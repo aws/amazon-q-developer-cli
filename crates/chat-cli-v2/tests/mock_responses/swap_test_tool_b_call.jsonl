@@ -1,0 +1,6 @@
+// Mock API response that triggers MCP tool call to swap_test_tool_b
+{"kind":"event","data":{"kind":"ToolUseEvent","data":{"tool_use_id":"tooluse_swap_b_001","name":"swap_test_tool_b","input":null,"stop":null}}}
+{"kind":"event","data":{"kind":"ToolUseEvent","data":{"tool_use_id":"tooluse_swap_b_001","name":"swap_test_tool_b","input":"{\"input\": \"test\"}","stop":null}}}
+{"kind":"event","data":{"kind":"ToolUseEvent","data":{"tool_use_id":"tooluse_swap_b_001","name":"swap_test_tool_b","input":null,"stop":true}}}
+
+{"kind":"event","data":{"kind":"AssistantResponseEvent","data":{"content":"Tool B executed."}}}

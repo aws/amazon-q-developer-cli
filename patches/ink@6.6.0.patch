@@ -1,0 +1,33 @@
+diff --git a/build/log-update.js b/build/log-update.js
+index 24deab03bf72317b22a248d2431260fa1424c6de..18921629a6fcb12a2df94f474f988855236b574e 100644
+--- a/build/log-update.js
++++ b/build/log-update.js
+@@ -41,6 +41,9 @@ const createIncremental = (stream, { showCursor = false } = {}) => {
+     let previousLines = [];
+     let previousOutput = '';
+     let hasHiddenCursor = false;
++    // Cache terminal rows at start - only switch to incremental once content exceeds this
++    const initialTerminalRows = stream.rows || 24;
++    let useStandardMode = true;
+     const render = (str) => {
+         if (!showCursor && !hasHiddenCursor) {
+             cliCursor.hide();
+@@ -54,6 +57,18 @@ const createIncremental = (stream, { showCursor = false } = {}) => {
+         const nextLines = output.split('\n');
+         const nextCount = nextLines.length;
+         const visibleCount = nextCount - 1;
++        // Switch to incremental mode once content exceeds terminal height (one-way switch)
++        if (useStandardMode && visibleCount >= initialTerminalRows) {
++            useStandardMode = false;
++        }
++        // Use standard erase-and-rewrite when content fits in screen
++        // This avoids cursor positioning issues that cause duplication
++        if (useStandardMode) {
++            stream.write(ansiEscapes.eraseLines(previousCount) + output);
++            previousOutput = output;
++            previousLines = nextLines;
++            return;
++        }
+         if (output === '\n' || previousOutput.length === 0) {
+             stream.write(ansiEscapes.eraseLines(previousCount) + output);
+             previousOutput = output;

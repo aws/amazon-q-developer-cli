@@ -1,0 +1,8 @@
+// Sample mock MCP server config for testing
+// Tool definitions
+{"type": "tool", "name": "echo", "description": "Echoes back the input", "input_schema": {"type": "object", "properties": {"message": {"type": "string"}}, "required": ["message"]}}
+{"type": "tool", "name": "add", "description": "Adds two numbers", "input_schema": {"type": "object", "properties": {"a": {"type": "number"}, "b": {"type": "number"}}, "required": ["a", "b"]}}
+
+// Mock responses
+{"type": "response", "tool": "echo", "response": {"echoed": "hello world"}}
+{"type": "response", "tool": "add", "response": {"result": 42}}

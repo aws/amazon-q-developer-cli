@@ -21,6 +21,7 @@ use agent::agent_loop::types::{
     ContentBlock,
     Message,
     Role,
+    ToolResultBlock,
     ToolSpec,
 };
 use agent::mcp::McpManager;
@@ -100,11 +101,13 @@ impl TestCaseBuilder {
             model = model.with_response(response);
         }
 
+        let model = Arc::new(model);
+
         let mut agent = Agent::new(
             snapshot,
             None,
             None,
-            Arc::new(model),
+            Arc::clone(&model) as Arc<dyn agent::agent_loop::model::Model>,
             McpManager::default().spawn(),
             false,
         )
@@ -129,6 +132,7 @@ impl TestCaseBuilder {
         Ok(TestCase {
             test_name,
             agent: agent.spawn(),
+            model,
             test_base,
             sent_requests: Vec::new(),
             agent_events: Vec::new(),
@@ -144,6 +148,7 @@ pub struct TestCase {
     test_name: String,
 
     agent: AgentHandle,
+    model: Arc<MockModel>,
     test_base: TestBase,
 
     tool_use_approvals: Vec<SendApprovalResultArgs>,
@@ -168,18 +173,30 @@ impl TestCase {
             .expect("failed to send prompt");
     }
 
+    pub async fn swap_agent(&self, args: agent::protocol::SwapAgentArgs) -> Result<()> {
+        self.agent.swap_agent(args).await?;
+        Ok(())
+    }
+
+    pub async fn compact_conversation(&self) -> Result<()> {
+        self.agent.compact_conversation().await?;
+        Ok(())
+    }
+
+    pub async fn create_snapshot(&self) -> AgentSnapshot {
+        self.agent.create_snapshot().await.expect("failed to create snapshot")
+    }
+
     pub fn requests(&self) -> &[SentRequest] {
         &self.sent_requests
     }
 
-    pub async fn wait_until_agent_stop(&mut self, timeout: Duration) {
+    pub async fn wait_until_agent_stop(&mut self, timeout: Duration) -> Result<()> {
         let timeout_at = Instant::now() + timeout;
         loop {
-            let evt = tokio::time::timeout_at(timeout_at.into(), self.recv_agent_event())
-                .await
-                .expect("timed out");
+            let evt = tokio::time::timeout_at(timeout_at.into(), self.recv_agent_event()).await?;
             match &evt {
-                AgentEvent::Stop(_) => break,
+                AgentEvent::Stop(_) => return Ok(()),
                 approval @ AgentEvent::ApprovalRequest { id, .. } => {
                     if !self.trust_all_tools {
                         let Some(approval) = self.tool_use_approvals.get(self.curr_approval_index) else {
@@ -205,6 +222,18 @@ impl TestCase {
         }
     }
 
+    pub async fn wait_until_compaction_complete(&mut self, timeout: Duration) {
+        let timeout_at = Instant::now() + timeout;
+        loop {
+            let evt = tokio::time::timeout_at(timeout_at.into(), self.recv_agent_event())
+                .await
+                .expect("timed out waiting for compaction");
+            if matches!(evt, AgentEvent::Compaction(agent::protocol::CompactionEvent::Completed)) {
+                break;
+            }
+        }
+    }
+
     async fn recv_agent_event(&mut self) -> AgentEvent {
         let evt = self.agent.recv().await.unwrap();
         self.agent_events.push(evt.clone());
@@ -219,6 +248,20 @@ impl TestCase {
             sent_requests: self.sent_requests.clone(),
             agent_events: self.agent_events.clone(),
         }
+    }
+
+    pub fn log_entry_appended_events(&self) -> Vec<&AgentEvent> {
+        self.agent_events
+            .iter()
+            .filter(|e| matches!(e, AgentEvent::LogEntryAppended { .. }))
+            .collect()
+    }
+
+    pub fn compaction_events(&self) -> Vec<&AgentEvent> {
+        self.agent_events
+            .iter()
+            .filter(|e| matches!(e, AgentEvent::Compaction(_)))
+            .collect()
     }
 }
 
@@ -263,6 +306,13 @@ impl SentRequest {
         })
     }
 
+    pub fn has_tool_result(&self, predicate: impl Fn(&ToolResultBlock) -> bool) -> bool {
+        self.original
+            .messages
+            .last()
+            .is_some_and(|m| m.content.iter().filter_map(|c| c.tool_result()).any(predicate))
+    }
+
     pub fn tool_specs(&self) -> Option<&Vec<ToolSpec>> {
         self.original.tool_specs.as_ref()
     }
@@ -282,11 +332,13 @@ pub async fn parse_response_streams(content: impl AsRef<str>) -> Result<MockResp
         if line.starts_with("//") {
             continue;
         }
-        // empty line -> new response stream
-        if line.is_empty() && !curr_stream.is_empty() {
-            let mut temp = Vec::new();
-            std::mem::swap(&mut temp, &mut curr_stream);
-            stream.push(temp);
+        // empty line -> new response stream (if we have content)
+        if line.is_empty() {
+            if !curr_stream.is_empty() {
+                let mut temp = Vec::new();
+                std::mem::swap(&mut temp, &mut curr_stream);
+                stream.push(temp);
+            }
             continue;
         }
         // otherwise, push the value to the current response

@@ -1,0 +1,5 @@
+[typescript.type_mappings]
+"DateTime" = "string"
+"Uuid" = "string"
+"Duration" = "{ secs: number, nanos: number }"
+"Value" = "unknown"

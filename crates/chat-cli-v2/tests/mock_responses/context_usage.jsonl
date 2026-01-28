@@ -1,0 +1,3 @@
+// Response with context usage event
+{"kind":"event","data":{"kind":"AssistantResponseEvent","data":{"content":"Hello!"}}}
+{"kind":"event","data":{"kind":"ContextUsageEvent","data":{"context_usage_percentage":42.5}}}

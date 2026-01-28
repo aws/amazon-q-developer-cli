@@ -37,6 +37,11 @@ pub trait Model: std::fmt::Debug + Send + Sync + 'static {
         cancel_token: CancellationToken,
     ) -> Pin<Box<dyn Stream<Item = StreamResult> + Send + 'static>>;
 
+    /// Returns the context window size in tokens, if known.
+    fn context_window_size(&self) -> Option<usize> {
+        None
+    }
+
     /// Dump serializable state required by the model implementation.
     ///
     /// This is intended to provide the ability to save and restore state

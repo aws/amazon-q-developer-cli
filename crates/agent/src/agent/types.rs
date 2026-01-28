@@ -10,6 +10,7 @@ use serde::{
     Deserialize,
     Serialize,
 };
+use typeshare::typeshare;
 use uuid::Uuid;
 
 use super::agent_loop::protocol::{
@@ -18,6 +19,10 @@ use super::agent_loop::protocol::{
 };
 use super::agent_loop::types::Message;
 use super::consts::DEFAULT_AGENT_NAME;
+use super::event_log::{
+    EventLog,
+    LogEntry,
+};
 use crate::agent::ExecutionState;
 use crate::agent::agent_config::definitions::AgentConfig;
 use crate::agent::tools::ToolState;
@@ -34,20 +39,25 @@ use crate::agent::tools::ToolState;
 ///
 /// and so on.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[typeshare]
 pub struct AgentSnapshot {
     /// Agent id
     pub id: AgentId,
     /// Agent config
+    #[typeshare(skip)]
     pub agent_config: AgentConfig,
     /// Agent conversation state
     pub conversation_state: ConversationState,
     /// Agent conversation metadata
+    #[typeshare(skip)]
     pub conversation_metadata: ConversationMetadata,
     /// Agent execution state
+    #[typeshare(skip)]
     pub execution_state: ExecutionState,
     /// State associated with the model implementation used by the agent
     pub model_state: Option<serde_json::Value>,
     /// Persistent state required by tools during the conversation
+    #[typeshare(skip)]
     pub tool_state: ToolState,
     /// Agent settings
     pub settings: AgentSettings,
@@ -58,7 +68,7 @@ impl AgentSnapshot {
         Self {
             id: agent_config.name().into(),
             agent_config,
-            conversation_state: ConversationState::new(),
+            conversation_state: ConversationState::new(Uuid::new_v4(), Vec::new()),
             conversation_metadata: Default::default(),
             execution_state: Default::default(),
             model_state: Default::default(),
@@ -73,7 +83,7 @@ impl AgentSnapshot {
         Self {
             id: agent_config.name().into(),
             agent_config,
-            conversation_state: ConversationState::new(),
+            conversation_state: ConversationState::new(Uuid::new_v4(), Vec::new()),
             conversation_metadata: Default::default(),
             execution_state: Default::default(),
             model_state: Default::default(),
@@ -125,10 +135,14 @@ impl AsRef<str> for ConversationSummary {
 }
 
 /// Settings to modify the runtime behavior of the agent.
+#[typeshare]
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AgentSettings {
     /// Timeout waiting for MCP servers to initialize during agent initialization.
     pub mcp_init_timeout: Duration,
+    /// Disable automatic compaction when context window overflows.
+    #[serde(default)]
+    pub disable_auto_compact: bool,
 }
 
 impl AgentSettings {
@@ -139,30 +153,61 @@ impl Default for AgentSettings {
     fn default() -> Self {
         Self {
             mcp_init_timeout: Self::DEFAULT_MCP_INIT_TIMEOUT,
+            disable_auto_compact: false,
         }
     }
 }
 
 /// State associated with a history of messages.
+#[typeshare]
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ConversationState {
     pub id: Uuid,
-    pub messages: Vec<Message>,
+    #[serde(default)]
+    event_log: EventLog,
+    #[serde(skip)]
+    messages_cache: Option<Vec<Message>>,
 }
 
 impl ConversationState {
-    /// Creates a new conversation state with a new id and empty history.
-    pub fn new() -> Self {
+    pub fn new(id: Uuid, entries: Vec<LogEntry>) -> Self {
+        let event_log = EventLog::new(entries);
+        let messages = event_log.derive_messages();
         Self {
-            id: Uuid::new_v4(),
-            messages: Vec::new(),
+            id,
+            event_log,
+            messages_cache: Some(messages),
         }
+    }
+
+    pub fn messages(&mut self) -> &[Message] {
+        if self.messages_cache.is_none() {
+            self.messages_cache = Some(self.event_log.derive_messages());
+        }
+        self.messages_cache.as_ref().unwrap()
+    }
+
+    pub fn cached_messages(&self) -> Option<&[Message]> {
+        self.messages_cache.as_deref()
+    }
+
+    pub fn event_log(&self) -> &EventLog {
+        &self.event_log
+    }
+
+    /// Append a log entry and return its index. Updates the messages cache.
+    pub fn append_log(&mut self, entry: LogEntry) -> usize {
+        let messages = self.messages_cache.get_or_insert_with(Vec::new);
+        entry.apply(messages, &self.event_log);
+        self.event_log.append(entry);
+        self.event_log.len() - 1
     }
 }
 
+// TODO: Remove Default implementation - ConversationState should require explicit id
 impl Default for ConversationState {
     fn default() -> Self {
-        Self::new()
+        Self::new(Uuid::new_v4(), Vec::new())
     }
 }
 
@@ -181,6 +226,7 @@ pub struct ConversationMetadata {
 /// Unique identifier of an agent instance within a session.
 ///
 /// Formatted as: `parent_id/name#rand`
+#[typeshare]
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct AgentId {
     /// Name of the agent

@@ -1,0 +1,30 @@
+// Prompt: write "hello world" in bash to hello.sh
+
+{"kind":"event","data":{"kind":"ToolUseEvent","data":{"tool_use_id":"tooluse_0nkBoUUETVmUUPmRgJebCg","name":"write","input":null,"stop":null}}}
+{"kind":"event","data":{"kind":"ToolUseEvent","data":{"tool_use_id":"tooluse_0nkBoUUETVmUUPmRgJebCg","name":"write","input":"{\"comma","stop":null}}}
+{"kind":"event","data":{"kind":"ToolUseEvent","data":{"tool_use_id":"tooluse_0nkBoUUETVmUUPmRgJebCg","name":"write","input":"nd\": \"crea","stop":null}}}
+{"kind":"event","data":{"kind":"ToolUseEvent","data":{"tool_use_id":"tooluse_0nkBoUUETVmUUPmRgJebCg","name":"write","input":"te\"","stop":null}}}
+{"kind":"event","data":{"kind":"ToolUseEvent","data":{"tool_use_id":"tooluse_0nkBoUUETVmUUPmRgJebCg","name":"write","input":", \"pa","stop":null}}}
+{"kind":"event","data":{"kind":"ToolUseEvent","data":{"tool_use_id":"tooluse_0nkBoUUETVmUUPmRgJebCg","name":"write","input":"th\": \"hello.sh\"","stop":null}}}
+{"kind":"event","data":{"kind":"ToolUseEvent","data":{"tool_use_id":"tooluse_0nkBoUUETVmUUPmRgJebCg","name":"write","input":", ","stop":null}}}
+{"kind":"event","data":{"kind":"ToolUseEvent","data":{"tool_use_id":"tooluse_0nkBoUUETVmUUPmRgJebCg","name":"write","input":"\"conte","stop":null}}}
+{"kind":"event","data":{"kind":"ToolUseEvent","data":{"tool_use_id":"tooluse_0nkBoUUETVmUUPmRgJebCg","name":"write","input":"nt\":","stop":null}}}
+{"kind":"event","data":{"kind":"ToolUseEvent","data":{"tool_use_id":"tooluse_0nkBoUUETVmUUPmRgJebCg","name":"write","input":" \"#!/bin/bas","stop":null}}}
+{"kind":"event","data":{"kind":"ToolUseEvent","data":{"tool_use_id":"tooluse_0nkBoUUETVmUUPmRgJebCg","name":"write","input":"h\\necho \\\"","stop":null}}}
+{"kind":"event","data":{"kind":"ToolUseEvent","data":{"tool_use_id":"tooluse_0nkBoUUETVmUUPmRgJebCg","name":"write","input":"hello ","stop":null}}}
+{"kind":"event","data":{"kind":"ToolUseEvent","data":{"tool_use_id":"tooluse_0nkBoUUETVmUUPmRgJebCg","name":"write","input":"world\\\"\\n\"}","stop":null}}}
+{"kind":"event","data":{"kind":"ToolUseEvent","data":{"tool_use_id":"tooluse_0nkBoUUETVmUUPmRgJebCg","name":"write","input":null,"stop":true}}}
+
+
+{"kind":"event","data":{"kind":"AssistantResponseEvent","data":{"content":"Create"}}}
+{"kind":"event","data":{"kind":"AssistantResponseEvent","data":{"content":"d `"}}}
+{"kind":"event","data":{"kind":"AssistantResponseEvent","data":{"content":"hello.sh`."}}}
+{"kind":"event","data":{"kind":"AssistantResponseEvent","data":{"content":" Run"}}}
+{"kind":"event","data":{"kind":"AssistantResponseEvent","data":{"content":" it with `"}}}
+{"kind":"event","data":{"kind":"AssistantResponseEvent","data":{"content":"bash"}}}
+{"kind":"event","data":{"kind":"AssistantResponseEvent","data":{"content":" hello.sh` or"}}}
+{"kind":"event","data":{"kind":"AssistantResponseEvent","data":{"content":" make"}}}
+{"kind":"event","data":{"kind":"AssistantResponseEvent","data":{"content":" it executable with `chmod +x hello"}}}
+{"kind":"event","data":{"kind":"AssistantResponseEvent","data":{"content":".sh`"}}}
+{"kind":"event","data":{"kind":"AssistantResponseEvent","data":{"content":" first"}}}
+{"kind":"event","data":{"kind":"AssistantResponseEvent","data":{"content":"."}}}

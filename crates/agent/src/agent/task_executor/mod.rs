@@ -1,6 +1,7 @@
 use std::collections::HashMap;
 use std::pin::Pin;
 use std::process::Stdio;
+use std::sync::Arc;
 use std::time::{
     Duration,
     Instant,
@@ -35,6 +36,7 @@ use crate::agent::tools::{
     ToolState,
 };
 use crate::agent::util::truncate_safe;
+use crate::util::providers::SystemProvider;
 
 #[derive(Debug, Clone)]
 pub struct ToolExecutorHandle {}
@@ -58,10 +60,12 @@ pub struct TaskExecutor {
     executing_hooks: HashMap<HookExecutionId, ExecutingHook>,
 
     hooks_cache: HashMap<Hook, CachedHook>,
+
+    sys_provider: Arc<dyn SystemProvider>,
 }
 
 impl TaskExecutor {
-    pub fn new() -> Self {
+    pub fn new(sys_provider: Arc<dyn SystemProvider>) -> Self {
         let (execute_request_tx, execute_request_rx) = mpsc::channel(32);
         let (execute_result_tx, execute_result_rx) = mpsc::channel(32);
         Self {
@@ -73,6 +77,7 @@ impl TaskExecutor {
             executing_tools: HashMap::new(),
             executing_hooks: HashMap::new(),
             hooks_cache: HashMap::new(),
+            sys_provider,
         }
     }
 
@@ -185,14 +190,15 @@ impl TaskExecutor {
         let cancel_token = CancellationToken::new();
         let id_clone = req.id.clone();
         let cancel_token_clone = cancel_token.clone();
+        let sys_provider = Arc::clone(&self.sys_provider);
 
         match req.id.hook.config.clone() {
             HookConfig::ShellCommand(command) => {
                 tokio::spawn(async move {
-                    let cwd = std::env::current_dir()
-                        .expect("current dir exists")
-                        .to_string_lossy()
-                        .to_string();
+                    let cwd = sys_provider
+                        .cwd()
+                        .map(|p| p.to_string_lossy().to_string())
+                        .unwrap_or_default();
                     let fut = run_command_hook(
                         req.id.hook.trigger,
                         command.clone(),
@@ -279,12 +285,6 @@ impl TaskExecutor {
                 }
             },
         }
-    }
-}
-
-impl Default for TaskExecutor {
-    fn default() -> Self {
-        Self::new()
     }
 }
 
@@ -581,6 +581,7 @@ async fn run_command_hook(
     let cmd = cmd
         .arg("-c")
         .arg(command)
+        .current_dir(cwd)
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
@@ -591,6 +592,7 @@ async fn run_command_hook(
     let cmd = cmd
         .arg("/C")
         .arg(command)
+        .current_dir(cwd)
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
@@ -675,6 +677,7 @@ fn sanitize_user_prompt(input: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::util::test::TestProvider;
 
     const TEST_COMMAND_HOOK: &str = r#"
 {
@@ -691,7 +694,8 @@ mod tests {
 
     #[tokio::test]
     async fn test_hook_execution() {
-        let mut executor = TaskExecutor::new();
+        let cwd = std::env::current_dir().expect("current dir exists");
+        let mut executor = TaskExecutor::new(Arc::new(TestProvider::new_with_base(cwd)));
 
         executor
             .start_hook_execution(StartHookExecution {

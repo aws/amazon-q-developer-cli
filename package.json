@@ -1,0 +1,14 @@
+{
+  "name": "kiro-cli-chat",
+  "private": true,
+  "workspaces": [
+    "packages/*"
+  ],
+  "devDependencies": {
+    "eslint": "^9.17.0",
+    "prettier": "^3.4.2"
+  },
+  "patchedDependencies": {
+    "ink@6.6.0": "patches/ink@6.6.0.patch"
+  }
+}

@@ -49,6 +49,11 @@ pub struct LoadedAgentConfig {
 }
 
 impl LoadedAgentConfig {
+    /// Creates a new LoadedAgentConfig with the given config and source.
+    pub fn new(config: AgentConfig, source: ConfigSource) -> Self {
+        Self { source, config }
+    }
+
     pub fn config(&self) -> &AgentConfig {
         &self.config
     }

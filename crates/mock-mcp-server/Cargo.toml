@@ -1,0 +1,28 @@
+[package]
+name = "mock-mcp-server"
+version = "0.1.0"
+edition = "2021"
+description = "Mock MCP server for testing ACP MCP integration"
+
+[lib]
+name = "mock_mcp_server"
+path = "src/lib.rs"
+
+[[bin]]
+name = "mock-mcp-server"
+path = "src/main.rs"
+
+[dependencies]
+rmcp = { workspace = true, features = ["server", "transport-io", "transport-streamable-http-server"] }
+tokio = { workspace = true, features = ["full"] }
+serde = { workspace = true, features = ["derive"] }
+serde_json.workspace = true
+clap = { version = "4", features = ["derive"] }
+anyhow.workspace = true
+tracing.workspace = true
+axum = "0.8"
+tempfile = "3"
+walkdir.workspace = true
+
+[dev-dependencies]
+wait-timeout = "0.2"

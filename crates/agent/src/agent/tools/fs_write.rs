@@ -120,32 +120,64 @@ impl FsWrite {
         }
     }
 
+    pub fn start_lines(&self) -> Vec<u32> {
+        match self {
+            FsWrite::Create(v) => v.start_line.into_iter().collect(),
+            FsWrite::StrReplace(v) => v.start_lines.clone(),
+            FsWrite::Insert(v) => v.start_line.into_iter().collect(),
+        }
+    }
+
     fn canonical_path<P: SystemProvider>(&self, provider: &P) -> Result<PathBuf, String> {
         Ok(PathBuf::from(
             canonicalize_path_sys(self.path(), provider).map_err(|e| e.to_string())?,
         ))
     }
 
-    pub async fn validate<P: SystemProvider>(&self, provider: &P) -> Result<(), String> {
+    pub async fn validate<P: SystemProvider>(&mut self, provider: &P) -> Result<(), String> {
         let mut errors = Vec::new();
 
         if self.path().is_empty() {
             errors.push("Path must not be empty".to_string());
         }
 
-        match &self {
-            FsWrite::Create(_) => (),
-            FsWrite::StrReplace(_) => {
-                if !self.canonical_path(provider)?.exists() {
+        let path = self.canonical_path(provider)?;
+
+        match self {
+            FsWrite::Create(v) => {
+                v.start_line = Some(1);
+            },
+            FsWrite::StrReplace(v) => {
+                if !path.exists() {
                     errors.push(
                         "The provided path must exist in order to replace or insert contents into it".to_string(),
                     );
+                } else if let Ok(content) = tokio::fs::read_to_string(&path).await {
+                    let matches: Vec<_> = content.match_indices(&v.old_str).collect();
+                    if matches.is_empty() {
+                        errors.push("The provided old_str was not found in the file".to_string());
+                    } else if v.replace_all {
+                        v.start_lines = matches
+                            .iter()
+                            .map(|(byte_offset, _)| (content[..*byte_offset].lines().count() as u32).saturating_add(1))
+                            .collect();
+                    } else {
+                        let byte_offset = matches[0].0;
+                        v.start_lines = vec![(content[..byte_offset].lines().count() as u32).saturating_add(1)];
+                    }
                 }
             },
             FsWrite::Insert(v) => {
                 if v.content.is_empty() {
                     errors.push("Content to insert must not be empty".to_string());
                 }
+                v.start_line = match v.insert_line {
+                    Some(line) => Some(line.saturating_add(1)),
+                    None => tokio::fs::read_to_string(&path)
+                        .await
+                        .ok()
+                        .map(|c| (c.lines().count() as u32).saturating_add(1)),
+                };
             },
         }
 
@@ -180,10 +212,13 @@ impl FsWrite {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct FileCreate {
-    path: String,
+    pub path: String,
     pub content: String,
+    /// Starting line number (1-indexed), computed during validation
+    #[serde(skip)]
+    pub start_line: Option<u32>,
 }
 
 impl FileCreate {
@@ -206,7 +241,7 @@ impl FileCreate {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct StrReplace {
     path: String,
@@ -214,6 +249,9 @@ pub struct StrReplace {
     pub new_str: String,
     #[serde(default)]
     replace_all: bool,
+    /// Starting line numbers (1-indexed), computed during validation
+    #[serde(skip)]
+    pub start_lines: Vec<u32>,
 }
 
 impl StrReplace {
@@ -255,12 +293,15 @@ impl StrReplace {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Insert {
     path: String,
     content: String,
     insert_line: Option<u32>,
+    /// Starting line number (1-indexed), computed during validation
+    #[serde(skip)]
+    pub start_line: Option<u32>,
 }
 
 impl Insert {
@@ -361,11 +402,96 @@ mod tests {
     use crate::util::test::TestBase;
 
     #[tokio::test]
-    async fn test_create_file() {
+    async fn test_validate_sets_start_line_str_replace() {
+        let test_base = TestBase::new()
+            .await
+            .with_file(("test.txt", "first\nsecond\nthird"))
+            .await;
+
+        let mut tool = FsWrite::StrReplace(StrReplace {
+            path: test_base.join("test.txt").to_string_lossy().to_string(),
+            old_str: "second".to_string(),
+            new_str: "replaced".to_string(),
+            ..Default::default()
+        });
+
+        assert!(tool.validate(&test_base).await.is_ok());
+        assert_eq!(tool.start_lines(), vec![2]); // "second" is on line 2
+    }
+
+    #[tokio::test]
+    async fn test_validate_str_replace_old_str_not_found() {
+        let test_base = TestBase::new().await.with_file(("test.txt", "hello world")).await;
+
+        let mut tool = FsWrite::StrReplace(StrReplace {
+            path: test_base.join("test.txt").to_string_lossy().to_string(),
+            old_str: "nonexistent".to_string(),
+            new_str: "replaced".to_string(),
+            ..Default::default()
+        });
+
+        let result = tool.validate(&test_base).await;
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("old_str was not found"));
+    }
+
+    #[tokio::test]
+    async fn test_validate_sets_start_line_create() {
         let test_base = TestBase::new().await;
-        let tool = FsWrite::Create(FileCreate {
+
+        let mut tool = FsWrite::Create(FileCreate {
             path: test_base.join("new.txt").to_string_lossy().to_string(),
             content: "hello world".to_string(),
+            ..Default::default()
+        });
+
+        assert!(tool.validate(&test_base).await.is_ok());
+        assert_eq!(tool.start_lines(), vec![1]);
+    }
+
+    #[tokio::test]
+    async fn test_validate_sets_start_line_insert() {
+        let test_base = TestBase::new()
+            .await
+            .with_file(("test.txt", "line1\nline2\nline3"))
+            .await;
+
+        let mut tool = FsWrite::Insert(Insert {
+            path: test_base.join("test.txt").to_string_lossy().to_string(),
+            content: "inserted".to_string(),
+            insert_line: Some(2),
+            ..Default::default()
+        });
+
+        assert!(tool.validate(&test_base).await.is_ok());
+        assert_eq!(tool.start_lines(), vec![3]); // Inserted content starts at line 3
+    }
+
+    #[tokio::test]
+    async fn test_validate_sets_start_line_insert_append() {
+        let test_base = TestBase::new()
+            .await
+            .with_file(("test.txt", "line1\nline2\nline3"))
+            .await;
+
+        let mut tool = FsWrite::Insert(Insert {
+            path: test_base.join("test.txt").to_string_lossy().to_string(),
+            content: "appended".to_string(),
+            insert_line: None,
+            ..Default::default()
+        });
+
+        assert!(tool.validate(&test_base).await.is_ok());
+        assert_eq!(tool.start_lines(), vec![4]); // Appended content starts at line 4
+    }
+
+    #[tokio::test]
+    async fn test_create_file() {
+        let test_base = TestBase::new().await;
+        let mut tool = FsWrite::Create(FileCreate {
+            path: test_base.join("new.txt").to_string_lossy().to_string(),
+            content: "hello world".to_string(),
+            ..Default::default()
         });
 
         assert!(tool.validate(&test_base).await.is_ok());
@@ -381,6 +507,7 @@ mod tests {
         let tool = FsWrite::Create(FileCreate {
             path: test_base.join("nested/dir/file.txt").to_string_lossy().to_string(),
             content: "nested content".to_string(),
+            ..Default::default()
         });
 
         assert!(tool.execute(None, &test_base).await.is_ok());
@@ -399,7 +526,7 @@ mod tests {
             path: test_base.join("test.txt").to_string_lossy().to_string(),
             old_str: "world".to_string(),
             new_str: "rust".to_string(),
-            replace_all: false,
+            ..Default::default()
         });
 
         assert!(tool.execute(None, &test_base).await.is_ok());
@@ -417,6 +544,7 @@ mod tests {
             old_str: "foo".to_string(),
             new_str: "baz".to_string(),
             replace_all: true,
+            ..Default::default()
         });
 
         assert!(tool.execute(None, &test_base).await.is_ok());
@@ -433,7 +561,7 @@ mod tests {
             path: test_base.join("test.txt").to_string_lossy().to_string(),
             old_str: "missing".to_string(),
             new_str: "replacement".to_string(),
-            replace_all: false,
+            ..Default::default()
         });
 
         assert!(tool.execute(None, &test_base).await.is_err());
@@ -450,6 +578,7 @@ mod tests {
             path: test_base.join("test.txt").to_string_lossy().to_string(),
             content: "inserted".to_string(),
             insert_line: Some(1),
+            ..Default::default()
         });
 
         assert!(tool.execute(None, &test_base).await.is_ok());
@@ -465,7 +594,7 @@ mod tests {
         let tool = FsWrite::Insert(Insert {
             path: test_base.join("test.txt").to_string_lossy().to_string(),
             content: "appended".to_string(),
-            insert_line: None,
+            ..Default::default()
         });
 
         assert!(tool.execute(None, &test_base).await.is_ok());
@@ -477,9 +606,10 @@ mod tests {
     #[tokio::test]
     async fn test_fs_write_validate_empty_path() {
         let test_base = TestBase::new().await;
-        let tool = FsWrite::Create(FileCreate {
+        let mut tool = FsWrite::Create(FileCreate {
             path: "".to_string(),
             content: "content".to_string(),
+            ..Default::default()
         });
 
         assert!(tool.validate(&test_base).await.is_err());
@@ -488,11 +618,11 @@ mod tests {
     #[tokio::test]
     async fn test_fs_write_validate_nonexistent_file_for_replace() {
         let test_base = TestBase::new().await;
-        let tool = FsWrite::StrReplace(StrReplace {
+        let mut tool = FsWrite::StrReplace(StrReplace {
             path: "/nonexistent/file.txt".to_string(),
             old_str: "old".to_string(),
             new_str: "new".to_string(),
-            replace_all: false,
+            ..Default::default()
         });
 
         assert!(tool.validate(&test_base).await.is_err());

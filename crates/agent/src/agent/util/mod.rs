@@ -24,6 +24,8 @@ use tokio::io::{
     BufReader,
 };
 
+pub const DEFAULT_TRUNCATE_SUFFIX: &str = "...truncated";
+
 pub fn expand_env_vars(env_vars: &mut HashMap<String, String>) {
     let env_provider = |input: &str| Ok(std::env::var(input).ok());
     expand_env_vars_impl(env_vars, env_provider);
@@ -70,7 +72,8 @@ pub fn truncate_safe(s: &str, max_bytes: usize) -> &str {
 ///
 /// If both `s` and `suffix` are larger than `max_bytes`, then `s` is replaced with a truncated
 /// `suffix`.
-pub fn truncate_safe_in_place(s: &mut String, max_bytes: usize, suffix: &str) {
+pub fn truncate_safe_in_place(s: &mut String, max_bytes: usize, suffix: Option<&str>) {
+    let suffix = suffix.unwrap_or(DEFAULT_TRUNCATE_SUFFIX);
     // If `s` doesn't need to be truncated, do nothing.
     if s.len() <= max_bytes {
         return;
@@ -153,7 +156,7 @@ mod tests {
 
     #[test]
     fn test_truncate_safe_in_place() {
-        let suffix = "suffix";
+        let suffix = Some("suffix");
         let tests = &[
             ("Hello World", 7, "Hsuffix"),
             ("Hello World", usize::MAX, "Hello World"),

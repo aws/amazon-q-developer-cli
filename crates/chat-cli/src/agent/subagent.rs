@@ -217,6 +217,7 @@ impl<'a> Subagent<'a> {
             settings: AgentSettings {
                 // one day
                 mcp_init_timeout: std::time::Duration::from_secs(86400),
+                disable_auto_compact: Default::default(),
             },
             ..Default::default()
         };
@@ -572,8 +573,8 @@ impl<'a> Subagent<'a> {
 
             summary.token_count = summary
                 .token_count
-                .saturating_add(md.input_token_count)
-                .saturating_add(md.output_token_count);
+                .saturating_add(md.input_token_count.into())
+                .saturating_add(md.output_token_count.into());
 
             if let Some(turn_duration) = md.turn_duration.as_ref() {
                 let duration = summary.duration.get_or_insert(std::time::Duration::from_secs(0));

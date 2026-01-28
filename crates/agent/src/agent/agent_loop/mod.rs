@@ -126,9 +126,11 @@ pub struct AgentLoop {
     /// Cancellation token used for gracefully cancelling the underlying response stream
     cancel_token: CancellationToken,
 
-    /// The current response stream future being received along with it's associated parse state
-    #[allow(clippy::type_complexity)]
-    curr_stream: Option<(StreamParseState, Pin<Box<dyn Stream<Item = StreamResult> + Send>>)>,
+    /// The current response stream future being received
+    curr_stream: Option<Pin<Box<dyn Stream<Item = StreamResult> + Send>>>,
+
+    /// Parse state for the current stream (separate so cancel handler can access it)
+    curr_stream_state: Option<StreamParseState>,
 
     /// List of completed stream parse states
     stream_states: Vec<StreamParseState>,
@@ -150,7 +152,7 @@ impl std::fmt::Debug for AgentLoop {
         f.debug_struct("AgentLoop")
             .field("id", &self.id)
             .field("execution_state", &self.execution_state)
-            .field("curr_stream", &self.curr_stream.as_ref().map(|s| &s.0))
+            .field("curr_stream_state", &self.curr_stream_state)
             .field("stream_states", &self.stream_states)
             .finish()
     }
@@ -165,6 +167,7 @@ impl AgentLoop {
             execution_state: LoopState::Idle,
             cancel_token,
             curr_stream: None,
+            curr_stream_state: None,
             stream_states: Vec::new(),
             loop_start_time: None,
             loop_end_time: None,
@@ -203,30 +206,25 @@ impl AgentLoop {
                 },
 
                 // Branch for handling the next stream event.
-                //
-                // We do some trickery to return a future that never resolves if we're not currently
-                // consuming a response stream.
                 res = async {
-                    match self.curr_stream.take() {
-                        Some((state, mut stream)) => {
-                            let next_ev = stream.next().await;
-                            (state, stream, next_ev)
-                        },
+                    match self.curr_stream.as_mut() {
+                        Some(stream) => stream.next().await,
                         None => std::future::pending().await,
                     }
                 } => {
-                    let (mut stream_state, stream, stream_event) = res;
-                    debug!(?self.id, ?stream_event, "agent loop received stream event");
+                    debug!(?self.id, ?res, "agent loop received stream event");
 
                     // Buffer for the stream parser to update with events to send
                     let mut loop_events: Vec<AgentLoopEventKind> = Vec::new();
 
                     // Advance the stream parse state
-                    stream_state.next(stream_event, &mut loop_events);
+                    let stream_state = self.curr_stream_state.as_mut().expect("curr_stream_state should exist when curr_stream exists");
+                    stream_state.next(res, &mut loop_events);
 
                     if stream_state.ended() {
-                        // Pushing the state early here to ensure the metadata event is created
-                        // correctly in the case of UserTurnEnded.
+                        // Stream ended, clean up
+                        self.curr_stream = None;
+                        let stream_state = self.curr_stream_state.take().unwrap();
                         self.stream_states.push(stream_state);
                         let stream_state = self.stream_states.last().expect("should exist after push");
 
@@ -241,9 +239,6 @@ impl AgentLoop {
                             self.loop_end_time = Some(Instant::now());
                             loop_events.push(AgentLoopEventKind::UserTurnEnd(self.make_user_turn_metadata()));
                         }
-                    } else {
-                        // Stream is still being consumed, so add back to curr_stream.
-                        self.curr_stream = Some((stream_state, stream));
                     }
 
                     // Send agent loop events back from the parsed state so far
@@ -296,34 +291,43 @@ impl AgentLoop {
 
                 let cancel_token = self.cancel_token.clone();
                 let stream = model.stream(args.messages, args.tool_specs, args.system_prompt, cancel_token);
-                self.curr_stream = Some((StreamParseState::new(next_user_message), stream));
+                self.curr_stream = Some(stream);
+                self.curr_stream_state = Some(StreamParseState::new(next_user_message));
                 Ok(AgentLoopResponse::Success)
             },
 
             AgentLoopRequest::Cancel => {
+                // Always cancel the token first - this will cause RTS to emit Interrupted
+                self.cancel_token.cancel();
+
                 let mut buf = Vec::new();
-                // If there's an active stream, then interrupt it.
-                if let Some((mut parse_state, mut fut)) = self.curr_stream.take() {
-                    debug_assert!(self.execution_state == LoopState::ConsumingResponse);
-                    self.cancel_token.cancel();
-                    while let Some(ev) = fut.next().await {
-                        parse_state.next(Some(ev), &mut buf);
+
+                // Drain the stream only if we have it (stream branch doesn't)
+                if let Some(mut stream) = self.curr_stream.take() {
+                    while let Some(ev) = stream.next().await {
+                        if let Some(parse_state) = self.curr_stream_state.as_mut() {
+                            parse_state.next(Some(ev), &mut buf);
+                        }
                     }
+                }
+                // If stream branch has curr_stream, it will be dropped when select! cancels it
+
+                // Finalize the parse state if it exists
+                if let Some(mut parse_state) = self.curr_stream_state.take() {
                     parse_state.next(None, &mut buf);
-                    debug_assert!(parse_state.ended());
                     self.stream_states.push(parse_state);
                 }
 
                 self.loop_end_time = Some(Instant::now());
                 let metadata = self.make_user_turn_metadata();
                 buf.push(self.set_execution_state(LoopState::UserTurnEnded));
-                buf.push(AgentLoopEventKind::UserTurnEnd(metadata.clone()));
+                buf.push(AgentLoopEventKind::UserTurnEnd(metadata));
 
                 for ev in buf.drain(..) {
                     self.loop_event_tx.send(ev).await.ok();
                 }
 
-                Ok(AgentLoopResponse::UserTurnMetadata(Box::new(metadata)))
+                Ok(AgentLoopResponse::Success)
             },
         }
     }
@@ -345,8 +349,9 @@ impl AgentLoop {
         let mut message_ids = Vec::new();
         let mut number_of_cycles = 0_u32;
         let mut builtin_tool_uses = 0_u32;
-        let mut input_token_count = 0_u64;
-        let mut output_token_count = 0_u64;
+        let mut input_token_count = 0_u32;
+        let mut output_token_count = 0_u32;
+        let mut context_usage_percentage = None;
 
         for s in &self.stream_states {
             message_ids.push(s.user_message.id.clone());
@@ -365,6 +370,9 @@ impl AgentLoop {
                 }
                 if let Some(token_count) = md_usage.output_tokens.as_ref() {
                     output_token_count = output_token_count.saturating_add(*token_count);
+                }
+                if let Some(percent) = md_usage.context_usage_percentage {
+                    context_usage_percentage = Some(percent);
                 }
             }
         }
@@ -394,6 +402,7 @@ impl AgentLoop {
             end_timestamp: Utc::now(),
             input_token_count,
             output_token_count,
+            context_usage_percentage,
         }
     }
 }
@@ -651,6 +660,7 @@ impl StreamParseState {
     }
 }
 
+/// Handle for communicating with an [`AgentLoop`] actor.
 #[derive(Debug)]
 pub struct AgentLoopHandle {
     /// Identifier for the loop.
@@ -712,18 +722,10 @@ impl AgentLoopHandle {
     }
 
     /// Ends the agent loop
-    pub async fn cancel(&self) -> Result<UserTurnMetadata, AgentLoopResponseError> {
-        match self
-            .sender
-            .send_recv(AgentLoopRequest::Cancel)
-            .await
-            .unwrap_or(Err(AgentLoopResponseError::AgentLoopExited))?
-        {
-            AgentLoopResponse::UserTurnMetadata(md) => Ok(*md),
-            other => Err(AgentLoopResponseError::Custom(format!(
-                "unknown response getting execution state: {other:?}",
-            ))),
-        }
+    pub async fn cancel(&self) -> Result<(), AgentLoopResponseError> {
+        _ = self.sender.send_recv(AgentLoopRequest::Cancel).await;
+
+        Ok(())
     }
 }
 

@@ -1,0 +1,172 @@
+[package]
+name = "chat_cli_v2"
+authors.workspace = true
+edition.workspace = true
+homepage.workspace = true
+publish.workspace = true
+version.workspace = true
+license.workspace = true
+default-run = "chat_cli_v2"
+
+[lints]
+workspace = true
+
+[features]
+default = []
+wayland = ["arboard/wayland-data-control"]
+
+[dependencies]
+agent-client-protocol.workspace = true
+agent.workspace = true
+amzn-codewhisperer-client.workspace = true
+amzn-codewhisperer-streaming-client.workspace = true
+amzn-consolas-client.workspace = true
+amzn-qdeveloper-streaming-client.workspace = true
+amzn-toolkit-telemetry-client.workspace = true
+anstream.workspace = true
+arboard.workspace = true
+async-stream.workspace = true
+async-trait.workspace = true
+aws-config.workspace = true
+aws-credential-types.workspace = true
+aws-runtime.workspace = true
+aws-sdk-cognitoidentity.workspace = true
+aws-sdk-ssooidc.workspace = true
+aws-smithy-async.workspace = true
+aws-smithy-runtime-api.workspace = true
+aws-smithy-types.workspace = true
+aws-types.workspace = true
+base64.workspace = true
+bitflags.workspace = true
+bstr.workspace = true
+bytes.workspace = true
+camino.workspace = true
+cfg-if.workspace = true
+chrono.workspace = true
+clap_complete_fig.workspace = true
+clap_complete.workspace = true
+clap.workspace = true
+code-agent-sdk = { path = "../code-agent-sdk" }
+color-eyre.workspace = true
+color-print.workspace = true
+convert_case.workspace = true
+cookie.workspace = true
+crossterm.workspace = true
+ctrlc.workspace = true
+dialoguer.workspace = true
+dirs.workspace = true
+eyre.workspace = true
+fd-lock.workspace = true
+futures.workspace = true
+glob.workspace = true
+globset.workspace = true
+grep-regex = "0.1.14"
+grep-searcher = "0.1.16"
+hex.workspace = true
+html2text = "0.12"
+http-body-util.workspace = true
+http.workspace = true
+hyper-util.workspace = true
+hyper.workspace = true
+ignore.workspace = true
+image.workspace = true
+indicatif.workspace = true
+indoc.workspace = true
+insta.workspace = true
+jsonschema.workspace = true
+libc.workspace = true
+mimalloc.workspace = true
+nix.workspace = true
+owo-colors.workspace = true
+parking_lot.workspace = true
+paste.workspace = true
+percent-encoding.workspace = true
+r2d2_sqlite.workspace = true
+r2d2.workspace = true
+rand.workspace = true
+regex.workspace = true
+reqwest.workspace = true
+ring.workspace = true
+rmcp.workspace = true
+rusqlite.workspace = true
+rustls-native-certs.workspace = true
+rustls-pemfile.workspace = true
+rustls.workspace = true
+rustyline.workspace = true
+sacp.workspace = true
+agent-client-protocol-schema.workspace = true
+schemars.workspace = true
+semantic_search_client.workspace = true
+semver.workspace = true
+serde_json.workspace = true
+serde_yaml.workspace = true
+serde.workspace = true
+sha2.workspace = true
+shell-color.workspace = true
+shell-words.workspace = true
+shellexpand.workspace = true
+shlex.workspace = true
+similar.workspace = true
+spinners.workspace = true
+static_assertions = "1.1"
+strip-ansi-escapes.workspace = true
+strsim.workspace = true
+strum.workspace = true
+syntect.workspace = true
+sysinfo.workspace = true
+tempfile.workspace = true
+thiserror.workspace = true
+time.workspace = true
+tokio-stream.workspace = true
+tokio-tungstenite.workspace = true
+tokio-util.workspace = true
+tokio.workspace = true
+toml.workspace = true
+typeshare = "1.0.4"
+tracing-appender.workspace = true
+tracing-subscriber.workspace = true
+tracing.workspace = true
+typed-path.workspace = true
+unicode-width.workspace = true
+url.workspace = true
+urlencoding = "2.1.3"
+uuid.workspace = true
+walkdir.workspace = true
+webpki-roots.workspace = true
+whoami.workspace = true
+winnow.workspace = true
+zip.workspace = true
+
+[target.'cfg(unix)'.dependencies]
+nix.workspace = true
+skim.workspace = true
+
+[target.'cfg(target_os = "macos")'.dependencies]
+objc2.workspace = true
+objc2-app-kit.workspace = true
+objc2-foundation.workspace = true
+security-framework.workspace = true
+
+[target.'cfg(windows)'.dependencies]
+windows.workspace = true
+winreg.workspace = true
+
+[dev-dependencies]
+assert_cmd.workspace = true
+criterion.workspace = true
+mock-mcp-server = { path = "../mock-mcp-server" }
+mockito.workspace = true
+ntest = "0.9"
+paste.workspace = true
+predicates.workspace = true
+sacp.workspace = true
+tracing-test.workspace = true
+
+[build-dependencies]
+convert_case.workspace = true
+prettyplease.workspace = true
+quote.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+syn.workspace = true
+schemars.workspace = true

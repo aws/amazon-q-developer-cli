@@ -1,0 +1,11 @@
+[
+  "cloudwatch:describe-alarms",
+  "cloudwatch:get-metric-data",
+  "cloudwatch:get-metric-statistics",
+  "cloudwatch:list-metrics",
+  "iam:get-role",
+  "iot-data:get-thing-shadow",
+  "rds:describe-db-instances",
+  "s3:ls",
+  "s3:presign"
+]

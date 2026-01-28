@@ -1,0 +1,2 @@
+// Simple text response
+{"kind":"event","data":{"kind":"AssistantResponseEvent","data":{"content":"Hello from the agent!"}}}

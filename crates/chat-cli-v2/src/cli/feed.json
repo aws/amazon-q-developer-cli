@@ -1,0 +1,1646 @@
+{
+  "$schema": "./feed-schema.json",
+  "entries": [
+    {
+      "$comment": "This is the next release, any changes here",
+      "type": "release",
+      "date": "2999-01-01",
+      "version": "0.0.0",
+      "title": "Version 0.0.0",
+      "hidden": true,
+      "changes": []
+    },
+    {
+      "type": "release",
+      "date": "2026-01-15",
+      "version": "1.24.0",
+      "title": "Version 1.24.0",
+      "changes": [
+        {
+          "type": "added",
+          "description": "Custom diff tool support for write tool via chat.diffTool setting"
+        },
+        {
+          "type": "added",
+          "description": "Tab completion for @prompts now includes local and global file-based prompts"
+        },
+        {
+          "type": "added",
+          "description": "Improved code understanding with codebase overviews and smarter symbol navigation using Tree-sitter analysis. Learn details at: https://kiro.dev/docs/cli/code-intelligence/"
+        },
+        {
+          "type": "added",
+          "description": "Lazy loading for knowledge bases - loads on demand rather than all at once"
+        },
+        {
+          "type": "added",
+          "description": "Granular URL permissions for web_fetch tool through agent config"
+        },
+        {
+          "type": "added",
+          "description": "Social authentication support for remote development environments"
+        },
+        {
+          "type": "added",
+          "description": "Keyboard shortcuts for agent switching - Quickly switch between agents with custom keybinding. Learn details at: https://kiro.dev/docs/cli/custom-agents/configuration-reference/"
+        },
+        {
+          "type": "added",
+          "description": "Enhanced use_aws tool readonly operation identification & cli agent trusts readonly by default"
+        },
+        {
+          "type": "added",
+          "description": "Support progressive-loading of context files in custom agents"
+        },
+        {
+          "type": "fixed",
+          "description": "Subagents now correctly prompt for permission before running shell commands"
+        },
+        {
+          "type": "fixed",
+          "description": "/tools untrust now works correctly after /tools trust-all"
+        },
+        {
+          "type": "fixed",
+          "description": "/chat save and /chat load now support tilde expansion for better path resolution"
+        },
+        {
+          "type": "fixed",
+          "description": "Fixed a crash in the grep tool when searching files containing multi-byte Unicode characters"
+        },
+        {
+          "type": "changed",
+          "description": "Persistent index for faster knowledge base loading"
+        },
+        {
+          "type": "changed",
+          "description": "Refined context usage indicator to improve accuracy"
+        },
+        {
+          "type": "changed",
+          "description": "Improved system prompt for compaction with UX enhancements"
+        }
+      ]
+    },
+    {
+      "type": "release",
+      "date": "2025-12-23",
+      "version": "1.23.1",
+      "title": "Version 1.23.1",
+      "changes": [
+        {
+          "type": "fixed",
+          "description": "Removed write tool access for planning agent"
+        },
+        {
+          "type": "fixed",
+          "description": "Deprecation warnings for /save and /load commands now accept parameters properly"
+        },
+        {
+          "type": "changed",
+          "description": "Added execution details for grep and glob tools"
+        },
+        {
+          "type": "fixed",
+          "description": "Disabled MCP servers no longer show as initializing"
+        },
+        {
+          "type": "fixed",
+          "description": "Inconsistent mcp tool name parsing between main chat and subagent"
+        },
+        {
+          "type": "changed",
+          "description": "Makes subagent tool in default agent not trusted by default"
+        }
+      ]
+    },
+    {
+      "type": "release",
+      "date": "2025-12-18",
+      "version": "1.23.0",
+      "title": "Version 1.23.0",
+      "changes": [
+        {
+          "type": "added",
+          "description": "Introducing Subagents - Delegate complex tasks to specialized agents with live progress tracking"
+        },
+        {
+          "type": "added",
+          "description": "Introducing the Plan Agent - a specialized built-in agent for breaking down complex tasks into implementation plans"
+        },
+        {
+          "type": "added",
+          "description": "New grep and glob tools for advanced file searching and pattern matching"
+        },
+        {
+          "type": "added",
+          "description": "MCP registry support for governance of MCP tools"
+        },
+        {
+          "type": "added",
+          "description": "Multi-session support with interactive session picker"
+        },
+        {
+          "type": "added",
+          "description": "Default agent prompt, highlighting Kiro CLI capabilities"
+        },
+        {
+          "type": "added",
+          "description": "/model set-current-as-default command for persisting model selection"
+        },
+        {
+          "type": "fixed",
+          "description": "Improve LSP loading time for code intelligence tools"
+        }
+      ]
+    },
+    {
+      "type": "release",
+      "date": "2025-12-11",
+      "version": "1.22.0",
+      "title": "Version 1.22.0",
+      "changes": [
+        {
+          "type": "added",
+          "description": "Introducing code intelligence through LSP integration - kiro.dev/docs/cli/code-intelligence/"
+        },
+        {
+          "type": "added",
+          "description": "Knowledge Index with agent schema configuration for knowledge bases and auto-indexing support"
+        },
+        {
+          "type": "changed",
+          "description": "Enhanced auto-compaction with deterministic read, write, shell and aws tool artifacts"
+        },
+        {
+          "type": "fixed",
+          "description": "Added guardrails for fs_read to avoid context overflow"
+        }
+      ]
+    },
+    {
+      "type": "release",
+      "date": "2025-11-25",
+      "version": "1.21.0",
+      "title": "Version 1.21.0",
+      "changes": [
+        {
+          "type": "added",
+          "description": "Web Search and Web Fetch tools for accessing current information from the web"
+        },
+        {
+          "type": "added",
+          "description": "Kiro CLI automatically migrates some of your configurations from .amazonq to .kiro. Read the details at kiro.dev/cli-upgrade"
+        }
+      ]
+    },
+    {
+      "type": "release",
+      "date": "2025-11-25",
+      "version": "1.20.2",
+      "title": "Version 1.20.2",
+      "changes": [
+        {
+          "type": "added",
+          "description": "Todo list improvements with task details and sticky active todos"
+        },
+        {
+          "type": "added",
+          "description": "/tangent forget command to remove recent messages from conversation context history"
+        },
+        {
+          "type": "added",
+          "description": "Knowledge base improvements with file metadata, limit controls, file type filters, and sort options"
+        },
+        {
+          "type": "fixed",
+          "description": "Migration now preserves shell file formatting and prevents configuration corruption"
+        },
+        {
+          "type": "added",
+          "description": "Kiro CLI automatically migrates some of your configurations from .amazonq to .kiro. Read the details at kiro.dev/cli-upgrade"
+        }
+      ]
+    },
+    {
+      "type": "release",
+      "date": "2025-11-24",
+      "version": "1.20.1",
+      "title": "Version 1.20.1",
+      "changes": [
+        {
+          "type": "fixed",
+          "description": "Kiro-default agent showed no path found"
+        },
+        {
+          "type": "fixed",
+          "description": "Agent created in legacy folder"
+        },
+        {
+          "type": "fixed",
+          "description": "Add mcp with workspace scope sometimes failed"
+        },
+        {
+          "type": "fixed",
+          "description": "Inline code block color update"
+        }
+      ]
+    },
+    {
+      "type": "release",
+      "date": "2025-11-17",
+      "version": "1.20.0",
+      "title": "Version 1.20.0",
+      "changes": [
+        {
+          "type": "added",
+          "description": "The Kiro CLI is here! Kiro CLI leverages the Kiro Auto agent to deliver the best results at the best price, in your terminal, and takes you from natural language, to code, to deployment. Kiro CLI supports different agent modes, MCPs, Kiro steering files, and custom agents, allowing you to mold the CLI to meet your needs."
+        }
+      ]
+    },
+        {
+      "type": "release",
+      "date": "2025-11-17",
+      "version": "1.19.7",
+      "title": "Version 1.19.7",
+      "changes": [
+        {
+          "type": "added",
+          "description": "Kiro CLI announcement. Learn more at kiro.dev/cli-upgrade - [#3433](https://github.com/aws/amazon-q-developer-cli/pull/3433)"
+        }
+      ]
+    },
+    {
+      "type": "release",
+      "date": "2025-11-13",
+      "version": "1.19.6",
+      "title": "Version 1.19.6",
+      "changes": [
+        {
+          "type": "fixed",
+          "description": "Right arrow key being disabled - [#3439](https://github.com/aws/amazon-q-developer-cli/pull/3439)"
+        }
+      ]
+    },
+    {
+      "type": "release",
+      "date": "2025-11-12",
+      "version": "1.19.5",
+      "title": "Version 1.19.5",
+      "changes": [
+        {
+          "type": "fixed",
+          "description": "Minor bug fixes"
+        }
+      ]
+    },
+    {
+      "type": "release",
+      "date": "2025-11-07",
+      "version": "1.19.4",
+      "title": "Version 1.19.4",
+      "changes": [
+        {
+          "type": "added",
+          "description": "Enhanced `delegate` tool UX and mechanics - [#3337](https://github.com/aws/amazon-q-developer-cli/pull/3337)"
+        },
+        {
+          "type": "added",
+          "description": "Warning when duplicate agents are loaded from the same directory - [#3335](https://github.com/aws/amazon-q-developer-cli/pull/3335)"
+        },
+        {
+          "type": "changed",
+          "description": "Block potentially dangerous commands from executing with the configured `execute_bash.allowedCommands` - [#3313](https://github.com/aws/amazon-q-developer-cli/pull/3313)"
+        },
+        {
+          "type": "fixed",
+          "description": "Expanding `~` in prompt `file:://` URIs - [#3301](https://github.com/aws/amazon-q-developer-cli/pull/3301)"
+        }
+      ]
+    },
+    {
+      "type": "release",
+      "date": "2025-10-29",
+      "version": "1.19.3",
+      "title": "Version 1.19.3",
+      "changes": [
+        {
+          "type": "fixed",
+          "description": "Racing condition between prompting and printing - [#3308](https://github.com/aws/amazon-q-developer-cli/pull/3308)"
+        }
+      ]
+    },
+    {
+      "type": "release",
+      "date": "2025-10-28",
+      "version": "1.19.2",
+      "title": "Version 1.19.2",
+      "changes": [
+        {
+          "type": "fixed",
+          "description": "`/model` failing to load Sonnet 4.5 - [#3288](https://github.com/aws/amazon-q-developer-cli/pull/3288)"
+        }
+      ]
+    },
+    {
+      "type": "release",
+      "date": "2025-10-27",
+      "version": "1.19.1",
+      "title": "Version 1.19.1",
+      "changes": [
+        {
+          "type": "fixed",
+          "description": "Improved `fs-write` diff color contrast for dark and light terminal themes - [#3281](https://github.com/aws/amazon-q-developer-cli/pull/3281)"
+        },
+        {
+          "type": "fixed",
+          "description": "Non-interactive chat output now correctly prints to standard output  - [#3277](https://github.com/aws/amazon-q-developer-cli/pull/3277)"
+        },
+        {
+          "type": "fixed",
+          "description": "Issue with random characters printed before the Spinner  - [#3282](https://github.com/aws/amazon-q-developer-cli/pull/3282)"
+        }
+      ]
+    },
+    {
+      "type": "release",
+      "date": "2025-10-23",
+      "version": "1.19.0",
+      "title": "Version 1.19.0",
+      "changes": [
+        {
+          "type": "added",
+          "description": "Image paste support and `/paste` command - [#3088](https://github.com/aws/amazon-q-developer-cli/pull/3088)"
+        },
+        {
+          "type": "fixed",
+          "description": "Improved UX for `q settings list` command - [#3167](https://github.com/aws/amazon-q-developer-cli/pull/3167)"
+        },
+        {
+          "type": "added",
+          "description": "File:// URI support for agent prompts - [#3024](https://github.com/aws/amazon-q-developer-cli/pull/3024)"
+        },
+        {
+          "type": "added",
+          "description": "PDF file support for knowledge - [#3151](https://github.com/aws/amazon-q-developer-cli/pull/3151)"
+        },
+        {
+          "type": "added",
+          "description": "Support configurable OAuth redirect URI per MCP server - [#3124](https://github.com/aws/amazon-q-developer-cli/pull/3124)"
+        },
+        {
+          "type": "fixed",
+          "description": "Fixes an issue with checkpoint feature, when starting multiple conversations from the same directory - [#3133](https://github.com/aws/amazon-q-developer-cli/pull/3133)"
+        }
+      ]
+    },
+    {
+      "type": "release",
+      "date": "2025-10-13",
+      "version": "1.18.1",
+      "title": "Version 1.18.1",
+      "changes": [
+        {
+          "type": "fixed",
+          "description": "Minor version reporting an old version"
+        }
+      ]
+    },
+    {
+      "type": "release",
+      "date": "2025-10-03",
+      "version": "1.18.0",
+      "title": "Version 1.18.0",
+      "changes": [
+        {
+          "type": "added",
+          "description": "[Experimental] Agent delegate tool - [#3073](https://github.com/aws/amazon-q-developer-cli/pull/3073)"
+        },
+        {
+          "type": "added",
+          "description": "Stop hook functionality - [#3070](https://github.com/aws/amazon-q-developer-cli/pull/3070)"
+        },
+        {
+          "type": "added",
+          "description": "Unified show and status commands for knowledge - [#3052](https://github.com/aws/amazon-q-developer-cli/pull/3052)"
+        },
+        {
+          "type": "added",
+          "description": "/logdump command - [#2539](https://github.com/aws/amazon-q-developer-cli/pull/2539)"
+        },
+        {
+          "type": "added",
+          "description": "Experiment manager functionality - [#3054](https://github.com/aws/amazon-q-developer-cli/pull/3054)"
+        },
+        {
+          "type": "fixed",
+          "description": "MCP prompts with no arguments - [#3018](https://github.com/aws/amazon-q-developer-cli/pull/3018)"
+        }
+      ]
+    },
+    {
+      "type": "release",
+      "date": "2025-09-30",
+      "version": "1.17.1",
+      "title": "Version 1.17.1",
+      "changes": [
+        {
+          "type": "added",
+          "description": "Model description under /model command - [#3057](https://github.com/aws/amazon-q-developer-cli/pull/3057)"
+        }
+      ]
+    },
+    {
+      "type": "release",
+      "date": "2025-09-29",
+      "version": "1.17.0",
+      "title": "Version 1.17.0",
+      "changes": [
+        {
+          "type": "added",
+          "description": "SSE support for MCP - [#2995](https://github.com/aws/amazon-q-developer-cli/pull/2995)"
+        },
+        {
+          "type": "fixed",
+          "description": "Reloads only the built-in tools only for /experiment - [#3012](https://github.com/aws/amazon-q-developer-cli/pull/3012)"
+        },
+        {
+          "type": "added",
+          "description": "Add a `/reply` command - [#2680](https://github.com/aws/amazon-q-developer-cli/pull/2680)"
+        },
+        {
+          "type": "added",
+          "description": "[Experimental] Adds checkpointing functionality using Git CLI commands - [#2896](https://github.com/aws/amazon-q-developer-cli/pull/2896)"
+        },
+        {
+          "type": "fixed",
+          "description": "Validation issues with MCP tool arguments - [#2986](https://github.com/aws/amazon-q-developer-cli/pull/2986)"
+        },
+        {
+          "type": "added",
+          "description": "[Experimental] Add context usage percentage indicator to prompt - [#2994](https://github.com/aws/amazon-q-developer-cli/pull/2994)"
+        },
+        {
+          "type": "added",
+          "description": "Support for custom prompts, see `/prompts` - [#2799](https://github.com/aws/amazon-q-developer-cli/pull/2799)"
+        },
+        {
+          "type": "fixed",
+          "description": "Various issues with MCP OAuth - [#2976](https://github.com/aws/amazon-q-developer-cli/pull/2976)"
+        },
+        {
+          "type": "fixed",
+          "description": "Improve error messages for dispatch failures - [#2969](https://github.com/aws/amazon-q-developer-cli/pull/2969)"
+        },
+        {
+          "type": "added",
+          "description": "Enhanced MCP prompt management with improved UX - [#2953](https://github.com/aws/amazon-q-developer-cli/pull/2953)"
+        }
+      ]
+    },
+    {
+      "type": "release",
+      "date": "2025-09-19",
+      "version": "1.16.2",
+      "title": "Version 1.16.2",
+      "changes": [
+        {
+          "type": "added",
+          "description": "Add support for preToolUse and postToolUse hook - [#2875](https://github.com/aws/amazon-q-developer-cli/pull/2875)"
+        },
+        {
+          "type": "added",
+          "description": "Support for specifying oauth scopes via config - [#2925]( https://github.com/aws/amazon-q-developer-cli/pull/2925)"
+        },
+        {
+          "type": "fixed",
+          "description": "Support for headers ingestion for remote mcp - [#2925]( https://github.com/aws/amazon-q-developer-cli/pull/2925)"
+        },
+        {
+          "type": "added",
+          "description": "Change autocomplete shortcut from ctrl-f to ctrl-g - [#2634](https://github.com/aws/amazon-q-developer-cli/pull/2634)"
+        },
+        {
+          "type": "fixed",
+          "description": "Fix file-path expansion in mcp-config - [#2915]( https://github.com/aws/amazon-q-developer-cli/pull/2915)"
+        },
+        {
+          "type": "fixed",
+          "description": "Fix filepath expansion to use absolute paths - [#2933](https://github.com/aws/amazon-q-developer-cli/pull/2933)"
+        }
+      ]
+    },
+    {
+      "type": "release",
+      "date": "2025-09-17",
+      "version": "1.16.1",
+      "title": "Version 1.16.1",
+      "changes": [
+        {
+          "type": "fixed",
+          "description": "Dashboard not updating after logging in - [#688](https://github.com/aws/amazon-q-developer-cli-autocomplete/pull/688)"
+        }
+      ]
+    },
+    {
+      "type": "release",
+      "date": "2025-09-16",
+      "version": "1.16.0",
+      "title": "Version 1.16.0",
+      "changes": [
+        {
+          "type": "added",
+          "description": "Support for remote MCP connections - [#2836](https://github.com/aws/amazon-q-developer-cli/pull/2836)"
+        },
+        {
+          "type": "added",
+          "description": "A new `/tangent tail` command to preserve the last tangent conversation - [#2838](https://github.com/aws/amazon-q-developer-cli/pull/2838)"
+        },
+        {
+          "type": "added",
+          "description": "A new edit subcommand to `/agent` slash command for modifying existing agents - [#2854](https://github.com/aws/amazon-q-developer-cli/pull/2854)"
+        },
+        {
+          "type": "added",
+          "description": "A new auto-announcement feature with `/changelog` command - [#2833](https://github.com/aws/amazon-q-developer-cli/pull/2833)"
+        },
+        {
+          "type": "added",
+          "description": "A new CLI history persistence feature with file storage - [#2769](https://github.com/aws/amazon-q-developer-cli/pull/2769)"
+        },
+        {
+          "type": "added",
+          "description": "Support for comma-containing arguments in MCP --args parameter - [#2754](https://github.com/aws/amazon-q-developer-cli/pull/2754)"
+        },
+        {
+          "type": "added",
+          "description": "Support for configurable autoAllowReadonly setting in use_aws tool - [#2828](https://github.com/aws/amazon-q-developer-cli/pull/2828)"
+        },
+        {
+          "type": "added",
+          "description": "Support for configurable line wrapping in chat interface - [#2816](https://github.com/aws/amazon-q-developer-cli/pull/2816)"
+        },
+        {
+          "type": "added",
+          "description": "Support for model field in agent configuration format - [#2815](https://github.com/aws/amazon-q-developer-cli/pull/2815)"
+        },
+        {
+          "type": "added",
+          "description": "AGENTS.md documentation to default agent resources - [#2812](https://github.com/aws/amazon-q-developer-cli/pull/2812)"
+        },
+        {
+          "type": "security",
+          "description": "Reduced default fs_read trust permission to current working directory only - [#2824](https://github.com/aws/amazon-q-developer-cli/pull/2824)"
+        },
+        {
+          "type": "security",
+          "description": "Changed autoAllowReadonly default to false for security in execute_bash - [#2846](https://github.com/aws/amazon-q-developer-cli/pull/2846)"
+        },
+        {
+          "type": "security",
+          "description": "Updated dangerous patterns for execute_bash to include $ character - [#2811](https://github.com/aws/amazon-q-developer-cli/pull/2811)"
+        },
+        {
+          "type": "fixed",
+          "description": "Path with trailing slash not being handled in file matching - [#2817](https://github.com/aws/amazon-q-developer-cli/pull/2817)"
+        },
+        {
+          "type": "fixed",
+          "description": "Summary being erroneously preserved when conversation is cleared - [#2793](https://github.com/aws/amazon-q-developer-cli/pull/2793)"
+        }
+      ]
+    },
+    {
+      "type": "release",
+      "date": "2025-09-02",
+      "version": "1.15.0",
+      "title": "Version 1.15.0",
+      "changes": [
+        {
+          "type": "added",
+          "description": "A new command `/experiment` for toggling experimental features - [#2711](https://github.com/aws/amazon-q-developer-cli/pull/2711)"
+        },
+        {
+          "type": "added",
+          "description": "A new command `/agent generate` for generating agent config with Q - [#2690](https://github.com/aws/amazon-q-developer-cli/pull/2690)"
+        },
+        {
+          "type": "added",
+          "description": "A new command `/tangent` for going on a tangent without context pollution - [#2634](https://github.com/aws/amazon-q-developer-cli/pull/2634)"
+        },
+        {
+          "type": "added",
+          "description": "A new to-do list tool for handling complex multi-step prompts - [#2533](https://github.com/aws/amazon-q-developer-cli/pull/2533)"
+        },
+        {
+          "type": "added",
+          "description": "Agent-scoped knowledge base and context-specific search - [#2647](https://github.com/aws/amazon-q-developer-cli/pull/2647)"
+        },
+        {
+          "type": "added",
+          "description": "A new tool `introspect` that allows Q CLI to answer questions about itself - [#2677](https://github.com/aws/amazon-q-developer-cli/pull/2677)"
+        }
+      ]
+    },
+    {
+      "type": "release",
+      "date": "2025-08-21",
+      "version": "1.14.1",
+      "title": "Version 1.14.1",
+      "changes": [
+        {
+          "type": "fixed",
+          "description": "Tool permission issue in agent - [#2619](https://github.com/aws/amazon-q-developer-cli/pull/2619)"
+        },
+        {
+          "type": "added",
+          "description": "MCP admin-level configuration with GetProfile - [#2639](https://github.com/aws/amazon-q-developer-cli/pull/2639)"
+        },
+        {
+          "type": "added",
+          "description": "Wildcard pattern matching support for agent allowedTools - [#2612](https://github.com/aws/amazon-q-developer-cli/pull/2612)"
+        },
+        {
+          "type": "added",
+          "description": "Agent hot swap capability - [#2637](https://github.com/aws/amazon-q-developer-cli/pull/2637)"
+        },
+        {
+          "type": "fixed",
+          "description": "Agent default profile printing issue in `use_aws`, plus minor doc updates - [#2617](https://github.com/aws/amazon-q-developer-cli/pull/2617)"
+        },
+        {
+          "type": "changed",
+          "description": "Knowledge beta improvements (phase 2): Refactored async_client and added BM25 support - [#2608](https://github.com/aws/amazon-q-developer-cli/pull/2608)"
+        }
+      ]
+    },
+    {
+      "type": "release",
+      "date": "2025-08-15",
+      "version": "1.14.0",
+      "title": "Version 1.14.0",
+      "changes": [
+        {
+          "type": "added",
+          "description": "Additional supported models in `q chat`, see `/model` - [#2419](https://github.com/aws/amazon-q-developer-cli/pull/2419)"
+        },
+        {
+          "type": "added",
+          "description": "`--include` and `--exclude` flags for the `/knowledge add` command - [#2545](https://github.com/aws/amazon-q-developer-cli/pull/2545)"
+        },
+        {
+          "type": "added",
+          "description": "Notifications on API retries - [#2607](https://github.com/aws/amazon-q-developer-cli/pull/2607)"
+        }
+      ]
+    },
+    {
+      "type": "release",
+      "date": "2025-08-11",
+      "version": "1.13.3",
+      "title": "Version 1.13.3",
+      "changes": [
+        {
+          "type": "added",
+          "description": "Support for setting denied shell commands with `toolsSettings.execute_bash.deniedCommands` - [#2512](https://github.com/aws/amazon-q-developer-cli/pull/2512)"
+        },
+        {
+          "type": "added",
+          "description": "Support for setting denied AWS services with `toolsSettings.use_aws.deniedServices` - [#2512](https://github.com/aws/amazon-q-developer-cli/pull/2512)"
+        },
+        {
+          "type": "added",
+          "description": "Support for setting denied file paths for `fs_read` and `fs_write` using `deniedPaths` in `toolsSettings` - [#2512](https://github.com/aws/amazon-q-developer-cli/pull/2512)"
+        },
+        {
+          "type": "added",
+          "description": "Support for setting environment variables in MCP config - [#2241](https://github.com/aws/amazon-q-developer-cli/pull/2241)"
+        },
+        {
+          "type": "fixed",
+          "description": "`q mcp add` from failing when the targeted `mcp.json` file does not exist - [#2561](https://github.com/aws/amazon-q-developer-cli/pull/2561)"
+        }
+      ]
+    },
+    {
+      "type": "release",
+      "date": "2025-08-08",
+      "version": "1.13.2",
+      "title": "Version 1.13.2",
+      "changes": [
+        {
+          "type": "added",
+          "description": "Regex matching for the `toolsSettings.execute_bash.allowedCommands` agent configuration - [#2483](https://github.com/aws/amazon-q-developer-cli/pull/2483)"
+        },
+        {
+          "type": "added",
+          "description": "Support for workspace `mcp.json` configuration when `useLegacyMcpJson` is enabled - [#2516](https://github.com/aws/amazon-q-developer-cli/pull/2516)"
+        },
+        {
+          "type": "added",
+          "description": "`/context show` to differentiate between agent and session context - [#2494](https://github.com/aws/amazon-q-developer-cli/pull/2494)"
+        },
+        {
+          "type": "fixed",
+          "description": "Issues with `q mcp` subcommands failing - [#2475](https://github.com/aws/amazon-q-developer-cli/pull/2475)"
+        },
+        {
+          "type": "fixed",
+          "description": "The `knowledge` tool always requiring permission - [#2501](https://github.com/aws/amazon-q-developer-cli/pull/2501)"
+        }
+      ]
+    },
+    {
+      "type": "release",
+      "date": "2025-08-01",
+      "version": "1.13.1",
+      "title": "Version 1.13.1",
+      "changes": [
+        {
+          "type": "added",
+          "description": "JSON schema support for the agent specification. Try it with `/agent create` - [#2440](https://github.com/aws/amazon-q-developer-cli/pull/2440)"
+        },
+        {
+          "type": "deprecated",
+          "description": "The `/profile` command - [#2468](https://github.com/aws/amazon-q-developer-cli/pull/2468)"
+        },
+        {
+          "type": "fixed",
+          "description": "Tool permissioning not being reset - [#2469](https://github.com/aws/amazon-q-developer-cli/pull/2469)"
+        },
+        {
+          "type": "fixed",
+          "description": "An issue with history compaction not being applied on context overflow"
+        }
+      ]
+    },
+    {
+      "type": "release",
+      "date": "2025-07-31",
+      "version": "1.13.0",
+      "title": "Version 1.13.0",
+      "changes": [
+        {
+          "type": "added",
+          "description": "A new paradigm for working with `q chat` using agents. [See the documentation for more details](https://github.com/aws/amazon-q-developer-cli/blob/main/docs/SUMMARY.md)"
+        },
+        {
+          "type": "added",
+          "description": "A new setting to disable markdown rendering in `qchat` with `chat.disableMarkdownRendering` - [#2223](https://github.com/aws/amazon-q-developer-cli/pull/2223)"
+        },
+        {
+          "type": "added",
+          "description": "A new setting to disable markdown rendering in `qchat` with `chat.disableMarkdownRendering` - [#2236](https://github.com/aws/amazon-q-developer-cli/pull/2236)"
+        },
+        {
+          "type": "fixed",
+          "description": "An issue with `/compact` failing for large initial messages - [#2375](https://github.com/aws/amazon-q-developer-cli/pull/2375)"
+        },
+        {
+          "type": "fixed",
+          "description": "Images being removed from the conversation history - [#2333](https://github.com/aws/amazon-q-developer-cli/pull/2333)"
+        },
+        {
+          "type": "fixed",
+          "description": "Code block detection for multi-line input - [#2384](https://github.com/aws/amazon-q-developer-cli/pull/2384)"
+        }
+      ]
+    },
+    {
+      "type": "release",
+      "date": "2025-07-22",
+      "version": "1.12.7",
+      "title": "Version 1.12.7",
+      "changes": [
+        {
+          "type": "fixed",
+          "description": "Issues with `q chat` requests not being cached correctly - [#461](https://github.com/aws/amazon-q-developer-cli-autocomplete/pull/461)"
+        }
+      ]
+    },
+    {
+      "type": "release",
+      "date": "2025-07-17",
+      "version": "1.12.6",
+      "title": "Version 1.12.6",
+      "changes": [
+        {
+          "type": "fixed",
+          "description": "Issues with read-only commands with the `execute_bash` tool - [#444](https://github.com/aws/amazon-q-developer-cli-autocomplete/pull/444)"
+        }
+      ]
+    },
+    {
+      "type": "release",
+      "date": "2025-07-14",
+      "version": "1.12.5",
+      "title": "Version 1.12.5",
+      "changes": [
+        {
+          "type": "added",
+          "description": "(Experimental) Support for Sigv4 authentication with `q chat`. Launch chat with the environment variable `AMAZON_Q_SIGV4=1` - [#207](https://github.com/aws/amazon-q-developer-cli-autocomplete/pull/207)"
+        },
+        {
+          "type": "fixed",
+          "description": "An issue with authentication failing for long chat sessions - [#424](https://github.com/aws/amazon-q-developer-cli-autocomplete/pull/424)"
+        },
+        {
+          "type": "fixed",
+          "description": "Issues with parsing `/compact` and `/editor` arguments - [#425](https://github.com/aws/amazon-q-developer-cli-autocomplete/pull/425)"
+        },
+        {
+          "type": "changed",
+          "description": "`q chat` inline prompt hints to be disabled by default. To enable, run `q settings chat.enableHistoryHints true` - [#429](https://github.com/aws/amazon-q-developer-cli-autocomplete/pull/429)"
+        }
+      ]
+    },
+    {
+      "type": "release",
+      "date": "2025-07-09",
+      "version": "1.12.4",
+      "title": "Version 1.12.4",
+      "changes": [
+        {
+          "type": "added",
+          "description": "Extra options for history compaction in `q chat` - see `/compact --help` - [#402](https://github.com/aws/amazon-q-developer-cli-autocomplete/pull/402)"
+        },
+        {
+          "type": "fixed",
+          "description": "Issues with `/compact` - [#407](https://github.com/aws/amazon-q-developer-cli-autocomplete/pull/407)"
+        }
+      ]
+    },
+    {
+      "type": "release",
+      "date": "2025-07-03",
+      "version": "1.12.3",
+      "title": "Version 1.12.3",
+      "changes": [
+        {
+          "type": "fixed",
+          "description": "Piping input into `q chat` - [#363](https://github.com/aws/amazon-q-developer-cli-autocomplete/pull/363)"
+        },
+        {
+          "type": "fixed",
+          "description": "An issue with `/compact` not being executed on context window overflow - [#365](https://github.com/aws/amazon-q-developer-cli-autocomplete/pull/365)"
+        },
+        {
+          "type": "changed",
+          "description": "The `-a` flag to alias to `--trust-all-tools` - [#372](https://github.com/aws/amazon-q-developer-cli-autocomplete/pull/372)"
+        },
+        {
+          "type": "added",
+          "description": "Terminal bell support for the emacs eat terminal - [#357](https://github.com/aws/amazon-q-developer-cli-autocomplete/pull/357)"
+        }
+      ]
+    },
+    {
+      "type": "release",
+      "date": "2025-06-30",
+      "version": "1.12.2",
+      "title": "Version 1.12.2",
+      "changes": [
+        {
+          "type": "added",
+          "description": "Autocompletion with ghost text in `q chat`. Accept completions using right arrow or `Ctrl + f` - [#288](https://github.com/aws/amazon-q-developer-cli-autocomplete/pull/288)"
+        },
+        {
+          "type": "added",
+          "description": "A purpose tag for the `fs_write` tool that summarizes the change being made - [#279](https://github.com/aws/amazon-q-developer-cli-autocomplete/pull/279)"
+        },
+        {
+          "type": "changed",
+          "description": "The `/context hooks` slash command to `/hooks` in `q chat` - [#223](https://github.com/aws/amazon-q-developer-cli-autocomplete/pull/223)"
+        },
+        {
+          "type": "fixed",
+          "description": "`--trust-tools` to work with MCP tools in `q chat` - [#206](https://github.com/aws/amazon-q-developer-cli-autocomplete/pull/206)"
+        },
+        {
+          "type": "fixed",
+          "description": "Formatting for error messages on prompt retrieval from MCP servers - [#216](https://github.com/aws/amazon-q-developer-cli-autocomplete/pull/216)"
+        },
+        {
+          "type": "fixed",
+          "description": "File name extension inconsistency with `/save` and `/load` in `q chat` - [#289](https://github.com/aws/amazon-q-developer-cli-autocomplete/pull/289)"
+        }
+      ]
+    },
+    {
+      "type": "release",
+      "date": "2025-06-17",
+      "version": "1.12.1",
+      "title": "Version 1.12.1",
+      "changes": [
+        {
+          "type": "changed",
+          "description": "The default `q chat` model to Sonnet 4 for users in the IAD region - [#219](https://github.com/aws/amazon-q-developer-cli-autocomplete/pull/219)"
+        },
+        {
+          "type": "added",
+          "description": "Support for passing arguments to MCP server configuration in the CLI - [#262](https://github.com/aws/amazon-q-developer-cli-autocomplete/pull/262)"
+        },
+        {
+          "type": "added",
+          "description": "Support for disabling MCP servers with `disabled: true` - [#257](https://github.com/aws/amazon-q-developer-cli-autocomplete/pull/257)"
+        },
+        {
+          "type": "added",
+          "description": "Instructions on using `/prompts` in `q chat` - [#208](https://github.com/aws/amazon-q-developer-cli-autocomplete/pull/208)"
+        },
+        {
+          "type": "fixed",
+          "description": "Validation errors with `/compact` in `q chat` - [#224](https://github.com/aws/amazon-q-developer-cli-autocomplete/pull/224)"
+        },
+        {
+          "type": "fixed",
+          "description": "Issues resolving relative paths with `fs_write` in `q chat` - [#256](https://github.com/aws/amazon-q-developer-cli-autocomplete/pull/256)"
+        }
+      ]
+    },
+    {
+      "type": "release",
+      "date": "2025-06-11",
+      "version": "1.12.0",
+      "title": "Version 1.12.0",
+      "changes": [
+        {
+          "type": "added",
+          "description": "Support for upgrading to a pro subscription with `/subscribe` in `q chat` - [#143](https://github.com/aws/amazon-q-developer-cli-autocomplete/pull/143)"
+        },
+        {
+          "type": "fixed",
+          "description": "`q chat` failing to launch in some Linux installations - [#169](https://github.com/aws/amazon-q-developer-cli-autocomplete/pull/169)"
+        }
+      ]
+    },
+    {
+      "type": "release",
+      "date": "2025-06-04",
+      "version": "1.11.0",
+      "title": "Version 1.11.0",
+      "changes": [
+        {
+          "type": "added",
+          "description": "Model selection and Sonnet v4 support with `/model` in `q chat` - [#157](https://github.com/aws/amazon-q-developer-cli-autocomplete/pull/157)"
+        },
+        {
+          "type": "fixed",
+          "description": "Formatting issues with the `fs_read` tool in `q chat` - [#122](https://github.com/aws/amazon-q-developer-cli-autocomplete/pull/122)"
+        },
+        {
+          "type": "fixed",
+          "description": "Various issues in `q chat`"
+        }
+      ]
+    },
+    {
+      "type": "release",
+      "date": "2025-05-21",
+      "version": "1.10.2",
+      "title": "Version 1.10.2",
+      "changes": [
+        {
+          "type": "added",
+          "description": "Server load timeout for no interactive mode - [#1851](https://github.com/aws/amazon-q-developer-cli/pull/1851)"
+        },
+        {
+          "type": "added",
+          "description": "`chat.editMode` to tips - [#1900](https://github.com/aws/amazon-q-developer-cli/pull/1900)"
+        },
+        {
+          "type": "fixed",
+          "description": "Unqualified tools from being included in the tools schema - [#84](https://github.com/aws/amazon-q-developer-cli-autocomplete/pull/84)"
+        },
+        {
+          "type": "fixed",
+          "description": "An issue where an early error from an mcp server will cause loading status to be terminated prematurely - [#1919](https://github.com/aws/amazon-q-developer-cli/pull/1919)"
+        },
+        {
+          "type": "fixed",
+          "description": "Tools and prompts not being sorted - [#1809](https://github.com/aws/amazon-q-developer-cli/pull/1809)"
+        },
+        {
+          "type": "fixed",
+          "description": "Various issues with `q chat`"
+        }
+      ]
+    },
+    {
+      "type": "release",
+      "date": "2025-05-16",
+      "version": "1.10.1",
+      "title": "Version 1.10.1",
+      "changes": [
+        {
+          "type": "fixed",
+          "description": "An issue where `q chat` would prompt for login while already logged in - [#1862](https://github.com/aws/amazon-q-developer-cli/pull/1862)"
+        }
+      ]
+    },
+    {
+      "type": "release",
+      "date": "2025-05-15",
+      "version": "1.10.0",
+      "title": "Version 1.10.0",
+      "changes": [
+        {
+          "type": "added",
+          "description": "Support for FRA (region `eu-central-1`) for pro users - [#1333](https://github.com/aws/amazon-q-developer-cli/pull/1333)"
+        },
+        {
+          "type": "added",
+          "description": "Persistent conversations by working directory with `q chat --resume` - [#1767](https://github.com/aws/amazon-q-developer-cli/pull/1767)"
+        },
+        {
+          "type": "added",
+          "description": "Background MCP server loading in `q chat` - [#1775](https://github.com/aws/amazon-q-developer-cli/pull/1775)"
+        },
+        {
+          "type": "added",
+          "description": "Image support in `q chat` - [#1489](https://github.com/aws/amazon-q-developer-cli/pull/1489)"
+        },
+        {
+          "type": "added",
+          "description": "Git-aware file selection in the `q chat` fuzzy finder - [#1649](https://github.com/aws/amazon-q-developer-cli/pull/1649)"
+        },
+        {
+          "type": "added",
+          "description": "Commands `/save` and `/load` for saving and loading conversation state in `q chat` - [#1762](https://github.com/aws/amazon-q-developer-cli/pull/1762)"
+        },
+        {
+          "type": "added",
+          "description": "A new subcommand `q mcp` for updating MCP server configuration - [#1836](https://github.com/aws/amazon-q-developer-cli/pull/1836)"
+        },
+        {
+          "type": "added",
+          "description": "An improved `/context show --expand` in `q chat` - [#1762](https://github.com/aws/amazon-q-developer-cli/pull/1762)"
+        },
+        {
+          "type": "added",
+          "description": "A new flag `--changelog` to `q version` for displaying the change log from the CLI - [#1375](https://github.com/aws/amazon-q-developer-cli/pull/1375)"
+        },
+        {
+          "type": "fixed",
+          "description": "Context files causing overflow in `q chat` - [#1331](https://github.com/aws/amazon-q-developer-cli/pull/1331)"
+        },
+        {
+          "type": "fixed",
+          "description": "An issue with token overflow in the `/usage` command in `q chat` - [#1762](https://github.com/aws/amazon-q-developer-cli/pull/1762)"
+        },
+        {
+          "type": "fixed",
+          "description": "An issue where non-interactive chat sessions displayed welcome banner - [#1437](https://github.com/aws/amazon-q-developer-cli/pull/1437)"
+        },
+        {
+          "type": "fixed",
+          "description": "An issue where the `/context` chat command reference was duplicated in `/help` - [#1438](https://github.com/aws/amazon-q-developer-cli/pull/1438)"
+        },
+        {
+          "type": "fixed",
+          "description": "Preferred default of fuzzy find to `ctrl+s` in `q chat` - [#1442](https://github.com/aws/amazon-q-developer-cli/pull/1442)"
+        },
+        {
+          "type": "fixed",
+          "description": "Various issues in `q chat`"
+        }
+      ]
+    },
+    {
+      "type": "release",
+      "date": "2025-04-28",
+      "version": "1.9.1",
+      "title": "Version 1.9.1",
+      "changes": [
+        {
+          "type": "fixed",
+          "description": "A bug where chat would sometimes become unresponsive"
+        }
+      ]
+    },
+    {
+      "type": "release",
+      "date": "2025-04-28",
+      "version": "1.9.0",
+      "title": "Version 1.9.0",
+      "changes": [
+        {
+          "type": "added",
+          "description": "Model Context Protocol (MCP) support in `q chat` - [#1365](https://github.com/aws/amazon-q-developer-cli/pull/1365)"
+        },
+        {
+          "type": "added",
+          "description": "Fuzzy finding support for selecting profiles in `q chat` - [#1388](https://github.com/aws/amazon-q-developer-cli/pull/1388)"
+        },
+        {
+          "type": "changed",
+          "description": "`/compact` to display the summary by default in `q chat` - [#1313](https://github.com/aws/amazon-q-developer-cli/pull/1313)"
+        },
+        {
+          "type": "fixed",
+          "description": "Various issues in `q chat`"
+        }
+      ]
+    },
+    {
+      "type": "release",
+      "date": "2025-04-25",
+      "version": "1.8.1",
+      "title": "Version 1.8.1",
+      "changes": [
+        {
+          "type": "fixed",
+          "description": "An issue with `/compact` failing in `q chat`"
+        }
+      ]
+    },
+    {
+      "type": "release",
+      "date": "2025-04-22",
+      "version": "1.8.0",
+      "title": "Version 1.8.0",
+      "changes": [
+        {
+          "type": "added",
+          "description": "Fuzzy search for slash commands in `q chat` with `Ctrl + k` - [#1181](https://github.com/aws/amazon-q-developer-cli/pull/1181)"
+        },
+        {
+          "type": "added",
+          "description": "A new capability for dynamically adding context to messages in `q chat` with \"context hooks\" - [#1218](https://github.com/aws/amazon-q-developer-cli/pull/1218)"
+        },
+        {
+          "type": "added",
+          "description": "A new command `/usage` in `q chat` to display an estimate of the context window usage - [#1177](https://github.com/aws/amazon-q-developer-cli/pull/1177)"
+        },
+        {
+          "type": "added",
+          "description": "A new greeting UI with rotating tips in `q chat` - [#1262](https://github.com/aws/amazon-q-developer-cli/pull/1262)"
+        },
+        {
+          "type": "added",
+          "description": "An extra confirmation prompt before clearing the history in `q chat` with `/clear` - [#1180](https://github.com/aws/amazon-q-developer-cli/pull/1180)"
+        },
+        {
+          "type": "added",
+          "description": "Support for using a system proxy with the `HTTP_PROXY` environment variable - [#1199](https://github.com/aws/amazon-q-developer-cli/pull/1199)"
+        },
+        {
+          "type": "added",
+          "description": "The ability to reset a single tool's permissions in `q chat` with `/tools reset` - [#1102](https://github.com/aws/amazon-q-developer-cli/pull/1102)"
+        },
+        {
+          "type": "added",
+          "description": "Various UI improvements in `q chat`"
+        },
+        {
+          "type": "fixed",
+          "description": "Arguments for `EDITOR` not being correctly parsed by the `/editor` command in `q chat` - [#1209](https://github.com/aws/amazon-q-developer-cli/pull/1209)"
+        },
+        {
+          "type": "fixed",
+          "description": "The `/compact` command failing to compact history after the context window has been filled in `q chat` - [#1275](https://github.com/aws/amazon-q-developer-cli/pull/1275)"
+        },
+        {
+          "type": "fixed",
+          "description": "Various issues in `q chat`"
+        }
+      ]
+    },
+    {
+      "type": "release",
+      "date": "2025-04-10",
+      "version": "1.7.3",
+      "title": "Version 1.7.3",
+      "changes": [
+        {
+          "type": "added",
+          "description": "A new command `/tools` in `q chat` for granular tool permissioning - [#1054](https://github.com/aws/amazon-q-developer-cli/pull/1054)"
+        },
+        {
+          "type": "added",
+          "description": "A new command `/compact` in `q chat` for summarizing the conversation history - [#1128](https://github.com/aws/amazon-q-developer-cli/pull/1128)"
+        },
+        {
+          "type": "added",
+          "description": "A new command `/editor` in `q chat` for composing prompts using the configured editor - [#1035](https://github.com/aws/amazon-q-developer-cli/pull/1035)"
+        },
+        {
+          "type": "added",
+          "description": "A new command `/issue` in `q chat` for creating new GitHub issues - [#990](https://github.com/aws/amazon-q-developer-cli/pull/990)"
+        },
+        {
+          "type": "added",
+          "description": "A new tool `report_issue` in `q chat` for creating new GitHub issues - [#974](https://github.com/aws/amazon-q-developer-cli/pull/974)"
+        },
+        {
+          "type": "added",
+          "description": "An improved context file display in `q chat` - [#983](https://github.com/aws/amazon-q-developer-cli/pull/983)"
+        },
+        {
+          "type": "added",
+          "description": "Optional terminal notifications on completed responses - [#1135](https://github.com/aws/amazon-q-developer-cli/pull/1135)"
+        },
+        {
+          "type": "added",
+          "description": "An option `--non-interactive` to invoke `q chat` headlessly - [#878](https://github.com/aws/amazon-q-developer-cli/pull/878)"
+        },
+        {
+          "type": "added",
+          "description": "File name autocompletion in `q chat` - [#930](https://github.com/aws/amazon-q-developer-cli/pull/930)"
+        },
+        {
+          "type": "added",
+          "description": "Improved `execute_bash` pipe safety checking in `q chat` - [#927](https://github.com/aws/amazon-q-developer-cli/pull/927)"
+        },
+        {
+          "type": "changed",
+          "description": "Executing `q` now enters `q chat` instead of opening the dashboard - [#987](https://github.com/aws/amazon-q-developer-cli/pull/987)"
+        },
+        {
+          "type": "fixed",
+          "description": "A missing Match criteria error in the ssh integration - [#1134](https://github.com/aws/amazon-q-developer-cli/pull/1134)"
+        },
+        {
+          "type": "fixed",
+          "description": "Various issues in `q chat`"
+        }
+      ]
+    },
+    {
+      "type": "release",
+      "date": "2025-03-20",
+      "version": "1.7.2",
+      "title": "Version 1.7.2",
+      "changes": [
+        {
+          "type": "added",
+          "description": "Support for automatically adding files as context in `q chat` - [#834](https://github.com/aws/amazon-q-developer-cli/pull/834)"
+        },
+        {
+          "type": "added",
+          "description": "A search ability when reading the filesystem in `q chat` - [#811](https://github.com/aws/amazon-q-developer-cli/pull/811)"
+        },
+        {
+          "type": "added",
+          "description": "A larger maximum tool response size in `q chat` - [#850](https://github.com/aws/amazon-q-developer-cli/pull/850)"
+        },
+        {
+          "type": "fixed",
+          "description": "Detecting libc on certain Linux distributions during install - [#851](https://github.com/aws/amazon-q-developer-cli/pull/851)"
+        }
+      ]
+    },
+    {
+      "type": "release",
+      "date": "2025-03-14",
+      "version": "1.7.1",
+      "title": "Version 1.7.1",
+      "changes": [
+        {
+          "type": "added",
+          "description": "An improved file diff in `q chat` - [#799](https://github.com/aws/amazon-q-developer-cli/pull/799)"
+        },
+        {
+          "type": "added",
+          "description": "Multi-line input support in `q chat` - [#831](https://github.com/aws/amazon-q-developer-cli/pull/831)"
+        },
+        {
+          "type": "added",
+          "description": "An append functionality with fs_write in `q chat` - [#764](https://github.com/aws/amazon-q-developer-cli/pull/764)"
+        },
+        {
+          "type": "added",
+          "description": "Support for WindSurf Next - [#814](https://github.com/aws/amazon-q-developer-cli/pull/814)"
+        },
+        {
+          "type": "changed",
+          "description": "`ctrl+c` so that it exits `q chat` on first attempt - [#830](https://github.com/aws/amazon-q-developer-cli/pull/830)"
+        },
+        {
+          "type": "fixed",
+          "description": "Minor issues in `q chat`"
+        }
+      ]
+    },
+    {
+      "type": "release",
+      "date": "2025-03-05",
+      "version": "1.7.0",
+      "title": "Version 1.7.0",
+      "changes": [
+        {
+          "type": "added",
+          "description": "An enhanced `q chat` with agentic capabilities. See the [announcement post](https://aws.amazon.com/blogs/devops/introducing-the-enhanced-command-line-interface-in-amazon-q-developer/) for more information."
+        }
+      ]
+    },
+    {
+      "type": "release",
+      "date": "2025-02-20",
+      "version": "1.6.3",
+      "title": "Version 1.6.3",
+      "changes": [
+        {
+          "type": "fixed",
+          "description": "Minor issues"
+        }
+      ]
+    },
+    {
+      "type": "release",
+      "date": "2025-02-19",
+      "version": "1.6.2",
+      "title": "Version 1.6.2",
+      "changes": [
+        {
+          "type": "added",
+          "description": "Support for Trae [#488](https://github.com/aws/amazon-q-developer-cli/pull/488)"
+        },
+        {
+          "type": "fixed",
+          "description": "Minor issues"
+        }
+      ]
+    },
+    {
+      "type": "release",
+      "date": "2025-02-03",
+      "version": "1.6.1",
+      "title": "Version 1.6.1",
+      "changes": [
+        {
+          "type": "added",
+          "description": "Support for Positron [#406](https://github.com/aws/amazon-q-developer-cli/pull/406)"
+        },
+        {
+          "type": "added",
+          "description": "Self-updating for Linux AppImage builds [#410](https://github.com/aws/amazon-q-developer-cli/pull/410)"
+        },
+        {
+          "type": "fixed",
+          "description": "Extra lines in inline recommendations [#446](https://github.com/aws/amazon-q-developer-cli/pull/446)"
+        },
+        {
+          "type": "fixed",
+          "description": "Minor issues"
+        }
+      ]
+    },
+    {
+      "type": "release",
+      "date": "2025-01-06",
+      "version": "1.6.0",
+      "title": "Version 1.6.0",
+      "changes": [
+        {
+          "type": "added",
+          "description": "Support for Ghostty [#335](https://github.com/aws/amazon-q-developer-cli/pull/335)"
+        },
+        {
+          "type": "added",
+          "description": "Support for Guake [#260](https://github.com/aws/amazon-q-developer-cli/pull/260)"
+        },
+        {
+          "type": "fixed",
+          "description": "Accept text through pipes in `q chat` [#259](https://github.com/aws/amazon-q-developer-cli/pull/259)"
+        }
+      ]
+    },
+    {
+      "type": "release",
+      "date": "2024-12-13",
+      "version": "1.5.1",
+      "title": "Version 1.5.1",
+      "changes": [
+        {
+          "type": "added",
+          "description": "Support for WindSurf [#125](https://github.com/aws/amazon-q-developer-cli/pull/125)"
+        },
+        {
+          "type": "fixed",
+          "description": "Linux SSH installations unable to update [#235](https://github.com/aws/amazon-q-developer-cli/issues/235)"
+        },
+        {
+          "type": "fixed",
+          "description": "`q translate` providing macOS specific responses on Linux"
+        }
+      ]
+    },
+    {
+      "type": "release",
+      "date": "2024-11-21",
+      "version": "1.5.0",
+      "title": "Version 1.5.0",
+      "changes": [
+        {
+          "type": "added",
+          "description": "Support for Linux desktop. See the [AWS documentation](https://docs.aws.amazon.com/amazonq/latest/qdeveloper-ug/command-line.html) for more information."
+        }
+      ]
+    },
+    {
+      "type": "release",
+      "date": "2024-11-15",
+      "version": "1.4.6",
+      "title": "Version 1.4.6",
+      "changes": [
+        {
+          "type": "fixed",
+          "description": "Minor issues"
+        }
+      ]
+    },
+    {
+      "type": "release",
+      "date": "2024-09-26",
+      "version": "1.4.5",
+      "title": "Version 1.4.5",
+      "changes": [
+        {
+          "type": "fixed",
+          "description": "Minor issues"
+        }
+      ]
+    },
+    {
+      "type": "release",
+      "date": "2024-09-16",
+      "version": "1.4.4",
+      "title": "Version 1.4.4",
+      "changes": [
+        {
+          "type": "fixed",
+          "description": "Minor issues"
+        }
+      ]
+    },
+    {
+      "type": "release",
+      "date": "2024-09-13",
+      "version": "1.4.3",
+      "title": "Version 1.4.3",
+      "changes": [
+        {
+          "type": "fixed",
+          "description": "Minor issues"
+        }
+      ]
+    },
+    {
+      "type": "release",
+      "date": "2024-09-10",
+      "version": "1.4.2",
+      "title": "Version 1.4.2",
+      "changes": [
+        {
+          "type": "fixed",
+          "description": "Linux install script error"
+        }
+      ]
+    },
+    {
+      "type": "release",
+      "date": "2024-09-09",
+      "version": "1.4.1",
+      "title": "Version 1.4.1",
+      "changes": [
+        {
+          "type": "fixed",
+          "description": "Minor issues"
+        }
+      ]
+    },
+    {
+      "type": "release",
+      "date": "2024-08-27",
+      "version": "1.4.0",
+      "title": "Version 1.4.0",
+      "changes": [
+        {
+          "type": "fixed",
+          "description": "Frequent timeout errors in `q chat`"
+        },
+        {
+          "type": "fixed",
+          "description": "Bash integrations messing up prompt in ZSH child processes"
+        },
+        {
+          "type": "fixed",
+          "description": "Zsh integration errors when sourced via a non-interactive script"
+        }
+      ]
+    },
+    {
+      "type": "release",
+      "date": "2024-07-29",
+      "version": "1.3.3",
+      "title": "Version 1.3.3",
+      "changes": [
+        {
+          "type": "fixed",
+          "description": "Minor issues"
+        }
+      ]
+    },
+    {
+      "type": "release",
+      "date": "2024-07-10",
+      "version": "1.3.2",
+      "title": "Version 1.3.2",
+      "changes": [
+        {
+          "type": "added",
+          "description": "Setting to disable greeting in `q chat`, see [Chat](/chat) for the setting."
+        },
+        {
+          "type": "fixed",
+          "description": "Using `tmux` is now supported in ssh."
+        },
+        {
+          "type": "fixed",
+          "description": "Logging via the CLI would not show the \"Use with Pro license\" option."
+        }
+      ]
+    },
+    {
+      "type": "release",
+      "date": "2024-06-28",
+      "version": "1.3.1",
+      "title": "Version 1.3.1",
+      "changes": [
+        {
+          "type": "added",
+          "description": "Support for readline style input in `q chat`."
+        },
+        {
+          "type": "fixed",
+          "description": "Pressing enter multiple times triggered `q translate` to immediately execute."
+        }
+      ]
+    },
+    {
+      "type": "release",
+      "date": "2024-06-24",
+      "version": "1.3.0",
+      "title": "Version 1.3.0",
+      "changes": [
+        {
+          "type": "added",
+          "description": "[PKCE-based authorization](https://aws.amazon.com/about-aws/whats-new/2024/05/aws-iam-identity-pkce-authorizations-aws-applications/) for login."
+        },
+        {
+          "type": "changed",
+          "description": "Menubar icon now indicates when there are issues with authentication or the app is not setup."
+        },
+        {
+          "type": "changed",
+          "description": "Added `quit` command to `q chat` ([#211](https://github.com/aws/q-command-line-discussions/discussions/211))."
+        }
+      ]
+    },
+    {
+      "type": "release",
+      "date": "2024-06-04",
+      "version": "1.2.0",
+      "title": "Version 1.2.0",
+      "changes": [
+        {
+          "type": "added",
+          "description": "AI-powered inline completions, see [Inline](/inline) for more info."
+        },
+        {
+          "type": "fixed",
+          "description": "Login infinite redirect for first time users."
+        }
+      ]
+    },
+    {
+      "type": "release",
+      "date": "2024-05-20",
+      "version": "1.1.0",
+      "title": "Version 1.1.0",
+      "changes": [
+        {
+          "type": "added",
+          "description": "The \"What's New\" page with the latest release notes and announcements."
+        },
+        {
+          "type": "added",
+          "description": "History loading for CLI Completions, press `ctrl+r` to switch to history mode. ([#57](https://github.com/aws/q-command-line-discussions/discussions/57))."
+        },
+        {
+          "type": "added",
+          "description": "Support for [`generateSpecCacheKey`](https://github.com/withfig/autocomplete-tools/pull/105) for CLI Completions."
+        }
+      ]
+    },
+    {
+      "type": "announcement",
+      "date": "2024-04-30",
+      "version": "1.0.0",
+      "title": "CodeWhisperer is now Amazon Q",
+      "description": "Amazon Q Developer is a generative artificial intelligence (AI) powered conversational assistant that can help you understand, build, extend, and operate AWS applications.",
+      "link": "https://aws.amazon.com/blogs/aws/amazon-q-developer-now-generally-available-includes-new-capabilities-to-reimagine-developer-experience/"
+    }
+  ]
+}

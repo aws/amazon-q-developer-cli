@@ -10,6 +10,7 @@ use serde::{
     Serialize,
 };
 use tokio::sync::mpsc;
+use typeshare::typeshare;
 
 use super::model::Model;
 use super::types::{
@@ -96,7 +97,7 @@ impl AgentLoopEvent {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(tag = "kind", content = "content")]
+#[serde(tag = "kind", content = "data")]
 #[serde(rename_all = "camelCase")]
 pub enum AgentLoopEventKind {
     /// Text returned by the assistant.
@@ -152,8 +153,9 @@ pub enum AgentLoopEventKind {
     Stream(StreamResult),
 }
 
+#[typeshare]
 #[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(tag = "result")]
+#[serde(tag = "result", content = "data")]
 #[serde(rename_all = "lowercase")]
 pub enum StreamResult {
     Ok(StreamEvent),
@@ -236,9 +238,11 @@ pub struct UserTurnMetadata {
     pub end_reason: LoopEndReason,
     pub end_timestamp: DateTime<Utc>,
     /// Input token count associated with the turn
-    pub input_token_count: u64,
+    pub input_token_count: u32,
     /// Output token count associated with the turn
-    pub output_token_count: u64,
+    pub output_token_count: u32,
+    /// Context usage percentage (0-100)
+    pub context_usage_percentage: Option<f32>,
 }
 
 /// The reason why a user turn ended

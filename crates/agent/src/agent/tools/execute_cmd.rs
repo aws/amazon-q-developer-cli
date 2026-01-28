@@ -23,12 +23,14 @@ use super::{
     ToolExecutionOutputItem,
     ToolExecutionResult,
 };
+use crate::agent::permissions::ReadonlyChecker;
 use crate::agent::util::consts::{
     USER_AGENT_APP_NAME,
     USER_AGENT_ENV_VAR,
     USER_AGENT_VERSION_KEY,
     USER_AGENT_VERSION_VALUE,
 };
+use crate::util::providers::SystemProvider;
 
 const EXECUTE_CMD_TOOL_DESCRIPTION: &str = r#"
 A tool for executing bash commands.
@@ -86,6 +88,17 @@ pub struct ExecuteCmd {
     pub command: String,
 }
 
+const READONLY_COMMANDS: &[&str] = &[
+    "ls", "cat", "echo", "pwd", "which", "head", "tail", "find", "grep", "dir", "type",
+];
+
+impl ReadonlyChecker for ExecuteCmd {
+    fn is_readonly(command: &str) -> bool {
+        let command_name = command.split_whitespace().next().unwrap_or("");
+        READONLY_COMMANDS.contains(&command_name)
+    }
+}
+
 impl ExecuteCmd {
     pub fn tool_schema() -> serde_json::Value {
         let schema = schema_for!(Self);
@@ -100,14 +113,19 @@ impl ExecuteCmd {
         }
     }
 
-    pub async fn execute(&self) -> ToolExecutionResult {
-        let shell = std::env::var("AMAZON_Q_CHAT_SHELL").unwrap_or("bash".to_string());
+    pub async fn execute<P: SystemProvider>(&self, provider: &P) -> ToolExecutionResult {
+        let cwd = provider
+            .cwd()
+            .map_err(|e| ToolExecutionError::io("Failed to get working directory", e))?;
+
+        let shell = provider.var("AMAZON_Q_CHAT_SHELL").unwrap_or("bash".to_string());
 
         let env_vars = env_vars_with_user_agent();
 
         let child = Command::new(shell)
             .arg("-c")
             .arg(&self.command)
+            .current_dir(&cwd)
             .envs(env_vars)
             .stdin(Stdio::inherit())
             .stdout(Stdio::piped())

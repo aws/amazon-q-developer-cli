@@ -1,12 +1,15 @@
 pub mod agent_config;
 pub mod agent_loop;
+pub mod compact;
 pub mod consts;
+pub mod event_log;
 pub mod mcp;
 mod permissions;
 pub mod protocol;
 pub mod task_executor;
 mod tool_utils;
 pub mod tools;
+pub mod tui_commands;
 pub mod types;
 pub mod util;
 
@@ -57,6 +60,10 @@ use agent_loop::{
 };
 use chrono::Utc;
 use consts::MAX_RESOURCE_FILE_LENGTH;
+use event_log::{
+    LogEntry,
+    ToolResult as LogToolResult,
+};
 use futures::stream::FuturesUnordered;
 use mcp::McpServerEvent;
 use permissions::evaluate_tool_permission;
@@ -73,6 +80,7 @@ use protocol::{
     PermissionEvalResult,
     SendApprovalResultArgs,
     SendPromptArgs,
+    SwapAgentArgs,
     ToolCall,
     ToolCallResult,
     UpdateEvent,
@@ -137,12 +145,21 @@ use util::providers::{
 };
 use util::read_file_with_max_limit;
 use util::request_channel::new_request_channel;
+use uuid::Uuid;
 
+use crate::agent::compact::{
+    CompactStrategy,
+    create_compaction_request,
+};
 use crate::agent::consts::{
     DUMMY_TOOL_NAME,
     MAX_CONVERSATION_STATE_HISTORY_LEN,
 };
-use crate::agent::mcp::McpManagerHandle;
+use crate::agent::mcp::{
+    McpManager,
+    McpManagerHandle,
+};
+use crate::agent::protocol::CompactionEvent;
 use crate::agent::tools::{
     BuiltInTool,
     ToolKind,
@@ -162,6 +179,7 @@ use crate::agent::util::request_channel::{
 pub const CONTEXT_ENTRY_START_HEADER: &str = "--- CONTEXT ENTRY BEGIN ---\n";
 pub const CONTEXT_ENTRY_END_HEADER: &str = "--- CONTEXT ENTRY END ---\n\n";
 
+/// Handle for communicating with an [`Agent`] actor.
 #[derive(Debug)]
 pub struct AgentHandle {
     sender: RequestSender<AgentRequest, AgentResponse, AgentError>,
@@ -203,6 +221,7 @@ impl AgentHandle {
     }
 
     pub async fn send_tool_use_approval_result(&self, args: SendApprovalResultArgs) -> Result<(), AgentError> {
+        tracing::error!("tool use approval sent");
         match self
             .sender
             .send_recv(AgentRequest::SendApprovalResult(args))
@@ -238,11 +257,38 @@ impl AgentHandle {
         }
     }
 
+    pub async fn swap_agent(&self, args: SwapAgentArgs) -> Result<(), AgentError> {
+        match self
+            .sender
+            .send_recv(AgentRequest::SwapAgent(Box::new(args)))
+            .await
+            .unwrap_or(Err(AgentError::Channel))?
+        {
+            AgentResponse::SwapComplete => Ok(()),
+            other => Err(AgentError::Custom(format!("received unexpected response: {other:?}"))),
+        }
+    }
+
     pub fn terminate(&self) {
         _ = self.sender.try_blocking_send_recv(AgentRequest::Terminate);
     }
+
+    pub async fn compact_conversation(&self) -> Result<(), AgentError> {
+        match self
+            .sender
+            .send_recv(AgentRequest::CompactConversation)
+            .await
+            .unwrap_or(Err(AgentError::Channel))?
+        {
+            AgentResponse::Success => Ok(()),
+            other => Err(AgentError::Custom(format!("received unexpected response: {other:?}"))),
+        }
+    }
 }
 
+/// Core LLM agent that implements an [`AgentConfig`].
+///
+/// Use [`Agent::spawn`] to start the actor and obtain an [`AgentHandle`].
 #[derive(Debug)]
 pub struct Agent {
     id: AgentId,
@@ -256,12 +302,14 @@ pub struct Agent {
     agent_event_tx: broadcast::Sender<AgentEvent>,
     agent_event_rx: Option<broadcast::Receiver<AgentEvent>>,
 
-    // TODO - use this
     agent_event_buf: Vec<AgentEvent>,
 
     /// Contains an [AgentLoop] if the agent is in the middle of executing a user turn, otherwise
     /// is [None].
     agent_loop: Option<AgentLoopHandle>,
+
+    /// Contains an [AgentLoop] for compaction requests, separate from the main agent loop.
+    compaction_loop: Option<AgentLoopHandle>,
 
     /// Used for executing tools and hooks in the background
     task_executor: TaskExecutor,
@@ -294,11 +342,6 @@ pub struct Agent {
     /// request.
     cached_mcp_configs: LoadedMcpServerConfigs,
 
-    /// https://agentclientprotocol.com/protocol/session-setup#working-directory
-    ///
-    /// TODO: Figure out how this impacts agent behavior, versus the configured [SystemProvider].
-    #[allow(dead_code)]
-    working_directory: Option<PathBuf>,
     /// Provider for system context like env vars, home dir, current working dir
     sys_provider: Arc<dyn SystemProvider>,
     /// Denotes whether or not this agent is being spawned as a subagent
@@ -331,9 +374,11 @@ impl Agent {
         let (agent_event_tx, agent_event_rx) = broadcast::channel(1024);
 
         let agent_config = snapshot.agent_config;
+
         let cached_mcp_configs =
             LoadedMcpServerConfigs::from_agent_config(&agent_config, local_mcp_path, global_mcp_path).await;
-        let task_executor = TaskExecutor::new();
+        let sys_provider: Arc<dyn SystemProvider> = Arc::new(RealProvider);
+        let task_executor = TaskExecutor::new(Arc::clone(&sys_provider));
 
         Ok(Self {
             id: snapshot.id,
@@ -346,6 +391,7 @@ impl Agent {
             agent_event_rx: Some(agent_event_rx),
             agent_event_buf: Vec::new(),
             agent_loop: None,
+            compaction_loop: None,
             task_executor,
             mcp_manager_handle,
             agent_spawn_hooks: Default::default(),
@@ -353,14 +399,14 @@ impl Agent {
             settings: snapshot.settings,
             cached_tool_specs: None,
             cached_mcp_configs,
-            working_directory: None,
-            sys_provider: Arc::new(RealProvider),
+            sys_provider,
             is_subagent,
         })
     }
 
     pub fn set_sys_provider(&mut self, provider: impl SystemProvider) {
         self.sys_provider = Arc::new(provider);
+        self.task_executor = TaskExecutor::new(Arc::clone(&self.sys_provider));
     }
 
     /// Starts the agent task, returning a handle from which messages can be sent and events can be
@@ -409,78 +455,7 @@ impl Agent {
                 }
             });
 
-            let mut results = FuturesUnordered::new();
-
-            for config in self
-                .cached_mcp_configs
-                .configs
-                .iter()
-                .filter(|config| config.is_enabled())
-            {
-                let Ok(rx) = self
-                    .mcp_manager_handle
-                    .launch_server(config.server_name.clone(), config.config.clone())
-                    .await
-                else {
-                    warn!(?config.server_name, "failed to launch MCP config, skipping");
-                    continue;
-                };
-                let name = config.server_name.clone();
-                results.push(async move { (name, rx.await) });
-            }
-
-            // Continually loop through the receivers until all have completed.
-            let mut launched_servers = Vec::new();
-            let (success_tx, mut success_rx) = mpsc::channel(8);
-            let mut failed_servers = Vec::new();
-            let (failed_tx, mut failed_rx) = mpsc::channel(8);
-            let init_results_handle = tokio::spawn(async move {
-                while let Some((name, res)) = results.next().await {
-                    debug!(?name, ?res, "received result from LaunchServer request");
-                    let Ok(res) = res else {
-                        warn!(?name, "channel unexpectedly dropped during MCP initialization");
-                        let _ = failed_tx.send(name).await;
-                        continue;
-                    };
-                    match res {
-                        Ok(_) => {
-                            let _ = success_tx.send(name).await;
-                        },
-                        Err(err) => {
-                            error!(?name, ?err, "failed to launch MCP server");
-                            let _ = failed_tx.send(name).await;
-                        },
-                    }
-                }
-            });
-
-            let timeout_at = Instant::now() + self.settings.mcp_init_timeout;
-            loop {
-                tokio::select! {
-                    name = success_rx.recv() => {
-                        let Some(name) = name else {
-                            // If None is returned in either success/failed receivers, then the
-                            // senders have dropped, meaning initialization has completed.
-                            break;
-                        };
-                        debug!(?name, "MCP server successfully initialized");
-                        launched_servers.push(name.clone());
-                    },
-                    name = failed_rx.recv() => {
-                        let Some(name) = name else {
-                            break;
-                        };
-                        warn!(?name, "MCP server failed initialization");
-                        failed_servers.push(name);
-                    },
-                    _ = tokio::time::sleep_until(timeout_at) => {
-                        warn!("timed out before all MCP servers could be initialized");
-                        break;
-                    },
-                }
-            }
-            info!(?launched_servers, ?failed_servers, "MCP server initialization finished");
-            init_results_handle.abort();
+            self.launch_mcp_servers().await;
         }
 
         // Next, run agent spawn hooks.
@@ -498,12 +473,86 @@ impl Agent {
                     )
                 })
                 .collect();
-            if let Err(err) = self.start_hooks_execution(hooks, HookStage::AgentSpawn, None).await {
-                error!(?err, "failed to execute agent spawn hooks");
-            }
+            self.start_hooks_execution(hooks, HookStage::AgentSpawn, None).await;
         } else {
             self.agent_event_buf.push(AgentEvent::Initialized);
         }
+    }
+
+    #[inline]
+    async fn launch_mcp_servers(&mut self) {
+        let mut results = FuturesUnordered::new();
+
+        for config in self
+            .cached_mcp_configs
+            .configs
+            .iter()
+            .filter(|config| config.is_enabled())
+        {
+            let Ok(rx) = self
+                .mcp_manager_handle
+                .launch_server(config.server_name.clone(), config.config.clone())
+                .await
+            else {
+                warn!(?config.server_name, "failed to launch MCP config, skipping");
+                continue;
+            };
+            let name = config.server_name.clone();
+            results.push(async move { (name, rx.await) });
+        }
+
+        // Continually loop through the receivers until all have completed.
+        let mut launched_servers = Vec::new();
+        let (success_tx, mut success_rx) = mpsc::channel(8);
+        let mut failed_servers = Vec::new();
+        let (failed_tx, mut failed_rx) = mpsc::channel(8);
+        let init_results_handle = tokio::spawn(async move {
+            while let Some((name, res)) = results.next().await {
+                debug!(?name, ?res, "received result from LaunchServer request");
+                let Ok(res) = res else {
+                    warn!(?name, "channel unexpectedly dropped during MCP initialization");
+                    let _ = failed_tx.send(name).await;
+                    continue;
+                };
+                match res {
+                    Ok(_) => {
+                        let _ = success_tx.send(name).await;
+                    },
+                    Err(err) => {
+                        error!(?name, ?err, "failed to launch MCP server");
+                        let _ = failed_tx.send(name).await;
+                    },
+                }
+            }
+        });
+
+        let timeout_at = Instant::now() + self.settings.mcp_init_timeout;
+        loop {
+            tokio::select! {
+                name = success_rx.recv() => {
+                    let Some(name) = name else {
+                        // If None is returned in either success/failed receivers, then the
+                        // senders have dropped, meaning initialization has completed.
+                        break;
+                    };
+                    debug!(?name, "MCP server successfully initialized");
+                    launched_servers.push(name.clone());
+                },
+                name = failed_rx.recv() => {
+                    let Some(name) = name else {
+                        break;
+                    };
+                    warn!(?name, "MCP server failed initialization");
+                    failed_servers.push(name);
+                },
+                _ = tokio::time::sleep_until(timeout_at) => {
+                    warn!("timed out before all MCP servers could be initialized");
+                    break;
+                },
+            }
+        }
+        info!(?launched_servers, ?failed_servers, "MCP server initialization finished");
+        init_results_handle.abort();
     }
 
     async fn main_loop(mut self, mut request_rx: RequestReceiver<AgentRequest, AgentResponse, AgentError>) {
@@ -545,6 +594,22 @@ impl Agent {
                     let evt = res;
                     if let Err(e) = self.handle_agent_loop_event(evt).await {
                         error!(?e, "failed to handle agent loop event");
+                        self.set_active_state(ActiveState::Errored(e)).await;
+                    }
+                },
+
+                // Branch for handling compaction loop events
+                res = async {
+                    match self.compaction_loop.as_mut() {
+                        Some(handle) => handle.recv().await,
+                        None => std::future::pending().await,
+                    }
+                } => {
+                    if let Err(e) = self.handle_compaction_loop_event(res).await {
+                        error!(?e, "failed to handle compaction loop event");
+                        self.agent_event_buf.push(AgentEvent::Compaction(CompactionEvent::Failed {
+                            error: e.to_string(),
+                        }));
                         self.set_active_state(ActiveState::Errored(e)).await;
                     }
                 },
@@ -630,28 +695,27 @@ impl Agent {
             // messages:
             // 1. user tool results replaced with content: "Tool use was cancelled by the user"
             // 2. assistant message with content: "Tool uses were interrupted, waiting for the next user prompt"
-            let tool_results = self
-                .conversation_state
-                .messages
-                .last()
-                .iter()
-                .flat_map(|m| {
-                    m.content.iter().filter_map(|c| match c {
-                        ContentBlock::ToolUse(tool_use) => Some(ContentBlock::ToolResult(ToolResultBlock {
+            let mut content = Vec::new();
+            let mut results = HashMap::new();
+            if let Some(m) = self.conversation_state.messages().last() {
+                for c in &m.content {
+                    if let ContentBlock::ToolUse(tool_use) = c {
+                        content.push(ContentBlock::ToolResult(ToolResultBlock {
                             tool_use_id: tool_use.tool_use_id.clone(),
                             content: vec![ToolResultContentBlock::Text(
                                 "Tool use was cancelled by the user".to_string(),
                             )],
                             status: ToolResultStatus::Error,
-                        })),
-                        _ => None,
-                    })
-                })
-                .collect::<Vec<_>>();
-            self.conversation_state
-                .messages
-                .push(Message::new(Role::User, tool_results, Some(Utc::now())));
-            self.conversation_state.messages.push(Message::new(
+                        }));
+                        results.insert(tool_use.tool_use_id.clone(), LogToolResult {
+                            tool: None,
+                            result: ToolCallResult::Cancelled,
+                        });
+                    }
+                }
+            }
+            self.append_tool_results(content, results);
+            self.append_assistant_message(Message::new(
                 Role::Assistant,
                 vec![ContentBlock::Text(
                     "Tool uses were interrupted, waiting for the next user prompt".to_string(),
@@ -704,7 +768,53 @@ impl Agent {
 
                 Ok(AgentResponse::TerminateAcknowledged)
             },
+            AgentRequest::SwapAgent(args) => self.handle_swap_agent(*args).await,
+            AgentRequest::CompactConversation => {
+                if !matches!(self.active_state(), ActiveState::Idle) {
+                    return Err(AgentError::NotIdle);
+                }
+                self.start_compaction().await?;
+                Ok(AgentResponse::Success)
+            },
         }
+    }
+
+    async fn handle_swap_agent(&mut self, args: SwapAgentArgs) -> Result<AgentResponse, AgentError> {
+        // Only allow swap when agent is idle
+        if !matches!(self.active_state(), ActiveState::Idle) {
+            return Err(AgentError::NotIdle);
+        }
+
+        // Some clients (e.g. jetbrains) for whatever reason would send swap request with every
+        // request. It is not clear to me whether or not ACP is meant to be used this way. As a
+        // preemptive measure, we'll try to guard against this via first checking if we even need
+        // to swap.
+        if self.agent_config.name() == args.agent_config.name() {
+            return Ok(AgentResponse::SwapComplete);
+        }
+
+        // 1. Terminate existing MCP servers
+        self.mcp_manager_handle.terminate();
+
+        // 2. Create new MCP manager (terminate kills the old one)
+        self.mcp_manager_handle = McpManager::default().spawn();
+
+        // 3. Update agent config and clear cached tool specs
+        self.agent_config = args.agent_config;
+        self.cached_tool_specs = None;
+
+        // 4. Reload MCP configs from new agent config
+        self.cached_mcp_configs = LoadedMcpServerConfigs::from_agent_config(
+            &self.agent_config,
+            args.local_mcp_path.as_ref(),
+            args.global_mcp_path.as_ref(),
+        )
+        .await;
+
+        // 5. Launch new MCP servers
+        self.launch_mcp_servers().await;
+
+        Ok(AgentResponse::SwapComplete)
     }
 
     /// Handlers for a [AgentRequest::Cancel] request.
@@ -713,6 +823,7 @@ impl Agent {
             ActiveState::Idle
             | ActiveState::Errored(_)
             | ActiveState::ExecutingRequest
+            | ActiveState::Compacting { .. }
             | ActiveState::WaitingForApproval { .. } => {},
             ActiveState::ExecutingHooks(executing_hooks) => {
                 for hook in executing_hooks.hooks() {
@@ -732,6 +843,7 @@ impl Agent {
                 ActiveState::WaitingForApproval { .. }
                 | ActiveState::ExecutingHooks(_)
                 | ActiveState::ExecutingRequest
+                | ActiveState::Compacting { .. }
                 | ActiveState::ExecutingTools(_) => {
                     self.agent_event_buf.push(AgentEvent::Stop(AgentStopReason::Cancelled));
                 },
@@ -780,30 +892,35 @@ impl Agent {
                 .is_some_and(|r| matches!(r, ApprovalResult::Deny { .. }))
         });
         if denied {
-            let content = needs_approval
-                .iter()
-                .map(|(tool_use_id, approval_result)| {
-                    let reason = match approval_result {
-                        Some(ApprovalResult::Approve) => "Tool use was approved, but did not execute".to_string(),
-                        Some(ApprovalResult::Deny { reason }) => {
-                            let mut v = "Tool use was denied by the user.".to_string();
-                            if let Some(r) = reason {
-                                v.push_str(format!(" Reason: {r}").as_str());
-                            }
-                            v
-                        },
-                        None => "Tool use was not executed".to_string(),
-                    };
-                    ContentBlock::ToolResult(ToolResultBlock {
-                        tool_use_id: tool_use_id.clone(),
-                        content: vec![ToolResultContentBlock::Text(reason)],
-                        status: ToolResultStatus::Error,
-                    })
-                })
-                .collect::<Vec<_>>();
-            self.conversation_state
-                .messages
-                .push(Message::new(Role::User, content, Some(Utc::now())));
+            let mut content = Vec::new();
+            let mut results = HashMap::new();
+            for (tool_use_id, approval_result) in needs_approval {
+                let reason = match approval_result {
+                    Some(ApprovalResult::Approve) => "Tool use was approved, but did not execute".to_string(),
+                    Some(ApprovalResult::Deny { reason }) => {
+                        let mut v = "Tool use was denied by the user.".to_string();
+                        if let Some(r) = reason {
+                            v.push_str(format!(" Reason: {r}").as_str());
+                        }
+                        v
+                    },
+                    None => "Tool use was not executed".to_string(),
+                };
+                content.push(ContentBlock::ToolResult(ToolResultBlock {
+                    tool_use_id: tool_use_id.clone(),
+                    content: vec![ToolResultContentBlock::Text(reason.clone())],
+                    status: ToolResultStatus::Error,
+                }));
+                let tool = tools
+                    .iter()
+                    .find(|(b, _)| &b.tool_use_id == tool_use_id)
+                    .map(|(_, t)| t);
+                results.insert(tool_use_id.clone(), LogToolResult {
+                    tool: tool.map(|t| Box::new(t.clone())),
+                    result: ToolCallResult::Error(ToolExecutionError::Custom(reason)),
+                });
+            }
+            self.append_tool_results(content, results);
             let args = self.format_request().await;
             self.send_request(args).await?;
             self.set_active_state(ActiveState::ExecutingRequest).await;
@@ -837,7 +954,7 @@ impl Agent {
         match evt {
             AgentLoopEventKind::ResponseStreamEnd { result, metadata } => match result {
                 Ok(msg) => {
-                    self.conversation_state.messages.push(msg.clone());
+                    self.append_assistant_message(msg.clone());
                     if !metadata.tool_uses.is_empty() {
                         self.handle_tool_uses(metadata.tool_uses.clone()).await?;
                     }
@@ -850,7 +967,7 @@ impl Agent {
             AgentLoopEventKind::UserTurnEnd(md) => {
                 self.conversation_metadata.user_turn_metadatas.push(md.clone());
 
-                // Execute Stop hooks
+                // Execute Stop hooks if required
                 let hooks = self.get_hooks(HookTrigger::Stop);
                 if !hooks.is_empty() {
                     let hooks = hooks
@@ -865,12 +982,18 @@ impl Agent {
                             )
                         })
                         .collect();
-                    // TODO: Handle synchronous stop hooks
-                    if let Err(err) = self.start_hooks_execution(hooks, HookStage::Stop, None).await {
-                        error!(?err, "failed to execute stop hooks");
-                    }
+                    self.start_hooks_execution(
+                        hooks,
+                        HookStage::Stop {
+                            user_turn_metadata: Box::new(md),
+                        },
+                        None,
+                    )
+                    .await;
+                    return Ok(());
                 }
 
+                // Otherwise, end turn.
                 self.set_active_state(ActiveState::Idle).await;
                 self.agent_event_buf.push(AgentEvent::EndTurn(md));
                 self.agent_event_buf.push(AgentEvent::Stop(AgentStopReason::EndTurn));
@@ -930,50 +1053,37 @@ impl Agent {
                         })
                         .collect(),
                 );
-                self.conversation_state.messages.push(Message {
-                    id: None,
-                    role: Role::Assistant,
-                    content: assistant_content,
-                    timestamp: Some(Utc::now()),
-                });
+                self.append_assistant_message(Message::new(Role::Assistant, assistant_content, Some(Utc::now())));
 
-                self.conversation_state.messages.push(Message {
-                        id: None,
-                        role: Role::User,
-                        content: vec![ContentBlock::Text(
-                            "The generated tool was too large, try again but this time split up the work between multiple tool uses"
-                                .to_string(),
-                        )],
-                        timestamp: Some(Utc::now()),
-                    });
+                self.append_user_message(vec![ContentBlock::Text(
+                    "The generated tool was too large, try again but this time split up the work between multiple tool uses"
+                        .to_string(),
+                )]);
 
                 let args = self.format_request().await;
                 self.send_request(args).await?;
             },
             LoopError::Stream(stream_err) => match &stream_err.kind {
                 StreamErrorKind::StreamTimeout { .. } => {
-                    self.conversation_state.messages.push(Message {
-                        id: None,
-                        role: Role::Assistant,
-                        content: vec![ContentBlock::Text(
+                    self.append_assistant_message(Message::new(
+                        Role::Assistant,
+                        vec![ContentBlock::Text(
                             "Response timed out - message took too long to generate".to_string(),
                         )],
-                        timestamp: Some(Utc::now()),
-                    });
-                    self.conversation_state.messages.push(Message {
-                        id: None,
-                        role: Role::User,
-                        content: vec![ContentBlock::Text(
-                            "You took too long to respond - try to split up the work into smaller steps.".to_string(),
-                        )],
-                        timestamp: Some(Utc::now()),
-                    });
+                        Some(Utc::now()),
+                    ));
+                    self.append_user_message(vec![ContentBlock::Text(
+                        "You took too long to respond - try to split up the work into smaller steps.".to_string(),
+                    )]);
 
                     let args = self.format_request().await;
                     self.send_request(args).await?;
                 },
                 StreamErrorKind::Interrupted => {
                     // nothing to do
+                },
+                StreamErrorKind::ContextWindowOverflow if !self.settings.disable_auto_compact => {
+                    self.start_compaction().await?;
                 },
                 StreamErrorKind::Validation { .. }
                 | StreamErrorKind::ServiceFailure
@@ -1000,7 +1110,10 @@ impl Agent {
                 }
             },
             ActiveState::WaitingForApproval { .. } => (),
-            ActiveState::ExecutingRequest | ActiveState::ExecutingHooks(_) | ActiveState::ExecutingTools { .. } => {
+            ActiveState::ExecutingRequest
+            | ActiveState::ExecutingHooks(_)
+            | ActiveState::ExecutingTools { .. }
+            | ActiveState::Compacting { .. } => {
                 return Err(AgentError::NotIdle);
             },
         }
@@ -1022,7 +1135,7 @@ impl Agent {
                 .collect();
             let prompt = args.text();
             self.start_hooks_execution(hooks, HookStage::PrePrompt { args }, prompt)
-                .await?;
+                .await;
             Ok(AgentResponse::Success)
         } else {
             self.send_prompt_impl(args, vec![]).await
@@ -1040,7 +1153,7 @@ impl Agent {
             .map(|c| match c {
                 ContentChunk::Text(t) => ContentBlock::Text(t),
                 ContentChunk::Image(img) => ContentBlock::Image(img),
-                ContentChunk::ResourceLink(_) => panic!("resource links are not supported"),
+                ContentChunk::ResourceLink(json) => ContentBlock::Text(json),
             })
             .collect::<Vec<_>>();
 
@@ -1049,9 +1162,7 @@ impl Agent {
             user_msg_content.push(ContentBlock::Text(output.clone()));
         }
 
-        self.conversation_state
-            .messages
-            .push(Message::new(Role::User, user_msg_content.clone(), Some(Utc::now())));
+        self.append_user_message(user_msg_content.clone());
 
         // Create a new agent loop, and send the request.
         let loop_id = AgentLoopId::new(self.id.clone());
@@ -1072,12 +1183,14 @@ impl Agent {
     /// 1. Have context messages prepended to the start of the message history
     /// 2. Have conversation history invariants enforced, mutating messages as required
     async fn format_request(&mut self) -> SendRequestArgs {
+        let latest_summary = self.conversation_state.event_log().latest_summary().map(String::from);
         format_request(
-            VecDeque::from(self.conversation_state.messages.clone()),
+            VecDeque::from(self.conversation_state.messages().to_vec()),
             self.make_tool_spec().await,
             &self.agent_config,
             self.agent_spawn_hooks.iter().map(|(_, c)| c),
             &self.sys_provider,
+            latest_summary,
         )
         .await
     }
@@ -1092,6 +1205,106 @@ impl Agent {
         self.agent_event_buf
             .push(AgentEvent::Internal(InternalEvent::RequestSent(request_args)));
         Ok(res)
+    }
+
+    /// Starts compaction of the conversation history.
+    ///
+    /// This can be triggered either:
+    /// - Automatically when context window overflow occurs
+    /// - Manually via `CompactConversation` request
+    async fn start_compaction(&mut self) -> Result<(), AgentError> {
+        self.agent_event_buf
+            .push(AgentEvent::Compaction(CompactionEvent::Started));
+
+        let strategy = CompactStrategy::default();
+        let latest_summary = self.conversation_state.event_log().latest_summary().map(String::from);
+        let compaction_request = create_compaction_request(
+            self.conversation_state.messages(),
+            &strategy,
+            self.model.context_window_size(),
+            None::<String>,
+            latest_summary.as_deref(),
+        );
+
+        // Spawn a new agent loop specifically for compaction
+        let loop_id = AgentLoopId::new(self.id.clone());
+        let cancel_token = CancellationToken::new();
+        let mut compaction_handle = AgentLoop::new(loop_id, cancel_token).spawn();
+
+        let model = Arc::clone(&self.model);
+        compaction_handle
+            .send_request(model, compaction_request.clone())
+            .await?;
+
+        self.agent_event_buf
+            .push(AgentEvent::Internal(InternalEvent::RequestSent(compaction_request)));
+
+        self.compaction_loop = Some(compaction_handle);
+        self.set_active_state(ActiveState::Compacting { strategy }).await;
+        Ok(())
+    }
+
+    /// Handles events from the compaction agent loop.
+    async fn handle_compaction_loop_event(&mut self, evt: Option<AgentLoopEventKind>) -> Result<(), AgentError> {
+        debug!(?evt, "handling compaction loop event");
+
+        let Some(evt) = evt else {
+            self.compaction_loop = None;
+            return Ok(());
+        };
+
+        if let AgentLoopEventKind::ResponseStreamEnd { result, metadata } = evt {
+            match result {
+                Ok(msg) => {
+                    // Compaction should not produce tool uses
+                    if !metadata.tool_uses.is_empty() {
+                        return Err(AgentError::Custom(
+                            "Compaction response unexpectedly contained tool uses".to_string(),
+                        ));
+                    }
+
+                    // Get the strategy before modifying state
+                    let ActiveState::Compacting { strategy } = std::mem::take(&mut self.execution_state.active_state)
+                    else {
+                        return Err(AgentError::Custom("Not in compacting state".to_string()));
+                    };
+
+                    // Finalize compaction and get the log entry
+                    let context_window_size = self.model.context_window_size();
+                    let (entry, index) =
+                        compact::finalize_compaction(&mut self.conversation_state, msg, &strategy, context_window_size);
+
+                    self.compaction_loop = None;
+                    self.agent_event_buf.push(AgentEvent::LogEntryAppended { entry, index });
+                    self.agent_event_buf
+                        .push(AgentEvent::Compaction(CompactionEvent::Completed));
+
+                    // Retry if last message is from user, otherwise go idle
+                    if self
+                        .conversation_state
+                        .messages()
+                        .last()
+                        .is_some_and(|m| m.role == Role::User)
+                    {
+                        let pending_request = self.format_request().await;
+                        self.set_active_state(ActiveState::ExecutingRequest).await;
+                        self.send_request(pending_request).await?;
+                    } else {
+                        self.set_active_state(ActiveState::Idle).await;
+                    }
+                },
+                Err(err) => {
+                    self.compaction_loop = None;
+                    self.agent_event_buf
+                        .push(AgentEvent::Compaction(CompactionEvent::Failed {
+                            error: err.to_string(),
+                        }));
+                    self.set_active_state(ActiveState::Errored(err.into())).await;
+                },
+            }
+        }
+
+        Ok(())
     }
 
     /// Entrypoint for handling tool uses returned by the model.
@@ -1112,20 +1325,22 @@ impl Agent {
         if !errors.is_empty() {
             // Send parse errors back to the model.
             trace!(?errors, "failed to parse tools");
-            let content = errors
-                .into_iter()
-                .map(|e| {
-                    let err_msg = e.to_string();
-                    ContentBlock::ToolResult(ToolResultBlock {
-                        tool_use_id: e.tool_use.tool_use_id,
-                        content: vec![ToolResultContentBlock::Text(err_msg)],
-                        status: ToolResultStatus::Error,
-                    })
-                })
-                .collect();
-            self.conversation_state
-                .messages
-                .push(Message::new(Role::User, content, Some(Utc::now())));
+            let mut content = Vec::new();
+            let mut results = HashMap::new();
+            for e in errors {
+                let tool_use_id = e.tool_use.tool_use_id.clone();
+                let err_msg = e.to_string();
+                content.push(ContentBlock::ToolResult(ToolResultBlock {
+                    tool_use_id: tool_use_id.clone(),
+                    content: vec![ToolResultContentBlock::Text(err_msg.clone())],
+                    status: ToolResultStatus::Error,
+                }));
+                results.insert(tool_use_id, LogToolResult {
+                    tool: None,
+                    result: ToolCallResult::Error(ToolExecutionError::Custom(err_msg)),
+                });
+            }
+            self.append_tool_results(content, results);
             let args = self.format_request().await;
             self.send_request(args).await?;
             return Ok(());
@@ -1150,21 +1365,21 @@ impl Agent {
 
         // Return denied tools immediately back to the model
         if !denied.is_empty() {
-            let content = denied
-                .into_iter()
-                .map(|(block, _, _)| {
-                    ContentBlock::ToolResult(ToolResultBlock {
-                        tool_use_id: block.tool_use_id.clone(),
-                        content: vec![ToolResultContentBlock::Text(
-                            "Tool use was rejected because the arguments supplied are forbidden:".to_string(),
-                        )],
-                        status: ToolResultStatus::Error,
-                    })
-                })
-                .collect();
-            self.conversation_state
-                .messages
-                .push(Message::new(Role::User, content, Some(Utc::now())));
+            let mut content = Vec::new();
+            let mut results = HashMap::new();
+            for (block, tool, _) in denied {
+                let err_msg = "Tool use was rejected because the arguments supplied are forbidden:".to_string();
+                content.push(ContentBlock::ToolResult(ToolResultBlock {
+                    tool_use_id: block.tool_use_id.clone(),
+                    content: vec![ToolResultContentBlock::Text(err_msg.clone())],
+                    status: ToolResultStatus::Error,
+                }));
+                results.insert(block.tool_use_id.clone(), LogToolResult {
+                    tool: Some(Box::new(tool.clone())),
+                    result: ToolCallResult::Error(ToolExecutionError::Custom(err_msg)),
+                });
+            }
+            self.append_tool_results(content, results);
             let args = self.format_request().await;
             self.send_request(args).await?;
             return Ok(());
@@ -1190,7 +1405,7 @@ impl Agent {
                 tools: tools.clone(),
                 needs_approval: needs_approval.clone(),
             };
-            self.start_hooks_execution(hooks_to_execute, stage, None).await?;
+            self.start_hooks_execution(hooks_to_execute, stage, None).await;
             return Ok(());
         }
 
@@ -1229,7 +1444,7 @@ impl Agent {
         hooks: Vec<(HookExecutionId, Option<(ToolUseBlock, Tool)>)>,
         stage: HookStage,
         prompt: Option<String>,
-    ) -> Result<(), AgentError> {
+    ) {
         let mut hooks_state = Vec::new();
         for (id, tool_ctx) in hooks {
             let req = StartHookExecution {
@@ -1249,7 +1464,6 @@ impl Agent {
             stage,
         }))
         .await;
-        Ok(())
     }
 
     async fn handle_task_executor_event(&mut self, evt: TaskExecutorEvent) -> Result<(), AgentError> {
@@ -1336,14 +1550,14 @@ impl Agent {
         if !hooks_to_execute.is_empty() {
             debug!("found hooks to execute for postToolUse");
             let stage = HookStage::PostToolUse {
-                tool_results: executing_tools.tool_results(),
+                executing_tools: executing_tools.clone(),
             };
-            self.start_hooks_execution(hooks_to_execute, stage, None).await?;
+            self.start_hooks_execution(hooks_to_execute, stage, None).await;
             return Ok(());
         }
 
         // All tools have finished executing, so send the results back to the model.
-        self.send_tool_results(executing_tools.tool_results()).await?;
+        self.send_tool_results(&executing_tools).await?;
         Ok(())
     }
 
@@ -1393,32 +1607,35 @@ impl Agent {
                 // If any command hooks exited with status 2, then we'll block.
                 // Otherwise, execute the tools.
                 let mut denied_tools = Vec::new();
-                for (block, _) in tools {
+                for (block, tool) in tools {
                     if let Some(hook) = executing_hooks.has_failure_exit_code_for_tool(&block.tool_use_id) {
                         denied_tools.push((
                             block.tool_use_id.clone(),
+                            tool.clone(),
                             hook.result.as_ref().cloned().expect("is some"),
                         ));
                     }
                 }
                 if !denied_tools.is_empty() {
                     // Send denied tool results back to the model.
-                    let content = denied_tools
-                        .into_iter()
-                        .map(|(tool_use_id, hook_res)| {
-                            ContentBlock::ToolResult(ToolResultBlock {
-                                tool_use_id,
-                                content: vec![ToolResultContentBlock::Text(format!(
-                                    "PreToolHook blocked the tool execution: {}",
-                                    hook_res.output().unwrap_or("no output provided")
-                                ))],
-                                status: ToolResultStatus::Error,
-                            })
-                        })
-                        .collect();
-                    self.conversation_state
-                        .messages
-                        .push(Message::new(Role::User, content, Some(Utc::now())));
+                    let mut content = Vec::new();
+                    let mut results = HashMap::new();
+                    for (tool_use_id, tool, hook_res) in denied_tools {
+                        let err_msg = format!(
+                            "PreToolHook blocked the tool execution: {}",
+                            hook_res.output().unwrap_or("no output provided")
+                        );
+                        content.push(ContentBlock::ToolResult(ToolResultBlock {
+                            tool_use_id: tool_use_id.clone(),
+                            content: vec![ToolResultContentBlock::Text(err_msg.clone())],
+                            status: ToolResultStatus::Error,
+                        }));
+                        results.insert(tool_use_id, LogToolResult {
+                            tool: Some(Box::new(tool)),
+                            result: ToolCallResult::Error(ToolExecutionError::Custom(err_msg)),
+                        });
+                    }
+                    self.append_tool_results(content, results);
                     let args = self.format_request().await;
                     self.send_request(args).await?;
                     return Ok(());
@@ -1429,12 +1646,15 @@ impl Agent {
                 let needs_approval = needs_approval.clone();
                 Ok(self.process_tool_uses(tools, needs_approval).await?)
             },
-            HookStage::PostToolUse { tool_results } => {
-                let tool_results = tool_results.clone();
-                self.send_tool_results(tool_results).await?;
+            HookStage::PostToolUse { executing_tools } => {
+                let executing_tools = executing_tools.clone();
+                self.send_tool_results(&executing_tools).await?;
                 Ok(())
             },
-            HookStage::Stop => {
+            HookStage::Stop { user_turn_metadata } => {
+                self.agent_event_buf
+                    .push(AgentEvent::EndTurn((**user_turn_metadata).clone()));
+                self.agent_event_buf.push(AgentEvent::Stop(AgentStopReason::EndTurn));
                 self.set_active_state(ActiveState::Idle).await;
                 Ok(())
             },
@@ -1588,14 +1808,14 @@ impl Agent {
                     continue;
                 },
             };
-            let tool = match Tool::parse(&canonical_tool_name, tool_use.input.clone()) {
+            let mut tool = match Tool::parse(&canonical_tool_name, tool_use.input.clone()) {
                 Ok(t) => t,
                 Err(err) => {
                     parse_errors.push(ToolParseError::new(tool_use, err));
                     continue;
                 },
             };
-            match self.validate_tool(&tool).await {
+            match self.validate_tool(&mut tool).await {
                 Ok(_) => tools.push((tool_use, tool)),
                 Err(err) => {
                     parse_errors.push(ToolParseError::new(tool_use, err));
@@ -1606,8 +1826,8 @@ impl Agent {
         (tools, parse_errors)
     }
 
-    async fn validate_tool(&self, tool: &Tool) -> Result<(), ToolParseErrorKind> {
-        match tool.kind() {
+    async fn validate_tool(&self, tool: &mut Tool) -> Result<(), ToolParseErrorKind> {
+        match &mut tool.kind {
             ToolKind::BuiltIn(built_in) => match built_in {
                 BuiltInTool::FileRead(t) => t
                     .validate(&self.sys_provider)
@@ -1617,7 +1837,14 @@ impl Agent {
                     .validate(&self.sys_provider)
                     .await
                     .map_err(ToolParseErrorKind::invalid_args),
-                BuiltInTool::Grep(_) => Ok(()),
+                BuiltInTool::Grep(t) => t
+                    .validate(&self.sys_provider)
+                    .await
+                    .map_err(ToolParseErrorKind::invalid_args),
+                BuiltInTool::Glob(t) => t
+                    .validate(&self.sys_provider)
+                    .await
+                    .map_err(ToolParseErrorKind::invalid_args),
                 BuiltInTool::Ls(t) => t
                     .validate(&self.sys_provider)
                     .await
@@ -1626,8 +1853,9 @@ impl Agent {
                 BuiltInTool::ExecuteCmd(_) => Ok(()),
                 BuiltInTool::Introspect(_) => Ok(()),
                 BuiltInTool::Summary(_) => Ok(()),
-                BuiltInTool::SpawnSubagent => Ok(()),
+                BuiltInTool::SpawnSubagent(_) => Ok(()),
                 BuiltInTool::ImageRead(t) => t.validate().await.map_err(ToolParseErrorKind::invalid_args),
+                BuiltInTool::UseAws(t) => t.validate().await.map_err(ToolParseErrorKind::invalid_args),
             },
             ToolKind::Mcp(_) => Ok(()),
         }
@@ -1725,17 +1953,22 @@ impl Agent {
                         res
                     })
                 },
-                BuiltInTool::ExecuteCmd(t) => Box::pin(async move { t.execute().await }),
+                BuiltInTool::ExecuteCmd(t) => Box::pin(async move { t.execute(&provider).await }),
                 BuiltInTool::ImageRead(t) => Box::pin(async move { t.execute().await }),
                 BuiltInTool::Introspect(_) => panic!("unimplemented"),
-                BuiltInTool::Grep(_) => panic!("unimplemented"),
+                BuiltInTool::Grep(t) => Box::pin(async move { t.execute(&provider).await }),
+                BuiltInTool::Glob(t) => Box::pin(async move { t.execute(&provider).await }),
                 BuiltInTool::Ls(t) => Box::pin(async move { t.execute(&provider).await }),
                 BuiltInTool::Mkdir(_) => panic!("unimplemented"),
-                BuiltInTool::SpawnSubagent => panic!("unimplemented"),
+                BuiltInTool::SpawnSubagent(t) => {
+                    let event_tx = self.agent_event_tx.clone();
+                    Box::pin(async move { t.execute(event_tx).await })
+                },
                 BuiltInTool::Summary(t) => {
                     let result_tx = self.agent_event_tx.clone();
                     Box::pin(async move { t.execute(result_tx).await })
                 },
+                BuiltInTool::UseAws(t) => Box::pin(async move { t.execute().await }),
             },
             ToolKind::Mcp(t) => {
                 let mcp_tool = t.clone();
@@ -1779,11 +2012,19 @@ impl Agent {
         Ok(())
     }
 
-    async fn send_tool_results(&mut self, tool_results: Vec<ToolExecutorResult>) -> Result<(), AgentError> {
+    async fn send_tool_results(&mut self, executing_tools: &ExecutingTools) -> Result<(), AgentError> {
         let mut content = Vec::new();
-        for result in tool_results {
+        let mut results = HashMap::new();
+
+        for executing_tool in executing_tools.tools() {
+            debug_assert!(executing_tool.result.is_some(), "tool result must be Some");
+            let Some(result) = &executing_tool.result else {
+                continue;
+            };
+            let tool_use_id = executing_tool.tool_use_block.tool_use_id.clone();
+
             match result {
-                ToolExecutorResult::Completed { id, result } => match result {
+                ToolExecutorResult::Completed { result, .. } => match result {
                     Ok(res) => {
                         let mut content_items = Vec::new();
                         for item in &res.items {
@@ -1795,16 +2036,26 @@ impl Agent {
                             content_items.push(content_item);
                         }
                         content.push(ContentBlock::ToolResult(ToolResultBlock {
-                            tool_use_id: id.tool_use_id().to_string(),
+                            tool_use_id: tool_use_id.clone(),
                             content: content_items,
                             status: ToolResultStatus::Success,
                         }));
+                        results.insert(tool_use_id, LogToolResult {
+                            tool: Some(Box::new(executing_tool.tool.clone())),
+                            result: ToolCallResult::Success(res.clone()),
+                        });
                     },
-                    Err(err) => content.push(ContentBlock::ToolResult(ToolResultBlock {
-                        tool_use_id: id.tool_use_id().to_string(),
-                        content: vec![ToolResultContentBlock::Text(err.to_string())],
-                        status: ToolResultStatus::Error,
-                    })),
+                    Err(err) => {
+                        content.push(ContentBlock::ToolResult(ToolResultBlock {
+                            tool_use_id: tool_use_id.clone(),
+                            content: vec![ToolResultContentBlock::Text(err.to_string())],
+                            status: ToolResultStatus::Error,
+                        }));
+                        results.insert(tool_use_id, LogToolResult {
+                            tool: Some(Box::new(executing_tool.tool.clone())),
+                            result: ToolCallResult::Error(err.clone()),
+                        });
+                    },
                 },
                 ToolExecutorResult::Cancelled { .. } => {
                     // Should never happen in this flow
@@ -1812,9 +2063,7 @@ impl Agent {
             }
         }
 
-        self.conversation_state
-            .messages
-            .push(Message::new(Role::User, content, Some(Utc::now())));
+        self.append_tool_results(content, results);
         let args = self.format_request().await;
         self.send_request(args).await?;
         self.set_active_state(ActiveState::ExecutingRequest).await;
@@ -1835,6 +2084,28 @@ impl Agent {
     pub fn append_embedded_user_msg(&mut self, msg: &str) {
         self.agent_config.append_to_system_prompt(msg);
     }
+
+    /// Append a user message to the conversation and emit the log event.
+    fn append_user_message(&mut self, content: Vec<ContentBlock>) {
+        let entry = LogEntry::prompt(Uuid::new_v4().to_string(), content);
+        let index = self.conversation_state.append_log(entry.clone());
+        self.agent_event_buf.push(AgentEvent::LogEntryAppended { entry, index });
+    }
+
+    /// Append tool results to the conversation and emit the log event.
+    fn append_tool_results(&mut self, content: Vec<ContentBlock>, results: HashMap<String, LogToolResult>) {
+        let entry = LogEntry::tool_results(Uuid::new_v4().to_string(), content, results);
+        let index = self.conversation_state.append_log(entry.clone());
+        self.agent_event_buf.push(AgentEvent::LogEntryAppended { entry, index });
+    }
+
+    /// Append an assistant message to the conversation and emit the log event.
+    fn append_assistant_message(&mut self, msg: Message) {
+        let message_id = msg.id.clone().unwrap_or_else(|| Uuid::new_v4().to_string());
+        let entry = LogEntry::assistant_message(message_id, msg.content);
+        let index = self.conversation_state.append_log(entry.clone());
+        self.agent_event_buf.push(AgentEvent::LogEntryAppended { entry, index });
+    }
 }
 
 /// Creates a request structure for sending to the model.
@@ -1849,6 +2120,7 @@ async fn format_request<T, U, P>(
     agent_config: &AgentConfig,
     agent_spawn_hooks: T,
     provider: &P,
+    latest_summary: Option<String>,
 ) -> SendRequestArgs
 where
     T: IntoIterator<Item = U>,
@@ -1857,7 +2129,7 @@ where
 {
     enforce_conversation_invariants(&mut messages, &mut tool_spec);
 
-    let ctx_messages = create_context_messages(agent_config, agent_spawn_hooks, provider).await;
+    let ctx_messages = create_context_messages(agent_config, agent_spawn_hooks, latest_summary, provider).await;
     for msg in ctx_messages.into_iter().rev() {
         messages.push_front(msg);
     }
@@ -1887,6 +2159,7 @@ where
 async fn create_context_messages<T, U, P>(
     agent_config: &AgentConfig,
     agent_spawn_hooks: T,
+    latest_summary: Option<String>,
     provider: &P,
 ) -> Vec<Message>
 where
@@ -1897,7 +2170,12 @@ where
     let system_prompt = agent_config.system_prompt();
     let resources = collect_resources(agent_config.resources(), provider).await;
 
-    let content = format_user_context_message(system_prompt, resources.iter().map(|r| &r.content), agent_spawn_hooks);
+    let content = format_user_context_message(
+        system_prompt,
+        resources.iter().map(|r| &r.content),
+        agent_spawn_hooks,
+        latest_summary,
+    );
     if content.is_empty() {
         return vec![];
     }
@@ -1913,7 +2191,12 @@ where
     vec![user_msg, assistant_msg]
 }
 
-fn format_user_context_message<T, U, S, V>(system_prompt: Option<&str>, resources: T, agent_spawn_hooks: U) -> String
+fn format_user_context_message<T, U, S, V>(
+    system_prompt: Option<&str>,
+    resources: T,
+    agent_spawn_hooks: U,
+    latest_summary: Option<String>,
+) -> String
 where
     T: IntoIterator<Item = S>,
     U: IntoIterator<Item = V>,
@@ -1921,6 +2204,14 @@ where
     V: AsRef<str>,
 {
     let mut context_content = String::new();
+
+    if let Some(summary) = latest_summary {
+        context_content.push_str(CONTEXT_ENTRY_START_HEADER);
+        context_content.push_str("This summary contains ALL relevant information from our previous conversation including tool uses, results, code analysis, and file operations. YOU MUST reference this information when answering questions and explicitly acknowledge specific details from the summary when they're relevant to the current question.\n\nSUMMARY CONTENT:\n");
+        context_content.push_str(&summary);
+        context_content.push('\n');
+        context_content.push_str(CONTEXT_ENTRY_END_HEADER);
+    }
 
     if let Some(prompt) = system_prompt {
         context_content.push_str(&format!("Follow this instruction: {prompt}"));
@@ -2177,9 +2468,11 @@ pub enum ActiveState {
     ExecutingRequest,
     /// Agent is executing tools
     ExecutingTools(ExecutingTools),
-    // ExecutingTools {
-    //     tools: HashMap<ToolExecutionId, ((ToolUseBlock, Tool), Option<ToolExecutorResult>)>,
-    // },
+    /// Agent is compacting conversation history
+    Compacting {
+        /// The strategy used for compaction
+        strategy: CompactStrategy,
+    },
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -2200,10 +2493,6 @@ impl ExecutingTools {
 
     fn all_tools_finished(&self) -> bool {
         self.0.iter().all(|tool| tool.result.is_some())
-    }
-
-    fn tool_results(&self) -> Vec<ToolExecutorResult> {
-        self.0.iter().filter_map(|tool| tool.result.clone()).collect()
     }
 }
 
@@ -2320,9 +2609,12 @@ pub enum HookStage {
         needs_approval: Vec<String>,
     },
     /// Hooks after executing tool uses
-    PostToolUse { tool_results: Vec<ToolExecutorResult> },
+    PostToolUse { executing_tools: ExecutingTools },
     /// Hooks when the assistant finishes responding
-    Stop,
+    Stop {
+        /// The [UserTurnMetadata] for the completed user turn
+        user_turn_metadata: Box<UserTurnMetadata>,
+    },
 }
 
 #[cfg(test)]

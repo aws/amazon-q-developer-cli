@@ -1,0 +1,6 @@
+// Mock response that triggers an MCP tool call to the "greet" tool
+{"kind":"event","data":{"kind":"ToolUseEvent","data":{"tool_use_id":"tooluse_stdio_001","name":"greet","input":null,"stop":null}}}
+{"kind":"event","data":{"kind":"ToolUseEvent","data":{"tool_use_id":"tooluse_stdio_001","name":"greet","input":"{\"name\": \"world\"}","stop":null}}}
+{"kind":"event","data":{"kind":"ToolUseEvent","data":{"tool_use_id":"tooluse_stdio_001","name":"greet","input":null,"stop":true}}}
+
+{"kind":"event","data":{"kind":"AssistantResponseEvent","data":{"content":"Greeted successfully."}}}

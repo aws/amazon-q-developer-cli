@@ -1,6 +1,7 @@
 pub mod execute_cmd;
 pub mod fs_read;
 pub mod fs_write;
+pub mod glob;
 pub mod grep;
 pub mod image_read;
 pub mod introspect;
@@ -9,6 +10,8 @@ pub mod mcp;
 pub mod mkdir;
 pub mod rm;
 pub mod summary;
+pub mod use_aws;
+pub mod use_subagent;
 
 use std::borrow::Cow;
 use std::sync::Arc;
@@ -20,6 +23,7 @@ use fs_write::{
     FsWriteContext,
     FsWriteState,
 };
+use glob::Glob;
 use grep::Grep;
 use image_read::ImageRead;
 use introspect::Introspect;
@@ -33,6 +37,14 @@ use serde::{
 };
 use strum::IntoEnumIterator;
 use summary::Summary;
+use typeshare::typeshare;
+use use_aws::UseAws;
+pub use use_subagent::{
+    SubagentInvocation,
+    SubagentRequest,
+    SubagentResponse,
+    UseSubagent,
+};
 
 use super::agent_config::parse::CanonicalToolName;
 use super::agent_loop::types::ToolUseBlock;
@@ -81,6 +93,29 @@ where
     }
 }
 
+/// Tool name aliases as they appear on the wire (snake_case format).
+#[typeshare]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ToolNameAlias {
+    // FsWrite aliases
+    FsWrite,
+    Write,
+    // FsRead aliases
+    FsRead,
+    Read,
+    // ExecuteCmd aliases
+    ExecuteBash,
+    ExecuteCmd,
+    Shell,
+    // Other tools
+    ImageRead,
+    Ls,
+    Summary,
+    UseSubagent,
+    Subagent,
+}
+
 #[derive(
     Debug,
     Clone,
@@ -111,6 +146,12 @@ pub enum BuiltInToolName {
     ImageRead,
     Ls,
     Summary,
+    #[strum(serialize = "use_subagent", serialize = "subagent")]
+    SpawnSubagent,
+    Grep,
+    Glob,
+    #[strum(serialize = "use_aws", serialize = "aws")]
+    UseAws,
 }
 
 impl BuiltInToolName {
@@ -122,6 +163,10 @@ impl BuiltInToolName {
             BuiltInToolName::ImageRead => ImageRead::aliases(),
             BuiltInToolName::Ls => Ls::aliases(),
             BuiltInToolName::Summary => Summary::aliases(),
+            BuiltInToolName::SpawnSubagent => UseSubagent::aliases(),
+            BuiltInToolName::Grep => Grep::aliases(),
+            BuiltInToolName::Glob => Glob::aliases(),
+            BuiltInToolName::UseAws => UseAws::aliases(),
         }
     }
 }
@@ -258,14 +303,15 @@ pub enum BuiltInTool {
     FileRead(FsRead),
     FileWrite(FsWrite),
     Grep(Grep),
+    Glob(Glob),
     Ls(Ls),
     Mkdir(Mkdir),
     ImageRead(ImageRead),
     ExecuteCmd(ExecuteCmd),
     Introspect(Introspect),
     Summary(Summary),
-    /// TODO
-    SpawnSubagent,
+    SpawnSubagent(UseSubagent),
+    UseAws(UseAws),
 }
 
 impl BuiltInTool {
@@ -289,6 +335,18 @@ impl BuiltInTool {
             BuiltInToolName::Summary => serde_json::from_value::<Summary>(args)
                 .map(Self::Summary)
                 .map_err(ToolParseErrorKind::schema_failure),
+            BuiltInToolName::SpawnSubagent => serde_json::from_value::<UseSubagent>(args)
+                .map(Self::SpawnSubagent)
+                .map_err(ToolParseErrorKind::schema_failure),
+            BuiltInToolName::Grep => serde_json::from_value::<Grep>(args)
+                .map(Self::Grep)
+                .map_err(ToolParseErrorKind::schema_failure),
+            BuiltInToolName::Glob => serde_json::from_value::<Glob>(args)
+                .map(Self::Glob)
+                .map_err(ToolParseErrorKind::schema_failure),
+            BuiltInToolName::UseAws => serde_json::from_value::<UseAws>(args)
+                .map(Self::UseAws)
+                .map_err(ToolParseErrorKind::schema_failure),
         }
     }
 
@@ -300,6 +358,10 @@ impl BuiltInTool {
             BuiltInToolName::ImageRead => generate_tool_spec_from_trait::<ImageRead>(),
             BuiltInToolName::Ls => generate_tool_spec_from_trait::<Ls>(),
             BuiltInToolName::Summary => generate_tool_spec_from_trait::<Summary>(),
+            BuiltInToolName::SpawnSubagent => generate_tool_spec_from_trait::<UseSubagent>(),
+            BuiltInToolName::Grep => generate_tool_spec_from_trait::<Grep>(),
+            BuiltInToolName::Glob => generate_tool_spec_from_trait::<Glob>(),
+            BuiltInToolName::UseAws => generate_tool_spec_from_trait::<UseAws>(),
         }
     }
 
@@ -307,14 +369,16 @@ impl BuiltInTool {
         match self {
             BuiltInTool::FileRead(_) => BuiltInToolName::FsRead,
             BuiltInTool::FileWrite(_) => BuiltInToolName::FsWrite,
-            BuiltInTool::Grep(_) => panic!("unimplemented"),
+            BuiltInTool::Grep(_) => BuiltInToolName::Grep,
+            BuiltInTool::Glob(_) => BuiltInToolName::Glob,
             BuiltInTool::Ls(_) => BuiltInToolName::Ls,
             BuiltInTool::Mkdir(_) => panic!("unimplemented"),
             BuiltInTool::ImageRead(_) => BuiltInToolName::ImageRead,
             BuiltInTool::ExecuteCmd(_) => BuiltInToolName::ExecuteCmd,
             BuiltInTool::Introspect(_) => panic!("unimplemented"),
             BuiltInTool::Summary(_) => BuiltInToolName::Summary,
-            BuiltInTool::SpawnSubagent => panic!("unimplemented"),
+            BuiltInTool::SpawnSubagent(_) => BuiltInToolName::SpawnSubagent,
+            BuiltInTool::UseAws(_) => BuiltInToolName::UseAws,
         }
     }
 
@@ -322,14 +386,16 @@ impl BuiltInTool {
         match self {
             BuiltInTool::FileRead(_) => BuiltInToolName::FsRead.into(),
             BuiltInTool::FileWrite(_) => BuiltInToolName::FsWrite.into(),
-            BuiltInTool::Grep(_) => panic!("unimplemented"),
+            BuiltInTool::Grep(_) => BuiltInToolName::Grep.into(),
+            BuiltInTool::Glob(_) => BuiltInToolName::Glob.into(),
             BuiltInTool::Ls(_) => BuiltInToolName::Ls.into(),
             BuiltInTool::Mkdir(_) => panic!("unimplemented"),
             BuiltInTool::ImageRead(_) => BuiltInToolName::ImageRead.into(),
             BuiltInTool::ExecuteCmd(_) => BuiltInToolName::ExecuteCmd.into(),
             BuiltInTool::Introspect(_) => panic!("unimplemented"),
             BuiltInTool::Summary(_) => BuiltInToolName::Summary.into(),
-            BuiltInTool::SpawnSubagent => panic!("unimplemented"),
+            BuiltInTool::SpawnSubagent(_) => BuiltInToolName::SpawnSubagent.into(),
+            BuiltInTool::UseAws(_) => BuiltInToolName::UseAws.into(),
         }
     }
 
@@ -337,14 +403,16 @@ impl BuiltInTool {
         match self {
             BuiltInTool::FileRead(_) => FsRead::aliases(),
             BuiltInTool::FileWrite(_) => FsWrite::aliases(),
-            BuiltInTool::Grep(_) => panic!("unimplemented"),
+            BuiltInTool::Grep(_) => Grep::aliases(),
+            BuiltInTool::Glob(_) => Glob::aliases(),
             BuiltInTool::Ls(_) => Ls::aliases(),
             BuiltInTool::Mkdir(_) => panic!("unimplemented"),
             BuiltInTool::ImageRead(_) => ImageRead::aliases(),
             BuiltInTool::ExecuteCmd(_) => ExecuteCmd::aliases(),
             BuiltInTool::Introspect(_) => panic!("unimplemented"),
             BuiltInTool::Summary(_) => Summary::aliases(),
-            BuiltInTool::SpawnSubagent => panic!("unimplemented"),
+            BuiltInTool::SpawnSubagent(_) => UseSubagent::aliases(),
+            BuiltInTool::UseAws(_) => UseAws::aliases(),
         }
     }
 }

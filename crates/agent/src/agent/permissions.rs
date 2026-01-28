@@ -10,6 +10,8 @@ use super::util::path::canonicalize_path_sys;
 use super::util::providers::SystemProvider;
 use crate::agent::agent_config::definitions::ToolsSettings;
 use crate::agent::protocol::PermissionEvalResult;
+use crate::agent::tools::execute_cmd::ExecuteCmd;
+use crate::agent::tools::use_aws::UseAws;
 use crate::agent::tools::{
     BuiltInTool,
     ToolKind,
@@ -78,12 +80,53 @@ pub fn evaluate_tool_permission<P: SystemProvider>(
                 is_allowed,
                 provider,
             ),
-            BuiltInTool::Grep(_) => Ok(PermissionEvalResult::Allow),
+            BuiltInTool::Grep(grep) => {
+                let path = grep.get_path(provider).map_err(|e| UtilError::Custom(e.to_string()))?;
+                match evaluate_permission_for_paths(
+                    &settings.grep.allowed_paths,
+                    &settings.grep.denied_paths,
+                    [path],
+                    is_allowed,
+                    provider,
+                ) {
+                    Ok(result) => {
+                        if matches!(result, PermissionEvalResult::Deny { .. }) {
+                            return Ok(result);
+                        }
+                        if settings.grep.allow_read_only || is_allowed {
+                            return Ok(PermissionEvalResult::Allow);
+                        }
+                        Ok(result)
+                    },
+                    Err(e) => Err(e),
+                }
+            },
+            BuiltInTool::Glob(glob) => {
+                let path = glob.get_path(provider).map_err(|e| UtilError::Custom(e.to_string()))?;
+                match evaluate_permission_for_paths(
+                    &settings.glob.allowed_paths,
+                    &settings.glob.denied_paths,
+                    [path],
+                    is_allowed,
+                    provider,
+                ) {
+                    Ok(result) => {
+                        if matches!(result, PermissionEvalResult::Deny { .. }) {
+                            return Ok(result);
+                        }
+                        if settings.glob.allow_read_only || is_allowed {
+                            return Ok(PermissionEvalResult::Allow);
+                        }
+                        Ok(result)
+                    },
+                    Err(e) => Err(e),
+                }
+            },
 
             // Reuse the same settings for fs write
             BuiltInTool::Mkdir(_) => Ok(PermissionEvalResult::Allow),
 
-            BuiltInTool::ExecuteCmd(execute_cmd) => evaluate_permission_for_command(
+            BuiltInTool::ExecuteCmd(execute_cmd) => evaluate_permission_for_command::<ExecuteCmd>(
                 &settings.shell.allowed_commands,
                 &settings.shell.denied_commands,
                 &execute_cmd.command,
@@ -92,8 +135,19 @@ pub fn evaluate_tool_permission<P: SystemProvider>(
                 settings.shell.deny_by_default,
             ),
             BuiltInTool::Introspect(_) => Ok(PermissionEvalResult::Allow),
-            BuiltInTool::SpawnSubagent => Ok(PermissionEvalResult::Allow),
+            BuiltInTool::SpawnSubagent(_) => Ok(PermissionEvalResult::Allow),
             BuiltInTool::Summary(_) => Ok(PermissionEvalResult::Allow),
+            BuiltInTool::UseAws(use_aws) => {
+                let key = format!("{}:{}", use_aws.service_name, use_aws.operation_name);
+                evaluate_permission_for_command::<UseAws>(
+                    &settings.use_aws.allowed_services,
+                    &settings.use_aws.denied_services,
+                    &key,
+                    is_allowed,
+                    settings.use_aws.auto_allow_readonly,
+                    false,
+                )
+            },
         },
         ToolKind::Mcp(_) => Ok(if is_allowed {
             PermissionEvalResult::Allow
@@ -103,7 +157,11 @@ pub fn evaluate_tool_permission<P: SystemProvider>(
     }
 }
 
-fn evaluate_permission_for_command(
+pub trait ReadonlyChecker {
+    fn is_readonly(command: &str) -> bool;
+}
+
+fn evaluate_permission_for_command<T: ReadonlyChecker>(
     allowed_commands: &[String],
     denied_commands: &[String],
     command: &str,
@@ -111,10 +169,6 @@ fn evaluate_permission_for_command(
     auto_allow_readonly: bool,
     deny_by_default: bool,
 ) -> Result<PermissionEvalResult, UtilError> {
-    const READONLY_COMMANDS: &[&str] = &[
-        "ls", "cat", "echo", "pwd", "which", "head", "tail", "find", "grep", "dir", "type",
-    ];
-
     let allow = create_globset(allowed_commands.iter());
     let deny = create_globset(denied_commands.iter());
 
@@ -139,11 +193,8 @@ fn evaluate_permission_for_command(
         return Ok(PermissionEvalResult::Allow);
     }
 
-    if auto_allow_readonly {
-        let command_name = command.split_whitespace().next().unwrap_or("");
-        if READONLY_COMMANDS.contains(&command_name) {
-            return Ok(PermissionEvalResult::Allow);
-        }
+    if auto_allow_readonly && T::is_readonly(command) {
+        return Ok(PermissionEvalResult::Allow);
     }
 
     if deny_by_default {
@@ -474,7 +525,7 @@ mod tests {
     #[test]
     fn test_evaluate_permission_for_commands() {
         // Test denied commands (should short circuit)
-        let result = evaluate_permission_for_command(
+        let result = evaluate_permission_for_command::<ExecuteCmd>(
             &["git status".to_string()],
             &["git push*".to_string()],
             "git push origin main",
@@ -486,24 +537,142 @@ mod tests {
         assert!(matches!(result, PermissionEvalResult::Deny { .. }));
 
         // Test allowed commands
-        let result =
-            evaluate_permission_for_command(&["git status".to_string()], &[], "git status", false, false, false)
-                .unwrap();
+        let result = evaluate_permission_for_command::<ExecuteCmd>(
+            &["git status".to_string()],
+            &[],
+            "git status",
+            false,
+            false,
+            false,
+        )
+        .unwrap();
         assert!(matches!(result, PermissionEvalResult::Allow));
-        let result =
-            evaluate_permission_for_command(&["git*".to_string()], &[], "git status", false, false, false).unwrap();
+        let result = evaluate_permission_for_command::<ExecuteCmd>(
+            &["git*".to_string()],
+            &[],
+            "git status",
+            false,
+            false,
+            false,
+        )
+        .unwrap();
         assert!(matches!(result, PermissionEvalResult::Allow));
 
         // Test auto_allow_readonly
-        let result = evaluate_permission_for_command(&[], &[], "ls -la", false, true, false).unwrap();
+        let result = evaluate_permission_for_command::<ExecuteCmd>(&[], &[], "ls -la", false, true, false).unwrap();
         assert!(matches!(result, PermissionEvalResult::Allow));
 
         // Test deny_by_default
-        let result = evaluate_permission_for_command(&[], &[], "rm file.txt", false, false, true).unwrap();
+        let result =
+            evaluate_permission_for_command::<ExecuteCmd>(&[], &[], "rm file.txt", false, false, true).unwrap();
         assert!(matches!(result, PermissionEvalResult::Deny { .. }));
 
         // Test normal ask behavior
-        let result = evaluate_permission_for_command(&[], &[], "rm file.txt", false, false, false).unwrap();
+        let result =
+            evaluate_permission_for_command::<ExecuteCmd>(&[], &[], "rm file.txt", false, false, false).unwrap();
         assert!(matches!(result, PermissionEvalResult::Ask));
+    }
+
+    #[test]
+    fn test_evaluate_grep_permission() {
+        use crate::agent::agent_config::definitions::GrepSettings;
+        use crate::tools::grep::Grep;
+
+        let provider = TestProvider::new();
+        let allowed_tools = HashSet::new();
+
+        // Test grep with allow_read_only = true
+        let grep_tool = ToolKind::BuiltIn(BuiltInTool::Grep(Grep {
+            pattern: "test".to_string(),
+            path: Some("/some/path".to_string()),
+            include: None,
+            case_sensitive: None,
+            output_mode: None,
+            max_matches_per_file: None,
+            max_files: None,
+            max_total_lines: None,
+            max_depth: None,
+        }));
+
+        let mut settings = ToolsSettings {
+            grep: GrepSettings {
+                allowed_paths: vec![],
+                denied_paths: vec![],
+                allow_read_only: true,
+            },
+            ..Default::default()
+        };
+
+        let result = evaluate_tool_permission(&allowed_tools, &settings, &grep_tool, &provider);
+        assert!(matches!(result, Ok(PermissionEvalResult::Allow)));
+
+        // Test grep with denied path
+        settings.grep = GrepSettings {
+            allowed_paths: vec![],
+            denied_paths: vec!["/some".to_string()],
+            allow_read_only: false,
+        };
+
+        let result = evaluate_tool_permission(&allowed_tools, &settings, &grep_tool, &provider);
+        assert!(matches!(result, Ok(PermissionEvalResult::Deny { .. })));
+
+        // Test grep with allowed path
+        settings.grep = GrepSettings {
+            allowed_paths: vec!["/some".to_string()],
+            denied_paths: vec![],
+            allow_read_only: false,
+        };
+
+        let result = evaluate_tool_permission(&allowed_tools, &settings, &grep_tool, &provider);
+        assert!(matches!(result, Ok(PermissionEvalResult::Allow)));
+    }
+
+    #[test]
+    fn test_evaluate_glob_permission() {
+        use crate::agent::agent_config::definitions::GlobSettings;
+        use crate::tools::glob::Glob;
+
+        let provider = TestProvider::new();
+        let allowed_tools = HashSet::new();
+
+        // Test glob with allow_read_only = true
+        let glob_tool = ToolKind::BuiltIn(BuiltInTool::Glob(Glob {
+            pattern: "*.rs".to_string(),
+            path: Some("/some/path".to_string()),
+            limit: None,
+            max_depth: None,
+        }));
+
+        let mut settings = ToolsSettings {
+            glob: GlobSettings {
+                allowed_paths: vec![],
+                denied_paths: vec![],
+                allow_read_only: true,
+            },
+            ..Default::default()
+        };
+
+        let result = evaluate_tool_permission(&allowed_tools, &settings, &glob_tool, &provider);
+        assert!(matches!(result, Ok(PermissionEvalResult::Allow)));
+
+        // Test glob with denied path
+        settings.glob = GlobSettings {
+            allowed_paths: vec![],
+            denied_paths: vec!["/some".to_string()],
+            allow_read_only: false,
+        };
+
+        let result = evaluate_tool_permission(&allowed_tools, &settings, &glob_tool, &provider);
+        assert!(matches!(result, Ok(PermissionEvalResult::Deny { .. })));
+
+        // Test glob with allowed path
+        settings.glob = GlobSettings {
+            allowed_paths: vec!["/some".to_string()],
+            denied_paths: vec![],
+            allow_read_only: false,
+        };
+
+        let result = evaluate_tool_permission(&allowed_tools, &settings, &glob_tool, &provider);
+        assert!(matches!(result, Ok(PermissionEvalResult::Allow)));
     }
 }

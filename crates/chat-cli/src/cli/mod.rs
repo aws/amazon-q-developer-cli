@@ -182,8 +182,14 @@ impl RootSubcommand {
             Self::Version { changelog } => Cli::print_version(changelog),
             Self::Chat(args) => args.execute(os).await,
             Self::Mcp(args) => args.execute(os, &mut std::io::stderr()).await,
-            Self::Acp => crate::agent::acp::acp_agent::execute(os).await,
-            Self::AcpClient { agent } => crate::agent::acp::acp_client::execute(agent).await,
+            Self::Acp => {
+                // Os is defined in both crates. This is just a bandaid until we can deprecate v1
+                // for real
+                use chat_cli_v2::os::Os as NewOs;
+                let mut os = NewOs::new().await?;
+                chat_cli_v2::agent::acp::acp_agent::execute(&mut os).await
+            },
+            Self::AcpClient { agent } => chat_cli_v2::agent::acp::acp_client::execute(agent).await,
         }
     }
 }

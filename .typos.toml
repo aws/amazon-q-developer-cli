@@ -4,3 +4,4 @@
 mmaped = "mmaped"
 caf = "caf" # used in chat tools test
 braket = "braket" # AWS Braket quantum computing service
+nd = "nd" # ndjson (newline-delimited JSON)

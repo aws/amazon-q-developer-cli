@@ -1,6 +1,6 @@
 [workspace]
 resolver = "3"
-members = ["crates/amzn-codewhisperer-client", "crates/amzn-codewhisperer-streaming-client", "crates/amzn-consolas-client", "crates/amzn-qdeveloper-streaming-client", "crates/amzn-toolkit-telemetry-client", "crates/aws-toolkit-telemetry-definitions", "crates/chat-cli", "crates/code-agent-sdk", "crates/semantic-search-client", "crates/chat-cli-ui", "crates/agent"]
+members = ["crates/amzn-codewhisperer-client", "crates/amzn-codewhisperer-streaming-client", "crates/amzn-consolas-client", "crates/amzn-qdeveloper-streaming-client", "crates/amzn-toolkit-telemetry-client", "crates/aws-toolkit-telemetry-definitions", "crates/chat-cli", "crates/chat-cli-v2", "crates/code-agent-sdk", "crates/semantic-search-client", "crates/agent", "crates/mock-mcp-server", "crates/chat-cli-ui"]
 default-members = ["crates/chat-cli"]
 
 [workspace.package]
@@ -13,16 +13,18 @@ license = "MIT OR Apache-2.0"
 
 [workspace.dependencies]
 agent = { path = "crates/agent" }
-agent-client-protocol = "0.7.0"
+agent-client-protocol = { version = "0.7.0", features = ["unstable"] }
 amzn-codewhisperer-client = { path = "crates/amzn-codewhisperer-client" }
 amzn-codewhisperer-streaming-client = { path = "crates/amzn-codewhisperer-streaming-client" }
 amzn-consolas-client = { path = "crates/amzn-consolas-client" }
 amzn-qdeveloper-streaming-client = { path = "crates/amzn-qdeveloper-streaming-client" }
 amzn-toolkit-telemetry-client = { path = "crates/amzn-toolkit-telemetry-client" }
-anyhow = "1.0"
+chat-cli-ui = { path = "crates/chat-cli-ui" }
 anstream = "0.6.13"
+anyhow = "1.0"
 arboard = { version = "3.6.1", default-features = false, features = ["image-data"] }
 assert_cmd = "2.0"
+async-stream = "0.3"
 ast-grep-core = "0.40.2"
 ast-grep-language = { version = "0.40.2", default-features = false, features = [
     "tree-sitter-bash",
@@ -86,11 +88,14 @@ http = "1.2.0"
 http-body-util = "0.1.3"
 hyper = { version = "1.6.0", features = ["server"] }
 hyper-util = { version = "0.1.11", features = ["tokio"] }
+grep-regex = "0.1.14"
+grep-searcher = "0.1.16"
 ignore = "0.4.23"
 image = "0.25"
 indicatif = "0.17.11"
 indoc = "2.0.6"
 insta = "1.43.1"
+jsonschema = "0.30.0"
 libc = "0.2.172"
 lsp-types = "0.95.0"
 mimalloc = "0.1.46"
@@ -116,17 +121,21 @@ rayon = "1.10.0"
 regex = "1.7.0"
 reqwest = { version = "0.12.14", default-features = false, features = ["http2", "charset", "rustls-tls", "rustls-tls-native-roots", "gzip", "json", "socks", "cookies", "stream"] }
 ring = "0.17.14"
+rmcp = { version = "0.8.0", features = ["client", "transport-sse-client-reqwest", "reqwest", "transport-streamable-http-client-reqwest", "transport-child-process", "tower", "auth"] }
 rusqlite = { version = "0.32.1", features = ["bundled", "serde_json"] }
 rustls = "0.23.23"
 rustls-native-certs = "0.8.1"
 rustls-pemfile = "2.1.0"
 rustyline = { version = "15.0.0", features = ["custom-bindings", "derive", "with-file-history"], default-features = false }
 sacp = "10.0.0"
+agent-client-protocol-schema = { version = "0.10.5", features = ["unstable_session_model"] }
+schemars = "1.0.4"
 security-framework = "3.2.0"
 semantic_search_client = { path = "crates/semantic-search-client" }
 semver = { version = "1.0.26", features = ["serde"] }
 serde = { version = "1.0.219", features = ["derive", "rc"] }
 serde_json = { version = "1.0.140", features = ["preserve_order"] }
+serde_yaml = "0.9"
 sha2 = "0.10.9"
 shell-color = "1.0.0"
 shell-words = "1.1.0"
@@ -154,6 +163,7 @@ tracing-appender = "0.2.2"
 tracing-subscriber = { version = "0.3.19", features = ["env-filter", "fmt", "parking_lot", "time"] }
 tracing-test = "0.2.4"
 typed-path = "0.11.0"
+typeshare = "1.0.4"
 unicode-width = "0.2.0"
 url = "2.5.4"
 uuid = { version = "1.15.1", features = ["v4", "serde"] }
@@ -164,12 +174,7 @@ whoami = "1.6.0"
 windows = { version = "0.61.1", features = ["Foundation", "Win32_System_ProcessStatus", "Win32_System_Kernel", "Win32_System_Threading", "Wdk_System_Threading"] }
 winnow = "=0.6.2"
 winreg = "0.55.0"
-schemars = "1.0.4"
-jsonschema = "0.30.0"
 zip = "2.2.0"
-rmcp = { version = "0.8.0", features = ["client", "transport-sse-client-reqwest", "reqwest", "transport-streamable-http-client-reqwest", "transport-child-process", "tower", "auth"] }
-chat-cli-ui = { path = "crates/chat-cli-ui" }
-serde_yaml = "0.9"
 
 [workspace.lints.rust]
 future_incompatible = "warn"

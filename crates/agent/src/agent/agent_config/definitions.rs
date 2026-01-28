@@ -34,6 +34,12 @@ impl AgentConfig {
         }
     }
 
+    pub fn description(&self) -> Option<&str> {
+        match self {
+            AgentConfig::V2025_08_22(a) => a.description.as_deref(),
+        }
+    }
+
     pub fn system_prompt(&self) -> Option<&str> {
         match self {
             AgentConfig::V2025_08_22(a) => a.system_prompt.as_deref(),
@@ -70,7 +76,6 @@ impl AgentConfig {
         }
     }
 
-    // pub fn resources(&self) -> &[impl AsRef<str>] {
     pub fn resources(&self) -> &[impl AsRef<str>] {
         match self {
             AgentConfig::V2025_08_22(a) => a.resources.as_slice(),
@@ -86,6 +91,12 @@ impl AgentConfig {
     pub fn use_legacy_mcp_json(&self) -> bool {
         match self {
             AgentConfig::V2025_08_22(a) => a.use_legacy_mcp_json,
+        }
+    }
+
+    pub fn model(&self) -> Option<&str> {
+        match self {
+            AgentConfig::V2025_08_22(a) => a.model.as_deref(),
         }
     }
 
@@ -107,6 +118,46 @@ impl AgentConfig {
                     let mut new_prompt = format!("{incoming}\n\n{prompt}");
                     std::mem::swap(prompt, &mut new_prompt);
                 }
+            },
+        }
+    }
+
+    /// Adds MCP servers to the agent config.
+    ///
+    /// - If a server name conflicts with an existing one, it is overridden
+    /// - Adds `@server_name/*` to the tools list to include all tools from the server
+    ///
+    /// Returns `Some` with the list of overridden server names, or `None` if no conflicts.
+    pub fn add_mcp_servers(
+        &mut self,
+        servers: impl IntoIterator<Item = (String, McpServerConfig)>,
+    ) -> Option<Vec<String>> {
+        let mut overridden = Vec::new();
+
+        match self {
+            AgentConfig::V2025_08_22(c) => {
+                for (name, config) in servers {
+                    if c.mcp_servers.contains_key(&name) {
+                        overridden.push(name.clone());
+                    }
+                    c.mcp_servers.insert(name.clone(), config);
+
+                    let tool_pattern = format!("@{}/*", name);
+                    if !c.tools.contains(&tool_pattern) {
+                        c.tools.push(tool_pattern);
+                    }
+                }
+            },
+        }
+
+        if overridden.is_empty() { None } else { Some(overridden) }
+    }
+
+    /// Adds a hook to the agent config
+    pub fn add_hook(&mut self, trigger: HookTrigger, config: HookConfig) {
+        match self {
+            AgentConfig::V2025_08_22(c) => {
+                c.hooks.entry(trigger).or_default().push(config);
             },
         }
     }
@@ -179,6 +230,10 @@ pub struct AgentConfigV2025_08_22 {
     /// List of tools the agent is explicitly allowed to use
     #[serde(default)]
     pub allowed_tools: HashSet<String>,
+
+    /// The model ID to use for this agent. If not specified, uses the default model.
+    #[serde(default)]
+    pub model: Option<String>,
 }
 
 impl Default for AgentConfigV2025_08_22 {
@@ -208,6 +263,7 @@ impl Default for AgentConfigV2025_08_22 {
             .collect::<Vec<_>>(),
 
             allowed_tools: HashSet::from([BuiltInToolName::FsRead.to_string()]),
+            model: None,
         }
     }
 }
@@ -221,6 +277,12 @@ pub struct ToolsSettings {
     pub fs_write: FsWriteSettings,
     #[serde(default, alias = "execute_bash", alias = "executeCmd", alias = "execute_cmd")]
     pub shell: ExecuteCmdSettings,
+    #[serde(default)]
+    pub grep: GrepSettings,
+    #[serde(default)]
+    pub glob: GlobSettings,
+    #[serde(default, alias = "aws")]
+    pub use_aws: UseAwsSettings,
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize, JsonSchema)]
@@ -252,6 +314,53 @@ pub struct ExecuteCmdSettings {
     pub deny_by_default: bool,
     #[serde(default)]
     pub auto_allow_readonly: bool,
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct GrepSettings {
+    #[serde(default)]
+    pub allowed_paths: Vec<String>,
+    #[serde(default)]
+    pub denied_paths: Vec<String>,
+    #[serde(default)]
+    pub allow_read_only: bool,
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct GlobSettings {
+    #[serde(default)]
+    pub allowed_paths: Vec<String>,
+    #[serde(default)]
+    pub denied_paths: Vec<String>,
+    #[serde(default)]
+    pub allow_read_only: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct UseAwsSettings {
+    #[serde(default)]
+    pub allowed_services: Vec<String>,
+    #[serde(default)]
+    pub denied_services: Vec<String>,
+    #[serde(default = "default_true")]
+    pub auto_allow_readonly: bool,
+}
+
+impl Default for UseAwsSettings {
+    fn default() -> Self {
+        Self {
+            allowed_services: Vec::new(),
+            denied_services: Vec::new(),
+            auto_allow_readonly: true,
+        }
+    }
+}
+
+fn default_true() -> bool {
+    true
 }
 
 /// This mirrors claude's config set up.
@@ -411,6 +520,17 @@ pub struct BaseHookConfig {
     /// Currently used for matching tool names for PreToolUse and PostToolUse hooks
     #[serde(skip_serializing_if = "Option::is_none")]
     pub matcher: Option<String>,
+}
+
+impl Default for BaseHookConfig {
+    fn default() -> Self {
+        Self {
+            timeout_ms: hook_default_timeout_ms(),
+            max_output_size: hook_default_max_output_size(),
+            cache_ttl_seconds: hook_default_cache_ttl_seconds(),
+            matcher: None,
+        }
+    }
 }
 
 fn hook_default_timeout_ms() -> u64 {
@@ -628,6 +748,54 @@ mod tests {
     }
 
     #[test]
+    fn test_add_mcp_servers() {
+        let mut config = AgentConfig::default();
+        let server = McpServerConfig::Remote(RemoteMcpServerConfig {
+            url: "https://example.com/mcp".to_string(),
+            headers: HashMap::new(),
+            oauth_scopes: Vec::new(),
+            timeout_ms: 120_000,
+            oauth: None,
+            disabled: false,
+        });
+
+        let overridden = config.add_mcp_servers(vec![("test-server".to_string(), server)]);
+        assert!(overridden.is_none());
+        assert!(config.mcp_servers().contains_key("test-server"));
+        assert!(config.tools().contains(&"@test-server/*".to_string()));
+    }
+
+    #[test]
+    fn test_add_mcp_servers_override() {
+        let mut config = AgentConfig::default();
+        let server1 = McpServerConfig::Remote(RemoteMcpServerConfig {
+            url: "https://old.com/mcp".to_string(),
+            headers: HashMap::new(),
+            oauth_scopes: Vec::new(),
+            timeout_ms: 120_000,
+            oauth: None,
+            disabled: false,
+        });
+        config.add_mcp_servers(vec![("test-server".to_string(), server1)]);
+
+        let server2 = McpServerConfig::Remote(RemoteMcpServerConfig {
+            url: "https://new.com/mcp".to_string(),
+            headers: HashMap::new(),
+            oauth_scopes: Vec::new(),
+            timeout_ms: 120_000,
+            oauth: None,
+            disabled: false,
+        });
+        let overridden = config.add_mcp_servers(vec![("test-server".to_string(), server2)]);
+
+        assert_eq!(overridden, Some(vec!["test-server".to_string()]));
+        match config.mcp_servers().get("test-server").unwrap() {
+            McpServerConfig::Remote(r) => assert_eq!(r.url, "https://new.com/mcp"),
+            _ => panic!("Expected Remote"),
+        }
+    }
+
+    #[test]
     fn test_tools_settings_deser() {
         let agent = serde_json::json!({
             "name": "example",
@@ -707,5 +875,31 @@ mod tests {
         assert!(config.tool_settings().is_some());
         let tools_settings = config.tool_settings().unwrap();
         assert_eq!(tools_settings.shell.allowed_commands, vec!["jj *"]);
+    }
+
+    #[test]
+    fn test_grep_glob_settings_deser() {
+        let agent = serde_json::json!({
+            "name": "example",
+            "toolsSettings": {
+                "grep": {
+                    "allowedPaths": ["/home/user"],
+                    "deniedPaths": ["/secret"],
+                    "allowReadOnly": true
+                },
+                "glob": {
+                    "allowedPaths": ["/projects"],
+                    "allowReadOnly": false
+                }
+            }
+        });
+
+        let config: AgentConfig = serde_json::from_value(agent).unwrap();
+        let settings = config.tool_settings().unwrap();
+        assert_eq!(settings.grep.allowed_paths, vec!["/home/user"]);
+        assert_eq!(settings.grep.denied_paths, vec!["/secret"]);
+        assert!(settings.grep.allow_read_only);
+        assert_eq!(settings.glob.allowed_paths, vec!["/projects"]);
+        assert!(!settings.glob.allow_read_only);
     }
 }

@@ -1,0 +1,2 @@
+{"type": "tool", "name": "greet", "description": "Greets someone", "input_schema": {"type": "object", "properties": {"name": {"type": "string"}}}}
+{"type": "response", "tool": "greet", "response": {"greeting": "Hello!"}}

@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::path::PathBuf;
 
 use serde::{
     Deserialize,
@@ -6,6 +7,7 @@ use serde::{
 };
 
 use super::ExecutionState;
+use super::agent_config::definitions::AgentConfig;
 use super::agent_loop::protocol::{
     AgentLoopEvent,
     AgentLoopResponseError,
@@ -15,8 +17,12 @@ use super::agent_loop::protocol::{
 };
 use super::agent_loop::types::{
     ImageBlock,
+    ToolResultBlock,
+    ToolResultContentBlock,
+    ToolResultStatus,
     ToolUseBlock,
 };
+use super::event_log::LogEntry;
 use super::mcp::types::Prompt;
 use super::mcp::{
     McpManagerError,
@@ -24,6 +30,7 @@ use super::mcp::{
 };
 use super::task_executor::TaskExecutorEvent;
 use super::tools::summary::Summary;
+use super::tools::use_subagent::SubagentRequest;
 use super::tools::{
     Tool,
     ToolExecutionError,
@@ -34,7 +41,7 @@ use super::types::AgentSnapshot;
 /// Represents a message from the agent to the client
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[allow(clippy::large_enum_variant)]
-#[serde(tag = "kind", content = "content")]
+#[serde(tag = "kind", content = "data")]
 #[serde(rename_all = "camelCase")]
 pub enum AgentEvent {
     /// Update events to be surfaced prior to an agent being fully initialized
@@ -86,6 +93,32 @@ pub enum AgentEvent {
 
     /// Summary of a subagent's execution
     SubagentSummary(Summary),
+
+    /// A log entry was appended to the conversation event log
+    LogEntryAppended {
+        /// The log entry that was appended
+        entry: LogEntry,
+        /// Index of the entry in the event log
+        index: usize,
+    },
+
+    /// Request to spawn subagent(s) - handled by the consumer of agent handle
+    SpawnSubagentRequest(SubagentRequest),
+
+    /// Compaction-related events
+    Compaction(CompactionEvent),
+}
+
+/// Events related to conversation compaction
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "camelCase")]
+pub enum CompactionEvent {
+    /// Compaction has started
+    Started,
+    /// Compaction completed successfully
+    Completed,
+    /// Compaction failed
+    Failed { error: String },
 }
 
 impl From<TaskExecutorEvent> for AgentEvent {
@@ -96,7 +129,7 @@ impl From<TaskExecutorEvent> for AgentEvent {
 
 impl From<AgentLoopEvent> for AgentEvent {
     fn from(value: AgentLoopEvent) -> Self {
-        Self::Internal(InternalEvent::AgentLoop(value))
+        Self::Internal(InternalEvent::AgentLoop(Box::new(value)))
     }
 }
 
@@ -152,7 +185,7 @@ pub enum AgentStopReason {
 }
 
 /// Represents a message from the client to the agent
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone)]
 pub enum AgentRequest {
     /// Send a new prompt
     SendPrompt(SendPromptArgs),
@@ -165,6 +198,10 @@ pub enum AgentRequest {
     CreateSnapshot,
     GetMcpPrompts,
     Terminate,
+    /// Swap to a different agent configuration
+    SwapAgent(Box<SwapAgentArgs>),
+    /// Manually trigger conversation compaction
+    CompactConversation,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -226,6 +263,38 @@ pub enum ToolCallResult {
     Cancelled,
 }
 
+impl ToolCallResult {
+    pub fn to_tool_result_block(&self, tool_use_id: &str) -> ToolResultBlock {
+        match self {
+            ToolCallResult::Success(output) => ToolResultBlock {
+                tool_use_id: tool_use_id.to_string(),
+                content: output
+                    .items
+                    .iter()
+                    .map(|item| match item {
+                        super::tools::ToolExecutionOutputItem::Text(t) => ToolResultContentBlock::Text(t.clone()),
+                        super::tools::ToolExecutionOutputItem::Json(v) => ToolResultContentBlock::Json(v.clone()),
+                        super::tools::ToolExecutionOutputItem::Image(img) => ToolResultContentBlock::Image(img.clone()),
+                    })
+                    .collect(),
+                status: ToolResultStatus::Success,
+            },
+            ToolCallResult::Error(err) => ToolResultBlock {
+                tool_use_id: tool_use_id.to_string(),
+                content: vec![ToolResultContentBlock::Text(err.to_string())],
+                status: ToolResultStatus::Error,
+            },
+            ToolCallResult::Cancelled => ToolResultBlock {
+                tool_use_id: tool_use_id.to_string(),
+                content: vec![ToolResultContentBlock::Text(
+                    "Tool use was cancelled by the user".to_string(),
+                )],
+                status: ToolResultStatus::Error,
+            },
+        }
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SendApprovalResultArgs {
@@ -260,7 +329,7 @@ pub enum PermissionEvalResult {
 pub enum ContentChunk {
     Text(String),
     Image(ImageBlock),
-    ResourceLink(ResourceLink),
+    ResourceLink(String),
 }
 
 impl From<String> for ContentChunk {
@@ -274,14 +343,17 @@ impl From<ImageBlock> for ContentChunk {
         Self::Image(value)
     }
 }
-impl From<ResourceLink> for ContentChunk {
-    fn from(value: ResourceLink) -> Self {
-        Self::ResourceLink(value)
-    }
-}
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ResourceLink {}
+/// Arguments for swapping to a different agent configuration
+#[derive(Debug, Clone)]
+pub struct SwapAgentArgs {
+    /// The new agent configuration to use
+    pub agent_config: AgentConfig,
+    /// Path to workspace-level mcp.json
+    pub local_mcp_path: Option<PathBuf>,
+    /// Path to global mcp.json
+    pub global_mcp_path: Option<PathBuf>,
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[allow(clippy::large_enum_variant)]
@@ -290,6 +362,7 @@ pub enum AgentResponse {
     Snapshot(AgentSnapshot),
     McpPrompts(HashMap<String, Vec<Prompt>>),
     TerminateAcknowledged,
+    SwapComplete,
     Unknown,
 }
 
@@ -323,7 +396,7 @@ pub enum InternalEvent {
     /// - Text content
     /// - Tool uses
     /// - Metadata about a response stream, and about a complete user turn
-    AgentLoop(AgentLoopEvent),
+    AgentLoop(Box<AgentLoopEvent>),
     /// The exact request sent to the backend
     RequestSent(SendRequestArgs),
     /// The agent has changed state.

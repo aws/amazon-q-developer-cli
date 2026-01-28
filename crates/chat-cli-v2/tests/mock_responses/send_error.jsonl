@@ -1,0 +1,2 @@
+// Mock response that returns a send error (fails on initial request)
+{"kind":"sendError","data":{"kind":"Throttling","request_id":null,"status_code":429}}

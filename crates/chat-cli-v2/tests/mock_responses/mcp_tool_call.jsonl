@@ -1,0 +1,6 @@
+// Mock response that triggers an MCP tool call to the "echo" tool
+{"kind":"event","data":{"kind":"ToolUseEvent","data":{"tool_use_id":"tooluse_mcp_test_001","name":"echo","input":null,"stop":null}}}
+{"kind":"event","data":{"kind":"ToolUseEvent","data":{"tool_use_id":"tooluse_mcp_test_001","name":"echo","input":"{\"message\": \"hello from mcp\"}","stop":null}}}
+{"kind":"event","data":{"kind":"ToolUseEvent","data":{"tool_use_id":"tooluse_mcp_test_001","name":"echo","input":null,"stop":true}}}
+
+{"kind":"event","data":{"kind":"AssistantResponseEvent","data":{"content":"The MCP tool returned the echoed message."}}}

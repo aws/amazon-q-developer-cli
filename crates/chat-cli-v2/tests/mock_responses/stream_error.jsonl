@@ -1,0 +1,3 @@
+// Mock response that returns a throttling error mid-stream
+{"kind":"event","data":{"kind":"AssistantResponseEvent","data":{"content":"Starting to"}}}
+{"kind":"streamError","data":{"kind":"Throttling","request_id":null,"status_code":429}}

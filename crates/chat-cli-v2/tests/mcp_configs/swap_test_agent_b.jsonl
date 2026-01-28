@@ -1,0 +1,4 @@
+// MCP config for agent swap test - Agent B
+// Tool name is unique to this test to avoid conflicts with other tests
+{"type": "tool", "name": "swap_test_tool_b", "description": "Tool B for swap test", "input_schema": {"type": "object", "properties": {"input": {"type": "string"}}}}
+{"type": "response", "tool": "swap_test_tool_b", "response": {"result": "response_from_agent_b"}}

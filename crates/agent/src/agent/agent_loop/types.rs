@@ -12,10 +12,14 @@ use serde::{
 };
 use serde_json::Map;
 use tracing::error;
+use typeshare::typeshare;
 use uuid::Uuid;
 
+use crate::agent::util::truncate_safe_in_place;
+
+#[typeshare]
 #[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[serde(tag = "kind", content = "data", rename_all = "camelCase")]
 pub enum StreamEvent {
     MessageStart(MessageStartEvent),
     MessageStop(MessageStopEvent),
@@ -25,6 +29,7 @@ pub enum StreamEvent {
     Metadata(MetadataEvent),
 }
 
+#[typeshare]
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct StreamError {
     /// The request id returned by the model provider, if available
@@ -100,8 +105,9 @@ impl std::error::Error for StreamError {
     }
 }
 
+#[typeshare]
 #[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[serde(tag = "kind", content = "data", rename_all = "camelCase")]
 pub enum StreamErrorKind {
     /// The request failed due to the context window overflowing.
     ///
@@ -157,6 +163,7 @@ pub trait StreamErrorSource: std::any::Any + std::error::Error + Send + Sync {
     fn as_any(&self) -> &dyn std::any::Any;
 }
 
+#[typeshare]
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Message {
@@ -304,10 +311,35 @@ impl Message {
         }
         if results.is_empty() { None } else { Some(results) }
     }
+
+    /// Returns the approximate byte length of this message's content.
+    pub fn byte_len(&self) -> usize {
+        self.content.iter().map(|c| c.byte_len()).sum()
+    }
+
+    /// Truncates content in this message so total size is under max_length.
+    /// Budget is distributed equally among truncatable items (excludes images).
+    pub fn truncate(&mut self, max_length: usize, suffix: Option<&str>) {
+        let total_len: usize = self.content.iter().map(|c| c.byte_len()).sum();
+        if total_len <= max_length {
+            return;
+        }
+
+        let truncatable_count: usize = self.content.iter().map(|c| c.truncatable_count()).sum();
+        if truncatable_count == 0 {
+            return;
+        }
+
+        let per_item_budget = max_length / truncatable_count;
+        for c in &mut self.content {
+            c.truncate(per_item_budget, suffix);
+        }
+    }
 }
 
+#[typeshare]
 #[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", tag = "kind", content = "data")]
 pub enum ContentBlock {
     Text(String),
     ToolUse(ToolUseBlock),
@@ -336,6 +368,57 @@ impl ContentBlock {
             _ => None,
         }
     }
+
+    pub fn byte_len(&self) -> usize {
+        match self {
+            ContentBlock::Text(t) => t.len(),
+            ContentBlock::ToolUse(tu) => tu.input.to_string().len(),
+            ContentBlock::ToolResult(tr) => tr
+                .content
+                .iter()
+                .map(|c| match c {
+                    ToolResultContentBlock::Text(t) => t.len(),
+                    ToolResultContentBlock::Json(v) => v.to_string().len(),
+                    ToolResultContentBlock::Image(img) => img.byte_len(),
+                })
+                .sum(),
+            ContentBlock::Image(img) => img.byte_len(),
+        }
+    }
+
+    pub fn truncatable_count(&self) -> usize {
+        match self {
+            ContentBlock::Text(_) => 1,
+            ContentBlock::ToolUse(_) => 0,
+            ContentBlock::ToolResult(tr) => tr
+                .content
+                .iter()
+                .filter(|c| !matches!(c, ToolResultContentBlock::Image(_)))
+                .count(),
+            ContentBlock::Image(_) => 0,
+        }
+    }
+
+    pub fn truncate(&mut self, max_length: usize, suffix: Option<&str>) {
+        match self {
+            ContentBlock::Text(t) => truncate_safe_in_place(t, max_length, suffix),
+            ContentBlock::ToolUse(_) => (),
+            ContentBlock::ToolResult(tr) => {
+                for c in &mut tr.content {
+                    match c {
+                        ToolResultContentBlock::Text(t) => truncate_safe_in_place(t, max_length, suffix),
+                        ToolResultContentBlock::Json(v) => {
+                            let mut s = v.to_string();
+                            truncate_safe_in_place(&mut s, max_length, suffix);
+                            *c = ToolResultContentBlock::Text(s);
+                        },
+                        ToolResultContentBlock::Image(_) => (),
+                    }
+                }
+            },
+            ContentBlock::Image(_) => (),
+        }
+    }
 }
 
 impl From<String> for ContentBlock {
@@ -344,6 +427,7 @@ impl From<String> for ContentBlock {
     }
 }
 
+#[typeshare]
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub struct ImageBlock {
@@ -351,6 +435,15 @@ pub struct ImageBlock {
     pub source: ImageSource,
 }
 
+impl ImageBlock {
+    pub fn byte_len(&self) -> usize {
+        match &self.source {
+            ImageSource::Bytes(bytes) => bytes.len(),
+        }
+    }
+}
+
+#[typeshare]
 #[derive(
     Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, strum::EnumString, strum::Display, strum::EnumIter,
 )]
@@ -365,8 +458,9 @@ pub enum ImageFormat {
     Webp,
 }
 
+#[typeshare]
 #[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", tag = "kind", content = "data")]
 pub enum ImageSource {
     Bytes(#[serde(with = "serde_bytes")] Vec<u8>),
 }
@@ -379,6 +473,7 @@ pub struct ToolSpec {
     pub input_schema: Map<String, serde_json::Value>,
 }
 
+#[typeshare]
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ToolUseBlock {
@@ -390,6 +485,7 @@ pub struct ToolUseBlock {
     pub input: serde_json::Value,
 }
 
+#[typeshare]
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ToolResultBlock {
@@ -398,8 +494,9 @@ pub struct ToolResultBlock {
     pub status: ToolResultStatus,
 }
 
+#[typeshare]
 #[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", tag = "kind", content = "data")]
 pub enum ToolResultContentBlock {
     Text(String),
     Json(serde_json::Value),
@@ -422,6 +519,7 @@ impl ToolResultContentBlock {
     }
 }
 
+#[typeshare]
 #[derive(Debug, Copy, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum ToolResultStatus {
@@ -429,18 +527,21 @@ pub enum ToolResultStatus {
     Success,
 }
 
+#[typeshare]
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct MessageStartEvent {
     pub role: Role,
 }
 
+#[typeshare]
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct MessageStopEvent {
     pub stop_reason: StopReason,
 }
 
+#[typeshare]
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, strum::EnumString, strum::Display)]
 #[serde(rename_all = "camelCase")]
 #[strum(serialize_all = "camelCase")]
@@ -449,6 +550,7 @@ pub enum Role {
     Assistant,
 }
 
+#[typeshare]
 #[derive(Debug, Clone, Serialize, Deserialize, strum::EnumString, strum::Display)]
 #[serde(rename_all = "camelCase")]
 #[strum(serialize_all = "camelCase")]
@@ -458,6 +560,7 @@ pub enum StopReason {
     MaxTokens,
 }
 
+#[typeshare]
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ContentBlockStartEvent {
@@ -467,12 +570,14 @@ pub struct ContentBlockStartEvent {
     pub content_block_index: Option<i32>,
 }
 
+#[typeshare]
 #[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[serde(tag = "kind", content = "data", rename_all = "camelCase")]
 pub enum ContentBlockStart {
     ToolUse(ToolUseBlockStart),
 }
 
+#[typeshare]
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ToolUseBlockStart {
@@ -482,6 +587,7 @@ pub struct ToolUseBlockStart {
     pub name: String,
 }
 
+#[typeshare]
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ContentBlockDeltaEvent {
@@ -491,8 +597,9 @@ pub struct ContentBlockDeltaEvent {
     pub content_block_index: Option<i32>,
 }
 
+#[typeshare]
 #[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[serde(tag = "kind", content = "data", rename_all = "camelCase")]
 pub enum ContentBlockDelta {
     Text(String),
     ToolUse(ToolUseBlockDelta),
@@ -501,12 +608,14 @@ pub enum ContentBlockDelta {
     Document,
 }
 
+#[typeshare]
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ToolUseBlockDelta {
     pub input: String,
 }
 
+#[typeshare]
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ContentBlockStopEvent {
@@ -515,6 +624,7 @@ pub struct ContentBlockStopEvent {
     pub content_block_index: Option<i32>,
 }
 
+#[typeshare]
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct MetadataEvent {
@@ -523,6 +633,7 @@ pub struct MetadataEvent {
     pub service: Option<MetadataService>,
 }
 
+#[typeshare]
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct MetadataMetrics {
@@ -533,15 +644,18 @@ pub struct MetadataMetrics {
     pub response_stream_len: u32,
 }
 
+#[typeshare]
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct MetadataUsage {
-    pub input_tokens: Option<u64>,
-    pub output_tokens: Option<u64>,
-    pub cache_read_input_tokens: Option<u64>,
-    pub cache_write_input_tokens: Option<u64>,
+    pub input_tokens: Option<u32>,
+    pub output_tokens: Option<u32>,
+    pub cache_read_input_tokens: Option<u32>,
+    pub cache_write_input_tokens: Option<u32>,
+    pub context_usage_percentage: Option<f32>,
 }
 
+#[typeshare]
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct MetadataService {
@@ -577,5 +691,92 @@ mod tests {
             "expected 'jpg' to parse to {}",
             ImageFormat::Jpeg
         );
+    }
+
+    #[test]
+    fn test_message_byte_len() {
+        let msg = Message::new(
+            Role::User,
+            vec![
+                ContentBlock::Text("hello".to_string()),
+                ContentBlock::Text("world".to_string()),
+            ],
+            None,
+        );
+        assert_eq!(msg.byte_len(), 10);
+    }
+
+    #[test]
+    fn test_message_truncate_under_limit() {
+        let mut msg = Message::new(Role::User, vec![ContentBlock::Text("hello".to_string())], None);
+        msg.truncate(100, None);
+        assert_eq!(msg.text(), "hello");
+    }
+
+    #[test]
+    fn test_message_truncate_single_text() {
+        let mut msg = Message::new(
+            Role::User,
+            vec![ContentBlock::Text("hello world this is a long message".to_string())],
+            None,
+        );
+        msg.truncate(20, Some("..."));
+        assert!(msg.byte_len() <= 20);
+        assert!(msg.text().ends_with("..."));
+    }
+
+    #[test]
+    fn test_message_truncate_multiple_text_blocks() {
+        let mut msg = Message::new(
+            Role::User,
+            vec![
+                ContentBlock::Text("aaaaaaaaaa".to_string()), // 10 bytes
+                ContentBlock::Text("bbbbbbbbbb".to_string()), // 10 bytes
+            ],
+            None,
+        );
+        // Total 20 bytes, truncate to 16 -> 8 per item
+        msg.truncate(16, Some(".."));
+        assert!(msg.byte_len() <= 16);
+    }
+
+    #[test]
+    fn test_message_truncate_with_tool_result() {
+        let mut msg = Message::new(
+            Role::User,
+            vec![ContentBlock::ToolResult(ToolResultBlock {
+                tool_use_id: "test".to_string(),
+                content: vec![
+                    ToolResultContentBlock::Text("long text content here".to_string()),
+                    ToolResultContentBlock::Json(serde_json::json!({"key": "value"})),
+                ],
+                status: ToolResultStatus::Success,
+            })],
+            None,
+        );
+        msg.truncate(20, Some(".."));
+        assert!(msg.byte_len() <= 20);
+    }
+
+    #[test]
+    fn test_message_truncate_skips_images() {
+        let mut msg = Message::new(
+            Role::User,
+            vec![
+                ContentBlock::Text("hello".to_string()),
+                ContentBlock::Image(ImageBlock {
+                    format: ImageFormat::Png,
+                    source: ImageSource::Bytes(vec![0; 100]),
+                }),
+            ],
+            None,
+        );
+        // Image has 100 bytes, text has 5. Only text is truncatable.
+        // truncatable_count = 1, so budget = 10 / 1 = 10
+        msg.truncate(10, None);
+        // Text should remain unchanged since 5 <= 10
+        assert_eq!(msg.content[0].text(), Some("hello"));
+        // Image should be unchanged
+        assert_eq!(msg.content[1].byte_len(), 100);
     }
 }

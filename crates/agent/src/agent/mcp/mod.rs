@@ -152,6 +152,7 @@ use crate::agent::util::request_channel::{
     respond,
 };
 
+/// Handle for communicating with an [`McpManager`] actor.
 #[derive(Debug)]
 pub struct McpManagerHandle {
     /// Sender for sending requests to the tool manager task
@@ -263,6 +264,9 @@ impl McpManagerHandle {
     }
 }
 
+/// Actor that manages the lifecycle of multiple MCP servers.
+///
+/// See the module-level documentation for architecture details.
 #[derive(Debug)]
 pub struct McpManager {
     request_tx: RequestSender<McpManagerRequest, McpManagerResponse, McpManagerError>,

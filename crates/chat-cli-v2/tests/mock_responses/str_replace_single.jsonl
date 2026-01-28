@@ -1,0 +1,7 @@
+// Prompt: replace "old_value" with "new_value" in /tmp/str_replace_test.txt
+
+{"kind":"event","data":{"kind":"ToolUseEvent","data":{"tool_use_id":"tooluse_112n-QpLREKGvkQNomvCNw","name":"write","input":null,"stop":null}}}
+{"kind":"event","data":{"kind":"ToolUseEvent","data":{"tool_use_id":"tooluse_112n-QpLREKGvkQNomvCNw","name":"write","input":"{\"command\": \"strReplace\", \"path\": \"/tmp/str_replace_test.txt\", \"oldStr\": \"old_value\", \"newStr\": \"new_value\"}","stop":null}}}
+{"kind":"event","data":{"kind":"ToolUseEvent","data":{"tool_use_id":"tooluse_112n-QpLREKGvkQNomvCNw","name":"write","input":null,"stop":true}}}
+
+{"kind":"event","data":{"kind":"AssistantResponseEvent","data":{"content":"Done. Replaced \"old_value\" with \"new_value\" in `/tmp/str_replace_test.txt`."}}}
