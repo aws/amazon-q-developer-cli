@@ -23,7 +23,7 @@
     "knowledge"
   ],
   "useLegacyMcpJson": true,
-  "keyboardShortcut": "ctrl+w",
+  "keyboardShortcut": "ctrl+1",
   "welcomeMessage": "Hi! I'm the Kiro-Dev agent. What would you like to build today?",
   "toolsSettings": {
     "execute_bash": {
