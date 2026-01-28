@@ -25,7 +25,7 @@ on:
         type: string
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   prepare_message:
@@ -54,32 +54,25 @@ jobs:
           echo "$COMMITS" >> $GITHUB_OUTPUT
           echo "EOF" >> $GITHUB_OUTPUT
 
-      - name: Extract User-Facing Messages
-        id: user-facing
+      - name: Generate Release Notes from Fragments
+        id: release-notes
         run: |
-          CURRENT_TAG=$(git tag -l 'chat-v*-nightly.*' --sort=-v:refname --merged origin/nightly | head -1)
-          LAST_TAG=$(git tag -l 'chat-v*-nightly.*' --sort=-v:refname --merged origin/nightly | head -2 | tail -1)
-          if [[ -z "$LAST_TAG" ]]; then
-            RANGE="origin/nightly~10..origin/nightly"
-          else
-            RANGE="${LAST_TAG}..${CURRENT_TAG}"
-          fi
-          
-          USER_FACING=""
-          while IFS= read -r commit; do
-            MSG=$(git log -1 --format=%B "$commit")
-            if echo "$MSG" | grep -q "^User-facing:"; then
-              TITLE=$(git log -1 --format=%s "$commit")
-              UF_MSG=$(echo "$MSG" | sed -n '/^User-facing:/,/^$/p' | sed 's/^User-facing: *//' | tr '\n' ' ' | sed 's/  */ /g')
-              if [[ -n "$UF_MSG" ]]; then
-                USER_FACING="${USER_FACING}• ${TITLE}: ${UF_MSG}"$'\n'
-              fi
-            fi
-          done < <(git rev-list "$RANGE" | grep -v "$(git log --format=%H --grep='Sync: Merge main into nightly' "$RANGE")")
-          
-          echo "messages<<EOF" >> $GITHUB_OUTPUT
-          echo "$USER_FACING" >> $GITHUB_OUTPUT
+          NOTES=$(python3 .github/scripts/nightly-release-notes.py generate)
+          echo "notes<<EOF" >> $GITHUB_OUTPUT
+          echo "$NOTES" >> $GITHUB_OUTPUT
           echo "EOF" >> $GITHUB_OUTPUT
+
+      - name: Mark Fragments as Included in Nightly
+        run: |
+          python3 .github/scripts/nightly-release-notes.py mark "${{ inputs.version }}"
+          
+          if [ -n "$(git status --porcelain .changes/nightly-released)" ]; then
+            git config user.name "GitHub Actions Bot"
+            git config user.email "github-actions[bot]@users.noreply.github.com"
+            git add .changes/nightly-released
+            git commit -m "chore: Mark fragments as included in nightly ${{ inputs.version }}"
+            git push origin ${{ inputs.branch_name }}
+          fi
 
       - name: Format Timestamp
         id: format-timestamp
@@ -97,10 +90,10 @@ jobs:
         id: build-message
         env:
           COMMITS: ${{ steps.get-commits.outputs.commits }}
-          USER_FACING: ${{ steps.user-facing.outputs.messages }}
+          RELEASE_NOTES: ${{ steps.release-notes.outputs.notes }}
         run: |
-          if [[ -z "$USER_FACING" ]]; then
-            USER_FACING="Could not auto-populate the changelog. The kiro-cli team will share updates in this :thread: soon."
+          if [[ -z "$RELEASE_NOTES" ]]; then
+            RELEASE_NOTES="Could not auto-populate the changelog. The kiro-cli team will share updates in this :thread: soon."
           fi
           jq -n \
             --arg message "🌙 New Kiro CLI nightly version released!" \
@@ -108,14 +101,14 @@ jobs:
             --arg timestamp "${{ steps.format-timestamp.outputs.readable }}" \
             --arg branch "${{ inputs.branch_name }}" \
             --arg commits "$COMMITS" \
-            --arg user_facing "$USER_FACING" \
+            --arg release_notes "$RELEASE_NOTES" \
             '{
               message: $message,
               version: $version,
               build_timestamp: $timestamp,
               branch_name: $branch,
               commits: $commits,
-              user_facing: $user_facing
+              release_notes: $release_notes
             }' > message.json
           echo "message<<JSONEOF" >> $GITHUB_OUTPUT
           cat message.json >> $GITHUB_OUTPUT

@@ -20,4 +20,3 @@ if ! cargo clippy --locked --workspace --color always -- -D warnings; then
 fi
 
 exit 0
-

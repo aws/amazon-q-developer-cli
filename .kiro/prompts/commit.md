@@ -61,17 +61,6 @@ If option 2:
   
   Testing: high-level summary of testing changes/improvements.
   Do not go into too much details, just high-level changes
-  
-  User-facing: (Optional - only for changes that affect user experience)
-  Brief description of what this means for kiro-cli users.
-  
-  IMPORTANT: Only include User-facing section when ALL of these are true:
-  - Changes are in the 'crates/' folder (not .github/, .kiro/, docs/, etc.)
-  - Changes modify user-visible behavior (CLI output, commands, features)
-  - Changes are NOT internal refactors, dependency updates, or code cleanup
-  
-  When in doubt, review the diff and ask: "Will users notice this change?"
-  If no, omit the User-facing section.
   ```
 
 **Commit types:**
@@ -100,10 +89,6 @@ Key changes:
 
 Testing: Added unit tests for configuration management and
 integration tests for CLI commands. All tests passing.
-
-User-facing: Users can now manage MCP servers using
-`kiro-cli mcp add/remove/list` commands instead of manually
-editing config files.
 ```
 
 ### 4. Present your plan to the user
@@ -118,7 +103,32 @@ editing config files.
 - Create commits with your planned messages
 - Show the result with `git log --oneline -n [number]`
 
-### 6. Ask about pushing
+### 6. Create changelog fragment (if needed)
+
+Before committing, check if a changelog fragment is needed:
+
+**Create fragment when ALL of these are true:**
+- Changes are in the `crates/` folder (not .github/, .kiro/, docs/, etc.)
+- Changes modify user-visible behavior (CLI output, commands, features)
+- Changes are NOT internal refactors, dependency updates, or code cleanup
+
+**When in doubt:** Ask "Will users notice this change?" If no, skip the fragment.
+
+If a fragment is needed, ask the user:
+```
+This PR includes user-facing changes. Would you like me to create a changelog fragment?
+```
+
+If yes:
+```bash
+./scripts/new-change.sh <type> "<description>"
+```
+
+Types: `added`, `changed`, `deprecated`, `removed`, `fixed`, `security`
+
+Include the fragment in your commit by adding `.changes/unreleased/*.json` to the staged files.
+
+### 7. Ask about pushing
 
 After creating commits, ask:
 ```
@@ -171,9 +181,6 @@ Key changes:
 
 Testing: Added unit tests for config parsing and validation.
 Integration tests verify agent loading and CLI commands.
-
-User-facing: Users can now create custom agents with specific
-tool permissions and model preferences using JSON config files.
 ```
 
 ```
@@ -212,7 +219,7 @@ Testing: Ran full test suite to verify no regressions.
 All tests passing.
 ```
 
-(Note: No User-facing section needed for internal dependency updates)
+(Note: No Changelog section needed for internal dependency updates)
 
 ```
 chore: Add commit message validation to CI
@@ -233,7 +240,7 @@ Testing: Tested hook with valid and invalid commit messages.
 CI workflow validates all commits in pull requests.
 ```
 
-(Note: No User-facing section needed for CI/CD and development tooling)
+(Note: No Changelog section needed for CI/CD and development tooling)
 
 ## Tips for Good Commits
 
