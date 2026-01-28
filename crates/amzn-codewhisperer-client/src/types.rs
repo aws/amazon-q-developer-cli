@@ -7,6 +7,7 @@ pub use crate::types::_app_studio_state::AppStudioState;
 pub use crate::types::_application_properties::ApplicationProperties;
 pub use crate::types::_artifact_type::ArtifactType;
 pub use crate::types::_assistant_response_message::AssistantResponseMessage;
+pub use crate::types::_autonomous_agents::AutonomousAgents;
 pub use crate::types::_bonus::Bonus;
 pub use crate::types::_bonus_status::BonusStatus;
 pub use crate::types::_by_user_analytics::ByUserAnalytics;
@@ -15,6 +16,8 @@ pub use crate::types::_cache_point_type::CachePointType;
 pub use crate::types::_change_log_granularity_type::ChangeLogGranularityType;
 pub use crate::types::_change_log_options::ChangeLogOptions;
 pub use crate::types::_chat_add_message_event::ChatAddMessageEvent;
+pub use crate::types::_chat_agent_mode::ChatAgentMode;
+pub use crate::types::_chat_autonomy_mode::ChatAutonomyMode;
 pub use crate::types::_chat_interact_with_message_event::ChatInteractWithMessageEvent;
 pub use crate::types::_chat_message::ChatMessage;
 pub use crate::types::_chat_message_interaction_type::ChatMessageInteractionType;
@@ -98,6 +101,9 @@ pub use crate::types::_input_type::InputType;
 pub use crate::types::_intent::Intent;
 pub use crate::types::_intent_context::IntentContext;
 pub use crate::types::_internal_server_exception_reason::InternalServerExceptionReason;
+pub use crate::types::_kiro_chat_message_event::KiroChatMessageEvent;
+pub use crate::types::_kiro_enterprise_telemetry_event::KiroEnterpriseTelemetryEvent;
+pub use crate::types::_kiro_subscription_type::KiroSubscriptionType;
 pub use crate::types::_mcp_configuration::McpConfiguration;
 pub use crate::types::_memory_entry::MemoryEntry;
 pub use crate::types::_memory_entry_metadata::MemoryEntryMetadata;
@@ -106,6 +112,7 @@ pub use crate::types::_metric_data::MetricData;
 pub use crate::types::_model::Model;
 pub use crate::types::_model_provider::ModelProvider;
 pub use crate::types::_notifications_feature::NotificationsFeature;
+pub use crate::types::_oidc_claim_keys::OidcClaimKeys;
 pub use crate::types::_operating_system::OperatingSystem;
 pub use crate::types::_opt_in_feature_toggle::OptInFeatureToggle;
 pub use crate::types::_opt_in_features::OptInFeatures;
@@ -126,6 +133,7 @@ pub use crate::types::_profile_info::ProfileInfo;
 pub use crate::types::_profile_status::ProfileStatus;
 pub use crate::types::_profile_type::ProfileType;
 pub use crate::types::_programming_language::ProgrammingLanguage;
+pub use crate::types::_prompt_caching::PromptCaching;
 pub use crate::types::_prompt_logging::PromptLogging;
 pub use crate::types::_range::Range;
 pub use crate::types::_reasoning_content::ReasoningContent;
@@ -183,6 +191,7 @@ pub use crate::types::_tool_result_content_block::ToolResultContentBlock;
 pub use crate::types::_tool_result_status::ToolResultStatus;
 pub use crate::types::_tool_specification::ToolSpecification;
 pub use crate::types::_tool_use::ToolUse;
+pub use crate::types::_total_usage::TotalUsage;
 pub use crate::types::_transform_event::TransformEvent;
 pub use crate::types::_transformation_dot_net_runtime_env::TransformationDotNetRuntimeEnv;
 pub use crate::types::_transformation_download_artifact::TransformationDownloadArtifact;
@@ -225,6 +234,7 @@ pub use crate::types::_user_modification_event::UserModificationEvent;
 pub use crate::types::_user_settings::UserSettings;
 pub use crate::types::_user_trigger_decision_event::UserTriggerDecisionEvent;
 pub use crate::types::_validation_exception_reason::ValidationExceptionReason;
+pub use crate::types::_web_tools::WebTools;
 pub use crate::types::_workspace_context::WorkspaceContext;
 pub use crate::types::_workspace_context_upload_context::WorkspaceContextUploadContext;
 pub use crate::types::_workspace_metadata::WorkspaceMetadata;
@@ -247,6 +257,8 @@ mod _artifact_type;
 
 mod _assistant_response_message;
 
+mod _autonomous_agents;
+
 mod _bonus;
 
 mod _bonus_status;
@@ -262,6 +274,10 @@ mod _change_log_granularity_type;
 mod _change_log_options;
 
 mod _chat_add_message_event;
+
+mod _chat_agent_mode;
+
+mod _chat_autonomy_mode;
 
 mod _chat_interact_with_message_event;
 
@@ -429,6 +445,12 @@ mod _intent_context;
 
 mod _internal_server_exception_reason;
 
+mod _kiro_chat_message_event;
+
+mod _kiro_enterprise_telemetry_event;
+
+mod _kiro_subscription_type;
+
 mod _mcp_configuration;
 
 mod _memory_entry;
@@ -444,6 +466,8 @@ mod _model;
 mod _model_provider;
 
 mod _notifications_feature;
+
+mod _oidc_claim_keys;
 
 mod _operating_system;
 
@@ -484,6 +508,8 @@ mod _profile_status;
 mod _profile_type;
 
 mod _programming_language;
+
+mod _prompt_caching;
 
 mod _prompt_logging;
 
@@ -599,6 +625,8 @@ mod _tool_specification;
 
 mod _tool_use;
 
+mod _total_usage;
+
 mod _transform_event;
 
 mod _transformation_dot_net_runtime_env;
@@ -682,6 +710,8 @@ mod _user_settings;
 mod _user_trigger_decision_event;
 
 mod _validation_exception_reason;
+
+mod _web_tools;
 
 mod _workspace_context;
 

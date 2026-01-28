@@ -17,8 +17,8 @@ pub struct Model {
     pub token_limits: ::std::option::Option<crate::types::TokenLimits>,
     /// List of input types supported by this model
     pub supported_input_types: ::std::option::Option<::std::vec::Vec<crate::types::InputType>>,
-    /// Whether the model supports prompt caching
-    pub supports_prompt_cache: ::std::option::Option<bool>,
+    /// Prompt caching configuration for this model
+    pub prompt_caching: ::std::option::Option<crate::types::PromptCaching>,
 }
 impl Model {
     /// Unique identifier for the model
@@ -60,9 +60,9 @@ impl Model {
         self.supported_input_types.as_deref().unwrap_or_default()
     }
 
-    /// Whether the model supports prompt caching
-    pub fn supports_prompt_cache(&self) -> ::std::option::Option<bool> {
-        self.supports_prompt_cache
+    /// Prompt caching configuration for this model
+    pub fn prompt_caching(&self) -> ::std::option::Option<&crate::types::PromptCaching> {
+        self.prompt_caching.as_ref()
     }
 }
 impl Model {
@@ -83,7 +83,7 @@ pub struct ModelBuilder {
     pub(crate) rate_unit: ::std::option::Option<::std::string::String>,
     pub(crate) token_limits: ::std::option::Option<crate::types::TokenLimits>,
     pub(crate) supported_input_types: ::std::option::Option<::std::vec::Vec<crate::types::InputType>>,
-    pub(crate) supports_prompt_cache: ::std::option::Option<bool>,
+    pub(crate) prompt_caching: ::std::option::Option<crate::types::PromptCaching>,
 }
 impl ModelBuilder {
     /// Unique identifier for the model
@@ -216,21 +216,21 @@ impl ModelBuilder {
         &self.supported_input_types
     }
 
-    /// Whether the model supports prompt caching
-    pub fn supports_prompt_cache(mut self, input: bool) -> Self {
-        self.supports_prompt_cache = ::std::option::Option::Some(input);
+    /// Prompt caching configuration for this model
+    pub fn prompt_caching(mut self, input: crate::types::PromptCaching) -> Self {
+        self.prompt_caching = ::std::option::Option::Some(input);
         self
     }
 
-    /// Whether the model supports prompt caching
-    pub fn set_supports_prompt_cache(mut self, input: ::std::option::Option<bool>) -> Self {
-        self.supports_prompt_cache = input;
+    /// Prompt caching configuration for this model
+    pub fn set_prompt_caching(mut self, input: ::std::option::Option<crate::types::PromptCaching>) -> Self {
+        self.prompt_caching = input;
         self
     }
 
-    /// Whether the model supports prompt caching
-    pub fn get_supports_prompt_cache(&self) -> &::std::option::Option<bool> {
-        &self.supports_prompt_cache
+    /// Prompt caching configuration for this model
+    pub fn get_prompt_caching(&self) -> &::std::option::Option<crate::types::PromptCaching> {
+        &self.prompt_caching
     }
 
     /// Consumes the builder and constructs a [`Model`](crate::types::Model).
@@ -250,7 +250,7 @@ impl ModelBuilder {
             rate_unit: self.rate_unit,
             token_limits: self.token_limits,
             supported_input_types: self.supported_input_types,
-            supports_prompt_cache: self.supports_prompt_cache,
+            prompt_caching: self.prompt_caching,
         })
     }
 }

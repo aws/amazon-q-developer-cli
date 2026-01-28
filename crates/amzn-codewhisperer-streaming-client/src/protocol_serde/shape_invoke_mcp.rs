@@ -98,7 +98,9 @@ pub fn de_invoke_mcp_http_response(
         output = crate::protocol_serde::shape_invoke_mcp::de_invoke_mcp(_response_body, output)
             .map_err(crate::operation::invoke_mcp::InvokeMCPError::unhandled)?;
         output._set_request_id(::aws_types::request_id::RequestId::request_id(_response_headers).map(str::to_string));
-        output.build()
+        crate::serde_util::invoke_mcp_output_output_correct_errors(output)
+            .build()
+            .map_err(crate::operation::invoke_mcp::InvokeMCPError::unhandled)?
     })
 }
 

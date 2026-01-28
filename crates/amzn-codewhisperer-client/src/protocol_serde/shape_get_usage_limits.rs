@@ -182,6 +182,10 @@ pub(crate) fn de_get_usage_limits(
                 "userInfo" => {
                     builder = builder.set_user_info(crate::protocol_serde::shape_user_info::de_user_info(tokens)?);
                 },
+                "totalUsage" => {
+                    builder =
+                        builder.set_total_usage(crate::protocol_serde::shape_total_usage::de_total_usage(tokens)?);
+                },
                 _ => ::aws_smithy_json::deserialize::token::skip_value(tokens)?,
             },
             other => {

@@ -17,6 +17,10 @@ pub struct OptInFeatures {
     pub overage_configuration: ::std::option::Option<crate::types::OverageConfiguration>,
     #[allow(missing_docs)] // documentation missing in model
     pub mcp_configuration: ::std::option::Option<crate::types::McpConfiguration>,
+    #[allow(missing_docs)] // documentation missing in model
+    pub autonomous_agents: ::std::option::Option<crate::types::AutonomousAgents>,
+    #[allow(missing_docs)] // documentation missing in model
+    pub web_tools: ::std::option::Option<crate::types::WebTools>,
 }
 impl OptInFeatures {
     #[allow(missing_docs)] // documentation missing in model
@@ -55,6 +59,16 @@ impl OptInFeatures {
     pub fn mcp_configuration(&self) -> ::std::option::Option<&crate::types::McpConfiguration> {
         self.mcp_configuration.as_ref()
     }
+
+    #[allow(missing_docs)] // documentation missing in model
+    pub fn autonomous_agents(&self) -> ::std::option::Option<&crate::types::AutonomousAgents> {
+        self.autonomous_agents.as_ref()
+    }
+
+    #[allow(missing_docs)] // documentation missing in model
+    pub fn web_tools(&self) -> ::std::option::Option<&crate::types::WebTools> {
+        self.web_tools.as_ref()
+    }
 }
 impl OptInFeatures {
     /// Creates a new builder-style object to manufacture
@@ -75,6 +89,8 @@ pub struct OptInFeaturesBuilder {
     pub(crate) workspace_context: ::std::option::Option<crate::types::WorkspaceContext>,
     pub(crate) overage_configuration: ::std::option::Option<crate::types::OverageConfiguration>,
     pub(crate) mcp_configuration: ::std::option::Option<crate::types::McpConfiguration>,
+    pub(crate) autonomous_agents: ::std::option::Option<crate::types::AutonomousAgents>,
+    pub(crate) web_tools: ::std::option::Option<crate::types::WebTools>,
 }
 impl OptInFeaturesBuilder {
     #[allow(missing_docs)] // documentation missing in model
@@ -207,6 +223,40 @@ impl OptInFeaturesBuilder {
         &self.mcp_configuration
     }
 
+    #[allow(missing_docs)] // documentation missing in model
+    pub fn autonomous_agents(mut self, input: crate::types::AutonomousAgents) -> Self {
+        self.autonomous_agents = ::std::option::Option::Some(input);
+        self
+    }
+
+    #[allow(missing_docs)] // documentation missing in model
+    pub fn set_autonomous_agents(mut self, input: ::std::option::Option<crate::types::AutonomousAgents>) -> Self {
+        self.autonomous_agents = input;
+        self
+    }
+
+    #[allow(missing_docs)] // documentation missing in model
+    pub fn get_autonomous_agents(&self) -> &::std::option::Option<crate::types::AutonomousAgents> {
+        &self.autonomous_agents
+    }
+
+    #[allow(missing_docs)] // documentation missing in model
+    pub fn web_tools(mut self, input: crate::types::WebTools) -> Self {
+        self.web_tools = ::std::option::Option::Some(input);
+        self
+    }
+
+    #[allow(missing_docs)] // documentation missing in model
+    pub fn set_web_tools(mut self, input: ::std::option::Option<crate::types::WebTools>) -> Self {
+        self.web_tools = input;
+        self
+    }
+
+    #[allow(missing_docs)] // documentation missing in model
+    pub fn get_web_tools(&self) -> &::std::option::Option<crate::types::WebTools> {
+        &self.web_tools
+    }
+
     /// Consumes the builder and constructs a [`OptInFeatures`](crate::types::OptInFeatures).
     pub fn build(self) -> crate::types::OptInFeatures {
         crate::types::OptInFeatures {
@@ -217,6 +267,8 @@ impl OptInFeaturesBuilder {
             workspace_context: self.workspace_context,
             overage_configuration: self.overage_configuration,
             mcp_configuration: self.mcp_configuration,
+            autonomous_agents: self.autonomous_agents,
+            web_tools: self.web_tools,
         }
     }
 }

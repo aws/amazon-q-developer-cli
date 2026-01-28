@@ -16,6 +16,8 @@ pub struct TokenUsage {
     /// Percentage of model context window used (0-100). Calculated as (totalTokens /
     /// maxContextWindowTokens) * 100
     pub context_usage_percentage: ::std::option::Option<f32>,
+    /// Normalized token usage calculated by MPS using credit information from AppConfig. Formula: https://tiny.amazon.com/jbpi4cst/quipKUZGKiro
+    pub normalized_token_usage: ::std::option::Option<f32>,
 }
 impl TokenUsage {
     #[allow(missing_docs)] // documentation missing in model
@@ -48,6 +50,11 @@ impl TokenUsage {
     pub fn context_usage_percentage(&self) -> ::std::option::Option<f32> {
         self.context_usage_percentage
     }
+
+    /// Normalized token usage calculated by MPS using credit information from AppConfig. Formula: https://tiny.amazon.com/jbpi4cst/quipKUZGKiro
+    pub fn normalized_token_usage(&self) -> ::std::option::Option<f32> {
+        self.normalized_token_usage
+    }
 }
 impl TokenUsage {
     /// Creates a new builder-style object to manufacture [`TokenUsage`](crate::types::TokenUsage).
@@ -66,6 +73,7 @@ pub struct TokenUsageBuilder {
     pub(crate) cache_read_input_tokens: ::std::option::Option<i32>,
     pub(crate) cache_write_input_tokens: ::std::option::Option<i32>,
     pub(crate) context_usage_percentage: ::std::option::Option<f32>,
+    pub(crate) normalized_token_usage: ::std::option::Option<f32>,
 }
 impl TokenUsageBuilder {
     #[allow(missing_docs)] // documentation missing in model
@@ -176,6 +184,23 @@ impl TokenUsageBuilder {
         &self.context_usage_percentage
     }
 
+    /// Normalized token usage calculated by MPS using credit information from AppConfig. Formula: https://tiny.amazon.com/jbpi4cst/quipKUZGKiro
+    pub fn normalized_token_usage(mut self, input: f32) -> Self {
+        self.normalized_token_usage = ::std::option::Option::Some(input);
+        self
+    }
+
+    /// Normalized token usage calculated by MPS using credit information from AppConfig. Formula: https://tiny.amazon.com/jbpi4cst/quipKUZGKiro
+    pub fn set_normalized_token_usage(mut self, input: ::std::option::Option<f32>) -> Self {
+        self.normalized_token_usage = input;
+        self
+    }
+
+    /// Normalized token usage calculated by MPS using credit information from AppConfig. Formula: https://tiny.amazon.com/jbpi4cst/quipKUZGKiro
+    pub fn get_normalized_token_usage(&self) -> &::std::option::Option<f32> {
+        &self.normalized_token_usage
+    }
+
     /// Consumes the builder and constructs a [`TokenUsage`](crate::types::TokenUsage).
     /// This method will fail if any of the following fields are not set:
     /// - [`uncached_input_tokens`](crate::types::builders::TokenUsageBuilder::uncached_input_tokens)
@@ -206,6 +231,7 @@ impl TokenUsageBuilder {
             cache_read_input_tokens: self.cache_read_input_tokens,
             cache_write_input_tokens: self.cache_write_input_tokens,
             context_usage_percentage: self.context_usage_percentage,
+            normalized_token_usage: self.normalized_token_usage,
         })
     }
 }

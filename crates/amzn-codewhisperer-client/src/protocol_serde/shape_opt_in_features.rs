@@ -57,6 +57,15 @@ where
                                 crate::protocol_serde::shape_mcp_configuration::de_mcp_configuration(tokens)?,
                             );
                         },
+                        "autonomousAgents" => {
+                            builder = builder.set_autonomous_agents(
+                                crate::protocol_serde::shape_autonomous_agents::de_autonomous_agents(tokens)?,
+                            );
+                        },
+                        "webTools" => {
+                            builder =
+                                builder.set_web_tools(crate::protocol_serde::shape_web_tools::de_web_tools(tokens)?);
+                        },
                         _ => ::aws_smithy_json::deserialize::token::skip_value(tokens)?,
                     },
                     other => {

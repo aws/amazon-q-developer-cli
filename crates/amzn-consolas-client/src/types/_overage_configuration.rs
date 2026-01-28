@@ -5,11 +5,18 @@
 pub struct OverageConfiguration {
     #[allow(missing_docs)] // documentation missing in model
     pub overage_status: crate::types::OverageStatus,
+    #[allow(missing_docs)] // documentation missing in model
+    pub overage_limit: ::std::option::Option<i32>,
 }
 impl OverageConfiguration {
     #[allow(missing_docs)] // documentation missing in model
     pub fn overage_status(&self) -> &crate::types::OverageStatus {
         &self.overage_status
+    }
+
+    #[allow(missing_docs)] // documentation missing in model
+    pub fn overage_limit(&self) -> ::std::option::Option<i32> {
+        self.overage_limit
     }
 }
 impl OverageConfiguration {
@@ -25,6 +32,7 @@ impl OverageConfiguration {
 #[non_exhaustive]
 pub struct OverageConfigurationBuilder {
     pub(crate) overage_status: ::std::option::Option<crate::types::OverageStatus>,
+    pub(crate) overage_limit: ::std::option::Option<i32>,
 }
 impl OverageConfigurationBuilder {
     #[allow(missing_docs)] // documentation missing in model
@@ -45,6 +53,23 @@ impl OverageConfigurationBuilder {
         &self.overage_status
     }
 
+    #[allow(missing_docs)] // documentation missing in model
+    pub fn overage_limit(mut self, input: i32) -> Self {
+        self.overage_limit = ::std::option::Option::Some(input);
+        self
+    }
+
+    #[allow(missing_docs)] // documentation missing in model
+    pub fn set_overage_limit(mut self, input: ::std::option::Option<i32>) -> Self {
+        self.overage_limit = input;
+        self
+    }
+
+    #[allow(missing_docs)] // documentation missing in model
+    pub fn get_overage_limit(&self) -> &::std::option::Option<i32> {
+        &self.overage_limit
+    }
+
     /// Consumes the builder and constructs a
     /// [`OverageConfiguration`](crate::types::OverageConfiguration). This method will fail if
     /// any of the following fields are not set:
@@ -60,6 +85,7 @@ impl OverageConfigurationBuilder {
                     "overage_status was not specified but it is required when building OverageConfiguration",
                 )
             })?,
+            overage_limit: self.overage_limit,
         })
     }
 }

@@ -34,7 +34,7 @@ echo "  [y] Yes, docs are updated"
 echo "  [n] No, run docs agent"
 echo "  [s] Skip - no doc changes needed"
 echo ""
-read -p "Choice (y/n/s): " -n 1 -r
+read -p "Choice (y/n/s): " -n 1 -r < /dev/tty
 echo ""
 
 case $REPLY in

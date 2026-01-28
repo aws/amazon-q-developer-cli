@@ -54,6 +54,18 @@ where
                                         .transpose()?,
                                 );
                             },
+                            "jitSubscriptionRoleArn" => {
+                                builder = builder.set_jit_subscription_role_arn(
+                                    ::aws_smithy_json::deserialize::token::expect_string_or_null(tokens.next())?
+                                        .map(|s| s.to_unescaped().map(|u| u.into_owned()))
+                                        .transpose()?,
+                                );
+                            },
+                            "oidcClaimKeys" => {
+                                builder = builder.set_oidc_claim_keys(
+                                    crate::protocol_serde::shape_oidc_claim_keys::de_oidc_claim_keys(tokens)?,
+                                );
+                            },
                             _ => ::aws_smithy_json::deserialize::token::skip_value(tokens)?,
                         }
                     },

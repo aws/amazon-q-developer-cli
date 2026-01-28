@@ -128,4 +128,6 @@ mod generate_task_assist_plan;
 
 mod invoke_mcp;
 
+mod invoke_mcp_stream;
+
 mod send_message;

@@ -373,3 +373,65 @@ impl ::aws_smithy_eventstream::frame::UnmarshallMessage for ChatResponseStreamUn
         }
     }
 }
+
+#[non_exhaustive]
+#[derive(Debug)]
+pub struct McpStreamOutputUnmarshaller;
+
+impl McpStreamOutputUnmarshaller {
+    pub fn new() -> Self {
+        McpStreamOutputUnmarshaller
+    }
+}
+impl ::aws_smithy_eventstream::frame::UnmarshallMessage for McpStreamOutputUnmarshaller {
+    type Error = crate::types::error::McpStreamOutputError;
+    type Output = crate::types::McpStreamOutput;
+
+    fn unmarshall(
+        &self,
+        message: &::aws_smithy_types::event_stream::Message,
+    ) -> std::result::Result<
+        ::aws_smithy_eventstream::frame::UnmarshalledMessage<Self::Output, Self::Error>,
+        ::aws_smithy_eventstream::error::Error,
+    > {
+        let response_headers = ::aws_smithy_eventstream::smithy::parse_response_headers(message)?;
+        match response_headers.message_type.as_str() {
+            "event" => match response_headers.smithy_type.as_str() {
+                "message" => {
+                    let parsed = crate::protocol_serde::shape_json_rpc_stream_event::de_json_rpc_stream_event_payload(
+                        &message.payload()[..],
+                    )
+                    .map_err(|err| {
+                        ::aws_smithy_eventstream::error::Error::unmarshalling(format!(
+                            "failed to unmarshall Message: {err}"
+                        ))
+                    })?;
+                    Ok(::aws_smithy_eventstream::frame::UnmarshalledMessage::Event(
+                        crate::types::McpStreamOutput::Message(parsed),
+                    ))
+                },
+                _unknown_variant => Ok(::aws_smithy_eventstream::frame::UnmarshalledMessage::Event(
+                    crate::types::McpStreamOutput::Unknown,
+                )),
+            },
+            "exception" => {
+                let generic = match crate::protocol_serde::parse_event_stream_error_metadata(message.payload()) {
+                    Ok(builder) => builder.build(),
+                    Err(err) => {
+                        return Ok(::aws_smithy_eventstream::frame::UnmarshalledMessage::Error(
+                            crate::types::error::McpStreamOutputError::unhandled(err),
+                        ));
+                    },
+                };
+                Ok(::aws_smithy_eventstream::frame::UnmarshalledMessage::Error(
+                    crate::types::error::McpStreamOutputError::generic(generic),
+                ))
+            },
+            value => {
+                return Err(::aws_smithy_eventstream::error::Error::unmarshalling(format!(
+                    "unrecognized :message-type: {value}"
+                )));
+            },
+        }
+    }
+}

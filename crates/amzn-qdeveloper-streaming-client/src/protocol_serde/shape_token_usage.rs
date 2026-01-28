@@ -61,6 +61,12 @@ where
                                         .map(|v| v.to_f32_lossy()),
                                 );
                             },
+                            "normalizedTokenUsage" => {
+                                builder = builder.set_normalized_token_usage(
+                                    ::aws_smithy_json::deserialize::token::expect_number_or_null(tokens.next())?
+                                        .map(|v| v.to_f32_lossy()),
+                                );
+                            },
                             _ => ::aws_smithy_json::deserialize::token::skip_value(tokens)?,
                         }
                     },

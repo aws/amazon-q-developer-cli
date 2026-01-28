@@ -71,6 +71,15 @@ pub(crate) fn service_unavailable_exception_correct_errors(
     builder
 }
 
+pub(crate) fn invoke_mcp_output_output_correct_errors(
+    mut builder: crate::operation::invoke_mcp::builders::InvokeMcpOutputBuilder,
+) -> crate::operation::invoke_mcp::builders::InvokeMcpOutputBuilder {
+    if builder.id.is_none() {
+        builder.id = Some(Default::default())
+    }
+    builder
+}
+
 pub(crate) fn json_rpc_error_correct_errors(
     mut builder: crate::types::builders::JsonRpcErrorBuilder,
 ) -> crate::types::builders::JsonRpcErrorBuilder {
@@ -130,6 +139,15 @@ pub(crate) fn invalid_state_event_correct_errors(
     }
     if builder.message.is_none() {
         builder.message = Some(Default::default())
+    }
+    builder
+}
+
+pub(crate) fn json_rpc_stream_event_correct_errors(
+    mut builder: crate::types::builders::JsonRpcStreamEventBuilder,
+) -> crate::types::builders::JsonRpcStreamEventBuilder {
+    if builder.jsonrpc.is_none() {
+        builder.jsonrpc = Some(Default::default())
     }
     builder
 }

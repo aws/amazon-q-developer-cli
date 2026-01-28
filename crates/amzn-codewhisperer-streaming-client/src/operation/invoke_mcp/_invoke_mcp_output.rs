@@ -6,8 +6,8 @@
 pub struct InvokeMcpOutput {
     /// JSON-RPC protocol version
     pub jsonrpc: ::std::option::Option<::std::string::String>,
-    /// Request identifier for response correlation (string, number, or null per JSON-RPC 2.0)
-    pub id: ::std::option::Option<::aws_smithy_types::Document>,
+    /// Request identifier for response correlation (string or number per MCP spec)
+    pub id: ::aws_smithy_types::Document,
     /// Success result (mutually exclusive with error)
     pub result: ::std::option::Option<::aws_smithy_types::Document>,
     /// Error information (mutually exclusive with result)
@@ -20,9 +20,9 @@ impl InvokeMcpOutput {
         self.jsonrpc.as_deref()
     }
 
-    /// Request identifier for response correlation (string, number, or null per JSON-RPC 2.0)
-    pub fn id(&self) -> ::std::option::Option<&::aws_smithy_types::Document> {
-        self.id.as_ref()
+    /// Request identifier for response correlation (string or number per MCP spec)
+    pub fn id(&self) -> &::aws_smithy_types::Document {
+        &self.id
     }
 
     /// Success result (mutually exclusive with error)
@@ -87,19 +87,20 @@ impl InvokeMcpOutputBuilder {
         &self.jsonrpc
     }
 
-    /// Request identifier for response correlation (string, number, or null per JSON-RPC 2.0)
+    /// Request identifier for response correlation (string or number per MCP spec)
+    /// This field is required.
     pub fn id(mut self, input: ::aws_smithy_types::Document) -> Self {
         self.id = ::std::option::Option::Some(input);
         self
     }
 
-    /// Request identifier for response correlation (string, number, or null per JSON-RPC 2.0)
+    /// Request identifier for response correlation (string or number per MCP spec)
     pub fn set_id(mut self, input: ::std::option::Option<::aws_smithy_types::Document>) -> Self {
         self.id = input;
         self
     }
 
-    /// Request identifier for response correlation (string, number, or null per JSON-RPC 2.0)
+    /// Request identifier for response correlation (string or number per MCP spec)
     pub fn get_id(&self) -> &::std::option::Option<::aws_smithy_types::Document> {
         &self.id
     }
@@ -149,15 +150,27 @@ impl InvokeMcpOutputBuilder {
     }
 
     /// Consumes the builder and constructs a
-    /// [`InvokeMcpOutput`](crate::operation::invoke_mcp::InvokeMcpOutput).
-    pub fn build(self) -> crate::operation::invoke_mcp::InvokeMcpOutput {
-        crate::operation::invoke_mcp::InvokeMcpOutput {
+    /// [`InvokeMcpOutput`](crate::operation::invoke_mcp::InvokeMcpOutput). This method will
+    /// fail if any of the following fields are not set:
+    /// - [`id`](crate::operation::invoke_mcp::builders::InvokeMcpOutputBuilder::id)
+    pub fn build(
+        self,
+    ) -> ::std::result::Result<
+        crate::operation::invoke_mcp::InvokeMcpOutput,
+        ::aws_smithy_types::error::operation::BuildError,
+    > {
+        ::std::result::Result::Ok(crate::operation::invoke_mcp::InvokeMcpOutput {
             jsonrpc: self.jsonrpc,
-            id: self.id,
+            id: self.id.ok_or_else(|| {
+                ::aws_smithy_types::error::operation::BuildError::missing_field(
+                    "id",
+                    "id was not specified but it is required when building InvokeMcpOutput",
+                )
+            })?,
             result: self.result,
             error: self.error,
             _request_id: self._request_id,
-        }
+        })
     }
 }
 impl ::std::fmt::Debug for InvokeMcpOutputBuilder {

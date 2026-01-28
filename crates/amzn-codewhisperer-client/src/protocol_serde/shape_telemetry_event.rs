@@ -172,6 +172,21 @@ pub fn ser_telemetry_event(
             crate::protocol_serde::shape_test_generation_event::ser_test_generation_event(&mut object_23, inner)?;
             object_23.finish();
         },
+        crate::types::TelemetryEvent::KiroEnterpriseTelemetryEvent(inner) => {
+            #[allow(unused_mut)]
+            let mut object_24 = object_3.key("kiroEnterpriseTelemetryEvent").start_object();
+            crate::protocol_serde::shape_kiro_enterprise_telemetry_event::ser_kiro_enterprise_telemetry_event(
+                &mut object_24,
+                inner,
+            )?;
+            object_24.finish();
+        },
+        crate::types::TelemetryEvent::KiroChatMessageEvent(inner) => {
+            #[allow(unused_mut)]
+            let mut object_25 = object_3.key("kiroChatMessageEvent").start_object();
+            crate::protocol_serde::shape_kiro_chat_message_event::ser_kiro_chat_message_event(&mut object_25, inner)?;
+            object_25.finish();
+        },
         crate::types::TelemetryEvent::Unknown => {
             return Err(::aws_smithy_types::error::operation::SerializationError::unknown_variant("TelemetryEvent"));
         },

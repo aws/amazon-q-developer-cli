@@ -12,5 +12,14 @@ pub fn ser_external_identity_source(
     if let Some(var_1) = &input.subscription_start_type {
         object.key("subscriptionStartType").string(var_1.as_str());
     }
+    if let Some(var_2) = &input.jit_subscription_role_arn {
+        object.key("jitSubscriptionRoleArn").string(var_2.as_str());
+    }
+    if let Some(var_3) = &input.oidc_claim_keys {
+        #[allow(unused_mut)]
+        let mut object_4 = object.key("oidcClaimKeys").start_object();
+        crate::protocol_serde::shape_oidc_claim_keys::ser_oidc_claim_keys(&mut object_4, var_3)?;
+        object_4.finish();
+    }
     Ok(())
 }

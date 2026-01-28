@@ -268,6 +268,8 @@ pub(crate) mod shape_telemetry_event;
 
 pub(crate) mod shape_test_generation_job;
 
+pub(crate) mod shape_total_usage;
+
 pub(crate) mod shape_transformation_job;
 
 pub(crate) mod shape_transformation_plan;
@@ -348,6 +350,10 @@ pub(crate) mod shape_free_trial_info;
 
 pub(crate) mod shape_inline_chat_event;
 
+pub(crate) mod shape_kiro_chat_message_event;
+
+pub(crate) mod shape_kiro_enterprise_telemetry_event;
+
 pub(crate) mod shape_memory_entry_metadata;
 
 pub(crate) mod shape_metric_data;
@@ -361,6 +367,8 @@ pub(crate) mod shape_position;
 pub(crate) mod shape_prediction;
 
 pub(crate) mod shape_profile;
+
+pub(crate) mod shape_prompt_caching;
 
 pub(crate) mod shape_references;
 
@@ -407,6 +415,8 @@ pub(crate) mod shape_application_properties_list;
 pub(crate) mod shape_assistant_response_message;
 
 pub(crate) mod shape_attributes_map;
+
+pub(crate) mod shape_autonomous_agents;
 
 pub(crate) mod shape_bonus;
 
@@ -459,6 +469,8 @@ pub(crate) mod shape_transformation_runtime_env;
 pub(crate) mod shape_transformation_step;
 
 pub(crate) mod shape_user_input_message;
+
+pub(crate) mod shape_web_tools;
 
 pub(crate) mod shape_workspace_context;
 
@@ -513,6 +525,8 @@ pub(crate) mod shape_env_state;
 pub(crate) mod shape_git_state;
 
 pub(crate) mod shape_image_source;
+
+pub(crate) mod shape_oidc_claim_keys;
 
 pub(crate) mod shape_reasoning_text;
 

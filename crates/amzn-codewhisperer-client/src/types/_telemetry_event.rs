@@ -38,6 +38,10 @@ pub enum TelemetryEvent {
     FeatureDevEvent(crate::types::FeatureDevEvent),
     #[allow(missing_docs)] // documentation missing in model
     InlineChatEvent(crate::types::InlineChatEvent),
+    /// Kiro Chat Message Event for reporting user activity metrics by subscription per day
+    KiroChatMessageEvent(crate::types::KiroChatMessageEvent),
+    /// Kiro Enterprise Telemetry Event for reporting user activity metrics by subscription per day
+    KiroEnterpriseTelemetryEvent(crate::types::KiroEnterpriseTelemetryEvent),
     #[allow(missing_docs)] // documentation missing in model
     MetricData(crate::types::MetricData),
     #[allow(missing_docs)] // documentation missing in model
@@ -378,6 +382,45 @@ impl TelemetryEvent {
     /// [`InlineChatEvent`](crate::types::TelemetryEvent::InlineChatEvent).
     pub fn is_inline_chat_event(&self) -> bool {
         self.as_inline_chat_event().is_ok()
+    }
+
+    /// Tries to convert the enum instance into
+    /// [`KiroChatMessageEvent`](crate::types::TelemetryEvent::KiroChatMessageEvent), extracting the
+    /// inner [`KiroChatMessageEvent`](crate::types::KiroChatMessageEvent). Returns `Err(&Self)`
+    /// if it can't be converted.
+    pub fn as_kiro_chat_message_event(&self) -> ::std::result::Result<&crate::types::KiroChatMessageEvent, &Self> {
+        if let TelemetryEvent::KiroChatMessageEvent(val) = &self {
+            ::std::result::Result::Ok(val)
+        } else {
+            ::std::result::Result::Err(self)
+        }
+    }
+
+    /// Returns true if this is a
+    /// [`KiroChatMessageEvent`](crate::types::TelemetryEvent::KiroChatMessageEvent).
+    pub fn is_kiro_chat_message_event(&self) -> bool {
+        self.as_kiro_chat_message_event().is_ok()
+    }
+
+    /// Tries to convert the enum instance into
+    /// [`KiroEnterpriseTelemetryEvent`](crate::types::TelemetryEvent::KiroEnterpriseTelemetryEvent),
+    /// extracting the inner
+    /// [`KiroEnterpriseTelemetryEvent`](crate::types::KiroEnterpriseTelemetryEvent).
+    /// Returns `Err(&Self)` if it can't be converted.
+    pub fn as_kiro_enterprise_telemetry_event(
+        &self,
+    ) -> ::std::result::Result<&crate::types::KiroEnterpriseTelemetryEvent, &Self> {
+        if let TelemetryEvent::KiroEnterpriseTelemetryEvent(val) = &self {
+            ::std::result::Result::Ok(val)
+        } else {
+            ::std::result::Result::Err(self)
+        }
+    }
+
+    /// Returns true if this is a
+    /// [`KiroEnterpriseTelemetryEvent`](crate::types::TelemetryEvent::KiroEnterpriseTelemetryEvent).
+    pub fn is_kiro_enterprise_telemetry_event(&self) -> bool {
+        self.as_kiro_enterprise_telemetry_event().is_ok()
     }
 
     /// Tries to convert the enum instance into

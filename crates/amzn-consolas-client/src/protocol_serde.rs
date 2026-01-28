@@ -172,6 +172,8 @@ pub(crate) mod shape_tag;
 
 pub(crate) mod shape_tag_list;
 
+pub(crate) mod shape_autonomous_agents;
+
 pub(crate) mod shape_by_user_analytics;
 
 pub(crate) mod shape_code_star_reference;
@@ -204,6 +206,8 @@ pub(crate) mod shape_sso_identity_source;
 
 pub(crate) mod shape_supplemental_context_metadata;
 
+pub(crate) mod shape_web_tools;
+
 pub(crate) mod shape_workspace_context;
 
 pub(crate) mod shape_active_functionality_list;
@@ -213,6 +217,8 @@ pub(crate) mod shape_application_properties_list;
 pub(crate) mod shape_identity_details;
 
 pub(crate) mod shape_imports;
+
+pub(crate) mod shape_oidc_claim_keys;
 
 pub(crate) mod shape_previous_editor_state_metadata;
 

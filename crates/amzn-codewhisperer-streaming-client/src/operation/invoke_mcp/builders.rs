@@ -136,19 +136,19 @@ impl InvokeMCPFluentBuilder {
         self.inner.get_jsonrpc()
     }
 
-    /// Request identifier for response correlation (string, number, or null per JSON-RPC 2.0)
+    /// Request identifier for response correlation (string or number per MCP spec)
     pub fn id(mut self, input: ::aws_smithy_types::Document) -> Self {
         self.inner = self.inner.id(input);
         self
     }
 
-    /// Request identifier for response correlation (string, number, or null per JSON-RPC 2.0)
+    /// Request identifier for response correlation (string or number per MCP spec)
     pub fn set_id(mut self, input: ::std::option::Option<::aws_smithy_types::Document>) -> Self {
         self.inner = self.inner.set_id(input);
         self
     }
 
-    /// Request identifier for response correlation (string, number, or null per JSON-RPC 2.0)
+    /// Request identifier for response correlation (string or number per MCP spec)
     pub fn get_id(&self) -> &::std::option::Option<::aws_smithy_types::Document> {
         self.inner.get_id()
     }

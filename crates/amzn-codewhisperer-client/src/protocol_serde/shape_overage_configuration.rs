@@ -32,6 +32,13 @@ where
                                     .transpose()?,
                             );
                         },
+                        "overageLimit" => {
+                            builder = builder.set_overage_limit(
+                                ::aws_smithy_json::deserialize::token::expect_number_or_null(tokens.next())?
+                                    .map(i32::try_from)
+                                    .transpose()?,
+                            );
+                        },
                         _ => ::aws_smithy_json::deserialize::token::skip_value(tokens)?,
                     },
                     other => {
@@ -64,6 +71,12 @@ pub fn ser_overage_configuration(
 ) -> ::std::result::Result<(), ::aws_smithy_types::error::operation::SerializationError> {
     {
         object.key("overageStatus").string(input.overage_status.as_str());
+    }
+    if let Some(var_1) = &input.overage_limit {
+        object.key("overageLimit").number(
+            #[allow(clippy::useless_conversion)]
+            ::aws_smithy_types::Number::NegInt((*var_1).into()),
+        );
     }
     Ok(())
 }

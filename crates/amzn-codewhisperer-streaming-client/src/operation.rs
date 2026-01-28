@@ -13,5 +13,8 @@ pub mod generate_task_assist_plan;
 /// Types for the `InvokeMCP` operation.
 pub mod invoke_mcp;
 
+/// Types for the `InvokeMCPStream` operation.
+pub mod invoke_mcp_stream;
+
 /// Types for the `SendMessage` operation.
 pub mod send_message;

@@ -51,6 +51,18 @@ pub fn ser_opt_in_features(
         crate::protocol_serde::shape_mcp_configuration::ser_mcp_configuration(&mut object_16, var_15)?;
         object_16.finish();
     }
+    if let Some(var_17) = &input.autonomous_agents {
+        #[allow(unused_mut)]
+        let mut object_18 = object.key("autonomousAgents").start_object();
+        crate::protocol_serde::shape_autonomous_agents::ser_autonomous_agents(&mut object_18, var_17)?;
+        object_18.finish();
+    }
+    if let Some(var_19) = &input.web_tools {
+        #[allow(unused_mut)]
+        let mut object_20 = object.key("webTools").start_object();
+        crate::protocol_serde::shape_web_tools::ser_web_tools(&mut object_20, var_19)?;
+        object_20.finish();
+    }
     Ok(())
 }
 
@@ -111,6 +123,15 @@ where
                             builder = builder.set_mcp_configuration(
                                 crate::protocol_serde::shape_mcp_configuration::de_mcp_configuration(tokens)?,
                             );
+                        },
+                        "autonomousAgents" => {
+                            builder = builder.set_autonomous_agents(
+                                crate::protocol_serde::shape_autonomous_agents::de_autonomous_agents(tokens)?,
+                            );
+                        },
+                        "webTools" => {
+                            builder =
+                                builder.set_web_tools(crate::protocol_serde::shape_web_tools::de_web_tools(tokens)?);
                         },
                         _ => ::aws_smithy_json::deserialize::token::skip_value(tokens)?,
                     },

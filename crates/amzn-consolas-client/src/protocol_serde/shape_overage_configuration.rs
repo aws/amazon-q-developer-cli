@@ -6,6 +6,12 @@ pub fn ser_overage_configuration(
     {
         object.key("overageStatus").string(input.overage_status.as_str());
     }
+    if let Some(var_1) = &input.overage_limit {
+        object.key("overageLimit").number(
+            #[allow(clippy::useless_conversion)]
+            ::aws_smithy_types::Number::NegInt((*var_1).into()),
+        );
+    }
     Ok(())
 }
 
@@ -39,6 +45,13 @@ where
                             builder = builder.set_overage_status(
                                 ::aws_smithy_json::deserialize::token::expect_string_or_null(tokens.next())?
                                     .map(|s| s.to_unescaped().map(|u| crate::types::OverageStatus::from(u.as_ref())))
+                                    .transpose()?,
+                            );
+                        },
+                        "overageLimit" => {
+                            builder = builder.set_overage_limit(
+                                ::aws_smithy_json::deserialize::token::expect_number_or_null(tokens.next())?
+                                    .map(i32::try_from)
                                     .transpose()?,
                             );
                         },

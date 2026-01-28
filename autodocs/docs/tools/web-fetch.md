@@ -1,13 +1,13 @@
 ---
 doc_meta:
-  validated: 2026-01-14
-  commit: 7172e74d
+  validated: 2026-01-27
+  commit: 7943adae
   status: validated
   testable_headless: true
   category: tool
   title: web_fetch
   description: Fetch and extract content from specific URLs with selective, truncated, or full modes
-  keywords: [web_fetch, fetch, url, web, content, extract, trusted, blocked, permissions]
+  keywords: [web_fetch, fetch, url, web, content, extract, trusted, blocked, permissions, enterprise]
   related: [web-search]
 ---
 
@@ -200,6 +200,12 @@ Complete content.
 **Cause**: URL matches a pattern in blocked list  
 **Solution**: Remove pattern from blocked list in toolsSettings.
 
+### Issue: Tool Not Listed
+
+**Symptom**: web_fetch doesn't appear in available tools  
+**Cause**: Enterprise administrator has disabled web tools  
+**Solution**: Contact your organization's administrator
+
 ## Related Features
 
 - [web_search](web-search.md) - Search web for URLs
@@ -215,6 +221,7 @@ Complete content.
 - No JavaScript execution
 - No authentication support
 - Regional availability (not in eu-central-1)
+- Enterprise administrators can disable web tools for their organization
 
 ## Technical Details
 

@@ -207,6 +207,23 @@ impl ToolsArgs {
             )?;
         }
 
+        if !session.conversation.tool_manager.web_tools_enabled {
+            let message = if session.conversation.tool_manager.web_tools_disabled_due_to_api_failure {
+                "Failed to retrieve web tools settings; web tools disabled\n\n"
+            } else {
+                "Web tools have been disabled by your administrator.\n\n"
+            };
+
+            queue!(
+                session.stderr,
+                StyledText::warning_fg(),
+                style::Print("\n"),
+                style::Print("⚠️  WARNING: "),
+                StyledText::reset(),
+                style::Print(message),
+            )?;
+        }
+
         Ok(ChatState::default())
     }
 

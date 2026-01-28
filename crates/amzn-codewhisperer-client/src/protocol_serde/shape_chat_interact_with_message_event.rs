@@ -12,56 +12,62 @@ pub fn ser_chat_interact_with_message_event(
     if let Some(var_1) = &input.customization_arn {
         object.key("customizationArn").string(var_1.as_str());
     }
-    if let Some(var_2) = &input.interaction_type {
-        object.key("interactionType").string(var_2.as_str());
+    if let Some(var_2) = &input.programming_language {
+        #[allow(unused_mut)]
+        let mut object_3 = object.key("programmingLanguage").start_object();
+        crate::protocol_serde::shape_programming_language::ser_programming_language(&mut object_3, var_2)?;
+        object_3.finish();
     }
-    if let Some(var_3) = &input.interaction_target {
-        object.key("interactionTarget").string(var_3.as_str());
+    if let Some(var_4) = &input.interaction_type {
+        object.key("interactionType").string(var_4.as_str());
     }
-    if let Some(var_4) = &input.accepted_character_count {
+    if let Some(var_5) = &input.interaction_target {
+        object.key("interactionTarget").string(var_5.as_str());
+    }
+    if let Some(var_6) = &input.accepted_character_count {
         object.key("acceptedCharacterCount").number(
             #[allow(clippy::useless_conversion)]
-            ::aws_smithy_types::Number::NegInt((*var_4).into()),
+            ::aws_smithy_types::Number::NegInt((*var_6).into()),
         );
     }
-    if let Some(var_5) = &input.accepted_line_count {
+    if let Some(var_7) = &input.accepted_line_count {
         object.key("acceptedLineCount").number(
             #[allow(clippy::useless_conversion)]
-            ::aws_smithy_types::Number::NegInt((*var_5).into()),
+            ::aws_smithy_types::Number::NegInt((*var_7).into()),
         );
     }
-    if let Some(var_6) = &input.accepted_snippet_has_reference {
-        object.key("acceptedSnippetHasReference").boolean(*var_6);
+    if let Some(var_8) = &input.accepted_snippet_has_reference {
+        object.key("acceptedSnippetHasReference").boolean(*var_8);
     }
-    if let Some(var_7) = &input.has_project_level_context {
-        object.key("hasProjectLevelContext").boolean(*var_7);
+    if let Some(var_9) = &input.has_project_level_context {
+        object.key("hasProjectLevelContext").boolean(*var_9);
     }
-    if let Some(var_8) = &input.user_intent {
-        object.key("userIntent").string(var_8.as_str());
+    if let Some(var_10) = &input.user_intent {
+        object.key("userIntent").string(var_10.as_str());
     }
-    if let Some(var_9) = &input.added_ide_diagnostics {
-        let mut array_10 = object.key("addedIdeDiagnostics").start_array();
-        for item_11 in var_9 {
+    if let Some(var_11) = &input.added_ide_diagnostics {
+        let mut array_12 = object.key("addedIdeDiagnostics").start_array();
+        for item_13 in var_11 {
             {
                 #[allow(unused_mut)]
-                let mut object_12 = array_10.value().start_object();
-                crate::protocol_serde::shape_ide_diagnostic::ser_ide_diagnostic(&mut object_12, item_11)?;
-                object_12.finish();
+                let mut object_14 = array_12.value().start_object();
+                crate::protocol_serde::shape_ide_diagnostic::ser_ide_diagnostic(&mut object_14, item_13)?;
+                object_14.finish();
             }
         }
-        array_10.finish();
+        array_12.finish();
     }
-    if let Some(var_13) = &input.removed_ide_diagnostics {
-        let mut array_14 = object.key("removedIdeDiagnostics").start_array();
-        for item_15 in var_13 {
+    if let Some(var_15) = &input.removed_ide_diagnostics {
+        let mut array_16 = object.key("removedIdeDiagnostics").start_array();
+        for item_17 in var_15 {
             {
                 #[allow(unused_mut)]
-                let mut object_16 = array_14.value().start_object();
-                crate::protocol_serde::shape_ide_diagnostic::ser_ide_diagnostic(&mut object_16, item_15)?;
-                object_16.finish();
+                let mut object_18 = array_16.value().start_object();
+                crate::protocol_serde::shape_ide_diagnostic::ser_ide_diagnostic(&mut object_18, item_17)?;
+                object_18.finish();
             }
         }
-        array_14.finish();
+        array_16.finish();
     }
     Ok(())
 }

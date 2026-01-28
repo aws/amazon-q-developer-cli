@@ -20,6 +20,7 @@ impl super::Client {
     ///   - [`subscription_info(Option<SubscriptionInfo>)`](crate::operation::get_usage_limits::GetUsageLimitsOutput::subscription_info): Subscription Info
     ///   - [`overage_configuration(Option<OverageConfiguration>)`](crate::operation::get_usage_limits::GetUsageLimitsOutput::overage_configuration): Overage Configuration
     ///   - [`user_info(Option<UserInfo>)`](crate::operation::get_usage_limits::GetUsageLimitsOutput::user_info): User Information
+    ///   - [`total_usage(Option<TotalUsage>)`](crate::operation::get_usage_limits::GetUsageLimitsOutput::total_usage): Total overage usage information
     /// - On failure, responds with
     ///   [`SdkError<GetUsageLimitsError>`](crate::operation::get_usage_limits::GetUsageLimitsError)
     pub fn get_usage_limits(&self) -> crate::operation::get_usage_limits::builders::GetUsageLimitsFluentBuilder {

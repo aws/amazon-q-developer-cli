@@ -36,11 +36,13 @@ pub(crate) mod shape_generate_task_assist_plan;
 
 pub(crate) mod shape_invoke_mcp;
 
-pub(crate) mod shape_send_message;
+pub(crate) mod shape_invoke_mcp_stream;
 
 pub(crate) fn or_empty_doc(data: &[u8]) -> &[u8] {
     if data.is_empty() { b"{}" } else { data }
 }
+
+pub(crate) mod shape_send_message;
 
 pub(crate) mod shape_access_denied_error;
 
@@ -63,6 +65,10 @@ pub(crate) mod shape_generate_task_assist_plan_output;
 pub(crate) mod shape_internal_server_error;
 
 pub(crate) mod shape_invoke_mcp_input;
+
+pub(crate) mod shape_invoke_mcp_stream_input;
+
+pub(crate) mod shape_invoke_mcp_stream_output;
 
 pub(crate) mod shape_resource_not_found_exception;
 
@@ -118,6 +124,8 @@ pub(crate) mod shape_intents_event;
 pub(crate) mod shape_interaction_components_event;
 
 pub(crate) mod shape_invalid_state_event;
+
+pub(crate) mod shape_json_rpc_stream_event;
 
 pub(crate) mod shape_message_metadata_event;
 

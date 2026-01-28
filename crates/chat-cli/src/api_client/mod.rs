@@ -273,12 +273,19 @@ impl ApiClient {
             ]);
         }
 
+        debug!("Calling ListAvailableProfiles API");
+
         let mut profiles = vec![];
         let mut stream = self.client.list_available_profiles().into_paginator().send();
         while let Some(profiles_output) = stream.next().await {
-            profiles.extend(profiles_output?.profiles().iter().cloned().map(AuthProfile::from));
+            let output = profiles_output?;
+            for p in output.profiles() {
+                debug!(arn = %p.arn(), name = %p.profile_name(), "ListAvailableProfiles response");
+            }
+            profiles.extend(output.profiles().iter().cloned().map(AuthProfile::from));
         }
 
+        debug!(total = profiles.len(), "ListAvailableProfiles complete");
         Ok(profiles)
     }
 
@@ -385,6 +392,60 @@ impl ApiClient {
         let registry_url = mcp_config.and_then(|config| config.mcp_registry_url().map(|s| s.to_string()));
 
         Ok((mcp_enabled, registry_url))
+    }
+
+    /// Check if web tools (web_search, web_fetch) are enabled for this profile
+    pub async fn is_web_tools_enabled(&self, database: &Database) -> Result<bool, ApiClientError> {
+        // Get profile ARN - try self.profile first, then database
+        debug!(
+            self_profile = ?self.profile.as_ref().map(|p| &p.arn),
+            "is_web_tools_enabled called"
+        );
+
+        let db_profile = database.get_auth_profile().ok().flatten();
+        debug!(db_profile = ?db_profile.as_ref().map(|p| &p.arn), "database profile");
+
+        let profile_arn = self
+            .profile
+            .as_ref()
+            .map(|p| p.arn.clone())
+            .or_else(|| db_profile.map(|p| p.arn));
+
+        let Some(arn) = profile_arn else {
+            debug!("No profile ARN available, skipping web_tools check (enabled by default)");
+            return Ok(true);
+        };
+
+        debug!(arn = %arn, "Calling GetProfile");
+
+        let response = match self
+            .client
+            .get_profile()
+            .set_profile_arn(Some(arn.clone()))
+            .send()
+            .await
+        {
+            Ok(r) => r,
+            Err(e) => {
+                error!(arn = %arn, error = ?e, "GetProfile failed");
+                return Err(e.into());
+            },
+        };
+
+        let profile = response.profile();
+        let web_tools = profile.opt_in_features().and_then(|features| features.web_tools());
+
+        debug!(
+            arn = %profile.arn(),
+            profile_name = ?profile.profile_name(),
+            web_tools = ?web_tools,
+            "GetProfile response"
+        );
+
+        let enabled = web_tools.is_none_or(|wt| matches!(wt.toggle(), OptInFeatureToggle::On));
+        debug!(enabled = enabled, "web_tools_enabled result");
+
+        Ok(enabled)
     }
 
     pub async fn create_subscription_token(&self) -> Result<CreateSubscriptionTokenOutput, ApiClientError> {
@@ -841,5 +902,46 @@ mod tests {
                 model_id
             );
         }
+    }
+
+    #[test]
+    fn test_web_tools_toggle_logic() {
+        use amzn_consolas_client::types::{
+            OptInFeatureToggle,
+            WebTools,
+        };
+
+        // Helper to check if web tools would be enabled given an Option<WebTools>
+        fn is_enabled(web_tools: Option<&WebTools>) -> bool {
+            web_tools.is_none_or(|wt| matches!(wt.toggle(), OptInFeatureToggle::On))
+        }
+
+        // None -> enabled (default behavior)
+        assert!(is_enabled(None), "web_tools=None should be enabled");
+
+        // ON -> enabled
+        let on = WebTools::builder().toggle(OptInFeatureToggle::On).build().unwrap();
+        assert!(is_enabled(Some(&on)), "web_tools=ON should be enabled");
+
+        // OFF -> disabled
+        let off = WebTools::builder().toggle(OptInFeatureToggle::Off).build().unwrap();
+        assert!(!is_enabled(Some(&off)), "web_tools=OFF should be disabled");
+    }
+
+    #[test]
+    fn test_web_tools_error_handling() {
+        // Test that unwrap_or(false) behavior is correct for error cases
+        let ok_true: Result<bool, &str> = Ok(true);
+        let ok_false: Result<bool, &str> = Ok(false);
+        let err: Result<bool, &str> = Err("API error");
+
+        // Ok(true) -> enabled
+        assert!(ok_true.unwrap_or(false), "Ok(true) should be enabled");
+
+        // Ok(false) -> disabled (admin opt-out)
+        assert!(!ok_false.unwrap_or(false), "Ok(false) should be disabled");
+
+        // Err -> disabled (fail closed)
+        assert!(!err.unwrap_or(false), "Err should default to disabled");
     }
 }

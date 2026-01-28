@@ -612,6 +612,15 @@ pub(crate) fn profile_correct_errors(
     builder
 }
 
+pub(crate) fn prompt_caching_correct_errors(
+    mut builder: crate::types::builders::PromptCachingBuilder,
+) -> crate::types::builders::PromptCachingBuilder {
+    if builder.supports_prompt_caching.is_none() {
+        builder.supports_prompt_caching = Some(Default::default())
+    }
+    builder
+}
+
 pub(crate) fn reference_tracker_configuration_correct_errors(
     mut builder: crate::types::builders::ReferenceTrackerConfigurationBuilder,
 ) -> crate::types::builders::ReferenceTrackerConfigurationBuilder {
@@ -649,6 +658,15 @@ pub(crate) fn usage_limit_list_correct_errors(
     }
     if builder.total_usage_limit.is_none() {
         builder.total_usage_limit = Some(Default::default())
+    }
+    builder
+}
+
+pub(crate) fn autonomous_agents_correct_errors(
+    mut builder: crate::types::builders::AutonomousAgentsBuilder,
+) -> crate::types::builders::AutonomousAgentsBuilder {
+    if builder.toggle.is_none() {
+        builder.toggle = "no value was set".parse::<crate::types::OptInFeatureToggle>().ok()
     }
     builder
 }
@@ -778,6 +796,15 @@ pub(crate) fn transformation_step_correct_errors(
     builder
 }
 
+pub(crate) fn web_tools_correct_errors(
+    mut builder: crate::types::builders::WebToolsBuilder,
+) -> crate::types::builders::WebToolsBuilder {
+    if builder.toggle.is_none() {
+        builder.toggle = "no value was set".parse::<crate::types::OptInFeatureToggle>().ok()
+    }
+    builder
+}
+
 pub(crate) fn workspace_context_correct_errors(
     mut builder: crate::types::builders::WorkspaceContextBuilder,
 ) -> crate::types::builders::WorkspaceContextBuilder {
@@ -825,6 +852,21 @@ pub(crate) fn sso_identity_details_correct_errors(
     }
     if builder.oidc_client_id.is_none() {
         builder.oidc_client_id = Some(Default::default())
+    }
+    builder
+}
+
+pub(crate) fn oidc_claim_keys_correct_errors(
+    mut builder: crate::types::builders::OidcClaimKeysBuilder,
+) -> crate::types::builders::OidcClaimKeysBuilder {
+    if builder.token_id_claim_key.is_none() {
+        builder.token_id_claim_key = Some(Default::default())
+    }
+    if builder.user_id_claim_key.is_none() {
+        builder.user_id_claim_key = Some(Default::default())
+    }
+    if builder.app_claim_key.is_none() {
+        builder.app_claim_key = Some(Default::default())
     }
     builder
 }

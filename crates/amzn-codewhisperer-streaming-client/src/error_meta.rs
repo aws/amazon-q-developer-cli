@@ -268,6 +268,50 @@ impl From<crate::operation::invoke_mcp::InvokeMCPError> for Error {
         }
     }
 }
+impl<R>
+    From<
+        ::aws_smithy_runtime_api::client::result::SdkError<
+            crate::operation::invoke_mcp_stream::InvokeMCPStreamError,
+            R,
+        >,
+    > for Error
+where
+    R: Send + Sync + std::fmt::Debug + 'static,
+{
+    fn from(
+        err: ::aws_smithy_runtime_api::client::result::SdkError<
+            crate::operation::invoke_mcp_stream::InvokeMCPStreamError,
+            R,
+        >,
+    ) -> Self {
+        match err {
+            ::aws_smithy_runtime_api::client::result::SdkError::ServiceError(context) => Self::from(context.into_err()),
+            _ => Error::Unhandled(crate::error::sealed_unhandled::Unhandled {
+                meta: ::aws_smithy_types::error::metadata::ProvideErrorMetadata::meta(&err).clone(),
+                source: err.into(),
+            }),
+        }
+    }
+}
+impl From<crate::operation::invoke_mcp_stream::InvokeMCPStreamError> for Error {
+    fn from(err: crate::operation::invoke_mcp_stream::InvokeMCPStreamError) -> Self {
+        match err {
+            crate::operation::invoke_mcp_stream::InvokeMCPStreamError::AccessDeniedError(inner) => {
+                Error::AccessDeniedError(inner)
+            },
+            crate::operation::invoke_mcp_stream::InvokeMCPStreamError::InternalServerError(inner) => {
+                Error::InternalServerError(inner)
+            },
+            crate::operation::invoke_mcp_stream::InvokeMCPStreamError::ThrottlingError(inner) => {
+                Error::ThrottlingError(inner)
+            },
+            crate::operation::invoke_mcp_stream::InvokeMCPStreamError::ValidationError(inner) => {
+                Error::ValidationError(inner)
+            },
+            crate::operation::invoke_mcp_stream::InvokeMCPStreamError::Unhandled(inner) => Error::Unhandled(inner),
+        }
+    }
+}
 impl<R> From<::aws_smithy_runtime_api::client::result::SdkError<crate::operation::send_message::SendMessageError, R>>
     for Error
 where
@@ -361,6 +405,29 @@ impl From<crate::types::error::ChatResponseStreamError> for Error {
                 Error::InternalServerError(inner)
             },
             crate::types::error::ChatResponseStreamError::Unhandled(inner) => Error::Unhandled(inner),
+        }
+    }
+}
+impl<R> From<::aws_smithy_runtime_api::client::result::SdkError<crate::types::error::McpStreamOutputError, R>> for Error
+where
+    R: Send + Sync + std::fmt::Debug + 'static,
+{
+    fn from(
+        err: ::aws_smithy_runtime_api::client::result::SdkError<crate::types::error::McpStreamOutputError, R>,
+    ) -> Self {
+        match err {
+            ::aws_smithy_runtime_api::client::result::SdkError::ServiceError(context) => Self::from(context.into_err()),
+            _ => Error::Unhandled(crate::error::sealed_unhandled::Unhandled {
+                meta: ::aws_smithy_types::error::metadata::ProvideErrorMetadata::meta(&err).clone(),
+                source: err.into(),
+            }),
+        }
+    }
+}
+impl From<crate::types::error::McpStreamOutputError> for Error {
+    fn from(err: crate::types::error::McpStreamOutputError) -> Self {
+        match err {
+            crate::types::error::McpStreamOutputError::Unhandled(inner) => Error::Unhandled(inner),
         }
     }
 }

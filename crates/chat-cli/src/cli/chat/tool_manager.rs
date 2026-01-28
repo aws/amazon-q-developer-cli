@@ -496,6 +496,8 @@ impl ToolManagerBuilder {
             },
             messenger_builder: Some(messenger_builder),
             is_first_launch: self.is_first_launch,
+            web_tools_enabled: true,
+            web_tools_disabled_due_to_api_failure: false,
             ..Default::default()
         })
     }
@@ -648,6 +650,11 @@ pub struct ToolManager {
     /// We need to store this for when we switch agent - we need to be spawning messengers that are
     /// already listened to by the orchestrator task
     messenger_builder: Option<ServerMessengerBuilder>,
+
+    /// Whether web tools are enabled (false if admin disabled or API error)
+    pub web_tools_enabled: bool,
+    /// Whether web tools were disabled due to API failure vs admin configuration
+    pub web_tools_disabled_due_to_api_failure: bool,
 
     /// A collection of preferences that pertains to the conversation
     /// As far as tool manager goes, this is relevant for tool and server filters
@@ -861,6 +868,25 @@ impl ToolManager {
             }
             if !crate::cli::chat::tools::web_fetch::WebFetch::is_enabled(os) {
                 tool_specs.remove(ToolMetadata::WEB_FETCH.spec_name);
+            }
+            // Block web tools if enterprise has opted out (disable on API error)
+            match os.client.is_web_tools_enabled(&os.database).await {
+                Ok(true) => {
+                    self.web_tools_enabled = true;
+                    self.web_tools_disabled_due_to_api_failure = false;
+                },
+                Ok(false) => {
+                    self.web_tools_enabled = false;
+                    self.web_tools_disabled_due_to_api_failure = false;
+                    tool_specs.remove(ToolMetadata::WEB_SEARCH.spec_name);
+                    tool_specs.remove(ToolMetadata::WEB_FETCH.spec_name);
+                },
+                Err(_) => {
+                    self.web_tools_enabled = false;
+                    self.web_tools_disabled_due_to_api_failure = true;
+                    tool_specs.remove(ToolMetadata::WEB_SEARCH.spec_name);
+                    tool_specs.remove(ToolMetadata::WEB_FETCH.spec_name);
+                },
             }
 
             #[cfg(windows)]

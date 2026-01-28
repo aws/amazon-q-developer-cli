@@ -20,6 +20,8 @@ pub struct GetUsageLimitsOutput {
     pub overage_configuration: ::std::option::Option<crate::types::OverageConfiguration>,
     /// User Information
     pub user_info: ::std::option::Option<crate::types::UserInfo>,
+    /// Total overage usage information
+    pub total_usage: ::std::option::Option<crate::types::TotalUsage>,
     _request_id: Option<String>,
 }
 impl GetUsageLimitsOutput {
@@ -68,6 +70,11 @@ impl GetUsageLimitsOutput {
     pub fn user_info(&self) -> ::std::option::Option<&crate::types::UserInfo> {
         self.user_info.as_ref()
     }
+
+    /// Total overage usage information
+    pub fn total_usage(&self) -> ::std::option::Option<&crate::types::TotalUsage> {
+        self.total_usage.as_ref()
+    }
 }
 impl ::aws_types::request_id::RequestId for GetUsageLimitsOutput {
     fn request_id(&self) -> Option<&str> {
@@ -95,6 +102,7 @@ pub struct GetUsageLimitsOutputBuilder {
     pub(crate) subscription_info: ::std::option::Option<crate::types::SubscriptionInfo>,
     pub(crate) overage_configuration: ::std::option::Option<crate::types::OverageConfiguration>,
     pub(crate) user_info: ::std::option::Option<crate::types::UserInfo>,
+    pub(crate) total_usage: ::std::option::Option<crate::types::TotalUsage>,
     _request_id: Option<String>,
 }
 impl GetUsageLimitsOutputBuilder {
@@ -254,6 +262,23 @@ impl GetUsageLimitsOutputBuilder {
         &self.user_info
     }
 
+    /// Total overage usage information
+    pub fn total_usage(mut self, input: crate::types::TotalUsage) -> Self {
+        self.total_usage = ::std::option::Option::Some(input);
+        self
+    }
+
+    /// Total overage usage information
+    pub fn set_total_usage(mut self, input: ::std::option::Option<crate::types::TotalUsage>) -> Self {
+        self.total_usage = input;
+        self
+    }
+
+    /// Total overage usage information
+    pub fn get_total_usage(&self) -> &::std::option::Option<crate::types::TotalUsage> {
+        &self.total_usage
+    }
+
     pub(crate) fn _request_id(mut self, request_id: impl Into<String>) -> Self {
         self._request_id = Some(request_id.into());
         self
@@ -276,6 +301,7 @@ impl GetUsageLimitsOutputBuilder {
             subscription_info: self.subscription_info,
             overage_configuration: self.overage_configuration,
             user_info: self.user_info,
+            total_usage: self.total_usage,
             _request_id: self._request_id,
         }
     }

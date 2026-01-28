@@ -61,7 +61,9 @@ pub use crate::types::_internal_server_exception_reason::InternalServerException
 pub use crate::types::_invalid_state_event::InvalidStateEvent;
 pub use crate::types::_invalid_state_reason::InvalidStateReason;
 pub use crate::types::_json_rpc_error::JsonRpcError;
+pub use crate::types::_json_rpc_stream_event::JsonRpcStreamEvent;
 pub use crate::types::_mcp_method::McpMethod;
+pub use crate::types::_mcp_stream_output::McpStreamOutput;
 pub use crate::types::_message_metadata_event::MessageMetadataEvent;
 pub use crate::types::_metadata_event::MetadataEvent;
 pub use crate::types::_metering_event::MeteringEvent;
@@ -252,7 +254,11 @@ mod _invalid_state_reason;
 
 mod _json_rpc_error;
 
+mod _json_rpc_stream_event;
+
 mod _mcp_method;
+
+mod _mcp_stream_output;
 
 mod _message_metadata_event;
 

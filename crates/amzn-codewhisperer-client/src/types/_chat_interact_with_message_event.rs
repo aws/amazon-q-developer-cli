@@ -9,6 +9,8 @@ pub struct ChatInteractWithMessageEvent {
     pub message_id: ::std::string::String,
     #[allow(missing_docs)] // documentation missing in model
     pub customization_arn: ::std::option::Option<::std::string::String>,
+    /// Programming Languages supported by CodeWhisperer
+    pub programming_language: ::std::option::Option<crate::types::ProgrammingLanguage>,
     /// Chat Message Interaction Type
     pub interaction_type: ::std::option::Option<crate::types::ChatMessageInteractionType>,
     #[allow(missing_docs)] // documentation missing in model
@@ -44,6 +46,11 @@ impl ChatInteractWithMessageEvent {
     #[allow(missing_docs)] // documentation missing in model
     pub fn customization_arn(&self) -> ::std::option::Option<&str> {
         self.customization_arn.as_deref()
+    }
+
+    /// Programming Languages supported by CodeWhisperer
+    pub fn programming_language(&self) -> ::std::option::Option<&crate::types::ProgrammingLanguage> {
+        self.programming_language.as_ref()
     }
 
     /// Chat Message Interaction Type
@@ -112,6 +119,7 @@ pub struct ChatInteractWithMessageEventBuilder {
     pub(crate) conversation_id: ::std::option::Option<::std::string::String>,
     pub(crate) message_id: ::std::option::Option<::std::string::String>,
     pub(crate) customization_arn: ::std::option::Option<::std::string::String>,
+    pub(crate) programming_language: ::std::option::Option<crate::types::ProgrammingLanguage>,
     pub(crate) interaction_type: ::std::option::Option<crate::types::ChatMessageInteractionType>,
     pub(crate) interaction_target: ::std::option::Option<::std::string::String>,
     pub(crate) accepted_character_count: ::std::option::Option<i32>,
@@ -174,6 +182,23 @@ impl ChatInteractWithMessageEventBuilder {
     #[allow(missing_docs)] // documentation missing in model
     pub fn get_customization_arn(&self) -> &::std::option::Option<::std::string::String> {
         &self.customization_arn
+    }
+
+    /// Programming Languages supported by CodeWhisperer
+    pub fn programming_language(mut self, input: crate::types::ProgrammingLanguage) -> Self {
+        self.programming_language = ::std::option::Option::Some(input);
+        self
+    }
+
+    /// Programming Languages supported by CodeWhisperer
+    pub fn set_programming_language(mut self, input: ::std::option::Option<crate::types::ProgrammingLanguage>) -> Self {
+        self.programming_language = input;
+        self
+    }
+
+    /// Programming Languages supported by CodeWhisperer
+    pub fn get_programming_language(&self) -> &::std::option::Option<crate::types::ProgrammingLanguage> {
+        &self.programming_language
     }
 
     /// Chat Message Interaction Type
@@ -377,6 +402,7 @@ impl ChatInteractWithMessageEventBuilder {
                 )
             })?,
             customization_arn: self.customization_arn,
+            programming_language: self.programming_language,
             interaction_type: self.interaction_type,
             interaction_target: self.interaction_target,
             accepted_character_count: self.accepted_character_count,

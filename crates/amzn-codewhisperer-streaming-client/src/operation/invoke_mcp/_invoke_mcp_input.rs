@@ -6,7 +6,7 @@
 pub struct InvokeMcpInput {
     /// JSON-RPC protocol version
     pub jsonrpc: ::std::option::Option<::std::string::String>,
-    /// Request identifier for response correlation (string, number, or null per JSON-RPC 2.0)
+    /// Request identifier for response correlation (string or number per MCP spec)
     pub id: ::std::option::Option<::aws_smithy_types::Document>,
     /// MCP method name
     pub method: ::std::option::Option<crate::types::McpMethod>,
@@ -19,7 +19,7 @@ impl InvokeMcpInput {
         self.jsonrpc.as_deref()
     }
 
-    /// Request identifier for response correlation (string, number, or null per JSON-RPC 2.0)
+    /// Request identifier for response correlation (string or number per MCP spec)
     pub fn id(&self) -> ::std::option::Option<&::aws_smithy_types::Document> {
         self.id.as_ref()
     }
@@ -79,19 +79,20 @@ impl InvokeMcpInputBuilder {
         &self.jsonrpc
     }
 
-    /// Request identifier for response correlation (string, number, or null per JSON-RPC 2.0)
+    /// Request identifier for response correlation (string or number per MCP spec)
+    /// This field is required.
     pub fn id(mut self, input: ::aws_smithy_types::Document) -> Self {
         self.id = ::std::option::Option::Some(input);
         self
     }
 
-    /// Request identifier for response correlation (string, number, or null per JSON-RPC 2.0)
+    /// Request identifier for response correlation (string or number per MCP spec)
     pub fn set_id(mut self, input: ::std::option::Option<::aws_smithy_types::Document>) -> Self {
         self.id = input;
         self
     }
 
-    /// Request identifier for response correlation (string, number, or null per JSON-RPC 2.0)
+    /// Request identifier for response correlation (string or number per MCP spec)
     pub fn get_id(&self) -> &::std::option::Option<::aws_smithy_types::Document> {
         &self.id
     }

@@ -37,6 +37,7 @@ pub use crate::types::_interaction_component_entry::InteractionComponentEntryBui
 pub use crate::types::_interaction_components_event::InteractionComponentsEventBuilder;
 pub use crate::types::_invalid_state_event::InvalidStateEventBuilder;
 pub use crate::types::_json_rpc_error::JsonRpcErrorBuilder;
+pub use crate::types::_json_rpc_stream_event::JsonRpcStreamEventBuilder;
 pub use crate::types::_message_metadata_event::MessageMetadataEventBuilder;
 pub use crate::types::_metadata_event::MetadataEventBuilder;
 pub use crate::types::_metering_event::MeteringEventBuilder;
