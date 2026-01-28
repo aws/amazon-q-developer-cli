@@ -1,0 +1,6 @@
+// shell tool call to test title generation
+{"kind":"event","data":{"kind":"ToolUseEvent","data":{"tool_use_id":"tooluse_bash_001","name":"shell","input":null,"stop":null}}}
+{"kind":"event","data":{"kind":"ToolUseEvent","data":{"tool_use_id":"tooluse_bash_001","name":"shell","input":"{\"command\": \"echo hello world\"}","stop":null}}}
+{"kind":"event","data":{"kind":"ToolUseEvent","data":{"tool_use_id":"tooluse_bash_001","name":"shell","input":null,"stop":true}}}
+
+{"kind":"event","data":{"kind":"AssistantResponseEvent","data":{"content":"Command executed."}}}

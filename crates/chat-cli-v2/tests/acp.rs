@@ -9,6 +9,7 @@ use agent_client_protocol::{
 use amzn_codewhisperer_streaming_client::types::builders::AssistantResponseEventBuilder;
 use chat_cli_v2::agent::acp::extensions::methods;
 use common::{
+    AcpTestClient,
     AcpTestHarness,
     AcpTestHarnessBuilder,
 };
@@ -1148,4 +1149,113 @@ async fn context_usage_flows_to_user_turn_metadata() {
         log_content.contains("Sending context usage notification"),
         "Should send context usage notification"
     );
+}
+
+/// Helper to extract tool call title from a prompt response
+async fn get_tool_call_title(
+    harness: &mut AcpTestHarness,
+    client: &AcpTestClient,
+    session_id: &agent_client_protocol::SessionId,
+    mock_file: &str,
+    prompt: &str,
+) -> String {
+    harness
+        .push_mock_responses_from_file(&session_id.0, mock_file)
+        .await;
+
+    client
+        .prompt_text(session_id.clone(), prompt)
+        .await
+        .expect("prompt failed");
+
+    let captured = client.captured().await;
+    captured
+        .session_updates
+        .iter()
+        .find_map(|u| match u {
+            SessionUpdate::ToolCall(tc) => Some(tc.title.clone()),
+            _ => None,
+        })
+        .expect("should have a ToolCall")
+}
+
+#[tokio::test]
+#[timeout(10000)]
+async fn tool_call_has_descriptive_title_fs_read() {
+    let (mut harness, client, session_id, _) = AcpTestHarnessBuilder::new("tool_title_fs_read")
+        .build_with_session()
+        .await;
+
+    let test_file = harness.paths.cwd.join("test_file.txt");
+    tokio::fs::write(&test_file, "test content")
+        .await
+        .expect("failed to create test file");
+
+    let title = get_tool_call_title(
+        &mut harness,
+        &client,
+        &session_id,
+        "tests/mock_responses/tool_title_fs_read.jsonl",
+        "read the test file",
+    )
+    .await;
+
+    assert_eq!(title, "Reading test_file.txt");
+}
+
+#[tokio::test]
+#[timeout(10000)]
+async fn tool_call_has_descriptive_title_fs_write_create() {
+    let (mut harness, client, session_id, _) = AcpTestHarnessBuilder::new("tool_title_fs_write_create")
+        .build_with_session()
+        .await;
+
+    let title = get_tool_call_title(
+        &mut harness,
+        &client,
+        &session_id,
+        "tests/mock_responses/tool_title_fs_write_create.jsonl",
+        "create a new file",
+    )
+    .await;
+
+    assert_eq!(title, "Creating new_file.txt");
+}
+
+#[tokio::test]
+#[timeout(10000)]
+async fn tool_call_has_descriptive_title_grep() {
+    let (mut harness, client, session_id, _) = AcpTestHarnessBuilder::new("tool_title_grep")
+        .build_with_session()
+        .await;
+
+    let title = get_tool_call_title(
+        &mut harness,
+        &client,
+        &session_id,
+        "tests/mock_responses/tool_title_grep.jsonl",
+        "search for TODO",
+    )
+    .await;
+
+    assert_eq!(title, "Searching for 'TODO'");
+}
+
+#[tokio::test]
+#[timeout(10000)]
+async fn tool_call_has_descriptive_title_execute_bash() {
+    let (mut harness, client, session_id, _) = AcpTestHarnessBuilder::new("tool_title_execute_bash")
+        .build_with_session()
+        .await;
+
+    let title = get_tool_call_title(
+        &mut harness,
+        &client,
+        &session_id,
+        "tests/mock_responses/tool_title_execute_bash.jsonl",
+        "run echo hello",
+    )
+    .await;
+
+    assert_eq!(title, "Running: echo hello world");
 }

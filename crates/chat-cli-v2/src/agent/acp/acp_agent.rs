@@ -908,8 +908,9 @@ fn convert_update_event_to_session_update(update_event: UpdateEvent) -> Option<S
         )),
         UpdateEvent::ToolCall(tool_call) => {
             let locations = get_tool_locations(&tool_call.tool);
+            let title = get_tool_title(&tool_call.tool);
 
-            let mut acp_tool_call = ToolCall::new(ToolCallId::new(tool_call.id), tool_call.tool_use_block.name.clone())
+            let mut acp_tool_call = ToolCall::new(ToolCallId::new(tool_call.id), title)
                 .kind(get_tool_kind(&tool_call.tool_use_block.name))
                 .status(ToolCallStatus::InProgress)
                 .content(get_tool_content(&tool_call.tool))
@@ -929,12 +930,13 @@ fn convert_update_event_to_session_update(update_event: UpdateEvent) -> Option<S
             };
 
             let locations = get_tool_locations(&tool_call.tool);
+            let title = get_tool_title(&tool_call.tool);
 
             Some(SessionUpdate::ToolCallUpdate(ToolCallUpdate::new(
                 ToolCallId::new(tool_call.id),
                 ToolCallUpdateFields::new()
                     .status(Some(status))
-                    .title(Some(tool_call.tool_use_block.name.clone()))
+                    .title(Some(title))
                     .kind(Some(get_tool_kind(&tool_call.tool_use_block.name)))
                     .raw_input(Some(tool_call.tool_use_block.input.clone()))
                     .raw_output(raw_output)
@@ -1014,6 +1016,62 @@ fn get_tool_kind(tool_name: &str) -> ToolKind {
         }
     } else {
         ToolKind::Other
+    }
+}
+
+fn get_tool_title(tool: &Tool) -> String {
+    match &tool.kind {
+        AgentToolKind::BuiltIn(builtin) => match builtin {
+            BuiltInTool::FileRead(fs_read) => {
+                let paths: Vec<_> = fs_read.ops.iter().map(|op| op.path.as_str()).collect();
+                format_paths_title("Reading", &paths)
+            },
+            BuiltInTool::FileWrite(fs_write) => {
+                let action = match fs_write {
+                    FsWrite::Create(_) => "Creating",
+                    FsWrite::StrReplace(_) | FsWrite::Insert(_) => "Editing",
+                };
+                format!("{} {}", action, truncate_path(fs_write.path()))
+            },
+            BuiltInTool::Grep(grep) => format!("Searching for '{}'", truncate_str(&grep.pattern, 30)),
+            BuiltInTool::Glob(glob) => format!("Finding {}", truncate_str(&glob.pattern, 40)),
+            BuiltInTool::Ls(ls) => format!("Listing {}", truncate_path(&ls.path)),
+            BuiltInTool::ExecuteCmd(cmd) => format!("Running: {}", truncate_str(&cmd.command, 40)),
+            BuiltInTool::UseAws(aws) => format!("AWS: {} {}", aws.service_name, aws.operation_name),
+            BuiltInTool::ImageRead(img) => {
+                let paths: Vec<_> = img.paths.iter().map(|p| p.as_str()).collect();
+                format_paths_title("Reading image", &paths)
+            },
+            BuiltInTool::SpawnSubagent(_) => "Spawning subagent".to_string(),
+            BuiltInTool::Summary(_) => "Summarizing".to_string(),
+            BuiltInTool::Mkdir(_) => "Creating directory".to_string(),
+            BuiltInTool::Introspect(_) => "Introspecting".to_string(),
+        },
+        AgentToolKind::Mcp(mcp) => mcp.tool_name.clone(),
+    }
+}
+
+fn truncate_str(s: &str, max_len: usize) -> String {
+    let truncated = agent::util::truncate_safe(s, max_len);
+    if truncated.len() < s.len() {
+        format!("{}...", truncated)
+    } else {
+        s.to_string()
+    }
+}
+
+fn truncate_path(path: &str) -> String {
+    let p = std::path::Path::new(path);
+    p.file_name()
+        .map(|f| f.to_string_lossy().to_string())
+        .unwrap_or_else(|| truncate_str(path, 30))
+}
+
+fn format_paths_title(action: &str, paths: &[&str]) -> String {
+    match paths.len() {
+        0 => action.to_string(),
+        1 => format!("{} {}", action, truncate_path(paths[0])),
+        n => format!("{} {} (+{} more)", action, truncate_path(paths[0]), n - 1),
     }
 }
 

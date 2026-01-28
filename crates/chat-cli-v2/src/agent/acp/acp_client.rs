@@ -108,6 +108,8 @@ impl acp::Client for AcpClient {
 pub async fn execute(agent_path: String) -> Result<ExitCode> {
     let mut child = tokio::process::Command::new(&agent_path)
         .arg("acp")  // Add the acp subcommand
+        .env("KIRO_LOG_LEVEL", "debug")
+        .env("KIRO_CHAT_LOG_FILE", "/tmp/kiro-headless-chat.log")
         .stdin(std::process::Stdio::piped())
         .stdout(std::process::Stdio::piped())
         .kill_on_drop(true)

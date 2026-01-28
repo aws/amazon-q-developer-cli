@@ -1,0 +1,6 @@
+// grep tool call to test title generation - uses cwd which is sandboxed
+{"kind":"event","data":{"kind":"ToolUseEvent","data":{"tool_use_id":"tooluse_grep_001","name":"grep","input":null,"stop":null}}}
+{"kind":"event","data":{"kind":"ToolUseEvent","data":{"tool_use_id":"tooluse_grep_001","name":"grep","input":"{\"pattern\": \"TODO\"}","stop":null}}}
+{"kind":"event","data":{"kind":"ToolUseEvent","data":{"tool_use_id":"tooluse_grep_001","name":"grep","input":null,"stop":true}}}
+
+{"kind":"event","data":{"kind":"AssistantResponseEvent","data":{"content":"Search complete."}}}

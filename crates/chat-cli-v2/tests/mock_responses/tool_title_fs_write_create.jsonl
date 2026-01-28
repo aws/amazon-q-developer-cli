@@ -1,0 +1,6 @@
+// fs_write (create) tool call to test title generation
+{"kind":"event","data":{"kind":"ToolUseEvent","data":{"tool_use_id":"tooluse_write_001","name":"write","input":null,"stop":null}}}
+{"kind":"event","data":{"kind":"ToolUseEvent","data":{"tool_use_id":"tooluse_write_001","name":"write","input":"{\"command\": \"create\", \"path\": \"new_file.txt\", \"content\": \"hello world\"}","stop":null}}}
+{"kind":"event","data":{"kind":"ToolUseEvent","data":{"tool_use_id":"tooluse_write_001","name":"write","input":null,"stop":true}}}
+
+{"kind":"event","data":{"kind":"AssistantResponseEvent","data":{"content":"Created the file."}}}

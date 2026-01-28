@@ -1,0 +1,6 @@
+// fs_read tool call to test title generation
+{"kind":"event","data":{"kind":"ToolUseEvent","data":{"tool_use_id":"tooluse_read_001","name":"read","input":null,"stop":null}}}
+{"kind":"event","data":{"kind":"ToolUseEvent","data":{"tool_use_id":"tooluse_read_001","name":"read","input":"{\"ops\": [{\"path\": \"test_file.txt\"}]}","stop":null}}}
+{"kind":"event","data":{"kind":"ToolUseEvent","data":{"tool_use_id":"tooluse_read_001","name":"read","input":null,"stop":true}}}
+
+{"kind":"event","data":{"kind":"AssistantResponseEvent","data":{"content":"Done reading the file."}}}
