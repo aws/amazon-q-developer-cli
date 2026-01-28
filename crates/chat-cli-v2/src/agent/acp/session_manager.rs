@@ -707,6 +707,10 @@ async fn handle_approval_request(
     session_id: SessionId,
     trust_tx: mpsc::Sender<String>,
 ) -> Result<(), sacp::Error> {
+    use std::str::FromStr;
+
+    use agent::agent_config::parse::CanonicalToolName;
+    use agent::tools::Tool;
     use sacp::schema::{
         PermissionOption,
         PermissionOptionKind,
@@ -714,7 +718,15 @@ async fn handle_approval_request(
         ToolCallUpdateFields,
     };
 
+    use super::acp_agent::get_tool_title;
+
     let tool_name = tool_use.name.clone();
+
+    // Generate descriptive title by parsing the tool
+    let title = CanonicalToolName::from_str(&tool_use.name)
+        .ok()
+        .and_then(|name| Tool::parse(&name, tool_use.input.clone()).ok())
+        .map_or_else(|| tool_use.name.clone(), |tool| get_tool_title(&tool));
 
     // Send permission request to client
     let response = cx
@@ -722,7 +734,7 @@ async fn handle_approval_request(
             session_id,
             ToolCallUpdate::new(
                 ToolCallId::new(id.clone()),
-                ToolCallUpdateFields::new().title(Some(tool_use.name.clone())),
+                ToolCallUpdateFields::new().title(Some(title)),
             ),
             vec![
                 PermissionOption::new(permission_options::ALLOW_ONCE, "Yes", PermissionOptionKind::AllowOnce),

@@ -1159,9 +1159,7 @@ async fn get_tool_call_title(
     mock_file: &str,
     prompt: &str,
 ) -> String {
-    harness
-        .push_mock_responses_from_file(&session_id.0, mock_file)
-        .await;
+    harness.push_mock_responses_from_file(&session_id.0, mock_file).await;
 
     client
         .prompt_text(session_id.clone(), prompt)
@@ -1187,9 +1185,7 @@ async fn get_tool_call_locations(
     mock_file: &str,
     prompt: &str,
 ) -> Vec<agent_client_protocol::ToolCallLocation> {
-    harness
-        .push_mock_responses_from_file(&session_id.0, mock_file)
-        .await;
+    harness.push_mock_responses_from_file(&session_id.0, mock_file).await;
 
     client
         .prompt_text(session_id.clone(), prompt)
@@ -1210,9 +1206,7 @@ async fn get_tool_call_locations(
 #[tokio::test]
 #[timeout(10000)]
 async fn tool_call_has_descriptive_title_fs_read() {
-    let (mut harness, client, session_id, _) = AcpTestHarnessBuilder::new("tool_title_fs_read")
-        .build_with_session()
-        .await;
+    let (mut harness, client, session_id, _) = AcpTestHarnessBuilder::new("tool_fs_read").build_with_session().await;
 
     let test_file = harness.paths.cwd.join("test_file.txt");
     tokio::fs::write(&test_file, "test content")
@@ -1223,7 +1217,7 @@ async fn tool_call_has_descriptive_title_fs_read() {
         &mut harness,
         &client,
         &session_id,
-        "tests/mock_responses/tool_title_fs_read.jsonl",
+        "tests/mock_responses/tool_fs_read.jsonl",
         "read the test file",
     )
     .await;
@@ -1234,7 +1228,7 @@ async fn tool_call_has_descriptive_title_fs_read() {
 #[tokio::test]
 #[timeout(10000)]
 async fn tool_call_has_descriptive_title_fs_write_create() {
-    let (mut harness, client, session_id, _) = AcpTestHarnessBuilder::new("tool_title_fs_write_create")
+    let (mut harness, client, session_id, _) = AcpTestHarnessBuilder::new("tool_fs_write_create")
         .build_with_session()
         .await;
 
@@ -1242,7 +1236,7 @@ async fn tool_call_has_descriptive_title_fs_write_create() {
         &mut harness,
         &client,
         &session_id,
-        "tests/mock_responses/tool_title_fs_write_create.jsonl",
+        "tests/mock_responses/tool_fs_write_create.jsonl",
         "create a new file",
     )
     .await;
@@ -1253,15 +1247,13 @@ async fn tool_call_has_descriptive_title_fs_write_create() {
 #[tokio::test]
 #[timeout(10000)]
 async fn tool_call_has_descriptive_title_grep() {
-    let (mut harness, client, session_id, _) = AcpTestHarnessBuilder::new("tool_title_grep")
-        .build_with_session()
-        .await;
+    let (mut harness, client, session_id, _) = AcpTestHarnessBuilder::new("tool_grep").build_with_session().await;
 
     let title = get_tool_call_title(
         &mut harness,
         &client,
         &session_id,
-        "tests/mock_responses/tool_title_grep.jsonl",
+        "tests/mock_responses/tool_grep.jsonl",
         "search for TODO",
     )
     .await;
@@ -1272,7 +1264,7 @@ async fn tool_call_has_descriptive_title_grep() {
 #[tokio::test]
 #[timeout(10000)]
 async fn tool_call_has_descriptive_title_execute_bash() {
-    let (mut harness, client, session_id, _) = AcpTestHarnessBuilder::new("tool_title_execute_bash")
+    let (mut harness, client, session_id, _) = AcpTestHarnessBuilder::new("tool_execute_bash")
         .build_with_session()
         .await;
 
@@ -1280,7 +1272,7 @@ async fn tool_call_has_descriptive_title_execute_bash() {
         &mut harness,
         &client,
         &session_id,
-        "tests/mock_responses/tool_title_execute_bash.jsonl",
+        "tests/mock_responses/tool_execute_bash.jsonl",
         "run echo hello",
     )
     .await;
@@ -1291,18 +1283,22 @@ async fn tool_call_has_descriptive_title_execute_bash() {
 #[tokio::test]
 #[timeout(10000)]
 async fn tool_call_has_locations_fs_read_multiple() {
-    let (mut harness, client, session_id, _) = AcpTestHarnessBuilder::new("tool_locations_fs_read_multi")
+    let (mut harness, client, session_id, _) = AcpTestHarnessBuilder::new("tool_fs_read_multi")
         .build_with_session()
         .await;
 
-    tokio::fs::write(harness.paths.cwd.join("file1.txt"), "content1").await.unwrap();
-    tokio::fs::write(harness.paths.cwd.join("file2.txt"), "content2").await.unwrap();
+    tokio::fs::write(harness.paths.cwd.join("file1.txt"), "content1")
+        .await
+        .unwrap();
+    tokio::fs::write(harness.paths.cwd.join("file2.txt"), "content2")
+        .await
+        .unwrap();
 
     let locations = get_tool_call_locations(
         &mut harness,
         &client,
         &session_id,
-        "tests/mock_responses/tool_locations_fs_read_multi.jsonl",
+        "tests/mock_responses/tool_fs_read_multi.jsonl",
         "read both files",
     )
     .await;
@@ -1315,20 +1311,23 @@ async fn tool_call_has_locations_fs_read_multiple() {
 #[tokio::test]
 #[timeout(10000)]
 async fn tool_call_has_locations_fs_read_with_line() {
-    let (mut harness, client, session_id, _) = AcpTestHarnessBuilder::new("tool_locations_fs_read_offset")
+    let (mut harness, client, session_id, _) = AcpTestHarnessBuilder::new("tool_fs_read_offset")
         .build_with_session()
         .await;
 
     let test_file = harness.paths.cwd.join("test_file.txt");
-    tokio::fs::write(&test_file, "line1\nline2\nline3\nline4\nline5\nline6\nline7\nline8\nline9\nline10")
-        .await
-        .unwrap();
+    tokio::fs::write(
+        &test_file,
+        "line1\nline2\nline3\nline4\nline5\nline6\nline7\nline8\nline9\nline10",
+    )
+    .await
+    .unwrap();
 
     let locations = get_tool_call_locations(
         &mut harness,
         &client,
         &session_id,
-        "tests/mock_responses/tool_locations_fs_read_offset.jsonl",
+        "tests/mock_responses/tool_fs_read_offset.jsonl",
         "read from line 10",
     )
     .await;

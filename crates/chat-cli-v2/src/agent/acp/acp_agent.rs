@@ -1019,7 +1019,7 @@ fn get_tool_kind(tool_name: &str) -> ToolKind {
     }
 }
 
-fn get_tool_title(tool: &Tool) -> String {
+pub(crate) fn get_tool_title(tool: &Tool) -> String {
     match &tool.kind {
         AgentToolKind::BuiltIn(builtin) => match builtin {
             BuiltInTool::FileRead(fs_read) => {
@@ -1052,19 +1052,15 @@ fn get_tool_title(tool: &Tool) -> String {
 }
 
 fn truncate_str(s: &str, max_len: usize) -> String {
-    let truncated = agent::util::truncate_safe(s, max_len);
-    if truncated.len() < s.len() {
-        format!("{}...", truncated)
-    } else {
-        s.to_string()
-    }
+    let mut result = s.to_string();
+    agent::util::truncate_safe_in_place(&mut result, max_len, Some("..."));
+    result
 }
 
 fn truncate_path(path: &str) -> String {
     let p = std::path::Path::new(path);
     p.file_name()
-        .map(|f| f.to_string_lossy().to_string())
-        .unwrap_or_else(|| truncate_str(path, 30))
+        .map_or_else(|| truncate_str(path, 30), |f| f.to_string_lossy().to_string())
 }
 
 fn format_paths_title(action: &str, paths: &[&str]) -> String {
@@ -1120,12 +1116,10 @@ fn get_tool_locations(tool: &Tool) -> Option<Vec<ToolCallLocation>> {
                     )
                 }
             },
-            BuiltInTool::ImageRead(image_read) => {
-                Some(image_read.paths.iter().map(|p| ToolCallLocation::new(p)).collect())
-            },
+            BuiltInTool::ImageRead(image_read) => Some(image_read.paths.iter().map(ToolCallLocation::new).collect()),
             _ => None,
         },
-        _ => None,
+        AgentToolKind::Mcp(_) => None,
     }
 }
 
