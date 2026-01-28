@@ -58,6 +58,28 @@ impl ContextManager {
         })
     }
 
+    /// Create context manager from embedded data (in-memory, no disk I/O)
+    pub fn from_embedded_data(
+        contexts: HashMap<String, KnowledgeContext>,
+        context_data: HashMap<String, Vec<crate::types::DataPoint>>,
+    ) -> Result<Self> {
+        let arc_contexts = contexts.into_iter().map(|(k, v)| (k, Arc::new(v))).collect();
+
+        // Load context data into volatile_contexts
+        let mut volatile_contexts = HashMap::new();
+        for (context_id, data_points) in context_data {
+            let semantic_context = SemanticContext::from_data(data_points)?;
+            volatile_contexts.insert(context_id, Arc::new(Mutex::new(semantic_context)));
+        }
+
+        Ok(Self {
+            contexts: Arc::new(RwLock::new(arc_contexts)),
+            volatile_contexts: Arc::new(RwLock::new(volatile_contexts)),
+            bm25_contexts: Arc::new(RwLock::new(HashMap::new())),
+            base_dir: PathBuf::from("/tmp/embedded"), // Dummy path
+        })
+    }
+
     /// Get all contexts
     pub async fn get_contexts(&self) -> Vec<Arc<KnowledgeContext>> {
         match tokio::time::timeout(Duration::from_secs(2), self.contexts.read()).await {

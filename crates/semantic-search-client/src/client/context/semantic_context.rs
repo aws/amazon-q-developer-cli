@@ -59,6 +59,22 @@ impl SemanticContext {
         Ok(context)
     }
 
+    /// Create semantic context from in-memory data (no disk I/O)
+    pub fn from_data(data_points: Vec<DataPoint>) -> Result<Self> {
+        let mut context = Self {
+            data_points,
+            index: None,
+            data_path: PathBuf::from("/tmp/embedded"), // Dummy path, not used
+        };
+
+        // Build index from data
+        if !context.data_points.is_empty() {
+            context.rebuild_index()?;
+        }
+
+        Ok(context)
+    }
+
     /// Get the directory containing the index files
     fn index_dir(&self) -> Option<&std::path::Path> {
         self.data_path.parent()

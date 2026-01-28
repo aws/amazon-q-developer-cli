@@ -1,6 +1,10 @@
 use std::borrow::Cow;
 use std::cell::RefCell;
 use std::path::PathBuf;
+use std::sync::atomic::{
+    AtomicUsize,
+    Ordering,
+};
 use std::sync::{
     Arc,
     Mutex,
@@ -340,7 +344,22 @@ pub struct ChatHinter {
     history_hints_enabled: bool,
     history_path: PathBuf,
     available_commands: Vec<&'static str>,
+    /// Track if first hint has been shown
+    first_hint_shown: std::sync::atomic::AtomicBool,
 }
+
+const INITIAL_PROMPT_HINTS: &[&str] = &[
+    "How can I help?",
+    "What should we work on?",
+    "Ask me anything!",
+    "What would you like to do?",
+    "Ready when you are!",
+    "Curious what I can do? Just ask!",
+    "Not sure where to start? Ask me about my features",
+    "Want to know what commands I have? Just ask",
+];
+
+static HINT_INDEX: AtomicUsize = AtomicUsize::new(0);
 
 impl ChatHinter {
     /// Creates a new ChatHinter instance
@@ -349,6 +368,7 @@ impl ChatHinter {
             history_hints_enabled,
             history_path,
             available_commands,
+            first_hint_shown: std::sync::atomic::AtomicBool::new(false),
         }
     }
 
@@ -358,9 +378,14 @@ impl ChatHinter {
 
     /// Finds the best hint for the current input using rustyline's history
     fn find_hint(&self, line: &str, ctx: &Context<'_>) -> Option<String> {
-        // If line is empty, no hint
+        // If line is empty, show hint
         if line.is_empty() {
-            return None;
+            // First prompt: rotate through initial hints. After that: fixed follow-up hint
+            if self.first_hint_shown.swap(true, Ordering::Relaxed) {
+                return Some("What would you like to do next?".to_string());
+            }
+            let idx = HINT_INDEX.fetch_add(1, Ordering::Relaxed) % INITIAL_PROMPT_HINTS.len();
+            return Some(INITIAL_PROMPT_HINTS[idx].to_string());
         }
 
         // If line starts with a slash, try to find a command hint

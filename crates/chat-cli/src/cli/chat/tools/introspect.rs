@@ -1,7 +1,18 @@
-use std::io::Write;
+use std::collections::HashMap;
+use std::io::{
+    Read,
+    Write,
+};
+use std::sync::{
+    Arc,
+    LazyLock,
+};
 
 use clap::CommandFactory;
 use eyre::Result;
+use flate2::read::GzDecoder;
+use semantic_search_client::AsyncSemanticSearchClient;
+use semantic_search_client::config::SemanticSearchConfig;
 use serde::{
     Deserialize,
     Serialize,
@@ -10,6 +21,7 @@ use strum::{
     EnumMessage,
     IntoEnumIterator,
 };
+use tokio::sync::Mutex;
 
 use super::{
     InvokeOutput,
@@ -24,10 +36,25 @@ use crate::cli::experiment::experiment_manager::{
 use crate::database::settings::Setting;
 use crate::os::Os;
 
+// Embed pre-built search index at compile time
+const DOC_SEARCH_INDEX_GZ: &[u8] = include_bytes!("../../../../../../autodocs/meta/doc-search-index.tar.gz");
+
+// Embed doc index for progressive loading fallback
+const DOC_INDEX_JSON: &str = include_str!("../../../../../../autodocs/meta/doc-index.json");
+
+// Lazy-initialized semantic search client
+static DOC_SEARCH_CLIENT: LazyLock<Mutex<Option<Arc<AsyncSemanticSearchClient>>>> = LazyLock::new(|| Mutex::new(None));
+
+// Cache for parsed doc index (path -> content)
+static DOC_CONTENT_CACHE: LazyLock<std::sync::Mutex<Option<HashMap<String, String>>>> =
+    LazyLock::new(|| std::sync::Mutex::new(None));
+
 #[derive(Debug, Clone, Deserialize)]
 pub struct Introspect {
     #[serde(default)]
     query: Option<String>,
+    #[serde(default)]
+    doc_path: Option<String>,
 }
 
 #[derive(Debug, Serialize)]
@@ -35,15 +62,6 @@ pub struct IntrospectResponse {
     built_in_help: Option<String>,
     documentation: Option<String>,
     query_context: Option<String>,
-    recommendations: Vec<ToolRecommendation>,
-}
-
-#[derive(Debug, Serialize)]
-pub struct ToolRecommendation {
-    tool_name: String,
-    description: String,
-    use_case: String,
-    example: Option<String>,
 }
 
 impl Introspect {
@@ -58,101 +76,35 @@ impl Introspect {
         let mut cmd = SlashCommand::command();
         let help_content = cmd.render_help().to_string();
 
-        // Embed documentation at compile time
-        let mut documentation = String::new();
-
-        documentation.push_str("\n\n--- README.md ---\n");
-        documentation.push_str(include_str!("../../../../../../README.md"));
-
-        documentation.push_str("\n\n--- docs/built-in-tools.md ---\n");
-        documentation.push_str(include_str!("../../../../../../docs/built-in-tools.md"));
-
-        documentation.push_str("\n\n--- docs/experiments.md ---\n");
-        documentation.push_str(include_str!("../../../../../../docs/experiments.md"));
-
-        documentation.push_str("\n\n--- docs/agent-file-locations.md ---\n");
-        documentation.push_str(include_str!("../../../../../../docs/agent-file-locations.md"));
-
-        documentation.push_str("\n\n--- docs/tangent-mode.md ---\n");
-        documentation.push_str(include_str!("../../../../../../docs/tangent-mode.md"));
-
-        // Only include web-search docs if feature is enabled for the user's region
-        let endpoint = crate::api_client::Endpoint::configured_value(&os.database);
-        if crate::feature_flags::FeatureFlags::is_web_search_enabled_for_region(endpoint.region().as_ref()) {
-            documentation.push_str("\n\n--- docs/web-search.md ---\n");
-            documentation.push_str(include_str!("../../../../../../docs/web-search.md"));
+        // If doc_path is provided, return that specific doc from embedded index
+        if let Some(path) = &self.doc_path {
+            let documentation = Self::get_doc_by_path(path)?;
+            let response = IntrospectResponse {
+                built_in_help: None,
+                documentation: Some(documentation),
+                query_context: None,
+            };
+            return Ok(InvokeOutput {
+                output: OutputKind::Json(serde_json::to_value(&response)?),
+            });
         }
 
-        // Only include code-intelligence docs if feature is enabled
-        if crate::feature_flags::FeatureFlags::CODE_INTELLIGENCE_ENABLED {
-            documentation.push_str("\n\n--- docs/code-intelligence.md ---\n");
-            documentation.push_str(include_str!("../../../../../../docs/code-intelligence.md"));
-        }
-
-        documentation.push_str("\n\n--- docs/planning-agent.md ---\n");
-        documentation.push_str(include_str!("../../../../../../docs/planning-agent.md"));
-
-        documentation.push_str("\n\n--- docs/introspect-tool.md ---\n");
-        documentation.push_str(include_str!("../../../../../../docs/introspect-tool.md"));
-
-        documentation.push_str("\n\n--- docs/mcp-registry.md ---\n");
-        documentation.push_str(include_str!("../../../../../../docs/mcp-registry.md"));
-
-        documentation.push_str("\n\n--- docs/todo-lists.md ---\n");
-        documentation.push_str(include_str!("../../../../../../docs/todo-lists.md"));
-
-        documentation.push_str("\n\n--- docs/hooks.md ---\n");
-        documentation.push_str(include_str!("../../../../../../docs/hooks.md"));
-
-        documentation.push_str("\n\n--- docs/diff-tool.md ---\n");
-        documentation.push_str(include_str!("../../../../../../docs/diff-tool.md"));
-
-        documentation.push_str("\n\n--- docs/knowledge-management.md ---\n");
-        documentation.push_str(include_str!("../../../../../../docs/knowledge-management.md"));
-
-        documentation.push_str("\n\n--- changelog (from feed.json) ---\n");
-        // Include recent changelog entries from feed.json
-        let feed = crate::cli::feed::Feed::load();
-        let recent_entries = feed.get_all_changelogs().into_iter().take(1).collect::<Vec<_>>();
-        for entry in recent_entries {
-            documentation.push_str(&format!("\n## {} ({})\n", entry.version, entry.date));
-            for change in &entry.changes {
-                documentation.push_str(&format!("- {}: {}\n", change.change_type, change.description));
+        let documentation = if let Some(query) = &self.query {
+            match self.get_relevant_docs(query).await {
+                Ok(docs) => docs,
+                Err(e) => {
+                    tracing::warn!("Semantic search failed: {e}, using fallback");
+                    Self::get_all_docs()
+                },
             }
-        }
-
-        documentation.push_str("\n\n--- CONTRIBUTING.md ---\n");
-        documentation.push_str(include_str!("../../../../../../CONTRIBUTING.md"));
-
-        // Add settings information dynamically
-        documentation.push_str("\n\n--- Available Settings ---\n");
-        documentation.push_str(
-            "KIRO CLI supports these configuration settings (use `kiro-cli settings` command from terminal, NOT /settings):\n\n",
-        );
-
-        // Automatically iterate over all settings with descriptions
-        for setting in Setting::iter() {
-            let description = setting.get_message().unwrap_or("No description available");
-            documentation.push_str(&format!("• {} - {}\n", setting.as_ref(), description));
-        }
-
-        documentation.push_str(
-            "\nNOTE: Settings are managed via `kiro-cli settings` command from terminal, not slash commands in chat.\n",
-        );
-
-        documentation.push_str("\n\n--- CRITICAL INSTRUCTION ---\n");
-        documentation.push_str("YOU MUST ONLY provide information that is explicitly documented in the sections above. If specific details about any tool, feature, or command are not documented, you MUST clearly state that the information is not available in the documentation. DO NOT generate plausible-sounding information or make assumptions about undocumented features.\n\n");
-
-        // TODO: Add KIRO CLI documentation links when available
-        // documentation.push_str("--- GitHub References ---\n");
-        // documentation.push_str("INSTRUCTION: When your response uses information from any of these
-        // documentation files, include the relevant GitHub link(s) at the end:\n"); documentation.push_str("• README.md: https://github.com/kiro-cli/kiro-cli/blob/main/README.md\n");
+        } else {
+            Self::get_all_docs()
+        };
 
         let response = IntrospectResponse {
             built_in_help: Some(help_content),
             documentation: Some(documentation),
             query_context: self.query.clone(),
-            recommendations: vec![],
         };
 
         // Add footer as direct text output if tangent mode is enabled
@@ -189,17 +141,208 @@ impl Introspect {
         })
     }
 
-    pub fn queue_description(tool: &super::tool::Tool, output: &mut impl Write) -> Result<()> {
+    pub fn queue_description(&self, tool: &super::tool::Tool, output: &mut impl Write) -> Result<()> {
         use crossterm::{
             queue,
             style,
         };
-        queue!(output, style::Print("Introspecting to get you the right information"))?;
+
+        let mode = if self.doc_path.is_some() {
+            "progressive"
+        } else if self.query.is_some() {
+            "semantic"
+        } else {
+            "index"
+        };
+
+        queue!(
+            output,
+            style::Print(format!("Introspecting to get you the right information [mode: {mode}]"))
+        )?;
         super::display_tool_use(tool, output)?;
+        queue!(output, style::Print("\n"))?;
         Ok(())
     }
 
     pub async fn validate(&self, _os: &Os) -> Result<()> {
         Ok(())
+    }
+
+    /// Get or initialize doc search client
+    async fn get_doc_search_client() -> Result<Arc<AsyncSemanticSearchClient>> {
+        let mut client_guard = DOC_SEARCH_CLIENT.lock().await;
+
+        if let Some(client) = client_guard.as_ref() {
+            return Ok(client.clone());
+        }
+
+        // Parse embedded index in memory
+        let (contexts, context_data) = Self::parse_embedded_index()?;
+
+        let config = SemanticSearchConfig {
+            chunk_size: 100000,
+            chunk_overlap: 0,
+            ..Default::default()
+        };
+
+        // Create client from in-memory data (no disk I/O)
+        let client = AsyncSemanticSearchClient::from_embedded_data(contexts, context_data, config).await?;
+        let client_arc = Arc::new(client);
+        *client_guard = Some(client_arc.clone());
+
+        Ok(client_arc)
+    }
+
+    /// Parse embedded search index in memory
+    #[allow(clippy::type_complexity)]
+    fn parse_embedded_index() -> Result<(
+        HashMap<String, semantic_search_client::types::KnowledgeContext>,
+        HashMap<String, Vec<semantic_search_client::types::DataPoint>>,
+    )> {
+        // Decompress tar in memory
+        let mut decoder = GzDecoder::new(DOC_SEARCH_INDEX_GZ);
+        let mut tar_data = Vec::new();
+        decoder.read_to_end(&mut tar_data)?;
+
+        // Parse tar and extract files in memory
+        let mut archive = tar::Archive::new(&tar_data[..]);
+        let mut files = HashMap::new();
+
+        for entry in archive.entries()? {
+            let mut entry = entry?;
+            let path = entry.path()?.to_string_lossy().to_string();
+
+            if entry.header().entry_type().is_dir() || path.contains("/.") {
+                continue;
+            }
+
+            // Normalize path (remove ./ prefix)
+            let normalized_path = path.trim_start_matches("./").to_string();
+
+            let mut content_bytes = Vec::new();
+            entry.read_to_end(&mut content_bytes)?;
+
+            // Only include valid UTF-8 files (skip binary/corrupted files)
+            if let Ok(content) = String::from_utf8(content_bytes) {
+                files.insert(normalized_path, content);
+            }
+        }
+
+        // Parse contexts.json
+        let contexts_json = files
+            .get("contexts.json")
+            .ok_or_else(|| eyre::eyre!("contexts.json not found in embedded index"))?;
+        let contexts: HashMap<String, semantic_search_client::types::KnowledgeContext> =
+            serde_json::from_str(contexts_json)?;
+
+        // Parse data.json for each context
+        let mut context_data = HashMap::new();
+        for context_id in contexts.keys() {
+            let data_path = format!("{}/data.json", context_id);
+            if let Some(data_json) = files.get(&data_path) {
+                let data: Vec<semantic_search_client::types::DataPoint> = serde_json::from_str(data_json)?;
+                context_data.insert(context_id.clone(), data);
+            }
+        }
+
+        Ok((contexts, context_data))
+    }
+
+    /// Get relevant docs using semantic search
+    async fn get_relevant_docs(&self, query: &str) -> Result<String> {
+        let client = Self::get_doc_search_client().await?;
+
+        let contexts = client.get_contexts().await;
+        let autodocs_context = contexts
+            .iter()
+            .find(|c| c.name == "kiro-autodocs")
+            .ok_or_else(|| eyre::eyre!("kiro-autodocs context not found in embedded index"))?;
+
+        let results = client.search_context(&autodocs_context.id, query, Some(5)).await?;
+
+        let mut documentation = String::new();
+        documentation.push_str(&format!("\n\n--- Documentation for: {} ---\n", query));
+        documentation.push_str(
+            "The following documentation is provided inline. DO NOT attempt to read files - all content is below.\n\n",
+        );
+
+        // Load matching docs
+        for (i, result) in results.iter().enumerate() {
+            if let Some(text) = result.text() {
+                documentation.push_str(&format!("\n\n--- Document {} ---\n", i + 1));
+                documentation.push_str(text);
+            }
+        }
+
+        // Add settings
+        documentation.push_str(&Self::get_settings_info());
+
+        Ok(documentation)
+    }
+
+    /// Get a specific doc by path from the embedded index (cached)
+    fn get_doc_by_path(path: &str) -> Result<String> {
+        let mut cache = DOC_CONTENT_CACHE.lock().unwrap();
+
+        if cache.is_none() {
+            let (_contexts, context_data) = Self::parse_embedded_index()?;
+            let mut doc_map = HashMap::new();
+
+            for data_points in context_data.values() {
+                for point in data_points {
+                    if let Some(doc_path) = point.payload.get("path").and_then(|v| v.as_str())
+                        && let Some(text) = point.payload.get("text").and_then(|v| v.as_str())
+                    {
+                        doc_map.insert(doc_path.to_string(), text.to_string());
+                    }
+                }
+            }
+            *cache = Some(doc_map);
+        }
+
+        let doc_map = cache.as_ref().unwrap();
+        doc_map
+            .get(path)
+            .or_else(|| doc_map.iter().find(|(k, _)| k.ends_with(path)).map(|(_, v)| v))
+            .map(|text| format!("--- Documentation: {} ---\n\n{}", path, text))
+            .ok_or_else(|| eyre::eyre!("Document not found: {}", path))
+    }
+
+    /// Get doc index for LLM to select docs (fallback when semantic search fails)
+    fn get_all_docs() -> String {
+        let mut content = String::new();
+
+        content.push_str("--- Available Documentation Index ---\n");
+        content.push_str("Below is metadata for all available documentation.\n");
+        content.push_str("To get full content of a specific doc, call introspect with doc_path parameter.\n");
+        content.push_str("Example: {\"doc_path\": \"features/tangent-mode.md\"}\n\n");
+        content.push_str(DOC_INDEX_JSON);
+
+        content.push_str(&Self::get_settings_info());
+        content
+    }
+
+    /// Get settings information (always included)
+    fn get_settings_info() -> String {
+        let mut content = String::new();
+
+        content.push_str("\n\n--- Available Settings ---\n");
+        content.push_str(
+            "KIRO CLI supports these configuration settings (use `kiro-cli settings` command from terminal, NOT /settings):\n\n",
+        );
+
+        for setting in Setting::iter() {
+            let description = setting.get_message().unwrap_or("No description available");
+            content.push_str(&format!("• {} - {}\n", setting.as_ref(), description));
+        }
+
+        content.push_str(
+            "\nNOTE: Settings are managed via `kiro-cli settings` command from terminal, not slash commands in chat.\n",
+        );
+
+        content.push_str("\n\n--- CRITICAL INSTRUCTION ---\n");
+        content.push_str("YOU MUST ONLY provide information that is explicitly documented in the sections above. If specific details about any tool, feature, or command are not documented, you MUST clearly state that the information is not available in the documentation. DO NOT generate plausible-sounding information or make assumptions about undocumented features.\n\n");
+
+        content
     }
 }

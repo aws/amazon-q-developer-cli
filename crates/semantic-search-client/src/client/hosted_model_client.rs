@@ -179,7 +179,7 @@ impl HostedModelClient {
             let pb = ProgressBar::new(content_length);
             pb.set_style(
                 ProgressStyle::default_bar()
-                    .template("{msg} {spinner:.green} [{elapsed_precise}] [{bar:40.cyan/blue}] {bytes}/{total_bytes} ({bytes_per_sec}, {eta})")
+                    .template("\n{msg} {spinner:.green} [{elapsed_precise}] [{bar:40.cyan/blue}] {bytes}/{total_bytes} ({bytes_per_sec}, {eta})")
                     .expect("Failed to set progress bar template")
                     .progress_chars("#>-")
             );

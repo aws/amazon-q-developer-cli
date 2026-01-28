@@ -80,7 +80,7 @@ jobs:
 
       - name: Install cross (for cross-compilation)
         if: matrix.musl || matrix.cross_target
-        run: cargo install cross --git https://github.com/cross-rs/cross --locked
+        run: cargo install cross --git https://github.com/cross-rs/cross --tag v0.2.4 --locked
 
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4

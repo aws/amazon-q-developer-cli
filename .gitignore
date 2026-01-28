@@ -52,4 +52,15 @@ run-build.sh
 .amazonq/
 
 chat.log
-thoughts/
+.kiro/
+
+# Generated doc embeddings and indexes
+autodocs/meta/plans/
+tmp/
+autodocs/meta/diagrams/
+scripts/index-docs-for-introspect.sh
+autodocs/meta/scripts/test-semantic-search.py
+autodocs/meta/scripts/generate-doc-embeddings.py
+autodocs/meta/feature-inventory.json
+autodocs/meta/scripts/export-embeddings.py
+autodocs/meta/doc-embeddings.json
