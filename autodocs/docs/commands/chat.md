@@ -1,14 +1,14 @@
 ---
 doc_meta:
-  validated: 2025-12-19
-  commit: 57090ffe
+  validated: 2026-01-28
+  commit: 0b13a71c
   status: validated
   testable_headless: true
   category: command
   title: kiro-cli chat
   description: Start AI assistant session with support for agents, models, tool trust, and conversation management
-  keywords: [chat, conversation, agent, model, interactive, headless]
-  related: [slash-chat-save, slash-chat-load, slash-agent]
+  keywords: [chat, conversation, agent, model, interactive, headless, mcp, require-mcp-startup]
+  related: [slash-chat-save, slash-chat-load, slash-agent, exit-codes]
 ---
 
 # kiro-cli chat
@@ -99,6 +99,7 @@ kiro-cli chat --resume-picker
 | `--list-sessions` | `-l` | flag | List saved conversations |
 | `--delete-session` | `-d` | string | Delete conversation by ID |
 | `--wrap` | `-w` | enum | Line wrapping (always/never/auto) |
+| `--require-mcp-startup` | | flag | Exit with code 3 if any MCP server fails to start |
 | `--verbose` | `-v` | flag | Increase logging verbosity (can be repeated) |
 | `--help` | `-h` | flag | Print help information |
 | `[INPUT]` | | string | Initial query to send |
@@ -153,6 +154,14 @@ kiro-cli chat --delete-session abc123
 ✔ Deleted chat session abc123
 ```
 
+### Example 6: Require MCP Servers
+
+```bash
+kiro-cli chat --require-mcp-startup --no-interactive "Run analysis"
+```
+
+**What this does**: Exits with code 3 if any configured MCP server fails to start. Useful for CI/CD pipelines.
+
 ## Headless Mode
 
 Use `--no-interactive` for automation and scripts:
@@ -200,6 +209,12 @@ Use `--no-interactive` for automation and scripts:
 **Symptom**: Error "not a terminal"  
 **Cause**: Interactive slash command used in headless mode  
 **Solution**: Use direct CLI commands instead (e.g., `kiro-cli settings` instead of `/experiment`)
+
+### Issue: MCP Server Startup Failure
+
+**Symptom**: Exit code 3 with `--require-mcp-startup`  
+**Cause**: One or more MCP servers failed to start  
+**Solution**: Check MCP server configuration. Verify server paths and dependencies are correct.
 
 ## Related Features
 

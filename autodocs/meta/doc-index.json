@@ -1,6 +1,6 @@
 {
-  "generated_at": "2026-01-27T12:36:19.740379",
-  "total_docs": 91,
+  "generated_at": "2026-01-28T21:33:34.541529",
+  "total_docs": 92,
   "by_category": {
     "command": [
       "commands/agent.md",
@@ -16,6 +16,7 @@
       "features/agent-configuration.md",
       "features/code-intelligence.md",
       "features/diff-tool.md",
+      "features/exit-codes.md",
       "features/experiments.md",
       "features/hooks.md",
       "features/knowledge-management.md",
@@ -140,14 +141,17 @@
         "agent",
         "model",
         "interactive",
-        "headless"
+        "headless",
+        "mcp",
+        "require-mcp-startup"
       ],
       "related": [
         "slash-chat-save",
         "slash-chat-load",
-        "slash-agent"
+        "slash-agent",
+        "exit-codes"
       ],
-      "validated": "2025-12-19",
+      "validated": "2026-01-28",
       "status": "validated"
     },
     {
@@ -338,6 +342,30 @@
         "write-tool"
       ],
       "validated": "2026-01-13",
+      "status": "validated"
+    },
+    {
+      "path": "features/exit-codes.md",
+      "file": "exit-codes.md",
+      "title": "Exit Codes",
+      "description": "CLI exit codes for scripting and CI/CD integration",
+      "category": "feature",
+      "keywords": [
+        "exit",
+        "code",
+        "status",
+        "error",
+        "ci",
+        "cd",
+        "automation",
+        "script",
+        "mcp"
+      ],
+      "related": [
+        "chat",
+        "hooks"
+      ],
+      "validated": "2026-01-28",
       "status": "validated"
     },
     {
@@ -1125,7 +1153,7 @@
       "path": "slash-commands/code.md",
       "file": "code.md",
       "title": "/code",
-      "description": "Manage code intelligence with init, status, logs, and overview subcommands",
+      "description": "Manage code intelligence with init, status, logs, overview, and summary subcommands",
       "category": "slash_command",
       "keywords": [
         "code",
@@ -1134,7 +1162,9 @@
         "init",
         "status",
         "logs",
-        "overview"
+        "overview",
+        "summary",
+        "documentation"
       ],
       "related": [
         "code-tool",
@@ -1904,12 +1934,13 @@
         "extract",
         "trusted",
         "blocked",
-        "permissions"
+        "permissions",
+        "enterprise"
       ],
       "related": [
         "web-search"
       ],
-      "validated": "2026-01-14",
+      "validated": "2026-01-27",
       "status": "validated"
     },
     {
@@ -1923,7 +1954,8 @@
         "search",
         "web",
         "internet",
-        "research"
+        "research",
+        "enterprise"
       ],
       "related": [
         "web-fetch"
