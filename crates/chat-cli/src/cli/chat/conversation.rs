@@ -1385,13 +1385,8 @@ Return only the JSON configuration, no additional text."
                         context_content.push_str(CONTEXT_ENTRY_START_HEADER);
                         context_content.push_str(AUTO_FILES_MESSAGE);
                         for file in &context_files {
-                            if let ContextFile::Auto {
-                                name,
-                                filepath,
-                                description,
-                            } = file
-                            {
-                                context_content.push_str(&format!("{name}: {description} (file: {filepath})\n"));
+                            if let Some(rendered) = file.render_context_entry() {
+                                context_content.push_str(&rendered);
                             }
                         }
                         context_content.push_str(CONTEXT_ENTRY_END_HEADER);

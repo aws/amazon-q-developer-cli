@@ -180,9 +180,10 @@ impl GhIssue {
                             os_str.push_str(&format!("{filepath}, {size} tkns\n"));
                             size
                         },
-                        ContextFile::Auto { filepath, .. } => {
-                            os_str.push_str(&format!("{filepath} (auto), 0 tkns\n"));
-                            0
+                        ContextFile::Auto { filepath, name, .. } => {
+                            let size = file.size();
+                            os_str.push_str(&format!("{filepath} (skill: {name}), {size} tkns\n"));
+                            size
                         },
                     })
                     .sum();

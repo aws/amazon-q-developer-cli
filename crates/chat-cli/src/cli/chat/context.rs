@@ -63,11 +63,29 @@ impl ContextFile {
         }
     }
 
+    /// Renders the context entry string for Auto/Skill files.
+    /// Format: "{name}: {description} (file: {filepath})\n"
+    /// Returns None for Full files (they include full content instead).
+    pub fn render_context_entry(&self) -> Option<String> {
+        match self {
+            ContextFile::Full { .. } => None,
+            ContextFile::Auto {
+                name,
+                filepath,
+                description,
+            } => Some(format!("{name}: {description} (file: {filepath})\n")),
+        }
+    }
+
     pub fn size(&self) -> usize {
         use crate::cli::chat::token_counter::TokenCounter;
         match self {
             ContextFile::Full { content, .. } => TokenCounter::count_tokens(content),
-            ContextFile::Auto { .. } => 0,
+            ContextFile::Auto { .. } => {
+                // Use render_context_entry to get the exact string sent to the model
+                self.render_context_entry()
+                    .map_or(0, |s| TokenCounter::count_tokens(&s))
+            },
         }
     }
 }
@@ -773,28 +791,58 @@ mod tests {
         assert_eq!(context_files.len(), 2);
         assert_eq!(dropped_files.len(), 0);
 
-        // Check regular file
-        if let ContextFile::Full { filepath, content } = &context_files[0] {
-            assert!(filepath.contains("README.md"));
-            assert!(content.contains("# Regular File"));
-        } else {
-            panic!("Expected Full file");
+        // Check files (order may vary due to chroot path sorting)
+        let mut found_full = false;
+        let mut found_auto = false;
+
+        for file in &context_files {
+            match file {
+                ContextFile::Full { filepath, content } => {
+                    assert!(filepath.contains("README.md"));
+                    assert!(content.contains("# Regular File"));
+                    found_full = true;
+                },
+                ContextFile::Auto {
+                    name,
+                    filepath,
+                    description,
+                } => {
+                    assert_eq!(name, "database-helper");
+                    assert_eq!(description, "Helps with database queries");
+                    assert!(filepath.contains("test-skill.md"));
+                    found_auto = true;
+                },
+            }
         }
 
-        // Check auto file
-        if let ContextFile::Auto {
-            name,
-            filepath,
-            description,
-        } = &context_files[1]
-        {
-            assert_eq!(name, "database-helper");
-            assert_eq!(description, "Helps with database queries");
-            assert!(filepath.contains("test-skill.md"));
-        } else {
-            panic!("Expected Auto file");
-        }
+        assert!(found_full, "Should have found Full file (README.md)");
+        assert!(found_auto, "Should have found Auto file (test-skill.md)");
 
         Ok(())
+    }
+
+    /// Test that ContextFile::Auto (skill) size is now non-zero
+    /// This is the key fix for /context showing 0% for skills
+    #[test]
+    fn test_skill_context_file_has_nonzero_size() {
+        let skill = ContextFile::Auto {
+            name: "reducing-entropy".to_string(),
+            filepath: ".kiro/skills/reducing-entropy/SKILL.md".to_string(),
+            description: "Minimize total codebase size during development".to_string(),
+        };
+
+        let size = skill.size();
+        assert!(
+            size > 0,
+            "Skill files should have non-zero size to show in /context. Got size: {}",
+            size
+        );
+
+        // Verify the size is reasonable (the rendered string is ~100 chars, so ~25 tokens)
+        assert!(
+            size > 10 && size < 100,
+            "Expected reasonable token count, got: {}",
+            size
+        );
     }
 }
