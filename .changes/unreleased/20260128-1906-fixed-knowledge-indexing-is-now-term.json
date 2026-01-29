@@ -1,0 +1,4 @@
+{
+  "type": "fixed",
+  "description": "Knowledge indexing is now terminated immediately when the user requests to exit"
+}

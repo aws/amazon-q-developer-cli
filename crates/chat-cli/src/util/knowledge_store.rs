@@ -165,6 +165,10 @@ impl std::fmt::Display for KnowledgeError {
 
 impl std::error::Error for KnowledgeError {}
 
+/// Static singleton for the async knowledge store instance
+static ASYNC_KNOWLEDGE_STORE: Lazy<tokio::sync::Mutex<Option<Arc<Mutex<KnowledgeStore>>>>> =
+    Lazy::new(|| tokio::sync::Mutex::new(None));
+
 /// Async knowledge store - manages agent specific knowledge bases
 pub struct KnowledgeStore {
     agent_client: AsyncSemanticSearchClient,
@@ -172,14 +176,25 @@ pub struct KnowledgeStore {
 }
 
 impl KnowledgeStore {
+    /// Cancel all active knowledge operations on the static singleton.
+    /// This should be called during CLI shutdown to ensure background workers are stopped.
+    pub async fn cancel_all_operations_static() {
+        // Try to lock with a short timeout to avoid blocking shutdown
+        if let Ok(instance_guard) =
+            tokio::time::timeout(std::time::Duration::from_millis(100), ASYNC_KNOWLEDGE_STORE.lock()).await
+            && let Some(store_arc) = instance_guard.as_ref()
+            && let Ok(store) = store_arc.try_lock()
+            && let Err(e) = store.agent_client.cancel_all_operations().await
+        {
+            tracing::debug!("Failed to cancel knowledge operations on shutdown: {}", e);
+        }
+    }
+
     /// Get singleton instance with optional agent
     pub async fn get_async_instance(
         os: &Os,
         agent: Option<&crate::cli::Agent>,
     ) -> Result<Arc<Mutex<Self>>, paths::DirectoryError> {
-        static ASYNC_INSTANCE: Lazy<tokio::sync::Mutex<Option<Arc<Mutex<KnowledgeStore>>>>> =
-            Lazy::new(|| tokio::sync::Mutex::new(None));
-
         if cfg!(test) {
             // For tests, create a new instance each time
             let store = Self::new_with_os_settings(os, agent)
@@ -189,7 +204,7 @@ impl KnowledgeStore {
         } else {
             let current_agent_dir = agent_knowledge_dir(os, agent)?;
 
-            let mut instance_guard = ASYNC_INSTANCE.lock().await;
+            let mut instance_guard = ASYNC_KNOWLEDGE_STORE.lock().await;
 
             let needs_reinit = match instance_guard.as_ref() {
                 None => true,

@@ -2046,6 +2046,9 @@ impl ChatSession {
             self.next(os).await?;
         }
 
+        // Cancel any active knowledge indexing operations on exit
+        crate::util::knowledge_store::KnowledgeStore::cancel_all_operations_static().await;
+
         Ok(())
     }
 
