@@ -3987,6 +3987,8 @@ impl ChatSession {
 
             // Run Stop hooks when the assistant finishes responding
             if let Some(cm) = self.conversation.context_manager.as_mut() {
+                // Print newline to prevent hook spinner from overwriting LLM output
+                execute!(self.stderr, style::Print("\n"))?;
                 let _ = cm
                     .run_hooks(
                         crate::cli::agent::hook::HookTrigger::Stop,
