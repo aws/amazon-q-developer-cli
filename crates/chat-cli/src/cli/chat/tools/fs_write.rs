@@ -575,10 +575,16 @@ impl FsWrite {
                             | Self::Insert { path, .. }
                             | Self::Append { path, .. }
                             | Self::StrReplace { path, .. } => {
-                                let Ok(path) = paths::canonicalizes_path(os, path) else {
+                                let Ok(canonical_path) = paths::canonicalizes_path(os, path) else {
                                     return PermissionEvalResult::Ask;
                                 };
-                                let denied_match_set = deny_set.matches(path.as_ref() as &str);
+                                // Check both canonical path and original expanded path to handle symlinks
+                                // e.g., /tmp -> /private/tmp on macOS
+                                let expanded_path = paths::expand_path(os, path)
+                                    .map(|p| p.to_string_lossy().to_string())
+                                    .unwrap_or_default();
+
+                                let denied_match_set = deny_set.matches(canonical_path.as_str());
                                 if !denied_match_set.is_empty() {
                                     return PermissionEvalResult::Deny({
                                         denied_match_set
@@ -587,7 +593,21 @@ impl FsWrite {
                                             .collect::<Vec<_>>()
                                     });
                                 }
-                                if allow_set.is_match(path.as_ref() as &str) {
+                                // Also check expanded path for deny
+                                let denied_expanded = deny_set.matches(expanded_path.as_str());
+                                if !denied_expanded.is_empty() {
+                                    return PermissionEvalResult::Deny({
+                                        denied_expanded
+                                            .iter()
+                                            .filter_map(|i| sanitized_deny_list.get(*i).map(|s| (*s).clone()))
+                                            .collect::<Vec<_>>()
+                                    });
+                                }
+
+                                // Allow if either path form matches
+                                if allow_set.is_match(canonical_path.as_str())
+                                    || allow_set.is_match(expanded_path.as_str())
+                                {
                                     return PermissionEvalResult::Allow;
                                 }
                                 // When fallback_action is interactive, is_in_allowlist can bypass allowedPaths
@@ -1764,5 +1784,59 @@ mod tests {
 
         let res = tool_allowed.eval_perm(&os, &agent);
         assert!(matches!(res, PermissionEvalResult::Allow));
+    }
+
+    /// Test symlink path resolution: allowedPaths with symlink should work for existing files.
+    /// This simulates macOS /tmp -> /private/tmp where:
+    /// - User specifies allowedPaths: ["/symlink/**"]
+    /// - File exists at /real/file.txt (canonical: /chroot/real/file.txt)
+    /// - Symlink /symlink -> /real
+    /// - Editing /symlink/file.txt should be allowed
+    #[tokio::test]
+    async fn test_eval_perm_symlink_path_resolution() {
+        let os = Os::new().await.unwrap();
+
+        // Create /real/file.txt
+        os.fs.create_dir_all("/real").await.unwrap();
+        os.fs.write("/real/file.txt", "content").await.unwrap();
+
+        // Create symlink: /symlink -> /real
+        os.fs.symlink("/real", "/symlink").await.unwrap();
+
+        // Get the chroot-resolved symlink path for allowedPaths
+        let symlink_path = os.fs.chroot_path("/symlink");
+        let allowed_pattern = format!("{}/**", symlink_path.to_string_lossy());
+
+        let agent = Agent {
+            name: "test_agent".to_string(),
+            tools_settings: {
+                let mut map = HashMap::<ToolSettingTarget, serde_json::Value>::new();
+                map.insert(
+                    ToolSettingTarget("fs_write".to_string()),
+                    serde_json::json!({
+                        "allowedPaths": [allowed_pattern],
+                    }),
+                );
+                map
+            },
+            ..Default::default()
+        };
+
+        // Edit file via symlink path - should be allowed
+        let symlink_file = format!("{}/file.txt", symlink_path.to_string_lossy());
+        let tool_edit = serde_json::from_value::<FsWrite>(serde_json::json!({
+            "path": symlink_file,
+            "command": "str_replace",
+            "old_str": "content",
+            "new_str": "new content"
+        }))
+        .unwrap();
+
+        let res = tool_edit.eval_perm(&os, &agent);
+        assert!(
+            matches!(res, PermissionEvalResult::Allow),
+            "editing file via symlink path should be allowed when symlink is in allowedPaths, got {:?}",
+            res
+        );
     }
 }
