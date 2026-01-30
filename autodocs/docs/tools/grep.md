@@ -17,6 +17,8 @@ Fast regex pattern search in files with configurable output modes and limits.
 
 ## Overview
 
+> **Note**: This tool is used by the AI assistant to fulfill your requests. You don't invoke it directly - simply ask questions naturally, and the assistant will use this tool to search for patterns in files as needed.
+
 The grep tool searches for regex patterns across files in a directory tree. It respects .gitignore, supports file filtering, and offers three output modes: content (matching lines), files_with_matches (paths only), and count (match counts). Configurable limits prevent overwhelming output.
 
 ## How It Works
@@ -24,6 +26,8 @@ The grep tool searches for regex patterns across files in a directory tree. It r
 Grep walks the directory tree using ignore rules (.gitignore), applies file filters, and searches each file for the pattern. Results are limited by max_matches_per_file, max_files, and max_total_lines to keep output manageable. Case-insensitive by default.
 
 ## Usage
+
+> **Technical Reference**: The JSON examples below show the internal tool format used by the AI assistant. Users should not copy or type these - they are provided for developers and agent configuration authors only.
 
 ### Basic Usage
 

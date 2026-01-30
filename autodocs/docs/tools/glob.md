@@ -17,6 +17,8 @@ Find files and directories matching glob patterns with .gitignore support.
 
 ## Overview
 
+> **Note**: This tool is used by the AI assistant to fulfill your requests. You don't invoke it directly - simply ask questions naturally, and the assistant will use this tool to find files matching patterns as needed.
+
 The glob tool finds files and directories whose paths match a glob pattern. It respects .gitignore rules, supports complex patterns with wildcards and braces, and returns results as JSON with truncation indicators. Prefer this over bash `find` command for path discovery.
 
 ## How It Works
@@ -24,6 +26,8 @@ The glob tool finds files and directories whose paths match a glob pattern. It r
 Glob walks the directory tree from a base path, applies the pattern to each path, and collects matches. It respects .gitignore, .ignore, and .git/info/exclude files. Results are limited by the limit parameter to prevent overwhelming output.
 
 ## Usage
+
+> **Technical Reference**: The JSON examples below show the internal tool format used by the AI assistant. Users should not copy or type these - they are provided for developers and agent configuration authors only.
 
 ### Basic Usage
 

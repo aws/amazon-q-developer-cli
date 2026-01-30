@@ -17,6 +17,8 @@ Self-awareness tool providing information about Kiro CLI capabilities and docume
 
 ## Overview
 
+> **Note**: This tool is used by the AI assistant to fulfill your requests. You don't invoke it directly - simply ask questions about Kiro CLI naturally, and the assistant will use this tool to provide answers.
+
 The introspect tool enables Kiro CLI to answer questions about itself. It provides access to embedded documentation, command help, settings, and feature information. Automatically activates when you ask questions like "How do I save conversations?" or "What tools are available?"
 
 ## How It Works

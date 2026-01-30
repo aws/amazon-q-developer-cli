@@ -17,7 +17,7 @@ Manage code intelligence with init, status, logs, overview, and summary subcomma
 
 ## Overview
 
-Manages code intelligence. Initialize LSP workspace, check server status, view logs, and get codebase overviews.
+Manages code intelligence. The AI assistant also uses the `code` tool automatically to analyze code during conversations. Initialize LSP workspace, check server status, view logs, and get codebase overviews.
 
 ## Usage
 

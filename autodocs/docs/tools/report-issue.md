@@ -17,9 +17,13 @@ Open browser with pre-filled GitHub issue template for reporting bugs or feature
 
 ## Overview
 
+> **Note**: This tool is used by the AI assistant to fulfill your requests. You don't invoke it directly - simply ask questions naturally, and the assistant will use this tool to help you report issues.
+
 The report_issue tool opens a browser with a pre-filled GitHub issue template. Automatically includes conversation transcript, context, request IDs, and environment details for bug reports.
 
 ## Usage
+
+> **Technical Reference**: The JSON examples below show the internal tool format used by the AI assistant. Users should not copy or type these - they are provided for developers and agent configuration authors only.
 
 ### Basic Usage
 

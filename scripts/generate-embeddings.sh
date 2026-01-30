@@ -15,6 +15,8 @@ echo "  Doc index: $INDEX_SIZE"
 # Step 2: Index docs with semantic search
 echo ""
 echo "Step 2: Indexing docs with semantic-search-client..."
+# Remove existing index to force re-indexing with updated content
+rm -rf ~/.kiro/doc-search
 cargo run --quiet --example index_autodocs
 
 # Step 3: Package search index

@@ -17,9 +17,13 @@ Fetch and extract content from specific URLs with selective, truncated, or full 
 
 ## Overview
 
+> **Note**: This tool is used by the AI assistant to fulfill your requests. You don't invoke it directly - simply ask questions naturally, and the assistant will use this tool to fetch web content as needed.
+
 The web_fetch tool retrieves content from web pages. Supports three extraction modes: selective (smart extraction around search terms), truncated (first 8000 characters), and full (complete content up to 10MB). Use selective mode to read specific parts without filling context.
 
 ## Usage
+
+> **Technical Reference**: The JSON examples below show the internal tool format used by the AI assistant. Users should not copy or type these - they are provided for developers and agent configuration authors only.
 
 ### Basic Usage
 

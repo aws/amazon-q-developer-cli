@@ -17,9 +17,13 @@ Store and retrieve information across chat sessions with semantic search capabil
 
 ## Overview
 
+> **Note**: This tool is used by the AI assistant to fulfill your requests. You don't invoke it directly - simply ask questions naturally, and the assistant will use this tool to store and retrieve information as needed.
+
 The knowledge tool provides persistent information storage across chat sessions. Store files, directories, or text snippets, then search semantically. Experimental feature requiring explicit enablement.
 
 ## Usage
+
+> **Technical Reference**: The JSON examples below show the internal tool format used by the AI assistant. Users should not copy or type these - they are provided for developers and agent configuration authors only.
 
 ### Basic Usage
 

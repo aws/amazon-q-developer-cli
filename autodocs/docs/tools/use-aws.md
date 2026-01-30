@@ -17,9 +17,13 @@ Make AWS CLI API calls with service, operation, and parameters.
 
 ## Overview
 
+> **Note**: This tool is used by the AI assistant to fulfill your requests. You don't invoke it directly - simply ask questions naturally, and the assistant will use this tool to make AWS API calls as needed.
+
 The use_aws tool executes AWS CLI commands with specified service, operation, and parameters. Supports all AWS services and operations. Read-only operations are auto-approved by default using a comprehensive list of 7,069 known readonly operations from the AWS Service Authorization Reference. Requires AWS CLI installed and configured.
 
 ## Usage
+
+> **Technical Reference**: The JSON examples below show the internal tool format used by the AI assistant. Users should not copy or type these - they are provided for developers and agent configuration authors only.
 
 ### Basic Usage
 

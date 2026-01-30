@@ -17,7 +17,7 @@ Manage knowledge base with add, search, remove, show, and clear operations.
 
 ## Overview
 
-The `/knowledge` command provides slash command interface for knowledge base management. Add files or text, search semantically, remove entries, view all entries, and clear knowledge base.
+The `/knowledge` command provides slash command interface for knowledge base management. The AI assistant also uses the `knowledge` tool automatically to store and retrieve information during conversations. Add files or text, search semantically, remove entries, view all entries, and clear knowledge base.
 
 ## Usage
 

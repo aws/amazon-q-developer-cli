@@ -17,6 +17,8 @@ Read files, directories, and images with support for line ranges, pattern search
 
 ## Overview
 
+> **Note**: This tool is used by the AI assistant to fulfill your requests. You don't invoke it directly - simply ask questions naturally, and the assistant will use this tool to read files and directories as needed.
+
 The fs_read tool provides comprehensive file system reading capabilities. It supports four operation modes: reading file lines with range selection, listing directory contents, searching for patterns within files, and reading images. Multiple operations can be batched in a single tool invocation.
 
 ## How It Works
@@ -24,6 +26,8 @@ The fs_read tool provides comprehensive file system reading capabilities. It sup
 The tool accepts an array of operations, each specifying a mode (Line, Directory, Search, or Image) and mode-specific parameters. Operations execute sequentially and return combined results. Path validation ensures files/directories exist before reading.
 
 ## Usage
+
+> **Technical Reference**: The JSON examples below show the internal tool format used by the AI assistant. Users should not copy or type these - they are provided for developers and agent configuration authors only.
 
 ### Basic Usage
 

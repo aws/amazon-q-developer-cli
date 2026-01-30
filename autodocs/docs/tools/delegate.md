@@ -17,6 +17,8 @@ Launch and manage asynchronous agent processes running independently in backgrou
 
 ## Overview
 
+> **Note**: This tool is used by the AI assistant to fulfill your requests. You don't invoke it directly - simply ask questions naturally, and the assistant will use this tool when background execution would be beneficial.
+
 The delegate tool launches agents that run asynchronously in the background (non-blocking). Unlike use_subagent which runs synchronously, delegate allows main agent to continue while background agents work. Only one task per agent at a time. Files stored in `.kiro/.subagents/`.
 
 ## How It Works
@@ -24,6 +26,8 @@ The delegate tool launches agents that run asynchronously in the background (non
 Delegate spawns an agent process that runs independently. Main agent continues immediately without waiting. Check status later to see progress or results. Each agent can only run one task at a time - launching new task for same agent replaces previous task.
 
 ## Usage
+
+> **Technical Reference**: The JSON examples below show the internal tool format used by the AI assistant. Users should not copy or type these - they are provided for developers and agent configuration authors only.
 
 ### Basic Usage
 

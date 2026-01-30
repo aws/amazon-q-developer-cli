@@ -34,6 +34,8 @@ autodocs/
 - Examples with JSON payloads
 - Troubleshooting
 
+**Invocation note**: All tool docs must include a note in the Overview section clarifying that the tool is invoked by the AI assistant, not by users directly. Example: "This tool is used by the AI assistant to fulfill your requests. You don't invoke it directly - simply ask questions naturally."
+
 ### slash-commands/
 **What**: In-chat commands starting with `/`  
 **Examples**: /save, /load, /agent, /context, /tools  

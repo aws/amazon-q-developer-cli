@@ -17,6 +17,8 @@ Code intelligence with tree-sitter (built-in) and LSP (optional) for symbol sear
 
 ## Overview
 
+> **Note**: This tool is used by the AI assistant to fulfill your requests. You don't invoke it directly - simply ask questions naturally, and the assistant will use this tool to analyze code as needed.
+
 The code tool provides two layers of code understanding:
 
 **Tree-sitter (Built-in)** - Out-of-the-box support for 18 languages. Search symbols with fuzzy matching, pattern search/rewrite, and codebase exploration without installing any LSP.
@@ -30,6 +32,8 @@ Supported languages: Bash, C, C++, C#, Elixir, Go, Java, JavaScript, Kotlin, Lua
 Tree-sitter operations work immediately - no setup required. For LSP features, run `/code init` to detect languages and start servers. The tool then provides semantic operations that understand code structure.
 
 ## Usage
+
+> **Technical Reference**: The JSON examples below show the internal tool format used by the AI assistant. Users should not copy or type these - they are provided for developers and agent configuration authors only.
 
 ### Basic Usage
 

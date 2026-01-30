@@ -17,11 +17,9 @@ Internal reasoning tool for complex problem-solving and decision-making.
 
 ## Overview
 
+> **Note**: This tool is used by the AI assistant automatically when enabled. You don't invoke it directly - simply ask questions naturally, and the assistant will use this tool for internal reasoning as needed.
+
 The thinking tool allows the AI to reason through complex problems during response generation. Provides dedicated space to process tool results, navigate decision trees, and improve response quality in multi-step scenarios. Experimental feature.
-
-## Usage
-
-The tool is invoked automatically by the AI when enabled - no user action needed.
 
 ## Configuration
 

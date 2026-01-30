@@ -17,6 +17,8 @@ Create and manage TODO lists for tracking multi-step tasks with progress and con
 
 ## Overview
 
+> **Note**: This tool is used by the AI assistant to fulfill your requests. You don't invoke it directly - simply ask questions naturally, and the assistant will use this tool to track multi-step tasks.
+
 The todo_list tool creates persistent TODO lists for multi-step tasks. Lists are stored in `.kiro/cli-todo-lists/` and track task completion, context, and modified files. Essential for complex tasks requiring multiple steps. Lists can be resumed across sessions.
 
 ## How It Works
@@ -24,6 +26,8 @@ The todo_list tool creates persistent TODO lists for multi-step tasks. Lists are
 Create list with tasks before starting work. Mark tasks complete as you finish them. Add context and track modified files. Lists persist across sessions. Use `/todo` slash commands to view, resume, or delete lists.
 
 ## Usage
+
+> **Technical Reference**: The JSON examples below show the internal tool format used by the AI assistant. Users should not copy or type these - they are provided for developers and agent configuration authors only.
 
 ### Basic Usage
 

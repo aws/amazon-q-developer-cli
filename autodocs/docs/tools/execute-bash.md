@@ -17,6 +17,8 @@ Execute bash commands on the user's system with output capture and safety checks
 
 ## Overview
 
+> **Note**: This tool is used by the AI assistant to fulfill your requests. You don't invoke it directly - simply ask questions naturally, and the assistant will use this tool to execute commands as needed.
+
 The execute_bash tool runs shell commands and captures stdout, stderr, and exit codes. It includes safety checks for dangerous patterns and supports configuration for auto-allowing read-only commands or specific command patterns.
 
 ## How It Works
@@ -24,6 +26,8 @@ The execute_bash tool runs shell commands and captures stdout, stderr, and exit 
 Commands are validated against allowed/denied lists and safety patterns before execution. Read-only commands (ls, cat, pwd, etc.) can be auto-approved. Multi-line commands and dangerous patterns (pipes, redirects, command substitution) require explicit approval unless configured otherwise.
 
 ## Usage
+
+> **Technical Reference**: The JSON examples below show the internal tool format used by the AI assistant. Users should not copy or type these - they are provided for developers and agent configuration authors only.
 
 ### Basic Usage
 

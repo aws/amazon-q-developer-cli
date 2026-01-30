@@ -16,6 +16,8 @@ Internal tool for execution mode transitions (not user-facing).
 
 ## Overview
 
+> **Note**: This is an internal system tool used by the AI assistant for mode transitions. It is not user-facing.
+
 Internal system tool used for mode switching between planning and execution phases. Not intended for direct user interaction or configuration.
 
 ## Technical Details

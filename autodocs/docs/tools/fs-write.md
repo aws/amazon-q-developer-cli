@@ -17,6 +17,8 @@ Create and modify files with support for create, str_replace, insert, and append
 
 ## Overview
 
+> **Note**: This tool is used by the AI assistant to fulfill your requests. You don't invoke it directly - simply ask questions naturally, and the assistant will use this tool to create and modify files as needed.
+
 The fs_write tool provides file creation and editing capabilities through four commands: create (new files or overwrite), str_replace (find and replace), insert (add at line position), and append (add to end). All operations include safety checks and can be restricted via agent configuration.
 
 ## How It Works
@@ -24,6 +26,8 @@ The fs_write tool provides file creation and editing capabilities through four c
 Each operation validates the target path, creates parent directories if needed, and performs the requested modification. The str_replace command ensures exactly one match to prevent unintended changes. All operations track file modifications for context management.
 
 ## Usage
+
+> **Technical Reference**: The JSON examples below show the internal tool format used by the AI assistant. Users should not copy or type these - they are provided for developers and agent configuration authors only.
 
 ### Basic Usage
 
