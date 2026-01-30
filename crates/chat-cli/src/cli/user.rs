@@ -274,16 +274,31 @@ impl WhoamiArgs {
     pub async fn execute(self, os: &mut Os) -> Result<ExitCode> {
         let builder_id = BuilderIdToken::load(&os.database, Some(&os.telemetry)).await;
 
+        // Fetch email from usage limits API (gracefully handle failures)
+        let email = os
+            .client
+            .get_usage_limits_with_email()
+            .await
+            .ok()
+            .and_then(|r| r.user_info)
+            .map(|u| u.email);
+
         if let Ok(Some(token)) = builder_id {
             self.format.print(
-                || match token.token_type() {
-                    TokenType::BuilderId => "Logged in with Builder ID".into(),
-                    TokenType::IamIdentityCenter => {
-                        format!(
-                            "Logged in with IAM Identity Center ({})",
-                            token.start_url.as_ref().unwrap()
-                        )
-                    },
+                || {
+                    let login_type = match token.token_type() {
+                        TokenType::BuilderId => "Logged in with Builder ID".into(),
+                        TokenType::IamIdentityCenter => {
+                            format!(
+                                "Logged in with IAM Identity Center ({})",
+                                token.start_url.as_ref().unwrap()
+                            )
+                        },
+                    };
+                    match &email {
+                        Some(e) => format!("{login_type}\nEmail: {e}"),
+                        None => login_type,
+                    }
                 },
                 || {
                     json!({
@@ -293,6 +308,7 @@ impl WhoamiArgs {
                         },
                         "startUrl": token.start_url,
                         "region": token.region,
+                        "email": email,
                     })
                 },
             );
@@ -309,11 +325,18 @@ impl WhoamiArgs {
         // Check for social login token
         if let Ok(Some(social_token)) = crate::auth::social::SocialToken::load(&os.database).await {
             self.format.print(
-                || format!("Logged in with {}", social_token.provider),
+                || {
+                    let login_type = format!("Logged in with {}", social_token.provider);
+                    match &email {
+                        Some(e) => format!("{login_type}\nEmail: {e}"),
+                        None => login_type,
+                    }
+                },
                 || {
                     json!({
                         "accountType": "Social",
                         "provider": social_token.provider.to_string(),
+                        "email": email,
                     })
                 },
             );

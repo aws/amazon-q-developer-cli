@@ -306,24 +306,14 @@ fn default_context_window() -> usize {
 }
 
 fn get_fallback_models() -> Vec<ModelInfo> {
-    vec![
-        ModelInfo {
-            model_name: Some("claude-sonnet-4".to_string()),
-            model_id: "claude-sonnet-4".to_string(),
-            description: None,
-            context_window_tokens: 200_000,
-            rate_multiplier: None,
-            rate_unit: None,
-        },
-        ModelInfo {
-            model_name: Some("claude-3.7-sonnet".to_string()),
-            model_id: "claude-3.7-sonnet".to_string(),
-            description: None,
-            context_window_tokens: 200_000,
-            rate_multiplier: None,
-            rate_unit: None,
-        },
-    ]
+    vec![ModelInfo {
+        model_name: Some("auto".to_string()),
+        model_id: "auto".to_string(),
+        description: None,
+        context_window_tokens: 200_000,
+        rate_multiplier: None,
+        rate_unit: None,
+    }]
 }
 
 pub fn normalize_model_name(name: &str) -> &str {

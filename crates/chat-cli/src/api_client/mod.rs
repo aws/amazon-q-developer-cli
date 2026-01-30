@@ -467,10 +467,24 @@ impl ApiClient {
     pub async fn get_usage_limits(
         &self,
     ) -> Result<amzn_codewhisperer_client::operation::get_usage_limits::GetUsageLimitsOutput, ApiClientError> {
+        self.get_usage_limits_impl(false).await
+    }
+
+    pub async fn get_usage_limits_with_email(
+        &self,
+    ) -> Result<amzn_codewhisperer_client::operation::get_usage_limits::GetUsageLimitsOutput, ApiClientError> {
+        self.get_usage_limits_impl(true).await
+    }
+
+    async fn get_usage_limits_impl(
+        &self,
+        is_email_required: bool,
+    ) -> Result<amzn_codewhisperer_client::operation::get_usage_limits::GetUsageLimitsOutput, ApiClientError> {
         self.client
             .get_usage_limits()
             .set_origin(Some(amzn_codewhisperer_client::types::Origin::KiroCli))
             .set_profile_arn(self.profile.as_ref().map(|p| p.arn.clone()))
+            .set_is_email_required(Some(is_email_required))
             .send()
             .await
             .map_err(ApiClientError::GetUsageLimitsError)
