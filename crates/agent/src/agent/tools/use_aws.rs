@@ -64,6 +64,11 @@ const USE_AWS_SCHEMA: &str = r#"
             "type": "string",
             "description": "The name of the operation to perform."
         },
+        "positional_args": {
+            "type": "array",
+            "items": {"type": "string"},
+            "description": "Positional arguments for high-level commands (e.g., s3 cp, s3 mv, s3 sync, s3 rm). These are passed directly without -- prefix. Use this for source/destination paths in S3 commands."
+        },
         "parameters": {
             "type": "object",
             "description": "The parameters for the operation. The parameter keys MUST conform to the AWS CLI specification. You should prefer to use JSON Syntax over shorthand syntax wherever possible. For parameters that are booleans, prioritize using flags with no value. Denote these flags with flag names as key and an empty string as their value. You should also prefer kebab case."
@@ -108,6 +113,7 @@ impl BuiltInToolTrait for UseAws {
 pub struct UseAws {
     pub service_name: String,
     pub operation_name: String,
+    pub positional_args: Option<Vec<String>>,
     pub parameters: Option<HashMap<String, serde_json::Value>>,
     pub region: String,
     pub profile_name: Option<String>,
@@ -118,6 +124,7 @@ pub struct UseAws {
 struct UseAwsRaw {
     pub service_name: String,
     pub operation_name: String,
+    pub positional_args: Option<Vec<String>>,
     pub parameters: Option<HashMap<String, serde_json::Value>>,
     pub region: String,
     pub profile_name: Option<String>,
@@ -138,6 +145,7 @@ impl TryFrom<UseAwsRaw> for UseAws {
         Ok(UseAws {
             service_name: raw.service_name,
             operation_name: raw.operation_name,
+            positional_args: raw.positional_args,
             parameters: raw.parameters,
             region: raw.region,
             profile_name: raw.profile_name,
@@ -179,6 +187,12 @@ impl UseAws {
         }
 
         command.arg(&self.service_name).arg(&self.operation_name);
+
+        if let Some(positional_args) = &self.positional_args {
+            for arg in positional_args {
+                command.arg(arg);
+            }
+        }
 
         if let Some(parameters) = self.cli_parameters() {
             for (name, val) in parameters {
@@ -325,5 +339,20 @@ mod tests {
         }));
         assert!(result.is_err());
         assert!(result.unwrap_err().to_string().contains("cannot start with '-'"));
+    }
+
+    #[test]
+    fn test_positional_args() {
+        let cmd = use_aws! {{
+            "service_name": "s3",
+            "operation_name": "cp",
+            "positional_args": ["s3://bucket/file.csv", "/local/path/"],
+            "region": "us-east-1",
+            "label": "Copy S3 file"
+        }};
+        assert_eq!(
+            cmd.positional_args,
+            Some(vec!["s3://bucket/file.csv".to_string(), "/local/path/".to_string()])
+        );
     }
 }

@@ -1,5 +1,5 @@
 {
-  "generated_at": "2026-01-28T21:33:34.541529",
+  "generated_at": "2026-01-29T21:41:52.787409",
   "total_docs": 92,
   "by_category": {
     "command": [
@@ -1894,7 +1894,7 @@
       "related": [
         "execute-bash"
       ],
-      "validated": "2026-01-27",
+      "validated": "2026-01-29",
       "status": "validated"
     },
     {

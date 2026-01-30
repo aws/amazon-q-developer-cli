@@ -1,7 +1,7 @@
 ---
 doc_meta:
-  validated: 2026-01-27
-  commit: 85403a86
+  validated: 2026-01-29
+  commit: 5db28275
   status: validated
   testable_headless: true
   category: tool
@@ -78,7 +78,38 @@ The use_aws tool executes AWS CLI commands with specified service, operation, an
 
 **What this does**: Downloads object from S3 bucket.
 
-#### Use Case 4: With AWS Profile
+#### Use Case 4: Copy S3 File (High-Level Command)
+
+```json
+{
+  "service_name": "s3",
+  "operation_name": "cp",
+  "positional_args": ["s3://my-bucket/file.csv", "./local/"],
+  "region": "us-east-1",
+  "label": "Copy file from S3"
+}
+```
+
+**What this does**: Executes `aws s3 cp s3://my-bucket/file.csv ./local/`. Use `positional_args` for S3 high-level commands that require source/destination paths.
+
+#### Use Case 5: Sync S3 Directory
+
+```json
+{
+  "service_name": "s3",
+  "operation_name": "sync",
+  "positional_args": ["./data/", "s3://my-bucket/backup/"],
+  "parameters": {
+    "--exclude": "*.tmp"
+  },
+  "region": "us-east-1",
+  "label": "Sync local directory to S3"
+}
+```
+
+**What this does**: Syncs local directory to S3, excluding .tmp files.
+
+#### Use Case 6: With AWS Profile
 
 ```json
 {
@@ -120,6 +151,7 @@ Configure service restrictions in agent's `toolsSettings`:
 |-----------|------|----------|-------------|
 | `service_name` | string | Yes | AWS service (e.g., s3, ec2, lambda). Must not start with `-` |
 | `operation_name` | string | Yes | Operation to perform (e.g., list-buckets, describe-instances) |
+| `positional_args` | array | No | Positional arguments for S3 high-level commands (cp, mv, sync, rm). Source/destination paths |
 | `parameters` | object | No | Operation parameters as key-value pairs |
 | `region` | string | Yes | AWS region (e.g., us-east-1, eu-west-1) |
 | `profile_name` | string | No | AWS profile from ~/.aws/credentials |
@@ -147,6 +179,25 @@ Use JSON syntax for parameters:
     "--dry-run": ""
   }
 }
+```
+
+## Positional Arguments
+
+Use `positional_args` for S3 high-level commands that require source/destination paths:
+
+```json
+{
+  "service_name": "s3",
+  "operation_name": "cp",
+  "positional_args": ["s3://bucket/source.txt", "/local/dest.txt"],
+  "region": "us-east-1",
+  "label": "Copy from S3"
+}
+```
+
+**Supported commands**: `s3 cp`, `s3 mv`, `s3 sync`, `s3 rm`
+
+Positional arguments are passed directly without `--` prefix, before any parameters.
 ```
 
 ## Read-Only Operations

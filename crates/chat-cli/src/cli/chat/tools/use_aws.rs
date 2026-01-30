@@ -60,6 +60,7 @@ static AWS_READONLY_ADDITIONS: LazyLock<HashSet<&'static str>> = LazyLock::new(|
 pub struct UseAws {
     pub service_name: String,
     pub operation_name: String,
+    pub positional_args: Option<Vec<String>>,
     pub parameters: Option<HashMap<String, serde_json::Value>>,
     pub region: String,
     pub profile_name: Option<String>,
@@ -70,6 +71,7 @@ pub struct UseAws {
 struct UseAwsRaw {
     pub service_name: String,
     pub operation_name: String,
+    pub positional_args: Option<Vec<String>>,
     pub parameters: Option<HashMap<String, serde_json::Value>>,
     pub region: String,
     pub profile_name: Option<String>,
@@ -91,6 +93,7 @@ impl TryFrom<UseAwsRaw> for UseAws {
         Ok(UseAws {
             service_name: raw.service_name,
             operation_name: raw.operation_name,
+            positional_args: raw.positional_args,
             parameters: raw.parameters,
             region: raw.region,
             profile_name: raw.profile_name,
@@ -125,6 +128,13 @@ impl UseAws {
             command.arg("--profile").arg(profile_name);
         }
         command.arg(&self.service_name).arg(&self.operation_name);
+
+        if let Some(positional_args) = &self.positional_args {
+            for arg in positional_args {
+                command.arg(arg);
+            }
+        }
+
         if let Some(parameters) = self.cli_parameters() {
             for (name, val) in parameters {
                 command.arg(name);
@@ -187,6 +197,12 @@ impl UseAws {
             style::Print(format!("Service name: {}\n", self.service_name)),
             style::Print(format!("Operation name: {}\n", self.operation_name)),
         )?;
+        if let Some(positional_args) = &self.positional_args {
+            queue!(output, style::Print("Positional arguments:\n".to_string()))?;
+            for arg in positional_args {
+                queue!(output, style::Print(format!("- {arg}\n")))?;
+            }
+        }
         if let Some(parameters) = &self.parameters {
             queue!(output, style::Print("Parameters: \n".to_string()))?;
             for (name, value) in parameters {
