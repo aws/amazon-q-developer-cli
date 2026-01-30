@@ -33,7 +33,7 @@ pub enum AgentSubcommands {
     /// List the available agents. Note that local agents are only discovered if the command is
     /// invoked at a directory that contains them
     List,
-    /// Create an agent config. If path is not provided, Q CLI shall create this config in the
+    /// Create an agent config. If path is not provided, Kiro CLI shall create this config in the
     /// global agent directory
     Create {
         /// Name of the agent to be created
