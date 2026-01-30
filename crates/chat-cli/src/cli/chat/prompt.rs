@@ -699,7 +699,10 @@ pub fn rl(
 #[cfg(test)]
 mod tests {
     use rustyline::highlight::Highlighter;
-    use rustyline::history::DefaultHistory;
+    use rustyline::history::{
+        DefaultHistory,
+        History,
+    };
 
     use super::*;
     use crate::cli::experiment::experiment_manager::ExperimentName;
@@ -1101,5 +1104,16 @@ mod tests {
         assert!(available_commands.contains(&"/help"));
         assert!(available_commands.contains(&"/clear"));
         assert!(available_commands.contains(&"/quit"));
+    }
+
+    #[test]
+    fn test_history_search_is_case_insensitive() {
+        let mut history = DefaultHistory::new();
+        history.add("Hello World").unwrap();
+
+        // Lowercase search should find mixed-case entry
+        let result = history.search("hello", 0, SearchDirection::Reverse).unwrap();
+        assert!(result.is_some(), "Should find 'Hello World' when searching for 'hello'");
+        assert_eq!(result.unwrap().entry, "Hello World");
     }
 }

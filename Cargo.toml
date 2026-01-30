@@ -126,7 +126,7 @@ rusqlite = { version = "0.32.1", features = ["bundled", "serde_json"] }
 rustls = "0.23.23"
 rustls-native-certs = "0.8.1"
 rustls-pemfile = "2.1.0"
-rustyline = { version = "15.0.0", features = ["custom-bindings", "derive", "with-file-history"], default-features = false }
+rustyline = { version = "15.0.0", features = ["custom-bindings", "derive", "with-file-history", "case_insensitive_history_search"], default-features = false }
 sacp = "10.0.0"
 agent-client-protocol-schema = { version = "0.10.5", features = ["unstable_session_model"] }
 schemars = "1.0.4"
