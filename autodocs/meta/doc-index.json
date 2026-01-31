@@ -1,6 +1,6 @@
 {
-  "generated_at": "2026-01-30T14:12:44.020227",
-  "total_docs": 92,
+  "generated_at": "2026-01-30T16:33:21.399793",
+  "total_docs": 93,
   "by_category": {
     "command": [
       "commands/agent.md",
@@ -18,6 +18,7 @@
       "features/diff-tool.md",
       "features/exit-codes.md",
       "features/experiments.md",
+      "features/help-agent.md",
       "features/hooks.md",
       "features/knowledge-management.md",
       "features/mcp-registry.md",
@@ -385,6 +386,28 @@
         "slash-experiment"
       ],
       "validated": "2025-12-19",
+      "status": "validated"
+    },
+    {
+      "path": "features/help-agent.md",
+      "file": "help-agent.md",
+      "title": "Help Agent",
+      "description": "Built-in agent that answers questions about Kiro CLI features using documentation",
+      "category": "feature",
+      "keywords": [
+        "help",
+        "agent",
+        "documentation",
+        "introspect",
+        "questions",
+        "features"
+      ],
+      "related": [
+        "slash-help",
+        "introspect",
+        "planning-agent"
+      ],
+      "validated": "2026-01-30",
       "status": "validated"
     },
     {
@@ -1259,19 +1282,23 @@
       "path": "slash-commands/help.md",
       "file": "help.md",
       "title": "/help",
-      "description": "Display help information for all available slash commands with usage and descriptions",
+      "description": "Switch to the Help Agent to ask questions about Kiro CLI features and commands",
       "category": "slash_command",
       "keywords": [
         "help",
+        "agent",
+        "documentation",
         "commands",
-        "usage",
-        "reference"
+        "features",
+        "questions",
+        "legacy"
       ],
       "related": [
+        "help-agent",
         "introspect",
         "tools"
       ],
-      "validated": "2025-12-19",
+      "validated": "2026-01-30",
       "status": "validated"
     },
     {
@@ -1894,7 +1921,7 @@
       "related": [
         "execute-bash"
       ],
-      "validated": "2026-01-29",
+      "validated": "2026-01-27",
       "status": "validated"
     },
     {

@@ -1,5 +1,6 @@
 use crate::constants::{
     DEFAULT_AGENT_NAME,
+    HELP_AGENT_NAME,
     PLANNER_AGENT_NAME,
 };
 
@@ -108,6 +109,8 @@ pub fn generate_prompt(
         .map(|p| {
             if p == PLANNER_AGENT_NAME {
                 "[plan] ".to_string()
+            } else if p == HELP_AGENT_NAME {
+                "[help] ".to_string()
             } else {
                 format!("[{p}] ")
             }

@@ -1102,6 +1102,16 @@ impl Agents {
             agent
         });
 
+        // Add help agent (loaded from embedded JSON config)
+        all_agents.push({
+            let mut agent: Agent =
+                serde_json::from_str(include_str!("../../kiro_help.json")).expect("Invalid kiro_help.json");
+            agent.prompt = Some(include_str!("../../help_prompt.md").to_string());
+            configure_builtin_agent_resources(&mut agent, &resolver).await;
+            // Note: Help agent is read-only with only introspect tool
+            agent
+        });
+
         let all_agents = validator::validate_agents(all_agents, output);
 
         // Assume agent in the following order of priority:

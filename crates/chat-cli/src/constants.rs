@@ -20,8 +20,11 @@ pub const DEFAULT_AGENT_NAME: &str = "kiro_default";
 /// Planner agent name
 pub const PLANNER_AGENT_NAME: &str = "kiro_planner";
 
+/// Help agent name
+pub const HELP_AGENT_NAME: &str = "kiro_help";
+
 /// List of all built-in agent names
-pub const BUILT_IN_AGENTS: &[&str] = &[DEFAULT_AGENT_NAME, PLANNER_AGENT_NAME];
+pub const BUILT_IN_AGENTS: &[&str] = &[DEFAULT_AGENT_NAME, PLANNER_AGENT_NAME, HELP_AGENT_NAME];
 
 /// Reserved keyboard shortcuts that cannot be used as agent triggers
 pub const RESERVED_KEYBOARD_SHORTCUTS: &[&str] = &[

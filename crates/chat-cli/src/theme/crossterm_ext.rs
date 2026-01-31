@@ -122,12 +122,17 @@ impl StyledText {
         )
     }
 
-    /// Format agent name with appropriate color: brand (purple) for planner, profile (cyan) for
-    /// others
+    /// Format agent name with appropriate color: brand (purple) for planner/help, profile (cyan)
+    /// for others
     pub fn agent_indicator(agent_name: &str) -> String {
-        use crate::constants::PLANNER_AGENT_NAME;
+        use crate::constants::{
+            HELP_AGENT_NAME,
+            PLANNER_AGENT_NAME,
+        };
         if agent_name == PLANNER_AGENT_NAME {
             Self::brand("[plan]")
+        } else if agent_name == HELP_AGENT_NAME {
+            Self::brand("[help]")
         } else {
             Self::profile(&format!("[{agent_name}]"))
         }

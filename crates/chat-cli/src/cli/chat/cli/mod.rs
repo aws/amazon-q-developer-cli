@@ -6,6 +6,7 @@ pub mod compact;
 pub mod context;
 pub mod editor;
 pub mod experiment;
+pub mod help;
 pub mod hooks;
 pub mod knowledge;
 pub mod logdump;
@@ -29,6 +30,7 @@ use code::CodeSubcommand;
 use compact::CompactArgs;
 use editor::EditorArgs;
 use experiment::ExperimentArgs;
+use help::HelpArgs;
 use hooks::HooksArgs;
 use knowledge::KnowledgeSubcommand;
 use logdump::LogdumpArgs;
@@ -58,6 +60,8 @@ use crate::os::Os;
 /// Use any of these commands to manage your Kiro session. All commands start with '/'.
 #[derive(Debug, PartialEq, Parser)]
 #[command(
+    disable_help_flag = true,
+    disable_help_subcommand = true,
     color = clap::ColorChoice::Always, term_width = 0, after_long_help = &ui_text::extra_help(), override_usage = "/<COMMAND>",
     styles = clap::builder::Styles::styled()
         .header(clap::builder::styling::Style::new().bold())
@@ -152,6 +156,8 @@ pub enum SlashCommand {
     Todos(TodoSubcommand),
     /// Paste an image from clipboard
     Paste(PasteArgs),
+    /// Get help about Kiro CLI features and commands
+    Help(HelpArgs),
 }
 
 impl SlashCommand {
@@ -284,6 +290,7 @@ impl SlashCommand {
             Self::Checkpoint(subcommand) => subcommand.execute(os, session).await,
             Self::Todos(subcommand) => subcommand.execute(os, session).await,
             Self::Paste(args) => args.execute(os, session).await,
+            Self::Help(args) => args.execute(os, session).await,
         }
     }
 
@@ -317,6 +324,7 @@ impl SlashCommand {
             Self::Checkpoint(_) => "checkpoint",
             Self::Todos(_) => "todos",
             Self::Paste(_) => "paste",
+            Self::Help { .. } => "help",
         }
     }
 

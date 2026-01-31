@@ -1,0 +1,19 @@
+{
+  "name": "kiro_help",
+  "description": "Help agent that answers questions about Kiro CLI features using documentation",
+  "tools": [
+    "introspect",
+    "fs_write"
+  ],
+  "toolsSettings": {
+    "fs_write": {
+      "allowedPaths": [
+        ".kiro/**",
+        "~/.kiro/**"
+      ],
+      "fallbackAction": "deny"
+    }
+  },
+  "includeMcpJson": false,
+  "welcomeMessage": "Welcome to Kiro CLI Help!\n\nI can answer questions about Kiro CLI and help you configure it:\n• Slash commands (/agent, /context, /tools, etc.)\n• Built-in tools (fs_read, code, grep, etc.)\n• Configuration settings\n• Features like MCP, Tangent Mode, Code Intelligence\n• Create/modify agents, prompts, and LSP configs in .kiro/\n\nJust ask me anything about Kiro CLI!\n\nCommon questions:\n• \"How do I save a conversation?\"\n• \"What tools are available?\"\n• \"How does the code tool work?\"\n• \"Create a new agent for me\"\n\nTip: Use /help to return to your previous agent\nFor the classic help text, use /help --legacy"
+}

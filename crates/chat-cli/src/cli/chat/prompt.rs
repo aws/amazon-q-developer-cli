@@ -509,6 +509,9 @@ impl Highlighter for ChatHelper {
                 if profile == "plan" {
                     // Special styling for planner agent: [plan] in purple (brand color)
                     result.push_str(&StyledText::brand("[plan] "));
+                } else if profile == "help" {
+                    // Special styling for help agent: [help] in purple (brand color)
+                    result.push_str(&StyledText::brand("[help] "));
                 } else {
                     // Default styling for other agents: [agent] in cyan (profile indicator)
                     result.push_str(&StyledText::profile(&format!("[{profile}] ")));
