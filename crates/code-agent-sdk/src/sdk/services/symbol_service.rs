@@ -273,17 +273,17 @@ impl LspSymbolService {
         request: &FindSymbolsRequest,
     ) -> Result<Vec<SymbolInfo>, Error> {
         let mut all_symbols = Vec::new();
-        let detected_languages = workspace_manager.get_detected_languages()?;
+        let initialized_languages = workspace_manager.get_initialized_lsp_languages();
 
         // Filter languages if language filter is specified
         let languages_to_query: Vec<String> = if let Some(lang_filter) = &request.language {
             let filter_lower = lang_filter.to_lowercase();
-            detected_languages
+            initialized_languages
                 .into_iter()
                 .filter(|l| l.to_lowercase() == filter_lower)
                 .collect()
         } else {
-            detected_languages
+            initialized_languages
         };
 
         for language in languages_to_query {

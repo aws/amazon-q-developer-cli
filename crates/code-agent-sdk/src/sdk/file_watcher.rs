@@ -46,15 +46,22 @@ struct GitignoreMatcher {
 impl GitignoreMatcher {
     /// Build gitignore matcher by scanning workspace for .gitignore files
     fn new(workspace_root: &Path) -> Result<Self> {
-        use crate::utils::traversal::GITIGNORE_SEARCH_DEPTH;
+        use crate::utils::traversal::{
+            GITIGNORE_SEARCH_DEPTH,
+            should_skip_dir,
+        };
 
         let mut gitignores = Vec::new();
 
         // Walk the directory tree to find all .gitignore files
+        // Skip ALWAYS_SKIP_DIRS to avoid traversing large build/cache directories
         for entry in ignore::WalkBuilder::new(workspace_root)
             .hidden(false) // We want to see .gitignore files
             .git_ignore(false) // Don't apply gitignore while searching for gitignore files
             .max_depth(Some(GITIGNORE_SEARCH_DEPTH))
+            .filter_entry(|e| {
+                e.file_type().is_none_or(|ft| !ft.is_dir()) || !should_skip_dir(e.file_name().to_str().unwrap_or(""))
+            })
             .build()
         {
             let entry = entry?;
@@ -117,10 +124,12 @@ impl FileWatcher {
         event_tx: mpsc::UnboundedSender<FsEvent>,
         config: FileWatcherConfig,
     ) -> Result<Self> {
+        let fw_new_start = Instant::now();
         let tx = event_tx.clone();
         let workspace_root_clone = workspace_root.clone();
 
         // Build glob matchers
+        let stage = Instant::now();
         let mut include_builder = GlobSetBuilder::new();
         for pattern in &config.include_patterns {
             include_builder.add(Glob::new(pattern)?);
@@ -132,14 +141,18 @@ impl FileWatcher {
             exclude_builder.add(Glob::new(pattern)?);
         }
         let exclude_matcher = exclude_builder.build()?;
+        tracing::debug!("[CODE-INTEL]     - glob matchers: {:?}", stage.elapsed());
 
         // Build gitignore matcher if enabled
+        let stage = Instant::now();
         let gitignore_matcher = if config.respect_gitignore {
             Some(GitignoreMatcher::new(&workspace_root)?)
         } else {
             None
         };
+        tracing::debug!("[CODE-INTEL]     - gitignore matcher: {:?}", stage.elapsed());
 
+        let stage = Instant::now();
         let watcher = notify::recommended_watcher(move |res: notify::Result<Event>| {
             match res {
                 Ok(event) => {
@@ -166,24 +179,49 @@ impl FileWatcher {
                 Err(e) => tracing::error!("File watcher error: {:?}", e),
             }
         })?;
+        tracing::debug!("[CODE-INTEL]     - create watcher: {:?}", stage.elapsed());
 
         let mut file_watcher = Self { _watcher: watcher };
 
-        // Use gitignore-aware directory enumeration to avoid traversing ignored directories
-        // This is critical for performance when large directories are gitignored
-        let mut watch_count = 0;
-        for entry in
-            crate::utils::traversal::create_code_walker_with_gitignore(&workspace_root, None, config.respect_gitignore)
-                .build()
-                .flatten()
-                .filter(|e| e.file_type().is_some_and(|ft| ft.is_dir()))
-        {
-            if let Err(e) = file_watcher._watcher.watch(entry.path(), RecursiveMode::NonRecursive) {
-                tracing::warn!("Failed to watch directory {:?}: {}", entry.path(), e);
+        // Platform-specific watch strategy:
+        // - macOS (FSEvents): Single recursive watch is fast and efficient
+        // - Linux (inotify): Per-directory watches to respect gitignore and avoid inotify limits
+        let stage = Instant::now();
+        #[cfg(target_os = "macos")]
+        let watch_count = {
+            if let Err(e) = file_watcher._watcher.watch(&workspace_root, RecursiveMode::Recursive) {
+                tracing::warn!("Failed to watch workspace root {:?}: {}", workspace_root, e);
+                0
             } else {
-                watch_count += 1;
+                1
             }
-        }
+        };
+
+        #[cfg(not(target_os = "macos"))]
+        let watch_count = {
+            let mut count = 0;
+            for entry in crate::utils::traversal::create_code_walker_with_gitignore(
+                &workspace_root,
+                None,
+                config.respect_gitignore,
+            )
+            .build()
+            .flatten()
+            .filter(|e| e.file_type().is_some_and(|ft| ft.is_dir()))
+            {
+                if let Err(e) = file_watcher._watcher.watch(entry.path(), RecursiveMode::NonRecursive) {
+                    tracing::warn!("Failed to watch directory {:?}: {}", entry.path(), e);
+                } else {
+                    count += 1;
+                }
+            }
+            count
+        };
+        tracing::debug!("[CODE-INTEL]     - watch {} dirs: {:?}", watch_count, stage.elapsed());
+        tracing::debug!(
+            "[CODE-INTEL]     - FileWatcher::new total: {:?}",
+            fw_new_start.elapsed()
+        );
 
         tracing::trace!(
             "Started watching {} directories in {:?} with patterns include={:?}, exclude={:?}, gitignore={}",

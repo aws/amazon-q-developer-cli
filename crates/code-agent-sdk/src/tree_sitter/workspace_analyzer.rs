@@ -132,17 +132,16 @@ fn find_symbols_sync(
         let file_symbols = if let Some(cached) = code_store.get_cached_symbols(path) {
             cached
         } else {
-            let lang: ast_grep_language::SupportLang = match lang_name.parse() {
+            let lang: SupportLang = match lang_name.parse() {
                 Ok(l) => l,
                 Err(_) => continue,
             };
-            let symbols =
-                crate::tree_sitter::symbol_extractor::parse_file_symbols(path, workspace_root, &lang, lang_name);
+            let symbols = symbol_extractor::parse_file_symbols(path, workspace_root, &lang, lang_name);
             code_store.cache_symbols(path, symbols.clone());
             symbols
         };
 
-        // Apply matching based on exact_match flag
+        // Apply matching based on an exact_match flag
         for symbol in file_symbols {
             if request.exact_match {
                 if symbol.name == *query {

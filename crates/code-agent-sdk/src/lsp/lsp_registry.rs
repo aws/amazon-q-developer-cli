@@ -74,6 +74,14 @@ impl LspRegistry {
         self.configs.contains_key(server_name)
     }
 
+    /// Check if any initialized LSP server handles a file extension
+    pub fn has_initialized_lsp_for_extension(&self, extension: &str) -> bool {
+        self.configs
+            .iter()
+            .filter(|(_, config)| config.file_extensions.contains(&extension.to_string()))
+            .any(|(name, _)| self.clients.get(name).map(|c| c.is_initialized()).unwrap_or(false))
+    }
+
     /// Get all registered language server names
     pub fn registered_servers(&self) -> Vec<&String> {
         self.configs.keys().collect()
@@ -194,5 +202,54 @@ mod tests {
 
         assert_eq!(registry.registered_servers().len(), 1);
         assert!(registry.is_available("rust-analyzer"));
+    }
+
+    #[test]
+    fn test_has_initialized_lsp_for_extension_no_configs() {
+        let registry = LspRegistry::new();
+        assert!(!registry.has_initialized_lsp_for_extension("rs"));
+    }
+
+    #[test]
+    fn test_has_initialized_lsp_for_extension_not_initialized() {
+        let mut registry = LspRegistry::new();
+        registry.register_config(create_test_config("rust-analyzer", vec!["rs"]));
+        // Config registered but no client initialized
+        assert!(!registry.has_initialized_lsp_for_extension("rs"));
+    }
+
+    #[test]
+    fn test_has_initialized_lsp_for_extension_wrong_extension() {
+        let mut registry = LspRegistry::new();
+        registry.register_config(create_test_config("rust-analyzer", vec!["rs"]));
+        assert!(!registry.has_initialized_lsp_for_extension("xml"));
+    }
+
+    #[test]
+    fn test_initialized_servers_empty_when_no_clients() {
+        let mut registry = LspRegistry::new();
+        registry.register_config(create_test_config("rust-analyzer", vec!["rs"]));
+        registry.register_config(create_test_config("xml-lsp", vec!["xml"]));
+        // Configs registered but no clients initialized
+        assert!(registry.initialized_servers().is_empty());
+    }
+
+    #[test]
+    fn test_config_language_field_used_for_custom_lsp() {
+        // Verify that custom LSP configs use their own language field
+        let config = LanguageServerConfig {
+            language: "zonbook".to_string(), // Custom language not in tree-sitter
+            name: "zonbook-lsp".to_string(),
+            command: "zonbook-lsp".to_string(),
+            args: vec![],
+            file_extensions: vec!["xml".to_string()],
+            project_patterns: vec![],
+            exclude_patterns: vec![],
+            multi_workspace: false,
+            initialization_options: None,
+            request_timeout_secs: 30,
+        };
+        assert_eq!(config.language, "zonbook");
+        assert!(config.file_extensions.contains(&"xml".to_string()));
     }
 }

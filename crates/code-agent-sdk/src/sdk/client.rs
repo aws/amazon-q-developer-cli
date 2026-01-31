@@ -299,23 +299,21 @@ impl CodeIntelligence {
 
     pub async fn find_symbols(&mut self, request: FindSymbolsRequest) -> Result<Vec<SymbolInfo>> {
         let initialized_lsp_languages = self.workspace_manager.get_initialized_lsp_languages();
-
-        // Filter languages based on request constraints
         let lsp_languages = self.filter_languages(&initialized_lsp_languages, &request.language);
 
         let mut all_symbols = Vec::new();
         let mut last_error: Option<anyhow::Error> = None;
 
-        // Try LSP first for languages that have it
+        // Try LSP if available for the language
         if !lsp_languages.is_empty() {
-            tracing::info!("Using LSP search for languages: {:?}", lsp_languages);
+            tracing::debug!("Using LSP search for languages: {:?}", lsp_languages);
             match self
                 .lsp_symbol_service
                 .find_symbols(&mut self.workspace_manager, request.clone())
                 .await
             {
                 Ok(symbols) => {
-                    tracing::info!("LSP search returned {} symbols", symbols.len());
+                    tracing::debug!("LSP search returned {} symbols", symbols.len());
                     all_symbols.extend(symbols);
                 },
                 Err(e) => {
@@ -325,38 +323,31 @@ impl CodeIntelligence {
             }
         }
 
-        // TreeSitter searches only if:
-        // 1. No language filter specified (search all languages), OR
-        // 2. Language filter specified but LSP doesn't have it
-        let should_use_treesitter = request.language.is_none() || lsp_languages.is_empty();
-
-        if should_use_treesitter {
-            tracing::info!("Using tree-sitter for remaining languages");
-
-            match self
-                .tree_sitter_symbol_service
-                .find_symbols(&mut self.workspace_manager, &request)
-                .await
-            {
-                Ok(symbols) => {
-                    tracing::info!("TreeSitter search returned {} symbols", symbols.len());
-                    all_symbols.extend(symbols);
-                },
-                Err(e) => {
-                    tracing::warn!("TreeSitter search failed: {}", e);
+        // Always try tree-sitter (it filters by language internally)
+        tracing::debug!("Using tree-sitter for symbol search");
+        match self
+            .tree_sitter_symbol_service
+            .find_symbols(&mut self.workspace_manager, &request)
+            .await
+        {
+            Ok(symbols) => {
+                tracing::debug!("TreeSitter search returned {} symbols", symbols.len());
+                all_symbols.extend(symbols);
+            },
+            Err(e) => {
+                tracing::warn!("TreeSitter search failed: {}", e);
+                if last_error.is_none() {
                     last_error = Some(e);
-                },
-            }
+                }
+            },
         }
 
-        // Return error if no results and we had errors
         if all_symbols.is_empty()
             && let Some(e) = last_error
         {
             return Err(e);
         }
 
-        // Deduplicate, score, and sort
         Self::deduplicate_and_score_symbols(all_symbols, &request.symbol_name, request.limit.map(|l| l as usize))
     }
 
@@ -500,15 +491,8 @@ impl CodeIntelligence {
     pub async fn get_document_symbols(&mut self, request: GetDocumentSymbolsRequest) -> Result<Vec<SymbolInfo>> {
         let top_level_only = request.top_level_only.unwrap_or(true);
 
-        // Detect language from file extension
         let ext = request.file_path.extension().and_then(|e| e.to_str()).unwrap_or("");
-        let file_language = crate::tree_sitter::lang_from_extension(ext);
-
-        // Check if LSP is available for this file's language
-        let initialized_lsp_languages = self.workspace_manager.get_initialized_lsp_languages();
-        let has_lsp = file_language
-            .map(|lang| initialized_lsp_languages.iter().any(|l| l.eq_ignore_ascii_case(lang)))
-            .unwrap_or(false);
+        let has_lsp = self.workspace_manager.has_initialized_lsp_for_extension(ext);
 
         if has_lsp {
             let result = self
@@ -523,10 +507,12 @@ impl CodeIntelligence {
                     .await;
             }
             Ok(result)
-        } else {
+        } else if crate::tree_sitter::lang_from_extension(ext).is_some() {
             self.tree_sitter_symbol_service
                 .get_document_symbols(&mut self.workspace_manager, &request.file_path, top_level_only)
                 .await
+        } else {
+            Err(anyhow::anyhow!("Unsupported file extension: {}", ext))
         }
     }
 

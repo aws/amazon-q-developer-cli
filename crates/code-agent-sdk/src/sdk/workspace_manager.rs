@@ -110,6 +110,11 @@ impl WorkspaceManager {
         ".prettierrc",
     ];
 
+    /// Check if any initialized LSP handles a file extension
+    pub fn has_initialized_lsp_for_extension(&self, extension: &str) -> bool {
+        self.registry.has_initialized_lsp_for_extension(extension)
+    }
+
     /// Create new workspace manager with auto-detected workspace root
     pub fn new(workspace_root: PathBuf) -> Self {
         // Create config manager first (using workspace_root as base for .kiro/settings folder)
@@ -228,6 +233,11 @@ impl WorkspaceManager {
 
     /// Initialize all registered language servers
     pub async fn initialize(&mut self) -> Result<()> {
+        let init_start = std::time::Instant::now();
+        tracing::debug!(
+            "[CODE-INTEL] 🚀 Starting workspace initialization for: {}",
+            self.workspace_root.display()
+        );
         tracing::info!(
             "🚀 Starting workspace initialization for: {}",
             self.workspace_root.display()
@@ -247,20 +257,26 @@ impl WorkspaceManager {
             WorkspaceStatus::NotInitialized => {},
         }
         // Ensure config file exists (creates lsp.json if it doesn't exist)
+        let stage_start = std::time::Instant::now();
         self.config_manager.ensure_config_exists()?;
+        tracing::debug!("[CODE-INTEL] ✓ ensure_config_exists: {:?}", stage_start.elapsed());
 
         // Set status to Initializing
         *self.status.write().await = WorkspaceStatus::Initializing;
 
         // Auto-detect and register language servers if none are present
+        let stage_start = std::time::Instant::now();
         tracing::debug!("Ensuring language servers are registered");
         self.ensure_language_servers()?;
+        tracing::debug!("[CODE-INTEL] ✓ ensure_language_servers: {:?}", stage_start.elapsed());
         let workspace_uri = Url::from_file_path(&self.workspace_root).map_err(|_| {
             crate::error::CodeIntelligenceError::invalid_path(self.workspace_root.clone(), "Cannot convert to URI")
         })?;
 
         // Get detected languages to only initialize relevant LSPs
+        let stage_start = std::time::Instant::now();
         let workspace_info = self.detect_workspace()?;
+        tracing::debug!("[CODE-INTEL] ✓ detect_workspace: {:?}", stage_start.elapsed());
 
         let detected_languages: HashSet<String> = workspace_info.detected_languages.iter().cloned().collect();
 
@@ -466,22 +482,32 @@ impl WorkspaceManager {
         tracing::info!("Workspace initialization started (LSP servers initializing in background)");
 
         // Subscribe to diagnostics from all initialized LSP clients
+        let stage_start = std::time::Instant::now();
         tracing::debug!("Subscribing to diagnostics");
         if let Err(e) = self.subscribe_to_diagnostics().await {
             tracing::warn!("Failed to subscribe to diagnostics: {}", e);
         }
+        tracing::debug!("[CODE-INTEL] ✓ subscribe_to_diagnostics: {:?}", stage_start.elapsed());
 
-        tracing::debug!("Starting file watching");
         // Start file watching after LSP initialization
+        let stage_start = std::time::Instant::now();
+        tracing::debug!("Starting file watching");
         if let Err(e) = self.start_file_watching() {
             tracing::warn!("Failed to start file watching: {}", e);
         }
+        tracing::debug!("[CODE-INTEL] ✓ start_file_watching: {:?}", stage_start.elapsed());
 
         // Auto-open representative files (will skip files whose LSPs aren't ready yet)
         // Files will be opened on first actual use if LSPs are still initializing
+        let stage_start = std::time::Instant::now();
         if let Err(e) = self.auto_open_representative_files().await {
             tracing::warn!("Failed to auto-open representative files: {}", e);
         }
+        tracing::debug!(
+            "[CODE-INTEL] ✓ auto_open_representative_files: {:?}",
+            stage_start.elapsed()
+        );
+        tracing::debug!("[CODE-INTEL] ✅ Total initialization time: {:?}", init_start.elapsed());
 
         Ok(())
     }
@@ -1031,13 +1057,7 @@ impl WorkspaceManager {
                 .unwrap_or(false);
 
             if is_initialized {
-                // Map file extensions to languages
-                let config_languages: Vec<String> = config
-                    .file_extensions
-                    .iter()
-                    .filter_map(|ext| self.config_manager.get_language_for_extension(ext))
-                    .collect();
-                languages.extend(config_languages);
+                languages.push(config.language.clone());
             }
         }
 
@@ -1057,6 +1077,7 @@ impl WorkspaceManager {
 
     /// Start file watching with patterns based on detected languages
     pub fn start_file_watching(&mut self) -> Result<()> {
+        let fw_start = std::time::Instant::now();
         let (tx, rx) = mpsc::unbounded_channel::<FsEvent>();
 
         // Generate config from detected languages
@@ -1075,6 +1096,7 @@ impl WorkspaceManager {
                 exclude_patterns.extend(lang_config.exclude_patterns);
             }
         }
+        tracing::debug!("[CODE-INTEL]   - config generation: {:?}", fw_start.elapsed());
 
         let config = FileWatcherConfig {
             include_patterns,
@@ -1083,7 +1105,9 @@ impl WorkspaceManager {
         };
 
         // Start file watcher
+        let watcher_start = std::time::Instant::now();
         let file_watcher = FileWatcher::new(self.workspace_root.clone(), tx, config)?;
+        tracing::debug!("[CODE-INTEL]   - FileWatcher::new: {:?}", watcher_start.elapsed());
 
         // Start event processor with workspace manager reference
         let processor = crate::sdk::file_watcher::EventProcessor::new(rx, self as *mut _, self.workspace_root.clone());
