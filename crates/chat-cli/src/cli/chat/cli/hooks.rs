@@ -36,6 +36,7 @@ use crate::cli::agent::hook::{
     HookTrigger,
 };
 use crate::cli::agent::is_mcp_tool_ref;
+use crate::cli::chat::tools::ToolMetadata;
 use crate::cli::chat::util::truncate_safe;
 use crate::cli::chat::{
     ChatError,
@@ -73,6 +74,13 @@ fn hook_matches_tool(hook: &Hook, tool_name: &str) -> bool {
                         if pattern == &server_pattern {
                             return true;
                         }
+                    }
+
+                    // Check if pattern is an alias for a native tool
+                    if let Some(tool_info) = ToolMetadata::get_by_any_alias(pattern)
+                        && tool_info.spec_name == tool_name
+                    {
+                        return true;
                     }
 
                     // Use matches_any_pattern for both MCP and built-in tools
@@ -545,6 +553,49 @@ mod tests {
         assert!(hook_matches_tool(&git_status_hook, "@git/status"));
         assert!(!hook_matches_tool(&git_status_hook, "@git/commit"));
         assert!(!hook_matches_tool(&git_status_hook, "fs_write"));
+    }
+
+    #[test]
+    fn test_hook_matches_tool_with_aliases() {
+        // Test that hook matchers work with tool aliases (e.g., "read" for "fs_read")
+        let read_alias_hook = Hook {
+            command: "echo test".to_string(),
+            timeout_ms: 5000,
+            cache_ttl_seconds: 0,
+            max_output_size: 1000,
+            matcher: Some("read".to_string()),
+            source: crate::cli::agent::hook::Source::Session,
+        };
+
+        let write_alias_hook = Hook {
+            command: "echo test".to_string(),
+            timeout_ms: 5000,
+            cache_ttl_seconds: 0,
+            max_output_size: 1000,
+            matcher: Some("write".to_string()),
+            source: crate::cli::agent::hook::Source::Session,
+        };
+
+        let shell_alias_hook = Hook {
+            command: "echo test".to_string(),
+            timeout_ms: 5000,
+            cache_ttl_seconds: 0,
+            max_output_size: 1000,
+            matcher: Some("shell".to_string()),
+            source: crate::cli::agent::hook::Source::Session,
+        };
+
+        // "read" alias should match fs_read tool
+        assert!(hook_matches_tool(&read_alias_hook, "fs_read"));
+        assert!(!hook_matches_tool(&read_alias_hook, "fs_write"));
+
+        // "write" alias should match fs_write tool
+        assert!(hook_matches_tool(&write_alias_hook, "fs_write"));
+        assert!(!hook_matches_tool(&write_alias_hook, "fs_read"));
+
+        // "shell" alias should match execute_bash tool
+        assert!(hook_matches_tool(&shell_alias_hook, "execute_bash"));
+        assert!(!hook_matches_tool(&shell_alias_hook, "fs_read"));
     }
 
     #[tokio::test]

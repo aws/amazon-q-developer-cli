@@ -1,5 +1,5 @@
 {
-  "generated_at": "2026-01-30T16:33:21.399793",
+  "generated_at": "2026-02-02T07:20:47.926857",
   "total_docs": 93,
   "by_category": {
     "command": [
@@ -430,7 +430,7 @@
         "agent-configuration",
         "slash-hooks"
       ],
-      "validated": "2026-01-27",
+      "validated": "2026-02-02",
       "status": "validated"
     },
     {
@@ -1921,7 +1921,7 @@
       "related": [
         "execute-bash"
       ],
-      "validated": "2026-01-27",
+      "validated": "2026-01-29",
       "status": "validated"
     },
     {

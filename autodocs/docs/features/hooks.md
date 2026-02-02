@@ -1,7 +1,7 @@
 ---
 doc_meta:
-  validated: 2026-01-27
-  commit: 85403a86
+  validated: 2026-02-02
+  commit: 9c8974b4
   status: validated
   testable_headless: true
   category: feature
@@ -119,12 +119,27 @@ Use the `matcher` field to specify which tools the hook applies to:
 
 ### Examples
 - `"fs_write"` - Exact match for built-in tools
+- `"write"` - Tool alias (matches `fs_write`)
 - `"fs_*"` - Wildcard pattern for built-in tools
 - `"@git"` - All tools from git MCP server
 - `"@git/status"` - Specific tool from git MCP server
 - `"*"` - All tools (built-in and MCP)
 - `"@builtin"` - All built-in tools only
 - No matcher - Applies to all tools
+
+### Tool Aliases
+
+Hook matchers recognize tool aliases, so you can use shorter names:
+
+| Alias | Matches Tool |
+|-------|-------------|
+| `read` | `fs_read` |
+| `write` | `fs_write` |
+| `shell` | `execute_bash` |
+| `aws` | `use_aws` |
+| `report` | `gh_issue` |
+| `todo` | `todo_list` |
+| `subagent` | `use_subagent` |
 
 For complete tool reference format, see [agent format documentation](agent-format.md#tools-field).
 
