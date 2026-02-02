@@ -23,6 +23,7 @@ use super::event_log::{
     EventLog,
     LogEntry,
 };
+use super::permissions::RuntimePermissions;
 use crate::agent::ExecutionState;
 use crate::agent::agent_config::definitions::AgentConfig;
 use crate::agent::tools::ToolState;
@@ -61,6 +62,10 @@ pub struct AgentSnapshot {
     pub tool_state: ToolState,
     /// Agent settings
     pub settings: AgentSettings,
+    /// Runtime permissions accumulated during the session
+    #[typeshare(skip)]
+    #[serde(default)]
+    pub permissions: RuntimePermissions,
 }
 
 impl AgentSnapshot {
@@ -74,6 +79,7 @@ impl AgentSnapshot {
             model_state: Default::default(),
             tool_state: Default::default(),
             settings: Default::default(),
+            permissions: Default::default(),
         }
     }
 
@@ -89,6 +95,7 @@ impl AgentSnapshot {
             model_state: Default::default(),
             tool_state: Default::default(),
             settings: Default::default(),
+            permissions: Default::default(),
         }
     }
 }

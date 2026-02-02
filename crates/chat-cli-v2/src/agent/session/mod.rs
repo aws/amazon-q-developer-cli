@@ -77,6 +77,8 @@ impl SessionError {
 }
 
 /// Versioned session state for forward compatibility.
+use agent::permissions::RuntimePermissions;
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "version")]
 pub enum SessionState {
@@ -88,13 +90,20 @@ pub enum SessionState {
 pub struct SessionStateV1 {
     pub conversation_metadata: ConversationMetadata,
     pub rts_model_state: RtsStateSnapshot,
+    #[serde(default)]
+    pub permissions: RuntimePermissions,
 }
 
 impl SessionState {
-    pub fn new(conversation_metadata: ConversationMetadata, rts_model_state: RtsStateSnapshot) -> Self {
+    pub fn new(
+        conversation_metadata: ConversationMetadata,
+        rts_model_state: RtsStateSnapshot,
+        permissions: RuntimePermissions,
+    ) -> Self {
         Self::V1(SessionStateV1 {
             conversation_metadata,
             rts_model_state,
+            permissions,
         })
     }
 
@@ -107,6 +116,12 @@ impl SessionState {
     pub fn rts_model_state(&self) -> &RtsStateSnapshot {
         match self {
             Self::V1(v1) => &v1.rts_model_state,
+        }
+    }
+
+    pub fn permissions(&self) -> &RuntimePermissions {
+        match self {
+            Self::V1(v1) => &v1.permissions,
         }
     }
 }
@@ -513,11 +528,15 @@ mod tests {
     use crate::agent::rts::RtsStateSnapshot;
 
     fn test_state() -> SessionState {
-        SessionState::new(ConversationMetadata::default(), RtsStateSnapshot {
-            conversation_id: "test-session".to_string(),
-            model_info: None,
-            context_usage_percentage: None,
-        })
+        SessionState::new(
+            ConversationMetadata::default(),
+            RtsStateSnapshot {
+                conversation_id: "test-session".to_string(),
+                model_info: None,
+                context_usage_percentage: None,
+            },
+            RuntimePermissions::default(),
+        )
     }
 
     fn pid_always_dead(_pid: u32) -> bool {

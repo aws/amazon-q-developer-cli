@@ -7,7 +7,7 @@ use std::time::{
 
 use rmcp::RoleClient;
 use rmcp::model::{
-    CallToolRequestParam,
+    CallToolRequestParams,
     CallToolResult,
     ClientInfo,
     ClientResult,
@@ -235,6 +235,11 @@ impl rmcp::Service<RoleClient> for McpService {
             ServerRequest::CreateElicitationRequest(_) => Err(rmcp::ErrorData::method_not_found::<
                 rmcp::model::ElicitationCreateRequestMethod,
             >()),
+            ServerRequest::CustomRequest(req) => Err(rmcp::ErrorData::new(
+                rmcp::model::ErrorCode::METHOD_NOT_FOUND,
+                format!("Method not found: {}", req.method),
+                None,
+            )),
         }
     }
 
@@ -279,6 +284,7 @@ impl rmcp::Service<RoleClient> for McpService {
             ServerNotification::ResourceUpdatedNotification(_) => (),
             ServerNotification::ResourceListChangedNotification(_) => (),
             ServerNotification::ProgressNotification(_) => (),
+            ServerNotification::CustomNotification(_) => (),
         }
         Ok(())
     }
@@ -293,6 +299,7 @@ impl rmcp::Service<RoleClient> for McpService {
                 version: "1.0.0".to_string(),
                 ..Default::default()
             },
+            meta: None,
         }
     }
 }
@@ -411,7 +418,7 @@ pub struct RunningMcpService {
 }
 
 impl RunningMcpService {
-    decorate_with_auth_retry!(CallToolRequestParam, call_tool, CallToolResult);
+    decorate_with_auth_retry!(CallToolRequestParams, call_tool, CallToolResult);
 
     decorate_with_auth_retry!(list_all_tools, Vec<RmcpTool>);
 

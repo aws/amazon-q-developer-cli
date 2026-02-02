@@ -1,0 +1,133 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>Terminal Harness</title>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@xterm/xterm@5.5.0/css/xterm.css">
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      padding: 20px;
+      background: #1e1e1e;
+      color: #fff;
+      margin: 0;
+    }
+    #terminal {
+      margin: 20px 0;
+      width: fit-content;
+    }
+    button {
+      padding: 10px 20px;
+      margin: 5px;
+      font-size: 14px;
+      cursor: pointer;
+      background: #0078d4;
+      color: white;
+      border: none;
+      border-radius: 4px;
+    }
+    button:hover { background: #106ebe; }
+    #output {
+      background: #000;
+      color: #0f0;
+      padding: 15px;
+      margin: 20px 0;
+      font-family: monospace;
+      white-space: pre-wrap;
+      border: 1px solid #333;
+      max-height: 400px;
+      overflow-y: auto;
+      display: none;
+    }
+    .section {
+      margin: 20px 0;
+      padding: 15px;
+      background: #2a2a2a;
+      border-radius: 5px;
+    }
+    #status {
+      padding: 10px;
+      background: #2a4a2a;
+      border-radius: 4px;
+      margin-bottom: 10px;
+    }
+    #status.disconnected { background: #4a2a2a; }
+    #status.connecting { background: #4a4a2a; }
+  </style>
+</head>
+<body>
+  <h1>Terminal Harness</h1>
+  <div id="status" class="connecting">Connecting...</div>
+
+  <div class="section">
+    <h2>Terminal</h2>
+    <div id="terminal"></div>
+  </div>
+
+  <div class="section">
+    <button onclick="getScreen()">📸 Get Screen</button>
+    <button onclick="getBuffer()">📜 Get Buffer</button>
+  </div>
+
+  <pre id="output"></pre>
+
+  <script src="https://cdn.jsdelivr.net/npm/@xterm/xterm@5.5.0/lib/xterm.js"></script>
+  <script>
+    const term = new Terminal({
+      cols: 160,
+      rows: 50,
+      scrollback: 10000,
+      cursorBlink: true,
+      theme: { background: '#000000', foreground: '#ffffff', cursor: '#ffffff' }
+    });
+    window.term = term;
+    term.open(document.getElementById('terminal'));
+
+    const ws = new WebSocket(`ws://${location.host}`);
+    ws.onopen = () => {
+      document.getElementById('status').textContent = '✅ Connected';
+      document.getElementById('status').className = '';
+    };
+    ws.onclose = () => {
+      document.getElementById('status').textContent = '❌ Disconnected';
+      document.getElementById('status').className = 'disconnected';
+    };
+    ws.onerror = () => {
+      document.getElementById('status').textContent = '❌ Error';
+      document.getElementById('status').className = 'disconnected';
+    };
+    ws.onmessage = (e) => term.write(e.data);
+    term.onData((data) => ws.send(data));
+
+    function getScreen() {
+      const lines = [];
+      const buffer = term.buffer.active;
+      for (let i = 0; i < term.rows; i++) {
+        lines.push(buffer.getLine(i)?.translateToString() || '');
+      }
+      showOutput(lines.join('\n'));
+    }
+
+    function getBuffer() {
+      const lines = [];
+      const buffer = term.buffer.active;
+      for (let i = 0; i < buffer.length; i++) {
+        lines.push(buffer.getLine(i)?.translateToString() || '');
+      }
+      showOutput(lines.join('\n'));
+    }
+
+    function showOutput(text) {
+      const el = document.getElementById('output');
+      el.style.display = 'block';
+      el.textContent = text;
+      window.terminalContent = text;
+    }
+
+    window.getTerminalContent = () => {
+      getScreen();
+      return window.terminalContent;
+    };
+  </script>
+</body>
+</html>

@@ -16,6 +16,7 @@ use agent::protocol::{
     ApprovalResult,
     ContentChunk,
     InternalEvent,
+    PermissionOptionId,
     SendApprovalResultArgs,
     SendPromptArgs,
     UpdateEvent,
@@ -160,15 +161,18 @@ impl RunArgs {
                 AgentEvent::Stop(AgentStopReason::Error(agent_error)) => {
                     bail!("agent encountered an error: {:?}", agent_error)
                 },
-                AgentEvent::ApprovalRequest { id, tool_use, .. } => {
+                AgentEvent::ApprovalRequest(req) => {
                     if !self.dangerously_trust_all_tools {
-                        bail!("Tool approval is required: {:?}", tool_use);
+                        bail!("Tool approval is required: {:?}", req.tool_use);
                     } else {
-                        warn!(?tool_use, "trust all is enabled, ignoring approval request");
+                        warn!(tool_use = ?req.tool_use, "trust all is enabled, ignoring approval request");
                         agent
                             .send_tool_use_approval_result(SendApprovalResultArgs {
-                                id: id.clone(),
-                                result: ApprovalResult::Approve,
+                                id: req.id.clone(),
+                                result: ApprovalResult {
+                                    option_id: PermissionOptionId::AllowOnce,
+                                    reason: None,
+                                },
                             })
                             .await?;
                     }

@@ -83,6 +83,13 @@ pub struct MockResponse {
 }
 
 impl MockResponse {
+    pub fn with_delay(items: Vec<StreamResult>, delay: Duration) -> Self {
+        Self {
+            items,
+            time_to_first_chunk_delay: Some(delay),
+        }
+    }
+
     async fn stream(self, tx: mpsc::Sender<StreamResult>) {
         trace!(?self.items, "beginning stream for mock response");
         if let Some(delay) = self.time_to_first_chunk_delay {

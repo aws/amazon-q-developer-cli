@@ -5,7 +5,7 @@ use std::time::Duration;
 
 use rmcp::ServiceError;
 use rmcp::model::{
-    CallToolRequestParam,
+    CallToolRequestParams,
     Prompt as RmcpPrompt,
     Tool as RmcpTool,
 };
@@ -304,9 +304,11 @@ impl McpServerActor {
                 let message_tx = self.message_tx.clone();
                 tokio::spawn(async move {
                     let result = service_handle
-                        .call_tool(CallToolRequestParam {
+                        .call_tool(CallToolRequestParams {
                             name: name.into(),
                             arguments: args,
+                            meta: None,
+                            task: None,
                         })
                         .await
                         .map_err(McpServerActorError::from);

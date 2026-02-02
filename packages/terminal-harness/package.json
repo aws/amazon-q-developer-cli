@@ -1,0 +1,20 @@
+{
+  "name": "terminal-harness",
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "start": "bun run pty-server.ts",
+    "test": "playwright test"
+  },
+  "dependencies": {
+    "bun-pty": "^0.3.1",
+    "node-pty": "^1.1.0",
+    "strip-ansi": "^7.1.0",
+    "ws": "^8.19.0"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.40.0",
+    "@types/bun": "latest",
+    "@types/ws": "^8.18.1"
+  }
+}

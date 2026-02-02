@@ -4,8 +4,9 @@ pub mod compact;
 pub mod consts;
 pub mod event_log;
 pub mod mcp;
-mod permissions;
+pub mod permissions;
 pub mod protocol;
+pub mod shell_permission;
 pub mod task_executor;
 mod tool_utils;
 pub mod tools;
@@ -56,7 +57,6 @@ use agent_loop::{
     AgentLoop,
     AgentLoopHandle,
     AgentLoopId,
-    LoopState,
 };
 use chrono::Utc;
 use consts::MAX_RESOURCE_FILE_LENGTH;
@@ -66,18 +66,23 @@ use event_log::{
 };
 use futures::stream::FuturesUnordered;
 use mcp::McpServerEvent;
-use permissions::evaluate_tool_permission;
+use permissions::{
+    RuntimePermissions,
+    apply_approval_to_permissions,
+    evaluate_tool_permission,
+};
 use protocol::{
     AgentError,
     AgentEvent,
     AgentRequest,
     AgentResponse,
     AgentStopReason,
-    ApprovalResult,
     ContentChunk,
     InitializeUpdateEvent,
     InternalEvent,
     PermissionEvalResult,
+    PermissionOption,
+    PermissionOptionId,
     SendApprovalResultArgs,
     SendPromptArgs,
     SwapAgentArgs,
@@ -159,7 +164,10 @@ use crate::agent::mcp::{
     McpManager,
     McpManagerHandle,
 };
-use crate::agent::protocol::CompactionEvent;
+use crate::agent::protocol::{
+    ClearEvent,
+    CompactionEvent,
+};
 use crate::agent::tools::{
     BuiltInTool,
     ToolKind,
@@ -178,6 +186,7 @@ use crate::agent::util::request_channel::{
 
 pub const CONTEXT_ENTRY_START_HEADER: &str = "--- CONTEXT ENTRY BEGIN ---\n";
 pub const CONTEXT_ENTRY_END_HEADER: &str = "--- CONTEXT ENTRY END ---\n\n";
+pub const SKILL_FILES_MESSAGE: &str = "The following file entries contain: name, filepath, and description. You SHOULD decide when to read the full file using the filepath based on its description:\n\n";
 
 /// Handle for communicating with an [`Agent`] actor.
 #[derive(Debug)]
@@ -284,6 +293,18 @@ impl AgentHandle {
             other => Err(AgentError::Custom(format!("received unexpected response: {other:?}"))),
         }
     }
+
+    pub async fn clear_conversation(&self) -> Result<(), AgentError> {
+        match self
+            .sender
+            .send_recv(AgentRequest::ClearConversation)
+            .await
+            .unwrap_or(Err(AgentError::Channel))?
+        {
+            AgentResponse::Success => Ok(()),
+            other => Err(AgentError::Custom(format!("received unexpected response: {other:?}"))),
+        }
+    }
 }
 
 /// Core LLM agent that implements an [`AgentConfig`].
@@ -298,6 +319,8 @@ pub struct Agent {
     conversation_metadata: ConversationMetadata,
     execution_state: ExecutionState,
     tool_state: ToolState,
+    /// Runtime permissions accumulated during the session
+    permissions: RuntimePermissions,
 
     agent_event_tx: broadcast::Sender<AgentEvent>,
     agent_event_rx: Option<broadcast::Receiver<AgentEvent>>,
@@ -387,6 +410,7 @@ impl Agent {
             conversation_metadata: snapshot.conversation_metadata,
             execution_state: snapshot.execution_state,
             tool_state: snapshot.tool_state,
+            permissions: snapshot.permissions,
             agent_event_tx,
             agent_event_rx: Some(agent_event_rx),
             agent_event_buf: Vec::new(),
@@ -650,6 +674,15 @@ impl Agent {
             .push(AgentEvent::Internal(InternalEvent::StateChange { from, to }));
     }
 
+    /// Clears all conversation-related state for a fresh start.
+    fn clear_conversation(&mut self) {
+        // Append Clear to event log (keeps session, clears messages)
+        self.conversation_state.append_log(LogEntry::clear());
+        self.conversation_metadata = ConversationMetadata::default();
+        self.tool_state = ToolState::default();
+        self.agent_event_buf.push(AgentEvent::Clear(ClearEvent));
+    }
+
     fn create_snapshot(&self) -> AgentSnapshot {
         AgentSnapshot {
             id: self.id.clone(),
@@ -660,6 +693,7 @@ impl Agent {
             model_state: self.model.state(),
             tool_state: self.tool_state.clone(),
             settings: self.settings.clone(),
+            permissions: self.permissions.clone(),
         }
     }
 
@@ -690,7 +724,16 @@ impl Agent {
             return Ok(None);
         };
 
-        if let LoopState::PendingToolUseResults = handle.get_loop_state().await? {
+        // Check if the last message is from assistant and has tool uses that need to be cancelled
+        let has_pending_tool_uses = self
+            .conversation_state
+            .messages()
+            .last()
+            .filter(|m| m.role == Role::Assistant)
+            .and_then(|m| m.tool_uses())
+            .is_some();
+
+        if has_pending_tool_uses {
             // If the agent is in the middle of sending tool uses, then add two new
             // messages:
             // 1. user tool results replaced with content: "Tool use was cancelled by the user"
@@ -730,6 +773,20 @@ impl Agent {
                 .push(AgentLoopEvent::new(handle.id().clone(), evt.clone()).into());
             if let AgentLoopEventKind::UserTurnEnd(md) = evt {
                 self.conversation_metadata.user_turn_metadatas.push(md.clone());
+
+                // Cancel the user message if needed
+                let should_cancel_prompt = matches!(self.active_state(), ActiveState::ExecutingRequest)
+                    && self
+                        .conversation_state
+                        .messages()
+                        .last()
+                        .is_some_and(|m| m.role == Role::User);
+                if should_cancel_prompt {
+                    let entry = LogEntry::cancelled_prompt();
+                    let index = self.conversation_state.append_log(entry.clone());
+                    self.agent_event_buf.push(AgentEvent::LogEntryAppended { entry, index });
+                }
+
                 self.agent_event_buf.push(AgentEvent::EndTurn(md.clone()));
                 return Ok(Some(md));
             }
@@ -774,6 +831,13 @@ impl Agent {
                     return Err(AgentError::NotIdle);
                 }
                 self.start_compaction().await?;
+                Ok(AgentResponse::Success)
+            },
+            AgentRequest::ClearConversation => {
+                if !matches!(self.active_state(), ActiveState::Idle) {
+                    return Err(AgentError::NotIdle);
+                }
+                self.clear_conversation();
                 Ok(AgentResponse::Success)
             },
         }
@@ -824,7 +888,7 @@ impl Agent {
             | ActiveState::Errored(_)
             | ActiveState::ExecutingRequest
             | ActiveState::Compacting { .. }
-            | ActiveState::WaitingForApproval { .. } => {},
+            | ActiveState::WaitingForApproval(_) => {},
             ActiveState::ExecutingHooks(executing_hooks) => {
                 for hook in executing_hooks.hooks() {
                     self.task_executor.cancel_hook_execution(&hook.id);
@@ -840,7 +904,7 @@ impl Agent {
         // Send a stop event if required.
         if (self.end_current_turn().await?).is_some() {
             match self.active_state() {
-                ActiveState::WaitingForApproval { .. }
+                ActiveState::WaitingForApproval(_)
                 | ActiveState::ExecutingHooks(_)
                 | ActiveState::ExecutingRequest
                 | ActiveState::Compacting { .. }
@@ -861,63 +925,55 @@ impl Agent {
 
     /// Handler for a [AgentRequest::SendApprovalResult] request.
     async fn handle_approval_result(&mut self, args: SendApprovalResultArgs) -> Result<AgentResponse, AgentError> {
-        match &mut self.execution_state.active_state {
-            ActiveState::WaitingForApproval { needs_approval, .. } => {
-                let Some(approval_result) = needs_approval.get_mut(&args.id) else {
-                    return Err(AgentError::Custom(format!(
-                        "No tool use with the id '{}' requires approval",
-                        args.id
-                    )));
-                };
-                *approval_result = Some(args.result);
-            },
-            other => {
-                return Err(AgentError::Custom(format!(
-                    "Cannot send approval to agent with state: {other:?}"
-                )));
-            },
-        }
-
-        // Check if we should send the result back to the model.
-        // Either:
-        // 1. All tools are approved
-        // 2. If at least one is denied, immediately return the reason back to the model.
-        let ActiveState::WaitingForApproval { needs_approval, tools } = &self.execution_state.active_state else {
-            return Err("Agent is not waiting for approval".to_string().into());
+        let ActiveState::WaitingForApproval(state) = &mut self.execution_state.active_state else {
+            return Err(AgentError::Custom(format!(
+                "Cannot send approval to agent with state: {:?}",
+                self.execution_state.active_state
+            )));
         };
 
-        let denied = needs_approval.values().any(|approval_result| {
-            approval_result
-                .as_ref()
-                .is_some_and(|r| matches!(r, ApprovalResult::Deny { .. }))
-        });
-        if denied {
+        // Update permissions for "always" options
+        if let Some((_, tool)) = state.tools.iter().find(|(b, _)| b.tool_use_id == args.id) {
+            apply_approval_to_permissions(&mut self.permissions, tool.kind(), &args.result, &self.sys_provider);
+        }
+
+        // Store the selected option
+        let Some(approval_state) = state.needs_approval.get_mut(&args.id) else {
+            return Err(AgentError::Custom(format!(
+                "No tool use with the id '{}' requires approval",
+                args.id
+            )));
+        };
+        approval_state.selected = Some(args.result.option_id);
+
+        // Check if any tool was denied - if so, return all results to the model
+        let any_denied = state
+            .needs_approval
+            .values()
+            .any(|s| s.selected.as_ref().is_some_and(|id| id.is_reject()));
+
+        if any_denied {
             let mut content = Vec::new();
             let mut results = HashMap::new();
-            for (tool_use_id, approval_result) in needs_approval {
-                let reason = match approval_result {
-                    Some(ApprovalResult::Approve) => "Tool use was approved, but did not execute".to_string(),
-                    Some(ApprovalResult::Deny { reason }) => {
-                        let mut v = "Tool use was denied by the user.".to_string();
-                        if let Some(r) = reason {
-                            v.push_str(format!(" Reason: {r}").as_str());
-                        }
-                        v
-                    },
-                    None => "Tool use was not executed".to_string(),
+            for (tool_use_id, approval_state) in &state.needs_approval {
+                let reason = match &approval_state.selected {
+                    Some(id) if id.is_allow() => "Tool use was approved, but did not execute",
+                    Some(id) if id.is_reject() => "Tool use was denied by the user.",
+                    _ => "Tool use was not executed",
                 };
                 content.push(ContentBlock::ToolResult(ToolResultBlock {
                     tool_use_id: tool_use_id.clone(),
-                    content: vec![ToolResultContentBlock::Text(reason.clone())],
+                    content: vec![ToolResultContentBlock::Text(reason.to_string())],
                     status: ToolResultStatus::Error,
                 }));
-                let tool = tools
+                let tool = state
+                    .tools
                     .iter()
                     .find(|(b, _)| &b.tool_use_id == tool_use_id)
                     .map(|(_, t)| t);
                 results.insert(tool_use_id.clone(), LogToolResult {
                     tool: tool.map(|t| Box::new(t.clone())),
-                    result: ToolCallResult::Error(ToolExecutionError::Custom(reason)),
+                    result: ToolCallResult::Error(ToolExecutionError::Custom(reason.to_string())),
                 });
             }
             self.append_tool_results(content, results);
@@ -927,11 +983,15 @@ impl Agent {
             return Ok(AgentResponse::Success);
         }
 
-        let all_approved = needs_approval
+        // Check if all tools are approved - if so, execute them
+        let all_approved = state
+            .needs_approval
             .values()
-            .all(|approval_result| approval_result.as_ref().is_some_and(|r| r == &ApprovalResult::Approve));
+            .all(|s| s.selected.as_ref().is_some_and(|id| id.is_allow()));
+
         if all_approved {
-            self.execute_tools(tools.clone()).await?;
+            let tools = state.tools.clone();
+            self.execute_tools(tools).await?;
         }
 
         Ok(AgentResponse::Success)
@@ -1700,12 +1760,25 @@ impl Agent {
     async fn get_tool_names(&self) -> Vec<CanonicalToolName> {
         let mut tool_names = HashSet::new();
 
-        if self.is_subagent {
-            use crate::tools::summary::Summary;
-            tool_names.insert(Summary::get_canonical_name());
-        }
+        let built_in_tool_names = {
+            let mut names = built_in_tool_names();
 
-        let built_in_tool_names = built_in_tool_names();
+            // For the time being, subagent is not yet fully implemented in the agent crate so
+            // we'll remove it from the tool list.
+            // We'll also remove summary tool from the tool list if the agent is not a subagent.
+            // Opting for one single retain call to save an alloation (hence the if else)
+            if !self.is_subagent {
+                names.retain(|name| {
+                    name != &CanonicalToolName::BuiltIn(tools::BuiltInToolName::SpawnSubagent)
+                        && name != &CanonicalToolName::BuiltIn(tools::BuiltInToolName::Summary)
+                });
+            } else {
+                names.retain(|name| name != &CanonicalToolName::BuiltIn(tools::BuiltInToolName::SpawnSubagent));
+            }
+
+            names
+        };
+
         let config = self.get_agent_config().await;
 
         for tool_name in config.tools() {
@@ -1863,6 +1936,7 @@ impl Agent {
 
     async fn evaluate_tool_permission(&mut self, tool: &Tool) -> Result<PermissionEvalResult, AgentError> {
         match evaluate_tool_permission(
+            &self.permissions,
             self.agent_config.allowed_tools(),
             &self.agent_config.tool_settings().cloned().unwrap_or_default(),
             tool.kind(),
@@ -1882,18 +1956,21 @@ impl Agent {
         needs_approval: Vec<String>,
     ) -> Result<(), AgentError> {
         // First, update the agent state to WaitingForApproval
-        let mut needs_approval_res = HashMap::new();
+        let mut needs_approval_map = HashMap::new();
         for tool_use_id in &needs_approval {
-            debug_assert!(
-                tools.iter().any(|(b, _)| &b.tool_use_id == tool_use_id),
-                "unexpected tool use id requiring approval: tools: {tools:?} needs_approval: {needs_approval:?}"
-            );
-            needs_approval_res.insert(tool_use_id.clone(), None);
+            let Some((_, tool)) = tools.iter().find(|(b, _)| &b.tool_use_id == tool_use_id) else {
+                warn!(tool_use_id, "tool requiring approval not found in tools list");
+                continue;
+            };
+            needs_approval_map.insert(tool_use_id.clone(), ApprovalState {
+                options: tool.permission_options(),
+                selected: None,
+            });
         }
-        self.set_active_state(ActiveState::WaitingForApproval {
+        self.set_active_state(ActiveState::WaitingForApproval(WaitingForApproval {
             tools: tools.clone(),
-            needs_approval: needs_approval_res,
-        })
+            needs_approval: needs_approval_map,
+        }))
         .await;
 
         // Send notifications for each tool that requires approval
@@ -1901,11 +1978,14 @@ impl Agent {
             let Some((block, tool)) = tools.iter().find(|(b, _)| &b.tool_use_id == tool_use_id) else {
                 continue;
             };
-            self.agent_event_buf.push(AgentEvent::ApprovalRequest {
-                id: block.tool_use_id.clone(),
-                tool_use: (*block).clone(),
-                context: tool.get_context().await,
-            });
+            self.agent_event_buf
+                .push(AgentEvent::ApprovalRequest(protocol::ApprovalRequest {
+                    id: block.tool_use_id.clone(),
+                    tool_use: (*block).clone(),
+                    tool: tool.clone(),
+                    context: tool.get_context().await,
+                    options: tool.permission_options(),
+                }));
         }
 
         Ok(())
@@ -2168,11 +2248,12 @@ where
     P: SystemProvider,
 {
     let system_prompt = agent_config.system_prompt();
-    let resources = collect_resources(agent_config.resources(), provider).await;
+    let (files, skills) = collect_resources(agent_config.resources(), provider).await;
 
     let content = format_user_context_message(
         system_prompt,
-        resources.iter().map(|r| &r.content),
+        files.iter().map(|r| &r.content),
+        skills.iter().map(|r| &r.content),
         agent_spawn_hooks,
         latest_summary,
     );
@@ -2191,17 +2272,20 @@ where
     vec![user_msg, assistant_msg]
 }
 
-fn format_user_context_message<T, U, S, V>(
+fn format_user_context_message<T, U, S, V, W, X>(
     system_prompt: Option<&str>,
-    resources: T,
+    files: T,
+    skills: W,
     agent_spawn_hooks: U,
     latest_summary: Option<String>,
 ) -> String
 where
     T: IntoIterator<Item = S>,
     U: IntoIterator<Item = V>,
+    W: IntoIterator<Item = X>,
     S: AsRef<str>,
     V: AsRef<str>,
+    X: AsRef<str>,
 {
     let mut context_content = String::new();
 
@@ -2228,11 +2312,23 @@ where
         context_content.push_str(CONTEXT_ENTRY_END_HEADER);
     }
 
-    for resource in resources {
-        let content = resource.as_ref();
+    for file in files {
+        let content = file.as_ref();
         context_content.push_str(CONTEXT_ENTRY_START_HEADER);
         context_content.push_str(content);
         context_content.push_str("\n\n");
+        context_content.push_str(CONTEXT_ENTRY_END_HEADER);
+    }
+
+    // Skills block - all skills grouped together with instruction
+    let skills: Vec<_> = skills.into_iter().collect();
+    if !skills.is_empty() {
+        context_content.push_str(CONTEXT_ENTRY_START_HEADER);
+        context_content.push_str(SKILL_FILES_MESSAGE);
+        for skill in skills {
+            context_content.push_str(skill.as_ref());
+            context_content.push('\n');
+        }
         context_content.push_str(CONTEXT_ENTRY_END_HEADER);
     }
 
@@ -2354,7 +2450,38 @@ struct Resource {
     content: String,
 }
 
-async fn collect_resources<T, U, P>(resources: T, provider: &P) -> Vec<Resource>
+/// Extract YAML frontmatter from file content
+fn extract_yaml_frontmatter(content: &str) -> Option<&str> {
+    if !content.starts_with("---\n") {
+        return None;
+    }
+    let rest = &content[4..];
+    let end = rest.find("\n---")?;
+    Some(&rest[..end])
+}
+
+/// Parse skill frontmatter and format as hint
+fn format_skill_hint(file_path: &str, content: &str) -> Option<String> {
+    let yaml = extract_yaml_frontmatter(content)?;
+
+    // Simple parsing - look for name: and description: lines
+    let mut name = None;
+    let mut description = None;
+    for line in yaml.lines() {
+        if let Some(v) = line.strip_prefix("name:") {
+            name = Some(v.trim());
+        } else if let Some(v) = line.strip_prefix("description:") {
+            description = Some(v.trim());
+        }
+    }
+
+    let name = name.unwrap_or(file_path);
+    let description = description.unwrap_or("No description available");
+    Some(format!("{name}: {description} (file: {file_path})"))
+}
+
+/// Returns (files, skills) - files have full content, skills have metadata hints
+async fn collect_resources<T, U, P>(resources: T, provider: &P) -> (Vec<Resource>, Vec<Resource>)
 where
     T: IntoIterator<Item = U>,
     U: AsRef<str>,
@@ -2362,7 +2489,9 @@ where
 {
     use glob;
 
-    let mut return_val = Vec::new();
+    let mut files = Vec::new();
+    let mut skills = Vec::new();
+
     for resource in resources {
         let Ok(kind) = ResourceKind::parse(resource.as_ref(), provider) else {
             continue;
@@ -2376,7 +2505,7 @@ where
                 else {
                     continue;
                 };
-                return_val.push(Resource {
+                files.push(Resource {
                     config_value: original.to_string(),
                     content,
                 });
@@ -2395,9 +2524,46 @@ where
                         else {
                             continue;
                         };
-                        return_val.push(Resource {
+                        files.push(Resource {
                             config_value: original.to_string(),
                             content,
+                        });
+                    }
+                }
+            },
+            ResourceKind::Skill { original, file_path } => {
+                let Ok(path) = canonicalize_path_sys(&file_path, provider) else {
+                    continue;
+                };
+                let Ok((content, _)) = read_file_with_max_limit(&path, MAX_RESOURCE_FILE_LENGTH, "...truncated").await
+                else {
+                    continue;
+                };
+                let hint = format_skill_hint(&file_path, &content).unwrap_or(content);
+                skills.push(Resource {
+                    config_value: original.to_string(),
+                    content: hint,
+                });
+            },
+            ResourceKind::SkillGlob { original, pattern } => {
+                let Ok(entries) = glob::glob(pattern.as_str()) else {
+                    continue;
+                };
+                for entry in entries {
+                    let Ok(entry) = entry else {
+                        continue;
+                    };
+                    if entry.is_file() {
+                        let file_path = entry.to_string_lossy().to_string();
+                        let Ok((content, _)) =
+                            read_file_with_max_limit(entry.as_path(), MAX_RESOURCE_FILE_LENGTH, "...truncated").await
+                        else {
+                            continue;
+                        };
+                        let hint = format_skill_hint(&file_path, &content).unwrap_or(content);
+                        skills.push(Resource {
+                            config_value: original.to_string(),
+                            content: hint,
                         });
                     }
                 }
@@ -2405,7 +2571,7 @@ where
         }
     }
 
-    return_val
+    (files, skills)
 }
 
 fn hook_matches_tool(config: &HookConfig, tool: &Tool) -> bool {
@@ -2431,7 +2597,15 @@ fn hook_matches_tool(config: &HookConfig, tool: &Tool) -> bool {
         },
         ToolNameKind::AllBuiltIn => matches!(tool.kind(), ToolKind::BuiltIn(_)),
         ToolNameKind::BuiltInGlob(glob) => tool.builtin_tool_name().is_some_and(|n| matches_any_pattern([glob], n)),
-        ToolNameKind::BuiltIn(name) => tool.builtin_tool_name().is_some_and(|n| n.as_ref() == name),
+        ToolNameKind::BuiltIn(name) => {
+            // Parse matcher as BuiltInToolName to support all aliases
+            // e.g., "read", "fs_read", "fsRead" all match the FsRead tool
+            if let Ok(matcher_tool) = name.parse::<tools::BuiltInToolName>() {
+                tool.builtin_tool_name().is_some_and(|n| n == matcher_tool)
+            } else {
+                false
+            }
+        },
         ToolNameKind::AgentGlob(_) => false,
         ToolNameKind::Agent(_) => false,
     }
@@ -2454,12 +2628,7 @@ pub enum ActiveState {
     /// Agent has encountered an error.
     Errored(AgentError),
     /// Agent is waiting for approval to execute tool uses
-    WaitingForApproval {
-        /// All tools requested by the model
-        tools: Vec<(ToolUseBlock, Tool)>,
-        /// Map from a tool use id to the approval result and tool to execute
-        needs_approval: HashMap<String, Option<ApprovalResult>>,
-    },
+    WaitingForApproval(WaitingForApproval),
     /// Agent is executing hooks
     ExecutingHooks(ExecutingHooks),
     /// Agent is handling a prompt
@@ -2473,6 +2642,24 @@ pub enum ActiveState {
         /// The strategy used for compaction
         strategy: CompactStrategy,
     },
+}
+
+/// Tracks approval state for a single tool use.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ApprovalState {
+    /// Available permission options for this tool
+    pub options: Vec<PermissionOption>,
+    /// The option selected by the user, if any
+    pub selected: Option<PermissionOptionId>,
+}
+
+/// State for tools waiting for user approval.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct WaitingForApproval {
+    /// Tools pending approval with their parsed definitions
+    pub tools: Vec<(ToolUseBlock, Tool)>,
+    /// Approval state keyed by tool use ID
+    pub needs_approval: HashMap<String, ApprovalState>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -2636,8 +2823,10 @@ mod tests {
             test_base = test_base.with_file(file).await;
         }
 
-        let resources = collect_resources(["file://.amazonq/rules/**/*.md", "file://~/home.txt"], &test_base).await;
+        let (resources, skills) =
+            collect_resources(["file://.amazonq/rules/**/*.md", "file://~/home.txt"], &test_base).await;
 
+        assert!(skills.is_empty());
         for file in files {
             assert!(resources.iter().any(|r| r.content == file.1));
         }

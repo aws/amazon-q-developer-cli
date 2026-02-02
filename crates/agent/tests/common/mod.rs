@@ -29,10 +29,12 @@ use agent::protocol::{
     AgentEvent,
     ApprovalResult,
     InternalEvent,
+    PermissionOptionId,
     SendApprovalResultArgs,
     SendPromptArgs,
 };
 use agent::types::AgentSnapshot;
+use agent::util::providers::CwdProvider;
 use agent::util::test::{
     TestBase,
     TestFile,
@@ -56,6 +58,7 @@ pub struct TestCaseBuilder {
     mock_responses: Vec<MockResponse>,
     trust_all_tools: bool,
     tool_use_approvals: Vec<SendApprovalResultArgs>,
+    cwd_subdir: Option<String>,
 }
 
 impl TestCaseBuilder {
@@ -81,6 +84,11 @@ impl TestCaseBuilder {
         self
     }
 
+    pub fn with_mock_response(mut self, response: MockResponse) -> Self {
+        self.mock_responses.push(response);
+        self
+    }
+
     pub fn with_trust_all_tools(mut self, trust_all: bool) -> Self {
         self.trust_all_tools = trust_all;
         self
@@ -93,8 +101,13 @@ impl TestCaseBuilder {
         self
     }
 
+    pub fn with_cwd_subdir(mut self, subdir: impl Into<String>) -> Self {
+        self.cwd_subdir = Some(subdir.into());
+        self
+    }
+
     pub async fn build(self) -> Result<TestCase> {
-        let snapshot = AgentSnapshot::new_empty(self.agent_config.unwrap_or_default());
+        let mut snapshot = AgentSnapshot::new_empty(self.agent_config.unwrap_or_default());
 
         let mut model = MockModel::new();
         for response in self.mock_responses {
@@ -102,6 +115,17 @@ impl TestCaseBuilder {
         }
 
         let model = Arc::new(model);
+
+        let mut test_base = TestBase::new().await;
+        for file in self.files {
+            test_base = test_base.with_file(file).await;
+        }
+
+        let cwd = match &self.cwd_subdir {
+            Some(subdir) => test_base.join(subdir).to_string_lossy().to_string(),
+            None => test_base.cwd().unwrap().to_string_lossy().to_string(),
+        };
+        snapshot.permissions = snapshot.permissions.with_cwd(&cwd);
 
         let mut agent = Agent::new(
             snapshot,
@@ -112,11 +136,6 @@ impl TestCaseBuilder {
             false,
         )
         .await?;
-
-        let mut test_base = TestBase::new().await;
-        for file in self.files {
-            test_base = test_base.with_file(file).await;
-        }
 
         agent.set_sys_provider(test_base.provider().clone());
 
@@ -183,6 +202,11 @@ impl TestCase {
         Ok(())
     }
 
+    pub async fn cancel(&self) -> Result<()> {
+        self.agent.cancel().await?;
+        Ok(())
+    }
+
     pub async fn create_snapshot(&self) -> AgentSnapshot {
         self.agent.create_snapshot().await.expect("failed to create snapshot")
     }
@@ -197,7 +221,7 @@ impl TestCase {
             let evt = tokio::time::timeout_at(timeout_at.into(), self.recv_agent_event()).await?;
             match &evt {
                 AgentEvent::Stop(_) => return Ok(()),
-                approval @ AgentEvent::ApprovalRequest { id, .. } => {
+                approval @ AgentEvent::ApprovalRequest(req) => {
                     if !self.trust_all_tools {
                         let Some(approval) = self.tool_use_approvals.get(self.curr_approval_index) else {
                             panic!("received an unexpected approval request: {:?}", approval);
@@ -210,8 +234,11 @@ impl TestCase {
                     } else {
                         self.agent
                             .send_tool_use_approval_result(SendApprovalResultArgs {
-                                id: id.clone(),
-                                result: ApprovalResult::Approve,
+                                id: req.id.clone(),
+                                result: ApprovalResult {
+                                    option_id: PermissionOptionId::AllowOnce,
+                                    reason: None,
+                                },
                             })
                             .await
                             .unwrap();
@@ -222,16 +249,26 @@ impl TestCase {
         }
     }
 
-    pub async fn wait_until_compaction_complete(&mut self, timeout: Duration) {
+    pub async fn wait_until_agent_event(
+        &mut self,
+        timeout: Duration,
+        predicate: impl Fn(&AgentEvent) -> bool,
+    ) -> Result<AgentEvent> {
         let timeout_at = Instant::now() + timeout;
         loop {
-            let evt = tokio::time::timeout_at(timeout_at.into(), self.recv_agent_event())
-                .await
-                .expect("timed out waiting for compaction");
-            if matches!(evt, AgentEvent::Compaction(agent::protocol::CompactionEvent::Completed)) {
-                break;
+            let evt = tokio::time::timeout_at(timeout_at.into(), self.recv_agent_event()).await?;
+            if predicate(&evt) {
+                return Ok(evt);
             }
         }
+    }
+
+    pub async fn wait_until_compaction_complete(&mut self, timeout: Duration) {
+        self.wait_until_agent_event(timeout, |evt| {
+            matches!(evt, AgentEvent::Compaction(agent::protocol::CompactionEvent::Completed))
+        })
+        .await
+        .expect("timed out waiting for compaction");
     }
 
     async fn recv_agent_event(&mut self) -> AgentEvent {
@@ -263,6 +300,13 @@ impl TestCase {
             .filter(|e| matches!(e, AgentEvent::Compaction(_)))
             .collect()
     }
+
+    pub fn approval_request_events(&self) -> Vec<&AgentEvent> {
+        self.agent_events
+            .iter()
+            .filter(|e| matches!(e, AgentEvent::ApprovalRequest(_)))
+            .collect()
+    }
 }
 
 impl Drop for TestCase {
@@ -273,7 +317,7 @@ impl Drop for TestCase {
                 return;
             };
             let test_name = self.test_name.replace(" ", "_");
-            let file_name = PathBuf::from(format!("{}_debug_output.json", test_name));
+            let file_name = PathBuf::from(format!("tests/debug_output/{}_debug_output.json", test_name));
             let _ = std::fs::write(&file_name, test_output);
             println!("Test debug output written to: '{}'", file_name.to_string_lossy());
         }

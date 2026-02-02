@@ -26,6 +26,10 @@ pub enum TuiCommand {
     Context(ContextArgs),
     /// Compact the conversation history
     Compact(CompactArgs),
+    /// Clear the conversation history
+    Clear(ClearArgs),
+    /// Exit the application
+    Exit(ExitArgs),
 }
 
 /// Arguments for /model command
@@ -59,6 +63,18 @@ pub struct CompactArgs {
     pub target_tokens: Option<u32>,
 }
 
+/// Arguments for /clear command
+#[typeshare]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ClearArgs {}
+
+/// Arguments for /exit command
+#[typeshare]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ExitArgs {}
+
 impl TuiCommand {
     /// Command name with leading slash
     pub fn name(&self) -> &'static str {
@@ -66,6 +82,8 @@ impl TuiCommand {
             TuiCommand::Model(_) => "/model",
             TuiCommand::Context(_) => "/context",
             TuiCommand::Compact(_) => "/compact",
+            TuiCommand::Clear(_) => "/clear",
+            TuiCommand::Exit(_) => "/exit",
         }
     }
 
@@ -75,6 +93,8 @@ impl TuiCommand {
             TuiCommand::Model(_) => "Select or list available models",
             TuiCommand::Context(_) => "Show context/token usage",
             TuiCommand::Compact(_) => "Compact conversation history",
+            TuiCommand::Clear(_) => "Clear conversation history",
+            TuiCommand::Exit(_) => "Exit the application",
         }
     }
 
@@ -93,6 +113,11 @@ impl TuiCommand {
                 meta.insert("inputType".into(), "panel".into());
                 Some(meta)
             },
+            TuiCommand::Clear(_) | TuiCommand::Exit(_) => {
+                let mut meta = serde_json::Map::new();
+                meta.insert("local".into(), true.into());
+                Some(meta)
+            },
             TuiCommand::Compact(_) => None,
         }
     }
@@ -103,6 +128,8 @@ impl TuiCommand {
             TuiCommand::Model(ModelArgs::default()),
             TuiCommand::Context(ContextArgs::default()),
             TuiCommand::Compact(CompactArgs::default()),
+            TuiCommand::Clear(ClearArgs::default()),
+            TuiCommand::Exit(ExitArgs::default()),
         ]
     }
 }

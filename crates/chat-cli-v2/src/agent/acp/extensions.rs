@@ -12,6 +12,10 @@ pub mod methods {
     pub const MCP_OAUTH_REQUEST: &str = "_kiro.dev/mcp/oauth_request";
     /// MCP server initialized notification
     pub const MCP_SERVER_INITIALIZED: &str = "_kiro.dev/mcp/server_initialized";
+    /// Compaction status notification
+    pub const COMPACTION_STATUS: &str = "_kiro.dev/compaction/status";
+    /// Clear status notification
+    pub const CLEAR_STATUS: &str = "_kiro.dev/clear/status";
 }
 
 /// Notification to terminate a subagent session.
@@ -58,4 +62,28 @@ pub struct McpOauthRequestNotification {
 pub struct McpServerInitializedNotification {
     pub session_id: SessionId,
     pub server_name: String,
+}
+
+/// Compaction status notification payload.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CompactionStatusNotification {
+    pub session_id: SessionId,
+    pub status: CompactionStatus,
+}
+
+/// Status of a compaction operation.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(tag = "type", rename_all = "camelCase")]
+pub enum CompactionStatus {
+    Started,
+    Completed,
+    Failed { error: String },
+}
+
+/// Clear status notification payload.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ClearStatusNotification {
+    pub session_id: SessionId,
 }

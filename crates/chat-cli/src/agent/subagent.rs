@@ -14,9 +14,11 @@ use agent::mcp::{
 use agent::protocol::{
     AgentEvent,
     AgentStopReason,
+    ApprovalRequest,
     ApprovalResult,
     ContentChunk,
     InitializeUpdateEvent,
+    PermissionOptionId,
     SendApprovalResultArgs,
     SendPromptArgs,
     UpdateEvent,
@@ -407,7 +409,10 @@ impl<'a> Subagent<'a> {
                             agent
                                 .send_tool_use_approval_result(SendApprovalResultArgs {
                                     id,
-                                    result: ApprovalResult::Approve,
+                                    result: ApprovalResult {
+                                        option_id: PermissionOptionId::AllowOnce,
+                                        reason: None,
+                                    },
                                 })
                                 .await?;
                         },
@@ -415,7 +420,10 @@ impl<'a> Subagent<'a> {
                             agent
                                 .send_tool_use_approval_result(SendApprovalResultArgs {
                                     id,
-                                    result: ApprovalResult::Deny { reason: Some("User rejected this tool. Find an alternative or report inability to proceed.".to_string()) },
+                                    result: ApprovalResult {
+                                        option_id: PermissionOptionId::RejectOnce,
+                                        reason: Some("User rejected this tool. Find an alternative or report inability to proceed.".to_string()),
+                                    },
                                 })
                                 .await?;
                         },
@@ -512,14 +520,17 @@ impl<'a> Subagent<'a> {
                             });
                             break;
                         },
-                        AgentEvent::ApprovalRequest { id, tool_use, .. } => {
+                        AgentEvent::ApprovalRequest(ApprovalRequest { id, tool_use, .. }) => {
                             match (self.is_interactive, self.dangerously_trust_all_tools) {
                                 (_, true) => {
                                     warn!(?tool_use, "trust all is enabled, ignoring approval request");
                                     agent
                                         .send_tool_use_approval_result(SendApprovalResultArgs {
                                             id: id.clone(),
-                                            result: ApprovalResult::Approve,
+                                            result: ApprovalResult {
+                                                option_id: PermissionOptionId::AllowOnce,
+                                                reason: None,
+                                            },
                                         })
                                         .await?;
                                 }

@@ -1,33 +1,69 @@
-diff --git a/build/log-update.js b/build/log-update.js
-index 24deab03bf72317b22a248d2431260fa1424c6de..18921629a6fcb12a2df94f474f988855236b574e 100644
---- a/build/log-update.js
-+++ b/build/log-update.js
-@@ -41,6 +41,9 @@ const createIncremental = (stream, { showCursor = false } = {}) => {
-     let previousLines = [];
-     let previousOutput = '';
-     let hasHiddenCursor = false;
-+    // Cache terminal rows at start - only switch to incremental once content exceeds this
-+    const initialTerminalRows = stream.rows || 24;
-+    let useStandardMode = true;
-     const render = (str) => {
-         if (!showCursor && !hasHiddenCursor) {
-             cliCursor.hide();
-@@ -54,6 +57,18 @@ const createIncremental = (stream, { showCursor = false } = {}) => {
-         const nextLines = output.split('\n');
-         const nextCount = nextLines.length;
-         const visibleCount = nextCount - 1;
-+        // Switch to incremental mode once content exceeds terminal height (one-way switch)
-+        if (useStandardMode && visibleCount >= initialTerminalRows) {
-+            useStandardMode = false;
-+        }
-+        // Use standard erase-and-rewrite when content fits in screen
-+        // This avoids cursor positioning issues that cause duplication
-+        if (useStandardMode) {
-+            stream.write(ansiEscapes.eraseLines(previousCount) + output);
-+            previousOutput = output;
-+            previousLines = nextLines;
-+            return;
-+        }
-         if (output === '\n' || previousOutput.length === 0) {
-             stream.write(ansiEscapes.eraseLines(previousCount) + output);
-             previousOutput = output;
+diff --git a/build/ink.js b/build/ink.js
+--- a/build/ink.js
++++ b/build/ink.js
+@@ -102,9 +102,12 @@ export default class Ink {
+     resized = () => {
+         const currentWidth = this.getTerminalWidth();
+         if (currentWidth < this.lastTerminalWidth) {
+-            // We clear the screen when decreasing terminal width to prevent duplicate overlapping re-renders.
+-            this.log.clear();
++            // Clear entire terminal when width decreases to prevent artifacts from
++            // multi-line content that may have wrapped beyond tracked line count.
++            this.options.stdout.write('\x1b[H\x1b[J\x1b[3J');
++            this.log.sync('');
+             this.lastOutput = '';
++            this.lastOutputHeight = 0;
+         }
+         this.calculateLayout();
+         this.onRender();
+@@ -176,7 +179,10 @@ export default class Ink {
+             return;
+         }
+         if (hasStaticOutput) {
+-            this.fullStaticOutput += staticOutput;
++            // Only append if this static output is new (not already in fullStaticOutput)
++            if (!this.fullStaticOutput.endsWith(staticOutput)) {
++                this.fullStaticOutput += staticOutput;
++            }
+         }
+         if (this.lastOutputHeight >= this.options.stdout.rows) {
+             this.options.stdout.write(ansiEscapes.clearTerminal + this.fullStaticOutput + output);
+@@ -185,13 +191,31 @@ export default class Ink {
+             this.log.sync(output);
+             return;
+         }
+-        // To ensure static output is cleanly rendered before main output, clear main output first
+-        if (hasStaticOutput) {
+-            this.log.clear();
+-            this.options.stdout.write(staticOutput);
+-            this.log(output);
+-        }
+-        if (!hasStaticOutput && output !== this.lastOutput) {
++        // When there's static content, bypass log-update entirely to avoid cursor sync issues
++        if (this.fullStaticOutput || hasStaticOutput) {
++            // Skip render if output hasn't changed and no new static content
++            if (output === this.lastOutput && !hasStaticOutput) {
++                return;
++            }
++            
++            // Erase only the dynamic portion (cursor is already at the right position)
++            if (this.lastOutputHeight > 0) {
++                this.options.stdout.write(ansiEscapes.eraseLines(this.lastOutputHeight));
++            }
++            
++            // Write new static content if any
++            if (hasStaticOutput) {
++                this.options.stdout.write(staticOutput);
++            }
++            
++            // Write dynamic output
++            this.options.stdout.write(output);
++            this.lastOutput = output;
++            this.lastOutputHeight = outputHeight;
++            // Keep log-update in sync without writing (prevents double-write on next render)
++            this.log.sync(output.endsWith('\n') ? output.slice(0, -1) : output);
++        } else if (output !== this.lastOutput) {
++            // No static content - use normal log-update flow
+             this.throttledLog(output);
+         }
+         this.lastOutput = output;

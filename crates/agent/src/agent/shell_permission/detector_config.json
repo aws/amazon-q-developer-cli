@@ -1,0 +1,48 @@
+{
+  "dangerous_commands": ["eval", "source", "xargs"],
+  "dangerous_options": {
+    "find": ["-exec", "-execdir", "-delete", "-ok", "-okdir", "-fprint"],
+    "grep": ["-P", "--perl-regexp"],
+    "sed": ["/e"],
+    "sort": ["--compress-program"],
+    "man": ["--html", "--pager", "-H", "-P"],
+    "rg": ["--pre"],
+    "tar": ["--checkpoint-action"],
+    "zip": ["-TT", "--unzip-command"],
+    "git": ["--upload-pack", "--receive-pack", "--exec", "core.sshCommand", "core.gitProxy"],
+    "base64": ["-d", "--decode", "-D"],
+    "sh": ["-c"],
+    "bash": ["-c"],
+    "zsh": ["-c"],
+    "dash": ["-c"],
+    "ksh": ["-c"],
+    "csh": ["-c"],
+    "tcsh": ["-c"],
+    "fish": ["-c"],
+    "nu": ["-c", "--commands"],
+    "pwsh": ["-c", "-Command"],
+    "powershell": ["-c", "-Command"]
+  },
+  "dangerous_env_vars": [
+    "PAGER", "EDITOR", "VISUAL", "BROWSER", "MANPAGER", "GIT_PAGER", "LESS", "LESSOPEN", "LESSCLOSE",
+    "LD_PRELOAD", "LD_LIBRARY_PATH", "DYLD_INSERT_LIBRARIES", "DYLD_LIBRARY_PATH",
+    "PYTHONWARNINGS", "PYTHONSTARTUP", "PYTHONPATH", "PYTHONHOME",
+    "PERL5OPT", "PERL5LIB", "RUBYOPT", "RUBYLIB", "NODE_OPTIONS", "NODE_PATH",
+    "IFS", "PATH", "HOME", "SHELL", "PROMPT_COMMAND", "BASH_ENV", "ENV",
+    "GIT_SSH", "GIT_SSH_COMMAND", "GIT_EXEC_PATH", "GIT_TEMPLATE_DIR"
+  ],
+  "env_builtins": ["export", "typeset", "declare", "readonly", "local", "unset"],
+  "shells": ["sh", "bash", "zsh", "dash", "ksh", "csh", "tcsh", "fish", "nu", "pwsh", "powershell"],
+  "safe_commands": [
+    "ls", "cat", "echo", "pwd", "which", "head", "tail", "grep", "dir", "type", "wc", "cd", "find", "file", "df", "du",
+    "whoami", "uname", "cal", "printenv", "id", "groups", "tty", "uptime", "free", "lsb_release"
+  ],
+  "safe_options": {
+    "git": ["status", "log", "diff", "show", "branch", "tag", "remote", "blame", "reflog", "fetch", "version"],
+    "cargo": ["metadata", "tree", "search", "locate-project", "version", "--version"],
+    "npm": ["list", "ls", "view", "outdated", "search", "info", "show", "whoami", "audit", "version", "--version"],
+    "docker": ["ps", "images", "inspect", "logs", "version", "info", "top", "stats", "port", "history", "diff"],
+    "kubectl": ["get", "describe", "logs", "version", "cluster-info", "top", "api-resources", "explain"],
+    "rustup": ["show", "which", "version", "--version"]
+  }
+}

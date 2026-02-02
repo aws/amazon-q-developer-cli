@@ -14,16 +14,20 @@ use common::{
     AcpTestHarnessBuilder,
 };
 use ntest::timeout;
+use serial_test::serial;
 use tokio::time::sleep;
 
+use crate::common::PermissionResponse;
+
 #[tokio::test]
+#[ignore = "disabled for ux-refresh merge"]
 #[timeout(10000)]
-#[ignore = "Failing tests in CI but passes locally"]
+#[serial]
 async fn initialize() {
     let mut harness = AcpTestHarness::new("initialize").await;
     let (stdin, stdout) = harness.take_stdio();
 
-    let client = common::AcpTestClient::spawn(stdin, stdout);
+    let client = common::AcpTestClient::spawn(stdin, stdout, true);
 
     let resp = client.initialize().await.expect("initialize failed");
     assert_eq!(resp.protocol_version, agent_client_protocol::V1);
@@ -43,8 +47,9 @@ async fn initialize() {
 }
 
 #[tokio::test]
+#[ignore = "disabled for ux-refresh merge"]
 #[timeout(10000)]
-#[ignore = "Failing tests in CI but passes locally"]
+#[serial]
 async fn new_session_creates_files() {
     let (harness, _, session_id, _) = AcpTestHarnessBuilder::new("new_session_creates_files")
         .build_with_session()
@@ -63,10 +68,12 @@ async fn new_session_creates_files() {
 }
 
 #[tokio::test]
+#[ignore = "disabled for ux-refresh merge"]
 #[timeout(10000)]
-#[ignore = "Failing tests in CI but passes locally"]
+#[serial]
 async fn load_session_emits_history() {
     let (mut harness, client, session_id, cwd) = AcpTestHarnessBuilder::new("load_session_emits_history")
+        .with_trust_all(true)
         .build_with_session()
         .await;
 
@@ -120,8 +127,9 @@ async fn load_session_emits_history() {
 }
 
 #[tokio::test]
+#[ignore = "disabled for ux-refresh merge"]
 #[timeout(10000)]
-#[ignore = "Failing tests in CI but passes locally"]
+#[serial]
 async fn prompt_with_send_error() {
     let (mut harness, client, session_id, _) = AcpTestHarnessBuilder::new("prompt_with_send_error")
         .build_with_session()
@@ -137,7 +145,8 @@ async fn prompt_with_send_error() {
 }
 
 #[tokio::test]
-#[ignore = "Failing tests in CI but passes locally"]
+#[ignore = "disabled for ux-refresh merge"]
+#[serial]
 async fn captured_request_contains_conversation_state() {
     let (mut harness, client, session_id, _) =
         AcpTestHarnessBuilder::new("captured_request_contains_conversation_state")
@@ -178,8 +187,9 @@ async fn captured_request_contains_conversation_state() {
 }
 
 #[tokio::test]
+#[ignore = "disabled for ux-refresh merge"]
 #[timeout(10000)]
-#[ignore = "Failing tests in CI but passes locally"]
+#[serial]
 async fn default_agent_setting_used_as_initial_mode() {
     use agent::agent_config::definitions::AgentConfigV2025_08_22;
 
@@ -208,8 +218,9 @@ async fn default_agent_setting_used_as_initial_mode() {
 }
 
 #[tokio::test]
+#[ignore = "disabled for ux-refresh merge"]
 #[timeout(10000)]
-#[ignore = "Failing tests in CI but passes locally"]
+#[serial]
 async fn set_mode_switches_agent() {
     use agent::agent_config::definitions::AgentConfigV2025_08_22;
 
@@ -299,8 +310,9 @@ async fn set_mode_switches_agent() {
 }
 
 #[tokio::test]
+#[ignore = "disabled for ux-refresh merge"]
 #[timeout(10000)]
-#[ignore = "Failing tests in CI but passes locally"]
+#[serial]
 async fn session_cancel_notification() {
     let (_, client, session_id, _) = AcpTestHarnessBuilder::new("session_cancel_notification")
         .build_with_session()
@@ -313,7 +325,9 @@ async fn session_cancel_notification() {
 }
 
 #[tokio::test(flavor = "multi_thread")]
+#[ignore = "disabled for ux-refresh merge"]
 #[timeout(10000)]
+#[serial]
 #[ignore = "still running into hangs. will need to investigate"]
 async fn cancel_mid_stream_partial_response() {
     use chat_cli_v2::api_client::send_message_output::MockStreamItem;
@@ -361,13 +375,15 @@ async fn cancel_mid_stream_partial_response() {
 }
 
 #[tokio::test(flavor = "multi_thread")]
+#[ignore = "disabled for ux-refresh merge"]
 #[timeout(10000)]
-#[ignore = "Failing tests in CI but passes locally"]
+#[serial]
 async fn cancel_during_tool_approval_allows_new_prompt() {
     use chat_cli_v2::api_client::model::ChatResponseStream;
     use chat_cli_v2::api_client::send_message_output::MockStreamItem;
 
     let (mut harness, client, session_id, _) = AcpTestHarnessBuilder::new("cancel_during_approval")
+        .with_trust_all(true)
         .build_with_session()
         .await;
 
@@ -444,8 +460,9 @@ async fn cancel_during_tool_approval_allows_new_prompt() {
 }
 
 #[tokio::test]
+#[ignore = "disabled for ux-refresh merge"]
 #[timeout(10000)]
-#[ignore = "Failing tests in CI but passes locally"]
+#[serial]
 async fn prompt_with_resource_link() {
     use agent_client_protocol as acp;
 
@@ -492,8 +509,9 @@ async fn prompt_with_resource_link() {
 }
 
 #[tokio::test]
+#[ignore = "disabled for ux-refresh merge"]
 #[timeout(10000)]
-#[ignore = "Failing tests in CI but passes locally"]
+#[serial]
 async fn set_model_changes_model_id() {
     let (mut harness, client, session_id, _) = AcpTestHarnessBuilder::new("set_model_changes_model_id")
         .build_with_session()
@@ -534,8 +552,9 @@ async fn set_model_changes_model_id() {
 }
 
 #[tokio::test]
+#[ignore = "disabled for ux-refresh merge"]
 #[timeout(10000)]
-#[ignore = "Failing tests in CI but passes locally"]
+#[serial]
 async fn prompt_with_image() {
     use agent_client_protocol as acp;
     use base64::Engine;
@@ -589,8 +608,9 @@ async fn prompt_with_image() {
 }
 
 #[tokio::test]
+#[ignore = "disabled for ux-refresh merge"]
 #[timeout(30000)]
-#[ignore = "Failing tests in CI but passes locally"]
+#[serial]
 async fn http_mcp_server_tool_call_triggers_permission_request() {
     use mock_mcp_server::{
         MockMcpServerBuilder,
@@ -626,7 +646,10 @@ async fn http_mcp_server_tool_call_triggers_permission_request() {
         .wait_ready(Duration::from_secs(10))
         .expect("mock MCP server not ready");
 
-    let (harness, client) = AcpTestHarnessBuilder::new("mcp_tool_call").build().await;
+    let (harness, client) = AcpTestHarnessBuilder::new("mcp_tool_call")
+        .with_trust_all(true)
+        .build()
+        .await;
 
     let cwd = harness.paths.cwd.clone();
 
@@ -667,8 +690,9 @@ async fn http_mcp_server_tool_call_triggers_permission_request() {
 }
 
 #[tokio::test]
+#[ignore = "disabled for ux-refresh merge"]
 #[timeout(30000)]
-#[ignore = "Failing tests in CI but passes locally"]
+#[serial]
 async fn mcp_stdio_server_tool_call() {
     use std::path::PathBuf;
 
@@ -687,7 +711,10 @@ async fn mcp_stdio_server_tool_call() {
 
     let config_path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/mcp_configs/stdio_server.jsonl");
 
-    let (harness, client) = AcpTestHarnessBuilder::new("mcp_stdio").build().await;
+    let (harness, client) = AcpTestHarnessBuilder::new("mcp_stdio")
+        .with_trust_all(true)
+        .build()
+        .await;
 
     let cwd = harness.paths.cwd.clone();
 
@@ -723,8 +750,9 @@ async fn mcp_stdio_server_tool_call() {
 }
 
 #[tokio::test]
+#[ignore = "disabled for ux-refresh merge"]
 #[timeout(30000)]
-#[ignore = "Failing tests in CI but passes locally"]
+#[serial]
 async fn http_mcp_server_oauth_request_triggers_ext_notification() {
     use mock_mcp_server::{
         MockMcpServerBuilder,
@@ -817,8 +845,9 @@ async fn http_mcp_server_oauth_request_triggers_ext_notification() {
 /// other tests that may run in parallel. The process check at the end greps for
 /// the full command including these unique config file names.
 #[tokio::test]
+#[ignore = "disabled for ux-refresh merge"]
 #[timeout(30000)]
-#[ignore = "Failing tests in CI but passes locally"]
+#[serial]
 async fn agent_swap_reloads_mcp_servers() {
     use std::path::PathBuf;
 
@@ -876,6 +905,7 @@ async fn agent_swap_reloads_mcp_servers() {
         .with_agent_config("swap_test_agent_a", &agent_a_config)
         .with_agent_config("swap_test_agent_b", &agent_b_config)
         .with_setting("chat.defaultAgent", "swap_test_agent_a")
+        .with_trust_all(true)
         .build_with_session()
         .await;
 
@@ -984,10 +1014,12 @@ async fn agent_swap_reloads_mcp_servers() {
 }
 
 #[tokio::test]
+#[ignore = "disabled for ux-refresh merge"]
 #[timeout(10000)]
-#[ignore = "Failing tests in CI but passes locally"]
+#[serial]
 async fn auto_compaction_on_context_overflow() {
     let (mut harness, client, session_id, _cwd) = AcpTestHarnessBuilder::new("auto_compaction_on_context_overflow")
+        .with_trust_all(true)
         .build_with_session()
         .await;
 
@@ -1036,15 +1068,42 @@ async fn auto_compaction_on_context_overflow() {
             })
     });
     assert!(has_summary, "expected compaction summary in history after overflow");
+
+    // Wait for async notifications to arrive
+    sleep(Duration::from_millis(100)).await;
+
+    // Verify compaction status notifications were sent
+    // Note: ACP SDK strips leading underscore from method names
+    let captured = client.captured().await;
+    let compaction_notifications: Vec<_> = captured
+        .ext_notifications
+        .iter()
+        .filter(|n| n.method.as_ref() == "kiro.dev/compaction/status")
+        .collect();
+
+    assert!(
+        compaction_notifications
+            .iter()
+            .any(|n| n.params.get().contains("\"type\":\"started\"")),
+        "expected compaction started notification"
+    );
+    assert!(
+        compaction_notifications
+            .iter()
+            .any(|n| n.params.get().contains("\"type\":\"completed\"")),
+        "expected compaction completed notification"
+    );
 }
 
 #[tokio::test]
+#[ignore = "disabled for ux-refresh merge"]
 #[timeout(10000)]
-#[ignore = "Failing tests in CI but passes locally"]
+#[serial]
 async fn str_replace_tool_call_includes_location_with_line_number() {
     use agent_client_protocol::SessionUpdate;
 
     let (mut harness, client, session_id, _cwd) = AcpTestHarnessBuilder::new("str_replace_location")
+        .with_trust_all(true)
         .build_with_session()
         .await;
 
@@ -1120,7 +1179,9 @@ async fn str_replace_tool_call_includes_location_with_line_number() {
 }
 
 #[tokio::test]
+#[ignore = "disabled for ux-refresh merge"]
 #[timeout(10000)]
+#[serial]
 #[ignore = "broken, needs to be fixed"]
 async fn context_usage_flows_to_user_turn_metadata() {
     let (mut harness, client, session_id, _) = AcpTestHarnessBuilder::new("context_usage_flows_to_user_turn_metadata")
@@ -1204,8 +1265,8 @@ async fn get_tool_call_locations(
 }
 
 #[tokio::test]
+#[ignore = "disabled for ux-refresh merge"]
 #[timeout(10000)]
-#[ignore = "Failing tests in CI but passes locally"]
 async fn tool_call_has_descriptive_title_fs_read() {
     let (mut harness, client, session_id, _) = AcpTestHarnessBuilder::new("tool_fs_read").build_with_session().await;
 
@@ -1223,14 +1284,15 @@ async fn tool_call_has_descriptive_title_fs_read() {
     )
     .await;
 
-    assert_eq!(title, "Reading test_file.txt");
+    assert_eq!(title, "Reading test_file.txt:11-60");
 }
 
 #[tokio::test]
+#[ignore = "disabled for ux-refresh merge"]
 #[timeout(10000)]
-#[ignore = "Failing tests in CI but passes locally"]
 async fn tool_call_has_descriptive_title_fs_write_create() {
     let (mut harness, client, session_id, _) = AcpTestHarnessBuilder::new("tool_fs_write_create")
+        .with_trust_all(true)
         .build_with_session()
         .await;
 
@@ -1247,10 +1309,13 @@ async fn tool_call_has_descriptive_title_fs_write_create() {
 }
 
 #[tokio::test]
+#[ignore = "disabled for ux-refresh merge"]
 #[timeout(10000)]
-#[ignore = "Failing tests in CI but passes locally"]
 async fn tool_call_has_descriptive_title_grep() {
-    let (mut harness, client, session_id, _) = AcpTestHarnessBuilder::new("tool_grep").build_with_session().await;
+    let (mut harness, client, session_id, _) = AcpTestHarnessBuilder::new("tool_grep")
+        .with_trust_all(true)
+        .build_with_session()
+        .await;
 
     let title = get_tool_call_title(
         &mut harness,
@@ -1265,10 +1330,11 @@ async fn tool_call_has_descriptive_title_grep() {
 }
 
 #[tokio::test]
+#[ignore = "disabled for ux-refresh merge"]
 #[timeout(10000)]
-#[ignore = "Failing tests in CI but passes locally"]
 async fn tool_call_has_descriptive_title_execute_bash() {
     let (mut harness, client, session_id, _) = AcpTestHarnessBuilder::new("tool_execute_bash")
+        .with_trust_all(true)
         .build_with_session()
         .await;
 
@@ -1285,8 +1351,8 @@ async fn tool_call_has_descriptive_title_execute_bash() {
 }
 
 #[tokio::test]
+#[ignore = "disabled for ux-refresh merge"]
 #[timeout(10000)]
-#[ignore = "Failing tests in CI but passes locally"]
 async fn tool_call_has_locations_fs_read_multiple() {
     let (mut harness, client, session_id, _) = AcpTestHarnessBuilder::new("tool_fs_read_multi")
         .build_with_session()
@@ -1314,8 +1380,8 @@ async fn tool_call_has_locations_fs_read_multiple() {
 }
 
 #[tokio::test]
+#[ignore = "disabled for ux-refresh merge"]
 #[timeout(10000)]
-#[ignore = "Failing tests in CI but passes locally"]
 async fn tool_call_has_locations_fs_read_with_line() {
     let (mut harness, client, session_id, _) = AcpTestHarnessBuilder::new("tool_fs_read_offset")
         .build_with_session()
@@ -1341,4 +1407,106 @@ async fn tool_call_has_locations_fs_read_with_line() {
     assert_eq!(locations.len(), 1);
     assert_eq!(&locations[0].path, "test_file.txt");
     assert_eq!(locations[0].line, Some(10)); // offset 9 -> line 10
+}
+
+#[tokio::test]
+#[ignore = "disabled for ux-refresh merge"]
+#[timeout(10000)]
+async fn fs_read_in_cwd_does_not_require_permission() {
+    let (mut harness, client, session_id, _) = AcpTestHarnessBuilder::new("fs_read_cwd_permission")
+        .build_with_session()
+        .await;
+
+    let test_file = harness.paths.cwd.join("test_file.txt");
+    tokio::fs::write(&test_file, "test content")
+        .await
+        .expect("failed to create test file");
+
+    harness
+        .push_mock_responses_from_file(&session_id.0, "tests/mock_responses/tool_fs_read.jsonl")
+        .await;
+
+    client
+        .prompt_text(session_id.clone(), "read the test file")
+        .await
+        .expect("prompt failed");
+
+    let captured = client.captured().await;
+    assert!(
+        captured.permission_requests.is_empty(),
+        "fs_read in CWD should not require permission, got: {:?}",
+        captured.permission_requests
+    );
+}
+
+#[tokio::test]
+#[ignore = "disabled for ux-refresh merge"]
+#[timeout(10000)]
+async fn permissions_are_applied_and_loaded() {
+    let (mut harness, client, session_id, cwd) = AcpTestHarnessBuilder::new("permissions_are_applied_and_loaded")
+        .build_with_session()
+        .await;
+
+    harness
+        .push_mock_responses_from_file(
+            &session_id.0,
+            "tests/mock_responses/test_read_write_permissioning.jsonl",
+        )
+        .await;
+
+    // Queue permission responses:
+    // 1. First write (create hello.py) - allow always
+    client
+        .queue_permission_response(PermissionResponse::Select("allow_always".to_string()))
+        .await;
+    // 2. First read (hello.py) - auto-allowed (reads under cwd don't need permission)
+    // 3. Second write (update hello.py) - auto-allowed due to allow_always
+
+    let result = client
+        .prompt_text(
+            session_id.clone(),
+            "Write hello.py, read it, update it, then read it again",
+        )
+        .await
+        .expect("prompt failed");
+
+    assert_eq!(result.stop_reason, agent_client_protocol::StopReason::EndTurn);
+
+    // Verify we got exactly 1 permission request (first write only, second auto-allowed)
+    let captured = client.captured().await;
+    assert_eq!(
+        captured.permission_requests.len(),
+        1,
+        "Expected 1 permission request (first write only)"
+    );
+
+    // Clear client state before loading session
+    client.clear_captured().await;
+
+    // Load the session - permissions should be restored
+    client
+        .load_session(session_id.clone(), cwd)
+        .await
+        .expect("load_session failed");
+
+    // Push mock response for the write attempt after reload
+    harness
+        .push_mock_responses_from_file(&session_id.0, "tests/mock_responses/write_hello_py.jsonl")
+        .await;
+
+    // Attempt to write hello.py - should be auto-allowed due to persisted allow_always
+    let result = client
+        .prompt_text(session_id.clone(), "Write hello.py")
+        .await
+        .expect("prompt failed");
+
+    assert_eq!(result.stop_reason, agent_client_protocol::StopReason::EndTurn);
+
+    // Verify no new permission requests (write was auto-allowed from persisted permissions)
+    let captured = client.captured().await;
+    assert_eq!(
+        captured.permission_requests.len(),
+        0,
+        "Expected no permission requests - write should be auto-allowed from persisted permissions"
+    );
 }

@@ -20,9 +20,12 @@ use agent::mcp::{
     McpManager,
     McpServerEvent,
 };
+use agent::permissions::RuntimePermissions;
 use agent::protocol::{
     AgentEvent,
     AgentStopReason,
+    ApprovalRequest,
+    CompactionEvent,
     ContentChunk,
     SendPromptArgs,
     ToolCallResult,
@@ -64,14 +67,18 @@ use sacp::schema::{
     ModelInfo as AcpModelInfo,
     NewSessionRequest,
     NewSessionResponse,
+    PermissionOption,
+    PermissionOptionKind,
     PromptCapabilities,
     PromptRequest,
     PromptResponse,
     ProtocolVersion,
+    RequestPermissionRequest,
     SessionId,
     SessionMode,
     SessionModeState,
     SessionModelState,
+    SessionNotification,
     SessionUpdate,
     StopReason,
     TextContent,
@@ -99,12 +106,22 @@ use tokio_util::compat::{
     TokioAsyncWriteCompatExt,
 };
 use tracing::{
+    debug,
     error,
     info,
     warn,
 };
 use uuid::Uuid;
 
+use super::extensions::{
+    ClearStatusNotification,
+    CompactionStatus,
+    CompactionStatusNotification,
+    McpOauthRequestNotification,
+    McpServerInitializedNotification,
+    SubagentInfo,
+    methods,
+};
 use super::subagent_tool::{
     handle_internal_prompt,
     handle_subagent_request,
@@ -212,11 +229,32 @@ impl<T> InnerSender<T> {
 }
 
 /// Handle for communicating with an [`AcpSession`] actor.
+///
+/// # Method Patterns
+///
+/// ## Dispatch-Only Methods (Preferred)
+/// These methods send a request and return immediately. Responses are sent
+/// via the dedicated egress path (agent loop → session → client connection):
+/// - `handle_prompt()` - Response via PromptResponse
+/// - `cancel()` - Cancellation confirmed via session updates
+/// - `request_permission()` - Approval result via agent events
+/// - `add_trusted_tool()` - No response needed
+///
+/// ## Request-Response Methods (Avoid in dispatch handlers)
+/// WARNING: These methods block waiting for a response. Using them in dispatch
+/// handlers can cause deadlocks. They should be converted to dispatch-only in
+/// a future refactor:
+/// - `get_model_id()`
+/// - `set_model()`
+/// - `swap_agent()`
+/// - `execute_command()`
+/// - `get_command_options()`
+/// - `internal_prompt()`
 #[derive(Clone, Debug)]
 pub struct AcpSessionHandle {
     tx: InnerSender<AcpSessionRequest>,
     /// If this session is a background subagent, contains its metadata
-    pub _subagent_info: Option<super::extensions::SubagentInfo>,
+    pub _subagent_info: Option<SubagentInfo>,
 }
 
 impl AcpSessionHandle {
@@ -388,6 +426,7 @@ pub struct AcpSessionBuilder<'a> {
     local_mcp_path: Option<&'a PathBuf>,
     model_id: Option<&'a str>,
     session_tx: Option<SessionManagerHandle>,
+    client_cx: Option<JrConnectionCx<AgentToClient>>,
     mock_registry: Option<MockResponseRegistryHandle>,
 }
 
@@ -447,6 +486,11 @@ impl<'a> AcpSessionBuilder<'a> {
         self
     }
 
+    pub fn connection_cx(mut self, cx: JrConnectionCx<AgentToClient>) -> Self {
+        self.client_cx = Some(cx);
+        self
+    }
+
     pub fn mock_registry(mut self, registry: MockResponseRegistryHandle) -> Self {
         self.mock_registry = Some(registry);
         self
@@ -476,10 +520,15 @@ impl<'a> AcpSessionBuilder<'a> {
 
 /// An actor representing an active ACP session.
 ///
-/// Each session owns an [`Agent`](agent::Agent) and handles:
-/// - Converting ACP protocol messages to agent requests
-/// - Converting agent events to ACP notifications
-/// - Session persistence (via `SessionDb`)
+/// Each session owns:
+/// - An [`Agent`](agent::Agent) for LLM interactions
+/// - A [`JrConnectionCx`] for direct client communication (egress)
+/// - A [`SessionDb`] for persistence
+///
+/// The session handles:
+/// - Converting ACP protocol messages to agent requests (ingress)
+/// - Converting agent events to ACP notifications (egress via owned connection)
+/// - Tool approval flow with trusted tool tracking
 /// - Custom extension handlers (slash commands, etc.)
 struct AcpSession {
     session_id: SessionId,
@@ -489,6 +538,7 @@ struct AcpSession {
     rts_state: Arc<RtsState>,
     api_client: ApiClient,
     session_tx: SessionManagerHandle,
+    connection_cx: JrConnectionCx<AgentToClient>,
     pending_prompt_response: Option<tokio::sync::Mutex<JrRequestCx<PromptResponse>>>,
     os: Os,
 }
@@ -504,6 +554,7 @@ impl AcpSession {
             .ok_or_else(|| eyre::eyre!("session_id is required"))?;
         let cwd = builder.cwd.ok_or_else(|| eyre::eyre!("cwd is required"))?;
         let session_tx = builder.session_tx.expect("Missing session request sender");
+        let connection_cx = builder.client_cx.expect("Missing client connection");
 
         // Determine if loading existing session or creating new one
         let (session_db, snapshot) = if builder.load {
@@ -523,6 +574,7 @@ impl AcpSession {
                 },
                 conversation_state,
                 conversation_metadata: state.conversation_metadata().clone(),
+                permissions: state.permissions().clone().with_cwd(&cwd.to_string_lossy()),
                 ..Default::default()
             };
 
@@ -531,6 +583,7 @@ impl AcpSession {
             // Create new session
             let conversation_id = Uuid::parse_str(&session_id_str)
                 .map_err(|_e| eyre::eyre!("Invalid session ID '{}': must be a valid UUID", session_id_str))?;
+            let permissions = RuntimePermissions::default().with_cwd(&cwd.to_string_lossy());
             let snapshot = AgentSnapshot {
                 agent_config: if let Some(agent_config) = builder.initial_agent_config {
                     agent_config.config().clone()
@@ -538,6 +591,7 @@ impl AcpSession {
                     Default::default()
                 },
                 conversation_state: ConversationState::new(conversation_id, Vec::new()),
+                permissions: permissions.clone(),
                 ..Default::default()
             };
             let rts_snapshot = crate::agent::rts::RtsStateSnapshot {
@@ -545,7 +599,7 @@ impl AcpSession {
                 model_info: None,
                 context_usage_percentage: None,
             };
-            let initial_state = SessionState::new(snapshot.conversation_metadata.clone(), rts_snapshot);
+            let initial_state = SessionState::new(snapshot.conversation_metadata.clone(), rts_snapshot, permissions);
             let db = SessionDb::new(session_id_str.clone(), &cwd, initial_state)?;
 
             (db, snapshot)
@@ -589,6 +643,7 @@ impl AcpSession {
             agent,
             request_rx,
             session_tx,
+            connection_cx,
             session_db: Arc::new(session_db),
             rts_state,
             api_client,
@@ -617,10 +672,10 @@ impl AcpSession {
                     self.handle_request(req).await;
                 }
 
-                // Handle agent events (agent-driven broadcasting)
                 agent_event = self.agent.recv() => {
                     match agent_event {
                         Ok(event) => {
+                            debug!("Received agent event: {:?}", &event);
                             self.handle_agent_event(event).await;
                         }
                         Err(_) => {
@@ -632,6 +687,27 @@ impl AcpSession {
         }
     }
 
+    fn send_session_notification(&self, update: SessionUpdate) -> Result<(), sacp::Error> {
+        self.connection_cx
+            .send_notification(SessionNotification::new(self.session_id.clone(), update))
+    }
+
+    fn send_ext_notification<T: serde::Serialize>(&self, method: &str, params: T) -> Result<(), sacp::Error> {
+        let params_raw = serde_json::value::to_raw_value(&params)
+            .map_err(|e| sacp::util::internal_error(format!("Failed to serialize params: {}", e)))?;
+        let ext_notification = sacp::schema::ExtNotification::new(method, std::sync::Arc::from(params_raw));
+        self.connection_cx
+            .send_notification(sacp::schema::AgentNotification::ExtNotification(ext_notification))
+    }
+
+    fn send_turn_metadata(&self, metadata: &agent::agent_loop::protocol::UserTurnMetadata) -> Result<(), sacp::Error> {
+        let notification = super::schema::MetadataNotification {
+            session_id: self.session_id.to_string(),
+            context_usage_percentage: metadata.context_usage_percentage,
+        };
+        self.connection_cx.send_notification(notification)
+    }
+
     async fn emit_historical_notifications(&self) -> Result<(), sacp::Error> {
         let entries = self
             .session_db
@@ -640,9 +716,7 @@ impl AcpSession {
 
         for entry in entries {
             for update in log_entry_to_session_updates(&entry) {
-                self.session_tx
-                    .send_notification(update, self.session_id.clone())
-                    .await?;
+                self.send_session_notification(update)?;
             }
         }
         Ok(())
@@ -713,7 +787,9 @@ impl AcpSession {
                 error!("cancel called on agent handle");
             },
             AcpSessionRequest::ExecuteCommand { command, respond_to } => {
-                let result = super::command_handler::execute_command(command, &self.api_client, &self.rts_state).await;
+                let result =
+                    super::command_handler::execute_command(command, &self.api_client, &self.rts_state, &self.agent)
+                        .await;
                 let _ = respond_to.send(result);
             },
             AcpSessionRequest::GetCommandOptions {
@@ -721,9 +797,14 @@ impl AcpSession {
                 partial,
                 respond_to,
             } => {
-                let result =
-                    super::command_handler::get_command_options(command, &partial, &self.api_client, &self.rts_state)
-                        .await;
+                let result = super::command_handler::get_command_options(
+                    command,
+                    &partial,
+                    &self.api_client,
+                    &self.rts_state,
+                    &self.agent,
+                )
+                .await;
                 let _ = respond_to.send(result);
             },
         }
@@ -743,18 +824,21 @@ impl AcpSession {
                 }
             },
             AgentEvent::Update(update_event) => {
-                if let Err(e) = self.handle_update_event(update_event).await {
-                    error!("Failed to handle update event: {}", e);
+                if let Some(update) = convert_update_event_to_session_update(update_event) {
+                    let _ = self.send_session_notification(update);
                 }
             },
-            AgentEvent::ApprovalRequest { id, tool_use, context } => {
+            AgentEvent::ApprovalRequest(req) => {
                 info!(
                     "AgentEvent::ApprovalRequest: id={}, tool_use={:?}, context={:?}",
-                    id, tool_use, context
+                    req.id, req.tool_use, req.context
                 );
-                self.session_tx
-                    .request_permission(id, tool_use, self.session_id.clone(), self.agent.clone())
-                    .await;
+                let connection_cx = self.connection_cx.clone();
+                let session_id = self.session_id.clone();
+                let agent = self.agent.clone();
+                tokio::spawn(async move {
+                    handle_approval_request(req, connection_cx, session_id, agent).await;
+                });
             },
             AgentEvent::LogEntryAppended { entry, .. } => {
                 if let Err(e) = session_db.append_log_entry(&entry) {
@@ -762,17 +846,22 @@ impl AcpSession {
                 }
             },
             AgentEvent::EndTurn(md) => {
-                // Store context usage in rts state for /context command
-                if let Some(percentage) = md.context_usage_percentage {
-                    rts_state.set_context_usage_percentage(Some(percentage));
+                // Update context usage in rts state and send to TUI
+                if let Some(p) = md.context_usage_percentage {
+                    rts_state.set_context_usage_percentage(Some(p));
                 }
-                // Send turn metadata to TUI
-                let _ = self.session_tx.send_turn_metadata(self.session_id.clone(), &md).await;
+                if let Err(e) = self.send_turn_metadata(&md) {
+                    warn!("Failed to send turn metadata: {}", e);
+                }
                 // Send prompt response directly to the client - this ends the turn so we take() it
                 if let Some(respond_to) = self.pending_prompt_response.take() {
                     match self.agent.create_snapshot().await {
                         Ok(snapshot) => {
-                            let state = SessionState::new(snapshot.conversation_metadata, rts_state.snapshot());
+                            let state = SessionState::new(
+                                snapshot.conversation_metadata,
+                                rts_state.snapshot(),
+                                snapshot.permissions,
+                            );
                             if let Err(e) = session_db.update_state(state) {
                                 warn!("Failed to persist session state: {}", e);
                             }
@@ -808,53 +897,161 @@ impl AcpSession {
                     error!("Failed to handle MCP event: {}", e);
                 }
             },
+            AgentEvent::Compaction(compaction_event) => {
+                tracing::info!("Received compaction event: {:?}", compaction_event);
+                let status = match compaction_event {
+                    CompactionEvent::Started => CompactionStatus::Started,
+                    CompactionEvent::Completed => CompactionStatus::Completed,
+                    CompactionEvent::Failed { error } => CompactionStatus::Failed { error },
+                };
+                if let Err(e) = self.send_ext_notification(methods::COMPACTION_STATUS, CompactionStatusNotification {
+                    session_id: self.session_id.clone(),
+                    status,
+                }) {
+                    error!("Failed to send compaction notification: {}", e);
+                }
+            },
+            AgentEvent::Clear(_) => {
+                tracing::info!("Received clear event");
+                if let Err(e) = self.send_ext_notification(methods::CLEAR_STATUS, ClearStatusNotification {
+                    session_id: self.session_id.clone(),
+                }) {
+                    error!("Failed to send clear notification: {}", e);
+                }
+            },
             _ => {
                 // Other events that don't need processing
             },
         }
     }
 
-    async fn handle_update_event(&self, update_event: UpdateEvent) -> Result<(), sacp::Error> {
-        if let Some(update) = convert_update_event_to_session_update(update_event) {
-            self.session_tx
-                .send_notification(update, self.session_id.clone())
-                .await?;
-        }
-        Ok(())
-    }
-
     async fn handle_mcp_event(&self, event: McpServerEvent) -> Result<(), sacp::Error> {
         match event {
             McpServerEvent::OauthRequest { server_name, oauth_url } => {
                 info!(?server_name, ?oauth_url, "Forwarding OAuth request to client");
-                self.session_tx
-                    .send_ext_notification(
-                        super::extensions::methods::MCP_OAUTH_REQUEST,
-                        super::extensions::McpOauthRequestNotification {
-                            session_id: self.session_id.clone(),
-                            server_name,
-                            oauth_url,
-                        },
-                        self.session_id.clone(),
-                    )
-                    .await
+                self.send_ext_notification(methods::MCP_OAUTH_REQUEST, McpOauthRequestNotification {
+                    session_id: self.session_id.clone(),
+                    server_name,
+                    oauth_url,
+                })
             },
             McpServerEvent::Initialized { server_name, .. } => {
                 info!(?server_name, "Forwarding MCP server initialized to client");
-                self.session_tx
-                    .send_ext_notification(
-                        super::extensions::methods::MCP_SERVER_INITIALIZED,
-                        super::extensions::McpServerInitializedNotification {
-                            session_id: self.session_id.clone(),
-                            server_name,
-                        },
-                        self.session_id.clone(),
-                    )
-                    .await
+                self.send_ext_notification(methods::MCP_SERVER_INITIALIZED, McpServerInitializedNotification {
+                    session_id: self.session_id.clone(),
+                    server_name,
+                })
             },
             // Other MCP events don't need forwarding to client
             _ => Ok(()),
         }
+    }
+}
+
+async fn handle_approval_request(
+    req: ApprovalRequest,
+    client_cx: JrConnectionCx<AgentToClient>,
+    session_id: SessionId,
+    agent: AgentHandle,
+) {
+    // Map agent permission options to ACP permission options
+    // Filter out *ToolArgs variants as ACP only supports tool-level always options
+    let options: Vec<PermissionOption> = req
+        .options
+        .iter()
+        .filter_map(|opt| {
+            let (id, kind) = match opt.id {
+                // TODO: use id's from the agent instead of hard-coded ACP id's.
+                agent::protocol::PermissionOptionId::AllowOnce => ("allow_once", PermissionOptionKind::AllowOnce),
+                agent::protocol::PermissionOptionId::AllowAlwaysTool => {
+                    ("allow_always", PermissionOptionKind::AllowAlways)
+                },
+                agent::protocol::PermissionOptionId::AllowAlwaysToolArgs => return None,
+                agent::protocol::PermissionOptionId::RejectOnce => ("reject_once", PermissionOptionKind::RejectOnce),
+                agent::protocol::PermissionOptionId::RejectAlwaysTool => return None,
+                agent::protocol::PermissionOptionId::RejectAlwaysToolArgs => return None,
+                agent::protocol::PermissionOptionId::Custom(_) => return None,
+            };
+            Some(PermissionOption::new(id, &opt.label, kind))
+        })
+        .collect();
+
+    debug!("Sending permission request: {:?}", req);
+    let response = client_cx
+        .send_request(RequestPermissionRequest::new(
+            session_id,
+            ToolCallUpdate::new(
+                ToolCallId::new(req.id.clone()),
+                ToolCallUpdateFields::new().title(Some(get_tool_title(&req.tool))),
+            ),
+            options,
+        ))
+        .block_task()
+        .await;
+
+    match response {
+        Ok(res) => match res.outcome {
+            sacp::schema::RequestPermissionOutcome::Selected(selected) => {
+                use std::str::FromStr;
+                // Map ACP option_id to agent PermissionOptionId
+                // ACP's "allow_always"/"reject_always" map to our tool-level variants
+                let option_id = match selected.option_id.0.as_ref() {
+                    "allow_always" => agent::protocol::PermissionOptionId::AllowAlwaysTool,
+                    "reject_always" => agent::protocol::PermissionOptionId::RejectAlwaysTool,
+                    other => agent::protocol::PermissionOptionId::from_str(other)
+                        .unwrap_or_else(|_| agent::protocol::PermissionOptionId::Custom(other.to_string())),
+                };
+                let reason = if option_id.is_reject() {
+                    Some("User denied tool execution".to_string())
+                } else {
+                    None
+                };
+                let approval_result = agent::protocol::ApprovalResult { option_id, reason };
+                if let Err(e) = agent
+                    .send_tool_use_approval_result(agent::protocol::SendApprovalResultArgs {
+                        id: req.id,
+                        result: approval_result,
+                    })
+                    .await
+                {
+                    error!("Failed to send approval result: {}", e);
+                }
+            },
+            sacp::schema::RequestPermissionOutcome::Cancelled => {
+                if let Err(e) = agent.cancel().await {
+                    error!("Failed to cancel agent: {}", e);
+                }
+            },
+            _ => {
+                if let Err(e) = agent
+                    .send_tool_use_approval_result(agent::protocol::SendApprovalResultArgs {
+                        id: req.id,
+                        result: agent::protocol::ApprovalResult {
+                            option_id: agent::protocol::PermissionOptionId::RejectOnce,
+                            reason: Some("Unknown response".to_string()),
+                        },
+                    })
+                    .await
+                {
+                    error!("Failed to send approval result: {}", e);
+                }
+            },
+        },
+        Err(e) => {
+            error!("Failed to get permission response: {:?}", e);
+            if let Err(e) = agent
+                .send_tool_use_approval_result(agent::protocol::SendApprovalResultArgs {
+                    id: req.id,
+                    result: agent::protocol::ApprovalResult {
+                        option_id: agent::protocol::PermissionOptionId::RejectOnce,
+                        reason: Some(format!("Permission request failed: {}", e)),
+                    },
+                })
+                .await
+            {
+                error!("Failed to send approval result: {}", e);
+            }
+        },
     }
 }
 
@@ -912,7 +1109,7 @@ fn convert_update_event_to_session_update(update_event: UpdateEvent) -> Option<S
 
             let mut acp_tool_call = ToolCall::new(ToolCallId::new(tool_call.id), title)
                 .kind(get_tool_kind(&tool_call.tool_use_block.name))
-                .status(ToolCallStatus::InProgress)
+                .status(ToolCallStatus::Pending)
                 .content(get_tool_content(&tool_call.tool))
                 .raw_input(Some(tool_call.tool_use_block.input.clone()));
 
@@ -988,8 +1185,13 @@ fn log_entry_to_session_updates(entry: &LogEntry) -> Vec<SessionUpdate> {
                 ))
             })
             .collect(),
-        // Compaction, ResetTo don't emit notifications
-        LogEntry::V1(LogEntryV1::Compaction { .. } | LogEntryV1::ResetTo { .. }) => vec![],
+        // Compaction, ResetTo, CancelledPrompt, Clear don't emit notifications
+        LogEntry::V1(
+            LogEntryV1::Compaction { .. }
+            | LogEntryV1::ResetTo { .. }
+            | LogEntryV1::CancelledPrompt
+            | LogEntryV1::Clear,
+        ) => vec![],
     }
 }
 
@@ -1010,8 +1212,8 @@ fn get_tool_kind(tool_name: &str) -> ToolKind {
             BuiltInToolName::Ls => ToolKind::Read,
             BuiltInToolName::Summary => ToolKind::Other,
             BuiltInToolName::SpawnSubagent => ToolKind::Other,
-            BuiltInToolName::Grep => ToolKind::Read,
-            BuiltInToolName::Glob => ToolKind::Read,
+            BuiltInToolName::Grep => ToolKind::Search,
+            BuiltInToolName::Glob => ToolKind::Search,
             BuiltInToolName::UseAws => ToolKind::Execute,
         }
     } else {
@@ -1023,8 +1225,18 @@ pub(crate) fn get_tool_title(tool: &Tool) -> String {
     match &tool.kind {
         AgentToolKind::BuiltIn(builtin) => match builtin {
             BuiltInTool::FileRead(fs_read) => {
-                let paths: Vec<_> = fs_read.ops.iter().map(|op| op.path.as_str()).collect();
-                format_paths_title("Reading", &paths)
+                let files: Vec<_> = fs_read
+                    .ops
+                    .iter()
+                    .map(|op| {
+                        let start = op.offset.unwrap_or(0) + 1;
+                        match op.limit {
+                            Some(limit) => format!("{}:{}-{}", truncate_path(&op.path), start, start + limit - 1),
+                            None => format!("{}:{}", truncate_path(&op.path), start),
+                        }
+                    })
+                    .collect();
+                format!("Reading {}", files.join(", "))
             },
             BuiltInTool::FileWrite(fs_write) => {
                 let action = match fs_write {
@@ -1033,10 +1245,22 @@ pub(crate) fn get_tool_title(tool: &Tool) -> String {
                 };
                 format!("{} {}", action, truncate_path(fs_write.path()))
             },
-            BuiltInTool::Grep(grep) => format!("Searching for '{}'", truncate_str(&grep.pattern, 30)),
-            BuiltInTool::Glob(glob) => format!("Finding {}", truncate_str(&glob.pattern, 40)),
+            BuiltInTool::Grep(grep) => {
+                let pattern = truncate_str(&grep.pattern, 60);
+                match &grep.path {
+                    Some(path) => format!("Searching for '{}' in {}", pattern, truncate_path(path)),
+                    None => format!("Searching for '{}'", pattern),
+                }
+            },
+            BuiltInTool::Glob(glob) => {
+                let pattern = truncate_str(&glob.pattern, 60);
+                match &glob.path {
+                    Some(path) => format!("Finding {} in {}", pattern, truncate_path(path)),
+                    None => format!("Finding {}", pattern),
+                }
+            },
             BuiltInTool::Ls(ls) => format!("Listing {}", truncate_path(&ls.path)),
-            BuiltInTool::ExecuteCmd(cmd) => format!("Running: {}", truncate_str(&cmd.command, 40)),
+            BuiltInTool::ExecuteCmd(cmd) => format!("Running: {}", truncate_str(&cmd.command, 200)),
             BuiltInTool::UseAws(aws) => format!("AWS: {} {}", aws.service_name, aws.operation_name),
             BuiltInTool::ImageRead(img) => {
                 let paths: Vec<_> = img.paths.iter().map(|p| p.as_str()).collect();
@@ -1047,7 +1271,7 @@ pub(crate) fn get_tool_title(tool: &Tool) -> String {
             BuiltInTool::Mkdir(_) => "Creating directory".to_string(),
             BuiltInTool::Introspect(_) => "Introspecting".to_string(),
         },
-        AgentToolKind::Mcp(mcp) => mcp.tool_name.clone(),
+        AgentToolKind::Mcp(mcp) => format!("Running: @{}/{}", mcp.server_name, mcp.tool_name),
     }
 }
 
@@ -1381,7 +1605,9 @@ pub async fn execute(os: &mut Os) -> eyre::Result<ExitCode> {
                                 if let Ok(cancel_notif) =
                                     serde_json::from_value::<CancelNotification>(notif.params().clone())
                                 {
-                                    session_tx.cancel_session(&cancel_notif.session_id).await;
+                                    if let Ok(handle) = session_tx.get_session_handle(&cancel_notif.session_id).await {
+                                        let _ = handle.cancel().await;
+                                    }
                                     return Ok(sacp::Handled::Yes);
                                 }
                             },

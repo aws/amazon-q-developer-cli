@@ -28,6 +28,15 @@ impl Default for AgentConfig {
 }
 
 impl AgentConfig {
+    /// Creates an empty config with no allowed tools or resources.
+    pub fn new_empty() -> Self {
+        Self::V2025_08_22(AgentConfigV2025_08_22 {
+            allowed_tools: HashSet::new(),
+            resources: Vec::new(),
+            ..Default::default()
+        })
+    }
+
     pub fn name(&self) -> &str {
         match self {
             AgentConfig::V2025_08_22(a) => a.name.as_str(),
@@ -323,8 +332,6 @@ pub struct GrepSettings {
     pub allowed_paths: Vec<String>,
     #[serde(default)]
     pub denied_paths: Vec<String>,
-    #[serde(default)]
-    pub allow_read_only: bool,
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize, JsonSchema)]
@@ -334,8 +341,6 @@ pub struct GlobSettings {
     pub allowed_paths: Vec<String>,
     #[serde(default)]
     pub denied_paths: Vec<String>,
-    #[serde(default)]
-    pub allow_read_only: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
@@ -884,12 +889,10 @@ mod tests {
             "toolsSettings": {
                 "grep": {
                     "allowedPaths": ["/home/user"],
-                    "deniedPaths": ["/secret"],
-                    "allowReadOnly": true
+                    "deniedPaths": ["/secret"]
                 },
                 "glob": {
-                    "allowedPaths": ["/projects"],
-                    "allowReadOnly": false
+                    "allowedPaths": ["/projects"]
                 }
             }
         });
@@ -898,8 +901,6 @@ mod tests {
         let settings = config.tool_settings().unwrap();
         assert_eq!(settings.grep.allowed_paths, vec!["/home/user"]);
         assert_eq!(settings.grep.denied_paths, vec!["/secret"]);
-        assert!(settings.grep.allow_read_only);
         assert_eq!(settings.glob.allowed_paths, vec!["/projects"]);
-        assert!(!settings.glob.allow_read_only);
     }
 }

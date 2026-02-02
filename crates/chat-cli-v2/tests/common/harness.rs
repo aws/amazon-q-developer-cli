@@ -41,6 +41,7 @@ pub struct AcpTestHarnessBuilder {
     test_name: String,
     agent_configs: Vec<(String, serde_json::Value)>,
     settings: serde_json::Map<String, serde_json::Value>,
+    trust_all: bool,
 }
 
 impl AcpTestHarnessBuilder {
@@ -49,6 +50,7 @@ impl AcpTestHarnessBuilder {
             test_name: test_name.to_string(),
             agent_configs: Vec::new(),
             settings: serde_json::Map::new(),
+            trust_all: false,
         }
     }
 
@@ -69,6 +71,12 @@ impl AcpTestHarnessBuilder {
     /// Replace all settings with the provided map.
     pub fn with_settings(mut self, settings: serde_json::Map<String, serde_json::Value>) -> Self {
         self.settings = settings;
+        self
+    }
+
+    /// Set whether to auto-approve all permission requests.
+    pub fn with_trust_all(mut self, trust_all: bool) -> Self {
+        self.trust_all = trust_all;
         self
     }
 
@@ -95,7 +103,7 @@ impl AcpTestHarnessBuilder {
 
         let mut harness = AcpTestHarness::spawn(paths).await;
         let (stdin, stdout) = harness.take_stdio();
-        let client = super::AcpTestClient::spawn(stdin, stdout);
+        let client = super::AcpTestClient::spawn(stdin, stdout, self.trust_all);
         client.initialize().await.expect("initialize failed");
         harness.wait_for_ipc().await;
         (harness, client)
@@ -178,31 +186,6 @@ impl AcpTestHarness {
             ipc_stream: None,
             msg_id: AtomicU64::new(0),
         }
-    }
-
-    /// Setup harness + client + initialize.
-    pub async fn setup(name: &str) -> (Self, super::AcpTestClient) {
-        let mut harness = Self::new(name).await;
-        let (stdin, stdout) = harness.take_stdio();
-        let client = super::AcpTestClient::spawn(stdin, stdout);
-        client.initialize().await.expect("initialize failed");
-        (harness, client)
-    }
-
-    /// Setup harness + client + initialize + new session.
-    /// Returns (harness, client, session_id, cwd).
-    pub async fn setup_with_session(
-        name: &str,
-    ) -> (
-        Self,
-        super::AcpTestClient,
-        agent_client_protocol::SessionId,
-        std::path::PathBuf,
-    ) {
-        let (harness, client) = Self::setup(name).await;
-        let cwd = harness.paths.cwd.clone();
-        let resp = client.new_session(cwd.clone()).await.expect("new_session failed");
-        (harness, client, resp.session_id, cwd)
     }
 
     /// Wait for the agent to connect to IPC.

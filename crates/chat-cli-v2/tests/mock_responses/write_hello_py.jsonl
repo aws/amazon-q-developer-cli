@@ -1,0 +1,6 @@
+// Write to hello.py and end turn
+{"kind":"event","data":{"kind":"ToolUseEvent","data":{"tool_use_id":"tooluse_write_hello_py","name":"write","input":null,"stop":null}}}
+{"kind":"event","data":{"kind":"ToolUseEvent","data":{"tool_use_id":"tooluse_write_hello_py","name":"write","input":"{\"command\": \"create\", \"path\": \"hello.py\", \"content\": \"print('test')\"}","stop":null}}}
+{"kind":"event","data":{"kind":"ToolUseEvent","data":{"tool_use_id":"tooluse_write_hello_py","name":"write","input":null,"stop":true}}}
+
+{"kind":"event","data":{"kind":"AssistantResponseEvent","data":{"content":"Done."}}}

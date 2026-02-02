@@ -8,6 +8,7 @@ mod paths;
 pub use acp_client::{
     AcpTestClient,
     CapturedNotifications,
+    PermissionResponse,
     text_content,
 };
 pub use harness::{

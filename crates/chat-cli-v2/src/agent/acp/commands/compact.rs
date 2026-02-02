@@ -4,12 +4,17 @@ use agent::tui_commands::{
     CommandResult,
     CompactArgs,
 };
+use tracing::error;
 
 use super::CommandContext;
 
-pub async fn execute(args: &CompactArgs, _ctx: &CommandContext<'_>) -> CommandResult {
-    match args.target_tokens {
-        Some(target) => CommandResult::success(format!("Compaction to {} tokens not yet implemented", target)),
-        None => CommandResult::success("Compaction not yet implemented"),
-    }
+pub async fn execute(_args: &CompactArgs, ctx: &CommandContext<'_>) -> CommandResult {
+    let agent = ctx.agent.clone();
+    // Spawn compaction in background to avoid blocking
+    tokio::spawn(async move {
+        if let Err(e) = agent.compact_conversation().await {
+            error!("Compaction failed: {e}");
+        }
+    });
+    CommandResult::success("Compacting conversation...")
 }

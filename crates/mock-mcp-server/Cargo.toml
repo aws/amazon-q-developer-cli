@@ -13,7 +13,7 @@ name = "mock-mcp-server"
 path = "src/main.rs"
 
 [dependencies]
-rmcp = { version = "0.8.0", features = ["server", "transport-io", "transport-streamable-http-server"] }
+rmcp = { workspace = true, features = ["server", "transport-io", "transport-streamable-http-server"] }
 tokio = { workspace = true, features = ["full"] }
 serde = { workspace = true, features = ["derive"] }
 serde_json.workspace = true

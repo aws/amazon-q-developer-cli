@@ -9,6 +9,7 @@ use serde::{
     Deserialize,
     Serialize,
 };
+use tracing::warn;
 
 use super::agent_loop::types::{
     ContentBlock,
@@ -65,6 +66,10 @@ pub enum LogEntryV1 {
     },
     /// Reset conversation to a previous point
     ResetTo { target_index: usize },
+    /// Cancels the last user prompt (removes the last user message from history)
+    CancelledPrompt,
+    /// Clear conversation - fresh start within same session
+    Clear,
 }
 
 impl LogEntry {
@@ -94,6 +99,14 @@ impl LogEntry {
 
     pub fn reset_to(target_index: usize) -> Self {
         Self::V1(LogEntryV1::ResetTo { target_index })
+    }
+
+    pub fn cancelled_prompt() -> Self {
+        Self::V1(LogEntryV1::CancelledPrompt)
+    }
+
+    pub fn clear() -> Self {
+        Self::V1(LogEntryV1::Clear)
     }
 
     /// Apply this log entry to update the messages vec incrementally.
@@ -130,6 +143,23 @@ impl LogEntry {
             },
             LogEntry::V1(LogEntryV1::ResetTo { target_index }) => {
                 *messages = log.derive_messages_up_to(*target_index);
+            },
+            LogEntry::V1(LogEntryV1::CancelledPrompt) => {
+                if let Some(last_msg) = messages.last() {
+                    if last_msg.role == Role::User {
+                        messages.pop();
+                    } else {
+                        warn!(
+                            "CancelledPrompt: expected last message to be user message, but found {:?}",
+                            last_msg.role
+                        );
+                    }
+                } else {
+                    warn!("CancelledPrompt: no messages to cancel");
+                }
+            },
+            LogEntry::V1(LogEntryV1::Clear) => {
+                messages.clear();
             },
         }
     }
@@ -264,6 +294,22 @@ mod tests {
         assert_eq!(messages[1].role, Role::Assistant);
         assert_eq!(messages[1].id, Some("msg-2".to_string()));
         assert_eq!(messages[2].role, Role::User);
+        assert_eq!(messages[2].id, Some("msg-3".to_string()));
+
+        // Test CancelledPrompt
+        log.append(LogEntry::cancelled_prompt());
+
+        let messages_after_cancel = log.derive_messages();
+        assert_eq!(
+            messages_after_cancel.len(),
+            2,
+            "Should have 2 messages after cancelling msg-3"
+        );
+        assert_eq!(messages_after_cancel[0].role, Role::User);
+        assert_eq!(messages_after_cancel[0].id, Some("msg-1".to_string()));
+        assert_eq!(messages_after_cancel[1].role, Role::Assistant);
+        assert_eq!(messages_after_cancel[1].id, Some("msg-2".to_string()));
+        // msg-3 should be removed
     }
 
     #[test]

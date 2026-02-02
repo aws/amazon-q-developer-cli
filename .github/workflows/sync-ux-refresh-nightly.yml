@@ -1,0 +1,54 @@
+name: Sync UX Refresh Nightly Branch
+
+on:
+  push:
+    branches:
+      - feature/ux-refresh
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  sync:
+    name: Sync Nightly Branch
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ux-refresh-nightly
+          fetch-depth: 0
+
+      - name: Configure Git
+        run: |
+          git config user.name "GitHub Actions Bot"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+      - name: Merge feature/ux-refresh into ux-refresh-nightly
+        run: |
+          git fetch origin feature/ux-refresh
+          
+          git merge origin/feature/ux-refresh -m "Sync: Merge feature/ux-refresh into ux-refresh-nightly" || {
+            CONFLICTS=$(git diff --name-only --diff-filter=U)
+            if echo "$CONFLICTS" | grep -qE '^(Cargo\.toml|Cargo\.lock)$' && [ $(echo "$CONFLICTS" | wc -l) -le 2 ]; then
+              echo "Conflict in Cargo files detected - taking feature/ux-refresh's version"
+              git checkout --theirs Cargo.toml Cargo.lock
+              git add Cargo.toml Cargo.lock
+              
+              if [ -n "$(git diff --name-only --diff-filter=U)" ]; then
+                echo "❌ Additional conflicts detected beyond Cargo files"
+                git merge --abort
+                exit 1
+              fi
+              
+              git commit -m "Sync: Merge feature/ux-refresh into ux-refresh-nightly (took source version)"
+            else
+              echo "❌ Merge conflict detected"
+              git merge --abort
+              exit 1
+            fi
+          }
+          
+          git push origin ux-refresh-nightly
+          
+          echo "✅ ux-refresh-nightly synced with feature/ux-refresh"

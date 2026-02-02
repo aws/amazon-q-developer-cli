@@ -8,6 +8,7 @@
 //! The `AcpTestClient` handle communicates with this actor via channels, providing a
 //! simple async API that works from any tokio runtime.
 
+use std::collections::VecDeque;
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::thread;
@@ -46,6 +47,15 @@ pub struct CapturedNotifications {
     pub session_updates: Vec<acp::SessionUpdate>,
     pub permission_requests: Vec<acp::RequestPermissionRequest>,
     pub ext_notifications: Vec<acp::ExtNotification>,
+}
+
+/// Queued permission response for testing.
+#[derive(Debug, Clone)]
+pub enum PermissionResponse {
+    /// Select an option by its ID
+    Select(String),
+    /// Cancel the permission request
+    Cancel,
 }
 
 /// Commands sent to the ACP actor.
@@ -88,16 +98,30 @@ enum Command {
     ClearCaptured {
         reply: oneshot::Sender<()>,
     },
+    QueuePermissionResponse {
+        response: PermissionResponse,
+        reply: oneshot::Sender<()>,
+    },
 }
 
 /// Test client that captures all notifications for assertions.
 struct TestAcpClient {
     captured: Arc<Mutex<CapturedNotifications>>,
+    permission_responses: Arc<Mutex<VecDeque<PermissionResponse>>>,
+    trust_all: bool,
 }
 
 impl TestAcpClient {
-    fn new(captured: Arc<Mutex<CapturedNotifications>>) -> Self {
-        Self { captured }
+    fn new(
+        captured: Arc<Mutex<CapturedNotifications>>,
+        permission_responses: Arc<Mutex<VecDeque<PermissionResponse>>>,
+        trust_all: bool,
+    ) -> Self {
+        Self {
+            captured,
+            permission_responses,
+            trust_all,
+        }
     }
 }
 
@@ -114,17 +138,34 @@ impl acp::Client for TestAcpClient {
     ) -> acp::Result<acp::RequestPermissionResponse> {
         self.captured.lock().await.permission_requests.push(args.clone());
 
-        // Auto-approve first option
-        let option_id = args
-            .options
-            .first()
-            .map(|opt| opt.id.clone())
-            .ok_or_else(acp::Error::internal_error)?;
+        if self.trust_all {
+            // Auto-approve with AllowOnce
+            return Ok(acp::RequestPermissionResponse {
+                outcome: acp::RequestPermissionOutcome::Selected {
+                    option_id: acp::PermissionOptionId(
+                        agent::protocol::PermissionOptionId::AllowOnce.to_string().into(),
+                    ),
+                },
+                meta: None,
+            });
+        }
 
-        Ok(acp::RequestPermissionResponse {
-            outcome: acp::RequestPermissionOutcome::Selected { option_id },
-            meta: None,
-        })
+        // Pop from pre-queued responses
+        let response = self
+            .permission_responses
+            .lock()
+            .await
+            .pop_front()
+            .expect("No permission response queued - use queue_permission_response() before prompt");
+
+        let outcome = match response {
+            PermissionResponse::Select(id) => acp::RequestPermissionOutcome::Selected {
+                option_id: acp::PermissionOptionId(id.into()),
+            },
+            PermissionResponse::Cancel => acp::RequestPermissionOutcome::Cancelled,
+        };
+
+        Ok(acp::RequestPermissionResponse { outcome, meta: None })
     }
 
     async fn write_text_file(&self, _: acp::WriteTextFileRequest) -> acp::Result<acp::WriteTextFileResponse> {
@@ -179,7 +220,7 @@ pub struct AcpTestClient {
 
 impl AcpTestClient {
     /// Spawn the ACP client actor in a separate thread with its own runtime.
-    pub fn spawn(stdin: ChildStdin, stdout: ChildStdout) -> Self {
+    pub fn spawn(stdin: ChildStdin, stdout: ChildStdout, trust_all: bool) -> Self {
         let (tx, rx) = mpsc::channel(32);
 
         thread::spawn(move || {
@@ -189,10 +230,20 @@ impl AcpTestClient {
                 .unwrap();
 
             let local = tokio::task::LocalSet::new();
-            local.block_on(&rt, run_actor(stdin, stdout, rx));
+            local.block_on(&rt, run_actor(stdin, stdout, rx, trust_all));
         });
 
         Self { tx }
+    }
+
+    /// Queue a permission response for the next permission request.
+    pub async fn queue_permission_response(&self, response: PermissionResponse) {
+        let (reply, rx) = oneshot::channel();
+        self.tx
+            .send(Command::QueuePermissionResponse { response, reply })
+            .await
+            .ok();
+        rx.await.ok();
     }
 
     pub async fn initialize(&self) -> acp::Result<acp::InitializeResponse> {
@@ -349,9 +400,10 @@ impl AcpTestClient {
     }
 }
 
-async fn run_actor(stdin: ChildStdin, stdout: ChildStdout, mut rx: mpsc::Receiver<Command>) {
+async fn run_actor(stdin: ChildStdin, stdout: ChildStdout, mut rx: mpsc::Receiver<Command>, trust_all: bool) {
     let captured = Arc::new(Mutex::new(CapturedNotifications::default()));
-    let client = TestAcpClient::new(captured.clone());
+    let permission_responses = Arc::new(Mutex::new(VecDeque::new()));
+    let client = TestAcpClient::new(captured.clone(), permission_responses.clone(), trust_all);
 
     let outgoing = stdin.compat_write();
     let incoming = stdout.compat();
@@ -476,6 +528,10 @@ async fn run_actor(stdin: ChildStdin, stdout: ChildStdout, mut rx: mpsc::Receive
             },
             Command::ClearCaptured { reply } => {
                 *captured.lock().await = CapturedNotifications::default();
+                let _ = reply.send(());
+            },
+            Command::QueuePermissionResponse { response, reply } => {
+                permission_responses.lock().await.push_back(response);
                 let _ = reply.send(());
             },
         }

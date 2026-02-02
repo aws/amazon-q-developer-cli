@@ -3,6 +3,11 @@
 use std::borrow::Cow;
 use std::str::FromStr;
 
+use serde::{
+    Deserialize,
+    Serialize,
+};
+
 use crate::agent::tools::BuiltInToolName;
 use crate::agent::util::path::canonicalize_path_sys;
 use crate::agent::util::providers::SystemProvider;
@@ -12,30 +17,44 @@ use crate::agent::util::providers::SystemProvider;
 pub enum ResourceKind<'a> {
     File { original: &'a str, file_path: String },
     FileGlob { original: &'a str, pattern: glob::Pattern },
+    Skill { original: &'a str, file_path: String },
+    SkillGlob { original: &'a str, pattern: glob::Pattern },
 }
 
 impl<'a> ResourceKind<'a> {
     pub fn parse(value: &'a str, sys: &impl SystemProvider) -> Result<Self, String> {
-        if !value.starts_with("file://") {
-            return Err("Only file schemes are currently supported".to_string());
-        }
-
-        let file_path = value.trim_start_matches("file://");
-        if file_path.contains('*') || file_path.contains('?') {
-            let canon = canonicalize_path_sys(file_path, sys)
-                .map_err(|err| format!("Failed to canonicalize path for {file_path}: {err}"))?;
-            let pattern = glob::Pattern::new(canon.as_str())
-                .map_err(|err| format!("Failed to create glob for {canon}: {err}"))?;
-            Ok(Self::FileGlob {
-                original: value,
-                pattern,
-            })
+        let (scheme, path) = if let Some(p) = value.strip_prefix("file://") {
+            ("file", p)
+        } else if let Some(p) = value.strip_prefix("skill://") {
+            ("skill", p)
         } else {
-            Ok(Self::File {
+            return Err(format!("resource must start with file:// or skill://, got: {value}"));
+        };
+
+        let is_glob = path.contains('*') || path.contains('?');
+        let canon =
+            canonicalize_path_sys(path, sys).map_err(|err| format!("Failed to canonicalize path for {path}: {err}"))?;
+
+        match (scheme, is_glob) {
+            ("file", false) => Ok(Self::File {
                 original: value,
-                file_path: canonicalize_path_sys(file_path, sys)
-                    .map_err(|err| format!("Failed to canonicalize path for {file_path}: {err}"))?,
-            })
+                file_path: canon,
+            }),
+            ("file", true) => Ok(Self::FileGlob {
+                original: value,
+                pattern: glob::Pattern::new(&canon)
+                    .map_err(|err| format!("Failed to create glob for {canon}: {err}"))?,
+            }),
+            ("skill", false) => Ok(Self::Skill {
+                original: value,
+                file_path: canon,
+            }),
+            ("skill", true) => Ok(Self::SkillGlob {
+                original: value,
+                pattern: glob::Pattern::new(&canon)
+                    .map_err(|err| format!("Failed to create glob for {canon}: {err}"))?,
+            }),
+            _ => unreachable!(),
         }
     }
 }
@@ -136,7 +155,7 @@ impl<'a> ToolNameKind<'a> {
 /// 2. MCP servers providing out-of-spec tool names, which we must transform ourselves
 /// 3. Some backend-specific tool name validation - e.g., Bedrock only allows tool names matching
 ///    `[a-zA-Z0-9_-]+`
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum CanonicalToolName {
     BuiltIn(BuiltInToolName),
     // todo - make Cow?
@@ -230,6 +249,36 @@ mod tests {
         assert_eq!(ResourceKind::parse(resource, &sys).unwrap(), ResourceKind::FileGlob {
             original: resource,
             pattern: glob::Pattern::new("/home/testuser/project/**/*.rs").unwrap()
+        });
+    }
+
+    #[test]
+    fn test_resource_kind_parse_skill_scheme() {
+        let sys = TestProvider::new();
+
+        // Single skill file
+        let resource = "skill://skills/my-skill.md";
+        assert_eq!(ResourceKind::parse(resource, &sys).unwrap(), ResourceKind::Skill {
+            original: resource,
+            file_path: "/home/testuser/skills/my-skill.md".to_string()
+        });
+
+        // Skill with home directory
+        let resource = "skill://~/skills/helper.md";
+        assert_eq!(ResourceKind::parse(resource, &sys).unwrap(), ResourceKind::Skill {
+            original: resource,
+            file_path: "/home/testuser/skills/helper.md".to_string()
+        });
+    }
+
+    #[test]
+    fn test_resource_kind_parse_skill_glob() {
+        let sys = TestProvider::new();
+
+        let resource = "skill://.kiro/skills/**/SKILL.md";
+        assert_eq!(ResourceKind::parse(resource, &sys).unwrap(), ResourceKind::SkillGlob {
+            original: resource,
+            pattern: glob::Pattern::new("/home/testuser/.kiro/skills/**/SKILL.md").unwrap()
         });
     }
 

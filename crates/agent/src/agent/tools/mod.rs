@@ -49,7 +49,12 @@ pub use use_subagent::{
 use super::agent_config::parse::CanonicalToolName;
 use super::agent_loop::types::ToolUseBlock;
 use super::consts::TOOL_USE_PURPOSE_FIELD_NAME;
-use super::protocol::AgentError;
+use super::protocol::{
+    AgentError,
+    PermissionOption,
+    PermissionOptionHint,
+    PermissionOptionId,
+};
 use crate::agent::agent_loop::types::{
     ImageBlock,
     ToolSpec,
@@ -245,6 +250,32 @@ impl Tool {
 
     pub async fn get_context(&self) -> Option<ToolContext> {
         self.kind.get_context().await
+    }
+
+    /// Returns the permission options for this tool with appropriate labels.
+    pub fn permission_options(&self) -> Vec<PermissionOption> {
+        vec![
+            PermissionOption {
+                id: PermissionOptionId::AllowOnce,
+                label: "Yes".to_string(),
+                kind: PermissionOptionHint::AllowOnce,
+            },
+            PermissionOption {
+                id: PermissionOptionId::AllowAlwaysTool,
+                label: "Always".to_string(),
+                kind: PermissionOptionHint::AllowAlways,
+            },
+            PermissionOption {
+                id: PermissionOptionId::RejectOnce,
+                label: "No".to_string(),
+                kind: PermissionOptionHint::RejectOnce,
+            },
+            PermissionOption {
+                id: PermissionOptionId::RejectAlwaysTool,
+                label: "Never".to_string(),
+                kind: PermissionOptionHint::RejectAlways,
+            },
+        ]
     }
 }
 

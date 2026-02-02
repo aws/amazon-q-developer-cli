@@ -42,6 +42,8 @@ pub enum TuiCommandKind {
     Model,
     Context,
     Compact,
+    Clear,
+    Exit,
 }
 
 /// Request to get command options (autocomplete)

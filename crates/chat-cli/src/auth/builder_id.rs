@@ -85,7 +85,7 @@ pub fn client(region: Region) -> Client {
     Client::new(
         &aws_types::SdkConfig::builder()
             .http_client(crate::aws_common::http_client::client())
-            .behavior_version(BehaviorVersion::v2025_08_07())
+            .behavior_version(BehaviorVersion::v2026_01_12())
             .endpoint_url(oidc_url(&region))
             .region(region)
             .retry_config(RetryConfig::standard().with_max_attempts(3))

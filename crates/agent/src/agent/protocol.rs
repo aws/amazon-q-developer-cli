@@ -75,14 +75,7 @@ pub enum AgentEvent {
     EndTurn(UserTurnMetadata),
 
     /// A permission request to the client for using a specific tool.
-    ApprovalRequest {
-        /// Id for the approval request
-        id: String,
-        /// The tool use to be approved or denied
-        tool_use: ToolUseBlock,
-        /// Tool-specific context about the requested operation
-        context: Option<super::tools::ToolContext>,
-    },
+    ApprovalRequest(ApprovalRequest),
 
     /// Lower-level events associated with the agent's execution. Generally only useful for
     /// debugging or telemetry purposes.
@@ -107,6 +100,9 @@ pub enum AgentEvent {
 
     /// Compaction-related events
     Compaction(CompactionEvent),
+
+    /// Clear-related events
+    Clear(ClearEvent),
 }
 
 /// Events related to conversation compaction
@@ -120,6 +116,11 @@ pub enum CompactionEvent {
     /// Compaction failed
     Failed { error: String },
 }
+
+/// Events related to conversation clear
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ClearEvent;
 
 impl From<TaskExecutorEvent> for AgentEvent {
     fn from(value: TaskExecutorEvent) -> Self {
@@ -202,6 +203,8 @@ pub enum AgentRequest {
     SwapAgent(Box<SwapAgentArgs>),
     /// Manually trigger conversation compaction
     CompactConversation,
+    /// Clear conversation history
+    ClearConversation,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -295,6 +298,75 @@ impl ToolCallResult {
     }
 }
 
+/// A permission request to the client for using a specific tool.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ApprovalRequest {
+    /// Id for the approval request
+    pub id: String,
+    /// The tool use block from the model
+    pub tool_use: ToolUseBlock,
+    /// The parsed tool being requested
+    pub tool: Tool,
+    /// Tool-specific context about the requested operation
+    pub context: Option<super::tools::ToolContext>,
+    /// Available permission options with tool-specific labels
+    pub options: Vec<PermissionOption>,
+}
+
+/// A permission option presented to the user.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PermissionOption {
+    /// The option identifier
+    pub id: PermissionOptionId,
+    /// Display label for this option (tool-specific)
+    pub label: String,
+    /// Hint for how the client should treat this option
+    pub kind: PermissionOptionHint,
+}
+
+/// Permission option identifiers for tool approval.
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize, strum::EnumString, strum::Display)]
+#[serde(rename_all = "snake_case")]
+#[strum(serialize_all = "snake_case")]
+pub enum PermissionOptionId {
+    AllowOnce,
+    AllowAlwaysTool,
+    AllowAlwaysToolArgs,
+    RejectOnce,
+    RejectAlwaysTool,
+    RejectAlwaysToolArgs,
+    #[strum(default)]
+    Custom(String),
+}
+
+impl PermissionOptionId {
+    /// Returns true if this is an allow option.
+    pub fn is_allow(&self) -> bool {
+        matches!(
+            self,
+            Self::AllowOnce | Self::AllowAlwaysTool | Self::AllowAlwaysToolArgs
+        )
+    }
+
+    /// Returns true if this is a reject option.
+    pub fn is_reject(&self) -> bool {
+        matches!(
+            self,
+            Self::RejectOnce | Self::RejectAlwaysTool | Self::RejectAlwaysToolArgs
+        )
+    }
+}
+
+/// Hint for how the client should treat a permission option.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum PermissionOptionHint {
+    AllowOnce,
+    AllowAlways,
+    RejectOnce,
+    RejectAlways,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SendApprovalResultArgs {
@@ -304,11 +376,14 @@ pub struct SendApprovalResultArgs {
     pub result: ApprovalResult,
 }
 
+/// Result of a user's approval decision for a tool use request.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub enum ApprovalResult {
-    Approve,
-    Deny { reason: Option<String> },
+pub struct ApprovalResult {
+    /// The permission option selected by the user
+    pub option_id: PermissionOptionId,
+    /// Optional reason for rejection
+    pub reason: Option<String>,
 }
 
 /// Result of evaluating tool permissions, indicating whether a tool should be allowed,
@@ -405,4 +480,57 @@ pub enum InternalEvent {
     ToolPermissionEvalResult { tool: Tool, result: PermissionEvalResult },
     /// Events specific to tool and hook execution
     TaskExecutor(Box<TaskExecutorEvent>),
+}
+
+#[cfg(test)]
+mod tests {
+    use std::str::FromStr;
+
+    use super::*;
+
+    macro_rules! test_ser_deser {
+        ($ty:ident, $variant:expr, $text:expr) => {
+            let quoted = format!("\"{}\"", $text);
+            assert_eq!(quoted, serde_json::to_string(&$variant).unwrap());
+            assert_eq!($variant, serde_json::from_str(&quoted).unwrap());
+            assert_eq!($variant, $ty::from_str($text).unwrap());
+            assert_eq!($text, $variant.to_string());
+        };
+    }
+
+    #[test]
+    fn test_permission_option_id_ser_deser() {
+        test_ser_deser!(PermissionOptionId, PermissionOptionId::AllowOnce, "allow_once");
+        test_ser_deser!(
+            PermissionOptionId,
+            PermissionOptionId::AllowAlwaysTool,
+            "allow_always_tool"
+        );
+        test_ser_deser!(
+            PermissionOptionId,
+            PermissionOptionId::AllowAlwaysToolArgs,
+            "allow_always_tool_args"
+        );
+        test_ser_deser!(PermissionOptionId, PermissionOptionId::RejectOnce, "reject_once");
+        test_ser_deser!(
+            PermissionOptionId,
+            PermissionOptionId::RejectAlwaysTool,
+            "reject_always_tool"
+        );
+        test_ser_deser!(
+            PermissionOptionId,
+            PermissionOptionId::RejectAlwaysToolArgs,
+            "reject_always_tool_args"
+        );
+
+        // Custom variant - FromStr falls back to Custom for unknown strings
+        assert_eq!(
+            PermissionOptionId::from_str("my_custom_option").unwrap(),
+            PermissionOptionId::Custom("my_custom_option".to_string())
+        );
+        assert_eq!(
+            "my_custom_option",
+            PermissionOptionId::Custom("my_custom_option".to_string()).to_string()
+        );
+    }
 }

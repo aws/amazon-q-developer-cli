@@ -1,6 +1,6 @@
-// fs_read tool call to test title generation
+// fs_read tool call to test title generation with offset and limit
 {"kind":"event","data":{"kind":"ToolUseEvent","data":{"tool_use_id":"tooluse_read_001","name":"read","input":null,"stop":null}}}
-{"kind":"event","data":{"kind":"ToolUseEvent","data":{"tool_use_id":"tooluse_read_001","name":"read","input":"{\"ops\": [{\"path\": \"test_file.txt\"}]}","stop":null}}}
+{"kind":"event","data":{"kind":"ToolUseEvent","data":{"tool_use_id":"tooluse_read_001","name":"read","input":"{\"ops\": [{\"path\": \"test_file.txt\", \"offset\": 10, \"limit\": 50}]}","stop":null}}}
 {"kind":"event","data":{"kind":"ToolUseEvent","data":{"tool_use_id":"tooluse_read_001","name":"read","input":null,"stop":true}}}
 
 {"kind":"event","data":{"kind":"AssistantResponseEvent","data":{"content":"Done reading the file."}}}

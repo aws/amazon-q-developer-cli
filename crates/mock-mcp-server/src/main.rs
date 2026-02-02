@@ -81,7 +81,7 @@ impl ServerHandler for MockMcpServer {
 
     async fn list_tools(
         &self,
-        _request: Option<PaginatedRequestParam>,
+        _request: Option<PaginatedRequestParams>,
         _context: RequestContext<RoleServer>,
     ) -> Result<ListToolsResult, ErrorData> {
         let tools = self
@@ -95,18 +95,16 @@ impl ServerHandler for MockMcpServer {
                 annotations: None,
                 icons: None,
                 title: None,
+                meta: None,
             })
             .collect();
 
-        Ok(ListToolsResult {
-            tools,
-            next_cursor: None,
-        })
+        Ok(ListToolsResult::with_all_items(tools))
     }
 
     async fn call_tool(
         &self,
-        request: CallToolRequestParam,
+        request: CallToolRequestParams,
         _context: RequestContext<RoleServer>,
     ) -> Result<CallToolResult, ErrorData> {
         let tool_name = request.name.as_ref();
@@ -178,7 +176,7 @@ async fn run_http(server: MockMcpServer, port: u16, probe_status: Option<u16>) -
         let probe_returned = Arc::new(AtomicBool::new(false));
 
         async fn probe_middleware(
-            State((status_code, probe_returned)): State<(u16, Arc<AtomicBool>)>,
+            State((status_code, probe_returned, port)): State<(u16, Arc<AtomicBool>, u16)>,
             request: Request<Body>,
             next: Next,
         ) -> Response {
@@ -187,19 +185,41 @@ async fn run_http(server: MockMcpServer, port: u16, probe_status: Option<u16>) -
                 && request.uri().path().starts_with("/mcp")
                 && !probe_returned.swap(true, Ordering::SeqCst)
             {
-                return StatusCode::from_u16(status_code)
-                    .unwrap_or(StatusCode::UNAUTHORIZED)
+                // Return 401 with WWW-Authenticate header for OAuth discovery
+                let status = StatusCode::from_u16(status_code).unwrap_or(StatusCode::UNAUTHORIZED);
+                return (status, [(
+                    axum::http::header::WWW_AUTHENTICATE,
+                    format!(
+                        "Bearer resource_metadata=\"http://127.0.0.1:{}/.well-known/oauth-protected-resource\"",
+                        port
+                    ),
+                )])
                     .into_response();
             }
             next.run(request).await
         }
 
+        // Protected resource metadata endpoint - points to the authorization server
+        async fn oauth_protected_resource(
+            axum::extract::State(port): axum::extract::State<u16>,
+        ) -> Json<serde_json::Value> {
+            Json(serde_json::json!({
+                "resource": format!("http://127.0.0.1:{}/mcp", port),
+                "authorization_servers": [format!("http://127.0.0.1:{}", port)]
+            }))
+        }
+
         axum::Router::new()
             .route("/.well-known/oauth-authorization-server", get(oauth_discovery))
             .route("/mcp/.well-known/oauth-authorization-server", get(oauth_discovery))
+            .route("/.well-known/oauth-protected-resource", get(oauth_protected_resource))
+            .route(
+                "/mcp/.well-known/oauth-protected-resource",
+                get(oauth_protected_resource),
+            )
             .nest_service("/mcp", service)
             .layer(middleware::from_fn_with_state(
-                (status_code, probe_returned),
+                (status_code, probe_returned, port),
                 probe_middleware,
             ))
             .with_state(port)

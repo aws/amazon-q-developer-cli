@@ -1,0 +1,108 @@
+// Prompt:
+// Do these EXACT steps:
+// - Write a python script that prints "Hello, world!" and output it to "hello.py"
+// - Then read "hello.py"
+// - Then update the hello world script to instead print "Goodbye, world!"
+// - Then reread the updated "hello.py" script
+
+// tool use: write to file: hello.py
+{"kind":"event","data":{"kind":"ToolUseEvent","data":{"tool_use_id":"tooluse_FKug0ythTuCzkzMUQ_E1hw","name":"write","input":null,"stop":null}}}
+{"kind":"event","data":{"kind":"ToolUseEvent","data":{"tool_use_id":"tooluse_FKug0ythTuCzkzMUQ_E1hw","name":"write","input":"{\"__tool_us","stop":null}}}
+{"kind":"event","data":{"kind":"ToolUseEvent","data":{"tool_use_id":"tooluse_FKug0ythTuCzkzMUQ_E1hw","name":"write","input":"e_purpose\"","stop":null}}}
+{"kind":"event","data":{"kind":"ToolUseEvent","data":{"tool_use_id":"tooluse_FKug0ythTuCzkzMUQ_E1hw","name":"write","input":": \"Creat","stop":null}}}
+{"kind":"event","data":{"kind":"ToolUseEvent","data":{"tool_use_id":"tooluse_FKug0ythTuCzkzMUQ_E1hw","name":"write","input":"e a mini","stop":null}}}
+{"kind":"event","data":{"kind":"ToolUseEvent","data":{"tool_use_id":"tooluse_FKug0ythTuCzkzMUQ_E1hw","name":"write","input":"mal Py","stop":null}}}
+{"kind":"event","data":{"kind":"ToolUseEvent","data":{"tool_use_id":"tooluse_FKug0ythTuCzkzMUQ_E1hw","name":"write","input":"thon","stop":null}}}
+{"kind":"event","data":{"kind":"ToolUseEvent","data":{"tool_use_id":"tooluse_FKug0ythTuCzkzMUQ_E1hw","name":"write","input":" script t","stop":null}}}
+{"kind":"event","data":{"kind":"ToolUseEvent","data":{"tool_use_id":"tooluse_FKug0ythTuCzkzMUQ_E1hw","name":"write","input":"hat print","stop":null}}}
+{"kind":"event","data":{"kind":"ToolUseEvent","data":{"tool_use_id":"tooluse_FKug0ythTuCzkzMUQ_E1hw","name":"write","input":"s \\\"Hello, ","stop":null}}}
+{"kind":"event","data":{"kind":"ToolUseEvent","data":{"tool_use_id":"tooluse_FKug0ythTuCzkzMUQ_E1hw","name":"write","input":"wo","stop":null}}}
+{"kind":"event","data":{"kind":"ToolUseEvent","data":{"tool_use_id":"tooluse_FKug0ythTuCzkzMUQ_E1hw","name":"write","input":"rld!\\\"\"","stop":null}}}
+{"kind":"event","data":{"kind":"ToolUseEvent","data":{"tool_use_id":"tooluse_FKug0ythTuCzkzMUQ_E1hw","name":"write","input":", \"command\":","stop":null}}}
+{"kind":"event","data":{"kind":"ToolUseEvent","data":{"tool_use_id":"tooluse_FKug0ythTuCzkzMUQ_E1hw","name":"write","input":" \"c","stop":null}}}
+{"kind":"event","data":{"kind":"ToolUseEvent","data":{"tool_use_id":"tooluse_FKug0ythTuCzkzMUQ_E1hw","name":"write","input":"reate\"","stop":null}}}
+{"kind":"event","data":{"kind":"ToolUseEvent","data":{"tool_use_id":"tooluse_FKug0ythTuCzkzMUQ_E1hw","name":"write","input":", \"path\": \"h","stop":null}}}
+{"kind":"event","data":{"kind":"ToolUseEvent","data":{"tool_use_id":"tooluse_FKug0ythTuCzkzMUQ_E1hw","name":"write","input":"ello.","stop":null}}}
+{"kind":"event","data":{"kind":"ToolUseEvent","data":{"tool_use_id":"tooluse_FKug0ythTuCzkzMUQ_E1hw","name":"write","input":"py\"","stop":null}}}
+{"kind":"event","data":{"kind":"ToolUseEvent","data":{"tool_use_id":"tooluse_FKug0ythTuCzkzMUQ_E1hw","name":"write","input":", \"c","stop":null}}}
+{"kind":"event","data":{"kind":"ToolUseEvent","data":{"tool_use_id":"tooluse_FKug0ythTuCzkzMUQ_E1hw","name":"write","input":"ontent\": \"","stop":null}}}
+{"kind":"event","data":{"kind":"ToolUseEvent","data":{"tool_use_id":"tooluse_FKug0ythTuCzkzMUQ_E1hw","name":"write","input":"print(\\\"He","stop":null}}}
+{"kind":"event","data":{"kind":"ToolUseEvent","data":{"tool_use_id":"tooluse_FKug0ythTuCzkzMUQ_E1hw","name":"write","input":"llo, ","stop":null}}}
+{"kind":"event","data":{"kind":"ToolUseEvent","data":{"tool_use_id":"tooluse_FKug0ythTuCzkzMUQ_E1hw","name":"write","input":"world","stop":null}}}
+{"kind":"event","data":{"kind":"ToolUseEvent","data":{"tool_use_id":"tooluse_FKug0ythTuCzkzMUQ_E1hw","name":"write","input":"!\\\")\\","stop":null}}}
+{"kind":"event","data":{"kind":"ToolUseEvent","data":{"tool_use_id":"tooluse_FKug0ythTuCzkzMUQ_E1hw","name":"write","input":"n\"}","stop":null}}}
+{"kind":"event","data":{"kind":"ToolUseEvent","data":{"tool_use_id":"tooluse_FKug0ythTuCzkzMUQ_E1hw","name":"write","input":null,"stop":true}}}
+
+// tool use: read to file: hello.py
+{"kind":"event","data":{"kind":"ToolUseEvent","data":{"tool_use_id":"tooluse_FQSBB9mWSoCjc8m5mL1Tuw","name":"read","input":null,"stop":null}}}
+{"kind":"event","data":{"kind":"ToolUseEvent","data":{"tool_use_id":"tooluse_FQSBB9mWSoCjc8m5mL1Tuw","name":"read","input":"{\"","stop":null}}}
+{"kind":"event","data":{"kind":"ToolUseEvent","data":{"tool_use_id":"tooluse_FQSBB9mWSoCjc8m5mL1Tuw","name":"read","input":"__tool","stop":null}}}
+{"kind":"event","data":{"kind":"ToolUseEvent","data":{"tool_use_id":"tooluse_FQSBB9mWSoCjc8m5mL1Tuw","name":"read","input":"_use_purp","stop":null}}}
+{"kind":"event","data":{"kind":"ToolUseEvent","data":{"tool_use_id":"tooluse_FQSBB9mWSoCjc8m5mL1Tuw","name":"read","input":"ose\": \"Rea","stop":null}}}
+{"kind":"event","data":{"kind":"ToolUseEvent","data":{"tool_use_id":"tooluse_FQSBB9mWSoCjc8m5mL1Tuw","name":"read","input":"d the cont","stop":null}}}
+{"kind":"event","data":{"kind":"ToolUseEvent","data":{"tool_use_id":"tooluse_FQSBB9mWSoCjc8m5mL1Tuw","name":"read","input":"ents of ","stop":null}}}
+{"kind":"event","data":{"kind":"ToolUseEvent","data":{"tool_use_id":"tooluse_FQSBB9mWSoCjc8m5mL1Tuw","name":"read","input":"hel","stop":null}}}
+{"kind":"event","data":{"kind":"ToolUseEvent","data":{"tool_use_id":"tooluse_FQSBB9mWSoCjc8m5mL1Tuw","name":"read","input":"lo.p","stop":null}}}
+{"kind":"event","data":{"kind":"ToolUseEvent","data":{"tool_use_id":"tooluse_FQSBB9mWSoCjc8m5mL1Tuw","name":"read","input":"y\"","stop":null}}}
+{"kind":"event","data":{"kind":"ToolUseEvent","data":{"tool_use_id":"tooluse_FQSBB9mWSoCjc8m5mL1Tuw","name":"read","input":", \"ops\": [","stop":null}}}
+{"kind":"event","data":{"kind":"ToolUseEvent","data":{"tool_use_id":"tooluse_FQSBB9mWSoCjc8m5mL1Tuw","name":"read","input":"{\"p","stop":null}}}
+{"kind":"event","data":{"kind":"ToolUseEvent","data":{"tool_use_id":"tooluse_FQSBB9mWSoCjc8m5mL1Tuw","name":"read","input":"ath\":\"hello","stop":null}}}
+{"kind":"event","data":{"kind":"ToolUseEvent","data":{"tool_use_id":"tooluse_FQSBB9mWSoCjc8m5mL1Tuw","name":"read","input":".py\"}]}","stop":null}}}
+{"kind":"event","data":{"kind":"ToolUseEvent","data":{"tool_use_id":"tooluse_FQSBB9mWSoCjc8m5mL1Tuw","name":"read","input":null,"stop":true}}}
+
+// tool use: write to file: hello.py
+{"kind":"event","data":{"kind":"ToolUseEvent","data":{"tool_use_id":"tooluse_bHFooZMcQG2Oh-8BD-8ozQ","name":"write","input":null,"stop":null}}}
+{"kind":"event","data":{"kind":"ToolUseEvent","data":{"tool_use_id":"tooluse_bHFooZMcQG2Oh-8BD-8ozQ","name":"write","input":"{\"__to","stop":null}}}
+{"kind":"event","data":{"kind":"ToolUseEvent","data":{"tool_use_id":"tooluse_bHFooZMcQG2Oh-8BD-8ozQ","name":"write","input":"ol_us","stop":null}}}
+{"kind":"event","data":{"kind":"ToolUseEvent","data":{"tool_use_id":"tooluse_bHFooZMcQG2Oh-8BD-8ozQ","name":"write","input":"e_pur","stop":null}}}
+{"kind":"event","data":{"kind":"ToolUseEvent","data":{"tool_use_id":"tooluse_bHFooZMcQG2Oh-8BD-8ozQ","name":"write","input":"pose\"","stop":null}}}
+{"kind":"event","data":{"kind":"ToolUseEvent","data":{"tool_use_id":"tooluse_bHFooZMcQG2Oh-8BD-8ozQ","name":"write","input":": ","stop":null}}}
+{"kind":"event","data":{"kind":"ToolUseEvent","data":{"tool_use_id":"tooluse_bHFooZMcQG2Oh-8BD-8ozQ","name":"write","input":"\"Update the ","stop":null}}}
+{"kind":"event","data":{"kind":"ToolUseEvent","data":{"tool_use_id":"tooluse_bHFooZMcQG2Oh-8BD-8ozQ","name":"write","input":"prin","stop":null}}}
+{"kind":"event","data":{"kind":"ToolUseEvent","data":{"tool_use_id":"tooluse_bHFooZMcQG2Oh-8BD-8ozQ","name":"write","input":"t stateme","stop":null}}}
+{"kind":"event","data":{"kind":"ToolUseEvent","data":{"tool_use_id":"tooluse_bHFooZMcQG2Oh-8BD-8ozQ","name":"write","input":"nt to say","stop":null}}}
+{"kind":"event","data":{"kind":"ToolUseEvent","data":{"tool_use_id":"tooluse_bHFooZMcQG2Oh-8BD-8ozQ","name":"write","input":" \\\"G","stop":null}}}
+{"kind":"event","data":{"kind":"ToolUseEvent","data":{"tool_use_id":"tooluse_bHFooZMcQG2Oh-8BD-8ozQ","name":"write","input":"oodb","stop":null}}}
+{"kind":"event","data":{"kind":"ToolUseEvent","data":{"tool_use_id":"tooluse_bHFooZMcQG2Oh-8BD-8ozQ","name":"write","input":"ye, wo","stop":null}}}
+{"kind":"event","data":{"kind":"ToolUseEvent","data":{"tool_use_id":"tooluse_bHFooZMcQG2Oh-8BD-8ozQ","name":"write","input":"rld!\\\"","stop":null}}}
+{"kind":"event","data":{"kind":"ToolUseEvent","data":{"tool_use_id":"tooluse_bHFooZMcQG2Oh-8BD-8ozQ","name":"write","input":"\"","stop":null}}}
+{"kind":"event","data":{"kind":"ToolUseEvent","data":{"tool_use_id":"tooluse_bHFooZMcQG2Oh-8BD-8ozQ","name":"write","input":", \"comma","stop":null}}}
+{"kind":"event","data":{"kind":"ToolUseEvent","data":{"tool_use_id":"tooluse_bHFooZMcQG2Oh-8BD-8ozQ","name":"write","input":"nd\": \"","stop":null}}}
+{"kind":"event","data":{"kind":"ToolUseEvent","data":{"tool_use_id":"tooluse_bHFooZMcQG2Oh-8BD-8ozQ","name":"write","input":"strRepla","stop":null}}}
+{"kind":"event","data":{"kind":"ToolUseEvent","data":{"tool_use_id":"tooluse_bHFooZMcQG2Oh-8BD-8ozQ","name":"write","input":"ce\"","stop":null}}}
+{"kind":"event","data":{"kind":"ToolUseEvent","data":{"tool_use_id":"tooluse_bHFooZMcQG2Oh-8BD-8ozQ","name":"write","input":", \"p","stop":null}}}
+{"kind":"event","data":{"kind":"ToolUseEvent","data":{"tool_use_id":"tooluse_bHFooZMcQG2Oh-8BD-8ozQ","name":"write","input":"ath\": \"hell","stop":null}}}
+{"kind":"event","data":{"kind":"ToolUseEvent","data":{"tool_use_id":"tooluse_bHFooZMcQG2Oh-8BD-8ozQ","name":"write","input":"o.py\"","stop":null}}}
+{"kind":"event","data":{"kind":"ToolUseEvent","data":{"tool_use_id":"tooluse_bHFooZMcQG2Oh-8BD-8ozQ","name":"write","input":", \"ol","stop":null}}}
+{"kind":"event","data":{"kind":"ToolUseEvent","data":{"tool_use_id":"tooluse_bHFooZMcQG2Oh-8BD-8ozQ","name":"write","input":"dStr\": \"p","stop":null}}}
+{"kind":"event","data":{"kind":"ToolUseEvent","data":{"tool_use_id":"tooluse_bHFooZMcQG2Oh-8BD-8ozQ","name":"write","input":"ri","stop":null}}}
+{"kind":"event","data":{"kind":"ToolUseEvent","data":{"tool_use_id":"tooluse_bHFooZMcQG2Oh-8BD-8ozQ","name":"write","input":"nt(\\\"Hello","stop":null}}}
+{"kind":"event","data":{"kind":"ToolUseEvent","data":{"tool_use_id":"tooluse_bHFooZMcQG2Oh-8BD-8ozQ","name":"write","input":", wo","stop":null}}}
+{"kind":"event","data":{"kind":"ToolUseEvent","data":{"tool_use_id":"tooluse_bHFooZMcQG2Oh-8BD-8ozQ","name":"write","input":"rld!","stop":null}}}
+{"kind":"event","data":{"kind":"ToolUseEvent","data":{"tool_use_id":"tooluse_bHFooZMcQG2Oh-8BD-8ozQ","name":"write","input":"\\\")\"","stop":null}}}
+{"kind":"event","data":{"kind":"ToolUseEvent","data":{"tool_use_id":"tooluse_bHFooZMcQG2Oh-8BD-8ozQ","name":"write","input":", \"newS","stop":null}}}
+{"kind":"event","data":{"kind":"ToolUseEvent","data":{"tool_use_id":"tooluse_bHFooZMcQG2Oh-8BD-8ozQ","name":"write","input":"tr\": \"print","stop":null}}}
+{"kind":"event","data":{"kind":"ToolUseEvent","data":{"tool_use_id":"tooluse_bHFooZMcQG2Oh-8BD-8ozQ","name":"write","input":"(\\\"Goo","stop":null}}}
+{"kind":"event","data":{"kind":"ToolUseEvent","data":{"tool_use_id":"tooluse_bHFooZMcQG2Oh-8BD-8ozQ","name":"write","input":"dbye, worl","stop":null}}}
+{"kind":"event","data":{"kind":"ToolUseEvent","data":{"tool_use_id":"tooluse_bHFooZMcQG2Oh-8BD-8ozQ","name":"write","input":"d!\\\")\"}","stop":null}}}
+{"kind":"event","data":{"kind":"ToolUseEvent","data":{"tool_use_id":"tooluse_bHFooZMcQG2Oh-8BD-8ozQ","name":"write","input":null,"stop":true}}}
+
+// tool use: read to file: hello.py
+{"kind":"event","data":{"kind":"ToolUseEvent","data":{"tool_use_id":"tooluse_O4_nf9BkQgygWpWOMGhR0g","name":"read","input":null,"stop":null}}}
+{"kind":"event","data":{"kind":"ToolUseEvent","data":{"tool_use_id":"tooluse_O4_nf9BkQgygWpWOMGhR0g","name":"read","input":"{\"__tool_use","stop":null}}}
+{"kind":"event","data":{"kind":"ToolUseEvent","data":{"tool_use_id":"tooluse_O4_nf9BkQgygWpWOMGhR0g","name":"read","input":"_purpose\":","stop":null}}}
+{"kind":"event","data":{"kind":"ToolUseEvent","data":{"tool_use_id":"tooluse_O4_nf9BkQgygWpWOMGhR0g","name":"read","input":" \"R","stop":null}}}
+{"kind":"event","data":{"kind":"ToolUseEvent","data":{"tool_use_id":"tooluse_O4_nf9BkQgygWpWOMGhR0g","name":"read","input":"ead the","stop":null}}}
+{"kind":"event","data":{"kind":"ToolUseEvent","data":{"tool_use_id":"tooluse_O4_nf9BkQgygWpWOMGhR0g","name":"read","input":" updat","stop":null}}}
+{"kind":"event","data":{"kind":"ToolUseEvent","data":{"tool_use_id":"tooluse_O4_nf9BkQgygWpWOMGhR0g","name":"read","input":"ed contents ","stop":null}}}
+{"kind":"event","data":{"kind":"ToolUseEvent","data":{"tool_use_id":"tooluse_O4_nf9BkQgygWpWOMGhR0g","name":"read","input":"of hell","stop":null}}}
+{"kind":"event","data":{"kind":"ToolUseEvent","data":{"tool_use_id":"tooluse_O4_nf9BkQgygWpWOMGhR0g","name":"read","input":"o.py\"","stop":null}}}
+{"kind":"event","data":{"kind":"ToolUseEvent","data":{"tool_use_id":"tooluse_O4_nf9BkQgygWpWOMGhR0g","name":"read","input":", \"","stop":null}}}
+{"kind":"event","data":{"kind":"ToolUseEvent","data":{"tool_use_id":"tooluse_O4_nf9BkQgygWpWOMGhR0g","name":"read","input":"ops\": [{\"pat","stop":null}}}
+{"kind":"event","data":{"kind":"ToolUseEvent","data":{"tool_use_id":"tooluse_O4_nf9BkQgygWpWOMGhR0g","name":"read","input":"h\":","stop":null}}}
+{"kind":"event","data":{"kind":"ToolUseEvent","data":{"tool_use_id":"tooluse_O4_nf9BkQgygWpWOMGhR0g","name":"read","input":"\"hel","stop":null}}}
+{"kind":"event","data":{"kind":"ToolUseEvent","data":{"tool_use_id":"tooluse_O4_nf9BkQgygWpWOMGhR0g","name":"read","input":"lo.py\"}]}","stop":null}}}
+{"kind":"event","data":{"kind":"ToolUseEvent","data":{"tool_use_id":"tooluse_O4_nf9BkQgygWpWOMGhR0g","name":"read","input":null,"stop":true}}}
+
+// Simple text response to end turn
+{"kind":"event","data":{"kind":"AssistantResponseEvent","data":{"content":"Hello from the agent!"}}}

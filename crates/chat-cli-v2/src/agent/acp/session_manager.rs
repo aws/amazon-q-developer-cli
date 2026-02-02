@@ -4,21 +4,13 @@ use std::borrow::Cow;
 use std::collections::HashMap;
 use std::path::PathBuf;
 
-use agent::AgentHandle;
 use agent::agent_config::{
     ConfigSource,
     LoadedAgentConfig,
     load_agents,
 };
-use agent::agent_loop::types::ToolUseBlock;
 use agent::consts::DEFAULT_AGENT_NAME;
-use sacp::schema::{
-    SessionId,
-    SessionNotification,
-    SessionUpdate,
-    ToolCallId,
-    ToolCallUpdate,
-};
+use sacp::schema::SessionId;
 use sacp::{
     AgentToClient,
     JrConnectionCx,
@@ -144,9 +136,6 @@ impl SessionManagerBuilder {
             );
 
             loop {
-                // Flush any buffered notifications at the start of each iteration
-                session_manager.flush_notifications();
-
                 tokio::select! {
                     req = session_rx.recv() => {
                         let Some(request) = req else {
@@ -165,21 +154,16 @@ impl SessionManagerBuilder {
 
 /// Central coordinator that owns all active ACP sessions.
 ///
-/// Routes requests to the appropriate session and sends notifications to the ACP client.
+/// Manages session lifecycle (creation, retrieval, termination).
 #[derive(Clone, Debug)]
 pub struct SessionManager {
     sessions: HashMap<SessionId, AcpSessionHandle>,
-    client_connection: Option<JrConnectionCx<AgentToClient>>,
     agent_configs: Vec<LoadedAgentConfig>,
     os: Os,
     local_mcp_path: Option<PathBuf>,
     global_mcp_path: Option<PathBuf>,
     session_manager_handle: SessionManagerHandle,
     mock_registry: Option<MockResponseRegistryHandle>,
-    /// Buffer for notifications to be sent to the client at the start of the next loop iteration
-    notification_buf: Vec<SessionNotification>,
-    /// Per-session set of trusted tool names (tools that user selected "Trust" for)
-    trusted_tools: HashMap<SessionId, std::collections::HashSet<String>>,
 }
 
 impl SessionManager {
@@ -197,29 +181,12 @@ impl SessionManager {
     ) -> Self {
         Self {
             sessions: HashMap::new(),
-            client_connection: None,
             agent_configs,
             os,
             local_mcp_path,
             global_mcp_path,
             session_manager_handle,
             mock_registry,
-            notification_buf: Vec::new(),
-            trusted_tools: HashMap::new(),
-        }
-    }
-
-    /// Drains and sends all buffered notifications to the client.
-    fn flush_notifications(&mut self) {
-        if let Some(ref cx) = self.client_connection {
-            for notification in self.notification_buf.drain(..) {
-                if let Err(e) = cx.send_notification(notification) {
-                    error!(?e, "Failed to send buffered notification");
-                }
-            }
-        } else {
-            // No client connection, just clear the buffer
-            self.notification_buf.clear();
         }
     }
 
@@ -311,6 +278,15 @@ impl SessionManager {
                     .session_tx(self.session_manager_handle.clone())
                     .set_as_subagent(config.is_subagent);
 
+                // Pass client connection to session (required)
+                if let Some(cx) = connection_cx {
+                    builder = builder.connection_cx(cx);
+                } else {
+                    error!("No client connection provided for session");
+                    _ = resp_sender.send(Err(sacp::util::internal_error("Missing client connection")));
+                    return;
+                }
+
                 if let Some(ref registry) = self.mock_registry {
                     builder = builder.mock_registry(registry.clone());
                 }
@@ -342,12 +318,6 @@ impl SessionManager {
                         let current_model_id = handle.get_model_id().await.unwrap_or_default();
                         let handle_to_give = handle.clone();
                         self.sessions.insert(session_id.clone(), handle);
-                        // Register the client connection if provided
-                        if let Some(cx) = connection_cx
-                            && self.client_connection.is_none()
-                        {
-                            self.client_connection.replace(cx);
-                        }
                         _ = resp_sender.send(Ok(StartSessionResult {
                             handle: handle_to_give,
                             ready_rx,
@@ -380,112 +350,9 @@ impl SessionManager {
                     warn!(?session_id, "Attempted to terminate non-existent session");
                 }
             },
-            SessionManagerRequestData::CancelSession => {
-                if let Some(session_handle) = self.sessions.get(&session_id) {
-                    // Cancel the session - the agent handles all internal cancellation logic
-                    let _ = session_handle.cancel().await;
-                } else {
-                    warn!(?session_id, "Attempted to cancel non-existent session");
-                }
-            },
-            SessionManagerRequestData::SendNotification { update } => {
-                if let Some(cx) = self.client_connection.as_ref() {
-                    if let Err(e) = cx.send_notification(SessionNotification::new(session_id.clone(), *update)) {
-                        warn!("Failed to send notification to {}: {}", session_id, e);
-                    }
-                } else {
-                    warn!("No client connection found for session {}", session_id);
-                }
-            },
-            SessionManagerRequestData::SendMetadata {
-                context_usage_percentage,
-            } => {
-                if let Some(cx) = self.client_connection.as_ref() {
-                    let notification = super::schema::MetadataNotification {
-                        session_id: session_id.to_string(),
-                        context_usage_percentage,
-                    };
-                    if let Err(e) = cx.send_notification(notification) {
-                        warn!("Failed to send metadata notification: {}", e);
-                    }
-                }
-            },
-            SessionManagerRequestData::SendExtNotification { method, params } => {
-                if let Some(cx) = self.client_connection.as_ref() {
-                    let params_raw = match serde_json::value::to_raw_value(&params) {
-                        Ok(raw) => raw,
-                        Err(e) => {
-                            warn!("Failed to serialize extension notification params: {}", e);
-                            return;
-                        },
-                    };
-                    let ext_notification = sacp::schema::ExtNotification::new(method, std::sync::Arc::from(params_raw));
-                    let notification = sacp::schema::AgentNotification::ExtNotification(ext_notification);
-                    if let Err(e) = cx.send_notification(notification) {
-                        warn!("Failed to send extension notification: {}", e);
-                    }
-                } else {
-                    warn!("No client connection found for extension notification");
-                }
-            },
-            SessionManagerRequestData::ToolUseApprovalRequest {
-                tool_use_id,
-                tool_use,
-                agent_handle,
-            } => {
-                let Some(cx) = self.client_connection.as_ref() else {
-                    warn!(?session_id, "No client connection found for tool approval request");
-                    return;
-                };
-
-                // Check if this tool is already trusted for this session
-                let is_trusted = self
-                    .trusted_tools
-                    .get(&session_id)
-                    .is_some_and(|tools| tools.contains(&tool_use.name));
-
-                if is_trusted {
-                    // Auto-approve trusted tools
-                    if let Err(e) = agent_handle
-                        .send_tool_use_approval_result(agent::protocol::SendApprovalResultArgs {
-                            id: tool_use_id,
-                            result: agent::protocol::ApprovalResult::Approve,
-                        })
-                        .await
-                    {
-                        error!("Failed to send auto-approval for trusted tool: {}", e);
-                    }
-                } else {
-                    // Create a channel for the approval handler to notify us of trust decisions
-                    let (trust_tx, mut trust_rx) = mpsc::channel::<String>(1);
-                    let session_manager_handle = self.session_manager_handle.clone();
-                    let session_id_clone = session_id.clone();
-
-                    // Spawn a task to handle trust notifications
-                    tokio::spawn(async move {
-                        if let Some(tool_name) = trust_rx.recv().await {
-                            session_manager_handle
-                                .add_trusted_tool(&session_id_clone, tool_name)
-                                .await;
-                        }
-                    });
-
-                    tokio::spawn(handle_approval_request(
-                        tool_use_id,
-                        tool_use,
-                        agent_handle,
-                        cx.clone(),
-                        session_id,
-                        trust_tx,
-                    ));
-                }
-            },
             SessionManagerRequestData::SetMode { mode_id, resp_sender } => {
                 let result = self.handle_set_mode(&session_id, &mode_id).await;
                 _ = resp_sender.send(result);
-            },
-            SessionManagerRequestData::AddTrustedTool { tool_name } => {
-                self.trusted_tools.entry(session_id).or_default().insert(tool_name);
             },
         }
     }
@@ -510,28 +377,9 @@ pub(crate) enum SessionManagerRequestData {
         resp_sender: oneshot::Sender<Result<AcpSessionHandle, sacp::Error>>,
     },
     TerminateSession,
-    CancelSession,
-    SendNotification {
-        update: Box<SessionUpdate>,
-    },
-    SendMetadata {
-        context_usage_percentage: Option<f32>,
-    },
-    SendExtNotification {
-        method: String,
-        params: serde_json::Value,
-    },
-    ToolUseApprovalRequest {
-        tool_use_id: String,
-        tool_use: ToolUseBlock,
-        agent_handle: AgentHandle,
-    },
     SetMode {
         mode_id: String,
         resp_sender: oneshot::Sender<Result<(), sacp::Error>>,
-    },
-    AddTrustedTool {
-        tool_name: String,
     },
 }
 
@@ -577,93 +425,12 @@ impl SessionManagerHandle {
             .map_err(|_e| sacp::util::internal_error("Failed to receive session response"))?
     }
 
-    pub async fn send_notification(&self, update: SessionUpdate, session_id: SessionId) -> Result<(), sacp::Error> {
-        self.tx
-            .send(SessionManagerRequest {
-                session_id,
-                data: SessionManagerRequestData::SendNotification {
-                    update: Box::new(update),
-                },
-            })
-            .await
-            .map_err(|_e| sacp::util::internal_error("Failed to send notification"))?;
-        Ok(())
-    }
-
-    pub async fn send_turn_metadata(
-        &self,
-        session_id: SessionId,
-        metadata: &agent::agent_loop::protocol::UserTurnMetadata,
-    ) -> Result<(), sacp::Error> {
-        self.tx
-            .send(SessionManagerRequest {
-                session_id,
-                data: SessionManagerRequestData::SendMetadata {
-                    context_usage_percentage: metadata.context_usage_percentage,
-                },
-            })
-            .await
-            .map_err(|_e| sacp::util::internal_error("Failed to send metadata"))?;
-        Ok(())
-    }
-
-    pub async fn send_ext_notification<T: serde::Serialize>(
-        &self,
-        method: &str,
-        params: T,
-        session_id: SessionId,
-    ) -> Result<(), sacp::Error> {
-        let params_value = serde_json::to_value(params)
-            .map_err(|e| sacp::util::internal_error(format!("Failed to serialize params: {}", e)))?;
-        self.tx
-            .send(SessionManagerRequest {
-                session_id,
-                data: SessionManagerRequestData::SendExtNotification {
-                    method: method.to_string(),
-                    params: params_value,
-                },
-            })
-            .await
-            .map_err(|_e| sacp::util::internal_error("Failed to send extension notification"))?;
-        Ok(())
-    }
-
     pub async fn terminate_session(&self, session_id: &SessionId) {
         let _ = self
             .tx
             .send(SessionManagerRequest {
                 session_id: session_id.clone(),
                 data: SessionManagerRequestData::TerminateSession,
-            })
-            .await;
-    }
-
-    pub async fn cancel_session(&self, session_id: &SessionId) {
-        let _ = self
-            .tx
-            .send(SessionManagerRequest {
-                session_id: session_id.clone(),
-                data: SessionManagerRequestData::CancelSession,
-            })
-            .await;
-    }
-
-    pub async fn request_permission(
-        &self,
-        tool_use_id: String,
-        tool_use: ToolUseBlock,
-        session_id: SessionId,
-        agent_handle: AgentHandle,
-    ) {
-        let _ = self
-            .tx
-            .send(SessionManagerRequest {
-                session_id,
-                data: SessionManagerRequestData::ToolUseApprovalRequest {
-                    tool_use_id,
-                    tool_use,
-                    agent_handle,
-                },
             })
             .await;
     }
@@ -680,118 +447,4 @@ impl SessionManagerHandle {
         rx.await
             .map_err(|_e| sacp::util::internal_error("Failed to receive set_mode response"))?
     }
-
-    pub async fn add_trusted_tool(&self, session_id: &SessionId, tool_name: String) {
-        let _ = self
-            .tx
-            .send(SessionManagerRequest {
-                session_id: session_id.clone(),
-                data: SessionManagerRequestData::AddTrustedTool { tool_name },
-            })
-            .await;
-    }
-}
-
-// Permission option IDs for tool approval
-mod permission_options {
-    pub const ALLOW_ONCE: &str = "allow_once";
-    pub const REJECT_ONCE: &str = "reject_once";
-    pub const ALLOW_ALWAYS: &str = "allow_always";
-}
-
-async fn handle_approval_request(
-    id: String,
-    tool_use: ToolUseBlock,
-    agent: AgentHandle,
-    cx: JrConnectionCx<AgentToClient>,
-    session_id: SessionId,
-    trust_tx: mpsc::Sender<String>,
-) -> Result<(), sacp::Error> {
-    use std::str::FromStr;
-
-    use agent::agent_config::parse::CanonicalToolName;
-    use agent::tools::Tool;
-    use sacp::schema::{
-        PermissionOption,
-        PermissionOptionKind,
-        RequestPermissionRequest,
-        ToolCallUpdateFields,
-    };
-
-    use super::acp_agent::get_tool_title;
-
-    let tool_name = tool_use.name.clone();
-
-    // Generate descriptive title by parsing the tool
-    let title = CanonicalToolName::from_str(&tool_use.name)
-        .ok()
-        .and_then(|name| Tool::parse(&name, tool_use.input.clone()).ok())
-        .map_or_else(|| tool_use.name.clone(), |tool| get_tool_title(&tool));
-
-    // Send permission request to client
-    let response = cx
-        .send_request(RequestPermissionRequest::new(
-            session_id,
-            ToolCallUpdate::new(
-                ToolCallId::new(id.clone()),
-                ToolCallUpdateFields::new().title(Some(title)),
-            ),
-            vec![
-                PermissionOption::new(permission_options::ALLOW_ONCE, "Yes", PermissionOptionKind::AllowOnce),
-                PermissionOption::new(permission_options::REJECT_ONCE, "No", PermissionOptionKind::RejectOnce),
-                PermissionOption::new(
-                    permission_options::ALLOW_ALWAYS,
-                    "Trust",
-                    PermissionOptionKind::AllowAlways,
-                ),
-            ],
-        ))
-        .block_task()
-        .await;
-
-    let res = match response {
-        Ok(resp) => resp,
-        Err(e) => {
-            error!("Failed to get permission response: {:?}", e);
-            return Ok(());
-        },
-    };
-
-    let (approval_result, should_trust) = match res.outcome {
-        sacp::schema::RequestPermissionOutcome::Selected(selected) => match selected.option_id.0.as_ref() {
-            id if id == permission_options::REJECT_ONCE => (
-                agent::protocol::ApprovalResult::Deny {
-                    reason: Some("User denied tool execution".to_string()),
-                },
-                false,
-            ),
-            id if id == permission_options::ALLOW_ALWAYS => (agent::protocol::ApprovalResult::Approve, true),
-            _ => (agent::protocol::ApprovalResult::Approve, false),
-        },
-        sacp::schema::RequestPermissionOutcome::Cancelled => (
-            agent::protocol::ApprovalResult::Deny {
-                reason: Some("User cancelled".to_string()),
-            },
-            false,
-        ),
-        _ => (
-            agent::protocol::ApprovalResult::Deny {
-                reason: Some("Unknown response".to_string()),
-            },
-            false,
-        ),
-    };
-
-    // If user selected "Trust", notify the session manager to add this tool to trusted list
-    if should_trust {
-        let _ = trust_tx.send(tool_name).await;
-    }
-
-    agent
-        .send_tool_use_approval_result(agent::protocol::SendApprovalResultArgs {
-            id,
-            result: approval_result,
-        })
-        .await
-        .map_err(|e| sacp::util::internal_error(format!("Failed to send approval result: {}", e)))
 }
