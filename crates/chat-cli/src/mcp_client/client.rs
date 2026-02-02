@@ -4,19 +4,19 @@ use std::process::Stdio;
 
 use regex::Regex;
 use rmcp::model::{
-    CallToolRequestParam,
+    CallToolRequestParams,
     CallToolResult,
     ClientResult,
     ErrorCode,
-    GetPromptRequestParam,
+    GetPromptRequestParams,
     GetPromptResult,
     Implementation,
-    InitializeRequestParam,
+    InitializeRequestParams,
     ListPromptsResult,
     ListToolsResult,
     LoggingLevel,
     LoggingMessageNotificationParam,
-    PaginatedRequestParam,
+    PaginatedRequestParams,
     ServerNotification,
     ServerRequest,
 };
@@ -79,7 +79,7 @@ macro_rules! paginated_fetch {
             let mut content = Vec::<$content_type>::new();
 
             loop {
-                let param = Some(PaginatedRequestParam { cursor: cursor.clone() });
+                let param = Some(PaginatedRequestParams { cursor: cursor.clone(), meta: None });
                 match $service.$service_method(param).await {
                     Ok(mut result) => {
                         if let Some(s) = result.next_cursor {
@@ -258,9 +258,9 @@ impl Clone for RunningService {
 }
 
 impl RunningService {
-    decorate_with_auth_retry!(CallToolRequestParam, call_tool, CallToolResult);
+    decorate_with_auth_retry!(CallToolRequestParams, call_tool, CallToolResult);
 
-    decorate_with_auth_retry!(GetPromptRequestParam, get_prompt, GetPromptResult);
+    decorate_with_auth_retry!(GetPromptRequestParams, get_prompt, GetPromptResult);
 }
 
 /// This struct implements the [Service] trait from rmcp. It is within this trait the logic of
@@ -561,6 +561,11 @@ impl Service<RoleClient> for McpClientService {
             ServerRequest::CreateElicitationRequest(_) => Err(rmcp::ErrorData::method_not_found::<
                 rmcp::model::ElicitationCreateRequestMethod,
             >()),
+            ServerRequest::CustomRequest(req) => Err(rmcp::ErrorData::new(
+                rmcp::model::ErrorCode::METHOD_NOT_FOUND,
+                format!("Method not found: {}", req.method),
+                None,
+            )),
         }
     }
 
@@ -580,12 +585,13 @@ impl Service<RoleClient> for McpClientService {
             ServerNotification::ResourceUpdatedNotification(_) => (),
             ServerNotification::ResourceListChangedNotification(_) => (),
             ServerNotification::ProgressNotification(_) => (),
+            ServerNotification::CustomNotification(_) => (),
         };
         Ok(())
     }
 
     fn get_info(&self) -> <RoleClient as rmcp::service::ServiceRole>::Info {
-        InitializeRequestParam {
+        InitializeRequestParams {
             protocol_version: Default::default(),
             capabilities: Default::default(),
             client_info: Implementation {
@@ -593,6 +599,7 @@ impl Service<RoleClient> for McpClientService {
                 version: "1.0.0".to_string(),
                 ..Default::default()
             },
+            meta: None,
         }
     }
 }

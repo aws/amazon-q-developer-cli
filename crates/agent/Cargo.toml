@@ -55,7 +55,7 @@ r2d2_sqlite.workspace = true
 rand.workspace = true
 regex.workspace = true
 reqwest.workspace = true
-rmcp.workspace = true
+rmcp = { version = "0.8.0", features = ["client", "transport-sse-client-reqwest", "reqwest", "transport-streamable-http-client-reqwest", "transport-child-process", "tower", "auth"] }
 rusqlite.workspace = true
 rustls.workspace = true
 rustls-native-certs.workspace = true

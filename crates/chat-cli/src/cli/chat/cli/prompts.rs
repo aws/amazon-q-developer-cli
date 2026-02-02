@@ -2474,6 +2474,7 @@ mod tests {
                     required: Some(false),
                 },
             ]),
+            meta: None,
         };
 
         let bundle1 = PromptBundle {

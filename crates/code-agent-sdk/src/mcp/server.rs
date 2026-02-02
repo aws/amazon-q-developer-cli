@@ -4,13 +4,13 @@ use std::sync::Arc;
 use anyhow::Result;
 use rmcp::ServerHandler;
 use rmcp::model::{
-    CallToolRequestParam,
+    CallToolRequestParams,
     CallToolResult,
     Content,
     ErrorCode,
     ErrorData,
     ListToolsResult,
-    PaginatedRequestParam,
+    PaginatedRequestParams,
     ServerCapabilities,
     ServerInfo,
     Tool,
@@ -82,7 +82,7 @@ impl ServerHandler for CodeIntelligenceServer {
 
     async fn list_tools(
         &self,
-        _request: Option<PaginatedRequestParam>,
+        _request: Option<PaginatedRequestParams>,
         _context: RequestContext<RoleServer>,
     ) -> Result<ListToolsResult, ErrorData> {
         let tools = vec![
@@ -97,6 +97,7 @@ impl ServerHandler for CodeIntelligenceServer {
                 annotations: None,
                 icons: None,
                 title: None,
+                meta: None,
             },
             Tool {
                 name: "initialize_workspace".into(),
@@ -109,6 +110,7 @@ impl ServerHandler for CodeIntelligenceServer {
                 annotations: None,
                 icons: None,
                 title: None,
+                meta: None,
             },
             Tool {
                 name: "search_symbols".into(),
@@ -145,6 +147,7 @@ impl ServerHandler for CodeIntelligenceServer {
                 annotations: None,
                 icons: None,
                 title: None,
+                meta: None,
             },
             Tool {
                 name: "lookup_symbols".into(),
@@ -168,6 +171,7 @@ impl ServerHandler for CodeIntelligenceServer {
                 annotations: None,
                 icons: None,
                 title: None,
+                meta: None,
             },
             Tool {
                 name: "get_document_symbols".into(),
@@ -191,6 +195,7 @@ impl ServerHandler for CodeIntelligenceServer {
                 annotations: None,
                 icons: None,
                 title: None,
+                meta: None,
             },
             Tool {
                 name: "goto_definition".into(),
@@ -222,6 +227,7 @@ impl ServerHandler for CodeIntelligenceServer {
                 annotations: None,
                 icons: None,
                 title: None,
+                meta: None,
             },
             Tool {
                 name: "find_references".into(),
@@ -248,6 +254,7 @@ impl ServerHandler for CodeIntelligenceServer {
                 annotations: None,
                 icons: None,
                 title: None,
+                meta: None,
             },
             Tool {
                 name: "search_references".into(),
@@ -266,6 +273,7 @@ impl ServerHandler for CodeIntelligenceServer {
                 annotations: None,
                 icons: None,
                 title: None,
+                meta: None,
             },
             Tool {
                 name: "rename_symbol".into(),
@@ -301,6 +309,7 @@ impl ServerHandler for CodeIntelligenceServer {
                 annotations: None,
                 icons: None,
                 title: None,
+                meta: None,
             },
             Tool {
                 name: "format_code".into(),
@@ -329,18 +338,20 @@ impl ServerHandler for CodeIntelligenceServer {
                 annotations: None,
                 icons: None,
                 title: None,
+                meta: None,
             },
         ];
 
         Ok(ListToolsResult {
             tools,
             next_cursor: None,
+            meta: None,
         })
     }
 
     async fn call_tool(
         &self,
-        request: CallToolRequestParam,
+        request: CallToolRequestParams,
         _context: RequestContext<RoleServer>,
     ) -> Result<CallToolResult, ErrorData> {
         match request.name.as_ref() {

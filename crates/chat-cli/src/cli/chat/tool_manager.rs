@@ -36,7 +36,7 @@ use futures::future;
 use regex::Regex;
 use rmcp::ServiceError;
 use rmcp::model::{
-    GetPromptRequestParam,
+    GetPromptRequestParams,
     GetPromptResult,
     Prompt,
 };
@@ -1336,9 +1336,10 @@ impl ToolManager {
 
                     let arguments = Self::process_prompt_arguments(&prompt_get.arguments, &arguments);
 
-                    let params = GetPromptRequestParam {
+                    let params = GetPromptRequestParams {
                         name: prompt_name.clone(),
                         arguments,
+                        meta: None,
                     };
                     let running_service = client.get_running_service().await?;
                     let resp = running_service.get_prompt(params).await?;
@@ -2373,6 +2374,7 @@ mod tests {
             title: None,
             icons: None,
             arguments: None,
+            meta: None,
         };
 
         let bundle1 = PromptBundle {
@@ -2409,9 +2411,10 @@ mod tests {
         let prompt_name = prompt_name.unwrap();
 
         // This is what should be passed to MCP server
-        let params = GetPromptRequestParam {
+        let params = GetPromptRequestParams {
             name: prompt_name.clone(),
             arguments: None,
+            meta: None,
         };
 
         assert_eq!(params.name, "test-prompt"); // Not "example-server/test-prompt"

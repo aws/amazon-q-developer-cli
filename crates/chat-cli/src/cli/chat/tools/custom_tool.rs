@@ -7,7 +7,7 @@ use crossterm::{
     style,
 };
 use eyre::Result;
-use rmcp::model::CallToolRequestParam;
+use rmcp::model::CallToolRequestParams;
 use schemars::JsonSchema;
 use serde::{
     Deserialize,
@@ -212,9 +212,11 @@ impl CustomTool {
     }
 
     pub async fn invoke(&self, _os: &Os, _updates: &mut impl Write) -> Result<InvokeOutput> {
-        let params = CallToolRequestParam {
+        let params = CallToolRequestParams {
             name: Cow::from(self.name.clone()),
             arguments: self.params.clone(),
+            meta: None,
+            task: None,
         };
 
         let resp = self.client.call_tool(params.clone()).await?;
