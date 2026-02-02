@@ -1,4 +1,5 @@
 use crate::theme::StyledText;
+use crate::util::consts::env_var::KIRO_CHAT_LOG_FILE;
 use crate::util::env_var::is_log_stdout_enabled;
 pub mod agent;
 pub mod chat;
@@ -254,10 +255,15 @@ impl Cli {
                 false => None,
             },
             log_to_stdout: is_log_stdout_enabled() || self.verbose > 0,
-            log_file_path: match subcommand {
-                RootSubcommand::Chat { .. } => Some(logs_dir().expect("home dir must be set").join("kiro-chat.log")),
-                _ => None,
-            },
+            log_file_path: std::env::var(KIRO_CHAT_LOG_FILE)
+                .ok()
+                .map(std::path::PathBuf::from)
+                .or_else(|| match subcommand {
+                    RootSubcommand::Chat { .. } | RootSubcommand::Acp => {
+                        Some(logs_dir().expect("logs dir must be set").join("kiro-chat.log"))
+                    },
+                    _ => None,
+                }),
             delete_old_log_file: false,
         });
 

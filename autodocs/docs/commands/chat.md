@@ -1,13 +1,13 @@
 ---
 doc_meta:
-  validated: 2026-01-28
-  commit: 0b13a71c
+  validated: 2026-01-30
+  commit: e41c5854
   status: validated
   testable_headless: true
   category: command
   title: kiro-cli chat
   description: Start AI assistant session with support for agents, models, tool trust, and conversation management
-  keywords: [chat, conversation, agent, model, interactive, headless, mcp, require-mcp-startup]
+  keywords: [chat, conversation, agent, model, interactive, headless, mcp, require-mcp-startup, log, logging]
   related: [slash-chat-save, slash-chat-load, slash-agent, exit-codes]
 ---
 
@@ -251,3 +251,14 @@ Use `--no-interactive` for automation and scripts:
 **Headless Mode**: Sets non-interactive flag, disables terminal UI, requires initial query.
 
 **Line Wrapping**: Auto-detects terminal width. Override with `--wrap always` or `--wrap never`.
+
+**Logging**: Chat sessions write logs to platform-specific locations:
+- **macOS**: `$TMPDIR/kiro-log/kiro-chat.log`
+- **Linux**: `$XDG_RUNTIME_DIR/kiro-log/kiro-chat.log`
+- **Windows**: `%TEMP%/kiro-log/logs/kiro-chat.log`
+
+Override with `KIRO_CHAT_LOG_FILE` environment variable:
+
+```bash
+KIRO_CHAT_LOG_FILE=/tmp/my-debug.log kiro-cli chat
+```

@@ -1,5 +1,5 @@
 {
-  "generated_at": "2026-02-02T07:20:47.926857",
+  "generated_at": "2026-02-02T12:55:15.240006",
   "total_docs": 93,
   "by_category": {
     "command": [
@@ -144,7 +144,9 @@
         "interactive",
         "headless",
         "mcp",
-        "require-mcp-startup"
+        "require-mcp-startup",
+        "log",
+        "logging"
       ],
       "related": [
         "slash-chat-save",
@@ -152,7 +154,7 @@
         "slash-agent",
         "exit-codes"
       ],
-      "validated": "2026-01-28",
+      "validated": "2026-01-30",
       "status": "validated"
     },
     {

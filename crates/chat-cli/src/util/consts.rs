@@ -97,6 +97,9 @@ pub mod env_var {
         Q_LOG_STDOUT = "Q_LOG_STDOUT",
         KIRO_LOG_STDOUT = "KIRO_LOG_STDOUT",
 
+        /// Log file path override
+        KIRO_CHAT_LOG_FILE = "KIRO_CHAT_LOG_FILE",
+
         /// Disable telemetry
         Q_DISABLE_TELEMETRY = "Q_DISABLE_TELEMETRY",
         KIRO_DISABLE_TELEMETRY = "KIRO_DISABLE_TELEMETRY",
