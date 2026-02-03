@@ -325,10 +325,9 @@ async fn session_cancel_notification() {
 }
 
 #[tokio::test(flavor = "multi_thread")]
-#[ignore = "disabled for ux-refresh merge"]
+#[ignore = "still running into hangs. will need to investigate"]
 #[timeout(10000)]
 #[serial]
-#[ignore = "still running into hangs. will need to investigate"]
 async fn cancel_mid_stream_partial_response() {
     use chat_cli_v2::api_client::send_message_output::MockStreamItem;
 
@@ -1179,10 +1178,9 @@ async fn str_replace_tool_call_includes_location_with_line_number() {
 }
 
 #[tokio::test]
-#[ignore = "disabled for ux-refresh merge"]
+#[ignore = "broken, needs to be fixed"]
 #[timeout(10000)]
 #[serial]
-#[ignore = "broken, needs to be fixed"]
 async fn context_usage_flows_to_user_turn_metadata() {
     let (mut harness, client, session_id, _) = AcpTestHarnessBuilder::new("context_usage_flows_to_user_turn_metadata")
         .build_with_session()
