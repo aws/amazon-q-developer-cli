@@ -377,6 +377,21 @@ impl Model for RtsModel {
 
         Box::pin(ReceiverStream::new(rx))
     }
+
+    fn invoke_mcp(
+        &self,
+        tool_name: &str,
+        arguments: serde_json::Value,
+    ) -> Pin<Box<dyn std::future::Future<Output = Result<serde_json::Value, String>> + Send + '_>> {
+        let client = self.client.clone();
+        let tool_name = tool_name.to_string();
+        Box::pin(async move {
+            client
+                .invoke_mcp(&tool_name, arguments)
+                .await
+                .map_err(|e| e.to_string())
+        })
+    }
 }
 
 /// Contains only the serializable data associated with [RtsModel].

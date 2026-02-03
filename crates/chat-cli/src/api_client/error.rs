@@ -74,6 +74,9 @@ pub enum ApiClientError {
 
     #[error(transparent)]
     GetProfileError(#[from] SdkError<GetProfileError, HttpResponse>),
+
+    #[error("{0}")]
+    Other(String),
 }
 
 impl ApiClientError {
@@ -95,6 +98,7 @@ impl ApiClientError {
             Self::DefaultModelNotFound => None,
             Self::GetProfileError(e) => sdk_status_code(e),
             Self::GetUsageLimitsError(e) => sdk_status_code(e),
+            Self::Other(_) => None,
         }
     }
 }
@@ -118,6 +122,7 @@ impl ReasonCode for ApiClientError {
             Self::DefaultModelNotFound => "DefaultModelNotFound".to_string(),
             Self::GetProfileError(e) => sdk_error_code(e),
             Self::GetUsageLimitsError(e) => sdk_error_code(e),
+            Self::Other(_) => "Other".to_string(),
         }
     }
 }
