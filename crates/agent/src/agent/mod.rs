@@ -1929,6 +1929,8 @@ impl Agent {
                 BuiltInTool::SpawnSubagent(_) => Ok(()),
                 BuiltInTool::ImageRead(t) => t.validate().await.map_err(ToolParseErrorKind::invalid_args),
                 BuiltInTool::UseAws(t) => t.validate().await.map_err(ToolParseErrorKind::invalid_args),
+                BuiltInTool::WebFetch(_) => Ok(()),
+                BuiltInTool::WebSearch(_) => Ok(()),
             },
             ToolKind::Mcp(_) => Ok(()),
         }
@@ -2049,6 +2051,11 @@ impl Agent {
                     Box::pin(async move { t.execute(result_tx).await })
                 },
                 BuiltInTool::UseAws(t) => Box::pin(async move { t.execute().await }),
+                BuiltInTool::WebFetch(t) => Box::pin(async move { t.execute().await }),
+                BuiltInTool::WebSearch(t) => {
+                    let model = Arc::clone(&self.model);
+                    Box::pin(async move { t.execute(&*model).await })
+                },
             },
             ToolKind::Mcp(t) => {
                 let mcp_tool = t.clone();

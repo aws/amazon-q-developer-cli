@@ -169,6 +169,7 @@ struct RealApiClient {
     mock_client: Option<Arc<Mutex<std::vec::IntoIter<Vec<ChatResponseStream>>>>>,
     profile: Option<AuthProfile>,
     model_cache: ModelCache,
+    endpoint: Endpoint,
 }
 
 /// Handle to an actor that owns a shared registry for mock API responses, keyed by session_id.
@@ -533,6 +534,7 @@ impl RealApiClient {
                 mock_client: None,
                 profile: None,
                 model_cache: Arc::new(RwLock::new(None)),
+                endpoint: endpoint.clone(),
             };
 
             if let Some(json) = crate::util::env_var::get_mock_chat_response(env) {
@@ -578,6 +580,7 @@ impl RealApiClient {
             mock_client: None,
             profile,
             model_cache: Arc::new(RwLock::new(None)),
+            endpoint,
         })
     }
 
@@ -855,10 +858,142 @@ impl RealApiClient {
 
         self.mock_client = Some(Arc::new(Mutex::new(mock.into_iter())));
     }
+
+    async fn invoke_mcp(
+        &self,
+        tool_name: &str,
+        arguments: serde_json::Value,
+    ) -> Result<serde_json::Value, ApiClientError> {
+        let Some(streaming_client) = &self.streaming_client else {
+            return Err(ApiClientError::Other("Streaming client not available".into()));
+        };
+
+        let params = aws_smithy_types::Document::Object(
+            [
+                (
+                    "name".to_string(),
+                    aws_smithy_types::Document::String(tool_name.to_string()),
+                ),
+                ("arguments".to_string(), json_to_document(&arguments)),
+            ]
+            .into_iter()
+            .collect(),
+        );
+
+        let response = streaming_client
+            .invoke_mcp()
+            .jsonrpc("2.0")
+            .id("1".into())
+            .method(amzn_codewhisperer_streaming_client::types::McpMethod::ToolsCall)
+            .params(params)
+            .send()
+            .await
+            .map_err(|e| ApiClientError::Other(format!("Failed to invoke MCP: {e}")))?;
+
+        if let Some(error) = response.error() {
+            return Err(ApiClientError::Other(format!("MCP error: {error:?}")));
+        }
+
+        let result_doc = response
+            .result()
+            .ok_or_else(|| ApiClientError::Other("No result in MCP response".to_string()))?;
+
+        // Check for isError field
+        if let aws_smithy_types::Document::Object(map) = result_doc
+            && let Some(aws_smithy_types::Document::Bool(true)) = map.get("isError")
+        {
+            let error_msg = map
+                .get("content")
+                .and_then(|c| match c {
+                    aws_smithy_types::Document::Array(arr) => arr.first(),
+                    _ => None,
+                })
+                .and_then(|item| match item {
+                    aws_smithy_types::Document::Object(obj) => obj.get("text"),
+                    _ => None,
+                })
+                .and_then(|text| match text {
+                    aws_smithy_types::Document::String(s) => Some(s.as_str()),
+                    _ => None,
+                })
+                .unwrap_or("Unknown error");
+            return Err(ApiClientError::Other(format!("MCP tool failed: {error_msg}")));
+        }
+
+        let result_json = document_to_json(result_doc).map_err(|e| *e)?;
+
+        // Handle both string and object responses
+        let content_text: String = if let Some(result_str) = result_json.as_str() {
+            let first_level: serde_json::Value = serde_json::from_str(result_str)
+                .map_err(|e| ApiClientError::Other(format!("Failed to parse JSON: {e}")))?;
+
+            first_level
+                .get("content")
+                .and_then(|c| c.as_array())
+                .and_then(|arr| arr.first())
+                .and_then(|item| item.get("text"))
+                .and_then(|t| t.as_str())
+                .map(|s| s.to_string())
+                .ok_or_else(|| ApiClientError::Other("No text in content array".to_string()))?
+        } else if result_json.is_object() {
+            result_json
+                .get("content")
+                .and_then(|c| c.as_array())
+                .and_then(|arr| arr.first())
+                .and_then(|item| item.get("text"))
+                .and_then(|t| t.as_str())
+                .map(|s| s.to_string())
+                .ok_or_else(|| ApiClientError::Other("No text in content array".to_string()))?
+        } else {
+            return Err(ApiClientError::Other(format!(
+                "Unexpected result type: {result_json:?}"
+            )));
+        };
+
+        serde_json::from_str(&content_text).map_err(|e| ApiClientError::Other(format!("Failed to parse result: {e}")))
+    }
 }
 
 fn is_custom_endpoint(database: &Database) -> bool {
     database.settings.get(Setting::ApiCodeWhispererService).is_some()
+}
+
+fn json_to_document(value: &serde_json::Value) -> aws_smithy_types::Document {
+    match value {
+        serde_json::Value::Null => aws_smithy_types::Document::Null,
+        serde_json::Value::Bool(b) => aws_smithy_types::Document::Bool(*b),
+        serde_json::Value::Number(n) => {
+            aws_smithy_types::Document::Number(aws_smithy_types::Number::Float(n.as_f64().unwrap_or(0.0)))
+        },
+        serde_json::Value::String(s) => aws_smithy_types::Document::String(s.clone()),
+        serde_json::Value::Array(arr) => aws_smithy_types::Document::Array(arr.iter().map(json_to_document).collect()),
+        serde_json::Value::Object(obj) => {
+            aws_smithy_types::Document::Object(obj.iter().map(|(k, v)| (k.clone(), json_to_document(v))).collect())
+        },
+    }
+}
+
+fn document_to_json(doc: &aws_smithy_types::Document) -> Result<serde_json::Value, Box<ApiClientError>> {
+    match doc {
+        aws_smithy_types::Document::Object(map) => {
+            let mut json_map = serde_json::Map::new();
+            for (k, v) in map {
+                json_map.insert(k.clone(), document_to_json(v).map_err(|e| *e)?);
+            }
+            Ok(serde_json::Value::Object(json_map))
+        },
+        aws_smithy_types::Document::Array(arr) => {
+            let json_arr: Result<Vec<_>, _> = arr.iter().map(document_to_json).collect();
+            Ok(serde_json::Value::Array(json_arr?))
+        },
+        aws_smithy_types::Document::Number(n) => Ok(serde_json::Value::Number(
+            serde_json::Number::from_f64(n.to_f64_lossy())
+                .ok_or_else(|| ApiClientError::Other("Invalid number".into()))?,
+        )),
+        aws_smithy_types::Document::String(s) => Ok(serde_json::Value::String(s.clone())),
+        aws_smithy_types::Document::Bool(b) => Ok(serde_json::Value::Bool(*b)),
+        aws_smithy_types::Document::Null => Ok(serde_json::Value::Null),
+    }
 }
 
 impl ApiClient {
@@ -980,6 +1115,34 @@ impl ApiClient {
         match &mut self.inner {
             ApiClientInner::Real(c) => c.set_mock_output(json),
             ApiClientInner::IpcMock(_) => panic!("set_mock_output not supported on IpcMock"),
+        }
+    }
+
+    /// Returns the endpoint URL.
+    pub fn endpoint_url(&self) -> &str {
+        match &self.inner {
+            ApiClientInner::Real(c) => c.endpoint.url(),
+            ApiClientInner::IpcMock(_) => "https://q.us-east-1.amazonaws.com",
+        }
+    }
+
+    /// Returns the region.
+    pub fn region(&self) -> &str {
+        match &self.inner {
+            ApiClientInner::Real(c) => c.endpoint.region().as_ref(),
+            ApiClientInner::IpcMock(_) => "us-east-1",
+        }
+    }
+
+    /// Invokes an MCP tool call.
+    pub async fn invoke_mcp(
+        &self,
+        tool_name: &str,
+        arguments: serde_json::Value,
+    ) -> Result<serde_json::Value, ApiClientError> {
+        match &self.inner {
+            ApiClientInner::Real(c) => c.invoke_mcp(tool_name, arguments).await,
+            ApiClientInner::IpcMock(_) => Err(ApiClientError::Other("invoke_mcp not supported on IpcMock".into())),
         }
     }
 }

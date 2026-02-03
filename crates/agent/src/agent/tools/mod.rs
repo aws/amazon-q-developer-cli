@@ -12,6 +12,8 @@ pub mod rm;
 pub mod summary;
 pub mod use_aws;
 pub mod use_subagent;
+pub mod web_fetch;
+pub mod web_search;
 
 use std::borrow::Cow;
 use std::sync::Arc;
@@ -45,6 +47,8 @@ pub use use_subagent::{
     SubagentResponse,
     UseSubagent,
 };
+use web_fetch::WebFetch;
+use web_search::WebSearch;
 
 use super::agent_config::parse::CanonicalToolName;
 use super::agent_loop::types::ToolUseBlock;
@@ -157,6 +161,10 @@ pub enum BuiltInToolName {
     Glob,
     #[strum(serialize = "use_aws", serialize = "aws")]
     UseAws,
+    #[strum(serialize = "web_fetch")]
+    WebFetch,
+    #[strum(serialize = "web_search")]
+    WebSearch,
 }
 
 impl BuiltInToolName {
@@ -172,6 +180,8 @@ impl BuiltInToolName {
             BuiltInToolName::Grep => Grep::aliases(),
             BuiltInToolName::Glob => Glob::aliases(),
             BuiltInToolName::UseAws => UseAws::aliases(),
+            BuiltInToolName::WebFetch => WebFetch::aliases(),
+            BuiltInToolName::WebSearch => WebSearch::aliases(),
         }
     }
 }
@@ -343,6 +353,8 @@ pub enum BuiltInTool {
     Summary(Summary),
     SpawnSubagent(UseSubagent),
     UseAws(UseAws),
+    WebFetch(WebFetch),
+    WebSearch(WebSearch),
 }
 
 impl BuiltInTool {
@@ -378,6 +390,12 @@ impl BuiltInTool {
             BuiltInToolName::UseAws => serde_json::from_value::<UseAws>(args)
                 .map(Self::UseAws)
                 .map_err(ToolParseErrorKind::schema_failure),
+            BuiltInToolName::WebFetch => serde_json::from_value::<WebFetch>(args)
+                .map(Self::WebFetch)
+                .map_err(ToolParseErrorKind::schema_failure),
+            BuiltInToolName::WebSearch => serde_json::from_value::<WebSearch>(args)
+                .map(Self::WebSearch)
+                .map_err(ToolParseErrorKind::schema_failure),
         }
     }
 
@@ -393,6 +411,8 @@ impl BuiltInTool {
             BuiltInToolName::Grep => generate_tool_spec_from_trait::<Grep>(),
             BuiltInToolName::Glob => generate_tool_spec_from_trait::<Glob>(),
             BuiltInToolName::UseAws => generate_tool_spec_from_trait::<UseAws>(),
+            BuiltInToolName::WebFetch => generate_tool_spec_from_trait::<WebFetch>(),
+            BuiltInToolName::WebSearch => generate_tool_spec_from_trait::<WebSearch>(),
         }
     }
 
@@ -410,6 +430,8 @@ impl BuiltInTool {
             BuiltInTool::Summary(_) => BuiltInToolName::Summary,
             BuiltInTool::SpawnSubagent(_) => BuiltInToolName::SpawnSubagent,
             BuiltInTool::UseAws(_) => BuiltInToolName::UseAws,
+            BuiltInTool::WebFetch(_) => BuiltInToolName::WebFetch,
+            BuiltInTool::WebSearch(_) => BuiltInToolName::WebSearch,
         }
     }
 
@@ -427,6 +449,8 @@ impl BuiltInTool {
             BuiltInTool::Summary(_) => BuiltInToolName::Summary.into(),
             BuiltInTool::SpawnSubagent(_) => BuiltInToolName::SpawnSubagent.into(),
             BuiltInTool::UseAws(_) => BuiltInToolName::UseAws.into(),
+            BuiltInTool::WebFetch(_) => BuiltInToolName::WebFetch.into(),
+            BuiltInTool::WebSearch(_) => BuiltInToolName::WebSearch.into(),
         }
     }
 
@@ -444,6 +468,8 @@ impl BuiltInTool {
             BuiltInTool::Summary(_) => Summary::aliases(),
             BuiltInTool::SpawnSubagent(_) => UseSubagent::aliases(),
             BuiltInTool::UseAws(_) => UseAws::aliases(),
+            BuiltInTool::WebFetch(_) => WebFetch::aliases(),
+            BuiltInTool::WebSearch(_) => WebSearch::aliases(),
         }
     }
 }

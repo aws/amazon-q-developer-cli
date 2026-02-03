@@ -1215,6 +1215,8 @@ fn get_tool_kind(tool_name: &str) -> ToolKind {
             BuiltInToolName::Grep => ToolKind::Search,
             BuiltInToolName::Glob => ToolKind::Search,
             BuiltInToolName::UseAws => ToolKind::Execute,
+            BuiltInToolName::WebFetch => ToolKind::Read,
+            BuiltInToolName::WebSearch => ToolKind::Search,
         }
     } else {
         ToolKind::Other
@@ -1270,6 +1272,8 @@ pub(crate) fn get_tool_title(tool: &Tool) -> String {
             BuiltInTool::Summary(_) => "Summarizing".to_string(),
             BuiltInTool::Mkdir(_) => "Creating directory".to_string(),
             BuiltInTool::Introspect(_) => "Introspecting".to_string(),
+            BuiltInTool::WebFetch(_) => "Fetching web content".to_string(),
+            BuiltInTool::WebSearch(_) => "Searching the web".to_string(),
         },
         AgentToolKind::Mcp(mcp) => format!("Running: @{}/{}", mcp.server_name, mcp.tool_name),
     }

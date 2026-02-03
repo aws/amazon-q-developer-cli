@@ -49,6 +49,16 @@ pub trait Model: std::fmt::Debug + Send + Sync + 'static {
     fn state(&self) -> Option<serde_json::Value> {
         None
     }
+
+    /// Invokes an MCP tool call through the backend API.
+    fn invoke_mcp(
+        &self,
+        tool_name: &str,
+        arguments: serde_json::Value,
+    ) -> Pin<Box<dyn std::future::Future<Output = Result<serde_json::Value, String>> + Send + '_>> {
+        let _ = (tool_name, arguments);
+        Box::pin(async { Err("invoke_mcp not implemented".to_string()) })
+    }
 }
 
 #[derive(Debug, Clone)]

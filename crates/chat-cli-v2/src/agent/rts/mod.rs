@@ -373,6 +373,21 @@ impl Model for RtsModel {
     fn context_window_size(&self) -> Option<usize> {
         self.state.model_info().map(|m| m.context_window_tokens)
     }
+
+    fn invoke_mcp(
+        &self,
+        tool_name: &str,
+        arguments: serde_json::Value,
+    ) -> Pin<Box<dyn std::future::Future<Output = Result<serde_json::Value, String>> + Send + '_>> {
+        let client = self.client.clone();
+        let tool_name = tool_name.to_string();
+        Box::pin(async move {
+            client
+                .invoke_mcp(&tool_name, arguments)
+                .await
+                .map_err(|e| e.to_string())
+        })
+    }
 }
 
 /// Serializable snapshot of RTS model state.

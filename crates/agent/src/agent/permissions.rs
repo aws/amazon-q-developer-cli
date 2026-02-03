@@ -314,6 +314,16 @@ pub fn evaluate_tool_permission<P: SystemProvider>(
                     false,
                 )
             },
+            BuiltInTool::WebFetch(_) => Ok(if is_allowed {
+                PermissionEvalResult::Allow
+            } else {
+                PermissionEvalResult::Ask
+            }),
+            BuiltInTool::WebSearch(_) => Ok(if is_allowed {
+                PermissionEvalResult::Allow
+            } else {
+                PermissionEvalResult::Ask
+            }),
         },
         ToolKind::Mcp(_) => Ok(if is_allowed {
             PermissionEvalResult::Allow
