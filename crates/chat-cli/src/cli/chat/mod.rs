@@ -4126,11 +4126,15 @@ impl ChatSession {
                             .ok(),
                     };
                     if let Some(content) = content {
+                        // Show only user-visible part (before [DETAILS] delimiter)
+                        let display_content = content
+                            .split_once(tool_manager::ERROR_DETAILS_DELIMITER)
+                            .map_or(&*content, |(first, _)| first);
                         queue!(
                             self.stderr,
                             style::Print("\n"),
                             StyledText::error_fg(),
-                            style::Print(format!("{content}\n")),
+                            style::Print(format!("{display_content}\n")),
                             StyledText::reset(),
                         )?;
                     }

@@ -108,6 +108,8 @@ use crate::util::MCP_SERVER_TOOL_DELIMITER;
 use crate::util::consts::BUILTIN_TOOLS_PREFIX;
 
 const NAMESPACE_DELIMITER: &str = "___";
+/// Delimiter used to separate user-visible error from LLM-only details in validation messages
+pub const ERROR_DETAILS_DELIMITER: &str = " [DETAILS] ";
 // This applies for both mcp server and tool name
 const VALID_TOOL_NAME: &str = "^[a-zA-Z][a-zA-Z0-9_]*$";
 const SPINNER_CHARS: [char; 10] = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'];
@@ -1015,54 +1017,84 @@ impl ToolManager {
         Ok(self.schema.clone())
     }
 
+    /// Build an error message for tool validation failures.
+    /// If the tool exists in schema, includes required fields hint.
+    /// If not found, indicates the tool doesn't exist.
+    /// Format: "user visible part [DETAILS] llm-only details"
+    fn build_validation_error(&self, tool_name: &str, parse_error: &serde_json::Error) -> String {
+        match self.schema.get(tool_name) {
+            Some(spec) => {
+                let required = spec
+                    .input_schema
+                    .0
+                    .get("required")
+                    .and_then(|v| v.as_array())
+                    .map(|arr| arr.iter().filter_map(|v| v.as_str()).collect::<Vec<_>>().join(", "))
+                    .filter(|s| !s.is_empty());
+                match required {
+                    Some(fields) => format!(
+                        "Tool '{tool_name}' validation failed: {parse_error}{ERROR_DETAILS_DELIMITER}Required fields: [{fields}]. Do NOT retry with the same invalid parameters."
+                    ),
+                    None => format!(
+                        "Tool '{tool_name}' validation failed: {parse_error}{ERROR_DETAILS_DELIMITER}Do NOT retry with the same invalid parameters."
+                    ),
+                }
+            },
+            None => format!(
+                "Tool '{tool_name}' not found in available tools{ERROR_DETAILS_DELIMITER}Error: {parse_error}. Do NOT retry calling this tool."
+            ),
+        }
+    }
+
     pub async fn get_tool_from_tool_use(
         &mut self,
         value: AssistantToolUse,
         is_trust_all: bool,
     ) -> Result<Tool, ToolResult> {
+        let tool_name = value.name.clone();
         let map_err = |parse_error: serde_json::Error| ToolResult {
             tool_use_id: value.id.clone(),
-            content: vec![ToolResultContentBlock::Text(format!(
-                "Failed to validate tool parameters: {parse_error}. The model has either suggested tool parameters which are incompatible with the existing tools, or has suggested one or more tool that does not exist in the list of known tools."
-            ))],
+            content: vec![ToolResultContentBlock::Text(
+                self.build_validation_error(&tool_name, &parse_error),
+            )],
             status: ToolResultStatus::Error,
         };
 
         Ok(match value.name.as_str() {
             name if name == ToolMetadata::FS_READ.spec_name => {
-                Tool::FsRead(serde_json::from_value::<FsRead>(value.args).map_err(map_err)?)
+                Tool::FsRead(serde_json::from_value::<FsRead>(value.args).map_err(&map_err)?)
             },
             name if name == ToolMetadata::FS_WRITE.spec_name => {
-                Tool::FsWrite(serde_json::from_value::<FsWrite>(value.args).map_err(map_err)?)
+                Tool::FsWrite(serde_json::from_value::<FsWrite>(value.args).map_err(&map_err)?)
             },
             name if name == ToolMetadata::EXECUTE_COMMAND.spec_name => {
-                Tool::ExecuteCommand(serde_json::from_value::<ExecuteCommand>(value.args).map_err(map_err)?)
+                Tool::ExecuteCommand(serde_json::from_value::<ExecuteCommand>(value.args).map_err(&map_err)?)
             },
             name if name == ToolMetadata::USE_AWS.spec_name => {
-                Tool::UseAws(serde_json::from_value::<UseAws>(value.args).map_err(map_err)?)
+                Tool::UseAws(serde_json::from_value::<UseAws>(value.args).map_err(&map_err)?)
             },
             name if name == ToolMetadata::GH_ISSUE.spec_name => {
-                Tool::GhIssue(serde_json::from_value::<GhIssue>(value.args).map_err(map_err)?)
+                Tool::GhIssue(serde_json::from_value::<GhIssue>(value.args).map_err(&map_err)?)
             },
             name if name == ToolMetadata::INTROSPECT.spec_name => {
-                Tool::Introspect(serde_json::from_value::<Introspect>(value.args).map_err(map_err)?)
+                Tool::Introspect(serde_json::from_value::<Introspect>(value.args).map_err(&map_err)?)
             },
             name if name == ToolMetadata::THINKING.spec_name => {
-                Tool::Thinking(serde_json::from_value::<Thinking>(value.args).map_err(map_err)?)
+                Tool::Thinking(serde_json::from_value::<Thinking>(value.args).map_err(&map_err)?)
             },
             name if name == ToolMetadata::KNOWLEDGE.spec_name => {
-                Tool::Knowledge(serde_json::from_value::<Knowledge>(value.args).map_err(map_err)?)
+                Tool::Knowledge(serde_json::from_value::<Knowledge>(value.args).map_err(&map_err)?)
             },
             name if crate::cli::chat::tools::code::Code::INFO.aliases.contains(&name) => {
                 use crate::cli::chat::tools::code::Code;
 
-                Tool::Code(serde_json::from_value::<Code>(value.args).map_err(map_err)?)
+                Tool::Code(serde_json::from_value::<Code>(value.args).map_err(&map_err)?)
             },
             name if name == ToolMetadata::TODO.spec_name => {
-                Tool::Todo(serde_json::from_value::<TodoList>(value.args).map_err(map_err)?)
+                Tool::Todo(serde_json::from_value::<TodoList>(value.args).map_err(&map_err)?)
             },
             name if name == ToolMetadata::USE_SUBAGENT.spec_name => {
-                let mut use_subagent = serde_json::from_value::<UseSubagent>(value.args).map_err(map_err)?;
+                let mut use_subagent = serde_json::from_value::<UseSubagent>(value.args).map_err(&map_err)?;
                 if let UseSubagent::InvokeSubagents {
                     convo_id,
                     subagents,
@@ -1080,22 +1112,22 @@ impl ToolManager {
             },
             // Note that this name is NO LONGER namespaced with server_name{DELIMITER}tool_name
             name if name == ToolMetadata::DELEGATE.spec_name => {
-                Tool::Delegate(serde_json::from_value::<Delegate>(value.args).map_err(map_err)?)
+                Tool::Delegate(serde_json::from_value::<Delegate>(value.args).map_err(&map_err)?)
             },
             name if name == ToolMetadata::WEB_SEARCH.spec_name => {
-                Tool::WebSearch(serde_json::from_value::<WebSearch>(value.args).map_err(map_err)?)
+                Tool::WebSearch(serde_json::from_value::<WebSearch>(value.args).map_err(&map_err)?)
             },
             name if name == ToolMetadata::WEB_FETCH.spec_name => {
-                Tool::WebFetch(serde_json::from_value::<WebFetch>(value.args).map_err(map_err)?)
+                Tool::WebFetch(serde_json::from_value::<WebFetch>(value.args).map_err(&map_err)?)
             },
             name if name == ToolMetadata::GLOB.spec_name => {
-                Tool::Glob(serde_json::from_value::<Glob>(value.args).map_err(map_err)?)
+                Tool::Glob(serde_json::from_value::<Glob>(value.args).map_err(&map_err)?)
             },
             name if name == ToolMetadata::GREP.spec_name => {
-                Tool::Grep(serde_json::from_value::<Grep>(value.args).map_err(map_err)?)
+                Tool::Grep(serde_json::from_value::<Grep>(value.args).map_err(&map_err)?)
             },
             name if name == ToolMetadata::SWITCH_TO_EXECUTION.spec_name => {
-                Tool::SwitchToExecution(serde_json::from_value::<SwitchToExecution>(value.args).map_err(map_err)?)
+                Tool::SwitchToExecution(serde_json::from_value::<SwitchToExecution>(value.args).map_err(&map_err)?)
             },
             name => {
                 // Note: tn_map also has tools that underwent no transformation. In otherwords, if
@@ -2322,6 +2354,7 @@ fn queue_prompts_load_error_message(name: &str, msg: &eyre::Report, output: &mut
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::cli::chat::tools::InputSchema;
 
     #[test]
     fn test_sanitize_server_name() {
@@ -2532,5 +2565,140 @@ mod tests {
         assert!(path_str.ends_with(".kiro/settings/mcp.json"));
 
         Ok(())
+    }
+
+    #[test]
+    fn test_build_validation_error_tool_not_found() {
+        let tool_manager = ToolManager::default();
+        let parse_error: serde_json::Error = serde_json::from_str::<String>("invalid").unwrap_err();
+
+        let error_msg = tool_manager.build_validation_error("nonexistent_tool", &parse_error);
+
+        assert!(error_msg.contains("'nonexistent_tool' not found in available tools"));
+        assert!(error_msg.contains("Do NOT retry calling this tool"));
+    }
+
+    #[test]
+    fn test_build_validation_error_tool_exists_with_required_fields() {
+        let mut tool_manager = ToolManager::default();
+
+        // Add a tool with required fields to schema
+        let schema_json = serde_json::json!({
+            "type": "object",
+            "properties": {
+                "command": { "type": "string" },
+                "summary": { "type": "string" }
+            },
+            "required": ["command"]
+        });
+        tool_manager.schema.insert("execute_bash".to_string(), ToolSpec {
+            name: "execute_bash".to_string(),
+            description: "Execute bash command".to_string(),
+            input_schema: InputSchema(schema_json),
+            tool_origin: ToolOrigin::Native,
+        });
+
+        let parse_error: serde_json::Error = serde_json::from_str::<String>("{}").unwrap_err();
+        let error_msg = tool_manager.build_validation_error("execute_bash", &parse_error);
+
+        assert!(error_msg.contains("Tool 'execute_bash' validation failed"));
+        assert!(error_msg.contains("Required fields: [command]"));
+        assert!(error_msg.contains("Do NOT retry with the same invalid parameters"));
+    }
+
+    #[test]
+    fn test_build_validation_error_tool_exists_no_required_fields() {
+        let mut tool_manager = ToolManager::default();
+
+        // Add a tool without required fields
+        let schema_json = serde_json::json!({
+            "type": "object",
+            "properties": {
+                "optional_field": { "type": "string" }
+            }
+        });
+        tool_manager.schema.insert("optional_tool".to_string(), ToolSpec {
+            name: "optional_tool".to_string(),
+            description: "Tool with no required fields".to_string(),
+            input_schema: InputSchema(schema_json),
+            tool_origin: ToolOrigin::Native,
+        });
+
+        let parse_error: serde_json::Error = serde_json::from_str::<String>("invalid").unwrap_err();
+        let error_msg = tool_manager.build_validation_error("optional_tool", &parse_error);
+
+        assert!(error_msg.contains("Tool 'optional_tool' validation failed"));
+        assert!(!error_msg.contains("Required fields"));
+        assert!(error_msg.contains("Do NOT retry with the same invalid parameters"));
+    }
+
+    #[test]
+    fn test_build_validation_error_malformed_schema_no_panic() {
+        let mut tool_manager = ToolManager::default();
+
+        // Add a tool with malformed schema (required is not an array)
+        let schema_json = serde_json::json!({
+            "type": "object",
+            "required": "not_an_array"
+        });
+        tool_manager.schema.insert("malformed_tool".to_string(), ToolSpec {
+            name: "malformed_tool".to_string(),
+            description: "Tool with malformed schema".to_string(),
+            input_schema: InputSchema(schema_json),
+            tool_origin: ToolOrigin::Native,
+        });
+
+        let parse_error: serde_json::Error = serde_json::from_str::<String>("{}").unwrap_err();
+        // Should not panic, should gracefully handle malformed schema
+        let error_msg = tool_manager.build_validation_error("malformed_tool", &parse_error);
+
+        assert!(error_msg.contains("Tool 'malformed_tool' validation failed"));
+        assert!(!error_msg.contains("Required fields")); // Gracefully skipped
+    }
+
+    #[test]
+    fn test_build_validation_error_empty_required_array() {
+        let mut tool_manager = ToolManager::default();
+
+        // Add a tool with empty required array
+        let schema_json = serde_json::json!({
+            "type": "object",
+            "required": []
+        });
+        tool_manager.schema.insert("empty_required".to_string(), ToolSpec {
+            name: "empty_required".to_string(),
+            description: "Tool with empty required".to_string(),
+            input_schema: InputSchema(schema_json),
+            tool_origin: ToolOrigin::Native,
+        });
+
+        let parse_error: serde_json::Error = serde_json::from_str::<String>("{}").unwrap_err();
+        let error_msg = tool_manager.build_validation_error("empty_required", &parse_error);
+
+        assert!(error_msg.contains("Tool 'empty_required' validation failed"));
+        assert!(!error_msg.contains("Required fields")); // Empty array filtered out
+    }
+
+    #[test]
+    fn test_build_validation_error_required_with_non_string_values() {
+        let mut tool_manager = ToolManager::default();
+
+        // Add a tool with required array containing non-string values
+        let schema_json = serde_json::json!({
+            "type": "object",
+            "required": ["valid_field", 123, null, "another_field"]
+        });
+        tool_manager.schema.insert("mixed_required".to_string(), ToolSpec {
+            name: "mixed_required".to_string(),
+            description: "Tool with mixed required values".to_string(),
+            input_schema: InputSchema(schema_json),
+            tool_origin: ToolOrigin::Native,
+        });
+
+        let parse_error: serde_json::Error = serde_json::from_str::<String>("{}").unwrap_err();
+        let error_msg = tool_manager.build_validation_error("mixed_required", &parse_error);
+
+        // Should only include string values
+        assert!(error_msg.contains("Required fields: [valid_field, another_field]"));
     }
 }
