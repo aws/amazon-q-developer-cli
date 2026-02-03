@@ -1,5 +1,7 @@
 pub mod builder_id;
 mod consts;
+pub mod external_idp;
+pub mod oauth_callback;
 pub mod pkce;
 mod scope;
 
@@ -92,7 +94,7 @@ impl From<SdkError<StartDeviceAuthorizationError>> for AuthError {
         Self::SdkStartDeviceAuthorization(Box::new(value))
     }
 }
-/// Unified bearer token resolver that tries both social and builder ID tokens
+/// Unified bearer token resolver that tries external IdP, social, and builder ID tokens
 #[derive(Debug, Clone)]
 pub struct UnifiedBearerResolver;
 
@@ -104,6 +106,13 @@ impl ResolveIdentity for UnifiedBearerResolver {
     ) -> IdentityFuture<'a> {
         IdentityFuture::new_boxed(Box::pin(async {
             let database = Database::new_default().await?;
+
+            if let Ok(Some(token)) = external_idp::ExternalIdpToken::load(&database).await {
+                return Ok(Identity::new(
+                    Token::new(token.access_token.0.clone(), Some(token.expires_at.into())),
+                    Some(token.expires_at.into()),
+                ));
+            }
 
             if let Ok(Some(token)) = builder_id::BuilderIdToken::load(&database, None).await {
                 return Ok(Identity::new(

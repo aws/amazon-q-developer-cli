@@ -24,19 +24,31 @@ pub async fn list_available_profiles(
     region: &str,
 ) -> Result<Vec<AuthProfile>, ApiClientError> {
     debug!(region = %region, "list_available_profiles called");
+    list_profiles_from_endpoints(env, fs, database, &Endpoint::get_endpoints_from_region(region)).await
+}
 
+/// List profiles from all endpoints (for External IdP where region is unknown)
+pub async fn list_all_available_profiles(
+    env: &Env,
+    fs: &Fs,
+    database: &mut Database,
+) -> Result<Vec<AuthProfile>, ApiClientError> {
+    list_profiles_from_endpoints(env, fs, database, &Endpoint::all()).await
+}
+
+async fn list_profiles_from_endpoints(
+    env: &Env,
+    fs: &Fs,
+    database: &mut Database,
+    endpoints: &[Endpoint],
+) -> Result<Vec<AuthProfile>, ApiClientError> {
     // Check if custom endpoint is configured
     let configured = Endpoint::configured_value(database);
-    let is_custom = configured != Endpoint::DEFAULT_ENDPOINT
-        && configured != Endpoint::FRA_ENDPOINT
-        && configured != Endpoint::GOV_ENDPOINT_EAST
-        && configured != Endpoint::GOV_ENDPOINT_WEST;
-
-    let endpoints = if is_custom {
+    let endpoints = if Endpoint::is_custom(&configured) {
         debug!(endpoint = ?configured, "Using custom endpoint");
         vec![configured]
     } else {
-        Endpoint::get_endpoints_from_region(region)
+        endpoints.to_vec()
     };
 
     let mut profiles = vec![];

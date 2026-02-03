@@ -34,6 +34,20 @@ impl Endpoint {
         url: Cow::Borrowed("https://q.us-gov-west-1.amazonaws.com"),
         region: Region::from_static(US_GOV_WEST),
     };
+    const KNOWN_ENDPOINTS: &'static [Self] = &[
+        Self::DEFAULT_ENDPOINT,
+        Self::FRA_ENDPOINT,
+        Self::GOV_ENDPOINT_EAST,
+        Self::GOV_ENDPOINT_WEST,
+    ];
+
+    pub fn all() -> Vec<Self> {
+        Self::KNOWN_ENDPOINTS.to_vec()
+    }
+
+    pub fn is_custom(endpoint: &Self) -> bool {
+        !Self::KNOWN_ENDPOINTS.contains(endpoint)
+    }
 
     pub fn get_endpoints_from_region(region: &str) -> Vec<Self> {
         if region == US_GOV_EAST || region == US_GOV_WEST {

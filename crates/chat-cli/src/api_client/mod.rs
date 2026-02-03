@@ -8,6 +8,7 @@ pub mod opt_out;
 pub mod profile;
 mod retry_classifier;
 pub mod send_message_output;
+pub mod token_type_interceptor;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -57,7 +58,9 @@ use crate::api_client::model::{
 };
 use crate::api_client::opt_out::OptOutInterceptor;
 use crate::api_client::send_message_output::SendMessageOutput;
+use crate::api_client::token_type_interceptor::TokenTypeInterceptor;
 use crate::auth::UnifiedBearerResolver;
+use crate::auth::external_idp::ExternalIdpToken;
 use crate::aws_common::{
     UserAgentOverrideInterceptor,
     app_name,
@@ -157,6 +160,12 @@ impl ApiClient {
     ) -> Result<Self, ApiClientError> {
         let endpoint = endpoint.unwrap_or(Endpoint::configured_value(database));
 
+        // Check if using External IdP authentication
+        let is_external_idp = ExternalIdpToken::load(database)
+            .await
+            .map(|t| t.is_some())
+            .unwrap_or(false);
+
         let credentials = Credentials::new("xxx", "xxx", None, None, "xxx");
         let bearer_sdk_config = aws_config::defaults(behavior_version())
             .region(endpoint.region.clone())
@@ -171,6 +180,7 @@ impl ApiClient {
                 .http_client(crate::aws_common::http_client::client())
                 .interceptor(OptOutInterceptor::new(database))
                 .interceptor(UserAgentOverrideInterceptor::new())
+                .interceptor(TokenTypeInterceptor::new(is_external_idp))
                 .bearer_token_resolver(UnifiedBearerResolver)
                 .app_name(app_name())
                 .endpoint_resolver(StaticCodewhispererEndpointResolver::new(endpoint.url().to_string()))
@@ -200,6 +210,7 @@ impl ApiClient {
                 .interceptor(OptOutInterceptor::new(database))
                 .interceptor(UserAgentOverrideInterceptor::new())
                 .interceptor(DelayTrackingInterceptor::new())
+                .interceptor(TokenTypeInterceptor::new(is_external_idp))
                 .bearer_token_resolver(UnifiedBearerResolver)
                 .app_name(app_name())
                 .endpoint_resolver(StaticEndpointResolver::new(endpoint.url().to_string()))
