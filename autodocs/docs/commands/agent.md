@@ -1,13 +1,13 @@
 ---
 doc_meta:
-  validated: 2025-12-23
-  commit: 57090ffe
+  validated: 2026-02-02
+  commit: 2cfa80d8
   status: validated
   testable_headless: true
   category: command
   title: kiro-cli agent
   description: Manage agent configurations including list, validate, create, edit, migrate, and set-default operations
-  keywords: [agent, config, manage, validate, create, schema]
+  keywords: [agent, config, manage, validate, create, schema, description]
   related: [slash-agent, agent-config]
 ---
 
@@ -172,13 +172,18 @@ kiro-cli agent list
 
 **Expected Output**:
 ```
-  rust-expert         ~/.kiro/agents
-* python-dev          ~/.kiro/agents
-  code-reviewer       .kiro/agents
-  kiro_default        (Built-in)
+Workspace: ~/project/.kiro/agents
+Global:    ~/.kiro/agents
+
+* rust-expert       Workspace     Rust development with cargo and clippy
+  code-reviewer     Workspace     Code review agent focused on security and best practices
+  python-dev        Global        Python development assistant
+  kiro_default      (Built-in)    Default agent
+  kiro_help         (Built-in)    Help agent that answers questions about Kiro CLI features
+  kiro_planner      (Built-in)    Specialized planning agent for implementation plans
 ```
 
-Active agent marked with `*`. Shows agent name and location.
+Active agent marked with `*`. Shows agent name, source (Workspace/Global/Built-in), and description. Long descriptions wrap based on terminal width.
 
 ### Example 2: Validate Config
 

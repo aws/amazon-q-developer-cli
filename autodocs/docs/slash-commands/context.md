@@ -1,13 +1,13 @@
 ---
 doc_meta:
-  validated: 2026-01-27
-  commit: 85403a86
+  validated: 2026-02-02
+  commit: 2cfa80d8
   status: validated
   testable_headless: false
   category: slash_command
   title: /context
   description: View context window usage and manage context files with add, remove, show, and clear operations
-  keywords: [context, files, usage, tokens, window, manage, percentage]
+  keywords: [context, files, usage, tokens, window, manage, percentage, skill]
   related: [agent-config, hooks]
 ---
 
@@ -143,16 +143,21 @@ Agent (rust-expert)
   - src/**/*.rs
     src/main.rs
     src/lib.rs
+  - skill://.kiro/skills/**/SKILL.md
+    database-helper
 
 Session (temporary)
   <none>
 
-2 matched files in use
+3 matched files in use
 - src/main.rs (2.3% of context window)
 - src/lib.rs (1.8% of context window)
+- database-helper (0.1% of context window)
 
-Context files total: 4.1% of context window
+Context files total: 4.2% of context window
 ```
+
+Both regular files and skill resources show their estimated context usage.
 
 ### Example 3: Add Context Files
 
@@ -255,5 +260,7 @@ Context files have size limits to prevent overwhelming context window:
 **Size Limits**: Calculated as percentage of context window. Oldest files dropped first when limit exceeded.
 
 **Agent vs Session**: Agent context from configuration (permanent). Session context from `/context add` or loaded conversations (temporary).
+
+**Skill Resources**: `skill://` resources show their estimated size based on the metadata sent to the model (name, description, filepath). Full skill content is loaded on demand.
 
 **Hooks**: Context can include dynamic content via hooks. See agent configuration documentation.

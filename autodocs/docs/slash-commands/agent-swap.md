@@ -1,13 +1,13 @@
 ---
 doc_meta:
-  validated: 2026-01-05
-  commit: a1d370b5
+  validated: 2026-02-02
+  commit: 2cfa80d8
   status: validated
   testable_headless: false
   category: slash_command
   title: /agent
   description: Switch to different agent configuration during chat session
-  keywords: [agent, switch, swap, profile]
+  keywords: [agent, switch, swap, profile, description]
   related: [agent-generate, cmd-agent, agent-config]
 ---
 
@@ -82,11 +82,15 @@ Interactive process to create new agent with AI assistance.
 
 **Output**:
 ```
-Select agent:
-  default
-* rust-expert
-  python-dev
+Workspace: ~/project/.kiro/agents
+Global:    ~/.kiro/agents
+
+  kiro_default    (Built-in)    Default agent
+* rust-expert     Workspace     Rust development with cargo and clippy
+  python-dev      Global        Python development assistant
 ```
+
+Shows agents sorted alphabetically with active agent first. Descriptions help identify the right agent.
 
 ### Example 2: Direct Switch
 
@@ -97,7 +101,11 @@ Select agent:
 **Output**:
 ```
 ✔ Switched to agent: python-dev
+
+Python development assistant with pytest and type checking support.
 ```
+
+The agent's welcome message is displayed after switching.
 
 ### Example 3: List Agents
 
@@ -107,10 +115,18 @@ Select agent:
 
 **Output**:
 ```
-* rust-expert    ~/.kiro/agents
-  python-dev     ~/.kiro/agents
-  default        (Built-in)
+Workspace: ~/project/.kiro/agents
+Global:    ~/.kiro/agents
+
+* rust-expert       Workspace     Rust development with cargo and clippy
+  code-reviewer     Workspace     Code review agent focused on security and best practices
+  python-dev        Global        Python development assistant
+  kiro_default      (Built-in)    Default agent
+  kiro_help         (Built-in)    Help agent that answers questions about Kiro CLI features
+  kiro_planner      (Built-in)    Specialized planning agent for implementation plans
 ```
+
+Active agent marked with `*`. Shows name, source (Workspace/Global/Built-in), and description. Long descriptions wrap to fit terminal width.
 
 ## Agent Resolution
 
