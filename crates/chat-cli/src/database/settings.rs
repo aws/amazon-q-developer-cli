@@ -73,6 +73,8 @@ pub enum Setting {
 
     #[strum(message = "Auto-enter tangent mode for introspect questions (boolean)")]
     IntrospectTangentMode,
+    #[strum(message = "Use progressive loading instead of semantic search for introspect (boolean)")]
+    IntrospectProgressiveMode,
     #[strum(message = "Show greeting message on chat start (boolean)")]
     ChatGreetingEnabled,
     #[strum(message = "API request timeout in seconds (number)")]
@@ -154,6 +156,7 @@ impl AsRef<str> for Setting {
             Self::DelegateModeKey => "chat.delegateModeKey",
 
             Self::IntrospectTangentMode => "introspect.tangentMode",
+            Self::IntrospectProgressiveMode => "introspect.progressiveMode",
             Self::ChatGreetingEnabled => "chat.greeting.enabled",
             Self::ApiTimeout => "api.timeout",
             Self::ChatEditMode => "chat.editMode",
@@ -210,6 +213,7 @@ impl TryFrom<&str> for Setting {
             "chat.enableSubagent" => Ok(Self::EnabledSubagent),
 
             "introspect.tangentMode" => Ok(Self::IntrospectTangentMode),
+            "introspect.progressiveMode" => Ok(Self::IntrospectProgressiveMode),
             "chat.greeting.enabled" => Ok(Self::ChatGreetingEnabled),
             "api.timeout" => Ok(Self::ApiTimeout),
             "chat.editMode" => Ok(Self::ChatEditMode),

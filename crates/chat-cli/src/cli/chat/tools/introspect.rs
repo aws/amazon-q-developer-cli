@@ -89,13 +89,23 @@ impl Introspect {
             });
         }
 
+        let use_progressive = os
+            .database
+            .settings
+            .get_bool(Setting::IntrospectProgressiveMode)
+            .unwrap_or(false);
+
         let documentation = if let Some(query) = &self.query {
-            match self.get_relevant_docs(query).await {
-                Ok(docs) => docs,
-                Err(e) => {
-                    tracing::warn!("Semantic search failed: {e}, using fallback");
-                    Self::get_all_docs()
-                },
+            if use_progressive {
+                Self::get_all_docs()
+            } else {
+                match self.get_relevant_docs(query).await {
+                    Ok(docs) => docs,
+                    Err(e) => {
+                        tracing::warn!("Semantic search failed: {e}, using fallback");
+                        Self::get_all_docs()
+                    },
+                }
             }
         } else {
             Self::get_all_docs()
