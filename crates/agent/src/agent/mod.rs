@@ -1758,23 +1758,27 @@ impl Agent {
     /// This function ensures that we create a list of known tool names to be available
     /// for the agent's current state.
     async fn get_tool_names(&self) -> Vec<CanonicalToolName> {
-        let mut tool_names = HashSet::new();
+        let mut tool_names = {
+            let mut tool_names = HashSet::new();
+
+            if self.is_subagent {
+                tool_names.insert(CanonicalToolName::BuiltIn(tools::BuiltInToolName::Summary));
+            }
+
+            tool_names
+        };
 
         let built_in_tool_names = {
             let mut names = built_in_tool_names();
 
             // For the time being, subagent is not yet fully implemented in the agent crate so
             // we'll remove it from the tool list.
-            // We'll also remove summary tool from the tool list if the agent is not a subagent.
-            // Opting for one single retain call to save an alloation (hence the if else)
-            if !self.is_subagent {
-                names.retain(|name| {
-                    name != &CanonicalToolName::BuiltIn(tools::BuiltInToolName::SpawnSubagent)
-                        && name != &CanonicalToolName::BuiltIn(tools::BuiltInToolName::Summary)
-                });
-            } else {
-                names.retain(|name| name != &CanonicalToolName::BuiltIn(tools::BuiltInToolName::SpawnSubagent));
-            }
+            // We'll also remove summary tool from the tool list since that is added above in the
+            // initialization of tool_names
+            names.retain(|name| {
+                name != &CanonicalToolName::BuiltIn(tools::BuiltInToolName::SpawnSubagent)
+                    && name != &CanonicalToolName::BuiltIn(tools::BuiltInToolName::Summary)
+            });
 
             names
         };
