@@ -75,10 +75,6 @@
         {
           "type": "changed",
           "description": "Improved tool validation error messages to show required fields and hide internal details from user display"
-        },
-        {
-          "type": "added",
-          "description": "External Identity Provider (IdP) login support"
         }
       ]
     },
