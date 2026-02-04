@@ -1,0 +1,4 @@
+{
+  "type": "added",
+  "description": "Agent Client Protocol support for ACP-compatible IDEs via kiro-cli acp command"
+}

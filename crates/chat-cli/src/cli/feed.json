@@ -12,6 +12,78 @@
     },
     {
       "type": "release",
+      "date": "2026-02-03",
+      "version": "1.25.0",
+      "title": "Version 1.25.0",
+      "changes": [
+        {
+          "type": "added",
+          "description": "Agent Client Protocol support for ACP-compatible IDEs via kiro-cli acp command"
+        },
+        {
+          "type": "added",
+          "description": "Introspect now powered by comprehensive documentation coverage with semantic search"
+        },
+        {
+          "type": "added",
+          "description": "Enterprise governance support for web tools (web_search, web_fetch)"
+        },
+        {
+          "type": "added",
+          "description": "Agent list and swap commands now display agent descriptions"
+        },
+        {
+          "type": "fixed",
+          "description": "Welcome messages are now displayed whenever switching agents"
+        },
+        {
+          "type": "fixed",
+          "description": "write allowedPaths now works for both create and edit operations on systems with symlinks"
+        },
+        {
+          "type": "added",
+          "description": "add --require-mcp-startup flag to enforce successful MCP server startup"
+        },
+        {
+          "type": "fixed",
+          "description": "Knowledge indexing is now terminated immediately when the user requests to exit"
+        },
+        {
+          "type": "fixed",
+          "description": "Skill resources now show estimated size in /context instead of 0%"
+        },
+        {
+          "type": "fixed",
+          "description": "Enable case-insensitive history search in chat prompt"
+        },
+        {
+          "type": "fixed",
+          "description": "AWS tool supports S3 positional arguments for cp, mv, sync commands"
+        },
+        {
+          "type": "added",
+          "description": "Built-in help agent to explore CLI features and create configurations"
+        },
+        {
+          "type": "fixed",
+          "description": "Code intelligence now properly uses custom LSP servers for languages not supported by tree-sitter"
+        },
+        {
+          "type": "fixed",
+          "description": "Hook matchers now recognize tool aliases (e.g., 'read' for 'fs_read')"
+        },
+        {
+          "type": "changed",
+          "description": "Improved tool validation error messages to show required fields and hide internal details from user display"
+        },
+        {
+          "type": "added",
+          "description": "External Identity Provider (IdP) login support"
+        }
+      ]
+    },
+    {
+      "type": "release",
       "date": "2026-01-25",
       "version": "1.24.1",
       "title": "Version 1.24.1",
@@ -270,7 +342,7 @@
         }
       ]
     },
-        {
+    {
       "type": "release",
       "date": "2025-11-17",
       "version": "1.19.7",

@@ -1,5 +1,5 @@
 {
-  "generated_at": "2026-02-02T12:55:15.240006",
+  "generated_at": "2026-02-03T17:00:57.743078",
   "total_docs": 93,
   "by_category": {
     "command": [
@@ -121,13 +121,14 @@
         "manage",
         "validate",
         "create",
-        "schema"
+        "schema",
+        "description"
       ],
       "related": [
         "slash-agent",
         "agent-config"
       ],
-      "validated": "2025-12-23",
+      "validated": "2026-02-02",
       "status": "validated"
     },
     {
@@ -146,7 +147,8 @@
         "mcp",
         "require-mcp-startup",
         "log",
-        "logging"
+        "logging",
+        "history"
       ],
       "related": [
         "slash-chat-save",
@@ -154,7 +156,7 @@
         "slash-agent",
         "exit-codes"
       ],
-      "validated": "2026-01-30",
+      "validated": "2026-02-02",
       "status": "validated"
     },
     {
@@ -1045,14 +1047,15 @@
         "agent",
         "switch",
         "swap",
-        "profile"
+        "profile",
+        "description"
       ],
       "related": [
         "agent-generate",
         "cmd-agent",
         "agent-config"
       ],
-      "validated": "2026-01-05",
+      "validated": "2026-02-02",
       "status": "validated"
     },
     {
@@ -1230,13 +1233,14 @@
         "tokens",
         "window",
         "manage",
-        "percentage"
+        "percentage",
+        "skill"
       ],
       "related": [
         "agent-config",
         "hooks"
       ],
-      "validated": "2026-01-27",
+      "validated": "2026-02-02",
       "status": "validated"
     },
     {
