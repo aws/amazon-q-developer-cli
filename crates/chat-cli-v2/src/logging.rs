@@ -14,6 +14,7 @@ use tracing_subscriber::{
     fmt,
 };
 
+use crate::util::consts::env_var::KIRO_LOG_NO_COLOR;
 use crate::util::env_var::get_log_level as get_env_log_level;
 
 const MAX_FILE_SIZE: u64 = 10 * 1024 * 1024;
@@ -69,6 +70,7 @@ pub fn initialize_logging<T: AsRef<Path>>(args: LogArgs<T>) -> Result<LogGuard, 
     let (reloadable_filter_layer, reloadable_handle) = tracing_subscriber::reload::Layer::new(filter_layer);
     ENV_FILTER_RELOADABLE_HANDLE.lock().unwrap().replace(reloadable_handle);
     let mut mcp_path = None;
+    let use_ansi = !std::env::var(KIRO_LOG_NO_COLOR).is_ok_and(|v| !v.is_empty());
 
     // First we construct the file logging layer if a file name was provided.
     let (file_layer, _file_guard) = match args.log_file_path {
@@ -110,7 +112,10 @@ pub fn initialize_logging<T: AsRef<Path>>(args: LogArgs<T>) -> Result<LogGuard, 
             }
 
             let (non_blocking, guard) = tracing_appender::non_blocking(file);
-            let file_layer = fmt::layer().with_line_number(true).with_writer(non_blocking);
+            let file_layer = fmt::layer()
+                .with_line_number(true)
+                .with_ansi(use_ansi)
+                .with_writer(non_blocking);
 
             (Some(file_layer), Some(guard))
         },
@@ -120,7 +125,10 @@ pub fn initialize_logging<T: AsRef<Path>>(args: LogArgs<T>) -> Result<LogGuard, 
     // If we log to stdout, we need to add this layer to our logger.
     let (stdout_layer, _stdout_guard) = if args.log_to_stdout {
         let (non_blocking, guard) = tracing_appender::non_blocking(std::io::stdout());
-        let stdout_layer = fmt::layer().with_line_number(true).with_writer(non_blocking);
+        let stdout_layer = fmt::layer()
+            .with_line_number(true)
+            .with_ansi(use_ansi)
+            .with_writer(non_blocking);
         (Some(stdout_layer), Some(guard))
     } else {
         (None, None)
@@ -151,6 +159,7 @@ pub fn initialize_logging<T: AsRef<Path>>(args: LogArgs<T>) -> Result<LogGuard, 
         let (non_blocking, guard) = tracing_appender::non_blocking(file);
         let file_layer = fmt::layer()
             .with_line_number(true)
+            .with_ansi(use_ansi)
             .with_writer(non_blocking)
             .with_filter(EnvFilter::new("mcp=trace"));
         (Some(file_layer), Some(guard))
@@ -183,6 +192,7 @@ pub fn initialize_logging<T: AsRef<Path>>(args: LogArgs<T>) -> Result<LogGuard, 
         let (non_blocking, guard) = tracing_appender::non_blocking(file);
         let file_layer = fmt::layer()
             .with_line_number(true)
+            .with_ansi(use_ansi)
             .with_writer(non_blocking)
             .with_filter(EnvFilter::new("code_agent_sdk=trace"));
         (Some(file_layer), Some(guard))

@@ -48,10 +48,6 @@ pub mod env_var {
         Q_TERM = "Q_TERM",
         KIRO_TERM = "KIRO_TERM",
 
-        /// Sets the current log level
-        Q_LOG_LEVEL = "Q_LOG_LEVEL",
-        KIRO_LOG_LEVEL = "KIRO_LOG_LEVEL",
-
         /// Overrides the ZDOTDIR environment variable
         Q_ZDOTDIR = "Q_ZDOTDIR",
         KIRO_ZDOTDIR = "KIRO_ZDOTDIR",
@@ -92,9 +88,16 @@ pub mod env_var {
         Q_DISABLE_TRUECOLOR = "Q_DISABLE_TRUECOLOR",
         KIRO_DISABLE_TRUECOLOR = "KIRO_DISABLE_TRUECOLOR",
 
+        /// Sets the current log level
+        Q_LOG_LEVEL = "Q_LOG_LEVEL",
+        KIRO_LOG_LEVEL = "KIRO_LOG_LEVEL",
+
         /// Log to stdout
         Q_LOG_STDOUT = "Q_LOG_STDOUT",
         KIRO_LOG_STDOUT = "KIRO_LOG_STDOUT",
+
+        /// Disable colored log output
+        KIRO_LOG_NO_COLOR = "KIRO_LOG_NO_COLOR",
 
         /// Override log file path
         KIRO_CHAT_LOG_FILE = "KIRO_CHAT_LOG_FILE",

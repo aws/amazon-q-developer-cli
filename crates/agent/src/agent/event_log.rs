@@ -326,7 +326,7 @@ mod tests {
         let snapshot = vec![user_message("summary context"), assistant_msg("acknowledged")];
         log.append(LogEntry::compaction(
             "Summary of conversation".to_string(),
-            CompactStrategy::default(),
+            CompactStrategy::default_strategy(),
             snapshot,
         ));
 

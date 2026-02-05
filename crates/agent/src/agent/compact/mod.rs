@@ -1,5 +1,7 @@
 mod facts;
 
+use std::collections::VecDeque;
+
 pub use facts::{
     CommandEntry,
     CompactionFacts,
@@ -22,12 +24,13 @@ use super::types::ConversationState;
 use super::{
     CONTEXT_ENTRY_END_HEADER,
     CONTEXT_ENTRY_START_HEADER,
+    enforce_conversation_invariants,
 };
 
 const TRUNCATED_SUFFIX: &str = "...truncated due to length";
 const DEFAULT_MAX_MESSAGE_LEN: usize = 25_000;
-/// Default message pairs to exclude from compaction.
-pub const DEFAULT_MESSAGES_TO_EXCLUDE: usize = 2;
+/// Default (User, Assistant) message pairs to exclude from compaction.
+pub const DEFAULT_MESSAGE_PAIRS_TO_EXCLUDE: usize = 2;
 /// Default percentage of context window to exclude from compaction.
 pub const DEFAULT_CONTEXT_WINDOW_PERCENT_TO_EXCLUDE: usize = 2;
 /// Approximate bytes per token for estimation.
@@ -50,10 +53,10 @@ pub struct CompactingState {
     pub conversation: ConversationState,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub struct CompactStrategy {
-    /// Number of user/assistant pairs to exclude from the history as part of compaction.
-    pub messages_to_exclude: usize,
+    /// Number of (User, Assistant) message pairs to exclude from the history as part of compaction.
+    pub message_pairs_to_exclude: usize,
     /// Percentage of context window to exclude from compaction.
     pub context_window_percent_to_exclude: usize,
     /// Whether or not to truncate large messages in the history.
@@ -64,37 +67,72 @@ pub struct CompactStrategy {
 }
 
 impl CompactStrategy {
-    /// Returns max(messages_to_exclude, messages fitting in context_window_percent_to_exclude).
+    /// Returns the number of messages to exclude from the end of the history.
+    ///
+    /// The returned value ensures that `messages[..messages.len() - return_value]` consists of
+    /// (User, Assistant) pairs.
     fn effective_messages_to_exclude(&self, messages: &[Message], context_window_size: usize) -> usize {
+        if messages.is_empty() {
+            return 0;
+        }
+
+        // If the last message is from the user, exclude it from pair counting
+        let trailing_user = messages.last().is_some_and(|m| m.role == Role::User);
+        let pair_messages = &messages[..messages.len().saturating_sub(trailing_user as usize)];
+
         // Calculate how many tokens we want to preserve based on the percentage
         let tokens_to_exclude = context_window_size * self.context_window_percent_to_exclude / 100;
         let target_bytes = tokens_to_exclude * BYTES_PER_TOKEN;
 
-        // Count messages from the end until we exceed the byte budget.
-        // This tells us how many recent messages fit within the percentage-based limit.
-        let token_based_count = {
+        // Count message pairs from the end until we exceed the byte budget.
+        let token_based_pair_count = {
             let mut total_bytes = 0;
-            let mut count = 0;
-            for msg in messages.iter().rev() {
-                count += 1;
-                total_bytes += msg.byte_len();
+            let mut pair_count = 0;
+            for pair in pair_messages.rchunks(2) {
+                pair_count += 1;
+                total_bytes += pair.iter().map(|m| m.byte_len()).sum::<usize>();
                 if total_bytes >= target_bytes {
                     break;
                 }
             }
-            count
+            pair_count
         };
 
-        self.messages_to_exclude.max(token_based_count)
+        let exclude_count = self.message_pairs_to_exclude.max(token_based_pair_count) * 2;
+        let exclude_count = if trailing_user {
+            exclude_count + 1
+        } else {
+            exclude_count
+        };
+
+        // Ensure we leave at least 2 messages to summarize
+        let max_exclude = messages.len().saturating_sub(2);
+        exclude_count.min(max_exclude)
     }
 }
 
-impl Default for CompactStrategy {
-    fn default() -> Self {
+impl CompactStrategy {
+    /// Default compaction strategy that preserves message content.
+    ///
+    /// Excludes 2 message pairs from compaction and does not truncate large messages.
+    /// Use this as the first attempt when compacting conversation history.
+    pub fn default_strategy() -> Self {
         Self {
-            messages_to_exclude: DEFAULT_MESSAGES_TO_EXCLUDE,
+            message_pairs_to_exclude: DEFAULT_MESSAGE_PAIRS_TO_EXCLUDE,
             context_window_percent_to_exclude: DEFAULT_CONTEXT_WINDOW_PERCENT_TO_EXCLUDE,
             truncate_large_messages: false,
+            max_message_length: DEFAULT_MAX_MESSAGE_LEN,
+        }
+    }
+
+    /// Aggressive compaction strategy that truncates large messages.
+    ///
+    /// Use this as a fallback when the default strategy fails due to context window overflow.
+    pub fn aggressive_strategy() -> Self {
+        Self {
+            message_pairs_to_exclude: DEFAULT_MESSAGE_PAIRS_TO_EXCLUDE,
+            context_window_percent_to_exclude: DEFAULT_CONTEXT_WINDOW_PERCENT_TO_EXCLUDE,
+            truncate_large_messages: true,
             max_message_length: DEFAULT_MAX_MESSAGE_LEN,
         }
     }
@@ -124,9 +162,13 @@ pub fn create_compaction_request(
     let summary_prompt = create_summary_prompt(custom_prompt, latest_summary);
     history.push(Message::new(Role::User, vec![ContentBlock::Text(summary_prompt)], None));
 
+    let mut messages = VecDeque::from(history);
+    let mut tools = Vec::new();
+    enforce_conversation_invariants(&mut messages, &mut tools);
+
     SendRequestArgs {
-        messages: history,
-        tool_specs: None,
+        messages: messages.into(),
+        tool_specs: if tools.is_empty() { None } else { Some(tools) },
         system_prompt: None,
     }
 }
@@ -150,7 +192,7 @@ pub fn finalize_compaction(
 
     // Calculate messages to keep (the ones excluded from compaction)
     let drain_end = messages.len().saturating_sub(effective_exclude);
-    let messages_snapshot = messages[drain_end..].to_vec();
+    let messages_snapshot: Vec<Message> = messages[drain_end..].to_vec();
 
     // Extract LLM summary from response
     let llm_summary = model_response
@@ -168,7 +210,7 @@ pub fn finalize_compaction(
     };
 
     // Create and append the log entry
-    let entry = LogEntry::compaction(summary, strategy.clone(), messages_snapshot);
+    let entry = LogEntry::compaction(summary, *strategy, messages_snapshot);
     let index = conversation_state.append_log(entry.clone());
 
     (entry, index)
@@ -200,76 +242,134 @@ mod tests {
     use uuid::Uuid;
 
     use super::*;
+    use crate::agent::agent_loop::types::{
+        ToolResultBlock,
+        ToolResultContentBlock,
+        ToolResultStatus,
+        ToolUseBlock,
+    };
+    use crate::agent::detect_invariant_violations;
     use crate::agent::event_log::{
         LogEntry,
         LogEntryV1,
     };
 
+    fn assert_valid_conversation(messages: &[Message]) {
+        let violations = detect_invariant_violations(messages);
+        assert!(
+            violations.is_valid(),
+            "invalid conversation: {:?}\nmessages: {:#?}",
+            violations,
+            messages
+        );
+    }
+
+    fn append_user(conv: &mut ConversationState, text: &str) {
+        conv.append_log(LogEntry::prompt(Uuid::new_v4().to_string(), vec![ContentBlock::Text(
+            text.into(),
+        )]));
+    }
+
+    fn append_assistant(conv: &mut ConversationState, text: &str) {
+        conv.append_log(LogEntry::assistant_message(Uuid::new_v4().to_string(), vec![
+            ContentBlock::Text(text.into()),
+        ]));
+    }
+
+    fn append_assistant_tool_use(conv: &mut ConversationState, tool_use_id: &str) {
+        conv.append_log(LogEntry::assistant_message(Uuid::new_v4().to_string(), vec![
+            ContentBlock::ToolUse(ToolUseBlock {
+                tool_use_id: tool_use_id.into(),
+                name: "test_tool".into(),
+                input: serde_json::json!({}),
+            }),
+        ]));
+    }
+
+    fn append_user_tool_result(conv: &mut ConversationState, tool_use_id: &str) {
+        conv.append_log(LogEntry::prompt(Uuid::new_v4().to_string(), vec![
+            ContentBlock::ToolResult(ToolResultBlock {
+                tool_use_id: tool_use_id.into(),
+                content: vec![ToolResultContentBlock::Text("result".into())],
+                status: ToolResultStatus::Success,
+            }),
+        ]));
+    }
+
+    /// Creates a (User, Assistant) message pair with specific content sizes (in chars).
+    fn create_message_pair(user_chars: usize, assistant_chars: usize) -> [Message; 2] {
+        [
+            Message::new(Role::User, vec![ContentBlock::Text("x".repeat(user_chars))], None),
+            Message::new(
+                Role::Assistant,
+                vec![ContentBlock::Text("y".repeat(assistant_chars))],
+                None,
+            ),
+        ]
+    }
+
+    const TEST_CONTEXT_WINDOW: usize = 128_000;
+
     #[test]
-    fn test_finalize_compaction_drains_old_messages() {
-        let mut conversation_state = ConversationState::new(Uuid::new_v4(), Vec::new());
+    fn test_effective_messages_to_exclude_percentage_based() {
+        // Each pair: 4000 chars user + 4000 chars assistant = 8000 chars = ~2000 tokens
+        let messages: Vec<Message> = (0..5).flat_map(|_| create_message_pair(4000, 4000)).collect();
 
-        // Add 5 user/assistant pairs via append_log
-        for i in 0..5 {
-            conversation_state.append_log(LogEntry::prompt(format!("msg-{}", i * 2), vec![ContentBlock::Text(
-                format!("user {i}"),
-            )]));
-            conversation_state.append_log(LogEntry::assistant_message(format!("msg-{}", i * 2 + 1), vec![
-                ContentBlock::Text(format!("assistant {i}")),
-            ]));
-        }
-
-        assert_eq!(conversation_state.messages().len(), 10);
-
+        // Use 4% of 128K = 5120 tokens = ~20480 chars
         let strategy = CompactStrategy {
-            messages_to_exclude: 2,
-            context_window_percent_to_exclude: 0,
-            ..Default::default()
+            message_pairs_to_exclude: 1,
+            context_window_percent_to_exclude: 4,
+            ..CompactStrategy::default_strategy()
         };
 
-        let model_response = Message::new(
-            Role::Assistant,
-            vec![ContentBlock::Text("This is the summary".to_string())],
-            None,
-        );
-
-        let (entry, index) = finalize_compaction(&mut conversation_state, model_response, &strategy, Some(100_000));
-
-        // After compaction, should have only the excluded messages
-        assert_eq!(conversation_state.messages().len(), 2);
-
-        // Entry should contain the summary
-        match &entry {
-            LogEntry::V1(LogEntryV1::Compaction { summary, .. }) => {
-                assert!(summary.contains("This is the summary"));
-            },
-            _ => panic!("Expected compaction entry"),
-        }
-
-        // Index should be valid
-        assert!(index > 0);
+        let effective = strategy.effective_messages_to_exclude(&messages, TEST_CONTEXT_WINDOW);
+        // 4% of 128K = 5120 tokens = 20480 chars. Each pair is 8000 chars.
+        // 1st pair: 8000 (under), 2nd: 16000 (under), 3rd: 24000 (crosses threshold)
+        // max(1, 3) = 3 pairs = 6 messages
+        assert_eq!(effective, 6);
     }
 
     #[test]
-    fn test_create_compaction_request_excludes_recent() {
-        let messages: Vec<Message> = (0..6)
-            .map(|i| {
-                let role = if i % 2 == 0 { Role::User } else { Role::Assistant };
-                Message::new(role, vec![ContentBlock::Text(format!("msg{}", i))], None)
-            })
-            .collect();
+    fn test_effective_messages_to_exclude_message_based_wins() {
+        let messages: Vec<Message> = (0..5).flat_map(|_| create_message_pair(50, 50)).collect();
 
         let strategy = CompactStrategy {
-            messages_to_exclude: 2,
+            message_pairs_to_exclude: 4,
             context_window_percent_to_exclude: 0,
-            ..Default::default()
+            ..CompactStrategy::default_strategy()
         };
 
-        let request = create_compaction_request(&messages, &strategy, Some(100_000), None::<String>, None);
+        let effective = strategy.effective_messages_to_exclude(&messages, TEST_CONTEXT_WINDOW);
+        // Token-based gives 0, message_pairs_to_exclude is 4, max(4, 0) = 4 pairs = 8 messages
+        assert_eq!(effective, 8);
+    }
 
-        // Should have 4 old messages + 1 summary prompt = 5
-        assert_eq!(request.messages.len(), 5);
-        assert_eq!(request.messages.last().unwrap().role, Role::User);
+    #[test]
+    fn test_effective_messages_to_exclude_empty_history() {
+        let messages: Vec<Message> = vec![];
+        let strategy = CompactStrategy::default_strategy();
+
+        let effective = strategy.effective_messages_to_exclude(&messages, TEST_CONTEXT_WINDOW);
+        assert_eq!(effective, 0);
+    }
+
+    #[test]
+    fn test_effective_messages_to_exclude_small_history_leaves_messages_to_summarize() {
+        // 3 messages: User, Assistant, User (trailing)
+        let messages = vec![
+            Message::new(Role::User, vec![ContentBlock::Text("x".repeat(100000))], None),
+            Message::new(Role::Assistant, vec![ContentBlock::Text("y".repeat(100))], None),
+            Message::new(Role::User, vec![ContentBlock::Text("z".repeat(100))], None),
+        ];
+
+        let strategy = CompactStrategy {
+            message_pairs_to_exclude: 1,
+            context_window_percent_to_exclude: 2,
+            ..CompactStrategy::default_strategy()
+        };
+
+        let effective = strategy.effective_messages_to_exclude(&messages, TEST_CONTEXT_WINDOW);
+        assert_eq!(effective, 1);
     }
 
     #[test]
@@ -282,5 +382,94 @@ mod tests {
     fn test_create_summary_prompt_with_custom_prompt() {
         let prompt = create_summary_prompt(Some("Focus on code".to_string()), None::<&str>);
         assert!(prompt.contains("Focus on code"));
+    }
+
+    #[test]
+    fn test_compaction_full_flow() {
+        let mut conv = ConversationState::new(Uuid::new_v4(), Vec::new());
+
+        append_user(&mut conv, "hello");
+        append_assistant_tool_use(&mut conv, "tool_1");
+        append_user_tool_result(&mut conv, "tool_1");
+        append_assistant_tool_use(&mut conv, "tool_2");
+        append_user_tool_result(&mut conv, "tool_2");
+
+        assert_valid_conversation(conv.messages());
+
+        let strategy = CompactStrategy {
+            message_pairs_to_exclude: 1,
+            context_window_percent_to_exclude: 0,
+            ..CompactStrategy::default_strategy()
+        };
+
+        let request = create_compaction_request(conv.messages(), &strategy, Some(100_000), None::<String>, None);
+        assert_valid_conversation(&request.messages);
+
+        let model_response = Message::new(Role::Assistant, vec![ContentBlock::Text("Summary".into())], None);
+
+        let (_entry, _index) = finalize_compaction(&mut conv, model_response, &strategy, Some(100_000));
+        let messages = conv.messages();
+
+        // After compaction with message_pairs_to_exclude=1:
+        // Original: [U(hello), A(tool_1), U(result_1), A(tool_2), U(result_2)]
+        // Excluded: 1 pair (2) + trailing user (1) = 3
+        // Kept: messages[2..] = [U(result_1), A(tool_2), U(result_2)]
+        assert_eq!(
+            messages.len(),
+            3,
+            "expected 3 messages after compaction, got {}",
+            messages.len()
+        );
+        assert_eq!(messages[0].role, Role::User);
+        assert_eq!(messages[1].role, Role::Assistant);
+        assert_eq!(messages[2].role, Role::User);
+
+        // The first message should have tool_1 result (orphaned, will be fixed at request time)
+        assert!(
+            messages[0].tool_results_iter().any(|tr| tr.tool_use_id == "tool_1"),
+            "expected tool_1 result in first message"
+        );
+
+        // The last message should have tool_2 result
+        assert!(
+            messages[2].tool_results_iter().any(|tr| tr.tool_use_id == "tool_2"),
+            "expected tool_2 result in last message"
+        );
+    }
+
+    #[test]
+    fn test_default_compaction_strategy() {
+        let mut conv = ConversationState::new(Uuid::new_v4(), Vec::new());
+
+        // Add 3 user/assistant pairs
+        for i in 0..3 {
+            append_user(&mut conv, &format!("user {i}"));
+            append_assistant(&mut conv, &format!("assistant {i}"));
+        }
+
+        assert_eq!(conv.messages().len(), 6);
+        assert_valid_conversation(conv.messages());
+
+        let strategy = CompactStrategy::default_strategy();
+        let request = create_compaction_request(conv.messages(), &strategy, Some(100_000), None::<String>, None);
+        assert_valid_conversation(&request.messages);
+
+        // default excludes 2 pairs (4 messages), keeps 2 + compaction prompt = 3
+        assert_eq!(request.messages.len(), 3);
+
+        let model_response = Message::new(Role::Assistant, vec![ContentBlock::Text("Summary".into())], None);
+        let (entry, index) = finalize_compaction(&mut conv, model_response, &strategy, Some(100_000));
+
+        // After compaction: 4 messages remain (2 pairs excluded)
+        assert_eq!(conv.messages().len(), 4);
+        assert_valid_conversation(conv.messages());
+
+        match &entry {
+            LogEntry::V1(LogEntryV1::Compaction { summary, .. }) => {
+                assert!(summary.contains("Summary"));
+            },
+            _ => panic!("Expected compaction entry"),
+        }
+        assert!(index > 0);
     }
 }

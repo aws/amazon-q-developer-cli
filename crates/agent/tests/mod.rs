@@ -249,7 +249,8 @@ async fn test_log_entry_appended_events() {
 async fn test_auto_compaction_on_context_overflow() {
     let _ = tracing_subscriber::fmt::try_init();
 
-    // Responses: tool use -> tool use -> context overflow -> compaction summary -> retry success
+    // Responses: hello_ack -> tool use -> tool use -> context overflow -> compaction summary -> retry
+    // success
     let responses = parse_response_streams(include_str!("./mock_responses/context_window_overflow.jsonl"))
         .await
         .unwrap();
@@ -263,6 +264,11 @@ async fn test_auto_compaction_on_context_overflow() {
         .await
         .unwrap();
 
+    // First send hello and wait for response
+    test.send_prompt("hello".to_string()).await;
+    test.wait_until_agent_stop(Duration::from_secs(2)).await.unwrap();
+
+    // Then send the actual prompt that triggers tool uses and overflow
     test.send_prompt("test prompt".to_string()).await;
     test.wait_until_agent_stop(Duration::from_secs(2)).await.unwrap();
 
@@ -282,17 +288,11 @@ async fn test_auto_compaction_on_context_overflow() {
         "expected CompactionEvent::Completed"
     );
 
-    // Verify the request was retried after compaction
-    // Request 2 has ls tool result (before overflow), request 4 has it again (after compaction retry)
-    let requests = test.requests();
-    let ls_tool_result_count = requests
-        .iter()
-        .filter(|r| r.has_tool_result(|tr| tr.tool_use_id.contains("kexAaD9RRkyTgeHlCu7bRA")))
-        .count();
+    // Verify the retry request (last one) has the ls tool result
+    let retry_request = test.requests().last().unwrap();
     assert!(
-        ls_tool_result_count >= 2,
-        "expected at least 2 requests with ls tool result (original + retry), found {}",
-        ls_tool_result_count
+        retry_request.has_tool_result(|tr| tr.tool_use_id.contains("kexAaD9RRkyTgeHlCu7bRA")),
+        "retry request should contain ls tool result"
     );
 }
 
@@ -626,4 +626,105 @@ async fn test_pretooluse_hook_matches_read_alias() {
 async fn test_pretooluse_hook_matches_fs_read() {
     let _ = tracing_subscriber::fmt::try_init();
     run_pretooluse_hook_matcher_test("fs_read").await;
+}
+
+#[tokio::test]
+async fn test_compaction_retry_on_context_overflow_success() {
+    let _ = tracing_subscriber::fmt::try_init();
+
+    // Responses: hello_ack -> context overflow -> compaction overflow -> compaction success -> retry
+    // success
+    let responses = parse_response_streams(include_str!("./mock_responses/compaction_retry_success.jsonl"))
+        .await
+        .unwrap();
+
+    let mut test = TestCase::builder()
+        .test_name("compaction retry on context overflow success")
+        .with_agent_config(AgentConfig::default())
+        .with_responses(responses)
+        .build()
+        .await
+        .unwrap();
+
+    // First send hello and wait for response
+    test.send_prompt("hello".to_string()).await;
+    test.wait_until_agent_stop(Duration::from_secs(2)).await.unwrap();
+
+    // Send prompt that triggers context overflow -> compaction retry
+    test.send_prompt("test prompt".to_string()).await;
+    test.wait_until_agent_stop(Duration::from_secs(2)).await.unwrap();
+
+    // Verify compaction events: should have Started and Completed (only one Started due to retry)
+    let compaction_events = test.compaction_events();
+
+    let started_count = compaction_events
+        .iter()
+        .filter(|e| matches!(e, AgentEvent::Compaction(CompactionEvent::Started)))
+        .count();
+    assert_eq!(started_count, 1, "expected exactly one CompactionEvent::Started");
+
+    assert!(
+        compaction_events
+            .iter()
+            .any(|e| matches!(e, AgentEvent::Compaction(CompactionEvent::Completed))),
+        "expected CompactionEvent::Completed"
+    );
+
+    // Verify agent ended in idle state (successful retry)
+    let snapshot = test.create_snapshot().await;
+    assert!(
+        matches!(snapshot.execution_state.active_state, ActiveState::Idle),
+        "expected agent to be idle after successful retry"
+    );
+}
+
+#[tokio::test]
+async fn test_compaction_retry_on_context_overflow_failure() {
+    let _ = tracing_subscriber::fmt::try_init();
+
+    // Responses: hello_ack -> context overflow -> compaction overflow -> compaction overflow again
+    // (fail)
+    let responses = parse_response_streams(include_str!("./mock_responses/compaction_retry_failure.jsonl"))
+        .await
+        .unwrap();
+
+    let mut test = TestCase::builder()
+        .test_name("compaction retry on context overflow failure")
+        .with_agent_config(AgentConfig::default())
+        .with_responses(responses)
+        .build()
+        .await
+        .unwrap();
+
+    // First send hello and wait for response
+    test.send_prompt("hello".to_string()).await;
+    test.wait_until_agent_stop(Duration::from_secs(2)).await.unwrap();
+
+    // Send prompt that triggers context overflow -> compaction retry -> failure
+    test.send_prompt("test prompt".to_string()).await;
+    test.wait_until_agent_stop(Duration::from_secs(2)).await.unwrap();
+
+    // Verify compaction events: should have Started and Failed
+    let compaction_events = test.compaction_events();
+
+    assert!(
+        compaction_events
+            .iter()
+            .any(|e| matches!(e, AgentEvent::Compaction(CompactionEvent::Started))),
+        "expected CompactionEvent::Started"
+    );
+
+    assert!(
+        compaction_events
+            .iter()
+            .any(|e| matches!(e, AgentEvent::Compaction(CompactionEvent::Failed { .. }))),
+        "expected CompactionEvent::Failed"
+    );
+
+    // Verify agent ended in errored state
+    let snapshot = test.create_snapshot().await;
+    assert!(
+        matches!(snapshot.execution_state.active_state, ActiveState::Errored(_)),
+        "expected agent to be in errored state after compaction failure"
+    );
 }

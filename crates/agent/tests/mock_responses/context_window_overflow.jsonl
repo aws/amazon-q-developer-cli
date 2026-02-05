@@ -1,3 +1,9 @@
+// hello -> hello_ack (simple text response, no tool use)
+{"result":"ok","data":{"kind":"messageStart","data":{"role":"assistant"}}}
+{"result":"ok","data":{"kind":"contentBlockDelta","data":{"delta":{"kind":"text","data":"Hello! How can I help you today?"},"contentBlockIndex":null}}}
+{"result":"ok","data":{"kind":"messageStop","data":{"stopReason":"endTurn"}}}
+{"result":"ok","data":{"kind":"metadata","data":{"metrics":{"requestStartTime":"2025-10-23T21:04:00.000000Z","requestEndTime":"2025-10-23T21:04:01.000000Z","timeToFirstChunk":{"secs":0,"nanos":100000000},"timeBetweenChunks":[],"responseStreamLen":30},"usage":null,"service":{"requestId":"hello-ack","statusCode":null}}}}
+
 // tool call to fs_read ./399k
 {"result":"ok","data":{"kind":"messageStart","data":{"role":"assistant"}}}
 {"result":"ok","data":{"kind":"contentBlockDelta","data":{"delta":{"kind":"text","data":"I"},"contentBlockIndex":null}}}

@@ -1,6 +1,6 @@
 {
-  "generated_at": "2026-02-03T17:00:57.743078",
-  "total_docs": 93,
+  "generated_at": "2026-02-05T10:25:58.834637",
+  "total_docs": 94,
   "by_category": {
     "command": [
       "commands/agent.md",
@@ -47,6 +47,7 @@
       "settings/enable-thinking.md",
       "settings/enable-todo-list.md",
       "settings/greeting-enabled.md",
+      "settings/introspect-progressive-mode.md",
       "settings/introspect-tangent-mode.md",
       "settings/tangent-mode-key.md"
     ],
@@ -148,7 +149,8 @@
         "require-mcp-startup",
         "log",
         "logging",
-        "history"
+        "history",
+        "KIRO_LOG_NO_COLOR"
       ],
       "related": [
         "slash-chat-save",
@@ -156,7 +158,7 @@
         "slash-agent",
         "exit-codes"
       ],
-      "validated": "2026-02-02",
+      "validated": "2026-02-05",
       "status": "validated"
     },
     {
@@ -799,6 +801,28 @@
       ],
       "related": [],
       "validated": "2025-12-19",
+      "status": "validated"
+    },
+    {
+      "path": "settings/introspect-progressive-mode.md",
+      "file": "introspect-progressive-mode.md",
+      "title": "introspect.progressiveMode",
+      "description": "Use progressive loading instead of semantic search for introspect",
+      "category": "setting",
+      "keywords": [
+        "setting",
+        "introspect",
+        "progressive",
+        "semantic",
+        "search",
+        "enterprise",
+        "model"
+      ],
+      "related": [
+        "introspect",
+        "introspect-tangent-mode"
+      ],
+      "validated": "2026-02-03",
       "status": "validated"
     },
     {

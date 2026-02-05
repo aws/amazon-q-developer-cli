@@ -837,7 +837,7 @@ impl Agent {
                 if !matches!(self.active_state(), ActiveState::Idle) {
                     return Err(AgentError::NotIdle);
                 }
-                self.start_compaction().await?;
+                self.start_compaction(CompactStrategy::default_strategy()).await?;
                 Ok(AgentResponse::Success)
             },
             AgentRequest::ClearConversation => {
@@ -1150,7 +1150,7 @@ impl Agent {
                     // nothing to do
                 },
                 StreamErrorKind::ContextWindowOverflow if !self.settings.disable_auto_compact => {
-                    self.start_compaction().await?;
+                    self.start_compaction(CompactStrategy::default_strategy()).await?;
                 },
                 StreamErrorKind::Validation { .. }
                 | StreamErrorKind::ServiceFailure
@@ -1279,11 +1279,14 @@ impl Agent {
     /// This can be triggered either:
     /// - Automatically when context window overflow occurs
     /// - Manually via `CompactConversation` request
-    async fn start_compaction(&mut self) -> Result<(), AgentError> {
-        self.agent_event_buf
-            .push(AgentEvent::Compaction(CompactionEvent::Started));
+    async fn start_compaction(&mut self, strategy: CompactStrategy) -> Result<(), AgentError> {
+        debug!(?strategy, "starting compaction");
 
-        let strategy = CompactStrategy::default();
+        if !matches!(self.active_state(), ActiveState::Compacting { .. }) {
+            self.agent_event_buf
+                .push(AgentEvent::Compaction(CompactionEvent::Started));
+        }
+
         let latest_summary = self.conversation_state.event_log().latest_summary().map(String::from);
         let compaction_request = create_compaction_request(
             self.conversation_state.messages(),
@@ -1320,6 +1323,10 @@ impl Agent {
             return Ok(());
         };
 
+        let ActiveState::Compacting { strategy } = self.execution_state.active_state else {
+            return Err(AgentError::Custom("Not in compacting state".to_string()));
+        };
+
         if let AgentLoopEventKind::ResponseStreamEnd { result, metadata } = evt {
             match result {
                 Ok(msg) => {
@@ -1330,17 +1337,12 @@ impl Agent {
                         ));
                     }
 
-                    // Get the strategy before modifying state
-                    let ActiveState::Compacting { strategy } = std::mem::take(&mut self.execution_state.active_state)
-                    else {
-                        return Err(AgentError::Custom("Not in compacting state".to_string()));
-                    };
-
                     // Finalize compaction and get the log entry
                     let context_window_size = self.model.context_window_size();
                     let (entry, index) =
                         compact::finalize_compaction(&mut self.conversation_state, msg, &strategy, context_window_size);
 
+                    info!("compaction completed successfully");
                     self.compaction_loop = None;
                     self.agent_event_buf.push(AgentEvent::LogEntryAppended { entry, index });
                     self.agent_event_buf
@@ -1353,20 +1355,36 @@ impl Agent {
                         .last()
                         .is_some_and(|m| m.role == Role::User)
                     {
+                        debug!("last message is from the user, retrying the request");
                         let pending_request = self.format_request().await;
                         self.set_active_state(ActiveState::ExecutingRequest).await;
                         self.send_request(pending_request).await?;
                     } else {
+                        debug!("last message is not from the user, going to idle state");
                         self.set_active_state(ActiveState::Idle).await;
                     }
                 },
                 Err(err) => {
                     self.compaction_loop = None;
-                    self.agent_event_buf
-                        .push(AgentEvent::Compaction(CompactionEvent::Failed {
-                            error: err.to_string(),
-                        }));
-                    self.set_active_state(ActiveState::Errored(err.into())).await;
+
+                    // Retry with aggressive strategy if context overflow and not already truncating
+                    let is_context_overflow = matches!(
+                        &err,
+                        LoopError::Stream(stream_err) if matches!(stream_err.kind, StreamErrorKind::ContextWindowOverflow)
+                    );
+
+                    if is_context_overflow && !strategy.truncate_large_messages {
+                        debug!("compaction failed due to context overflow, retrying with aggressive strategy");
+                        self.start_compaction(CompactStrategy::aggressive_strategy()).await?;
+                    } else {
+                        self.agent_event_buf
+                            .push(AgentEvent::Compaction(CompactionEvent::Failed {
+                                error: err.to_string(),
+                            }));
+                        self.set_active_state(ActiveState::Errored(err.clone().into())).await;
+                        self.agent_event_buf
+                            .push(AgentEvent::Stop(AgentStopReason::Error(err.into())));
+                    }
                 },
             }
         }
@@ -2379,25 +2397,104 @@ where
     context_content
 }
 
+/// Violations of conversation history invariants.
+#[derive(Debug, Default)]
+pub struct ConversationInvariantViolations {
+    /// First message is not a User message without tool results.
+    pub invalid_first_message: bool,
+    /// Indices of User messages not followed by an Assistant message (excludes last message).
+    pub user_not_followed_by_assistant: Vec<usize>,
+    /// Indices of Assistant messages not followed by a User message (excludes last message).
+    pub assistant_not_followed_by_user: Vec<usize>,
+    /// (message_index, tool_use_id) for tool results without corresponding tool use in preceding
+    /// assistant.
+    pub orphaned_tool_results: Vec<(usize, String)>,
+    /// (message_index, tool_use_id) for tool uses without corresponding tool result in following
+    /// user.
+    pub missing_tool_results: Vec<(usize, String)>,
+}
+
+impl ConversationInvariantViolations {
+    pub fn is_valid(&self) -> bool {
+        !self.invalid_first_message
+            && self.user_not_followed_by_assistant.is_empty()
+            && self.assistant_not_followed_by_user.is_empty()
+            && self.orphaned_tool_results.is_empty()
+            && self.missing_tool_results.is_empty()
+    }
+}
+
+/// Detects conversation history invariant violations without modifying the messages.
+pub fn detect_invariant_violations(messages: &[Message]) -> ConversationInvariantViolations {
+    let mut violations = ConversationInvariantViolations::default();
+
+    if messages.is_empty() {
+        return violations;
+    }
+
+    // Check first message is User without tool results
+    if messages[0].role != Role::User || messages[0].tool_results().is_some() {
+        violations.invalid_first_message = true;
+    }
+
+    // Check orphaned tool results in first message (no preceding assistant)
+    for tool_result in messages[0].tool_results_iter() {
+        violations
+            .orphaned_tool_results
+            .push((0, tool_result.tool_use_id.clone()));
+    }
+
+    // Check consecutive message pairs
+    for (i, pair) in messages.windows(2).enumerate() {
+        let curr = &pair[0];
+        let next = &pair[1];
+
+        match curr.role {
+            Role::User => {
+                if next.role != Role::Assistant {
+                    violations.user_not_followed_by_assistant.push(i);
+                }
+            },
+            Role::Assistant => {
+                if next.role != Role::User {
+                    violations.assistant_not_followed_by_user.push(i);
+                } else {
+                    // Check tool use/result pairing
+                    for tool_result in next.tool_results_iter() {
+                        if curr.get_tool_use(&tool_result.tool_use_id).is_none() {
+                            violations
+                                .orphaned_tool_results
+                                .push((i + 1, tool_result.tool_use_id.clone()));
+                        }
+                    }
+                    for tool_use in curr.tool_uses_iter() {
+                        if next.get_tool_result(&tool_use.tool_use_id).is_none() {
+                            violations.missing_tool_results.push((i, tool_use.tool_use_id.clone()));
+                        }
+                    }
+                }
+            },
+        }
+    }
+
+    violations
+}
+
 /// Updates the history so that, when non-empty, the following invariants are in place:
 /// - The history length is `<= MAX_CONVERSATION_STATE_HISTORY_LEN`. Oldest messages are dropped.
 /// - Any tool uses that do not exist in the provided tool specs will have their arguments replaced
 ///   with dummy content.
-fn enforce_conversation_invariants(messages: &mut VecDeque<Message>, tools: &mut Vec<ToolSpec>) {
+pub(super) fn enforce_conversation_invariants(messages: &mut VecDeque<Message>, tools: &mut Vec<ToolSpec>) {
     if messages.is_empty() {
         return;
     }
 
-    // First, trim the conversation history by finding the second oldest message from the user without
+    // Trim the conversation history by finding the oldest message from the user without
     // tool results - this will be the new oldest message in the history.
     //
     // Note that we reserve extra slots for context messages.
     const MAX_HISTORY_LEN: usize = MAX_CONVERSATION_STATE_HISTORY_LEN - 2;
-    let need_to_trim_front = messages
-        .front()
-        .is_none_or(|m| !(m.role == Role::User && m.tool_results().is_none()))
-        || messages.len() > MAX_HISTORY_LEN;
-    if need_to_trim_front {
+    if messages.len() > MAX_HISTORY_LEN {
         match messages
             .iter()
             .enumerate()

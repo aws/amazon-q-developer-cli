@@ -1,0 +1,23 @@
+// hello -> hello_ack
+{"result":"ok","data":{"kind":"messageStart","data":{"role":"assistant"}}}
+{"result":"ok","data":{"kind":"contentBlockDelta","data":{"delta":{"kind":"text","data":"Hello!"},"contentBlockIndex":null}}}
+{"result":"ok","data":{"kind":"messageStop","data":{"stopReason":"endTurn"}}}
+{"result":"ok","data":{"kind":"metadata","data":{"metrics":{"requestStartTime":"2025-10-23T21:04:00.000000Z","requestEndTime":"2025-10-23T21:04:01.000000Z","timeToFirstChunk":{"secs":0,"nanos":100000000},"timeBetweenChunks":[],"responseStreamLen":30},"usage":null,"service":{"requestId":"hello-ack","statusCode":null}}}}
+
+// contextWindowOverflow on main request
+{"result":"error","data":{"original_request_id":"main-request","original_status_code":400,"original_message":null,"kind":{"kind":"contextWindowOverflow"}}}
+
+// contextWindowOverflow on first compaction attempt (default strategy, no truncation)
+{"result":"error","data":{"original_request_id":"compaction-attempt-1","original_status_code":400,"original_message":null,"kind":{"kind":"contextWindowOverflow"}}}
+
+// compaction summary response (aggressive strategy with truncation succeeds)
+{"result":"ok","data":{"kind":"messageStart","data":{"role":"assistant"}}}
+{"result":"ok","data":{"kind":"contentBlockDelta","data":{"delta":{"kind":"text","data":"# Conversation Summary\n\nThe user said hello."},"contentBlockIndex":null}}}
+{"result":"ok","data":{"kind":"messageStop","data":{"stopReason":"endTurn"}}}
+{"result":"ok","data":{"kind":"metadata","data":{"metrics":{"requestStartTime":"2025-10-23T21:05:00.000000Z","requestEndTime":"2025-10-23T21:05:01.000000Z","timeToFirstChunk":{"secs":0,"nanos":100000000},"timeBetweenChunks":[],"responseStreamLen":50},"usage":null,"service":{"requestId":"compaction-summary","statusCode":null}}}}
+
+// retry response after compaction
+{"result":"ok","data":{"kind":"messageStart","data":{"role":"assistant"}}}
+{"result":"ok","data":{"kind":"contentBlockDelta","data":{"delta":{"kind":"text","data":"I can help you now."},"contentBlockIndex":null}}}
+{"result":"ok","data":{"kind":"messageStop","data":{"stopReason":"endTurn"}}}
+{"result":"ok","data":{"kind":"metadata","data":{"metrics":{"requestStartTime":"2025-10-23T21:05:02.000000Z","requestEndTime":"2025-10-23T21:05:03.000000Z","timeToFirstChunk":{"secs":0,"nanos":100000000},"timeBetweenChunks":[],"responseStreamLen":30},"usage":null,"service":{"requestId":"retry-after-compaction","statusCode":null}}}}

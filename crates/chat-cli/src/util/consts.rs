@@ -97,6 +97,9 @@ pub mod env_var {
         Q_LOG_STDOUT = "Q_LOG_STDOUT",
         KIRO_LOG_STDOUT = "KIRO_LOG_STDOUT",
 
+        /// Disable colored log output
+        KIRO_LOG_NO_COLOR = "KIRO_LOG_NO_COLOR",
+
         /// Log file path override
         KIRO_CHAT_LOG_FILE = "KIRO_CHAT_LOG_FILE",
 

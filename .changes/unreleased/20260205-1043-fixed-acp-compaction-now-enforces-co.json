@@ -1,0 +1,4 @@
+{
+  "type": "fixed",
+  "description": "ACP compaction now enforces conversation invariants and retries with aggressive strategy on failure"
+}

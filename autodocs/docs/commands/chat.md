@@ -1,13 +1,13 @@
 ---
 doc_meta:
-  validated: 2026-02-02
-  commit: 2cfa80d8
+  validated: 2026-02-05
+  commit: b67eac21
   status: validated
   testable_headless: true
   category: command
   title: kiro-cli chat
   description: Start AI assistant session with support for agents, models, tool trust, and conversation management
-  keywords: [chat, conversation, agent, model, interactive, headless, mcp, require-mcp-startup, log, logging, history]
+  keywords: [chat, conversation, agent, model, interactive, headless, mcp, require-mcp-startup, log, logging, history, KIRO_LOG_NO_COLOR]
   related: [slash-chat-save, slash-chat-load, slash-agent, exit-codes]
 ---
 
@@ -267,4 +267,10 @@ Override with `KIRO_CHAT_LOG_FILE` environment variable:
 
 ```bash
 KIRO_CHAT_LOG_FILE=/tmp/my-debug.log kiro-cli chat
+```
+
+Disable ANSI colors in log output with `KIRO_LOG_NO_COLOR`:
+
+```bash
+KIRO_LOG_NO_COLOR=1 kiro-cli chat
 ```

@@ -688,7 +688,8 @@ impl AcpSession {
                             self.handle_agent_event(event).await;
                         }
                         Err(_) => {
-                            warn!("Agent event channel closed");
+                            error!("Agent event channel closed, exiting");
+                            break;
                         }
                     }
                 }

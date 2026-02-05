@@ -60,6 +60,7 @@ use crate::agent::util::request_channel::{
     new_request_channel,
     respond,
 };
+use crate::detect_invariant_violations;
 
 /// Identifier for an instance of an executing loop. Derived from an agent id and some unique
 /// identifier.
@@ -258,6 +259,23 @@ impl AgentLoop {
         match req {
             AgentLoopRequest::GetExecutionState => Ok(AgentLoopResponse::ExecutionState(self.execution_state)),
             AgentLoopRequest::SendRequest { model, args } => {
+                let violations = detect_invariant_violations(&args.messages);
+                if !violations.is_valid() {
+                    error!("unexpected conversation history invariant violation: {:#?}", violations);
+                    return Err(AgentLoopResponseError::Custom(
+                        "invalid conversation history received".to_string(),
+                    ));
+                }
+                if !args.messages.last().is_some_and(|m| m.role == Role::User) {
+                    error!(
+                        "expected last message to be from the user, instead found: {:?}",
+                        args.messages.last()
+                    );
+                    return Err(AgentLoopResponseError::Custom(
+                        "expected last message to be from the user".to_string(),
+                    ));
+                }
+
                 if self.curr_stream.is_some() {
                     return Err(AgentLoopResponseError::StreamCurrentlyExecuting);
                 }
