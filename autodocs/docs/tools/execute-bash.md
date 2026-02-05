@@ -1,7 +1,7 @@
 ---
 doc_meta:
-  validated: 2025-12-19
-  commit: 57090ffe
+  validated: 2026-02-02
+  commit: edc8861d
   status: validated
   testable_headless: true
   category: tool
@@ -216,8 +216,8 @@ Filesystem      Size  Used Avail Use% Mounted on
 
 - Multi-line commands always require approval (safety feature)
 - Output limited by MAX_TOOL_RESPONSE_SIZE
-- No interactive command support (commands requiring user input will hang)
-- No real-time output streaming (output returned after completion)
+- No interactive command support (commands requiring user input will hang, though prompts display immediately)
+- Output streams in real-time to terminal but is truncated in the final result if it exceeds size limits
 - Commands run in user's shell environment
 - No timeout configuration (commands can run indefinitely)
 - Regex patterns don't support look-around assertions
@@ -236,4 +236,4 @@ Filesystem      Size  Used Avail Use% Mounted on
 
 **Exit Codes**: Captured and included in output. Non-zero exit codes don't cause tool failure.
 
-**Output Handling**: stdout and stderr captured separately, then combined in output. Unicode tags sanitized for safety.
+**Output Handling**: stdout and stderr captured separately, then combined in output. Output streams to terminal in real-time (including partial lines and prompts). Final result truncated if exceeding size limits. Unicode tags sanitized for safety.

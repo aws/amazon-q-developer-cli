@@ -12,6 +12,7 @@ use tracing::error;
 
 use super::{
     CommandResult,
+    MAX_COMMAND_OUTPUT_SIZE,
     env_vars_with_user_agent,
     format_output,
 };
@@ -20,16 +21,10 @@ use crate::os::Os;
 /// Run a command on Windows using cmd.exe.
 /// # Arguments
 /// * `command` - The command to run
-/// * `max_result_size` - max size of output streams, truncating if required
 /// * `updates` - output stream to push informational messages about the progress
 /// # Returns
 /// A [`CommandResult`]
-pub async fn run_command<W: Write>(
-    os: &Os,
-    command: &str,
-    max_result_size: usize,
-    mut updates: Option<W>,
-) -> Result<CommandResult> {
+pub async fn run_command<W: Write>(os: &Os, command: &str, mut updates: Option<W>) -> Result<CommandResult> {
     // Set up environment variables with user agent metadata for CloudTrail tracking
     let env_vars = env_vars_with_user_agent(os);
 
@@ -114,8 +109,8 @@ pub async fn run_command<W: Write>(
 
     Ok(CommandResult {
         exit_status: exit_status.code(),
-        stdout: format_output(&stdout_final, max_result_size),
-        stderr: format_output(&stderr_final, max_result_size),
+        stdout: format_output(&stdout_final, MAX_COMMAND_OUTPUT_SIZE),
+        stderr: format_output(&stderr_final, MAX_COMMAND_OUTPUT_SIZE),
     })
 }
 

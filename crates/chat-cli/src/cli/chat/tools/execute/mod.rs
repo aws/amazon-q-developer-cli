@@ -22,6 +22,11 @@ use crate::cli::chat::tools::{
     ToolInfo,
     display_tool_use,
 };
+
+/// Maximum size for command output (stdout/stderr) in bytes.
+/// This is a third of MAX_TOOL_RESPONSE_SIZE to allow room for both stdout and stderr
+/// plus the JSON structure in the response.
+pub const MAX_COMMAND_OUTPUT_SIZE: usize = MAX_TOOL_RESPONSE_SIZE / 3;
 use crate::cli::chat::util::truncate_safe;
 use crate::os::Os;
 use crate::theme::StyledText;
@@ -167,7 +172,7 @@ impl ExecuteCommand {
     }
 
     pub async fn invoke(&self, os: &Os, output: &mut impl Write) -> Result<InvokeOutput> {
-        let output = run_command(os, &self.command, MAX_TOOL_RESPONSE_SIZE / 3, Some(output)).await?;
+        let output = run_command(os, &self.command, Some(output)).await?;
         let clean_stdout = sanitize_unicode_tags(&output.stdout);
         let clean_stderr = sanitize_unicode_tags(&output.stderr);
 
