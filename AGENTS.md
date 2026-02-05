@@ -1,23 +1,57 @@
 ## Codebase Overview
 
-### Architecture Note: `agent` vs `chat_cli` Crates
+> **Note:** Kiro CLI has two architectures under active development:
+> - **V1** (`chat_cli`) - Currently released in production
+> - **V2** (`chat_cli_v2` + `packages/tui`) - In development, not yet released
+>
+> Both versions are actively maintained with ongoing feature development.
 
-The `agent` crate is an **active refactor** of core functionality from `chat_cli`. The goal is to extract the agent execution engine into a clean, reusable library separate from CLI concerns.
+### Kiro CLI V2 Architecture Overview
+
+Kiro CLI V2 uses a multi-process architecture with Agent Client Protocol (ACP) for communication between the TypeScript frontend and Rust backend:
+
+- **Frontend**: React/Ink-based terminal UI (`packages/tui`) bundled with the main `kiro-cli` Rust binary
+- **Backend**: Rust ACP agent implementation spawned with `kiro-cli chat acp` (`crates/chat-cli-v2`)
+- **Shared Types**: Type definitions using `typeshare` for Rust → TypeScript generation
+
+**Message Flow:**
+```
+TUI (TypeScript) ←─ ACP Protocol over stdio ─→ chat_cli_v2 (Rust) ─→ agent crate
+```
+
+**Actor Hierarchy in chat_cli_v2:**
+- `SessionManager` - Central coordinator for all active sessions
+- `AcpSession` - Bridges ACP protocol to Agent, handles session persistence
+- `Agent` (from `agent` crate) - Core LLM agent execution
+
+### Kiro CLI V1 Architecture Overview
+
+Kiro CLI V1 uses an integrated architecture where the terminal UI is built directly into the Rust binary:
+
+- **Single Binary**: `chat_cli` crate contains both CLI and terminal UI using crossterm
+- **Legacy Agent**: Main agent implementation in `cli/chat/` (~6k LOC)
+- **Subagent Support**: Uses the `agent` crate for `use_subagent` tool functionality only
+
+### Architecture Note: `agent` vs `chat_cli` vs `chat_cli_v2` Crates
+
+The `agent` crate is a reusable agent execution engine extracted from `chat_cli`:
 
 **Current state:**
-- `chat_cli` - Contains the full CLI application including legacy agent execution code in `cli/chat/`
-- `agent` - New crate with refactored agent loop, tool execution, permissions, and MCP management
+- `chat_cli` - CLI with integrated terminal UI (V1, production)
+- `chat_cli_v2` - ACP-based backend for TUI frontend (V2, in development)
+- `agent` - Core agent execution engine used by both V1 and V2
 
-**What's being migrated:**
-- Agent loop and state management → `agent/src/agent/`
-- Tool execution with timeouts → `agent/src/agent/task_executor/`
-- Permission evaluation → `agent/src/agent/permissions.rs`
-- MCP server lifecycle → `agent/src/agent/mcp/`
-- Stream parsing → `agent/src/agent/agent_loop/`
+**Usage by version:**
+- **V1 (chat_cli)**: Uses `agent` crate **only for subagent functionality** via `use_subagent` tool; main agent uses code in `cli/chat/`
+- **V2 (chat_cli_v2)**: Uses `agent` crate as the **primary agent engine** for both main agents and subagents
+
+**Dependency relationship:**
+- `chat_cli` depends on `chat_cli_v2` (uses it as a library for ACP commands)
+- Both `chat_cli` and `chat_cli_v2` depend on `agent`
 
 **During this transition:**
-- Some functionality exists in both crates (e.g., MCP client code, tool implementations)
-- New features should keep in mind that separate implementation maybe necessary for the `agent` crate, while we continue supporting the `chat_cli` crate
+- Active feature development occurs on both V1 and V2
+- Some functionality exists in multiple crates (e.g., MCP client code, tool implementations)
 
 ### Core Crates
 
@@ -82,6 +116,27 @@ The `agent` crate is an **active refactor** of core functionality from `chat_cli
 - `protocol` - Event types: agent events, tool calls, messages, reasoning, state deltas
 - `subagent_indicator` - Terminal UI widget for subagent execution status
 - `conduit` - Structured output routing to stdout/stderr
+
+### Core Packages
+
+**tui** (`packages/tui`) - React/Ink Terminal UI (V2)
+- React-based terminal interface using Ink framework
+- Communicates with Rust backend via ACP over stdio
+- Zustand for state management (messages, approvals, context tracking)
+- Key files:
+  - `src/index.tsx` - Main app entry point
+  - `src/kiro.ts` - Stateless session lifecycle manager
+  - `src/acp-client.ts` - ACP protocol implementation
+  - `src/stores/app-store.ts` - Zustand state store
+  - `src/components/` - UI components (chat, layout, primitives)
+
+**terminal-harness** (`packages/terminal-harness`) - E2E Testing Infrastructure
+- Web-based terminal testing using bun-pty + xterm.js + Playwright
+- Provides automated testing of CLI in real terminal environment
+- Key files:
+  - `pty-server.ts` - HTTP server with WebSocket for PTY communication
+  - `shell.html` - Browser-based terminal interface
+  - `tests/` - Playwright test suites
 
 ### AWS Client Crates
 

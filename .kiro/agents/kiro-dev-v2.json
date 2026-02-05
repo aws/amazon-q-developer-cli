@@ -1,0 +1,72 @@
+{
+  "name": "kiro-dev-v2",
+  "description": "Kiro CLI V2 development agent for TUI (TypeScript/React/Ink) and chat-cli-v2 (Rust/ACP)",
+  "model": "claude-opus-4.5",
+  "prompt": "file://resources/KIRO_DEV_V2_PROMPT.md",
+  "tools": [
+    "fs_read",
+    "fs_write",
+    "execute_bash",
+    "code",
+    "grep",
+    "glob",
+    "introspect",
+    "knowledge",
+    "todo_list",
+    "subagent"
+  ],
+  "allowedTools": [
+    "fs_read",
+    "grep",
+    "glob",
+    "introspect",
+    "knowledge"
+  ],
+  "keyboardShortcut": "ctrl+3",
+  "welcomeMessage": "Hi! I'm the Kiro-Dev-V2 agent for TUI and ACP backend development. What would you like to build?",
+  "toolsSettings": {
+    "execute_bash": {
+      "autoAllowReadonly": true,
+      "allowedCommands": [
+        "^git status$",
+        "^git diff[^&;|]*$",
+        "^git log[^&;|]*$",
+        "^git add[^&;|]*$",
+        "^git commit[^&;|]*$",
+        "^cargo clippy[^&;]*$",
+        "^cargo \\+nightly fmt[^&;]*$",
+        "^cargo build[^&;]*$",
+        "^cargo test[^&;]*$",
+        "^bun install$",
+        "^bun test[^&;|]*$",
+        "^bun run[^&;|]*$",
+        "^\\./scripts/generate-types\\.sh$",
+        "^cat[^&;|]*$",
+        "^ls[^&;|]*$",
+        "^pwd$"
+      ]
+    },
+    "subagent": {
+      "trustedAgents": ["kiro-research-agent"],
+      "availableAgents": ["kiro-research-agent", "kiro_default"]
+    }
+  },
+  "resources": [
+    "file://AGENTS.md",
+    "file://README.md",
+    "file://crates/chat-cli-v2/README.md",
+    "file://packages/tui/TESTING.md"
+  ],
+  "hooks": {
+    "agentSpawn": [
+      {
+        "command": "git status",
+        "description": "Add current git status to context"
+      },
+      {
+        "command": "pwd",
+        "description": "Add current directory to context"
+      }
+    ]
+  }
+}
