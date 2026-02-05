@@ -248,6 +248,7 @@ mod tests {
             Arc::new(RtsModel::new(mock_api_client, state)),
             agent::mcp::McpManager::default().spawn(),
             true,
+            None,
         )
         .await
         .expect("Failed to create agent")

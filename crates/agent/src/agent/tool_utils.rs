@@ -123,10 +123,12 @@ impl SanitizedToolSpec {
 ///   server
 /// - `aliases` - Map from a canonical tool name to an aliased name. This refers to the `aliases`
 ///   field in the agent config
+/// - `lsp_initialized` - Whether LSP is initialized (affects Code tool spec)
 pub fn sanitize_tool_specs(
     canonical_names: Vec<CanonicalToolName>,
     mcp_tool_specs: HashMap<String, Vec<ToolSpec>>,
     aliases: &HashMap<String, String>,
+    lsp_initialized: bool,
 ) -> SanitizedToolSpecs {
     // Mapping from tool names as presented to the model, to a sanitized tool spec that won't cause
     // validation errors.
@@ -141,7 +143,7 @@ pub fn sanitize_tool_specs(
             canon_name @ CanonicalToolName::BuiltIn(name) => {
                 tool_map.insert(name.as_ref().to_string(), SanitizedToolSpec {
                     canonical_name: canon_name.clone(),
-                    tool_spec: BuiltInTool::generate_tool_spec(name),
+                    tool_spec: BuiltInTool::generate_tool_spec_with_context(name, lsp_initialized),
                 });
             },
             CanonicalToolName::Mcp { server_name, tool_name } => {

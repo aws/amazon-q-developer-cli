@@ -134,6 +134,7 @@ impl TestCaseBuilder {
             Arc::clone(&model) as Arc<dyn agent::agent_loop::model::Model>,
             McpManager::default().spawn(),
             false,
+            None, // code_intelligence not needed for tests
         )
         .await?;
 

@@ -28,6 +28,7 @@ bstr.workspace = true
 bytes.workspace = true
 cfg-if.workspace = true
 chrono.workspace = true
+code-agent-sdk = { path = "../code-agent-sdk" }
 clap = { workspace = true, features = ["derive"] }
 color-eyre = "0.6.5"
 color-print.workspace = true

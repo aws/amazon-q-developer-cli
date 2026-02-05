@@ -1,3 +1,5 @@
+pub mod code;
+pub mod code_spec;
 pub mod execute_cmd;
 pub mod fs_read;
 pub mod fs_write;
@@ -18,6 +20,8 @@ pub mod web_search;
 use std::borrow::Cow;
 use std::sync::Arc;
 
+use code::Code;
+pub use code_spec::get_code_tool_spec;
 use execute_cmd::ExecuteCmd;
 use fs_read::FsRead;
 use fs_write::{
@@ -165,6 +169,8 @@ pub enum BuiltInToolName {
     WebFetch,
     #[strum(serialize = "web_search")]
     WebSearch,
+    #[strum(serialize = "code")]
+    Code,
 }
 
 impl BuiltInToolName {
@@ -182,6 +188,7 @@ impl BuiltInToolName {
             BuiltInToolName::UseAws => UseAws::aliases(),
             BuiltInToolName::WebFetch => WebFetch::aliases(),
             BuiltInToolName::WebSearch => WebSearch::aliases(),
+            BuiltInToolName::Code => Code::aliases(),
         }
     }
 }
@@ -355,6 +362,7 @@ pub enum BuiltInTool {
     UseAws(UseAws),
     WebFetch(WebFetch),
     WebSearch(WebSearch),
+    Code(Code),
 }
 
 impl BuiltInTool {
@@ -396,10 +404,17 @@ impl BuiltInTool {
             BuiltInToolName::WebSearch => serde_json::from_value::<WebSearch>(args)
                 .map(Self::WebSearch)
                 .map_err(ToolParseErrorKind::schema_failure),
+            BuiltInToolName::Code => serde_json::from_value::<Code>(args)
+                .map(Self::Code)
+                .map_err(ToolParseErrorKind::schema_failure),
         }
     }
 
     pub fn generate_tool_spec(name: &BuiltInToolName) -> ToolSpec {
+        Self::generate_tool_spec_with_context(name, false)
+    }
+
+    pub fn generate_tool_spec_with_context(name: &BuiltInToolName, lsp_initialized: bool) -> ToolSpec {
         match name {
             BuiltInToolName::FsRead => generate_tool_spec_from_json_schema::<FsRead>(),
             BuiltInToolName::FsWrite => generate_tool_spec_from_trait::<FsWrite>(),
@@ -413,6 +428,7 @@ impl BuiltInTool {
             BuiltInToolName::UseAws => generate_tool_spec_from_trait::<UseAws>(),
             BuiltInToolName::WebFetch => generate_tool_spec_from_trait::<WebFetch>(),
             BuiltInToolName::WebSearch => generate_tool_spec_from_trait::<WebSearch>(),
+            BuiltInToolName::Code => get_code_tool_spec(lsp_initialized),
         }
     }
 
@@ -432,6 +448,7 @@ impl BuiltInTool {
             BuiltInTool::UseAws(_) => BuiltInToolName::UseAws,
             BuiltInTool::WebFetch(_) => BuiltInToolName::WebFetch,
             BuiltInTool::WebSearch(_) => BuiltInToolName::WebSearch,
+            BuiltInTool::Code(_) => BuiltInToolName::Code,
         }
     }
 
@@ -451,6 +468,7 @@ impl BuiltInTool {
             BuiltInTool::UseAws(_) => BuiltInToolName::UseAws.into(),
             BuiltInTool::WebFetch(_) => BuiltInToolName::WebFetch.into(),
             BuiltInTool::WebSearch(_) => BuiltInToolName::WebSearch.into(),
+            BuiltInTool::Code(_) => BuiltInToolName::Code.into(),
         }
     }
 
@@ -470,6 +488,7 @@ impl BuiltInTool {
             BuiltInTool::UseAws(_) => UseAws::aliases(),
             BuiltInTool::WebFetch(_) => WebFetch::aliases(),
             BuiltInTool::WebSearch(_) => WebSearch::aliases(),
+            BuiltInTool::Code(_) => Code::aliases(),
         }
     }
 }

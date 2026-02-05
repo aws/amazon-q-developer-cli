@@ -205,6 +205,7 @@ pub struct Subagent<'a> {
     pub local_mcp_path: &'a PathBuf,
     pub global_mcp_path: &'a PathBuf,
     pub parent_tool_use_id: &'a str,
+    pub code_intelligence: Option<std::sync::Arc<tokio::sync::RwLock<code_agent_sdk::CodeIntelligence>>>,
 }
 
 impl<'a> Subagent<'a> {
@@ -262,6 +263,7 @@ impl<'a> Subagent<'a> {
             model,
             mcp_manager_handle,
             true,
+            self.code_intelligence.clone(),
         )
         .await?;
 
@@ -677,6 +679,7 @@ async fn test_sub_agent_routine(queries: Vec<(String, String)>) -> Result<Vec<Su
             local_mcp_path: &local_mcp_path,
             global_mcp_path: &global_mcp_path,
             parent_tool_use_id: "",
+            code_intelligence: None,
         })
         .collect::<Vec<_>>();
 

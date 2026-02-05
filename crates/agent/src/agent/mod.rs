@@ -59,6 +59,7 @@ use agent_loop::{
     AgentLoopId,
 };
 use chrono::Utc;
+use code_agent_sdk::CodeIntelligence;
 use consts::MAX_RESOURCE_FILE_LENGTH;
 use event_log::{
     LogEntry,
@@ -109,6 +110,7 @@ use task_executor::{
     ToolFuture,
 };
 use tokio::sync::{
+    RwLock,
     broadcast,
     mpsc,
     oneshot,
@@ -369,6 +371,8 @@ pub struct Agent {
     sys_provider: Arc<dyn SystemProvider>,
     /// Denotes whether or not this agent is being spawned as a subagent
     is_subagent: bool,
+    /// Shared code intelligence client for LSP operations (optional)
+    code_intelligence: Option<Arc<RwLock<CodeIntelligence>>>,
 }
 
 impl Agent {
@@ -384,6 +388,7 @@ impl Agent {
     /// * `model` - The backend implementation to use
     /// * `mcp_manager_handle` - Handle to an actor managing MCP servers
     /// * `is_subagent` - whether or not the agent is spawned as a subagent
+    /// * `code_intelligence` - Shared code intelligence client (optional)
     pub async fn new(
         snapshot: AgentSnapshot,
         local_mcp_path: Option<&PathBuf>,
@@ -391,6 +396,7 @@ impl Agent {
         model: Arc<dyn Model>,
         mcp_manager_handle: McpManagerHandle,
         is_subagent: bool,
+        code_intelligence: Option<Arc<RwLock<CodeIntelligence>>>,
     ) -> eyre::Result<Agent> {
         debug!(?snapshot, "initializing agent from snapshot");
 
@@ -425,6 +431,7 @@ impl Agent {
             cached_mcp_configs,
             sys_provider,
             is_subagent,
+            code_intelligence,
         })
     }
 
@@ -1735,7 +1742,18 @@ impl Agent {
             }
         }
 
-        let sanitized_specs = sanitize_tool_specs(tool_names, mcp_server_tool_specs, self.agent_config.tool_aliases());
+        let lsp_initialized = self
+            .code_intelligence
+            .as_ref()
+            .and_then(|c| c.try_read().ok())
+            .is_some_and(|c| c.is_code_intelligence_initialized());
+
+        let sanitized_specs = sanitize_tool_specs(
+            tool_names,
+            mcp_server_tool_specs,
+            self.agent_config.tool_aliases(),
+            lsp_initialized,
+        );
         if !sanitized_specs.transformed_tool_specs().is_empty() {
             warn!(transformed_tool_spec = ?sanitized_specs.transformed_tool_specs(), "some tool specs were transformed");
         }
@@ -1935,6 +1953,10 @@ impl Agent {
                 BuiltInTool::UseAws(t) => t.validate().await.map_err(ToolParseErrorKind::invalid_args),
                 BuiltInTool::WebFetch(_) => Ok(()),
                 BuiltInTool::WebSearch(_) => Ok(()),
+                BuiltInTool::Code(t) => t
+                    .validate(&self.sys_provider)
+                    .await
+                    .map_err(ToolParseErrorKind::invalid_args),
             },
             ToolKind::Mcp(_) => Ok(()),
         }
@@ -2059,6 +2081,17 @@ impl Agent {
                 BuiltInTool::WebSearch(t) => {
                     let model = Arc::clone(&self.model);
                     Box::pin(async move { t.execute(&*model).await })
+                },
+                BuiltInTool::Code(t) => {
+                    let code_intel = self.code_intelligence.clone();
+                    Box::pin(async move {
+                        match code_intel {
+                            Some(ci) => t.execute(&ci, &*provider).await,
+                            None => Err(ToolExecutionError::Custom(
+                                "Code intelligence not available. Run '/code init' to initialize.".to_string(),
+                            )),
+                        }
+                    })
                 },
             },
             ToolKind::Mcp(t) => {

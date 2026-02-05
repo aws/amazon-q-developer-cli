@@ -2,7 +2,11 @@
 
 use std::borrow::Cow;
 use std::collections::HashMap;
-use std::path::PathBuf;
+use std::path::{
+    Path,
+    PathBuf,
+};
+use std::sync::Arc;
 
 use agent::agent_config::{
     ConfigSource,
@@ -10,17 +14,20 @@ use agent::agent_config::{
     load_agents,
 };
 use agent::consts::DEFAULT_AGENT_NAME;
+use code_agent_sdk::CodeIntelligence;
 use sacp::schema::SessionId;
 use sacp::{
     AgentToClient,
     JrConnectionCx,
 };
 use tokio::sync::{
+    RwLock,
     mpsc,
     oneshot,
 };
 use tracing::{
     error,
+    info,
     warn,
 };
 
@@ -164,6 +171,8 @@ pub struct SessionManager {
     global_mcp_path: Option<PathBuf>,
     session_manager_handle: SessionManagerHandle,
     mock_registry: Option<MockResponseRegistryHandle>,
+    /// Shared code intelligence client - lazily initialized, shared across all sessions
+    code_intelligence: Option<Arc<RwLock<CodeIntelligence>>>,
 }
 
 impl SessionManager {
@@ -187,7 +196,31 @@ impl SessionManager {
             global_mcp_path,
             session_manager_handle,
             mock_registry,
+            code_intelligence: None,
         }
+    }
+
+    /// Get or initialize the shared CodeIntelligence client
+    fn get_or_init_code_intelligence(&mut self, cwd: &Path) -> Option<Arc<RwLock<CodeIntelligence>>> {
+        if self.code_intelligence.is_none() {
+            match CodeIntelligence::builder()
+                .workspace_root(cwd.to_path_buf())
+                .auto_detect_languages()
+                .build()
+            {
+                Ok(client) => {
+                    info!("Initialized shared CodeIntelligence client");
+                    self.code_intelligence = Some(Arc::new(RwLock::new(client)));
+                },
+                Err(e) => {
+                    error!(
+                        "Failed to initialize CodeIntelligence: {}. Code tool will be unavailable.",
+                        e
+                    );
+                },
+            }
+        }
+        self.code_intelligence.clone()
     }
 
     async fn handle_set_mode(&self, session_id: &SessionId, mode_id: &str) -> Result<(), sacp::Error> {
@@ -239,7 +272,7 @@ impl SessionManager {
                     .unwrap_or(default_agent);
 
                 // If ACP client provided MCP servers, create an ephemeral config with them merged in
-                let agent_config_to_use: Cow<'_, LoadedAgentConfig> = if !config.mcp_servers.is_empty() {
+                let agent_config_to_use: LoadedAgentConfig = if !config.mcp_servers.is_empty() {
                     let mut ephemeral = base_agent_config.config().clone();
 
                     // Convert ACP MCP servers to agent configs
@@ -259,24 +292,26 @@ impl SessionManager {
                         warn!(?overridden, "ACP MCP servers override existing servers in agent config");
                     }
 
-                    let loaded = LoadedAgentConfig::new(ephemeral, ConfigSource::BuiltIn);
-
-                    Cow::Owned(loaded)
+                    LoadedAgentConfig::new(ephemeral, ConfigSource::BuiltIn)
                 } else {
-                    Cow::Borrowed(base_agent_config)
+                    base_agent_config.clone()
                 };
+
+                // Initialize or get shared code intelligence client
+                let code_intel = self.get_or_init_code_intelligence(&config.cwd);
 
                 let mut builder = AcpSessionBuilder::default()
                     .os(self.os.clone())
                     .session_id(config.session_id)
-                    .cwd(config.cwd)
+                    .cwd(config.cwd.clone())
                     .load(config.load)
                     .local_mcp_path(self.local_mcp_path.as_ref())
                     .global_mcp_path(self.global_mcp_path.as_ref())
-                    .initial_agent_config(agent_config_to_use)
+                    .initial_agent_config(Cow::Owned(agent_config_to_use))
                     .user_embedded_msg(config.user_embedded_msg.as_deref())
                     .session_tx(self.session_manager_handle.clone())
-                    .set_as_subagent(config.is_subagent);
+                    .set_as_subagent(config.is_subagent)
+                    .code_intelligence(code_intel);
 
                 // Pass client connection to session (required)
                 if let Some(cx) = connection_cx {

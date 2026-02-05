@@ -47,6 +47,7 @@ pub struct InvokeSubagent {
 }
 
 impl InvokeSubagent {
+    #[allow(clippy::too_many_arguments)]
     fn as_subagent<'a>(
         &'a self,
         id: u16,
@@ -55,6 +56,7 @@ impl InvokeSubagent {
         local_mcp_path: &'a PathBuf,
         global_mcp_path: &'a PathBuf,
         parent_tool_use_id: &'a str,
+        code_intelligence: Option<std::sync::Arc<tokio::sync::RwLock<code_agent_sdk::CodeIntelligence>>>,
     ) -> Subagent<'a> {
         let InvokeSubagent {
             query,
@@ -76,6 +78,7 @@ impl InvokeSubagent {
             local_mcp_path,
             global_mcp_path,
             parent_tool_use_id,
+            code_intelligence,
         }
     }
 }
@@ -260,7 +263,12 @@ impl UseSubagent {
             .collect()
     }
 
-    pub async fn invoke(&self, os: &Os, agents: &Agents) -> Result<InvokeOutput> {
+    pub async fn invoke(
+        &self,
+        os: &Os,
+        agents: &Agents,
+        code_intelligence: &Option<std::sync::Arc<tokio::sync::RwLock<code_agent_sdk::CodeIntelligence>>>,
+    ) -> Result<InvokeOutput> {
         match self {
             Self::ListAgents => {
                 // Get available_agents setting from active agent
@@ -315,6 +323,7 @@ impl UseSubagent {
                             &local_mcp_path,
                             &global_mcp_path,
                             parent_tool_use_id,
+                            code_intelligence.clone(),
                         )
                     })
                     .collect::<Vec<_>>();

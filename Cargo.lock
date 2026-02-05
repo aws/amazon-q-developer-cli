@@ -63,6 +63,7 @@ dependencies = [
  "cfg-if",
  "chrono",
  "clap",
+ "code-agent-sdk",
  "color-eyre",
  "color-print",
  "convert_case 0.8.0",

@@ -51,6 +51,7 @@ use agent::{
     Agent,
     AgentHandle,
 };
+use code_agent_sdk::CodeIntelligence;
 use sacp::schema::{
     AGENT_METHOD_NAMES,
     AgentCapabilities,
@@ -98,6 +99,7 @@ use sacp::{
     MessageCx,
 };
 use tokio::sync::{
+    RwLock,
     mpsc,
     oneshot,
 };
@@ -428,6 +430,7 @@ pub struct AcpSessionBuilder<'a> {
     session_tx: Option<SessionManagerHandle>,
     client_cx: Option<JrConnectionCx<AgentToClient>>,
     mock_registry: Option<MockResponseRegistryHandle>,
+    code_intelligence: Option<Arc<RwLock<CodeIntelligence>>>,
 }
 
 impl<'a> AcpSessionBuilder<'a> {
@@ -493,6 +496,11 @@ impl<'a> AcpSessionBuilder<'a> {
 
     pub fn mock_registry(mut self, registry: MockResponseRegistryHandle) -> Self {
         self.mock_registry = Some(registry);
+        self
+    }
+
+    pub fn code_intelligence(mut self, client: Option<Arc<RwLock<CodeIntelligence>>>) -> Self {
+        self.code_intelligence = client;
         self
     }
 
@@ -627,6 +635,7 @@ impl AcpSession {
             model,
             McpManager::default().spawn(),
             builder.is_subagent,
+            builder.code_intelligence,
         )
         .await?;
 
@@ -881,7 +890,8 @@ impl AcpSession {
                     let _ = respond_to.respond(PromptResponse::new(stop_reason));
                 }
             },
-            AgentEvent::Stop(AgentStopReason::Error(_)) => {
+            AgentEvent::Stop(AgentStopReason::Error(e)) => {
+                error!("Agent stopped with error: {:?}", e);
                 // Send error response directly to the client - this ends the turn so we take() it
                 if let Some(respond_to) = self.pending_prompt_response.take() {
                     let respond_to = respond_to.into_inner();
@@ -1217,6 +1227,7 @@ fn get_tool_kind(tool_name: &str) -> ToolKind {
             BuiltInToolName::UseAws => ToolKind::Execute,
             BuiltInToolName::WebFetch => ToolKind::Read,
             BuiltInToolName::WebSearch => ToolKind::Search,
+            BuiltInToolName::Code => ToolKind::Read, // Default, actual kind determined by operation
         }
     } else {
         ToolKind::Other
@@ -1274,6 +1285,31 @@ pub(crate) fn get_tool_title(tool: &Tool) -> String {
             BuiltInTool::Introspect(_) => "Introspecting".to_string(),
             BuiltInTool::WebFetch(_) => "Fetching web content".to_string(),
             BuiltInTool::WebSearch(_) => "Searching the web".to_string(),
+            BuiltInTool::Code(code) => {
+                use agent::tools::code::Code;
+                match code {
+                    Code::SearchSymbols(p) => format!("Searching symbols: {}", p.symbol_name),
+                    Code::LookupSymbols(p) => format!("Looking up: {}", p.symbols.join(", ")),
+                    Code::FindReferences(p) => format!("Finding references in {}", truncate_path(&p.file_path)),
+                    Code::GotoDefinition(p) => format!("Going to definition in {}", truncate_path(&p.file_path)),
+                    Code::GetDocumentSymbols(p) => format!("Getting symbols in {}", truncate_path(&p.file_path)),
+                    Code::GetDiagnostics(p) => format!("Getting diagnostics for {}", truncate_path(&p.file_path)),
+                    Code::GetHover(p) => format!("Getting hover info in {}", truncate_path(&p.file_path)),
+                    Code::GetCompletions(p) => format!("Getting completions in {}", truncate_path(&p.file_path)),
+                    Code::RenameSymbol(p) => format!("Renaming to '{}' in {}", p.new_name, truncate_path(&p.file_path)),
+                    Code::Format(p) => format!(
+                        "Formatting {}",
+                        p.file_path
+                            .as_deref()
+                            .map_or_else(|| "workspace".to_string(), truncate_path)
+                    ),
+                    Code::PatternSearch(p) => format!("Pattern search: {}", truncate_str(&p.pattern, 40)),
+                    Code::PatternRewrite(p) => format!("Pattern rewrite: {}", truncate_str(&p.pattern, 40)),
+                    Code::GenerateCodebaseOverview(_) => "Generating codebase overview".to_string(),
+                    Code::SearchCodebaseMap(_) => "Searching codebase map".to_string(),
+                    Code::InitializeWorkspace => "Initializing workspace".to_string(),
+                }
+            },
         },
         AgentToolKind::Mcp(mcp) => format!("Running: @{}/{}", mcp.server_name, mcp.tool_name),
     }

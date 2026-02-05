@@ -324,6 +324,14 @@ pub fn evaluate_tool_permission<P: SystemProvider>(
             } else {
                 PermissionEvalResult::Ask
             }),
+            BuiltInTool::Code(code) => Ok(if !code.is_write_operation() {
+                // Read operations always allowed
+                PermissionEvalResult::Allow
+            } else if is_allowed {
+                PermissionEvalResult::Allow
+            } else {
+                PermissionEvalResult::Ask
+            }),
         },
         ToolKind::Mcp(_) => Ok(if is_allowed {
             PermissionEvalResult::Allow
