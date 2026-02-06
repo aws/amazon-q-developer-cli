@@ -29,6 +29,31 @@ pub struct BM25Context {
 }
 
 impl BM25Context {
+    /// Create a new BM25 context from in-memory BM25 data points
+    pub fn from_bm25_data(data_points: Vec<BM25DataPoint>) -> Result<Self> {
+        // Calculate average document length
+        let total_len: usize = data_points.iter().map(|p| p.content.len()).sum();
+        let avgdl = if data_points.is_empty() {
+            0.0
+        } else {
+            total_len as f64 / data_points.len() as f64
+        };
+
+        let mut context = Self {
+            data_points,
+            index: None,
+            data_path: PathBuf::from("/tmp/embedded"),
+            avgdl,
+        };
+
+        // Build the index
+        if !context.data_points.is_empty() {
+            context.rebuild_index()?;
+        }
+
+        Ok(context)
+    }
+
     /// Create a new BM25 context
     pub fn new(data_path: PathBuf, avgdl: f64) -> Result<Self> {
         // Create the directory if it doesn't exist

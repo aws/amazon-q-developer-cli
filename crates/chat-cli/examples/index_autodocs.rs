@@ -30,8 +30,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Check if already indexed
     let contexts = client.get_contexts().await;
-    if contexts.iter().any(|c| c.name == "kiro-autodocs") {
-        println!("✓ autodocs already indexed");
+    let has_semantic = contexts.iter().any(|c| c.name == "kiro-autodocs-semantic");
+    let has_bm25 = contexts.iter().any(|c| c.name == "kiro-autodocs-bm25");
+
+    if has_semantic && has_bm25 {
+        println!("✓ autodocs already indexed (both semantic and BM25)");
         println!("\nExisting contexts:");
         for ctx in contexts {
             println!("  - {}: {} items", ctx.name, ctx.item_count);
@@ -49,19 +52,39 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     println!("Indexing: {}", autodocs_path.display());
 
-    let request = AddContextRequest {
-        path: autodocs_path,
-        name: "kiro-autodocs".to_string(),
-        description: "Kiro CLI documentation".to_string(),
-        persistent: true,
-        include_patterns: Some(vec!["**/*.md".to_string()]),
-        exclude_patterns: None,
-        embedding_type: None,
-        auto_sync: false,
-    };
+    // Create semantic index
+    if !has_semantic {
+        println!("\n1. Creating semantic index...");
+        let request = AddContextRequest {
+            path: autodocs_path.clone(),
+            name: "kiro-autodocs-semantic".to_string(),
+            description: "Kiro CLI documentation (semantic)".to_string(),
+            persistent: true,
+            include_patterns: Some(vec!["**/*.md".to_string()]),
+            exclude_patterns: None,
+            embedding_type: Some(semantic_search_client::embedding::EmbeddingType::Best),
+            auto_sync: false,
+        };
+        let (op_id, _) = client.add_context(request).await?;
+        println!("✓ Semantic indexing started: {}", op_id);
+    }
 
-    let (op_id, _) = client.add_context(request).await?;
-    println!("✓ Indexing started: {}\n", op_id);
+    // Create BM25 index
+    if !has_bm25 {
+        println!("\n2. Creating BM25 index...");
+        let request = AddContextRequest {
+            path: autodocs_path,
+            name: "kiro-autodocs-bm25".to_string(),
+            description: "Kiro CLI documentation (BM25)".to_string(),
+            persistent: true,
+            include_patterns: Some(vec!["**/*.md".to_string()]),
+            exclude_patterns: None,
+            embedding_type: Some(semantic_search_client::embedding::EmbeddingType::Fast),
+            auto_sync: false,
+        };
+        let (op_id, _) = client.add_context(request).await?;
+        println!("✓ BM25 indexing started: {}", op_id);
+    }
 
     // Wait for completion
     println!("Waiting for indexing to complete...");
@@ -87,10 +110,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         println!("  - {}: {} items", ctx.name, ctx.item_count);
     }
 
-    if contexts.iter().any(|c| c.name == "kiro-autodocs") {
-        println!("\n✅ Success! Introspect will now use semantic search");
+    let has_semantic = contexts.iter().any(|c| c.name == "kiro-autodocs-semantic");
+    let has_bm25 = contexts.iter().any(|c| c.name == "kiro-autodocs-bm25");
+
+    if has_semantic && has_bm25 {
+        println!("\n✅ Success! Introspect will now use hybrid search (semantic + BM25)");
     } else {
-        println!("\n❌ Failed to create kiro-autodocs context");
+        println!("\n❌ Failed to create both indexes");
     }
 
     Ok(())

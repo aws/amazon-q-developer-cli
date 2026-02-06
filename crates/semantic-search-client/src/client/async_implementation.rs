@@ -125,34 +125,31 @@ impl AsyncSemanticSearchClient {
     /// # Returns
     ///
     /// Returns a `Result<Self>` containing the initialized client.
+    /// Create client from embedded data with both semantic and BM25 contexts
     pub async fn from_embedded_data(
         contexts: HashMap<String, crate::types::KnowledgeContext>,
-        context_data: HashMap<String, Vec<crate::types::DataPoint>>,
+        semantic_data: HashMap<String, Vec<crate::types::DataPoint>>,
+        bm25_data: HashMap<String, Vec<crate::types::BM25DataPoint>>,
         config: SemanticSearchConfig,
     ) -> Result<Self> {
-        // Ensure model is downloaded (needed for query embeddings)
-        ModelDownloader::ensure_models_downloaded(&config.embedding_type).await?;
+        // Ensure model is downloaded only if we have semantic data
+        if !semantic_data.is_empty() {
+            ModelDownloader::ensure_models_downloaded(&config.embedding_type).await?;
+        }
 
-        // Create embedder (still needs model for query embeddings)
         let embedder = embedder_factory::create_embedder(config.embedding_type)?;
-
-        // Create context manager from in-memory data
-        let context_manager = ContextManager::from_embedded_data(contexts, context_data)?;
+        let context_manager = ContextManager::from_embedded_data(contexts, semantic_data, bm25_data)?;
         let operation_manager = OperationManager::new();
-
-        // No background worker needed for read-only embedded data
         let (job_tx, _job_rx) = mpsc::unbounded_channel();
 
-        let client = Self {
-            base_dir: PathBuf::from("/tmp/embedded"), // Dummy path, not used
+        Ok(Self {
+            base_dir: PathBuf::from("/tmp/embedded"),
             embedder,
             config,
             job_tx,
             context_manager,
             operation_manager,
-        };
-
-        Ok(client)
+        })
     }
 
     /// Creates a new AsyncSemanticSearchClient with default configuration.

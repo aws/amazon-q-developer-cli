@@ -64,3 +64,5 @@ autodocs/meta/scripts/generate-doc-embeddings.py
 autodocs/meta/feature-inventory.json
 autodocs/meta/scripts/export-embeddings.py
 autodocs/meta/doc-embeddings.json
+autodocs/meta/doc-index.json
+autodocs/meta/doc-search-index.tar.gz

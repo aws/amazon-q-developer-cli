@@ -187,7 +187,7 @@ impl Introspect {
         }
 
         // Parse embedded index in memory
-        let (contexts, context_data) = Self::parse_embedded_index()?;
+        let (contexts, semantic_data, bm25_data) = Self::parse_embedded_index()?;
 
         let config = SemanticSearchConfig {
             chunk_size: 100000,
@@ -196,7 +196,7 @@ impl Introspect {
         };
 
         // Create client from in-memory data (no disk I/O)
-        let client = AsyncSemanticSearchClient::from_embedded_data(contexts, context_data, config).await?;
+        let client = AsyncSemanticSearchClient::from_embedded_data(contexts, semantic_data, bm25_data, config).await?;
         let client_arc = Arc::new(client);
         *client_guard = Some(client_arc.clone());
 
@@ -208,6 +208,7 @@ impl Introspect {
     fn parse_embedded_index() -> Result<(
         HashMap<String, semantic_search_client::types::KnowledgeContext>,
         HashMap<String, Vec<semantic_search_client::types::DataPoint>>,
+        HashMap<String, Vec<semantic_search_client::types::BM25DataPoint>>,
     )> {
         // Decompress tar in memory
         let mut decoder = GzDecoder::new(DOC_SEARCH_INDEX_GZ);
@@ -246,16 +247,84 @@ impl Introspect {
             serde_json::from_str(contexts_json)?;
 
         // Parse data.json for each context
-        let mut context_data = HashMap::new();
-        for context_id in contexts.keys() {
-            let data_path = format!("{}/data.json", context_id);
-            if let Some(data_json) = files.get(&data_path) {
-                let data: Vec<semantic_search_client::types::DataPoint> = serde_json::from_str(data_json)?;
-                context_data.insert(context_id.clone(), data);
+        let mut semantic_data = HashMap::new();
+        let mut bm25_data = HashMap::new();
+
+        for (context_id, context_meta) in contexts.iter() {
+            // Check if it's BM25 or semantic
+            if context_meta.embedding_type.is_bm25() {
+                let bm25_path = format!("{}/data.bm25.json", context_id);
+                if let Some(bm25_json) = files.get(&bm25_path) {
+                    // Parse BM25 data directly (no vector conversion needed)
+                    let data: Vec<semantic_search_client::types::BM25DataPoint> =
+                        serde_json::from_str(bm25_json).map_err(|e| eyre::eyre!("Failed to parse BM25 data: {}", e))?;
+                    bm25_data.insert(context_id.clone(), data);
+                }
+            } else {
+                // Semantic data
+                let data_path = format!("{}/data.json", context_id);
+                if let Some(data_json) = files.get(&data_path) {
+                    let data: Vec<semantic_search_client::types::DataPoint> = serde_json::from_str(data_json)?;
+                    semantic_data.insert(context_id.clone(), data);
+                }
             }
         }
 
-        Ok((contexts, context_data))
+        Ok((contexts, semantic_data, bm25_data))
+    }
+
+    /// Extract document path from search result
+    fn get_doc_path(result: &semantic_search_client::types::SearchResult) -> &str {
+        result
+            .point
+            .payload
+            .get("path")
+            .and_then(|v| v.as_str())
+            .unwrap_or("unknown")
+    }
+
+    /// Combine search results using Reciprocal Rank Fusion (RRF)
+    fn rrf_combine(
+        semantic_results: Vec<semantic_search_client::types::SearchResult>,
+        bm25_results: Vec<semantic_search_client::types::SearchResult>,
+        top_k: usize,
+    ) -> Vec<semantic_search_client::types::SearchResult> {
+        use std::collections::HashMap;
+
+        const RRF_K: f32 = 60.0; // RRF constant
+
+        let mut scores: HashMap<usize, (f32, semantic_search_client::types::SearchResult)> = HashMap::new();
+
+        // Score semantic results
+        for (rank, result) in semantic_results.into_iter().enumerate() {
+            let doc_id = result.point.id;
+            let rrf_score = 1.0 / (RRF_K + (rank as f32) + 1.0);
+            scores.insert(doc_id, (rrf_score, result));
+        }
+
+        // Add BM25 results
+        for (rank, result) in bm25_results.into_iter().enumerate() {
+            let doc_id = result.point.id;
+            let rrf_score = 1.0 / (RRF_K + (rank as f32) + 1.0);
+            scores
+                .entry(doc_id)
+                .and_modify(|(score, _)| *score += rrf_score)
+                .or_insert((rrf_score, result));
+        }
+
+        // Sort by combined score and take top k
+        let mut combined: Vec<_> = scores.into_values().collect();
+        combined.sort_by(|a, b| b.0.partial_cmp(&a.0).unwrap_or(std::cmp::Ordering::Equal));
+
+        // Update distance field with RRF score for display
+        combined
+            .into_iter()
+            .take(top_k)
+            .map(|(rrf_score, mut result)| {
+                result.distance = rrf_score;
+                result
+            })
+            .collect()
     }
 
     /// Get relevant docs using semantic search
@@ -263,12 +332,54 @@ impl Introspect {
         let client = Self::get_doc_search_client().await?;
 
         let contexts = client.get_contexts().await;
-        let autodocs_context = contexts
-            .iter()
-            .find(|c| c.name == "kiro-autodocs")
-            .ok_or_else(|| eyre::eyre!("kiro-autodocs context not found in embedded index"))?;
+        let semantic_ctx = contexts.iter().find(|c| c.name == "kiro-autodocs-semantic");
+        let bm25_ctx = contexts.iter().find(|c| c.name == "kiro-autodocs-bm25");
 
-        let results = client.search_context(&autodocs_context.id, query, Some(5)).await?;
+        // Fallback to old single index if hybrid not available
+        let legacy_ctx = contexts.iter().find(|c| c.name == "kiro-autodocs");
+
+        let results = if let (Some(sem), Some(bm25)) = (semantic_ctx, bm25_ctx) {
+            const FETCH_SIZE: usize = 10;
+            const RESULT_SIZE: usize = 5;
+
+            // Hybrid search: fetch FETCH_SIZE from each, RRF combine, return RESULT_SIZE
+            let sem_results = client
+                .search_context(&sem.id, query, Some(FETCH_SIZE))
+                .await
+                .map_err(|e| eyre::eyre!("Semantic search failed: {}", e))?;
+            let bm25_results = client
+                .search_context(&bm25.id, query, Some(FETCH_SIZE))
+                .await
+                .map_err(|e| eyre::eyre!("BM25 search failed: {}", e))?;
+
+            tracing::debug!("=== SEMANTIC RESULTS (top {}) ===", FETCH_SIZE);
+            for (i, result) in sem_results.iter().enumerate() {
+                tracing::debug!(
+                    "  {}. {} (distance: {:.4})",
+                    i + 1,
+                    Self::get_doc_path(result),
+                    result.distance
+                );
+            }
+
+            tracing::debug!("=== BM25 RESULTS (top {}) ===", FETCH_SIZE);
+            for (i, result) in bm25_results.iter().enumerate() {
+                tracing::debug!(
+                    "  {}. {} (score: {:.4})",
+                    i + 1,
+                    Self::get_doc_path(result),
+                    result.distance
+                );
+            }
+
+            Self::rrf_combine(sem_results, bm25_results, RESULT_SIZE)
+        } else if let Some(ctx) = legacy_ctx.or(semantic_ctx) {
+            tracing::debug!("Fallback to single index: {}", ctx.name);
+            // Fallback to single index
+            client.search_context(&ctx.id, query, Some(5)).await?
+        } else {
+            return Err(eyre::eyre!("No autodocs context found in embedded index"));
+        };
 
         let mut documentation = String::new();
         documentation.push_str(&format!("\n\n--- Documentation for: {} ---\n", query));
@@ -276,13 +387,23 @@ impl Introspect {
             "The following documentation is provided inline. DO NOT attempt to read files - all content is below.\n\n",
         );
 
+        tracing::debug!("=== INTROSPECT: Sending {} docs to LLM ===", results.len());
+
         // Load matching docs
         for (i, result) in results.iter().enumerate() {
             if let Some(text) = result.text() {
+                tracing::debug!(
+                    "  {}. {} (RRF score: {:.4})",
+                    i + 1,
+                    Self::get_doc_path(result),
+                    result.distance
+                );
+
                 documentation.push_str(&format!("\n\n--- Document {} ---\n", i + 1));
                 documentation.push_str(text);
             }
         }
+        tracing::debug!("=== END INTROSPECT ===");
 
         // Add settings
         documentation.push_str(&Self::get_settings_info());
@@ -290,20 +411,35 @@ impl Introspect {
         Ok(documentation)
     }
 
+    /// Extract doc path->content map from payload
+    fn extract_docs_from_payload(payload: &HashMap<String, serde_json::Value>) -> Option<(String, String)> {
+        let doc_path = payload.get("path").and_then(|v| v.as_str())?;
+        let text = payload.get("text").and_then(|v| v.as_str())?;
+        Some((doc_path.to_string(), text.to_string()))
+    }
+
     /// Get a specific doc by path from the embedded index (cached)
     fn get_doc_by_path(path: &str) -> Result<String> {
         let mut cache = DOC_CONTENT_CACHE.lock().unwrap();
 
         if cache.is_none() {
-            let (_contexts, context_data) = Self::parse_embedded_index()?;
+            let (_contexts, semantic_data, bm25_data) = Self::parse_embedded_index()?;
             let mut doc_map = HashMap::new();
 
-            for data_points in context_data.values() {
+            // Process semantic data
+            for data_points in semantic_data.values() {
                 for point in data_points {
-                    if let Some(doc_path) = point.payload.get("path").and_then(|v| v.as_str())
-                        && let Some(text) = point.payload.get("text").and_then(|v| v.as_str())
-                    {
-                        doc_map.insert(doc_path.to_string(), text.to_string());
+                    if let Some((doc_path, text)) = Self::extract_docs_from_payload(&point.payload) {
+                        doc_map.insert(doc_path, text);
+                    }
+                }
+            }
+
+            // Process BM25 data
+            for data_points in bm25_data.values() {
+                for point in data_points {
+                    if let Some((doc_path, text)) = Self::extract_docs_from_payload(&point.payload) {
+                        doc_map.insert(doc_path, text);
                     }
                 }
             }
@@ -354,5 +490,146 @@ impl Introspect {
         content.push_str("YOU MUST ONLY provide information that is explicitly documented in the sections above. If specific details about any tool, feature, or command are not documented, you MUST clearly state that the information is not available in the documentation. DO NOT generate plausible-sounding information or make assumptions about undocumented features.\n\n");
 
         content
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::collections::HashMap;
+
+    use semantic_search_client::types::{
+        DataPoint,
+        SearchResult,
+    };
+
+    use super::*;
+
+    fn create_test_result(id: usize, path: &str, distance: f32) -> SearchResult {
+        let mut payload = HashMap::new();
+        payload.insert("path".to_string(), serde_json::json!(path));
+        payload.insert("text".to_string(), serde_json::json!("test content"));
+
+        SearchResult {
+            point: DataPoint {
+                id,
+                payload,
+                vector: vec![],
+            },
+            distance,
+        }
+    }
+
+    #[test]
+    fn test_rrf_combine_consensus_boosting() {
+        // Doc appears in both results should rank higher
+        let semantic = vec![
+            create_test_result(1, "doc1.md", 0.5),
+            create_test_result(2, "doc2.md", 0.6),
+            create_test_result(3, "doc3.md", 0.7),
+        ];
+
+        let bm25 = vec![
+            create_test_result(2, "doc2.md", 5.0), // doc2 in both
+            create_test_result(4, "doc4.md", 4.0),
+            create_test_result(5, "doc5.md", 3.0),
+        ];
+
+        let results = Introspect::rrf_combine(semantic, bm25, 5);
+
+        // doc2 should be first (appears in both)
+        assert_eq!(Introspect::get_doc_path(&results[0]), "doc2.md");
+
+        // RRF score should be sum of both ranks
+        // Semantic rank 2: 1/(60+2) = 0.0161
+        // BM25 rank 1: 1/(60+1) = 0.0164
+        // Total: ~0.0325
+        assert!((results[0].distance - 0.0325).abs() < 0.001);
+    }
+
+    #[test]
+    fn test_rrf_combine_single_source() {
+        // Doc only in one result
+        let semantic = vec![create_test_result(1, "doc1.md", 0.5)];
+
+        let bm25 = vec![create_test_result(2, "doc2.md", 5.0)];
+
+        let results = Introspect::rrf_combine(semantic, bm25, 5);
+
+        assert_eq!(results.len(), 2);
+
+        // Both should have similar scores (rank 1 in their respective lists)
+        // 1/(60+1) = 0.0164
+        assert!((results[0].distance - 0.0164).abs() < 0.001);
+        assert!((results[1].distance - 0.0164).abs() < 0.001);
+    }
+
+    #[test]
+    fn test_rrf_combine_respects_top_k() {
+        let semantic = vec![
+            create_test_result(1, "doc1.md", 0.1),
+            create_test_result(2, "doc2.md", 0.2),
+            create_test_result(3, "doc3.md", 0.3),
+        ];
+
+        let bm25 = vec![
+            create_test_result(4, "doc4.md", 1.0),
+            create_test_result(5, "doc5.md", 2.0),
+        ];
+
+        let results = Introspect::rrf_combine(semantic, bm25, 3);
+
+        // Should only return top 3
+        assert_eq!(results.len(), 3);
+    }
+
+    #[test]
+    fn test_rrf_combine_empty_results() {
+        let semantic = vec![];
+        let bm25 = vec![create_test_result(1, "doc1.md", 1.0)];
+
+        let results = Introspect::rrf_combine(semantic, bm25, 5);
+
+        assert_eq!(results.len(), 1);
+        assert_eq!(Introspect::get_doc_path(&results[0]), "doc1.md");
+    }
+
+    #[test]
+    fn test_rrf_combine_rank_matters() {
+        // Higher rank (lower number) should get better score
+        let semantic = vec![
+            create_test_result(1, "doc1.md", 0.1), // rank 1
+            create_test_result(2, "doc2.md", 0.2), // rank 2
+        ];
+
+        let bm25 = vec![];
+
+        let results = Introspect::rrf_combine(semantic, bm25, 5);
+
+        // doc1 (rank 1) should have higher RRF score than doc2 (rank 2)
+        assert!(results[0].distance > results[1].distance);
+        assert_eq!(Introspect::get_doc_path(&results[0]), "doc1.md");
+    }
+
+    #[test]
+    fn test_get_doc_path() {
+        let result = create_test_result(1, "features/agent-config.md", 0.5);
+        assert_eq!(Introspect::get_doc_path(&result), "features/agent-config.md");
+    }
+
+    #[test]
+    fn test_get_doc_path_missing() {
+        let mut payload = HashMap::new();
+        payload.insert("text".to_string(), serde_json::json!("content"));
+
+        let result = SearchResult {
+            point: DataPoint {
+                id: 1,
+                payload,
+                vector: vec![],
+            },
+            distance: 0.5,
+        };
+
+        assert_eq!(Introspect::get_doc_path(&result), "unknown");
     }
 }

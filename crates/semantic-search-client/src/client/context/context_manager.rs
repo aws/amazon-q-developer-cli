@@ -61,22 +61,30 @@ impl ContextManager {
     /// Create context manager from embedded data (in-memory, no disk I/O)
     pub fn from_embedded_data(
         contexts: HashMap<String, KnowledgeContext>,
-        context_data: HashMap<String, Vec<crate::types::DataPoint>>,
+        semantic_data: HashMap<String, Vec<crate::types::DataPoint>>,
+        bm25_data: HashMap<String, Vec<crate::types::BM25DataPoint>>,
     ) -> Result<Self> {
         let arc_contexts = contexts.into_iter().map(|(k, v)| (k, Arc::new(v))).collect();
 
-        // Load context data into volatile_contexts
+        // Load semantic contexts
         let mut volatile_contexts = HashMap::new();
-        for (context_id, data_points) in context_data {
+        for (context_id, data_points) in semantic_data {
             let semantic_context = SemanticContext::from_data(data_points)?;
             volatile_contexts.insert(context_id, Arc::new(Mutex::new(semantic_context)));
+        }
+
+        // Load BM25 contexts
+        let mut bm25_contexts_map = HashMap::new();
+        for (context_id, data_points) in bm25_data {
+            let bm25_context = BM25Context::from_bm25_data(data_points)?;
+            bm25_contexts_map.insert(context_id, Arc::new(Mutex::new(bm25_context)));
         }
 
         Ok(Self {
             contexts: Arc::new(RwLock::new(arc_contexts)),
             volatile_contexts: Arc::new(RwLock::new(volatile_contexts)),
-            bm25_contexts: Arc::new(RwLock::new(HashMap::new())),
-            base_dir: PathBuf::from("/tmp/embedded"), // Dummy path
+            bm25_contexts: Arc::new(RwLock::new(bm25_contexts_map)),
+            base_dir: PathBuf::from("/tmp/embedded"),
         })
     }
 
