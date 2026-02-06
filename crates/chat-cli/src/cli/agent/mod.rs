@@ -40,6 +40,7 @@ use serde::{
 use thiserror::Error;
 use tokio::fs::ReadDir;
 use tracing::{
+    debug,
     error,
     info,
     warn,
@@ -635,40 +636,115 @@ impl Agent {
         }
     }
 
-    /// Retrieves an agent by name. It does so via first seeking the given agent under local dir,
-    /// and falling back to global dir if it does not exist in local.
+    /// Retrieves an agent by name. It does so via:
+    /// 1. First trying to find a file named `{agent_name}.json` in local then global dirs (and
+    ///    verifying the name field matches)
+    /// 2. If not found, searching through all agent files to find one where the `name` field
+    ///    matches
     pub async fn get_agent_by_name(os: &Os, agent_name: &str) -> eyre::Result<(Agent, PathBuf)> {
         let resolver = os.path_resolver();
-        let config_path: Result<PathBuf, PathBuf> = 'config: {
-            // local first, and then fall back to looking at global
-            let local_config_dir = resolver.workspace().agents_dir()?.join(format!("{agent_name}.json"));
-            if os.fs.exists(&local_config_dir) {
-                break 'config Ok(local_config_dir);
-            }
 
-            let global_config_dir = resolver.global().agents_dir()?.join(format!("{agent_name}.json"));
-            if os.fs.exists(&global_config_dir) {
-                break 'config Ok(global_config_dir);
-            }
-
-            Err(global_config_dir)
-        };
-
-        match config_path {
-            Ok(config_path) => {
-                let content = os.fs.read(&config_path).await?;
-                let mut agent = serde_json::from_slice::<Agent>(&content)?;
-                let mut stderr = std::io::stderr();
-                let legacy_mcp_config = if agent.include_mcp_json {
-                    load_legacy_mcp_config(os, &mut stderr).await.unwrap_or(None)
-                } else {
-                    None
-                };
-                agent.thaw(&config_path, legacy_mcp_config.as_ref(), &mut stderr)?;
-                Ok((agent, config_path))
-            },
-            _ => bail!("Agent {agent_name} does not exist"),
+        // Helper to finalize an agent (thaw with legacy MCP config if needed)
+        async fn finalize_agent(os: &Os, mut agent: Agent, path: &Path) -> eyre::Result<Agent> {
+            let mut stderr = std::io::stderr();
+            let legacy_mcp_config = if agent.include_mcp_json {
+                load_legacy_mcp_config(os, &mut stderr).await.unwrap_or(None)
+            } else {
+                None
+            };
+            agent.thaw(path, legacy_mcp_config.as_ref(), &mut stderr)?;
+            Ok(agent)
         }
+
+        // Collect directories to search (local first, then global)
+        let dirs_to_search: Vec<PathBuf> = [
+            resolver.workspace().agents_dir().ok(),
+            resolver.global().agents_dir().ok(),
+        ]
+        .into_iter()
+        .flatten()
+        .collect();
+
+        // Phase 1: Try direct filename match with name verification
+        for dir in &dirs_to_search {
+            let direct_path = dir.join(format!("{agent_name}.json"));
+            match os.fs.read(&direct_path).await {
+                Ok(content) => match serde_json::from_slice::<Agent>(&content) {
+                    Ok(agent) if agent.name == agent_name => {
+                        let agent = finalize_agent(os, agent, &direct_path).await?;
+                        return Ok((agent, direct_path));
+                    },
+                    Ok(agent) => {
+                        debug!(
+                            path = %direct_path.display(),
+                            expected = agent_name,
+                            actual = agent.name,
+                            "Agent name field does not match filename, skipping direct match"
+                        );
+                    },
+                    Err(e) => {
+                        debug!(
+                            path = %direct_path.display(),
+                            error = %e,
+                            "Failed to parse agent JSON from file"
+                        );
+                    },
+                },
+                Err(e) => {
+                    debug!(
+                        path = %direct_path.display(),
+                        error = %e,
+                        "Failed to read agent file"
+                    );
+                },
+            }
+        }
+
+        // Phase 2: Search all files by name field
+        for dir in dirs_to_search {
+            match os.fs.read_dir(&dir).await {
+                Ok(mut entries) => {
+                    while let Ok(Some(entry)) = entries.next_entry().await {
+                        let path = entry.path();
+                        if path.extension().and_then(|s| s.to_str()) != Some("json") {
+                            continue;
+                        }
+                        match os.fs.read(&path).await {
+                            Ok(content) => match serde_json::from_slice::<Agent>(&content) {
+                                Ok(agent) if agent.name == agent_name => {
+                                    let agent = finalize_agent(os, agent, &path).await?;
+                                    return Ok((agent, path));
+                                },
+                                Ok(_) => {},
+                                Err(e) => {
+                                    debug!(
+                                        path = %path.display(),
+                                        error = %e,
+                                        "Failed to parse agent JSON while searching by name"
+                                    );
+                                },
+                            },
+                            Err(e) => {
+                                debug!(
+                                    path = %path.display(),
+                                    error = %e,
+                                    "Failed to read agent file while searching by name"
+                                );
+                            },
+                        }
+                    }
+                },
+                Err(e) => {
+                    debug!(
+                        dir = %dir.display(),
+                        error = %e,
+                        "Failed to read agents directory"
+                    );
+                },
+            }
+        }
+
+        bail!("Agent {agent_name} does not exist")
     }
 
     pub async fn load(
@@ -2373,6 +2449,102 @@ mod tests {
         assert_eq!(agent.resources.len(), 2);
         assert!(matches!(agent.resources[0], ResourcePath::FilePath(_)));
         assert!(matches!(agent.resources[1], ResourcePath::Complex(_)));
+    }
+
+    #[tokio::test]
+    async fn test_get_agent_by_name_with_different_filename() {
+        use tempfile::TempDir;
+
+        let temp_dir = TempDir::new().unwrap();
+        let temp_path = temp_dir.path();
+
+        let os = Os::new().await.unwrap();
+        // Set working directory to temp path so path_resolver uses our temp dir
+        os.env.set_current_dir_for_test(temp_path.to_path_buf());
+
+        // Create workspace agents directory
+        let agents_dir = temp_path.join(".kiro/agents");
+        os.fs.create_dir_all(&agents_dir).await.unwrap();
+
+        // Test 1: Agent where filename matches name (baseline case)
+        let matching_agent = Agent {
+            name: "matching_agent".to_string(),
+            description: Some("Agent with matching filename".to_string()),
+            include_mcp_json: false, // Disable to avoid side effects
+            ..Default::default()
+        };
+        os.fs
+            .write(
+                agents_dir.join("matching_agent.json"),
+                matching_agent.to_str_pretty().unwrap(),
+            )
+            .await
+            .unwrap();
+
+        let result = Agent::get_agent_by_name(&os, "matching_agent").await;
+        assert!(result.is_ok(), "Should find agent when filename matches name");
+        let (agent, path) = result.unwrap();
+        assert_eq!(agent.name, "matching_agent");
+        assert!(path.ends_with("matching_agent.json"));
+
+        // Test 2: Agent where name differs from filename - should find by searching name field
+        let mismatched_agent = Agent {
+            name: "actual_name".to_string(),
+            description: Some("Agent with mismatched filename".to_string()),
+            include_mcp_json: false,
+            ..Default::default()
+        };
+        os.fs
+            .write(
+                agents_dir.join("different_filename.json"),
+                mismatched_agent.to_str_pretty().unwrap(),
+            )
+            .await
+            .unwrap();
+
+        let result = Agent::get_agent_by_name(&os, "actual_name").await;
+        assert!(
+            result.is_ok(),
+            "Should find agent by name field even when filename differs"
+        );
+        let (agent, path) = result.unwrap();
+        assert_eq!(agent.name, "actual_name");
+        assert!(path.ends_with("different_filename.json"));
+
+        // Test 3: File with matching filename but different name field should NOT be found
+        // when searching by filename
+        let wrong_name_agent = Agent {
+            name: "wrong_name".to_string(),
+            description: Some("Agent with wrong name in file".to_string()),
+            include_mcp_json: false,
+            ..Default::default()
+        };
+        os.fs
+            .write(
+                agents_dir.join("expected_name.json"),
+                wrong_name_agent.to_str_pretty().unwrap(),
+            )
+            .await
+            .unwrap();
+
+        // Searching for "expected_name" should fail because the file's name field is "wrong_name"
+        let result = Agent::get_agent_by_name(&os, "expected_name").await;
+        assert!(
+            result.is_err(),
+            "Should NOT find agent when filename matches but name field differs"
+        );
+
+        // But searching for "wrong_name" should succeed (found via name field search)
+        let result = Agent::get_agent_by_name(&os, "wrong_name").await;
+        assert!(result.is_ok(), "Should find agent by its actual name field");
+        let (agent, path) = result.unwrap();
+        assert_eq!(agent.name, "wrong_name");
+        assert!(path.ends_with("expected_name.json"));
+
+        // Test 4: Non-existent agent should return error
+        let result = Agent::get_agent_by_name(&os, "nonexistent_agent").await;
+        assert!(result.is_err(), "Should return error for non-existent agent");
+        assert!(result.unwrap_err().to_string().contains("does not exist"));
     }
 
     #[test]

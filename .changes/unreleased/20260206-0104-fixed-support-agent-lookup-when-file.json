@@ -1,0 +1,4 @@
+{
+  "type": "fixed",
+  "description": "Support agent lookup when filename differs from name field"
+}
