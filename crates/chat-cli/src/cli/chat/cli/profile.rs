@@ -254,9 +254,26 @@ impl AgentSubcommand {
             Self::Edit { name, path } => {
                 use std::path::PathBuf;
 
+                // Helper to check if agent is built-in and return error if so
+                let check_not_builtin = |agent_name: &str| -> Result<(), ChatError> {
+                    if let Some(agent) = session.conversation.agents.agents.get(agent_name)
+                        && agent.is_builtin()
+                    {
+                        return Err(ChatError::Custom(
+                            format!(
+                                "Cannot edit built-in agent '{}'. Create a new agent with '/agent create'",
+                                agent_name
+                            )
+                            .into(),
+                        ));
+                    }
+                    Ok(())
+                };
+
                 let mut show_both_params_warning = false;
                 let (agent_name, path_with_file_name) = match (name, path) {
                     (Some(name), None) => {
+                        check_not_builtin(&name)?;
                         let (_agent, path) = Agent::get_agent_by_name(os, &name)
                             .await
                             .map_err(|e| ChatError::Custom(Cow::Owned(e.to_string())))?;
@@ -279,6 +296,7 @@ impl AgentSubcommand {
                         (agent.name.clone(), path)
                     },
                     (Some(name), Some(path_arg)) => {
+                        check_not_builtin(&name)?;
                         // --name takes priority, but warn if --path points to a different agent
                         let (_agent, path) = Agent::get_agent_by_name(os, &name)
                             .await
@@ -292,7 +310,13 @@ impl AgentSubcommand {
                         (name, path)
                     },
                     (None, None) => {
-                        return Err(ChatError::Custom("Must specify either --name or --path".into()));
+                        // Default to editing the current agent
+                        let current_agent_name = session.conversation.agents.active_idx.clone();
+                        check_not_builtin(&current_agent_name)?;
+                        let (_agent, path) = Agent::get_agent_by_name(os, &current_agent_name)
+                            .await
+                            .map_err(|e| ChatError::Custom(Cow::Owned(e.to_string())))?;
+                        (current_agent_name, path)
                     },
                 };
 

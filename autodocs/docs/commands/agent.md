@@ -1,7 +1,7 @@
 ---
 doc_meta:
-  validated: 2026-02-02
-  commit: 2cfa80d8
+  validated: 2026-02-05
+  commit: adc1a97a
   status: validated
   testable_headless: true
   category: command
@@ -125,13 +125,16 @@ kiro-cli agent create --name <AGENT_NAME> [--directory <DIR>] [--from <TEMPLATE>
 Edit existing agent configuration.
 
 ```bash
-kiro-cli agent edit --name <AGENT_NAME>
+kiro-cli agent edit [--name <AGENT_NAME>] [--path <PATH>]
 ```
 
 **Parameters**:
-- `--name, -n`: Name of agent to edit (required)
+- `--name, -n`: Name of agent to edit (defaults to current agent)
+- `--path`: Path to agent configuration file
 
 **Opens**: Agent configuration in default editor.
+
+**Note**: Built-in agents cannot be edited. Attempting to edit a built-in agent returns an error suggesting to create a new agent instead.
 
 ### migrate
 
@@ -210,10 +213,27 @@ kiro-cli agent create --name code-reviewer
 ### Example 4: Edit Agent
 
 ```bash
+kiro-cli agent edit
+```
+
+**Expected Output**: Opens current agent's configuration in default editor.
+
+```bash
 kiro-cli agent edit --name rust-expert
 ```
 
-**Expected Output**: Opens agent configuration in default editor.
+**Expected Output**: Opens `rust-expert` agent configuration in default editor.
+
+### Example 5: Attempt to Edit Built-in Agent
+
+```bash
+kiro-cli agent edit --name kiro_default
+```
+
+**Expected Output**:
+```
+Cannot edit built-in agent 'kiro_default'. Create a new agent with 'kiro-cli agent create'
+```
 
 ### Example 5: Set Default Agent
 

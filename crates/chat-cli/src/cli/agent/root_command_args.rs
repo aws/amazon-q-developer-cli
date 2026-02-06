@@ -23,6 +23,7 @@ use super::{
     McpServerConfig,
     legacy,
 };
+use crate::constants::CLI_NAME;
 use crate::database::settings::Setting;
 use crate::os::Os;
 use crate::theme::StyledText;
@@ -151,13 +152,28 @@ impl AgentArgs {
                 )?;
             },
             Some(AgentSubcommands::Edit { name, path }) => {
-                let _agents = Agents::load(os, None, true, &mut stderr, mcp_enabled, mcp_api_failure)
+                let agents = Agents::load(os, None, true, &mut stderr, mcp_enabled, mcp_api_failure)
                     .await
                     .0;
+
+                // Helper to check if agent is built-in and return error if so
+                let check_not_builtin = |agent_name: &str| -> Result<()> {
+                    if let Some(agent) = agents.agents.get(agent_name)
+                        && agent.is_builtin()
+                    {
+                        bail!(
+                            "Cannot edit built-in agent '{}'. Create a new agent with '{} agent create'",
+                            agent_name,
+                            CLI_NAME
+                        );
+                    }
+                    Ok(())
+                };
 
                 let mut show_both_params_warning = false;
                 let (agent_name, path_with_file_name) = match (name, path) {
                     (Some(name), None) => {
+                        check_not_builtin(&name)?;
                         let (_agent, path) = Agent::get_agent_by_name(os, &name).await?;
                         (name, path)
                     },
@@ -171,6 +187,7 @@ impl AgentArgs {
                         (agent.name.clone(), path)
                     },
                     (Some(name), Some(path_arg)) => {
+                        check_not_builtin(&name)?;
                         // --name takes priority, but warn if --path points to a different agent
                         let (_agent, path) = Agent::get_agent_by_name(os, &name).await?;
 
@@ -182,7 +199,11 @@ impl AgentArgs {
                         (name, path)
                     },
                     (None, None) => {
-                        bail!("Must specify either --name or --path");
+                        // Default to editing the current (default) agent
+                        let current_agent_name = agents.active_idx.clone();
+                        check_not_builtin(&current_agent_name)?;
+                        let (_agent, path) = Agent::get_agent_by_name(os, &current_agent_name).await?;
+                        (current_agent_name, path)
                     },
                 };
 

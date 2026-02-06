@@ -468,6 +468,11 @@ impl Default for Agent {
 }
 
 impl Agent {
+    /// Returns true if this agent is a built-in agent (e.g., kiro_default, kiro_planner)
+    pub fn is_builtin(&self) -> bool {
+        self.source_location == AgentSourceLocation::BuiltIn
+    }
+
     /// Add all tools from schema to allowed_tools with proper formatting
     pub fn add_tools_to_allowed(&mut self, schema: &std::collections::HashMap<String, ToolSpec>) {
         for (tool_name, tool_spec) in schema.iter() {

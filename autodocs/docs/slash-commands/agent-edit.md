@@ -1,7 +1,7 @@
 ---
 doc_meta:
-  validated: 2026-01-05
-  commit: a1d370b5
+  validated: 2026-02-05
+  commit: adc1a97a
   status: validated
   testable_headless: false
   category: slash_command
@@ -17,7 +17,7 @@ Edit an existing agent configuration.
 
 ## Overview
 
-The `/agent edit` command opens an existing agent configuration for editing, either by agent name or direct file path.
+The `/agent edit` command opens an existing agent configuration for editing. By default, it edits the currently active agent. You can also specify a different agent by name or path.
 
 ## Usage
 
@@ -27,13 +27,21 @@ The `/agent edit` command opens an existing agent configuration for editing, eit
 
 ## Options
 
-- `-n, --name <NAME>` - Name of the agent to edit
+- `-n, --name <NAME>` - Name of the agent to edit (defaults to current agent)
 - `--path <PATH>` - Path to the agent config file to edit
 - `-h, --help` - Print help
 
 ## Examples
 
-### Example 1: Edit by Name
+### Example 1: Edit Current Agent
+
+```
+/agent edit
+```
+
+Opens the currently active agent's configuration for editing.
+
+### Example 2: Edit by Name
 
 ```
 /agent edit --name python-dev
@@ -41,34 +49,34 @@ The `/agent edit` command opens an existing agent configuration for editing, eit
 
 Opens the `python-dev` agent configuration for editing.
 
-### Example 2: Edit by Path
+### Example 3: Edit by Path
 
 ```
-/agent edit --path ~/.kiro/agents/my-agent.toml
+/agent edit --path ~/.kiro/agents/my-agent.json
 ```
 
 Opens the agent configuration file at the specified path.
-
-### Example 3: Interactive Selection
-
-```
-/agent edit
-```
-
-Shows picker to select agent to edit (if no options provided).
 
 ## Agent Resolution
 
 When using `--name`:
 1. **Local**: `.kiro/agents/` in current directory
 2. **Global**: `~/.kiro/agents/` in home directory
-3. **Built-in**: Default agents (read-only)
 
 ## Editor Behavior
 
 - Opens configuration file in default system editor
 - Changes are saved automatically when editor closes
-- Built-in agents cannot be modified
+
+## Limitations
+
+Built-in agents (`kiro_default`, `kiro_help`, `kiro_planner`) cannot be edited. Attempting to edit a built-in agent returns an error:
+
+```
+Cannot edit built-in agent 'kiro_default'. Create a new agent with '/agent create'
+```
+
+To customize behavior, create a new agent based on your needs.
 
 ## Related Commands
 
@@ -80,5 +88,18 @@ When using `--name`:
 ## Technical Details
 
 **File Format**: Agent configurations are typically TOML files.
+
+**Editor**: Uses system default editor or `$EDITOR` environment variable.
+
+## Related Commands
+
+- [/agent list](agent-list.md) - List available agents
+- [/agent create](agent-create.md) - Create new agent
+- [/agent](agent-swap.md) - Switch to different agent
+- [kiro-cli agent](../commands/agent.md) - CLI agent management
+
+## Technical Details
+
+**File Format**: Agent configurations are JSON files.
 
 **Editor**: Uses system default editor or `$EDITOR` environment variable.
