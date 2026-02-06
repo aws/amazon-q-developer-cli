@@ -78,6 +78,9 @@ jobs:
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable
 
+      - name: Cache Rust dependencies
+        uses: Swatinem/rust-cache@v2
+
       - name: Install cross (for cross-compilation)
         if: matrix.musl || matrix.cross_target
         run: cargo install cross --git https://github.com/cross-rs/cross --tag v0.2.4 --locked

@@ -65,6 +65,9 @@ jobs:
         with:
           targets: aarch64-apple-darwin,x86_64-apple-darwin
 
+      - name: Cache Rust dependencies
+        uses: Swatinem/rust-cache@v2
+
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
         with:
