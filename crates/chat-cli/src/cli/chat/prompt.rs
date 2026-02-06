@@ -1,10 +1,7 @@
 use std::borrow::Cow;
 use std::cell::RefCell;
 use std::path::PathBuf;
-use std::sync::atomic::{
-    AtomicUsize,
-    Ordering,
-};
+use std::sync::atomic::Ordering;
 use std::sync::{
     Arc,
     Mutex,
@@ -342,6 +339,8 @@ impl Completer for ChatCompleter {
 pub struct ChatHinter {
     /// Whether history-based hints are enabled
     history_hints_enabled: bool,
+    /// Whether prompt hints are enabled
+    prompt_hints_enabled: bool,
     history_path: PathBuf,
     available_commands: Vec<&'static str>,
     /// Track if first hint has been shown
@@ -359,13 +358,17 @@ const INITIAL_PROMPT_HINTS: &[&str] = &[
     "Want to know what commands I have? Just ask",
 ];
 
-static HINT_INDEX: AtomicUsize = AtomicUsize::new(0);
-
 impl ChatHinter {
     /// Creates a new ChatHinter instance
-    pub fn new(history_hints_enabled: bool, history_path: PathBuf, available_commands: Vec<&'static str>) -> Self {
+    pub fn new(
+        history_hints_enabled: bool,
+        prompt_hints_enabled: bool,
+        history_path: PathBuf,
+        available_commands: Vec<&'static str>,
+    ) -> Self {
         Self {
             history_hints_enabled,
+            prompt_hints_enabled,
             history_path,
             available_commands,
             first_hint_shown: std::sync::atomic::AtomicBool::new(false),
@@ -378,14 +381,14 @@ impl ChatHinter {
 
     /// Finds the best hint for the current input using rustyline's history
     fn find_hint(&self, line: &str, ctx: &Context<'_>) -> Option<String> {
-        // If line is empty, show hint
-        if line.is_empty() {
-            // First prompt: rotate through initial hints. After that: fixed follow-up hint
-            if self.first_hint_shown.swap(true, Ordering::Relaxed) {
-                return Some("What would you like to do next?".to_string());
+        // If line is empty, show hint (if enabled)
+        if line.is_empty() && self.prompt_hints_enabled {
+            // Only show hint on first prompt
+            if !self.first_hint_shown.swap(true, Ordering::Relaxed) {
+                use rand::Rng;
+                let idx = rand::rng().random_range(0..INITIAL_PROMPT_HINTS.len());
+                return Some(INITIAL_PROMPT_HINTS[idx].to_string());
             }
-            let idx = HINT_INDEX.fetch_add(1, Ordering::Relaxed) % INITIAL_PROMPT_HINTS.len();
-            return Some(INITIAL_PROMPT_HINTS[idx].to_string());
         }
 
         // If line starts with a slash, try to find a command hint
@@ -623,6 +626,12 @@ pub fn rl(
         .get_bool(Setting::ChatEnableHistoryHints)
         .unwrap_or(false);
 
+    let prompt_hints_enabled = os
+        .database
+        .settings
+        .get_bool(Setting::ChatEnablePromptHints)
+        .unwrap_or(true);
+
     let history_path = os.path_resolver().global().cli_bash_history()?;
 
     // Generate available commands based on enabled experiments
@@ -630,7 +639,12 @@ pub fn rl(
 
     let h = ChatHelper {
         completer: ChatCompleter::new(sender, receiver, available_commands.clone()),
-        hinter: ChatHinter::new(history_hints_enabled, history_path, available_commands),
+        hinter: ChatHinter::new(
+            history_hints_enabled,
+            prompt_hints_enabled,
+            history_path,
+            available_commands,
+        ),
         validator: MultiLineValidator,
     };
 
@@ -774,7 +788,7 @@ mod tests {
                 prompt_response_receiver,
                 available_commands.clone(),
             ),
-            hinter: ChatHinter::new(true, PathBuf::new(), available_commands),
+            hinter: ChatHinter::new(true, true, PathBuf::new(), available_commands),
             validator: MultiLineValidator,
         };
 
@@ -798,7 +812,7 @@ mod tests {
                 prompt_response_receiver,
                 available_commands.clone(),
             ),
-            hinter: ChatHinter::new(true, PathBuf::new(), available_commands),
+            hinter: ChatHinter::new(true, true, PathBuf::new(), available_commands),
             validator: MultiLineValidator,
         };
 
@@ -825,7 +839,7 @@ mod tests {
                 prompt_response_receiver,
                 available_commands.clone(),
             ),
-            hinter: ChatHinter::new(true, PathBuf::new(), available_commands),
+            hinter: ChatHinter::new(true, true, PathBuf::new(), available_commands),
             validator: MultiLineValidator,
         };
 
@@ -852,7 +866,7 @@ mod tests {
                 prompt_response_receiver,
                 available_commands.clone(),
             ),
-            hinter: ChatHinter::new(true, PathBuf::new(), available_commands),
+            hinter: ChatHinter::new(true, true, PathBuf::new(), available_commands),
             validator: MultiLineValidator,
         };
 
@@ -884,7 +898,7 @@ mod tests {
                 prompt_response_receiver,
                 available_commands.clone(),
             ),
-            hinter: ChatHinter::new(true, PathBuf::new(), available_commands),
+            hinter: ChatHinter::new(true, true, PathBuf::new(), available_commands),
             validator: MultiLineValidator,
         };
 
@@ -908,7 +922,7 @@ mod tests {
                 prompt_response_receiver,
                 available_commands.clone(),
             ),
-            hinter: ChatHinter::new(true, PathBuf::new(), available_commands),
+            hinter: ChatHinter::new(true, true, PathBuf::new(), available_commands),
             validator: MultiLineValidator,
         };
 
@@ -934,7 +948,7 @@ mod tests {
                 prompt_response_receiver,
                 available_commands.clone(),
             ),
-            hinter: ChatHinter::new(true, PathBuf::new(), available_commands),
+            hinter: ChatHinter::new(true, true, PathBuf::new(), available_commands),
             validator: MultiLineValidator,
         };
 
@@ -965,7 +979,7 @@ mod tests {
                 prompt_response_receiver,
                 available_commands.clone(),
             ),
-            hinter: ChatHinter::new(true, PathBuf::new(), available_commands),
+            hinter: ChatHinter::new(true, true, PathBuf::new(), available_commands),
             validator: MultiLineValidator,
         };
 
@@ -987,7 +1001,7 @@ mod tests {
         // Create a mock Os for testing
         let mock_os = crate::os::Os::new().await.unwrap();
         let available_commands = get_available_commands(&mock_os);
-        let hinter = ChatHinter::new(true, PathBuf::new(), available_commands);
+        let hinter = ChatHinter::new(true, true, PathBuf::new(), available_commands);
 
         // Test hint for a command
         let line = "/he";
@@ -1020,7 +1034,7 @@ mod tests {
         // Create a mock Os for testing
         let mock_os = crate::os::Os::new().await.unwrap();
         let available_commands = get_available_commands(&mock_os);
-        let hinter = ChatHinter::new(false, PathBuf::new(), available_commands);
+        let hinter = ChatHinter::new(false, true, PathBuf::new(), available_commands);
 
         // Test hint from history - should be None since history hints are disabled
         let line = "How";
