@@ -2919,11 +2919,11 @@ impl ChatSession {
                             })
                             .clone()
                             .unwrap_or(tool_use.name.clone());
-                        self.conversation.agents.trust_tools(vec![formatted_tool_name]);
+                        self.conversation.agents.trust_tools(vec![formatted_tool_name.clone()]);
 
                         if let Some(agent) = self.conversation.agents.get_active() {
                             agent
-                                .print_overridden_permissions(&mut self.stderr)
+                                .print_overridden_permission_for_tool(&formatted_tool_name, &mut self.stderr)
                                 .map_err(|_e| ChatError::Custom("Failed to validate agent tool settings".into()))?;
                         }
                     }

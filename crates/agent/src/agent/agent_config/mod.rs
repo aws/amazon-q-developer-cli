@@ -292,7 +292,7 @@ pub struct LoadedMcpServerConfigs {
 
 impl LoadedMcpServerConfigs {
     /// Loads MCP configs from the given agent config, taking into consideration global and
-    /// workspace MCP config files for when the use_legacy_mcp_json field is true.
+    /// workspace MCP config files for when the include_mcp_json field is true.
     pub async fn from_agent_config(
         config: &AgentConfig,
         local_mcp_path: Option<&PathBuf>,
@@ -309,7 +309,7 @@ impl LoadedMcpServerConfigs {
             .collect::<Vec<_>>();
         configs.append(&mut agent_configs);
 
-        if config.use_legacy_mcp_json() {
+        if config.include_mcp_json() {
             let mut push_configs = |mcp_servers: McpServers, source: McpServerConfigSource| {
                 for (name, config) in mcp_servers.mcp_servers {
                     let config = LoadedMcpServerConfig {

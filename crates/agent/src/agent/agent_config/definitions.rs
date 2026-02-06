@@ -97,9 +97,9 @@ impl AgentConfig {
         }
     }
 
-    pub fn use_legacy_mcp_json(&self) -> bool {
+    pub fn include_mcp_json(&self) -> bool {
         match self {
-            AgentConfig::V2025_08_22(a) => a.use_legacy_mcp_json,
+            AgentConfig::V2025_08_22(a) => a.include_mcp_json,
         }
     }
 
@@ -227,8 +227,8 @@ pub struct AgentConfigV2025_08_22 {
     ///
     /// You can reference tools brought in by these servers as just as you would with the servers
     /// you configure in the mcpServers field in this config
-    #[serde(default, alias = "includeMcpJson")]
-    pub use_legacy_mcp_json: bool,
+    #[serde(default, alias = "useLegacyMcpJson")]
+    pub include_mcp_json: bool,
 
     // context files
     /// Files to include in the agent's context
@@ -259,7 +259,7 @@ impl Default for AgentConfigV2025_08_22 {
             hooks: Default::default(),
             model_preferences: Default::default(),
             mcp_servers: Default::default(),
-            use_legacy_mcp_json: true,
+            include_mcp_json: true,
 
             resources: vec![
                 "file://AmazonQ.md",
@@ -579,29 +579,29 @@ mod tests {
     }
 
     #[test]
-    fn test_use_legacy_mcp_json_old_name() {
+    fn test_include_mcp_json_old_name() {
         let agent = serde_json::json!({
             "name": "test",
             "useLegacyMcpJson": true
         });
 
         let config: AgentConfigV2025_08_22 = serde_json::from_value(agent).unwrap();
-        assert!(config.use_legacy_mcp_json);
+        assert!(config.include_mcp_json);
     }
 
     #[test]
-    fn test_use_legacy_mcp_json_new_name() {
+    fn test_include_mcp_json_new_name() {
         let agent = serde_json::json!({
             "name": "test",
             "includeMcpJson": true
         });
 
         let config: AgentConfigV2025_08_22 = serde_json::from_value(agent).unwrap();
-        assert!(config.use_legacy_mcp_json);
+        assert!(config.include_mcp_json);
     }
 
     #[test]
-    fn test_use_legacy_mcp_json_both_names() {
+    fn test_include_mcp_json_both_names() {
         // When both are present, serde will error as they map to the same field
         let agent = serde_json::json!({
             "name": "test",

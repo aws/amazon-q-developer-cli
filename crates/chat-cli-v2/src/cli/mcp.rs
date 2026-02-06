@@ -777,11 +777,10 @@ async fn get_mcp_server_configs(os: &mut Os) -> Result<BTreeMap<Scope, Vec<(Stri
         } else {
             Scope::Workspace
         };
-        results.entry(scope).or_insert(Vec::new()).push((
-            agent.name,
-            Some(agent.mcp_servers),
-            agent.use_legacy_mcp_json,
-        ));
+        results
+            .entry(scope)
+            .or_insert(Vec::new())
+            .push((agent.name, Some(agent.mcp_servers), agent.include_mcp_json));
     }
 
     for agents in results.values_mut() {

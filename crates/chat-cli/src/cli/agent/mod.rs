@@ -418,8 +418,8 @@ pub struct Agent {
     /// Whether or not to include the legacy global MCP configuration in the agent
     /// You can reference tools brought in by these servers as just as you would with the servers
     /// you configure in the mcpServers field in this config
-    #[serde(default, alias = "includeMcpJson")]
-    pub use_legacy_mcp_json: bool,
+    #[serde(default, alias = "useLegacyMcpJson")]
+    pub include_mcp_json: bool,
     /// The model ID to use for this agent. If not specified, uses the default model.
     #[serde(default)]
     pub model: Option<String>,
@@ -456,7 +456,7 @@ impl Default for Agent {
             resources: Vec::new(),
             hooks: Default::default(),
             tools_settings: Default::default(),
-            use_legacy_mcp_json: true,
+            include_mcp_json: true,
             model: None,
             keyboard_shortcut: None,
             welcome_message: None,
@@ -511,7 +511,7 @@ impl Agent {
 
         let Self { mcp_servers, .. } = self;
 
-        if let (true, Some(legacy_mcp_config)) = (self.use_legacy_mcp_json, legacy_mcp_config) {
+        if let (true, Some(legacy_mcp_config)) = (self.include_mcp_json, legacy_mcp_config) {
             for (name, legacy_server) in &legacy_mcp_config.mcp_servers {
                 if mcp_servers.mcp_servers.contains_key(name) {
                     let _ = queue!(
@@ -542,27 +542,35 @@ impl Agent {
 
     pub fn print_overridden_permissions(&self, output: &mut impl Write) -> Result<(), AgentConfigError> {
         for allowed_tool in &self.allowed_tools {
-            if let Some(settings) = self.tools_settings.get(allowed_tool.as_str()) {
-                // currently we only have four native tools that offers tool settings
-                let overridden_settings_key = match allowed_tool.as_str() {
-                    name if ToolMetadata::FS_READ.aliases.contains(&name)
-                        || ToolMetadata::FS_WRITE.aliases.contains(&name) =>
-                    {
-                        Some("allowedPaths")
-                    },
-                    name if ToolMetadata::USE_AWS.aliases.contains(&name) => Some("allowedServices"),
-                    name if ToolMetadata::EXECUTE_COMMAND.aliases.contains(&name) => Some("allowedCommands"),
-                    _ => None,
-                };
+            self.print_overridden_permission_for_tool(allowed_tool, output)?;
+        }
+        Ok(())
+    }
 
-                if let Some(key) = overridden_settings_key
-                    && let Some(ref override_settings) = settings.get(key).map(|value| format!("{key}: {value}"))
+    pub fn print_overridden_permission_for_tool(
+        &self,
+        tool_name: &str,
+        output: &mut impl Write,
+    ) -> Result<(), AgentConfigError> {
+        if let Some(settings) = self.tools_settings.get(tool_name) {
+            // currently we only have four native tools that offers tool settings
+            let overridden_settings_key = match tool_name {
+                name if ToolMetadata::FS_READ.aliases.contains(&name)
+                    || ToolMetadata::FS_WRITE.aliases.contains(&name) =>
                 {
-                    queue_permission_override_warning(allowed_tool.as_str(), override_settings, output)?;
-                }
+                    Some("allowedPaths")
+                },
+                name if ToolMetadata::USE_AWS.aliases.contains(&name) => Some("allowedServices"),
+                name if ToolMetadata::EXECUTE_COMMAND.aliases.contains(&name) => Some("allowedCommands"),
+                _ => None,
+            };
+
+            if let Some(key) = overridden_settings_key
+                && let Some(ref override_settings) = settings.get(key).map(|value| format!("{key}: {value}"))
+            {
+                queue_permission_override_warning(tool_name, override_settings, output)?;
             }
         }
-
         Ok(())
     }
 
@@ -651,7 +659,7 @@ impl Agent {
                 let content = os.fs.read(&config_path).await?;
                 let mut agent = serde_json::from_slice::<Agent>(&content)?;
                 let mut stderr = std::io::stderr();
-                let legacy_mcp_config = if agent.use_legacy_mcp_json {
+                let legacy_mcp_config = if agent.include_mcp_json {
                     load_legacy_mcp_config(os, &mut stderr).await.unwrap_or(None)
                 } else {
                     None
@@ -677,7 +685,7 @@ impl Agent {
         })?;
 
         if mcp_enabled {
-            if agent.use_legacy_mcp_json && legacy_mcp_config.is_none() {
+            if agent.include_mcp_json && legacy_mcp_config.is_none() {
                 let config = load_legacy_mcp_config(os, output).await.unwrap_or_default();
                 if let Some(config) = config {
                     legacy_mcp_config.replace(config);
@@ -695,7 +703,7 @@ impl Agent {
     /// Clear all MCP configurations while preserving built-in tools
     pub fn clear_mcp_configs(&mut self) {
         self.mcp_servers = McpServerConfig::default();
-        self.use_legacy_mcp_json = false;
+        self.include_mcp_json = false;
 
         // Transform tools: "*" → "@builtin", remove MCP refs
         self.tools = self
@@ -1798,7 +1806,7 @@ mod tests {
             tools_settings: Default::default(),
             resources: Vec::new(),
             hooks: Default::default(),
-            use_legacy_mcp_json: false,
+            include_mcp_json: false,
             model: None,
             keyboard_shortcut: None,
             welcome_message: None,
