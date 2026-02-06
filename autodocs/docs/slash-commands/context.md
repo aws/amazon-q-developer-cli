@@ -1,7 +1,7 @@
 ---
 doc_meta:
-  validated: 2026-02-02
-  commit: 2cfa80d8
+  validated: 2026-02-04
+  commit: 1c24e37d
   status: validated
   testable_headless: false
   category: slash_command
@@ -141,10 +141,11 @@ Context Window Usage:
 ```
 Agent (rust-expert)
   - src/**/*.rs
-    src/main.rs
-    src/lib.rs
+      src/main.rs
+      src/lib.rs
+  - Cargo.toml /Users/me/project/Cargo.toml
   - skill://.kiro/skills/**/SKILL.md
-    database-helper
+      database-helper
 
 Session (temporary)
   <none>
@@ -156,6 +157,8 @@ Session (temporary)
 
 Context files total: 4.2% of context window
 ```
+
+Glob patterns (containing `*`, `?`, or `[`) display the pattern on its own line with matched files indented below. Single file paths show the pattern and resolved path on the same line.
 
 Both regular files and skill resources show their estimated context usage.
 

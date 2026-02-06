@@ -35,6 +35,66 @@ use crate::constants::{
 use crate::os::Os;
 use crate::theme::StyledText;
 
+/// Returns true if the path contains glob pattern characters.
+fn is_glob_pattern(path: &str) -> bool {
+    path.contains('*') || path.contains('?') || path.contains('[')
+}
+
+/// Renders a single context path entry and its matched files.
+fn render_context_path_entry(
+    stderr: &mut impl std::io::Write,
+    path_str: &str,
+    context_files: &[ContextFile],
+) -> std::io::Result<()> {
+    let is_glob = is_glob_pattern(path_str);
+
+    if is_glob {
+        // For globs: show pattern on its own line with matched files listed below
+        execute!(stderr, style::Print(format!("  - {}\n", path_str)))?;
+
+        if context_files.is_empty() {
+            execute!(
+                stderr,
+                StyledText::secondary_fg(),
+                style::Print("      (no matches)\n"),
+                StyledText::reset()
+            )?;
+        } else {
+            // Print all matched files indented under the pattern
+            for file in context_files {
+                execute!(
+                    stderr,
+                    style::Print("      "),
+                    StyledText::current_item_fg(),
+                    style::Print(format!("{}\n", file.filepath())),
+                    StyledText::reset()
+                )?;
+            }
+        }
+    } else {
+        // For single files: show pattern and resolved path on same line
+        execute!(stderr, style::Print(format!("  - {} ", path_str)))?;
+
+        if context_files.is_empty() {
+            execute!(
+                stderr,
+                StyledText::secondary_fg(),
+                style::Print("(no matches)\n"),
+                StyledText::reset()
+            )?;
+        } else {
+            execute!(
+                stderr,
+                StyledText::current_item_fg(),
+                style::Print(format!("{}\n", context_files[0].filepath())),
+                StyledText::reset()
+            )?;
+        }
+    }
+
+    Ok(())
+}
+
 /// Context command for viewing token usage and managing context files.
 /// Without subcommands: displays context window token usage breakdown by component
 /// (context files, tools, assistant responses, user prompts).
@@ -147,16 +207,10 @@ impl ContextSubcommand {
                     )?;
                 } else {
                     for path in &agent_owned_list {
-                        execute!(session.stderr, style::Print(format!("  - {} ", path.get_path_as_str())))?;
+                        let path_str = path.get_path_as_str();
+
                         if let Ok(context_files) = context_manager.get_context_files_by_path(os, path).await {
-                            for file in &context_files {
-                                execute!(
-                                    session.stderr,
-                                    StyledText::current_item_fg(),
-                                    style::Print(format!("{}\n", file.filepath())),
-                                    StyledText::reset()
-                                )?;
-                            }
+                            render_context_path_entry(&mut session.stderr, path_str, &context_files)?;
 
                             profile_context_files.extend(context_files.into_iter().map(|file| match file {
                                 ContextFile::Full { filepath, content } => (filepath, content, false),
@@ -170,12 +224,7 @@ impl ContextSubcommand {
                                 },
                             }));
                         } else {
-                            execute!(
-                                session.stderr,
-                                StyledText::secondary_fg(),
-                                style::Print("(no matches)\n"),
-                                StyledText::reset()
-                            )?;
+                            render_context_path_entry(&mut session.stderr, path_str, &[])?;
                         }
                     }
                     execute!(session.stderr, style::Print("\n"))?;
@@ -198,15 +247,11 @@ impl ContextSubcommand {
                     )?;
                 } else {
                     for path in &session_owned_list {
+                        let path_str = path.get_path_as_str();
+
                         if let Ok(context_files) = context_manager.get_context_files_by_path(os, path).await {
-                            for file in &context_files {
-                                execute!(
-                                    session.stderr,
-                                    StyledText::current_item_fg(),
-                                    style::Print(format!("  {}\n", file.filepath())),
-                                    StyledText::reset()
-                                )?;
-                            }
+                            render_context_path_entry(&mut session.stderr, path_str, &context_files)?;
+
                             profile_context_files.extend(context_files.into_iter().filter_map(|file| {
                                 match file {
                                     ContextFile::Full { filepath, content } => Some((filepath, content, true)),
@@ -214,13 +259,7 @@ impl ContextSubcommand {
                                 }
                             }));
                         } else {
-                            execute!(
-                                session.stderr,
-                                style::Print(format!("  - {} ", path.get_path_as_str())),
-                                StyledText::secondary_fg(),
-                                style::Print("(no matches)\n"),
-                                StyledText::reset()
-                            )?;
+                            render_context_path_entry(&mut session.stderr, path_str, &[])?;
                         }
                     }
                     execute!(session.stderr, style::Print("\n"))?;
