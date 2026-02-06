@@ -54,7 +54,10 @@ use tracing::{
 use crate::api_client::stalled_stream_protection_config;
 use crate::auth::AuthError;
 use crate::auth::consts::*;
-use crate::auth::scope::is_scopes;
+use crate::auth::scope::{
+    get_scopes,
+    is_scopes,
+};
 use crate::aws_common::app_name;
 use crate::database::{
     Database,
@@ -169,7 +172,7 @@ impl DeviceRegistration {
     ) -> Result<Self, AuthError> {
         match Self::load_from_secret_store(database, region).await {
             Ok(Some(registration)) if registration.oauth_flow == OAuthFlow::DeviceCode => match &registration.scopes {
-                Some(scopes) if is_scopes(scopes) => return Ok(registration),
+                Some(scopes) if is_scopes(scopes, database) => return Ok(registration),
                 _ => warn!("Invalid scopes in device registration, ignoring"),
             },
             // If it doesn't exist or is for another OAuth flow,
@@ -184,17 +187,13 @@ impl DeviceRegistration {
             .register_client()
             .client_name(CLIENT_NAME)
             .client_type(CLIENT_TYPE);
-        for scope in SCOPES {
-            register = register.scopes(*scope);
+        let scopes = get_scopes(database);
+        for scope in &scopes {
+            register = register.scopes(scope.clone());
         }
         let output = register.send().await?;
 
-        let device_registration = Self::from_output(
-            output,
-            region,
-            OAuthFlow::DeviceCode,
-            SCOPES.iter().map(|s| (*s).to_owned()).collect(),
-        );
+        let device_registration = Self::from_output(output, region, OAuthFlow::DeviceCode, scopes);
 
         if let Err(err) = device_registration.save(database).await {
             error!(?err, "Failed to write device registration to keychain");
@@ -298,6 +297,10 @@ impl BuilderIdToken {
 
     #[cfg(test)]
     fn test() -> Self {
+        let scopes: Vec<String> = SCOPE_SUFFIXES
+            .iter()
+            .map(|s| format!("{}{}", DEFAULT_SCOPE_PREFIX, s))
+            .collect();
         Self {
             access_token: Secret("test_access_token".to_string()),
             expires_at: time::OffsetDateTime::now_utc() + time::Duration::minutes(60),
@@ -305,7 +308,7 @@ impl BuilderIdToken {
             region: Some(OIDC_BUILDER_ID_REGION.to_string()),
             start_url: Some(START_URL.to_string()),
             oauth_flow: OAuthFlow::DeviceCode,
-            scopes: Some(SCOPES.iter().map(|s| (*s).to_owned()).collect()),
+            scopes: Some(scopes),
         }
     }
 
@@ -317,6 +320,10 @@ impl BuilderIdToken {
         // Can't use #[cfg(test)] without breaking lints, and we don't want to require
         // authentication in order to run ChatSession tests. Hence, adding this here with cfg!(test)
         if cfg!(test) && !is_integ_test() {
+            let scopes: Vec<String> = SCOPE_SUFFIXES
+                .iter()
+                .map(|s| format!("{}{}", DEFAULT_SCOPE_PREFIX, s))
+                .collect();
             return Ok(Some(Self {
                 access_token: Secret("test_access_token".to_string()),
                 expires_at: time::OffsetDateTime::now_utc() + time::Duration::minutes(60),
@@ -324,7 +331,7 @@ impl BuilderIdToken {
                 region: Some(OIDC_BUILDER_ID_REGION.to_string()),
                 start_url: Some(START_URL.to_string()),
                 oauth_flow: OAuthFlow::DeviceCode,
-                scopes: Some(SCOPES.iter().map(|s| (*s).to_owned()).collect()),
+                scopes: Some(scopes),
             }));
         }
 

@@ -27,6 +27,7 @@ use tracing::{
 use crate::auth::AuthError;
 use crate::auth::consts::SOCIAL_AUTH_SERVICE_ENDPOINT;
 pub use crate::auth::oauth_callback::CALLBACK_PORTS;
+use crate::database::settings::Setting;
 use crate::database::{
     Database,
     Secret,
@@ -144,7 +145,7 @@ impl SocialToken {
 
         let client = Client::new();
         let response = client
-            .post(format!("{SOCIAL_AUTH_SERVICE_ENDPOINT}/refreshToken"))
+            .post(format!("{}/refreshToken", get_kiro_auth_endpoint(database)))
             .header("Content-Type", "application/json")
             .header("User-Agent", USER_AGENT)
             .json(&serde_json::json!({
@@ -195,7 +196,7 @@ impl SocialToken {
         });
 
         let response = client
-            .post(format!("{SOCIAL_AUTH_SERVICE_ENDPOINT}/oauth/token"))
+            .post(format!("{}/oauth/token", get_kiro_auth_endpoint(database)))
             .header("Content-Type", "application/json")
             .header("User-Agent", USER_AGENT)
             .json(&token_request)
@@ -270,6 +271,15 @@ pub async fn is_social_logged_in(database: &Database) -> bool {
 pub async fn logout_social(database: &Database) -> Result<(), AuthError> {
     database.delete_secret(SocialToken::SECRET_KEY).await?;
     Ok(())
+}
+
+/// Get the Kiro auth service endpoint from setting, or use prod as default
+fn get_kiro_auth_endpoint(database: &Database) -> String {
+    database
+        .settings
+        .get(Setting::ApiKiroAuthService)
+        .and_then(|v| v.as_str())
+        .map_or_else(|| SOCIAL_AUTH_SERVICE_ENDPOINT.to_string(), |s| s.to_string())
 }
 
 #[cfg(test)]

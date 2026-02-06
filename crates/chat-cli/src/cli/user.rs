@@ -215,7 +215,8 @@ impl LoginArgs {
 /// # Arguments
 /// * `requires_profile` - Whether to prompt for profile selection after login (IdC only)
 async fn complete_sso_auth(os: &mut Os, issuer_url: String, idc_region: String, requires_profile: bool) -> Result<()> {
-    let (client, registration) = start_pkce_authorization(Some(issuer_url.clone()), Some(idc_region.clone())).await?;
+    let (client, registration) =
+        start_pkce_authorization(Some(issuer_url.clone()), Some(idc_region.clone()), &os.database).await?;
 
     match crate::util::open::open_url_async(&registration.url).await {
         // If it succeeded, finish PKCE.

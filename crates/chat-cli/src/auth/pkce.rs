@@ -41,6 +41,7 @@ use tracing::{
 use crate::auth::builder_id::*;
 use crate::auth::consts::*;
 use crate::auth::oauth_callback::wait_for_callback;
+use crate::auth::scope::get_scopes;
 use crate::auth::{
     AuthError,
     START_URL,
@@ -54,24 +55,24 @@ const DEFAULT_AUTHORIZATION_TIMEOUT: Duration = Duration::from_secs(60 * 3);
 pub async fn start_pkce_authorization(
     start_url: Option<String>,
     region: Option<String>,
+    database: &Database,
 ) -> Result<(Client, PkceRegistration), AuthError> {
     let issuer_url = start_url.as_deref().unwrap_or(START_URL);
     let region = region.clone().map_or(OIDC_BUILDER_ID_REGION, Region::new);
     let client = client(region.clone());
-    let registration = PkceRegistration::register(&client, region, issuer_url.to_string(), None).await?;
+    let registration =
+        PkceRegistration::register(&client, region, issuer_url.to_string(), None, get_scopes(database)).await?;
     Ok((client, registration))
 }
 
 /// Represents a client used for registering with AWS IAM OIDC.
 #[async_trait::async_trait]
 pub trait PkceClient {
-    /// The scopes that the client will request
-    fn scopes() -> Vec<String>;
-
     async fn register_client(
         &self,
         redirect_uri: String,
         issuer_url: String,
+        scopes: &[String],
     ) -> Result<RegisterClientResponse, AuthError>;
 
     async fn create_token(&self, args: CreateTokenArgs) -> Result<CreateTokenResponse, AuthError>;
@@ -108,14 +109,11 @@ pub struct CreateTokenArgs {
 
 #[async_trait::async_trait]
 impl PkceClient for Client {
-    fn scopes() -> Vec<String> {
-        SCOPES.iter().map(|s| (*s).to_owned()).collect()
-    }
-
     async fn register_client(
         &self,
         redirect_uri: String,
         issuer_url: String,
+        scopes: &[String],
     ) -> Result<RegisterClientResponse, AuthError> {
         let mut register = self
             .register_client()
@@ -125,8 +123,8 @@ impl PkceClient for Client {
             .redirect_uris(redirect_uri.clone())
             .grant_types("authorization_code")
             .grant_types("refresh_token");
-        for scope in Self::scopes() {
-            register = register.scopes(scope);
+        for scope in scopes {
+            register = register.scopes(scope.clone());
         }
         let output = register.send().await?;
         Ok(RegisterClientResponse { output })
@@ -171,14 +169,17 @@ pub struct PkceRegistration {
     issuer_url: String,
     /// Time to wait for [`Self::finish`] to complete. Default is [`DEFAULT_AUTHORIZATION_TIMEOUT`].
     timeout: Duration,
+    /// The resolved OIDC scopes for this registration.
+    scopes: Vec<String>,
 }
 
 impl PkceRegistration {
-    pub async fn register(
-        client: &impl PkceClient,
+    pub async fn register<C: PkceClient>(
+        client: &C,
         region: Region,
         issuer_url: String,
         timeout: Option<Duration>,
+        scopes: Vec<String>,
     ) -> Result<Self, AuthError> {
         let listener = TcpListener::bind("127.0.0.1:0").await?;
         let redirect_uri = format!("http://{}/oauth/callback", listener.local_addr()?);
@@ -190,13 +191,15 @@ impl PkceRegistration {
             .collect::<Vec<_>>();
         let state = String::from_utf8(state).unwrap_or("state".to_string());
 
-        let response = client.register_client(redirect_uri.clone(), issuer_url.clone()).await?;
+        let response = client
+            .register_client(redirect_uri.clone(), issuer_url.clone(), &scopes)
+            .await?;
 
         let query = PkceQueryParams {
             client_id: response.client_id().to_string(),
             redirect_uri: redirect_uri.clone(),
             // Scopes must be space delimited.
-            scopes: SCOPES.join(" "),
+            scopes: scopes.join(" "),
             state: state.clone(),
             code_challenge: code_challenge.clone(),
             code_challenge_method: "S256".to_string(),
@@ -213,6 +216,7 @@ impl PkceRegistration {
             region,
             issuer_url,
             timeout: timeout.unwrap_or(DEFAULT_AUTHORIZATION_TIMEOUT),
+            scopes,
         })
     }
 
@@ -248,14 +252,14 @@ impl PkceRegistration {
             self.region.clone(),
             Some(self.issuer_url),
             OAuthFlow::Pkce,
-            Some(C::scopes()),
+            Some(self.scopes.clone()),
         );
 
         let device_registration = DeviceRegistration::from_output(
             self.registered_client.output,
             &self.region,
             OAuthFlow::Pkce,
-            C::scopes(),
+            self.scopes,
         );
 
         if let Some(database) = database {
@@ -328,18 +332,30 @@ pub fn generate_code_challenge(code_verifier: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::auth::scope::is_scopes;
+    use crate::auth::consts::{
+        DEFAULT_SCOPE_PREFIX,
+        SCOPE_SUFFIXES,
+    };
+    use crate::auth::scope::scopes_match;
+
+    fn test_scopes() -> Vec<String> {
+        SCOPE_SUFFIXES
+            .iter()
+            .map(|s| format!("{}{}", DEFAULT_SCOPE_PREFIX, s))
+            .collect()
+    }
 
     #[derive(Debug, Clone)]
     struct TestPkceClient;
 
     #[async_trait::async_trait]
     impl PkceClient for TestPkceClient {
-        fn scopes() -> Vec<String> {
-            vec!["scope:1".to_string(), "scope:2".to_string()]
-        }
-
-        async fn register_client(&self, _: String, _: String) -> Result<RegisterClientResponse, AuthError> {
+        async fn register_client(
+            &self,
+            _: String,
+            _: String,
+            _: &[String],
+        ) -> Result<RegisterClientResponse, AuthError> {
             Ok(RegisterClientResponse {
                 output: RegisterClientOutput::builder()
                     .client_id("test_client_id")
@@ -363,7 +379,7 @@ mod tests {
         let start_url = "https://amzn.awsapps.com/start".to_string();
         let region = Region::new("us-east-1");
         let client = client(region.clone());
-        let registration = PkceRegistration::register(&client, region.clone(), start_url, None)
+        let registration = PkceRegistration::register(&client, region.clone(), start_url, None, test_scopes())
             .await
             .unwrap();
         println!("{registration:?}");
@@ -382,7 +398,7 @@ mod tests {
         let region = Region::new("us-east-1");
         let issuer_url = START_URL.into();
         let client = TestPkceClient {};
-        let registration = PkceRegistration::register(&client, region, issuer_url, None)
+        let registration = PkceRegistration::register(&client, region, issuer_url, None, test_scopes())
             .await
             .unwrap();
 
@@ -404,7 +420,7 @@ mod tests {
         let region = Region::new("us-east-1");
         let issuer_url = START_URL.into();
         let client = TestPkceClient {};
-        let registration = PkceRegistration::register(&client, region, issuer_url, None)
+        let registration = PkceRegistration::register(&client, region, issuer_url, None, test_scopes())
             .await
             .unwrap();
 
@@ -428,7 +444,7 @@ mod tests {
         let region = Region::new("us-east-1");
         let issuer_url = START_URL.into();
         let client = TestPkceClient {};
-        let registration = PkceRegistration::register(&client, region, issuer_url, None)
+        let registration = PkceRegistration::register(&client, region, issuer_url, None, test_scopes())
             .await
             .unwrap();
 
@@ -455,9 +471,15 @@ mod tests {
         let region = Region::new("us-east-1");
         let issuer_url = START_URL.into();
         let client = TestPkceClient {};
-        let registration = PkceRegistration::register(&client, region, issuer_url, Some(Duration::from_millis(100)))
-            .await
-            .unwrap();
+        let registration = PkceRegistration::register(
+            &client,
+            region,
+            issuer_url,
+            Some(Duration::from_millis(100)),
+            test_scopes(),
+        )
+        .await
+        .unwrap();
 
         assert!(matches!(
             registration.finish(&client, None).await,
@@ -477,6 +499,7 @@ mod tests {
 
     #[test]
     fn verify_client_scopes() {
-        assert!(is_scopes(&Client::scopes()));
+        let scopes = test_scopes();
+        assert!(scopes_match(&scopes, &scopes));
     }
 }

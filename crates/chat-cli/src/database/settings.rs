@@ -87,10 +87,14 @@ pub enum Setting {
         message = "CodeWhisperer service endpoint URL (string)",
         props(scope = "global_only")
     )]
+    ApiOidcScopePrefix,
+    #[strum(message = "CodeWhisperer OIDC scope prefix (string)", props(scope = "global_only"))]
     ApiCodeWhispererService,
     #[strum(message = "Q service endpoint URL (string)", props(scope = "global_only"))]
     ApiQService,
     #[strum(message = "MCP server initialization timeout (number)")]
+    ApiKiroAuthService,
+    #[strum(message = "Kiro auth service endpoint", props(scope = "global_only"))]
     McpInitTimeout,
     #[strum(message = "Non-interactive MCP timeout (number)")]
     McpNoInteractiveTimeout,
@@ -164,7 +168,9 @@ impl AsRef<str> for Setting {
             Self::ChatEditMode => "chat.editMode",
             Self::ChatEnableNotifications => "chat.enableNotifications",
             Self::ApiCodeWhispererService => "api.codewhisperer.service",
+            Self::ApiOidcScopePrefix => "api.oidc.scopePrefix",
             Self::ApiQService => "api.q.service",
+            Self::ApiKiroAuthService => "api.kiroauth.service",
             Self::McpInitTimeout => "mcp.initTimeout",
             Self::McpNoInteractiveTimeout => "mcp.noInteractiveTimeout",
             Self::McpLoadedBefore => "mcp.loadedBefore",
@@ -222,7 +228,9 @@ impl TryFrom<&str> for Setting {
             "chat.editMode" => Ok(Self::ChatEditMode),
             "chat.enableNotifications" => Ok(Self::ChatEnableNotifications),
             "api.codewhisperer.service" => Ok(Self::ApiCodeWhispererService),
+            "api.oidc.scopePrefix" => Ok(Self::ApiOidcScopePrefix),
             "api.q.service" => Ok(Self::ApiQService),
+            "api.kiroauth.service" => Ok(Self::ApiKiroAuthService),
             "mcp.initTimeout" => Ok(Self::McpInitTimeout),
             "mcp.noInteractiveTimeout" => Ok(Self::McpNoInteractiveTimeout),
             "mcp.loadedBefore" => Ok(Self::McpLoadedBefore),

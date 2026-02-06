@@ -4,16 +4,19 @@ pub(crate) use crate::constants::CLIENT_NAME;
 
 pub(crate) const OIDC_BUILDER_ID_REGION: Region = Region::from_static("us-east-1");
 
+/// The default prefix for OIDC scopes
+pub(crate) const DEFAULT_SCOPE_PREFIX: &str = "codewhisperer:";
+
 /// The scopes requested for OIDC
 ///
 /// Do not include `sso:account:access`, these permissions are not needed and were
 /// previously included
-pub(crate) const SCOPES: &[&str] = &[
-    "codewhisperer:completions",
-    "codewhisperer:analysis",
-    "codewhisperer:conversations",
-    // "codewhisperer:taskassist",
-    // "codewhisperer:transformations",
+pub(crate) const SCOPE_SUFFIXES: &[&str] = &[
+    "completions",
+    "analysis",
+    "conversations",
+    // "taskassist",
+    // "transformations",
 ];
 
 pub(crate) const CLIENT_TYPE: &str = "public";
