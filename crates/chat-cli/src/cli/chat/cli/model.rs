@@ -10,7 +10,6 @@ use crossterm::{
     execute,
     queue,
 };
-use dialoguer::Select;
 use serde::{
     Deserialize,
     Serialize,
@@ -25,6 +24,59 @@ use crate::cli::chat::{
 use crate::database::settings::Setting;
 use crate::os::Os;
 use crate::theme::StyledText;
+
+/// Display information for model list
+struct ModelListDisplayInfo {
+    model_info: ModelInfo,
+    is_current: bool,
+}
+
+impl ModelListDisplayInfo {
+    fn new(model_info: ModelInfo, is_current: bool) -> Self {
+        Self { model_info, is_current }
+    }
+
+    /// Sort models: current first, then maintain API order
+    fn sort_list(list: &mut [Self]) {
+        list.sort_by(|a, b| match (a.is_current, b.is_current) {
+            (true, false) => std::cmp::Ordering::Less,
+            (false, true) => std::cmp::Ordering::Greater,
+            _ => std::cmp::Ordering::Equal,
+        });
+    }
+
+    /// Format items for fuzzy selector display
+    fn format_for_selector(list: &[Self]) -> Vec<String> {
+        let max_name_length = list
+            .iter()
+            .map(|m| m.model_info.display_name().len())
+            .max()
+            .unwrap_or(0);
+
+        list.iter()
+            .map(|info| {
+                let prefix = if info.is_current { "* " } else { "  " };
+                let display_name = info.model_info.display_name();
+
+                // Format rate multiplier
+                let rate_info = if let Some(multiplier) = info.model_info.rate_multiplier {
+                    format!("{multiplier:.2}x credits")
+                } else {
+                    "----- credits".to_string()
+                };
+
+                if let Some(desc) = info.model_info.description() {
+                    format!(
+                        "{prefix}{:<max_name_length$}    {:<15}    {}",
+                        display_name, rate_info, desc
+                    )
+                } else {
+                    format!("{prefix}{:<max_name_length$}    {}", display_name, rate_info)
+                }
+            })
+            .collect()
+    }
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ModelInfo {
@@ -135,84 +187,37 @@ pub async fn select_model(os: &Os, session: &mut ChatSession) -> Result<Option<C
 
     let active_model_id = session.conversation.model_info.as_ref().map(|m| m.model_id.as_str());
 
-    let labels: Vec<String> = models
-        .iter()
+    // Build display info list
+    let mut model_infos: Vec<ModelListDisplayInfo> = models
+        .into_iter()
         .map(|model| {
-            let display_name = model.display_name();
-            let description = model.description();
             let is_current = Some(model.model_id.as_str()) == active_model_id;
-
-            // Format rate multiplier if available
-            let rate_info = model.rate_multiplier.map(|multiplier| {
-                let unit = model.rate_unit.as_deref().unwrap_or("credit");
-                // Format as whole number if it's a whole number, otherwise show one decimal place
-                let multiplier_str = if multiplier.fract().abs() < f64::EPSILON {
-                    format!("{multiplier:.0}x")
-                } else {
-                    format!("{multiplier:.1}x")
-                };
-                format!(
-                    " {} {}",
-                    StyledText::secondary("|"),
-                    StyledText::secondary(&format!("{multiplier_str} {unit}"))
-                )
-            });
-
-            let current_marker = if is_current {
-                Some(format!(" {}", StyledText::current_item("(current)")))
-            } else {
-                None
-            };
-
-            if let Some(desc) = description {
-                format!(
-                    "{display_name}{}{} {} {}",
-                    current_marker.as_deref().unwrap_or(""),
-                    rate_info.as_deref().unwrap_or(""),
-                    StyledText::secondary("|"),
-                    StyledText::secondary(desc)
-                )
-            } else {
-                format!(
-                    "{display_name}{}{}",
-                    current_marker.as_deref().unwrap_or(""),
-                    rate_info.as_deref().unwrap_or("")
-                )
-            }
+            ModelListDisplayInfo::new(model, is_current)
         })
         .collect();
 
-    let default_index = active_model_id
-        .and_then(|id| models.iter().position(|m| m.model_id == id))
-        .unwrap_or(0);
+    ModelListDisplayInfo::sort_list(&mut model_infos);
+    let formatted_items = ModelListDisplayInfo::format_for_selector(&model_infos);
 
-    let selection: Option<_> = match Select::with_theme(&crate::util::dialoguer_theme())
-        .with_prompt(format!(
-            "{}({}) {} · {}({}) {}",
-            StyledText::secondary("Press "),
-            StyledText::current_item("↑↓"),
-            StyledText::secondary("to navigate"),
-            StyledText::secondary("Enter"),
-            StyledText::current_item("⏎"),
-            StyledText::secondary("to select model")
-        ))
-        .items(&labels)
-        .default(default_index)
-        .interact_on_opt(&dialoguer::console::Term::stdout())
+    // Launch fuzzy selector (inline mode)
+    let selected = super::super::skim_integration::launch_skim_selector_inline(
+        &formatted_items,
+        "Select model (type to search): ",
+        false,
+    )
+    .map_err(|e| ChatError::Custom(format!("Failed to launch model selector: {e}").into()))?;
+
+    if let Some(selections) = selected
+        && let Some(selected_line) = selections.first()
     {
-        Ok(sel) => {
-            let _ = crossterm::execute!(std::io::stdout(), StyledText::emphasis_fg());
-            sel
-        },
-        // Ctrl‑C -> Err(Interrupted)
-        Err(dialoguer::Error::IO(ref e)) if e.kind() == std::io::ErrorKind::Interrupted => return Ok(None),
-        Err(e) => return Err(ChatError::Custom(format!("Failed to choose model: {e}").into())),
-    };
+        // Find the index of the selected line in formatted_items
+        let selected_idx = formatted_items
+            .iter()
+            .position(|item| item == selected_line)
+            .ok_or_else(|| ChatError::Custom("Selected item not found".into()))?;
 
-    queue!(session.stderr, StyledText::reset())?;
-
-    if let Some(index) = selection {
-        let selected = models[index].clone();
+        // Use that index to get the actual model
+        let selected = model_infos[selected_idx].model_info.clone();
         session.conversation.model_info = Some(selected.clone());
         let display_name = selected.display_name();
 
@@ -220,8 +225,6 @@ pub async fn select_model(os: &Os, session: &mut ChatSession) -> Result<Option<C
             session.stderr,
             style::Print("\n"),
             style::Print(format!(" Using {display_name}\n\n")),
-            StyledText::reset(),
-            StyledText::reset(),
             StyledText::reset(),
         )?;
     }
