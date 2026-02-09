@@ -1,0 +1,4 @@
+{
+  "type": "fixed",
+  "description": "LSP client now reports clientInfo (name and version) to language servers"
+}

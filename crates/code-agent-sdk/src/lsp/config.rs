@@ -14,6 +14,12 @@ use url::Url;
 
 use crate::model::types::LanguageServerConfig;
 
+/// Client name reported to LSP servers
+pub const CLIENT_NAME: &str = "Kiro CLI";
+
+/// Client version reported to LSP servers
+pub const CLIENT_VERSION: &str = env!("CARGO_PKG_VERSION");
+
 /// Configuration for LSP client initialization
 pub struct LspConfig;
 
@@ -127,7 +133,10 @@ impl LspConfig {
                 ..Default::default()
             },
             trace: Some(TraceValue::Verbose),
-            client_info: None,
+            client_info: Some(ClientInfo {
+                name: CLIENT_NAME.to_string(),
+                version: Some(CLIENT_VERSION.to_string()),
+            }),
             locale: None,
             work_done_progress_params: Default::default(),
         }
@@ -276,6 +285,11 @@ mod tests {
         assert!(params.capabilities.text_document.is_some());
         assert!(params.capabilities.workspace.is_some());
         assert_eq!(params.trace, Some(TraceValue::Verbose));
+
+        // Verify client_info is properly set
+        let client_info = params.client_info.expect("client_info should be set");
+        assert_eq!(client_info.name, CLIENT_NAME);
+        assert_eq!(client_info.version, Some(CLIENT_VERSION.to_string()));
     }
 
     #[test]
