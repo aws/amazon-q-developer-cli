@@ -3,6 +3,7 @@
   "description": "Help agent that answers questions about Kiro CLI features using documentation",
   "tools": [
     "introspect",
+    "fs_read",
     "fs_write"
   ],
   "toolsSettings": {
