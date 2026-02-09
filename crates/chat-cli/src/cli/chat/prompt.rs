@@ -118,6 +118,7 @@ pub const COMMANDS: &[&str] = &[
     "/agent delete",
     "/agent rename",
     "/agent set",
+    "/agent swap",
     "/agent schema",
     "/agent generate",
     "/chat",
@@ -276,10 +277,14 @@ impl PromptCompleter {
     }
 }
 
+// Agent commands that support agent name completion
+const AGENT_COMMANDS_WITH_NAME_COMPLETION: &[&str] = &["/agent swap ", "/agent delete "];
+
 pub struct ChatCompleter {
     path_completer: PathCompleter,
     prompt_completer: PromptCompleter,
     available_commands: Vec<&'static str>,
+    agent_names: Vec<String>,
 }
 
 impl ChatCompleter {
@@ -287,12 +292,36 @@ impl ChatCompleter {
         sender: PromptQuerySender,
         receiver: PromptQueryResponseReceiver,
         available_commands: Vec<&'static str>,
+        agent_names: Vec<String>,
     ) -> Self {
         Self {
             path_completer: PathCompleter::new(),
             prompt_completer: PromptCompleter::new(sender, receiver),
             available_commands,
+            agent_names,
         }
+    }
+
+    /// Helper method to check if line matches an agent command pattern and return agent name part
+    fn try_complete_agent_name(&self, line: &str, pos: usize) -> Option<(usize, Vec<String>)> {
+        for prefix in AGENT_COMMANDS_WITH_NAME_COMPLETION {
+            if line.starts_with(prefix) {
+                let prefix_len = prefix.len();
+                let agent_part = &line[prefix_len..pos];
+                let mut candidates: Vec<String> = self
+                    .agent_names
+                    .iter()
+                    .filter(|name| name.starts_with(agent_part))
+                    .cloned()
+                    .collect();
+                candidates.sort();
+
+                if !candidates.is_empty() {
+                    return Some((prefix_len, candidates));
+                }
+            }
+        }
+        None
     }
 }
 
@@ -312,6 +341,11 @@ impl Completer for ChatCompleter {
             if !candidates.is_empty() {
                 return Ok((0, candidates));
             }
+        }
+
+        // Handle agent name completion for agent commands
+        if let Some((start, candidates)) = self.try_complete_agent_name(line, pos) {
+            return Ok((start, candidates));
         }
 
         if line.starts_with('@') {
@@ -345,6 +379,7 @@ pub struct ChatHinter {
     available_commands: Vec<&'static str>,
     /// Track if first hint has been shown
     first_hint_shown: std::sync::atomic::AtomicBool,
+    agent_names: Vec<String>,
 }
 
 const INITIAL_PROMPT_HINTS: &[(&str, u32)] = &[
@@ -366,6 +401,7 @@ impl ChatHinter {
         prompt_hints_enabled: bool,
         history_path: PathBuf,
         available_commands: Vec<&'static str>,
+        agent_names: Vec<String>,
     ) -> Self {
         Self {
             history_hints_enabled,
@@ -373,11 +409,35 @@ impl ChatHinter {
             history_path,
             available_commands,
             first_hint_shown: std::sync::atomic::AtomicBool::new(false),
+            agent_names,
         }
     }
 
     pub fn get_history_path(&self) -> PathBuf {
         self.history_path.clone()
+    }
+
+    /// Helper method to check if line matches an agent command pattern and return hint
+    fn try_hint_agent_name(&self, line: &str) -> Option<String> {
+        for prefix in AGENT_COMMANDS_WITH_NAME_COMPLETION {
+            if let Some(agent_part) = line.strip_prefix(prefix) {
+                let mut matching_agents: Vec<&String> = self
+                    .agent_names
+                    .iter()
+                    .filter(|name| name.starts_with(agent_part))
+                    .collect();
+                matching_agents.sort();
+                return matching_agents.first().and_then(|name| {
+                    let remainder = &name[agent_part.len()..];
+                    if remainder.is_empty() {
+                        None
+                    } else {
+                        Some(remainder.to_string())
+                    }
+                });
+            }
+        }
+        None
     }
 
     /// Finds the best hint for the current input using rustyline's history
@@ -401,11 +461,18 @@ impl ChatHinter {
 
         // If line starts with a slash, try to find a command hint
         if line.starts_with('/') {
-            return self
+            // Check if we're completing an agent name for agent commands
+            if let Some(hint) = self.try_hint_agent_name(line) {
+                return Some(hint);
+            }
+
+            // Otherwise, provide command completion hint
+            let cmd_hint = self
                 .available_commands
                 .iter()
                 .find(|cmd| cmd.starts_with(line))
                 .map(|cmd| cmd[line.len()..].to_string());
+            return cmd_hint;
         }
 
         // Try to find a hint from rustyline's history if history hints are enabled
@@ -645,13 +712,17 @@ pub fn rl(
     // Generate available commands based on enabled experiments
     let available_commands = get_available_commands(os);
 
+    // Extract agent names for completion/hints
+    let agent_names: Vec<String> = agents.agents.keys().cloned().collect();
+
     let h = ChatHelper {
-        completer: ChatCompleter::new(sender, receiver, available_commands.clone()),
+        completer: ChatCompleter::new(sender, receiver, available_commands.clone(), agent_names.clone()),
         hinter: ChatHinter::new(
             history_hints_enabled,
             prompt_hints_enabled,
             history_path,
             available_commands,
+            agent_names,
         ),
         validator: MultiLineValidator,
     };
@@ -741,7 +812,12 @@ mod tests {
         // Create a mock Os for testing
         let mock_os = crate::os::Os::new().await.unwrap();
         let available_commands = get_available_commands(&mock_os);
-        let completer = ChatCompleter::new(prompt_request_sender, prompt_response_receiver, available_commands);
+        let completer = ChatCompleter::new(
+            prompt_request_sender,
+            prompt_response_receiver,
+            available_commands,
+            Vec::new(),
+        );
         let line = "/h";
         let pos = 2; // Position at the end of "/h"
 
@@ -767,7 +843,12 @@ mod tests {
         // Create a mock Os for testing
         let mock_os = crate::os::Os::new().await.unwrap();
         let available_commands = get_available_commands(&mock_os);
-        let completer = ChatCompleter::new(prompt_request_sender, prompt_response_receiver, available_commands);
+        let completer = ChatCompleter::new(
+            prompt_request_sender,
+            prompt_response_receiver,
+            available_commands,
+            Vec::new(),
+        );
         let line = "Hello, how are you?";
         let pos = line.len();
 
@@ -795,8 +876,9 @@ mod tests {
                 prompt_request_sender,
                 prompt_response_receiver,
                 available_commands.clone(),
+                Vec::new(),
             ),
-            hinter: ChatHinter::new(true, true, PathBuf::new(), available_commands),
+            hinter: ChatHinter::new(true, true, PathBuf::new(), available_commands, Vec::new()),
             validator: MultiLineValidator,
         };
 
@@ -819,8 +901,9 @@ mod tests {
                 prompt_request_sender,
                 prompt_response_receiver,
                 available_commands.clone(),
+                Vec::new(),
             ),
-            hinter: ChatHinter::new(true, true, PathBuf::new(), available_commands),
+            hinter: ChatHinter::new(true, true, PathBuf::new(), available_commands, Vec::new()),
             validator: MultiLineValidator,
         };
 
@@ -846,8 +929,9 @@ mod tests {
                 prompt_request_sender,
                 prompt_response_receiver,
                 available_commands.clone(),
+                Vec::new(),
             ),
-            hinter: ChatHinter::new(true, true, PathBuf::new(), available_commands),
+            hinter: ChatHinter::new(true, true, PathBuf::new(), available_commands, Vec::new()),
             validator: MultiLineValidator,
         };
 
@@ -873,8 +957,9 @@ mod tests {
                 prompt_request_sender,
                 prompt_response_receiver,
                 available_commands.clone(),
+                Vec::new(),
             ),
-            hinter: ChatHinter::new(true, true, PathBuf::new(), available_commands),
+            hinter: ChatHinter::new(true, true, PathBuf::new(), available_commands, Vec::new()),
             validator: MultiLineValidator,
         };
 
@@ -905,8 +990,9 @@ mod tests {
                 prompt_request_sender,
                 prompt_response_receiver,
                 available_commands.clone(),
+                Vec::new(),
             ),
-            hinter: ChatHinter::new(true, true, PathBuf::new(), available_commands),
+            hinter: ChatHinter::new(true, true, PathBuf::new(), available_commands, Vec::new()),
             validator: MultiLineValidator,
         };
 
@@ -929,8 +1015,9 @@ mod tests {
                 prompt_request_sender,
                 prompt_response_receiver,
                 available_commands.clone(),
+                Vec::new(),
             ),
-            hinter: ChatHinter::new(true, true, PathBuf::new(), available_commands),
+            hinter: ChatHinter::new(true, true, PathBuf::new(), available_commands, Vec::new()),
             validator: MultiLineValidator,
         };
 
@@ -955,8 +1042,9 @@ mod tests {
                 prompt_request_sender,
                 prompt_response_receiver,
                 available_commands.clone(),
+                Vec::new(),
             ),
-            hinter: ChatHinter::new(true, true, PathBuf::new(), available_commands),
+            hinter: ChatHinter::new(true, true, PathBuf::new(), available_commands, Vec::new()),
             validator: MultiLineValidator,
         };
 
@@ -986,8 +1074,9 @@ mod tests {
                 prompt_request_sender,
                 prompt_response_receiver,
                 available_commands.clone(),
+                Vec::new(),
             ),
-            hinter: ChatHinter::new(true, true, PathBuf::new(), available_commands),
+            hinter: ChatHinter::new(true, true, PathBuf::new(), available_commands, Vec::new()),
             validator: MultiLineValidator,
         };
 
@@ -1009,7 +1098,7 @@ mod tests {
         // Create a mock Os for testing
         let mock_os = crate::os::Os::new().await.unwrap();
         let available_commands = get_available_commands(&mock_os);
-        let hinter = ChatHinter::new(true, true, PathBuf::new(), available_commands);
+        let hinter = ChatHinter::new(true, true, PathBuf::new(), available_commands, Vec::new());
 
         // Test hint for a command
         let line = "/he";
@@ -1042,7 +1131,7 @@ mod tests {
         // Create a mock Os for testing
         let mock_os = crate::os::Os::new().await.unwrap();
         let available_commands = get_available_commands(&mock_os);
-        let hinter = ChatHinter::new(false, true, PathBuf::new(), available_commands);
+        let hinter = ChatHinter::new(false, true, PathBuf::new(), available_commands, Vec::new());
 
         // Test hint from history - should be None since history hints are disabled
         let line = "How";
@@ -1140,5 +1229,260 @@ mod tests {
         let result = history.search("hello", 0, SearchDirection::Reverse).unwrap();
         assert!(result.is_some(), "Should find 'Hello World' when searching for 'hello'");
         assert_eq!(result.unwrap().entry, "Hello World");
+    }
+
+    #[tokio::test]
+    async fn test_chat_completer_agent_swap_completion() {
+        let (prompt_request_sender, _) = tokio::sync::broadcast::channel::<PromptQuery>(5);
+        let (_, prompt_response_receiver) = tokio::sync::broadcast::channel::<PromptQueryResult>(5);
+
+        // Create a mock Os for testing
+        let mock_os = crate::os::Os::new().await.unwrap();
+        let available_commands = get_available_commands(&mock_os);
+        let completer = ChatCompleter::new(
+            prompt_request_sender,
+            prompt_response_receiver,
+            available_commands,
+            Vec::new(),
+        );
+
+        // Create a mock context with empty history
+        let empty_history = DefaultHistory::new();
+        let ctx = Context::new(&empty_history);
+
+        // Test completion for "/agent s" - should include "/agent swap"
+        let line = "/agent s";
+        let pos = line.len();
+        let (start, completions) = completer.complete(line, pos, &ctx).unwrap();
+
+        // Verify start position
+        assert_eq!(start, 0);
+
+        // Verify completions contain "/agent swap"
+        assert!(
+            completions.contains(&"/agent swap".to_string()),
+            "Expected '/agent swap' in completions, got: {:?}",
+            completions
+        );
+    }
+
+    #[tokio::test]
+    async fn test_chat_hinter_agent_swap_hint() {
+        // Create a mock Os for testing
+        let mock_os = crate::os::Os::new().await.unwrap();
+        let available_commands = get_available_commands(&mock_os);
+        let hinter = ChatHinter::new(true, true, PathBuf::new(), available_commands, Vec::new());
+
+        // Create a mock context with empty history
+        let empty_history = DefaultHistory::new();
+        let ctx = Context::new(&empty_history);
+
+        // Test hint for "/agent s" - the hinter provides the first alphabetically sorted match
+        // Since commands are sorted, "/agent schema" comes before "/agent swap"
+        // So we expect "chema" as the hint, not "wap"
+        let line = "/agent s";
+        let pos = line.len();
+        let hint = hinter.hint(line, pos, &ctx);
+
+        // Should get "chema" as the hint (completes to "/agent schema", the first alphabetical match)
+        assert_eq!(
+            hint,
+            Some("chema".to_string()),
+            "Expected 'chema' as hint for '/agent s', got: {:?}",
+            hint
+        );
+
+        // Test hint for "/agent sw" - should now provide "ap" as ghost text
+        let line = "/agent sw";
+        let pos = line.len();
+        let hint = hinter.hint(line, pos, &ctx);
+        assert_eq!(
+            hint,
+            Some("ap".to_string()),
+            "Expected 'ap' as hint for '/agent sw', got: {:?}",
+            hint
+        );
+
+        // Test that hint is not provided when cursor is not at the end
+        let hint = hinter.hint(line, 5, &ctx);
+        assert_eq!(hint, None);
+    }
+
+    #[tokio::test]
+    async fn test_agent_swap_agent_name_completion() {
+        let (prompt_request_sender, _) = tokio::sync::broadcast::channel::<PromptQuery>(5);
+        let (_, prompt_response_receiver) = tokio::sync::broadcast::channel::<PromptQueryResult>(5);
+
+        // Create a mock Os for testing
+        let mock_os = crate::os::Os::new().await.unwrap();
+        let available_commands = get_available_commands(&mock_os);
+
+        // Create mock agent names
+        let agent_names = vec![
+            "kiro-dev".to_string(),
+            "kiro-research-agent".to_string(),
+            "python-agent".to_string(),
+        ];
+
+        let completer = ChatCompleter::new(
+            prompt_request_sender,
+            prompt_response_receiver,
+            available_commands,
+            agent_names,
+        );
+
+        // Create a mock context with empty history
+        let empty_history = DefaultHistory::new();
+        let ctx = Context::new(&empty_history);
+
+        // Test completion for "/agent swap k" - should return agents starting with "k"
+        let line = "/agent swap k";
+        let pos = line.len();
+        let (start, completions) = completer.complete(line, pos, &ctx).unwrap();
+
+        // Verify start position is where agent name begins (after "/agent swap ")
+        assert_eq!(start, 12);
+
+        // Verify completions contain the two "kiro-" agents
+        assert_eq!(completions.len(), 2);
+        assert!(completions.contains(&"kiro-dev".to_string()));
+        assert!(completions.contains(&"kiro-research-agent".to_string()));
+        assert!(!completions.contains(&"python-agent".to_string()));
+
+        // Test completion for "/agent swap p" - should return "python-agent"
+        let line = "/agent swap p";
+        let pos = line.len();
+        let (start, completions) = completer.complete(line, pos, &ctx).unwrap();
+
+        assert_eq!(start, 12);
+        assert_eq!(completions.len(), 1);
+        assert!(completions.contains(&"python-agent".to_string()));
+    }
+
+    #[tokio::test]
+    async fn test_agent_swap_agent_name_hint() {
+        // Create a mock Os for testing
+        let mock_os = crate::os::Os::new().await.unwrap();
+        let available_commands = get_available_commands(&mock_os);
+
+        // Create mock agent names
+        let agent_names = vec![
+            "kiro-dev".to_string(),
+            "kiro-research-agent".to_string(),
+            "python-agent".to_string(),
+        ];
+
+        let hinter = ChatHinter::new(true, true, PathBuf::new(), available_commands, agent_names);
+
+        // Create a mock context with empty history
+        let empty_history = DefaultHistory::new();
+        let ctx = Context::new(&empty_history);
+
+        // Test hint for "/agent swap k" - should show "iro-dev" (first alphabetically)
+        let line = "/agent swap k";
+        let pos = line.len();
+        let hint = hinter.hint(line, pos, &ctx);
+        assert_eq!(hint, Some("iro-dev".to_string()));
+
+        // Test hint for "/agent swap p" - should show "ython-agent"
+        let line = "/agent swap p";
+        let pos = line.len();
+        let hint = hinter.hint(line, pos, &ctx);
+        assert_eq!(hint, Some("ython-agent".to_string()));
+    }
+
+    #[tokio::test]
+    async fn test_agent_delete_agent_name_completion() {
+        let (prompt_request_sender, _) = tokio::sync::broadcast::channel::<PromptQuery>(5);
+        let (_, prompt_response_receiver) = tokio::sync::broadcast::channel::<PromptQueryResult>(5);
+
+        // Create a mock Os for testing
+        let mock_os = crate::os::Os::new().await.unwrap();
+        let available_commands = get_available_commands(&mock_os);
+
+        // Create mock agent names
+        let agent_names = vec![
+            "kiro-dev".to_string(),
+            "kiro-research-agent".to_string(),
+            "python-agent".to_string(),
+        ];
+
+        let completer = ChatCompleter::new(
+            prompt_request_sender,
+            prompt_response_receiver,
+            available_commands,
+            agent_names,
+        );
+
+        // Create a mock context with empty history
+        let empty_history = DefaultHistory::new();
+        let ctx = Context::new(&empty_history);
+
+        // Test completion for "/agent delete k" - should return agents starting with "k"
+        let line = "/agent delete k";
+        let pos = line.len();
+        let (start, completions) = completer.complete(line, pos, &ctx).unwrap();
+
+        // Verify start position is where agent name begins (after "/agent delete ")
+        assert_eq!(start, 14);
+
+        // Verify completions contain the two "kiro-" agents
+        assert_eq!(completions.len(), 2);
+        assert!(completions.contains(&"kiro-dev".to_string()));
+        assert!(completions.contains(&"kiro-research-agent".to_string()));
+        assert!(!completions.contains(&"python-agent".to_string()));
+
+        // Test completion for "/agent delete p" - should return "python-agent"
+        let line = "/agent delete p";
+        let pos = line.len();
+        let (start, completions) = completer.complete(line, pos, &ctx).unwrap();
+
+        assert_eq!(start, 14);
+        assert_eq!(completions.len(), 1);
+        assert!(completions.contains(&"python-agent".to_string()));
+    }
+
+    #[tokio::test]
+    async fn test_agent_delete_agent_name_hint() {
+        // Create a mock Os for testing
+        let mock_os = crate::os::Os::new().await.unwrap();
+        let available_commands = get_available_commands(&mock_os);
+
+        // Create mock agent names
+        let agent_names = vec![
+            "kiro-dev".to_string(),
+            "kiro-research-agent".to_string(),
+            "python-agent".to_string(),
+        ];
+
+        let hinter = ChatHinter::new(true, true, PathBuf::new(), available_commands, agent_names);
+
+        // Create a mock context with empty history
+        let empty_history = DefaultHistory::new();
+        let ctx = Context::new(&empty_history);
+
+        // Test hint for "/agent delete k" - should show "iro-dev" (first alphabetically)
+        let line = "/agent delete k";
+        let pos = line.len();
+        let hint = hinter.hint(line, pos, &ctx);
+        assert_eq!(hint, Some("iro-dev".to_string()));
+
+        // Test hint for "/agent delete p" - should show "ython-agent"
+        let line = "/agent delete p";
+        let pos = line.len();
+        let hint = hinter.hint(line, pos, &ctx);
+        assert_eq!(hint, Some("ython-agent".to_string()));
+
+        // Test hint for "/agent delete kiro-r" - should show "esearch-agent"
+        let line = "/agent delete kiro-r";
+        let pos = line.len();
+        let hint = hinter.hint(line, pos, &ctx);
+        assert_eq!(hint, Some("esearch-agent".to_string()));
+
+        // Test that no hint is provided for a complete match
+        let line = "/agent delete kiro-dev";
+        let pos = line.len();
+        let hint = hinter.hint(line, pos, &ctx);
+        assert_eq!(hint, None);
     }
 }

@@ -1,0 +1,4 @@
+{
+  "type": "added",
+  "description": "Agent name tab completion and ghost text hints for /agent swap and /agent delete commands"
+}
