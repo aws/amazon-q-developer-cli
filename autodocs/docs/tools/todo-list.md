@@ -263,7 +263,9 @@ List all existing TODO list IDs.
 
 ## Limitations
 
-- Lists stored locally in `.kiro/cli-todo-lists/`
+- Lists stored in application data directory:
+  - macOS: `~/Library/Application Support/kiro-cli/todo-lists/`
+  - Linux: `~/.local/share/kiro-cli/todo-lists/`
 - No cloud sync or sharing
 - One active list per conversation (can have multiple saved)
 - Task indices are 0-based
@@ -274,7 +276,7 @@ List all existing TODO list IDs.
 
 **Aliases**: `todo_list`
 
-**Storage**: Lists stored as JSON in `.kiro/cli-todo-lists/` directory.
+**Storage**: Lists stored as JSON in application data directory (`todo-lists/<workspace-hash>/`).
 
 **State**: Each list contains:
 - `tasks`: Array of task objects with description, completed status, details

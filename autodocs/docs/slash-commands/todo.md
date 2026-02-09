@@ -119,6 +119,6 @@ kiro-cli settings chat.enableTodoList true
 
 ## Technical Details
 
-**Storage**: `.kiro/cli-todo-lists/` directory
+**Storage**: Application data directory (`todo-lists/<workspace-hash>/`)
 
 **Display**: ✓ for completed, ✗ for in-progress

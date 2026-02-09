@@ -66,6 +66,6 @@ Run kiro-cli login to log back in to Kiro CLI
 
 ## Technical Details
 
-**Credentials**: Stored in local database (`~/.kiro/`)
+**Credentials**: Stored in local database (application data directory)
 
 **Scope**: Logout is user-wide, affects all workspaces

@@ -23,7 +23,9 @@ Kiro CLI automatically saves all chat sessions on every conversation turn. Sessi
 
 **Automatic**: Every conversation turn saved to database  
 **Scope**: Per-directory (each project has own sessions)  
-**Storage**: Local database (`~/.kiro/`)  
+**Storage**: SQLite database in application data directory:
+- macOS: `~/Library/Application Support/kiro-cli/data.sqlite3`
+- Linux: `~/.local/share/kiro-cli/data.sqlite3`  
 **Session ID**: UUID for each session
 
 ## Managing Sessions
@@ -177,7 +179,7 @@ Exports current session to file.
 
 ## Technical Details
 
-**Storage**: SQLite database in `~/.kiro/`
+**Storage**: SQLite database in application data directory (`data.sqlite3`)
 
 **Scope**: Sessions keyed by directory path
 

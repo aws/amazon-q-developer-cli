@@ -136,7 +136,16 @@ kiro-cli mcp status --name git
 ## Related
 
 - [/mcp](../slash-commands/mcp.md) - View server status in chat
-- [Agent Configuration](../agent-config/overview.md) - Configure in agent
+- [Agent Configuration](../features/agent-configuration.md) - Configure MCP in agents
+
+## Configuration Files
+
+MCP server configurations are stored in:
+
+**Global** (user-wide): `~/.kiro/settings/mcp.json`  
+**Workspace** (project-specific): `.kiro/settings/mcp.json`
+
+Workspace configuration takes precedence over global.
 
 ## Troubleshooting
 

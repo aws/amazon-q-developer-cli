@@ -64,7 +64,13 @@ Each agent has its own isolated knowledge base.
 
 **Storage structure**:
 ```
-~/.kiro/knowledge_bases/
+# macOS
+~/Library/Application Support/kiro-cli/knowledge_bases/
+
+# Linux
+~/.local/share/kiro-cli/knowledge_bases/
+
+# Structure:
 ├── q_cli_default/              # Default agent
 │   ├── contexts.json
 │   └── context-id-1/
@@ -149,8 +155,8 @@ Unsupported files indexed without text extraction.
 
 ```bash
 kiro-cli settings knowledge.maxFiles 10000
-kiro-cli settings knowledge.chunkSize 1024
-kiro-cli settings knowledge.chunkOverlap 256
+kiro-cli settings knowledge.chunkSize 512
+kiro-cli settings knowledge.chunkOverlap 128
 kiro-cli settings knowledge.indexType Fast
 kiro-cli settings knowledge.defaultIncludePatterns '["**/*.rs"]'
 kiro-cli settings knowledge.defaultExcludePatterns '["target/**"]'

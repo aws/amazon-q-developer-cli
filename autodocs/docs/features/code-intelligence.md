@@ -169,6 +169,12 @@ brew install jdtls
 # Extract and add to PATH
 ```
 
+**Kotlin**
+```bash
+# Download from https://github.com/fwcd/kotlin-language-server
+# Extract and add to PATH
+```
+
 **Ruby**
 ```bash
 gem install solargraph
@@ -186,11 +192,6 @@ sudo apt install clangd
 
 # Linux (Arch)
 sudo pacman -S clang
-```
-
-**Kotlin**
-```bash
-brew install kotlin-language-server
 ```
 
 ### Initialize Code Intelligence
@@ -542,6 +543,8 @@ Display LSP logs for troubleshooting.
 
 ## Supported LSP Servers
 
+The following LSP servers are pre-configured and auto-detected:
+
 | Language | Extensions | Server | Install Command |
 |----------|------------|--------|-----------------|
 | TypeScript/JavaScript | `.ts`, `.js`, `.tsx`, `.jsx` | `typescript-language-server` | `npm install -g typescript-language-server typescript` |
@@ -549,9 +552,11 @@ Display LSP logs for troubleshooting.
 | Python | `.py` | `pyright` | `pip install pyright` |
 | Go | `.go` | `gopls` | `go install golang.org/x/tools/gopls@latest` |
 | Java | `.java` | `jdtls` | `brew install jdtls` (macOS) |
+| Kotlin | `.kt`, `.kts` | `kotlin-lsp` | See [kotlin-lsp](https://github.com/fwcd/kotlin-language-server) |
 | Ruby | `.rb` | `solargraph` | `gem install solargraph` |
 | C/C++ | `.c`, `.cpp`, `.h`, `.hpp` | `clangd` | `brew install llvm` (macOS) or `apt install clangd` (Linux) |
-| Kotlin | `.kt`, `.kts` | `kotlin-language-server` | `brew install kotlin-language-server` |
+
+Additional languages can be added via custom `lsp.json` configuration (see Custom Language Servers section).
 
 ### "Code tool is not enabled for this agent"
 **Cause**: The agent you're using doesn't have the `code` tool in its tool list.

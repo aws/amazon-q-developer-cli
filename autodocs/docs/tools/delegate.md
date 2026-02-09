@@ -19,7 +19,7 @@ Launch and manage asynchronous agent processes running independently in backgrou
 
 > **Note**: This tool is used by the AI assistant to fulfill your requests. You don't invoke it directly - simply ask questions naturally, and the assistant will use this tool when background execution would be beneficial.
 
-The delegate tool launches agents that run asynchronously in the background (non-blocking). Unlike use_subagent which runs synchronously, delegate allows main agent to continue while background agents work. Only one task per agent at a time. Files stored in `.kiro/.subagents/`.
+The delegate tool launches agents that run asynchronously in the background (non-blocking). Unlike use_subagent which runs synchronously, delegate allows main agent to continue while background agents work. Only one task per agent at a time.
 
 ## How It Works
 
@@ -194,7 +194,7 @@ Show available agents.
 
 **Symptom**: Status shows completed but no output  
 **Cause**: Agent may have failed or produced no output  
-**Solution**: Check agent logs in `.kiro/.subagents/` directory.
+**Solution**: Check agent logs in application data directory (`.subagents/`).
 
 ## Related Features
 
@@ -208,7 +208,6 @@ Show available agents.
 - No real-time progress updates (must check status)
 - Launching new task replaces previous task for same agent
 - No inter-agent communication
-- Files stored in `.kiro/.subagents/` directory
 - Experimental feature - may change or be removed
 
 ## Technical Details
@@ -217,7 +216,9 @@ Show available agents.
 
 **Execution**: Asynchronous (non-blocking) - main agent continues immediately.
 
-**Storage**: Agent files stored in `.kiro/.subagents/` in current workspace.
+**Storage**: Agent files stored in application data directory:
+- macOS: `~/Library/Application Support/kiro-cli/.subagents/`
+- Linux: `~/.local/share/kiro-cli/.subagents/`
 
 **Agent Selection**: If agent not specified, uses "q_cli_default". If specified agent not found, returns error.
 

@@ -193,8 +193,8 @@ Your token overrides registry defaults.
 **Registry Source**: Configured by administrator at organization level
 
 **Scope Options**:
-- Global: `~/.kiro/mcp.json`
-- Workspace: `.kiro/mcp.json`
+- Global: `~/.kiro/settings/mcp.json`
+- Workspace: `.kiro/settings/mcp.json`
 - Agent-specific: In agent configuration
 
 **Customization**: Environment variables and HTTP headers can be customized even in registry mode

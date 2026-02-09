@@ -42,7 +42,7 @@ Local agents take precedence over global with same name.
   },
   "resources": ["src/**/*.rs", "Cargo.toml"],
   "hooks": {
-    "onStart": {
+    "agentSpawn": {
       "command": "git status",
       "description": "Show git status"
     }
@@ -316,6 +316,7 @@ MCP server configurations.
 - `args` (optional): Command arguments
 - `env` (optional): Environment variables
 - `timeout` (optional): Request timeout in milliseconds (default: 120000)
+- `disabled` (optional): Set to `true` to skip loading this server (default: false)
 
 ### toolAliases
 
@@ -539,7 +540,7 @@ Checks JSON syntax and schema compliance.
   },
   "resources": ["src/**/*.rs", "Cargo.toml"],
   "hooks": {
-    "onStart": {
+    "agentSpawn": {
       "command": "cargo --version",
       "description": "Show Rust version"
     }

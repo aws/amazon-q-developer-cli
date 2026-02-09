@@ -17,7 +17,7 @@ View context hooks configuration and execution status.
 
 ## Overview
 
-Displays hooks configured in current agent. Hooks are commands executed at specific triggers (onStart, onContextLoad, beforeToolUse, afterToolUse) to provide dynamic context.
+Displays hooks configured in current agent. Hooks are commands executed at specific triggers (agentSpawn, userPromptSubmit, preToolUse, postToolUse, stop) to provide dynamic context.
 
 ## Usage
 
@@ -48,11 +48,11 @@ Shows:
 
 **Output**:
 ```
-onStart:
+agentSpawn:
   Command: git status
   Description: Show git status
 
-beforeToolUse (fs_write):
+preToolUse (fs_write):
   Command: git diff
   Description: Show pending changes
 ```
