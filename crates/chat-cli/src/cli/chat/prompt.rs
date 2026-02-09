@@ -347,15 +347,16 @@ pub struct ChatHinter {
     first_hint_shown: std::sync::atomic::AtomicBool,
 }
 
-const INITIAL_PROMPT_HINTS: &[&str] = &[
-    "How can I help?",
-    "What should we work on?",
-    "Ask me anything!",
-    "What would you like to do?",
-    "Ready when you are!",
-    "Curious what I can do? Just ask!",
-    "Not sure where to start? Ask me about my features",
-    "Want to know what commands I have? Just ask",
+const INITIAL_PROMPT_HINTS: &[(&str, u32)] = &[
+    ("How can I help?", 1),
+    ("What should we work on?", 1),
+    ("Ask me anything!", 1),
+    ("What would you like to do?", 1),
+    ("Ready when you are!", 1),
+    ("Curious what I can do? Just ask!", 1),
+    ("Not sure where to start? Ask me about my features", 1),
+    ("Want to know what commands I have? Just ask", 1),
+    ("Need help with features or setup? Use /help", 3),
 ];
 
 impl ChatHinter {
@@ -386,8 +387,15 @@ impl ChatHinter {
             // Only show hint on first prompt
             if !self.first_hint_shown.swap(true, Ordering::Relaxed) {
                 use rand::Rng;
-                let idx = rand::rng().random_range(0..INITIAL_PROMPT_HINTS.len());
-                return Some(INITIAL_PROMPT_HINTS[idx].to_string());
+                // Build weighted list by duplicating hints based on weight
+                let mut weighted_hints = Vec::new();
+                for (hint, weight) in INITIAL_PROMPT_HINTS {
+                    for _ in 0..*weight {
+                        weighted_hints.push(*hint);
+                    }
+                }
+                let idx = rand::rng().random_range(0..weighted_hints.len());
+                return Some(weighted_hints[idx].to_string());
             }
         }
 
