@@ -600,6 +600,9 @@ def build(
         info("Running cargo clippy")
         run_clippy()
 
+    info("Generating documentation embeddings")
+    run_cmd(["./scripts/generate-embeddings.sh"])
+
     info("Building", CHAT_PACKAGE_NAME)
     chat_path = build_chat_bin(
         release=release,

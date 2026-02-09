@@ -55,11 +55,9 @@ case $REPLY in
         echo ""
         kiro-cli chat --agent docs --no-interactive "Update documentation for my code changes"
         echo ""
-        echo "Regenerating search embeddings..."
-        ./scripts/generate-embeddings.sh
-        echo ""
         echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
         echo "Review the generated docs, then commit and push again."
+        echo "Note: Embeddings will be regenerated during build."
         echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
         exit 1
         ;;
