@@ -1,0 +1,4 @@
+{
+  "type": "changed",
+  "description": "Remove tool description truncation and warn about large descriptions instead"
+}

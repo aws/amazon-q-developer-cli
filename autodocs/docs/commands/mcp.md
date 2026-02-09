@@ -1,7 +1,7 @@
 ---
 doc_meta:
-  validated: 2025-12-19
-  commit: 57090ffe
+  validated: 2026-01-28
+  commit: 0fce279f
   status: validated
   testable_headless: true
   category: command
@@ -166,3 +166,18 @@ Workspace configuration takes precedence over global.
 **Symptom**: Remove fails  
 **Cause**: Server not in configuration  
 **Solution**: Use `kiro-cli mcp list` to see configured servers
+
+### Issue: Tool Excluded Due to Validation Error
+
+**Symptom**: Message "The following tools have been excluded due to validation errors"  
+**Cause**: Tool fails validation requirements:
+- Tool name exceeds 64 characters (including server prefix)
+- Tool name contains invalid characters (must match `^[a-zA-Z][a-zA-Z0-9_]*$`)
+- Tool description is empty  
+**Solution**: Contact MCP server maintainer to fix tool specification.
+
+### Issue: Large Description Warning
+
+**Symptom**: Message "The following tools have large descriptions which may impact agent performance"  
+**Cause**: Tool description exceeds 10,000 characters  
+**Solution**: Tool still works but may slow down agent responses. Consider asking server maintainer to shorten description.

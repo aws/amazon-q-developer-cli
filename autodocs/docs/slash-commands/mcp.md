@@ -1,7 +1,7 @@
 ---
 doc_meta:
-  validated: 2026-01-27
-  commit: 85403a86
+  validated: 2026-01-28
+  commit: 0fce279f
   status: validated
   testable_headless: false
   category: slash_command
@@ -159,3 +159,18 @@ Add an MCP server from the registry
 **Symptom**: Server initialized but tools not working  
 **Cause**: Server error or incompatible version  
 **Solution**: Check server logs. Verify server version compatibility.
+
+### Issue: Tool Excluded Due to Validation Error
+
+**Symptom**: Message "The following tools have been excluded due to validation errors"  
+**Cause**: Tool fails validation requirements:
+- Tool name exceeds 64 characters (including server prefix)
+- Tool name contains invalid characters (must match `^[a-zA-Z][a-zA-Z0-9_]*$`)
+- Tool description is empty  
+**Solution**: Contact MCP server maintainer to fix tool specification.
+
+### Issue: Large Description Warning
+
+**Symptom**: Message "The following tools have large descriptions which may impact agent performance"  
+**Cause**: Tool description exceeds 10,000 characters  
+**Solution**: Tool still works but may slow down agent responses. Consider asking server maintainer to shorten description.

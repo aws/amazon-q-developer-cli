@@ -9,8 +9,8 @@ use regex::Regex;
 use super::agent_config::parse::CanonicalToolName;
 use super::agent_loop::types::ToolSpec;
 use super::consts::{
+    LARGE_TOOL_DESCRIPTION_THRESHOLD,
     MAX_TOOL_NAME_LEN,
-    MAX_TOOL_SPEC_DESCRIPTION_LEN,
     RTS_VALID_TOOL_NAME_REGEX,
     TOOL_USE_PURPOSE_FIELD_DESCRIPTION,
     TOOL_USE_PURPOSE_FIELD_NAME,
@@ -228,7 +228,7 @@ pub fn sanitize_tool_specs(
                     ToolValidationErrorKind::NameCollision(n.canonical_name.clone()),
                 ));
             } else {
-                if spec.description.len() > MAX_TOOL_SPEC_DESCRIPTION_LEN {
+                if spec.description.len() > LARGE_TOOL_DESCRIPTION_THRESHOLD {
                     warnings.push(ToolValidationError::new(
                         server_name.clone(),
                         spec.clone(),
@@ -245,7 +245,6 @@ pub fn sanitize_tool_specs(
                     ));
                 }
                 spec.name = sanitized_name.clone();
-                spec.description.truncate(MAX_TOOL_SPEC_DESCRIPTION_LEN);
                 tool_map.insert(sanitized_name, SanitizedToolSpec {
                     canonical_name,
                     tool_spec: spec,

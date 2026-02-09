@@ -10,7 +10,8 @@ pub const RTS_VALID_TOOL_NAME_REGEX: &str = "^[a-zA-Z][a-zA-Z0-9_-]{0,64}$";
 
 pub const MAX_TOOL_NAME_LEN: usize = 64;
 
-pub const MAX_TOOL_SPEC_DESCRIPTION_LEN: usize = 10_004;
+/// Threshold for warning about large tool descriptions that may impact performance
+pub const LARGE_TOOL_DESCRIPTION_THRESHOLD: usize = 10_000;
 
 pub const DEFAULT_MCP_CREDENTIAL_PATH: &str = "~/.aws/sso/cache";
 

@@ -24,6 +24,7 @@ use std::time::{
     Instant,
 };
 
+use agent::consts::LARGE_TOOL_DESCRIPTION_THRESHOLD;
 use crossterm::{
     cursor,
     execute,
@@ -528,16 +529,22 @@ pub enum PromptQueryResult {
     Search(Vec<String>),
 }
 
-/// Categorizes different types of tool name validation failures:
-/// - `TooLong`: The tool name exceeds the maximum allowed length
-/// - `IllegalChar`: The tool name contains characters that are not allowed
-/// - `EmptyDescription`: The tool description is empty or missing
+/// Tools excluded from the available tools list due to validation failures.
 #[allow(dead_code)]
-enum ToolValidationViolation {
+enum ToolExclusion {
+    /// Tool name exceeds the maximum allowed length
     TooLong(String),
+    /// Tool name contains characters that are not allowed
     IllegalChar(String),
+    /// Tool description is empty or missing
     EmptyDescription(String),
-    DescriptionTooLong(String),
+}
+
+/// Warnings for tools that are loaded but may have issues.
+#[allow(dead_code)]
+enum ToolWarning {
+    /// Tool description is large and may impact agent performance
+    LargeDescription(String),
 }
 
 #[derive(Clone, Default, Debug, Eq, PartialEq)]
@@ -2052,7 +2059,8 @@ async fn process_tool_specs(
     //
     // For non-compliance due to point 1, we shall change it on behalf of the users.
     // For the rest, we simply throw a warning and reject the tool.
-    let mut out_of_spec_tool_names = Vec::<ToolValidationViolation>::new();
+    let mut excluded_tools: Vec<ToolExclusion> = Vec::new();
+    let mut tool_warnings: Vec<ToolWarning> = Vec::new();
     let mut hasher = DefaultHasher::new();
     let mut number_of_tools = 0_usize;
 
@@ -2077,16 +2085,15 @@ async fn process_tool_specs(
             }
         });
         if model_tool_name.len() > 64 {
-            out_of_spec_tool_names.push(ToolValidationViolation::TooLong(spec.name.clone()));
+            excluded_tools.push(ToolExclusion::TooLong(spec.name.clone()));
             continue;
         } else if spec.description.is_empty() {
-            out_of_spec_tool_names.push(ToolValidationViolation::EmptyDescription(spec.name.clone()));
+            excluded_tools.push(ToolExclusion::EmptyDescription(spec.name.clone()));
             continue;
         }
 
-        if spec.description.len() > 10_004 {
-            spec.description.truncate(10_004);
-            out_of_spec_tool_names.push(ToolValidationViolation::DescriptionTooLong(spec.name.clone()));
+        if spec.description.len() > LARGE_TOOL_DESCRIPTION_THRESHOLD {
+            tool_warnings.push(ToolWarning::LargeDescription(spec.name.clone()));
         }
 
         tn_map.insert(model_tool_name.clone(), ToolInfo {
@@ -2123,33 +2130,41 @@ async fn process_tool_specs(
     // considered a "server load". Reasoning being:
     // - Failures here are not related to server load
     // - There is not a whole lot we can do with this data
-    if !out_of_spec_tool_names.is_empty() {
-        Err(eyre::eyre!(out_of_spec_tool_names.iter().fold(
-            String::from(
-                "The following tools are out of spec. They may have been excluded from the list of available tools:\n",
-            ),
-            |mut acc, name| {
-                let (tool_name, msg) = match name {
-                    ToolValidationViolation::TooLong(tool_name) => (
-                        tool_name.as_str(),
+    if !excluded_tools.is_empty() || !tool_warnings.is_empty() {
+        let mut message = String::new();
+
+        // Report excluded tools
+        if !excluded_tools.is_empty() {
+            message.push_str("The following tools have been excluded due to validation errors:\n");
+            for exclusion in &excluded_tools {
+                let (tool_name, reason) = match exclusion {
+                    ToolExclusion::TooLong(name) => (
+                        name.as_str(),
                         "tool name exceeds max length of 64 when combined with server name",
                     ),
-                    ToolValidationViolation::IllegalChar(tool_name) => (
-                        tool_name.as_str(),
+                    ToolExclusion::IllegalChar(name) => (
+                        name.as_str(),
                         "tool name must be compliant with ^[a-zA-Z][a-zA-Z0-9_]*$",
                     ),
-                    ToolValidationViolation::EmptyDescription(tool_name) => {
-                        (tool_name.as_str(), "tool schema contains empty description")
-                    },
-                    ToolValidationViolation::DescriptionTooLong(tool_name) => (
-                        tool_name.as_str(),
-                        "tool description is longer than 10024 characters and has been truncated",
-                    ),
+                    ToolExclusion::EmptyDescription(name) => (name.as_str(), "tool schema contains empty description"),
                 };
-                acc.push_str(format!(" - {tool_name} ({msg})\n").as_str());
-                acc
-            },
-        )))
+                message.push_str(&format!(" - {tool_name} ({reason})\n"));
+            }
+        }
+
+        // Report warnings (tools are still loaded)
+        if !tool_warnings.is_empty() {
+            if !message.is_empty() {
+                message.push('\n');
+            }
+            message.push_str("The following tools have large descriptions which may impact agent performance:\n");
+            for warning in &tool_warnings {
+                let ToolWarning::LargeDescription(name) = warning;
+                message.push_str(&format!(" - {name}\n"));
+            }
+        }
+
+        Err(eyre::eyre!(message))
     } else {
         Ok(())
     }
