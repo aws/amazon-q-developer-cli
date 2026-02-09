@@ -1,0 +1,4 @@
+{
+  "type": "added",
+  "description": "Update the shell tool with a working_dir parameter to prevent the model from prefixing all commands with cd"
+}

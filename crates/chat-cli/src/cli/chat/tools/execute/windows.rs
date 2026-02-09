@@ -21,21 +21,33 @@ use crate::os::Os;
 /// Run a command on Windows using cmd.exe.
 /// # Arguments
 /// * `command` - The command to run
+/// * `working_dir` - Optional working directory for command execution
 /// * `updates` - output stream to push informational messages about the progress
 /// # Returns
 /// A [`CommandResult`]
-pub async fn run_command<W: Write>(os: &Os, command: &str, mut updates: Option<W>) -> Result<CommandResult> {
+pub async fn run_command<W: Write>(
+    os: &Os,
+    command: &str,
+    working_dir: Option<&str>,
+    mut updates: Option<W>,
+) -> Result<CommandResult> {
     // Set up environment variables with user agent metadata for CloudTrail tracking
     let env_vars = env_vars_with_user_agent(os);
 
     // We need to maintain a handle on stderr and stdout, but pipe it to the terminal as well
-    let mut child = tokio::process::Command::new("cmd")
-        .arg("/C")
+    let mut cmd = tokio::process::Command::new("cmd");
+    cmd.arg("/C")
         .arg(command)
         .envs(env_vars)
         .stdin(Stdio::inherit())
         .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
+        .stderr(Stdio::piped());
+
+    if let Some(dir) = working_dir {
+        cmd.current_dir(dir);
+    }
+
+    let mut child = cmd
         .spawn()
         .wrap_err_with(|| format!("Unable to spawn command '{command}'"))?;
 

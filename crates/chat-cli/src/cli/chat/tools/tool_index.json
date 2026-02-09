@@ -120,6 +120,10 @@
         "summary": {
           "type": "string",
           "description": "A brief explanation of what the command does"
+        },
+        "working_dir": {
+          "type": "string",
+          "description": "Working directory for command execution. Supports tilde expansion (e.g., ~/projects). If not specified, uses the current working directory."
         }
       },
       "required": [

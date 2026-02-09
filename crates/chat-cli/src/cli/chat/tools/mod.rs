@@ -474,5 +474,13 @@ mod tests {
             format!("{ACTIVE_USER_HOME}{MAIN_SEPARATOR}other").as_str(),
         )
         .await;
+
+        // Test same directory returns an empty string
+        assert_paths(
+            format!("{ACTIVE_USER_HOME}{MAIN_SEPARATOR}src").as_str(),
+            format!("{ACTIVE_USER_HOME}{MAIN_SEPARATOR}src").as_str(),
+            "",
+        )
+        .await;
     }
 }

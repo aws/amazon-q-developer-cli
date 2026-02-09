@@ -223,7 +223,7 @@ impl Tool {
             match self {
                 Tool::FsRead(fs_read) => fs_read.queue_description(self, os, &mut buf).await,
                 Tool::FsWrite(fs_write) => fs_write.queue_description(self, os, &mut buf),
-                Tool::ExecuteCommand(execute_command) => execute_command.queue_description(self, &mut buf),
+                Tool::ExecuteCommand(execute_command) => execute_command.queue_description(self, os, &mut buf),
                 Tool::UseAws(use_aws) => use_aws.queue_description(self, &mut buf),
                 Tool::Custom(custom_tool) => custom_tool.queue_description(self, &mut buf),
                 Tool::GhIssue(gh_issue) => gh_issue.queue_description(self, &mut buf),
@@ -257,7 +257,7 @@ impl Tool {
             match self {
                 Tool::FsRead(fs_read) => fs_read.queue_description(self, os, output).await,
                 Tool::FsWrite(fs_write) => fs_write.queue_description(self, os, output),
-                Tool::ExecuteCommand(execute_command) => execute_command.queue_description(self, output),
+                Tool::ExecuteCommand(execute_command) => execute_command.queue_description(self, os, output),
                 Tool::UseAws(use_aws) => use_aws.queue_description(self, output),
                 Tool::Custom(custom_tool) => custom_tool.queue_description(self, output),
                 Tool::GhIssue(gh_issue) => gh_issue.queue_description(self, output),

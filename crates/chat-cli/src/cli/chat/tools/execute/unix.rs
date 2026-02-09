@@ -21,23 +21,35 @@ use crate::util::env_var::get_chat_shell;
 /// Run a bash command on Unix systems.
 /// # Arguments
 /// * `command` - The command to run
+/// * `working_dir` - Optional working directory for command execution
 /// * `updates` - output stream to push informational messages about the progress
 /// # Returns
 /// A [`CommandResult`]
-pub async fn run_command<W: Write>(os: &Os, command: &str, mut updates: Option<W>) -> Result<CommandResult> {
+pub async fn run_command<W: Write>(
+    os: &Os,
+    command: &str,
+    working_dir: Option<&str>,
+    mut updates: Option<W>,
+) -> Result<CommandResult> {
     let shell = get_chat_shell();
 
     // Set up environment variables with user agent metadata for CloudTrail tracking
     let env_vars = env_vars_with_user_agent(os);
 
     // We need to maintain a handle on stderr and stdout, but pipe it to the terminal as well
-    let mut child = tokio::process::Command::new(shell)
-        .arg("-c")
+    let mut cmd = tokio::process::Command::new(shell);
+    cmd.arg("-c")
         .arg(command)
         .envs(env_vars)
         .stdin(Stdio::inherit())
         .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
+        .stderr(Stdio::piped());
+
+    if let Some(dir) = working_dir {
+        cmd.current_dir(dir);
+    }
+
+    let mut child = cmd
         .spawn()
         .wrap_err_with(|| format!("Unable to spawn command '{command}'"))?;
 
@@ -244,5 +256,22 @@ mod tests {
         } else {
             panic!("Expected JSON output");
         }
+    }
+
+    #[tokio::test]
+    async fn test_run_command_with_working_dir() {
+        use super::run_command;
+
+        let os = Os::new().await.unwrap();
+        let temp_dir = tempfile::tempdir().unwrap();
+        let canonical_path = temp_dir.path().canonicalize().unwrap();
+        let canonical_str = canonical_path.to_string_lossy().to_string();
+
+        let result = run_command(&os, "pwd", Some(&canonical_str), None::<std::io::Stdout>)
+            .await
+            .unwrap();
+
+        assert_eq!(result.exit_status, Some(0));
+        assert!(result.stdout.trim().ends_with(&canonical_str));
     }
 }

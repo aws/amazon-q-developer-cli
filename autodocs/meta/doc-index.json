@@ -1,5 +1,5 @@
 {
-  "generated_at": "2026-02-05T10:25:58.834637",
+  "generated_at": "2026-02-06T17:30:26.910110",
   "total_docs": 94,
   "by_category": {
     "command": [
@@ -1719,14 +1719,16 @@
         "bash",
         "command",
         "terminal",
-        "run"
+        "run",
+        "working_dir",
+        "directory"
       ],
       "related": [
         "fs-read",
         "fs-write",
         "use-aws"
       ],
-      "validated": "2026-02-02",
+      "validated": "2026-02-06",
       "status": "validated"
     },
     {

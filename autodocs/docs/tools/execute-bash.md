@@ -1,13 +1,13 @@
 ---
 doc_meta:
-  validated: 2026-02-02
-  commit: edc8861d
+  validated: 2026-02-06
+  commit: 7ba9105a
   status: validated
   testable_headless: true
   category: tool
   title: execute_bash
   description: Execute bash commands on the user's system with output capture and safety checks
-  keywords: [execute_bash, shell, bash, command, terminal, run]
+  keywords: [execute_bash, shell, bash, command, terminal, run, working_dir, directory]
   related: [fs-read, fs-write, use-aws]
 ---
 
@@ -28,6 +28,14 @@ Commands are validated against allowed/denied lists and safety patterns before e
 ## Usage
 
 > **Technical Reference**: The JSON examples below show the internal tool format used by the AI assistant. Users should not copy or type these - they are provided for developers and agent configuration authors only.
+
+### Parameters
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `command` | string | Yes | The bash command to execute |
+| `summary` | string | No | Brief explanation of what the command does |
+| `working_dir` | string | No | Working directory for command execution. Supports tilde expansion (e.g., `~/projects`). Defaults to current working directory |
 
 ### Basic Usage
 
@@ -82,6 +90,18 @@ Commands are validated against allowed/denied lists and safety patterns before e
 ```
 
 **What this does**: Searches for files matching pattern. Auto-approved if no dangerous flags (-exec, -delete).
+
+#### Use Case 5: Run Command in Different Directory
+
+```json
+{
+  "command": "npm install",
+  "summary": "Install dependencies in frontend directory",
+  "working_dir": "~/projects/myapp/frontend"
+}
+```
+
+**What this does**: Runs npm install in the specified directory without changing the session's current directory.
 
 ## Configuration
 
@@ -206,6 +226,12 @@ Filesystem      Size  Used Avail Use% Mounted on
 **Cause**: Output exceeds MAX_TOOL_RESPONSE_SIZE  
 **Solution**: Use output redirection to file, then read file with fs_read.
 
+### Issue: Working Directory Not Found
+
+**Symptom**: Error "Working directory is not a directory"  
+**Cause**: The specified `working_dir` path doesn't exist or isn't a directory  
+**Solution**: Verify the path exists and is a directory. Tilde expansion is supported (e.g., `~/projects`).
+
 ## Related Features
 
 - [fs_read](fs-read.md) - Read command output from files
@@ -228,7 +254,7 @@ Filesystem      Size  Used Avail Use% Mounted on
 
 **Platform**: Works on Unix/Linux/macOS (bash) and Windows (cmd/PowerShell)
 
-**Environment**: Commands execute in user's current shell with environment variables. Working directory is current directory.
+**Environment**: Commands execute in user's current shell with environment variables. Working directory defaults to current directory but can be overridden with `working_dir` parameter (supports tilde expansion).
 
 **Read-only Commands**: ls, cat, echo, pwd, which, head, tail, find (without mutation flags), grep (without -P), dir, type
 

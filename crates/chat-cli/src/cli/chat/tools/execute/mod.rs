@@ -1,4 +1,5 @@
 use std::io::Write;
+use std::path::Path;
 
 use crossterm::queue;
 use crossterm::style::{
@@ -52,6 +53,7 @@ pub const READONLY_COMMANDS: &[&str] = &[
 pub struct ExecuteCommand {
     pub command: String,
     pub summary: Option<String>,
+    pub working_dir: Option<String>,
 }
 
 impl ExecuteCommand {
@@ -171,8 +173,20 @@ impl ExecuteCommand {
         false
     }
 
+    /// Returns the canonicalized working directory path, if set.
+    fn canonical_working_dir(&self, os: &Os) -> Result<Option<String>> {
+        self.working_dir
+            .as_ref()
+            .map(|dir| {
+                crate::util::paths::canonicalizes_path(os, dir)
+                    .map_err(|e| eyre::eyre!("Invalid working directory '{}': {}", dir, e))
+            })
+            .transpose()
+    }
+
     pub async fn invoke(&self, os: &Os, output: &mut impl Write) -> Result<InvokeOutput> {
-        let output = run_command(os, &self.command, Some(output)).await?;
+        let working_dir = self.canonical_working_dir(os)?;
+        let output = run_command(os, &self.command, working_dir.as_deref(), Some(output)).await?;
         let clean_stdout = sanitize_unicode_tags(&output.stdout);
         let clean_stderr = sanitize_unicode_tags(&output.stderr);
 
@@ -187,7 +201,7 @@ impl ExecuteCommand {
         })
     }
 
-    pub fn queue_description(&self, tool: &super::tool::Tool, output: &mut impl Write) -> Result<()> {
+    pub fn queue_description(&self, tool: &super::tool::Tool, os: &Os, output: &mut impl Write) -> Result<()> {
         queue!(output, style::Print("I will run the following command: "),)?;
         queue!(
             output,
@@ -195,6 +209,20 @@ impl ExecuteCommand {
             style::Print(&self.command),
             StyledText::reset(),
         )?;
+        if let Some(ref dir) = self.working_dir {
+            let cwd = os.env.current_dir().unwrap_or_default();
+            let formatted = super::format_path(cwd, dir);
+            if !formatted.is_empty() {
+                queue!(
+                    output,
+                    style::Print(" (in "),
+                    StyledText::brand_fg(),
+                    style::Print(&formatted),
+                    StyledText::reset(),
+                    style::Print(")"),
+                )?;
+            }
+        }
         display_tool_use(tool, output)?;
         queue!(output, style::Print("\n"))?;
 
@@ -213,8 +241,12 @@ impl ExecuteCommand {
         Ok(())
     }
 
-    pub async fn validate(&mut self, _os: &Os) -> Result<()> {
-        // TODO: probably some small amount of PATH checking
+    pub async fn validate(&mut self, os: &Os) -> Result<()> {
+        if let Some(ref dir) = self.canonical_working_dir(os)?
+            && !Path::new(dir).is_dir()
+        {
+            eyre::bail!("Working directory is not a directory: {}", dir);
+        }
         Ok(())
     }
 
@@ -769,5 +801,23 @@ mod tests {
         // Should contain both the existing value and our metadata
         assert!(user_agent_value.contains("ExistingValue"));
         assert!(user_agent_value.contains(USER_AGENT_APP_NAME));
+    }
+
+    #[tokio::test]
+    async fn test_validate_working_dir() {
+        let os = Os::new().await.unwrap();
+        let temp_dir = tempfile::tempdir().unwrap();
+
+        // Valid directory
+        let mut cmd = ExecuteCommand {
+            command: "pwd".to_string(),
+            summary: None,
+            working_dir: Some(temp_dir.path().to_string_lossy().to_string()),
+        };
+        assert!(cmd.validate(&os).await.is_ok(), "valid directory should pass");
+
+        // Non-existent directory
+        cmd.working_dir = Some("/nonexistent_dir_12345".to_string());
+        assert!(cmd.validate(&os).await.is_err(), "non-existent directory should fail");
     }
 }
