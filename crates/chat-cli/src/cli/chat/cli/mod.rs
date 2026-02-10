@@ -60,7 +60,6 @@ use crate::os::Os;
 /// Use any of these commands to manage your Kiro session. All commands start with '/'.
 #[derive(Debug, PartialEq, Parser)]
 #[command(
-    disable_help_flag = true,
     disable_help_subcommand = true,
     color = clap::ColorChoice::Always, term_width = 0, after_long_help = &ui_text::extra_help(), override_usage = "/<COMMAND>",
     styles = clap::builder::Styles::styled()

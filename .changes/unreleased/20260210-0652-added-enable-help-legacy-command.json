@@ -1,0 +1,4 @@
+{
+  "type": "added",
+  "description": "Enable /help --legacy <command> for command-specific help"
+}
