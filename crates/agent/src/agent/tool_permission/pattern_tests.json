@@ -1,0 +1,65 @@
+[
+  {
+    "name": "regex_match",
+    "rules": [{ "pattern": "git .*", "mode": "Regex", "action": "Allow" }],
+    "cases": [
+      { "input": "git status", "expected": "allow" },
+      { "input": "git push origin", "expected": "allow" },
+      { "input": "cargo build", "expected": "no_match" }
+    ]
+  },
+  {
+    "name": "regex_pre_anchored",
+    "rules": [{ "pattern": "^cargo build$", "mode": "Regex", "action": "Deny" }],
+    "cases": [
+      { "input": "cargo build", "expected": "deny" },
+      { "input": "cargo build --release", "expected": "no_match" }
+    ]
+  },
+
+  {
+    "name": "glob_match",
+    "rules": [{ "pattern": "/home/user/**", "mode": "Glob", "action": "Allow" }],
+    "cases": [
+      { "input": "/home/user/file.txt", "expected": "allow" },
+      { "input": "/home/user/dir/file.txt", "expected": "allow" },
+      { "input": "/etc/passwd", "expected": "no_match" }
+    ]
+  },
+  {
+    "name": "prefix_match",
+    "rules": [{ "pattern": "npm run", "mode": "Prefix", "action": "Allow" }],
+    "cases": [
+      { "input": "npm run", "expected": "allow" },
+      { "input": "npm run build", "expected": "allow" },
+      { "input": "npm running", "expected": "no_match" }
+    ]
+  },
+  {
+    "name": "deny_precedence",
+    "rules": [
+      { "pattern": ".*", "mode": "Regex", "action": "Allow" },
+      { "pattern": "rm -rf .*", "mode": "Regex", "action": "Deny" }
+    ],
+    "cases": [
+      { "input": "rm -rf /", "expected": "deny" },
+      { "input": "ls -la", "expected": "allow" }
+    ]
+  },
+  {
+    "name": "mixed_modes",
+    "rules": [
+      { "pattern": "rm -rf .*", "mode": "Regex", "action": "Deny" },
+      { "pattern": "/etc/**", "mode": "Glob", "action": "Deny" },
+      { "pattern": "git .*", "mode": "Regex", "action": "Allow" },
+      { "pattern": "npm run", "mode": "Prefix", "action": "Allow" }
+    ],
+    "cases": [
+      { "input": "rm -rf /", "expected": "deny" },
+      { "input": "/etc/passwd", "expected": "deny" },
+      { "input": "git status", "expected": "allow" },
+      { "input": "npm run build", "expected": "allow" },
+      { "input": "unknown", "expected": "no_match" }
+    ]
+  }
+]

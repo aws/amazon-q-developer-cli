@@ -126,7 +126,7 @@ async fn test_agent_defaults() {
 
     let mut test = TestCase::builder()
         .test_name("agent default config behavior")
-        .with_agent_config(AgentConfig::default())
+        .with_default_agent_config()
         .with_file(("AmazonQ.md", AMAZON_Q_MD_CONTENT))
         .with_file(("AGENTS.md", AGENTS_MD_CONTENT))
         .with_file(("README.md", README_MD_CONTENT))
@@ -192,7 +192,7 @@ async fn test_log_entry_appended_events() {
 
     let mut test = TestCase::builder()
         .test_name("log entry appended events")
-        .with_agent_config(AgentConfig::default())
+        .with_default_agent_config()
         .with_responses(
             parse_response_streams(include_str!("./mock_responses/builtin_tools.jsonl"))
                 .await
@@ -257,7 +257,7 @@ async fn test_auto_compaction_on_context_overflow() {
 
     let mut test = TestCase::builder()
         .test_name("auto compaction on context overflow")
-        .with_agent_config(AgentConfig::default())
+        .with_default_agent_config()
         .with_responses(responses)
         .with_trust_all_tools(true)
         .build()
@@ -306,7 +306,7 @@ async fn test_manual_compaction() {
 
     let mut test = TestCase::builder()
         .test_name("manual compaction")
-        .with_agent_config(AgentConfig::default())
+        .with_default_agent_config()
         .with_responses(responses)
         .build()
         .await
@@ -388,7 +388,7 @@ async fn test_allow_always_grants_exact_file_permission() {
 
     let mut test = TestCase::builder()
         .test_name("allow_always grants exact file permission")
-        .with_agent_config(AgentConfig::new_empty())
+        .with_default_agent_config()
         .with_file(("subdir/file.txt", "content"))
         .with_file(("other/output.txt", "other content"))
         // Use a different CWD so test files aren't auto-allowed for read
@@ -461,6 +461,7 @@ async fn test_cancel_during_executing_request() {
 
     let mut test = TestCase::builder()
         .test_name("cancel during executing request")
+        .with_default_agent_config()
         .with_mock_response(delayed_response)
         .build()
         .await
@@ -508,6 +509,7 @@ async fn test_cancel_with_pending_tool_uses() {
 
     let mut test = TestCase::builder()
         .test_name("cancel with pending tool uses")
+        .with_default_agent_config()
         .with_responses(vec![response_stream[0].clone()])
         .build()
         .await
@@ -579,21 +581,19 @@ async fn run_pretooluse_hook_matcher_test(matcher: &str) {
     let hook_log = temp_dir.path().join("hook_log.txt");
     let hook_log_str = hook_log.to_string_lossy().to_string();
 
-    let mut agent_config = AgentConfig::default();
-    agent_config.add_hook(
-        HookTrigger::PreToolUse,
-        HookConfig::ShellCommand(CommandHook {
-            command: format!("cat >> {}", hook_log_str),
-            opts: agent::agent_config::definitions::BaseHookConfig {
-                matcher: Some(matcher.to_string()),
-                ..Default::default()
-            },
-        }),
-    );
-
     let mut test = TestCase::builder()
         .test_name(&format!("pretooluse hook matches {}", matcher))
-        .with_agent_config(agent_config)
+        .with_default_agent_config()
+        .with_hook(
+            HookTrigger::PreToolUse,
+            HookConfig::ShellCommand(CommandHook {
+                command: format!("cat >> {}", hook_log_str),
+                opts: agent::agent_config::definitions::BaseHookConfig {
+                    matcher: Some(matcher.to_string()),
+                    ..Default::default()
+                },
+            }),
+        )
         .with_file(("test.txt", "content"))
         .with_responses(
             parse_response_streams(include_str!("./mock_responses/fs_read_only.jsonl"))
@@ -640,7 +640,7 @@ async fn test_compaction_retry_on_context_overflow_success() {
 
     let mut test = TestCase::builder()
         .test_name("compaction retry on context overflow success")
-        .with_agent_config(AgentConfig::default())
+        .with_default_agent_config()
         .with_responses(responses)
         .build()
         .await
@@ -690,7 +690,7 @@ async fn test_compaction_retry_on_context_overflow_failure() {
 
     let mut test = TestCase::builder()
         .test_name("compaction retry on context overflow failure")
-        .with_agent_config(AgentConfig::default())
+        .with_default_agent_config()
         .with_responses(responses)
         .build()
         .await

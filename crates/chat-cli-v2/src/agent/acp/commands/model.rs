@@ -80,10 +80,11 @@ async fn switch_model(name: &str, ctx: &CommandContext<'_>) -> CommandResult {
         None => return CommandResult::error(format!("Unknown model: {}", name)),
     };
 
+    let display_name = model.model_name.clone().unwrap_or_else(|| name.to_string());
     ctx.rts_state.set_model_info(Some(model));
     CommandResult::success_with_data(
         format!("Model changed to {}", name),
-        serde_json::json!({ "model": name }),
+        serde_json::json!({ "model": { "id": name, "name": display_name } }),
     )
 }
 

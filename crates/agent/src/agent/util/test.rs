@@ -49,6 +49,11 @@ impl TestBase {
         self.test_dir = self.test_dir.with_file_sys(file, &self.provider).await;
         self
     }
+
+    pub async fn with_directory(mut self, path: impl AsRef<Path>) -> Self {
+        self.test_dir = self.test_dir.with_directory_sys(path, &self.provider).await;
+        self
+    }
 }
 
 impl EnvProvider for TestBase {
@@ -131,6 +136,18 @@ impl TestDir {
         }
 
         tokio::fs::write(file_path, file.content()).await.unwrap();
+        self
+    }
+
+    /// Creates a directory under the test directory.
+    pub async fn with_directory_sys<P: SystemProvider>(self, path: impl AsRef<Path>, provider: &P) -> Self {
+        let dir_path = canonicalize_path_sys(path.as_ref().to_string_lossy(), provider).unwrap();
+
+        if !dir_path.starts_with(&self.temp_dir.path().to_string_lossy().to_string()) {
+            panic!("outside of temp dir");
+        }
+
+        tokio::fs::create_dir_all(&dir_path).await.unwrap();
         self
     }
 }

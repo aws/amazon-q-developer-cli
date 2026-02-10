@@ -14,6 +14,7 @@ use agent::agent_config::{
     load_agents,
 };
 use agent::consts::DEFAULT_AGENT_NAME;
+use agent::util::providers::RealProvider;
 use code_agent_sdk::CodeIntelligence;
 use sacp::schema::SessionId;
 use sacp::{
@@ -47,7 +48,7 @@ use crate::database::settings::Setting;
 use crate::os::Os;
 
 /// Metadata about an available agent configuration.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize)]
 pub struct AgentInfo {
     pub name: String,
     pub description: Option<String>,
@@ -69,8 +70,6 @@ pub struct StartSessionResult {
 #[derive(Clone, Debug, Default)]
 pub struct SessionManagerBuilder {
     os: Option<Os>,
-    local_agent_path: Option<PathBuf>,
-    global_agent_path: Option<PathBuf>,
     local_mcp_path: Option<PathBuf>,
     global_mcp_path: Option<PathBuf>,
 }
@@ -78,16 +77,6 @@ pub struct SessionManagerBuilder {
 impl SessionManagerBuilder {
     pub fn os(mut self, os: Os) -> Self {
         self.os = Some(os);
-        self
-    }
-
-    pub fn local_agent_path(mut self, path: Option<PathBuf>) -> Self {
-        self.local_agent_path = path;
-        self
-    }
-
-    pub fn global_agent_path(mut self, path: Option<PathBuf>) -> Self {
-        self.global_agent_path = path;
         self
     }
 
@@ -105,8 +94,6 @@ impl SessionManagerBuilder {
         let (tx, mut session_rx) = mpsc::channel::<SessionManagerRequest>(25);
         let Self {
             os,
-            local_agent_path,
-            global_agent_path,
             local_mcp_path,
             global_mcp_path,
         } = self;
@@ -117,10 +104,8 @@ impl SessionManagerBuilder {
 
         tokio::spawn(async move {
             // Load agent configs once at startup
-            let agent_configs: Vec<LoadedAgentConfig> = match (local_agent_path.as_ref(), global_agent_path.as_ref()) {
-                (Some(local), Some(global)) => load_agents(local, global).await.map(|(c, _)| c).unwrap_or_default(),
-                _ => Vec::new(),
-            };
+            let agent_configs: Vec<LoadedAgentConfig> =
+                load_agents(&RealProvider).await.map(|(c, _)| c).unwrap_or_default();
 
             // In test mode, spawn IpcServer and MockResponseRegistry
             let mock_registry = if std::env::var("KIRO_TEST_MODE").is_ok() {
@@ -171,6 +156,16 @@ pub struct SessionManager {
     global_mcp_path: Option<PathBuf>,
     session_manager_handle: SessionManagerHandle,
     mock_registry: Option<MockResponseRegistryHandle>,
+    /// The agent name to use when creating the next session.
+    ///
+    /// # Context
+    ///
+    /// Why is this required? In an ACP integration, we want to support launching the CLI with a
+    /// `--agent` flag so that a session can be initialized using an agent (ie, ACP mode).
+    ///
+    /// If session/new supports a `mode` parameter when creating/loading a session, this could
+    /// likely be removed.
+    next_agent_name: Option<String>,
     /// Shared code intelligence client - lazily initialized, shared across all sessions
     code_intelligence: Option<Arc<RwLock<CodeIntelligence>>>,
 }
@@ -196,6 +191,7 @@ impl SessionManager {
             global_mcp_path,
             session_manager_handle,
             mock_registry,
+            next_agent_name: None,
             code_intelligence: None,
         }
     }
@@ -326,7 +322,7 @@ impl SessionManager {
                     builder = builder.mock_registry(registry.clone());
                 }
 
-                let available_agents: Vec<AgentInfo> = self
+                let mut available_agents: Vec<AgentInfo> = self
                     .agent_configs
                     .iter()
                     .map(|c| AgentInfo {
@@ -334,6 +330,13 @@ impl SessionManager {
                         description: c.config().description().map(|s| s.to_string()),
                     })
                     .collect();
+                // Dedupe by name (keep first occurrence)
+                let mut seen = std::collections::HashSet::new();
+                available_agents.retain(|a| seen.insert(a.name.clone()));
+
+                builder = builder.available_agents(available_agents.clone());
+                builder = builder.agent_configs(self.agent_configs.clone());
+                builder = builder.current_agent_name(agent_name.clone());
 
                 // Fetch available models
                 let available_models = match get_available_models(&self.os).await {
@@ -349,8 +352,8 @@ impl SessionManager {
                     .await
                     .map_err(|e| sacp::util::internal_error(format!("Failed to start session: {}", e)))
                 {
-                    Ok((handle, ready_rx)) => {
-                        let current_model_id = handle.get_model_id().await.unwrap_or_default();
+                    Ok((handle, ready_rx, initial_model_id)) => {
+                        let current_model_id = initial_model_id.unwrap_or_default();
                         let handle_to_give = handle.clone();
                         self.sessions.insert(session_id.clone(), handle);
                         _ = resp_sender.send(Ok(StartSessionResult {
@@ -389,6 +392,13 @@ impl SessionManager {
                 let result = self.handle_set_mode(&session_id, &mode_id).await;
                 _ = resp_sender.send(result);
             },
+            SessionManagerRequestData::SetNextAgentName {
+                next_agent_name,
+                resp_sender,
+            } => {
+                self.next_agent_name = Some(next_agent_name);
+                _ = resp_sender.send(Ok(()));
+            },
         }
     }
 }
@@ -414,6 +424,10 @@ pub(crate) enum SessionManagerRequestData {
     TerminateSession,
     SetMode {
         mode_id: String,
+        resp_sender: oneshot::Sender<Result<(), sacp::Error>>,
+    },
+    SetNextAgentName {
+        next_agent_name: String,
         resp_sender: oneshot::Sender<Result<(), sacp::Error>>,
     },
 }
@@ -481,5 +495,23 @@ impl SessionManagerHandle {
             .map_err(|_e| sacp::util::internal_error("Failed to send set_mode request"))?;
         rx.await
             .map_err(|_e| sacp::util::internal_error("Failed to receive set_mode response"))?
+    }
+
+    pub async fn set_next_agent_name(&self, next_agent_name: String) -> Result<(), sacp::Error> {
+        let (resp_sender, rx) = oneshot::channel();
+        self.tx
+            .send(SessionManagerRequest {
+                // TODO - refactor request type to just be an enum, and move session_id into each
+                // enum variant
+                session_id: SessionId::new(String::new()),
+                data: SessionManagerRequestData::SetNextAgentName {
+                    next_agent_name,
+                    resp_sender,
+                },
+            })
+            .await
+            .map_err(|_e| sacp::util::internal_error("Failed to send set_next_agent_name request"))?;
+        rx.await
+            .map_err(|_e| sacp::util::internal_error("Failed to receive set_next_agent_name response"))?
     }
 }

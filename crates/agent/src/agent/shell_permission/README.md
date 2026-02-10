@@ -27,7 +27,7 @@ The system uses a 3-layer evaluation approach:
                               │
                               ▼
 ┌─────────────────────────────────────────────────────────────┐
-│  Layer 3: Decide                                   [Future] │
+│  Layer 3: Decide                                   [PR2 ✓]  │
 │  - Apply policy rules (allowedCommands, deniedCommands)     │
 │  - Apply user settings (denyByDefault, autoAllowReadonly)   │
 │  - Aggregate results (most restrictive wins)                │
@@ -38,9 +38,10 @@ The system uses a 3-layer evaluation approach:
 
 ```
 crates/agent/src/agent/shell_permission/
-├── mod.rs              # Public API, core types
-├── parser.rs           # Tree-sitter command parsing [PR1 ✓]
-├── detector.rs         # Layer 2: Detection [PR2 ✓]
+├── mod.rs              # Public API, orchestration
+├── parser.rs           # Layer 1: Tree-sitter parsing
+├── detector.rs         # Layer 2: Dangerous pattern detection
+├── decider.rs          # Layer 3: Policy rules and decision
 └── README.md           # This file
 ```
 
@@ -66,14 +67,27 @@ Analyzes parsed commands to determine danger level and readonly status.
 - Detects pipe-to-shell patterns (`curl | bash`)
 - Configuration-driven via `detector_config.json`
 
-## Layer 3: Decide (Future)
+## Layer 3: Decide
+Applies policy rules and user settings to make final decision.
 
-*To be implemented in future PR*
+### Policy Rules
 
-Will apply:
-- Policy rules from agent configuration
-- User settings (`denyByDefault`, `autoAllowReadonly`)
-- Result aggregation for chained commands
+Rules are evaluated in order: **deny → allow → default**
+
+```json
+{
+  "toolsSettings": {
+    "shell": {
+      "allowedCommands": ["git *", "npm run *"],
+      "deniedCommands": ["rm -rf *", "sudo *"]
+    }
+  }
+}
+```
+
+- Deny rules are checked first (security-first)
+- Invalid deny patterns block all commands (fail-secure)
+- Invalid allow patterns are silently ignored
 
 ## Appendix: 
 

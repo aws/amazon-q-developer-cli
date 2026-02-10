@@ -6,11 +6,16 @@ use std::sync::Arc;
 
 use agent::agent_config::LoadedAgentConfig;
 use agent::agent_loop::model::Model;
+use agent::agent_loop::protocol::{
+    AgentLoopEventKind,
+    LoopError,
+};
 use agent::agent_loop::types::{
     ContentBlock as AgentContentBlock,
     ImageBlock,
     ImageFormat,
     ImageSource,
+    StreamErrorKind,
 };
 use agent::event_log::{
     LogEntry,
@@ -27,6 +32,7 @@ use agent::protocol::{
     ApprovalRequest,
     CompactionEvent,
     ContentChunk,
+    InternalEvent,
     SendPromptArgs,
     ToolCallResult,
     UpdateEvent,
@@ -120,7 +126,9 @@ use super::extensions::{
     CompactionStatus,
     CompactionStatusNotification,
     McpOauthRequestNotification,
+    McpServerInitFailureNotification,
     McpServerInitializedNotification,
+    RateLimitErrorNotification,
     SubagentInfo,
     methods,
 };
@@ -431,6 +439,9 @@ pub struct AcpSessionBuilder<'a> {
     client_cx: Option<JrConnectionCx<AgentToClient>>,
     mock_registry: Option<MockResponseRegistryHandle>,
     code_intelligence: Option<Arc<RwLock<CodeIntelligence>>>,
+    available_agents: Vec<super::session_manager::AgentInfo>,
+    agent_configs: Vec<LoadedAgentConfig>,
+    current_agent_name: Option<String>,
 }
 
 impl<'a> AcpSessionBuilder<'a> {
@@ -504,16 +515,35 @@ impl<'a> AcpSessionBuilder<'a> {
         self
     }
 
+    pub fn available_agents(mut self, agents: Vec<super::session_manager::AgentInfo>) -> Self {
+        self.available_agents = agents;
+        self
+    }
+
+    pub fn agent_configs(mut self, configs: Vec<LoadedAgentConfig>) -> Self {
+        self.agent_configs = configs;
+        self
+    }
+
+    pub fn current_agent_name(mut self, name: String) -> Self {
+        self.current_agent_name = Some(name);
+        self
+    }
+
     /// Spawns a new ACP session actor and returns a handle to communicate with it.
     ///
     /// The returned `ready_rx` resolves after historical notifications have been emitted
     /// (for loaded sessions) and the session is ready to accept prompts.
-    pub async fn start_session(mut self) -> eyre::Result<(AcpSessionHandle, oneshot::Receiver<()>)> {
+    ///
+    /// Returns (handle, ready_rx, initial_model_id) where initial_model_id is the model
+    /// set during session creation (avoids race condition with channel-based query).
+    pub async fn start_session(mut self) -> eyre::Result<(AcpSessionHandle, oneshot::Receiver<()>, Option<String>)> {
         let os = self.os.take().ok_or_else(|| eyre::eyre!("Os is required"))?;
 
         let (tx, rx) = mpsc::channel(32);
         let (ready_tx, ready_rx) = oneshot::channel();
         let session = AcpSession::with_builder(os, rx, self).await?;
+        let initial_model_id = session.rts_state.model_id();
         tokio::spawn(async move { session.main_loop(ready_tx).await });
 
         Ok((
@@ -522,6 +552,7 @@ impl<'a> AcpSessionBuilder<'a> {
                 _subagent_info: None,
             },
             ready_rx,
+            initial_model_id,
         ))
     }
 }
@@ -546,6 +577,11 @@ struct AcpSession {
     rts_state: Arc<RtsState>,
     api_client: ApiClient,
     session_tx: SessionManagerHandle,
+    available_agents: Vec<super::session_manager::AgentInfo>,
+    agent_configs: Vec<LoadedAgentConfig>,
+    local_mcp_path: Option<PathBuf>,
+    global_mcp_path: Option<PathBuf>,
+    current_agent_name: String,
     connection_cx: JrConnectionCx<AgentToClient>,
     pending_prompt_response: Option<tokio::sync::Mutex<JrRequestCx<PromptResponse>>>,
     os: Os,
@@ -652,6 +688,11 @@ impl AcpSession {
             agent,
             request_rx,
             session_tx,
+            available_agents: builder.available_agents,
+            agent_configs: builder.agent_configs,
+            local_mcp_path: builder.local_mcp_path.cloned(),
+            global_mcp_path: builder.global_mcp_path.cloned(),
+            current_agent_name: builder.current_agent_name.unwrap_or_default(),
             connection_cx,
             session_db: Arc::new(session_db),
             rts_state,
@@ -797,9 +838,20 @@ impl AcpSession {
                 error!("cancel called on agent handle");
             },
             AcpSessionRequest::ExecuteCommand { command, respond_to } => {
-                let result =
-                    super::command_handler::execute_command(command, &self.api_client, &self.rts_state, &self.agent)
-                        .await;
+                let result = super::command_handler::execute_command(
+                    command,
+                    &self.api_client,
+                    &self.rts_state,
+                    &self.agent,
+                    &self.session_tx,
+                    &self.available_agents,
+                    &self.agent_configs,
+                    self.local_mcp_path.as_ref(),
+                    self.global_mcp_path.as_ref(),
+                    &self.session_id.to_string(),
+                    &self.current_agent_name,
+                )
+                .await;
                 let _ = respond_to.send(result);
             },
             AcpSessionRequest::GetCommandOptions {
@@ -813,6 +865,13 @@ impl AcpSession {
                     &self.api_client,
                     &self.rts_state,
                     &self.agent,
+                    &self.session_tx,
+                    &self.available_agents,
+                    &self.agent_configs,
+                    self.local_mcp_path.as_ref(),
+                    self.global_mcp_path.as_ref(),
+                    &self.session_id.to_string(),
+                    &self.current_agent_name,
                 )
                 .await;
                 let _ = respond_to.send(result);
@@ -891,12 +950,26 @@ impl AcpSession {
                     let _ = respond_to.respond(PromptResponse::new(stop_reason));
                 }
             },
-            AgentEvent::Stop(AgentStopReason::Error(e)) => {
-                error!("Agent stopped with error: {:?}", e);
+            AgentEvent::Stop(AgentStopReason::Error(agent_error)) => {
+                // Check if this is a throttling error and send a rate limit notification
+                if let agent::protocol::AgentError::AgentLoopError(LoopError::Stream(stream_error)) = &agent_error
+                    && matches!(stream_error.kind, StreamErrorKind::Throttling)
+                {
+                    info!("Sending rate limit error notification to client");
+                    if let Err(e) = self.send_ext_notification(methods::RATE_LIMIT_ERROR, RateLimitErrorNotification {
+                        session_id: self.session_id.clone(),
+                        message: "Rate limit exceeded. Please wait a moment before trying again.".to_string(),
+                    }) {
+                        error!("Failed to send rate limit notification: {}", e);
+                    }
+                }
+
                 // Send error response directly to the client - this ends the turn so we take() it
                 if let Some(respond_to) = self.pending_prompt_response.take() {
                     let respond_to = respond_to.into_inner();
-                    let _ = respond_to.respond_with_error(sacp::util::internal_error("Agent error"));
+                    // Include the actual error message for better user feedback
+                    let error_message = format!("{}", agent_error);
+                    let _ = respond_to.respond_with_error(sacp::util::internal_error(error_message));
                 }
             },
             AgentEvent::SpawnSubagentRequest(spawn_request) => {
@@ -930,6 +1003,16 @@ impl AcpSession {
                     error!("Failed to send clear notification: {}", e);
                 }
             },
+            AgentEvent::Internal(InternalEvent::AgentLoop(loop_event)) => {
+                // Handle ToolUseStart to show immediate feedback in the TUI
+                if let AgentLoopEventKind::ToolUseStart { id, name } = loop_event.kind {
+                    // Send a pending tool call notification
+                    let tool_call = ToolCall::new(ToolCallId::new(id), name.clone())
+                        .kind(get_tool_kind(&name))
+                        .status(ToolCallStatus::InProgress);
+                    let _ = self.send_session_notification(SessionUpdate::ToolCall(tool_call));
+                }
+            },
             _ => {
                 // Other events that don't need processing
             },
@@ -953,8 +1036,16 @@ impl AcpSession {
                     server_name,
                 })
             },
+            McpServerEvent::InitializeError { server_name, error } => {
+                info!(?server_name, ?error, "Forwarding MCP server init failure to client");
+                self.send_ext_notification(methods::MCP_SERVER_INIT_FAILURE, McpServerInitFailureNotification {
+                    session_id: self.session_id.clone(),
+                    server_name,
+                    error,
+                })
+            },
             // Other MCP events don't need forwarding to client
-            _ => Ok(()),
+            McpServerEvent::Initializing { .. } => Ok(()),
         }
     }
 }
@@ -1390,18 +1481,25 @@ fn get_tool_locations(tool: &Tool) -> Option<Vec<ToolCallLocation>> {
 
 /// Update model ID in RTS state.
 /// Validates the model ID against available models if specified.
-/// Returns Ok(()) if model was set, Err with message if validation failed.
+/// Priority: 1) explicit model arg, 2) user's saved default, 3) API default
 async fn update_model_info(os: &Os, rts_state: &RtsState, model: Option<&str>) -> Result<(), String> {
-    let (models, default) = get_available_models(os)
+    use crate::database::settings::Setting;
+
+    let (models, api_default) = get_available_models(os)
         .await
         .map_err(|e| format!("Failed to fetch available models: {}", e))?;
 
     let model_info = if let Some(requested_model) = model {
+        // Explicit model from agent config
         find_model(&models, requested_model)
             .ok_or_else(|| format!("Model '{}' not found", requested_model))?
             .clone()
+    } else if let Some(saved) = os.database.settings.get_string(Setting::ChatDefaultModel) {
+        // User's saved default model
+        find_model(&models, &saved).cloned().unwrap_or(api_default)
     } else {
-        default
+        // API default
+        api_default
     };
 
     rts_state.set_model_info(Some(model_info));
@@ -1409,22 +1507,22 @@ async fn update_model_info(os: &Os, rts_state: &RtsState, model: Option<&str>) -
 }
 
 /// Entry point for SACP agent
-pub async fn execute(os: &mut Os) -> eyre::Result<ExitCode> {
+pub async fn execute(os: &mut Os, initial_agent_name: Option<String>) -> eyre::Result<ExitCode> {
     use super::extensions::TerminateSessionNotification;
 
     let resolver = PathResolver::new(os);
     let local_mcp_path = resolver.workspace().mcp_config().ok();
     let global_mcp_path = resolver.global().mcp_config().ok();
-    let local_agent_path = resolver.workspace().agents_dir().ok();
-    let global_agent_path = resolver.global().agents_dir().ok();
 
     let session_manager_handle = SessionManager::builder()
         .os(os.clone())
-        .local_agent_path(local_agent_path)
-        .global_agent_path(global_agent_path)
         .local_mcp_path(local_mcp_path)
         .global_mcp_path(global_mcp_path)
         .spawn();
+
+    if let Some(n) = initial_agent_name {
+        let _ = session_manager_handle.set_next_agent_name(n).await;
+    }
 
     // NOTE: It is _extremely_ easy to create a deadlock with sacp (read more about it
     // [here](https://docs.rs/sacp/10.1.0/sacp/concepts/ordering/index.html)). For that reason, it

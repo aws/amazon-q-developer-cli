@@ -121,7 +121,11 @@ pub enum RootSubcommand {
     Mcp(McpSubcommand),
     /// Start Agent Client Protocol (ACP) agent
     #[command(hide = true)]
-    Acp,
+    Acp {
+        /// Name of the agent to use when starting the first session
+        #[arg(long)]
+        agent: Option<String>,
+    },
     /// ACP test client
     #[command(hide = true)]
     AcpClient {
@@ -183,12 +187,12 @@ impl RootSubcommand {
             Self::Version { changelog } => Cli::print_version(changelog),
             Self::Chat(args) => args.execute(os).await,
             Self::Mcp(args) => args.execute(os, &mut std::io::stderr()).await,
-            Self::Acp => {
+            Self::Acp { agent } => {
                 // Os is defined in both crates. This is just a bandaid until we can deprecate v1
                 // for real
                 use chat_cli_v2::os::Os as NewOs;
                 let mut os = NewOs::new().await?;
-                chat_cli_v2::agent::acp::acp_agent::execute(&mut os).await
+                chat_cli_v2::agent::acp::acp_agent::execute(&mut os, agent).await
             },
             Self::AcpClient { agent } => chat_cli_v2::agent::acp::acp_client::execute(agent).await,
         }
@@ -215,7 +219,7 @@ impl Display for RootSubcommand {
             Self::Issue(_) => "issue",
             Self::Version { .. } => "version",
             Self::Mcp(_) => "mcp",
-            Self::Acp => "acp",
+            Self::Acp { .. } => "acp",
             Self::AcpClient { .. } => "acp-client",
         };
 
@@ -259,7 +263,7 @@ impl Cli {
                 .ok()
                 .map(std::path::PathBuf::from)
                 .or_else(|| match subcommand {
-                    RootSubcommand::Chat { .. } | RootSubcommand::Acp => {
+                    RootSubcommand::Chat { .. } | RootSubcommand::Acp { .. } => {
                         Some(logs_dir().expect("logs dir must be set").join("kiro-chat.log"))
                     },
                     _ => None,

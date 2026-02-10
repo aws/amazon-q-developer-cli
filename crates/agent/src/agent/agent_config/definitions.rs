@@ -10,8 +10,6 @@ use serde::{
 };
 
 use super::types::ResourcePath;
-use crate::agent::consts::DEFAULT_AGENT_NAME;
-use crate::agent::tools::BuiltInToolName;
 use crate::mcp::oauth_util::OAuthConfig;
 
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
@@ -97,9 +95,9 @@ impl AgentConfig {
         }
     }
 
-    pub fn include_mcp_json(&self) -> bool {
+    pub fn use_legacy_mcp_json(&self) -> bool {
         match self {
-            AgentConfig::V2025_08_22(a) => a.include_mcp_json,
+            AgentConfig::V2025_08_22(a) => a.use_legacy_mcp_json,
         }
     }
 
@@ -170,15 +168,26 @@ impl AgentConfig {
             },
         }
     }
+
+    /// Sets the tools available to the agent
+    pub fn set_tools(&mut self, tools: Vec<String>) {
+        match self {
+            AgentConfig::V2025_08_22(c) => {
+                c.tools = tools;
+            },
+        }
+    }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
 #[schemars(description = "An Agent is a declarative way of configuring a given instance of kiro-cli.")]
 pub struct AgentConfigV2025_08_22 {
     #[serde(rename = "$schema", default = "default_schema")]
+    #[schemars(skip)]
     pub schema: String,
     /// Name of the agent.
+    #[serde(default)]
     pub name: String,
     /// Human-readable description of what the agent does.
     ///
@@ -227,8 +236,8 @@ pub struct AgentConfigV2025_08_22 {
     ///
     /// You can reference tools brought in by these servers as just as you would with the servers
     /// you configure in the mcpServers field in this config
-    #[serde(default, alias = "useLegacyMcpJson")]
-    pub include_mcp_json: bool,
+    #[serde(default, alias = "includeMcpJson")]
+    pub use_legacy_mcp_json: bool,
 
     // context files
     /// Files to include in the agent's context
@@ -243,38 +252,6 @@ pub struct AgentConfigV2025_08_22 {
     /// The model ID to use for this agent. If not specified, uses the default model.
     #[serde(default)]
     pub model: Option<String>,
-}
-
-impl Default for AgentConfigV2025_08_22 {
-    fn default() -> Self {
-        Self {
-            schema: default_schema(),
-            name: DEFAULT_AGENT_NAME.to_string(),
-            description: Some("The default agent for Q CLI".to_string()),
-            system_prompt: None,
-            tools: vec!["*".to_string()],
-            tools_settings: Default::default(),
-            tool_aliases: Default::default(),
-            tool_schema: Default::default(),
-            hooks: Default::default(),
-            model_preferences: Default::default(),
-            mcp_servers: Default::default(),
-            include_mcp_json: true,
-
-            resources: vec![
-                "file://AmazonQ.md",
-                "file://AGENTS.md",
-                "file://README.md",
-                "file://.amazonq/rules/**/*.md",
-            ]
-            .into_iter()
-            .map(Into::into)
-            .collect::<Vec<_>>(),
-
-            allowed_tools: HashSet::from([BuiltInToolName::FsRead.to_string()]),
-            model: None,
-        }
-    }
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize, JsonSchema)]
@@ -579,29 +556,29 @@ mod tests {
     }
 
     #[test]
-    fn test_include_mcp_json_old_name() {
+    fn test_use_legacy_mcp_json_old_name() {
         let agent = serde_json::json!({
             "name": "test",
             "useLegacyMcpJson": true
         });
 
         let config: AgentConfigV2025_08_22 = serde_json::from_value(agent).unwrap();
-        assert!(config.include_mcp_json);
+        assert!(config.use_legacy_mcp_json);
     }
 
     #[test]
-    fn test_include_mcp_json_new_name() {
+    fn test_use_legacy_mcp_json_new_name() {
         let agent = serde_json::json!({
             "name": "test",
             "includeMcpJson": true
         });
 
         let config: AgentConfigV2025_08_22 = serde_json::from_value(agent).unwrap();
-        assert!(config.include_mcp_json);
+        assert!(config.use_legacy_mcp_json);
     }
 
     #[test]
-    fn test_include_mcp_json_both_names() {
+    fn test_use_legacy_mcp_json_both_names() {
         // When both are present, serde will error as they map to the same field
         let agent = serde_json::json!({
             "name": "test",

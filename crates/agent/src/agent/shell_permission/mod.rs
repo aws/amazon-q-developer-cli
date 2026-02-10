@@ -2,47 +2,27 @@
 //!
 //! The system uses a 3-layer evaluation approach:
 //! 1. Parse - Parse with tree-sitter, split chained commands
-//! 2. Detect - Dangerous patterns, environment manipulation, readonly check
+//! 2. Detect - Dangerous patterns, readonly check
 //! 3. Decide - Policy rules, user settings, aggregate results
 
+mod decider;
 mod detector;
 mod parser;
 
-use detector::{
-    DangerLevel,
-    detect,
-};
+use decider::decide;
+use detector::detect;
 use parser::parse_command;
-use serde::{
-    Deserialize,
-    Serialize,
-};
+use serde::Deserialize;
 
-/// Result of shell permission evaluation.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub enum ShellPermissionResult {
-    /// Command is allowed to execute without user confirmation.
-    Allow,
-    /// Command requires user confirmation before execution.
-    Ask {
-        /// Optional reason explaining why confirmation is needed.
-        reason: Option<String>,
-    },
-    /// Command is denied with specific reasons.
-    Deny {
-        /// Explanation of why the command was denied.
-        reason: String,
-        /// Patterns that matched and caused the denial.
-        matched_patterns: Vec<String>,
-    },
-}
+use super::protocol::PermissionEvalResult;
 
 /// Settings for shell permission evaluation.
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone, Default, Deserialize)]
+#[serde(default)]
 pub struct ShellPermissionSettings {
-    /// Commands that are explicitly allowed (glob patterns).
+    /// Commands that are explicitly allowed (regex patterns).
     pub allowed_commands: Vec<String>,
-    /// Commands that are explicitly denied (glob patterns).
+    /// Commands that are explicitly denied (regex patterns).
     pub denied_commands: Vec<String>,
     /// Whether to auto-allow readonly commands.
     pub auto_allow_readonly: bool,
@@ -53,39 +33,65 @@ pub struct ShellPermissionSettings {
 }
 
 /// Evaluate shell permission for a command.
-pub fn evaluate_shell_permission(command: &str, settings: &ShellPermissionSettings) -> ShellPermissionResult {
-    // Layer 1: Parse command
+pub fn evaluate_shell_permission(command: &str, settings: &ShellPermissionSettings) -> PermissionEvalResult {
+    // Layer 1: Parse
     let parse_result = parse_command(command);
-
-    // If parsing failed, be conservative
     if parse_result.parse_failed {
-        return ShellPermissionResult::Ask { reason: None };
+        return PermissionEvalResult::Ask;
     }
 
     // Layer 2: Detect
     let detection = detect(&parse_result.commands);
 
-    // Layer 3: Decide (stub - to be implemented in PR3)
-    // TODO: Apply policy rules
-    // TODO: Apply user settings
-    // TODO: Aggregate results
-    if detection.danger_level != DangerLevel::None {
-        return ShellPermissionResult::Ask { reason: None };
-    }
-    if settings.auto_allow_readonly && detection.is_readonly {
-        return ShellPermissionResult::Allow;
-    }
-
-    if settings.is_tool_allowed {
-        ShellPermissionResult::Allow
-    } else {
-        ShellPermissionResult::Ask { reason: None }
-    }
+    // Layer 3: Decide
+    decide(&parse_result.commands, &detection, settings)
 }
 
 #[cfg(test)]
 mod tests {
+    use serde::Deserialize;
+
     use super::*;
+
+    #[derive(Debug, Deserialize)]
+    struct TestGroup {
+        name: String,
+        #[serde(default)]
+        settings: ShellPermissionSettings,
+        cases: Vec<TestCase>,
+    }
+
+    #[derive(Debug, Deserialize)]
+    struct TestCase {
+        input: String,
+        expected: String,
+    }
+
+    #[test]
+    fn test_e2e_cases() {
+        let json = include_str!("test_data/e2e_tests.json");
+        let groups: Vec<TestGroup> = serde_json::from_str(json).expect("Failed to parse e2e_tests.json");
+
+        let mut total = 0;
+        for group in groups {
+            for tc in group.cases {
+                total += 1;
+                let result = evaluate_shell_permission(&tc.input, &group.settings);
+                let result_str = match &result {
+                    PermissionEvalResult::Allow => "Allow",
+                    PermissionEvalResult::Ask => "Ask",
+                    PermissionEvalResult::Deny { .. } => "Deny",
+                };
+
+                assert_eq!(
+                    result_str, tc.expected,
+                    "[{}] input='{}' expected={}, got={:?}",
+                    group.name, tc.input, tc.expected, result
+                );
+            }
+        }
+        println!("e2e_tests.json: {total} test cases passed");
+    }
 
     #[test]
     fn test_readonly_command_allowed() {
@@ -94,7 +100,7 @@ mod tests {
             ..Default::default()
         };
         let result = evaluate_shell_permission("ls -la", &settings);
-        assert_eq!(result, ShellPermissionResult::Allow);
+        assert_eq!(result, PermissionEvalResult::Allow);
     }
 
     #[test]
@@ -104,7 +110,7 @@ mod tests {
             ..Default::default()
         };
         let result = evaluate_shell_permission("ls -la", &settings);
-        assert!(matches!(result, ShellPermissionResult::Ask { .. }));
+        assert_eq!(result, PermissionEvalResult::Ask);
     }
 
     #[test]
@@ -114,13 +120,33 @@ mod tests {
             ..Default::default()
         };
         let result = evaluate_shell_permission("rm -rf /", &settings);
-        assert_eq!(result, ShellPermissionResult::Allow);
+        assert_eq!(result, PermissionEvalResult::Allow);
     }
 
     #[test]
     fn test_dangerous_command_asks() {
         let settings = ShellPermissionSettings::default();
         let result = evaluate_shell_permission("find . -exec rm {} \\;", &settings);
-        assert!(matches!(result, ShellPermissionResult::Ask { .. }));
+        assert_eq!(result, PermissionEvalResult::Ask);
+    }
+
+    #[test]
+    fn test_denied_command() {
+        let settings = ShellPermissionSettings {
+            denied_commands: vec!["rm -rf .*".into()],
+            ..Default::default()
+        };
+        let result = evaluate_shell_permission("rm -rf /", &settings);
+        assert!(matches!(result, PermissionEvalResult::Deny { .. }));
+    }
+
+    #[test]
+    fn test_allowed_command() {
+        let settings = ShellPermissionSettings {
+            allowed_commands: vec!["git .*".into()],
+            ..Default::default()
+        };
+        let result = evaluate_shell_permission("git status", &settings);
+        assert_eq!(result, PermissionEvalResult::Allow);
     }
 }

@@ -1,0 +1,487 @@
+<!DOCTYPE html>
+<html><head>
+<title>Profile Report - 2026-02-04T07:01:18.345Z</title>
+<style>
+  body { font-family: system-ui; max-width: 1200px; margin: 0 auto; padding: 20px; background: #1a1a2e; color: #eee; }
+  h1, h2 { color: #00d9ff; }
+  table { width: 100%; border-collapse: collapse; margin: 20px 0; }
+  th, td { padding: 8px 12px; text-align: left; border-bottom: 1px solid #333; }
+  th { background: #16213e; color: #00d9ff; }
+  .row { cursor: pointer; }
+  .row:hover { background: #1f3460; }
+  .ours { color: #4ade80; }
+  .dep { color: #fbbf24; }
+  .rt { color: #94a3b8; }
+  .trend { font-family: monospace; letter-spacing: -2px; }
+  .meta { color: #888; margin-bottom: 20px; }
+  .details { display: none; background: #0f0f23; }
+  .details.open { display: table-row; }
+  .details td { padding: 15px 20px; }
+  .call-list { margin: 5px 0; padding-left: 20px; }
+  .call-list li { margin: 3px 0; color: #888; }
+  .call-list .fn { color: #00d9ff; }
+  .hot-path { background: #1f1f3a; padding: 15px; border-radius: 8px; margin: 10px 0; }
+  .hot-path h3 { margin: 0 0 10px 0; color: #ff6b6b; }
+  .path-item { padding: 5px 0; border-left: 2px solid #ff6b6b; padding-left: 10px; margin-left: 10px; }
+</style>
+</head><body>
+<h1>🔥 CPU Profile Report</h1>
+<div class="meta">
+  <p>Duration: 99.2s | Samples: 19046 | Generated: 2026-02-04T07:01:18.345Z</p>
+</div>
+
+<h2>🔥 Top 5 Hot Paths</h2>
+
+<div class="hot-path">
+  <h3>#1: map (12696ms self)</h3>
+  <div><strong>Called by:</strong></div>
+  <div class="path-item">← get (10957x)</div><div class="path-item">← (anonymous) (1857x)</div><div class="path-item">← wrapAnsi (1831x)</div>
+  <div style="margin-top:10px"><strong>Calls:</strong></div>
+  <div class="path-item">→ (anonymous) (10680x)</div><div class="path-item">→ (anonymous) (1855x)</div><div class="path-item">→ exec (1830x)</div>
+</div>
+
+<div class="hot-path">
+  <h3>#2: diffAnsiCodes (10233ms self)</h3>
+  <div><strong>Called by:</strong></div>
+  <div class="path-item">← styledCharsToString (6843x)</div>
+  <div style="margin-top:10px"><strong>Calls:</strong></div>
+  <div class="path-item">→ undoAnsiCodes (2008x)</div><div class="path-item">→ map (1446x)</div><div class="path-item">→ Set (1231x)</div>
+</div>
+
+<div class="hot-path">
+  <h3>#3: Set (8129ms self)</h3>
+  <div><strong>Called by:</strong></div>
+  <div class="path-item">← diffAnsiCodes (1231x)</div><div class="path-item">← ansiCodesToString (330x)</div><div class="path-item">← (anonymous) (1x)</div>
+  <div style="margin-top:10px"><strong>Calls:</strong></div>
+  <div class="path-item">→ (unknown) (1x)</div>
+</div>
+
+<div class="hot-path">
+  <h3>#4: next (5244ms self)</h3>
+  <div><strong>Called by:</strong></div>
+  <div class="path-item">← stringWidth (832x)</div><div class="path-item">← performIteration (169x)</div><div class="path-item">← exec (23x)</div>
+  <div style="margin-top:10px"><strong>Calls:</strong></div>
+  <div class="path-item">→ arrayIteratorNextHelper (27x)</div>
+</div>
+
+<div class="hot-path">
+  <h3>#5: performIteration (4572ms self)</h3>
+  <div><strong>Called by:</strong></div>
+  <div class="path-item">← ansiCodesToString (1047x)</div>
+  <div style="margin-top:10px"><strong>Calls:</strong></div>
+  <div class="path-item">→ next (169x)</div>
+</div>
+
+
+<h2>Top Functions by Self Time</h2>
+<p style="color:#888">Click a row to see callers and callees</p>
+<table>
+  <tr><th>Function</th><th>Self Time</th><th>Total Time</th><th>Calls</th><th>Type</th><th>Trend</th></tr>
+  
+  <tr class="row" onclick="toggle(0)">
+    <td>map @ unknown</td>
+    <td>12695.6ms</td>
+    <td>92254.2ms</td>
+    <td>2,438</td>
+    <td class="rt">runtime</td>
+    <td class="trend">▁▁▁▁▁▁▆█▅▂</td>
+  </tr>
+  <tr class="details" id="details-0">
+    <td colspan="6">
+      <strong>Called by:</strong>
+      <ul class="call-list">
+        <li><span class="fn">get @ output.js</span> (10957x)</li><li><span class="fn">(anonymous) @ Message.tsx</span> (1857x)</li><li><span class="fn">wrapAnsi @ index.js</span> (1831x)</li><li><span class="fn">diffAnsiCodes @ diff.js</span> (1446x)</li><li><span class="fn">undoAnsiCodes @ undo.js</span> (591x)</li>
+      </ul>
+      <strong>Calls:</strong>
+      <ul class="call-list">
+        <li><span class="fn">(anonymous) @ output.js</span> (10680x)</li><li><span class="fn">(anonymous) @ Message.tsx</span> (1855x)</li><li><span class="fn">exec @ index.js</span> (1830x)</li><li><span class="fn">stringWidth @ index.js</span> (600x)</li><li><span class="fn">trimEnd @ unknown</span> (263x)</li>
+      </ul>
+    </td>
+  </tr>
+  <tr class="row" onclick="toggle(1)">
+    <td>diffAnsiCodes @ diff.js</td>
+    <td>10232.5ms</td>
+    <td>35634.2ms</td>
+    <td>1,965</td>
+    <td class="dep">dependency</td>
+    <td class="trend">▁▁▁▁▁▁▅█▄▂</td>
+  </tr>
+  <tr class="details" id="details-1">
+    <td colspan="6">
+      <strong>Called by:</strong>
+      <ul class="call-list">
+        <li><span class="fn">styledCharsToString @ styledChars.js</span> (6843x)</li>
+      </ul>
+      <strong>Calls:</strong>
+      <ul class="call-list">
+        <li><span class="fn">undoAnsiCodes @ undo.js</span> (2008x)</li><li><span class="fn">map @ unknown</span> (1446x)</li><li><span class="fn">Set @ unknown</span> (1231x)</li><li><span class="fn">filter @ unknown</span> (193x)</li>
+      </ul>
+    </td>
+  </tr>
+  <tr class="row" onclick="toggle(2)">
+    <td>Set @ unknown</td>
+    <td>8128.7ms</td>
+    <td>8133.9ms</td>
+    <td>1,561</td>
+    <td class="rt">runtime</td>
+    <td class="trend">▁▁▁▂▁▁▆█▅▂</td>
+  </tr>
+  <tr class="details" id="details-2">
+    <td colspan="6">
+      <strong>Called by:</strong>
+      <ul class="call-list">
+        <li><span class="fn">diffAnsiCodes @ diff.js</span> (1231x)</li><li><span class="fn">ansiCodesToString @ ansiCodes.js</span> (330x)</li><li><span class="fn">(anonymous) @ diff.js</span> (1x)</li>
+      </ul>
+      <strong>Calls:</strong>
+      <ul class="call-list">
+        <li><span class="fn">(unknown) @ unknown</span> (1x)</li>
+      </ul>
+    </td>
+  </tr>
+  <tr class="row" onclick="toggle(3)">
+    <td>next @ unknown</td>
+    <td>5243.8ms</td>
+    <td>5384.4ms</td>
+    <td>1,007</td>
+    <td class="rt">runtime</td>
+    <td class="trend">▁▁▁▂▁▁▆█▄▁</td>
+  </tr>
+  <tr class="details" id="details-3">
+    <td colspan="6">
+      <strong>Called by:</strong>
+      <ul class="call-list">
+        <li><span class="fn">stringWidth @ index.js</span> (832x)</li><li><span class="fn">performIteration @ unknown</span> (169x)</li><li><span class="fn">exec @ index.js</span> (23x)</li><li><span class="fn">get @ output.js</span> (8x)</li><li><span class="fn">compareEntries @ shallow.mjs</span> (2x)</li>
+      </ul>
+      <strong>Calls:</strong>
+      <ul class="call-list">
+        <li><span class="fn">arrayIteratorNextHelper @ unknown</span> (27x)</li>
+      </ul>
+    </td>
+  </tr>
+  <tr class="row" onclick="toggle(4)">
+    <td>performIteration @ unknown</td>
+    <td>4572.1ms</td>
+    <td>5452.1ms</td>
+    <td>878</td>
+    <td class="rt">runtime</td>
+    <td class="trend">▁▁▁▁▁▁▆█▄▂</td>
+  </tr>
+  <tr class="details" id="details-4">
+    <td colspan="6">
+      <strong>Called by:</strong>
+      <ul class="call-list">
+        <li><span class="fn">ansiCodesToString @ ansiCodes.js</span> (1047x)</li>
+      </ul>
+      <strong>Calls:</strong>
+      <ul class="call-list">
+        <li><span class="fn">next @ unknown</span> (169x)</li>
+      </ul>
+    </td>
+  </tr>
+  <tr class="row" onclick="toggle(5)">
+    <td>write @ unknown</td>
+    <td>4488.8ms</td>
+    <td>4488.8ms</td>
+    <td>862</td>
+    <td class="rt">runtime</td>
+    <td class="trend">▁▁▁▂▁▁▆█▅▃</td>
+  </tr>
+  <tr class="details" id="details-5">
+    <td colspan="6">
+      <strong>Called by:</strong>
+      <ul class="call-list">
+        <li><span class="fn">writeFast @ streams</span> (861x)</li><li><span class="fn">readableAddChunkPushByteMode @ readable</span> (1x)</li>
+      </ul>
+      <strong>Calls:</strong>
+      <ul class="call-list">
+        <li>(leaf)</li>
+      </ul>
+    </td>
+  </tr>
+  <tr class="row" onclick="toggle(6)">
+    <td>ansiCodesToString @ ansiCodes.js</td>
+    <td>3634.8ms</td>
+    <td>12914.3ms</td>
+    <td>698</td>
+    <td class="dep">dependency</td>
+    <td class="trend">▁▁▁▂▁▁▆█▄▂</td>
+  </tr>
+  <tr class="details" id="details-6">
+    <td colspan="6">
+      <strong>Called by:</strong>
+      <ul class="call-list">
+        <li><span class="fn">styledCharsToString @ styledChars.js</span> (2480x)</li>
+      </ul>
+      <strong>Calls:</strong>
+      <ul class="call-list">
+        <li><span class="fn">performIteration @ unknown</span> (1047x)</li><li><span class="fn">map @ unknown</span> (405x)</li><li><span class="fn">Set @ unknown</span> (330x)</li>
+      </ul>
+    </td>
+  </tr>
+  <tr class="row" onclick="toggle(7)">
+    <td>styledCharsToString @ styledChars.js</td>
+    <td>3134.9ms</td>
+    <td>54250.6ms</td>
+    <td>602</td>
+    <td class="dep">dependency</td>
+    <td class="trend">▁▁▁▁▁▁▅█▅▂</td>
+  </tr>
+  <tr class="details" id="details-7">
+    <td colspan="6">
+      <strong>Called by:</strong>
+      <ul class="call-list">
+        <li><span class="fn">(anonymous) @ output.js</span> (10418x)</li>
+      </ul>
+      <strong>Calls:</strong>
+      <ul class="call-list">
+        <li><span class="fn">diffAnsiCodes @ diff.js</span> (6843x)</li><li><span class="fn">ansiCodesToString @ ansiCodes.js</span> (2480x)</li><li><span class="fn">join @ unknown</span> (493x)</li>
+      </ul>
+    </td>
+  </tr>
+  <tr class="row" onclick="toggle(8)">
+    <td>get @ output.js</td>
+    <td>2994.3ms</td>
+    <td>64561.3ms</td>
+    <td>575</td>
+    <td class="dep">dependency</td>
+    <td class="trend">▁▁▁▂▁▁▆█▅▂</td>
+  </tr>
+  <tr class="details" id="details-8">
+    <td colspan="6">
+      <strong>Called by:</strong>
+      <ul class="call-list">
+        <li><span class="fn">renderer @ renderer.js</span> (12398x)</li>
+      </ul>
+      <strong>Calls:</strong>
+      <ul class="call-list">
+        <li><span class="fn">map @ unknown</span> (10957x)</li><li><span class="fn">tokenize @ tokenize.js</span> (421x)</li><li><span class="fn">styledCharsFromTokens @ styledChars.js</span> (190x)</li><li><span class="fn">transform @ Text.js</span> (116x)</li><li><span class="fn">stringWidth @ output.js</span> (90x)</li>
+      </ul>
+    </td>
+  </tr>
+  <tr class="row" onclick="toggle(9)">
+    <td>reduceAnsiCodesIncremental @ reduce.js</td>
+    <td>2968.2ms</td>
+    <td>3108.8ms</td>
+    <td>570</td>
+    <td class="dep">dependency</td>
+    <td class="trend">▁▁▁▁▁▁▅█▅▂</td>
+  </tr>
+  <tr class="details" id="details-9">
+    <td colspan="6">
+      <strong>Called by:</strong>
+      <ul class="call-list">
+        <li><span class="fn">undoAnsiCodes @ undo.js</span> (557x)</li><li><span class="fn">styledCharsFromTokens @ styledChars.js</span> (40x)</li>
+      </ul>
+      <strong>Calls:</strong>
+      <ul class="call-list">
+        <li><span class="fn">filter @ unknown</span> (26x)</li><li><span class="fn">find @ unknown</span> (1x)</li>
+      </ul>
+    </td>
+  </tr>
+  <tr class="row" onclick="toggle(10)">
+    <td>reverse @ unknown</td>
+    <td>2957.8ms</td>
+    <td>2957.8ms</td>
+    <td>568</td>
+    <td class="rt">runtime</td>
+    <td class="trend">▁▁▁▁▁▁▆█▄▃</td>
+  </tr>
+  <tr class="details" id="details-10">
+    <td colspan="6">
+      <strong>Called by:</strong>
+      <ul class="call-list">
+        <li><span class="fn">undoAnsiCodes @ undo.js</span> (568x)</li>
+      </ul>
+      <strong>Calls:</strong>
+      <ul class="call-list">
+        <li>(leaf)</li>
+      </ul>
+    </td>
+  </tr>
+  <tr class="row" onclick="toggle(11)">
+    <td>segment @ unknown</td>
+    <td>2848.4ms</td>
+    <td>2848.4ms</td>
+    <td>547</td>
+    <td class="rt">runtime</td>
+    <td class="trend">▁▁▁▂▁▁▅█▅▁</td>
+  </tr>
+  <tr class="details" id="details-11">
+    <td colspan="6">
+      <strong>Called by:</strong>
+      <ul class="call-list">
+        <li><span class="fn">stringWidth @ index.js</span> (547x)</li>
+      </ul>
+      <strong>Calls:</strong>
+      <ul class="call-list">
+        <li>(leaf)</li>
+      </ul>
+    </td>
+  </tr>
+  <tr class="row" onclick="toggle(12)">
+    <td>join @ unknown</td>
+    <td>2812.0ms</td>
+    <td>2812.0ms</td>
+    <td>540</td>
+    <td class="rt">runtime</td>
+    <td class="trend">▁▁▁▂▁▁▅█▅▂</td>
+  </tr>
+  <tr class="details" id="details-12">
+    <td colspan="6">
+      <strong>Called by:</strong>
+      <ul class="call-list">
+        <li><span class="fn">styledCharsToString @ styledChars.js</span> (493x)</li><li><span class="fn">(anonymous) @ Message.tsx</span> (17x)</li><li><span class="fn">splitCompoundSGRSequences @ tokenize.js</span> (17x)</li><li><span class="fn">exec @ index.js</span> (8x)</li><li><span class="fn">get @ output.js</span> (5x)</li>
+      </ul>
+      <strong>Calls:</strong>
+      <ul class="call-list">
+        <li>(leaf)</li>
+      </ul>
+    </td>
+  </tr>
+  <tr class="row" onclick="toggle(13)">
+    <td>filter @ unknown</td>
+    <td>2421.4ms</td>
+    <td>2483.9ms</td>
+    <td>465</td>
+    <td class="rt">runtime</td>
+    <td class="trend">▁▁▁▁▁▁▅█▄▂</td>
+  </tr>
+  <tr class="details" id="details-13">
+    <td colspan="6">
+      <strong>Called by:</strong>
+      <ul class="call-list">
+        <li><span class="fn">(anonymous) @ output.js</span> (257x)</li><li><span class="fn">diffAnsiCodes @ diff.js</span> (193x)</li><li><span class="fn">reduceAnsiCodesIncremental @ reduce.js</span> (26x)</li><li><span class="fn">ConversationView @ ConversationView.tsx</span> (1x)</li>
+      </ul>
+      <strong>Calls:</strong>
+      <ul class="call-list">
+        <li><span class="fn">(anonymous) @ diff.js</span> (10x)</li><li><span class="fn">(anonymous) @ reduce.js</span> (1x)</li><li><span class="fn">(anonymous) @ ConversationView.tsx</span> (1x)</li>
+      </ul>
+    </td>
+  </tr>
+  <tr class="row" onclick="toggle(14)">
+    <td>[Symbol.iterator] @ unknown</td>
+    <td>2332.9ms</td>
+    <td>2332.9ms</td>
+    <td>448</td>
+    <td class="rt">runtime</td>
+    <td class="trend">▁▁▁▁▁▁▅█▃▁</td>
+  </tr>
+  <tr class="details" id="details-14">
+    <td colspan="6">
+      <strong>Called by:</strong>
+      <ul class="call-list">
+        <li><span class="fn">stringWidth @ index.js</span> (447x)</li><li><span class="fn">get @ output.js</span> (1x)</li>
+      </ul>
+      <strong>Calls:</strong>
+      <ul class="call-list">
+        <li>(leaf)</li>
+      </ul>
+    </td>
+  </tr>
+  <tr class="row" onclick="toggle(15)">
+    <td>isWide @ lookup.js</td>
+    <td>2249.6ms</td>
+    <td>2249.6ms</td>
+    <td>432</td>
+    <td class="dep">dependency</td>
+    <td class="trend">▁▁▁▂▁▁▆█▅▂</td>
+  </tr>
+  <tr class="details" id="details-15">
+    <td colspan="6">
+      <strong>Called by:</strong>
+      <ul class="call-list">
+        <li><span class="fn">eastAsianWidth @ index.js</span> (332x)</li><li><span class="fn">tokenize @ tokenize.js</span> (100x)</li>
+      </ul>
+      <strong>Calls:</strong>
+      <ul class="call-list">
+        <li>(leaf)</li>
+      </ul>
+    </td>
+  </tr>
+  <tr class="row" onclick="toggle(16)">
+    <td>stringWidth @ index.js</td>
+    <td>1504.9ms</td>
+    <td>14158.9ms</td>
+    <td>289</td>
+    <td class="dep">dependency</td>
+    <td class="trend">▁▂▁▂▁▁█▇▆▁</td>
+  </tr>
+  <tr class="details" id="details-16">
+    <td colspan="6">
+      <strong>Called by:</strong>
+      <ul class="call-list">
+        <li><span class="fn">widestLine @ index.js</span> (1079x)</li><li><span class="fn">exec @ index.js</span> (992x)</li><li><span class="fn">map @ unknown</span> (600x)</li><li><span class="fn">stringWidth @ output.js</span> (48x)</li>
+      </ul>
+      <strong>Calls:</strong>
+      <ul class="call-list">
+        <li><span class="fn">next @ unknown</span> (832x)</li><li><span class="fn">segment @ unknown</span> (547x)</li><li><span class="fn">[Symbol.iterator] @ unknown</span> (447x)</li><li><span class="fn">eastAsianWidth @ index.js</span> (346x)</li><li><span class="fn">stripAnsi @ index.js</span> (104x)</li>
+      </ul>
+    </td>
+  </tr>
+  <tr class="row" onclick="toggle(17)">
+    <td>trimEnd @ unknown</td>
+    <td>1369.5ms</td>
+    <td>1369.5ms</td>
+    <td>263</td>
+    <td class="rt">runtime</td>
+    <td class="trend">▁▁▁▂▁▁▅█▅▂</td>
+  </tr>
+  <tr class="details" id="details-17">
+    <td colspan="6">
+      <strong>Called by:</strong>
+      <ul class="call-list">
+        <li><span class="fn">map @ unknown</span> (263x)</li>
+      </ul>
+      <strong>Calls:</strong>
+      <ul class="call-list">
+        <li>(leaf)</li>
+      </ul>
+    </td>
+  </tr>
+  <tr class="row" onclick="toggle(18)">
+    <td>resolve @ unknown</td>
+    <td>1338.3ms</td>
+    <td>1338.3ms</td>
+    <td>257</td>
+    <td class="rt">runtime</td>
+    <td class="trend">█▁▁▁▁▁▁▁▁▁</td>
+  </tr>
+  <tr class="details" id="details-18">
+    <td colspan="6">
+      <strong>Called by:</strong>
+      <ul class="call-list">
+        <li><span class="fn">(anonymous) @ unknown</span> (257x)</li>
+      </ul>
+      <strong>Calls:</strong>
+      <ul class="call-list">
+        <li>(leaf)</li>
+      </ul>
+    </td>
+  </tr>
+  <tr class="row" onclick="toggle(19)">
+    <td>anonymous @ unknown</td>
+    <td>1208.1ms</td>
+    <td>2582.9ms</td>
+    <td>232</td>
+    <td class="rt">runtime</td>
+    <td class="trend">█▁▁▁▁▁▁▁▁▁</td>
+  </tr>
+  <tr class="details" id="details-19">
+    <td colspan="6">
+      <strong>Called by:</strong>
+      <ul class="call-list">
+        <li><span class="fn">require @ unknown</span> (457x)</li><li><span class="fn">bound require @ unknown</span> (5x)</li><li><span class="fn">internal:assert/assertion_error @ assertion_error</span> (4x)</li><li><span class="fn">loadAssertionError @ node:assert</span> (4x)</li><li><span class="fn">internal:streams/duplex @ duplex</span> (3x)</li>
+      </ul>
+      <strong>Calls:</strong>
+      <ul class="call-list">
+        <li><span class="fn">(anonymous) @ index.js</span> (215x)</li><li><span class="fn">(anonymous) @ theme.js</span> (8x)</li><li><span class="fn">node:assert @ node:assert</span> (5x)</li><li><span class="fn">(anonymous) @ react-jsx-dev-runtime.development.js</span> (4x)</li><li><span class="fn">internal:assert/assertion_error @ assertion_error</span> (4x)</li>
+      </ul>
+    </td>
+  </tr>
+</table>
+<script>
+function toggle(i) {
+  document.getElementById('details-' + i).classList.toggle('open');
+}
+</script>
+</body></html>

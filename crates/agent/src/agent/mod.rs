@@ -8,6 +8,7 @@ pub mod permissions;
 pub mod protocol;
 pub mod shell_permission;
 pub mod task_executor;
+pub mod tool_permission;
 mod tool_utils;
 pub mod tools;
 pub mod tui_commands;

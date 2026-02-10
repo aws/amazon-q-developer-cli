@@ -1,0 +1,487 @@
+<!DOCTYPE html>
+<html><head>
+<title>Profile Report - 2026-02-04T06:57:38.014Z</title>
+<style>
+  body { font-family: system-ui; max-width: 1200px; margin: 0 auto; padding: 20px; background: #1a1a2e; color: #eee; }
+  h1, h2 { color: #00d9ff; }
+  table { width: 100%; border-collapse: collapse; margin: 20px 0; }
+  th, td { padding: 8px 12px; text-align: left; border-bottom: 1px solid #333; }
+  th { background: #16213e; color: #00d9ff; }
+  .row { cursor: pointer; }
+  .row:hover { background: #1f3460; }
+  .ours { color: #4ade80; }
+  .dep { color: #fbbf24; }
+  .rt { color: #94a3b8; }
+  .trend { font-family: monospace; letter-spacing: -2px; }
+  .meta { color: #888; margin-bottom: 20px; }
+  .details { display: none; background: #0f0f23; }
+  .details.open { display: table-row; }
+  .details td { padding: 15px 20px; }
+  .call-list { margin: 5px 0; padding-left: 20px; }
+  .call-list li { margin: 3px 0; color: #888; }
+  .call-list .fn { color: #00d9ff; }
+  .hot-path { background: #1f1f3a; padding: 15px; border-radius: 8px; margin: 10px 0; }
+  .hot-path h3 { margin: 0 0 10px 0; color: #ff6b6b; }
+  .path-item { padding: 5px 0; border-left: 2px solid #ff6b6b; padding-left: 10px; margin-left: 10px; }
+</style>
+</head><body>
+<h1>🔥 CPU Profile Report</h1>
+<div class="meta">
+  <p>Duration: 188.5s | Samples: 87185 | Generated: 2026-02-04T06:57:38.014Z</p>
+</div>
+
+<h2>🔥 Top 5 Hot Paths</h2>
+
+<div class="hot-path">
+  <h3>#1: /^\p{RGI_Emoji}$/v (96731ms self)</h3>
+  <div><strong>Called by:</strong></div>
+  <div class="path-item">← stringWidth (44727x)</div><div class="path-item">← test (2x)</div>
+  <div style="margin-top:10px"><strong>Calls:</strong></div>
+  <div class="path-item">→ (leaf)</div>
+</div>
+
+<div class="hot-path">
+  <h3>#2: segment (14433ms self)</h3>
+  <div><strong>Called by:</strong></div>
+  <div class="path-item">← stringWidth (6674x)</div>
+  <div style="margin-top:10px"><strong>Calls:</strong></div>
+  <div class="path-item">→ (leaf)</div>
+</div>
+
+<div class="hot-path">
+  <h3>#3: [Symbol.iterator] (10636ms self)</h3>
+  <div><strong>Called by:</strong></div>
+  <div class="path-item">← stringWidth (4915x)</div><div class="path-item">← get (3x)</div>
+  <div style="margin-top:10px"><strong>Calls:</strong></div>
+  <div class="path-item">→ (leaf)</div>
+</div>
+
+<div class="hot-path">
+  <h3>#4: map (8071ms self)</h3>
+  <div><strong>Called by:</strong></div>
+  <div class="path-item">← get (16074x)</div><div class="path-item">← (anonymous) (3602x)</div><div class="path-item">← wrapAnsi (3564x)</div>
+  <div style="margin-top:10px"><strong>Calls:</strong></div>
+  <div class="path-item">→ (anonymous) (15721x)</div><div class="path-item">→ (anonymous) (3598x)</div><div class="path-item">→ exec (3562x)</div>
+</div>
+
+<div class="hot-path">
+  <h3>#5: next (7050ms self)</h3>
+  <div><strong>Called by:</strong></div>
+  <div class="path-item">← stringWidth (2997x)</div><div class="path-item">← performIteration (237x)</div><div class="path-item">← exec (46x)</div>
+  <div style="margin-top:10px"><strong>Calls:</strong></div>
+  <div class="path-item">→ arrayIteratorNextHelper (62x)</div>
+</div>
+
+
+<h2>Top Functions by Self Time</h2>
+<p style="color:#888">Click a row to see callers and callees</p>
+<table>
+  <tr><th>Function</th><th>Self Time</th><th>Total Time</th><th>Calls</th><th>Type</th><th>Trend</th></tr>
+  
+  <tr class="row" onclick="toggle(0)">
+    <td>/^\p{RGI_Emoji}$/v @ unknown</td>
+    <td>96730.8ms</td>
+    <td>96730.8ms</td>
+    <td>44,729</td>
+    <td class="rt">runtime</td>
+    <td class="trend">▁▂▃▂▄▄▇▇▇█▇▇▇▇▃▇▁▄▂</td>
+  </tr>
+  <tr class="details" id="details-0">
+    <td colspan="6">
+      <strong>Called by:</strong>
+      <ul class="call-list">
+        <li><span class="fn">stringWidth @ index.js</span> (44727x)</li><li><span class="fn">test @ unknown</span> (2x)</li>
+      </ul>
+      <strong>Calls:</strong>
+      <ul class="call-list">
+        <li>(leaf)</li>
+      </ul>
+    </td>
+  </tr>
+  <tr class="row" onclick="toggle(1)">
+    <td>segment @ unknown</td>
+    <td>14433.2ms</td>
+    <td>14433.2ms</td>
+    <td>6,674</td>
+    <td class="rt">runtime</td>
+    <td class="trend">▁▁▂▁▂▃▆▇▆▇█▇▇▇▃▆▁▂▁</td>
+  </tr>
+  <tr class="details" id="details-1">
+    <td colspan="6">
+      <strong>Called by:</strong>
+      <ul class="call-list">
+        <li><span class="fn">stringWidth @ index.js</span> (6674x)</li>
+      </ul>
+      <strong>Calls:</strong>
+      <ul class="call-list">
+        <li>(leaf)</li>
+      </ul>
+    </td>
+  </tr>
+  <tr class="row" onclick="toggle(2)">
+    <td>[Symbol.iterator] @ unknown</td>
+    <td>10635.6ms</td>
+    <td>10635.6ms</td>
+    <td>4,918</td>
+    <td class="rt">runtime</td>
+    <td class="trend">▁▁▂▁▃▄▆▇▇▇█▇▇▇▃▇▁▃▁</td>
+  </tr>
+  <tr class="details" id="details-2">
+    <td colspan="6">
+      <strong>Called by:</strong>
+      <ul class="call-list">
+        <li><span class="fn">stringWidth @ index.js</span> (4915x)</li><li><span class="fn">get @ output.js</span> (3x)</li>
+      </ul>
+      <strong>Calls:</strong>
+      <ul class="call-list">
+        <li>(leaf)</li>
+      </ul>
+    </td>
+  </tr>
+  <tr class="row" onclick="toggle(3)">
+    <td>map @ unknown</td>
+    <td>8070.8ms</td>
+    <td>60455.4ms</td>
+    <td>3,732</td>
+    <td class="rt">runtime</td>
+    <td class="trend">▁▁▁▁▂▃▄▆▆▆▇█▇▇▃▇▁▄▁</td>
+  </tr>
+  <tr class="details" id="details-3">
+    <td colspan="6">
+      <strong>Called by:</strong>
+      <ul class="call-list">
+        <li><span class="fn">get @ output.js</span> (16074x)</li><li><span class="fn">(anonymous) @ Message.tsx</span> (3602x)</li><li><span class="fn">wrapAnsi @ index.js</span> (3564x)</li><li><span class="fn">diffAnsiCodes @ diff.js</span> (2178x)</li><li><span class="fn">undoAnsiCodes @ undo.js</span> (966x)</li>
+      </ul>
+      <strong>Calls:</strong>
+      <ul class="call-list">
+        <li><span class="fn">(anonymous) @ output.js</span> (15721x)</li><li><span class="fn">(anonymous) @ Message.tsx</span> (3598x)</li><li><span class="fn">exec @ index.js</span> (3562x)</li><li><span class="fn">stringWidth @ index.js</span> (924x)</li><li><span class="fn">trimEnd @ unknown</span> (347x)</li>
+      </ul>
+    </td>
+  </tr>
+  <tr class="row" onclick="toggle(4)">
+    <td>next @ unknown</td>
+    <td>7050.1ms</td>
+    <td>7184.1ms</td>
+    <td>3,260</td>
+    <td class="rt">runtime</td>
+    <td class="trend">▁▁▁▁▃▄▆▇▆█▇▇▇▇▂▅▁▂▁</td>
+  </tr>
+  <tr class="details" id="details-4">
+    <td colspan="6">
+      <strong>Called by:</strong>
+      <ul class="call-list">
+        <li><span class="fn">stringWidth @ index.js</span> (2997x)</li><li><span class="fn">performIteration @ unknown</span> (237x)</li><li><span class="fn">exec @ index.js</span> (46x)</li><li><span class="fn">get @ output.js</span> (21x)</li><li><span class="fn">isZeroWidthCluster @ index.js</span> (14x)</li>
+      </ul>
+      <strong>Calls:</strong>
+      <ul class="call-list">
+        <li><span class="fn">arrayIteratorNextHelper @ unknown</span> (62x)</li>
+      </ul>
+    </td>
+  </tr>
+  <tr class="row" onclick="toggle(5)">
+    <td>diffAnsiCodes @ diff.js</td>
+    <td>5953.6ms</td>
+    <td>21939.5ms</td>
+    <td>2,753</td>
+    <td class="dep">dependency</td>
+    <td class="trend">▁▁▁▁▂▂▄▅▅▆▆▇▆█▃▇▁▄▁</td>
+  </tr>
+  <tr class="details" id="details-5">
+    <td colspan="6">
+      <strong>Called by:</strong>
+      <ul class="call-list">
+        <li><span class="fn">styledCharsToString @ styledChars.js</span> (10145x)</li>
+      </ul>
+      <strong>Calls:</strong>
+      <ul class="call-list">
+        <li><span class="fn">undoAnsiCodes @ undo.js</span> (3043x)</li><li><span class="fn">map @ unknown</span> (2178x)</li><li><span class="fn">Set @ unknown</span> (1815x)</li><li><span class="fn">filter @ unknown</span> (355x)</li><li><span class="fn">(anonymous) @ undo.js</span> (1x)</li>
+      </ul>
+    </td>
+  </tr>
+  <tr class="row" onclick="toggle(6)">
+    <td>Set @ unknown</td>
+    <td>4999.9ms</td>
+    <td>5002.1ms</td>
+    <td>2,312</td>
+    <td class="rt">runtime</td>
+    <td class="trend">▁▁▁▁▂▃▅▅▄▆▇▆▇▇▃█▁▄▁</td>
+  </tr>
+  <tr class="details" id="details-6">
+    <td colspan="6">
+      <strong>Called by:</strong>
+      <ul class="call-list">
+        <li><span class="fn">diffAnsiCodes @ diff.js</span> (1815x)</li><li><span class="fn">ansiCodesToString @ ansiCodes.js</span> (498x)</li>
+      </ul>
+      <strong>Calls:</strong>
+      <ul class="call-list">
+        <li><span class="fn">(unknown) @ unknown</span> (1x)</li>
+      </ul>
+    </td>
+  </tr>
+  <tr class="row" onclick="toggle(7)">
+    <td>get @ output.js</td>
+    <td>3003.8ms</td>
+    <td>167153.5ms</td>
+    <td>1,389</td>
+    <td class="dep">dependency</td>
+    <td class="trend">▁▁▁▁▂▂▄▆▅▆▆▆▆█▃▆▁▄▁</td>
+  </tr>
+  <tr class="details" id="details-7">
+    <td colspan="6">
+      <strong>Called by:</strong>
+      <ul class="call-list">
+        <li><span class="fn">renderer @ renderer.js</span> (77293x)</li>
+      </ul>
+      <strong>Calls:</strong>
+      <ul class="call-list">
+        <li><span class="fn">stringWidth @ index.js</span> (57686x)</li><li><span class="fn">map @ unknown</span> (16074x)</li><li><span class="fn">tokenize @ tokenize.js</span> (1090x)</li><li><span class="fn">styledCharsFromTokens @ styledChars.js</span> (466x)</li><li><span class="fn">transform @ Text.js</span> (445x)</li>
+      </ul>
+    </td>
+  </tr>
+  <tr class="row" onclick="toggle(8)">
+    <td>isWide @ lookup.js</td>
+    <td>2807.0ms</td>
+    <td>2807.0ms</td>
+    <td>1,298</td>
+    <td class="dep">dependency</td>
+    <td class="trend">▁▂▂▁▄▄▇▆▆▆█▅▆▅▁▃▁▂▁</td>
+  </tr>
+  <tr class="details" id="details-8">
+    <td colspan="6">
+      <strong>Called by:</strong>
+      <ul class="call-list">
+        <li><span class="fn">eastAsianWidth @ index.js</span> (1041x)</li><li><span class="fn">tokenize @ tokenize.js</span> (257x)</li>
+      </ul>
+      <strong>Calls:</strong>
+      <ul class="call-list">
+        <li>(leaf)</li>
+      </ul>
+    </td>
+  </tr>
+  <tr class="row" onclick="toggle(9)">
+    <td>performIteration @ unknown</td>
+    <td>2428.6ms</td>
+    <td>2941.1ms</td>
+    <td>1,123</td>
+    <td class="rt">runtime</td>
+    <td class="trend">▁▁▁▁▂▂▄▅▇▆▆▇▇▇▄█▁▄▁</td>
+  </tr>
+  <tr class="details" id="details-9">
+    <td colspan="6">
+      <strong>Called by:</strong>
+      <ul class="call-list">
+        <li><span class="fn">ansiCodesToString @ ansiCodes.js</span> (1360x)</li>
+      </ul>
+      <strong>Calls:</strong>
+      <ul class="call-list">
+        <li><span class="fn">next @ unknown</span> (237x)</li>
+      </ul>
+    </td>
+  </tr>
+  <tr class="row" onclick="toggle(10)">
+    <td>ansiCodesToString @ ansiCodes.js</td>
+    <td>2285.9ms</td>
+    <td>7592.9ms</td>
+    <td>1,057</td>
+    <td class="dep">dependency</td>
+    <td class="trend">▁▁▁▁▂▂▄▆▅▆▆▇▇█▃▆▁▅▁</td>
+  </tr>
+  <tr class="details" id="details-10">
+    <td colspan="6">
+      <strong>Called by:</strong>
+      <ul class="call-list">
+        <li><span class="fn">styledCharsToString @ styledChars.js</span> (3511x)</li>
+      </ul>
+      <strong>Calls:</strong>
+      <ul class="call-list">
+        <li><span class="fn">performIteration @ unknown</span> (1360x)</li><li><span class="fn">map @ unknown</span> (596x)</li><li><span class="fn">Set @ unknown</span> (498x)</li>
+      </ul>
+    </td>
+  </tr>
+  <tr class="row" onclick="toggle(11)">
+    <td>write @ unknown</td>
+    <td>2175.6ms</td>
+    <td>2175.6ms</td>
+    <td>1,006</td>
+    <td class="rt">runtime</td>
+    <td class="trend">▁▁▃▂▃▅▆▇▅█▇▇▇▇▃▇▁▄▁</td>
+  </tr>
+  <tr class="details" id="details-11">
+    <td colspan="6">
+      <strong>Called by:</strong>
+      <ul class="call-list">
+        <li><span class="fn">writeFast @ streams</span> (1005x)</li><li><span class="fn">readableAddChunkPushByteMode @ readable</span> (1x)</li>
+      </ul>
+      <strong>Calls:</strong>
+      <ul class="call-list">
+        <li>(leaf)</li>
+      </ul>
+    </td>
+  </tr>
+  <tr class="row" onclick="toggle(12)">
+    <td>styledCharsToString @ styledChars.js</td>
+    <td>2078.3ms</td>
+    <td>33143.9ms</td>
+    <td>961</td>
+    <td class="dep">dependency</td>
+    <td class="trend">▁▁▁▁▁▂▅▄▆▇▅▅█▆▂▇▁▃▁</td>
+  </tr>
+  <tr class="details" id="details-12">
+    <td colspan="6">
+      <strong>Called by:</strong>
+      <ul class="call-list">
+        <li><span class="fn">(anonymous) @ output.js</span> (15326x)</li>
+      </ul>
+      <strong>Calls:</strong>
+      <ul class="call-list">
+        <li><span class="fn">diffAnsiCodes @ diff.js</span> (10145x)</li><li><span class="fn">ansiCodesToString @ ansiCodes.js</span> (3511x)</li><li><span class="fn">join @ unknown</span> (709x)</li>
+      </ul>
+    </td>
+  </tr>
+  <tr class="row" onclick="toggle(13)">
+    <td>stringWidth @ index.js</td>
+    <td>2013.4ms</td>
+    <td>135744.0ms</td>
+    <td>931</td>
+    <td class="dep">dependency</td>
+    <td class="trend">▁▁▁▁▄▅▇█▆▇▇▆▇▆▂▃▁▂▁</td>
+  </tr>
+  <tr class="details" id="details-13">
+    <td colspan="6">
+      <strong>Called by:</strong>
+      <ul class="call-list">
+        <li><span class="fn">get @ output.js</span> (57686x)</li><li><span class="fn">exec @ index.js</span> (2309x)</li><li><span class="fn">widestLine @ index.js</span> (1850x)</li><li><span class="fn">map @ unknown</span> (924x)</li>
+      </ul>
+      <strong>Calls:</strong>
+      <ul class="call-list">
+        <li><span class="fn">/^\p{RGI_Emoji}$/v @ unknown</span> (44727x)</li><li><span class="fn">segment @ unknown</span> (6674x)</li><li><span class="fn">[Symbol.iterator] @ unknown</span> (4915x)</li><li><span class="fn">next @ unknown</span> (2997x)</li><li><span class="fn">eastAsianWidth @ index.js</span> (1093x)</li>
+      </ul>
+    </td>
+  </tr>
+  <tr class="row" onclick="toggle(14)">
+    <td>reduceAnsiCodesIncremental @ reduce.js</td>
+    <td>1985.3ms</td>
+    <td>2123.7ms</td>
+    <td>918</td>
+    <td class="dep">dependency</td>
+    <td class="trend">▁▁▁▁▂▃▃▅▅█▇▇▇▇▄▆▁▄▁</td>
+  </tr>
+  <tr class="details" id="details-14">
+    <td colspan="6">
+      <strong>Called by:</strong>
+      <ul class="call-list">
+        <li><span class="fn">undoAnsiCodes @ undo.js</span> (863x)</li><li><span class="fn">styledCharsFromTokens @ styledChars.js</span> (119x)</li>
+      </ul>
+      <strong>Calls:</strong>
+      <ul class="call-list">
+        <li><span class="fn">filter @ unknown</span> (60x)</li><li><span class="fn">find @ unknown</span> (4x)</li>
+      </ul>
+    </td>
+  </tr>
+  <tr class="row" onclick="toggle(15)">
+    <td>reverse @ unknown</td>
+    <td>1890.1ms</td>
+    <td>1890.1ms</td>
+    <td>874</td>
+    <td class="rt">runtime</td>
+    <td class="trend">▁▁▁▁▂▂▅▆▆▇▇▇██▄▇▁▃▁</td>
+  </tr>
+  <tr class="details" id="details-15">
+    <td colspan="6">
+      <strong>Called by:</strong>
+      <ul class="call-list">
+        <li><span class="fn">undoAnsiCodes @ undo.js</span> (873x)</li><li><span class="fn">makeIssue @ parseUtil.js</span> (1x)</li>
+      </ul>
+      <strong>Calls:</strong>
+      <ul class="call-list">
+        <li>(leaf)</li>
+      </ul>
+    </td>
+  </tr>
+  <tr class="row" onclick="toggle(16)">
+    <td>join @ unknown</td>
+    <td>1779.8ms</td>
+    <td>1779.8ms</td>
+    <td>823</td>
+    <td class="rt">runtime</td>
+    <td class="trend">▁▁▁▁▂▂▄▄▅▅▆▇█▇▃▆▁▃▁</td>
+  </tr>
+  <tr class="details" id="details-16">
+    <td colspan="6">
+      <strong>Called by:</strong>
+      <ul class="call-list">
+        <li><span class="fn">styledCharsToString @ styledChars.js</span> (709x)</li><li><span class="fn">splitCompoundSGRSequences @ tokenize.js</span> (68x)</li><li><span class="fn">(anonymous) @ Message.tsx</span> (26x)</li><li><span class="fn">get @ output.js</span> (16x)</li><li><span class="fn">exec @ index.js</span> (3x)</li>
+      </ul>
+      <strong>Calls:</strong>
+      <ul class="call-list">
+        <li>(leaf)</li>
+      </ul>
+    </td>
+  </tr>
+  <tr class="row" onclick="toggle(17)">
+    <td>filter @ unknown</td>
+    <td>1604.6ms</td>
+    <td>1749.5ms</td>
+    <td>742</td>
+    <td class="rt">runtime</td>
+    <td class="trend">▁▁▁▁▂▃▄▅▅▇▅█▆▅▃▆▁▃▁</td>
+  </tr>
+  <tr class="details" id="details-17">
+    <td colspan="6">
+      <strong>Called by:</strong>
+      <ul class="call-list">
+        <li><span class="fn">(anonymous) @ output.js</span> (393x)</li><li><span class="fn">diffAnsiCodes @ diff.js</span> (355x)</li><li><span class="fn">reduceAnsiCodesIncremental @ reduce.js</span> (60x)</li><li><span class="fn">addIssueToContext @ parseUtil.js</span> (1x)</li>
+      </ul>
+      <strong>Calls:</strong>
+      <ul class="call-list">
+        <li><span class="fn">(anonymous) @ diff.js</span> (65x)</li><li><span class="fn">(anonymous) @ reduce.js</span> (1x)</li><li><span class="fn">(anonymous) @ parseUtil.js</span> (1x)</li>
+      </ul>
+    </td>
+  </tr>
+  <tr class="row" onclick="toggle(18)">
+    <td>trimEnd @ unknown</td>
+    <td>750.4ms</td>
+    <td>750.4ms</td>
+    <td>347</td>
+    <td class="rt">runtime</td>
+    <td class="trend">▁▁▁▁▁▃▄▄▃▆▆▆█▅▄▇▁▃▁</td>
+  </tr>
+  <tr class="details" id="details-18">
+    <td colspan="6">
+      <strong>Called by:</strong>
+      <ul class="call-list">
+        <li><span class="fn">map @ unknown</span> (347x)</li>
+      </ul>
+      <strong>Calls:</strong>
+      <ul class="call-list">
+        <li>(leaf)</li>
+      </ul>
+    </td>
+  </tr>
+  <tr class="row" onclick="toggle(19)">
+    <td>stringSplitFast @ unknown</td>
+    <td>702.8ms</td>
+    <td>702.8ms</td>
+    <td>325</td>
+    <td class="rt">runtime</td>
+    <td class="trend">▁▁▁▁▃▄▆▆▄▅▆▆▆█▁▃▁▂▂</td>
+  </tr>
+  <tr class="details" id="details-19">
+    <td colspan="6">
+      <strong>Called by:</strong>
+      <ul class="call-list">
+        <li><span class="fn">wordLengths @ index.js</span> (104x)</li><li><span class="fn">splitCompoundSGRSequences @ tokenize.js</span> (90x)</li><li><span class="fn">widestLine @ index.js</span> (44x)</li><li><span class="fn">get @ output.js</span> (28x)</li><li><span class="fn">exec @ index.js</span> (25x)</li>
+      </ul>
+      <strong>Calls:</strong>
+      <ul class="call-list">
+        <li>(leaf)</li>
+      </ul>
+    </td>
+  </tr>
+</table>
+<script>
+function toggle(i) {
+  document.getElementById('details-' + i).classList.toggle('open');
+}
+</script>
+</body></html>

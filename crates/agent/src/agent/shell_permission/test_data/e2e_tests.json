@@ -1,0 +1,76 @@
+[
+  {
+    "name": "auto_allow_readonly",
+    "settings": {"auto_allow_readonly": true},
+    "cases": [
+      {"input": "ls -la", "expected": "Allow"},
+      {"input": "cat file.txt", "expected": "Allow"},
+      {"input": "pwd", "expected": "Allow"},
+      {"input": "git status", "expected": "Allow"},
+      {"input": "git log --oneline", "expected": "Allow"},
+      {"input": "git push", "expected": "Ask"},
+      {"input": "find . -exec rm {} \\;", "expected": "Ask"},
+      {"input": "cat file | grep pattern", "expected": "Ask"},
+      {"input": "echo hello > file.txt", "expected": "Ask"},
+      {"input": "echo $(whoami)", "expected": "Ask"},
+      {"input": "find . -${t}exec rm {} +", "expected": "Ask"},
+      {"input": "export PAGER=evil", "expected": "Ask"}
+    ]
+  },
+  {
+    "name": "allowed_commands",
+    "settings": {"allowed_commands": ["git .*", "npm run .*"]},
+    "cases": [
+      {"input": "git status", "expected": "Allow"},
+      {"input": "git push --force", "expected": "Allow"},
+      {"input": "npm run build", "expected": "Allow"},
+      {"input": "rm -rf /", "expected": "Ask"},
+      {"input": "ls", "expected": "Ask"}
+    ]
+  },
+  {
+    "name": "denied_commands",
+    "settings": {"denied_commands": ["rm -rf .*", ".*--force.*"]},
+    "cases": [
+      {"input": "rm -rf /", "expected": "Deny"},
+      {"input": "git push --force", "expected": "Deny"},
+      {"input": "ls -la", "expected": "Ask"},
+      {"input": "rm file.txt", "expected": "Ask"}
+    ]
+  },
+  {
+    "name": "deny_overrides_allow",
+    "settings": {"allowed_commands": ["git .*"], "denied_commands": [".*--force.*"]},
+    "cases": [
+      {"input": "git status", "expected": "Allow"},
+      {"input": "git push", "expected": "Allow"},
+      {"input": "git push --force", "expected": "Deny"}
+    ]
+  },
+  {
+    "name": "tool_allowed",
+    "settings": {"is_tool_allowed": true},
+    "cases": [
+      {"input": "rm -rf /", "expected": "Allow"},
+      {"input": "find . -exec rm {} \\;", "expected": "Allow"}
+    ]
+  },
+  {
+    "name": "deny_by_default",
+    "settings": {"deny_by_default": true, "allowed_commands": ["ls.*"]},
+    "cases": [
+      {"input": "ls -la", "expected": "Allow"},
+      {"input": "pwd", "expected": "Deny"},
+      {"input": "cat file", "expected": "Deny"}
+    ]
+  },
+  {
+    "name": "default_settings",
+    "settings": {},
+    "cases": [
+      {"input": "ls -la", "expected": "Ask"},
+      {"input": "find . -exec rm {} \\;", "expected": "Ask"},
+      {"input": "rm file.txt", "expected": "Ask"}
+    ]
+  }
+]

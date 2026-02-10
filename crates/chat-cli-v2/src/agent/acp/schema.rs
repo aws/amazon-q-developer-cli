@@ -40,6 +40,7 @@ impl From<CommandResult> for CommandExecuteResponse {
 #[serde(rename_all = "camelCase")]
 pub enum TuiCommandKind {
     Model,
+    Agent,
     Context,
     Compact,
     Clear,

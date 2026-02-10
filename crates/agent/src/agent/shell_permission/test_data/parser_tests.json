@@ -1,0 +1,256 @@
+[
+  {
+    "name": "simple_command_with_quoted_path",
+    "input": "'/usr/bin/ls' -la",
+    "parse_failed": false,
+    "commands": [{"command": "'/usr/bin/ls' -la", "command_path": "/usr/bin/ls", "command_name": "ls", "args": ["-la"]}]
+  },
+  {
+    "name": "chained_and",
+    "input": "cmd1 && cmd2",
+    "parse_failed": false,
+    "commands": [
+      {"command": "cmd1", "command_path": "cmd1", "command_name": "cmd1", "operator": "And"},
+      {"command": "cmd2", "command_path": "cmd2", "command_name": "cmd2"}
+    ]
+  },
+  {
+    "name": "chained_or",
+    "input": "cmd1 || cmd2",
+    "parse_failed": false,
+    "commands": [
+      {"command": "cmd1", "command_path": "cmd1", "command_name": "cmd1", "operator": "Or"},
+      {"command": "cmd2", "command_path": "cmd2", "command_name": "cmd2"}
+    ]
+  },
+  {
+    "name": "chained_sequence",
+    "input": "cmd1; cmd2",
+    "parse_failed": false,
+    "commands": [
+      {"command": "cmd1", "command_path": "cmd1", "command_name": "cmd1", "operator": "Sequence"},
+      {"command": "cmd2", "command_path": "cmd2", "command_name": "cmd2"}
+    ]
+  },
+  {
+    "name": "pipe",
+    "input": "cat file | grep pattern",
+    "parse_failed": false,
+    "commands": [
+      {"command": "cat file", "command_path": "cat", "command_name": "cat", "args": ["file"], "operator": "Pipe"},
+      {"command": "grep pattern", "command_path": "grep", "command_name": "grep", "args": ["pattern"]}
+    ]
+  },
+  {
+    "name": "output_redirection",
+    "input": "echo hello > file.txt",
+    "parse_failed": false,
+    "commands": [{"command": "echo hello", "command_path": "echo", "command_name": "echo", "args": ["hello"], "has_redirection": true}]
+  },
+  {
+    "name": "append_redirection",
+    "input": "echo hello >> file.txt",
+    "parse_failed": false,
+    "commands": [{"command": "echo hello", "command_path": "echo", "command_name": "echo", "args": ["hello"], "has_redirection": true}]
+  },
+  {
+    "name": "input_redirection",
+    "input": "cat < file.txt",
+    "parse_failed": false,
+    "commands": [{"command": "cat", "command_path": "cat", "command_name": "cat", "has_redirection": true}]
+  },
+  {
+    "name": "command_substitution_dollar",
+    "input": "echo $(whoami)",
+    "parse_failed": false,
+    "commands": [{"command": "echo $(whoami)", "command_path": "echo", "command_name": "echo", "args": ["$(whoami)"], "has_command_substitution": true}]
+  },
+  {
+    "name": "command_substitution_backtick",
+    "input": "echo `whoami`",
+    "parse_failed": false,
+    "commands": [{"command": "echo `whoami`", "command_path": "echo", "command_name": "echo", "args": ["`whoami`"], "has_command_substitution": true}]
+  },
+  {
+    "name": "subshell",
+    "input": "(cd /tmp && ls)",
+    "parse_failed": false,
+    "commands": [
+      {"command": "cd /tmp", "command_path": "cd", "command_name": "cd", "args": ["/tmp"], "operator": "And", "is_subshell": true},
+      {"command": "ls", "command_path": "ls", "command_name": "ls", "is_subshell": true}
+    ]
+  },
+  {
+    "name": "quoted_string_no_split",
+    "input": "echo \"hello && world\"",
+    "parse_failed": false,
+    "commands": [{"command": "echo \"hello && world\"", "command_path": "echo", "command_name": "echo", "args": ["\"hello && world\""]}]
+  },
+  {
+    "name": "triple_chain",
+    "input": "cmd1 && cmd2 || cmd3",
+    "parse_failed": false,
+    "commands": [
+      {"command": "cmd1", "command_path": "cmd1", "command_name": "cmd1", "operator": "And"},
+      {"command": "cmd2", "command_path": "cmd2", "command_name": "cmd2", "operator": "Or"},
+      {"command": "cmd3", "command_path": "cmd3", "command_name": "cmd3"}
+    ]
+  },
+  {
+    "name": "pipe_chain",
+    "input": "cat file | grep foo | wc -l",
+    "parse_failed": false,
+    "commands": [
+      {"command": "cat file", "command_path": "cat", "command_name": "cat", "args": ["file"], "operator": "Pipe"},
+      {"command": "grep foo", "command_path": "grep", "command_name": "grep", "args": ["foo"], "operator": "Pipe"},
+      {"command": "wc -l", "command_path": "wc", "command_name": "wc", "args": ["-l"]}
+    ]
+  },
+  {
+    "name": "mixed_pipe_and_chain",
+    "input": "cat file | grep pattern && echo done",
+    "parse_failed": false,
+    "commands": [
+      {"command": "cat file", "command_path": "cat", "command_name": "cat", "args": ["file"], "operator": "Pipe"},
+      {"command": "grep pattern", "command_path": "grep", "command_name": "grep", "args": ["pattern"], "operator": "And"},
+      {"command": "echo done", "command_path": "echo", "command_name": "echo", "args": ["done"]}
+    ]
+  },
+  {
+    "name": "heredoc",
+    "input": "cat <<EOF\nhello\nEOF",
+    "parse_failed": false,
+    "commands": [{"command": "cat", "command_path": "cat", "command_name": "cat", "has_redirection": true, "has_heredoc": true}]
+  },
+  {
+    "name": "process_substitution",
+    "input": "diff <(ls dir1) <(ls dir2)",
+    "parse_failed": false,
+    "commands": [{"command": "diff <(ls dir1) <(ls dir2)", "command_path": "diff", "command_name": "diff", "args": ["<(ls dir1)", "<(ls dir2)"], "has_process_substitution": true}]
+  },
+  {
+    "name": "empty_input",
+    "input": "",
+    "parse_failed": false,
+    "commands": []
+  },
+  {
+    "name": "git_status",
+    "input": "git status",
+    "parse_failed": false,
+    "commands": [{"command": "git status", "command_path": "git", "command_name": "git", "args": ["status"]}]
+  },
+  {
+    "name": "npm_run_build",
+    "input": "npm run build",
+    "parse_failed": false,
+    "commands": [{"command": "npm run build", "command_path": "npm", "command_name": "npm", "args": ["run", "build"]}]
+  },
+  {
+    "name": "herestring",
+    "input": "cat <<< \"hello world\"",
+    "parse_failed": false,
+    "commands": [{"command": "cat <<< \"hello world\"", "command_path": "cat", "command_name": "cat", "has_heredoc": true}]
+  },
+  {
+    "name": "nested_command_substitution",
+    "input": "echo $(echo $(whoami))",
+    "parse_failed": false,
+    "commands": [{"command": "echo $(echo $(whoami))", "command_path": "echo", "command_name": "echo", "args": ["$(echo $(whoami))"], "has_command_substitution": true}]
+  },
+  {
+    "name": "command_with_comment",
+    "input": "ls -la # list files",
+    "parse_failed": false,
+    "commands": [{"command": "ls -la", "command_path": "ls", "command_name": "ls", "args": ["-la"]}]
+  },
+  {
+    "name": "mixed_all_operators",
+    "input": "cmd1 && cmd2 || cmd3; cmd4",
+    "parse_failed": false,
+    "commands": [
+      {"command": "cmd1", "command_path": "cmd1", "command_name": "cmd1", "operator": "And"},
+      {"command": "cmd2", "command_path": "cmd2", "command_name": "cmd2", "operator": "Or"},
+      {"command": "cmd3", "command_path": "cmd3", "command_name": "cmd3", "operator": "Sequence"},
+      {"command": "cmd4", "command_path": "cmd4", "command_name": "cmd4"}
+    ]
+  },
+  {
+    "name": "single_quoted_no_split",
+    "input": "echo 'hello && world'",
+    "parse_failed": false,
+    "commands": [{"command": "echo 'hello && world'", "command_path": "echo", "command_name": "echo", "args": ["'hello && world'"]}]
+  },
+  {
+    "name": "pipe_with_redirection",
+    "input": "cat file | grep pattern > output.txt",
+    "parse_failed": false,
+    "commands": [
+      {"command": "cat file", "command_path": "cat", "command_name": "cat", "args": ["file"], "operator": "Pipe"},
+      {"command": "grep pattern", "command_path": "grep", "command_name": "grep", "args": ["pattern"], "has_redirection": true}
+    ]
+  },
+  {
+    "name": "subshell_with_redirection",
+    "input": "(echo hello) > file.txt",
+    "parse_failed": false,
+    "commands": [{"command": "echo hello", "command_path": "echo", "command_name": "echo", "args": ["hello"], "has_redirection": true, "is_subshell": true}]
+  },
+  {
+    "name": "background_command",
+    "input": "sleep 10 &",
+    "parse_failed": false,
+    "commands": [{"command": "sleep 10", "command_path": "sleep", "command_name": "sleep", "args": ["10"]}]
+  },
+  {
+    "name": "stderr_redirection",
+    "input": "cmd 2>&1",
+    "parse_failed": false,
+    "commands": [{"command": "cmd", "command_path": "cmd", "command_name": "cmd", "has_redirection": true}]
+  },
+  {
+    "name": "whitespace_only",
+    "input": "   ",
+    "parse_failed": false,
+    "commands": []
+  },
+  {
+    "name": "command_with_env_var",
+    "input": "echo $HOME",
+    "parse_failed": false,
+    "commands": [{"command": "echo $HOME", "command_path": "echo", "command_name": "echo", "args": ["$HOME"], "has_variable_expansion": true}]
+  },
+  {
+    "name": "command_with_brace_expansion",
+    "input": "echo ${HOME}",
+    "parse_failed": false,
+    "commands": [{"command": "echo ${HOME}", "command_path": "echo", "command_name": "echo", "args": ["${HOME}"], "has_variable_expansion": true}]
+  },
+  {
+    "name": "escaped_characters",
+    "input": "echo hello\\ world",
+    "parse_failed": false,
+    "commands": [{"command": "echo hello\\ world", "command_path": "echo", "command_name": "echo", "args": ["hello\\ world"]}]
+  },
+  {
+    "name": "newline_separated",
+    "input": "cmd1\ncmd2",
+    "parse_failed": false,
+    "commands": [
+      {"command": "cmd1", "command_path": "cmd1", "command_name": "cmd1"},
+      {"command": "cmd2", "command_path": "cmd2", "command_name": "cmd2"}
+    ]
+  },
+  {
+    "name": "complex_find_command",
+    "input": "find . -name \"*.rs\" -type f",
+    "parse_failed": false,
+    "commands": [{"command": "find . -name \"*.rs\" -type f", "command_path": "find", "command_name": "find", "args": [".", "-name", "\"*.rs\"", "-type", "f"]}]
+  },
+  {
+    "name": "command_substitution_in_args",
+    "input": "tar -czf backup-$(date +%Y%m%d).tar.gz .",
+    "parse_failed": false,
+    "commands": [{"command": "tar -czf backup-$(date +%Y%m%d).tar.gz .", "command_path": "tar", "command_name": "tar", "args": ["-czf", "backup-$(date +%Y%m%d).tar.gz", "."], "has_command_substitution": true}]
+  }
+]

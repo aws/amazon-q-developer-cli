@@ -558,6 +558,7 @@ mod tests {
     fn test_execute_cmd() {
         let tool = ExecuteCmd {
             command: "cargo test".into(),
+            working_dir: None,
         };
         let mut input = serde_json::to_value(&tool).unwrap();
         input

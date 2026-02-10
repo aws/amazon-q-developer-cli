@@ -28,6 +28,7 @@ use agent::types::{
     AgentSettings,
     AgentSnapshot,
 };
+use agent::util::providers::RealProvider;
 use chat_cli_ui::conduit::{
     ControlEnd,
     get_conduit,
@@ -200,8 +201,6 @@ pub struct Subagent<'a> {
     pub task_context: Option<&'a str>,
     pub dangerously_trust_all_tools: bool,
     pub is_interactive: bool,
-    pub local_agent_path: &'a PathBuf,
-    pub global_agent_path: &'a PathBuf,
     pub local_mcp_path: &'a PathBuf,
     pub global_mcp_path: &'a PathBuf,
     pub parent_tool_use_id: &'a str,
@@ -247,7 +246,7 @@ impl<'a> Subagent<'a> {
         };
 
         if let Some(name) = self.agent_name {
-            let (configs, _) = load_agents(self.local_agent_path, self.global_agent_path).await?;
+            let (configs, _) = load_agents(&RealProvider).await?;
             if let Some(cfg) = configs.into_iter().find(|c| c.name() == name) {
                 snapshot.agent_config = cfg.config().clone();
             } else {
@@ -659,8 +658,6 @@ pub fn subagent_widget_demo(queries: Vec<(String, String)>) {
 async fn test_sub_agent_routine(queries: Vec<(String, String)>) -> Result<Vec<Summary>> {
     let os = Os::new().await.expect("failed to spawn os");
     let resolver = os.path_resolver();
-    let local_agent_path = resolver.workspace().agents_dir().expect("failed to retrieve path");
-    let global_agent_path = resolver.global().agents_dir().expect("failed to retrieve path");
     let local_mcp_path = resolver.workspace().mcp_config().expect("failed to retrieve path");
     let global_mcp_path = resolver.global().mcp_config().expect("failed to retrieve path");
     let is_interactive = true;
@@ -674,8 +671,6 @@ async fn test_sub_agent_routine(queries: Vec<(String, String)>) -> Result<Vec<Su
             task_context: None,
             dangerously_trust_all_tools: false,
             is_interactive,
-            local_agent_path: &local_agent_path,
-            global_agent_path: &global_agent_path,
             local_mcp_path: &local_mcp_path,
             global_mcp_path: &global_mcp_path,
             parent_tool_use_id: "",

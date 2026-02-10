@@ -1,5 +1,13 @@
 pub const DEFAULT_AGENT_NAME: &str = "kiro_default";
 
+/// Resources always included for the default agent
+pub const DEFAULT_AGENT_RESOURCES: &[&str] = &[
+    "file://AGENTS.md",
+    "file://README.md",
+    "skill://.kiro/skills/*/SKILL.md",
+    "skill://~/.kiro/skills/*/SKILL.md",
+];
+
 pub const MAX_CONVERSATION_STATE_HISTORY_LEN: usize = 500;
 
 pub const DUMMY_TOOL_NAME: &str = "dummy";

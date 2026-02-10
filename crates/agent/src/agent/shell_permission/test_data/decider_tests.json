@@ -1,0 +1,105 @@
+[
+  {
+    "name": "order_1_deny_rule_wins_over_everything",
+    "commands": ["rm file"],
+    "settings": {
+      "denied_commands": ["rm .*"],
+      "allowed_commands": ["rm .*"],
+      "is_tool_allowed": true,
+      "auto_allow_readonly": true
+    },
+    "detection": { "danger_level": "None", "is_readonly": true },
+    "expected": "Deny"
+  },
+  {
+    "name": "order_2_allow_rule_bypasses_dangerous",
+    "commands": ["find . -exec rm {} \\;"],
+    "settings": {
+      "allowed_commands": ["find .*"]
+    },
+    "detection": { "danger_level": "High", "is_readonly": false },
+    "expected": "Allow"
+  },
+  {
+    "name": "order_3_tool_allowed_bypasses_dangerous",
+    "commands": ["rm -rf /"],
+    "settings": {
+      "is_tool_allowed": true
+    },
+    "detection": { "danger_level": "High", "is_readonly": false },
+    "expected": "Allow"
+  },
+  {
+    "name": "order_4_dangerous_before_readonly",
+    "commands": ["cat $(whoami)"],
+    "settings": {
+      "auto_allow_readonly": true
+    },
+    "detection": { "danger_level": "High", "is_readonly": true },
+    "expected": "Ask"
+  },
+  {
+    "name": "order_5_readonly_allowed_when_not_dangerous",
+    "commands": ["ls -la"],
+    "settings": {
+      "auto_allow_readonly": true
+    },
+    "detection": { "danger_level": "None", "is_readonly": true },
+    "expected": "Allow"
+  },
+  {
+    "name": "order_6_deny_by_default_after_readonly",
+    "commands": ["unknown_cmd"],
+    "settings": {
+      "deny_by_default": true,
+      "auto_allow_readonly": true
+    },
+    "detection": { "danger_level": "None", "is_readonly": false },
+    "expected": "Deny"
+  },
+  {
+    "name": "order_6_deny_by_default_skipped_for_readonly",
+    "commands": ["ls"],
+    "settings": {
+      "deny_by_default": true,
+      "auto_allow_readonly": true
+    },
+    "detection": { "danger_level": "None", "is_readonly": true },
+    "expected": "Allow"
+  },
+  {
+    "name": "order_7_default_ask",
+    "commands": ["unknown_cmd"],
+    "settings": {},
+    "detection": { "danger_level": "None", "is_readonly": false },
+    "expected": "Ask"
+  },
+  {
+    "name": "chained_all_allowed_passes",
+    "commands": ["git status", "git log"],
+    "settings": {
+      "allowed_commands": ["git .*"]
+    },
+    "detection": { "danger_level": "Low", "is_readonly": false },
+    "expected": "Allow"
+  },
+  {
+    "name": "chained_partial_allow_asks",
+    "commands": ["cd dir", "git status"],
+    "settings": {
+      "allowed_commands": ["git .*"]
+    },
+    "detection": { "danger_level": "Low", "is_readonly": false },
+    "expected": "Ask"
+  },
+  {
+    "name": "chained_any_deny_denies",
+    "commands": ["ls", "rm file"],
+    "settings": {
+      "allowed_commands": ["ls"],
+      "denied_commands": ["rm .*"]
+    },
+    "detection": { "danger_level": "None", "is_readonly": false },
+    "expected": "Deny"
+  }
+]

@@ -920,7 +920,7 @@ impl RealApiClient {
             return Err(ApiClientError::Other(format!("MCP tool failed: {error_msg}")));
         }
 
-        let result_json = document_to_json(result_doc).map_err(|e| *e)?;
+        let result_json = document_to_json(result_doc)?;
 
         // Handle both string and object responses
         let content_text: String = if let Some(result_str) = result_json.as_str() {
@@ -973,12 +973,13 @@ fn json_to_document(value: &serde_json::Value) -> aws_smithy_types::Document {
     }
 }
 
-fn document_to_json(doc: &aws_smithy_types::Document) -> Result<serde_json::Value, Box<ApiClientError>> {
+#[allow(clippy::result_large_err)]
+fn document_to_json(doc: &aws_smithy_types::Document) -> Result<serde_json::Value, ApiClientError> {
     match doc {
         aws_smithy_types::Document::Object(map) => {
             let mut json_map = serde_json::Map::new();
             for (k, v) in map {
-                json_map.insert(k.clone(), document_to_json(v).map_err(|e| *e)?);
+                json_map.insert(k.clone(), document_to_json(v)?);
             }
             Ok(serde_json::Value::Object(json_map))
         },
@@ -1185,11 +1186,28 @@ fn classify_error_kind<T: ProvideErrorMetadata, R>(
         return ConverseStreamErrorKind::MonthlyLimitReached;
     }
 
-    ConverseStreamErrorKind::Unknown {
-        // do not change - we currently use sdk_error_code for mapping from an arbitrary sdk error
-        // to a reason code.
-        reason_code: error::sdk_error_code(sdk_error),
-    }
+    // For dispatch failures (like auth errors), include the full error chain
+    // to provide better error messages to the user
+    let reason_code = match sdk_error {
+        error::SdkError::DispatchFailure(e) => {
+            // Build a more descriptive error message from the error chain
+            let mut msg = String::from("dispatch failure");
+            if let Some(connector_error) = e.as_connector_error() {
+                use std::error::Error;
+                msg.push_str(&format!(": {}", connector_error));
+                // Walk the error chain to find the root cause
+                let mut source = connector_error.source();
+                while let Some(err) = source {
+                    msg.push_str(&format!(" - {}", err));
+                    source = err.source();
+                }
+            }
+            msg
+        },
+        _ => error::sdk_error_code(sdk_error),
+    };
+
+    ConverseStreamErrorKind::Unknown { reason_code }
 }
 
 fn timeout_config(database: &Database) -> TimeoutConfig {

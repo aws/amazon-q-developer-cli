@@ -44,9 +44,14 @@ struct DetectorConfig {
     safe_options: HashMap<String, Vec<String>>,
 }
 
-fn load_config() -> DetectorConfig {
-    let json = include_str!("detector_config.json");
-    serde_json::from_str(json).expect("Failed to parse detector_config.json")
+use std::sync::OnceLock;
+
+fn load_config() -> &'static DetectorConfig {
+    static CONFIG: OnceLock<DetectorConfig> = OnceLock::new();
+    CONFIG.get_or_init(|| {
+        let json = include_str!("detector_config.json");
+        serde_json::from_str(json).expect("Failed to parse detector_config.json")
+    })
 }
 
 /// Run Layer 2 detection on a command chain.
@@ -56,16 +61,16 @@ pub fn detect(commands: &[ParsedCommand]) -> DetectResult {
     // Per-command detection
     let command_danger_levels: Vec<_> = commands
         .iter()
-        .map(|cmd| get_danger_level_with_config(cmd, &config))
+        .map(|cmd| get_danger_level_with_config(cmd, config))
         .collect();
 
     let command_readonly: Vec<_> = commands
         .iter()
-        .map(|cmd| is_readonly_with_config(cmd, &config))
+        .map(|cmd| is_readonly_with_config(cmd, config))
         .collect();
 
     // Multi-command detection (patterns that span commands)
-    let chain_danger = detect_chain_patterns(commands, &config);
+    let chain_danger = detect_chain_patterns(commands, config);
 
     // Aggregate
     let max_single = command_danger_levels.iter().max().copied().unwrap_or(DangerLevel::None);
@@ -104,6 +109,7 @@ fn get_danger_level_with_config(cmd: &ParsedCommand, config: &DetectorConfig) ->
         || cmd.has_process_substitution
         || has_dangerous_command_options(cmd, config)
         || is_dangerous_env_manipulation(cmd, config)
+        || has_prompt_expansion(cmd)
     {
         return DangerLevel::High;
     }
@@ -132,6 +138,10 @@ fn has_dangerous_command_options(cmd: &ParsedCommand, config: &DetectorConfig) -
                 return true;
             }
         }
+        // Variable expansion could hide dangerous options (e.g., -e${t}xec -> -exec)
+        if cmd.has_variable_expansion {
+            return true;
+        }
     }
 
     false
@@ -158,6 +168,11 @@ fn is_dangerous_env_manipulation(cmd: &ParsedCommand, config: &DetectorConfig) -
     }
 
     false
+}
+
+/// Detect dangerous prompt expansion like `${var@P}` that can execute code.
+fn has_prompt_expansion(cmd: &ParsedCommand) -> bool {
+    cmd.has_variable_expansion && cmd.args.iter().any(|a| a.contains("@P"))
 }
 
 // ============================================================================
@@ -255,6 +270,16 @@ mod tests {
         assert_eq!(get_danger_level(&make_cmd("eval 'code'")), DangerLevel::High);
         assert_eq!(get_danger_level(&make_cmd("xargs rm")), DangerLevel::High);
         assert_eq!(get_danger_level(&make_cmd("find . -exec rm {} \\;")), DangerLevel::High);
+
+        // Variable injection can hide dangerous options (e.g., -${t}exec -> -exec)
+        let mut cmd = make_cmd("find . -${t}exec rm {} +");
+        cmd.has_variable_expansion = true;
+        assert_eq!(get_danger_level(&cmd), DangerLevel::High);
+
+        // Prompt expansion ${var@P} can execute code
+        let mut cmd = make_cmd("echo ${var@P}");
+        cmd.has_variable_expansion = true;
+        assert_eq!(get_danger_level(&cmd), DangerLevel::High);
     }
 
     #[test]

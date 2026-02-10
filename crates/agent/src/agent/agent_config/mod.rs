@@ -1,4 +1,5 @@
 pub mod definitions;
+pub mod load;
 pub mod parse;
 pub mod types;
 
@@ -19,17 +20,12 @@ use definitions::{
     McpServers,
     ToolsSettings,
 };
-use eyre::Result;
 use serde::{
     Deserialize,
     Serialize,
 };
 use tokio::fs;
-use tracing::{
-    error,
-    info,
-    warn,
-};
+use tracing::warn;
 
 use crate::agent::util::error::{
     ErrorContext as _,
@@ -101,15 +97,6 @@ pub enum ConfigSource {
     BuiltIn,
 }
 
-impl Default for LoadedAgentConfig {
-    fn default() -> Self {
-        Self {
-            source: ConfigSource::BuiltIn,
-            config: Default::default(),
-        }
-    }
-}
-
 impl LoadedAgentConfig {
     pub fn system_prompt(&self) -> Option<&str> {
         self.config.system_prompt()
@@ -134,122 +121,7 @@ impl From<UtilError> for AgentConfigError {
     }
 }
 
-pub async fn load_agents(
-    local_path: &PathBuf,
-    global_path: &PathBuf,
-) -> Result<(Vec<LoadedAgentConfig>, Vec<AgentConfigError>)> {
-    let mut agent_configs = Vec::new();
-    let mut invalid_agents = Vec::new();
-    match load_agents_from_dir(local_path, false).await {
-        Ok((valid, mut invalid)) => {
-            if !invalid.is_empty() {
-                error!(?invalid, "found invalid workspace agents");
-                invalid_agents.append(&mut invalid);
-            }
-            agent_configs.append(
-                &mut valid
-                    .into_iter()
-                    .map(|(path, config)| LoadedAgentConfig {
-                        source: ConfigSource::Workspace { path },
-                        config,
-                    })
-                    .collect(),
-            );
-        },
-        Err(e) => {
-            error!(?e, "failed to read local agents");
-        },
-    };
-
-    match load_agents_from_dir(global_path, false).await {
-        Ok((valid, mut invalid)) => {
-            if !invalid.is_empty() {
-                error!(?invalid, "found invalid global agents");
-                invalid_agents.append(&mut invalid);
-            }
-            agent_configs.append(
-                &mut valid
-                    .into_iter()
-                    .map(|(path, config)| LoadedAgentConfig {
-                        source: ConfigSource::Global { path },
-                        config,
-                    })
-                    .collect(),
-            );
-        },
-        Err(e) => {
-            error!(?e, "failed to read global agents");
-        },
-    };
-
-    // Always include the default agent as a fallback.
-    agent_configs.push(LoadedAgentConfig::default());
-
-    info!(?agent_configs, "loaded agent config");
-
-    Ok((agent_configs, invalid_agents))
-}
-
-async fn load_agents_from_dir(
-    dir: impl AsRef<Path>,
-    create_if_missing: bool,
-) -> Result<(Vec<(PathBuf, AgentConfig)>, Vec<AgentConfigError>)> {
-    let dir = dir.as_ref();
-
-    if !dir.exists() && create_if_missing {
-        tokio::fs::create_dir_all(&dir)
-            .await
-            .with_context(|| format!("failed to create agents directory {:?}", &dir))?;
-    }
-
-    let mut read_dir = tokio::fs::read_dir(&dir)
-        .await
-        .with_context(|| format!("failed to read local agents directory {:?}", &dir))?;
-
-    let mut agents: Vec<(PathBuf, AgentConfig)> = vec![];
-    let mut invalid_agents: Vec<AgentConfigError> = vec![];
-
-    loop {
-        match read_dir.next_entry().await {
-            Ok(Some(entry)) => {
-                let entry_path = entry.path();
-                let Ok(md) = entry
-                    .metadata()
-                    .await
-                    .map_err(|e| error!(?e, "failed to read metadata for {:?}", entry_path))
-                else {
-                    continue;
-                };
-
-                if !md.is_file() {
-                    warn!("skipping agent for path {:?}: not a file", entry_path);
-                }
-
-                let Ok(entry_contents) = tokio::fs::read_to_string(&entry_path)
-                    .await
-                    .map_err(|e| error!(?e, "failed to read agent config at {:?}", entry_path))
-                else {
-                    continue;
-                };
-
-                match serde_json::from_str(&entry_contents) {
-                    Ok(agent) => agents.push((entry_path, agent)),
-                    Err(e) => invalid_agents.push(AgentConfigError::InvalidAgentConfig {
-                        path: entry_path.to_string_lossy().to_string(),
-                        message: e.to_string(),
-                    }),
-                }
-            },
-            Ok(None) => break,
-            Err(e) => {
-                error!(?e, "failed to ready directory entry in {:?}", dir);
-                break;
-            },
-        }
-    }
-
-    Ok((agents, invalid_agents))
-}
+pub use load::load_agents;
 
 #[derive(Debug, Clone)]
 pub struct LoadedMcpServerConfig {
@@ -292,7 +164,7 @@ pub struct LoadedMcpServerConfigs {
 
 impl LoadedMcpServerConfigs {
     /// Loads MCP configs from the given agent config, taking into consideration global and
-    /// workspace MCP config files for when the include_mcp_json field is true.
+    /// workspace MCP config files for when the use_legacy_mcp_json field is true.
     pub async fn from_agent_config(
         config: &AgentConfig,
         local_mcp_path: Option<&PathBuf>,
@@ -309,7 +181,7 @@ impl LoadedMcpServerConfigs {
             .collect::<Vec<_>>();
         configs.append(&mut agent_configs);
 
-        if config.include_mcp_json() {
+        if config.use_legacy_mcp_json() {
             let mut push_configs = |mcp_servers: McpServers, source: McpServerConfigSource| {
                 for (name, config) in mcp_servers.mcp_servers {
                     let config = LoadedMcpServerConfig {

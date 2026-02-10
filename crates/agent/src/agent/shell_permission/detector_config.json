@@ -1,5 +1,5 @@
 {
-  "dangerous_commands": ["eval", "source", "xargs"],
+  "dangerous_commands": ["eval", "source", "xargs", "del", "erase", "format", "move", "Start-Process", "Invoke-Item", "Remove-Item"],
   "dangerous_options": {
     "find": ["-exec", "-execdir", "-delete", "-ok", "-okdir", "-fprint"],
     "grep": ["-P", "--perl-regexp"],
@@ -11,6 +11,10 @@
     "zip": ["-TT", "--unzip-command"],
     "git": ["--upload-pack", "--receive-pack", "--exec", "core.sshCommand", "core.gitProxy"],
     "base64": ["-d", "--decode", "-D"],
+    "history": ["-s", "-a", "-w"],
+    "rmdir": ["/s", "/q"],
+    "rd": ["/s", "/q"],
+    "start": ["http", "https"],
     "sh": ["-c"],
     "bash": ["-c"],
     "zsh": ["-c"],

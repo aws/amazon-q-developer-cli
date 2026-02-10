@@ -91,8 +91,6 @@ pub enum Setting {
     CompactionExcludeMessages,
     #[strum(message = "Show conversation history hints (boolean)")]
     ChatEnableHistoryHints,
-    #[strum(message = "Show rotating prompt hints on empty input (boolean)")]
-    ChatEnablePromptHints,
     #[strum(message = "Enable the todo list feature (boolean)")]
     EnabledTodoList,
     #[strum(message = "Enable the checkpoint feature (boolean)")]
@@ -143,7 +141,6 @@ impl AsRef<str> for Setting {
             Self::CompactionExcludeContextWindowPercent => "compaction.excludeContextWindowPercent",
             Self::CompactionExcludeMessages => "compaction.excludeMessages",
             Self::ChatEnableHistoryHints => "chat.enableHistoryHints",
-            Self::ChatEnablePromptHints => "chat.enablePromptHints",
             Self::EnabledTodoList => "chat.enableTodoList",
             Self::EnabledCheckpoint => "chat.enableCheckpoint",
             Self::EnabledContextUsageIndicator => "chat.enableContextUsageIndicator",
@@ -200,7 +197,6 @@ impl TryFrom<&str> for Setting {
             "compaction.excludeContextWindowPercent" => Ok(Self::CompactionExcludeContextWindowPercent),
             "compaction.excludeMessages" => Ok(Self::CompactionExcludeMessages),
             "chat.enableHistoryHints" => Ok(Self::ChatEnableHistoryHints),
-            "chat.enablePromptHints" => Ok(Self::ChatEnablePromptHints),
             "chat.enableTodoList" => Ok(Self::EnabledTodoList),
             "chat.enableCheckpoint" => Ok(Self::EnabledCheckpoint),
             "chat.enableContextUsageIndicator" => Ok(Self::EnabledContextUsageIndicator),

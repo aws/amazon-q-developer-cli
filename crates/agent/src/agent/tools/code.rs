@@ -3,10 +3,7 @@
 //! Provides LSP-powered and tree-sitter-based code analysis operations.
 
 use std::borrow::Cow;
-use std::path::{
-    Path,
-    PathBuf,
-};
+use std::path::PathBuf;
 use std::sync::Arc;
 
 use code_agent_sdk::CodeIntelligence;
@@ -564,6 +561,8 @@ impl Code {
         }
     }
 }
+
+use std::path::Path;
 
 fn resolve_path(cwd: &Path, path: &str) -> PathBuf {
     let p = PathBuf::from(path);

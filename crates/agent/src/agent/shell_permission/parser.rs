@@ -371,7 +371,7 @@ mod tests {
     }
 
     fn load_test_cases() -> Vec<TestCase> {
-        let json = include_str!("parser_tests.json");
+        let json = include_str!("test_data/parser_tests.json");
         serde_json::from_str(json).expect("Failed to parse parser_tests.json")
     }
 

@@ -67,3 +67,24 @@ diff --git a/build/ink.js b/build/ink.js
              this.throttledLog(output);
          }
          this.lastOutput = output;
+diff --git a/build/output.js b/build/output.js
+--- a/build/output.js
++++ b/build/output.js
+@@ -1,5 +1,16 @@
+ import sliceAnsi from 'slice-ansi';
+-import stringWidth from 'string-width';
++import originalStringWidth from 'string-width';
+ import widestLine from 'widest-line';
+ import { styledCharsFromTokens, styledCharsToString, tokenize, } from '@alcalzone/ansi-tokenize';
++// Memoize stringWidth to avoid repeated emoji regex checks
++const stringWidthCache = new Map();
++function stringWidth(str) {
++    let result = stringWidthCache.get(str);
++    if (result === undefined) {
++        result = originalStringWidth(str);
++        if (stringWidthCache.size > 10000) stringWidthCache.clear();
++        stringWidthCache.set(str, result);
++    }
++    return result;
++}
+ export default class Output {

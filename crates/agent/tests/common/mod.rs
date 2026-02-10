@@ -8,7 +8,12 @@ use std::time::{
     Instant,
 };
 
-use agent::agent_config::definitions::AgentConfig;
+use agent::agent_config::definitions::{
+    AgentConfig,
+    HookConfig,
+    HookTrigger,
+};
+use agent::agent_config::load::build_default_agent;
 use agent::agent_loop::model::{
     MockModel,
     MockResponse,
@@ -54,6 +59,8 @@ type MockResponseStreams = Vec<Vec<StreamResult>>;
 pub struct TestCaseBuilder {
     test_name: Option<String>,
     agent_config: Option<AgentConfig>,
+    use_default_agent: bool,
+    hooks: Vec<(HookTrigger, HookConfig)>,
     files: Vec<Box<dyn TestFile>>,
     mock_responses: Vec<MockResponse>,
     trust_all_tools: bool,
@@ -69,6 +76,16 @@ impl TestCaseBuilder {
 
     pub fn with_agent_config(mut self, agent_config: AgentConfig) -> Self {
         self.agent_config = Some(agent_config);
+        self
+    }
+
+    pub fn with_default_agent_config(mut self) -> Self {
+        self.use_default_agent = true;
+        self
+    }
+
+    pub fn with_hook(mut self, trigger: HookTrigger, config: HookConfig) -> Self {
+        self.hooks.push((trigger, config));
         self
     }
 
@@ -107,8 +124,6 @@ impl TestCaseBuilder {
     }
 
     pub async fn build(self) -> Result<TestCase> {
-        let mut snapshot = AgentSnapshot::new_empty(self.agent_config.unwrap_or_default());
-
         let mut model = MockModel::new();
         for response in self.mock_responses {
             model = model.with_response(response);
@@ -120,6 +135,18 @@ impl TestCaseBuilder {
         for file in self.files {
             test_base = test_base.with_file(file).await;
         }
+
+        let mut agent_config = if self.use_default_agent {
+            build_default_agent(&*test_base.provider()).config().clone()
+        } else {
+            self.agent_config.unwrap_or_default()
+        };
+
+        for (trigger, config) in self.hooks {
+            agent_config.add_hook(trigger, config);
+        }
+
+        let mut snapshot = AgentSnapshot::new_empty(agent_config);
 
         let cwd = match &self.cwd_subdir {
             Some(subdir) => test_base.join(subdir).to_string_lossy().to_string(),

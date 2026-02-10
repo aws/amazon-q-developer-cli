@@ -20,7 +20,6 @@ use crate::agent::protocol::{
     PermissionEvalResult,
     PermissionOptionId,
 };
-use crate::agent::tools::execute_cmd::ExecuteCmd;
 use crate::agent::tools::use_aws::UseAws;
 use crate::agent::tools::{
     BuiltInTool,
@@ -292,7 +291,7 @@ pub fn evaluate_tool_permission<P: SystemProvider>(
             // Reuse the same settings for fs write
             BuiltInTool::Mkdir(_) => Ok(PermissionEvalResult::Allow),
 
-            BuiltInTool::ExecuteCmd(execute_cmd) => evaluate_permission_for_command::<ExecuteCmd>(
+            BuiltInTool::ExecuteCmd(execute_cmd) => evaluate_permission_for_shell_command(
                 &settings.shell.allowed_commands,
                 &settings.shell.denied_commands,
                 &execute_cmd.command,
@@ -305,13 +304,12 @@ pub fn evaluate_tool_permission<P: SystemProvider>(
             BuiltInTool::Summary(_) => Ok(PermissionEvalResult::Allow),
             BuiltInTool::UseAws(use_aws) => {
                 let key = format!("{}:{}", use_aws.service_name, use_aws.operation_name);
-                evaluate_permission_for_command::<UseAws>(
+                evaluate_permission_for_aws_command(
                     &settings.use_aws.allowed_services,
                     &settings.use_aws.denied_services,
                     &key,
                     is_allowed,
                     settings.use_aws.auto_allow_readonly,
-                    false,
                 )
             },
             BuiltInTool::WebFetch(_) => Ok(if is_allowed {
@@ -353,11 +351,8 @@ pub fn evaluate_tool_permission<P: SystemProvider>(
     Ok(result)
 }
 
-pub trait ReadonlyChecker {
-    fn is_readonly(command: &str) -> bool;
-}
-
-fn evaluate_permission_for_command<T: ReadonlyChecker>(
+/// Evaluate permission for shell commands using the new shell_permission system.
+fn evaluate_permission_for_shell_command(
     allowed_commands: &[String],
     denied_commands: &[String],
     command: &str,
@@ -365,7 +360,6 @@ fn evaluate_permission_for_command<T: ReadonlyChecker>(
     auto_allow_readonly: bool,
     deny_by_default: bool,
 ) -> Result<PermissionEvalResult, UtilError> {
-    // New shell permission system (PR1 - parsing + stub detect/decide)
     let settings = super::shell_permission::ShellPermissionSettings {
         allowed_commands: allowed_commands.to_vec(),
         denied_commands: denied_commands.to_vec(),
@@ -373,14 +367,17 @@ fn evaluate_permission_for_command<T: ReadonlyChecker>(
         deny_by_default,
         is_tool_allowed: is_allowed,
     };
-    let result = super::shell_permission::evaluate_shell_permission(command, &settings);
-    tracing::debug!(
-        command = command,
-        result = ?result,
-        "shell_permission: evaluated command"
-    );
+    Ok(super::shell_permission::evaluate_shell_permission(command, &settings))
+}
 
-    // Existing logic below (to be replaced when detect/decide layers are implemented)
+/// Evaluate permission for AWS commands using glob patterns.
+fn evaluate_permission_for_aws_command(
+    allowed_commands: &[String],
+    denied_commands: &[String],
+    command: &str,
+    is_allowed: bool,
+    auto_allow_readonly: bool,
+) -> Result<PermissionEvalResult, UtilError> {
     let allow = create_globset(allowed_commands.iter());
     let deny = create_globset(denied_commands.iter());
 
@@ -405,14 +402,8 @@ fn evaluate_permission_for_command<T: ReadonlyChecker>(
         return Ok(PermissionEvalResult::Allow);
     }
 
-    if auto_allow_readonly && T::is_readonly(command) {
+    if auto_allow_readonly && UseAws::is_readonly(command) {
         return Ok(PermissionEvalResult::Allow);
-    }
-
-    if deny_by_default {
-        return Ok(PermissionEvalResult::Deny {
-            reason: "Command not in allowed list".to_string(),
-        });
     }
 
     Ok(if is_allowed {
@@ -781,9 +772,10 @@ mod tests {
     #[test]
     fn test_evaluate_permission_for_commands() {
         // Test denied commands (should short circuit)
-        let result = evaluate_permission_for_command::<ExecuteCmd>(
+        // Note: patterns are now regex, so "git push.*" matches "git push origin main"
+        let result = evaluate_permission_for_shell_command(
             &["git status".to_string()],
-            &["git push*".to_string()],
+            &["git push.*".to_string()],
             "git push origin main",
             true,
             false,
@@ -792,40 +784,26 @@ mod tests {
         .unwrap();
         assert!(matches!(result, PermissionEvalResult::Deny { .. }));
 
-        // Test allowed commands
-        let result = evaluate_permission_for_command::<ExecuteCmd>(
-            &["git status".to_string()],
-            &[],
-            "git status",
-            false,
-            false,
-            false,
-        )
-        .unwrap();
+        // Test allowed commands (regex pattern)
+        let result =
+            evaluate_permission_for_shell_command(&["git status".to_string()], &[], "git status", false, false, false)
+                .unwrap();
         assert!(matches!(result, PermissionEvalResult::Allow));
-        let result = evaluate_permission_for_command::<ExecuteCmd>(
-            &["git*".to_string()],
-            &[],
-            "git status",
-            false,
-            false,
-            false,
-        )
-        .unwrap();
+        let result =
+            evaluate_permission_for_shell_command(&["git.*".to_string()], &[], "git status", false, false, false)
+                .unwrap();
         assert!(matches!(result, PermissionEvalResult::Allow));
 
         // Test auto_allow_readonly
-        let result = evaluate_permission_for_command::<ExecuteCmd>(&[], &[], "ls -la", false, true, false).unwrap();
+        let result = evaluate_permission_for_shell_command(&[], &[], "ls -la", false, true, false).unwrap();
         assert!(matches!(result, PermissionEvalResult::Allow));
 
         // Test deny_by_default
-        let result =
-            evaluate_permission_for_command::<ExecuteCmd>(&[], &[], "rm file.txt", false, false, true).unwrap();
+        let result = evaluate_permission_for_shell_command(&[], &[], "rm file.txt", false, false, true).unwrap();
         assert!(matches!(result, PermissionEvalResult::Deny { .. }));
 
         // Test normal ask behavior
-        let result =
-            evaluate_permission_for_command::<ExecuteCmd>(&[], &[], "rm file.txt", false, false, false).unwrap();
+        let result = evaluate_permission_for_shell_command(&[], &[], "rm file.txt", false, false, false).unwrap();
         assert!(matches!(result, PermissionEvalResult::Ask));
     }
 

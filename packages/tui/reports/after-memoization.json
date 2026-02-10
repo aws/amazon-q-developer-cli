@@ -1,0 +1,545 @@
+{
+  "timestamp": "2026-02-04T07:01:28.859Z",
+  "durationS": 99.18002525,
+  "samples": 19046,
+  "functions": [
+    {
+      "name": "map @ unknown",
+      "selfTimeMs": 12695.626460122861,
+      "totalTimeMs": 92254.19129103224,
+      "calls": 2438,
+      "type": "runtime",
+      "trend": [
+        3,
+        38,
+        53,
+        108,
+        8,
+        0,
+        638,
+        866,
+        524,
+        200
+      ],
+      "callers": {
+        "get @ output.js": 10957,
+        "(anonymous) @ Message.tsx": 1857,
+        "wrapAnsi @ index.js": 1831,
+        "diffAnsiCodes @ diff.js": 1446,
+        "undoAnsiCodes @ undo.js": 591
+      },
+      "callees": {
+        "(anonymous) @ output.js": 10680,
+        "(anonymous) @ Message.tsx": 1855,
+        "exec @ index.js": 1830,
+        "stringWidth @ index.js": 600,
+        "trimEnd @ unknown": 263
+      }
+    },
+    {
+      "name": "diffAnsiCodes @ diff.js",
+      "selfTimeMs": 10232.52911982831,
+      "totalTimeMs": 35634.196827982254,
+      "calls": 1965,
+      "type": "dependency",
+      "trend": [
+        11,
+        45,
+        52,
+        82,
+        4,
+        0,
+        510,
+        721,
+        383,
+        157
+      ],
+      "callers": {
+        "styledCharsToString @ styledChars.js": 6843
+      },
+      "callees": {
+        "undoAnsiCodes @ undo.js": 2008,
+        "map @ unknown": 1446,
+        "Set @ unknown": 1231,
+        "filter @ unknown": 193
+      }
+    },
+    {
+      "name": "Set @ unknown",
+      "selfTimeMs": 8128.741962367427,
+      "totalTimeMs": 8133.949356321537,
+      "calls": 1561,
+      "type": "runtime",
+      "trend": [
+        10,
+        34,
+        35,
+        90,
+        4,
+        0,
+        422,
+        514,
+        334,
+        118
+      ],
+      "callers": {
+        "diffAnsiCodes @ diff.js": 1231,
+        "ansiCodesToString @ ansiCodes.js": 330,
+        "(anonymous) @ diff.js": 1
+      },
+      "callees": {
+        "(unknown) @ unknown": 1
+      }
+    },
+    {
+      "name": "next @ unknown",
+      "selfTimeMs": 5243.845711789877,
+      "totalTimeMs": 5384.445348550877,
+      "calls": 1007,
+      "type": "runtime",
+      "trend": [
+        6,
+        48,
+        10,
+        88,
+        7,
+        0,
+        272,
+        364,
+        167,
+        45
+      ],
+      "callers": {
+        "stringWidth @ index.js": 832,
+        "performIteration @ unknown": 169,
+        "exec @ index.js": 23,
+        "get @ output.js": 8,
+        "compareEntries @ shallow.mjs": 2
+      },
+      "callees": {
+        "arrayIteratorNextHelper @ unknown": 27
+      }
+    },
+    {
+      "name": "performIteration @ unknown",
+      "selfTimeMs": 4572.091891709546,
+      "totalTimeMs": 5452.141469954321,
+      "calls": 878,
+      "type": "runtime",
+      "trend": [
+        4,
+        11,
+        18,
+        38,
+        3,
+        0,
+        255,
+        310,
+        176,
+        63
+      ],
+      "callers": {
+        "ansiCodesToString @ ansiCodes.js": 1047
+      },
+      "callees": {
+        "next @ unknown": 169
+      }
+    },
+    {
+      "name": "write @ unknown",
+      "selfTimeMs": 4488.773588443767,
+      "totalTimeMs": 4488.773588443767,
+      "calls": 862,
+      "type": "runtime",
+      "trend": [
+        2,
+        26,
+        28,
+        63,
+        6,
+        0,
+        217,
+        263,
+        175,
+        82
+      ],
+      "callers": {
+        "writeFast @ streams": 861,
+        "readableAddChunkPushByteMode @ readable": 1
+      },
+      "callees": {}
+    },
+    {
+      "name": "ansiCodesToString @ ansiCodes.js",
+      "selfTimeMs": 3634.7609799695474,
+      "totalTimeMs": 12914.337006195527,
+      "calls": 698,
+      "type": "dependency",
+      "trend": [
+        1,
+        17,
+        19,
+        36,
+        3,
+        0,
+        189,
+        248,
+        129,
+        56
+      ],
+      "callers": {
+        "styledCharsToString @ styledChars.js": 2480
+      },
+      "callees": {
+        "performIteration @ unknown": 1047,
+        "map @ unknown": 405,
+        "Set @ unknown": 330
+      }
+    },
+    {
+      "name": "styledCharsToString @ styledChars.js",
+      "selfTimeMs": 3134.8511603748816,
+      "totalTimeMs": 54250.630213929435,
+      "calls": 602,
+      "type": "dependency",
+      "trend": [
+        2,
+        11,
+        13,
+        16,
+        2,
+        0,
+        148,
+        211,
+        143,
+        56
+      ],
+      "callers": {
+        "(anonymous) @ output.js": 10418
+      },
+      "callees": {
+        "diffAnsiCodes @ diff.js": 6843,
+        "ansiCodesToString @ ansiCodes.js": 2480,
+        "join @ unknown": 493
+      }
+    },
+    {
+      "name": "get @ output.js",
+      "selfTimeMs": 2994.2515236138825,
+      "totalTimeMs": 64561.27024306941,
+      "calls": 575,
+      "type": "dependency",
+      "trend": [
+        6,
+        15,
+        17,
+        35,
+        3,
+        0,
+        145,
+        192,
+        112,
+        50
+      ],
+      "callers": {
+        "renderer @ renderer.js": 12398
+      },
+      "callees": {
+        "map @ unknown": 10957,
+        "tokenize @ tokenize.js": 421,
+        "styledCharsFromTokens @ styledChars.js": 190,
+        "transform @ Text.js": 116,
+        "stringWidth @ output.js": 90
+      }
+    },
+    {
+      "name": "reduceAnsiCodesIncremental @ reduce.js",
+      "selfTimeMs": 2968.214553843327,
+      "totalTimeMs": 3108.8141906043265,
+      "calls": 570,
+      "type": "dependency",
+      "trend": [
+        4,
+        9,
+        18,
+        23,
+        5,
+        0,
+        138,
+        206,
+        125,
+        42
+      ],
+      "callers": {
+        "undoAnsiCodes @ undo.js": 557,
+        "styledCharsFromTokens @ styledChars.js": 40
+      },
+      "callees": {
+        "filter @ unknown": 26,
+        "find @ unknown": 1
+      }
+    },
+    {
+      "name": "reverse @ unknown",
+      "selfTimeMs": 2957.7997659351045,
+      "totalTimeMs": 2957.7997659351045,
+      "calls": 568,
+      "type": "runtime",
+      "trend": [
+        3,
+        12,
+        10,
+        20,
+        0,
+        0,
+        157,
+        199,
+        107,
+        60
+      ],
+      "callers": {
+        "undoAnsiCodes @ undo.js": 568
+      },
+      "callees": {}
+    },
+    {
+      "name": "segment @ unknown",
+      "selfTimeMs": 2848.4444928987714,
+      "totalTimeMs": 2848.4444928987714,
+      "calls": 547,
+      "type": "runtime",
+      "trend": [
+        2,
+        18,
+        6,
+        46,
+        2,
+        0,
+        138,
+        200,
+        118,
+        17
+      ],
+      "callers": {
+        "stringWidth @ index.js": 547
+      },
+      "callees": {}
+    },
+    {
+      "name": "join @ unknown",
+      "selfTimeMs": 2811.992735219994,
+      "totalTimeMs": 2811.992735219994,
+      "calls": 540,
+      "type": "runtime",
+      "trend": [
+        3,
+        10,
+        10,
+        29,
+        2,
+        0,
+        130,
+        195,
+        127,
+        34
+      ],
+      "callers": {
+        "styledCharsToString @ styledChars.js": 493,
+        "(anonymous) @ Message.tsx": 17,
+        "splitCompoundSGRSequences @ tokenize.js": 17,
+        "exec @ index.js": 8,
+        "get @ output.js": 5
+      },
+      "callees": {}
+    },
+    {
+      "name": "filter @ unknown",
+      "selfTimeMs": 2421.4381886616616,
+      "totalTimeMs": 2483.926916110994,
+      "calls": 465,
+      "type": "runtime",
+      "trend": [
+        3,
+        9,
+        11,
+        18,
+        1,
+        0,
+        107,
+        174,
+        98,
+        44
+      ],
+      "callers": {
+        "(anonymous) @ output.js": 257,
+        "diffAnsiCodes @ diff.js": 193,
+        "reduceAnsiCodesIncremental @ reduce.js": 26,
+        "ConversationView @ ConversationView.tsx": 1
+      },
+      "callees": {
+        "(anonymous) @ diff.js": 10,
+        "(anonymous) @ reduce.js": 1,
+        "(anonymous) @ ConversationView.tsx": 1
+      }
+    },
+    {
+      "name": "[Symbol.iterator] @ unknown",
+      "selfTimeMs": 2332.9124914417725,
+      "totalTimeMs": 2332.9124914417725,
+      "calls": 448,
+      "type": "runtime",
+      "trend": [
+        0,
+        10,
+        1,
+        25,
+        3,
+        0,
+        134,
+        188,
+        75,
+        12
+      ],
+      "callers": {
+        "stringWidth @ index.js": 447,
+        "get @ output.js": 1
+      },
+      "callees": {}
+    },
+    {
+      "name": "isWide @ lookup.js",
+      "selfTimeMs": 2249.594188175995,
+      "totalTimeMs": 2249.594188175995,
+      "calls": 432,
+      "type": "dependency",
+      "trend": [
+        2,
+        20,
+        8,
+        36,
+        5,
+        0,
+        107,
+        144,
+        89,
+        21
+      ],
+      "callers": {
+        "eastAsianWidth @ index.js": 332,
+        "tokenize @ tokenize.js": 100
+      },
+      "callees": {}
+    },
+    {
+      "name": "stringWidth @ index.js",
+      "selfTimeMs": 1504.9368527381077,
+      "totalTimeMs": 14158.90416122808,
+      "calls": 289,
+      "type": "dependency",
+      "trend": [
+        2,
+        14,
+        3,
+        22,
+        6,
+        0,
+        86,
+        79,
+        70,
+        7
+      ],
+      "callers": {
+        "widestLine @ index.js": 1079,
+        "exec @ index.js": 992,
+        "map @ unknown": 600,
+        "stringWidth @ output.js": 48
+      },
+      "callees": {
+        "next @ unknown": 832,
+        "segment @ unknown": 547,
+        "[Symbol.iterator] @ unknown": 447,
+        "eastAsianWidth @ index.js": 346,
+        "stripAnsi @ index.js": 104
+      }
+    },
+    {
+      "name": "trimEnd @ unknown",
+      "selfTimeMs": 1369.5446099312192,
+      "totalTimeMs": 1369.5446099312192,
+      "calls": 263,
+      "type": "runtime",
+      "trend": [
+        0,
+        8,
+        1,
+        16,
+        1,
+        0,
+        62,
+        94,
+        56,
+        25
+      ],
+      "callers": {
+        "map @ unknown": 263
+      },
+      "callees": {}
+    },
+    {
+      "name": "resolve @ unknown",
+      "selfTimeMs": 1338.3002462065524,
+      "totalTimeMs": 1338.3002462065524,
+      "calls": 257,
+      "type": "runtime",
+      "trend": [
+        257,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      "callers": {
+        "(anonymous) @ unknown": 257
+      },
+      "callees": {}
+    },
+    {
+      "name": "anonymous @ unknown",
+      "selfTimeMs": 1208.115397353775,
+      "totalTimeMs": 2582.8674012391057,
+      "calls": 232,
+      "type": "runtime",
+      "trend": [
+        230,
+        0,
+        0,
+        0,
+        0,
+        0,
+        1,
+        1,
+        0,
+        0
+      ],
+      "callers": {
+        "require @ unknown": 457,
+        "bound require @ unknown": 5,
+        "internal:assert/assertion_error @ assertion_error": 4,
+        "loadAssertionError @ node:assert": 4,
+        "internal:streams/duplex @ duplex": 3
+      },
+      "callees": {
+        "(anonymous) @ index.js": 215,
+        "(anonymous) @ theme.js": 8,
+        "node:assert @ node:assert": 5,
+        "(anonymous) @ react-jsx-dev-runtime.development.js": 4,
+        "internal:assert/assertion_error @ assertion_error": 4
+      }
+    }
+  ]
+}

@@ -51,8 +51,6 @@ impl InvokeSubagent {
     fn as_subagent<'a>(
         &'a self,
         id: u16,
-        local_agent_path: &'a PathBuf,
-        global_agent_path: &'a PathBuf,
         local_mcp_path: &'a PathBuf,
         global_mcp_path: &'a PathBuf,
         parent_tool_use_id: &'a str,
@@ -73,8 +71,6 @@ impl InvokeSubagent {
             task_context: relevant_context.as_deref(),
             dangerously_trust_all_tools: *dangerously_trust_all_tools,
             is_interactive: *is_interactive,
-            local_agent_path,
-            global_agent_path,
             local_mcp_path,
             global_mcp_path,
             parent_tool_use_id,
@@ -306,8 +302,6 @@ impl UseSubagent {
             } => {
                 let (view_end, input_rx, control_end) = get_conduit();
                 let resolver = os.path_resolver();
-                let local_agent_path = resolver.workspace().agents_dir()?;
-                let global_agent_path = resolver.global().agents_dir()?;
                 let local_mcp_path = resolver.workspace().mcp_config()?;
                 let global_mcp_path = resolver.global().mcp_config()?;
                 let is_interactive = subagents.iter().any(|agent| agent.is_interactive);
@@ -318,8 +312,6 @@ impl UseSubagent {
                     .map(|(id, invoke_subagent)| {
                         invoke_subagent.as_subagent(
                             id as u16,
-                            &local_agent_path,
-                            &global_agent_path,
                             &local_mcp_path,
                             &global_mcp_path,
                             parent_tool_use_id,

@@ -22,6 +22,8 @@ use typeshare::typeshare;
 pub enum TuiCommand {
     /// List available models or switch to a specific model
     Model(ModelArgs),
+    /// List available agents or switch to a specific agent
+    Agent(AgentArgs),
     /// Show context/token usage for the current conversation
     Context(ContextArgs),
     /// Compact the conversation history
@@ -41,6 +43,17 @@ pub struct ModelArgs {
     /// Accepts either `modelName` or `value` (for generic selection UI)
     #[serde(alias = "value", skip_serializing_if = "Option::is_none")]
     pub model_name: Option<String>,
+}
+
+/// Arguments for /agent command
+#[typeshare]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AgentArgs {
+    /// Agent name to switch to. If None, lists available agents.
+    /// Accepts either `agentName` or `value` (for generic selection UI)
+    #[serde(alias = "value", skip_serializing_if = "Option::is_none")]
+    pub agent_name: Option<String>,
 }
 
 /// Arguments for /context command
@@ -80,6 +93,7 @@ impl TuiCommand {
     pub fn name(&self) -> &'static str {
         match self {
             TuiCommand::Model(_) => "/model",
+            TuiCommand::Agent(_) => "/agent",
             TuiCommand::Context(_) => "/context",
             TuiCommand::Compact(_) => "/compact",
             TuiCommand::Clear(_) => "/clear",
@@ -91,6 +105,7 @@ impl TuiCommand {
     pub fn description(&self) -> &'static str {
         match self {
             TuiCommand::Model(_) => "Select or list available models",
+            TuiCommand::Agent(_) => "Select or list available agents",
             TuiCommand::Context(_) => "Show context/token usage",
             TuiCommand::Compact(_) => "Compact conversation history",
             TuiCommand::Clear(_) => "Clear conversation history",
@@ -106,6 +121,13 @@ impl TuiCommand {
                 meta.insert("optionsMethod".into(), "_kiro.dev/commands/model/options".into());
                 meta.insert("inputType".into(), "selection".into());
                 meta.insert("hint".into(), "↑↓ to choose model".into());
+                Some(meta)
+            },
+            TuiCommand::Agent(_) => {
+                let mut meta = serde_json::Map::new();
+                meta.insert("optionsMethod".into(), "_kiro.dev/commands/agent/options".into());
+                meta.insert("inputType".into(), "selection".into());
+                meta.insert("hint".into(), "↑↓ to choose agent".into());
                 Some(meta)
             },
             TuiCommand::Context(_) => {
@@ -126,6 +148,7 @@ impl TuiCommand {
     pub fn all_commands() -> Vec<TuiCommand> {
         vec![
             TuiCommand::Model(ModelArgs::default()),
+            TuiCommand::Agent(AgentArgs::default()),
             TuiCommand::Context(ContextArgs::default()),
             TuiCommand::Compact(CompactArgs::default()),
             TuiCommand::Clear(ClearArgs::default()),

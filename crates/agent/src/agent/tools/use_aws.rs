@@ -25,7 +25,6 @@ use super::{
     ToolExecutionOutputItem,
     ToolExecutionResult,
 };
-use crate::agent::permissions::ReadonlyChecker;
 use crate::agent::util::consts::{
     USER_AGENT_APP_NAME,
     USER_AGENT_ENV_VAR,
@@ -154,13 +153,12 @@ impl TryFrom<UseAwsRaw> for UseAws {
     }
 }
 
-impl ReadonlyChecker for UseAws {
-    fn is_readonly(command: &str) -> bool {
-        AWS_READONLY_OPS.contains(command) || AWS_READONLY_ADDITIONS.contains(command)
-    }
-}
-
 impl UseAws {
+    /// Check if an AWS operation is readonly.
+    pub fn is_readonly(operation: &str) -> bool {
+        AWS_READONLY_OPS.contains(operation) || AWS_READONLY_ADDITIONS.contains(operation)
+    }
+
     pub async fn validate(&self) -> Result<(), String> {
         if self.service_name.is_empty() {
             return Err("service_name must not be empty".to_string());

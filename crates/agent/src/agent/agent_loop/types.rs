@@ -90,8 +90,11 @@ impl std::fmt::Display for StreamError {
         if let Some(request_id) = self.original_request_id.as_ref() {
             write!(f, "request_id: {request_id}, error: ")?;
         }
-        if let Some(source) = self.source.as_ref() {
-            write!(f, "{source}")?;
+        // Always include the kind message for better error context
+        write!(f, "{}", self.kind)?;
+        // Include original message if available for more detail
+        if let Some(original_message) = self.original_message.as_ref() {
+            write!(f, " - {original_message}")?;
         }
         Ok(())
     }

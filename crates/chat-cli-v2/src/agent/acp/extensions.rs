@@ -12,6 +12,10 @@ pub mod methods {
     pub const MCP_OAUTH_REQUEST: &str = "_kiro.dev/mcp/oauth_request";
     /// MCP server initialized notification
     pub const MCP_SERVER_INITIALIZED: &str = "_kiro.dev/mcp/server_initialized";
+    /// MCP server init failure notification
+    pub const MCP_SERVER_INIT_FAILURE: &str = "_kiro.dev/mcp/server_init_failure";
+    /// Rate limit error notification
+    pub const RATE_LIMIT_ERROR: &str = "_kiro.dev/error/rate_limit";
     /// Compaction status notification
     pub const COMPACTION_STATUS: &str = "_kiro.dev/compaction/status";
     /// Clear status notification
@@ -62,6 +66,23 @@ pub struct McpOauthRequestNotification {
 pub struct McpServerInitializedNotification {
     pub session_id: SessionId,
     pub server_name: String,
+}
+
+/// MCP server init failure notification payload.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct McpServerInitFailureNotification {
+    pub session_id: SessionId,
+    pub server_name: String,
+    pub error: String,
+}
+
+/// Rate limit error notification payload.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RateLimitErrorNotification {
+    pub session_id: SessionId,
+    pub message: String,
 }
 
 /// Compaction status notification payload.

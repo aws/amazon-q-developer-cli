@@ -2,6 +2,7 @@
 #![cfg(target_family = "unix")]
 
 use std::collections::HashMap;
+use std::path::Path;
 use std::process::Stdio;
 
 use bstr::ByteSlice as _;
@@ -23,13 +24,13 @@ use super::{
     ToolExecutionOutputItem,
     ToolExecutionResult,
 };
-use crate::agent::permissions::ReadonlyChecker;
 use crate::agent::util::consts::{
     USER_AGENT_APP_NAME,
     USER_AGENT_ENV_VAR,
     USER_AGENT_VERSION_KEY,
     USER_AGENT_VERSION_VALUE,
 };
+use crate::agent::util::path::canonicalize_path_sys;
 use crate::util::providers::SystemProvider;
 
 const EXECUTE_CMD_TOOL_DESCRIPTION: &str = r#"
@@ -57,6 +58,10 @@ const EXECUTE_CMD_SCHEMA: &str = r#"
         "command": {
             "type": "string",
             "description": "Command to execute"
+        },
+        "working_dir": {
+            "type": "string",
+            "description": "Optional working directory for command execution. If not specified, uses the current working directory."
         }
     },
     "required": [
@@ -86,17 +91,7 @@ impl BuiltInToolTrait for ExecuteCmd {
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct ExecuteCmd {
     pub command: String,
-}
-
-const READONLY_COMMANDS: &[&str] = &[
-    "ls", "cat", "echo", "pwd", "which", "head", "tail", "find", "grep", "dir", "type",
-];
-
-impl ReadonlyChecker for ExecuteCmd {
-    fn is_readonly(command: &str) -> bool {
-        let command_name = command.split_whitespace().next().unwrap_or("");
-        READONLY_COMMANDS.contains(&command_name)
-    }
+    pub working_dir: Option<String>,
 }
 
 impl ExecuteCmd {
@@ -105,18 +100,37 @@ impl ExecuteCmd {
         serde_json::to_value(schema).expect("creating tool schema should not fail")
     }
 
-    pub async fn validate(&self) -> Result<(), String> {
+    /// Returns the canonicalized working directory path, if set.
+    fn canonical_working_dir<P: SystemProvider>(&self, provider: &P) -> Result<Option<String>, String> {
+        self.working_dir
+            .as_ref()
+            .map(|dir| {
+                canonicalize_path_sys(dir, provider).map_err(|e| format!("Invalid working directory '{}': {}", dir, e))
+            })
+            .transpose()
+    }
+
+    pub async fn validate<P: SystemProvider>(&self, provider: &P) -> Result<(), String> {
         if self.command.is_empty() {
-            Err("Command must not be empty".to_string())
-        } else {
-            Ok(())
+            return Err("Command must not be empty".to_string());
         }
+        if let Some(ref dir) = self.canonical_working_dir(provider)?
+            && !Path::new(dir).is_dir()
+        {
+            return Err(format!("Working directory is not a directory: {}", dir));
+        }
+        Ok(())
     }
 
     pub async fn execute<P: SystemProvider>(&self, provider: &P) -> ToolExecutionResult {
-        let cwd = provider
-            .cwd()
-            .map_err(|e| ToolExecutionError::io("Failed to get working directory", e))?;
+        let process_dir = self
+            .canonical_working_dir(provider)
+            .map_err(ToolExecutionError::Custom)?
+            .unwrap_or_else(|| {
+                provider
+                    .cwd()
+                    .map_or_else(|_| ".".to_string(), |p| p.to_string_lossy().to_string())
+            });
 
         let shell = provider.var("AMAZON_Q_CHAT_SHELL").unwrap_or("bash".to_string());
 
@@ -125,7 +139,7 @@ impl ExecuteCmd {
         let child = Command::new(shell)
             .arg("-c")
             .arg(&self.command)
-            .current_dir(&cwd)
+            .current_dir(&process_dir)
             .envs(env_vars)
             .stdin(Stdio::inherit())
             .stdout(Stdio::piped())
@@ -263,5 +277,32 @@ mod tests {
         assert_eq!(result.len(), 50_000 * visible_block.len());
 
         assert!(result.chars().all(|c| !is_hidden(c)));
+    }
+
+    #[tokio::test]
+    async fn test_execute_with_working_dir() {
+        use crate::util::test::TestBase;
+
+        let test_base = TestBase::new().await.with_directory("subdir").await;
+        let canonical_str = test_base
+            .join("subdir")
+            .canonicalize()
+            .unwrap()
+            .to_string_lossy()
+            .to_string();
+
+        let cmd = ExecuteCmd {
+            command: "pwd".to_string(),
+            working_dir: Some(canonical_str.clone()),
+        };
+
+        let result = cmd.execute(&test_base).await.unwrap();
+        let json = match &result.items[0] {
+            ToolExecutionOutputItem::Json(v) => v,
+            _ => panic!("Expected JSON output"),
+        };
+
+        assert_eq!(json["exit_status"], "exit status: 0");
+        assert!(json["stdout"].as_str().unwrap().trim().ends_with(&canonical_str));
     }
 }
