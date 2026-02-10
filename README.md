@@ -33,6 +33,7 @@ Kiro-cli includes prompt-based workflows in `.kiro/prompts/` to accelerate devel
 | `@plan` | Create implementation plans interactively | `thoughts/shared/plans/YYYY-MM-DD-description.md` |
 | `@implement` | Execute approved plans phase-by-phase | Code changes with verification |
 | `@validate` | Verify implementation against plan | Validation report |
+| `@changelog` | Propose changelog entries for recent changes | `.changes/unreleased/*.json` |
 | `@commit` | Create git commits with proper formatting | Git commits |
 
 ### Typical Workflow

@@ -26,7 +26,7 @@
   ],
   "useLegacyMcpJson": true,
   "keyboardShortcut": "ctrl+1",
-  "welcomeMessage": "Hi! I'm the Kiro-Dev agent. What would you like to build today?\n\nAvailable workflows:\n- `@release` - Generate release notes, bump version, and create PR with author attribution\n- `@generate_docs` - Update autodocs index for introspect tool",
+  "welcomeMessage": "Hi! I'm the Kiro-Dev agent. What would you like to build today?\n\nAvailable workflows:\n- `@changelog` - Propose changelog entries for recent changes\n- `@release` - Generate release notes, bump version, and create PR with author attribution\n- `@docs` - Update autodocs for code changes",
   "toolsSettings": {
     "execute_bash": {
       "autoAllowReadonly": true,
