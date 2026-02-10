@@ -1,13 +1,13 @@
 ---
 doc_meta:
-  validated: 2026-01-27
-  commit: 85403a86
+  validated: 2026-02-09
+  commit: c1055bde
   status: validated
   testable_headless: true
   category: slash_command
   title: /tools
   description: View available tools and manage tool permissions with trust, untrust, and reset operations
-  keywords: [tools, permissions, trust, schema, approve]
+  keywords: [tools, permissions, trust, schema, approve, tokens]
   related: [agent-config, cmd-chat]
 ---
 
@@ -51,6 +51,8 @@ Display all available tools and permissions.
 Shows:
 - Native tools (built-in)
 - MCP server tools (by server)
+- Estimated token count per tool (~Tokens column)
+- Total token count per origin (Native, each MCP server)
 - Permission status for each tool
 - Loading MCP servers
 
@@ -117,18 +119,22 @@ Outputs complete tool specifications.
 
 **Output**:
 ```
-Tool                Permission
-▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔
+Tool                ~Tokens    Permission
+▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔
 Native
-- fs_read           Trusted
-- fs_write          Ask
-- execute_bash      Ask
-- grep              Trusted
+- fs_read              1.2k    Trusted
+- fs_write             892     Ask
+- execute_bash         756     Ask
+- grep                 1.1k    Trusted
+  Total                4.0k
 
 @git
-- git_status        Allowed
-- git_commit        Ask
+- git_status           423     Allowed
+- git_commit           512     Ask
+  Total                935
 ```
+
+The `~Tokens` column shows estimated token usage for each tool's schema. Values 1000+ display as `k` (e.g., `1.2k` = ~1200 tokens). Each section shows a **Total** line with the combined token count for all tools in that origin.
 
 ### Example 2: Trust Tool
 

@@ -1,5 +1,6 @@
 use std::collections::{
     BTreeSet,
+    HashMap,
     HashSet,
 };
 use std::io::Write;
@@ -17,6 +18,7 @@ use crossterm::{
 use crate::api_client::model::Tool as FigTool;
 use crate::cli::agent::Agent;
 use crate::cli::chat::consts::DUMMY_TOOL_NAME;
+use crate::cli::chat::token_counter::TokenCounter;
 use crate::cli::chat::tools::{
     ToolMetadata,
     ToolOrigin,
@@ -34,6 +36,22 @@ use crate::constants::{
 };
 use crate::theme::StyledText;
 use crate::util::consts::MCP_SERVER_TOOL_DELIMITER;
+
+/// Formats a token count into a compact human-readable string.
+fn format_tokens(tokens: usize) -> String {
+    if tokens >= 1000 {
+        format!("{:.1}k", tokens as f64 / 1000.0)
+    } else {
+        tokens.to_string()
+    }
+}
+
+/// Estimates the token count for a tool specification by serializing it to JSON
+/// and using the standard character-based heuristic.
+fn estimate_tool_tokens(spec: &crate::cli::chat::tools::ToolSpec) -> usize {
+    let json = serde_json::to_string(spec).unwrap_or_default();
+    TokenCounter::count_tokens(&json)
+}
 
 /// Command-line arguments for managing tools in the chat session
 #[deny(missing_docs)]
@@ -83,14 +101,34 @@ impl ToolsArgs {
                     .unwrap_or(0),
             );
 
+        // Pre-compute token estimate strings for all tools
+        let schema = &session.conversation.tool_manager.schema;
+        let token_strings: HashMap<&str, String> = schema
+            .iter()
+            .map(|(name, spec)| (name.as_str(), format_tokens(estimate_tool_tokens(spec))))
+            .collect();
+
+        let token_col_header = "~Tokens";
+        let token_col_width = token_strings
+            .values()
+            .map(|s| s.len())
+            .max()
+            .unwrap_or(0)
+            .max(token_col_header.len());
+
         queue!(
             session.stderr,
             style::Print("\n"),
             style::SetAttribute(Attribute::Bold),
             style::Print({
-                // Adding 2 because of "- " preceding every tool name
-                let width = (longest + 2).saturating_sub("Tool".len()) + 4;
-                format!("Tool{:>width$}Permission", "", width = width)
+                let pad1 = (longest + 2).saturating_sub("Tool".len()) + 4;
+                format!(
+                    "Tool{:pad1$}{:>tw$}    Permission",
+                    "",
+                    token_col_header,
+                    pad1 = pad1,
+                    tw = token_col_width,
+                )
             }),
             StyledText::reset_attributes(),
             style::Print("\n"),
@@ -125,25 +163,53 @@ impl ToolsArgs {
                 })
                 .collect::<BTreeSet<_>>();
 
+            let mut origin_total_tokens: usize = 0;
             let to_display = sorted_tools.iter().fold(String::new(), |mut acc, tool_name| {
                 // Get preferred alias for native tools, or use original name for MCP tools
                 let display_name =
                     ToolMetadata::get_by_spec_name(tool_name).map_or(*tool_name, |info| info.preferred_alias);
 
-                // Use saturating subtraction to avoid underflow if display_name is longer than longest
-                let width = longest.saturating_sub(display_name.len()).saturating_add(4);
+                let pad1 = longest.saturating_sub(display_name.len()).saturating_add(4);
+
+                // Look up token estimate - try the model tool name (via tn_map reverse lookup)
+                let (token_str, token_count) = session
+                    .conversation
+                    .tool_manager
+                    .tn_map
+                    .iter()
+                    .find(|(_, info)| info.host_tool_name.as_str() == *tool_name)
+                    .and_then(|(model_name, _)| {
+                        let spec = schema.get(model_name)?;
+                        let token_str = token_strings.get(model_name.as_str())?;
+                        Some((token_str.as_str(), estimate_tool_tokens(spec)))
+                    })
+                    .or_else(|| {
+                        token_strings
+                            .get(*tool_name)
+                            .map(|s| (s.as_str(), schema.get(*tool_name).map_or(0, estimate_tool_tokens)))
+                    })
+                    .unwrap_or(("-", 0));
+
+                origin_total_tokens += token_count;
+
                 acc.push_str(
                     format!(
-                        "- {}{:>width$}{}\n",
+                        "- {}{:pad1$}{:>tw$}    {}\n",
                         display_name,
                         "",
+                        token_str,
                         session.conversation.agents.display_label(tool_name, origin),
-                        width = width
+                        pad1 = pad1,
+                        tw = token_col_width,
                     )
                     .as_str(),
                 );
                 acc
             });
+
+            // Format the total for this origin
+            let total_str = format_tokens(origin_total_tokens);
+            let total_pad = longest.saturating_sub("Total".len()).saturating_add(4);
 
             let _ = queue!(
                 session.stderr,
@@ -151,6 +217,15 @@ impl ToolsArgs {
                 style::Print(format!("{origin}\n")),
                 StyledText::reset_attributes(),
                 style::Print(to_display),
+                StyledText::secondary_fg(),
+                style::Print(format!(
+                    "  Total{:total_pad$}{:>tw$}\n",
+                    "",
+                    total_str,
+                    total_pad = total_pad,
+                    tw = token_col_width,
+                )),
+                StyledText::reset(),
                 style::Print("\n")
             );
         }
@@ -477,5 +552,26 @@ impl ToolsSubcommand {
             ToolsSubcommand::TrustAll => "trust-all",
             ToolsSubcommand::Reset => "reset",
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_format_tokens_small() {
+        assert_eq!(format_tokens(0), "0");
+        assert_eq!(format_tokens(50), "50");
+        assert_eq!(format_tokens(999), "999");
+    }
+
+    #[test]
+    fn test_format_tokens_thousands() {
+        assert_eq!(format_tokens(1000), "1.0k");
+        assert_eq!(format_tokens(1200), "1.2k");
+        assert_eq!(format_tokens(2500), "2.5k");
+        assert_eq!(format_tokens(10000), "10.0k");
+        assert_eq!(format_tokens(15700), "15.7k");
     }
 }
