@@ -78,11 +78,14 @@ pub async fn pattern_search(workspace_root: &Path, request: PatternSearchRequest
         cancel_check.cancel();
     });
 
+    let lang_name = request.language.to_lowercase();
+    if crate::tree_sitter::get_extensions(&lang_name).is_none() {
+        anyhow::bail!("Language '{}' is not supported for pattern search", request.language);
+    }
     let lang: SupportLang = request
         .language
         .parse()
         .map_err(|_| anyhow::anyhow!("Unsupported language: {}", request.language))?;
-    let lang_name = request.language.to_lowercase();
     let offset = request.offset.unwrap_or(0) as usize;
     let limit = request.limit.unwrap_or(crate::model::types::DEFAULT_SEARCH_RESULTS) as usize;
 
@@ -254,4 +257,24 @@ fn get_extensions_for_lang(lang: &str) -> Vec<&'static str> {
     crate::tree_sitter::get_extensions(lang)
         .map(|exts| exts.iter().map(|s| s.as_str()).collect())
         .unwrap_or_default()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn test_unsupported_language_returns_error() {
+        let request = PatternSearchRequest {
+            pattern: "key: value".to_string(),
+            language: "yaml".to_string(),
+            file_path: None,
+            limit: None,
+            offset: None,
+        };
+
+        let result = pattern_search(Path::new("/tmp"), request).await;
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("not supported"));
+    }
 }

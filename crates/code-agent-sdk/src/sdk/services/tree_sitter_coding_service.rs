@@ -30,11 +30,14 @@ impl TreeSitterCodingService {
         request: PatternRewriteRequest,
     ) -> Result<RewriteResult> {
         let workspace_root = workspace_manager.workspace_root().to_path_buf();
+        let lang_name = request.language.to_lowercase();
+        if crate::tree_sitter::get_extensions(&lang_name).is_none() {
+            anyhow::bail!("Language '{}' is not supported for pattern rewrite", request.language);
+        }
         let lang: SupportLang = request
             .language
             .parse()
             .map_err(|_| anyhow::anyhow!("Unsupported language: {}", request.language))?;
-        let lang_name = request.language.to_lowercase();
         let limit = request.limit.unwrap_or(crate::model::types::DEFAULT_SEARCH_RESULTS) as usize;
 
         let pattern = Pattern::try_new(&request.pattern, lang)
@@ -208,5 +211,23 @@ mod tests {
     fn test_parse_language_typescript() {
         let lang: Result<SupportLang, _> = "typescript".parse();
         assert!(lang.is_ok());
+    }
+
+    #[tokio::test]
+    async fn test_unsupported_language_returns_error() {
+        let service = TreeSitterCodingService::new();
+        let mut workspace_manager = WorkspaceManager::new(std::path::PathBuf::from("/tmp"));
+        let request = PatternRewriteRequest {
+            pattern: "key: value".to_string(),
+            replacement: "key: newvalue".to_string(),
+            language: "yaml".to_string(),
+            file_path: None,
+            limit: None,
+            dry_run: true,
+        };
+
+        let result = service.pattern_rewrite(&mut workspace_manager, request).await;
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("not supported"));
     }
 }
