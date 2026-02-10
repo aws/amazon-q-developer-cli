@@ -217,7 +217,7 @@ impl WebFetch {
 
     fn strip_html(html: &str) -> String {
         // Use html2text library for proper HTML parsing and entity decoding
-        html2text::from_read(html.as_bytes(), usize::MAX)
+        html2text::from_read(html.as_bytes(), usize::MAX).unwrap_or_else(|_| html.to_string())
     }
 
     fn truncate_content(text: &str, max_chars: usize) -> Result<String> {
