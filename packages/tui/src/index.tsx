@@ -133,5 +133,5 @@ function App() {
 render(<App />, { 
   exitOnCtrlC: false,
   patchConsole: false,
-  incrementalRendering: true
+  incrementalRendering: false
 });

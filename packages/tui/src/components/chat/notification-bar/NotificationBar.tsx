@@ -11,6 +11,10 @@ interface NotificationBarProps {
 }
 
 export function NotificationBar({ message, status, autoHideMs, onDismiss }: NotificationBarProps) {
+  if (!message) {
+    return <Box height={1} />;
+  }
+
   return (
     <Box height={1}>
       <Alert message={message} status={status} autoHideMs={autoHideMs} onDismiss={onDismiss} />

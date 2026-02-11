@@ -189,6 +189,7 @@ export const getStatusColor = (
 ) => {
   switch (statusType) {
     case 'active':
+    case 'loading':
       return getColor('brand');
     case 'success':
       return getColor('success');
@@ -198,5 +199,7 @@ export const getStatusColor = (
       return getColor('warning');
     case 'error':
       return getColor('error');
+    default:
+      return getColor('brand');
   }
 };

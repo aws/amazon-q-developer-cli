@@ -1,11 +1,21 @@
 #!/usr/bin/env bun
-import { spawn } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 import { resolve } from "node:path";
 
 const REPO_ROOT = resolve(import.meta.dir, "../../..");
 const CARGO_BIN = resolve(REPO_ROOT, "target/debug/chat_cli_v2");
+const INK_DIR = resolve(REPO_ROOT, "packages/ink");
 
 const skipRustBuild = process.argv.includes("--skip-rust-build");
+
+function buildInk(): boolean {
+  console.log("Building ink...");
+  const result = spawnSync("bunx", ["tsc", "--project", "tsconfig.json"], {
+    cwd: INK_DIR,
+    stdio: "inherit"
+  });
+  return result.status === 0;
+}
 
 function startTUI() {
   console.log("Starting TUI...");
@@ -27,6 +37,10 @@ function startTUI() {
 
 if (skipRustBuild) {
   console.log("Skipping Rust build...");
+  if (!buildInk()) {
+    console.error("Ink build failed");
+    process.exit(1);
+  }
   startTUI();
 } else {
   console.log("Building chat_cli...");
@@ -55,6 +69,11 @@ if (skipRustBuild) {
       if (code !== 0) {
         console.error("Type generation failed");
         process.exit(code ?? 1);
+      }
+
+      if (!buildInk()) {
+        console.error("Ink build failed");
+        process.exit(1);
       }
 
       startTUI();

@@ -29,6 +29,13 @@ export const WRITE_TOOL_NAMES: Set<string> = new Set([ToolNameAlias.FsWrite, Too
 export const READ_TOOL_NAMES: Set<string> = new Set([ToolNameAlias.FsRead, ToolNameAlias.Read]);
 export const SHELL_TOOL_NAMES: Set<string> = new Set([ToolNameAlias.ExecuteBash, ToolNameAlias.ExecuteCmd, ToolNameAlias.Shell]);
 
+export type ToolKind = 'edit' | 'read' | 'shell' | 'grep' | 'glob' | string;
+
+export interface ToolCallLocation {
+  path: string;
+  line?: number;
+}
+
 export type ContentChunk =
   | { type: ContentType.Text; text: string }
   | { type: ContentType.Image; image: any }

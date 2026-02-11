@@ -1,0 +1,72 @@
+{
+	"name": "ink",
+	"version": "6.7.0-fork",
+	"description": "React for CLI (forked)",
+	"license": "MIT",
+	"repository": "vadimdemedes/ink",
+	"type": "module",
+	"exports": {
+		"types": "./build/index.d.ts",
+		"default": "./build/index.js"
+	},
+	"engines": {
+		"node": ">=20"
+	},
+	"scripts": {
+		"build": "tsc"
+	},
+	"files": [
+		"build"
+	],
+	"dependencies": {
+		"@alcalzone/ansi-tokenize": "^0.2.4",
+		"ansi-escapes": "^7.3.0",
+		"ansi-styles": "^6.2.1",
+		"auto-bind": "^5.0.1",
+		"chalk": "^5.6.0",
+		"cli-boxes": "^3.0.0",
+		"cli-cursor": "^4.0.0",
+		"cli-truncate": "^5.1.1",
+		"code-excerpt": "^4.0.0",
+		"es-toolkit": "^1.39.10",
+		"indent-string": "^5.0.0",
+		"is-in-ci": "^2.0.0",
+		"patch-console": "^2.0.0",
+		"react-reconciler": "^0.33.0",
+		"scheduler": "^0.27.0",
+		"signal-exit": "^3.0.7",
+		"slice-ansi": "^7.1.0",
+		"stack-utils": "^2.0.6",
+		"string-width": "^8.1.1",
+		"terminal-size": "^4.0.1",
+		"type-fest": "^5.4.1",
+		"widest-line": "^6.0.0",
+		"wrap-ansi": "^9.0.0",
+		"ws": "^8.18.0",
+		"yoga-layout": "~3.2.1"
+	},
+	"devDependencies": {
+		"@sindresorhus/tsconfig": "^7.0.0",
+		"@types/node": "^25.0.10",
+		"@types/react": "^19.2.13",
+		"@types/react-reconciler": "^0.33.0",
+		"@types/scheduler": "^0.26.0",
+		"@types/signal-exit": "^3.0.0",
+		"@types/stack-utils": "^2.0.2",
+		"@types/ws": "^8.18.1",
+		"typescript": "^5.8.3"
+	},
+	"peerDependencies": {
+		"@types/react": ">=19.0.0",
+		"react": ">=19.0.0",
+		"react-devtools-core": "^6.1.2"
+	},
+	"peerDependenciesMeta": {
+		"@types/react": {
+			"optional": true
+		},
+		"react-devtools-core": {
+			"optional": true
+		}
+	}
+}

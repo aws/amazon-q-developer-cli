@@ -5,12 +5,14 @@ export enum IconType {
   DOT = 'dot',
   SMALL_DOT = 'small-dot',
   CHEVRON_RIGHT = 'chevron-right',
+  ARROW_DOWN = 'arrow-down',
 }
 
 const ICON_MAP: Record<IconType, string> = {
   [IconType.DOT]: '●',
   [IconType.SMALL_DOT]: '·',
   [IconType.CHEVRON_RIGHT]: '❯',
+  [IconType.ARROW_DOWN]: '↓',
 };
 
 export interface IconProps {

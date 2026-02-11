@@ -20,9 +20,10 @@ export interface MessageProps {
   content: string;
   type: MessageType;
   status?: StatusType;
+  barColor?: string;
 }
 
-export const Message = React.memo(function Message({ content, type, status }: MessageProps) {
+export const Message = React.memo(function Message({ content, type, status, barColor }: MessageProps) {
   const { getColor } = useTheme();
   const highlightCode = useSyntaxHighlight();
 
@@ -124,7 +125,7 @@ export const Message = React.memo(function Message({ content, type, status }: Me
   }, [content, type, getMessageColor, getColor, highlightCode]);
 
   return (
-    <StatusBar status={messageStatus}>
+    <StatusBar status={messageStatus} barColor={barColor}>
       {renderContent()}
       {type === MessageType.DEVELOPER && <Text> </Text>}
     </StatusBar>
