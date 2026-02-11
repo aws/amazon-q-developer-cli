@@ -1,0 +1,4 @@
+{
+  "type": "fixed",
+  "description": "Deduplicate steering directory patterns in /context show when running from home directory"
+}

@@ -1039,10 +1039,14 @@ async fn configure_builtin_agent_resources(agent: &mut Agent, resolver: &PathRes
         .resources
         .extend(paths::workspace::DEFAULT_AGENT_RESOURCES.iter().map(|&s| s.into()));
 
+    let mut global_steering_canonical = None;
+
     // Add global steering (KIRO-only)
     if let Ok(global_steering_dir) = resolver.global().steering_dir()
         && global_steering_dir.exists()
     {
+        // Canonicalize to resolve symlinks and get the real path
+        global_steering_canonical = global_steering_dir.canonicalize().ok();
         let global_steering_pattern = format!("file://{}/**/*.md", global_steering_dir.display());
         agent.resources.push(global_steering_pattern.into());
     }
@@ -1051,8 +1055,17 @@ async fn configure_builtin_agent_resources(agent: &mut Agent, resolver: &PathRes
     if let Ok(workspace_steering_dir) = resolver.workspace().steering_dir()
         && workspace_steering_dir.exists()
     {
-        let workspace_steering_pattern = format!("file://{}/**/*.md", workspace_steering_dir.display());
-        agent.resources.push(workspace_steering_pattern.into());
+        // Only add if it's different from global (to avoid duplicates when cwd == home_dir)
+        let workspace_steering_canonical = workspace_steering_dir.canonicalize().ok();
+        let is_duplicate = workspace_steering_canonical
+            .as_ref()
+            .zip(global_steering_canonical.as_ref())
+            .is_some_and(|(w, g)| w == g);
+
+        if !is_duplicate {
+            let workspace_steering_pattern = format!("file://{}/**/*.md", workspace_steering_dir.display());
+            agent.resources.push(workspace_steering_pattern.into());
+        }
     }
 
     // Add rules pattern if available (only when .amazonq exists but .kiro doesn't)
