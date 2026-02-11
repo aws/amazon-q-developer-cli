@@ -276,6 +276,7 @@ impl McpServerActor {
 
                     if let Ok(McpServerActorResponse::TerminateAcknowledged) = res {
                         respond!(req, res);
+                        self.service_handle.cancel().await;
                         break;
                     } else {
                         respond!(req, res);

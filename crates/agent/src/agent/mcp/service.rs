@@ -56,6 +56,8 @@ use crate::agent::util::path::expand_path;
 use crate::agent_config::definitions::RemoteMcpServerConfig;
 use crate::util::providers::RealProvider;
 
+const SHUTDOWN_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(3);
+
 /// This struct is consumed by the [rmcp] crate on server launch. The only purpose of this struct
 /// is to handle server-to-client requests. Client-side code will own a [RunningMcpService]
 /// instance.
@@ -456,6 +458,23 @@ impl RunningMcpService {
         Self {
             running_service: InnerService::Original(running_service),
             auth_client,
+        }
+    }
+
+    /// Gracefully shuts down the MCP server by calling cancel on the underlying rmcp service.
+    ///
+    /// For stdio transports, this closes stdin to the child process and waits for it to exit
+    /// (with a timeout before sending SIGKILL). Uses `close_with_timeout` to avoid blocking
+    /// indefinitely if the serve task cleanup hangs. This should be called before dropping
+    /// the service to ensure child processes are properly cleaned up.
+    pub async fn cancel(self) {
+        match self.running_service {
+            InnerService::Original(mut rs) => {
+                if let Err(e) = rs.close_with_timeout(SHUTDOWN_TIMEOUT).await {
+                    warn!("Failed to shut down MCP service: {e}");
+                }
+            },
+            InnerService::Peer(_) => {},
         }
     }
 }

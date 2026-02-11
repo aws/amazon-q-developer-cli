@@ -1405,6 +1405,42 @@ impl ToolManager {
             .values()
             .any(|records| records.iter().any(|r| matches!(r, LoadingRecord::Err(..))))
     }
+
+    /// Gracefully shuts down all running MCP server processes.
+    ///
+    /// This calls `close_with_timeout()` on each MCP service, which closes stdin to child
+    /// processes and waits for them to exit (with a timeout before force-killing). This ensures
+    /// MCP server processes don't leak when the CLI session ends.
+    pub async fn shutdown_all_clients(&mut self) {
+        const SHUTDOWN_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(3);
+        let clients = self.clients.drain().collect::<Vec<_>>();
+        let futures: Vec<_> = clients
+            .into_iter()
+            .map(|(server_name, client)| async move {
+                let running_service = match client {
+                    InitializedMcpClient::Pending(mut handle) => {
+                        match tokio::time::timeout(SHUTDOWN_TIMEOUT, &mut handle).await {
+                            Ok(Ok(Ok(service))) => service,
+                            _ => {
+                                handle.abort();
+                                tracing::warn!("MCP server {server_name} did not initialize, aborting");
+                                return;
+                            },
+                        }
+                    },
+                    InitializedMcpClient::Ready(service) => service,
+                };
+
+                let InnerService::Original(mut inner) = running_service.inner_service else {
+                    return;
+                };
+                if let Err(e) = inner.close_with_timeout(SHUTDOWN_TIMEOUT).await {
+                    tracing::warn!("Failed to shut down MCP server {server_name}: {e}");
+                }
+            })
+            .collect();
+        futures::future::join_all(futures).await;
+    }
 }
 
 type DisplayTaskJoinHandle = JoinHandle<Result<(), eyre::Report>>;

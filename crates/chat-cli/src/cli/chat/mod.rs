@@ -2049,6 +2049,11 @@ impl ChatSession {
         // Cancel any active knowledge indexing operations on exit
         crate::util::knowledge_store::KnowledgeStore::cancel_all_operations_static().await;
 
+        // Gracefully shut down all MCP server processes to prevent leaked child processes
+        tracing::debug!("Shutting down MCP servers...");
+        self.conversation.tool_manager.shutdown_all_clients().await;
+        tracing::debug!("MCP server shutdown complete");
+
         Ok(())
     }
 
