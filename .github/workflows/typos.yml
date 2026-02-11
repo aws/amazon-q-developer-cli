@@ -1,8 +1,7 @@
-name: Typos
+name: "PR: Typos"
 
 on:
-  workflow_dispatch:
-  push:
+  pull_request:
 
 permissions:
   contents: read

@@ -1,4 +1,4 @@
-name: Check Merge Conflicts
+name: "PR: Check Merge Conflicts"
 
 on:
   pull_request:
