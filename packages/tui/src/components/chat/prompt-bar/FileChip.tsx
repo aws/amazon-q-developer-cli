@@ -1,6 +1,7 @@
 import React from 'react';
 import path from 'path';
-import Chip, { ChipColor } from '../../ui/chip/Chip.js';
+import { Text } from 'ink';
+import { useTheme } from '../../../hooks/useThemeContext.js';
 
 export interface FileChipProps {
   filePath: string;
@@ -9,11 +10,10 @@ export interface FileChipProps {
 
 export const FileChip = React.memo(function FileChip({ filePath, lineCount }: FileChipProps) {
   const fileName = path.basename(filePath);
+  const { getColor } = useTheme();
   return (
-    <Chip
-      value={` ${fileName}  ${lineCount} lines `}
-      color={ChipColor.BRAND}
-      background={true}
-    />
+    <Text backgroundColor={getColor('muted').hex} color={getColor('brand').hex}>
+      {` ${fileName}  ${lineCount} lines `}
+    </Text>
   );
 });

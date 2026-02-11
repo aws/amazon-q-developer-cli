@@ -1,8 +1,6 @@
-import { Box } from 'ink';
-import path from 'path';
+import { Box, Text as InkText } from 'ink';
 import React, { useEffect, useRef, useState, useLayoutEffect, useCallback, useMemo } from 'react';
 import { useTheme } from '../../../hooks/useThemeContext.js';
-import { useTerminalSize } from '../../../hooks/useTerminalSize.js';
 import { useKeypress, type Key } from '../../../hooks/useKeypress.js';
 import { Text } from '../../ui/text/Text.js';
 import { PastedChip, shouldCollapsePaste } from './PastedChip.js';
@@ -26,23 +24,6 @@ import {
   transposeChars,
 } from '../../../utils/input-editing.js';
 import { CommandHistory } from '../../../utils/command-history.js';
-
-// Calculate the visual display width of a chip
-const getChipDisplayWidth = (seg: Segment): number => {
-  if (seg.type === 'file') {
-    const fileName = path.basename(seg.filePath);
-    // Format: " {fileName}  {lineCount} lines " with background
-    return ` ${fileName}  ${seg.lineCount} lines `.length;
-  }
-  if (seg.type === 'paste') {
-    // Format: " {lineCount} lines " or " {charCount} chars "
-    const label = seg.lineCount > 1 
-      ? `${seg.lineCount} lines` 
-      : `${seg.charCount} chars`;
-    return ` ${label} `.length;
-  }
-  return 0;
-};
 
 export interface TriggerRule {
   key: string;
@@ -105,15 +86,13 @@ export const PromptInput = React.memo(function PromptInput({
   const { setCommandInput, clearCommandInput } = useCommandActions();
   const { pendingFileAttachment } = useFileAttachmentState();
   const { consumePendingFileAttachment } = useFileAttachmentActions();
-  const { width: terminalWidth } = useTerminalSize();
-
   const [segments, setSegments] = useState<Segment[]>([{ type: 'text', value: '' }]);
   const [cursor, setCursor] = useState(0);
 
   const { getColor } = useTheme();
   const prevTriggerRef = useRef<TriggerInfo | null>(null);
 
-  const secondaryColor = useMemo(() => getColor('secondary'), [getColor]);
+  const mutedColor = useMemo(() => getColor('muted'), [getColor]);
 
   // Sync from store
   useEffect(() => {
@@ -446,233 +425,69 @@ export const PromptInput = React.memo(function PromptInput({
     }
   });
 
-  // Render an inverse-color block cursor (single character)
-  const renderCursor = (char: string = ' ') => {
-    if (isProcessing) return null;
-    return <Text inverse>{char}</Text>;
-  };
-
-  // Render text with cursor at the specified position
-  const renderTextWithCursor = (text: string, cursorPos: number) => {
-    if (isProcessing) {
-      return <Text>{text}</Text>;
-    }
-    
-    const before = text.slice(0, cursorPos);
-    const charAtCursor = text[cursorPos] ?? ' ';
-    const after = text.slice(cursorPos + 1);
-    
-    return (
-      <>
-        {before && <Text>{before}</Text>}
-        {renderCursor(charAtCursor)}
-        {after && <Text>{after}</Text>}
-      </>
-    );
-  };
-
   const renderContent = () => {
     const total = totalWidth(segments);
-    if (total === 0) {
-      // Empty input - show cursor followed by placeholder
+    if (total === 0 && !isProcessing) {
       return (
         <>
-          {renderCursor()}
-          <Text>{secondaryColor(placeholder)}</Text>
+          <Text inverse> </Text>
+          <Text>{mutedColor(placeholder)}</Text>
         </>
       );
     }
+    if (total === 0) return null;
 
-    // Calculate total visual width to determine if we need multi-line rendering
-    let totalVisualWidth = 0;
-    for (const seg of segments) {
-      if (seg.type === 'text') {
-        // For text, count characters but handle existing newlines
-        const textLines = seg.value.split('\n');
-        for (let i = 0; i < textLines.length; i++) {
-          totalVisualWidth += textLines[i]!.length;
-          if (i < textLines.length - 1) {
-            // Reset for new line
-            totalVisualWidth = textLines[i + 1]!.length;
-          }
-        }
-      } else {
-        totalVisualWidth += getChipDisplayWidth(seg);
-      }
-    }
-
-    // Check if any text segment has newlines OR if content would wrap
-    const hasExplicitNewlines = segments.some(s => s.type === 'text' && s.value.includes('\n'));
-    const wouldWrap = totalVisualWidth > terminalWidth - 2; // -2 for some margin
-    
-    if (hasExplicitNewlines || wouldWrap) {
-      // Multi-line rendering with pre-wrapping
-      const lines: React.ReactNode[] = [];
-      let currentLine: React.ReactNode[] = [];
-      let globalPos = 0;
-      let currentLineWidth = 0;
-      const maxLineWidth = terminalWidth - 2; // Leave some margin
-      
-      for (let i = 0; i < segments.length; i++) {
-        const seg = segments[i]!;
-        
-        if (seg.type === 'text') {
-          const textLines = seg.value.split('\n');
-          for (let li = 0; li < textLines.length; li++) {
-            const lineText = textLines[li]!;
-            
-            // Check if this text needs to be wrapped
-            if (currentLineWidth + lineText.length > maxLineWidth && currentLineWidth > 0) {
-              // Start a new line before adding this text
-              lines.push(<Box key={lines.length}>{currentLine}</Box>);
-              currentLine = [];
-              currentLineWidth = 0;
-            }
-            
-            // If the text itself is longer than max width, we need to split it
-            let remainingText = lineText;
-            let textStartPos = globalPos;
-            
-            while (remainingText.length > 0) {
-              const availableWidth = maxLineWidth - currentLineWidth;
-              const chunkLength = Math.min(remainingText.length, availableWidth > 0 ? availableWidth : maxLineWidth);
-              const chunk = remainingText.slice(0, chunkLength);
-              remainingText = remainingText.slice(chunkLength);
-              
-              const chunkStart = textStartPos;
-              const chunkEnd = textStartPos + chunk.length;
-              const cursorInChunk = cursor >= chunkStart && cursor <= chunkEnd;
-              
-              if (cursorInChunk && !isProcessing) {
-                const localCursor = cursor - chunkStart;
-                currentLine.push(
-                  <React.Fragment key={`${i}-${li}-${textStartPos}`}>
-                    {renderTextWithCursor(chunk, localCursor)}
-                  </React.Fragment>
-                );
-              } else {
-                currentLine.push(<Text key={`${i}-${li}-${textStartPos}`}>{chunk}</Text>);
-              }
-              
-              currentLineWidth += chunk.length;
-              textStartPos += chunk.length;
-              
-              // If there's more text and we've filled the line, wrap
-              if (remainingText.length > 0) {
-                lines.push(<Box key={lines.length}>{currentLine}</Box>);
-                currentLine = [];
-                currentLineWidth = 0;
-              }
-            }
-            
-            globalPos += lineText.length;
-            
-            // Handle explicit newline (except for last part)
-            if (li < textLines.length - 1) {
-              lines.push(<Box key={lines.length}>{currentLine}</Box>);
-              currentLine = [];
-              currentLineWidth = 0;
-              globalPos += 1; // for the \n
-            }
-          }
-        } else {
-          // Chip segment
-          const chipWidth = getChipDisplayWidth(seg);
-          
-          // Check if chip would overflow current line
-          if (currentLineWidth + chipWidth > maxLineWidth && currentLineWidth > 0) {
-            lines.push(<Box key={lines.length}>{currentLine}</Box>);
-            currentLine = [];
-            currentLineWidth = 0;
-          }
-          
-          const cursorInSeg = cursor >= globalPos && cursor <= globalPos + 1;
-          if (seg.type === 'file') {
-            if (cursorInSeg && cursor === globalPos && !isProcessing) {
-              currentLine.push(<React.Fragment key={i}>{renderCursor()}<FileChip filePath={seg.filePath} lineCount={seg.lineCount} /></React.Fragment>);
-            } else {
-              currentLine.push(<FileChip key={i} filePath={seg.filePath} lineCount={seg.lineCount} />);
-            }
-          } else if (seg.type === 'paste') {
-            if (cursorInSeg && cursor === globalPos && !isProcessing) {
-              currentLine.push(<React.Fragment key={i}>{renderCursor()}<PastedChip lineCount={seg.lineCount} charCount={seg.charCount} /></React.Fragment>);
-            } else {
-              currentLine.push(<PastedChip key={i} lineCount={seg.lineCount} charCount={seg.charCount} />);
-            }
-          }
-          currentLineWidth += chipWidth;
-          globalPos += 1;
-        }
-      }
-      
-      if (currentLine.length > 0) {
-        lines.push(<Box key={lines.length}>{currentLine}</Box>);
-      }
-      
-      return <Box flexDirection="column">{lines}</Box>;
-    }
-
-    // Single-line rendering (content fits on one line)
-    const elements: React.ReactNode[] = [];
+    // Build flat array of <Text> children. Ink's squashTextNodes flattens
+    // nested <Text>/<ink-virtual-text> into one ANSI string, then wrap-ansi
+    // wraps it at the container width using string-width (Unicode-correct).
+    const parts: React.ReactNode[] = [];
     let pos = 0;
 
     for (let i = 0; i < segments.length; i++) {
       const seg = segments[i]!;
       const w = segmentWidth(seg);
-      const cursorInSeg = cursor >= pos && cursor <= pos + w;
+      const cursorInSeg = !isProcessing && cursor >= pos && cursor <= pos + w;
 
       if (seg.type === 'text') {
-        if (cursorInSeg && !isProcessing) {
+        if (cursorInSeg) {
           const localCursor = cursor - pos;
-          elements.push(
+          const charAtCursor = seg.value[localCursor] ?? ' ';
+          const after = localCursor < seg.value.length ? seg.value.slice(localCursor + 1) : '';
+          parts.push(
             <React.Fragment key={i}>
-              {renderTextWithCursor(seg.value, localCursor)}
+              <Text>{seg.value.slice(0, localCursor)}</Text>
+              <Text inverse>{charAtCursor}</Text>
+              {after && <Text>{after}</Text>}
             </React.Fragment>
           );
         } else {
-          elements.push(<Text key={i}>{seg.value}</Text>);
+          parts.push(<Text key={i}>{seg.value}</Text>);
         }
       } else if (seg.type === 'file') {
-        if (cursorInSeg && cursor === pos && !isProcessing) {
-          elements.push(
-            <React.Fragment key={i}>
-              {renderCursor()}
-              <FileChip filePath={seg.filePath} lineCount={seg.lineCount} />
-            </React.Fragment>
-          );
-        } else if (cursorInSeg && cursor === pos + 1 && !isProcessing) {
-          elements.push(
-            <React.Fragment key={i}>
-              <FileChip filePath={seg.filePath} lineCount={seg.lineCount} />
-              {i === segments.length - 1 && renderCursor()}
-            </React.Fragment>
-          );
+        if (cursorInSeg && cursor === pos) {
+          parts.push(<React.Fragment key={i}><Text inverse> </Text><FileChip filePath={seg.filePath} lineCount={seg.lineCount} /></React.Fragment>);
         } else {
-          elements.push(<FileChip key={i} filePath={seg.filePath} lineCount={seg.lineCount} />);
+          parts.push(<FileChip key={i} filePath={seg.filePath} lineCount={seg.lineCount} />);
         }
       } else if (seg.type === 'paste') {
-        if (cursorInSeg && cursor === pos && !isProcessing) {
-          elements.push(
-            <React.Fragment key={i}>
-              {renderCursor()}
-              <PastedChip lineCount={seg.lineCount} charCount={seg.charCount} />
-            </React.Fragment>
-          );
-        } else if (cursorInSeg && cursor === pos + 1 && !isProcessing) {
-          elements.push(
-            <React.Fragment key={i}>
-              <PastedChip lineCount={seg.lineCount} charCount={seg.charCount} />
-              {i === segments.length - 1 && renderCursor()}
-            </React.Fragment>
-          );
+        if (cursorInSeg && cursor === pos) {
+          parts.push(<React.Fragment key={i}><Text inverse> </Text><PastedChip lineCount={seg.lineCount} charCount={seg.charCount} /></React.Fragment>);
         } else {
-          elements.push(<PastedChip key={i} lineCount={seg.lineCount} charCount={seg.charCount} />);
+          parts.push(<PastedChip key={i} lineCount={seg.lineCount} charCount={seg.charCount} />);
         }
       }
       pos += w;
     }
 
-    return <>{elements}</>;
+    // Trailing cursor after a chip at the end
+    if (!isProcessing && cursor === total) {
+      const lastSeg = segments[segments.length - 1];
+      if (lastSeg && lastSeg.type !== 'text') {
+        parts.push(<Text key="cursor-end" inverse> </Text>);
+      }
+    }
+
+    return <InkText wrap="wrap">{parts}</InkText>;
   };
 
   return <Box>{renderContent()}</Box>;

@@ -1,5 +1,6 @@
 import React from 'react';
-import Chip, { ChipColor } from '../../ui/chip/Chip.js';
+import { Text } from 'ink';
+import { useTheme } from '../../../hooks/useThemeContext.js';
 
 export const PASTE_COLLAPSE_THRESHOLD_LINES = 10;
 export const PASTE_COLLAPSE_THRESHOLD_CHARS = 500;
@@ -31,16 +32,17 @@ function formatBytes(bytes: number): string {
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
-export function PastedChip({ 
-  type = 'text', 
-  lineCount = 0, 
+export const PastedChip = React.memo(function PastedChip({
+  type = 'text',
+  lineCount = 0,
   charCount = 0,
   imageWidth,
   imageHeight,
   imageSizeBytes,
 }: PastedChipProps) {
+  const { getColor } = useTheme();
   let label: string;
-  
+
   if (type === 'image') {
     // Format image info
     const dimensions = imageWidth && imageHeight ? `${imageWidth}×${imageHeight}` : '';
@@ -49,16 +51,14 @@ export function PastedChip({
     label = `pasted image${details ? ` (${details})` : ''}`;
   } else {
     // Text content
-    label = lineCount > 1 
-      ? `${lineCount} lines` 
+    label = lineCount > 1
+      ? `${lineCount} lines`
       : `${charCount} chars`;
   }
 
   return (
-    <Chip
-      value={` ${label} `}
-      color={ChipColor.BRAND}
-      background={true}
-    />
+    <Text backgroundColor={getColor('muted').hex} color={getColor('brand').hex}>
+      {` ${label} `}
+    </Text>
   );
-}
+});
