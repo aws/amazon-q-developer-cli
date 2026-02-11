@@ -17,6 +17,8 @@ interface ChipProps {
   value: string;
   /** Color preset for the chip */
   color?: ChipColor;
+  /** Custom hex color (overrides color preset) */
+  hexColor?: string;
   /** Prefix text to display before the value */
   prefix?: string;
   /** Whether to wrap the value in parentheses */
@@ -28,6 +30,7 @@ interface ChipProps {
 export default function Chip({
   value,
   color = ChipColor.PRIMARY,
+  hexColor,
   prefix,
   wrap = false,
   background = false,
@@ -41,7 +44,7 @@ export default function Chip({
     <Text>
       {prefix && getColor(ChipColor.SECONDARY)(prefix)}
       {wrap && getColor(ChipColor.SECONDARY)('(')}
-      {getColor(color)(value)}
+      {hexColor ? <Text color={hexColor}>{value}</Text> : getColor(color)(value)}
       {wrap && getColor(ChipColor.SECONDARY)(')')}
     </Text>
   );

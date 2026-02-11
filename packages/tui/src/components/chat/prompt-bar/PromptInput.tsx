@@ -317,11 +317,16 @@ export const PromptInput = React.memo(function PromptInput({
       return;
     }
 
+    // Check if slash command menu is visible
+    const slashMenuVisible = activeTrigger?.key === '/' && !commandInputValue.includes(' ');
+    // Check if file picker menu is visible
+    const filePickerVisible = activeTrigger?.key === '@' && filePickerHasResults;
+
     if (key.return) {
       // Block Enter if file picker menu is visible with results
-      if (activeTrigger?.key === '@' && filePickerHasResults) return;
-      // Block Enter if slash command menu is visible (input starts with / and no space)
-      if (activeTrigger?.key === '/' && !commandInputValue.includes(' ')) return;
+      if (filePickerVisible) return;
+      // Block Enter if slash command menu is visible
+      if (slashMenuVisible) return;
       const content = buildContent(segments);
       if (content) {
         clearAll();
@@ -346,6 +351,8 @@ export const PromptInput = React.memo(function PromptInput({
         setCursor(Math.min(totalWidth(segments), cursor + 1));
       }
     } else if (key.upArrow) {
+      // Skip if menu is visible - let menu handle it
+      if (slashMenuVisible || filePickerVisible) return;
       // Navigate to previous command in history
       const command = CommandHistory.getInstance().navigate('up');
       if (command) {
@@ -353,6 +360,8 @@ export const PromptInput = React.memo(function PromptInput({
         setCursor(command.length);
       }
     } else if (key.downArrow) {
+      // Skip if menu is visible - let menu handle it
+      if (slashMenuVisible || filePickerVisible) return;
       // Navigate to next command in history
       const command = CommandHistory.getInstance().navigate('down');
       if (command) {

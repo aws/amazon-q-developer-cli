@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { Box } from 'ink';
 import { useTheme } from '../../../hooks/useThemeContext.js';
 import { useTextStyle } from '../../../hooks/useTextStyle.js';
+import { useTerminalSize } from '../../../hooks/useTerminalSize.js';
 import { Text } from '../text/Text.js';
 import { Icon, IconType } from '../icon/Icon.js';
 import { useKeypress } from '../../../hooks/useKeypress.js';
@@ -34,6 +35,7 @@ export const Menu = React.memo(function Menu({
 }: MenuProps) {
   const [selectedIndex, setSelectedIndex] = useState(0);
   const { getColor } = useTheme();
+  const { width: terminalWidth } = useTerminalSize();
 
   // Get chalk functions for styling and coloring
   const label = useTextStyle('label');
@@ -42,6 +44,11 @@ export const Menu = React.memo(function Menu({
 
   // Calculate the maximum item label length for consistent column alignment
   const maxLabelLength = Math.max(...items.map((item) => item.label.length)) + prefix.length;
+  
+  // Calculate available width for description
+  const indicatorWidth = showSelectedIndicator ? 3 : 0; // chevron + 2 spaces
+  const spacerWidth = 4; // Box width={4}
+  const availableDescWidth = terminalWidth - indicatorWidth - maxLabelLength - spacerWidth - 5; // -5 for margin
 
   // Call onHighlight when selectedIndex changes
   React.useEffect(() => {
@@ -83,6 +90,11 @@ export const Menu = React.memo(function Menu({
         const itemText = `${prefix}${item.label}`;
         const paddedItem = itemText.padEnd(maxLabelLength);
         const isSelected = actualIndex === selectedIndex;
+        
+        // Truncate description if too long
+        const truncatedDesc = item.description.length > availableDescWidth 
+          ? item.description.slice(0, availableDescWidth - 3) + '...'
+          : item.description;
 
         return (
           <Box key={item.label} flexDirection="row">
@@ -98,7 +110,7 @@ export const Menu = React.memo(function Menu({
             )}
             <Text>{isSelected ? selectedLabel(paddedItem) : label(paddedItem)}</Text>
             <Box width={4} />
-            <Text>{description(item.description)}</Text>
+            <Text>{description(truncatedDesc)}</Text>
           </Box>
         );
       })}
