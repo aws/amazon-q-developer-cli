@@ -126,12 +126,8 @@ jobs:
       - name: Determine Environment
         id: determine-environment
         run: |
-          SOURCE_BRANCH="${{ github.ref_name }}"
-          if [[ "$SOURCE_BRANCH" == "prod" ]] || [[ "$SOURCE_BRANCH" == "main" ]]; then
-            echo 'ENVIRONMENT=["gamma", "prod"]' >> $GITHUB_OUTPUT
-          else
-            echo 'ENVIRONMENT=["gamma"]' >> $GITHUB_OUTPUT
-          fi
+          # V2 is in development, only build for gamma
+          echo 'ENVIRONMENT=["gamma"]' >> $GITHUB_OUTPUT
 
   TriggerDarwinBuild:
     needs: [prepare_branch]
