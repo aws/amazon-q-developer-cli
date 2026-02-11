@@ -14,6 +14,7 @@ use serde::{
     Deserialize,
     Serialize,
 };
+use strsim::jaro_winkler;
 
 use crate::api_client::Endpoint;
 use crate::cli::chat::{
@@ -78,6 +79,9 @@ impl ModelListDisplayInfo {
     }
 }
 
+/// Minimum similarity score (0.0-1.0) for suggesting a model name
+const MODEL_SIMILARITY_THRESHOLD: f64 = 0.6;
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ModelInfo {
     /// Display name
@@ -141,22 +145,26 @@ impl ModelInfo {
 /// Command-line arguments for model selection operations
 #[derive(Debug, PartialEq, Args)]
 pub struct ModelArgs {
+    /// Model name to select directly (e.g., claude-sonnet-4)
+    pub model_name: Option<String>,
+
     #[command(subcommand)]
     pub subcommand: Option<ModelSubcommand>,
 }
 
 impl ModelArgs {
     pub async fn execute(self, os: &mut Os, session: &mut ChatSession) -> Result<ChatState, ChatError> {
-        match self.subcommand {
-            Some(subcommand) => subcommand.execute(os, session).await,
-            None => Ok(select_model(os, session).await?.unwrap_or(ChatState::PromptUser {
+        match (&self.model_name, &self.subcommand) {
+            (_, Some(subcommand)) => subcommand.clone().execute(os, session).await,
+            (Some(model_name), None) => select_model_by_name(os, session, model_name).await,
+            (None, None) => Ok(select_model(os, session).await?.unwrap_or(ChatState::PromptUser {
                 skip_printing_tools: false,
             })),
         }
     }
 }
 
-#[derive(Debug, PartialEq, Subcommand)]
+#[derive(Debug, Clone, PartialEq, Subcommand)]
 pub enum ModelSubcommand {
     /// Set the current model as the default for new conversations
     #[command(name = "set-current-as-default")]
@@ -234,6 +242,63 @@ pub async fn select_model(os: &Os, session: &mut ChatSession) -> Result<Option<C
     Ok(Some(ChatState::PromptUser {
         skip_printing_tools: false,
     }))
+}
+
+/// Select a model directly by name without interactive selection
+async fn select_model_by_name(os: &Os, session: &mut ChatSession, name: &str) -> Result<ChatState, ChatError> {
+    let (models, _) = get_available_models(os).await?;
+
+    if let Some(model) = find_model(&models, name) {
+        session.conversation.model_info = Some(model.clone());
+        let display_name = model.display_name();
+
+        queue!(
+            session.stderr,
+            style::Print("\n"),
+            style::Print(format!(" Using {display_name}\n\n")),
+            StyledText::reset(),
+        )?;
+        execute!(session.stderr, StyledText::reset())?;
+
+        Ok(ChatState::PromptUser {
+            skip_printing_tools: false,
+        })
+    } else {
+        // Try fuzzy matching to suggest a model
+        let suggestion = find_similar_model(&models, name);
+
+        queue!(
+            session.stderr,
+            StyledText::warning_fg(),
+            style::Print(format!("Model '{}' not found.", name)),
+            StyledText::reset(),
+        )?;
+
+        if let Some(suggested_name) = suggestion {
+            queue!(
+                session.stderr,
+                style::Print(" Did you mean "),
+                StyledText::info_fg(),
+                style::Print(&suggested_name),
+                StyledText::reset(),
+                style::Print("?"),
+            )?;
+        }
+
+        queue!(
+            session.stderr,
+            style::Print(format!(
+                " Run {} to browse available models.\n",
+                StyledText::command("/model")
+            )),
+        )?;
+
+        execute!(session.stderr, StyledText::reset())?;
+
+        Ok(ChatState::PromptUser {
+            skip_printing_tools: false,
+        })
+    }
 }
 
 async fn set_current_as_default(os: &mut Os, session: &mut ChatSession) -> Result<ChatState, ChatError> {
@@ -335,4 +400,101 @@ pub fn find_model<'a>(models: &'a [ModelInfo], name: &str) -> Option<&'a ModelIn
             .is_some_and(|n| n.eq_ignore_ascii_case(normalized))
             || m.model_id.eq_ignore_ascii_case(normalized)
     })
+}
+
+/// Find the closest matching model name using fuzzy string matching.
+/// Returns the best match if it exceeds the similarity threshold.
+fn find_similar_model(models: &[ModelInfo], query: &str) -> Option<String> {
+    let query_lower = query.to_lowercase();
+
+    let mut scored: Vec<(f64, &ModelInfo)> = models
+        .iter()
+        .map(|model| {
+            // Score against both model_name and model_id
+            let name_score = model
+                .model_name
+                .as_ref()
+                .map_or(0.0, |n| jaro_winkler(&query_lower, &n.to_lowercase()));
+            let id_score = jaro_winkler(&query_lower, &model.model_id.to_lowercase());
+            (name_score.max(id_score), model)
+        })
+        .filter(|(score, _)| *score >= MODEL_SIMILARITY_THRESHOLD)
+        .collect();
+
+    scored.sort_by(|a, b| b.0.partial_cmp(&a.0).unwrap_or(std::cmp::Ordering::Equal));
+
+    scored.first().map(|(_, model)| model.display_name().to_string())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_find_similar_model_exact_match_not_needed() {
+        let models = vec![
+            ModelInfo {
+                model_name: Some("claude-sonnet-4".to_string()),
+                model_id: "claude-sonnet-4".to_string(),
+                description: None,
+                context_window_tokens: 200_000,
+                rate_multiplier: None,
+                rate_unit: None,
+            },
+            ModelInfo {
+                model_name: Some("claude-3.7-sonnet".to_string()),
+                model_id: "claude-3.7-sonnet".to_string(),
+                description: None,
+                context_window_tokens: 200_000,
+                rate_multiplier: None,
+                rate_unit: None,
+            },
+        ];
+
+        // Typo: "claud-sonnet" should suggest "claude-sonnet-4"
+        let suggestion = find_similar_model(&models, "claud-sonnet");
+        assert!(suggestion.is_some());
+        assert_eq!(suggestion.unwrap(), "claude-sonnet-4");
+
+        // Typo: "claude-sonet-4" should suggest "claude-sonnet-4"
+        let suggestion = find_similar_model(&models, "claude-sonet-4");
+        assert!(suggestion.is_some());
+        assert_eq!(suggestion.unwrap(), "claude-sonnet-4");
+
+        // Partial match with more context: "claude-sonnet" should match
+        let suggestion = find_similar_model(&models, "claude-sonnet");
+        assert!(suggestion.is_some(), "Expected 'claude-sonnet' to fuzzy match a model");
+    }
+
+    #[test]
+    fn test_find_similar_model_no_match() {
+        let models = vec![ModelInfo {
+            model_name: Some("claude-sonnet-4".to_string()),
+            model_id: "claude-sonnet-4".to_string(),
+            description: None,
+            context_window_tokens: 200_000,
+            rate_multiplier: None,
+            rate_unit: None,
+        }];
+
+        // Completely unrelated string should not match
+        let suggestion = find_similar_model(&models, "xyz123");
+        assert!(suggestion.is_none());
+    }
+
+    #[test]
+    fn test_find_similar_model_case_insensitive() {
+        let models = vec![ModelInfo {
+            model_name: Some("Claude-Sonnet-4".to_string()),
+            model_id: "claude-sonnet-4".to_string(),
+            description: None,
+            context_window_tokens: 200_000,
+            rate_multiplier: None,
+            rate_unit: None,
+        }];
+
+        // Should match regardless of case
+        let suggestion = find_similar_model(&models, "CLAUD-SONNET");
+        assert!(suggestion.is_some());
+    }
 }

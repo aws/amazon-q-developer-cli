@@ -521,12 +521,14 @@ pub struct PromptBundle {
 pub enum PromptQuery {
     List,
     Search(Option<String>),
+    Models(Option<String>),
 }
 
 #[derive(Clone, Debug)]
 pub enum PromptQueryResult {
     List(HashMap<String, Vec<PromptBundle>>),
     Search(Vec<String>),
+    Models(Vec<String>),
 }
 
 /// Tools excluded from the available tools list due to validation failures.
@@ -1265,6 +1267,7 @@ impl ToolManager {
             Ok(match query_result {
                 PromptQueryResult::List(list) => list,
                 PromptQueryResult::Search(_) => return Err(GetPromptError::IncorrectResponseType),
+                PromptQueryResult::Models(_) => return Err(GetPromptError::IncorrectResponseType),
             })
         } else {
             Err(GetPromptError::MissingChannel)
@@ -1679,6 +1682,25 @@ fn spawn_orchestrator_task(
                     let query_res = PromptQueryResult::Search(filtered_prompts);
                     if let Err(e) = prompt_query_response_sender.send(query_res) {
                         error!("Error sending prompts to chat helper: {:?}", e);
+                    }
+                },
+                PromptQuery::Models(filter) => {
+                    use crate::cli::chat::cli::model::get_available_models;
+                    let model_names: Vec<String> = match get_available_models(os).await {
+                        Ok((models, _)) => models
+                            .iter()
+                            .map(|m| m.display_name().to_string())
+                            .filter(|name| {
+                                filter
+                                    .as_ref()
+                                    .is_none_or(|f| name.to_lowercase().starts_with(&f.to_lowercase()))
+                            })
+                            .collect(),
+                        Err(_) => Vec::new(),
+                    };
+                    let query_res = PromptQueryResult::Models(model_names);
+                    if let Err(e) = prompt_query_response_sender.send(query_res) {
+                        error!("Error sending models to chat helper: {:?}", e);
                     }
                 },
             }

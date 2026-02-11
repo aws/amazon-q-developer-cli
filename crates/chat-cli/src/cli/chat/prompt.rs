@@ -271,6 +271,71 @@ impl PromptCompleter {
                     "Wrong query response type received",
                 ))));
             },
+            PromptQueryResult::Models(_) => {
+                return Err(ReadlineError::Io(std::io::Error::other(eyre::eyre!(
+                    "Wrong query response type received",
+                ))));
+            },
+        };
+
+        Ok(matches)
+    }
+}
+
+pub struct ModelCompleter {
+    sender: PromptQuerySender,
+    receiver: RefCell<PromptQueryResponseReceiver>,
+}
+
+impl ModelCompleter {
+    fn new(sender: PromptQuerySender, receiver: PromptQueryResponseReceiver) -> Self {
+        ModelCompleter {
+            sender,
+            receiver: RefCell::new(receiver),
+        }
+    }
+
+    fn complete_model(&self, prefix: &str) -> Result<Vec<String>, ReadlineError> {
+        let sender = &self.sender;
+        let receiver = self.receiver.borrow_mut();
+        let query = PromptQuery::Models(if !prefix.is_empty() {
+            Some(prefix.to_string())
+        } else {
+            None
+        });
+
+        sender
+            .send(query)
+            .map_err(|e| ReadlineError::Io(std::io::Error::other(e.to_string())))?;
+
+        let mut new_receiver = receiver.resubscribe();
+
+        let mut attempts = 0;
+        let max_attempts = 5;
+        let query_res = loop {
+            match new_receiver.try_recv() {
+                Ok(result) => break result,
+                Err(_e) if attempts < max_attempts - 1 => {
+                    attempts += 1;
+                    std::thread::sleep(std::time::Duration::from_millis(100));
+                },
+                Err(e) => {
+                    return Err(ReadlineError::Io(std::io::Error::other(eyre::eyre!(
+                        "Failed to receive model info after {} attempts: {:?}",
+                        max_attempts,
+                        e
+                    ))));
+                },
+            }
+        };
+
+        let matches = match query_res {
+            PromptQueryResult::Models(list) => list.into_iter().map(|n| format!("/model {n}")).collect::<Vec<_>>(),
+            _ => {
+                return Err(ReadlineError::Io(std::io::Error::other(eyre::eyre!(
+                    "Wrong query response type received",
+                ))));
+            },
         };
 
         Ok(matches)
@@ -283,6 +348,7 @@ const AGENT_COMMANDS_WITH_NAME_COMPLETION: &[&str] = &["/agent swap ", "/agent d
 pub struct ChatCompleter {
     path_completer: PathCompleter,
     prompt_completer: PromptCompleter,
+    model_completer: ModelCompleter,
     available_commands: Vec<&'static str>,
     agent_names: Vec<String>,
 }
@@ -296,7 +362,8 @@ impl ChatCompleter {
     ) -> Self {
         Self {
             path_completer: PathCompleter::new(),
-            prompt_completer: PromptCompleter::new(sender, receiver),
+            prompt_completer: PromptCompleter::new(sender.clone(), receiver.resubscribe()),
+            model_completer: ModelCompleter::new(sender, receiver),
             available_commands,
             agent_names,
         }
@@ -337,6 +404,17 @@ impl Completer for ChatCompleter {
         // Handle command completion - check if line starts with / for multi-word commands
         if line.starts_with('/') {
             let cmd_part = &line[..pos];
+
+            // Handle /model <partial> - use dynamic model completion
+            if let Some(model_prefix) = cmd_part.strip_prefix("/model ") {
+                // Don't intercept subcommands like "set-current-as-default"
+                if !model_prefix.starts_with("set-")
+                    && let Ok(completions) = self.model_completer.complete_model(model_prefix)
+                {
+                    return Ok((0, completions));
+                }
+            }
+
             let candidates = complete_command(self.available_commands.clone(), cmd_part);
             if !candidates.is_empty() {
                 return Ok((0, candidates));
@@ -380,6 +458,8 @@ pub struct ChatHinter {
     /// Track if first hint has been shown
     first_hint_shown: std::sync::atomic::AtomicBool,
     agent_names: Vec<String>,
+    model_query_sender: PromptQuerySender,
+    model_query_receiver: RefCell<PromptQueryResponseReceiver>,
 }
 
 const INITIAL_PROMPT_HINTS: &[(&str, u32)] = &[
@@ -402,6 +482,8 @@ impl ChatHinter {
         history_path: PathBuf,
         available_commands: Vec<&'static str>,
         agent_names: Vec<String>,
+        sender: PromptQuerySender,
+        receiver: PromptQueryResponseReceiver,
     ) -> Self {
         Self {
             history_hints_enabled,
@@ -410,6 +492,8 @@ impl ChatHinter {
             available_commands,
             first_hint_shown: std::sync::atomic::AtomicBool::new(false),
             agent_names,
+            model_query_sender: sender,
+            model_query_receiver: RefCell::new(receiver),
         }
     }
 
@@ -456,6 +540,39 @@ impl ChatHinter {
                 }
                 let idx = rand::rng().random_range(0..weighted_hints.len());
                 return Some(weighted_hints[idx].to_string());
+            }
+        }
+
+        // If line starts with /model, try to get model hint
+        if let Some(model_prefix) = line.strip_prefix("/model ") {
+            // Don't hint for subcommands
+            if model_prefix.starts_with("set-") {
+                return None;
+            }
+
+            // Query for models matching the prefix
+            let query = PromptQuery::Models(if !model_prefix.is_empty() {
+                Some(model_prefix.to_string())
+            } else {
+                None
+            });
+
+            if self.model_query_sender.send(query).is_ok() {
+                let mut receiver = self.model_query_receiver.borrow_mut().resubscribe();
+
+                // Quick poll for hint (don't wait too long or it'll feel laggy)
+                for _ in 0..2 {
+                    if let Ok(PromptQueryResult::Models(models)) = receiver.try_recv() {
+                        if let Some(first_model) = models.first() {
+                            // Return the remainder after what user has typed
+                            if first_model.len() > model_prefix.len() {
+                                return Some(first_model[model_prefix.len()..].to_string());
+                            }
+                        }
+                        break;
+                    }
+                    std::thread::sleep(std::time::Duration::from_millis(50));
+                }
             }
         }
 
@@ -716,13 +833,20 @@ pub fn rl(
     let agent_names: Vec<String> = agents.agents.keys().cloned().collect();
 
     let h = ChatHelper {
-        completer: ChatCompleter::new(sender, receiver, available_commands.clone(), agent_names.clone()),
+        completer: ChatCompleter::new(
+            sender.clone(),
+            receiver.resubscribe(),
+            available_commands.clone(),
+            agent_names.clone(),
+        ),
         hinter: ChatHinter::new(
             history_hints_enabled,
             prompt_hints_enabled,
             history_path,
             available_commands,
             agent_names,
+            sender,
+            receiver,
         ),
         validator: MultiLineValidator,
     };
@@ -871,6 +995,8 @@ mod tests {
         // Create a mock Os for testing
         let mock_os = crate::os::Os::new().await.unwrap();
         let available_commands = get_available_commands(&mock_os);
+        let (hinter_sender, _) = tokio::sync::broadcast::channel::<PromptQuery>(5);
+        let (_, hinter_receiver) = tokio::sync::broadcast::channel::<PromptQueryResult>(5);
         let helper = ChatHelper {
             completer: ChatCompleter::new(
                 prompt_request_sender,
@@ -878,7 +1004,15 @@ mod tests {
                 available_commands.clone(),
                 Vec::new(),
             ),
-            hinter: ChatHinter::new(true, true, PathBuf::new(), available_commands, Vec::new()),
+            hinter: ChatHinter::new(
+                true,
+                true,
+                PathBuf::new(),
+                available_commands,
+                Vec::new(),
+                hinter_sender,
+                hinter_receiver,
+            ),
             validator: MultiLineValidator,
         };
 
@@ -896,6 +1030,8 @@ mod tests {
         // Create a mock Os for testing
         let mock_os = crate::os::Os::new().await.unwrap();
         let available_commands = get_available_commands(&mock_os);
+        let (hinter_sender, _) = tokio::sync::broadcast::channel::<PromptQuery>(5);
+        let (_, hinter_receiver) = tokio::sync::broadcast::channel::<PromptQueryResult>(5);
         let helper = ChatHelper {
             completer: ChatCompleter::new(
                 prompt_request_sender,
@@ -903,7 +1039,15 @@ mod tests {
                 available_commands.clone(),
                 Vec::new(),
             ),
-            hinter: ChatHinter::new(true, true, PathBuf::new(), available_commands, Vec::new()),
+            hinter: ChatHinter::new(
+                true,
+                true,
+                PathBuf::new(),
+                available_commands,
+                Vec::new(),
+                hinter_sender,
+                hinter_receiver,
+            ),
             validator: MultiLineValidator,
         };
 
@@ -924,6 +1068,8 @@ mod tests {
         // Create a mock Os for testing
         let mock_os = crate::os::Os::new().await.unwrap();
         let available_commands = get_available_commands(&mock_os);
+        let (hinter_sender, _) = tokio::sync::broadcast::channel::<PromptQuery>(5);
+        let (_, hinter_receiver) = tokio::sync::broadcast::channel::<PromptQueryResult>(5);
         let helper = ChatHelper {
             completer: ChatCompleter::new(
                 prompt_request_sender,
@@ -931,7 +1077,15 @@ mod tests {
                 available_commands.clone(),
                 Vec::new(),
             ),
-            hinter: ChatHinter::new(true, true, PathBuf::new(), available_commands, Vec::new()),
+            hinter: ChatHinter::new(
+                true,
+                true,
+                PathBuf::new(),
+                available_commands,
+                Vec::new(),
+                hinter_sender,
+                hinter_receiver,
+            ),
             validator: MultiLineValidator,
         };
 
@@ -952,6 +1106,8 @@ mod tests {
         // Create a mock Os for testing
         let mock_os = crate::os::Os::new().await.unwrap();
         let available_commands = get_available_commands(&mock_os);
+        let (hinter_sender, _) = tokio::sync::broadcast::channel::<PromptQuery>(5);
+        let (_, hinter_receiver) = tokio::sync::broadcast::channel::<PromptQueryResult>(5);
         let helper = ChatHelper {
             completer: ChatCompleter::new(
                 prompt_request_sender,
@@ -959,7 +1115,15 @@ mod tests {
                 available_commands.clone(),
                 Vec::new(),
             ),
-            hinter: ChatHinter::new(true, true, PathBuf::new(), available_commands, Vec::new()),
+            hinter: ChatHinter::new(
+                true,
+                true,
+                PathBuf::new(),
+                available_commands,
+                Vec::new(),
+                hinter_sender,
+                hinter_receiver,
+            ),
             validator: MultiLineValidator,
         };
 
@@ -985,6 +1149,8 @@ mod tests {
         // Create a mock Os for testing
         let mock_os = crate::os::Os::new().await.unwrap();
         let available_commands = get_available_commands(&mock_os);
+        let (hinter_sender, _) = tokio::sync::broadcast::channel::<PromptQuery>(5);
+        let (_, hinter_receiver) = tokio::sync::broadcast::channel::<PromptQueryResult>(5);
         let helper = ChatHelper {
             completer: ChatCompleter::new(
                 prompt_request_sender,
@@ -992,7 +1158,15 @@ mod tests {
                 available_commands.clone(),
                 Vec::new(),
             ),
-            hinter: ChatHinter::new(true, true, PathBuf::new(), available_commands, Vec::new()),
+            hinter: ChatHinter::new(
+                true,
+                true,
+                PathBuf::new(),
+                available_commands,
+                Vec::new(),
+                hinter_sender,
+                hinter_receiver,
+            ),
             validator: MultiLineValidator,
         };
 
@@ -1010,6 +1184,8 @@ mod tests {
         // Create a mock Os for testing
         let mock_os = crate::os::Os::new().await.unwrap();
         let available_commands = get_available_commands(&mock_os);
+        let (hinter_sender, _) = tokio::sync::broadcast::channel::<PromptQuery>(5);
+        let (_, hinter_receiver) = tokio::sync::broadcast::channel::<PromptQueryResult>(5);
         let helper = ChatHelper {
             completer: ChatCompleter::new(
                 prompt_request_sender,
@@ -1017,7 +1193,15 @@ mod tests {
                 available_commands.clone(),
                 Vec::new(),
             ),
-            hinter: ChatHinter::new(true, true, PathBuf::new(), available_commands, Vec::new()),
+            hinter: ChatHinter::new(
+                true,
+                true,
+                PathBuf::new(),
+                available_commands,
+                Vec::new(),
+                hinter_sender,
+                hinter_receiver,
+            ),
             validator: MultiLineValidator,
         };
 
@@ -1037,6 +1221,8 @@ mod tests {
         // Create a mock Os for testing
         let mock_os = crate::os::Os::new().await.unwrap();
         let available_commands = get_available_commands(&mock_os);
+        let (hinter_sender, _) = tokio::sync::broadcast::channel::<PromptQuery>(5);
+        let (_, hinter_receiver) = tokio::sync::broadcast::channel::<PromptQueryResult>(5);
         let helper = ChatHelper {
             completer: ChatCompleter::new(
                 prompt_request_sender,
@@ -1044,7 +1230,15 @@ mod tests {
                 available_commands.clone(),
                 Vec::new(),
             ),
-            hinter: ChatHinter::new(true, true, PathBuf::new(), available_commands, Vec::new()),
+            hinter: ChatHinter::new(
+                true,
+                true,
+                PathBuf::new(),
+                available_commands,
+                Vec::new(),
+                hinter_sender,
+                hinter_receiver,
+            ),
             validator: MultiLineValidator,
         };
 
@@ -1069,6 +1263,8 @@ mod tests {
         // Create a mock Os for testing
         let mock_os = crate::os::Os::new().await.unwrap();
         let available_commands = get_available_commands(&mock_os);
+        let (hinter_sender, _) = tokio::sync::broadcast::channel::<PromptQuery>(5);
+        let (_, hinter_receiver) = tokio::sync::broadcast::channel::<PromptQueryResult>(5);
         let helper = ChatHelper {
             completer: ChatCompleter::new(
                 prompt_request_sender,
@@ -1076,7 +1272,15 @@ mod tests {
                 available_commands.clone(),
                 Vec::new(),
             ),
-            hinter: ChatHinter::new(true, true, PathBuf::new(), available_commands, Vec::new()),
+            hinter: ChatHinter::new(
+                true,
+                true,
+                PathBuf::new(),
+                available_commands,
+                Vec::new(),
+                hinter_sender,
+                hinter_receiver,
+            ),
             validator: MultiLineValidator,
         };
 
@@ -1098,7 +1302,17 @@ mod tests {
         // Create a mock Os for testing
         let mock_os = crate::os::Os::new().await.unwrap();
         let available_commands = get_available_commands(&mock_os);
-        let hinter = ChatHinter::new(true, true, PathBuf::new(), available_commands, Vec::new());
+        let (prompt_request_sender, _) = tokio::sync::broadcast::channel::<PromptQuery>(5);
+        let (_, prompt_response_receiver) = tokio::sync::broadcast::channel::<PromptQueryResult>(5);
+        let hinter = ChatHinter::new(
+            true,
+            true,
+            PathBuf::new(),
+            available_commands,
+            Vec::new(),
+            prompt_request_sender,
+            prompt_response_receiver,
+        );
 
         // Test hint for a command
         let line = "/he";
@@ -1131,7 +1345,17 @@ mod tests {
         // Create a mock Os for testing
         let mock_os = crate::os::Os::new().await.unwrap();
         let available_commands = get_available_commands(&mock_os);
-        let hinter = ChatHinter::new(false, true, PathBuf::new(), available_commands, Vec::new());
+        let (prompt_request_sender, _) = tokio::sync::broadcast::channel::<PromptQuery>(5);
+        let (_, prompt_response_receiver) = tokio::sync::broadcast::channel::<PromptQueryResult>(5);
+        let hinter = ChatHinter::new(
+            false,
+            true,
+            PathBuf::new(),
+            available_commands,
+            Vec::new(),
+            prompt_request_sender,
+            prompt_response_receiver,
+        );
 
         // Test hint from history - should be None since history hints are disabled
         let line = "How";
@@ -1271,7 +1495,17 @@ mod tests {
         // Create a mock Os for testing
         let mock_os = crate::os::Os::new().await.unwrap();
         let available_commands = get_available_commands(&mock_os);
-        let hinter = ChatHinter::new(true, true, PathBuf::new(), available_commands, Vec::new());
+        let (prompt_request_sender, _) = tokio::sync::broadcast::channel::<PromptQuery>(5);
+        let (_, prompt_response_receiver) = tokio::sync::broadcast::channel::<PromptQueryResult>(5);
+        let hinter = ChatHinter::new(
+            true,
+            true,
+            PathBuf::new(),
+            available_commands,
+            Vec::new(),
+            prompt_request_sender,
+            prompt_response_receiver,
+        );
 
         // Create a mock context with empty history
         let empty_history = DefaultHistory::new();
@@ -1372,7 +1606,17 @@ mod tests {
             "python-agent".to_string(),
         ];
 
-        let hinter = ChatHinter::new(true, true, PathBuf::new(), available_commands, agent_names);
+        let (prompt_request_sender, _) = tokio::sync::broadcast::channel::<PromptQuery>(5);
+        let (_, prompt_response_receiver) = tokio::sync::broadcast::channel::<PromptQueryResult>(5);
+        let hinter = ChatHinter::new(
+            true,
+            true,
+            PathBuf::new(),
+            available_commands,
+            agent_names,
+            prompt_request_sender,
+            prompt_response_receiver,
+        );
 
         // Create a mock context with empty history
         let empty_history = DefaultHistory::new();
@@ -1455,7 +1699,17 @@ mod tests {
             "python-agent".to_string(),
         ];
 
-        let hinter = ChatHinter::new(true, true, PathBuf::new(), available_commands, agent_names);
+        let (prompt_request_sender, _) = tokio::sync::broadcast::channel::<PromptQuery>(5);
+        let (_, prompt_response_receiver) = tokio::sync::broadcast::channel::<PromptQueryResult>(5);
+        let hinter = ChatHinter::new(
+            true,
+            true,
+            PathBuf::new(),
+            available_commands,
+            agent_names,
+            prompt_request_sender,
+            prompt_response_receiver,
+        );
 
         // Create a mock context with empty history
         let empty_history = DefaultHistory::new();
