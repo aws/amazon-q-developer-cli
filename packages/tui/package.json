@@ -4,8 +4,9 @@
   "type": "module",
   "scripts": {
     "dev": "bun run scripts/start-dev.ts",
+    "release": "bun run scripts/start-release.ts",
     "dev:storybook": "bun --watch src/storybook/run-storybook.tsx",
-    "build": "bun build src/index.tsx --outfile dist/tui.js --target bun",
+    "build": "NODE_ENV=production bun build src/index.tsx --outfile dist/tui.js --target bun",
     "typecheck": "tsc --noEmit",
     "lint": "eslint . && prettier --check src",
     "lint:fix": "eslint . --fix && prettier --write src",

@@ -9,7 +9,11 @@ const skipRustBuild = process.argv.includes("--skip-rust-build");
 
 function buildTui(): boolean {
   console.log("Building TUI...");
-  const result = spawnSync("bun", ["run", "build"], { cwd: TUI_ROOT, stdio: "inherit" });
+  const result = spawnSync("bun", ["run", "build"], { 
+    cwd: TUI_ROOT, 
+    stdio: "inherit",
+    env: { ...process.env, NODE_ENV: "production" }
+  });
   return result.status === 0;
 }
 

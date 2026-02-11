@@ -14,11 +14,13 @@ export const WelcomeScreen = React.memo(function WelcomeScreen({
   // mcpServers,
   animate = false,
 }: WelcomeScreenProps) {
+  const isDevelopment = process.env.NODE_ENV !== 'production';
   // const { getColor } = useTheme();
 
   return (
     <Box flexDirection="column" width="100%" alignItems="center">
       <Wordmark animate={animate} />
+      {isDevelopment && <Text dimColor>Development Mode</Text>}
 
       {/* <Box width="100%">
         <Text>{getColor('text')('━'.repeat(120))}</Text>
