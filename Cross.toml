@@ -8,4 +8,8 @@ passthrough = [
     "AMAZON_Q_BUILD_HASH",
     "AMAZON_Q_BUILD_DATETIME",
     "Q_TELEMETRY_CLIENT_ID",
+    "BUN_EXECUTABLE_PATH",
+    "BUN_RUNTIME_SHA256",
+    "TUI_JS_PATH",
+    "TUI_JS_SHA256",
 ]

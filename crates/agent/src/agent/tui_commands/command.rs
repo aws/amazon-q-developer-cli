@@ -30,8 +30,8 @@ pub enum TuiCommand {
     Compact(CompactArgs),
     /// Clear the conversation history
     Clear(ClearArgs),
-    /// Exit the application
-    Exit(ExitArgs),
+    /// Quit the application
+    Quit(QuitArgs),
 }
 
 /// Arguments for /model command
@@ -82,11 +82,11 @@ pub struct CompactArgs {
 #[serde(rename_all = "camelCase")]
 pub struct ClearArgs {}
 
-/// Arguments for /exit command
+/// Arguments for /quit command
 #[typeshare]
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct ExitArgs {}
+pub struct QuitArgs {}
 
 impl TuiCommand {
     /// Command name with leading slash
@@ -97,7 +97,7 @@ impl TuiCommand {
             TuiCommand::Context(_) => "/context",
             TuiCommand::Compact(_) => "/compact",
             TuiCommand::Clear(_) => "/clear",
-            TuiCommand::Exit(_) => "/exit",
+            TuiCommand::Quit(_) => "/quit",
         }
     }
 
@@ -109,7 +109,7 @@ impl TuiCommand {
             TuiCommand::Context(_) => "Show context/token usage",
             TuiCommand::Compact(_) => "Compact conversation history",
             TuiCommand::Clear(_) => "Clear conversation history",
-            TuiCommand::Exit(_) => "Exit the application",
+            TuiCommand::Quit(_) => "Quit the application",
         }
     }
 
@@ -135,7 +135,7 @@ impl TuiCommand {
                 meta.insert("inputType".into(), "panel".into());
                 Some(meta)
             },
-            TuiCommand::Clear(_) | TuiCommand::Exit(_) => {
+            TuiCommand::Clear(_) | TuiCommand::Quit(_) => {
                 let mut meta = serde_json::Map::new();
                 meta.insert("local".into(), true.into());
                 Some(meta)
@@ -152,7 +152,7 @@ impl TuiCommand {
             TuiCommand::Context(ContextArgs::default()),
             TuiCommand::Compact(CompactArgs::default()),
             TuiCommand::Clear(ClearArgs::default()),
-            TuiCommand::Exit(ExitArgs::default()),
+            TuiCommand::Quit(QuitArgs::default()),
         ]
     }
 }

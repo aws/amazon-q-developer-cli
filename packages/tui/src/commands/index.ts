@@ -12,9 +12,11 @@ export type { CommandContext } from './types.js';
 /** Find command by exact or prefix match (alphabetical order for prefix) */
 function findCommand(commands: SlashCommand[], name: string): SlashCommand | undefined {
   const lower = name.toLowerCase();
+  
   // Exact match first
   const exact = commands.find((c) => c.name.toLowerCase() === `/${lower}`);
   if (exact) return exact;
+  
   // Prefix match - sort alphabetically so /clear < /compact < /context
   const sorted = [...commands].sort((a, b) => a.name.localeCompare(b.name));
   return sorted.find((c) => c.name.toLowerCase().startsWith(`/${lower}`));

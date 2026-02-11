@@ -18,7 +18,7 @@ type EffectHandler = (result: CommandResult | null, ctx: CommandContext) => void
 type CommandName = TuiCommand['command'];
 
 /** Effect names - semantic actions the TUI can perform */
-type EffectName = 'updateModel' | 'updateAgent' | 'showContextPanel' | 'clearMessages' | 'exit';
+type EffectName = 'updateModel' | 'updateAgent' | 'showContextPanel' | 'clearMessages' | 'quit';
 
 /**
  * Command → Effect mapping.
@@ -28,7 +28,7 @@ const commandEffects: Partial<Record<CommandName, EffectName>> = {
   agent: 'updateAgent',
   context: 'showContextPanel',
   clear: 'clearMessages',
-  exit: 'exit',
+  quit: 'quit',
 };
 
 /**
@@ -57,7 +57,8 @@ const effectHandlers: Record<EffectName, EffectHandler> = {
     ctx.clearMessages();
   },
 
-  exit: () => {
+  quit: (_result, ctx) => {
+    ctx.kiro.close();
     process.exit(0);
   },
 };

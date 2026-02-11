@@ -387,25 +387,38 @@ fn download_feed_json() {
 }
 
 /// Conditionally embeds Bun runtime and TUI bundle if environment variables are set.
+/// For cross-compilation compatibility, files are copied to OUT_DIR which is always
+/// accessible inside the build container.
 fn embed_bun_and_tui() {
     // Always declare the cfg flags so rustc knows about them
     println!("cargo:rustc-check-cfg=cfg(bun_executable_path)");
     println!("cargo:rustc-check-cfg=cfg(tui_js_path)");
 
+    let out_dir = std::env::var("OUT_DIR").expect("OUT_DIR not set");
     let bun_path = std::env::var("BUN_EXECUTABLE_PATH").ok();
     let tui_path = std::env::var("TUI_JS_PATH").ok();
 
     if let Some(path) = bun_path {
         println!("cargo:warning=Embedding Bun executable");
-        println!("cargo:rustc-cfg=bun_executable_path");
-        println!("cargo:rustc-env=BUN_EXECUTABLE_PATH={path}");
         println!("cargo:rerun-if-changed={path}");
+
+        // Copy to OUT_DIR for cross-compilation compatibility
+        let dest_path = std::path::Path::new(&out_dir).join("bun_embedded");
+        std::fs::copy(&path, &dest_path).expect("Failed to copy bun executable to OUT_DIR");
+
+        println!("cargo:rustc-cfg=bun_executable_path");
+        println!("cargo:rustc-env=BUN_EXECUTABLE_PATH={}", dest_path.display());
     }
 
     if let Some(path) = tui_path {
         println!("cargo:warning=Embedding TUI js file");
-        println!("cargo:rustc-cfg=tui_js_path");
-        println!("cargo:rustc-env=TUI_JS_PATH={path}");
         println!("cargo:rerun-if-changed={path}");
+
+        // Copy to OUT_DIR for cross-compilation compatibility
+        let dest_path = std::path::Path::new(&out_dir).join("tui_embedded.js");
+        std::fs::copy(&path, &dest_path).expect("Failed to copy TUI js to OUT_DIR");
+
+        println!("cargo:rustc-cfg=tui_js_path");
+        println!("cargo:rustc-env=TUI_JS_PATH={}", dest_path.display());
     }
 }

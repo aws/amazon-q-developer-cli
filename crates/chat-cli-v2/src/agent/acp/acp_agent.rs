@@ -1013,6 +1013,16 @@ impl AcpSession {
                     let _ = self.send_session_notification(SessionUpdate::ToolCall(tool_call));
                 }
             },
+            AgentEvent::Stop(AgentStopReason::EndTurn) => {
+                // Resolve the pending prompt response if it hasn't been resolved yet.
+                // This can happen when the agent loop channel drops without an EndTurn event
+                // (e.g., the stream was interrupted or the loop exited unexpectedly).
+                if let Some(respond_to) = self.pending_prompt_response.take() {
+                    warn!("Resolving pending prompt via Stop(EndTurn) — no EndTurn event was received");
+                    let respond_to = respond_to.into_inner();
+                    let _ = respond_to.respond(PromptResponse::new(StopReason::EndTurn));
+                }
+            },
             _ => {
                 // Other events that don't need processing
             },

@@ -1,19 +1,12 @@
 import React from 'react';
-import { Divider, DividerProps } from './Divider.js';
+import { Divider } from './Divider.js';
+import type { DividerProps } from './Divider.js';
 
 const meta = {
   component: Divider,
   parameters: {
     layout: 'fullscreen',
-    storyOrder: [
-      'Default',
-      'CustomCharacter',
-      'CustomColor',
-      'CustomWidth',
-      'Thick',
-      'Dotted',
-      'Double',
-    ],
+    storyOrder: ['Default', 'CustomColor', 'AccentColor'],
   },
   tags: ['autodocs'],
 };
@@ -23,21 +16,10 @@ export default meta;
 export const Default = {
   parameters: {
     docs: {
-      storyDescription: 'Default horizontal divider with standard character',
+      storyDescription: 'Default horizontal divider using Box border',
     },
   },
   args: {} as DividerProps,
-};
-
-export const CustomCharacter = {
-  parameters: {
-    docs: {
-      storyDescription: 'Divider with custom character',
-    },
-  },
-  args: {
-    character: '═',
-  } as DividerProps,
 };
 
 export const CustomColor = {
@@ -47,54 +29,17 @@ export const CustomColor = {
     },
   },
   args: {
-    color: 'accent',
-  } as DividerProps,
-};
-
-export const CustomWidth = {
-  parameters: {
-    docs: {
-      storyDescription: 'Divider with custom width',
-    },
-  },
-  args: {
-    width: 40,
-  } as DividerProps,
-};
-
-export const Thick = {
-  parameters: {
-    docs: {
-      storyDescription: 'Thick divider using heavy line character',
-    },
-  },
-  args: {
-    character: '━',
     color: 'primary',
   } as DividerProps,
 };
 
-export const Dotted = {
+export const AccentColor = {
   parameters: {
     docs: {
-      storyDescription: 'Dotted divider using dot character',
+      storyDescription: 'Divider with accent theme color',
     },
   },
   args: {
-    character: '·',
-    color: 'muted',
-  } as DividerProps,
-};
-
-export const Double = {
-  parameters: {
-    docs: {
-      storyDescription: 'Double line divider',
-    },
-  },
-  args: {
-    character: '═',
-    color: 'secondary',
-    width: 60,
+    color: 'accent',
   } as DividerProps,
 };

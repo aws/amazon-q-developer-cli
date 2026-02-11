@@ -1,22 +1,37 @@
-import React, { useCallback } from 'react';
-import { Box, Text } from 'ink';
+import React, { useCallback, useMemo } from 'react';
+import { Box } from 'ink';
 import { ConversationView } from '../ui/ConversationView';
-import { ApprovalRequest } from '../ui/ApprovalRequest';
 import { ExitHint } from '../ui/ExitHint';
 import { CommandMenu } from '../ui/CommandMenu';
 import { ActionHint } from '../ui/hint/ActionHint.js';
-import { PromptBar } from '../chat/prompt-bar/PromptBar.js';
+import {
+  PromptBar,
+  type PromptBarHeader,
+} from '../chat/prompt-bar/PromptBar.js';
 import { ContextBar } from '../chat/prompt-bar/ContextBar.js';
+import { SnackBar } from '../chat/prompt-bar/SnackBar.js';
 import { NotificationBar } from '../chat/notification-bar/NotificationBar.js';
-import { WelcomeScreen } from '../welcome-screen/index.js';
+import { BlockingErrorAlert } from '../ui/alert/BlockingErrorAlert.js';
 import { Chip, ChipColor, ProgressChip } from '../ui/chip/index.js';
 import { ContextBreakdown } from '../ui/ContextBreakdown';
-import { useAppStore } from '../../stores/app-store';
-import { useKiro } from '../../hooks/useKiro';
-import { useTheme } from '../../hooks/useTheme';
+import {
+  useNotificationState,
+  useNotificationActions,
+  useProcessingState,
+  useUIState,
+  useUIActions,
+  useContextState,
+  useCommandState,
+  useCommandActions,
+  useInputActions,
+  useConversationState,
+  useApprovalState,
+} from '../../stores/selectors.js';
 import { useKeypress } from '../../hooks/useKeypress';
 import { getGitBranch } from '../../utils/git';
 import { shortenPath } from '../../utils/string';
+import { getAgentColor } from '../../utils/agentColors.js';
+import { ApprovalOptionId } from '../../types/agent-events.js';
 
 const TRIGGER_RULES = [
   { key: '/', type: 'start' as const },
@@ -24,44 +39,77 @@ const TRIGGER_RULES = [
 ];
 
 export const InlineLayout: React.FC = () => {
-  const handleUserInput = useAppStore((state) => state.handleUserInput);
-  const pendingApproval = useAppStore((state) => state.pendingApproval);
-  const isProcessing = useAppStore((state) => state.isProcessing);
-  const activeCommand = useAppStore((state) => state.activeCommand);
-  const setActiveCommand = useAppStore((state) => state.setActiveCommand);
-  const slashCommands = useAppStore((state) => state.slashCommands);
-  const currentModel = useAppStore((state) => state.currentModel);
-  const contextUsagePercent = useAppStore((state) => state.contextUsagePercent);
-  const lastTurnTokens = useAppStore((state) => state.lastTurnTokens);
-  const showContextBreakdown = useAppStore((state) => state.showContextBreakdown);
-  const setShowContextBreakdown = useAppStore((state) => state.setShowContextBreakdown);
-  const transientAlert = useAppStore((state) => state.transientAlert);
-  const dismissTransientAlert = useAppStore((state) => state.dismissTransientAlert);
-  const commandInputValue = useAppStore((state) => state.commandInputValue);
-  const setCommandInput = useAppStore((state) => state.setCommandInput);
-  const setActiveTrigger = useAppStore((state) => state.setActiveTrigger);
-  const clearCommandInput = useAppStore((state) => state.clearCommandInput);
-  const toolOutputsExpanded = useAppStore((state) => state.toolOutputsExpanded);
-  const hasExpandableToolOutputs = useAppStore((state) => state.hasExpandableToolOutputs);
-  const toggleToolOutputsExpanded = useAppStore((state) => state.toggleToolOutputsExpanded);
-  const { error } = useKiro();
-  const { colors } = useTheme();
+  // Grouped selectors using useShallow - prevents re-render cascades
+  const { transientAlert, loadingMessage, agentError, agentErrorGuidance } = useNotificationState();
+  const { dismissTransientAlert, setAgentError } = useNotificationActions();
+  const { isProcessing, isCompacting, pendingApproval } = useProcessingState();
+  const { respondToApproval, cancelApproval } = useApprovalState();
+  const { toolOutputsExpanded, hasExpandableToolOutputs, showContextBreakdown } = useUIState();
+  const { toggleToolOutputsExpanded, setShowContextBreakdown } = useUIActions();
+  const { sessionId, contextUsagePercent, lastTurnTokens, currentModel, currentAgent } = useContextState();
+  const { activeCommand } = useCommandState();
+  const { setActiveCommand, setActiveTrigger, clearCommandInput } = useCommandActions();
+  const { handleUserInput } = useInputActions();
+  const { messages } = useConversationState();
 
-  const gitBranch = getGitBranch();
+  // Cache git branch - only call once on mount to avoid blocking renders
+  const gitBranch = useMemo(() => getGitBranch(), []);
 
-  // Handle Ctrl+O to toggle expansion mode (single handler for all tool outputs)
-  useKeypress((input, key) => {
-    if (key.ctrl && input.toLowerCase() === 'o' && hasExpandableToolOutputs) {
-      toggleToolOutputsExpanded();
-    }
-  }, { isActive: hasExpandableToolOutputs && !toolOutputsExpanded });
+  // Handle approval keypresses
+  useKeypress(
+    (input, key) => {
+      if (!pendingApproval) return;
 
-  // Handle Esc to collapse expanded outputs
-  useKeypress((_input, key) => {
-    if (key.escape && toolOutputsExpanded) {
-      toggleToolOutputsExpanded();
-    }
-  }, { isActive: toolOutputsExpanded });
+      // Handle escape to cancel
+      if (key.escape) {
+        cancelApproval();
+        return;
+      }
+
+      const inputLower = input.toLowerCase();
+      let selectedOption;
+
+      // Map keys to option kinds
+      if (inputLower === 't') {
+        selectedOption = pendingApproval.permissionOptions.find(
+          (opt) => opt.kind === ApprovalOptionId.AllowAlways
+        );
+      } else if (inputLower === 'y') {
+        selectedOption = pendingApproval.permissionOptions.find(
+          (opt) => opt.kind === ApprovalOptionId.AllowOnce
+        );
+      } else if (inputLower === 'n') {
+        selectedOption = pendingApproval.permissionOptions.find(
+          (opt) => opt.kind === ApprovalOptionId.RejectOnce
+        );
+      }
+
+      if (selectedOption) {
+        respondToApproval(selectedOption.optionId);
+      }
+    },
+    { isActive: !!pendingApproval }
+  );
+
+  // Handle Ctrl+O to toggle expansion mode (works both ways)
+  useKeypress(
+    (input, key) => {
+      if (key.ctrl && input.toLowerCase() === 'o' && hasExpandableToolOutputs) {
+        toggleToolOutputsExpanded();
+      }
+    },
+    { isActive: hasExpandableToolOutputs }
+  );
+
+  // Handle Esc to collapse expanded outputs (secondary shortcut)
+  useKeypress(
+    (_input, key) => {
+      if (key.escape && toolOutputsExpanded) {
+        toggleToolOutputsExpanded();
+      }
+    },
+    { isActive: toolOutputsExpanded }
+  );
 
   const handleCloseContextBreakdown = useCallback(() => {
     setShowContextBreakdown(false);
@@ -69,71 +117,118 @@ export const InlineLayout: React.FC = () => {
     clearCommandInput();
   }, [setShowContextBreakdown, setActiveCommand, clearCommandInput]);
 
-  const contextBarHeader = (
-    <ContextBar>
-      <ProgressChip value={contextUsagePercent ?? 0} barColor="success" label="context remaining" showRemaining={true} />
-      <Chip value={shortenPath(process.cwd())} color={ChipColor.BRAND} />
-      {gitBranch && <Chip value={gitBranch} color={ChipColor.PRIMARY} prefix="git:" wrap={true} />}
-      {currentModel && <Chip value={currentModel.name} color={ChipColor.PRIMARY} />}
-    </ContextBar>
-  );
+  // Build the header - use SnackBar for approval, ContextBar otherwise
+  const promptBarHeader = useMemo(() => {
+    if (pendingApproval) {
+      // Find the tool message to get the tool name
+      const toolMessage = messages.find(
+        (msg) => msg.role === 'tool_use' && msg.id === pendingApproval.toolCall.toolCallId
+      );
+      const toolName = toolMessage && 'name' in toolMessage ? toolMessage.name : 'Tool';
+
+      // Build actions array
+      const actions = [];
+      if (pendingApproval.permissionOptions.find((opt) => opt.kind === ApprovalOptionId.AllowOnce)) {
+        actions.push({ key: 'y', label: 'Yes' });
+      }
+      if (pendingApproval.permissionOptions.find((opt) => opt.kind === ApprovalOptionId.RejectOnce)) {
+        actions.push({ key: 'n', label: 'No' });
+      }
+      if (pendingApproval.permissionOptions.find((opt) => opt.kind === ApprovalOptionId.AllowAlways)) {
+        actions.push({ key: 't', label: 'Trust' });
+      }
+
+      return (
+        <SnackBar
+          title={`${toolName} requires approval`}
+          actions={actions}
+          slideIn={true}
+        />
+      ) as PromptBarHeader;
+    }
+
+    return (
+      <ContextBar>
+        {currentAgent && (
+          <Chip value={currentAgent.name} hexColor={getAgentColor(currentAgent.name).hex} prefix="agent:" />
+        )}
+        <ProgressChip
+          value={contextUsagePercent ?? 0}
+          barColor="success"
+          label="context remaining"
+          showRemaining={true}
+        />
+        <Chip value={shortenPath(process.cwd())} color={ChipColor.BRAND} />
+        {gitBranch && (
+          <Chip
+            value={gitBranch}
+            color={ChipColor.PRIMARY}
+            prefix="git:"
+            wrap={true}
+          />
+        )}
+        {currentModel && (
+          <Chip value={currentModel.name} color={ChipColor.PRIMARY} />
+        )}
+      </ContextBar>
+    ) as PromptBarHeader;
+  }, [pendingApproval, messages, currentAgent, contextUsagePercent, gitBranch, currentModel]);
 
   const handleSubmit = useCallback((value: string) => {
-    const cmdName = value.match(/^\/(\w+)/)?.[0];
-    const cmd = slashCommands.find((c) => c.name === cmdName);
-    const retainInput = (cmd?.meta?.inputType === 'selection' || cmd?.meta?.inputType === 'panel') && !value.includes(' ');
-    
-    if (retainInput) {
-      setCommandInput(value);
-    } else {
-      clearCommandInput();
-    }
     handleUserInput(value);
-  }, [handleUserInput, slashCommands, setCommandInput, clearCommandInput]);
+  }, [handleUserInput]);
 
-  const handleInputChange = useCallback((value: string) => {
-    setCommandInput(value);
-  }, [setCommandInput]);
+  const handleTriggerDetected = useCallback(
+    (
+      trigger: {
+        key: string;
+        position: number;
+        type: 'start' | 'inline';
+      } | null
+    ) => {
+      setActiveTrigger(trigger);
+    },
+    [setActiveTrigger]
+  );
 
-  const handleTriggerDetected = useCallback((trigger: { key: string; position: number; type: 'start' | 'inline' } | null) => {
-    setActiveTrigger(trigger);
-  }, [setActiveTrigger]);
+  // Handler to dismiss blocking error (for recoverable errors)
+  const handleDismissError = useCallback(() => {
+    setAgentError(null);
+  }, [setAgentError]);
 
   return (
     <Box flexDirection="column">
-      <Box marginBottom={1}>
-        <WelcomeScreen agent="kiro" mcpServers={[]} animate={true} />
-      </Box>
-
-      {error && (
-        <Box paddingX={1} marginBottom={1}>
-          <Text color={colors.error}>⚠️ {error}</Text>
-        </Box>
+      {agentError && (
+        <BlockingErrorAlert
+          message={agentError}
+          guidance={agentErrorGuidance ?? undefined}
+          onDismiss={handleDismissError}
+        />
       )}
 
       <ConversationView />
 
-      <Box marginTop={1} height={1}>
-        {transientAlert && (
-          <NotificationBar
-            message={transientAlert.message}
-            status={transientAlert.status}
-            autoHideMs={transientAlert.autoHideMs}
-            onDismiss={dismissTransientAlert}
-          />
-        )}
-      </Box>
+      <NotificationBar
+        message={!sessionId ? 'Initializing...' : loadingMessage ?? transientAlert?.message}
+        status={!sessionId || loadingMessage ? 'loading' : transientAlert?.status}
+        autoHideMs={!sessionId || loadingMessage ? undefined : transientAlert?.autoHideMs}
+        onDismiss={!sessionId || loadingMessage ? undefined : dismissTransientAlert}
+      />
 
       <Box marginBottom={1}>
         <PromptBar
-          header={contextBarHeader}
+          header={promptBarHeader}
           onSubmit={handleSubmit}
-          onInputChange={handleInputChange}
           triggerRules={TRIGGER_RULES}
           onTriggerDetected={handleTriggerDetected}
-          isProcessing={isProcessing || !!pendingApproval || !!activeCommand}
-          clearOnSubmit={false}
-          value={commandInputValue}
+          isProcessing={
+            isProcessing ||
+            isCompacting ||
+            !!pendingApproval ||
+            !!activeCommand ||
+            !!agentError
+          }
+          placeholder={pendingApproval ? 'type permission (y/n/t) ↵' : undefined}
           hint={activeCommand?.command.meta?.hint as string | undefined}
           hideInput={toolOutputsExpanded}
         >
@@ -146,9 +241,10 @@ export const InlineLayout: React.FC = () => {
               onClose={handleCloseContextBreakdown}
             />
           )}
-          <ApprovalRequest />
-          <ActionHint text="esc to collapse output" visible={toolOutputsExpanded} />
-          <ActionHint text="Ctrl + o to expand output" visible={!toolOutputsExpanded && hasExpandableToolOutputs} />
+          <ActionHint
+            text="^O to collapse output"
+            visible={toolOutputsExpanded}
+          />
           <ExitHint />
         </PromptBar>
       </Box>

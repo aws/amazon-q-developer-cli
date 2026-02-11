@@ -20,7 +20,18 @@ export type TestCommand =
   | { kind: 'GET_AGENT_STATE' }
   | { kind: 'PUSH_SEND_MESSAGE_RESPONSE'; session_id: string; events: MockStreamItem[] | null }
   | { kind: 'MOCK_SESSION_UPDATE'; event: AgentStreamEvent }
-  | { kind: 'MOCK_ERROR'; error: string };
+  | { kind: 'MOCK_ERROR'; error: string }
+  | { kind: 'HEAP_SNAPSHOT'; filename: string }
+  | { kind: 'MEMORY_USAGE' }
+  | { kind: 'FORCE_GC' };
+
+export interface MemoryUsageData {
+  rss: number;
+  heapUsed: number;
+  heapTotal: number;
+  external: number;
+  arrayBuffers: number;
+}
 
 export type TestResponse =
   | { kind: 'GET_STORE'; data: AppState }
@@ -28,6 +39,9 @@ export type TestResponse =
   | { kind: 'PUSH_SEND_MESSAGE_RESPONSE' }
   | { kind: 'MOCK_SESSION_UPDATE' }
   | { kind: 'MOCK_ERROR' }
+  | { kind: 'HEAP_SNAPSHOT'; filename: string }
+  | { kind: 'MEMORY_USAGE'; data: MemoryUsageData }
+  | { kind: 'FORCE_GC' }
   | { kind: 'ERROR'; error: string };
 
 export interface TestMessageCommand {

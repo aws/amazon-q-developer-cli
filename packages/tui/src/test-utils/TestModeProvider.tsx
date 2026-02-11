@@ -1,5 +1,6 @@
 import React, { useEffect, useContext } from 'react';
 import * as net from 'net';
+import * as fs from 'fs';
 import { AppStoreContext } from '../stores/app-store';
 import type { TestCommand, TestResponse } from './shared/ipc-types';
 import { TuiIpcConnection } from './shared/tui-ipc-connection';
@@ -67,6 +68,41 @@ export const TestModeProvider: React.FC<TestModeProviderProps> = ({
           return {
             kind: 'MOCK_ERROR',
           };
+
+        case 'HEAP_SNAPSHOT': {
+          try {
+            const snapshot = Bun.generateHeapSnapshot();
+            fs.writeFileSync(command.filename, JSON.stringify(snapshot));
+            return {
+              kind: 'HEAP_SNAPSHOT',
+              filename: command.filename,
+            };
+          } catch (e) {
+            return {
+              kind: 'ERROR',
+              error: `Heap snapshot failed: ${e}`,
+            };
+          }
+        }
+
+        case 'MEMORY_USAGE': {
+          const mem = process.memoryUsage();
+          return {
+            kind: 'MEMORY_USAGE',
+            data: {
+              rss: mem.rss,
+              heapUsed: mem.heapUsed,
+              heapTotal: mem.heapTotal,
+              external: mem.external,
+              arrayBuffers: mem.arrayBuffers,
+            },
+          };
+        }
+
+        case 'FORCE_GC': {
+          if (typeof Bun !== 'undefined') Bun.gc(true);
+          return { kind: 'FORCE_GC' };
+        }
 
         default:
           throw new Error(`Unknown command: ${(command as TestCommand).kind}`);

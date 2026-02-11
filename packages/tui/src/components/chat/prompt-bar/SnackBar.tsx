@@ -18,7 +18,7 @@ export interface SnackBarProps {
 
 export function SnackBar({ title, actions, width, slideIn = false }: SnackBarProps) {
   const { getColor } = useTheme();
-  const [currentHeight, setCurrentHeight] = useState(slideIn ? 1 : 3);
+  const [currentHeight, setCurrentHeight] = useState(slideIn ? 0 : 1);
   const [showText, setShowText] = useState(!slideIn);
 
   const textColor = getColor('components.snackbar.text');
@@ -27,21 +27,17 @@ export function SnackBar({ title, actions, width, slideIn = false }: SnackBarPro
   // Slide in animation effect
   useEffect(() => {
     if (slideIn) {
-      // Start with height 1, background visible
+      // Start with height 0, background visible
       setCurrentHeight(0);
       setShowText(false);
 
-      // Animation sequence - slower for visibility
-      const timer1 = setTimeout(() => setCurrentHeight(1), 250); // Grow to height
-      const timer2 = setTimeout(() => setCurrentHeight(2), 350);
-      const timer3 = setTimeout(() => setCurrentHeight(3), 450);
-      const timer4 = setTimeout(() => setShowText(true), 500); // Show text
+      // Animation sequence - faster to match ContextBar height
+      const timer1 = setTimeout(() => setCurrentHeight(1), 100);
+      const timer2 = setTimeout(() => setShowText(true), 150);
 
       return () => {
         clearTimeout(timer1);
         clearTimeout(timer2);
-        clearTimeout(timer3);
-        clearTimeout(timer4);
       };
     }
   }, [slideIn]);

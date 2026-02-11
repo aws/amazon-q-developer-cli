@@ -158,6 +158,7 @@ export const useInputActions = () =>
       backspace: state.backspace,
       moveCursor: state.moveCursor,
       setViewport: state.setViewport,
+      navigateHistory: state.navigateHistory,
     }))
   );
 

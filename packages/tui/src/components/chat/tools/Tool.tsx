@@ -145,7 +145,7 @@ export const Tool = React.memo(function Tool({
     if (errorMessage) {
       return (
         <Box flexDirection="column">
-          <StatusInfo title={title} target={name} />
+          <StatusInfo title={title} target={name} shimmer={!isFinished} />
           {renderLocations()}
           <Box marginLeft={2}>
             <Text>{getColor('error')(errorMessage)}</Text>
@@ -158,7 +158,7 @@ export const Tool = React.memo(function Tool({
     if (isStatic || !hasOutput) {
       return (
         <Box flexDirection="column">
-          <StatusInfo title={title} target={name} />
+          <StatusInfo title={title} target={name} shimmer={!isFinished} />
           {renderLocations()}
         </Box>
       );
@@ -168,7 +168,7 @@ export const Tool = React.memo(function Tool({
     if (expanded) {
       return (
         <Box flexDirection="column">
-          <StatusInfo title={title} target={name} />
+          <StatusInfo title={title} target={name} shimmer={!isFinished} />
           {renderLocations()}
           <Box marginLeft={2} flexDirection="column">
             {outputLines.map((line, i) => (
@@ -182,7 +182,7 @@ export const Tool = React.memo(function Tool({
     // Collapsed view: show preview + hint
     return (
       <Box flexDirection="column">
-        <StatusInfo title={title} target={name} />
+        <StatusInfo title={title} target={name} shimmer={!isFinished} />
         {renderLocations()}
         <Box marginLeft={2} flexDirection="column">
           {outputLines.slice(0, PREVIEW_LINES).map((line, i) => (

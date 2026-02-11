@@ -34,3 +34,6 @@ report.[0-9]_.[0-9]_.[0-9]_.[0-9]_.json
 .DS_Store
 e2e_tests/test-outputs/
 integ_tests/test-outputs/
+
+# samples folder
+samples

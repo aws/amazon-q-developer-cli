@@ -1,21 +1,26 @@
 import React from 'react';
-import { Text } from '../text/Text.js';
+import { Box } from 'ink';
 import { useTheme } from '../../../hooks/useThemeContext.js';
 
 export interface DividerProps {
-  character?: string;
   color?: string; // Theme color path like 'border'
-  width?: number;
 }
 
 export const Divider = React.memo(function Divider({
-  character = '─',
   color = 'border',
-  width,
 }: DividerProps) {
   const { getColor } = useTheme();
-  const dividerColor = getColor(color);
-  const dividerWidth = width || process.stdout.columns || 80;
+  const dividerColor = getColor(color).hex;
 
-  return <Text>{dividerColor(character.repeat(dividerWidth))}</Text>;
+  return (
+    <Box
+      width="100%"
+      borderStyle="single"
+      borderTop={true}
+      borderBottom={false}
+      borderLeft={false}
+      borderRight={false}
+      borderTopColor={dividerColor}
+    />
+  );
 });

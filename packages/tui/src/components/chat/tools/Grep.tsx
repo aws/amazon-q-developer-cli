@@ -140,7 +140,7 @@ export const Grep = React.memo(function Grep({
     if (result?.status === 'error') {
       return (
         <Box flexDirection="column">
-          <StatusInfo title={title} target={searchPattern ? `"${searchPattern}"` : undefined} />
+          <StatusInfo title={title} target={searchPattern ? `"${searchPattern}"` : undefined} shimmer={!isFinished} />
           <Box marginLeft={2}>
             <Text>{getColor('error')(result.error)}</Text>
           </Box>
@@ -150,24 +150,24 @@ export const Grep = React.memo(function Grep({
 
     // No result yet or still searching
     if (!grepOutput) {
-      return <StatusInfo title={title} target={searchPattern ? `"${searchPattern}"` : undefined} />;
+      return <StatusInfo title={title} target={searchPattern ? `"${searchPattern}"` : undefined} shimmer={!isFinished} />;
     }
 
     // No matches found
     if (grepOutput.numMatches === 0 || grepOutput.message) {
-      return <StatusInfo title={title} target={getSummary()} />;
+      return <StatusInfo title={title} target={getSummary()} shimmer={!isFinished} />;
     }
 
     // Static view: just show summary
     if (isStatic) {
-      return <StatusInfo title={title} target={getSummary()} />;
+      return <StatusInfo title={title} target={getSummary()} shimmer={!isFinished} />;
     }
 
     // Expanded view: show all results
     if (expanded) {
       return (
         <Box flexDirection="column">
-          <StatusInfo title={title} target={getSummary()} />
+          <StatusInfo title={title} target={getSummary()} shimmer={!isFinished} />
           {results.map((fileResult, i) => (
             <Box key={i} flexDirection="column" marginLeft={2}>
               <Text>
@@ -194,7 +194,7 @@ export const Grep = React.memo(function Grep({
     // Collapsed view: show preview
     return (
       <Box flexDirection="column">
-        <StatusInfo title={title} target={getSummary()} />
+        <StatusInfo title={title} target={getSummary()} shimmer={!isFinished} />
         {results.slice(0, PREVIEW_FILES).map((fileResult, i) => (
           <Box key={i} flexDirection="column" marginLeft={2}>
             <Text>

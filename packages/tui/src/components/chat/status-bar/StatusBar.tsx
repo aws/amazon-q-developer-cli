@@ -3,8 +3,9 @@ import React, { createContext, useCallback, useContext, useLayoutEffect, useMemo
 import { useTheme } from '../../../hooks/useThemeContext.js';
 import { Text } from '../../ui/text/Text.js';
 import { Icon, IconType } from '../../ui/icon/Icon.js';
+import { Spinner } from '../../ui/spinner/Spinner.js';
 import { useCardContext } from '../../ui/card/Card.js';
-import { getStatusColor } from '../../../utils/colorUtils.js';
+import { getStatusColor, getTerminalChalkColor } from '../../../utils/colorUtils.js';
 import type { StatusType } from '../../../types/componentTypes.js';
 
 interface StatusBarContextType {
@@ -102,47 +103,62 @@ export const StatusBar = React.memo(function StatusBar({
     status,
   }), [setLineColor, getNextLineIndex, requestRemeasure, setStatus, status]);
 
-  // Determine if status should show a dot on first line (not for 'active')
-  const showDot = status && status !== 'active';
+  // Determine if status should show a dot on first line (not for 'active', 'thinking', or 'paused')
+  const showDot = status && status !== 'active' && status !== 'thinking' && status !== 'paused';
+  const showSpinner = status === 'thinking';
+  const showArrowDown = status === 'paused';
 
-  // Render the status bar column
-  const renderedBar = useMemo(() => {
+  // Render the status bar column elements
+  const barElements = useMemo(() => {
     if (lineCount === 0) return null;
     
-    const barElements = [];
+    const elements = [];
     for (let i = 0; i < lineCount; i++) {
-      // First line gets icon for certain status types
-      if (i === 0 && showDot) {
-        barElements.push(
+      // First line gets spinner for thinking, arrow for paused, icon for other statuses
+      if (i === 0 && showSpinner) {
+        const spinnerColor = barColorProp ? getTerminalChalkColor(barColorProp) : getStatusColor('thinking', getColor);
+        elements.push(
+          <Box key={i}>
+            <Spinner color={spinnerColor} />
+          </Box>,
+        );
+      } else if (i === 0 && showArrowDown) {
+        elements.push(
+          <Box key={i}>
+            <Icon type={IconType.ARROW_DOWN} color={getStatusColor('paused', getColor)} />
+          </Box>,
+        );
+      } else if (i === 0 && showDot) {
+        elements.push(
           <Box key={i}>
             <Icon type={IconType.DOT} color={getStatusColor(status!, getColor)} />
           </Box>,
         );
-      } else if (active) {
-        // Use line-specific override color, or status color, or default
-        const color = lineColors.get(i) || (status ? getStatusColor(status, getColor).hex : defaultBarColor);
-        barElements.push(
+      } else if (active && status !== 'paused') {
+        // Use line-specific override color, or barColor prop, or status color, or default
+        // Don't show bar for paused status (only show the arrow icon)
+        const color = lineColors.get(i) || (status && status !== 'active' ? getStatusColor(status, getColor).hex : defaultBarColor);
+        elements.push(
           <Text key={i} backgroundColor={color}>
             {' '}
           </Text>,
         );
       } else {
-        // Empty space for inactive cards
-        barElements.push(<Text key={i}> </Text>);
+        // Empty space for inactive cards or paused status
+        elements.push(<Text key={i}> </Text>);
       }
     }
-    return (
-      <Box flexDirection="column" width={1}>
-        {barElements}
-      </Box>
-    );
-  }, [lineCount, status, showDot, active, lineColors, defaultBarColor, getColor]);
+    return elements;
+  }, [lineCount, status, showDot, showSpinner, showArrowDown, active, lineColors, defaultBarColor, getColor]);
 
   return (
     <StatusBarContext.Provider value={contextValue}>
       <Box flexDirection="row" width="100%">
-        {renderedBar}
-        <Box flexDirection="column" flexGrow={1} marginLeft={renderedBar ? 1 : 0} ref={contentRef}>
+        {/* Always render a 1-char wide column for the bar to prevent layout shift */}
+        <Box flexDirection="column" width={1}>
+          {barElements}
+        </Box>
+        <Box flexDirection="column" flexGrow={1} marginLeft={1} ref={contentRef}>
           {children}
         </Box>
       </Box>

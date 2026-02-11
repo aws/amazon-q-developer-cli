@@ -4,6 +4,7 @@ import { Text } from '../text/Text.js';
 import { getStatusColor } from '../../../utils/colorUtils.js';
 import { useStatusBar } from '../../chat/status-bar/StatusBar.js';
 import type { StatusType } from '../../../types/componentTypes.js';
+import { ShimmerText } from '../shimmer/ShimmerText.js';
 
 export interface StatusInfoProps {
   /** The main heading/identifier (e.g., tool name, alert message) */
@@ -17,6 +18,9 @@ export interface StatusInfoProps {
   
   /** Whether to color the title based on status. Defaults to false. */
   useStatusColor?: boolean;
+
+  /** Whether to apply shimmer effect to title. Defaults to false. */
+  shimmer?: boolean;
 }
 
 export const StatusInfo = React.memo(function StatusInfo({ 
@@ -24,6 +28,7 @@ export const StatusInfo = React.memo(function StatusInfo({
   target, 
   status: statusProp,
   useStatusColor = false,
+  shimmer = false,
 }: StatusInfoProps) {
   const { getColor } = useTheme();
 
@@ -44,8 +49,12 @@ export const StatusInfo = React.memo(function StatusInfo({
 
   return (
     <Text>
-      {titleColor(title)}
-      {target && targetColor(`(${target})`)}
+      {shimmer ? (
+        <ShimmerText text={title} color={titleColor.hex} />
+      ) : (
+        titleColor(title)
+      )}
+      {target && targetColor(` (${target})`)}
     </Text>
   );
 });

@@ -176,6 +176,38 @@ export class E2ETestCase {
   }
 
   /**
+   * Takes a heap snapshot from the TUI process.
+   */
+  async takeHeapSnapshot(filename: string): Promise<string> {
+    if (!this.tuiConnection) throw new Error('TUI not connected');
+    const response = await this.tuiConnection.sendCommand({ kind: 'HEAP_SNAPSHOT', filename });
+    if (response.data.kind !== 'HEAP_SNAPSHOT') {
+      throw new Error(`Unexpected response: ${JSON.stringify(response)}`);
+    }
+    return response.data.filename;
+  }
+
+  /**
+   * Gets memory usage from within the TUI process (process.memoryUsage()).
+   */
+  async getMemoryUsage(): Promise<{ rss: number; heapUsed: number; heapTotal: number; external: number; arrayBuffers: number }> {
+    if (!this.tuiConnection) throw new Error('TUI not connected');
+    const response = await this.tuiConnection.sendCommand({ kind: 'MEMORY_USAGE' });
+    if (response.data.kind !== 'MEMORY_USAGE') {
+      throw new Error(`Unexpected response: ${JSON.stringify(response)}`);
+    }
+    return response.data.data;
+  }
+
+  /**
+   * Forces garbage collection in the TUI process.
+   */
+  async forceGC(): Promise<void> {
+    if (!this.tuiConnection) throw new Error('TUI not connected');
+    await this.tuiConnection.sendCommand({ kind: 'FORCE_GC' });
+  }
+
+  /**
    * Gets Rust backend session state (AgentSnapshot).
    */
   async getAgentState(): Promise<unknown> {
@@ -220,10 +252,10 @@ export class E2ETestCase {
       session_id: sessionId,
       events
     };
-    console.log('Sending command to agent:', JSON.stringify(cmd));
+    const eventsDesc = events ? `${events.length} events (${JSON.stringify(cmd).length} bytes)` : 'null (end stream)';
+    console.log(`Sending to agent: ${eventsDesc}`);
 
     const response = await this.agentConnection.sendCommand(cmd);
-    console.log('Got response from agent:', JSON.stringify(response));
 
     if (response.data.kind === 'ERROR') {
       throw new Error(`Failed to push send_message response: ${response.data.error}`);
@@ -263,8 +295,35 @@ export class E2ETestCase {
     return this.ptyManager.waitForVisibleText(text, timeout ?? this.options.timeout);
   }
 
+  /**
+   * Waits for the TUI to finish processing (isProcessing becomes false).
+   */
+  async waitForIdle(timeout = 30000): Promise<void> {
+    const start = Date.now();
+    while (Date.now() - start < timeout) {
+      const store = await this.getStore();
+      if (!store.isProcessing) return;
+      await this.sleepMs(100);
+    }
+    throw new Error('Timeout waiting for TUI to become idle');
+  }
+
   expectExit(): Promise<number> {
     return this.ptyManager.expectExit();
+  }
+
+  /**
+   * Returns the PID of the spawned CLI process.
+   */
+  getPid(): number | undefined {
+    return this.ptyManager.getPid();
+  }
+
+  /**
+   * Returns the path to the TUI log file.
+   */
+  getTuiLogPath(): string {
+    return this.paths.tuiLogFile;
   }
 
   private waitForTuiConnection(): Promise<void> {

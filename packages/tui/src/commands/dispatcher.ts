@@ -25,6 +25,7 @@ export async function dispatch(
   ctx: CommandContext
 ): Promise<void> {
   const { inputType } = cmd.meta ?? {};
+  const isLocal = cmd.meta?.local === true;
   const cmdName = cmd.name.replace(/^\//, '');
 
   // 1. Input gathering (when no args provided)
@@ -47,9 +48,9 @@ export async function dispatch(
     }
   }
 
-  // 2. Execute backend
+  // 2. Execute backend (skip for local commands)
   let result = null;
-  if (cmd.source === 'backend') {
+  if (cmd.source === 'backend' && !isLocal) {
     // Show loading for agent swap
     if (cmdName === 'agent' && args) {
       ctx.setLoadingMessage(`Agent changing to ${args}`);

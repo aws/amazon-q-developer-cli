@@ -2,7 +2,13 @@ import { createStore, useStore } from 'zustand';
 import { Kiro } from '../kiro';
 import { type Theme, defaultTheme, noColorTheme } from '../types/theme';
 import { createContext, useContext } from 'react';
-import { AgentEventType, ApprovalOptionId, type AgentStreamEvent, type ApprovalRequestInfo } from '../types/agent-events';
+import {
+  AgentEventType,
+  ApprovalOptionId,
+  type AgentStreamEvent,
+  type ApprovalRequestInfo,
+  type ToolKind,
+} from '../types/agent-events';
 import type {
   InputBufferState,
   InputBufferActions,
@@ -10,6 +16,21 @@ import type {
 } from '../types/input-buffer';
 import type { AvailableCommand, CommandOption } from '../types/commands';
 import type { StatusType } from '../types/componentTypes';
+import {
+  executeCommand,
+  executeCommandWithArg,
+  type CommandContext,
+} from '../commands/index.js';
+import { expandFileReferences, readFileContent } from '../utils/file-search.js';
+import { logger } from '../utils/logger.js';
+import {
+  getAuthErrorGuidance,
+  getSessionErrorGuidance,
+  getErrorGuidance,
+  simplifyErrorMessage,
+  detectErrorCategory,
+} from '../utils/error-guidance.js';
+import { CommandHistory } from '../utils/command-history.js';
 
 export enum MessageRole {
   User = 'user',
@@ -27,15 +48,26 @@ export enum ToolUseStatus {
   Rejected = 'rejected',
 }
 
-export type ToolResult = 
+export type ToolResult =
   | { status: 'success'; output: unknown }
   | { status: 'error'; error: string }
   | { status: 'cancelled' };
 
 export type MessageType =
-  | { id: string; role: MessageRole.User; content: string }
-  | { id: string; role: MessageRole.Model; content: string }
-  | { id: string; role: MessageRole.ToolUse; name: string; content: string; isFinished?: boolean; status?: ToolUseStatus; result?: ToolResult }
+  | { id: string; role: MessageRole.User; content: string; agentName?: string }
+  | { id: string; role: MessageRole.Model; content: string; agentName?: string }
+  | {
+      id: string;
+      role: MessageRole.ToolUse;
+      name: string;
+      kind?: ToolKind;
+      content: string;
+      isFinished?: boolean;
+      status?: ToolUseStatus;
+      result?: ToolResult;
+      locations?: Array<{ path: string; line?: number }>;
+      agentName?: string;
+    }
   | { id: string; role: MessageRole.System; content: string; success: boolean };
 
 export interface SlashCommand extends AvailableCommand {
@@ -82,15 +114,18 @@ type AppActions = BaseAppActions & InputBufferActions;
 interface BaseAppActions {
   // Kiro actions
   sendMessage: (content: string) => Promise<void>;
+  createStreamEventHandler: () => (event: AgentStreamEvent) => void;
   processMessageStream: (
     stream: AsyncGenerator<AgentStreamEvent>
   ) => Promise<void>;
   cancelMessage: () => Promise<void>;
   setProcessing: (processing: boolean) => void;
-  setAgentError: (error: string | null) => void;
+  setAgentError: (error: string | null, guidance?: string | null) => void;
   respondToApproval: (optionId: string) => void;
   cancelApproval: () => void;
   setCurrentModel: (model: { id: string; name: string } | null) => void;
+  setCurrentAgent: (agent: { name: string } | null) => void;
+  handleCompactionEvent: (event: AgentStreamEvent) => void;
 
   // Chat actions
   clearMessages: () => void;
@@ -102,10 +137,13 @@ interface BaseAppActions {
   setActiveCommand: (command: ActiveCommand | null) => void;
   executeCommandWithArg: (arg: string) => Promise<void>;
   setCommandInput: (value: string) => void;
-  setActiveTrigger: (trigger: { key: string; position: number; type: 'start' | 'inline' } | null) => void;
+  setActiveTrigger: (
+    trigger: { key: string; position: number; type: 'start' | 'inline' } | null
+  ) => void;
+  setFilePickerHasResults: (hasResults: boolean) => void;
   clearCommandInput: () => void;
 
-  navigateHistory: (direction: 'up' | 'down') => void;
+  navigateHistory: (direction: 'up' | 'down') => string | null;
 
   // UI actions
   setMode: (mode: 'inline' | 'expanded') => void;
@@ -113,6 +151,7 @@ interface BaseAppActions {
   resetExitSequence: () => void;
   showTransientAlert: (alert: TransientAlert) => void;
   dismissTransientAlert: () => void;
+  setLoadingMessage: (message: string | null) => void;
   toggleToolOutputsExpanded: () => void;
   setHasExpandableToolOutputs: (has: boolean) => void;
 
@@ -121,6 +160,19 @@ interface BaseAppActions {
   setLastTurnTokens: (tokens: LastTurnTokens) => void;
   toggleContextBreakdown: () => void;
   setShowContextBreakdown: (show: boolean) => void;
+
+  // File attachment actions
+  attachFile: (path: string) => void;
+  removeAttachedFile: (path: string) => void;
+  clearAttachedFiles: () => void;
+  setPendingFileAttachment: (
+    path: string | null,
+    triggerPosition?: number
+  ) => void;
+  consumePendingFileAttachment: () => {
+    path: string;
+    triggerPosition: number;
+  } | null;
 
   // Theme actions
   setTheme: (theme: Theme) => void;
@@ -147,37 +199,59 @@ export interface AppState {
   kiro: Kiro;
   sessionId: string | null;
   isProcessing: boolean;
+  isCompacting: boolean;
   agentError: string | null;
+  agentErrorGuidance: string | null;
   pendingApproval: ApprovalRequestInfo | null;
   currentModel: { id: string; name: string } | null;
+  currentAgent: { name: string } | null;
 
   // Command UI state
   activeCommand: ActiveCommand | null;
   commandInputValue: string;
-  activeTrigger: { key: string; position: number; type: 'start' | 'inline' } | null;
+  activeTrigger: {
+    key: string;
+    position: number;
+    type: 'start' | 'inline';
+  } | null;
+  filePickerHasResults: boolean;
 
   // Input state
   input: InputBufferState;
-
-  // Input history
-  inputHistory: string[];
-  historyIndex: number;
 
   // UI state
   mode: 'inline' | 'expanded';
   exitSequence: number;
   exitTimer: NodeJS.Timeout | null;
   transientAlert: TransientAlert | null;
+  loadingMessage: string | null;
   toolOutputsExpanded: boolean; // Global toggle for all tool outputs
   hasExpandableToolOutputs: boolean; // Whether there are any tool outputs that can be expanded
 
   // Context usage state
   contextUsagePercent: number | null;
   lastTurnTokens: LastTurnTokens | null;
+
+  // File attachments
+  attachedFiles: string[];
+  pendingFileAttachment: { path: string; triggerPosition: number } | null;
   showContextBreakdown: boolean;
+
+  // Abort controller for current stream
+  currentAbortController: AbortController | null;
+
+  // Streaming buffer control (typed properly instead of `any`)
+  streamingBuffer: {
+    startBuffering: (() => void) | null;
+    stopBuffering: (() => void) | null;
+  };
 
   // Theme state
   theme: Theme;
+}
+
+interface AppStoreProps {
+  kiro: Kiro;
 }
 
 interface AppStoreProps {
@@ -197,63 +271,212 @@ export const createAppStore = (props: AppStoreProps) =>
     // Initial state
     messages: [],
     queuedMessages: [],
-    slashCommands: [
-      { name: '/exit', description: 'Exit the application', source: 'local' },
-      { name: '/clear', description: 'Clear chat history', source: 'local' },
-    ],
+    slashCommands: [], // Backend sends all commands via CommandsUpdate
     kiro: props.kiro,
     sessionId: null,
     isProcessing: false,
+    isCompacting: false,
     agentError: null,
+    agentErrorGuidance: null,
     pendingApproval: null,
     currentModel: null,
+    currentAgent: null,
 
     activeCommand: null,
     commandInputValue: '',
     activeTrigger: null,
+    filePickerHasResults: false,
 
     input: initialInputBufferState(),
-
-    inputHistory: [],
-    historyIndex: -1,
 
     mode: 'inline',
 
     exitSequence: 0,
     exitTimer: null,
     transientAlert: null,
+    loadingMessage: null as string | null,
     toolOutputsExpanded: false,
     hasExpandableToolOutputs: false,
 
     contextUsagePercent: null,
     lastTurnTokens: null,
     showContextBreakdown: false,
+    attachedFiles: [],
+    pendingFileAttachment: null,
+    currentAbortController: null,
+    streamingBuffer: { startBuffering: null, stopBuffering: null },
 
     theme: getInitialTheme(),
 
     sendMessage: async (content: string) => {
-      const { kiro, isProcessing } = get();
-      if (isProcessing) return;
+      const { kiro, isProcessing, attachedFiles } = get();
+      if (isProcessing) {
+        return;
+      }
+
+      logger.debug('[store] sendMessage', { contentLength: content.length });
+
+      // Add to history
+      CommandHistory.getInstance().add(content);
+
+      // Expand @file: references and attached files
+      let expandedContent = expandFileReferences(content);
+      for (const filePath of attachedFiles) {
+        const fileContent = readFileContent(filePath);
+        if (fileContent) {
+          expandedContent += `\n<attached_file path="${filePath}">\n${fileContent}\n</attached_file>`;
+        }
+      }
 
       const abortController = new AbortController();
+      set({ currentAbortController: abortController });
+
       const userMessageId = generateMessageId();
       const userMessage: MessageType = {
         id: userMessageId,
         role: MessageRole.User,
-        content,
+        content, // Show original content in UI
+        agentName: get().currentAgent?.name,
       };
 
       set((state) => ({
         isProcessing: true,
         agentError: null,
+        agentErrorGuidance: null,
         messages: [...state.messages, userMessage],
+        attachedFiles: [], // Clear attachments after sending
+        // Reset expandable state for new turn
+        hasExpandableToolOutputs: false,
+        toolOutputsExpanded: false,
       }));
 
       try {
-        const stream = kiro.sendMessageStream(content, abortController.signal);
-        await get().processMessageStream(stream);
+        const eventHandler = get().createStreamEventHandler();
+        await kiro.streamMessage(
+          expandedContent,
+          abortController.signal,
+          eventHandler,
+        );
+        (eventHandler as any).flush?.();
 
         // Mark any remaining tool calls as finished and mark turn as complete
+        // Clear agentError on successful completion (Requirement 4.3)
+        set((state) => {
+          // Check if any tool calls need to be marked finished
+          const hasUnfinishedToolCalls = state.messages.some(
+            (msg) => msg.role === MessageRole.ToolUse && !msg.isFinished
+          );
+
+          if (hasUnfinishedToolCalls) {
+            const messages = state.messages.map((msg) => {
+              if (msg.role === MessageRole.ToolUse && !msg.isFinished) {
+                return { ...msg, isFinished: true };
+              }
+              return msg;
+            });
+            return {
+              messages,
+              isProcessing: false,
+              currentAbortController: null,
+              agentError: null,
+              agentErrorGuidance: null,
+            };
+          }
+
+          return {
+            isProcessing: false,
+            currentAbortController: null,
+            agentError: null,
+            agentErrorGuidance: null,
+          };
+        });
+      } catch (error) {
+        set({ currentAbortController: null });
+        logger.error('[store] sendMessage: caught error', error);
+        if (error instanceof DOMException && error.name === 'AbortError')
+          return;
+        // Extract error message
+        let errorMessage = 'Unknown error';
+        if (error instanceof Error) {
+          errorMessage = error.message || error.name || 'Unknown error';
+        } else if (typeof error === 'string') {
+          errorMessage = error;
+        } else if (typeof error === 'object' && error !== null) {
+          const errObj = error as Record<string, unknown>;
+          if (typeof errObj.message === 'string' && errObj.message) {
+            errorMessage = errObj.message;
+          } else if (
+            typeof errObj.error === 'object' &&
+            errObj.error !== null
+          ) {
+            const innerErr = errObj.error as Record<string, unknown>;
+            if (typeof innerErr.message === 'string' && innerErr.message) {
+              errorMessage = innerErr.message;
+            }
+          }
+        }
+
+        // Mark any remaining tool calls as finished on error
+        set((state) => {
+          const hasUnfinishedToolCalls = state.messages.some(
+            (msg) => msg.role === MessageRole.ToolUse && !msg.isFinished
+          );
+          if (hasUnfinishedToolCalls) {
+            return {
+              messages: state.messages.map((msg) =>
+                msg.role === MessageRole.ToolUse && !msg.isFinished
+                  ? { ...msg, isFinished: true }
+                  : msg
+              ),
+            };
+          }
+          return state;
+        });
+
+        // Determine error category and handle accordingly
+        const category = detectErrorCategory(errorMessage);
+        const displayMessage = simplifyErrorMessage(errorMessage);
+
+        // Only auth and session errors are blocking (require user action)
+        if (category === 'auth' || category === 'session') {
+          set({
+            agentError: displayMessage,
+            agentErrorGuidance: getErrorGuidance(errorMessage).message,
+            isProcessing: false,
+          });
+        } else {
+          // All other errors are non-blocking (transient alerts)
+          get().showTransientAlert({
+            message: displayMessage,
+            status: 'error',
+            autoHideMs: 5000,
+          });
+          set({ isProcessing: false });
+        }
+      }
+    },
+
+    /**
+     * Creates a synchronous event handler callback for stream events.
+     * This is the core event-processing logic, used by streamMessage.
+     * Returns a cleanup function via the returned handler's `.flush` property.
+     */
+    createStreamEventHandler: () => {
+      let isBuffering = false;
+      let bufferedContent = '';
+
+      // Batching: accumulate content chunks and flush to the store
+      // on a timer so Ink's render loop isn't starved by rapid-fire
+      // synchronous set() calls from the ACP notification handler.
+      let pendingContentFlush: ReturnType<typeof setTimeout> | null = null;
+      let lastContentEventId: string | null = null;
+
+      const startBuffering = () => {
+        isBuffering = true;
+      };
+
+      const commitBufferedContent = () => {
+        if (!bufferedContent) return;
         set((state) => {
           const messages = state.messages.map((msg) => {
             if (msg.role === MessageRole.ToolUse && !msg.isFinished) {
@@ -261,77 +484,176 @@ export const createAppStore = (props: AppStoreProps) =>
             }
             return msg;
           });
-          return {
-            messages,
-            isProcessing: false,
-          };
-        });
-      } catch (error) {
-        if (error instanceof DOMException && error.name === 'AbortError')
-          return;
-        set({
-          agentError: error instanceof Error ? error.message : 'Unknown error',
-          isProcessing: false,
-        });
-      }
-    },
 
-    processMessageStream: async (stream: AsyncGenerator<AgentStreamEvent>) => {
-      for await (const event of stream) {
+          const lastModelMsgIndex = messages.findLastIndex(
+            (msg) => msg.role === MessageRole.Model
+          );
+          if (lastModelMsgIndex !== -1) {
+            const msg = messages[lastModelMsgIndex];
+            if (msg && msg.role === MessageRole.Model) {
+              messages[lastModelMsgIndex] = {
+                ...msg,
+                content: bufferedContent,
+              };
+              return { messages };
+            }
+          }
+          return { messages };
+        });
+      };
+
+      const flushContentToStore = () => {
+        pendingContentFlush = null;
+        if (!bufferedContent) return;
+
+        set((state) => {
+          const messages = state.messages.map((msg) => {
+            if (msg.role === MessageRole.ToolUse && !msg.isFinished) {
+              return { ...msg, isFinished: true };
+            }
+            return msg;
+          });
+
+          const lastMsg = messages[messages.length - 1];
+          if (lastMsg?.role === MessageRole.Model) {
+            return {
+              messages: [
+                ...messages.slice(0, -1),
+                {
+                  id: lastMsg.id,
+                  role: MessageRole.Model,
+                  content: bufferedContent,
+                  agentName: lastMsg.agentName ?? state.currentAgent?.name,
+                },
+              ],
+            };
+          } else {
+            return {
+              messages: [
+                ...messages,
+                {
+                  id: lastContentEventId ?? crypto.randomUUID(),
+                  role: MessageRole.Model,
+                  content: bufferedContent,
+                  agentName: state.currentAgent?.name,
+                },
+              ],
+            };
+          }
+        });
+      };
+
+      const stopBuffering = () => {
+        if (isBuffering && bufferedContent) {
+          commitBufferedContent();
+          isBuffering = false;
+        }
+      };
+
+      set({ streamingBuffer: { startBuffering, stopBuffering } });
+
+      const handler = (event: AgentStreamEvent) => {
         switch (event.type) {
           case AgentEventType.Content:
             if (event.content.type === 'text') {
               const text = event.content.text;
-              set((state) => {
-                // Mark any pending tool calls as finished when we get content
-                const messages = state.messages.map((msg) => {
-                  if (msg.role === MessageRole.ToolUse && !msg.isFinished) {
-                    return { ...msg, isFinished: true };
-                  }
-                  return msg;
-                });
-                
-                const lastMsg = messages[messages.length - 1];
-                if (lastMsg?.role === MessageRole.Model) {
-                  return {
-                    messages: [
-                      ...messages.slice(0, -1),
-                      {
-                        id: lastMsg.id,
-                        role: MessageRole.Model,
-                        content: lastMsg.content + text,
-                      },
-                    ],
-                  };
-                } else {
-                  return {
-                    messages: [
-                      ...messages,
-                      { id: event.id, role: MessageRole.Model, content: text },
-                    ],
-                  };
+              bufferedContent += text;
+              lastContentEventId = event.id;
+
+              if (!isBuffering) {
+                // Schedule a batched flush instead of calling set() for
+                // every chunk.  This lets Ink render between flushes.
+                if (!pendingContentFlush) {
+                  pendingContentFlush = setTimeout(flushContentToStore, 16);
                 }
-              });
+              }
             }
             break;
           case AgentEventType.ToolCall:
+            if (isBuffering && bufferedContent) {
+              commitBufferedContent();
+              isBuffering = false;
+            }
+            // Flush any pending batched content before adding tool message
+            if (pendingContentFlush) {
+              clearTimeout(pendingContentFlush);
+              pendingContentFlush = null;
+              flushContentToStore();
+            }
+            // Reset buffer so the next Model message after this tool
+            // doesn't repeat text from before the tool call.
+            bufferedContent = '';
+            lastContentEventId = null;
+
             set((state) => {
-              // Check if this tool call already exists (avoid duplicates)
-              const existingToolCall = state.messages.find(
+              const existingIndex = state.messages.findIndex(
                 (msg) => msg.role === MessageRole.ToolUse && msg.id === event.id
               );
-              if (existingToolCall) {
+
+              let content: string;
+              const diff = event.toolContent?.[0];
+              if (diff) {
+                const args = event.args as Record<string, unknown>;
+                let command = 'create';
+                if (args.oldStr !== undefined) {
+                  command = 'strReplace';
+                } else if (args.insertLine !== undefined || args.append) {
+                  command = 'insert';
+                }
+                content = JSON.stringify({
+                  command,
+                  path: diff.path,
+                  content: diff.newText,
+                  oldStr: diff.oldText,
+                  newStr: diff.newText,
+                  insertLine: args.insertLine,
+                });
+              } else if (event.kind === 'edit') {
+                const args = event.args as Record<string, unknown>;
+                let command = 'create';
+                if (args.oldStr !== undefined) {
+                  command = 'strReplace';
+                } else if (args.insertLine !== undefined || args.append) {
+                  command = 'insert';
+                }
+                content = JSON.stringify({
+                  command,
+                  path: args.path,
+                  content: args.text || args.content || '',
+                  oldStr: args.oldStr,
+                  newStr: args.newStr,
+                  insertLine: args.insertLine,
+                });
+              } else {
+                content = JSON.stringify(event.args);
+              }
+
+              if (existingIndex !== -1) {
+                const existingMsg = state.messages[existingIndex];
+                if (existingMsg && existingMsg.role === MessageRole.ToolUse) {
+                  const hasNewContent =
+                    Object.keys(event.args).length > 0 || event.toolContent;
+                  if (hasNewContent) {
+                    const messages = [...state.messages];
+                    messages[existingIndex] = {
+                      ...existingMsg,
+                      content,
+                      kind: event.kind || existingMsg.kind,
+                      locations: event.locations || existingMsg.locations,
+                    };
+                    return { messages };
+                  }
+                }
                 return state;
               }
-              
-              // Mark any pending tool calls as finished when a new one starts
+
               const messages = state.messages.map((msg) => {
                 if (msg.role === MessageRole.ToolUse && !msg.isFinished) {
                   return { ...msg, isFinished: true };
                 }
                 return msg;
               });
-              
+
               return {
                 messages: [
                   ...messages,
@@ -339,7 +661,10 @@ export const createAppStore = (props: AppStoreProps) =>
                     id: event.id,
                     role: MessageRole.ToolUse,
                     name: event.name,
-                    content: JSON.stringify(event.args),
+                    kind: event.kind,
+                    content,
+                    locations: event.locations,
+                    agentName: state.currentAgent?.name,
                   },
                 ],
               };
@@ -349,19 +674,25 @@ export const createAppStore = (props: AppStoreProps) =>
             if (event.content.type === 'text') {
               const text = event.content.text;
               set((state) => {
-                const lastMsg = state.messages[state.messages.length - 1];
-                if (lastMsg?.role === MessageRole.ToolUse) {
-                  return {
-                    messages: [
-                      ...state.messages.slice(0, -1),
-                      {
-                        id: lastMsg.id,
-                        name: lastMsg.name,
-                        role: MessageRole.ToolUse,
-                        content: lastMsg.content + text,
-                      },
-                    ],
-                  };
+                const toolMsgIndex = state.messages.findIndex(
+                  (msg) =>
+                    msg.role === MessageRole.ToolUse && msg.id === event.id
+                );
+                if (toolMsgIndex !== -1) {
+                  const toolMsg = state.messages[toolMsgIndex];
+                  if (toolMsg && toolMsg.role === MessageRole.ToolUse) {
+                    const messages = [...state.messages];
+                    messages[toolMsgIndex] = {
+                      id: toolMsg.id,
+                      name: toolMsg.name,
+                      kind: toolMsg.kind,
+                      role: MessageRole.ToolUse,
+                      content: toolMsg.content + text,
+                      locations: toolMsg.locations,
+                      agentName: toolMsg.agentName,
+                    };
+                    return { messages };
+                  }
                 }
                 return state;
               });
@@ -380,9 +711,12 @@ export const createAppStore = (props: AppStoreProps) =>
                     id: toolMsg.id,
                     role: MessageRole.ToolUse,
                     name: toolMsg.name,
+                    kind: toolMsg.kind,
                     content: toolMsg.content,
                     isFinished: true,
                     result: event.result,
+                    locations: toolMsg.locations,
+                    agentName: toolMsg.agentName,
                   };
                 }
               }
@@ -396,7 +730,10 @@ export const createAppStore = (props: AppStoreProps) =>
             get().setContextUsage(event.percent);
             break;
           case AgentEventType.Metadata:
-            if (event.inputTokens !== undefined || event.outputTokens !== undefined) {
+            if (
+              event.inputTokens !== undefined ||
+              event.outputTokens !== undefined
+            ) {
               get().setLastTurnTokens({
                 input: event.inputTokens ?? 0,
                 output: event.outputTokens ?? 0,
@@ -404,48 +741,182 @@ export const createAppStore = (props: AppStoreProps) =>
               });
             }
             break;
+          case AgentEventType.CompactionStatus:
+            if (event.status === 'started') {
+              set({ isCompacting: true });
+            } else if (event.status === 'completed') {
+              set({ isCompacting: false });
+              get().showTransientAlert({
+                message: 'Conversation compacted',
+                status: 'success',
+                autoHideMs: 3000,
+              });
+            } else if (event.status === 'failed') {
+              set({ isCompacting: false });
+              get().showTransientAlert({
+                message: `Compaction failed: ${event.error ?? 'unknown error'}`,
+                status: 'error',
+                autoHideMs: 5000,
+              });
+            }
+            break;
+          case AgentEventType.AuthError:
+            {
+              const guidance = getAuthErrorGuidance(event.errorType);
+              set({
+                agentError: event.message,
+                agentErrorGuidance: guidance.message,
+                isProcessing: false,
+              });
+            }
+            break;
+          case AgentEventType.SessionError:
+            {
+              const guidance = getSessionErrorGuidance(
+                event.errorType,
+                event.pid
+              );
+              set({
+                agentError: event.message,
+                agentErrorGuidance: guidance.message,
+                isProcessing: false,
+              });
+            }
+            break;
+          case AgentEventType.McpServerInitFailure:
+            {
+              const message = `MCP server "${event.serverName}" failed to initialize: ${event.error}`;
+              get().showTransientAlert({
+                message,
+                status: 'error',
+                autoHideMs: 5000,
+              });
+            }
+            break;
+          case AgentEventType.RateLimitError:
+            {
+              get().showTransientAlert({
+                message: event.message,
+                status: 'error',
+                autoHideMs: 5000,
+              });
+            }
+            break;
         }
+      };
+
+      // Attach flush for callers to commit remaining buffered content
+      (handler as any).flush = () => {
+        // Cancel any pending batched flush and commit immediately
+        if (pendingContentFlush) {
+          clearTimeout(pendingContentFlush);
+          pendingContentFlush = null;
+        }
+        // flushContentToStore handles both creating new and updating
+        // existing Model messages — no need to also call commitBufferedContent
+        flushContentToStore();
+        set({ streamingBuffer: { startBuffering: null, stopBuffering: null } });
+      };
+
+      return handler;
+    },
+
+    /**
+     * Backward-compatible wrapper: consumes an async generator using the
+     * event handler. Used by unit tests that pass mock async generators.
+     */
+    processMessageStream: async (stream: AsyncGenerator<AgentStreamEvent>) => {
+      const handler = get().createStreamEventHandler();
+      for await (const event of stream) {
+        handler(event);
       }
+      (handler as any).flush?.();
     },
 
     cancelMessage: async () => {
-      const { kiro } = get();
+      const { kiro, currentAbortController } = get();
       if (!kiro) return;
 
       try {
+        // Abort local stream first
+        if (currentAbortController) {
+          currentAbortController.abort();
+          set({ currentAbortController: null });
+        }
+        // Then notify backend
         await kiro.cancel();
         set({ isProcessing: false });
+        get().showTransientAlert({
+          message: 'Cancelled streaming',
+          status: 'info',
+          autoHideMs: 2000,
+        });
       } catch (error) {
+        const errorMessage =
+          error instanceof Error ? error.message : 'Cancel failed';
         set({
-          agentError: error instanceof Error ? error.message : 'Cancel failed',
+          agentError: errorMessage,
+          agentErrorGuidance: getErrorGuidance(errorMessage).message,
+          isProcessing: false,
         });
       }
     },
 
     setProcessing: (isProcessing) => set({ isProcessing }),
-    setAgentError: (agentError) => set({ agentError }),
+    setAgentError: (agentError, guidance) =>
+      set({ agentError, agentErrorGuidance: guidance ?? null }),
     setCurrentModel: (currentModel) => set({ currentModel }),
+    setCurrentAgent: (currentAgent) => set({ currentAgent }),
+
+    handleCompactionEvent: (event) => {
+      if (event.type === AgentEventType.ContextUsage) {
+        get().setContextUsage(event.percent);
+        return;
+      }
+      if (event.type !== AgentEventType.CompactionStatus) return;
+      if (event.status === 'started') {
+        set({ isCompacting: true });
+      } else if (event.status === 'completed') {
+        set({ isCompacting: false });
+        get().showTransientAlert({
+          message: 'Conversation compacted',
+          status: 'success',
+          autoHideMs: 3000,
+        });
+      } else if (event.status === 'failed') {
+        set({ isCompacting: false });
+        get().showTransientAlert({
+          message: `Compaction failed: ${event.error ?? 'unknown error'}`,
+          status: 'error',
+          autoHideMs: 5000,
+        });
+      }
+    },
 
     respondToApproval: (optionId: string) => {
       const { pendingApproval } = get();
       if (pendingApproval) {
         const toolCallId = pendingApproval.toolCall.toolCallId;
-        const isRejected = optionId === ApprovalOptionId.RejectOnce || optionId === ApprovalOptionId.RejectAlways;
-        
+        const isRejected =
+          optionId === ApprovalOptionId.RejectOnce ||
+          optionId === ApprovalOptionId.RejectAlways;
+
         // Update the tool call status based on user response
         set((state) => ({
           messages: state.messages.map((msg) => {
             if (msg.role === MessageRole.ToolUse && msg.id === toolCallId) {
-              return { 
-                ...msg, 
-                status: isRejected ? ToolUseStatus.Rejected : ToolUseStatus.Approved, 
+              return {
+                ...msg,
+                status: isRejected
+                  ? ToolUseStatus.Rejected
+                  : ToolUseStatus.Approved,
                 isFinished: isRejected ? true : msg.isFinished,
               };
             }
             return msg;
           }),
         }));
-        
+
         pendingApproval.resolve({
           outcome: 'selected',
           optionId,
@@ -462,8 +933,23 @@ export const createAppStore = (props: AppStoreProps) =>
       }
     },
 
-    // Chat actions
-    clearMessages: () => set({ messages: [] }),
+    // Clear conversation but keep last turn visible in UI
+    clearMessages: () => {
+      const msgs = get().messages;
+      if (msgs.length < 2) return;
+      
+      // Find the last user message to keep the entire last turn
+      let lastUserIndex = -1;
+      for (let i = msgs.length - 1; i >= 0; i--) {
+        if (msgs[i].role === MessageRole.User) {
+          lastUserIndex = i;
+          break;
+        }
+      }
+      
+      if (lastUserIndex === -1) return;
+      set({ messages: msgs.slice(lastUserIndex) });
+    },
 
     setSlashCommands: (commands: SlashCommand[]) => {
       set((state) => {
@@ -486,28 +972,42 @@ export const createAppStore = (props: AppStoreProps) =>
       set({ activeTrigger: trigger });
     },
 
+    setFilePickerHasResults: (hasResults) => {
+      set({ filePickerHasResults: hasResults });
+    },
+
     clearCommandInput: () => {
-      set({ commandInputValue: '', activeTrigger: null });
+      set({
+        commandInputValue: '',
+        activeTrigger: null,
+        filePickerHasResults: false,
+      });
     },
 
     executeCommandWithArg: async (arg: string) => {
-      const { activeCommand, kiro } = get();
+      const { activeCommand } = get();
       if (!activeCommand) return;
 
       const cmdName = activeCommand.command.name.replace(/^\//, '');
       set({ activeCommand: null });
 
-      // Send generic { command, args: { value } } - backend handles mapping
-      const result = await kiro.executeCommand({
-        command: cmdName,
-        args: { value: arg },
-      } as import('../types/commands').TuiCommand);
+      const state = get();
+      const ctx: CommandContext = {
+        kiro: state.kiro,
+        slashCommands: state.slashCommands,
+        showAlert: (message, status, autoHideMs = 3000) =>
+          state.showTransientAlert({ message, status, autoHideMs }),
+        setLoadingMessage: state.setLoadingMessage,
+        setActiveCommand: state.setActiveCommand,
+        setCurrentModel: state.setCurrentModel,
+        setCurrentAgent: state.setCurrentAgent,
+        setShowContextBreakdown: (show) => set({ showContextBreakdown: show }),
+        clearMessages: state.clearMessages,
+        clearUIState: () =>
+          set({ activeCommand: null, showContextBreakdown: false }),
+      };
 
-      get().showTransientAlert({
-        message: result.message,
-        status: result.success ? 'success' : 'error',
-        autoHideMs: 3000,
-      });
+      await executeCommandWithArg(cmdName, arg, ctx);
     },
 
     queueMessage: (content: string) => {
@@ -651,10 +1151,9 @@ export const createAppStore = (props: AppStoreProps) =>
     },
 
     navigateHistory: (direction: 'up' | 'down') => {
-      set((state) => {
-        // todo
-        return state;
-      });
+      const history = CommandHistory.getInstance();
+      const command = history.navigate(direction);
+      return command;
     },
 
     // UI actions
@@ -669,6 +1168,8 @@ export const createAppStore = (props: AppStoreProps) =>
         const newSequence = state.exitSequence + 1;
 
         if (newSequence >= 2) {
+          // Clean up kiro before exiting
+          state.kiro.close();
           process.exit(0);
         }
 
@@ -697,6 +1198,10 @@ export const createAppStore = (props: AppStoreProps) =>
       set({ transientAlert: null });
     },
 
+    setLoadingMessage: (message) => {
+      set({ loadingMessage: message });
+    },
+
     // Context usage actions
     setContextUsage: (percent) => {
       set({ contextUsagePercent: percent });
@@ -712,6 +1217,35 @@ export const createAppStore = (props: AppStoreProps) =>
 
     setShowContextBreakdown: (show) => {
       set({ showContextBreakdown: show });
+    },
+
+    // File attachment actions
+    attachFile: (path) => {
+      set((state) => ({
+        attachedFiles: state.attachedFiles.includes(path)
+          ? state.attachedFiles
+          : [...state.attachedFiles, path],
+      }));
+    },
+
+    removeAttachedFile: (path) => {
+      set((state) => ({
+        attachedFiles: state.attachedFiles.filter((f) => f !== path),
+      }));
+    },
+
+    clearAttachedFiles: () => {
+      set({ attachedFiles: [] });
+    },
+
+    setPendingFileAttachment: (path, triggerPosition = 0) => {
+      set({ pendingFileAttachment: path ? { path, triggerPosition } : null });
+    },
+
+    consumePendingFileAttachment: () => {
+      const pending = get().pendingFileAttachment;
+      set({ pendingFileAttachment: null });
+      return pending;
     },
 
     toggleToolOutputsExpanded: () => {
@@ -737,9 +1271,7 @@ export const createAppStore = (props: AppStoreProps) =>
       state.resetExitSequence();
 
       // Add to history
-      set((prevState) => ({
-        inputHistory: [...prevState.inputHistory.slice(-49), trimmed],
-      }));
+      CommandHistory.getInstance().add(trimmed);
 
       // Queue if processing
       if (state.isProcessing) {
@@ -748,85 +1280,33 @@ export const createAppStore = (props: AppStoreProps) =>
         return;
       }
 
+      // Clear all UI state before processing any input
+      set({
+        activeCommand: null,
+        showContextBreakdown: false,
+       commandInputValue: '',
+        activeTrigger: null,
+      });
       state.clearInput();
 
-      // Handle slash commands
+      // Handle slash commands via command registry
       if (trimmed.startsWith('/')) {
-        // Local commands
-        if (trimmed === '/exit') {
-          process.exit(0);
-        } else if (trimmed === '/clear') {
-          state.clearMessages();
-          return;
-        }
-
-        // Check for backend commands with selection input
-        const cmdName = trimmed.split(' ')[0] ?? '';
-        const cmd = state.slashCommands.find((c) => c.name === cmdName);
-        
-        // Show selection UI for commands with inputType: 'selection'
-        if (cmd?.meta?.inputType === 'selection' && !trimmed.includes(' ')) {
-          // Fetch options from backend and show selection UI
-          try {
-            const response = await state.kiro.getCommandOptions(cmdName, '');
-            if (response.options.length > 0) {
-              state.setActiveCommand({ command: cmd, options: response.options });
-              return;
-            }
-          } catch {
-            // Fall through to execute directly if options fetch fails
-          }
-        }
-
-        // Panel commands retain input without showing options menu
-        if (cmd?.meta?.inputType === 'panel' && !trimmed.includes(' ')) {
-          state.setCommandInput(trimmed);
-          state.setActiveCommand({ command: cmd, options: [] });
-          // Show context breakdown for /context command
-          if (cmdName === '/context') {
-            set({ showContextBreakdown: true });
-          }
-          // Execute command but don't show transient alert for panel commands
-          if (cmd?.source === 'backend') {
-            const cmdNameOnly = cmdName.replace(/^\//, '');
-            try {
-              await state.kiro.executeCommand({
-                command: cmdNameOnly,
-                args: {},
-              } as import('../types/commands').TuiCommand);
-            } catch {
-              // Silently ignore errors for panel commands
-            }
-          }
-          return;
-        }
-
-        // For other backend commands, execute directly
-        if (cmd?.source === 'backend') {
-          const cmdNameOnly = cmdName.replace(/^\//, '');
-          const args = trimmed.slice(cmdName.length).trim();
-          
-          try {
-            const result = await state.kiro.executeCommand({
-              command: cmdNameOnly,
-              args: args ? { value: args } : {},
-            } as import('../types/commands').TuiCommand);
-            
-            state.showTransientAlert({
-              message: result.message,
-              status: result.success ? 'success' : 'error',
-              autoHideMs: 3000,
-            });
-          } catch {
-            state.showTransientAlert({
-              message: `Command ${cmdName} failed - backend unavailable`,
-              status: 'error',
-              autoHideMs: 3000,
-            });
-          }
-          return;
-        }
-
+        const ctx: CommandContext = {
+          kiro: state.kiro,
+          slashCommands: state.slashCommands,
+          showAlert: (message, status, autoHideMs = 3000) =>
+            state.showTransientAlert({ message, status, autoHideMs }),
+          setLoadingMessage: state.setLoadingMessage,
+          setActiveCommand: state.setActiveCommand,
+          setCurrentModel: state.setCurrentModel,
+          setCurrentAgent: state.setCurrentAgent,
+          setShowContextBreakdown: (show) =>
+            set({ showContextBreakdown: show }),
+          clearMessages: state.clearMessages,
+          clearUIState: () =>
+            set({ activeCommand: null, showContextBreakdown: false }),
+        };
+        await executeCommand(trimmed, ctx);
         return;
       }
 

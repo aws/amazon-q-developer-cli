@@ -1,7 +1,6 @@
 import * as acp from '@agentclientprotocol/sdk';
 import { logger } from './utils/logger';
 import { spawn, type ChildProcess } from 'node:child_process';
-import { Readable } from 'node:stream';
 import type { SessionClient } from './types/session-client';
 import {
   AgentEventType,
@@ -10,7 +9,11 @@ import {
   ToolCallStatus,
   type AgentStreamEvent,
 } from './types/agent-events';
-import type { CommandOptionsResponse, CommandResult, TuiCommand } from './types/commands';
+import type {
+  CommandOptionsResponse,
+  CommandResult,
+  TuiCommand,
+} from './types/commands';
 import { v4 as uuidv4 } from 'uuid';
 
 export type AcpSessionUpdate = acp.SessionNotification['update'];
@@ -21,6 +24,10 @@ const EXT_METHODS = {
   COMMANDS_EXECUTE: 'kiro.dev/commands/execute',
   COMMANDS_OPTIONS: 'kiro.dev/commands/options',
   METADATA: 'kiro.dev/metadata',
+  COMPACTION_STATUS: 'kiro.dev/compaction/status',
+  CLEAR_STATUS: 'kiro.dev/clear/status',
+  MCP_SERVER_INIT_FAILURE: 'kiro.dev/mcp/server_init_failure',
+  RATE_LIMIT_ERROR: 'kiro.dev/error/rate_limit',
 } as const;
 
 /**
@@ -49,7 +56,7 @@ export class AcpClient implements acp.Client, SessionClient {
       logger.error('Agent stdin error:', err);
     });
 
-    // Create a WritableStream that writes to stdin
+    // WritableStream wrapping node stdin
     const writable = new WritableStream<Uint8Array>({
       async write(chunk) {
         return new Promise<void>((resolve, reject) => {
@@ -63,12 +70,63 @@ export class AcpClient implements acp.Client, SessionClient {
         stdin.end();
       },
       abort(reason) {
-        stdin.destroy(reason instanceof Error ? reason : new Error(String(reason)));
-      }
+        stdin.destroy(
+          reason instanceof Error ? reason : new Error(String(reason))
+        );
+      },
     });
 
-    const readable = Readable.toWeb(stdout) as unknown as ReadableStream<Uint8Array>;
-    const stream = acp.ndJsonStream(writable, readable);
+    // Parse ndjson directly from 'data' events and push parsed JSON-RPC
+    // messages into a ReadableStream. This bypasses ndJsonStream's
+    // reader.read() on a pipe-backed stream, which intermittently stalls
+    // under Bun when Ink/React is rendering concurrently.
+    let buffer = '';
+    const decoder = new TextDecoder();
+
+    let messageController: ReadableStreamDefaultController<any>;
+    const parsedMessages = new ReadableStream<any>({
+      start(controller) {
+        messageController = controller;
+      },
+      cancel() {
+        stdout.destroy();
+      },
+    });
+
+    stdout.on('data', (chunk: Buffer) => {
+      buffer += decoder.decode(new Uint8Array(chunk), { stream: true });
+      const lines = buffer.split('\n');
+      buffer = lines.pop() || '';
+      for (const line of lines) {
+        const trimmed = line.trim();
+        if (trimmed) {
+          try {
+            const message = JSON.parse(trimmed);
+            messageController.enqueue(message);
+          } catch (err) {
+            logger.error('[pipe] Failed to parse JSON:', trimmed, err);
+          }
+        }
+      }
+    });
+    stdout.on('end', () => {
+      if (buffer.trim()) {
+        try {
+          messageController.enqueue(JSON.parse(buffer.trim()));
+        } catch { /* ignore */ }
+      }
+      messageController.close();
+    });
+    stdout.on('error', (err) => {
+      logger.error('[pipe] stdout error:', err);
+      messageController.error(err);
+    });
+
+    // readable: pre-parsed messages (bypasses ndJsonStream reader)
+    // writable: still uses ndJsonStream serialization for outgoing messages
+    const dummyReadable = new ReadableStream<Uint8Array>({ start() {} });
+    const ndJson = acp.ndJsonStream(writable, dummyReadable);
+    const stream = { readable: parsedMessages, writable: ndJson.writable };
 
     this.connection = new acp.ClientSideConnection((_agent) => this, stream);
   }
@@ -90,18 +148,29 @@ export class AcpClient implements acp.Client, SessionClient {
     });
   }
 
-  async newSession(): Promise<{ sessionId: string; currentModel?: { id: string; name: string } }> {
+  async newSession(): Promise<{
+    sessionId: string;
+    currentModel?: { id: string; name: string };
+    currentAgent?: { name: string };
+  }> {
     const sessionResult = await this.connection.newSession({
       cwd: process.cwd(),
       mcpServers: [],
     });
 
     this.sessionId = sessionResult.sessionId;
-    logger.debug('ACP session created', { sessionId: this.sessionId, models: sessionResult.models });
+    logger.debug('ACP session created', {
+      sessionId: this.sessionId,
+      models: sessionResult.models,
+      modes: sessionResult.modes,
+    });
 
     // Extract current model info from session response
     let currentModel: { id: string; name: string } | undefined;
-    if (sessionResult.models?.currentModelId && sessionResult.models?.availableModels) {
+    if (
+      sessionResult.models?.currentModelId &&
+      sessionResult.models?.availableModels
+    ) {
       const modelInfo = sessionResult.models.availableModels.find(
         (m) => m.modelId === sessionResult.models?.currentModelId
       );
@@ -110,7 +179,13 @@ export class AcpClient implements acp.Client, SessionClient {
       }
     }
 
-    return { sessionId: this.sessionId, currentModel };
+    // Extract current agent info from session response
+    let currentAgent: { name: string } | undefined;
+    if (sessionResult.modes?.currentModeId) {
+      currentAgent = { name: sessionResult.modes.currentModeId };
+    }
+
+    return { sessionId: this.sessionId, currentModel, currentAgent };
   }
 
   async loadSession(sessionId: string): Promise<void> {
@@ -128,16 +203,51 @@ export class AcpClient implements acp.Client, SessionClient {
       throw new Error('cannot send prompt without an active session');
     }
 
-    logger.debug('sending prompt: ', messages);
-    await this.connection.prompt({
-      prompt: messages,
-      sessionId: this.sessionId,
-    });
-    logger.debug('prompt completed');
+    // Fail fast if the connection is already closed
+    if (this.connection.signal.aborted) {
+      logger.error('[acp] prompt called but connection already closed');
+      throw new Error('Agent connection closed unexpectedly');
+    }
+
+    logger.debug('[acp] sending prompt', { sessionId: this.sessionId });
+    try {
+      // Race the prompt against the connection closing to avoid hanging
+      // if the backend process dies while we're waiting for a response
+      const connectionClosed = new Promise<never>((_resolve, reject) => {
+        if (this.connection.signal.aborted) {
+          reject(new Error('Agent connection closed unexpectedly'));
+          return;
+        }
+        this.connection.signal.addEventListener('abort', () => {
+          logger.error('[acp] connection closed while prompt was pending');
+          reject(new Error('Agent connection closed unexpectedly'));
+        }, { once: true });
+      });
+      // Suppress unhandled rejection if prompt wins the race
+      connectionClosed.catch(() => {});
+
+      await Promise.race([
+        this.connection.prompt({
+          prompt: messages,
+          sessionId: this.sessionId,
+        }),
+        connectionClosed,
+      ]);
+    } catch (e) {
+      logger.error('[acp] prompt failed', e);
+      throw e;
+    }
   }
 
   async cancel(): Promise<void> {
-    // Cancel implementation
+    if (!this.sessionId) return;
+
+    try {
+      await this.connection.cancel({ sessionId: this.sessionId });
+      logger.debug('Cancel notification sent');
+    } catch (e) {
+      logger.error('Failed to send cancel notification:', e);
+    }
   }
 
   async executeCommand(command: TuiCommand): Promise<CommandResult> {
@@ -147,27 +257,44 @@ export class AcpClient implements acp.Client, SessionClient {
 
     try {
       // extMethod already prepends '_', so don't include it
-      const result = await this.connection.extMethod(EXT_METHODS.COMMANDS_EXECUTE, {
-        sessionId: this.sessionId,
-        command,
-      });
+      const result = await this.connection.extMethod(
+        EXT_METHODS.COMMANDS_EXECUTE,
+        {
+          sessionId: this.sessionId,
+          command,
+        }
+      );
       return result as unknown as CommandResult;
     } catch (e) {
-      return { success: false, message: e instanceof Error ? e.message : 'Command failed' };
+      return {
+        success: false,
+        message: e instanceof Error ? e.message : 'Command failed',
+      };
     }
   }
 
-  async getCommandOptions(commandName: string, partial: string): Promise<CommandOptionsResponse> {
+  async setMode(modeId: string): Promise<void> {
+    if (!this.sessionId) return;
+    await this.connection.setSessionMode({ sessionId: this.sessionId, modeId });
+  }
+
+  async getCommandOptions(
+    commandName: string,
+    partial: string
+  ): Promise<CommandOptionsResponse> {
     if (!this.sessionId) {
       return { options: [] };
     }
 
     try {
-      const result = await this.connection.extMethod(EXT_METHODS.COMMANDS_OPTIONS, {
-        sessionId: this.sessionId,
-        command: commandName.replace(/^\//, ''),
-        partial,
-      });
+      const result = await this.connection.extMethod(
+        EXT_METHODS.COMMANDS_OPTIONS,
+        {
+          sessionId: this.sessionId,
+          command: commandName.replace(/^\//, ''),
+          partial,
+        }
+      );
       return result as unknown as CommandOptionsResponse;
     } catch {
       return { options: [] };
@@ -175,7 +302,7 @@ export class AcpClient implements acp.Client, SessionClient {
   }
 
   close(): void {
-    this.agentProcess.kill();
+    this.agentProcess.kill('SIGTERM');
   }
 
   // ===========
@@ -185,39 +312,39 @@ export class AcpClient implements acp.Client, SessionClient {
   async requestPermission(
     params: acp.RequestPermissionRequest
   ): Promise<acp.RequestPermissionResponse> {
-    const response = await new Promise<acp.RequestPermissionResponse>((resolve) => {
-      const event: AgentStreamEvent = {
-        type: AgentEventType.ApprovalRequest,
-        value: {
-          toolCall: { toolCallId: params.toolCall?.toolCallId || '' },
-          permissionOptions: (params.options || []).map((opt) => ({
-            kind: opt.kind as ApprovalOptionId,
-            name: opt.name,
-            optionId: opt.optionId,
-          })),
-          resolve: (userResponse) => {
-            const acpResponse: acp.RequestPermissionResponse =
-              userResponse.outcome === 'selected'
-                ? {
-                    outcome: {
-                      outcome: 'selected' as const,
-                      optionId: userResponse.optionId,
-                    },
-                  }
-                : { outcome: { outcome: 'cancelled' as const } };
-            resolve(acpResponse);
+    const response = await new Promise<acp.RequestPermissionResponse>(
+      (resolve) => {
+        const event: AgentStreamEvent = {
+          type: AgentEventType.ApprovalRequest,
+          value: {
+            toolCall: { toolCallId: params.toolCall?.toolCallId || '' },
+            permissionOptions: (params.options || []).map((opt) => ({
+              kind: opt.kind as ApprovalOptionId,
+              name: opt.name,
+              optionId: opt.optionId,
+            })),
+            resolve: (userResponse) => {
+              const acpResponse: acp.RequestPermissionResponse =
+                userResponse.outcome === 'selected'
+                  ? {
+                      outcome: {
+                        outcome: 'selected' as const,
+                        optionId: userResponse.optionId,
+                      },
+                    }
+                  : { outcome: { outcome: 'cancelled' as const } };
+              resolve(acpResponse);
+            },
           },
-        },
-      };
-      this.broadcastStreamEvent(event);
-    });
-    
+        };
+        this.broadcastStreamEvent(event);
+      }
+    );
+
     return response;
   }
 
   async sessionUpdate(params: acp.SessionNotification): Promise<void> {
-    logger.debug('Session update received', params);
-
     const { update } = params;
     if (update) {
       const event = this.convertAcpUpdateToEvent(update);
@@ -281,27 +408,106 @@ export class AcpClient implements acp.Client, SessionClient {
     params: Record<string, unknown>
   ): Promise<void> {
     logger.debug('Extension notification received:', method, params);
-
     // Handle custom commands available notification (SDK strips leading _)
-    if (method === EXT_METHODS.COMMANDS_AVAILABLE) {
-      const commands = (params.commands as Array<{ name: string; description: string; meta?: Record<string, unknown> }>) || [];
+    const handler = this.extNotificationHandlers[method];
+    if (handler) {
+      handler(params);
+    }
+  }
+  private extNotificationHandlers: Record<
+    string,
+    (params: Record<string, unknown>) => void
+  > = {
+    [EXT_METHODS.COMMANDS_AVAILABLE]: (params) =>
+      this.handleCommandsAdvertising(params),
+    [EXT_METHODS.METADATA]: (params) => this.handleMetadataUpdate(params),
+    [EXT_METHODS.COMPACTION_STATUS]: (params) =>
+      this.handleCompactionStatus(params),
+    [EXT_METHODS.CLEAR_STATUS]: () => this.handleClearStatus(),
+    [EXT_METHODS.MCP_SERVER_INIT_FAILURE]: (params) =>
+      this.handleMcpServerInitFailure(params),
+    [EXT_METHODS.RATE_LIMIT_ERROR]: (params) =>
+      this.handleRateLimitError(params),
+  };
+
+  private handleCommandsAdvertising(params: Record<string, unknown>) {
+    const commands =
+      (params.commands as Array<{
+        name: string;
+        description: string;
+        meta?: Record<string, unknown>;
+      }>) || [];
+    this.broadcastStreamEvent({
+      type: AgentEventType.CommandsUpdate,
+      commands: commands.map((cmd) => ({
+        name: cmd.name,
+        description: cmd.description,
+        meta: cmd.meta,
+      })),
+    });
+  }
+
+  private handleMetadataUpdate(params: Record<string, unknown>) {
+    const percent =
+      (params.contextUsagePercentage as number | undefined) ?? null;
+    if (percent !== null) {
       this.broadcastStreamEvent({
-        type: AgentEventType.CommandsUpdate,
-        commands: commands.map((cmd) => ({
-          name: cmd.name,
-          description: cmd.description,
-          meta: cmd.meta,
-        })),
+        type: AgentEventType.ContextUsage,
+        percent,
       });
-    } else if (method === EXT_METHODS.METADATA) {
-      const percent = (params.contextUsagePercentage as number | undefined) ?? null;
-      if (percent !== null) {
+    }
+  }
+
+  private handleClearStatus() {
+    logger.debug('Clear status received');
+    // TODO: Show "calculating..." or similar UX until next real message provides accurate context usage
+    this.broadcastStreamEvent({
+      type: AgentEventType.ContextUsage,
+      percent: 0,
+    });
+  }
+
+  private handleCompactionStatus(params: Record<string, unknown>) {
+    const status = params.status as {
+      type: string;
+      error?: string;
+      contextUsagePercentage?: number;
+    };
+    logger.debug('Compaction status received:', status);
+    if (status) {
+      this.broadcastStreamEvent({
+        type: AgentEventType.CompactionStatus,
+        status: status.type as 'started' | 'completed' | 'failed',
+        error: status.error,
+      });
+      // TODO: Show "calculating..." or similar UX until next real message provides accurate context usage
+      if (status.type === 'completed') {
         this.broadcastStreamEvent({
           type: AgentEventType.ContextUsage,
-          percent,
+          percent: 0,
         });
       }
     }
+  }
+
+  private handleMcpServerInitFailure(params: Record<string, unknown>) {
+    const serverName = params.serverName as string;
+    const error = params.error as string;
+    logger.debug('MCP server init failure received:', { serverName, error });
+    this.broadcastStreamEvent({
+      type: AgentEventType.McpServerInitFailure,
+      serverName,
+      error,
+    });
+  }
+
+  private handleRateLimitError(params: Record<string, unknown>) {
+    const message = params.message as string;
+    logger.debug('Rate limit error received:', { message });
+    this.broadcastStreamEvent({
+      type: AgentEventType.RateLimitError,
+      message,
+    });
   }
 
   // ===========
@@ -337,11 +543,30 @@ export class AcpClient implements acp.Client, SessionClient {
       }
 
       case 'tool_call': {
+        // Extract diff content from ACP ToolCallContent
+        const toolContent = ((update as any).content || [])
+          .filter((c: any) => c.type === 'diff')
+          .map((c: any) => ({
+            type: 'diff' as const,
+            path: c.path,
+            newText: c.newText || '',
+            oldText: c.oldText,
+          }));
+
+        // Extract locations from ACP
+        const locations = ((update as any).locations || []).map((loc: any) => ({
+          path: loc.path,
+          line: loc.line,
+        }));
+
         return {
           type: AgentEventType.ToolCall,
           id: update.toolCallId,
           name: update.title || 'unknown',
+          kind: (update as any).kind,
           args: update.rawInput || {},
+          toolContent: toolContent.length > 0 ? toolContent : undefined,
+          locations: locations.length > 0 ? locations : undefined,
         };
       }
 
@@ -359,7 +584,10 @@ export class AcpClient implements acp.Client, SessionClient {
           return {
             type: AgentEventType.ToolCallFinished,
             id: toolCallUpdate.toolCallId,
-            result: { status: 'error', error: toolCallUpdate.rawOutput || 'Tool execution failed' },
+            result: {
+              status: 'error',
+              error: toolCallUpdate.rawOutput || 'Tool execution failed',
+            },
           };
         }
         return {
@@ -373,11 +601,13 @@ export class AcpClient implements acp.Client, SessionClient {
         const commandsUpdate = update as any;
         return {
           type: AgentEventType.CommandsUpdate,
-          commands: (commandsUpdate.availableCommands || []).map((cmd: any) => ({
-            name: cmd.name,
-            description: cmd.description,
-            meta: cmd._meta,  // ACP uses _meta field
-          })),
+          commands: (commandsUpdate.availableCommands || []).map(
+            (cmd: any) => ({
+              name: cmd.name,
+              description: cmd.description,
+              meta: cmd._meta, // ACP uses _meta field
+            })
+          ),
         };
       }
 

@@ -84,6 +84,14 @@ export function detectTerminalThemeWithDetails(): DetectionResult {
  * Detect theme from terminal-specific environment variables
  */
 function detectFromTerminalEnv(): DetectionResult | null {
+  // Ghostty: Default to dark theme since most Ghostty users use dark themes
+  // and Ghostty doesn't expose its theme via environment variables
+  const isGhostty =
+    process.env.GHOSTTY_RESOURCES_DIR || process.env.TERM_PROGRAM === 'ghostty';
+  if (isGhostty) {
+    return { theme: 'dark', method: 'Ghostty-default', confidence: 'medium' };
+  }
+
   // iTerm2: Check ITERM_PROFILE for common naming patterns
   const itermProfile = process.env.ITERM_PROFILE?.toLowerCase();
   if (itermProfile) {

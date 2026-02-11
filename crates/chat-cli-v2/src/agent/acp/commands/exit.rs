@@ -1,13 +1,13 @@
-//! /exit command execution
+//! /quit command execution
 
 use agent::tui_commands::{
     CommandResult,
-    ExitArgs,
+    QuitArgs,
 };
 
 use super::CommandContext;
 
-pub async fn execute(_args: &ExitArgs, _ctx: &CommandContext<'_>) -> CommandResult {
-    // Backend acknowledges - TUI handles actual exit
-    CommandResult::success("Exiting")
+pub async fn execute(_args: &QuitArgs, _ctx: &CommandContext<'_>) -> CommandResult {
+    // Backend acknowledges - TUI handles actual quit
+    CommandResult::success("Quitting")
 }

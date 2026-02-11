@@ -1,13 +1,12 @@
 import React from 'react';
 import { SnackBar } from '../chat/prompt-bar/SnackBar';
-import { useAppStore } from '../../stores/app-store';
+import { useApprovalState, useConversationState } from '../../stores/selectors';
 import { ApprovalOptionId, type PermissionOption } from '../../types/agent-events';
 import { useKeypress } from '../../hooks/useKeypress';
 
 export const ApprovalRequest: React.FC = () => {
-  const pendingApproval = useAppStore((state) => state.pendingApproval);
-  const respondToApproval = useAppStore((state) => state.respondToApproval);
-  const cancelApproval = useAppStore((state) => state.cancelApproval);
+  const { pendingApproval, respondToApproval, cancelApproval } = useApprovalState();
+  const { messages } = useConversationState();
 
   useKeypress((input, key) => {
     if (!pendingApproval) return;
@@ -43,6 +42,12 @@ export const ApprovalRequest: React.FC = () => {
 
   if (!pendingApproval) return null;
 
+  // Find the tool message by ID to get the tool name
+  const toolMessage = messages.find(
+    (msg) => msg.role === 'tool_use' && msg.id === pendingApproval.toolCall.toolCallId
+  );
+  const toolName = toolMessage && 'name' in toolMessage ? toolMessage.name : 'Tool';
+
   // Build actions array with only the options we want to show
   const actions = [];
   
@@ -60,7 +65,7 @@ export const ApprovalRequest: React.FC = () => {
 
   return (
     <SnackBar
-      title="Tool requires approval"
+      title={`${toolName} requires approval`}
       actions={actions}
       slideIn={true}
     />

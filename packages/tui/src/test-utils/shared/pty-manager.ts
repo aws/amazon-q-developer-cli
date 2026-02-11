@@ -148,6 +148,13 @@ export class PtyManager {
   }
 
   /**
+   * Returns the PID of the spawned process.
+   */
+  getPid(): number | undefined {
+    return this.pty?.pid;
+  }
+
+  /**
    * Returns the current terminal screen as a 2D array of characters.
    * Each row is a string representing one line of the terminal.
    * Escape codes are parsed by xterm, so this returns the actual rendered content.

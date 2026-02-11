@@ -1,5 +1,5 @@
 #!/usr/bin/env bun
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef } from 'react';
 import { render } from 'ink';
 import { Text } from 'ink';
 import { ErrorBoundary } from './components/ui/ErrorBoundary';
@@ -39,10 +39,66 @@ process.on('SIGHUP', () => {
   cleanup();
 });
 
+// Pre-create kiro and store outside of React to start initialization immediately
+const agentPath = getAgentPath();
+const kiro = new Kiro();
+const appStore = createAppStore({ kiro });
+
+// Start initialization immediately (non-blocking)
+let initPromise: Promise<void> | null = null;
+let initError: string | null = null;
+
+const startInitialization = () => {
+  if (initPromise) return initPromise;
+  
+  // Wire up commands handler before initialize
+  kiro.onCommandsUpdate((commands) => {
+    appStore.getState().setSlashCommands(
+      commands.map((cmd) => ({
+        name: cmd.name.startsWith('/') ? cmd.name : `/${cmd.name}`,
+        description: cmd.description,
+        source: 'backend' as const,
+        meta: cmd.meta as import('./types/commands').CommandMeta | undefined,
+      }))
+    );
+  });
+  
+  // Wire up model handler before initialize
+  kiro.onModelUpdate((model) => {
+    appStore.getState().setCurrentModel(model);
+  });
+  
+  // Wire up agent handler before initialize
+  kiro.onAgentUpdate((agent) => {
+    appStore.getState().setCurrentAgent(agent);
+  });
+  
+  // Wire up compaction status handler
+  kiro.onCompactionStatus((event) => {
+    appStore.getState().handleCompactionEvent(event);
+  });
+  
+  initPromise = kiro.initialize(agentPath)
+    .then(() => {
+      appStore.setState({ sessionId: kiro.sessionId ?? null });
+      logger.info('Kiro initialized successfully');
+    })
+    .catch((error) => {
+      logger.error('Failed to initialize Kiro:', error);
+      initError = error.message || 'Initialization failed';
+    });
+  
+  return initPromise;
+};
+
+// Start initialization immediately
+startInitialization();
+
+// Clear screen and move cursor to top
+process.stdout.write('\x1b[2J\x1b[H');
+
 function App() {
-  const [isInitialized, setIsInitialized] = useState(false);
-  const [initError, setInitError] = useState<string | null>(null);
-  const appStoreRef = useRef<AppStoreApi | null>(null);
+  const appStoreRef = useRef<AppStoreApi>(appStore);
 
   // Enable bracketed paste mode on mount
   useEffect(() => {
@@ -52,52 +108,13 @@ function App() {
     };
   }, []);
 
+  // Wait for initialization to complete (UI renders immediately)
   useEffect(() => {
-    if (isInitialized) {
-      return;
-    }
-
-    const agentPath = getAgentPath();
-    const kiro = new Kiro();
-    
-    // Create store first so we can wire up commands handler
-    const store = createAppStore({ kiro });
-    appStoreRef.current = store;
-    
-    // Wire up commands handler before initialize
-    kiro.onCommandsUpdate((commands) => {
-      store.getState().setSlashCommands(
-        commands.map((cmd) => ({
-          name: cmd.name.startsWith('/') ? cmd.name : `/${cmd.name}`,
-          description: cmd.description,
-          source: 'backend' as const,
-          meta: cmd.meta as import('./types/commands').CommandMeta | undefined,
-        }))
-      );
-    });
-    
-    // Wire up model handler before initialize
-    kiro.onModelUpdate((model) => {
-      store.getState().setCurrentModel(model);
-    });
-    
-    kiro.initialize(agentPath)
-      .then(() => {
-        store.setState({ sessionId: kiro.sessionId ?? null });
-        setIsInitialized(true);
-      })
-      .catch((error) => {
-        logger.error('Failed to initialize Kiro:', error);
-        setInitError(error.message || 'Initialization failed');
-      });
-  }, [appStoreRef, isInitialized, setIsInitialized]);
+    startInitialization();
+  }, []);
 
   if (initError) {
     return <Text color="red">Error: {initError}</Text>;
-  }
-
-  if (!appStoreRef.current) {
-    return <Text>Initializing Kiro...</Text>;
   }
 
   return (

@@ -46,6 +46,6 @@ pub async fn execute(command: TuiCommand, ctx: &CommandContext<'_>) -> CommandRe
         TuiCommand::Context(ref args) => context::execute(args, ctx).await,
         TuiCommand::Compact(ref args) => compact::execute(args, ctx).await,
         TuiCommand::Clear(ref args) => clear::execute(args, ctx).await,
-        TuiCommand::Exit(ref args) => exit::execute(args, ctx).await,
+        TuiCommand::Quit(ref args) => exit::execute(args, ctx).await,
     }
 }

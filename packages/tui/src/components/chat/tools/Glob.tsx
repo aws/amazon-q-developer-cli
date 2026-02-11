@@ -129,7 +129,7 @@ export const Glob = React.memo(function Glob({
     if (result?.status === 'error') {
       return (
         <Box flexDirection="column">
-          <StatusInfo title={title} target={globPattern ? `"${globPattern}"` : undefined} />
+          <StatusInfo title={title} target={globPattern ? `"${globPattern}"` : undefined} shimmer={!isFinished} />
           <Box marginLeft={2}>
             <Text>{getColor('error')(result.error)}</Text>
           </Box>
@@ -139,24 +139,24 @@ export const Glob = React.memo(function Glob({
 
     // No result yet or still searching
     if (!globOutput) {
-      return <StatusInfo title={title} target={globPattern ? `"${globPattern}"` : undefined} />;
+      return <StatusInfo title={title} target={globPattern ? `"${globPattern}"` : undefined} shimmer={!isFinished} />;
     }
 
     // No files found
     if (globOutput.totalFiles === 0 || globOutput.message) {
-      return <StatusInfo title={title} target={getSummary()} />;
+      return <StatusInfo title={title} target={getSummary()} shimmer={!isFinished} />;
     }
 
     // Static view: just show summary
     if (isStatic) {
-      return <StatusInfo title={title} target={getSummary()} />;
+      return <StatusInfo title={title} target={getSummary()} shimmer={!isFinished} />;
     }
 
     // Expanded view: show all files
     if (expanded) {
       return (
         <Box flexDirection="column">
-          <StatusInfo title={title} target={getSummary()} />
+          <StatusInfo title={title} target={getSummary()} shimmer={!isFinished} />
           {filePaths.map((filePath, i) => (
             <Box key={i} marginLeft={2}>
               <Text>{getColor('secondary')(`→ ${getFileName(filePath)}`)}</Text>
@@ -174,7 +174,7 @@ export const Glob = React.memo(function Glob({
     // Collapsed view: show preview
     return (
       <Box flexDirection="column">
-        <StatusInfo title={title} target={getSummary()} />
+        <StatusInfo title={title} target={getSummary()} shimmer={!isFinished} />
         {filePaths.slice(0, PREVIEW_FILES).map((filePath, i) => (
           <Box key={i} marginLeft={2}>
             <Text>{getColor('secondary')(`→ ${getFileName(filePath)}`)}</Text>

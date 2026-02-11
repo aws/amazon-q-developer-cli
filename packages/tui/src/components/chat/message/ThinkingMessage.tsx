@@ -9,11 +9,11 @@ interface ThinkingMessageProps {
 
 export const ThinkingMessage: React.FC<ThinkingMessageProps> = ({ barColor }) => {
   const { getColor } = useTheme();
-  const seconadryColor = getColor('secondary');
+  const secondaryColor = getColor('secondary');
 
   return (
     <StatusBar status="thinking" barColor={barColor}>
-        <Text>{seconadryColor('Thinking...')}</Text>
+      <Text>{secondaryColor('Thinking...')}</Text>
     </StatusBar>
   );
 };

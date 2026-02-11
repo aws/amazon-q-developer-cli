@@ -626,6 +626,8 @@ impl Agent {
                     let evt = res;
                     if let Err(e) = self.handle_agent_loop_event(evt).await {
                         error!(?e, "failed to handle agent loop event");
+                        self.agent_event_buf
+                            .push(AgentEvent::Stop(AgentStopReason::Error(e.clone())));
                         self.set_active_state(ActiveState::Errored(e)).await;
                     }
                 },
@@ -1010,9 +1012,12 @@ impl Agent {
         let loop_id = self.agent_loop_handle()?.id().clone();
 
         // If the event is None, then the channel has dropped, meaning the agent loop has exited.
-        // Thus, return early.
+        // Emit a Stop event so the ACP prompt response is always resolved
         let Some(evt) = evt else {
+            warn!("agent loop channel dropped without EndTurn, emitting Stop event");
             self.agent_loop = None;
+            self.set_active_state(ActiveState::Idle).await;
+            self.agent_event_buf.push(AgentEvent::Stop(AgentStopReason::EndTurn));
             return Ok(());
         };
 
