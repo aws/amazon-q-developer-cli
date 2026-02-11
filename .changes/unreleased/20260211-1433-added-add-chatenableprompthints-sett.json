@@ -1,0 +1,4 @@
+{
+  "type": "added",
+  "description": "Add chat.enablePromptHints setting to control startup hint display (default: true)"
+}
