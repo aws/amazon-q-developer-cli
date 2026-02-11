@@ -180,38 +180,22 @@ jobs:
           aws-region: ${{ env.AWS_REGION }}
           role-duration-seconds: 3600
 
-      - name: Publish to Toolbox (kv2 channel)
+      - name: Invoke Toolbox Lambda
         run: |
-          VERSION="${{ needs.prepare_branch.outputs.version }}"
-          COMMIT_SHA="${{ needs.prepare_branch.outputs.commit_sha }}"
-          BRANCH_NAME="${{ needs.prepare_branch.outputs.branch_name }}"
-          BUILD_TIMESTAMP="${{ needs.prepare_branch.outputs.build_timestamp }}"
-
-          echo "Publishing V2 to Toolbox kv2 channel..."
-          echo "Version: $VERSION"
-          echo "Commit: $COMMIT_SHA"
-          echo "Branch: $BRANCH_NAME"
-
-          PAYLOAD=$(cat <<EOF
-          {
-            "version": "$VERSION",
-            "commit": "$COMMIT_SHA",
-            "branch": "$BRANCH_NAME",
-            "channel": "kv2",
-            "build_timestamp": "$BUILD_TIMESTAMP"
-          }
-          EOF
-          )
-
           aws lambda invoke \
             --function-name "${{ secrets.TOOLBOX_KV2_POC_LAMBDA_ARN }}" \
-            --payload "$(echo "$PAYLOAD" | base64)" \
+            --payload '{"commit": "${{ needs.prepare_branch.outputs.commit_sha }}","version": "${{ needs.prepare_branch.outputs.version }}","channel": "kv2","branch_name": "${{ needs.prepare_branch.outputs.branch_name }}","override_channel_check": "true"}' \
             --cli-binary-format raw-in-base64-out \
+            --cli-read-timeout 900 \
             response.json
 
           cat response.json
-          echo ""
-          echo "✓ Published V2 to Toolbox kv2 channel"
+          if grep -q '"statusCode": 200' response.json; then
+            echo "✓ Toolbox publish successful"
+          else
+            echo "✗ Toolbox publish failed"
+            exit 1
+          fi
 
   BuildSummary:
     name: V2 Build Summary
