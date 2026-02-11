@@ -48,15 +48,15 @@ const ConversationTurnCard = React.memo(function ConversationTurnCard({
   const agentName = turn.userMessage.agentName;
   const agentBarColor = agentName ? getAgentColor(agentName).hex : undefined;
   
-  // Check if there's any active/unfinished tool or streaming content
-  const hasActiveContent = turn.aiMessages.some((msg) => {
-    if (msg.role === MessageRole.ToolUse) {
-      return !msg.isFinished;
-    }
-    return false; // Model messages are considered complete once added
-  });
+  // Check if the last AI message is still active (streaming or executing)
+  const lastAiMsg = turn.aiMessages[turn.aiMessages.length - 1];
+  const hasActiveContent = lastAiMsg
+    ? (lastAiMsg.role === MessageRole.ToolUse && !lastAiMsg.isFinished) ||
+      (lastAiMsg.role === MessageRole.Model && turn.isActive && isProcessing && !!lastAiMsg.content)
+    : false;
   
   // Show thinking when processing but no active content
+  // (visible between tool calls, hidden while streaming)
   const showThinking = turn.isActive && isProcessing && !hasActiveContent;
 
   // Don't render if user message has no content
