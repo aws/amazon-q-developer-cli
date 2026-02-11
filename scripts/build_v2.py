@@ -686,8 +686,8 @@ def build_tui() -> pathlib.Path:
     """Build the TypeScript TUI, returning an absolute path to the output JS file."""
     tui_dir = pathlib.Path("packages/tui")
 
-    info("Installing TUI dependencies")
-    run_cmd(["bun", "install", "--frozen-lockfile"], cwd=tui_dir)
+    info("Installing TUI dependencies (from workspace root for workspace:* resolution)")
+    run_cmd(["bun", "install", "--frozen-lockfile"])
 
     info("Building TUI")
     run_cmd(["bun", "run", "build"], cwd=tui_dir)
