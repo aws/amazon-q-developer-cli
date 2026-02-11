@@ -685,9 +685,13 @@ def download_bun() -> pathlib.Path:
 def build_tui() -> pathlib.Path:
     """Build the TypeScript TUI, returning an absolute path to the output JS file."""
     tui_dir = pathlib.Path("packages/tui")
+    ink_dir = pathlib.Path("packages/ink")
 
-    info("Installing TUI dependencies (from workspace root for workspace:* resolution)")
+    info("Installing dependencies (from workspace root for workspace:* resolution)")
     run_cmd(["bun", "install", "--frozen-lockfile"])
+
+    info("Building local ink package")
+    run_cmd(["bun", "run", "build"], cwd=ink_dir)
 
     info("Building TUI")
     run_cmd(["bun", "run", "build"], cwd=tui_dir)
