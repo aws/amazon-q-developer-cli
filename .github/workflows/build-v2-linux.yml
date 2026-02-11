@@ -1,0 +1,126 @@
+name: 2.1 Build V2 Linux
+
+on:
+  workflow_call:
+    inputs:
+      channel:
+        type: string
+        required: true
+      build_timestamp:
+        type: string
+        required: true
+      version:
+        type: string
+        required: true
+      release_type:
+        type: string
+        required: true
+      environment:
+        type: string
+        required: true
+      branch_name:
+        type: string
+        required: true
+      commit_sha:
+        type: string
+        required: true
+      bun_version:
+        type: string
+        required: false
+        default: "1.2.4"
+
+env:
+  AWS_REGION: "us-east-1"
+  STAGE_NAME: ${{ inputs.environment }}
+  CI: 1
+
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+  build-linux:
+    name: Build V2 Linux (${{ matrix.target }}, ${{ inputs.environment }})
+    runs-on: ${{ matrix.runner }}
+    environment: ${{ inputs.environment }}
+    strategy:
+      fail-fast: true
+      matrix:
+        include:
+          - target: x86_64-unknown-linux-gnu
+            runner: ubuntu-22.04
+          - target: x86_64-unknown-linux-musl
+            runner: ubuntu-22.04
+            musl: "1"
+          - target: aarch64-unknown-linux-gnu
+            runner: ubuntu-22.04
+            cross_target: aarch64-unknown-linux-gnu
+          - target: aarch64-unknown-linux-musl
+            runner: ubuntu-22.04
+            musl: "1"
+            cross_target: aarch64-unknown-linux-musl
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.commit_sha }}
+
+      - name: Configure environment from secrets
+        run: |
+          {
+            echo "AWS_GITHUB_ACTIONS_ROLE_ARN=${{ secrets.AWS_GITHUB_ACTIONS_ROLE_ARN }}"
+            echo "BUILD_OUTPUT_BUCKET=${{ secrets.BUILD_OUTPUT_BUCKET }}"
+          } >> "$GITHUB_ENV"
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install Python dependencies
+        run: pip install -r scripts/requirements.txt
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+
+      - name: Install cross (for cross-compilation)
+        if: matrix.musl || matrix.cross_target
+        run: cargo install cross --git https://github.com/cross-rs/cross --locked
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ env.AWS_GITHUB_ACTIONS_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+          role-duration-seconds: 7200
+
+      - name: Build Linux Binary
+        env:
+          AMAZON_Q_BUILD_MUSL: ${{ matrix.musl }}
+          AMAZON_Q_BUILD_TARGET_TRIPLE: ${{ matrix.cross_target }}
+        run: |
+          python3 ./scripts/main_v2.py build \
+            --skip-lints --skip-tests \
+            --stage-name "${{ env.STAGE_NAME }}"
+
+      - name: Upload artifacts to S3
+        run: |
+          echo "Uploading build artifacts to S3..."
+          BRANCH_NAME="${{ inputs.branch_name }}"
+          COMMIT_ID="${{ inputs.commit_sha }}"
+          TARGET="${{ matrix.target }}"
+          S3_PATH_COMMIT="chat/${BRANCH_NAME}/${COMMIT_ID}/${TARGET}"
+          S3_PATH_LATEST="chat/${BRANCH_NAME}/latest/${TARGET}"
+
+          if [ -d "build" ] && [ "$(ls -A build)" ]; then
+              aws s3 cp build/ "s3://${{ env.BUILD_OUTPUT_BUCKET }}/${S3_PATH_COMMIT}/" --recursive
+              echo "✓ Uploaded to s3://${{ env.BUILD_OUTPUT_BUCKET }}/${S3_PATH_COMMIT}/"
+
+              aws s3 cp build/ "s3://${{ env.BUILD_OUTPUT_BUCKET }}/${S3_PATH_LATEST}/" --recursive
+              echo "✓ Uploaded to s3://${{ env.BUILD_OUTPUT_BUCKET }}/${S3_PATH_LATEST}/"
+          else
+              echo "❌ Build directory not found or empty"
+              exit 1
+          fi

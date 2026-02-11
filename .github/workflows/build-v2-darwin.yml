@@ -1,0 +1,175 @@
+name: 2.2 Build V2 Darwin (Universal Binary)
+
+on:
+  workflow_call:
+    inputs:
+      channel:
+        type: string
+        required: true
+      build_timestamp:
+        type: string
+        required: true
+      version:
+        type: string
+        required: true
+      release_type:
+        type: string
+        required: true
+      environment:
+        type: string
+        required: true
+      branch_name:
+        type: string
+        required: true
+      commit_sha:
+        type: string
+        required: true
+      bun_version:
+        type: string
+        required: false
+        default: "1.2.4"
+
+env:
+  AWS_REGION: "us-east-1"
+  STAGE_NAME: ${{ inputs.environment }}
+  CI: 1
+
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+  build-darwin:
+    name: Build V2 Darwin Universal Binary (${{ inputs.environment }})
+    runs-on: macos-latest
+    environment: ${{ inputs.environment }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.commit_sha }}
+
+      - name: Configure environment from secrets
+        run: |
+          {
+            echo "AWS_GITHUB_ACTIONS_ROLE_ARN=${{ secrets.AWS_GITHUB_ACTIONS_ROLE_ARN }}"
+            echo "AWS_ACCOUNT_ID=${{ secrets.AWS_ACCOUNT_ID }}"
+            echo "SIGNING_BUCKET_NAME=${{ secrets.SIGNING_BUCKET_NAME }}"
+          } >> "$GITHUB_ENV"
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install Python dependencies
+        run: pip install -r scripts/requirements.txt
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-apple-darwin,x86_64-apple-darwin
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ env.AWS_GITHUB_ACTIONS_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+          role-duration-seconds: 7200
+
+      - name: Build macOS Universal Binary (unsigned)
+        env:
+          DISABLE_SIGNING: "1"
+        run: |
+          python3 ./scripts/main_v2.py build \
+            --skip-lints --skip-tests \
+            --stage-name "${{ env.STAGE_NAME }}"
+
+      - name: Upload unsigned binary to S3
+        run: |
+          BRANCH_NAME="${{ inputs.branch_name }}"
+          COMMIT_ID="${{ inputs.commit_sha }}"
+          S3_PATH="${BRANCH_NAME}/unsigned-build-output/${COMMIT_ID}"
+
+          aws s3 cp build/kiro-cli-chat.zip "s3://${{ env.SIGNING_BUCKET_NAME }}/${S3_PATH}/kiro-cli-chat.zip"
+          aws s3 cp build/kiro-cli-chat.zip.sha256 "s3://${{ env.SIGNING_BUCKET_NAME }}/${S3_PATH}/kiro-cli-chat.zip.sha256"
+          echo "✓ Uploaded unsigned binary to s3://${{ env.SIGNING_BUCKET_NAME }}/${S3_PATH}/"
+
+  sign-and-notarize-darwin:
+    name: Sign and Notarize (${{ inputs.environment }})
+    needs: build-darwin
+    if: startsWith(inputs.branch_name, 'v2-nightly')
+    runs-on: macos-latest
+    environment: ${{ inputs.environment }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.commit_sha }}
+
+      - name: Configure environment from secrets
+        run: |
+          {
+            echo "AWS_GITHUB_ACTIONS_ROLE_ARN=${{ secrets.AWS_GITHUB_ACTIONS_ROLE_ARN }}"
+            echo "AWS_ACCOUNT_ID=${{ secrets.AWS_ACCOUNT_ID }}"
+            echo "BUILD_OUTPUT_BUCKET=${{ secrets.BUILD_OUTPUT_BUCKET }}"
+            echo "SIGNING_BUCKET_NAME=${{ secrets.SIGNING_BUCKET_NAME }}"
+          } >> "$GITHUB_ENV"
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install Python dependencies
+        run: pip install -r scripts/requirements.txt
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ env.AWS_GITHUB_ACTIONS_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+          role-duration-seconds: 7200
+
+      - name: Download unsigned binary
+        run: |
+          BRANCH_NAME="${{ inputs.branch_name }}"
+          COMMIT_ID="${{ inputs.commit_sha }}"
+          S3_PATH="${BRANCH_NAME}/unsigned-build-output/${COMMIT_ID}"
+
+          mkdir -p build
+          aws s3 cp "s3://${{ env.SIGNING_BUCKET_NAME }}/${S3_PATH}/kiro-cli-chat.zip" build/kiro-cli-chat.zip
+          aws s3 cp "s3://${{ env.SIGNING_BUCKET_NAME }}/${S3_PATH}/kiro-cli-chat.zip.sha256" build/kiro-cli-chat.zip.sha256
+          cd build && unzip kiro-cli-chat.zip && rm kiro-cli-chat.zip
+          echo "✓ Downloaded unsigned binary"
+
+      - name: Sign and Notarize
+        env:
+          SIGNING_BUCKET_NAME: ${{ secrets.SIGNING_BUCKET_NAME }}
+          SIGNING_ROLE_ARN: ${{ secrets.SIGNING_ROLE_ARN }}
+          SIGNING_APPLE_NOTARIZING_SECRET_ARN: ${{ secrets.SIGNING_APPLE_NOTARIZING_SECRET_ARN }}
+        run: |
+          python3 ./scripts/main_v2.py sign-macos \
+            --binary-path build/kiro-cli-chat
+
+      - name: Upload signed artifacts to S3
+        run: |
+          BRANCH_NAME="${{ inputs.branch_name }}"
+          COMMIT_ID="${{ inputs.commit_sha }}"
+          TARGET="universal-apple-darwin"
+          S3_PATH_COMMIT="chat/${BRANCH_NAME}/${COMMIT_ID}/${TARGET}"
+          S3_PATH_LATEST="chat/${BRANCH_NAME}/latest/${TARGET}"
+
+          if [ -f "build/kiro-cli-chat.zip" ] && [ -f "build/kiro-cli-chat.zip.sha256" ]; then
+              aws s3 cp build/kiro-cli-chat.zip "s3://${{ env.BUILD_OUTPUT_BUCKET }}/${S3_PATH_COMMIT}/"
+              aws s3 cp build/kiro-cli-chat.zip.sha256 "s3://${{ env.BUILD_OUTPUT_BUCKET }}/${S3_PATH_COMMIT}/"
+              echo "✓ Uploaded to s3://${{ env.BUILD_OUTPUT_BUCKET }}/${S3_PATH_COMMIT}/"
+
+              aws s3 cp build/kiro-cli-chat.zip "s3://${{ env.BUILD_OUTPUT_BUCKET }}/${S3_PATH_LATEST}/"
+              aws s3 cp build/kiro-cli-chat.zip.sha256 "s3://${{ env.BUILD_OUTPUT_BUCKET }}/${S3_PATH_LATEST}/"
+              echo "✓ Uploaded to s3://${{ env.BUILD_OUTPUT_BUCKET }}/${S3_PATH_LATEST}/"
+          else
+              echo "❌ Signed artifacts not found"
+              exit 1
+          fi

@@ -1,0 +1,243 @@
+name: 2.0 Build Kiro CLI V2 (All Platforms)
+on:
+  workflow_dispatch:
+
+env:
+  AWS_REGION: "us-east-1"
+  V2_NIGHTLY_BRANCH: "v2-nightly"
+
+permissions:
+  id-token: write
+  contents: write
+  actions: write
+
+concurrency:
+  group: kiro-cli-v2-version-management
+  cancel-in-progress: false
+
+jobs:
+  prepare_branch:
+    name: Prepare v2-nightly Branch
+    runs-on: ubuntu-latest
+    outputs:
+      branch_name: v2-nightly
+      commit_sha: ${{ steps.capture-sha.outputs.COMMIT_SHA }}
+      version: ${{ steps.get-version.outputs.VERSION }}
+      build_timestamp: ${{ steps.timestamp.outputs.BUILD_TIMESTAMP }}
+      environment: ${{ steps.determine-environment.outputs.ENVIRONMENT }}
+    steps:
+      - name: Generate Build Timestamp
+        id: timestamp
+        run: |
+          BUILD_TIMESTAMP=$(date +%Y%m%d%H%M)
+          echo "BUILD_TIMESTAMP=$BUILD_TIMESTAMP" >> $GITHUB_OUTPUT
+
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: ${{ github.ref_name }}
+
+      - name: Configure Git
+        run: |
+          git config user.name "GitHub Actions Bot"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+      - name: Sync v2-nightly branch from source
+        id: sync-branch
+        run: |
+          SOURCE_BRANCH="${{ github.ref_name }}"
+          NIGHTLY_BRANCH="${{ env.V2_NIGHTLY_BRANCH }}"
+
+          # Check if v2-nightly exists on remote
+          if git ls-remote --exit-code origin "refs/heads/${NIGHTLY_BRANCH}" >/dev/null 2>&1; then
+            echo "v2-nightly exists, saving its current version before syncing"
+            git fetch origin "${NIGHTLY_BRANCH}"
+            PREV_VERSION=$(git show "origin/${NIGHTLY_BRANCH}:Cargo.toml" | grep '^version = ' | head -1 | sed 's/version = "\(.*\)"/\1/')
+            echo "Previous v2-nightly version: $PREV_VERSION"
+            echo "PREV_VERSION=$PREV_VERSION" >> $GITHUB_OUTPUT
+          else
+            echo "v2-nightly does not exist yet, will create from ${SOURCE_BRANCH}"
+            PREV_VERSION=""
+            echo "PREV_VERSION=" >> $GITHUB_OUTPUT
+          fi
+
+          # Create/reset v2-nightly to match source branch content
+          git checkout -B "${NIGHTLY_BRANCH}"
+          git push --force origin "${NIGHTLY_BRANCH}"
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Bump Version
+        id: bump-version
+        run: |
+          SOURCE_VERSION=$(grep '^version = ' Cargo.toml | head -1 | sed 's/version = "\(.*\)"/\1/')
+          PREV_VERSION="${{ steps.sync-branch.outputs.PREV_VERSION }}"
+
+          # Determine which version to bump from:
+          # If v2-nightly previously had a nightly version with the same base, use it
+          # so the counter increments. Otherwise use the source version.
+          BUMP_FROM="$SOURCE_VERSION"
+          if [[ -n "$PREV_VERSION" ]] && [[ "$PREV_VERSION" == *"-nightly."* ]]; then
+            # Extract base version from previous nightly (e.g. "1.25.1" from "1.25.1-nightly.3")
+            PREV_BASE=$(echo "$PREV_VERSION" | sed 's/-nightly\..*//')
+            # The bump script will bump source patch+1, so check if prev base matches that
+            EXPECTED_BASE=$(python3 .github/scripts/bump_version.py "$SOURCE_VERSION" "patch" "nightly" | sed 's/-nightly\..*//')
+            if [[ "$PREV_BASE" == "$EXPECTED_BASE" ]]; then
+              echo "Previous nightly base matches, incrementing from $PREV_VERSION"
+              BUMP_FROM="$PREV_VERSION"
+            else
+              echo "Base version changed ($PREV_BASE != $EXPECTED_BASE), starting fresh"
+            fi
+          fi
+
+          echo "Bumping from: $BUMP_FROM"
+          NEW_VERSION=$(python3 .github/scripts/bump_version.py "$BUMP_FROM" "patch" "nightly")
+          echo "New version: $NEW_VERSION"
+
+          sed -i "s/^version = \".*\"/version = \"$NEW_VERSION\"/" Cargo.toml
+          cargo update --workspace
+          git add Cargo.toml Cargo.lock
+          git commit -m "V2 Nightly: Bump version to $NEW_VERSION"
+          git push origin ${{ env.V2_NIGHTLY_BRANCH }}
+          echo "VERSION=$NEW_VERSION" >> $GITHUB_OUTPUT
+
+      - name: Get Version
+        id: get-version
+        run: |
+          VERSION=$(grep '^version = ' Cargo.toml | head -1 | sed 's/version = "\(.*\)"/\1/')
+          echo "VERSION=$VERSION" >> $GITHUB_OUTPUT
+
+      - name: Create Git Tag
+        run: |
+          VERSION="${{ steps.get-version.outputs.VERSION }}"
+          TAG="chat-v2-v${VERSION}"
+          git tag "$TAG"
+          git push origin "$TAG"
+          echo "Created and pushed git tag: $TAG"
+
+      - name: Capture Commit SHA
+        id: capture-sha
+        run: |
+          COMMIT_SHA=$(git rev-parse HEAD)
+          echo "COMMIT_SHA=$COMMIT_SHA" >> $GITHUB_OUTPUT
+          echo "Final commit SHA: $COMMIT_SHA"
+
+      - name: Determine Environment
+        id: determine-environment
+        run: |
+          SOURCE_BRANCH="${{ github.ref_name }}"
+          if [[ "$SOURCE_BRANCH" == "prod" ]] || [[ "$SOURCE_BRANCH" == "main" ]]; then
+            echo 'ENVIRONMENT=["gamma", "prod"]' >> $GITHUB_OUTPUT
+          else
+            echo 'ENVIRONMENT=["gamma"]' >> $GITHUB_OUTPUT
+          fi
+
+  TriggerDarwinBuild:
+    needs: [prepare_branch]
+    name: Trigger Darwin Universal Build (${{ matrix.environment }})
+    strategy:
+      matrix:
+        environment: ${{ fromJSON(needs.prepare_branch.outputs.environment) }}
+    uses: ./.github/workflows/build-v2-darwin.yml
+    secrets: inherit
+    with:
+      channel: nightly
+      build_timestamp: ${{ needs.prepare_branch.outputs.build_timestamp }}
+      version: ${{ needs.prepare_branch.outputs.version }}
+      release_type: nightly
+      environment: ${{ matrix.environment }}
+      branch_name: ${{ needs.prepare_branch.outputs.branch_name }}
+      commit_sha: ${{ needs.prepare_branch.outputs.commit_sha }}
+
+  TriggerLinuxBuild:
+    needs: [prepare_branch]
+    name: Trigger Linux Build (${{ matrix.environment }})
+    strategy:
+      matrix:
+        environment: ${{ fromJSON(needs.prepare_branch.outputs.environment) }}
+    uses: ./.github/workflows/build-v2-linux.yml
+    secrets: inherit
+    with:
+      channel: nightly
+      build_timestamp: ${{ needs.prepare_branch.outputs.build_timestamp }}
+      version: ${{ needs.prepare_branch.outputs.version }}
+      release_type: nightly
+      environment: ${{ matrix.environment }}
+      branch_name: ${{ needs.prepare_branch.outputs.branch_name }}
+      commit_sha: ${{ needs.prepare_branch.outputs.commit_sha }}
+
+  PublishToToolbox:
+    name: Publish to Toolbox (${{ matrix.environment }})
+    needs: [prepare_branch, TriggerDarwinBuild, TriggerLinuxBuild]
+    if: needs.TriggerDarwinBuild.result == 'success' && needs.TriggerLinuxBuild.result == 'success'
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        environment: ${{ fromJSON(needs.prepare_branch.outputs.environment) }}
+    environment: ${{ matrix.environment }}
+    steps:
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_GITHUB_ACTIONS_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+          role-duration-seconds: 3600
+
+      - name: Publish to Toolbox (kv2 channel)
+        run: |
+          VERSION="${{ needs.prepare_branch.outputs.version }}"
+          COMMIT_SHA="${{ needs.prepare_branch.outputs.commit_sha }}"
+          BRANCH_NAME="${{ needs.prepare_branch.outputs.branch_name }}"
+          BUILD_TIMESTAMP="${{ needs.prepare_branch.outputs.build_timestamp }}"
+
+          echo "Publishing V2 to Toolbox kv2 channel..."
+          echo "Version: $VERSION"
+          echo "Commit: $COMMIT_SHA"
+          echo "Branch: $BRANCH_NAME"
+
+          PAYLOAD=$(cat <<EOF
+          {
+            "version": "$VERSION",
+            "commit": "$COMMIT_SHA",
+            "branch": "$BRANCH_NAME",
+            "channel": "kv2",
+            "build_timestamp": "$BUILD_TIMESTAMP"
+          }
+          EOF
+          )
+
+          aws lambda invoke \
+            --function-name "${{ secrets.TOOLBOX_KV2_POC_LAMBDA_ARN }}" \
+            --payload "$(echo "$PAYLOAD" | base64)" \
+            --cli-binary-format raw-in-base64-out \
+            response.json
+
+          cat response.json
+          echo ""
+          echo "✓ Published V2 to Toolbox kv2 channel"
+
+  BuildSummary:
+    name: V2 Build Summary
+    needs: [prepare_branch, TriggerDarwinBuild, TriggerLinuxBuild, PublishToToolbox]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Generate Build Summary
+        run: |
+          echo "## Kiro CLI V2 Build Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Property | Value |" >> $GITHUB_STEP_SUMMARY
+          echo "|----------|-------|" >> $GITHUB_STEP_SUMMARY
+          echo "| **Version** | ${{ needs.prepare_branch.outputs.version }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Commit SHA** | ${{ needs.prepare_branch.outputs.commit_sha }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Build Timestamp** | ${{ needs.prepare_branch.outputs.build_timestamp }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Source Branch** | ${{ github.ref_name }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Build Branch** | v2-nightly |" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Build Results" >> $GITHUB_STEP_SUMMARY
+          echo "| Platform | Status |" >> $GITHUB_STEP_SUMMARY
+          echo "|----------|--------|" >> $GITHUB_STEP_SUMMARY
+          echo "| Darwin | ${{ needs.TriggerDarwinBuild.result == 'success' && '✅' || '❌' }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Linux | ${{ needs.TriggerLinuxBuild.result == 'success' && '✅' || '❌' }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Toolbox Publish | ${{ needs.PublishToToolbox.result == 'success' && '✅' || needs.PublishToToolbox.result == 'skipped' && '⏭️' || '❌' }} |" >> $GITHUB_STEP_SUMMARY
