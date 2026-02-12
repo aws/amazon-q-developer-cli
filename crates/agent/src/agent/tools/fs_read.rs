@@ -27,7 +27,8 @@ use super::{
 use crate::util::path::canonicalize_path_sys;
 use crate::util::providers::SystemProvider;
 
-const MAX_READ_SIZE: u32 = 250 * 1024;
+/// Maximum file size for reading (250KB). Used by fs_read tool and @file references.
+pub const MAX_READ_SIZE: u32 = 250 * 1024;
 
 const FS_READ_TOOL_DESCRIPTION: &str = r#"
 A tool for viewing file contents.

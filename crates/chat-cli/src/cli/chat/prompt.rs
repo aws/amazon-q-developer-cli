@@ -53,12 +53,14 @@ use super::util::clipboard::{
     ClipboardError,
     paste_image_from_clipboard,
 };
+use crate::cli::chat::file_reference::REFERENCE_PREFIX;
 use crate::cli::experiment::experiment_manager::{
     ExperimentManager,
     ExperimentName,
 };
 use crate::database::settings::Setting;
 use crate::os::Os;
+use crate::theme::colors::BRAND_PURPLE;
 
 /// Shared state for clipboard paste operations triggered by Ctrl+V
 #[derive(Clone, Debug)]
@@ -265,7 +267,10 @@ impl PromptCompleter {
             }
         };
         let matches = match query_res {
-            PromptQueryResult::Search(list) => list.into_iter().map(|n| format!("@{n}")).collect::<Vec<_>>(),
+            PromptQueryResult::Search(list) => list
+                .into_iter()
+                .map(|n| format!("{REFERENCE_PREFIX}{n}"))
+                .collect::<Vec<_>>(),
             PromptQueryResult::List(_) => {
                 return Err(ReadlineError::Io(std::io::Error::other(eyre::eyre!(
                     "Wrong query response type received",
@@ -399,7 +404,7 @@ impl Completer for ChatCompleter {
         &self,
         line: &str,
         pos: usize,
-        _ctx: &Context<'_>,
+        ctx: &Context<'_>,
     ) -> Result<(usize, Vec<Self::Candidate>), ReadlineError> {
         // Handle command completion - check if line starts with / for multi-word commands
         if line.starts_with('/') {
@@ -426,17 +431,41 @@ impl Completer for ChatCompleter {
             return Ok((start, candidates));
         }
 
-        if line.starts_with('@') {
-            let search_word = line.strip_prefix('@').unwrap_or("");
-            if let Ok(completions) = self.prompt_completer.complete_prompt(search_word)
-                && !completions.is_empty()
+        // Handle @reference completion: prompts only at start, files anywhere
+        if let Some(at_pos) = line.rfind(REFERENCE_PREFIX) {
+            let search_word = &line[at_pos + 1..];
+            let mut all_completions = Vec::new();
+
+            let is_quoted = search_word.starts_with('"');
+            let actual_search = if is_quoted { &search_word[1..] } else { search_word };
+
+            let path_pos = actual_search.len();
+            if let Ok((_, path_completions)) = self.path_completer.complete_path(actual_search, path_pos, ctx) {
+                all_completions.extend(path_completions.into_iter().map(|p| {
+                    if is_quoted || p.contains(' ') {
+                        let unescaped = p.replace("\\ ", " ").replace("\\(", "(").replace("\\)", ")");
+                        format!("{REFERENCE_PREFIX}\"{}\"", unescaped)
+                    } else {
+                        format!("{REFERENCE_PREFIX}{}", p)
+                    }
+                }));
+            }
+
+            if at_pos == 0
+                && let Ok(prompt_completions) = self.prompt_completer.complete_prompt(search_word)
             {
-                return Ok((0, completions));
+                all_completions.extend(prompt_completions);
+            }
+
+            if !all_completions.is_empty() {
+                all_completions.sort();
+                all_completions.dedup();
+                return Ok((at_pos, all_completions));
             }
         }
 
         // Handle file path completion as fallback
-        if let Ok((pos, completions)) = self.path_completer.complete_path(line, pos, _ctx)
+        if let Ok((pos, completions)) = self.path_completer.complete_path(line, pos, ctx)
             && !completions.is_empty()
         {
             return Ok((pos, completions));
@@ -472,6 +501,7 @@ const INITIAL_PROMPT_HINTS: &[(&str, u32)] = &[
     ("Not sure where to start? Ask me about my features", 1),
     ("Want to know what commands I have? Just ask", 1),
     ("Need help with features or setup? Use /help", 3),
+    ("Use @file or @dir to include file contents inline", 1),
 ];
 
 impl ChatHinter {
@@ -678,12 +708,62 @@ impl Highlighter for ChatHelper {
         Cow::Owned(format!("\x1b[38;5;240m{hint}\x1b[m"))
     }
 
+    /// Highlight @references with brand purple color
     fn highlight<'l>(&self, line: &'l str, _pos: usize) -> Cow<'l, str> {
-        Cow::Borrowed(line)
+        // Skip highlighting if no @ references present
+        if !line.contains(REFERENCE_PREFIX) {
+            return Cow::Borrowed(line);
+        }
+
+        const RESET: &str = "\x1b[0m";
+        let brand_escape = format!("\x1b[38;5;{}m", BRAND_PURPLE);
+
+        let mut result = String::with_capacity(line.len() + 32);
+        let mut chars = line.char_indices().peekable();
+        let mut prev_char: Option<char> = None;
+
+        while let Some((_i, c)) = chars.next() {
+            // Check for @ at word boundary (start of line or after whitespace)
+            if c == REFERENCE_PREFIX && (prev_char.is_none() || prev_char.is_some_and(|p| p.is_whitespace())) {
+                result.push_str(&brand_escape);
+                result.push(REFERENCE_PREFIX);
+
+                // Check for quoted path: @"path with spaces"
+                if chars.peek().map(|(_, c)| *c) == Some('"') {
+                    result.push('"');
+                    chars.next(); // consume opening quote
+                    // Consume until closing quote
+                    while let Some(&(_, next_c)) = chars.peek() {
+                        result.push(next_c);
+                        chars.next();
+                        if next_c == '"' {
+                            break;
+                        }
+                    }
+                } else {
+                    // Regular path: consume until whitespace
+                    while let Some(&(_, next_c)) = chars.peek() {
+                        if next_c.is_whitespace() {
+                            break;
+                        }
+                        result.push(next_c);
+                        chars.next();
+                    }
+                }
+
+                result.push_str(RESET);
+            } else {
+                result.push(c);
+            }
+            prev_char = Some(c);
+        }
+
+        Cow::Owned(result)
     }
 
-    fn highlight_char(&self, _line: &str, _pos: usize, _kind: CmdKind) -> bool {
-        false
+    fn highlight_char(&self, line: &str, _pos: usize, _kind: CmdKind) -> bool {
+        // Tell rustyline to refresh highlighting when line contains @
+        line.contains(REFERENCE_PREFIX)
     }
 
     fn highlight_prompt<'b, 's: 'b, 'p: 'b>(&'s self, prompt: &'p str, _default: bool) -> Cow<'b, str> {

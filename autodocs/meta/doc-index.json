@@ -1,6 +1,6 @@
 {
-  "generated_at": "2026-02-06T17:30:26.910110",
-  "total_docs": 94,
+  "generated_at": "2026-02-09T11:24:44.742207",
+  "total_docs": 95,
   "by_category": {
     "command": [
       "commands/agent.md",
@@ -18,6 +18,7 @@
       "features/diff-tool.md",
       "features/exit-codes.md",
       "features/experiments.md",
+      "features/file-references.md",
       "features/help-agent.md",
       "features/hooks.md",
       "features/knowledge-management.md",
@@ -129,7 +130,7 @@
         "slash-agent",
         "agent-config"
       ],
-      "validated": "2026-02-02",
+      "validated": "2026-02-05",
       "status": "validated"
     },
     {
@@ -392,6 +393,28 @@
         "slash-experiment"
       ],
       "validated": "2025-12-19",
+      "status": "validated"
+    },
+    {
+      "path": "features/file-references.md",
+      "file": "file-references.md",
+      "title": "File References",
+      "description": "Use @path syntax to include file contents or directory listings inline in chat messages",
+      "category": "feature",
+      "keywords": [
+        "file",
+        "directory",
+        "reference",
+        "inline",
+        "context",
+        "tree",
+        "quoted"
+      ],
+      "related": [
+        "slash-chat",
+        "tab-completion"
+      ],
+      "validated": "2026-02-09",
       "status": "validated"
     },
     {
@@ -973,7 +996,7 @@
         "cmd-agent",
         "agent-config"
       ],
-      "validated": "2026-01-05",
+      "validated": "2026-02-05",
       "status": "validated"
     },
     {
@@ -1264,7 +1287,7 @@
         "agent-config",
         "hooks"
       ],
-      "validated": "2026-02-02",
+      "validated": "2026-02-04",
       "status": "validated"
     },
     {

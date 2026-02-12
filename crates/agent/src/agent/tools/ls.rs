@@ -73,7 +73,9 @@ const LS_SCHEMA: &str = r#"
 /// Directory names to not search through when performing recursive directory listings.
 ///
 /// The model would have to explicitly search these directories if it wants to.
-const IGNORE_PATTERNS: [&str; 7] = ["node_modules", "bin", "build", "dist", "out", ".cache", ".git"];
+/// Directory patterns to ignore when traversing (common build/cache directories).
+/// Used by ls tool and @directory references.
+pub const IGNORE_PATTERNS: [&str; 7] = ["node_modules", "bin", "build", "dist", "out", ".cache", ".git"];
 
 // The max number of entry listing results to send to the model.
 const MAX_LS_ENTRIES: usize = 1000;

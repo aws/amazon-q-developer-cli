@@ -17,6 +17,7 @@ pub mod use_subagent;
 pub mod web_fetch;
 pub mod web_search;
 
+// Re-export constants for use by other crates
 use std::borrow::Cow;
 use std::sync::Arc;
 
@@ -24,6 +25,7 @@ use code::Code;
 pub use code_spec::get_code_tool_spec;
 use execute_cmd::ExecuteCmd;
 use fs_read::FsRead;
+pub use fs_read::MAX_READ_SIZE;
 use fs_write::{
     FsWrite,
     FsWriteContext,
@@ -33,6 +35,7 @@ use glob::Glob;
 use grep::Grep;
 use image_read::ImageRead;
 use introspect::Introspect;
+pub use ls::IGNORE_PATTERNS;
 use ls::Ls;
 use mcp::McpTool;
 use mkdir::Mkdir;

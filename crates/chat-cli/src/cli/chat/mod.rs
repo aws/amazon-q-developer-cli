@@ -16,6 +16,7 @@ pub mod cli;
 mod consts;
 pub mod context;
 mod conversation;
+mod file_reference;
 mod input_source;
 mod message;
 mod parse;
@@ -43,6 +44,7 @@ pub mod util;
 use std::borrow::Cow;
 use std::collections::{
     HashMap,
+    HashSet,
     VecDeque,
 };
 use std::io::{
@@ -191,8 +193,13 @@ use crate::cli::chat::checkpoint::{
 use crate::cli::chat::cli::SlashCommand;
 use crate::cli::chat::cli::editor::open_editor;
 use crate::cli::chat::cli::prompts::{
+    FilePrompts,
     GetPromptError,
     PromptsSubcommand,
+};
+use crate::cli::chat::file_reference::{
+    REFERENCE_PREFIX,
+    expand_references,
 };
 use crate::cli::chat::message::UserMessage;
 use crate::cli::chat::util::sanitize_unicode_tags;
@@ -2842,24 +2849,57 @@ impl ChatSession {
             Ok(ChatState::PromptUser {
                 skip_printing_tools: false,
             })
-        } else if let Some(command) = input_trimmed.strip_prefix("@") {
-            let input_parts =
-                shlex::split(command).ok_or(ChatError::Custom("Error splitting prompt command".into()))?;
+        } else if input_trimmed.starts_with(REFERENCE_PREFIX) {
+            // Input starts with @ - check if first word is a known prompt
+            // Collect known prompt names for priority checking
+            let mut known_prompts = HashSet::new();
+            if let Ok(file_prompts) = FilePrompts::get_available_names(os) {
+                known_prompts.extend(file_prompts);
+            }
+            if let Ok(mcp_prompts) = self.conversation.tool_manager.list_prompts().await {
+                known_prompts.extend(mcp_prompts.keys().cloned());
+            }
 
-            let mut iter = input_parts.into_iter();
-            let prompt_name = iter
-                .next()
-                .ok_or(ChatError::Custom("Prompt name needs to be specified".into()))?;
+            // Extract first word after @ to check if it's a prompt
+            let after_at = input_trimmed.strip_prefix(REFERENCE_PREFIX).unwrap_or("");
+            let first_word = after_at.split_whitespace().next().unwrap_or("");
 
-            let args: Vec<String> = iter.collect();
-            let arguments = if args.is_empty() { None } else { Some(args) };
+            // If first word is a known prompt, use existing prompt handling (full backwards compat)
+            if known_prompts.contains(first_word) {
+                let command = after_at;
+                let input_parts =
+                    shlex::split(command).ok_or(ChatError::Custom("Error splitting prompt command".into()))?;
 
-            let subcommand = PromptsSubcommand::Get {
-                orig_input: Some(command.to_string()),
-                name: prompt_name,
-                arguments,
-            };
-            return subcommand.execute(os, self).await;
+                let mut iter = input_parts.into_iter();
+                let prompt_name = iter
+                    .next()
+                    .ok_or(ChatError::Custom("Prompt name needs to be specified".into()))?;
+
+                let args: Vec<String> = iter.collect();
+                let arguments = if args.is_empty() { None } else { Some(args) };
+
+                let subcommand = PromptsSubcommand::Get {
+                    orig_input: Some(command.to_string()),
+                    name: prompt_name,
+                    arguments,
+                };
+                return subcommand.execute(os, self).await;
+            }
+
+            // Not a prompt - try file/directory expansion
+            // If expansion changes the message, re-process it; otherwise fall through to normal handling
+            if let Some(state) = self.try_at_reference_expansion(&input_trimmed)? {
+                return Ok(state);
+            }
+            // No expansion happened - fall through to normal input handling below
+            self.process_normal_input(os, user_input, &input_trimmed).await
+        } else if input_trimmed.contains(REFERENCE_PREFIX) {
+            // Input contains @ but doesn't start with it - try file/directory expansion
+            if let Some(state) = self.try_at_reference_expansion(&input_trimmed)? {
+                return Ok(state);
+            }
+            // No expansion happened - fall through to normal input handling below
+            self.process_normal_input(os, user_input, &input_trimmed).await
         } else if let Some(command) = input_trimmed.strip_prefix("!") {
             // Use platform-appropriate shell
             let result = if cfg!(target_os = "windows") {
@@ -2894,97 +2934,141 @@ impl ChatSession {
                 skip_printing_tools: false,
             })
         } else {
-            // Track the message for checkpoint descriptions, but only if not already set
-            // This prevents tool approval responses (y/n/t) from overwriting the original message
-            if ExperimentManager::is_enabled(os, ExperimentName::Checkpoint)
-                && !self.conversation.is_in_tangent_mode()
-                && let Some(manager) = self.conversation.checkpoint_manager.as_mut()
-                && !manager.message_locked
-                && self.pending_tool_index.is_none()
-            {
-                manager.pending_user_message = Some(user_input.clone());
-                manager.message_locked = true;
-            }
-
-            // Check for a pending tool approval
-            if let Some(index) = self.pending_tool_index {
-                let tool_use = &mut self.tool_uses[index];
-                if is_approval_response(&input_trimmed) {
-                    if is_trust_response(&input_trimmed) {
-                        let formatted_tool_name = self
-                            .conversation
-                            .tool_manager
-                            .tn_map
-                            .get(&tool_use.name)
-                            .map(|info| {
-                                format!(
-                                    "@{}{MCP_SERVER_TOOL_DELIMITER}{}",
-                                    info.server_name, info.host_tool_name
-                                )
-                            })
-                            .clone()
-                            .unwrap_or(tool_use.name.clone());
-                        self.conversation.agents.trust_tools(vec![formatted_tool_name.clone()]);
-
-                        if let Some(agent) = self.conversation.agents.get_active() {
-                            agent
-                                .print_overridden_permission_for_tool(&formatted_tool_name, &mut self.stderr)
-                                .map_err(|_e| ChatError::Custom("Failed to validate agent tool settings".into()))?;
-                        }
-                    }
-                    tool_use.accepted = true;
-
-                    return Ok(ChatState::ExecuteTools);
-                }
-            } else if !self.pending_prompts.is_empty() {
-                let prompts = self.pending_prompts.drain(0..).collect();
-                user_input = self
-                    .conversation
-                    .append_prompts(prompts)
-                    .ok_or(ChatError::Custom("Prompt append failed".into()))?;
-            }
-
-            // Otherwise continue with normal chat on 'n' or other responses
-            self.tool_use_status = ToolUseStatus::Idle;
-
-            if self.pending_tool_index.is_some() {
-                // If the user just enters "n", replace the message we send to the model with
-                // something more substantial.
-                // TODO: Update this flow to something that does *not* require two requests just to
-                // get a meaningful response from the user - this is a short term solution before
-                // we decide on a better flow.
-                let user_input = if is_reject_response(user_input.trim()) {
-                    "I deny this tool request. Ask a follow up question clarifying the expected action".to_string()
-                } else {
-                    user_input
-                };
-
-                self.conversation.abandon_tool_use(&self.tool_uses, user_input);
-            } else {
-                self.conversation.set_next_user_message(user_input).await;
-            }
-            // For tool approval responses (y/n/t), preserve active turn
-            let preserve_turn = is_tool_permission_interaction(&input_trimmed);
-            if !preserve_turn {
-                self.reset_user_turn();
-            }
-
-            let conv_state = self
-                .conversation
-                .as_sendable_conversation_state(os, &mut self.stderr, true)
-                .await?;
-            self.send_tool_use_telemetry(os).await;
-
-            queue!(self.stderr, StyledText::emphasis_fg())?;
-            queue!(self.stderr, StyledText::reset())?;
-            queue!(self.stderr, cursor::Hide)?;
-
-            if self.interactive {
-                self.spinner = Some(Spinner::new(Spinners::Dots, "Thinking...".to_owned()));
-            }
-
-            Ok(ChatState::HandleResponseStream(conv_state))
+            // Normal input processing (handles pending tool approval, sends to model, etc.)
+            self.process_normal_input(os, user_input, &input_trimmed).await
         }
+    }
+
+    /// Try to expand @file and @directory references in user input.
+    /// Returns Some(ChatState) if expansion happened, None if nothing changed.
+    fn try_at_reference_expansion(&mut self, input: &str) -> Result<Option<ChatState>, ChatError> {
+        let expansion = expand_references(input);
+
+        // Display warnings
+        for warning in &expansion.warnings {
+            queue!(
+                self.stderr,
+                StyledText::warning_fg(),
+                style::Print(format!("⚠ {}\n", warning)),
+                StyledText::reset(),
+            )?;
+        }
+
+        // Display errors as warnings (don't block on invalid references for backwards compat)
+        for error in &expansion.errors {
+            queue!(
+                self.stderr,
+                StyledText::warning_fg(),
+                style::Print(format!("⚠ {}\n", error)),
+                StyledText::reset(),
+            )?;
+        }
+
+        // If expansion changed the message, return HandleInput to re-process
+        // Otherwise return None to fall through to normal input handling
+        if expansion.expanded_message != input {
+            Ok(Some(ChatState::HandleInput {
+                input: expansion.expanded_message,
+            }))
+        } else {
+            Ok(None)
+        }
+    }
+
+    /// Process normal user input (handles pending tool approval, sends to model, etc.)
+    async fn process_normal_input(
+        &mut self,
+        os: &mut Os,
+        mut user_input: String,
+        input_trimmed: &str,
+    ) -> Result<ChatState, ChatError> {
+        // Track the message for checkpoint descriptions, but only if not already set
+        // This prevents tool approval responses (y/n/t) from overwriting the original message
+        if ExperimentManager::is_enabled(os, ExperimentName::Checkpoint)
+            && !self.conversation.is_in_tangent_mode()
+            && let Some(manager) = self.conversation.checkpoint_manager.as_mut()
+            && !manager.message_locked
+            && self.pending_tool_index.is_none()
+        {
+            manager.pending_user_message = Some(user_input.clone());
+            manager.message_locked = true;
+        }
+
+        // Check for a pending tool approval
+        if let Some(index) = self.pending_tool_index {
+            let tool_use = &mut self.tool_uses[index];
+            if is_approval_response(input_trimmed) {
+                if is_trust_response(input_trimmed) {
+                    let formatted_tool_name = self
+                        .conversation
+                        .tool_manager
+                        .tn_map
+                        .get(&tool_use.name)
+                        .map(|info| {
+                            format!(
+                                "@{}{MCP_SERVER_TOOL_DELIMITER}{}",
+                                info.server_name, info.host_tool_name
+                            )
+                        })
+                        .clone()
+                        .unwrap_or(tool_use.name.clone());
+                    self.conversation.agents.trust_tools(vec![formatted_tool_name]);
+
+                    if let Some(agent) = self.conversation.agents.get_active() {
+                        agent
+                            .print_overridden_permissions(&mut self.stderr)
+                            .map_err(|_e| ChatError::Custom("Failed to validate agent tool settings".into()))?;
+                    }
+                }
+                tool_use.accepted = true;
+
+                return Ok(ChatState::ExecuteTools);
+            }
+        } else if !self.pending_prompts.is_empty() {
+            let prompts = self.pending_prompts.drain(0..).collect();
+            user_input = self
+                .conversation
+                .append_prompts(prompts)
+                .ok_or(ChatError::Custom("Prompt append failed".into()))?;
+        }
+
+        // Otherwise continue with normal chat on 'n' or other responses
+        self.tool_use_status = ToolUseStatus::Idle;
+
+        if self.pending_tool_index.is_some() {
+            // If the user just enters "n", replace the message we send to the model with
+            // something more substantial.
+            let user_input = if is_reject_response(user_input.trim()) {
+                "I deny this tool request. Ask a follow up question clarifying the expected action".to_string()
+            } else {
+                user_input
+            };
+
+            self.conversation.abandon_tool_use(&self.tool_uses, user_input);
+        } else {
+            self.conversation.set_next_user_message(user_input).await;
+        }
+        // For tool approval responses (y/n/t), preserve active turn
+        let preserve_turn = is_tool_permission_interaction(input_trimmed);
+        if !preserve_turn {
+            self.reset_user_turn();
+        }
+
+        let conv_state = self
+            .conversation
+            .as_sendable_conversation_state(os, &mut self.stderr, true)
+            .await?;
+        self.send_tool_use_telemetry(os).await;
+
+        queue!(self.stderr, StyledText::emphasis_fg())?;
+        queue!(self.stderr, StyledText::reset())?;
+        queue!(self.stderr, cursor::Hide)?;
+
+        if self.interactive {
+            self.spinner = Some(Spinner::new(Spinners::Dots, "Thinking...".to_owned()));
+        }
+
+        Ok(ChatState::HandleResponseStream(conv_state))
     }
 
     async fn tool_use_execute(&mut self, os: &mut Os) -> Result<ChatState, ChatError> {
@@ -3519,6 +3603,7 @@ impl ChatSession {
         self.send_chat_telemetry(os, TelemetryResult::Succeeded, None, None, None, false)
             .await;
         self.send_tool_use_telemetry(os).await;
+
         return Ok(ChatState::HandleResponseStream(
             self.conversation
                 .as_sendable_conversation_state(os, &mut self.stderr, false)

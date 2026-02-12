@@ -407,6 +407,11 @@ pub mod tips {
                 "Prefer a different diff view for the write tool? For example, run {}",
                 StyledText::command(&format!("{CLI_NAME} settings chat.diffTool delta"))
             ),
+            format!(
+                "Include file contents inline with {} or browse directories with {}",
+                StyledText::command("@file.txt"),
+                StyledText::command("@src/")
+            ),
         ]
     }
 }
