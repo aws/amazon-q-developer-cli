@@ -1,7 +1,7 @@
 ---
 doc_meta:
   validated: 2026-02-11
-  commit: a9a37454
+  commit: 78ada5ad
   status: validated
   testable_headless: false
   category: slash_command
@@ -17,17 +17,17 @@ Define a default agent to use when kiro-cli chat launches.
 
 ## Overview
 
-The `/agent set-default` command sets a specific agent as the default for new chat sessions launched with `kiro-cli chat`.
+The `/agent set-default` command sets a specific agent as the default for new chat sessions launched with `kiro-cli chat`. When no name is provided, a fuzzy selector appears to choose from available agents.
 
 ## Usage
 
 ```
-/agent set-default <NAME>
+/agent set-default [NAME]
 ```
 
 ## Arguments
 
-- `<NAME>` - Name of the agent to set as default (required)
+- `[NAME]` - Name of the agent to set as default (optional, shows selector if omitted)
 
 ## Options
 
@@ -35,7 +35,15 @@ The `/agent set-default` command sets a specific agent as the default for new ch
 
 ## Examples
 
-### Example 1: Set Default Agent
+### Example 1: Interactive Selection
+
+```
+/agent set-default
+```
+
+Opens a fuzzy selector showing all available agents. Type to filter, press Enter to select, or Esc to cancel.
+
+### Example 2: Set Default Agent
 
 ```
 /agent set-default python-dev
@@ -43,18 +51,18 @@ The `/agent set-default` command sets a specific agent as the default for new ch
 
 **Output**:
 ```
-✔ Set python-dev as default agent
+✓ Default agent set to 'python-dev'. This will take effect the next time kiro-cli chat is launched.
 ```
 
-### Example 2: Set Built-in Default
+### Example 3: Set Built-in Default
 
 ```
-/agent set-default default
+/agent set-default kiro_default
 ```
 
 **Output**:
 ```
-✔ Set default as default agent
+✓ Default agent set to 'kiro_default'. This will take effect the next time kiro-cli chat is launched.
 ```
 
 ## Behavior

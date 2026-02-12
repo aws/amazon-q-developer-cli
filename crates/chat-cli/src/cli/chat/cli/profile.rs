@@ -98,8 +98,9 @@ pub enum AgentSubcommand {
     Schema,
     /// Define a default agent to use when kiro-cli chat launches
     SetDefault {
-        /// Name of the agent to set as default
-        name: String,
+        /// Optional name of the agent to set as default. If not provided, a selection dialog will
+        /// be shown
+        name: Option<String>,
     },
     /// Swap to a new agent at runtime
     #[command(alias = "switch")]
@@ -107,6 +108,76 @@ pub enum AgentSubcommand {
         /// Optional name of the agent to swap to. If not provided, a selection dialog will be shown
         name: Option<String>,
     },
+}
+
+/// Options for the agent selector
+pub struct AgentSelectorOptions<'a> {
+    /// Prompt to display in the selector
+    pub prompt: &'a str,
+    /// Whether to exclude built-in agents from the list
+    pub exclude_builtins: bool,
+}
+
+impl Default for AgentSelectorOptions<'_> {
+    fn default() -> Self {
+        Self {
+            prompt: "Select agent (type to search): ",
+            exclude_builtins: false,
+        }
+    }
+}
+
+/// Launch a fuzzy selector to choose an agent from the available agents.
+/// Returns the selected agent name, or None if the user cancelled.
+fn prompt_agent_selection(agents: &Agents, options: AgentSelectorOptions<'_>) -> Result<Option<String>, ChatError> {
+    let active_agent_name = &agents.active_idx;
+    let mut agent_infos: Vec<AgentListDisplayInfo> = agents
+        .agents
+        .iter()
+        .filter(|(_, agent)| !options.exclude_builtins || !agent.is_builtin())
+        .map(|(name, agent)| {
+            let is_active = name == active_agent_name;
+            AgentListDisplayInfo::new(
+                name.clone(),
+                agent.source_location,
+                agent.description.clone(),
+                is_active,
+            )
+        })
+        .collect();
+
+    if agent_infos.is_empty() {
+        return if options.exclude_builtins {
+            Err(ChatError::Custom(
+                "No editable agents found. Create a new agent with '/agent create'".into(),
+            ))
+        } else {
+            Err(ChatError::Custom("No agents available".into()))
+        };
+    }
+
+    AgentListDisplayInfo::sort_list(&mut agent_infos);
+    let formatted_items = AgentListDisplayInfo::format_for_selector(&agent_infos);
+
+    // Launch fuzzy selector (inline mode)
+    let selected = super::super::skim_integration::launch_skim_selector_inline(&formatted_items, options.prompt, false)
+        .map_err(|e| ChatError::Custom(format!("Failed to launch agent selector: {e}").into()))?;
+
+    if let Some(selections) = selected
+        && let Some(selected_line) = selections.first()
+    {
+        // Find the index of the selected line in formatted_items
+        let selected_idx = formatted_items
+            .iter()
+            .position(|item| item == selected_line)
+            .ok_or_else(|| ChatError::Custom("Selected item not found".into()))?;
+
+        // Use that index to get the actual agent name
+        Ok(Some(agent_infos[selected_idx].name.clone()))
+    } else {
+        // User cancelled selection
+        Ok(None)
+    }
 }
 
 fn prompt_mcp_server_selection(servers: &[McpServerInfo]) -> eyre::Result<Option<Vec<&McpServerInfo>>> {
@@ -307,13 +378,24 @@ impl AgentSubcommand {
                         (name, path)
                     },
                     (None, None) => {
-                        // Default to editing the current agent
-                        let current_agent_name = session.conversation.agents.active_idx.clone();
-                        check_not_builtin(&current_agent_name)?;
-                        let (_agent, path) = Agent::get_agent_by_name(os, &current_agent_name)
-                            .await
-                            .map_err(|e| ChatError::Custom(Cow::Owned(e.to_string())))?;
-                        (current_agent_name, path)
+                        // Show fuzzy selector to choose an agent to edit
+                        let selected_name =
+                            prompt_agent_selection(&session.conversation.agents, AgentSelectorOptions {
+                                prompt: "Select agent to edit (type to search): ",
+                                exclude_builtins: true,
+                            })?;
+
+                        if let Some(agent_name) = selected_name {
+                            let (_agent, path) = Agent::get_agent_by_name(os, &agent_name)
+                                .await
+                                .map_err(|e| ChatError::Custom(Cow::Owned(e.to_string())))?;
+                            (agent_name, path)
+                        } else {
+                            // User cancelled selection
+                            return Ok(ChatState::PromptUser {
+                                skip_printing_tools: true,
+                            });
+                        }
                     },
                 };
 
@@ -493,98 +575,86 @@ impl AgentSubcommand {
                     StyledText::reset_attributes()
                 )?;
             },
-            Self::SetDefault { name } => match session.conversation.agents.agents.get(&name) {
-                Some(agent) => {
-                    os.database
-                        .settings
-                        .set(Setting::ChatDefaultAgent, agent.name.clone(), None)
-                        .await
-                        .map_err(|e| ChatError::Custom(e.to_string().into()))?;
+            Self::SetDefault { name } => {
+                let agent_name = if let Some(name) = name {
+                    name
+                } else {
+                    // Show fuzzy selector to choose an agent to set as default
+                    let selected_name = prompt_agent_selection(&session.conversation.agents, AgentSelectorOptions {
+                        prompt: "Select default agent (type to search): ",
+                        exclude_builtins: false,
+                    })?;
 
-                    execute!(
-                        session.stderr,
-                        StyledText::success_fg(),
-                        style::Print("✓ Default agent set to '"),
-                        style::Print(&agent.name),
-                        style::Print("'. This will take effect the next time kiro-cli chat is launched.\n"),
-                        StyledText::reset(),
-                    )?;
-                },
-                None => {
-                    execute!(
-                        session.stderr,
-                        StyledText::error_fg(),
-                        style::Print("Error: "),
-                        StyledText::reset(),
-                        style::Print(format!("No agent with name {name} found\n")),
-                    )?;
-                },
+                    match selected_name {
+                        Some(name) => name,
+                        None => {
+                            // User cancelled selection
+                            return Ok(ChatState::PromptUser {
+                                skip_printing_tools: true,
+                            });
+                        },
+                    }
+                };
+
+                match session.conversation.agents.agents.get(&agent_name) {
+                    Some(agent) => {
+                        os.database
+                            .settings
+                            .set(Setting::ChatDefaultAgent, agent.name.clone(), None)
+                            .await
+                            .map_err(|e| ChatError::Custom(e.to_string().into()))?;
+
+                        execute!(
+                            session.stderr,
+                            StyledText::success_fg(),
+                            style::Print("✓ Default agent set to '"),
+                            style::Print(&agent.name),
+                            style::Print("'. This will take effect the next time kiro-cli chat is launched.\n"),
+                            StyledText::reset(),
+                        )?;
+                    },
+                    None => {
+                        execute!(
+                            session.stderr,
+                            StyledText::error_fg(),
+                            style::Print("Error: "),
+                            StyledText::reset(),
+                            style::Print(format!("No agent with name {agent_name} found\n")),
+                        )?;
+                    },
+                }
             },
             Self::Swap { name } => {
-                if let Some(name) = name {
-                    session.conversation.swap_agent(os, &mut session.stderr, &name).await?;
-                    session.input_source.agent_swap_state().set_current_agent(name.clone());
-
-                    // Display welcome message if the agent has one
-                    if let Some(agent) = session.conversation.agents.get_active() {
-                        agent.print_welcome_message(&mut session.stderr)?;
-                    }
+                let agent_name = if let Some(name) = name {
+                    name
                 } else {
-                    // Collect agents with metadata for display
-                    let active_agent_name = &session.conversation.agents.active_idx;
-                    let mut agent_infos: Vec<AgentListDisplayInfo> = session
-                        .conversation
-                        .agents
-                        .agents
-                        .iter()
-                        .map(|(name, agent)| {
-                            let is_active = name == active_agent_name;
-                            AgentListDisplayInfo::new(
-                                name.clone(),
-                                agent.source_location,
-                                agent.description.clone(),
-                                is_active,
-                            )
-                        })
-                        .collect();
+                    // Show fuzzy selector to choose an agent to swap to
+                    let selected_name =
+                        prompt_agent_selection(&session.conversation.agents, AgentSelectorOptions::default())?;
 
-                    AgentListDisplayInfo::sort_list(&mut agent_infos);
-                    let formatted_items = AgentListDisplayInfo::format_for_selector(&agent_infos);
-
-                    // Launch fuzzy selector (inline mode)
-                    let selected = super::super::skim_integration::launch_skim_selector_inline(
-                        &formatted_items,
-                        "Select agent (type to search): ",
-                        false,
-                    )
-                    .map_err(|e| ChatError::Custom(format!("Failed to launch agent selector: {e}").into()))?;
-
-                    if let Some(selections) = selected
-                        && let Some(selected_line) = selections.first()
-                    {
-                        // Find the index of the selected line in formatted_items
-                        let selected_idx = formatted_items
-                            .iter()
-                            .position(|item| item == selected_line)
-                            .ok_or_else(|| ChatError::Custom("Selected item not found".into()))?;
-
-                        // Use that index to get the actual agent name
-                        let agent_name = &agent_infos[selected_idx].name;
-
-                        session
-                            .conversation
-                            .swap_agent(os, &mut session.stderr, agent_name)
-                            .await?;
-                        session
-                            .input_source
-                            .agent_swap_state()
-                            .set_current_agent(agent_name.clone());
-
-                        // Display welcome message if the agent has one
-                        if let Some(agent) = session.conversation.agents.get_active() {
-                            agent.print_welcome_message(&mut session.stderr)?;
-                        }
+                    match selected_name {
+                        Some(name) => name,
+                        None => {
+                            // User cancelled selection
+                            return Ok(ChatState::PromptUser {
+                                skip_printing_tools: true,
+                            });
+                        },
                     }
+                };
+
+                session
+                    .conversation
+                    .swap_agent(os, &mut session.stderr, &agent_name)
+                    .await?;
+                session
+                    .input_source
+                    .agent_swap_state()
+                    .set_current_agent(agent_name.clone());
+
+                // Display welcome message if the agent has one
+                if let Some(agent) = session.conversation.agents.get_active() {
+                    agent.print_welcome_message(&mut session.stderr)?;
                 }
             },
         }

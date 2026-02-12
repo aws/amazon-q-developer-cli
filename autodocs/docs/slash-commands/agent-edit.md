@@ -1,7 +1,7 @@
 ---
 doc_meta:
   validated: 2026-02-11
-  commit: a9a37454
+  commit: 78ada5ad
   status: validated
   testable_headless: false
   category: slash_command
@@ -17,7 +17,7 @@ Edit an existing agent configuration.
 
 ## Overview
 
-The `/agent edit` command opens an existing agent configuration for editing. By default, it edits the currently active agent. You can also specify a different agent by name or path.
+The `/agent edit` command opens an existing agent configuration for editing. When no name is provided, a fuzzy selector appears to choose from available editable agents. You can also specify an agent by name or path.
 
 ## Usage
 
@@ -27,7 +27,7 @@ The `/agent edit` command opens an existing agent configuration for editing. By 
 
 ## Arguments
 
-- `[NAME]` - Name of the agent to edit (optional, defaults to current agent)
+- `[NAME]` - Name of the agent to edit (optional, shows selector if omitted)
 
 ## Options
 
@@ -36,13 +36,13 @@ The `/agent edit` command opens an existing agent configuration for editing. By 
 
 ## Examples
 
-### Example 1: Edit Current Agent
+### Example 1: Interactive Selection
 
 ```
 /agent edit
 ```
 
-Opens the currently active agent's configuration for editing.
+Opens a fuzzy selector showing all editable (non-built-in) agents. Type to filter, press Enter to select, or Esc to cancel.
 
 ### Example 2: Edit by Name
 
@@ -73,26 +73,13 @@ When specifying an agent name:
 
 ## Limitations
 
-Built-in agents (`kiro_default`, `kiro_help`, `kiro_planner`) cannot be edited. Attempting to edit a built-in agent returns an error:
+Built-in agents (`kiro_default`, `kiro_help`, `kiro_planner`) cannot be edited and are excluded from the interactive selector. Attempting to edit a built-in agent by name returns an error:
 
 ```
 Cannot edit built-in agent 'kiro_default'. Create a new agent with '/agent create'
 ```
 
 To customize behavior, create a new agent based on your needs.
-
-## Related Commands
-
-- [/agent list](agent-list.md) - List available agents
-- [/agent create](agent-create.md) - Create new agent
-- [/agent](agent-swap.md) - Switch to different agent
-- [kiro-cli agent](../commands/agent.md) - CLI agent management
-
-## Technical Details
-
-**File Format**: Agent configurations are typically TOML files.
-
-**Editor**: Uses system default editor or `$EDITOR` environment variable.
 
 ## Related Commands
 
