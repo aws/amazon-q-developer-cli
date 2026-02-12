@@ -4,6 +4,7 @@ import { StatusBar, useStatusBar } from '../status-bar/StatusBar.js';
 import { StatusInfo } from '../../ui/status/StatusInfo.js';
 import { useTheme } from '../../../hooks/useThemeContext.js';
 import { useExpandableOutput } from '../../../hooks/useExpandableOutput.js';
+import { unwrapResultOutput } from '../../../utils/tool-result.js';
 import type { ToolResult } from '../../../stores/app-store.js';
 import type { StatusType } from '../../../types/componentTypes.js';
 
@@ -89,49 +90,29 @@ export const Shell = React.memo(function Shell({
 
   // Extract output and exit status from result
   const { output, exitCode } = useMemo(() => {
-    if (!result || result.status !== 'success') {
-      return { output: null, exitCode: null };
+    const { obj, text } = unwrapResultOutput(result);
+
+    if (text) return { output: text, exitCode: null };
+    if (!obj) return { output: null, exitCode: null };
+
+    let code: number | null = null;
+    if ('exit_status' in obj) {
+      const exitStatus = obj.exit_status;
+      if (typeof exitStatus === 'number') {
+        code = exitStatus;
+      } else if (typeof exitStatus === 'string') {
+        const match = exitStatus.match(/(\d+)/);
+        if (match && match[1]) {
+          code = parseInt(match[1], 10);
+        }
+      }
     }
 
-    const rawOutput = result.output;
     let outputStr: string | null = null;
-    let code: number | null = null;
-
-    // Handle the nested structure: {items: [{Json: {exit_status, stdout, stderr}}]}
-    if (rawOutput && typeof rawOutput === 'object') {
-      let obj = rawOutput as Record<string, unknown>;
-
-      // Unwrap items array if present
-      if ('items' in obj && Array.isArray(obj.items) && obj.items.length > 0) {
-        const firstItem = obj.items[0] as Record<string, unknown>;
-        if ('Json' in firstItem && typeof firstItem.Json === 'object') {
-          obj = firstItem.Json as Record<string, unknown>;
-        } else {
-          obj = firstItem;
-        }
-      }
-
-      // Get exit status
-      if ('exit_status' in obj) {
-        const exitStatus = obj.exit_status;
-        if (typeof exitStatus === 'number') {
-          code = exitStatus;
-        } else if (typeof exitStatus === 'string') {
-          const match = exitStatus.match(/(\d+)/);
-          if (match && match[1]) {
-            code = parseInt(match[1], 10);
-          }
-        }
-      }
-
-      // Prefer stdout, fall back to stderr if stdout is empty
-      if ('stdout' in obj && typeof obj.stdout === 'string' && obj.stdout.trim()) {
-        outputStr = obj.stdout;
-      } else if ('stderr' in obj && typeof obj.stderr === 'string' && obj.stderr.trim()) {
-        outputStr = obj.stderr;
-      }
-    } else if (typeof rawOutput === 'string') {
-      outputStr = rawOutput;
+    if ('stdout' in obj && typeof obj.stdout === 'string' && obj.stdout.trim()) {
+      outputStr = obj.stdout;
+    } else if ('stderr' in obj && typeof obj.stderr === 'string' && obj.stderr.trim()) {
+      outputStr = obj.stderr;
     }
 
     return { output: outputStr, exitCode: code };

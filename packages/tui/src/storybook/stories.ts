@@ -18,10 +18,14 @@ import * as PastedChipStories from '../components/chat/prompt-bar/PastedChip.sto
 import * as IconStories from '../components/ui/icon/Icon.stories.js';
 import * as DividerStories from '../components/ui/divider/Divider.stories.js';
 import * as WriteStories from '../components/chat/tools/Write.stories.js';
+import * as GrepStories from '../components/chat/tools/Grep.stories.js';
+import * as GlobStories from '../components/chat/tools/Glob.stories.js';
 import * as StatusInfoStories from '../components/ui/status/StatusInfo.stories.js';
 import * as AlertStories from '../components/ui/alert/Alert.stories.js';
 import * as ShellStories from '../components/chat/tools/Shell.stories.js';
 import * as ReadStories from '../components/chat/tools/Read.stories.js';
+import * as WebSearchStories from '../components/chat/tools/WebSearch.stories.js';
+import * as WebFetchStories from '../components/chat/tools/WebFetch.stories.js';
 import * as NotificationBarStories from '../components/chat/notification-bar/NotificationBar.stories.js';
 import * as ActionHintStories from '../components/ui/hint/ActionHint.stories.js';
 
@@ -149,10 +153,14 @@ export const stories = [
   convertStoryModule(IconStories, '../components/ui/icon/Icon.stories.js'),
   convertStoryModule(DividerStories, '../components/ui/divider/Divider.stories.js'),
   convertStoryModule(WriteStories, '../components/chat/tools/Write.stories.js'),
+  convertStoryModule(GrepStories, '../components/chat/tools/Grep.stories.js'),
+  convertStoryModule(GlobStories, '../components/chat/tools/Glob.stories.js'),
   convertStoryModule(StatusInfoStories, '../components/ui/status/StatusInfo.stories.js'),
   convertStoryModule(AlertStories, '../components/ui/alert/Alert.stories.js'),
   convertStoryModule(ShellStories, '../components/chat/tools/Shell.stories.js'),
   convertStoryModule(ReadStories, '../components/chat/tools/Read.stories.js'),
+  convertStoryModule(WebSearchStories, '../components/chat/tools/WebSearch.stories.js'),
+  convertStoryModule(WebFetchStories, '../components/chat/tools/WebFetch.stories.js'),
   convertStoryModule(NotificationBarStories, '../components/chat/notification-bar/NotificationBar.stories.js'),
   convertStoryModule(ActionHintStories, '../components/ui/hint/ActionHint.stories.js'),
 ];

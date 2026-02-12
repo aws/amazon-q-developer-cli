@@ -52,6 +52,9 @@ export const kiroDark: Theme = {
         bar: { truecolor: '#ff8080', color256: 210 }, // editorGutter.deletedBackground
         highlight: { truecolor: '#3a2d2f', color256: 236 }, // diffEditor.removedTextBackground (blended with bg)
       },
+      unchanged: {
+        bar: { truecolor: '#303030', color256: 236 },
+      },
     },
   },
   textStyles: {

@@ -4,6 +4,7 @@ import { StatusBar } from '../status-bar/StatusBar.js';
 import { StatusInfo } from '../../ui/status/StatusInfo.js';
 import { useTheme } from '../../../hooks/useThemeContext.js';
 import { useExpandableOutput } from '../../../hooks/useExpandableOutput.js';
+import { parseToolArg, unwrapResultOutput } from '../../../utils/tool-result.js';
 import type { ToolResult } from '../../../stores/app-store.js';
 import type { StatusType } from '../../../types/componentTypes.js';
 
@@ -60,34 +61,12 @@ export const Glob = React.memo(function Glob({
   const { getColor } = useTheme();
 
   // Parse glob pattern from content (tool args)
-  const globPattern = useMemo(() => {
-    if (!content) return null;
-    try {
-      const parsed = JSON.parse(content);
-      return parsed.pattern || null;
-    } catch {
-      return null;
-    }
-  }, [content]);
+  const globPattern = useMemo(() => parseToolArg(content, 'pattern'), [content]);
 
   // Parse glob output from result
   const globOutput = useMemo((): GlobOutput | null => {
-    if (!result || result.status !== 'success') return null;
-
-    const rawOutput = result.output;
-    if (!rawOutput || typeof rawOutput !== 'object') return null;
-
-    let obj = rawOutput as Record<string, unknown>;
-
-    // Unwrap items array if present
-    if ('items' in obj && Array.isArray(obj.items) && obj.items.length > 0) {
-      const firstItem = obj.items[0] as Record<string, unknown>;
-      if ('Json' in firstItem && typeof firstItem.Json === 'object') {
-        obj = firstItem.Json as Record<string, unknown>;
-      } else {
-        obj = firstItem;
-      }
-    }
+    const { obj } = unwrapResultOutput(result);
+    if (!obj) return null;
 
     return {
       filePaths: Array.isArray(obj.filePaths) ? obj.filePaths as string[] : [],

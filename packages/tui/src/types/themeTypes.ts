@@ -91,6 +91,9 @@ export interface Theme {
         bar: TerminalColor;
         highlight: TerminalColor;
       };
+      unchanged: {
+        bar: TerminalColor;
+      };
     };
   };
   textStyles: {

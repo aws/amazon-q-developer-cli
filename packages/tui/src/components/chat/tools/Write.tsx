@@ -5,39 +5,7 @@ import { useTheme } from '../../../hooks/useThemeContext.js';
 import { useSyntaxHighlight } from '../../../utils/syntax-highlight.js';
 import { useStatusBar } from '../status-bar/StatusBar.js';
 import { StatusInfo } from '../../ui/status/StatusInfo.js';
-
-// Simple diff implementation
-interface Change {
-  added?: boolean;
-  removed?: boolean;
-  value: string;
-}
-
-const simpleDiff = (oldText: string, newText: string): Change[] => {
-  const oldLines = oldText.split('\n');
-  const newLines = newText.split('\n');
-  const changes: Change[] = [];
-
-  const maxLines = Math.max(oldLines.length, newLines.length);
-
-  for (let i = 0; i < maxLines; i++) {
-    const oldLine = oldLines[i];
-    const newLine = newLines[i];
-
-    if (oldLine === undefined) {
-      changes.push({ added: true, value: newLine + '\n' });
-    } else if (newLine === undefined) {
-      changes.push({ removed: true, value: oldLine + '\n' });
-    } else if (oldLine !== newLine) {
-      changes.push({ removed: true, value: oldLine + '\n' });
-      changes.push({ added: true, value: newLine + '\n' });
-    } else {
-      changes.push({ value: oldLine + '\n' });
-    }
-  }
-
-  return changes;
-};
+import { diffLines, type Change } from 'diff';
 
 export interface WriteProps {
   /** Old text content for diff (empty string for new files) */
@@ -134,7 +102,7 @@ export const Write = React.memo<WriteProps>(function Write({
   }, [parsedContent, isFinished]);
 
   const language = displayPath?.split('.').pop()?.toLowerCase();
-  const changes = simpleDiff(displayOldText || '', displayNewText || '');
+  const changes = diffLines(displayOldText || '', displayNewText || '');
 
   // Calculate available width for content
   const fillsEdgeMargin = process.env.TERM_PROGRAM === 'iTerm.app';
@@ -146,11 +114,16 @@ export const Write = React.memo<WriteProps>(function Write({
     return line.slice(0, maxWidth - 1) + '…';
   };
 
+  // When rendered with a StatusInfo header (content prop), the diff starts after:
+  // - 1 line for StatusInfo header
+  // - 1 line for marginTop={1}
+  const headerLines = content ? 2 : 0;
+
   // Set bar colors for each diff line
   useEffect(() => {
     if (!statusBar) return;
 
-    let currentLine = lineOffset;
+    let currentLine = lineOffset + headerLines;
     changes.forEach((change: Change) => {
       const lines = change.value.split('\n');
       if (lines[lines.length - 1] === '') {
@@ -161,11 +134,13 @@ export const Write = React.memo<WriteProps>(function Write({
           statusBar.setLineColor(currentLine, getColor('diff.removed.bar').hex);
         } else if (change.added) {
           statusBar.setLineColor(currentLine, getColor('diff.added.bar').hex);
+        } else {
+          statusBar.setLineColor(currentLine, getColor('diff.unchanged.bar').hex);
         }
         currentLine++;
       });
     });
-  }, [statusBar, changes, getColor, lineOffset]);
+  }, [statusBar, changes, getColor, lineOffset, headerLines]);
 
   // Don't render if no content
   if (!displayNewText && !displayOldText) {

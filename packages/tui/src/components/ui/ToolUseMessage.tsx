@@ -8,9 +8,11 @@ import { Read } from '../chat/tools/Read.js';
 import { Shell } from '../chat/tools/Shell.js';
 import { Grep } from '../chat/tools/Grep.js';
 import { Glob } from '../chat/tools/Glob.js';
+import { WebSearch } from '../chat/tools/WebSearch.js';
+import { WebFetch } from '../chat/tools/WebFetch.js';
 import { Tool } from '../chat/tools/Tool.js';
 import { ToolUseStatus, type ToolResult } from '../../stores/app-store.js';
-import { WRITE_TOOL_NAMES, READ_TOOL_NAMES, SHELL_TOOL_NAMES, type ToolKind, type ToolCallLocation } from '../../types/agent-events.js';
+import { WRITE_TOOL_NAMES, READ_TOOL_NAMES, SHELL_TOOL_NAMES, WEB_SEARCH_TOOL_NAMES, WEB_FETCH_TOOL_NAMES, GREP_TOOL_NAMES, GLOB_TOOL_NAMES, type ToolKind, type ToolCallLocation } from '../../types/agent-events.js';
 
 export interface ToolUseMessageProps {
   id: string;
@@ -137,6 +139,52 @@ function ToolUseContent({
         noStatusBar
         isFinished={isFinished}
         isStatic={isStatic}
+        result={result}
+      />
+    );
+  }
+
+  if (WEB_SEARCH_TOOL_NAMES.has(name)) {
+    return (
+      <WebSearch
+        isFinished={isFinished}
+        isStatic={isStatic}
+        content={content}
+        result={result}
+      />
+    );
+  }
+
+  if (WEB_FETCH_TOOL_NAMES.has(name)) {
+    return (
+      <WebFetch
+        isFinished={isFinished}
+        isStatic={isStatic}
+        content={content}
+        result={result}
+      />
+    );
+  }
+
+  if (GREP_TOOL_NAMES.has(name)) {
+    return (
+      <Grep
+        noStatusBar
+        isFinished={isFinished}
+        isStatic={isStatic}
+        content={content}
+        result={result}
+      />
+    );
+  }
+
+  if (GLOB_TOOL_NAMES.has(name)) {
+    return (
+      <Glob
+        noStatusBar
+        isFinished={isFinished}
+        isStatic={isStatic}
+        content={content}
         result={result}
       />
     );

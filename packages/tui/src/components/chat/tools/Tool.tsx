@@ -3,6 +3,7 @@ import { Box, Text } from 'ink';
 import { useTheme } from '../../../hooks/useThemeContext.js';
 import { StatusBar } from '../status-bar/StatusBar.js';
 import { useExpandableOutput } from '../../../hooks/useExpandableOutput.js';
+import { unwrapResultOutput } from '../../../utils/tool-result.js';
 import type { ToolResult } from '../../../stores/app-store.js';
 import { StatusInfo } from '../../ui/status/StatusInfo.js';
 import type { StatusType } from '../../../types/componentTypes.js';
@@ -72,47 +73,23 @@ export const Tool = React.memo(function Tool({
 
   // Extract and format output from result
   const { output, outputLines } = useMemo(() => {
-    if (!result || result.status !== 'success') {
-      return { output: null, outputLines: [] };
-    }
+    const { obj, text } = unwrapResultOutput(result);
 
-    const rawOutput = result.output;
+    if (text) return { output: text, outputLines: text.split('\n') };
+    if (!obj) return { output: null, outputLines: [] };
+
     let outputStr: string | null = null;
-
-    // Handle various output formats
-    if (typeof rawOutput === 'string') {
-      outputStr = rawOutput;
-    } else if (rawOutput && typeof rawOutput === 'object') {
-      let obj = rawOutput as Record<string, unknown>;
-
-      // Unwrap items array if present
-      if ('items' in obj && Array.isArray(obj.items) && obj.items.length > 0) {
-        const firstItem = obj.items[0] as Record<string, unknown>;
-        if ('Json' in firstItem && typeof firstItem.Json === 'object') {
-          obj = firstItem.Json as Record<string, unknown>;
-        } else if ('Text' in firstItem && typeof firstItem.Text === 'string') {
-          outputStr = firstItem.Text;
-        } else {
-          obj = firstItem;
-        }
-      }
-
-      // Try to extract text content
-      if (!outputStr) {
-        if ('text' in obj && typeof obj.text === 'string') {
-          outputStr = obj.text;
-        } else if ('content' in obj && typeof obj.content === 'string') {
-          outputStr = obj.content;
-        } else if ('result' in obj && typeof obj.result === 'string') {
-          outputStr = obj.result;
-        } else {
-          // Fallback: pretty-print JSON
-          try {
-            outputStr = JSON.stringify(obj, null, 2);
-          } catch {
-            outputStr = null;
-          }
-        }
+    if ('text' in obj && typeof obj.text === 'string') {
+      outputStr = obj.text;
+    } else if ('content' in obj && typeof obj.content === 'string') {
+      outputStr = obj.content;
+    } else if ('result' in obj && typeof obj.result === 'string') {
+      outputStr = obj.result;
+    } else {
+      try {
+        outputStr = JSON.stringify(obj, null, 2);
+      } catch {
+        outputStr = null;
       }
     }
 

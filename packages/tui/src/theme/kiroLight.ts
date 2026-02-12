@@ -52,6 +52,9 @@ export const kiroLight: Theme = {
         bar: { truecolor: '#eb5c5c', color256: 203 }, // editorGutter.deletedBackground - darker red
         highlight: { truecolor: '#e8c2c2', color256: 217 }, // diffEditor.removedTextBackground - medium red
       },
+      unchanged: {
+        bar: { truecolor: '#BCBCBC', color256: 250 },
+      },
     },
   },
   textStyles: {

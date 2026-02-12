@@ -28,6 +28,10 @@ export enum ToolCallStatus {
 export const WRITE_TOOL_NAMES: Set<string> = new Set([ToolNameAlias.FsWrite, ToolNameAlias.Write]);
 export const READ_TOOL_NAMES: Set<string> = new Set([ToolNameAlias.FsRead, ToolNameAlias.Read]);
 export const SHELL_TOOL_NAMES: Set<string> = new Set([ToolNameAlias.ExecuteBash, ToolNameAlias.ExecuteCmd, ToolNameAlias.Shell]);
+export const WEB_SEARCH_TOOL_NAMES: Set<string> = new Set(['web_search', 'Searching the web']);
+export const WEB_FETCH_TOOL_NAMES: Set<string> = new Set(['web_fetch', 'Fetching web content']);
+export const GREP_TOOL_NAMES: Set<string> = new Set(['grep', 'grep_search']);
+export const GLOB_TOOL_NAMES: Set<string> = new Set(['glob', 'file_search']);
 
 export type ToolKind = 'edit' | 'read' | 'shell' | 'grep' | 'glob' | string;
 
