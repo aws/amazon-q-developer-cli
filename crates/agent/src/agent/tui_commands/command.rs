@@ -175,7 +175,7 @@ impl TuiCommand {
 
     /// All available commands with default args (for advertising to TUI)
     pub fn all_commands() -> Vec<TuiCommand> {
-        vec![
+        let mut commands = vec![
             TuiCommand::Help(HelpArgs::default()),
             TuiCommand::Model(ModelArgs::default()),
             TuiCommand::Agent(AgentArgs::default()),
@@ -183,7 +183,9 @@ impl TuiCommand {
             TuiCommand::Compact(CompactArgs::default()),
             TuiCommand::Clear(ClearArgs::default()),
             TuiCommand::Quit(QuitArgs::default()),
-        ]
+        ];
+        commands.sort_by_key(|cmd| cmd.name());
+        commands
     }
 }
 
