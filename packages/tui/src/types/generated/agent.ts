@@ -143,6 +143,10 @@ export interface ContextArgs {
 	verbose?: boolean;
 }
 
+/** Arguments for /help command */
+export interface HelpArgs {
+}
+
 export enum ImageFormat {
 	Gif = "gif",
 	Jpeg = "jpeg",
@@ -360,6 +364,8 @@ export enum ToolNameAlias {
  * This is distinct from ACP "slash commands" which are prompt-based workflows.
  */
 export type TuiCommand = 
+	/** Show help with all available commands */
+	| { command: "help", args: HelpArgs }
 	/** List available models or switch to a specific model */
 	| { command: "model", args: ModelArgs }
 	/** List available agents or switch to a specific agent */

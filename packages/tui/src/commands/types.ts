@@ -23,6 +23,8 @@ export interface CommandContext {
   setCurrentAgent: (agent: { name: string }) => void;
   /** Show/hide context breakdown panel */
   setShowContextBreakdown: (show: boolean) => void;
+  /** Show/hide help panel */
+  setShowHelpPanel: (show: boolean, commands?: Array<{ name: string; description: string; usage: string }>) => void;
   /** Clear conversation messages */
   clearMessages: () => void;
   /** Clear all command UI state (menus, panels) */

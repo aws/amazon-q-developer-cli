@@ -18,12 +18,13 @@ type EffectHandler = (result: CommandResult | null, ctx: CommandContext) => void
 type CommandName = TuiCommand['command'];
 
 /** Effect names - semantic actions the TUI can perform */
-type EffectName = 'updateModel' | 'updateAgent' | 'showContextPanel' | 'clearMessages' | 'quit';
+type EffectName = 'updateModel' | 'updateAgent' | 'showContextPanel' | 'showHelpPanel' | 'clearMessages' | 'quit';
 
 /**
  * Command → Effect mapping.
  */
 const commandEffects: Partial<Record<CommandName, EffectName>> = {
+  help: 'showHelpPanel',
   model: 'updateModel',
   agent: 'updateAgent',
   context: 'showContextPanel',
@@ -51,6 +52,13 @@ const effectHandlers: Record<EffectName, EffectHandler> = {
 
   showContextPanel: (_result, ctx) => {
     ctx.setShowContextBreakdown(true);
+  },
+
+  showHelpPanel: (result, ctx) => {
+    const data = result?.data as { commands?: Array<{ name: string; description: string; usage: string }> } | undefined;
+    if (data?.commands) {
+      ctx.setShowHelpPanel(true, data.commands);
+    }
   },
 
   clearMessages: (_result, ctx) => {

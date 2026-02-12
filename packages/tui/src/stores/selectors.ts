@@ -105,6 +105,8 @@ export const useUIState = () =>
       toolOutputsExpanded: state.toolOutputsExpanded,
       hasExpandableToolOutputs: state.hasExpandableToolOutputs,
       showContextBreakdown: state.showContextBreakdown,
+      showHelpPanel: state.showHelpPanel,
+      helpCommands: state.helpCommands,
     }))
   );
 
@@ -117,6 +119,7 @@ export const useUIActions = () =>
       toggleToolOutputsExpanded: state.toggleToolOutputsExpanded,
       setHasExpandableToolOutputs: state.setHasExpandableToolOutputs,
       setShowContextBreakdown: state.setShowContextBreakdown,
+      setShowHelpPanel: state.setShowHelpPanel,
     }))
   );
 

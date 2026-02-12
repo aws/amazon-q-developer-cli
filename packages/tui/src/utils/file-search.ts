@@ -1,26 +1,110 @@
-import { execSync } from 'child_process';
-import { readFileSync, existsSync } from 'fs';
+import { readdirSync, readFileSync, existsSync } from 'fs';
+import { join, relative } from 'path';
+import ignore from 'ignore';
+
+/** Maximum directory depth for file search */
+const MAX_SEARCH_DEPTH = 5;
 
 /**
- * Search for files matching a query using fd or find (case insensitive).
+ * Load .gitignore rules
+ */
+function loadGitignore(cwd: string) {
+  const ig = ignore();
+  
+  // Always ignore these (matches code-agent-sdk ALWAYS_SKIP_DIRS and fs_read DEFAULT_EXCLUDE_PATTERNS)
+  ig.add([
+    // Build outputs
+    'build',
+    'dist',
+    'out',
+    'target',
+    // Dependencies
+    'node_modules',
+    'vendor',
+    '.venv',
+    'venv',
+    '__pycache__',
+    // IDE/Tools
+    '.idea',
+    '.vscode',
+    '.git',
+    // Package caches
+    '.cache',
+    '.gradle',
+    '.npm',
+    '.cargo',
+  ]);
+  
+  // Load .gitignore if it exists
+  const gitignorePath = join(cwd, '.gitignore');
+  if (existsSync(gitignorePath)) {
+    try {
+      const content = readFileSync(gitignorePath, 'utf-8');
+      ig.add(content);
+    } catch {
+      // Ignore errors reading .gitignore
+    }
+  }
+  
+  return ig;
+}
+
+/**
+ * Recursively search for files matching query
+ */
+function searchFilesRecursive(
+  dir: string,
+  query: string,
+  depth: number,
+  maxDepth: number,
+  limit: number,
+  results: string[],
+  basePath: string,
+  ig: ReturnType<typeof ignore>
+): void {
+  if (depth > maxDepth || results.length >= limit) return;
+  
+  try {
+    const entries = readdirSync(dir, { withFileTypes: true });
+    
+    for (const entry of entries) {
+      if (results.length >= limit) break;
+      
+      const fullPath = join(dir, entry.name);
+      const relativePath = relative(basePath, fullPath);
+      
+      // Check if ignored by .gitignore rules
+      if (ig.ignores(relativePath)) continue;
+      
+      if (entry.isDirectory()) {
+        searchFilesRecursive(fullPath, query, depth + 1, maxDepth, limit, results, basePath, ig);
+      } else if (entry.isFile()) {
+        // Case-insensitive match
+        if (entry.name.toLowerCase().includes(query.toLowerCase())) {
+          results.push(relativePath);
+        }
+      }
+    }
+  } catch {
+    // Skip directories we can't read
+  }
+}
+
+/**
+ * Search for files matching a query (case insensitive).
  * Returns up to `limit` file paths relative to cwd.
+ * Respects .gitignore patterns.
  */
 export function searchFiles(query: string, limit = 20): string[] {
   if (!query) return [];
-
-  try {
-    const result = execSync(
-      `fd --type f --hidden --exclude .git --ignore-case --max-results ${limit} "${query}" 2>/dev/null || find . -type f -iname "*${query}*" 2>/dev/null | head -${limit}`,
-      { encoding: 'utf-8', maxBuffer: 1024 * 1024 }
-    );
-    return result
-      .trim()
-      .split('\n')
-      .filter(Boolean)
-      .map((p) => p.replace(/^\.\//, ''));
-  } catch {
-    return [];
-  }
+  
+  const cwd = process.cwd();
+  const ig = loadGitignore(cwd);
+  const results: string[] = [];
+  
+  searchFilesRecursive(cwd, query, 0, MAX_SEARCH_DEPTH, limit, results, cwd, ig);
+  
+  return results;
 }
 
 /**

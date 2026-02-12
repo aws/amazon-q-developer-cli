@@ -47,11 +47,14 @@ export function ContextBreakdown({ percent, tokens, model, onClose }: ContextBre
   const { getColor } = useTheme();
   const dim = getColor('secondary');
   const primary = getColor('primary');
+  const brand = getColor('brand');
   
   const displayPercent = percent ?? 0;
 
-  useInput(() => {
-    onClose();
+  useInput((_input, key) => {
+    if (key.escape) {
+      onClose();
+    }
   });
 
   return (
@@ -81,7 +84,7 @@ export function ContextBreakdown({ percent, tokens, model, onClose }: ContextBre
       </Box>
 
       <Box marginTop={1}>
-        <Text>{dim('Press any key to close')}</Text>
+        <Text>{dim('Press ')}{brand('Esc')}{dim(' to close')}</Text>
       </Box>
     </Box>
   );

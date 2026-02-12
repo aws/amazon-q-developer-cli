@@ -5,6 +5,7 @@ pub mod clear;
 pub mod compact;
 pub mod context;
 pub mod exit;
+pub mod help;
 pub mod model;
 
 use std::path::PathBuf;
@@ -41,6 +42,7 @@ pub struct CommandContext<'a> {
 /// Execute a slash command by dispatching to the appropriate module
 pub async fn execute(command: TuiCommand, ctx: &CommandContext<'_>) -> CommandResult {
     match command {
+        TuiCommand::Help(_args) => help::execute(ctx).await,
         TuiCommand::Model(ref args) => model::execute(args, ctx).await,
         TuiCommand::Agent(ref args) => agent::execute(args, ctx).await,
         TuiCommand::Context(ref args) => context::execute(args, ctx).await,

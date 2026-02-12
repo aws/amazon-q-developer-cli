@@ -160,6 +160,7 @@ interface BaseAppActions {
   setLastTurnTokens: (tokens: LastTurnTokens) => void;
   toggleContextBreakdown: () => void;
   setShowContextBreakdown: (show: boolean) => void;
+  setShowHelpPanel: (show: boolean, commands?: Array<{ name: string; description: string; usage: string }>) => void;
 
   // File attachment actions
   attachFile: (path: string) => void;
@@ -236,6 +237,8 @@ export interface AppState {
   attachedFiles: string[];
   pendingFileAttachment: { path: string; triggerPosition: number } | null;
   showContextBreakdown: boolean;
+  showHelpPanel: boolean;
+  helpCommands: Array<{ name: string; description: string; usage: string }>;
 
   // Abort controller for current stream
   currentAbortController: AbortController | null;
@@ -301,6 +304,8 @@ export const createAppStore = (props: AppStoreProps) =>
     contextUsagePercent: null,
     lastTurnTokens: null,
     showContextBreakdown: false,
+    showHelpPanel: false,
+    helpCommands: [],
     attachedFiles: [],
     pendingFileAttachment: null,
     currentAbortController: null,
@@ -1002,9 +1007,10 @@ export const createAppStore = (props: AppStoreProps) =>
         setCurrentModel: state.setCurrentModel,
         setCurrentAgent: state.setCurrentAgent,
         setShowContextBreakdown: (show) => set({ showContextBreakdown: show }),
+        setShowHelpPanel: state.setShowHelpPanel,
         clearMessages: state.clearMessages,
         clearUIState: () =>
-          set({ activeCommand: null, showContextBreakdown: false }),
+          set({ activeCommand: null, showContextBreakdown: false, showHelpPanel: false }),
       };
 
       await executeCommandWithArg(cmdName, arg, ctx);
@@ -1219,6 +1225,10 @@ export const createAppStore = (props: AppStoreProps) =>
       set({ showContextBreakdown: show });
     },
 
+    setShowHelpPanel: (show, commands = []) => {
+      set({ showHelpPanel: show, helpCommands: commands });
+    },
+
     // File attachment actions
     attachFile: (path) => {
       set((state) => ({
@@ -1270,9 +1280,6 @@ export const createAppStore = (props: AppStoreProps) =>
       const state = get();
       state.resetExitSequence();
 
-      // Add to history
-      CommandHistory.getInstance().add(trimmed);
-
       // Queue if processing
       if (state.isProcessing) {
         state.queueMessage(trimmed);
@@ -1302,9 +1309,10 @@ export const createAppStore = (props: AppStoreProps) =>
           setCurrentAgent: state.setCurrentAgent,
           setShowContextBreakdown: (show) =>
             set({ showContextBreakdown: show }),
+          setShowHelpPanel: state.setShowHelpPanel,
           clearMessages: state.clearMessages,
           clearUIState: () =>
-            set({ activeCommand: null, showContextBreakdown: false }),
+            set({ activeCommand: null, showContextBreakdown: false, showHelpPanel: false }),
         };
         await executeCommand(trimmed, ctx);
         return;

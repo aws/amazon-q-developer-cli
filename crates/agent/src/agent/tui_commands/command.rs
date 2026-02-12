@@ -20,6 +20,8 @@ use typeshare::typeshare;
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "command", content = "args", rename_all = "camelCase")]
 pub enum TuiCommand {
+    /// Show help with all available commands
+    Help(HelpArgs),
     /// List available models or switch to a specific model
     Model(ModelArgs),
     /// List available agents or switch to a specific agent
@@ -33,6 +35,12 @@ pub enum TuiCommand {
     /// Quit the application
     Quit(QuitArgs),
 }
+
+/// Arguments for /help command
+#[typeshare]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct HelpArgs {}
 
 /// Arguments for /model command
 #[typeshare]
@@ -92,6 +100,7 @@ impl TuiCommand {
     /// Command name with leading slash
     pub fn name(&self) -> &'static str {
         match self {
+            TuiCommand::Help(_) => "/help",
             TuiCommand::Model(_) => "/model",
             TuiCommand::Agent(_) => "/agent",
             TuiCommand::Context(_) => "/context",
@@ -104,6 +113,7 @@ impl TuiCommand {
     /// Human-readable description
     pub fn description(&self) -> &'static str {
         match self {
+            TuiCommand::Help(_) => "Show this help message",
             TuiCommand::Model(_) => "Select or list available models",
             TuiCommand::Agent(_) => "Select or list available agents",
             TuiCommand::Context(_) => "Show context/token usage",
@@ -113,9 +123,27 @@ impl TuiCommand {
         }
     }
 
+    /// Usage example
+    pub fn usage(&self) -> &'static str {
+        match self {
+            TuiCommand::Help(_) => "/help",
+            TuiCommand::Model(_) => "/model [model-name]",
+            TuiCommand::Agent(_) => "/agent [agent-name]",
+            TuiCommand::Context(_) => "/context",
+            TuiCommand::Compact(_) => "/compact",
+            TuiCommand::Clear(_) => "/clear",
+            TuiCommand::Quit(_) => "/quit",
+        }
+    }
+
     /// Metadata for TUI (options method, input type, etc.)
     pub fn meta(&self) -> Option<serde_json::Map<String, serde_json::Value>> {
         match self {
+            TuiCommand::Help(_) => {
+                let mut meta = serde_json::Map::new();
+                meta.insert("inputType".into(), "panel".into());
+                Some(meta)
+            },
             TuiCommand::Model(_) => {
                 let mut meta = serde_json::Map::new();
                 meta.insert("optionsMethod".into(), "_kiro.dev/commands/model/options".into());
@@ -147,6 +175,7 @@ impl TuiCommand {
     /// All available commands with default args (for advertising to TUI)
     pub fn all_commands() -> Vec<TuiCommand> {
         vec![
+            TuiCommand::Help(HelpArgs::default()),
             TuiCommand::Model(ModelArgs::default()),
             TuiCommand::Agent(AgentArgs::default()),
             TuiCommand::Context(ContextArgs::default()),

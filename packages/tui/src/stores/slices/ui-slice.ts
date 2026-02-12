@@ -18,6 +18,8 @@ export interface UIState {
   contextUsagePercent: number | null;
   lastTurnTokens: LastTurnTokens | null;
   showContextBreakdown: boolean;
+  showHelpPanel: boolean;
+  helpCommands: Array<{ name: string; description: string; usage: string }>;
 }
 
 export interface UIActions {
@@ -30,6 +32,7 @@ export interface UIActions {
   setLastTurnTokens: (tokens: LastTurnTokens) => void;
   toggleContextBreakdown: () => void;
   setShowContextBreakdown: (show: boolean) => void;
+  setShowHelpPanel: (show: boolean, commands?: Array<{ name: string; description: string; usage: string }>) => void;
 }
 
 export type UISlice = UIState & UIActions;
@@ -44,6 +47,8 @@ export const createUISlice: StateCreator<UISlice> = (set) => ({
   contextUsagePercent: null,
   lastTurnTokens: null,
   showContextBreakdown: false,
+  showHelpPanel: false,
+  helpCommands: [],
 
   // Actions
   setMode: (mode) => set({ mode }),
@@ -71,4 +76,5 @@ export const createUISlice: StateCreator<UISlice> = (set) => ({
   setLastTurnTokens: (tokens) => set({ lastTurnTokens: tokens }),
   toggleContextBreakdown: () => set((state) => ({ showContextBreakdown: !state.showContextBreakdown })),
   setShowContextBreakdown: (show) => set({ showContextBreakdown: show }),
+  setShowHelpPanel: (show, commands = []) => set({ showHelpPanel: show, helpCommands: commands }),
 });

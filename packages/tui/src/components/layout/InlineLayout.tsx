@@ -4,6 +4,7 @@ import { ConversationView } from '../ui/ConversationView';
 import { ExitHint } from '../ui/ExitHint';
 import { CommandMenu } from '../ui/CommandMenu';
 import { ActionHint } from '../ui/hint/ActionHint.js';
+import { HelpPanel } from '../ui/HelpPanel';
 import {
   PromptBar,
   type PromptBarHeader,
@@ -44,8 +45,8 @@ export const InlineLayout: React.FC = () => {
   const { dismissTransientAlert, setAgentError } = useNotificationActions();
   const { isProcessing, isCompacting, pendingApproval } = useProcessingState();
   const { respondToApproval, cancelApproval } = useApprovalState();
-  const { toolOutputsExpanded, hasExpandableToolOutputs, showContextBreakdown } = useUIState();
-  const { toggleToolOutputsExpanded, setShowContextBreakdown } = useUIActions();
+  const { toolOutputsExpanded, hasExpandableToolOutputs, showContextBreakdown, showHelpPanel, helpCommands } = useUIState();
+  const { toggleToolOutputsExpanded, setShowContextBreakdown, setShowHelpPanel } = useUIActions();
   const { sessionId, contextUsagePercent, lastTurnTokens, currentModel, currentAgent } = useContextState();
   const { activeCommand } = useCommandState();
   const { setActiveCommand, setActiveTrigger, clearCommandInput } = useCommandActions();
@@ -116,6 +117,12 @@ export const InlineLayout: React.FC = () => {
     setActiveCommand(null);
     clearCommandInput();
   }, [setShowContextBreakdown, setActiveCommand, clearCommandInput]);
+
+  const handleCloseHelpPanel = useCallback(() => {
+    setShowHelpPanel(false);
+    setActiveCommand(null);
+    clearCommandInput();
+  }, [setShowHelpPanel, setActiveCommand, clearCommandInput]);
 
   // Build the header - use SnackBar for approval, ContextBar otherwise
   const promptBarHeader = useMemo(() => {
@@ -239,6 +246,12 @@ export const InlineLayout: React.FC = () => {
               tokens={lastTurnTokens}
               model={currentModel?.name ?? null}
               onClose={handleCloseContextBreakdown}
+            />
+          )}
+          {showHelpPanel && (
+            <HelpPanel
+              commands={helpCommands}
+              onClose={handleCloseHelpPanel}
             />
           )}
           <ActionHint
