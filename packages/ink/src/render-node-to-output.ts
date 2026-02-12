@@ -1,4 +1,4 @@
-import widestLine from 'widest-line';
+import {cachedWidestLine as widestLine} from './cached-string-width.js';
 import indentString from 'indent-string';
 import Yoga from 'yoga-layout';
 import wrapText from './wrap-text.js';

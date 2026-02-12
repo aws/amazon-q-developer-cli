@@ -1,6 +1,8 @@
 import sliceAnsi from 'slice-ansi';
-import stringWidth from 'string-width';
-import widestLine from 'widest-line';
+import {
+	cachedStringWidth,
+	cachedWidestLine as widestLine,
+} from './cached-string-width.js';
 import {
 	type StyledChar,
 	styledCharsFromTokens,
@@ -8,18 +10,6 @@ import {
 	tokenize,
 } from '@alcalzone/ansi-tokenize';
 import {type OutputTransformer} from './render-node-to-output.js';
-
-// stringWidth cache to avoid repeated emoji/unicode regex per frame
-const swCache = new Map<string, number>();
-function cachedStringWidth(str: string): number {
-	let r = swCache.get(str);
-	if (r === undefined) {
-		r = stringWidth(str);
-		if (swCache.size > 10_000) swCache.clear();
-		swCache.set(str, r);
-	}
-	return r;
-}
 
 /**
 "Virtual" output class

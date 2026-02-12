@@ -1,4 +1,4 @@
-import widestLine from 'widest-line';
+import {cachedWidestLine as widestLine} from './cached-string-width.js';
 
 const cache = new Map<string, Output>();
 
