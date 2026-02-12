@@ -1,7 +1,7 @@
 ---
 doc_meta:
-  validated: 2026-01-05
-  commit: a1d370b5
+  validated: 2026-02-11
+  commit: a9a37454
   status: validated
   testable_headless: false
   category: slash_command
@@ -22,12 +22,15 @@ The `/agent create` command creates a new agent configuration with the specified
 ## Usage
 
 ```
-/agent create --name <NAME> [OPTIONS]
+/agent create <NAME> [OPTIONS]
 ```
+
+## Arguments
+
+- `<NAME>` - Name of the agent to be created (required)
 
 ## Options
 
-- `-n, --name <NAME>` - Name of the agent to be created (required)
 - `-d, --directory <DIRECTORY>` - Directory where the agent will be saved (optional)
 - `-f, --from <FROM>` - Name of existing agent to use as template (optional)
 - `-h, --help` - Print help
@@ -37,7 +40,7 @@ The `/agent create` command creates a new agent configuration with the specified
 ### Example 1: Basic Agent Creation
 
 ```
-/agent create --name my-agent
+/agent create my-agent
 ```
 
 Creates a new agent in the global agent directory.
@@ -45,7 +48,7 @@ Creates a new agent in the global agent directory.
 ### Example 2: Create in Specific Directory
 
 ```
-/agent create --name my-agent --directory ./custom-agents
+/agent create my-agent --directory ./custom-agents
 ```
 
 Creates agent in specified directory.
@@ -53,7 +56,7 @@ Creates agent in specified directory.
 ### Example 3: Create from Template
 
 ```
-/agent create --name my-agent --from python-dev
+/agent create my-agent --from python-dev
 ```
 
 Creates new agent using `python-dev` as template.
@@ -61,7 +64,7 @@ Creates new agent using `python-dev` as template.
 ### Example 4: Full Options
 
 ```
-/agent create --name my-agent --directory ./.kiro/agents --from rust-expert
+/agent create my-agent --directory ./.kiro/agents --from rust-expert
 ```
 
 Creates agent in local directory using template.

@@ -1,0 +1,4 @@
+{
+  "type": "changed",
+  "description": "Agent name is now a positional argument (e.g., 'kiro-cli agent create my-agent' instead of '--name my-agent')"
+}

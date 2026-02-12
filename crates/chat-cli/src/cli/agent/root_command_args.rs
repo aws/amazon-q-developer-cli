@@ -36,9 +36,12 @@ pub enum AgentSubcommands {
     /// Create an agent config. If path is not provided, Kiro CLI shall create this config in the
     /// global agent directory
     Create {
-        /// Name of the agent to be created
-        #[arg(long, short)]
-        name: String,
+        /// Name of the agent to be created (can also be provided via --name for backwards
+        /// compatibility)
+        name: Option<String>,
+        /// Name of the agent to be created (deprecated: use positional argument instead)
+        #[arg(long = "name", short = 'n', hide = true)]
+        name_flag: Option<String>,
         /// The directory where the agent will be saved. If not provided, the agent will be saved in
         /// the global agent directory
         #[arg(long, short)]
@@ -49,9 +52,11 @@ pub enum AgentSubcommands {
     },
     /// Edit an existing agent config
     Edit {
-        /// Name of the agent to edit
-        #[arg(long, short)]
+        /// Name of the agent to edit (can also be provided via --name for backwards compatibility)
         name: Option<String>,
+        /// Name of the agent to edit (deprecated: use positional argument instead)
+        #[arg(long = "name", short = 'n', hide = true)]
+        name_flag: Option<String>,
         /// Path to the agent config file to edit
         #[arg(long)]
         path: Option<String>,
@@ -70,8 +75,12 @@ pub enum AgentSubcommands {
     },
     /// Define a default agent to use when q chat launches
     SetDefault {
-        #[arg(long, short)]
-        name: String,
+        /// Name of the agent to set as default (can also be provided via --name for backwards
+        /// compatibility)
+        name: Option<String>,
+        /// Name of the agent to set as default (deprecated: use positional argument instead)
+        #[arg(long = "name", short = 'n', hide = true)]
+        name_flag: Option<String>,
     },
 }
 
@@ -123,7 +132,22 @@ impl AgentArgs {
                 AgentListDisplayInfo::render_list(&mut stderr, &agent_infos, false)?;
                 writeln!(stderr)?;
             },
-            Some(AgentSubcommands::Create { name, directory, from }) => {
+            Some(AgentSubcommands::Create {
+                name,
+                name_flag,
+                directory,
+                from,
+            }) => {
+                // Positional argument takes precedence over --name flag (which only exists for backwards
+                // compatibility)
+                let name = match (name, name_flag) {
+                    (Some(n), _) => n,    // Positional argument has priority
+                    (None, Some(n)) => n, // Fall back to --name flag
+                    (None, None) => {
+                        bail!("Agent name is required. Usage: {CLI_NAME} agent create <name>");
+                    },
+                };
+
                 let mut agents = Agents::load(os, None, true, &mut stderr, mcp_enabled, mcp_api_failure)
                     .await
                     .0;
@@ -151,7 +175,15 @@ impl AgentArgs {
                     path_with_file_name.display()
                 )?;
             },
-            Some(AgentSubcommands::Edit { name, path }) => {
+            Some(AgentSubcommands::Edit { name, name_flag, path }) => {
+                // Positional argument takes precedence over --name flag (which only exists for backwards
+                // compatibility)
+                let name = match (name, name_flag) {
+                    (Some(n), _) => Some(n),    // Positional argument has priority
+                    (None, Some(n)) => Some(n), // Fall back to --name flag
+                    (None, None) => None,
+                };
+
                 let agents = Agents::load(os, None, true, &mut stderr, mcp_enabled, mcp_api_failure)
                     .await
                     .0;
@@ -361,7 +393,17 @@ impl AgentArgs {
                     },
                 }
             },
-            Some(AgentSubcommands::SetDefault { name }) => {
+            Some(AgentSubcommands::SetDefault { name, name_flag }) => {
+                // Positional argument takes precedence over --name flag (which only exists for backwards
+                // compatibility)
+                let name = match (name, name_flag) {
+                    (Some(n), _) => n,    // Positional argument has priority
+                    (None, Some(n)) => n, // Fall back to --name flag
+                    (None, None) => {
+                        bail!("Agent name is required. Usage: {CLI_NAME} agent set-default <name>");
+                    },
+                };
+
                 let mut agents = Agents::load(os, None, true, &mut stderr, mcp_enabled, mcp_api_failure)
                     .await
                     .0;
@@ -377,7 +419,9 @@ impl AgentArgs {
                             StyledText::success_fg(),
                             style::Print("✓ Default agent set to '"),
                             style::Print(&agent.name),
-                            style::Print("'. This will take effect the next time q chat is launched.\n"),
+                            style::Print(format!(
+                                "'. This will take effect the next time {CLI_NAME} chat is launched.\n"
+                            )),
                             StyledText::reset(),
                         );
                     },
@@ -471,21 +515,37 @@ mod tests {
 
     #[test]
     fn test_agent_subcommand_create() {
+        // Test positional name argument
         assert_parse!(
-            ["agent", "create", "--name", "some_agent", "--from", "some_old_agent"],
+            ["agent", "create", "some_agent", "--from", "some_old_agent"],
             RootSubcommand::Agent(AgentArgs {
                 cmd: Some(AgentSubcommands::Create {
-                    name: "some_agent".to_string(),
+                    name: Some("some_agent".to_string()),
+                    name_flag: None,
                     directory: None,
                     from: Some("some_old_agent".to_string())
                 })
             })
         );
+        // Test --name flag (for backwards compatibility)
+        assert_parse!(
+            ["agent", "create", "--name", "some_agent", "--from", "some_old_agent"],
+            RootSubcommand::Agent(AgentArgs {
+                cmd: Some(AgentSubcommands::Create {
+                    name: None,
+                    name_flag: Some("some_agent".to_string()),
+                    directory: None,
+                    from: Some("some_old_agent".to_string())
+                })
+            })
+        );
+        // Test -n flag (for backwards compatibility)
         assert_parse!(
             ["agent", "create", "-n", "some_agent", "--from", "some_old_agent"],
             RootSubcommand::Agent(AgentArgs {
                 cmd: Some(AgentSubcommands::Create {
-                    name: "some_agent".to_string(),
+                    name: None,
+                    name_flag: Some("some_agent".to_string()),
                     directory: None,
                     from: Some("some_old_agent".to_string())
                 })
@@ -496,10 +556,21 @@ mod tests {
     #[test]
     fn test_agent_subcommand_edit() {
         assert_parse!(
-            ["agent", "edit", "--name", "existing_agent"],
+            ["agent", "edit", "existing_agent"],
             RootSubcommand::Agent(AgentArgs {
                 cmd: Some(AgentSubcommands::Edit {
                     name: Some("existing_agent".to_string()),
+                    name_flag: None,
+                    path: None,
+                })
+            })
+        );
+        assert_parse!(
+            ["agent", "edit", "--name", "existing_agent"],
+            RootSubcommand::Agent(AgentArgs {
+                cmd: Some(AgentSubcommands::Edit {
+                    name: None,
+                    name_flag: Some("existing_agent".to_string()),
                     path: None,
                 })
             })
@@ -508,7 +579,8 @@ mod tests {
             ["agent", "edit", "-n", "existing_agent"],
             RootSubcommand::Agent(AgentArgs {
                 cmd: Some(AgentSubcommands::Edit {
-                    name: Some("existing_agent".to_string()),
+                    name: None,
+                    name_flag: Some("existing_agent".to_string()),
                     path: None,
                 })
             })
@@ -518,23 +590,18 @@ mod tests {
             RootSubcommand::Agent(AgentArgs {
                 cmd: Some(AgentSubcommands::Edit {
                     name: None,
+                    name_flag: None,
                     path: Some("/path/to/agent.json".to_string()),
                 })
             })
         );
-        // Test that both parameters can be provided (--name takes priority)
+        // Test that both parameters can be provided
         assert_parse!(
-            [
-                "agent",
-                "edit",
-                "--name",
-                "existing_agent",
-                "--path",
-                "/path/to/agent.json"
-            ],
+            ["agent", "edit", "existing_agent", "--path", "/path/to/agent.json"],
             RootSubcommand::Agent(AgentArgs {
                 cmd: Some(AgentSubcommands::Edit {
                     name: Some("existing_agent".to_string()),
+                    name_flag: None,
                     path: Some("/path/to/agent.json".to_string()),
                 })
             })

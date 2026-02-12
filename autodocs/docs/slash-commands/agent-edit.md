@@ -1,7 +1,7 @@
 ---
 doc_meta:
-  validated: 2026-02-05
-  commit: adc1a97a
+  validated: 2026-02-11
+  commit: a9a37454
   status: validated
   testable_headless: false
   category: slash_command
@@ -22,12 +22,15 @@ The `/agent edit` command opens an existing agent configuration for editing. By 
 ## Usage
 
 ```
-/agent edit [OPTIONS]
+/agent edit [NAME] [OPTIONS]
 ```
+
+## Arguments
+
+- `[NAME]` - Name of the agent to edit (optional, defaults to current agent)
 
 ## Options
 
-- `-n, --name <NAME>` - Name of the agent to edit (defaults to current agent)
 - `--path <PATH>` - Path to the agent config file to edit
 - `-h, --help` - Print help
 
@@ -44,7 +47,7 @@ Opens the currently active agent's configuration for editing.
 ### Example 2: Edit by Name
 
 ```
-/agent edit --name python-dev
+/agent edit python-dev
 ```
 
 Opens the `python-dev` agent configuration for editing.
@@ -59,7 +62,7 @@ Opens the agent configuration file at the specified path.
 
 ## Agent Resolution
 
-When using `--name`:
+When specifying an agent name:
 1. **Local**: `.kiro/agents/` in current directory
 2. **Global**: `~/.kiro/agents/` in home directory
 

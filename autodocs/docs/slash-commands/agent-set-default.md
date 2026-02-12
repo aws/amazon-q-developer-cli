@@ -1,7 +1,7 @@
 ---
 doc_meta:
-  validated: 2026-01-05
-  commit: a1d370b5
+  validated: 2026-02-11
+  commit: a9a37454
   status: validated
   testable_headless: false
   category: slash_command
@@ -22,12 +22,15 @@ The `/agent set-default` command sets a specific agent as the default for new ch
 ## Usage
 
 ```
-/agent set-default --name <NAME>
+/agent set-default <NAME>
 ```
+
+## Arguments
+
+- `<NAME>` - Name of the agent to set as default (required)
 
 ## Options
 
-- `-n, --name <NAME>` - Name of the agent to set as default (required)
 - `-h, --help` - Print help
 
 ## Examples
@@ -35,7 +38,7 @@ The `/agent set-default` command sets a specific agent as the default for new ch
 ### Example 1: Set Default Agent
 
 ```
-/agent set-default --name python-dev
+/agent set-default python-dev
 ```
 
 **Output**:
@@ -46,7 +49,7 @@ The `/agent set-default` command sets a specific agent as the default for new ch
 ### Example 2: Set Built-in Default
 
 ```
-/agent set-default --name default
+/agent set-default default
 ```
 
 **Output**:

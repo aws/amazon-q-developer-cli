@@ -63,7 +63,6 @@ pub enum AgentSubcommand {
     /// Create a new agent with the specified name
     Create {
         /// Name of the agent to be created
-        #[arg(long, short)]
         name: String,
         /// The directory where the agent will be saved. If not provided, the agent will be saved in
         /// the global agent directory
@@ -76,7 +75,6 @@ pub enum AgentSubcommand {
     /// Edit an existing agent configuration
     Edit {
         /// Name of the agent to edit
-        #[arg(long, short)]
         name: Option<String>,
         /// Path to the agent config file to edit
         #[arg(long)]
@@ -101,7 +99,6 @@ pub enum AgentSubcommand {
     /// Define a default agent to use when kiro-cli chat launches
     SetDefault {
         /// Name of the agent to set as default
-        #[arg(long, short)]
         name: String,
     },
     /// Swap to a new agent at runtime

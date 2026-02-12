@@ -1,7 +1,7 @@
 ---
 doc_meta:
-  validated: 2026-02-05
-  commit: adc1a97a
+  validated: 2026-02-11
+  commit: a9a37454
   status: validated
   testable_headless: true
   category: command
@@ -55,7 +55,7 @@ kiro-cli agent validate --path ~/.kiro/agents/my-agent.json
 #### Use Case 3: Create New Agent
 
 ```bash
-kiro-cli agent create --name example-agent
+kiro-cli agent create example-agent
 ```
 
 **What this does**: Creates new agent configuration file with specified name.
@@ -63,7 +63,7 @@ kiro-cli agent create --name example-agent
 #### Use Case 4: Edit Existing Agent
 
 ```bash
-kiro-cli agent edit --name my-agent
+kiro-cli agent edit my-agent
 ```
 
 **What this does**: Opens agent configuration in default editor for modification.
@@ -71,7 +71,7 @@ kiro-cli agent edit --name my-agent
 #### Use Case 5: Set Default Agent
 
 ```bash
-kiro-cli agent set-default --name rust-expert
+kiro-cli agent set-default rust-expert
 ```
 
 **What this does**: Sets specified agent as default for new chat sessions.
@@ -110,11 +110,13 @@ kiro-cli agent validate --path <PATH>
 Create new agent configuration.
 
 ```bash
-kiro-cli agent create --name <AGENT_NAME> [--directory <DIR>] [--from <TEMPLATE>]
+kiro-cli agent create <AGENT_NAME> [--directory <DIR>] [--from <TEMPLATE>]
 ```
 
-**Parameters**:
-- `--name, -n`: Name for new agent (required)
+**Arguments**:
+- `<AGENT_NAME>`: Name for new agent (required)
+
+**Options**:
 - `--directory, -d`: Directory to save agent (optional, defaults to global)
 - `--from, -f`: Template agent to copy from (optional)
 
@@ -125,11 +127,13 @@ kiro-cli agent create --name <AGENT_NAME> [--directory <DIR>] [--from <TEMPLATE>
 Edit existing agent configuration.
 
 ```bash
-kiro-cli agent edit [--name <AGENT_NAME>] [--path <PATH>]
+kiro-cli agent edit [AGENT_NAME] [--path <PATH>]
 ```
 
-**Parameters**:
-- `--name, -n`: Name of agent to edit (defaults to current agent)
+**Arguments**:
+- `[AGENT_NAME]`: Name of agent to edit (optional, defaults to current agent)
+
+**Options**:
 - `--path`: Path to agent configuration file
 
 **Opens**: Agent configuration in default editor.
@@ -151,11 +155,11 @@ kiro-cli agent migrate
 Set default agent for new chat sessions.
 
 ```bash
-kiro-cli agent set-default --name <AGENT_NAME>
+kiro-cli agent set-default <AGENT_NAME>
 ```
 
-**Parameters**:
-- `--name, -n`: Name of agent to set as default (required)
+**Arguments**:
+- `<AGENT_NAME>`: Name of agent to set as default (required)
 
 ### help
 
@@ -202,7 +206,7 @@ kiro-cli agent validate --path ~/.kiro/agents/rust-expert.json
 ### Example 3: Create New Agent
 
 ```bash
-kiro-cli agent create --name code-reviewer
+kiro-cli agent create code-reviewer
 ```
 
 **Expected Output**:
@@ -219,7 +223,7 @@ kiro-cli agent edit
 **Expected Output**: Opens current agent's configuration in default editor.
 
 ```bash
-kiro-cli agent edit --name rust-expert
+kiro-cli agent edit rust-expert
 ```
 
 **Expected Output**: Opens `rust-expert` agent configuration in default editor.
@@ -227,7 +231,7 @@ kiro-cli agent edit --name rust-expert
 ### Example 5: Attempt to Edit Built-in Agent
 
 ```bash
-kiro-cli agent edit --name kiro_default
+kiro-cli agent edit kiro_default
 ```
 
 **Expected Output**:
@@ -238,7 +242,7 @@ Cannot edit built-in agent 'kiro_default'. Create a new agent with 'kiro-cli age
 ### Example 5: Set Default Agent
 
 ```bash
-kiro-cli agent set-default --name python-dev
+kiro-cli agent set-default python-dev
 ```
 
 **Expected Output**:
