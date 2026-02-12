@@ -4476,7 +4476,12 @@ impl ChatSession {
             is_code_intelligence_active(&self.conversation.code_intelligence_client, &self.conversation.agents);
 
         // Check if context usage indicator is enabled
-        let usage_percentage = if ExperimentManager::is_enabled(os, ExperimentName::ContextUsageIndicator) {
+        let usage_percentage = if os
+            .database
+            .settings
+            .get_bool(Setting::EnabledContextUsageIndicator)
+            .unwrap_or(true)
+        {
             // Prefer backend value over local estimate
             if let Some(backend_pct) = self.conversation.get_backend_context_percentage() {
                 Some(backend_pct)

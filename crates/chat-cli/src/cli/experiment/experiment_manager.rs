@@ -12,7 +12,6 @@ pub enum ExperimentName {
     TangentMode,
     TodoList,
     Checkpoint,
-    ContextUsageIndicator,
     Delegate,
 }
 
@@ -24,7 +23,6 @@ impl ExperimentName {
             Self::TangentMode => "Tangent Mode",
             Self::TodoList => "Todo Lists",
             Self::Checkpoint => "Checkpoint",
-            Self::ContextUsageIndicator => "Context Usage Indicator",
             Self::Delegate => "Delegate",
         }
     }
@@ -101,13 +99,6 @@ static AVAILABLE_EXPERIMENTS: &[Experiment] = &[
             "/checkpoint diff",
             "/checkpoint clean",
         ],
-    },
-    Experiment {
-        experiment_name: ExperimentName::ContextUsageIndicator,
-        description: "Shows context usage percentage in the prompt (e.g., [rust-agent] 6% >)",
-        setting_key: Setting::EnabledContextUsageIndicator,
-        enabled: true,
-        commands: &[],
     },
     Experiment {
         experiment_name: ExperimentName::Delegate,
