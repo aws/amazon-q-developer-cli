@@ -746,8 +746,7 @@ fn classify_error_kind<T: ProvideErrorMetadata, R>(
     let contains = |haystack: &[u8], needle: &[u8]| haystack.windows(needle.len()).any(|v| v == needle);
 
     let is_throttling = status_code.is_some_and(|status| status == 429);
-    let is_context_window_overflow =
-        contains(body, b"Input is too long.") || contains(body, b"prompt is too long");
+    let is_context_window_overflow = contains(body, b"Input is too long.") || contains(body, b"prompt is too long");
     let is_model_unavailable = contains(body, b"INSUFFICIENT_MODEL_CAPACITY")
         // Legacy error response fallback
         || (model_id_opt.is_some()
