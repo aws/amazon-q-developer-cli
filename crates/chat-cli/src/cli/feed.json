@@ -12,6 +12,110 @@
     },
     {
       "type": "release",
+      "date": "2026-02-12",
+      "version": "1.26.0",
+      "title": "Version 1.26.0",
+      "changes": [
+        {
+          "type": "added",
+          "description": "Implement @file and @directory expansion for inline content references"
+        },
+        {
+          "type": "fixed",
+          "description": "Interactive shell prompts now display immediately without waiting for newlines"
+        },
+        {
+          "type": "fixed",
+          "description": "Respect --no-interactive flag in subagent indicator"
+        },
+        {
+          "type": "added",
+          "description": "Skills from .kiro/skills/ and ~/.kiro/skills/ are now automatically available to the default agent"
+        },
+        {
+          "type": "fixed",
+          "description": "Show glob patterns in /context show output for easier removal"
+        },
+        {
+          "type": "changed",
+          "description": "Agent edit commands now default to editing the current agent when no arguments are provided"
+        },
+        {
+          "type": "added",
+          "description": "KIRO_LOG_NO_COLOR environment variable to disable colored log output"
+        },
+        {
+          "type": "fixed",
+          "description": "Compaction failures in the subagent tool and ACP subcommand"
+        },
+        {
+          "type": "fixed",
+          "description": "Support agent lookup when filename differs from name field"
+        },
+        {
+          "type": "added",
+          "description": "Update the shell tool with a working_dir parameter to prevent the model from prefixing all commands with cd"
+        },
+        {
+          "type": "changed",
+          "description": "Remove tool description truncation and warn about large descriptions instead"
+        },
+        {
+          "type": "added",
+          "description": "Agent name tab completion and ghost text hints for /agent swap and /agent delete commands"
+        },
+        {
+          "type": "fixed",
+          "description": "LSP client now reports clientInfo (name and version) to language servers"
+        },
+        {
+          "type": "added",
+          "description": "Display estimated token counts per tool and totals per origin in /tools output"
+        },
+        {
+          "type": "added",
+          "description": "Support --agent flag for the acp subcommand"
+        },
+        {
+          "type": "fixed",
+          "description": "Fix default agent loading for ACP"
+        },
+        {
+          "type": "added",
+          "description": "Add code tool for ACP and subagents"
+        },
+        {
+          "type": "fixed",
+          "description": "Fix /clear command showing garbled ANSI output instead of confirmation prompt"
+        },
+        {
+          "type": "fixed",
+          "description": "Deduplicate steering directory patterns in /context show when running from home directory"
+        },
+        {
+          "type": "added",
+          "description": "Enable /help --legacy <command> for command-specific help"
+        },
+        {
+          "type": "fixed",
+          "description": "Gracefully shut down MCP server processes on CLI exit to prevent leaked child processes"
+        },
+        {
+          "type": "added",
+          "description": "Add dynamic model tab completion with fuzzy matching and ghost text hints for /model command"
+        },
+        {
+          "type": "added",
+          "description": "Add chat.enablePromptHints setting to control startup hint display (default: true)"
+        },
+        {
+          "type": "changed",
+          "description": "Enhanced introspect search algorithm for better accuracy"
+        }
+      ]
+    },
+    {
+      "type": "release",
       "date": "2026-02-03",
       "version": "1.25.0",
       "title": "Version 1.25.0",

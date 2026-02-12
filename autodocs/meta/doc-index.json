@@ -1,5 +1,5 @@
 {
-  "generated_at": "2026-02-09T11:24:44.742207",
+  "generated_at": "2026-02-12T15:19:52.740994",
   "total_docs": 95,
   "by_category": {
     "command": [
@@ -259,7 +259,7 @@
         "slash-mcp",
         "agent-config"
       ],
-      "validated": "2025-12-19",
+      "validated": "2026-01-28",
       "status": "validated"
     },
     {
@@ -427,14 +427,17 @@
         "file",
         "directory",
         "reference",
+        "at",
+        "path",
         "inline",
         "context",
         "tree",
         "quoted"
       ],
       "related": [
-        "slash-chat",
-        "tab-completion"
+        "prompts",
+        "fs-read",
+        "context"
       ],
       "validated": "2026-02-09",
       "status": "validated"
@@ -1510,7 +1513,7 @@
         "cmd-mcp",
         "agent-config"
       ],
-      "validated": "2026-01-27",
+      "validated": "2026-01-28",
       "status": "validated"
     },
     {
@@ -1524,13 +1527,14 @@
         "ai",
         "claude",
         "select",
-        "switch"
+        "switch",
+        "autocomplete"
       ],
       "related": [
         "default-model",
         "cmd-chat"
       ],
-      "validated": "2025-12-19",
+      "validated": "2026-01-26",
       "status": "validated"
     },
     {
@@ -1680,13 +1684,14 @@
         "permissions",
         "trust",
         "schema",
-        "approve"
+        "approve",
+        "tokens"
       ],
       "related": [
         "agent-config",
         "cmd-chat"
       ],
-      "validated": "2026-01-27",
+      "validated": "2026-02-09",
       "status": "validated"
     },
     {
