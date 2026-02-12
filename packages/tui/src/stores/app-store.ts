@@ -848,9 +848,33 @@ export const createAppStore = (props: AppStoreProps) =>
           currentAbortController.abort();
           set({ currentAbortController: null });
         }
+        
+        // Cancel any pending approval
+        get().cancelApproval();
+        
         // Then notify backend
         await kiro.cancel();
-        set({ isProcessing: false });
+        
+        // Mark any unfinished tool uses as finished with cancelled status
+        set((state) => {
+          const hasUnfinishedToolCalls = state.messages.some(
+            (msg) => msg.role === MessageRole.ToolUse && !msg.isFinished
+          );
+          
+          if (hasUnfinishedToolCalls) {
+            return {
+              messages: state.messages.map((msg) =>
+                msg.role === MessageRole.ToolUse && !msg.isFinished
+                  ? { ...msg, isFinished: true, result: { status: 'cancelled' } }
+                  : msg
+              ),
+              isProcessing: false,
+            };
+          }
+          
+          return { isProcessing: false };
+        });
+        
         get().showTransientAlert({
           message: 'Cancelled streaming',
           status: 'info',

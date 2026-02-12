@@ -44,11 +44,12 @@ export const ToolUseMessage = React.memo<ToolUseMessageProps>(function ToolUseMe
   // Map tool status to StatusBar status icon
   const statusIcon: StatusType | undefined = useMemo(() => {
     if (status === ToolUseStatus.Rejected) return 'error';
+    if (result?.status === 'cancelled') return 'error';
     if (status === ToolUseStatus.Approved && isFinished) return 'success';
     if (status === ToolUseStatus.Pending) return 'warning';
     if (isFinished) return 'success';
     return undefined; // In progress, no icon
-  }, [status, isFinished]);
+  }, [status, isFinished, result]);
 
   return (
     <StatusBar status={statusIcon} barColor={barColor}>

@@ -12,10 +12,14 @@ export const AppContainer: React.FC = () => {
   const resetExitSequence = useAppStore((state) => state.resetExitSequence);
   const clearCommandInput = useAppStore((state) => state.clearCommandInput);
   const commandInputValue = useAppStore((state) => state.commandInputValue);
+  const isProcessing = useAppStore((state) => state.isProcessing);
+  const cancelMessage = useAppStore((state) => state.cancelMessage);
 
   useKeypress((userInput, key) => {
     if (key.ctrl && userInput === 'c') {
-      if (commandInputValue) {
+      if (isProcessing) {
+        cancelMessage();
+      } else if (commandInputValue) {
         clearCommandInput();
         resetExitSequence();
       } else {

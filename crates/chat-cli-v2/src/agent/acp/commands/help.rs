@@ -9,7 +9,6 @@ use super::CommandContext;
 
 pub async fn execute(_ctx: &CommandContext<'_>) -> CommandResult {
     let commands = TuiCommand::all_commands();
-
     let commands_json: Vec<serde_json::Value> = commands
         .iter()
         .map(|cmd| {
