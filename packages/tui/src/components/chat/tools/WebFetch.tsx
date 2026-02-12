@@ -64,7 +64,10 @@ export const WebFetch = React.memo(function WebFetch({
     );
   }
 
-  const targetWithSummary = summary ? `${target} (${summary})` : target;
-
-  return <StatusInfo title={title} target={targetWithSummary} shimmer={!isFinished} />;
+  return (
+    <Box flexDirection="column">
+      <StatusInfo title={title} target={target} shimmer={!isFinished} />
+      {isFinished && summary && <Text>{getColor('secondary')(summary)}</Text>}
+    </Box>
+  );
 });

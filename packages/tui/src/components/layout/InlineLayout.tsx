@@ -255,7 +255,7 @@ export const InlineLayout: React.FC = () => {
             />
           )}
           <ActionHint
-            text="^O to collapse output"
+            text="Showing detailed output · ctrl+o to toggle"
             visible={toolOutputsExpanded}
           />
           <ExitHint />

@@ -1,106 +1,150 @@
 import React from 'react';
 import { Write } from './Write.js';
 import { Card } from '../../ui/card/Card.js';
+import { StatusBar } from '../status-bar/StatusBar.js';
 
 const meta = {
   component: Write,
   parameters: {
     layout: 'fullscreen',
-    storyOrder: ['InCard', 'InCardLarge', 'Standalone', 'StandaloneLarge'],
+    storyOrder: [
+      'Writing',
+      'Wrote',
+      'Created',
+      'Replaced',
+      'Inserted',
+    ],
   },
   tags: ['autodocs'],
 };
 
 export default meta;
 
-// Sample code for diff examples
-const simpleOldCode = `function greet(name) {
+const oldCode = `function greet(name) {
   console.log("Hello " + name);
 }`;
 
-const simpleNewCode = `function greet(name) {
+const newCode = `function greet(name) {
   console.log("Hello, " + name + "!");
 }`;
 
-const complexOldCode = `function calculateSum(a, b) {
-  return a + b;
-}
+const newFileContent = `import { useState } from 'react';
 
-function multiply(x, y) {
-  return x * y;
-}
+export function useCounter(initial = 0) {
+  const [count, setCount] = useState(initial);
+  return { count, increment: () => setCount(c => c + 1) };
+}`;
 
-const result = calculateSum(5, 3);
-console.log(result);
-export { calculateSum };`;
-
-const complexNewCode = `function calculateSum(a, b) {
-  return a + b;
-}
-
-function multiply(x, y) {
-  return x * y;
-}
-
-function divide(x, y) {
-  return x / y;
-}
-
-const result = calculateSum(5, 3);
-console.log('Result:', result);
-export { calculateSum, divide };`;
-
-// Write inside Card context (shows colored bars)
-export const InCard = {
-  parameters: {
-    docs: {
-      storyDescription:
-        'Write inside Card - shows red/green/purple bars for removed/added/unchanged lines',
-    },
-  },
+// Writing in progress (shimmer, no diff summary)
+export const Writing = {
   render: () => (
     <Card active={true}>
-      <Write oldText={simpleOldCode} newText={simpleNewCode} filePath="greet.js" />
+      <StatusBar>
+        <Write
+          oldText=""
+          newText=""
+          content={JSON.stringify({
+            command: 'strReplace',
+            path: 'src/utils/helpers.ts',
+            oldStr: oldCode,
+            newStr: newCode,
+          })}
+          isFinished={false}
+        />
+      </StatusBar>
     </Card>
   ),
 };
 
-export const InCardLarge = {
-  parameters: {
-    docs: {
-      storyDescription: 'Larger Write inside Card - shows complex diff with colored bars',
-    },
-  },
+// Wrote (strReplace finished)
+export const Wrote = {
   render: () => (
     <Card active={true}>
-      <Write oldText={complexOldCode} newText={complexNewCode} filePath="utils.js" />
+      <StatusBar status="success">
+        <Write
+          oldText=""
+          newText=""
+          content={JSON.stringify({
+            command: 'strReplace',
+            path: 'src/utils/helpers.ts',
+            oldStr: oldCode,
+            newStr: newCode,
+          })}
+          isFinished={true}
+        />
+      </StatusBar>
     </Card>
   ),
 };
 
-// Write standalone (without Card context)
-export const Standalone = {
-  parameters: {
-    docs: {
-      storyDescription: 'Write standalone (no Card context, no bars)',
-    },
-  },
-  args: {
-    oldText: simpleOldCode,
-    newText: simpleNewCode,
-    filePath: 'greet.js',
-  },
+// Created a new file
+export const Created = {
+  render: () => (
+    <Card active={true}>
+      <StatusBar status="success">
+        <Write
+          oldText=""
+          newText=""
+          content={JSON.stringify({
+            command: 'create',
+            path: 'src/hooks/useCounter.ts',
+            content: newFileContent,
+          })}
+          isFinished={true}
+        />
+      </StatusBar>
+    </Card>
+  ),
 };
 
-export const StandaloneLarge = {
-  parameters: {
-    docs: {
-      storyDescription: 'Larger Write standalone (no Card context, no bars)',
-    },
-  },
-  args: {
-    oldText: complexOldCode,
-    newText: complexNewCode,
-    filePath: 'utils.js',
-  },
+// Replaced in file
+export const Replaced = {
+  render: () => (
+    <Card active={true}>
+      <StatusBar status="success">
+        <Write
+          oldText=""
+          newText=""
+          content={JSON.stringify({
+            command: 'strReplace',
+            path: 'src/components/Button.tsx',
+            oldStr: `const Button = ({ label }) => {
+  return <button>{label}</button>;
+};`,
+            newStr: `const Button = ({ label, onClick, disabled = false }) => {
+  return (
+    <button onClick={onClick} disabled={disabled}>
+      {label}
+    </button>
+  );
+};`,
+          })}
+          isFinished={true}
+        />
+      </StatusBar>
+    </Card>
+  ),
 };
+
+// Inserted at a specific line
+export const Inserted = {
+  render: () => (
+    <Card active={true}>
+      <StatusBar status="success">
+        <Write
+          oldText=""
+          newText=""
+          content={JSON.stringify({
+            command: 'insert',
+            path: 'src/index.ts',
+            insertLine: 5,
+            content: `import { useCounter } from './hooks/useCounter';`,
+          })}
+          isFinished={true}
+        />
+      </StatusBar>
+    </Card>
+  ),
+};
+
+

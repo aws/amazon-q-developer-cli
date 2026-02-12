@@ -10,6 +10,8 @@ export interface UseExpandableOutputOptions {
   previewCount: number;
   /** Whether this is a static/past turn (no expandable output) */
   isStatic?: boolean;
+  /** Unit label for hidden items (e.g., "lines", "files", "entries"). Defaults to "more" */
+  unit?: string;
 }
 
 export interface UseExpandableOutputResult {
@@ -36,6 +38,7 @@ export function useExpandableOutput({
   totalItems,
   previewCount,
   isStatic = false,
+  unit = 'more',
 }: UseExpandableOutputOptions): UseExpandableOutputResult {
   // Try to get StatusBar context for remeasure
   let statusBarContext: ReturnType<typeof useStatusBar> | null = null;
@@ -73,7 +76,7 @@ export function useExpandableOutput({
     }
   }, [expanded, isStatic, requestRemeasure]);
 
-  const expandHint = hiddenCount > 0 ? `...+${hiddenCount} more (^O to expand)` : '';
+  const expandHint = hiddenCount > 0 ? `...+${hiddenCount} ${unit} (ctrl+o to toggle)` : '';
 
   return {
     expanded,

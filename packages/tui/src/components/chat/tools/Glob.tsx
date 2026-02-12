@@ -8,7 +8,7 @@ import { parseToolArg, unwrapResultOutput } from '../../../utils/tool-result.js'
 import type { ToolResult } from '../../../stores/app-store.js';
 import type { StatusType } from '../../../types/componentTypes.js';
 
-const PREVIEW_FILES = 5;
+const PREVIEW_FILES = 3;
 
 /** Parsed glob output structure */
 interface GlobOutput {
@@ -80,10 +80,11 @@ export const Glob = React.memo(function Glob({
   const filePaths = globOutput?.filePaths || [];
 
   // Use expandable output hook
-  const { expanded, hiddenCount } = useExpandableOutput({
+  const { expanded, expandHint, hiddenCount } = useExpandableOutput({
     totalItems: filePaths.length,
     previewCount: PREVIEW_FILES,
     isStatic,
+    unit: 'files',
   });
 
   // Extract filename from path
@@ -91,24 +92,24 @@ export const Glob = React.memo(function Glob({
     return path.split('/').pop() || path;
   };
 
-  // Build summary text
-  const getSummary = (): string => {
-    if (!globOutput) {
-      return globPattern ? `"${globPattern}"` : '';
-    }
-    if (globOutput.message) {
-      return globOutput.message;
-    }
-    const pattern = globPattern ? `"${globPattern}"` : 'pattern';
-    return `${globOutput.totalFiles} file${globOutput.totalFiles !== 1 ? 's' : ''} matching ${pattern}`;
+  // Build secondary summary text (shown on second line)
+  const getSecondarySummary = (): string | null => {
+    if (!globOutput || !isFinished) return null;
+    if (globOutput.message) return globOutput.message;
+    if (globOutput.totalFiles === 0) return 'no matches';
+    return `${globOutput.totalFiles} file${globOutput.totalFiles !== 1 ? 's' : ''}`;
   };
 
+  const target = globPattern ? `"${globPattern}"` : undefined;
+
   const renderContent = () => {
+    const secondarySummary = getSecondarySummary();
+
     // Error state
     if (result?.status === 'error') {
       return (
         <Box flexDirection="column">
-          <StatusInfo title={title} target={globPattern ? `"${globPattern}"` : undefined} shimmer={!isFinished} />
+          <StatusInfo title={title} target={target} shimmer={!isFinished} />
           <Box marginLeft={2}>
             <Text>{getColor('error')(result.error)}</Text>
           </Box>
@@ -118,27 +119,38 @@ export const Glob = React.memo(function Glob({
 
     // No result yet or still searching
     if (!globOutput) {
-      return <StatusInfo title={title} target={globPattern ? `"${globPattern}"` : undefined} shimmer={!isFinished} />;
+      return <StatusInfo title={title} target={target} shimmer={!isFinished} />;
     }
 
-    // No files found
+    // No files found or message
     if (globOutput.totalFiles === 0 || globOutput.message) {
-      return <StatusInfo title={title} target={getSummary()} shimmer={!isFinished} />;
+      return (
+        <Box flexDirection="column">
+          <StatusInfo title={title} target={target} shimmer={!isFinished} />
+          {secondarySummary && <Text>{getColor('secondary')(secondarySummary)}</Text>}
+        </Box>
+      );
     }
 
     // Static view: just show summary
     if (isStatic) {
-      return <StatusInfo title={title} target={getSummary()} shimmer={!isFinished} />;
+      return (
+        <Box flexDirection="column">
+          <StatusInfo title={title} target={target} shimmer={!isFinished} />
+          {secondarySummary && <Text>{getColor('secondary')(secondarySummary)}</Text>}
+        </Box>
+      );
     }
 
     // Expanded view: show all files
     if (expanded) {
       return (
         <Box flexDirection="column">
-          <StatusInfo title={title} target={getSummary()} shimmer={!isFinished} />
+          <StatusInfo title={title} target={target} shimmer={!isFinished} />
+          {secondarySummary && <Text>{getColor('secondary')(secondarySummary)}</Text>}
           {filePaths.map((filePath, i) => (
             <Box key={i} marginLeft={2}>
-              <Text>{getColor('secondary')(`→ ${getFileName(filePath)}`)}</Text>
+              <Text>{getColor('primary')(`→ ${getFileName(filePath)}`)}</Text>
             </Box>
           ))}
           {globOutput.truncated && (
@@ -153,19 +165,18 @@ export const Glob = React.memo(function Glob({
     // Collapsed view: show preview
     return (
       <Box flexDirection="column">
-        <StatusInfo title={title} target={getSummary()} shimmer={!isFinished} />
+        <StatusInfo title={title} target={target} shimmer={!isFinished} />
+        {secondarySummary && <Text>{getColor('secondary')(secondarySummary)}</Text>}
         {filePaths.slice(0, PREVIEW_FILES).map((filePath, i) => (
           <Box key={i} marginLeft={2}>
-            <Text>{getColor('secondary')(`→ ${getFileName(filePath)}`)}</Text>
+            <Text>{getColor('primary')(`→ ${getFileName(filePath)}`)}</Text>
           </Box>
         ))}
         {(hiddenCount > 0 || globOutput.truncated) && (
           <Box marginLeft={2}>
             <Text>
               {getColor('secondary')(
-                hiddenCount > 0
-                  ? `...+${hiddenCount} files (^O to expand)`
-                  : '(^O to expand)'
+                expandHint || '(ctrl+o to toggle)'
               )}
             </Text>
           </Box>

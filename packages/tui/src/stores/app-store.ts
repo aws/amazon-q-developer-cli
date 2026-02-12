@@ -957,6 +957,22 @@ export const createAppStore = (props: AppStoreProps) =>
     cancelApproval: () => {
       const { pendingApproval } = get();
       if (pendingApproval) {
+        const toolCallId = pendingApproval.toolCall.toolCallId;
+
+        // Mark the tool call as cancelled
+        set((state) => ({
+          messages: state.messages.map((msg) => {
+            if (msg.role === MessageRole.ToolUse && msg.id === toolCallId) {
+              return {
+                ...msg,
+                isFinished: true,
+                result: { status: 'cancelled' as const },
+              };
+            }
+            return msg;
+          }),
+        }));
+
         pendingApproval.resolve({ outcome: 'cancelled' });
         set({ pendingApproval: null });
       }

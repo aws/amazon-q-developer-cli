@@ -82,10 +82,11 @@ export const Read = React.memo(function Read({
   }, [content]);
 
   // Use expandable output hook
-  const { expanded, hiddenCount } = useExpandableOutput({
+  const { expanded, expandHint } = useExpandableOutput({
     totalItems: ops.length,
     previewCount: PREVIEW_FILES,
     isStatic,
+    unit: 'files',
   });
 
   const title = isFinished ? 'Read' : name;
@@ -140,9 +141,9 @@ export const Read = React.memo(function Read({
             <Text>{getColor('secondary')(`→ ${getFileName(op.path)}`)}</Text>
           </Box>
         ))}
-        {hiddenCount > 0 && (
+        {expandHint && (
           <Box marginLeft={2}>
-            <Text>{getColor('secondary')(`...+${hiddenCount} files (^O to expand)`)}</Text>
+            <Text>{getColor('secondary')(expandHint)}</Text>
           </Box>
         )}
       </Box>

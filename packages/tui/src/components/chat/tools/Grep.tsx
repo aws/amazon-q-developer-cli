@@ -91,10 +91,11 @@ export const Grep = React.memo(function Grep({
   const results = grepOutput?.results || [];
 
   // Use expandable output hook
-  const { expanded, hiddenCount } = useExpandableOutput({
+  const { expanded, expandHint, hiddenCount } = useExpandableOutput({
     totalItems: results.length,
     previewCount: PREVIEW_FILES,
     isStatic,
+    unit: 'files',
   });
 
   // Extract filename from path
@@ -102,24 +103,24 @@ export const Grep = React.memo(function Grep({
     return path.split('/').pop() || path;
   };
 
-  // Build summary text
-  const getSummary = (): string => {
-    if (!grepOutput) {
-      return searchPattern ? `"${searchPattern}"` : '';
-    }
-    if (grepOutput.message) {
-      return grepOutput.message;
-    }
-    const pattern = searchPattern ? `"${searchPattern}"` : 'pattern';
-    return `${pattern} → ${grepOutput.numMatches} match${grepOutput.numMatches !== 1 ? 'es' : ''} in ${grepOutput.numFiles} file${grepOutput.numFiles !== 1 ? 's' : ''}`;
+  // Build secondary summary text (shown on second line)
+  const getSecondarySummary = (): string | null => {
+    if (!grepOutput || !isFinished) return null;
+    if (grepOutput.message) return grepOutput.message;
+    if (grepOutput.numMatches === 0) return 'no matches';
+    return `${grepOutput.numMatches} match${grepOutput.numMatches !== 1 ? 'es' : ''} in ${grepOutput.numFiles} file${grepOutput.numFiles !== 1 ? 's' : ''}`;
   };
 
+  const target = searchPattern ? `"${searchPattern}"` : undefined;
+
   const renderContent = () => {
+    const secondarySummary = getSecondarySummary();
+
     // Error state
     if (result?.status === 'error') {
       return (
         <Box flexDirection="column">
-          <StatusInfo title={title} target={searchPattern ? `"${searchPattern}"` : undefined} shimmer={!isFinished} />
+          <StatusInfo title={title} target={target} shimmer={!isFinished} />
           <Box marginLeft={2}>
             <Text>{getColor('error')(result.error)}</Text>
           </Box>
@@ -129,34 +130,45 @@ export const Grep = React.memo(function Grep({
 
     // No result yet or still searching
     if (!grepOutput) {
-      return <StatusInfo title={title} target={searchPattern ? `"${searchPattern}"` : undefined} shimmer={!isFinished} />;
+      return <StatusInfo title={title} target={target} shimmer={!isFinished} />;
     }
 
-    // No matches found
+    // No matches found or message
     if (grepOutput.numMatches === 0 || grepOutput.message) {
-      return <StatusInfo title={title} target={getSummary()} shimmer={!isFinished} />;
+      return (
+        <Box flexDirection="column">
+          <StatusInfo title={title} target={target} shimmer={!isFinished} />
+          {secondarySummary && <Text>{getColor('secondary')(secondarySummary)}</Text>}
+        </Box>
+      );
     }
 
     // Static view: just show summary
     if (isStatic) {
-      return <StatusInfo title={title} target={getSummary()} shimmer={!isFinished} />;
+      return (
+        <Box flexDirection="column">
+          <StatusInfo title={title} target={target} shimmer={!isFinished} />
+          {secondarySummary && <Text>{getColor('secondary')(secondarySummary)}</Text>}
+        </Box>
+      );
     }
 
     // Expanded view: show all results
     if (expanded) {
       return (
         <Box flexDirection="column">
-          <StatusInfo title={title} target={getSummary()} shimmer={!isFinished} />
+          <StatusInfo title={title} target={target} shimmer={!isFinished} />
+          {secondarySummary && <Text>{getColor('secondary')(secondarySummary)}</Text>}
           {results.map((fileResult, i) => (
             <Box key={i} flexDirection="column" marginLeft={2}>
               <Text>
-                {getColor('secondary')(`→ ${getFileName(fileResult.file)}`)}
+                {getColor('primary')(`→ ${getFileName(fileResult.file)}`)}
                 {' '}
-                {getColor('muted')(`(${fileResult.count})`)}
+                {getColor('secondary')(`(${fileResult.count})`)}
               </Text>
               {fileResult.matches?.map((match, j) => (
                 <Box key={j} marginLeft={2}>
-                  <Text>{getColor('muted')(match)}</Text>
+                  <Text>{getColor('secondary')(match)}</Text>
                 </Box>
               ))}
             </Box>
@@ -173,22 +185,23 @@ export const Grep = React.memo(function Grep({
     // Collapsed view: show preview
     return (
       <Box flexDirection="column">
-        <StatusInfo title={title} target={getSummary()} shimmer={!isFinished} />
+        <StatusInfo title={title} target={target} shimmer={!isFinished} />
+        {secondarySummary && <Text>{getColor('secondary')(secondarySummary)}</Text>}
         {results.slice(0, PREVIEW_FILES).map((fileResult, i) => (
           <Box key={i} flexDirection="column" marginLeft={2}>
             <Text>
-              {getColor('secondary')(`→ ${getFileName(fileResult.file)}`)}
+              {getColor('primary')(`→ ${getFileName(fileResult.file)}`)}
               {' '}
-              {getColor('muted')(`(${fileResult.count})`)}
+              {getColor('secondary')(`(${fileResult.count})`)}
             </Text>
             {fileResult.matches?.slice(0, PREVIEW_MATCHES_PER_FILE).map((match, j) => (
               <Box key={j} marginLeft={2}>
-                <Text>{getColor('muted')(match)}</Text>
+                <Text>{getColor('secondary')(match)}</Text>
               </Box>
             ))}
             {(fileResult.matches?.length || 0) > PREVIEW_MATCHES_PER_FILE && (
               <Box marginLeft={2}>
-                <Text>{getColor('muted')(`...+${(fileResult.matches?.length || 0) - PREVIEW_MATCHES_PER_FILE} more`)}</Text>
+                <Text>{getColor('secondary')(`...+${(fileResult.matches?.length || 0) - PREVIEW_MATCHES_PER_FILE} more`)}</Text>
               </Box>
             )}
           </Box>
@@ -197,9 +210,7 @@ export const Grep = React.memo(function Grep({
           <Box marginLeft={2}>
             <Text>
               {getColor('secondary')(
-                hiddenCount > 0 
-                  ? `...+${hiddenCount} files (^O to expand)`
-                  : '(^O to expand)'
+                expandHint || '(ctrl+o to toggle)'
               )}
             </Text>
           </Box>

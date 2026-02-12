@@ -10,6 +10,7 @@ import type { StatusType } from '../../../types/componentTypes.js';
 
 interface StatusBarContextType {
   setLineColor: (lineIndex: number, color: string) => void;
+  setLineColors: (colors: Map<number, string>) => void;
   getNextLineIndex: (count?: number) => number;
   requestRemeasure: () => void;
   setStatus: (status: StatusType | undefined) => void;
@@ -61,6 +62,17 @@ export const StatusBar = React.memo(function StatusBar({
     });
   }, []);
 
+  // Batch set colors for multiple lines at once
+  const setLineColorsBatch = useCallback((colors: Map<number, string>) => {
+    setLineColors(prev => {
+      const newMap = new Map(prev);
+      for (const [index, color] of colors) {
+        newMap.set(index, color);
+      }
+      return newMap;
+    });
+  }, []);
+
   // Get next line index and advance counter
   const getNextLineIndex = useCallback((count: number = 1) => {
     const index = currentLineIndexRef.current;
@@ -97,11 +109,12 @@ export const StatusBar = React.memo(function StatusBar({
 
   const contextValue = useMemo(() => ({
     setLineColor,
+    setLineColors: setLineColorsBatch,
     getNextLineIndex,
     requestRemeasure,
     setStatus,
     status,
-  }), [setLineColor, getNextLineIndex, requestRemeasure, setStatus, status]);
+  }), [setLineColor, setLineColorsBatch, getNextLineIndex, requestRemeasure, setStatus, status]);
 
   // Determine if status should show a dot on first line (not for 'active', 'thinking', or 'paused')
   const showDot = status && status !== 'active' && status !== 'thinking' && status !== 'paused';

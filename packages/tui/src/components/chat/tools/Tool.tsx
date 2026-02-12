@@ -100,10 +100,11 @@ export const Tool = React.memo(function Tool({
   const hasOutput = output && output.trim().length > 0;
 
   // Use expandable output hook
-  const { expanded, hiddenCount } = useExpandableOutput({
+  const { expanded, expandHint } = useExpandableOutput({
     totalItems: outputLines.length,
     previewCount: PREVIEW_LINES,
     isStatic,
+    unit: 'lines',
   });
 
   const renderLocations = () => {
@@ -149,7 +150,7 @@ export const Tool = React.memo(function Tool({
           {renderLocations()}
           <Box marginLeft={2} flexDirection="column">
             {outputLines.map((line, i) => (
-              <Text key={i}>{getColor('secondary')(line)}</Text>
+              <Text key={i}>{getColor('primary')(line)}</Text>
             ))}
           </Box>
         </Box>
@@ -163,11 +164,11 @@ export const Tool = React.memo(function Tool({
         {renderLocations()}
         <Box marginLeft={2} flexDirection="column">
           {outputLines.slice(0, PREVIEW_LINES).map((line, i) => (
-            <Text key={i}>{getColor('secondary')(line)}</Text>
+            <Text key={i}>{getColor('primary')(line)}</Text>
           ))}
-          {hiddenCount > 0 && (
+          {expandHint && (
             <Text>
-              {getColor('secondary')(`...+${hiddenCount} lines (^O to expand)`)}
+              {getColor('secondary')(expandHint)}
             </Text>
           )}
         </Box>

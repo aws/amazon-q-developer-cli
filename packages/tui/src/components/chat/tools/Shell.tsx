@@ -127,10 +127,11 @@ export const Shell = React.memo(function Shell({
   }, [output]);
 
   // Use expandable output hook
-  const { expanded, hiddenCount } = useExpandableOutput({
+  const { expanded, expandHint } = useExpandableOutput({
     totalItems: outputLines.length,
     previewCount: PREVIEW_LINES,
     isStatic,
+    unit: 'lines',
   });
 
   // Set error status if command failed (non-zero exit code) or timeout error
@@ -173,7 +174,7 @@ export const Shell = React.memo(function Shell({
         <StatusInfo title={name} target={displayCommand} shimmer={!isFinished} />
         <Box marginLeft={2} flexDirection="column">
           {outputLines.map((line, i) => (
-            <Text key={i}>{getColor('secondary')(line)}</Text>
+            <Text key={i}>{getColor('primary')(line)}</Text>
           ))}
         </Box>
       </Box>
@@ -186,11 +187,11 @@ export const Shell = React.memo(function Shell({
       <StatusInfo title={name} target={displayCommand} shimmer={!isFinished} />
       <Box marginLeft={2} flexDirection="column">
         {outputLines.slice(0, PREVIEW_LINES).map((line, i) => (
-          <Text key={i}>{getColor('secondary')(line)}</Text>
+          <Text key={i}>{getColor('primary')(line)}</Text>
         ))}
-        {hiddenCount > 0 && (
+        {expandHint && (
           <Text>
-            {getColor('secondary')(`...+${hiddenCount} lines (^O to expand)`)}
+            {getColor('secondary')(expandHint)}
           </Text>
         )}
       </Box>
