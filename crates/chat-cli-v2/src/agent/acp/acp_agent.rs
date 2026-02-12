@@ -822,6 +822,9 @@ impl AcpSession {
                 if let Err(e) = update_model_info(&self.os, &self.rts_state, agent_config.model()).await {
                     warn!("Failed to update model during swap: {}", e);
                 }
+                // Reset stale context usage data since it's meaningless after swapping agents
+                self.rts_state.set_context_usage_percentage(None);
+
                 let resolver = PathResolver::new(&self.os);
                 let local_mcp_path = resolver.workspace().mcp_config().ok();
                 let global_mcp_path = resolver.global().mcp_config().ok();

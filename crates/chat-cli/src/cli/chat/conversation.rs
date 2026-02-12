@@ -1563,6 +1563,9 @@ Return only the JSON configuration, no additional text."
         // Update code intelligence state based on new agent's capabilities
         self.update_code_intelligence_for_agent().await;
 
+        // Reset stale context usage data since it's meaningless after swapping agents
+        self.reset_context_usage_percentages();
+
         self.update_state(true).await;
 
         Ok(())
