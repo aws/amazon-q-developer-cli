@@ -3,6 +3,7 @@
   "total_docs": 95,
   "by_category": {
     "command": [
+      "commands/acp.md",
       "commands/agent.md",
       "commands/chat.md",
       "commands/diagnostic.md",
@@ -111,6 +112,27 @@
     ]
   },
   "documents": [
+    {
+      "path": "commands/acp.md",
+      "file": "acp.md",
+      "title": "kiro-cli acp",
+      "description": "Start the Agent Client Protocol (ACP) agent for programmatic client integration",
+      "category": "command",
+      "keywords": [
+        "acp",
+        "agent-client-protocol",
+        "protocol",
+        "integration",
+        "api",
+        "headless"
+      ],
+      "related": [
+        "chat",
+        "mcp"
+      ],
+      "validated": "2026-02-03",
+      "status": "validated"
+    },
     {
       "path": "commands/agent.md",
       "file": "agent.md",
