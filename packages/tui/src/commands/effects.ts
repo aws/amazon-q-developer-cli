@@ -61,7 +61,7 @@ const effectHandlers: Record<EffectName, EffectHandler> = {
     }
   },
 
-  clearMessages: (_result, ctx) => {
+  clearMessages: (result, ctx) => {
     ctx.clearMessages();
   },
 

@@ -163,7 +163,8 @@ impl TuiCommand {
                 meta.insert("inputType".into(), "panel".into());
                 Some(meta)
             },
-            TuiCommand::Clear(_) | TuiCommand::Quit(_) => {
+            TuiCommand::Clear(_) => None,
+            TuiCommand::Quit(_) => {
                 let mut meta = serde_json::Map::new();
                 meta.insert("local".into(), true.into());
                 Some(meta)
