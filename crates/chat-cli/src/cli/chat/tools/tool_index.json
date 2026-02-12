@@ -109,7 +109,7 @@
   },
   "execute_bash": {
     "name": "execute_bash",
-    "description": "Execute the specified bash command.",
+    "description": "Execute the specified bash command. NEVER prefix commands with cd to change the working directory, use the `working_dir` argument instead.",
     "input_schema": {
       "type": "object",
       "properties": {

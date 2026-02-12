@@ -1,5 +1,6 @@
 use std::borrow::Borrow;
 use std::ops::Deref;
+use std::str::FromStr;
 
 use schemars::{
     JsonSchema,
@@ -188,14 +189,16 @@ impl Borrow<str> for ResourcePath {
     }
 }
 
-impl From<&str> for ResourcePath {
-    fn from(value: &str) -> Self {
-        Self::FilePath(value.to_string())
-    }
-}
+impl FromStr for ResourcePath {
+    type Err = String;
 
-impl From<String> for ResourcePath {
-    fn from(value: String) -> Self {
-        Self::FilePath(value)
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        if s.starts_with("skill://") {
+            Ok(Self::Skill(s.to_string()))
+        } else if s.starts_with("file://") {
+            Ok(Self::FilePath(s.to_string()))
+        } else {
+            Err(format!("resource must start with file:// or skill://, got: {}", s))
+        }
     }
 }

@@ -1385,9 +1385,11 @@ pub struct AgentsLoadMetadata {
 
 /// Configure built-in agents with resources
 async fn configure_builtin_agent_resources(agent: &mut Agent, resolver: &PathResolver<'_>) {
-    agent
-        .resources
-        .extend(paths::workspace::DEFAULT_AGENT_RESOURCES.iter().map(|&s| s.into()));
+    agent.resources.extend(
+        paths::workspace::DEFAULT_AGENT_RESOURCES
+            .iter()
+            .map(|&s| s.parse().expect("DEFAULT_AGENT_RESOURCES must be valid")),
+    );
 
     let mut global_steering_canonical = None;
 
@@ -1398,7 +1400,9 @@ async fn configure_builtin_agent_resources(agent: &mut Agent, resolver: &PathRes
         // Canonicalize to resolve symlinks and get the real path
         global_steering_canonical = global_steering_dir.canonicalize().ok();
         let global_steering_pattern = format!("file://{}/**/*.md", global_steering_dir.display());
-        agent.resources.push(global_steering_pattern.into());
+        agent
+            .resources
+            .push(global_steering_pattern.parse().expect("valid resource"));
     }
 
     // Add workspace steering (KIRO-only)
@@ -1414,17 +1418,21 @@ async fn configure_builtin_agent_resources(agent: &mut Agent, resolver: &PathRes
 
         if !is_duplicate {
             let workspace_steering_pattern = format!("file://{}/**/*.md", workspace_steering_dir.display());
-            agent.resources.push(workspace_steering_pattern.into());
+            agent
+                .resources
+                .push(workspace_steering_pattern.parse().expect("valid resource"));
         }
     }
 
     // Add rules pattern if available (only when .amazonq exists but .kiro doesn't)
     if let Some(rules_dir) = resolver.workspace().rules_dir() {
         let rules_pattern = paths::workspace::RULES_PATTERN.replace("{}", &rules_dir.display().to_string());
-        agent.resources.push(rules_pattern.into());
+        agent.resources.push(rules_pattern.parse().expect("valid resource"));
     }
 
-    agent.resources.insert(0, "file://AmazonQ.md".into());
+    agent
+        .resources
+        .insert(0, "file://AmazonQ.md".parse().expect("valid resource"));
 }
 
 async fn load_agents_from_entries(

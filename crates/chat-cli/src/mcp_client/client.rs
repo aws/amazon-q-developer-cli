@@ -585,6 +585,7 @@ impl Service<RoleClient> for McpClientService {
             ServerNotification::ResourceUpdatedNotification(_) => (),
             ServerNotification::ResourceListChangedNotification(_) => (),
             ServerNotification::ProgressNotification(_) => (),
+            ServerNotification::ElicitationCompletionNotification(_) => (),
             ServerNotification::CustomNotification(_) => (),
         };
         Ok(())

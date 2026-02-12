@@ -41,14 +41,14 @@ WHEN TO USE THIS TOOL:
 
 HOW TO USE:
 - Provide the command to execute
-
-FEATURES:
+- Use the `working_dir` argument to execute a command in another directory (defaults to current working directory)
 
 LIMITATIONS:
 - Does not respect user's bash profile or aliases
 
 TIPS:
 - Use the fileRead and fileWrite tools for reading and modifying files
+- NEVER prefix commands with cd to execute a command in another directory. Use the `working_dir` argument instead
 "#;
 
 const EXECUTE_CMD_SCHEMA: &str = r#"

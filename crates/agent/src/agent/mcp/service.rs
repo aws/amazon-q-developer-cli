@@ -286,6 +286,7 @@ impl rmcp::Service<RoleClient> for McpService {
             ServerNotification::ResourceUpdatedNotification(_) => (),
             ServerNotification::ResourceListChangedNotification(_) => (),
             ServerNotification::ProgressNotification(_) => (),
+            ServerNotification::ElicitationCompletionNotification(_) => (),
             ServerNotification::CustomNotification(_) => (),
         }
         Ok(())

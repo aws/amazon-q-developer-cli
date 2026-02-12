@@ -27,6 +27,7 @@ use tokio::sync::{
     oneshot,
 };
 use tracing::{
+    debug,
     error,
     info,
     warn,
@@ -240,6 +241,7 @@ impl SessionManager {
     }
 
     async fn handle_request(&mut self, request: SessionManagerRequest) {
+        debug!(?request, "session manager received new request");
         let SessionManagerRequest { session_id, data } = request;
 
         match data {
@@ -252,6 +254,7 @@ impl SessionManager {
                 let agent_name = config
                     .initial_agent_name
                     .clone()
+                    .or_else(|| self.next_agent_name.take())
                     .or_else(|| self.os.database.settings.get_string(Setting::ChatDefaultAgent))
                     .unwrap_or_else(|| agent::consts::DEFAULT_AGENT_NAME.to_string());
 

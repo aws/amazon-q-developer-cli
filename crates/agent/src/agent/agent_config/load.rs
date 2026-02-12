@@ -103,13 +103,20 @@ fn resolve_global_agents_dir(system: &dyn SystemProvider) -> Option<PathBuf> {
 }
 
 pub fn build_default_agent(system: &dyn SystemProvider) -> LoadedAgentConfig {
-    let mut resources: Vec<ResourcePath> = DEFAULT_AGENT_RESOURCES.iter().map(|&s| s.into()).collect();
+    let mut resources: Vec<ResourcePath> = DEFAULT_AGENT_RESOURCES
+        .iter()
+        .map(|&s| s.parse().expect("DEFAULT_AGENT_RESOURCES must be valid"))
+        .collect();
 
     // Add global steering if exists
     if let Some(home) = system.home() {
         let global_steering = home.join(".kiro").join("steering");
         if global_steering.exists() {
-            resources.push(format!("file://{}/**/*.md", global_steering.display()).into());
+            resources.push(
+                format!("file://{}/**/*.md", global_steering.display())
+                    .parse()
+                    .expect("valid resource"),
+            );
         }
     }
 
@@ -117,18 +124,22 @@ pub fn build_default_agent(system: &dyn SystemProvider) -> LoadedAgentConfig {
     if let Ok(cwd) = system.cwd() {
         let workspace_steering = cwd.join(".kiro").join("steering");
         if workspace_steering.exists() {
-            resources.push(format!("file://{}/**/*.md", workspace_steering.display()).into());
+            resources.push(
+                format!("file://{}/**/*.md", workspace_steering.display())
+                    .parse()
+                    .expect("valid resource"),
+            );
         }
 
         if cwd.join("AmazonQ.md").exists() {
-            resources.push("file://AmazonQ.md".into());
+            resources.push("file://AmazonQ.md".parse().expect("valid resource"));
         }
 
         // Add rules pattern if .amazonq exists but .kiro doesn't
         let amazonq_dir = cwd.join(".amazonq");
         let kiro_dir = cwd.join(".kiro");
         if amazonq_dir.exists() && !kiro_dir.exists() {
-            resources.push("file://.amazonq/rules/**/*.md".into());
+            resources.push("file://.amazonq/rules/**/*.md".parse().expect("valid resource"));
         }
     }
 

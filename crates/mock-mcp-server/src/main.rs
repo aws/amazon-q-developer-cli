@@ -93,6 +93,7 @@ impl ServerHandler for MockMcpServer {
                 input_schema: Arc::new(serde_json::from_value(t.input_schema.clone()).unwrap_or_default()),
                 output_schema: None,
                 annotations: None,
+                execution: None,
                 icons: None,
                 title: None,
                 meta: None,

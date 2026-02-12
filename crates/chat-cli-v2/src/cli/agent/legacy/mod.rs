@@ -152,7 +152,11 @@ pub async fn migrate(os: &mut Os, force: bool) -> eyre::Result<Option<Vec<Agent>
                     .agents_dir()?
                     .join(format!("{LEGACY_GLOBAL_AGENT_NAME}.json")),
             ),
-            resources: context.paths.iter().map(|p| format!("file://{p}").into()).collect(),
+            resources: context
+                .paths
+                .iter()
+                .map(|p| format!("file://{p}").parse().expect("valid resource"))
+                .collect(),
             hooks: HashMap::from([
                 (
                     super::HookTrigger::AgentSpawn,
@@ -189,7 +193,11 @@ pub async fn migrate(os: &mut Os, force: bool) -> eyre::Result<Option<Vec<Agent>
             path: Some(global_agent_path.join(format!("{profile_name}.json"))),
             name: profile_name,
             description: Some(PROFILE_DESC.to_string()),
-            resources: context.paths.iter().map(|p| format!("file://{p}").into()).collect(),
+            resources: context
+                .paths
+                .iter()
+                .map(|p| format!("file://{p}").parse().expect("valid resource"))
+                .collect(),
             hooks: HashMap::from([
                 (
                     super::HookTrigger::AgentSpawn,

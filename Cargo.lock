@@ -99,7 +99,7 @@ dependencies = [
  "rand 0.9.2",
  "regex",
  "reqwest",
- "rmcp 0.14.0",
+ "rmcp 0.15.0",
  "rusqlite",
  "rustls 0.23.36",
  "rustls-native-certs",
@@ -1759,7 +1759,7 @@ dependencies = [
  "regex",
  "reqwest",
  "ring",
- "rmcp 0.14.0",
+ "rmcp 0.15.0",
  "rusqlite",
  "rustls 0.23.36",
  "rustls-native-certs",
@@ -1901,7 +1901,7 @@ dependencies = [
  "regex",
  "reqwest",
  "ring",
- "rmcp 0.14.0",
+ "rmcp 0.15.0",
  "rusqlite",
  "rustls 0.23.36",
  "rustls-native-certs",
@@ -2130,7 +2130,7 @@ dependencies = [
  "moka",
  "notify",
  "rayon",
- "rmcp 0.14.0",
+ "rmcp 0.15.0",
  "serde",
  "serde_json",
  "sha2",
@@ -4967,7 +4967,7 @@ dependencies = [
  "anyhow",
  "axum",
  "clap",
- "rmcp 0.14.0",
+ "rmcp 0.15.0",
  "serde",
  "serde_json",
  "tempfile",
@@ -6807,9 +6807,9 @@ dependencies = [
 
 [[package]]
 name = "rmcp"
-version = "0.14.0"
+version = "0.15.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0a621b37a548ff6ab6292d57841eb25785a7f146d89391a19c9f199414bd13da"
+checksum = "1bef41ebc9ebed2c1b1d90203e9d1756091e8a00bbc3107676151f39868ca0ee"
 dependencies = [
  "async-trait",
  "axum",
@@ -6826,7 +6826,7 @@ dependencies = [
  "process-wrap",
  "rand 0.9.2",
  "reqwest",
- "rmcp-macros 0.14.0",
+ "rmcp-macros 0.15.0",
  "schemars",
  "serde",
  "serde_json",
@@ -6856,9 +6856,9 @@ dependencies = [
 
 [[package]]
 name = "rmcp-macros"
-version = "0.14.0"
+version = "0.15.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6b79ed92303f9262db79575aa8c3652581668e9d136be6fd0b9ededa78954c95"
+checksum = "0e88ad84b8b6237a934534a62b379a5be6388915663c0cc598ceb9b3292bbbfe"
 dependencies = [
  "darling 0.23.0",
  "proc-macro2",

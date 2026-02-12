@@ -1887,6 +1887,7 @@ mod tests {
         AssistantResponseMessage,
         ToolResultStatus,
     };
+    use crate::cli::agent::wrapper_types::ResourcePath;
     use crate::cli::agent::{
         Agent,
         Agents,
@@ -2106,8 +2107,12 @@ mod tests {
             let mut agents = Agents::default();
             let mut agent = Agent::default();
             agent.name = "TestAgent".to_string();
-            agent.resources.push(format!("file://{AMAZONQ_FILENAME}").into());
-            agent.resources.push(format!("file://{AGENTS_FILENAME}").into());
+            agent
+                .resources
+                .push(ResourcePath::FilePath(format!("file://{AMAZONQ_FILENAME}")));
+            agent
+                .resources
+                .push(ResourcePath::FilePath(format!("file://{AGENTS_FILENAME}")));
             agents.agents.insert("TestAgent".to_string(), agent);
             agents.switch("TestAgent", &os).await.expect("Agent switch failed");
             agents
