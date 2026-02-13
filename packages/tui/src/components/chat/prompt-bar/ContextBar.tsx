@@ -24,7 +24,7 @@ export function ContextBar({ children }: ContextBarProps) {
       {/* Remaining items with separators - each chip+separator wraps as a unit */}
       {restItems.map((item, index) => (
         <Box key={index + 1} flexDirection="row" gap={1} flexShrink={0}>
-          <Icon type={IconType.SMALL_DOT} color={getColor('muted')} />
+          <Icon type={IconType.SMALL_DOT} color={getColor('secondary')} />
           {item}
         </Box>
       ))}

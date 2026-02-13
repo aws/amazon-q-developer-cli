@@ -92,7 +92,7 @@ export const PromptInput = React.memo(function PromptInput({
   const { getColor } = useTheme();
   const prevTriggerRef = useRef<TriggerInfo | null>(null);
 
-  const mutedColor = useMemo(() => getColor('muted'), [getColor]);
+  const placeholderColor = useMemo(() => getColor('secondary'), [getColor]);
 
   // Sync from store
   useEffect(() => {
@@ -440,7 +440,7 @@ export const PromptInput = React.memo(function PromptInput({
       return (
         <>
           <Text inverse> </Text>
-          <Text>{mutedColor(placeholder)}</Text>
+          <Text>{placeholderColor(placeholder)}</Text>
         </>
       );
     }
