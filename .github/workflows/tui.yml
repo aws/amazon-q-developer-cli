@@ -114,6 +114,10 @@ jobs:
         run: bun install
         working-directory: packages/tui
 
+      - name: Build ink package
+        run: bun run build
+        working-directory: packages/ink
+
       - name: Build TUI
         run: bun run build
         working-directory: packages/tui
