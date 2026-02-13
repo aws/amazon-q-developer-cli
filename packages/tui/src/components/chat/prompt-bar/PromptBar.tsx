@@ -17,7 +17,7 @@ export type PromptBarHeader =
   | React.ReactElement<React.ComponentProps<typeof SnackBar>, typeof SnackBar>;
 
 interface PromptBarProps {
-  header: PromptBarHeader;
+  header?: PromptBarHeader;
   children?: React.ReactNode;
   onSubmit: (command: string) => void;
   isProcessing: boolean;
@@ -49,7 +49,7 @@ export function PromptBar({
     <Box flexDirection="column" gap={0}>
       <Divider />
       <Box paddingLeft={fillsEdgeMargin ? 1 : 0} flexDirection="column">
-        <Box marginBottom={1}>{header}</Box>
+        {header && <Box marginBottom={1}>{header}</Box>}
         {!hideInput && (
           <Box>
             <PromptInput

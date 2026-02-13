@@ -25,8 +25,10 @@ export interface CommandContext {
   setCurrentModel: (model: { id: string; name: string }) => void;
   /** Update current agent in store */
   setCurrentAgent: (agent: { name: string }) => void;
+  /** Update context usage percentage */
+  setContextUsage: (percent: number) => void;
   /** Show/hide context breakdown panel */
-  setShowContextBreakdown: (show: boolean) => void;
+  setShowContextBreakdown: (show: boolean, breakdown?: any) => void;
   /** Show/hide help panel */
   setShowHelpPanel: (
     show: boolean,

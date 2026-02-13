@@ -694,6 +694,13 @@ impl Agent {
     }
 
     fn create_snapshot(&self) -> AgentSnapshot {
+        // Get tool specs from cache if available
+        let tool_specs = self
+            .cached_tool_specs
+            .as_ref()
+            .map(|s| s.tool_map().values().map(|t| t.tool_spec().clone()).collect())
+            .unwrap_or_default();
+
         AgentSnapshot {
             id: self.id.clone(),
             agent_config: self.agent_config.clone(),
@@ -704,6 +711,7 @@ impl Agent {
             tool_state: self.tool_state.clone(),
             settings: self.settings.clone(),
             permissions: self.permissions.clone(),
+            tool_specs,
         }
     }
 

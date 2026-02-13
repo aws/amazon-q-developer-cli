@@ -105,6 +105,7 @@ export const useUIState = () =>
       toolOutputsExpanded: state.toolOutputsExpanded,
       hasExpandableToolOutputs: state.hasExpandableToolOutputs,
       showContextBreakdown: state.showContextBreakdown,
+      contextBreakdown: state.contextBreakdown,
       showHelpPanel: state.showHelpPanel,
       helpCommands: state.helpCommands,
     }))

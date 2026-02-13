@@ -66,6 +66,10 @@ pub struct AgentSnapshot {
     #[typeshare(skip)]
     #[serde(default)]
     pub permissions: RuntimePermissions,
+    /// Cached tool specifications (for context size calculation)
+    #[typeshare(skip)]
+    #[serde(default)]
+    pub tool_specs: Vec<super::agent_loop::types::ToolSpec>,
 }
 
 impl AgentSnapshot {
@@ -80,6 +84,7 @@ impl AgentSnapshot {
             tool_state: Default::default(),
             settings: Default::default(),
             permissions: Default::default(),
+            tool_specs: Default::default(),
         }
     }
 
@@ -96,6 +101,7 @@ impl AgentSnapshot {
             tool_state: Default::default(),
             settings: Default::default(),
             permissions: Default::default(),
+            tool_specs: Default::default(),
         }
     }
 }

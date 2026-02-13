@@ -108,6 +108,10 @@ impl SanitizedToolSpec {
     pub fn canonical_name(&self) -> &CanonicalToolName {
         &self.canonical_name
     }
+
+    pub fn tool_spec(&self) -> &ToolSpec {
+        &self.tool_spec
+    }
 }
 
 /// Creates a set of tool specs to send to the model.

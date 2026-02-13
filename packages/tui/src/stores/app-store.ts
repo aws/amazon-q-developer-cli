@@ -16,6 +16,14 @@ import type {
 } from '../types/input-buffer';
 import type { AvailableCommand, CommandOption } from '../types/commands';
 import type { StatusType } from '../types/componentTypes';
+
+export interface ContextBreakdownData {
+  contextFiles: { percent: number; tokens: number };
+  tools: { percent: number; tokens: number };
+  kiroResponses: { percent: number; tokens: number };
+  yourPrompts: { percent: number; tokens: number };
+  sessionFiles?: { percent: number; tokens: number };
+}
 import {
   executeCommand,
   executeCommandWithArg,
@@ -159,7 +167,10 @@ interface BaseAppActions {
   setContextUsage: (percent: number) => void;
   setLastTurnTokens: (tokens: LastTurnTokens) => void;
   toggleContextBreakdown: () => void;
-  setShowContextBreakdown: (show: boolean) => void;
+  setShowContextBreakdown: (
+    show: boolean,
+    breakdown?: ContextBreakdownData
+  ) => void;
   setShowHelpPanel: (
     show: boolean,
     commands?: Array<{ name: string; description: string; usage: string }>
@@ -240,6 +251,7 @@ export interface AppState {
   attachedFiles: string[];
   pendingFileAttachment: { path: string; triggerPosition: number } | null;
   showContextBreakdown: boolean;
+  contextBreakdown: ContextBreakdownData | null;
   showHelpPanel: boolean;
   helpCommands: Array<{ name: string; description: string; usage: string }>;
 
@@ -307,6 +319,7 @@ export const createAppStore = (props: AppStoreProps) =>
     contextUsagePercent: null,
     lastTurnTokens: null,
     showContextBreakdown: false,
+    contextBreakdown: null,
     showHelpPanel: false,
     helpCommands: [],
     attachedFiles: [],
@@ -993,8 +1006,7 @@ export const createAppStore = (props: AppStoreProps) =>
       // Find the last user message to keep the entire last turn
       let lastUserIndex = -1;
       for (let i = msgs.length - 1; i >= 0; i--) {
-        const msg = msgs[i];
-        if (msg && msg.role === MessageRole.User) {
+        if (msgs[i]?.role === MessageRole.User) {
           lastUserIndex = i;
           break;
         }
@@ -1054,7 +1066,8 @@ export const createAppStore = (props: AppStoreProps) =>
         setActiveCommand: state.setActiveCommand,
         setCurrentModel: state.setCurrentModel,
         setCurrentAgent: state.setCurrentAgent,
-        setShowContextBreakdown: (show) => set({ showContextBreakdown: show }),
+        setContextUsage: state.setContextUsage,
+        setShowContextBreakdown: state.setShowContextBreakdown,
         setShowHelpPanel: state.setShowHelpPanel,
         clearMessages: state.clearMessages,
         clearUIState: () =>
@@ -1062,6 +1075,7 @@ export const createAppStore = (props: AppStoreProps) =>
             activeCommand: null,
             showContextBreakdown: false,
             showHelpPanel: false,
+            contextBreakdown: null,
           }),
       };
 
@@ -1273,8 +1287,8 @@ export const createAppStore = (props: AppStoreProps) =>
       set((state) => ({ showContextBreakdown: !state.showContextBreakdown }));
     },
 
-    setShowContextBreakdown: (show) => {
-      set({ showContextBreakdown: show });
+    setShowContextBreakdown: (show, breakdown) => {
+      set({ showContextBreakdown: show, contextBreakdown: breakdown ?? null });
     },
 
     setShowHelpPanel: (show, commands = []) => {
@@ -1359,8 +1373,8 @@ export const createAppStore = (props: AppStoreProps) =>
           setActiveCommand: state.setActiveCommand,
           setCurrentModel: state.setCurrentModel,
           setCurrentAgent: state.setCurrentAgent,
-          setShowContextBreakdown: (show) =>
-            set({ showContextBreakdown: show }),
+          setContextUsage: state.setContextUsage,
+          setShowContextBreakdown: state.setShowContextBreakdown,
           setShowHelpPanel: state.setShowHelpPanel,
           clearMessages: state.clearMessages,
           clearUIState: () =>
@@ -1368,6 +1382,7 @@ export const createAppStore = (props: AppStoreProps) =>
               activeCommand: null,
               showContextBreakdown: false,
               showHelpPanel: false,
+              contextBreakdown: null,
             }),
         };
         await executeCommand(trimmed, ctx);

@@ -1,6 +1,7 @@
 import React from 'react';
 import { Box, useInput } from 'ink';
 import { Text } from './text/Text';
+import { Divider } from './divider/Divider';
 import { useTheme } from '../../hooks/useThemeContext';
 
 interface Command {
@@ -25,7 +26,15 @@ export const HelpPanel: React.FC<HelpPanelProps> = ({ commands, onClose }) => {
 
   return (
     <Box flexDirection="column" paddingX={1}>
-      <Text>{getColor('brand')('Available Commands')}</Text>
+      <Box justifyContent="space-between" marginBottom={0}>
+        <Text>{getColor('primary')('/help')}</Text>
+        <Text>
+          {getColor('secondary')('(')}
+          {getColor('brand')('ESC')}
+          {getColor('secondary')(' to close)')}
+        </Text>
+      </Box>
+      <Divider />
       {commands.map((cmd) => (
         <Box key={cmd.name} flexDirection="column">
           <Text>
@@ -35,11 +44,6 @@ export const HelpPanel: React.FC<HelpPanelProps> = ({ commands, onClose }) => {
           <Text> {getColor('secondary')(cmd.usage)}</Text>
         </Box>
       ))}
-      <Text>
-        {getColor('secondary')('Press ')}
-        {getColor('brand')('Esc')}
-        {getColor('secondary')(' to close')}
-      </Text>
     </Box>
   );
 };

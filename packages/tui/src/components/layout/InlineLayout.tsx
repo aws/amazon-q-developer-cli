@@ -50,6 +50,7 @@ export const InlineLayout: React.FC = () => {
     toolOutputsExpanded,
     hasExpandableToolOutputs,
     showContextBreakdown,
+    contextBreakdown,
     showHelpPanel,
     helpCommands,
   } = useUIState();
@@ -281,7 +282,9 @@ export const InlineLayout: React.FC = () => {
 
       <Box marginBottom={1}>
         <PromptBar
-          header={promptBarHeader}
+          header={
+            showContextBreakdown || showHelpPanel ? undefined : promptBarHeader
+          }
           onSubmit={handleSubmit}
           triggerRules={TRIGGER_RULES}
           onTriggerDetected={handleTriggerDetected}
@@ -302,7 +305,7 @@ export const InlineLayout: React.FC = () => {
           {showContextBreakdown && (
             <ContextBreakdown
               percent={contextUsagePercent}
-              tokens={lastTurnTokens}
+              breakdown={contextBreakdown ?? undefined}
               model={currentModel?.name ?? null}
               onClose={handleCloseContextBreakdown}
             />

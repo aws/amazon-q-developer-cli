@@ -61,8 +61,14 @@ const effectHandlers: Record<EffectName, EffectHandler> = {
     }
   },
 
-  showContextPanel: (_result, ctx) => {
-    ctx.setShowContextBreakdown(true);
+  showContextPanel: (result, ctx) => {
+    const data = result?.data as
+      | { breakdown?: any; contextUsagePercentage?: number }
+      | undefined;
+    if (data?.contextUsagePercentage != null) {
+      ctx.setContextUsage(data.contextUsagePercentage);
+    }
+    ctx.setShowContextBreakdown(true, data?.breakdown);
   },
 
   showHelpPanel: (result, ctx) => {
