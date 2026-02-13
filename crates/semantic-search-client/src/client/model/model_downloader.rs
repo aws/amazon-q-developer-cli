@@ -13,7 +13,6 @@ impl ModelDownloader {
     /// Ensure models are downloaded
     pub async fn ensure_models_downloaded(embedding_type: &EmbeddingType) -> Result<()> {
         match embedding_type {
-            #[cfg(not(all(target_os = "linux", target_arch = "aarch64")))]
             EmbeddingType::Best => {
                 Self::download_best_model().await?;
             },
@@ -28,7 +27,6 @@ impl ModelDownloader {
         Ok(())
     }
 
-    #[cfg(not(all(target_os = "linux", target_arch = "aarch64")))]
     async fn download_best_model() -> Result<()> {
         use crate::client::hosted_model_client::HostedModelClient;
         use crate::embedding::ModelType;

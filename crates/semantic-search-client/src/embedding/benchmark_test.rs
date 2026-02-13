@@ -5,11 +5,10 @@
 
 use std::env;
 
-use crate::embedding::run_standard_benchmark;
-#[cfg(not(all(target_os = "linux", target_arch = "aarch64")))]
 use crate::embedding::{
     CandleTextEmbedder,
     ModelType,
+    run_standard_benchmark,
 };
 
 /// Helper function to check if real embedder tests should be skipped
@@ -30,7 +29,6 @@ fn should_skip_real_embedder_tests() -> bool {
 }
 
 /// Run benchmark for a Candle model
-#[cfg(not(all(target_os = "linux", target_arch = "aarch64")))]
 fn benchmark_candle_model(model_type: ModelType) {
     match CandleTextEmbedder::with_model_type(model_type) {
         Ok(embedder) => {
@@ -61,12 +59,9 @@ fn test_standard_benchmark() {
     println!("Running standardized benchmark tests for embedding models");
     println!("--------------------------------------------------------");
 
-    // Benchmark Candle models (not available on Linux ARM)
-    #[cfg(not(all(target_os = "linux", target_arch = "aarch64")))]
-    {
-        benchmark_candle_model(ModelType::MiniLML6V2);
-        benchmark_candle_model(ModelType::MiniLML12V2);
-    }
+    // Benchmark Candle models
+    benchmark_candle_model(ModelType::MiniLML6V2);
+    benchmark_candle_model(ModelType::MiniLML12V2);
 
     println!("--------------------------------------------------------");
     println!("Benchmark tests completed");

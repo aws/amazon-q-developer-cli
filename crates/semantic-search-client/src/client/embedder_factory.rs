@@ -1,10 +1,8 @@
-#[cfg(not(all(target_os = "linux", target_arch = "aarch64")))]
-use crate::embedding::CandleTextEmbedder;
 use crate::embedding::MockTextEmbedder; // Used for Fast type since BM25 doesn't need embeddings
-#[cfg(not(all(target_os = "linux", target_arch = "aarch64")))]
-use crate::embedding::ModelType;
 use crate::embedding::{
+    CandleTextEmbedder,
     EmbeddingType,
+    ModelType,
     TextEmbedderTrait,
 };
 use crate::error::Result;
@@ -22,7 +20,6 @@ use crate::error::Result;
 pub fn create_embedder(embedding_type: EmbeddingType) -> Result<Box<dyn TextEmbedderTrait>> {
     let embedder: Box<dyn TextEmbedderTrait> = match embedding_type {
         EmbeddingType::Fast => Box::new(MockTextEmbedder::new(384)), // BM25 doesn't use embeddings
-        #[cfg(not(all(target_os = "linux", target_arch = "aarch64")))]
         EmbeddingType::Best => Box::new(CandleTextEmbedder::with_model_type(ModelType::MiniLML6V2)?),
         #[cfg(test)]
         EmbeddingType::Mock => Box::new(MockTextEmbedder::new(384)),
@@ -45,7 +42,6 @@ pub fn create_embedder(embedding_type: EmbeddingType) -> Result<Box<dyn TextEmbe
 pub fn create_embedder(embedding_type: EmbeddingType) -> Result<Box<dyn TextEmbedderTrait>> {
     let embedder: Box<dyn TextEmbedderTrait> = match embedding_type {
         EmbeddingType::Fast => Box::new(MockTextEmbedder::new(384)), // BM25 doesn't use embeddings
-        #[cfg(not(target_arch = "aarch64"))]
         EmbeddingType::Best => Box::new(CandleTextEmbedder::with_model_type(ModelType::MiniLML6V2)?),
         #[cfg(test)]
         EmbeddingType::Mock => Box::new(MockTextEmbedder::new(384)),

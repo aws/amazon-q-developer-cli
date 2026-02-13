@@ -379,25 +379,16 @@ let request = AddContextRequest {
 The library supports different embedding backends:
 
 ```rust
-// Use ONNX (fastest, used on macOS and Windows)
-#[cfg(any(target_os = "macos", target_os = "windows"))]
+// Use Best (semantic embeddings via Candle - available on all platforms)
 let client = SemanticSearchClient::with_embedding_type(
     "/path/to/storage",
-    EmbeddingType::Onnx,
+    EmbeddingType::Best,
 )?;
 
-// Use Candle (used on Linux non-ARM)
-#[cfg(all(target_os = "linux", not(target_arch = "aarch64")))]
+// Use Fast (BM25 keyword search - no model download required)
 let client = SemanticSearchClient::with_embedding_type(
     "/path/to/storage",
-    EmbeddingType::Candle,
-)?;
-
-// Use BM25 (used on Linux ARM64)
-#[cfg(all(target_os = "linux", target_arch = "aarch64"))]
-let client = SemanticSearchClient::with_embedding_type(
-    "/path/to/storage",
-    EmbeddingType::BM25,
+    EmbeddingType::Fast,
 )?;
 ```
 
