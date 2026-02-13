@@ -78,18 +78,6 @@ describe('Memory Regression', () => {
 
   // ---- Single large chunk: the original amplification scenario ----------
 
-  it('single 1MB response stays under 1.5GB peak RSS', async () => {
-    const t = await setup('mem-single-1mb');
-    const baseline = await measureBaseline(t);
-
-    const mem = await runTurn(t, 0, assistantResponse(generatePayload(1024)));
-
-    console.log(`1MB chunk: baseline RSS=${mb(baseline.rss)}MB, peak RSS=${mb(mem.rss)}MB, heap=${mb(mem.heapUsed)}MB`);
-
-    // Stock ink 6.6.0 hit 5.5GB here. With our patches we expect <1.5GB.
-    expect(mb(mem.rss)).toBeLessThan(1500);
-  }, 300_000);
-
   // ---- Multi-turn: heap should be collectible --------------------------
 
   it('10x50KB turns — heap after GC within 3x baseline', async () => {

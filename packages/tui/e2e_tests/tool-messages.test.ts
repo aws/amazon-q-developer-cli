@@ -59,8 +59,8 @@ describe('Tool Messages', () => {
     const snapshot = testCase.getSnapshot();
     console.log('Snapshot:\n' + testCase.getSnapshotFormatted());
 
-    // Verify shell tool indicator is displayed (shows "Ran" for execute_bash)
-    expect(snapshot.some((line) => line.includes('Ran'))).toBe(true);
+    // Verify shell tool indicator is displayed (shows "Bashed" for execute_bash)
+    expect(snapshot.some((line) => line.includes('Bashed'))).toBe(true);
     expect(snapshot.some((line) => line.includes('Command executed'))).toBe(true);
   }, 30000);
 

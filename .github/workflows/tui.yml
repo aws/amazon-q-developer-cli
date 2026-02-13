@@ -130,3 +130,11 @@ jobs:
       - name: Run E2E tests
         run: bun test ./e2e_tests/
         working-directory: packages/tui
+
+      - name: Upload test logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: e2e-logs-${{ matrix.os }}
+          path: packages/tui/e2e_tests/test-outputs/
+          retention-days: 7
