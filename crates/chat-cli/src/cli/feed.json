@@ -21,6 +21,10 @@
           "description": "Implement @file and @directory expansion for inline content references"
         },
         {
+          "type": "added",
+          "description": "Kiro unified entry point with `kiro-cli integrations install kiro-command-router`"
+        },
+        {
           "type": "fixed",
           "description": "Interactive shell prompts now display immediately without waiting for newlines"
         },
