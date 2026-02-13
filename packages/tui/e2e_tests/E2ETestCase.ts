@@ -58,6 +58,7 @@ export class E2ETestCase {
       cwd: process.cwd(),
       env: {
         KIRO_TEST_MODE: '1',
+        KIRO_INPUT_METRICS: 'true',
         KIRO_TEST_TUI_IPC_SOCKET_PATH: this.paths.tuiIpcSocket,
         KIRO_TEST_CHAT_IPC_SOCKET_PATH: this.paths.agentIpcSocket,
         KIRO_TEST_TUI_JS_PATH: tuiJsPath,

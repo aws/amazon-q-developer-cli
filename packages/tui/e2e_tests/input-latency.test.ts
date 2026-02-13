@@ -32,6 +32,9 @@ function computeStats(samples: InputMetricSample[]) {
 async function runLatencyTest(testCase: E2ETestCase, numTurns: number, responseText: string) {
   const charsPerTurn = 3;
   
+  // Small delay to ensure IPC is fully ready
+  await testCase.sleepMs(500);
+  
   for (let turn = 0; turn < numTurns; turn++) {
     await testCase.pushSendMessageResponse([
       { kind: 'event', data: { kind: 'AssistantResponseEvent', data: { content: `R${turn + 1}: ${responseText}` } } },

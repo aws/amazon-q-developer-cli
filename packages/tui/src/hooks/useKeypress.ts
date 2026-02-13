@@ -1,6 +1,7 @@
 import { useEffect, useRef } from 'react';
 import { useInput, useStdin } from 'ink';
 import { logger } from '../utils/logger.js';
+import { inputMetrics } from '../utils/inputMetrics.js';
 
 export interface Key {
   upArrow: boolean;
@@ -67,6 +68,9 @@ export const useKeypress = (
     if (isPastingRef.current) {
       return;
     }
+    inputMetrics.markKeypress(input);
+    inputMetrics.markHandlerStart();
+    
     handlerRef.current(input, {
       ...key,
       home: key.home ?? false,

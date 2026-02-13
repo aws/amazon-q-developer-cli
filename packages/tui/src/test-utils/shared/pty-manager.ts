@@ -30,6 +30,7 @@ export class PtyManager {
     this.terminal = new Terminal({
       cols: options.width,
       rows: options.height,
+      scrollback: 10000,
       allowProposedApi: true,
     });
   }
@@ -158,12 +159,15 @@ export class PtyManager {
    * Returns the current terminal screen as a 2D array of characters.
    * Each row is a string representing one line of the terminal.
    * Escape codes are parsed by xterm, so this returns the actual rendered content.
+   * Includes scrollback buffer content.
    */
   getSnapshot(): string[] {
     const buffer = this.terminal.buffer.active;
     const lines: string[] = [];
 
-    for (let i = 0; i < this.terminal.rows; i++) {
+    // Include scrollback + visible rows
+    const totalLines = buffer.baseY + this.terminal.rows;
+    for (let i = 0; i < totalLines; i++) {
       const line = buffer.getLine(i);
       lines.push(line?.translateToString() ?? '');
     }
