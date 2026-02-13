@@ -71,14 +71,20 @@ pub fn get_cli_client_application() -> Option<String> {
         .ok()
 }
 
-/// Get editor with default fallback
+/// Get editor with default fallback.
+/// Checks $VISUAL first (full-screen editors), then $EDITOR, then falls back to "vi".
 pub fn get_editor() -> String {
-    Env::new().get(EDITOR).unwrap_or_else(|_| "vi".to_string())
+    let env = Env::new();
+    env.get(VISUAL)
+        .or_else(|_| env.get(EDITOR))
+        .unwrap_or_else(|_| "vi".to_string())
 }
 
-/// Try to get editor without fallback
+/// Try to get editor without fallback.
+/// Checks $VISUAL first (full-screen editors), then $EDITOR.
 pub fn try_get_editor() -> Result<String, std::env::VarError> {
-    Env::new().get(EDITOR)
+    let env = Env::new();
+    env.get(VISUAL).or_else(|_| env.get(EDITOR))
 }
 
 /// Get terminal type

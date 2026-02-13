@@ -189,8 +189,8 @@ impl SettingsArgs {
         match self.cmd {
             Some(SettingsSubcommands::Open) => {
                 let file = GlobalPaths::settings_path().context("Could not get settings path")?;
-                let editor =
-                    crate::util::env_var::try_get_editor().context("The EDITOR environment variable is not set")?;
+                let editor = crate::util::env_var::try_get_editor()
+                    .context("Neither VISUAL nor EDITOR environment variable is set")?;
                 tokio::process::Command::new(editor).arg(file).spawn()?.wait().await?;
                 Ok(ExitCode::SUCCESS)
             },

@@ -135,6 +135,9 @@ pub mod env_var {
         /// Editor environment variable
         EDITOR = "EDITOR",
 
+        /// Visual editor environment variable (preferred over EDITOR)
+        VISUAL = "VISUAL",
+
         /// Terminal type
         TERM = "TERM",
 

@@ -5,8 +5,8 @@ use crate::util::env_var::get_editor;
 
 /// Launch the user's preferred editor with the given file path.
 ///
-/// This function properly parses the EDITOR environment variable to handle
-/// editors that require arguments (e.g., "emacsclient -nw").
+/// This function checks $VISUAL first, then $EDITOR, and properly parses the
+/// command to handle editors that require arguments (e.g., "emacsclient -nw").
 ///
 /// # Arguments
 /// * `file_path` - Path to the file to open in the editor
