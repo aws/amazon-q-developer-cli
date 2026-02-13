@@ -26,6 +26,14 @@
         },
         {
           "type": "fixed",
+          "description": "Handle context window overflow errors for Opus 4.6"
+        },
+        {
+          "type": "changed",
+          "description": "Agent name is now a positional argument (e.g., 'kiro-cli agent create my-agent' instead of '--name my-agent')"
+        },
+        {
+          "type": "fixed",
           "description": "Respect --no-interactive flag in subagent indicator"
         },
         {

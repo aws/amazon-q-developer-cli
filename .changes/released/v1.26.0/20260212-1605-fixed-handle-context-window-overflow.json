@@ -1,0 +1,4 @@
+{
+  "type": "fixed",
+  "description": "Handle context window overflow errors for Opus 4.6"
+}
