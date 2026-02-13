@@ -1,5 +1,15 @@
 [
   {
+    "name": "invalid_denied_regex_denies_all",
+    "commands": ["ls"],
+    "settings": {
+      "denied_commands": ["^(?!ls$).*"]
+    },
+    "detection": { "danger_level": "None", "is_readonly": true },
+    "expected": "Deny",
+    "expected_reason_contains": ["Invalid regex pattern"]
+  },
+  {
     "name": "order_1_deny_rule_wins_over_everything",
     "commands": ["rm file"],
     "settings": {

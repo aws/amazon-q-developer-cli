@@ -12,6 +12,7 @@ use crate::agent::tool_permission::{
     Rule,
     RuleAction,
     match_rules,
+    validate_regex,
 };
 
 /// Decide the final permission result for parsed commands.
@@ -20,6 +21,15 @@ pub fn decide(
     detection: &DetectResult,
     settings: &ShellPermissionSettings,
 ) -> PermissionEvalResult {
+    // 0. Invalid denied regex patterns should deny all (security-first)
+    for pattern in &settings.denied_commands {
+        if let Err(p) = validate_regex(pattern) {
+            return PermissionEvalResult::Deny {
+                reason: format!("Invalid regex pattern in deniedCommands: {}", p),
+            };
+        }
+    }
+
     let deny_rules = build_rules(&settings.denied_commands, RuleAction::Deny);
     let allow_rules = build_rules(&settings.allowed_commands, RuleAction::Allow);
 

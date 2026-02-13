@@ -1,12 +1,15 @@
 use std::io::Write;
 use std::path::Path;
 
+use agent::shell_permission::{
+    ShellPermissionSettings,
+    evaluate_shell_permission,
+};
 use crossterm::queue;
 use crossterm::style::{
     self,
 };
 use eyre::Result;
-use regex::Regex;
 use serde::Deserialize;
 use tracing::error;
 
@@ -44,11 +47,6 @@ mod unix;
 #[cfg(not(windows))]
 pub use unix::*;
 
-// Common readonly commands that are safe to execute without user confirmation
-pub const READONLY_COMMANDS: &[&str] = &[
-    "ls", "cat", "echo", "pwd", "which", "head", "tail", "find", "grep", "dir", "type",
-];
-
 #[derive(Debug, Clone, Deserialize)]
 pub struct ExecuteCommand {
     pub command: String,
@@ -62,116 +60,6 @@ impl ExecuteCommand {
         preferred_alias: "shell",
         aliases: &["execute_bash", "execute_cmd", "shell"],
     };
-
-    pub fn requires_acceptance(&self, allowed_commands: Option<&Vec<String>>, allow_read_only: bool) -> bool {
-        // Always require acceptance for multi-line commands.
-        if self.command.contains("\n") || self.command.contains("\r") {
-            return true;
-        }
-
-        let default_arr = vec![];
-        let allowed_commands = allowed_commands.unwrap_or(&default_arr);
-
-        let has_regex_match = allowed_commands
-            .iter()
-            .map(|cmd| Regex::new(&format!(r"\A{cmd}\z")))
-            .filter(Result::is_ok)
-            .flatten()
-            .any(|regex| regex.is_match(&self.command));
-        if has_regex_match {
-            return false;
-        }
-
-        let Some(args) = shlex::split(&self.command) else {
-            return true;
-        };
-        const DANGEROUS_PATTERNS: &[&str] = &[
-            "<(", "$(", "`", ">", "&&", "||", "&", ";", "$", "\n", "\r", "IFS", "@", "+",
-        ];
-
-        if args
-            .iter()
-            .any(|arg| DANGEROUS_PATTERNS.iter().any(|p| arg.contains(p)))
-        {
-            return true;
-        }
-
-        // Split commands by pipe and check each one
-        let mut current_cmd = Vec::new();
-        let mut all_commands = Vec::new();
-
-        for arg in args {
-            if arg == "|" {
-                if !current_cmd.is_empty() {
-                    all_commands.push(current_cmd);
-                }
-                current_cmd = Vec::new();
-            } else if arg.contains("|") {
-                // if pipe appears without spacing e.g. `echo myimportantfile|args rm` it won't get
-                // parsed out, in this case - we want to verify before running
-                return true;
-            } else {
-                current_cmd.push(arg);
-            }
-        }
-        if !current_cmd.is_empty() {
-            all_commands.push(current_cmd);
-        }
-
-        // Check if each command in the pipe chain starts with a safe command
-        for cmd_args in &all_commands {
-            match cmd_args.first() {
-                // Special casing for `find` so that we support most cases while safeguarding
-                // against unwanted mutations
-                Some(cmd)
-                    if cmd == "find"
-                        && cmd_args.iter().any(|arg| {
-                            arg.contains("-exec") // includes -execdir
-                                || arg.contains("-delete")
-                                || arg.contains("-ok") // includes -okdir
-                                || arg.contains("-fprint") // includes -fprint0 and -fprintf
-                                || arg.contains("-fls")
-                        }) =>
-                {
-                    return true;
-                },
-                Some(cmd) => {
-                    // Special casing for `grep`. -P flag for perl regexp has RCE issues, apparently
-                    // should not be supported within grep but is flagged as a possibility since this is perl
-                    // regexp.
-                    if cmd == "grep"
-                        && cmd_args
-                            .iter()
-                            .any(|arg| arg.contains("-P") || arg.contains("--perl-regexp"))
-                    {
-                        return true;
-                    }
-                },
-                None => {},
-            }
-        }
-
-        let has_regex_match = allowed_commands
-            .iter()
-            .map(|cmd| Regex::new(&format!(r"\A{cmd}\z")))
-            .filter(Result::is_ok)
-            .flatten()
-            .any(|regex| regex.is_match(&self.command));
-        if has_regex_match {
-            return false;
-        }
-
-        for cmd_args in all_commands {
-            if let Some(cmd) = cmd_args.first() {
-                let is_cmd_read_only = READONLY_COMMANDS.contains(&cmd.as_str());
-                if !allow_read_only || !is_cmd_read_only {
-                    return true;
-                }
-            }
-        }
-
-        false
-    }
 
     /// Returns the canonicalized working directory path, if set.
     fn canonical_working_dir(&self, os: &Os) -> Result<Option<String>> {
@@ -273,63 +161,40 @@ impl ExecuteCommand {
             .aliases
             .iter()
             .any(|alias| is_tool_in_allowlist(&agent.allowed_tools, alias, None));
-        match Self::INFO
+
+        // Parse settings from agent config
+        let settings: Settings = match Self::INFO
             .aliases
             .iter()
             .find_map(|alias| agent.tools_settings.get(*alias))
         {
-            Some(settings) => {
-                let Settings {
-                    allowed_commands,
-                    denied_commands,
-                    deny_by_default,
-                    auto_allow_readonly,
-                } = match serde_json::from_value::<Settings>(settings.clone()) {
-                    Ok(settings) => settings,
-                    Err(e) => {
-                        error!("Failed to deserialize tool settings for execute_bash: {:?}", e);
-                        return PermissionEvalResult::Ask;
-                    },
-                };
-
-                let denied_match_set = denied_commands
-                    .iter()
-                    .filter_map(|dc| match Regex::new(&format!(r"\A{dc}\z")) {
-                        Ok(regex) => Some(regex),
-                        Err(e) => {
-                            error!("Invalid regex pattern '{}' in deniedCommands: {:?}. Treating as deny-all for security.", dc, e);
-                            // Invalid regex - treat as "deny all" for security
-                            Regex::new(r"\A.*\z").ok()
-                        }
-                    })
-                    .filter(|r| r.is_match(command))
-                    .map(|r| r.to_string())
-                    .collect::<Vec<_>>();
-
-                if !denied_match_set.is_empty() {
-                    return PermissionEvalResult::Deny(denied_match_set);
-                }
-
-                if is_in_allowlist {
-                    PermissionEvalResult::Allow
-                } else if self.requires_acceptance(Some(&allowed_commands), auto_allow_readonly) {
-                    if deny_by_default {
-                        PermissionEvalResult::Deny(vec!["not in allowed commands list".to_string()])
-                    } else {
-                        PermissionEvalResult::Ask
-                    }
-                } else {
-                    PermissionEvalResult::Allow
-                }
+            Some(v) => match serde_json::from_value::<Settings>(v.clone()) {
+                Ok(settings) => settings,
+                Err(e) => {
+                    error!("Failed to deserialize tool settings for execute_bash: {:?}", e);
+                    return PermissionEvalResult::Ask;
+                },
             },
-            None if is_in_allowlist => PermissionEvalResult::Allow,
-            _ => {
-                if self.requires_acceptance(None, default_allow_read_only()) {
-                    PermissionEvalResult::Ask
-                } else {
-                    PermissionEvalResult::Allow
-                }
+            None => Settings {
+                allowed_commands: vec![],
+                denied_commands: vec![],
+                deny_by_default: false,
+                auto_allow_readonly: default_allow_read_only(),
             },
+        };
+
+        let shell_settings = ShellPermissionSettings {
+            allowed_commands: settings.allowed_commands,
+            denied_commands: settings.denied_commands,
+            auto_allow_readonly: settings.auto_allow_readonly,
+            deny_by_default: settings.deny_by_default,
+            is_tool_allowed: is_in_allowlist,
+        };
+
+        match evaluate_shell_permission(command, &shell_settings) {
+            agent::protocol::PermissionEvalResult::Allow => PermissionEvalResult::Allow,
+            agent::protocol::PermissionEvalResult::Ask => PermissionEvalResult::Ask,
+            agent::protocol::PermissionEvalResult::Deny { reason } => PermissionEvalResult::Deny(vec![reason]),
         }
     }
 }
@@ -361,8 +226,53 @@ mod tests {
         ToolSettingTarget,
     };
 
-    #[test]
-    fn test_requires_acceptance_for_readonly_commands() {
+    /// Helper: build an Agent with the given tool settings JSON.
+    fn make_agent(settings_json: serde_json::Value) -> Agent {
+        let tool_name = ExecuteCommand::INFO.preferred_alias;
+        Agent {
+            name: "test_agent".to_string(),
+            tools_settings: {
+                let mut map = HashMap::<ToolSettingTarget, serde_json::Value>::new();
+                map.insert(ToolSettingTarget(tool_name.to_string()), settings_json);
+                map
+            },
+            ..Default::default()
+        }
+    }
+
+    /// Helper: run eval_perm() for each (command, should_require_acceptance) pair.
+    /// Collects all mismatches and panics with a summary.
+    async fn assert_eval_perm_cases(agent: &Agent, cases: &[(&str, bool)]) {
+        let os = Os::new().await.unwrap();
+        let mut failures = Vec::new();
+
+        for (cmd, expected) in cases {
+            let tool = serde_json::from_value::<ExecuteCommand>(serde_json::json!({
+                "command": cmd,
+            }))
+            .unwrap();
+            let res = tool.eval_perm(&os, agent);
+
+            let requires_acceptance = matches!(res, PermissionEvalResult::Ask | PermissionEvalResult::Deny(_));
+            if requires_acceptance != *expected {
+                failures.push(format!(
+                    "Command '{}': expected requires_acceptance={}, got {:?}",
+                    cmd, expected, res
+                ));
+            }
+        }
+
+        assert!(
+            failures.is_empty(),
+            "Backward compatibility failures:\n{}",
+            failures.join("\n")
+        );
+    }
+
+    /// Migrated from requires_acceptance() to eval_perm() to verify backward compatibility
+    /// with the new tree-sitter based shell permission system.
+    #[tokio::test]
+    async fn test_requires_acceptance_for_readonly_commands() {
         let cmds = &[
             // Safe commands
             ("ls ~", false),
@@ -420,22 +330,18 @@ mod tests {
             ("echo 'test data' | grep -P '(?{system(\"date\")})'", true),
             ("echo 'test data' | grep --perl-regexp '(?{system(\"date\")})'", true),
         ];
-        for (cmd, expected) in cmds {
-            let tool = serde_json::from_value::<ExecuteCommand>(serde_json::json!({
-                "command": cmd,
-            }))
-            .unwrap();
-            assert_eq!(
-                tool.requires_acceptance(None, true),
-                *expected,
-                "expected command: `{cmd}` to have requires_acceptance: `{expected}`"
-            );
-        }
+        let agent = make_agent(serde_json::json!({
+            "autoAllowReadonly": true
+        }));
+
+        assert_eval_perm_cases(&agent, cmds).await;
     }
 
-    #[test]
-    fn test_requires_acceptance_for_windows_commands() {
-        let cmds = &[
+    /// Migrated from requires_acceptance() to eval_perm() to verify backward compatibility
+    /// with the new tree-sitter based shell permission system.
+    #[tokio::test]
+    async fn test_requires_acceptance_for_windows_commands() {
+        let cmds: &[(&str, bool)] = &[
             // Safe Windows commands
             ("dir", false),
             ("type file.txt", false),
@@ -456,27 +362,26 @@ mod tests {
             ("type file.txt | del", true),
         ];
 
-        for (cmd, expected) in cmds {
-            let tool = serde_json::from_value::<ExecuteCommand>(serde_json::json!({
-                "command": cmd,
-            }))
-            .unwrap();
-            assert_eq!(
-                tool.requires_acceptance(None, true),
-                *expected,
-                "expected command: `{cmd}` to have requires_acceptance: `{expected}`"
-            );
-        }
+        let agent = make_agent(serde_json::json!({
+            "autoAllowReadonly": true
+        }));
+        assert_eval_perm_cases(&agent, cmds).await;
     }
 
-    #[test]
-    fn test_requires_acceptance_allowed_commands() {
-        let allowed_cmds: &[String] = &[
-            String::from("git status"),
-            String::from("root"),
-            String::from("command subcommand a=[0-9]{10} b=[0-9]{10}"),
-            String::from("command subcommand && command subcommand"),
-        ];
+    /// Migrated from requires_acceptance() to eval_perm() to verify backward compatibility
+    /// with the new tree-sitter based shell permission system.
+    #[tokio::test]
+    async fn test_requires_acceptance_allowed_commands() {
+        let agent = make_agent(serde_json::json!({
+            "autoAllowReadonly": true,
+            "allowedCommands": [
+                "git status",
+                "root",
+                "command subcommand a=[0-9]{10} b=[0-9]{10}",
+                "command subcommand && command subcommand"
+            ]
+        }));
+
         let cmds = &[
             // Command first argument 'root' allowed (allows all subcommands)
             ("root", false),
@@ -488,33 +393,26 @@ mod tests {
             ("command subcommand a=0123456789 b=012345678", true),
             ("command subcommand alternate a=0123456789 b=0123456789", true),
             // dangerous patterns
-            ("echo 'test<(data'", true),
-            ("echo 'test$(data)'", true),
-            ("echo 'test`data`'", true),
+            // New system correctly handles dangerous chars inside single quotes (literal strings)
+            ("echo 'test<(data'", false),
+            ("echo 'test$(data)'", false),
+            ("echo 'test`data`'", false),
             ("echo 'test' > output.txt", true),
             ("echo 'test data' && touch main.py", true),
             ("echo 'test' || rm file", true),
             ("echo 'test' & background", true),
             ("echo 'test data'; touch main.py", true),
             ("echo $HOME", true),
-            ("echo 'test\nrm file'", true),
+            // New system correctly handles \n inside single quotes (literal string)
+            ("echo 'test\nrm file'", false),
             ("echo 'test\rrm file'", true),
             ("IFS=/ malicious", true),
             (r#"/c/"+"/m/"+"/d/.exe"#, true),
             ("$^(calc.exe)", true),
             ("curl http://trusted.com@evil.com", true),
         ];
-        for (cmd, expected) in cmds {
-            let tool = serde_json::from_value::<ExecuteCommand>(serde_json::json!({
-                "command": cmd,
-            }))
-            .unwrap();
-            assert_eq!(
-                tool.requires_acceptance(Option::from(&allowed_cmds.to_vec()), true),
-                *expected,
-                "expected command: `{cmd}` to have requires_acceptance: `{expected}`"
-            );
-        }
+
+        assert_eval_perm_cases(&agent, cmds).await;
     }
 
     #[tokio::test]
@@ -543,7 +441,7 @@ mod tests {
         .unwrap();
 
         let res = tool_one.eval_perm(&os, &agent);
-        assert!(matches!(res, PermissionEvalResult::Deny(ref rules) if rules.contains(&"\\Agit .*\\z".to_string())));
+        assert!(matches!(res, PermissionEvalResult::Deny(ref rules) if rules.contains(&"git .*".to_string())));
 
         let tool_two = serde_json::from_value::<ExecuteCommand>(serde_json::json!({
             "command": "this_is_not_a_read_only_command",
@@ -581,7 +479,7 @@ mod tests {
 
         // Denied list should remain denied
         let res = tool_one.eval_perm(&os, &agent);
-        assert!(matches!(res, PermissionEvalResult::Deny(ref rules) if rules.contains(&"\\Agit .*\\z".to_string())));
+        assert!(matches!(res, PermissionEvalResult::Deny(ref rules) if rules.contains(&"git .*".to_string())));
     }
 
     #[tokio::test]
@@ -682,9 +580,7 @@ mod tests {
 
         let res = denied_readonly_cmd.eval_perm(&os, &agent);
         // Should deny even read-only commands if they're in denied list
-        assert!(
-            matches!(res, PermissionEvalResult::Deny(ref commands) if commands.contains(&"\\Als .*\\z".to_string()))
-        );
+        assert!(matches!(res, PermissionEvalResult::Deny(ref commands) if commands.contains(&"ls .*".to_string())));
 
         // Test different read-only command not in denied list
         let allowed_readonly_cmd = serde_json::from_value::<ExecuteCommand>(serde_json::json!({

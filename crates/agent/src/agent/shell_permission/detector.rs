@@ -69,13 +69,14 @@ pub fn detect(commands: &[ParsedCommand]) -> DetectResult {
         .map(|cmd| is_readonly_with_config(cmd, config))
         .collect();
 
+    let is_readonly = command_readonly.iter().all(|&r| r);
+
     // Multi-command detection (patterns that span commands)
-    let chain_danger = detect_chain_patterns(commands, config);
+    let chain_danger = detect_chain_patterns(commands, config, is_readonly);
 
     // Aggregate
     let max_single = command_danger_levels.iter().max().copied().unwrap_or(DangerLevel::None);
     let danger_level = max_single.max(chain_danger);
-    let is_readonly = command_readonly.iter().all(|&r| r);
 
     DetectResult {
         danger_level,
@@ -86,15 +87,28 @@ pub fn detect(commands: &[ParsedCommand]) -> DetectResult {
 }
 
 /// Detect patterns that span multiple commands.
-fn detect_chain_patterns(commands: &[ParsedCommand], config: &DetectorConfig) -> DangerLevel {
+fn detect_chain_patterns(commands: &[ParsedCommand], config: &DetectorConfig, is_readonly: bool) -> DangerLevel {
+    // Pipe to shell: `curl | bash`
     for (i, cmd) in commands.iter().enumerate() {
-        // Pipe to shell: `curl | bash`
         if let Some(ChainOperator::Pipe) = cmd.operator
             && let Some(next) = commands.get(i + 1)
             && config.shells.contains(&next.command_name)
         {
             return DangerLevel::High;
         }
+    }
+
+    // Operators (&&, ||, ;, |) are danger, except readonly-only pipes
+    let has_operators = commands.iter().any(|cmd| cmd.operator.is_some());
+    if has_operators {
+        let only_pipes = commands
+            .iter()
+            .all(|cmd| matches!(cmd.operator, None | Some(ChainOperator::Pipe)));
+        if is_readonly && only_pipes {
+            // Readonly-only pipes are safe
+            return DangerLevel::None;
+        }
+        return DangerLevel::Low;
     }
     DangerLevel::None
 }
@@ -115,12 +129,7 @@ fn get_danger_level_with_config(cmd: &ParsedCommand, config: &DetectorConfig) ->
     }
 
     // Low: risky but no direct execution
-    if cmd.has_redirection
-        || cmd.has_variable_expansion
-        || cmd.has_variable_assignment
-        || cmd.has_ansi_c_string
-        || cmd.operator.is_some()
-    {
+    if cmd.has_redirection || cmd.has_variable_expansion || cmd.has_variable_assignment || cmd.has_ansi_c_string {
         return DangerLevel::Low;
     }
 

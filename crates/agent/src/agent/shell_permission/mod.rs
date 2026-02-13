@@ -44,7 +44,20 @@ pub fn evaluate_shell_permission(command: &str, settings: &ShellPermissionSettin
     let detection = detect(&parse_result.commands);
 
     // Layer 3: Decide
-    decide(&parse_result.commands, &detection, settings)
+    let result = decide(&parse_result.commands, &detection, settings);
+
+    // Guard against tree-sitter misparses
+    match result {
+        PermissionEvalResult::Allow if has_parser_blind_spots(command) => PermissionEvalResult::Ask,
+        other => other,
+    }
+}
+
+/// Returns true if the command contains patterns that tree-sitter bash grammar mishandles.
+fn has_parser_blind_spots(command: &str) -> bool {
+    // TODO: Need to revisit and investigate why \r was considered a dangerous command in v1
+    // implementation
+    command.contains('\r')
 }
 
 #[cfg(test)]

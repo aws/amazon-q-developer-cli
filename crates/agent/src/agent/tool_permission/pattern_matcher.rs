@@ -71,13 +71,27 @@ fn matches_pattern(value: &str, pattern: &str, mode: PatternMode) -> bool {
     }
 }
 
-fn matches_regex(value: &str, pattern: &str) -> bool {
-    let anchored = match (pattern.starts_with('^'), pattern.ends_with('$')) {
+/// Anchor a regex pattern (add ^ and $ if not present).
+fn anchor_regex(pattern: &str) -> String {
+    match (pattern.starts_with('^'), pattern.ends_with('$')) {
         (true, true) => pattern.to_string(),
         (true, false) => format!("{pattern}$"),
         (false, true) => format!("^{pattern}"),
         (false, false) => format!("^{pattern}$"),
-    };
+    }
+}
+
+/// Validate a regex pattern. Returns Err with the pattern if invalid.
+pub fn validate_regex(pattern: &str) -> Result<(), String> {
+    let anchored = anchor_regex(pattern);
+    match Regex::new(&anchored) {
+        Ok(_) => Ok(()),
+        Err(_) => Err(pattern.to_string()),
+    }
+}
+
+fn matches_regex(value: &str, pattern: &str) -> bool {
+    let anchored = anchor_regex(pattern);
     Regex::new(&anchored).map(|r| r.is_match(value)).unwrap_or(false)
 }
 

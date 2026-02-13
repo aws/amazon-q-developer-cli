@@ -7,4 +7,5 @@ pub use pattern_matcher::{
     Rule,
     RuleAction,
     match_rules,
+    validate_regex,
 };

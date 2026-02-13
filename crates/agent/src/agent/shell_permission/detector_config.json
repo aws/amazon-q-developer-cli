@@ -1,7 +1,7 @@
 {
   "dangerous_commands": ["eval", "source", "xargs", "del", "erase", "format", "move", "Start-Process", "Invoke-Item", "Remove-Item"],
   "dangerous_options": {
-    "find": ["-exec", "-execdir", "-delete", "-ok", "-okdir", "-fprint"],
+    "find": ["-exec", "-execdir", "-delete", "-ok", "-okdir", "-fprint", "-fls"],
     "grep": ["-P", "--perl-regexp"],
     "sed": ["/e"],
     "sort": ["--compress-program"],

@@ -10,7 +10,7 @@
       {"input": "git log --oneline", "expected": "Allow"},
       {"input": "git push", "expected": "Ask"},
       {"input": "find . -exec rm {} \\;", "expected": "Ask"},
-      {"input": "cat file | grep pattern", "expected": "Ask"},
+      {"input": "cat file | grep pattern", "expected": "Allow"},
       {"input": "echo hello > file.txt", "expected": "Ask"},
       {"input": "echo $(whoami)", "expected": "Ask"},
       {"input": "find . -${t}exec rm {} +", "expected": "Ask"},
