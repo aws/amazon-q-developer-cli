@@ -24,7 +24,7 @@ export const ReadFile = {
           <Text>import {'{ Box }'} from 'ink';</Text>
           <Text> </Text>
           <Text>export const Button = () =&gt; {'{'}</Text>
-          <Text>  return &lt;Box&gt;Click me&lt;/Box&gt;;</Text>
+          <Text> return &lt;Box&gt;Click me&lt;/Box&gt;;</Text>
           <Text>{'};'}</Text>
         </Box>
       </Card>

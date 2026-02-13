@@ -17,12 +17,18 @@ export interface PastedChipProps {
   imageSizeBytes?: number;
 }
 
-export function shouldCollapsePaste(content: string): { shouldCollapse: boolean; lineCount: number; charCount: number } {
+export function shouldCollapsePaste(content: string): {
+  shouldCollapse: boolean;
+  lineCount: number;
+  charCount: number;
+} {
   // Count lines by splitting on any newline variant (\n, \r\n, or \r)
   const lines = content.split(/\r\n|\r|\n/);
   const lineCount = lines.length;
   const charCount = content.length;
-  const shouldCollapse = lineCount > PASTE_COLLAPSE_THRESHOLD_LINES || charCount > PASTE_COLLAPSE_THRESHOLD_CHARS;
+  const shouldCollapse =
+    lineCount > PASTE_COLLAPSE_THRESHOLD_LINES ||
+    charCount > PASTE_COLLAPSE_THRESHOLD_CHARS;
   return { shouldCollapse, lineCount, charCount };
 }
 
@@ -45,15 +51,14 @@ export const PastedChip = React.memo(function PastedChip({
 
   if (type === 'image') {
     // Format image info
-    const dimensions = imageWidth && imageHeight ? `${imageWidth}×${imageHeight}` : '';
+    const dimensions =
+      imageWidth && imageHeight ? `${imageWidth}×${imageHeight}` : '';
     const size = imageSizeBytes ? formatBytes(imageSizeBytes) : '';
     const details = [dimensions, size].filter(Boolean).join(' ');
     label = `pasted image${details ? ` (${details})` : ''}`;
   } else {
     // Text content
-    label = lineCount > 1
-      ? `${lineCount} lines`
-      : `${charCount} chars`;
+    label = lineCount > 1 ? `${lineCount} lines` : `${charCount} chars`;
   }
 
   return (

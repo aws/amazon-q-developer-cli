@@ -41,15 +41,33 @@ const TRIGGER_RULES = [
 
 export const InlineLayout: React.FC = () => {
   // Grouped selectors using useShallow - prevents re-render cascades
-  const { transientAlert, loadingMessage, agentError, agentErrorGuidance } = useNotificationState();
+  const { transientAlert, loadingMessage, agentError, agentErrorGuidance } =
+    useNotificationState();
   const { dismissTransientAlert, setAgentError } = useNotificationActions();
   const { isProcessing, isCompacting, pendingApproval } = useProcessingState();
   const { respondToApproval, cancelApproval } = useApprovalState();
-  const { toolOutputsExpanded, hasExpandableToolOutputs, showContextBreakdown, showHelpPanel, helpCommands } = useUIState();
-  const { toggleToolOutputsExpanded, setShowContextBreakdown, setShowHelpPanel } = useUIActions();
-  const { sessionId, contextUsagePercent, lastTurnTokens, currentModel, currentAgent } = useContextState();
+  const {
+    toolOutputsExpanded,
+    hasExpandableToolOutputs,
+    showContextBreakdown,
+    showHelpPanel,
+    helpCommands,
+  } = useUIState();
+  const {
+    toggleToolOutputsExpanded,
+    setShowContextBreakdown,
+    setShowHelpPanel,
+  } = useUIActions();
+  const {
+    sessionId,
+    contextUsagePercent,
+    lastTurnTokens,
+    currentModel,
+    currentAgent,
+  } = useContextState();
   const { activeCommand } = useCommandState();
-  const { setActiveCommand, setActiveTrigger, clearCommandInput } = useCommandActions();
+  const { setActiveCommand, setActiveTrigger, clearCommandInput } =
+    useCommandActions();
   const { handleUserInput } = useInputActions();
   const { messages } = useConversationState();
 
@@ -129,19 +147,34 @@ export const InlineLayout: React.FC = () => {
     if (pendingApproval) {
       // Find the tool message to get the tool name
       const toolMessage = messages.find(
-        (msg) => msg.role === 'tool_use' && msg.id === pendingApproval.toolCall.toolCallId
+        (msg) =>
+          msg.role === 'tool_use' &&
+          msg.id === pendingApproval.toolCall.toolCallId
       );
-      const toolName = toolMessage && 'name' in toolMessage ? toolMessage.name : 'Tool';
+      const toolName =
+        toolMessage && 'name' in toolMessage ? toolMessage.name : 'Tool';
 
       // Build actions array
       const actions = [];
-      if (pendingApproval.permissionOptions.find((opt) => opt.kind === ApprovalOptionId.AllowOnce)) {
+      if (
+        pendingApproval.permissionOptions.find(
+          (opt) => opt.kind === ApprovalOptionId.AllowOnce
+        )
+      ) {
         actions.push({ key: 'y', label: 'Yes' });
       }
-      if (pendingApproval.permissionOptions.find((opt) => opt.kind === ApprovalOptionId.RejectOnce)) {
+      if (
+        pendingApproval.permissionOptions.find(
+          (opt) => opt.kind === ApprovalOptionId.RejectOnce
+        )
+      ) {
         actions.push({ key: 'n', label: 'No' });
       }
-      if (pendingApproval.permissionOptions.find((opt) => opt.kind === ApprovalOptionId.AllowAlways)) {
+      if (
+        pendingApproval.permissionOptions.find(
+          (opt) => opt.kind === ApprovalOptionId.AllowAlways
+        )
+      ) {
         actions.push({ key: 't', label: 'Trust' });
       }
 
@@ -157,7 +190,11 @@ export const InlineLayout: React.FC = () => {
     return (
       <ContextBar>
         {currentAgent && (
-          <Chip value={currentAgent.name} hexColor={getAgentColor(currentAgent.name).hex} prefix="agent:" />
+          <Chip
+            value={currentAgent.name}
+            hexColor={getAgentColor(currentAgent.name).hex}
+            prefix="agent:"
+          />
         )}
         <ProgressChip
           value={contextUsagePercent ?? 0}
@@ -179,11 +216,21 @@ export const InlineLayout: React.FC = () => {
         )}
       </ContextBar>
     ) as PromptBarHeader;
-  }, [pendingApproval, messages, currentAgent, contextUsagePercent, gitBranch, currentModel]);
+  }, [
+    pendingApproval,
+    messages,
+    currentAgent,
+    contextUsagePercent,
+    gitBranch,
+    currentModel,
+  ]);
 
-  const handleSubmit = useCallback((value: string) => {
-    handleUserInput(value);
-  }, [handleUserInput]);
+  const handleSubmit = useCallback(
+    (value: string) => {
+      handleUserInput(value);
+    },
+    [handleUserInput]
+  );
 
   const handleTriggerDetected = useCallback(
     (
@@ -216,10 +263,20 @@ export const InlineLayout: React.FC = () => {
       <ConversationView />
 
       <NotificationBar
-        message={!sessionId ? 'Initializing...' : loadingMessage ?? transientAlert?.message}
-        status={!sessionId || loadingMessage ? 'loading' : transientAlert?.status}
-        autoHideMs={!sessionId || loadingMessage ? undefined : transientAlert?.autoHideMs}
-        onDismiss={!sessionId || loadingMessage ? undefined : dismissTransientAlert}
+        message={
+          !sessionId
+            ? 'Initializing...'
+            : (loadingMessage ?? transientAlert?.message)
+        }
+        status={
+          !sessionId || loadingMessage ? 'loading' : transientAlert?.status
+        }
+        autoHideMs={
+          !sessionId || loadingMessage ? undefined : transientAlert?.autoHideMs
+        }
+        onDismiss={
+          !sessionId || loadingMessage ? undefined : dismissTransientAlert
+        }
       />
 
       <Box marginBottom={1}>
@@ -235,7 +292,9 @@ export const InlineLayout: React.FC = () => {
             !!activeCommand ||
             !!agentError
           }
-          placeholder={pendingApproval ? 'type permission (y/n/t) ↵' : undefined}
+          placeholder={
+            pendingApproval ? 'type permission (y/n/t) ↵' : undefined
+          }
           hint={activeCommand?.command.meta?.hint as string | undefined}
           hideInput={toolOutputsExpanded}
         >
@@ -249,10 +308,7 @@ export const InlineLayout: React.FC = () => {
             />
           )}
           {showHelpPanel && (
-            <HelpPanel
-              commands={helpCommands}
-              onClose={handleCloseHelpPanel}
-            />
+            <HelpPanel commands={helpCommands} onClose={handleCloseHelpPanel} />
           )}
           <ActionHint
             text="Showing detailed output · ctrl+o to toggle"

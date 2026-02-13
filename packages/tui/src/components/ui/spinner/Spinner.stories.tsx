@@ -1,5 +1,4 @@
 import { Spinner } from './Spinner.js';
-import type { SpinnerProps } from './Spinner.js';
 
 type Meta<T> = {
   title: string;
@@ -27,5 +26,5 @@ export default meta;
 type Story = StoryObj<typeof Spinner>;
 
 export const Default: Story = {
-  args: {} as SpinnerProps,
+  args: {},
 };

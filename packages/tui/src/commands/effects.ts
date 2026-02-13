@@ -12,13 +12,22 @@ import type { CommandContext } from './types.js';
 import type { CommandResult, TuiCommand } from '../types/commands.js';
 
 /** Effect handler function */
-type EffectHandler = (result: CommandResult | null, ctx: CommandContext) => void;
+type EffectHandler = (
+  result: CommandResult | null,
+  ctx: CommandContext
+) => void;
 
 /** Extract command name from TuiCommand union type */
 type CommandName = TuiCommand['command'];
 
 /** Effect names - semantic actions the TUI can perform */
-type EffectName = 'updateModel' | 'updateAgent' | 'showContextPanel' | 'showHelpPanel' | 'clearMessages' | 'quit';
+type EffectName =
+  | 'updateModel'
+  | 'updateAgent'
+  | 'showContextPanel'
+  | 'showHelpPanel'
+  | 'clearMessages'
+  | 'quit';
 
 /**
  * Command → Effect mapping.
@@ -37,7 +46,9 @@ const commandEffects: Partial<Record<CommandName, EffectName>> = {
  */
 const effectHandlers: Record<EffectName, EffectHandler> = {
   updateModel: (result, ctx) => {
-    const data = result?.data as { model?: { id: string; name: string } } | undefined;
+    const data = result?.data as
+      | { model?: { id: string; name: string } }
+      | undefined;
     if (data?.model) {
       ctx.setCurrentModel(data.model);
     }
@@ -55,7 +66,15 @@ const effectHandlers: Record<EffectName, EffectHandler> = {
   },
 
   showHelpPanel: (result, ctx) => {
-    const data = result?.data as { commands?: Array<{ name: string; description: string; usage: string }> } | undefined;
+    const data = result?.data as
+      | {
+          commands?: Array<{
+            name: string;
+            description: string;
+            usage: string;
+          }>;
+        }
+      | undefined;
     if (data?.commands) {
       ctx.setShowHelpPanel(true, data.commands);
     }
@@ -74,7 +93,11 @@ const effectHandlers: Record<EffectName, EffectHandler> = {
 /**
  * Run effect for a command.
  */
-export function runEffect(commandName: string, result: CommandResult | null, ctx: CommandContext): void {
+export function runEffect(
+  commandName: string,
+  result: CommandResult | null,
+  ctx: CommandContext
+): void {
   const effectName = commandEffects[commandName as CommandName];
   if (effectName) {
     effectHandlers[effectName]?.(result, ctx);

@@ -16,7 +16,8 @@ export default meta;
 export const FullInfo = {
   parameters: {
     docs: {
-      storyDescription: 'Complete command bar with workspace, git, and model info',
+      storyDescription:
+        'Complete command bar with workspace, git, and model info',
     },
   },
   render: () => (
@@ -64,7 +65,12 @@ export const CustomChips = {
   render: () => (
     <ContextBar>
       <Chip value="online" color={ChipColor.SUCCESS} prefix="● " />
-      <Chip value="feature/new-ui" color={ChipColor.PRIMARY} prefix="git:" wrap={true} />
+      <Chip
+        value="feature/new-ui"
+        color={ChipColor.PRIMARY}
+        prefix="git:"
+        wrap={true}
+      />
       <Chip value="processing" color={ChipColor.WARNING} prefix="⟳ " />
       <Chip value="claude-3.5-sonnet" color={ChipColor.PRIMARY} />
     </ContextBar>

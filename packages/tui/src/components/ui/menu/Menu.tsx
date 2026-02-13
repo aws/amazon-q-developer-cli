@@ -43,12 +43,14 @@ export const Menu = React.memo(function Menu({
   const description = getColor('secondary');
 
   // Calculate the maximum item label length for consistent column alignment
-  const maxLabelLength = Math.max(...items.map((item) => item.label.length)) + prefix.length;
-  
+  const maxLabelLength =
+    Math.max(...items.map((item) => item.label.length)) + prefix.length;
+
   // Calculate available width for description
   const indicatorWidth = showSelectedIndicator ? 3 : 0; // chevron + 2 spaces
   const spacerWidth = 4; // Box width={4}
-  const availableDescWidth = terminalWidth - indicatorWidth - maxLabelLength - spacerWidth - 5; // -5 for margin
+  const availableDescWidth =
+    terminalWidth - indicatorWidth - maxLabelLength - spacerWidth - 5; // -5 for margin
 
   // Call onHighlight when selectedIndex changes
   React.useEffect(() => {
@@ -78,7 +80,10 @@ export const Menu = React.memo(function Menu({
   // Calculate scroll window
   const startIndex = Math.max(
     0,
-    Math.min(selectedIndex - Math.floor(visibleItems / 2), items.length - visibleItems),
+    Math.min(
+      selectedIndex - Math.floor(visibleItems / 2),
+      items.length - visibleItems
+    )
   );
   const endIndex = Math.min(startIndex + visibleItems, items.length);
   const visibleItemsSlice = items.slice(startIndex, endIndex);
@@ -90,11 +95,12 @@ export const Menu = React.memo(function Menu({
         const itemText = `${prefix}${item.label}`;
         const paddedItem = itemText.padEnd(maxLabelLength);
         const isSelected = actualIndex === selectedIndex;
-        
+
         // Truncate description if too long
-        const truncatedDesc = item.description.length > availableDescWidth 
-          ? item.description.slice(0, availableDescWidth - 3) + '...'
-          : item.description;
+        const truncatedDesc =
+          item.description.length > availableDescWidth
+            ? item.description.slice(0, availableDescWidth - 3) + '...'
+            : item.description;
 
         return (
           <Box key={item.label} flexDirection="row">
@@ -108,7 +114,9 @@ export const Menu = React.memo(function Menu({
                 <Text> </Text>
               </>
             )}
-            <Text>{isSelected ? selectedLabel(paddedItem) : label(paddedItem)}</Text>
+            <Text>
+              {isSelected ? selectedLabel(paddedItem) : label(paddedItem)}
+            </Text>
             <Box width={4} />
             <Text>{description(truncatedDesc)}</Text>
           </Box>

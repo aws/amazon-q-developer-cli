@@ -1,5 +1,12 @@
 import { Box, Text as InkText } from 'ink';
-import React, { useEffect, useRef, useState, useLayoutEffect, useCallback, useMemo } from 'react';
+import React, {
+  useEffect,
+  useRef,
+  useState,
+  useLayoutEffect,
+  useCallback,
+  useMemo,
+} from 'react';
 import { useTheme } from '../../../hooks/useThemeContext.js';
 import { useKeypress, type Key } from '../../../hooks/useKeypress.js';
 import { Text } from '../../ui/text/Text.js';
@@ -7,8 +14,12 @@ import { PastedChip, shouldCollapsePaste } from './PastedChip.js';
 import { FileChip } from './FileChip.js';
 import { normalizeLineEndings, isPrintable } from '../../../utils/index.js';
 import { inputMetrics } from '../../../utils/inputMetrics.js';
-import { useCommandState, useCommandActions, useFileAttachmentState, useFileAttachmentActions } from '../../../stores/selectors.js';
-import { useAppStore } from '../../../stores/app-store.js';
+import {
+  useCommandState,
+  useCommandActions,
+  useFileAttachmentState,
+  useFileAttachmentActions,
+} from '../../../stores/selectors.js';
 import {
   type Segment,
   segmentWidth,
@@ -45,8 +56,18 @@ export interface PromptInputProps {
 }
 
 // FileSegment type for local use
-type FileSegment = { type: 'file'; filePath: string; content: string; lineCount: number };
-type PasteSegment = { type: 'paste'; content: string; lineCount: number; charCount: number };
+type FileSegment = {
+  type: 'file';
+  filePath: string;
+  content: string;
+  lineCount: number;
+};
+type PasteSegment = {
+  type: 'paste';
+  content: string;
+  lineCount: number;
+  charCount: number;
+};
 
 // Build content for submission - use @file: markers for later expansion
 const buildContent = (segments: Segment[]): string => {
@@ -60,7 +81,11 @@ const buildContent = (segments: Segment[]): string => {
 };
 
 // Detect trigger patterns
-const detectTrigger = (text: string, cursor: number, rules: TriggerRule[]): TriggerInfo | null => {
+const detectTrigger = (
+  text: string,
+  cursor: number,
+  rules: TriggerRule[]
+): TriggerInfo | null => {
   for (const rule of rules) {
     if (rule.type === 'start' && text.startsWith(rule.key)) {
       return { key: rule.key, position: 0, type: rule.type };
@@ -82,11 +107,14 @@ export const PromptInput = React.memo(function PromptInput({
   onTriggerDetected,
   placeholder = 'ask a question, or describe a task ↵',
 }: PromptInputProps) {
-  const { activeTrigger, filePickerHasResults, commandInputValue } = useCommandState();
+  const { activeTrigger, filePickerHasResults, commandInputValue } =
+    useCommandState();
   const { setCommandInput, clearCommandInput } = useCommandActions();
   const { pendingFileAttachment } = useFileAttachmentState();
   const { consumePendingFileAttachment } = useFileAttachmentActions();
-  const [segments, setSegments] = useState<Segment[]>([{ type: 'text', value: '' }]);
+  const [segments, setSegments] = useState<Segment[]>([
+    { type: 'text', value: '' },
+  ]);
   const [cursor, setCursor] = useState(0);
 
   const { getColor } = useTheme();
@@ -98,7 +126,11 @@ export const PromptInput = React.memo(function PromptInput({
   useEffect(() => {
     const visibleText = getVisibleText(segments);
     const firstSeg = segments[0];
-    if (commandInputValue !== visibleText && segments.length === 1 && firstSeg?.type === 'text') {
+    if (
+      commandInputValue !== visibleText &&
+      segments.length === 1 &&
+      firstSeg?.type === 'text'
+    ) {
       setSegments([{ type: 'text', value: commandInputValue }]);
       setCursor(commandInputValue.length);
     }
@@ -114,13 +146,21 @@ export const PromptInput = React.memo(function PromptInput({
         try {
           const content = fs.readFileSync(filePath, 'utf-8');
           const lines = content.split(/\r\n|\r|\n/);
-          const fileSegment: FileSegment = { type: 'file', filePath, content, lineCount: lines.length };
-          
+          const fileSegment: FileSegment = {
+            type: 'file',
+            filePath,
+            content,
+            lineCount: lines.length,
+          };
+
           // Use stored trigger position to find where @query starts
           const { segIdx, offset } = locateCursor(segments, triggerPosition);
-          const { segIdx: endSegIdx, offset: endOffset } = locateCursor(segments, cursor);
+          const { segIdx: endSegIdx, offset: endOffset } = locateCursor(
+            segments,
+            cursor
+          );
           const seg = segments[segIdx];
-          
+
           if (seg?.type === 'text' && segIdx === endSegIdx) {
             // Replace @query with file chip
             const newSegs = [
@@ -135,7 +175,10 @@ export const PromptInput = React.memo(function PromptInput({
             // Position cursor after the chip
             let newCursor = 0;
             for (const s of normalized) {
-              if (s === fileSegment || (s.type === 'file' && s.filePath === filePath)) {
+              if (
+                s === fileSegment ||
+                (s.type === 'file' && s.filePath === filePath)
+              ) {
                 newCursor += 1;
                 break;
               }
@@ -172,8 +215,11 @@ export const PromptInput = React.memo(function PromptInput({
     const text = getVisibleText(segments);
     const trigger = detectTrigger(text, cursor, triggerRules);
     const prev = prevTriggerRef.current;
-    const changed = (trigger === null) !== (prev === null) ||
-      (trigger && prev && (trigger.key !== prev.key || trigger.position !== prev.position));
+    const changed =
+      (trigger === null) !== (prev === null) ||
+      (trigger &&
+        prev &&
+        (trigger.key !== prev.key || trigger.position !== prev.position));
     if (changed) {
       onTriggerDetected(trigger);
       prevTriggerRef.current = trigger;
@@ -184,9 +230,12 @@ export const PromptInput = React.memo(function PromptInput({
     inputMetrics.markRenderComplete();
   });
 
-  const syncToStore = useCallback((segs: Segment[]) => {
-    setCommandInput(getVisibleText(segs));
-  }, [setCommandInput]);
+  const syncToStore = useCallback(
+    (segs: Segment[]) => {
+      setCommandInput(getVisibleText(segs));
+    },
+    [setCommandInput]
+  );
 
   const clearAll = () => {
     setSegments([{ type: 'text', value: '' }]);
@@ -198,9 +247,10 @@ export const PromptInput = React.memo(function PromptInput({
     inputMetrics.markStateUpdate();
     const { segIdx, offset } = locateCursor(segments, cursor);
     const seg = segments[segIdx];
-    
+
     if (seg?.type === 'text') {
-      const newValue = seg.value.slice(0, offset) + text + seg.value.slice(offset);
+      const newValue =
+        seg.value.slice(0, offset) + text + seg.value.slice(offset);
       const newSegs = [...segments];
       newSegs[segIdx] = { type: 'text', value: newValue };
       setSegments(newSegs);
@@ -232,7 +282,7 @@ export const PromptInput = React.memo(function PromptInput({
       };
       const { segIdx, offset } = locateCursor(segments, cursor);
       const seg = segments[segIdx];
-      
+
       if (seg?.type === 'text') {
         const newSegs = normalizeSegments([
           ...segments.slice(0, segIdx),
@@ -246,7 +296,10 @@ export const PromptInput = React.memo(function PromptInput({
         let newCursor = 0;
         for (let i = 0; i < newSegs.length; i++) {
           const s = newSegs[i]!;
-          if (s === pasteSegment || (s.type === 'paste' && s.content === normalized)) {
+          if (
+            s === pasteSegment ||
+            (s.type === 'paste' && s.content === normalized)
+          ) {
             newCursor += 1;
             break;
           }
@@ -281,20 +334,29 @@ export const PromptInput = React.memo(function PromptInput({
       if (prevSeg?.type === 'text') {
         // Delete last char of previous text
         const newSegs = [...segments];
-        newSegs[segIdx - 1] = { type: 'text', value: prevSeg.value.slice(0, -1) };
+        newSegs[segIdx - 1] = {
+          type: 'text',
+          value: prevSeg.value.slice(0, -1),
+        };
         setSegments(normalizeSegments(newSegs));
         setCursor(cursor - 1);
         syncToStore(newSegs);
       } else if (prevSeg) {
         // Delete the chip
-        const newSegs = [...segments.slice(0, segIdx - 1), ...segments.slice(segIdx)];
+        const newSegs = [
+          ...segments.slice(0, segIdx - 1),
+          ...segments.slice(segIdx),
+        ];
         setSegments(normalizeSegments(newSegs));
         setCursor(cursor - 1);
         syncToStore(newSegs);
       }
     } else if (seg && seg.type !== 'text' && offset === 1) {
       // Cursor right after a chip - delete the chip
-      const newSegs = [...segments.slice(0, segIdx), ...segments.slice(segIdx + 1)];
+      const newSegs = [
+        ...segments.slice(0, segIdx),
+        ...segments.slice(segIdx + 1),
+      ];
       setSegments(normalizeSegments(newSegs));
       setCursor(cursor - 1);
       syncToStore(newSegs);
@@ -318,9 +380,11 @@ export const PromptInput = React.memo(function PromptInput({
     }
 
     // Check if slash command menu is visible
-    const slashMenuVisible = activeTrigger?.key === '/' && !commandInputValue.includes(' ');
+    const slashMenuVisible =
+      activeTrigger?.key === '/' && !commandInputValue.includes(' ');
     // Check if file picker menu is visible
-    const filePickerVisible = activeTrigger?.key === '@' && filePickerHasResults;
+    const filePickerVisible =
+      activeTrigger?.key === '@' && filePickerHasResults;
 
     if (key.return) {
       // Block Enter if file picker menu is visible with results
@@ -461,7 +525,10 @@ export const PromptInput = React.memo(function PromptInput({
         if (cursorInSeg) {
           const localCursor = cursor - pos;
           const charAtCursor = seg.value[localCursor] ?? ' ';
-          const after = localCursor < seg.value.length ? seg.value.slice(localCursor + 1) : '';
+          const after =
+            localCursor < seg.value.length
+              ? seg.value.slice(localCursor + 1)
+              : '';
           parts.push(
             <React.Fragment key={i}>
               <Text>{seg.value.slice(0, localCursor)}</Text>
@@ -474,15 +541,37 @@ export const PromptInput = React.memo(function PromptInput({
         }
       } else if (seg.type === 'file') {
         if (cursorInSeg && cursor === pos) {
-          parts.push(<React.Fragment key={i}><Text inverse> </Text><FileChip filePath={seg.filePath} lineCount={seg.lineCount} /></React.Fragment>);
+          parts.push(
+            <React.Fragment key={i}>
+              <Text inverse> </Text>
+              <FileChip filePath={seg.filePath} lineCount={seg.lineCount} />
+            </React.Fragment>
+          );
         } else {
-          parts.push(<FileChip key={i} filePath={seg.filePath} lineCount={seg.lineCount} />);
+          parts.push(
+            <FileChip
+              key={i}
+              filePath={seg.filePath}
+              lineCount={seg.lineCount}
+            />
+          );
         }
       } else if (seg.type === 'paste') {
         if (cursorInSeg && cursor === pos) {
-          parts.push(<React.Fragment key={i}><Text inverse> </Text><PastedChip lineCount={seg.lineCount} charCount={seg.charCount} /></React.Fragment>);
+          parts.push(
+            <React.Fragment key={i}>
+              <Text inverse> </Text>
+              <PastedChip lineCount={seg.lineCount} charCount={seg.charCount} />
+            </React.Fragment>
+          );
         } else {
-          parts.push(<PastedChip key={i} lineCount={seg.lineCount} charCount={seg.charCount} />);
+          parts.push(
+            <PastedChip
+              key={i}
+              lineCount={seg.lineCount}
+              charCount={seg.charCount}
+            />
+          );
         }
       }
       pos += w;
@@ -492,7 +581,11 @@ export const PromptInput = React.memo(function PromptInput({
     if (!isProcessing && cursor === total) {
       const lastSeg = segments[segments.length - 1];
       if (lastSeg && lastSeg.type !== 'text') {
-        parts.push(<Text key="cursor-end" inverse> </Text>);
+        parts.push(
+          <Text key="cursor-end" inverse>
+            {' '}
+          </Text>
+        );
       }
     }
 

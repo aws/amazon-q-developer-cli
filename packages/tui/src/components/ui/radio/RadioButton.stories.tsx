@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
-import { RadioButton, RadioButtonProps } from './RadioButton.js';
-import { RadioGroup, RadioGroupProps } from './RadioGroup.js';
+import { RadioButton, type RadioButtonProps } from './RadioButton.js';
+import { RadioGroup, type RadioGroupProps } from './RadioGroup.js';
 import { Box } from 'ink';
 
 const meta = {

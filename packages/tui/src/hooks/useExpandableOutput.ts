@@ -27,7 +27,7 @@ export interface UseExpandableOutputResult {
 
 /**
  * Hook for managing expandable/collapsible output in tool components.
- * 
+ *
  * Handles:
  * - Reading expanded state from app store
  * - Registering expandable content with the store
@@ -54,7 +54,9 @@ export function useExpandableOutput({
 
   // Safe store access - returns defaults when no store context
   const store = useContext(AppStoreContext);
-  const expanded = store ? useStore(store, (state) => state.toolOutputsExpanded) : false;
+  const expanded = store
+    ? useStore(store, (state) => state.toolOutputsExpanded)
+    : false;
   const setHasExpandableToolOutputs = store
     ? useStore(store, (state) => state.setHasExpandableToolOutputs)
     : () => {};
@@ -76,7 +78,8 @@ export function useExpandableOutput({
     }
   }, [expanded, isStatic, requestRemeasure]);
 
-  const expandHint = hiddenCount > 0 ? `...+${hiddenCount} ${unit} (ctrl+o to toggle)` : '';
+  const expandHint =
+    hiddenCount > 0 ? `...+${hiddenCount} ${unit} (ctrl+o to toggle)` : '';
 
   return {
     expanded,

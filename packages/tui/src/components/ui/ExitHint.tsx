@@ -6,9 +6,6 @@ export const ExitHint: React.FC = () => {
   const exitSequence = useAppStore((state) => state.exitSequence);
 
   return (
-    <ActionHint 
-      text="Press Ctrl+C again to exit" 
-      visible={exitSequence > 0} 
-    />
+    <ActionHint text="Press Ctrl+C again to exit" visible={exitSequence > 0} />
   );
 };

@@ -101,7 +101,11 @@ export const Read = React.memo(function Read({
     if (ops.length === 1) {
       const op = ops[0];
       const displayContent = (
-        <StatusInfo title={title} target={op?.path || 'file'} shimmer={!isFinished} />
+        <StatusInfo
+          title={title}
+          target={op?.path || 'file'}
+          shimmer={!isFinished}
+        />
       );
       if (noStatusBar) return displayContent;
       return <StatusBar status={status}>{displayContent}</StatusBar>;
@@ -110,7 +114,11 @@ export const Read = React.memo(function Read({
     // Multiple files - static view: just show count
     if (isStatic) {
       const displayContent = (
-        <StatusInfo title={title} target={`${ops.length} files`} shimmer={!isFinished} />
+        <StatusInfo
+          title={title}
+          target={`${ops.length} files`}
+          shimmer={!isFinished}
+        />
       );
       if (noStatusBar) return displayContent;
       return <StatusBar status={status}>{displayContent}</StatusBar>;
@@ -120,7 +128,11 @@ export const Read = React.memo(function Read({
     if (expanded) {
       const displayContent = (
         <Box flexDirection="column">
-          <StatusInfo title={title} target={`${ops.length} files`} shimmer={!isFinished} />
+          <StatusInfo
+            title={title}
+            target={`${ops.length} files`}
+            shimmer={!isFinished}
+          />
           {ops.map((op, i) => (
             <Box key={i} marginLeft={2}>
               <Text>{getColor('secondary')(`→ ${getFileName(op.path)}`)}</Text>
@@ -135,7 +147,11 @@ export const Read = React.memo(function Read({
     // Multiple files - collapsed view
     const displayContent = (
       <Box flexDirection="column">
-        <StatusInfo title={title} target={`${ops.length} files`} shimmer={!isFinished} />
+        <StatusInfo
+          title={title}
+          target={`${ops.length} files`}
+          shimmer={!isFinished}
+        />
         {ops.slice(0, PREVIEW_FILES).map((op, i) => (
           <Box key={i} marginLeft={2}>
             <Text>{getColor('secondary')(`→ ${getFileName(op.path)}`)}</Text>
@@ -153,7 +169,9 @@ export const Read = React.memo(function Read({
   }
 
   // Simple mode: use target prop directly
-  const displayContent = <StatusInfo title={title} target={target} shimmer={!isFinished} />;
+  const displayContent = (
+    <StatusInfo title={title} target={target} shimmer={!isFinished} />
+  );
   if (noStatusBar) return displayContent;
   return <StatusBar status={status}>{displayContent}</StatusBar>;
 });

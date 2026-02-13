@@ -183,7 +183,7 @@ export class PtyManager {
     const width = this.options.width;
     const top = '┌' + '─'.repeat(width) + '┐';
     const bottom = '└' + '─'.repeat(width) + '┘';
-    const bordered = lines.map(line => '│' + line.padEnd(width) + '│');
+    const bordered = lines.map((line) => '│' + line.padEnd(width) + '│');
     return [top, ...bordered, bottom].join('\n');
   }
 
@@ -196,16 +196,34 @@ export class PtyManager {
 
     // ANSI 256 color palette (standard 16 colors)
     const palette = [
-      '#000000', '#cd0000', '#00cd00', '#cdcd00', '#0000ee', '#cd00cd', '#00cdcd', '#e5e5e5',
-      '#7f7f7f', '#ff0000', '#00ff00', '#ffff00', '#5c5cff', '#ff00ff', '#00ffff', '#ffffff',
+      '#000000',
+      '#cd0000',
+      '#00cd00',
+      '#cdcd00',
+      '#0000ee',
+      '#cd00cd',
+      '#00cdcd',
+      '#e5e5e5',
+      '#7f7f7f',
+      '#ff0000',
+      '#00ff00',
+      '#ffff00',
+      '#5c5cff',
+      '#ff00ff',
+      '#00ffff',
+      '#ffffff',
     ];
 
-    const getColor = (color: number, isRgb: boolean, isPalette: boolean): string | null => {
+    const getColor = (
+      color: number,
+      isRgb: boolean,
+      isPalette: boolean
+    ): string | null => {
       if (isRgb) {
         return `#${color.toString(16).padStart(6, '0')}`;
       }
       if (isPalette && color < 256) {
-        if (color < 16) return palette[color];
+        if (color < 16) return palette[color] ?? null;
         // 216 color cube (16-231)
         if (color < 232) {
           const c = color - 16;
@@ -240,10 +258,18 @@ export class PtyManager {
         if (cell.getWidth() === 0) continue; // Skip continuation cells
 
         const styles: string[] = [];
-        
-        const fg = getColor(cell.getFgColor(), cell.isFgRGB(), cell.isFgPalette());
-        const bg = getColor(cell.getBgColor(), cell.isBgRGB(), cell.isBgPalette());
-        
+
+        const fg = getColor(
+          cell.getFgColor(),
+          cell.isFgRGB(),
+          cell.isFgPalette()
+        );
+        const bg = getColor(
+          cell.getBgColor(),
+          cell.isBgRGB(),
+          cell.isBgPalette()
+        );
+
         if (fg) styles.push(`color:${fg}`);
         if (bg) styles.push(`background:${bg}`);
         if (cell.isBold()) styles.push('font-weight:bold');
@@ -265,7 +291,10 @@ export class PtyManager {
         }
 
         // Escape HTML entities
-        const escaped = char.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+        const escaped = char
+          .replace(/&/g, '&amp;')
+          .replace(/</g, '&lt;')
+          .replace(/>/g, '&gt;');
         html += escaped;
       }
 
@@ -283,12 +312,15 @@ export class PtyManager {
    * @param text - Text to wait for (case-sensitive)
    * @param timeout_ms - Timeout in milliseconds (defaults to 10000)
    */
-  async waitForVisibleText(text: string, timeout_ms: number = 10000): Promise<void> {
+  async waitForVisibleText(
+    text: string,
+    timeout_ms: number = 10000
+  ): Promise<void> {
     const startTime = Date.now();
 
     while (Date.now() - startTime < timeout_ms) {
       const snapshot = this.getSnapshot();
-      if (snapshot.some(line => line.includes(text))) {
+      if (snapshot.some((line) => line.includes(text))) {
         return;
       }
       await new Promise((resolve) => setTimeout(resolve, 50));

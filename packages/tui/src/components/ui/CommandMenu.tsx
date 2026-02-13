@@ -8,13 +8,19 @@ export const CommandMenu: React.FC = () => {
   const activeTrigger = useAppStore((state) => state.activeTrigger);
   const activeCommand = useAppStore((state) => state.activeCommand);
   const setActiveCommand = useAppStore((state) => state.setActiveCommand);
-  const executeCommandWithArg = useAppStore((state) => state.executeCommandWithArg);
+  const executeCommandWithArg = useAppStore(
+    (state) => state.executeCommandWithArg
+  );
   const slashCommands = useAppStore((state) => state.slashCommands);
   const handleUserInput = useAppStore((state) => state.handleUserInput);
   const clearCommandInput = useAppStore((state) => state.clearCommandInput);
   const setCommandInput = useAppStore((state) => state.setCommandInput);
-  const setPendingFileAttachment = useAppStore((state) => state.setPendingFileAttachment);
-  const setFilePickerHasResults = useAppStore((state) => state.setFilePickerHasResults);
+  const setPendingFileAttachment = useAppStore(
+    (state) => state.setPendingFileAttachment
+  );
+  const setFilePickerHasResults = useAppStore(
+    (state) => state.setFilePickerHasResults
+  );
   const setActiveTrigger = useAppStore((state) => state.setActiveTrigger);
 
   // File search state
@@ -41,50 +47,59 @@ export const CommandMenu: React.FC = () => {
   }, [fileQuery, activeTrigger, setFilePickerHasResults]);
 
   const filteredCommands = useMemo(() => {
-    if (activeTrigger?.key !== '/' || commandInputValue.includes(' ')) return [];
+    if (activeTrigger?.key !== '/' || commandInputValue.includes(' '))
+      return [];
     const partial = commandInputValue.slice(1).toLowerCase();
-    return slashCommands.filter(
-      (cmd) => cmd.name.slice(1).toLowerCase().startsWith(partial)
+    return slashCommands.filter((cmd) =>
+      cmd.name.slice(1).toLowerCase().startsWith(partial)
     );
   }, [commandInputValue, slashCommands, activeTrigger]);
 
-  const menuItems = useMemo(() => 
-    filteredCommands.map((cmd) => ({
-      label: cmd.name.slice(1),
-      description: cmd.description,
-    })),
+  const menuItems = useMemo(
+    () =>
+      filteredCommands.map((cmd) => ({
+        label: cmd.name.slice(1),
+        description: cmd.description,
+      })),
     [filteredCommands]
   );
 
-  const fileMenuItems = useMemo(() =>
-    fileResults.map((path) => ({
-      label: path,
-      description: '',
-    })),
+  const fileMenuItems = useMemo(
+    () =>
+      fileResults.map((path) => ({
+        label: path,
+        description: '',
+      })),
     [fileResults]
   );
 
   const showCommandMenu = menuItems.length > 0 && activeTrigger?.key === '/';
   const showFilePicker = fileMenuItems.length > 0 && activeTrigger?.key === '@';
 
-  const handleCommandSelect = useCallback(async (item: { label: string; description: string }) => {
-    const fullCommand = `/${item.label}`;
-    const cmd = slashCommands.find((c) => c.name === fullCommand);
-    const isSelectionCommand = cmd?.meta?.inputType === 'selection';
-    
-    await handleUserInput(fullCommand);
-    
-    if (isSelectionCommand) {
-      setCommandInput(fullCommand);
-    }
-  }, [handleUserInput, slashCommands, setCommandInput]);
+  const handleCommandSelect = useCallback(
+    async (item: { label: string; description: string }) => {
+      const fullCommand = `/${item.label}`;
+      const cmd = slashCommands.find((c) => c.name === fullCommand);
+      const isSelectionCommand = cmd?.meta?.inputType === 'selection';
 
-  const handleFileSelect = useCallback((item: { label: string }) => {
-    if (activeTrigger) {
-      setPendingFileAttachment(item.label, activeTrigger.position);
-      setActiveTrigger(null);
-    }
-  }, [activeTrigger, setPendingFileAttachment, setActiveTrigger]);
+      await handleUserInput(fullCommand);
+
+      if (isSelectionCommand) {
+        setCommandInput(fullCommand);
+      }
+    },
+    [handleUserInput, slashCommands, setCommandInput]
+  );
+
+  const handleFileSelect = useCallback(
+    (item: { label: string }) => {
+      if (activeTrigger) {
+        setPendingFileAttachment(item.label, activeTrigger.position);
+        setActiveTrigger(null);
+      }
+    },
+    [activeTrigger, setPendingFileAttachment, setActiveTrigger]
+  );
 
   const handleFilePickerEscape = useCallback(() => {
     setActiveTrigger(null);
@@ -127,7 +142,7 @@ export const CommandMenu: React.FC = () => {
             executeCommandWithArg(opt.value);
           }
         }}
-                onEscape={() => {
+        onEscape={() => {
           setActiveCommand(null);
           clearCommandInput();
         }}

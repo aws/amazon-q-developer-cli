@@ -1,6 +1,9 @@
 import React, { useEffect, createContext, useContext } from 'react';
 import { Box } from 'ink';
-import { enableAutoSync, detectSynchronizedOutput } from '../../../utils/synchronized-output.js';
+import {
+  enableAutoSync,
+  detectSynchronizedOutput,
+} from '../../../utils/synchronized-output.js';
 import { Divider } from '../divider/Divider.js';
 
 // Card Context - provides active state to children
@@ -32,7 +35,11 @@ export function Card({ children, active = false }: CardProps) {
     <CardContext.Provider value={{ active }}>
       <Box flexDirection="column" width="100%">
         <Divider />
-        <Box flexDirection="column" width="100%" marginLeft={fillsEdgeMargin ? 1 : 0}>
+        <Box
+          flexDirection="column"
+          width="100%"
+          marginLeft={fillsEdgeMargin ? 1 : 0}
+        >
           {children}
         </Box>
       </Box>

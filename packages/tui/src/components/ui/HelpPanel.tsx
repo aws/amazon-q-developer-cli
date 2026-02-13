@@ -29,12 +29,17 @@ export const HelpPanel: React.FC<HelpPanelProps> = ({ commands, onClose }) => {
       {commands.map((cmd) => (
         <Box key={cmd.name} flexDirection="column">
           <Text>
-            {getColor('primary')(cmd.name)} {getColor('secondary')(`- ${cmd.description}`)}
+            {getColor('primary')(cmd.name)}{' '}
+            {getColor('secondary')(`- ${cmd.description}`)}
           </Text>
-          <Text>  {getColor('secondary')(cmd.usage)}</Text>
+          <Text> {getColor('secondary')(cmd.usage)}</Text>
         </Box>
       ))}
-      <Text>{getColor('secondary')('Press ')}{getColor('brand')('Esc')}{getColor('secondary')(' to close')}</Text>
+      <Text>
+        {getColor('secondary')('Press ')}
+        {getColor('brand')('Esc')}
+        {getColor('secondary')(' to close')}
+      </Text>
     </Box>
   );
 };

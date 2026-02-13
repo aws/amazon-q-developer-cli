@@ -40,14 +40,16 @@ export const NoMatches = {
     result: {
       status: 'success',
       output: {
-        items: [{
-          Json: {
-            numMatches: 0,
-            numFiles: 0,
-            truncated: false,
-            message: 'No matches found for pattern: nonexistentPattern',
+        items: [
+          {
+            Json: {
+              numMatches: 0,
+              numFiles: 0,
+              truncated: false,
+              message: 'No matches found for pattern: nonexistentPattern',
+            },
           },
-        }],
+        ],
       },
     },
   },
@@ -63,24 +65,26 @@ export const SingleFileMatch = {
     result: {
       status: 'success',
       output: {
-        items: [{
-          Json: {
-            numMatches: 3,
-            numFiles: 1,
-            truncated: false,
-            results: [
-              {
-                file: 'src/components/Button.tsx',
-                count: 3,
-                matches: [
-                  '12:const [isOpen, setIsOpen] = useState(false);',
-                  '15:const [count, setCount] = useState(0);',
-                  '18:const [name, setName] = useState("");',
-                ],
-              },
-            ],
+        items: [
+          {
+            Json: {
+              numMatches: 3,
+              numFiles: 1,
+              truncated: false,
+              results: [
+                {
+                  file: 'src/components/Button.tsx',
+                  count: 3,
+                  matches: [
+                    '12:const [isOpen, setIsOpen] = useState(false);',
+                    '15:const [count, setCount] = useState(0);',
+                    '18:const [name, setName] = useState("");',
+                  ],
+                },
+              ],
+            },
           },
-        }],
+        ],
       },
     },
   },
@@ -96,20 +100,42 @@ export const MultipleFileMatches = {
     result: {
       status: 'success',
       output: {
-        items: [{
-          Json: {
-            numMatches: 15,
-            numFiles: 8,
-            truncated: false,
-            results: [
-              { file: 'src/components/Button.tsx', count: 1, matches: ["1:import React from 'react';"] },
-              { file: 'src/components/Modal.tsx', count: 1, matches: ["1:import React, { useState } from 'react';"] },
-              { file: 'src/components/Card.tsx', count: 1, matches: ["1:import React from 'react';"] },
-              { file: 'src/hooks/useTheme.ts', count: 1, matches: ["1:import { useContext } from 'react';"] },
-              { file: 'src/App.tsx', count: 1, matches: ["1:import React from 'react';"] },
-            ],
+        items: [
+          {
+            Json: {
+              numMatches: 15,
+              numFiles: 8,
+              truncated: false,
+              results: [
+                {
+                  file: 'src/components/Button.tsx',
+                  count: 1,
+                  matches: ["1:import React from 'react';"],
+                },
+                {
+                  file: 'src/components/Modal.tsx',
+                  count: 1,
+                  matches: ["1:import React, { useState } from 'react';"],
+                },
+                {
+                  file: 'src/components/Card.tsx',
+                  count: 1,
+                  matches: ["1:import React from 'react';"],
+                },
+                {
+                  file: 'src/hooks/useTheme.ts',
+                  count: 1,
+                  matches: ["1:import { useContext } from 'react';"],
+                },
+                {
+                  file: 'src/App.tsx',
+                  count: 1,
+                  matches: ["1:import React from 'react';"],
+                },
+              ],
+            },
           },
-        }],
+        ],
       },
     },
   },
@@ -126,38 +152,38 @@ export const WithMatchContent = {
       result={{
         status: 'success',
         output: {
-          items: [{
-            Json: {
-              numMatches: 5,
-              numFiles: 3,
-              truncated: false,
-              results: [
-                {
-                  file: 'src/utils/helpers.ts',
-                  count: 2,
-                  matches: [
-                    '45:// TODO: Add error handling',
-                    '78:// TODO: Optimize this function',
-                  ],
-                },
-                {
-                  file: 'src/components/Form.tsx',
-                  count: 2,
-                  matches: [
-                    '23:// TODO: Add validation',
-                    '89:// TODO: Handle edge cases',
-                  ],
-                },
-                {
-                  file: 'src/api/client.ts',
-                  count: 1,
-                  matches: [
-                    '12:// TODO: Add retry logic',
-                  ],
-                },
-              ],
+          items: [
+            {
+              Json: {
+                numMatches: 5,
+                numFiles: 3,
+                truncated: false,
+                results: [
+                  {
+                    file: 'src/utils/helpers.ts',
+                    count: 2,
+                    matches: [
+                      '45:// TODO: Add error handling',
+                      '78:// TODO: Optimize this function',
+                    ],
+                  },
+                  {
+                    file: 'src/components/Form.tsx',
+                    count: 2,
+                    matches: [
+                      '23:// TODO: Add validation',
+                      '89:// TODO: Handle edge cases',
+                    ],
+                  },
+                  {
+                    file: 'src/api/client.ts',
+                    count: 1,
+                    matches: ['12:// TODO: Add retry logic'],
+                  },
+                ],
+              },
             },
-          }],
+          ],
         },
       }}
     />
@@ -174,18 +200,35 @@ export const Truncated = {
     result: {
       status: 'success',
       output: {
-        items: [{
-          Json: {
-            numMatches: 250,
-            numFiles: 45,
-            truncated: true,
-            results: [
-              { file: 'src/utils/math.ts', count: 12, matches: ['5:function add(a, b) {', '15:function subtract(a, b) {'] },
-              { file: 'src/utils/string.ts', count: 8, matches: ['3:function capitalize(str) {'] },
-              { file: 'src/utils/array.ts', count: 6, matches: ['7:function flatten(arr) {'] },
-            ],
+        items: [
+          {
+            Json: {
+              numMatches: 250,
+              numFiles: 45,
+              truncated: true,
+              results: [
+                {
+                  file: 'src/utils/math.ts',
+                  count: 12,
+                  matches: [
+                    '5:function add(a, b) {',
+                    '15:function subtract(a, b) {',
+                  ],
+                },
+                {
+                  file: 'src/utils/string.ts',
+                  count: 8,
+                  matches: ['3:function capitalize(str) {'],
+                },
+                {
+                  file: 'src/utils/array.ts',
+                  count: 6,
+                  matches: ['7:function flatten(arr) {'],
+                },
+              ],
+            },
           },
-        }],
+        ],
       },
     },
   },
@@ -215,17 +258,19 @@ export const Standalone = {
     result: {
       status: 'success',
       output: {
-        items: [{
-          Json: {
-            numMatches: 5,
-            numFiles: 2,
-            truncated: false,
-            results: [
-              { file: 'src/test/utils.test.ts', count: 3 },
-              { file: 'src/test/api.test.ts', count: 2 },
-            ],
+        items: [
+          {
+            Json: {
+              numMatches: 5,
+              numFiles: 2,
+              truncated: false,
+              results: [
+                { file: 'src/test/utils.test.ts', count: 3 },
+                { file: 'src/test/api.test.ts', count: 2 },
+              ],
+            },
           },
-        }],
+        ],
       },
     },
   },

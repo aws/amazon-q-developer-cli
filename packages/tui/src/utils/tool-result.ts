@@ -1,7 +1,10 @@
 import type { ToolResult } from '../stores/app-store.js';
 
 /** Parse a JSON tool call content string and extract a specific field */
-export function parseToolArg(content: string | undefined, field: string): string | null {
+export function parseToolArg(
+  content: string | undefined,
+  field: string
+): string | null {
   if (!content) return null;
   try {
     return JSON.parse(content)[field] || null;
@@ -25,7 +28,7 @@ export function unwrapResultOutput(result: ToolResult | undefined): {
   if (typeof raw === 'string') return { obj: null, text: raw };
 
   if (raw && typeof raw === 'object') {
-    let obj = raw as Record<string, unknown>;
+    const obj = raw as Record<string, unknown>;
     if ('items' in obj && Array.isArray(obj.items) && obj.items.length > 0) {
       const first = obj.items[0] as Record<string, unknown>;
       if ('Text' in first && typeof first.Text === 'string') {
@@ -43,7 +46,9 @@ export function unwrapResultOutput(result: ToolResult | undefined): {
 }
 
 /** Extract the text content from a ToolResult output */
-export function extractResultText(result: ToolResult | undefined): string | null {
+export function extractResultText(
+  result: ToolResult | undefined
+): string | null {
   const { obj, text } = unwrapResultOutput(result);
   if (text) return text;
   if (!obj) return null;
@@ -60,7 +65,9 @@ export function formatCharCount(text: string): string {
 }
 
 /** Get a char count summary string from a ToolResult */
-export function getResultSummary(result: ToolResult | undefined): string | null {
+export function getResultSummary(
+  result: ToolResult | undefined
+): string | null {
   const text = extractResultText(result);
   return text ? formatCharCount(text) : null;
 }

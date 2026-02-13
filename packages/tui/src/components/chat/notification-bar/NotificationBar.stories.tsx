@@ -43,7 +43,10 @@ export const Warning = {
 export const AllTypes = {
   render: () => (
     <Box flexDirection="column" gap={1}>
-      <NotificationBar message="Operation completed successfully" status="success" />
+      <NotificationBar
+        message="Operation completed successfully"
+        status="success"
+      />
       <NotificationBar message="New update available" status="info" />
       <NotificationBar message="Disk space running low" status="warning" />
       <NotificationBar message="Connection failed" status="error" />

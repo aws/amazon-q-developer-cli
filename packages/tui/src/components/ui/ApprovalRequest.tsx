@@ -1,11 +1,15 @@
 import React from 'react';
 import { SnackBar } from '../chat/prompt-bar/SnackBar';
 import { useApprovalState, useConversationState } from '../../stores/selectors';
-import { ApprovalOptionId, type PermissionOption } from '../../types/agent-events';
+import {
+  ApprovalOptionId,
+  type PermissionOption,
+} from '../../types/agent-events';
 import { useKeypress } from '../../hooks/useKeypress';
 
 export const ApprovalRequest: React.FC = () => {
-  const { pendingApproval, respondToApproval, cancelApproval } = useApprovalState();
+  const { pendingApproval, respondToApproval, cancelApproval } =
+    useApprovalState();
   const { messages } = useConversationState();
 
   useKeypress((input, key) => {
@@ -44,22 +48,36 @@ export const ApprovalRequest: React.FC = () => {
 
   // Find the tool message by ID to get the tool name
   const toolMessage = messages.find(
-    (msg) => msg.role === 'tool_use' && msg.id === pendingApproval.toolCall.toolCallId
+    (msg) =>
+      msg.role === 'tool_use' && msg.id === pendingApproval.toolCall.toolCallId
   );
-  const toolName = toolMessage && 'name' in toolMessage ? toolMessage.name : 'Tool';
+  const toolName =
+    toolMessage && 'name' in toolMessage ? toolMessage.name : 'Tool';
 
   // Build actions array with only the options we want to show
   const actions = [];
-  
-  if (pendingApproval.permissionOptions.find((opt) => opt.kind === ApprovalOptionId.AllowOnce)) {
+
+  if (
+    pendingApproval.permissionOptions.find(
+      (opt) => opt.kind === ApprovalOptionId.AllowOnce
+    )
+  ) {
     actions.push({ key: 'y', label: 'Yes' });
   }
-  
-  if (pendingApproval.permissionOptions.find((opt) => opt.kind === ApprovalOptionId.RejectOnce)) {
+
+  if (
+    pendingApproval.permissionOptions.find(
+      (opt) => opt.kind === ApprovalOptionId.RejectOnce
+    )
+  ) {
     actions.push({ key: 'n', label: 'No' });
   }
-  
-  if (pendingApproval.permissionOptions.find((opt) => opt.kind === ApprovalOptionId.AllowAlways)) {
+
+  if (
+    pendingApproval.permissionOptions.find(
+      (opt) => opt.kind === ApprovalOptionId.AllowAlways
+    )
+  ) {
     actions.push({ key: 't', label: 'Trust' });
   }
 

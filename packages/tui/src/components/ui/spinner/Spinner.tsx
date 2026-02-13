@@ -16,7 +16,7 @@ export interface SpinnerProps {
 export const Spinner = ({ color }: SpinnerProps) => {
   const { getColor } = useTheme();
   const [frameIndex, setFrameIndex] = useState(0);
-  
+
   const colorFn = color || getColor('brand');
 
   useEffect(() => {

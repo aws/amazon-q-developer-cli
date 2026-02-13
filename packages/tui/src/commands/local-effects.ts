@@ -24,7 +24,10 @@ const effects: Record<LocalCommand, LocalEffect> = {
 };
 
 /** Execute local side-effect for a command if registered */
-export function executeLocalEffect(command: string, ctx: LocalEffectContext): void {
+export function executeLocalEffect(
+  command: string,
+  ctx: LocalEffectContext
+): void {
   const effect = effects[command as LocalCommand];
   effect?.(ctx);
 }

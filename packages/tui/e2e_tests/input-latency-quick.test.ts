@@ -45,7 +45,7 @@ describe('Input Latency Quick', () => {
     const samples: number[] = [];
     let match;
     while ((match = regex.exec(content)) !== null) {
-      samples.push(parseFloat(match[1]));
+      samples.push(parseFloat(match[1]!));
     }
     
     const sorted = samples.sort((a, b) => a - b);

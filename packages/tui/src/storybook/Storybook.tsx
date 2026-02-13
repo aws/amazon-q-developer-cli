@@ -8,7 +8,9 @@ type AppState = 'componentList' | 'componentView';
 
 export function Storybook() {
   const [state, setState] = useState<AppState>('componentList');
-  const [expandedCategories, setExpandedCategories] = useState<Set<string>>(new Set());
+  const [expandedCategories, setExpandedCategories] = useState<Set<string>>(
+    new Set()
+  );
   const [selectedVariant, setSelectedVariant] = useState(0);
   const { getColor } = useTheme();
 
@@ -19,14 +21,17 @@ export function Storybook() {
 
   // Group stories by category
   // Group stories by category (e.g., "UI/Radio/RadioButton" -> category is "UI/Radio")
-  const groupedStories = stories.reduce((acc, story, index) => {
-    const category = story.category || 'Uncategorized';
-    if (!acc[category]) {
-      acc[category] = [];
-    }
-    acc[category].push({ story, index });
-    return acc;
-  }, {} as Record<string, Array<{ story: typeof stories[0]; index: number }>>);
+  const groupedStories = stories.reduce(
+    (acc, story, index) => {
+      const category = story.category || 'Uncategorized';
+      if (!acc[category]) {
+        acc[category] = [];
+      }
+      acc[category].push({ story, index });
+      return acc;
+    },
+    {} as Record<string, Array<{ story: (typeof stories)[0]; index: number }>>
+  );
 
   const categories = Object.keys(groupedStories).sort();
 
@@ -35,110 +40,124 @@ export function Storybook() {
     const items: Array<
       | { type: 'sectionHeader'; name: string; componentCount: number }
       | { type: 'category'; name: string; componentCount: number }
-      | { type: 'component'; categoryName: string; story: typeof stories[0]; storyIndex: number }
+      | {
+          type: 'component';
+          categoryName: string;
+          story: (typeof stories)[0];
+          storyIndex: number;
+        }
     > = [];
 
     // Group categories by their top-level section (e.g., "UI", "Components")
     const sectionGroups: Record<string, string[]> = {};
     categories.forEach((category) => {
-      const section = category.split('/')[0];
+      const section = category.split('/')[0]!;
       if (!sectionGroups[section]) {
         sectionGroups[section] = [];
       }
-      sectionGroups[section].push(category);
+      sectionGroups[section]!.push(category);
     });
 
     // Process each section
-    Object.keys(sectionGroups).sort().forEach((section) => {
-      const sectionCategories = sectionGroups[section];
-      
-      // Add section header (always non-expandable)
-      const totalComponents = sectionCategories.reduce(
-        (sum, cat) => sum + groupedStories[cat].length,
-        0
-      );
-      items.push({
-        type: 'sectionHeader',
-        name: section,
-        componentCount: totalComponents,
-      });
+    Object.keys(sectionGroups)
+      .sort()
+      .forEach((section) => {
+        const sectionCategories = sectionGroups[section]!;
 
-      // Group by subfolder within this section
-      // For "UI/Radio/RadioButton" and "UI/Radio/RadioGroup", group by "Radio"
-      // For "UI/Chip/Chip", it's just "Chip"
-      const subfolderMap: Record<string, Array<{ story: typeof stories[0]; index: number; category: string }>> = {};
-      
-      sectionCategories.forEach((category) => {
-        const parts = category.split('/');
-        let subfolderKey: string;
-        
-        if (parts.length >= 2) {
-          // Extract subfolder name (e.g., "UI/Radio/RadioButton" -> "Radio")
-          subfolderKey = parts[1];
-        } else {
-          // Shouldn't happen with our current structure, but handle it
-          subfolderKey = category;
-        }
-        
-        if (!subfolderMap[subfolderKey]) {
-          subfolderMap[subfolderKey] = [];
-        }
-        
-        // Add all components from this category to the subfolder
-        groupedStories[category].forEach(({ story, index }) => {
-          subfolderMap[subfolderKey].push({ story, index, category });
+        // Add section header (always non-expandable)
+        const totalComponents = sectionCategories.reduce(
+          (sum, cat) => sum + groupedStories[cat]!.length,
+          0
+        );
+        items.push({
+          type: 'sectionHeader',
+          name: section,
+          componentCount: totalComponents,
         });
-      });
 
-      // Process each subfolder
-      Object.keys(subfolderMap).sort().forEach((subfolderName) => {
-        const components = subfolderMap[subfolderName];
-        const isSingleComponent = components.length === 1;
-        const subfolderFullName = `${section}/${subfolderName}`;
+        // Group by subfolder within this section
+        // For "UI/Radio/RadioButton" and "UI/Radio/RadioGroup", group by "Radio"
+        // For "UI/Chip/Chip", it's just "Chip"
+        const subfolderMap: Record<
+          string,
+          Array<{ story: (typeof stories)[0]; index: number; category: string }>
+        > = {};
 
-        if (isSingleComponent) {
-          // Single component - show flat
-          const component = components[0];
-          items.push({
-            type: 'component',
-            categoryName: component.category,
-            story: component.story,
-            storyIndex: component.index,
+        sectionCategories.forEach((category) => {
+          const parts = category.split('/');
+          let subfolderKey: string;
+
+          if (parts.length >= 2) {
+            // Extract subfolder name (e.g., "UI/Radio/RadioButton" -> "Radio")
+            subfolderKey = parts[1]!;
+          } else {
+            // Shouldn't happen with our current structure, but handle it
+            subfolderKey = category;
+          }
+
+          if (!subfolderMap[subfolderKey]) {
+            subfolderMap[subfolderKey] = [];
+          }
+
+          // Add all components from this category to the subfolder
+          groupedStories[category]!.forEach(({ story, index }) => {
+            subfolderMap[subfolderKey]!.push({ story, index, category });
           });
-        } else {
-          // Multiple components - show as expandable category
-          items.push({
-            type: 'category',
-            name: subfolderFullName,
-            componentCount: components.length,
-          });
+        });
 
-          // If expanded, show components
-          if (expandedCategories.has(subfolderFullName)) {
-            components.forEach(({ story, index, category }) => {
+        // Process each subfolder
+        Object.keys(subfolderMap)
+          .sort()
+          .forEach((subfolderName) => {
+            const components = subfolderMap[subfolderName]!;
+            const isSingleComponent = components.length === 1;
+            const subfolderFullName = `${section}/${subfolderName}`;
+
+            if (isSingleComponent) {
+              // Single component - show flat
+              const component = components[0]!;
               items.push({
                 type: 'component',
-                categoryName: category,
-                story,
-                storyIndex: index,
+                categoryName: component.category,
+                story: component.story,
+                storyIndex: component.index,
               });
-            });
-          }
-        }
+            } else {
+              // Multiple components - show as expandable category
+              items.push({
+                type: 'category',
+                name: subfolderFullName,
+                componentCount: components.length,
+              });
+
+              // If expanded, show components
+              if (expandedCategories.has(subfolderFullName)) {
+                components.forEach(({ story, index, category }) => {
+                  items.push({
+                    type: 'component',
+                    categoryName: category,
+                    story,
+                    storyIndex: index,
+                  });
+                });
+              }
+            }
+          });
       });
-    });
 
     return items;
   };
 
   const navigableItems = buildNavigableItems();
-  
+
   // Find the first navigable item (skip section headers)
   const firstNavigableIndex = navigableItems.findIndex(
-    item => item.type === 'component' || item.type === 'category'
+    (item) => item.type === 'component' || item.type === 'category'
   );
-  const [selectedIndex, setSelectedIndex] = useState(Math.max(0, firstNavigableIndex));
-  
+  const [selectedIndex, setSelectedIndex] = useState(
+    Math.max(0, firstNavigableIndex)
+  );
+
   // Calculate max name length for alignment (only for components and categories)
   const maxNameLength = navigableItems.reduce((max, item) => {
     if (item.type === 'component') {
@@ -156,7 +175,10 @@ export function Storybook() {
         // Move to previous navigable item (skip section headers)
         setSelectedIndex((prev) => {
           let newIndex = prev - 1;
-          while (newIndex >= 0 && navigableItems[newIndex].type === 'sectionHeader') {
+          while (
+            newIndex >= 0 &&
+            navigableItems[newIndex]?.type === 'sectionHeader'
+          ) {
             newIndex--;
           }
           return Math.max(0, newIndex);
@@ -165,13 +187,17 @@ export function Storybook() {
         // Move to next navigable item (skip section headers)
         setSelectedIndex((prev) => {
           let newIndex = prev + 1;
-          while (newIndex < navigableItems.length && navigableItems[newIndex].type === 'sectionHeader') {
+          while (
+            newIndex < navigableItems.length &&
+            navigableItems[newIndex]?.type === 'sectionHeader'
+          ) {
             newIndex++;
           }
           return Math.min(navigableItems.length - 1, newIndex);
         });
       } else if (key.return || key.rightArrow) {
         const selectedItem = navigableItems[selectedIndex];
+        if (!selectedItem) return;
         if (selectedItem.type === 'category') {
           // Toggle category expansion
           setExpandedCategories((prev) => {
@@ -190,7 +216,11 @@ export function Storybook() {
         }
       } else if (key.leftArrow) {
         const selectedItem = navigableItems[selectedIndex];
-        if (selectedItem.type === 'category' && expandedCategories.has(selectedItem.name)) {
+        if (!selectedItem) return;
+        if (
+          selectedItem.type === 'category' &&
+          expandedCategories.has(selectedItem.name)
+        ) {
           // Close expanded category
           setExpandedCategories((prev) => {
             const next = new Set(prev);
@@ -204,13 +234,13 @@ export function Storybook() {
             const categoryIndex = navigableItems.findIndex(
               (item) => item.type === 'category' && item.name === categoryName
             );
-            
+
             setExpandedCategories((prev) => {
               const next = new Set(prev);
               next.delete(categoryName);
               return next;
             });
-            
+
             if (categoryIndex !== -1) {
               setSelectedIndex(categoryIndex);
             }
@@ -221,9 +251,12 @@ export function Storybook() {
       }
     } else if (state === 'componentView') {
       const selectedItem = navigableItems[selectedIndex];
-      if (selectedItem.type !== 'component') return;
+      if (!selectedItem || selectedItem.type !== 'component') return;
 
-      const currentVariant = stories[selectedItem.storyIndex].variants[selectedVariant];
+      const currentStory = stories[selectedItem.storyIndex];
+      if (!currentStory) return;
+      const currentVariant = currentStory.variants[selectedVariant];
+      if (!currentVariant) return;
       const capturesKeyboard = currentVariant.parameters?.capturesKeyboard;
 
       if (capturesKeyboard) {
@@ -240,7 +273,7 @@ export function Storybook() {
           setSelectedVariant((prev) => prev - 1);
         }
       } else if (key.rightArrow) {
-        const maxVariants = stories[selectedItem.storyIndex].variants.length - 1;
+        const maxVariants = currentStory.variants.length - 1;
         setSelectedVariant((prev) => Math.min(maxVariants, prev + 1));
       } else if (key.escape) {
         setState('componentList');
@@ -271,7 +304,8 @@ export function Storybook() {
             return (
               <Text key={`section-${item.name}`} bold>
                 {'\n'}
-                {'  '}{item.name}
+                {'  '}
+                {item.name}
                 {'\n'}
               </Text>
             );
@@ -282,7 +316,10 @@ export function Storybook() {
             const displayName = item.name.split('/').pop() || item.name;
             const paddedName = displayName.padEnd(maxNameLength + 2);
             return (
-              <Text key={`cat-${item.name}`} color={isSelected ? 'green' : undefined}>
+              <Text
+                key={`cat-${item.name}`}
+                color={isSelected ? 'green' : undefined}
+              >
                 {isSelected ? '▶ ' : '  '}
                 {paddedName}
                 {isExpanded ? '▴' : '▾'}
@@ -293,11 +330,16 @@ export function Storybook() {
             // Check if this component is in an expanded category (needs extra indent)
             // item.categoryName is like "UI/Radio/RadioButton", category name is like "UI/Radio"
             const isInExpandedCategory = navigableItems.some(
-              (i) => i.type === 'category' && item.categoryName.startsWith(i.name + '/')
+              (i) =>
+                i.type === 'category' &&
+                item.categoryName.startsWith(i.name + '/')
             );
             const indent = isInExpandedCategory ? '  ' : '';
             return (
-              <Text key={`comp-${item.story.name}`} color={isSelected ? 'green' : undefined}>
+              <Text
+                key={`comp-${item.story.name}`}
+                color={isSelected ? 'green' : undefined}
+              >
                 {isSelected ? '▶ ' : '  '}
                 {indent}
                 {item.story.name}
@@ -311,10 +353,12 @@ export function Storybook() {
 
   const renderComponentView = () => {
     const selectedItem = navigableItems[selectedIndex];
-    if (selectedItem.type !== 'component') return null;
+    if (!selectedItem || selectedItem.type !== 'component') return null;
 
     const currentComponent = stories[selectedItem.storyIndex];
+    if (!currentComponent) return null;
     const currentVariant = currentComponent.variants[selectedVariant];
+    if (!currentVariant) return null;
     const Component = currentComponent.component;
 
     return (
@@ -346,7 +390,10 @@ export function Storybook() {
         <Box marginBottom={1}>
           <Text>{textColor('Variants: ')}</Text>
           {currentComponent.variants.map((variant, index) => (
-            <Text key={variant.name} color={index === selectedVariant ? 'green' : 'gray'}>
+            <Text
+              key={variant.name}
+              color={index === selectedVariant ? 'green' : 'gray'}
+            >
               {index > 0 ? ' | ' : ''}
               {index === selectedVariant ? '[' : ''}
               {variant.name}
@@ -361,54 +408,59 @@ export function Storybook() {
           {Object.keys(currentVariant.props).length > 0 ? (
             <Text>
               <Text color="gray">{'{ '}</Text>
-              {Object.entries(currentVariant.props).map(([key, value], index, array) => {
-                let displayValue: string;
+              {Object.entries(currentVariant.props).map(
+                ([key, value], index, array) => {
+                  let displayValue: string;
 
-                if (typeof value === 'string') {
-                  displayValue = `"${value}"`;
-                } else if (typeof value === 'boolean') {
-                  displayValue = String(value);
-                } else if (typeof value === 'number') {
-                  displayValue = String(value);
-                } else if (typeof value === 'function') {
-                  displayValue = '[Function]';
-                } else if (value === undefined) {
-                  displayValue = 'undefined';
-                } else if (value === null) {
-                  displayValue = 'null';
-                } else if (React.isValidElement(value)) {
-                  // Handle React elements
-                  const elementType =
-                    typeof value.type === 'string' ? value.type : value.type?.name || 'Component';
-                  const childrenProp = (value.props as any)?.children;
-                  if (typeof childrenProp === 'string') {
-                    displayValue = `<${elementType}>${childrenProp}</${elementType}>`;
+                  if (typeof value === 'string') {
+                    displayValue = `"${value}"`;
+                  } else if (typeof value === 'boolean') {
+                    displayValue = String(value);
+                  } else if (typeof value === 'number') {
+                    displayValue = String(value);
+                  } else if (typeof value === 'function') {
+                    displayValue = '[Function]';
+                  } else if (value === undefined) {
+                    displayValue = 'undefined';
+                  } else if (value === null) {
+                    displayValue = 'null';
+                  } else if (React.isValidElement(value)) {
+                    // Handle React elements
+                    const elementType =
+                      typeof value.type === 'string'
+                        ? value.type
+                        : value.type?.name || 'Component';
+                    const childrenProp = (value.props as any)?.children;
+                    if (typeof childrenProp === 'string') {
+                      displayValue = `<${elementType}>${childrenProp}</${elementType}>`;
+                    } else {
+                      displayValue = `<${elementType} />`;
+                    }
+                  } else if (typeof value === 'object' && value !== null) {
+                    // Handle plain objects
+                    try {
+                      displayValue = JSON.stringify(value, null, 0);
+                    } catch {
+                      displayValue = '[Object]';
+                    }
                   } else {
-                    displayValue = `<${elementType} />`;
+                    displayValue = String(value);
                   }
-                } else if (typeof value === 'object' && value !== null) {
-                  // Handle plain objects
-                  try {
-                    displayValue = JSON.stringify(value, null, 0);
-                  } catch {
-                    displayValue = '[Object]';
-                  }
-                } else {
-                  displayValue = String(value);
+
+                  const isOptional =
+                    currentVariant.parameters?.optionalProps?.includes(key);
+
+                  return (
+                    <Text key={key}>
+                      <Text color="cyan">{key}</Text>
+                      {isOptional && <Text color="gray">?</Text>}
+                      <Text color="gray">: </Text>
+                      <Text color="yellow">{displayValue}</Text>
+                      {index < array.length - 1 && <Text color="gray">, </Text>}
+                    </Text>
+                  );
                 }
-
-                const isOptional = currentVariant.parameters?.optionalProps?.includes(key);
-
-                return (
-                  <Text key={key}>
-                    <Text color="cyan">{key}</Text>
-                    {isOptional && <Text color="gray">?</Text>}
-                    <Text color="gray">: </Text>
-                    <Text color="yellow">{displayValue}</Text>
-                    {index < array.length - 1 && <Text color="gray">, </Text>}
-                  </Text>
-                );
-              })}
+              )}
               <Text color="gray">{' }'}</Text>
             </Text>
           ) : currentVariant.component ? (

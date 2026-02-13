@@ -34,10 +34,10 @@ export const StreamingMessage = React.memo(function StreamingMessage({
   const { height: terminalHeight } = useTerminalSize();
   const { getColor } = useTheme();
   const contentRef = useRef<any>(null);
-  
+
   // Get the buffering functions from store (typed, using shallow selector)
   const { startBuffering, stopBuffering } = useStreamingBuffer();
-  
+
   const [isBuffering, setIsBuffering] = useState(false);
   const [frozenContent, setFrozenContent] = useState('');
   // Track if user manually expanded - prevents re-buffering
@@ -47,16 +47,19 @@ export const StreamingMessage = React.memo(function StreamingMessage({
   const availableHeight = Math.max(5, terminalHeight - RESERVED_LINES);
 
   // Handle Ctrl+R to resume streaming
-  useInput((input, key) => {
-    if (isBuffering && isStreaming && key.ctrl && input === 'r') {
-      userExpandedRef.current = true;
-      setIsBuffering(false);
-      setFrozenContent('');
-      if (stopBuffering) {
-        stopBuffering();
+  useInput(
+    (input, key) => {
+      if (isBuffering && isStreaming && key.ctrl && input === 'r') {
+        userExpandedRef.current = true;
+        setIsBuffering(false);
+        setFrozenContent('');
+        if (stopBuffering) {
+          stopBuffering();
+        }
       }
-    }
-  }, { isActive: isBuffering && isStreaming });
+    },
+    { isActive: isBuffering && isStreaming }
+  );
 
   // Check for overflow
   useLayoutEffect(() => {
@@ -111,7 +114,12 @@ export const StreamingMessage = React.memo(function StreamingMessage({
   if (isBuffering && isStreaming) {
     return (
       <Box flexDirection="column">
-        <Message content={frozenContent} type={type} status="active" barColor={barColor} />
+        <Message
+          content={frozenContent}
+          type={type}
+          status="active"
+          barColor={barColor}
+        />
         <StatusBar status="paused">
           <Box gap={1}>
             <Text>{brandColor('Streaming...')}</Text>
@@ -125,7 +133,12 @@ export const StreamingMessage = React.memo(function StreamingMessage({
   // Normal rendering
   return (
     <Box ref={contentRef}>
-      <Message content={content} type={type} status={status} barColor={barColor} />
+      <Message
+        content={content}
+        type={type}
+        status={status}
+        barColor={barColor}
+      />
     </Box>
   );
 });

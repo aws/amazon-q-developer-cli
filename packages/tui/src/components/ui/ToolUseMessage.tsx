@@ -14,7 +14,19 @@ import { WebSearch } from '../chat/tools/WebSearch.js';
 import { WebFetch } from '../chat/tools/WebFetch.js';
 import { Tool } from '../chat/tools/Tool.js';
 import { ToolUseStatus, type ToolResult } from '../../stores/app-store.js';
-import { WRITE_TOOL_NAMES, READ_TOOL_NAMES, SHELL_TOOL_NAMES, WEB_SEARCH_TOOL_NAMES, WEB_FETCH_TOOL_NAMES, GREP_TOOL_NAMES, GLOB_TOOL_NAMES, LS_TOOL_NAMES, CODE_TOOL_NAMES, type ToolKind, type ToolCallLocation } from '../../types/agent-events.js';
+import {
+  WRITE_TOOL_NAMES,
+  READ_TOOL_NAMES,
+  SHELL_TOOL_NAMES,
+  WEB_SEARCH_TOOL_NAMES,
+  WEB_FETCH_TOOL_NAMES,
+  GREP_TOOL_NAMES,
+  GLOB_TOOL_NAMES,
+  LS_TOOL_NAMES,
+  CODE_TOOL_NAMES,
+  type ToolKind,
+  type ToolCallLocation,
+} from '../../types/agent-events.js';
 
 export interface ToolUseMessageProps {
   id: string;
@@ -29,44 +41,46 @@ export interface ToolUseMessageProps {
   isStatic?: boolean;
 }
 
-export const ToolUseMessage = React.memo<ToolUseMessageProps>(function ToolUseMessage({
-  id,
-  name,
-  content,
-  isFinished = false,
-  status,
-  result,
-  kind,
-  locations,
-  barColor,
-  isStatic = false,
-}) {
-  const { getColor } = useTheme();
+export const ToolUseMessage = React.memo<ToolUseMessageProps>(
+  function ToolUseMessage({
+    id,
+    name,
+    content,
+    isFinished = false,
+    status,
+    result,
+    kind,
+    locations,
+    barColor,
+    isStatic = false,
+  }) {
+    const { getColor } = useTheme();
 
-  // Map tool status to StatusBar status icon
-  const statusIcon: StatusType | undefined = useMemo(() => {
-    if (status === ToolUseStatus.Rejected) return 'error';
-    if (result?.status === 'cancelled') return 'error';
-    if (status === ToolUseStatus.Approved && isFinished) return 'success';
-    if (status === ToolUseStatus.Pending) return 'warning';
-    if (isFinished) return 'success';
-    return undefined; // In progress, no icon
-  }, [status, isFinished, result]);
+    // Map tool status to StatusBar status icon
+    const statusIcon: StatusType | undefined = useMemo(() => {
+      if (status === ToolUseStatus.Rejected) return 'error';
+      if (result?.status === 'cancelled') return 'error';
+      if (status === ToolUseStatus.Approved && isFinished) return 'success';
+      if (status === ToolUseStatus.Pending) return 'warning';
+      if (isFinished) return 'success';
+      return undefined; // In progress, no icon
+    }, [status, isFinished, result]);
 
-  return (
-    <StatusBar status={statusIcon} barColor={barColor}>
-      <ToolUseContent
-        name={name}
-        content={content}
-        isFinished={isFinished}
-        status={status}
-        result={result}
-        isStatic={isStatic}
-        locations={locations}
-      />
-    </StatusBar>
-  );
-});
+    return (
+      <StatusBar status={statusIcon} barColor={barColor}>
+        <ToolUseContent
+          name={name}
+          content={content}
+          isFinished={isFinished}
+          status={status}
+          result={result}
+          isStatic={isStatic}
+          locations={locations}
+        />
+      </StatusBar>
+    );
+  }
+);
 
 /** Inner component that lives inside StatusBar so it can call requestRemeasure */
 function ToolUseContent({
@@ -137,7 +151,9 @@ function ToolUseContent({
     try {
       const parsed = JSON.parse(content);
       command = parsed.command;
-    } catch { /* ignore */ }
+    } catch {
+      /* ignore */
+    }
     return (
       <Shell
         name={title}

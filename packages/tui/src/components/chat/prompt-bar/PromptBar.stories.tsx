@@ -43,7 +43,11 @@ const contextBarProcessing = React.createElement(ContextBar, {
       prefix: 'git:',
       wrap: true,
     }),
-    React.createElement(Chip, { key: 'model', value: 'gpt-4', color: ChipColor.PRIMARY }),
+    React.createElement(Chip, {
+      key: 'model',
+      value: 'gpt-4',
+      color: ChipColor.PRIMARY,
+    }),
   ],
 }) as PromptBarHeader;
 
@@ -63,7 +67,13 @@ const contextBarNoGit = React.createElement(ContextBar, {
 }) as PromptBarHeader;
 
 const contextBarMinimal = React.createElement(ContextBar, {
-  children: [React.createElement(Chip, { key: 'model', value: 'gpt-4', color: ChipColor.PRIMARY })],
+  children: [
+    React.createElement(Chip, {
+      key: 'model',
+      value: 'gpt-4',
+      color: ChipColor.PRIMARY,
+    }),
+  ],
 }) as PromptBarHeader;
 
 const snackBarExample = React.createElement(SnackBar, {
@@ -78,7 +88,17 @@ const meta = {
   component: PromptBar,
   parameters: {
     layout: 'fullscreen',
-    storyOrder: ['Basic', 'Processing', 'NoGit', 'Minimal', 'WithSnackBar', 'WithValue', 'WithMenu', 'WithApproval', 'LongPlaceholder'],
+    storyOrder: [
+      'Basic',
+      'Processing',
+      'NoGit',
+      'Minimal',
+      'WithSnackBar',
+      'WithValue',
+      'WithMenu',
+      'WithApproval',
+      'LongPlaceholder',
+    ],
   },
   tags: ['autodocs'],
 };

@@ -9,13 +9,13 @@ import { ShimmerText } from '../shimmer/ShimmerText.js';
 export interface StatusInfoProps {
   /** The main heading/identifier (e.g., tool name, alert message) */
   title: string;
-  
+
   /** Optional target/context shown in parentheses (e.g., file path, environment) */
   target?: string;
-  
+
   /** Optional status type for color theming - if provided, overrides StatusBar context */
   status?: StatusType;
-  
+
   /** Whether to color the title based on status. Defaults to false. */
   useStatusColor?: boolean;
 
@@ -23,9 +23,9 @@ export interface StatusInfoProps {
   shimmer?: boolean;
 }
 
-export const StatusInfo = React.memo(function StatusInfo({ 
-  title, 
-  target, 
+export const StatusInfo = React.memo(function StatusInfo({
+  title,
+  target,
   status: statusProp,
   useStatusColor = false,
   shimmer = false,
@@ -44,7 +44,10 @@ export const StatusInfo = React.memo(function StatusInfo({
   // Use prop if provided, otherwise use context, otherwise undefined
   const status = statusProp ?? contextStatus;
 
-  const titleColor = (useStatusColor && status) ? getStatusColor(status, getColor) : getColor('primary');
+  const titleColor =
+    useStatusColor && status
+      ? getStatusColor(status, getColor)
+      : getColor('primary');
   const targetColor = getColor('secondary');
 
   return (

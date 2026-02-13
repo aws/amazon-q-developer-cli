@@ -183,7 +183,8 @@ export const Error = {
 export const WithPathShortening = {
   parameters: {
     docs: {
-      storyDescription: 'Chip automatically shortens paths (replaces home directory with ~)',
+      storyDescription:
+        'Chip automatically shortens paths (replaces home directory with ~)',
     },
   },
   args: {

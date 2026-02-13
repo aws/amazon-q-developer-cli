@@ -26,7 +26,11 @@ export interface CommandState {
   slashCommands: SlashCommand[];
   activeCommand: ActiveCommand | null;
   commandInputValue: string;
-  activeTrigger: { key: string; position: number; type: 'start' | 'inline' } | null;
+  activeTrigger: {
+    key: string;
+    position: number;
+    type: 'start' | 'inline';
+  } | null;
   filePickerHasResults: boolean;
 }
 
@@ -34,7 +38,9 @@ export interface CommandActions {
   setSlashCommands: (commands: SlashCommand[]) => void;
   setActiveCommand: (command: ActiveCommand | null) => void;
   setCommandInput: (value: string) => void;
-  setActiveTrigger: (trigger: { key: string; position: number; type: 'start' | 'inline' } | null) => void;
+  setActiveTrigger: (
+    trigger: { key: string; position: number; type: 'start' | 'inline' } | null
+  ) => void;
   setFilePickerHasResults: (hasResults: boolean) => void;
   clearCommandInput: () => void;
 }
@@ -52,13 +58,21 @@ export const createCommandSlice: StateCreator<CommandSlice> = (set) => ({
   // Actions
   setSlashCommands: (commands) => {
     set((state) => {
-      const localCommands = state.slashCommands.filter((cmd) => cmd.source === 'local');
+      const localCommands = state.slashCommands.filter(
+        (cmd) => cmd.source === 'local'
+      );
       return { slashCommands: [...localCommands, ...commands] };
     });
   },
   setActiveCommand: (command) => set({ activeCommand: command }),
   setCommandInput: (value) => set({ commandInputValue: value }),
   setActiveTrigger: (trigger) => set({ activeTrigger: trigger }),
-  setFilePickerHasResults: (hasResults) => set({ filePickerHasResults: hasResults }),
-  clearCommandInput: () => set({ commandInputValue: '', activeTrigger: null, filePickerHasResults: false }),
+  setFilePickerHasResults: (hasResults) =>
+    set({ filePickerHasResults: hasResults }),
+  clearCommandInput: () =>
+    set({
+      commandInputValue: '',
+      activeTrigger: null,
+      filePickerHasResults: false,
+    }),
 });

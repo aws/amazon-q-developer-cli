@@ -57,7 +57,7 @@ export class TestCase {
     };
 
     const testName = this.options.testName || `integ-${Date.now()}`;
-    this.paths = createTestDir(testName, { 
+    this.paths = createTestDir(testName, {
       outputSubdir: 'integ',
     });
 
@@ -123,8 +123,10 @@ export class TestCase {
     // Save HTML snapshot before cleanup
     try {
       fs.writeFileSync(this.paths.snapshotHtmlFile, this.getSnapshotHtml());
-    } catch { /* ignore if terminal already closed */ }
-    
+    } catch {
+      /* ignore if terminal already closed */
+    }
+
     this.ptyManager.kill();
     this.tuiConnection?.close();
   }
@@ -298,8 +300,10 @@ export class TestCase {
     // Save HTML snapshot before exit
     try {
       fs.writeFileSync(this.paths.snapshotHtmlFile, this.getSnapshotHtml());
-    } catch { /* ignore if terminal already closed */ }
-    
+    } catch {
+      /* ignore if terminal already closed */
+    }
+
     return this.ptyManager.expectExit();
   }
 

@@ -1,4 +1,4 @@
-import { Theme } from './types.js';
+import type { Theme } from './types.js';
 
 export const kiroLight: Theme = {
   colors: {

@@ -22,7 +22,10 @@ const slashCommands = [
   { label: 'help', description: 'Show available commands and their usage' },
   { label: 'model', description: 'Select AI model for the chat session' },
   { label: 'quit', description: 'Exit the application' },
-  { label: 'steering', description: 'Manage steering rules and configurations' },
+  {
+    label: 'steering',
+    description: 'Manage steering rules and configurations',
+  },
   { label: 'spec', description: 'Create and manage feature specifications' },
   { label: 'hooks', description: 'Manage agent hooks and automations' },
   { label: 'config', description: 'Configure application settings' },
@@ -37,18 +40,30 @@ const mentions = [
 ];
 
 const aiModels = [
-  { label: 'GPT-4', description: 'OpenAI most capable model for complex tasks' },
+  {
+    label: 'GPT-4',
+    description: 'OpenAI most capable model for complex tasks',
+  },
   { label: 'GPT-4 Turbo', description: 'Faster and more cost-effective GPT-4' },
   { label: 'GPT-3.5 Turbo', description: 'Fast and efficient for most tasks' },
-  { label: 'Claude 3.5 Sonnet', description: 'Anthropic balanced model for various tasks' },
+  {
+    label: 'Claude 3.5 Sonnet',
+    description: 'Anthropic balanced model for various tasks',
+  },
   { label: 'Claude 3 Opus', description: 'Anthropic most powerful model' },
-  { label: 'Claude 3 Haiku', description: 'Anthropic fastest and most compact model' },
+  {
+    label: 'Claude 3 Haiku',
+    description: 'Anthropic fastest and most compact model',
+  },
   { label: 'Gemini Pro', description: 'Google multimodal AI model' },
   { label: 'Gemini Ultra', description: 'Google most capable model' },
   { label: 'Llama 3', description: 'Meta open-source language model' },
   { label: 'Llama 3.1', description: 'Meta improved open-source model' },
   { label: 'Mistral Large', description: 'Mistral AI flagship model' },
-  { label: 'Mistral Medium', description: 'Mistral AI balanced performance model' },
+  {
+    label: 'Mistral Medium',
+    description: 'Mistral AI balanced performance model',
+  },
   { label: 'Mixtral 8x7B', description: 'Mistral AI mixture of experts model' },
   { label: 'Command R+', description: 'Cohere enterprise-grade model' },
   { label: 'Command R', description: 'Cohere retrieval-augmented model' },
@@ -58,7 +73,10 @@ const manyCommands = [
   { label: 'help', description: 'Show available commands and their usage' },
   { label: 'model', description: 'Select AI model for the chat session' },
   { label: 'quit', description: 'Exit the application' },
-  { label: 'steering', description: 'Manage steering rules and configurations' },
+  {
+    label: 'steering',
+    description: 'Manage steering rules and configurations',
+  },
   { label: 'spec', description: 'Create and manage feature specifications' },
   { label: 'hooks', description: 'Manage agent hooks and automations' },
   { label: 'config', description: 'Configure application settings' },

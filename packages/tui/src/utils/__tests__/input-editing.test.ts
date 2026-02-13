@@ -55,7 +55,9 @@ describe('input-editing', () => {
   describe('totalWidth', () => {
     it('sums widths of all segments', () => {
       expect(totalWidth([text('hello'), text(' world')])).toBe(11);
-      expect(totalWidth([text('before '), paste('content', 5), text(' after')])).toBe(7 + 1 + 6);
+      expect(
+        totalWidth([text('before '), paste('content', 5), text(' after')])
+      ).toBe(7 + 1 + 6);
       expect(totalWidth([])).toBe(0);
     });
   });
@@ -89,13 +91,13 @@ describe('input-editing', () => {
     it('locates cursor with chip segments (chip width = 1)', () => {
       // "AAA " + [chip] + " BBB" = 4 + 1 + 4 = 9 total width
       const segments = [text('AAA '), paste('content', 5), text(' BBB')];
-      
+
       // Cursor at position 4 = end of "AAA "
       expect(locateCursor(segments, 4)).toEqual({ segIdx: 0, offset: 4 });
-      
+
       // Cursor at position 5 = on/after the chip (chip has width 1)
       expect(locateCursor(segments, 5)).toEqual({ segIdx: 1, offset: 1 });
-      
+
       // Cursor at position 6 = in " BBB" at offset 1
       expect(locateCursor(segments, 6)).toEqual({ segIdx: 2, offset: 1 });
     });
@@ -103,7 +105,11 @@ describe('input-editing', () => {
 
   describe('normalizeSegments', () => {
     it('merges adjacent text segments', () => {
-      const result = normalizeSegments([text('hello'), text(' '), text('world')]);
+      const result = normalizeSegments([
+        text('hello'),
+        text(' '),
+        text('world'),
+      ]);
       expect(result).toEqual([text('hello world')]);
     });
 
@@ -143,20 +149,20 @@ describe('input-editing', () => {
       // Moving left once more should jump past entire chip
       const segments = [text('AAA '), paste('content', 5), text(' BBB')];
       const total = totalWidth(segments); // 4 + 1 + 4 = 9
-      
+
       // Start at end (position 9)
       let cursor = total;
-      
+
       // Move left 4 times through " BBB"
       cursor = Math.max(0, cursor - 1); // 8
       cursor = Math.max(0, cursor - 1); // 7
       cursor = Math.max(0, cursor - 1); // 6
       cursor = Math.max(0, cursor - 1); // 5 - now at end of chip
-      
+
       // At position 5, we're right after the chip
       const loc = locateCursor(segments, cursor);
       expect(loc.segIdx).toBe(1); // On chip segment
-      
+
       // Move left once more - should jump to position 4 (before chip)
       cursor = Math.max(0, cursor - 1); // 4
       const locAfter = locateCursor(segments, cursor);
@@ -166,13 +172,13 @@ describe('input-editing', () => {
 
     it('cursor moves past chip in one step (right arrow)', () => {
       const segments = [text('AAA '), paste('content', 5), text(' BBB')];
-      
+
       // Start at position 4 (end of "AAA ", before chip)
       let cursor = 4;
-      
+
       // Move right once - should jump past entire chip to position 5
       cursor = Math.min(totalWidth(segments), cursor + 1); // 5
-      
+
       const loc = locateCursor(segments, cursor);
       // Position 5 is right after the chip (chip occupies position 4-5)
       expect(loc.segIdx).toBe(1); // Still on chip segment but at offset 1 (end)
@@ -183,9 +189,9 @@ describe('input-editing', () => {
     it('deletes word in text segment', () => {
       const segments = [text('hello world')];
       const cursor = 11; // End of "hello world"
-      
+
       const result = deleteWordBackward(segments, cursor);
-      
+
       // Should delete "world" leaving "hello "
       expect(result.segments[0]).toEqual(text('hello '));
       expect(result.cursor).toBe(6);
@@ -194,9 +200,9 @@ describe('input-editing', () => {
     it('deletes word from middle of text', () => {
       const segments = [text('hello world foo')];
       const cursor = 11; // End of "hello world"
-      
+
       const result = deleteWordBackward(segments, cursor);
-      
+
       expect(result.segments[0]).toEqual(text('hello  foo'));
       expect(result.cursor).toBe(6);
     });
@@ -204,7 +210,7 @@ describe('input-editing', () => {
     it('no-op when cursor is at position 0', () => {
       const segments = [text('hello')];
       const result = deleteWordBackward(segments, 0);
-      
+
       expect(result.segments[0]).toEqual(text('hello'));
       expect(result.cursor).toBe(0);
     });
@@ -212,9 +218,9 @@ describe('input-editing', () => {
     it('skips trailing spaces then deletes word', () => {
       const segments = [text('hello   ')];
       const cursor = 8; // End with trailing spaces
-      
+
       const result = deleteWordBackward(segments, cursor);
-      
+
       expect(result.segments[0]).toEqual(text(''));
       expect(result.cursor).toBe(0);
     });
@@ -222,9 +228,9 @@ describe('input-editing', () => {
     it('when on chip (offset 0), deletes previous segment', () => {
       const segments = [text('before '), paste('content', 5)];
       const cursor = 7; // On the chip (offset 0)
-      
+
       const result = deleteWordBackward(segments, cursor);
-      
+
       expect(result.cursor).toBe(0);
     });
   });
@@ -232,24 +238,24 @@ describe('input-editing', () => {
   describe('backspace on chip (simulated)', () => {
     // Note: Actual backspace is handled in PromptInput.handleBackspace
     // These tests verify the segment/cursor logic that backspace relies on
-    
+
     it('chip has width 1 so cursor positions work correctly', () => {
       // "before " (7) + chip (1) + " after" (6) = 14 total
       const segments = [text('before '), paste('content', 5), text(' after')];
       const total = totalWidth(segments);
       expect(total).toBe(14);
-      
+
       // Cursor positions:
       // 0-7: in "before " text
       // 7: at end of "before " (segIdx 0, offset 7)
       // 8: right after chip (segIdx 1, offset 1) - this triggers chip deletion
       // 9-14: in " after" text
-      
+
       // Cursor at position 8 = right after chip
       const loc8 = locateCursor(segments, 8);
       expect(loc8.segIdx).toBe(1); // On chip segment
       expect(loc8.offset).toBe(1); // At end of chip (offset 1 = after the chip)
-      
+
       // Cursor at position 9 = in " after" segment
       const loc9 = locateCursor(segments, 9);
       expect(loc9.segIdx).toBe(2); // In " after" segment
@@ -259,12 +265,12 @@ describe('input-editing', () => {
     it('cursor right after chip (offset=1) triggers chip deletion', () => {
       const segments = [text('before '), paste('content', 5)];
       const cursor = 8; // Right after chip (7 + 1)
-      
+
       const loc = locateCursor(segments, cursor);
       // offset === 1 on a chip means cursor is right after it
       expect(loc.segIdx).toBe(1);
       expect(loc.offset).toBe(1);
-      
+
       // PromptInput.handleBackspace checks: seg.type !== 'text' && offset === 1
       // and deletes the chip, moving cursor by 1
     });
@@ -274,9 +280,9 @@ describe('input-editing', () => {
     it('kills chip and everything after when cursor is on chip', () => {
       const segments = [text('before '), paste('content', 5), text(' after')];
       const cursor = 7; // At start of chip
-      
+
       const result = killToEnd(segments, cursor);
-      
+
       expect(result.segments).toEqual([text('before ')]);
       expect(result.cursor).toBe(7);
     });
@@ -284,9 +290,9 @@ describe('input-editing', () => {
     it('kills from cursor to end in text segment', () => {
       const segments = [text('hello world')];
       const cursor = 5; // After "hello"
-      
+
       const result = killToEnd(segments, cursor);
-      
+
       expect(result.segments).toEqual([text('hello')]);
       expect(result.cursor).toBe(5);
     });
@@ -294,9 +300,9 @@ describe('input-editing', () => {
     it('no-op when cursor is at end', () => {
       const segments = [text('hello')];
       const cursor = 5;
-      
+
       const result = killToEnd(segments, cursor);
-      
+
       expect(result.segments[0]).toEqual(text('hello'));
       expect(result.cursor).toBe(5);
     });
@@ -306,9 +312,9 @@ describe('input-editing', () => {
     it('kills everything before chip when cursor is on chip', () => {
       const segments = [text('before '), paste('content', 5), text(' after')];
       const cursor = 7; // At start of chip
-      
+
       const result = killToBeginning(segments, cursor);
-      
+
       expect(result.segments).toHaveLength(2);
       expect(result.segments[0]?.type).toBe('paste');
       expect(result.cursor).toBe(0);
@@ -317,9 +323,9 @@ describe('input-editing', () => {
     it('kills from beginning to cursor in text segment', () => {
       const segments = [text('hello world')];
       const cursor = 6; // After "hello "
-      
+
       const result = killToBeginning(segments, cursor);
-      
+
       expect(result.segments).toEqual([text('world')]);
       expect(result.cursor).toBe(0);
     });
@@ -327,9 +333,9 @@ describe('input-editing', () => {
     it('no-op when cursor is at beginning', () => {
       const segments = [text('hello')];
       const cursor = 0;
-      
+
       const result = killToBeginning(segments, cursor);
-      
+
       expect(result.segments[0]).toEqual(text('hello'));
       expect(result.cursor).toBe(0);
     });
@@ -339,18 +345,18 @@ describe('input-editing', () => {
     it('moves past chip as single unit', () => {
       const segments = [text('AAA '), paste('content', 5), text(' BBB')];
       const cursor = 4; // At end of "AAA ", before chip
-      
+
       const newCursor = moveWordForward(segments, cursor);
-      
+
       expect(newCursor).toBe(5);
     });
 
     it('skips word then spaces in text', () => {
       const segments = [text('hello world foo')];
       const cursor = 0;
-      
+
       const newCursor = moveWordForward(segments, cursor);
-      
+
       // Should skip "hello " -> position 6
       expect(newCursor).toBe(6);
     });
@@ -358,9 +364,9 @@ describe('input-editing', () => {
     it('no-op when cursor is at end', () => {
       const segments = [text('hello')];
       const cursor = 5;
-      
+
       const newCursor = moveWordForward(segments, cursor);
-      
+
       expect(newCursor).toBe(5);
     });
   });
@@ -369,18 +375,18 @@ describe('input-editing', () => {
     it('moves past chip as single unit', () => {
       const segments = [text('AAA '), paste('content', 5), text(' BBB')];
       const cursor = 5; // Right after chip
-      
+
       const newCursor = moveWordBackward(segments, cursor);
-      
+
       expect(newCursor).toBeLessThan(5);
     });
 
     it('skips spaces then word in text', () => {
       const segments = [text('hello world')];
       const cursor = 11; // End
-      
+
       const newCursor = moveWordBackward(segments, cursor);
-      
+
       // Should skip back to start of "world" -> position 6
       expect(newCursor).toBe(6);
     });
@@ -388,9 +394,9 @@ describe('input-editing', () => {
     it('no-op when cursor is at beginning', () => {
       const segments = [text('hello')];
       const cursor = 0;
-      
+
       const newCursor = moveWordBackward(segments, cursor);
-      
+
       expect(newCursor).toBe(0);
     });
   });
@@ -399,9 +405,9 @@ describe('input-editing', () => {
     it('swaps characters at cursor position', () => {
       const segments = [text('abcd')];
       const cursor = 2; // After 'ab'
-      
+
       const result = transposeChars(segments, cursor);
-      
+
       // Swaps char before cursor (b) with char at cursor (c)
       expect(result.segments[0]).toEqual(text('acbd'));
       expect(result.cursor).toBe(3); // Cursor moves forward
@@ -410,18 +416,18 @@ describe('input-editing', () => {
     it('swaps last two chars when cursor at end', () => {
       const segments = [text('abcd')];
       const cursor = 4; // At end
-      
+
       const result = transposeChars(segments, cursor);
-      
+
       expect(result.segments[0]).toEqual(text('abdc'));
     });
 
     it('does nothing at start of text', () => {
       const segments = [text('abcd')];
       const cursor = 0;
-      
+
       const result = transposeChars(segments, cursor);
-      
+
       expect(result.segments[0]).toEqual(text('abcd'));
       expect(result.cursor).toBe(0);
     });
@@ -431,7 +437,7 @@ describe('input-editing', () => {
     it('returns text content with zero-width space for chips', () => {
       const segments = [text('hello'), paste('content', 5), text('world')];
       const visible = getVisibleText(segments);
-      
+
       // Chip becomes zero-width space
       expect(visible).toBe('hello\u200Bworld');
     });
@@ -486,15 +492,16 @@ describe('input-editing', () => {
     it('inserts text at cursor position in text segment', () => {
       const segments = [text('helloworld')];
       const cursor = 5; // After 'hello'
-      
+
       const { segIdx, offset } = locateCursor(segments, cursor);
       const seg = segments[segIdx]!;
-      
+
       if (seg.type === 'text') {
-        const newValue = seg.value.slice(0, offset) + ' ' + seg.value.slice(offset);
+        const newValue =
+          seg.value.slice(0, offset) + ' ' + seg.value.slice(offset);
         const newSegs = [...segments];
         newSegs[segIdx] = { type: 'text', value: newValue };
-        
+
         expect(newSegs[0]).toEqual(text('hello world'));
       }
     });
@@ -502,12 +509,13 @@ describe('input-editing', () => {
     it('inserts newline character (Ctrl+J)', () => {
       const segments = [text('line1')];
       const cursor = 5;
-      
+
       const { segIdx, offset } = locateCursor(segments, cursor);
       const seg = segments[segIdx]!;
-      
+
       if (seg.type === 'text') {
-        const newValue = seg.value.slice(0, offset) + '\n' + seg.value.slice(offset);
+        const newValue =
+          seg.value.slice(0, offset) + '\n' + seg.value.slice(offset);
         expect(newValue).toBe('line1\n');
       }
     });
@@ -517,12 +525,13 @@ describe('input-editing', () => {
     it('deletes character before cursor in text', () => {
       const segments = [text('hello')];
       const cursor = 5;
-      
+
       const { segIdx, offset } = locateCursor(segments, cursor);
       const seg = segments[segIdx]!;
-      
+
       if (seg.type === 'text' && offset > 0) {
-        const newValue = seg.value.slice(0, offset - 1) + seg.value.slice(offset);
+        const newValue =
+          seg.value.slice(0, offset - 1) + seg.value.slice(offset);
         expect(newValue).toBe('hell');
       }
     });
@@ -530,7 +539,7 @@ describe('input-editing', () => {
     it('deletes multiple characters with repeated backspace', () => {
       let value = 'hello';
       let cursor = 5;
-      
+
       // Simulate 2 backspaces
       for (let i = 0; i < 2; i++) {
         if (cursor > 0) {
@@ -538,7 +547,7 @@ describe('input-editing', () => {
           cursor--;
         }
       }
-      
+
       expect(value).toBe('hel');
       expect(cursor).toBe(3);
     });
@@ -546,7 +555,7 @@ describe('input-editing', () => {
     it('no-op when cursor is at position 0', () => {
       const segments = [text('hello')];
       const cursor = 0;
-      
+
       // handleBackspace returns early when cursor === 0
       expect(cursor).toBe(0);
       expect(segments[0]).toEqual(text('hello'));
@@ -561,16 +570,17 @@ describe('input-editing', () => {
       // char of the text segment via the normal text path (offset > 0).
       const segments = [text('hello '), paste('content', 5)];
       const cursor = 6; // End of "hello " text
-      
+
       const loc = locateCursor(segments, cursor);
       // cursor 6 is at offset 6 of "hello " (end of text segment)
       expect(loc.segIdx).toBe(0);
       expect(loc.offset).toBe(6);
-      
+
       // handleBackspace: seg is text, offset > 0 -> delete char before cursor
       const seg = segments[loc.segIdx]!;
       if (seg.type === 'text' && loc.offset > 0) {
-        const newValue = seg.value.slice(0, loc.offset - 1) + seg.value.slice(loc.offset);
+        const newValue =
+          seg.value.slice(0, loc.offset - 1) + seg.value.slice(loc.offset);
         expect(newValue).toBe('hello');
       }
     });
@@ -580,10 +590,10 @@ describe('input-editing', () => {
     it('inserts text after chip when cursor is on a chip', () => {
       const segments = [text('before '), paste('content', 5)];
       const cursor = 8; // After chip (7 + 1)
-      
+
       const loc = locateCursor(segments, cursor);
       expect(loc.segIdx).toBe(1); // On chip
-      
+
       // PromptInput.insertText: when seg is not text, insert after chip
       // Result: [...segments.slice(0, segIdx + 1), text('X'), ...segments.slice(segIdx + 1)]
       const newSegs = [
@@ -601,13 +611,19 @@ describe('input-editing', () => {
     it('empty segments produce empty content after trim', () => {
       // buildContent joins segments and trims
       const segments = [text('')];
-      const content = segments.map(s => s.type === 'text' ? s.value : '').join('').trim();
+      const content = segments
+        .map((s) => (s.type === 'text' ? s.value : ''))
+        .join('')
+        .trim();
       expect(content).toBe('');
     });
 
     it('whitespace-only segments produce empty content after trim', () => {
       const segments = [text('   ')];
-      const content = segments.map(s => s.type === 'text' ? s.value : '').join('').trim();
+      const content = segments
+        .map((s) => (s.type === 'text' ? s.value : ''))
+        .join('')
+        .trim();
       expect(content).toBe('');
     });
   });

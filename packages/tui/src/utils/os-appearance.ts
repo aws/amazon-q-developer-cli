@@ -24,7 +24,7 @@ export function getOSAppearance(): 'dark' | 'light' {
         {
           encoding: 'utf8',
           stdio: ['pipe', 'pipe', 'ignore'], // Suppress stderr
-        },
+        }
       );
       // 0x0 = dark mode, 0x1 = light mode
       return result.includes('0x0') ? 'dark' : 'light';

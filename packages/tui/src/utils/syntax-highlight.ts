@@ -24,7 +24,7 @@ export function useSyntaxHighlight() {
       variable: getColor('syntax.variable'),
       attr: getColor('syntax.attr'),
     }),
-    [getColor],
+    [getColor]
   );
 
   const highlightCode = useMemo(
@@ -39,7 +39,7 @@ export function useSyntaxHighlight() {
           return code;
         }
       },
-    [syntaxTheme],
+    [syntaxTheme]
   );
 
   return highlightCode;

@@ -240,7 +240,7 @@ export class E2ETestCase {
    * - `events`: Array of MockStreamItem events to add to the response stream
    * - `null`: Signal that the current response is complete (closes the stream)
    */
-  async pushSendMessageResponse(events: MockStreamItem[] | null): Promise<void> {
+  async pushSendMessageResponse(events: MockStreamItem[] | null, options?: { silent?: boolean }): Promise<void> {
     if (!this.agentConnection) throw new Error('Agent not connected');
 
     // Get session ID from TUI store
@@ -254,7 +254,9 @@ export class E2ETestCase {
       events
     };
     const eventsDesc = events ? `${events.length} events (${JSON.stringify(cmd).length} bytes)` : 'null (end stream)';
-    console.log(`Sending to agent: ${eventsDesc}`);
+    if (!options?.silent) {
+      console.log(`Sending to agent: ${eventsDesc}`);
+    }
 
     const response = await this.agentConnection.sendCommand(cmd);
 

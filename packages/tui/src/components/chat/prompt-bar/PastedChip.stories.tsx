@@ -1,11 +1,17 @@
 import React from 'react';
-import { PastedChip, PastedChipProps } from './PastedChip.js';
+import { PastedChip, type PastedChipProps } from './PastedChip.js';
 
 const meta = {
   component: PastedChip,
   parameters: {
     layout: 'fullscreen',
-    storyOrder: ['TextFewLines', 'TextManyLines', 'TextFewChars', 'Image', 'ImageWithDetails'],
+    storyOrder: [
+      'TextFewLines',
+      'TextManyLines',
+      'TextFewChars',
+      'Image',
+      'ImageWithDetails',
+    ],
   },
   tags: ['autodocs'],
 };

@@ -43,9 +43,11 @@ export const FetchedWithSummary = {
     result: {
       status: 'success',
       output: {
-        items: [{
-          Text: 'Bun v1.2.20 release notes. This release fixes 141 issues and includes many reliability improvements throughout the runtime, the bundler, and the dev server. Reduced idle CPU usage, automatic yarn.lock migration, 40x faster AbortSignal.timeout...',
-        }],
+        items: [
+          {
+            Text: 'Bun v1.2.20 release notes. This release fixes 141 issues and includes many reliability improvements throughout the runtime, the bundler, and the dev server. Reduced idle CPU usage, automatic yarn.lock migration, 40x faster AbortSignal.timeout...',
+          },
+        ],
       },
     },
   },
@@ -61,9 +63,11 @@ export const LongUrl = {
     result: {
       status: 'success',
       output: {
-        items: [{
-          Text: 'The Promise.allSettled() static method takes an iterable of promises as input and returns a single Promise.',
-        }],
+        items: [
+          {
+            Text: 'The Promise.allSettled() static method takes an iterable of promises as input and returns a single Promise.',
+          },
+        ],
       },
     },
   },
@@ -80,9 +84,11 @@ export const WithMode = {
     result: {
       status: 'success',
       output: {
-        items: [{
-          Text: 'API documentation for the example service. Authentication: Bearer token required for all endpoints.',
-        }],
+        items: [
+          {
+            Text: 'API documentation for the example service. Authentication: Bearer token required for all endpoints.',
+          },
+        ],
       },
     },
   },

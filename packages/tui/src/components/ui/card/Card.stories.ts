@@ -29,7 +29,8 @@ export const Basic = {
         key: 'question',
       }),
       React.createElement(Message, {
-        content: 'Why do programmers prefer dark mode?\n\nBecause light attracts bugs! 🐛',
+        content:
+          'Why do programmers prefer dark mode?\n\nBecause light attracts bugs! 🐛',
         type: MessageType.AGENT,
         key: 'answer',
       }),
@@ -53,7 +54,8 @@ export const WithAnimation = {
         key: 'question',
       }),
       React.createElement(Message, {
-        content: 'Why do programmers prefer dark mode?\n\nBecause light attracts bugs! 🐛',
+        content:
+          'Why do programmers prefer dark mode?\n\nBecause light attracts bugs! 🐛',
         type: MessageType.AGENT,
         key: 'answer',
       }),
@@ -79,7 +81,8 @@ export const WithStatusDots = {
         key: 'question',
       }),
       React.createElement(Message, {
-        content: 'Why do programmers prefer dark mode?\n\nBecause light attracts bugs! 🐛',
+        content:
+          'Why do programmers prefer dark mode?\n\nBecause light attracts bugs! 🐛',
         type: MessageType.AGENT,
         status: 'success',
         key: 'answer',
@@ -93,7 +96,8 @@ export const WithStatusDots = {
 export const Inactive = {
   parameters: {
     docs: {
-      storyDescription: 'Inactive Card - StatusBar shows empty space instead of colored bars',
+      storyDescription:
+        'Inactive Card - StatusBar shows empty space instead of colored bars',
     },
   },
   args: {
@@ -104,7 +108,8 @@ export const Inactive = {
         key: 'question',
       }),
       React.createElement(Message, {
-        content: 'Why do programmers prefer dark mode?\n\nBecause light attracts bugs! 🐛',
+        content:
+          'Why do programmers prefer dark mode?\n\nBecause light attracts bugs! 🐛',
         type: MessageType.AGENT,
         key: 'answer',
       }),
@@ -112,4 +117,3 @@ export const Inactive = {
     active: false,
   },
 };
-

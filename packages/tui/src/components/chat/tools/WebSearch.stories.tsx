@@ -41,9 +41,11 @@ export const SearchedWithSummary = {
     result: {
       status: 'success',
       output: {
-        items: [{
-          Text: 'TypeScript 5.9 introduces several new features including...\nImproved type inference for generic functions\nNew satisfies operator enhancements\nBetter error messages for template literal types',
-        }],
+        items: [
+          {
+            Text: 'TypeScript 5.9 introduces several new features including...\nImproved type inference for generic functions\nNew satisfies operator enhancements\nBetter error messages for template literal types',
+          },
+        ],
       },
     },
   },

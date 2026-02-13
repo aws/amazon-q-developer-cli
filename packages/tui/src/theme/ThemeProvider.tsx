@@ -33,7 +33,11 @@ const createThemeContext = (theme: Theme): ThemeContextValue => ({
       }
     }
 
-    return getTerminalChalkColor(colorDef.truecolor, colorDef.color256, colorDef.named);
+    return getTerminalChalkColor(
+      colorDef.truecolor,
+      colorDef.color256,
+      colorDef.named
+    );
   },
 });
 
@@ -46,7 +50,9 @@ const getAutoTheme = (): Theme => {
 };
 
 // Create the React context with the default theme as the initial value
-export const ThemeContext = createContext<ThemeContextValue>(createThemeContext(kiroDark));
+export const ThemeContext = createContext<ThemeContextValue>(
+  createThemeContext(kiroDark)
+);
 
 /**
  * Props for the ThemeProvider component
@@ -63,8 +69,15 @@ interface ThemeProviderProps {
  * @param theme - Optional theme override ('auto' for detection, or a specific Theme). Defaults to 'auto'.
  * @param children - Child components that will have access to the theme context
  */
-export const ThemeProvider = ({ theme = 'auto', children }: ThemeProviderProps) => {
+export const ThemeProvider = ({
+  theme = 'auto',
+  children,
+}: ThemeProviderProps) => {
   const resolvedTheme = theme === 'auto' ? getAutoTheme() : theme;
   const themeContext = createThemeContext(resolvedTheme);
-  return <ThemeContext.Provider value={themeContext}>{children}</ThemeContext.Provider>;
+  return (
+    <ThemeContext.Provider value={themeContext}>
+      {children}
+    </ThemeContext.Provider>
+  );
 };

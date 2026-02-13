@@ -28,7 +28,9 @@ export const RadioGroup = React.memo(function RadioGroup({
   direction = 'vertical',
   label,
 }: RadioGroupProps) {
-  const [selectedValue, setSelectedValue] = useState(initialSelectedValue || options[0]?.value);
+  const [selectedValue, setSelectedValue] = useState(
+    initialSelectedValue || options[0]?.value
+  );
 
   // Get text styling for the label
   const labelStyle = useTextStyle('label');
@@ -41,7 +43,9 @@ export const RadioGroup = React.memo(function RadioGroup({
 
     // Notify parent if onChange is provided
     if (onChange) {
-      const selectedOption = options.find((option) => option.value === optionValue);
+      const selectedOption = options.find(
+        (option) => option.value === optionValue
+      );
       const selectedLabel = selectedOption?.label || optionValue;
       onChange(optionValue, selectedLabel);
     }
@@ -56,10 +60,10 @@ export const RadioGroup = React.memo(function RadioGroup({
 
     // Find current position in enabled options based on selected value
     const currentEnabledIndex = enabledOptions.findIndex(
-      (option) => option.value === selectedValue,
+      (option) => option.value === selectedValue
     );
 
-    let targetOption: RadioOption | null = null;
+    let targetOption: RadioOption | undefined;
 
     if (
       (key.upArrow && direction === 'vertical') ||
@@ -67,7 +71,9 @@ export const RadioGroup = React.memo(function RadioGroup({
     ) {
       // Move to previous enabled option
       const prevEnabledIndex =
-        currentEnabledIndex > 0 ? currentEnabledIndex - 1 : enabledOptions.length - 1;
+        currentEnabledIndex > 0
+          ? currentEnabledIndex - 1
+          : enabledOptions.length - 1;
       targetOption = enabledOptions[prevEnabledIndex];
     } else if (
       (key.downArrow && direction === 'vertical') ||
@@ -75,7 +81,9 @@ export const RadioGroup = React.memo(function RadioGroup({
     ) {
       // Move to next enabled option
       const nextEnabledIndex =
-        currentEnabledIndex < enabledOptions.length - 1 ? currentEnabledIndex + 1 : 0;
+        currentEnabledIndex < enabledOptions.length - 1
+          ? currentEnabledIndex + 1
+          : 0;
       targetOption = enabledOptions[nextEnabledIndex];
     }
 
@@ -98,7 +106,10 @@ export const RadioGroup = React.memo(function RadioGroup({
       )}
       <Box flexDirection={direction === 'vertical' ? 'column' : 'row'}>
         {options.map((option) => (
-          <Box key={option.value} marginRight={direction === 'horizontal' ? 2 : 0}>
+          <Box
+            key={option.value}
+            marginRight={direction === 'horizontal' ? 2 : 0}
+          >
             <RadioButton
               selected={selectedValue === option.value}
               label={option.label}

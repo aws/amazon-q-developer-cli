@@ -4,7 +4,6 @@ import { render } from 'ink';
 import { Storybook } from './Storybook.js';
 import { ThemeProvider } from '../theme/index.js';
 
-
 // Clear the terminal
 process.stdout.write('\x1b[2J\x1b[0f');
 
@@ -12,7 +11,7 @@ process.stdout.write('\x1b[2J\x1b[0f');
 const { unmount } = render(
   <ThemeProvider>
     <Storybook />
-  </ThemeProvider>,
+  </ThemeProvider>
 );
 
 // Handle exit

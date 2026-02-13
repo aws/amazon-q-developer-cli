@@ -20,7 +20,7 @@ export function ContextBar({ children }: ContextBarProps) {
       <Box flexGrow={1} flexShrink={0}>
         {firstItem}
       </Box>
-      
+
       {/* Remaining items with separators - each chip+separator wraps as a unit */}
       {restItems.map((item, index) => (
         <Box key={index + 1} flexDirection="row" gap={1} flexShrink={0}>

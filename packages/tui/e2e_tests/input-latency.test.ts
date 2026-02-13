@@ -17,7 +17,7 @@ function parseInputMetrics(logPath: string): InputMetricSample[] {
   const samples: InputMetricSample[] = [];
   let match;
   while ((match = regex.exec(content)) !== null) {
-    samples.push({ total: parseFloat(match[1]) });
+    samples.push({ total: parseFloat(match[1]!) });
   }
   return samples;
 }

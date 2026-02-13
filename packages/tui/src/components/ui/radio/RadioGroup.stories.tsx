@@ -1,10 +1,15 @@
-import { RadioGroup, RadioGroupProps } from './RadioGroup.js';
+import { RadioGroup, type RadioGroupProps } from './RadioGroup.js';
 
 const meta = {
   component: RadioGroup,
   parameters: {
     layout: 'fullscreen',
-    storyOrder: ['BasicVertical', 'BasicHorizontal', 'WithDisabledOptions', 'LargeList'],
+    storyOrder: [
+      'BasicVertical',
+      'BasicHorizontal',
+      'WithDisabledOptions',
+      'LargeList',
+    ],
   },
   tags: ['autodocs'],
   argTypes: {
@@ -75,7 +80,8 @@ export const WithDisabledOptions = {
 export const LargeList = {
   parameters: {
     docs: {
-      storyDescription: 'Radio group with many options to test navigation behavior',
+      storyDescription:
+        'Radio group with many options to test navigation behavior',
     },
   },
   args: {

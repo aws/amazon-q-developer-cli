@@ -89,7 +89,7 @@ export const Tool = React.memo(function Tool({
       try {
         outputStr = JSON.stringify(obj, null, 2);
       } catch {
-        outputStr = null;
+        // outputStr remains null
       }
     }
 
@@ -166,11 +166,7 @@ export const Tool = React.memo(function Tool({
           {outputLines.slice(0, PREVIEW_LINES).map((line, i) => (
             <Text key={i}>{getColor('primary')(line)}</Text>
           ))}
-          {expandHint && (
-            <Text>
-              {getColor('secondary')(expandHint)}
-            </Text>
-          )}
+          {expandHint && <Text>{getColor('secondary')(expandHint)}</Text>}
         </Box>
       </Box>
     );

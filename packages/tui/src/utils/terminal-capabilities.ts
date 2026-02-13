@@ -1,7 +1,14 @@
 // Detect terminal color capabilities
-export function getTerminalColorSupport(): 'truecolor' | '256color' | '16color' | 'basic' {
+export function getTerminalColorSupport():
+  | 'truecolor'
+  | '256color'
+  | '16color'
+  | 'basic' {
   // Check for truecolor support
-  if (process.env.COLORTERM === 'truecolor' || process.env.COLORTERM === '24bit') {
+  if (
+    process.env.COLORTERM === 'truecolor' ||
+    process.env.COLORTERM === '24bit'
+  ) {
     return 'truecolor';
   }
 
@@ -12,7 +19,11 @@ export function getTerminalColorSupport(): 'truecolor' | '256color' | '16color' 
     return 'truecolor';
   }
 
-  if (term.includes('256') || term === 'xterm-256color' || term === 'screen-256color') {
+  if (
+    term.includes('256') ||
+    term === 'xterm-256color' ||
+    term === 'screen-256color'
+  ) {
     return '256color';
   }
 

@@ -109,9 +109,17 @@ export const Shell = React.memo(function Shell({
     }
 
     let outputStr: string | null = null;
-    if ('stdout' in obj && typeof obj.stdout === 'string' && obj.stdout.trim()) {
+    if (
+      'stdout' in obj &&
+      typeof obj.stdout === 'string' &&
+      obj.stdout.trim()
+    ) {
       outputStr = obj.stdout;
-    } else if ('stderr' in obj && typeof obj.stderr === 'string' && obj.stderr.trim()) {
+    } else if (
+      'stderr' in obj &&
+      typeof obj.stderr === 'string' &&
+      obj.stderr.trim()
+    ) {
       outputStr = obj.stderr;
     }
 
@@ -145,21 +153,29 @@ export const Shell = React.memo(function Shell({
 
   // Simple mode: just show command info (no result handling)
   if (!result) {
-    const content = <StatusInfo title={name} target={displayCommand} shimmer={!isFinished} />;
+    const content = (
+      <StatusInfo title={name} target={displayCommand} shimmer={!isFinished} />
+    );
     if (noStatusBar) return content;
     return <StatusBar status={status}>{content}</StatusBar>;
   }
 
   // Static: show only command, no output
   if (isStatic || (!hasOutput && !errorMessage)) {
-    return <StatusInfo title={name} target={displayCommand} shimmer={!isFinished} />;
+    return (
+      <StatusInfo title={name} target={displayCommand} shimmer={!isFinished} />
+    );
   }
 
   // Show error message if present
   if (errorMessage) {
     return (
       <Box flexDirection="column">
-        <StatusInfo title={name} target={displayCommand} shimmer={!isFinished} />
+        <StatusInfo
+          title={name}
+          target={displayCommand}
+          shimmer={!isFinished}
+        />
         <Box marginLeft={2}>
           <Text>{getColor('error')(errorMessage)}</Text>
         </Box>
@@ -171,7 +187,11 @@ export const Shell = React.memo(function Shell({
   if (expanded) {
     return (
       <Box flexDirection="column">
-        <StatusInfo title={name} target={displayCommand} shimmer={!isFinished} />
+        <StatusInfo
+          title={name}
+          target={displayCommand}
+          shimmer={!isFinished}
+        />
         <Box marginLeft={2} flexDirection="column">
           {outputLines.map((line, i) => (
             <Text key={i}>{getColor('primary')(line)}</Text>
@@ -189,11 +209,7 @@ export const Shell = React.memo(function Shell({
         {outputLines.slice(0, PREVIEW_LINES).map((line, i) => (
           <Text key={i}>{getColor('primary')(line)}</Text>
         ))}
-        {expandHint && (
-          <Text>
-            {getColor('secondary')(expandHint)}
-          </Text>
-        )}
+        {expandHint && <Text>{getColor('secondary')(expandHint)}</Text>}
       </Box>
     </Box>
   );

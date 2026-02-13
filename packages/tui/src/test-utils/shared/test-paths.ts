@@ -34,9 +34,16 @@ export interface CreateTestDirOptions {
  * Creates the test directory if it doesn't exist.
  * Cleans the directory if it already exists.
  */
-export function createTestDir(testName: string, options: CreateTestDirOptions = {}): TestPaths {
+export function createTestDir(
+  testName: string,
+  options: CreateTestDirOptions = {}
+): TestPaths {
   const subdir = options.outputSubdir || 'e2e';
-  const baseDir = path.join(__dirname, `../../../${subdir}_tests/test-outputs`, testName);
+  const baseDir = path.join(
+    __dirname,
+    `../../../${subdir}_tests/test-outputs`,
+    testName
+  );
 
   // Clean and recreate directory
   if (fs.existsSync(baseDir)) {

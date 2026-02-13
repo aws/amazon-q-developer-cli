@@ -109,7 +109,7 @@ interface AppStoreProps {
   kiro: Kiro;
 }
 
-type AppActions = BaseAppActions & InputBufferActions;
+export type AppActions = BaseAppActions & InputBufferActions;
 
 interface BaseAppActions {
   // Kiro actions
@@ -160,7 +160,10 @@ interface BaseAppActions {
   setLastTurnTokens: (tokens: LastTurnTokens) => void;
   toggleContextBreakdown: () => void;
   setShowContextBreakdown: (show: boolean) => void;
-  setShowHelpPanel: (show: boolean, commands?: Array<{ name: string; description: string; usage: string }>) => void;
+  setShowHelpPanel: (
+    show: boolean,
+    commands?: Array<{ name: string; description: string; usage: string }>
+  ) => void;
 
   // File attachment actions
   attachFile: (path: string) => void;
@@ -360,7 +363,7 @@ export const createAppStore = (props: AppStoreProps) =>
         await kiro.streamMessage(
           expandedContent,
           abortController.signal,
-          eventHandler,
+          eventHandler
         );
         (eventHandler as any).flush?.();
 
@@ -848,33 +851,37 @@ export const createAppStore = (props: AppStoreProps) =>
           currentAbortController.abort();
           set({ currentAbortController: null });
         }
-        
+
         // Cancel any pending approval
         get().cancelApproval();
-        
+
         // Then notify backend
         await kiro.cancel();
-        
+
         // Mark any unfinished tool uses as finished with cancelled status
         set((state) => {
           const hasUnfinishedToolCalls = state.messages.some(
             (msg) => msg.role === MessageRole.ToolUse && !msg.isFinished
           );
-          
+
           if (hasUnfinishedToolCalls) {
             return {
               messages: state.messages.map((msg) =>
                 msg.role === MessageRole.ToolUse && !msg.isFinished
-                  ? { ...msg, isFinished: true, result: { status: 'cancelled' } }
+                  ? {
+                      ...msg,
+                      isFinished: true,
+                      result: { status: 'cancelled' },
+                    }
                   : msg
               ),
               isProcessing: false,
             };
           }
-          
+
           return { isProcessing: false };
         });
-        
+
         get().showTransientAlert({
           message: 'Cancelled streaming',
           status: 'info',
@@ -982,16 +989,17 @@ export const createAppStore = (props: AppStoreProps) =>
     clearMessages: () => {
       const msgs = get().messages;
       if (msgs.length < 2) return;
-      
+
       // Find the last user message to keep the entire last turn
       let lastUserIndex = -1;
       for (let i = msgs.length - 1; i >= 0; i--) {
-        if (msgs[i].role === MessageRole.User) {
+        const msg = msgs[i];
+        if (msg && msg.role === MessageRole.User) {
           lastUserIndex = i;
           break;
         }
       }
-      
+
       if (lastUserIndex === -1) return;
       set({ messages: msgs.slice(lastUserIndex) });
     },
@@ -1050,7 +1058,11 @@ export const createAppStore = (props: AppStoreProps) =>
         setShowHelpPanel: state.setShowHelpPanel,
         clearMessages: state.clearMessages,
         clearUIState: () =>
-          set({ activeCommand: null, showContextBreakdown: false, showHelpPanel: false }),
+          set({
+            activeCommand: null,
+            showContextBreakdown: false,
+            showHelpPanel: false,
+          }),
       };
 
       await executeCommandWithArg(cmdName, arg, ctx);
@@ -1331,7 +1343,7 @@ export const createAppStore = (props: AppStoreProps) =>
       set({
         activeCommand: null,
         showContextBreakdown: false,
-       commandInputValue: '',
+        commandInputValue: '',
         activeTrigger: null,
       });
       state.clearInput();
@@ -1352,7 +1364,11 @@ export const createAppStore = (props: AppStoreProps) =>
           setShowHelpPanel: state.setShowHelpPanel,
           clearMessages: state.clearMessages,
           clearUIState: () =>
-            set({ activeCommand: null, showContextBreakdown: false, showHelpPanel: false }),
+            set({
+              activeCommand: null,
+              showContextBreakdown: false,
+              showHelpPanel: false,
+            }),
         };
         await executeCommand(trimmed, ctx);
         return;

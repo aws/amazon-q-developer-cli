@@ -10,7 +10,10 @@ const fillsEdgeMargin = process.env.TERM_PROGRAM === 'iTerm.app';
 
 // Type-safe header that only accepts ContextBar or SnackBar components
 export type PromptBarHeader =
-  | React.ReactElement<React.ComponentProps<typeof ContextBar>, typeof ContextBar>
+  | React.ReactElement<
+      React.ComponentProps<typeof ContextBar>,
+      typeof ContextBar
+    >
   | React.ReactElement<React.ComponentProps<typeof SnackBar>, typeof SnackBar>;
 
 interface PromptBarProps {
@@ -54,10 +57,7 @@ export function PromptBar({
               isProcessing={isProcessing}
               triggerRules={triggerRules}
               onTriggerDetected={onTriggerDetected}
-              onInputChange={onInputChange}
               placeholder={placeholder}
-              clearOnSubmit={clearOnSubmit}
-              value={value}
             />
             {hint && <Text dimColor> {hint}</Text>}
           </Box>

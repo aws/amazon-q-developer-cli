@@ -30,19 +30,21 @@ class InputMetrics {
   private samples: MetricSample[] = [];
   private enabled: boolean;
   private maxSamples = 1000;
-  
+
   // Timing markers for current keypress
   private keypressTime: number | null = null;
   private handlerTime: number | null = null;
   private stateUpdateTime: number | null = null;
   private currentChar: string = '';
-  
+
   // Render phase tracking
   private renderPhases: RenderPhaseTiming[] = [];
   private currentRenderStart: number | null = null;
 
   constructor() {
-    this.enabled = process.env.KIRO_INPUT_METRICS === 'true' || process.env.KIRO_TEST_MODE === '1';
+    this.enabled =
+      process.env.KIRO_INPUT_METRICS === 'true' ||
+      process.env.KIRO_TEST_MODE === '1';
     if (this.enabled) {
       logger.info('[InputMetrics] Input latency metrics enabled');
     }
@@ -110,13 +112,17 @@ class InputMetrics {
    */
   markRenderComplete(): void {
     if (!this.enabled) return;
-    if (this.keypressTime === null || this.handlerTime === null || this.stateUpdateTime === null) {
+    if (
+      this.keypressTime === null ||
+      this.handlerTime === null ||
+      this.stateUpdateTime === null
+    ) {
       this.reset();
       return;
     }
 
     const renderTime = performance.now();
-    
+
     const sample: MetricSample = {
       timestamp: Date.now(),
       keypressToHandler: this.handlerTime - this.keypressTime,
@@ -127,7 +133,7 @@ class InputMetrics {
     };
 
     this.samples.push(sample);
-    
+
     // Keep only recent samples
     if (this.samples.length > this.maxSamples) {
       this.samples = this.samples.slice(-this.maxSamples);
@@ -136,7 +142,7 @@ class InputMetrics {
     // Log render phase breakdown if we have any
     if (this.renderPhases.length > 0) {
       const phaseStr = this.renderPhases
-        .map(p => `${p.componentName}=${p.duration.toFixed(2)}ms`)
+        .map((p) => `${p.componentName}=${p.duration.toFixed(2)}ms`)
         .join(' ');
       logger.debug(`[InputMetrics] Render phases: ${phaseStr}`);
     }
@@ -144,10 +150,10 @@ class InputMetrics {
     // Log individual sample at debug level
     logger.debug(
       `[InputMetrics] char="${sample.inputChar}" ` +
-      `keypress→handler=${sample.keypressToHandler.toFixed(2)}ms ` +
-      `handler→state=${sample.handlerToStateUpdate.toFixed(2)}ms ` +
-      `state→render=${sample.stateUpdateToRender.toFixed(2)}ms ` +
-      `total=${sample.totalLatency.toFixed(2)}ms`
+        `keypress→handler=${sample.keypressToHandler.toFixed(2)}ms ` +
+        `handler→state=${sample.handlerToStateUpdate.toFixed(2)}ms ` +
+        `state→render=${sample.stateUpdateToRender.toFixed(2)}ms ` +
+        `total=${sample.totalLatency.toFixed(2)}ms`
     );
 
     this.reset();
@@ -168,7 +174,9 @@ class InputMetrics {
   getStats(): MetricStats | null {
     if (this.samples.length === 0) return null;
 
-    const totals = this.samples.map(s => s.totalLatency).sort((a, b) => a - b);
+    const totals = this.samples
+      .map((s) => s.totalLatency)
+      .sort((a, b) => a - b);
     const count = this.samples.length;
 
     const sum = (arr: number[]) => arr.reduce((a, b) => a + b, 0);
@@ -180,9 +188,13 @@ class InputMetrics {
 
     return {
       count,
-      avgKeypressToHandler: avg(this.samples.map(s => s.keypressToHandler)),
-      avgHandlerToStateUpdate: avg(this.samples.map(s => s.handlerToStateUpdate)),
-      avgStateUpdateToRender: avg(this.samples.map(s => s.stateUpdateToRender)),
+      avgKeypressToHandler: avg(this.samples.map((s) => s.keypressToHandler)),
+      avgHandlerToStateUpdate: avg(
+        this.samples.map((s) => s.handlerToStateUpdate)
+      ),
+      avgStateUpdateToRender: avg(
+        this.samples.map((s) => s.stateUpdateToRender)
+      ),
       avgTotal: avg(totals),
       p50Total: percentile(totals, 50),
       p95Total: percentile(totals, 95),
@@ -203,15 +215,15 @@ class InputMetrics {
 
     logger.info(
       `[InputMetrics] Stats (n=${stats.count}):\n` +
-      `  Avg keypress→handler: ${stats.avgKeypressToHandler.toFixed(2)}ms\n` +
-      `  Avg handler→state:    ${stats.avgHandlerToStateUpdate.toFixed(2)}ms\n` +
-      `  Avg state→render:     ${stats.avgStateUpdateToRender.toFixed(2)}ms\n` +
-      `  Total latency:\n` +
-      `    avg=${stats.avgTotal.toFixed(2)}ms\n` +
-      `    p50=${stats.p50Total.toFixed(2)}ms\n` +
-      `    p95=${stats.p95Total.toFixed(2)}ms\n` +
-      `    p99=${stats.p99Total.toFixed(2)}ms\n` +
-      `    max=${stats.maxTotal.toFixed(2)}ms`
+        `  Avg keypress→handler: ${stats.avgKeypressToHandler.toFixed(2)}ms\n` +
+        `  Avg handler→state:    ${stats.avgHandlerToStateUpdate.toFixed(2)}ms\n` +
+        `  Avg state→render:     ${stats.avgStateUpdateToRender.toFixed(2)}ms\n` +
+        `  Total latency:\n` +
+        `    avg=${stats.avgTotal.toFixed(2)}ms\n` +
+        `    p50=${stats.p50Total.toFixed(2)}ms\n` +
+        `    p95=${stats.p95Total.toFixed(2)}ms\n` +
+        `    p99=${stats.p99Total.toFixed(2)}ms\n` +
+        `    max=${stats.maxTotal.toFixed(2)}ms`
     );
   }
 

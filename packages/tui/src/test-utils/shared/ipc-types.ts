@@ -18,7 +18,11 @@ export interface AgentSnapshot {
 export type TestCommand =
   | { kind: 'GET_STORE' }
   | { kind: 'GET_AGENT_STATE' }
-  | { kind: 'PUSH_SEND_MESSAGE_RESPONSE'; session_id: string; events: MockStreamItem[] | null }
+  | {
+      kind: 'PUSH_SEND_MESSAGE_RESPONSE';
+      session_id: string;
+      events: MockStreamItem[] | null;
+    }
   | { kind: 'MOCK_SESSION_UPDATE'; event: AgentStreamEvent }
   | { kind: 'MOCK_ERROR'; error: string }
   | { kind: 'HEAP_SNAPSHOT'; filename: string }

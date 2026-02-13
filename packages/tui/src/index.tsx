@@ -5,7 +5,11 @@ import { Text } from 'ink';
 import { ErrorBoundary } from './components/ui/ErrorBoundary';
 import { AppContainer } from './components/layout/AppContainer';
 import { ThemeProvider } from './theme';
-import { AppStoreContext, createAppStore, type AppStoreApi } from './stores/app-store';
+import {
+  AppStoreContext,
+  createAppStore,
+  type AppStoreApi,
+} from './stores/app-store';
 import { logger } from './utils/logger';
 import { Kiro } from './kiro';
 import { TestModeProvider } from './test-utils/TestModeProvider';
@@ -50,7 +54,7 @@ let initError: string | null = null;
 
 const startInitialization = () => {
   if (initPromise) return initPromise;
-  
+
   // Wire up commands handler before initialize
   kiro.onCommandsUpdate((commands) => {
     appStore.getState().setSlashCommands(
@@ -62,23 +66,24 @@ const startInitialization = () => {
       }))
     );
   });
-  
+
   // Wire up model handler before initialize
   kiro.onModelUpdate((model) => {
     appStore.getState().setCurrentModel(model);
   });
-  
+
   // Wire up agent handler before initialize
   kiro.onAgentUpdate((agent) => {
     appStore.getState().setCurrentAgent(agent);
   });
-  
+
   // Wire up compaction status handler
   kiro.onCompactionStatus((event) => {
     appStore.getState().handleCompactionEvent(event);
   });
-  
-  initPromise = kiro.initialize(agentPath)
+
+  initPromise = kiro
+    .initialize(agentPath)
     .then(() => {
       appStore.setState({ sessionId: kiro.sessionId ?? null });
       logger.info('Kiro initialized successfully');
@@ -87,7 +92,7 @@ const startInitialization = () => {
       logger.error('Failed to initialize Kiro:', error);
       initError = error.message || 'Initialization failed';
     });
-  
+
   return initPromise;
 };
 
@@ -130,8 +135,8 @@ function App() {
   );
 }
 
-render(<App />, { 
+render(<App />, {
   exitOnCtrlC: false,
   patchConsole: false,
-  incrementalRendering: false
+  incrementalRendering: false,
 });

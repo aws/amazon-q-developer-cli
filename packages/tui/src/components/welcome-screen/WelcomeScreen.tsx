@@ -1,6 +1,5 @@
 import React from 'react';
-import { Box } from 'ink';
-import { Text } from '../ui/text/Text.js';
+import { Box, Text as InkText } from 'ink';
 import { Wordmark /*useTheme*/ } from '../brand/index.js';
 
 export interface WelcomeScreenProps {
@@ -20,7 +19,7 @@ export const WelcomeScreen = React.memo(function WelcomeScreen({
   return (
     <Box flexDirection="column" width="100%" alignItems="center">
       <Wordmark animate={animate} />
-      {isDevelopment && <Text dimColor>Development Mode</Text>}
+      {isDevelopment && <InkText dimColor>Development Mode</InkText>}
 
       {/* <Box width="100%">
         <Text>{getColor('text')('━'.repeat(120))}</Text>

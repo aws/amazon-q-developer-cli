@@ -132,7 +132,8 @@ export class TuiIpcConnection {
             }
           } catch (error) {
             throw new Error(
-              `Failed to parse JSON line: ${error}. Line: ${line}`
+              `Failed to parse JSON line: ${error}. Line: ${line}`,
+              { cause: error }
             );
           }
         }

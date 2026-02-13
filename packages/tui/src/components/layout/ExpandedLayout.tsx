@@ -1,9 +1,15 @@
 import React from 'react';
 import { Box, Text } from 'ink';
-import { useAppStore } from '../../stores/app-store';
+import {
+  useAppStore,
+  type AppState,
+  type AppActions,
+} from '../../stores/app-store';
 
 export const ExpandedLayout: React.FC = () => {
-  const { setMode, messages, currentMessage } = useAppStore();
+  const setMode = useAppStore((s: AppState & AppActions) => s.setMode);
+  const messages = useAppStore((s: AppState & AppActions) => s.messages);
+  const currentMessage = null; // Not in store - placeholder for future
 
   return (
     <Box flexDirection="column" height="100%">

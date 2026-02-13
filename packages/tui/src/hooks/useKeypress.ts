@@ -34,12 +34,12 @@ const CTRL_C = '\x03';
 
 /**
  * Hook for handling keyboard input.
- * 
+ *
  * Uses Ink's useInput for regular keys (proper React state batching via reconciler.batchedUpdates)
  * and listens to the internal event emitter for:
  * - Bracketed paste detection (useInput doesn't preserve paste sequences)
  * - Multiple Ctrl+C handling (when sent as a single chunk like \x03\x03)
- * 
+ *
  * Why this hybrid approach:
  * - useInput wraps handlers in batchedUpdates(), preventing stale closure issues when
  *   multiple keys arrive in a single chunk (e.g., fast typing or test automation)
@@ -51,38 +51,45 @@ export const useKeypress = (
   options: { isActive?: boolean } = {}
 ) => {
   const { isActive = true } = options;
-  
+
   // Store handler in ref to always call latest version
   const handlerRef = useRef(handler);
   handlerRef.current = handler;
 
   // Access internal event emitter for paste detection and multi-Ctrl+C handling
-  const { internal_eventEmitter } = useStdin() as { internal_eventEmitter: import('events').EventEmitter };
+  const { internal_eventEmitter } = useStdin() as {
+    internal_eventEmitter: import('events').EventEmitter;
+  };
 
   // Track whether we're currently in a paste operation to prevent useInput from processing paste content
   const isPastingRef = useRef(false);
 
   // Use Ink's useInput for regular keys - it handles batching properly
   // Skip processing when we're in the middle of a bracketed paste
-  useInput((input, key) => {
-    if (isPastingRef.current) {
-      return;
-    }
-    inputMetrics.markKeypress(input);
-    inputMetrics.markHandlerStart();
-    
-    handlerRef.current(input, {
-      ...key,
-      home: key.home ?? false,
-      end: key.end ?? false,
-      paste: false,
-    });
-  }, { isActive });
+  useInput(
+    (input, key) => {
+      if (isPastingRef.current) {
+        return;
+      }
+      inputMetrics.markKeypress(input);
+      inputMetrics.markHandlerStart();
+
+      handlerRef.current(input, {
+        ...key,
+        home: key.home ?? false,
+        end: key.end ?? false,
+        paste: false,
+      });
+    },
+    { isActive }
+  );
 
   // Listen for special sequences on the internal event emitter
   useEffect(() => {
     // Debug: check if event emitter exists
-    logger.debug(`[useKeypress] useEffect: isActive=${isActive} hasEventEmitter=${!!internal_eventEmitter}`);
+    logger.debug(
+      `[useKeypress] useEffect: isActive=${isActive} hasEventEmitter=${!!internal_eventEmitter}`
+    );
 
     if (!isActive || !internal_eventEmitter) return;
 
@@ -99,18 +106,18 @@ export const useKeypress = (
         isPasting = true;
         isPastingRef.current = true;
         pasteBuffer = '';
-        
+
         // Extract content after paste start marker
         const startIdx = data.indexOf(PASTE_START) + PASTE_START.length;
         const remaining = data.slice(startIdx);
-        
+
         // Check if paste end is in the same chunk
         if (remaining.includes(PASTE_END)) {
           const endIdx = remaining.indexOf(PASTE_END);
           const pastedContent = remaining.slice(0, endIdx);
           isPasting = false;
           isPastingRef.current = false;
-          
+
           if (pastedContent) {
             handlerRef.current(pastedContent, {
               upArrow: false,
@@ -145,7 +152,7 @@ export const useKeypress = (
           pasteBuffer += data.slice(0, endIdx);
           isPasting = false;
           isPastingRef.current = false;
-          
+
           if (pasteBuffer) {
             handlerRef.current(pasteBuffer, {
               upArrow: false,
@@ -179,9 +186,12 @@ export const useKeypress = (
       // Ctrl+C bytes arrive together (e.g., [0x03, 0x03]), none get processed by useInput.
       // We need to handle ALL of them here.
       if (data.length > 1 && data.includes(CTRL_C)) {
+        // eslint-disable-next-line no-control-regex
         const ctrlCCount = (data.match(/\x03/g) || []).length;
         // Debug log
-        logger.debug(`[useKeypress] Multiple Ctrl+C detected: ${ctrlCCount} in chunk of length ${data.length}`);
+        logger.debug(
+          `[useKeypress] Multiple Ctrl+C detected: ${ctrlCCount} in chunk of length ${data.length}`
+        );
         // Fire all Ctrl+C events since useInput won't handle any of them
         for (let i = 0; i < ctrlCCount; i++) {
           handlerRef.current('c', {

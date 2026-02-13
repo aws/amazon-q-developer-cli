@@ -6,7 +6,10 @@ export interface ShimmerTextProps {
   color: string;
 }
 
-export const ShimmerText = React.memo(function ShimmerText({ text, color }: ShimmerTextProps) {
+export const ShimmerText = React.memo(function ShimmerText({
+  text,
+  color,
+}: ShimmerTextProps) {
   const [pos, setPos] = useState(0);
 
   useEffect(() => {

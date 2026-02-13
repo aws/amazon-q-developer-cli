@@ -16,7 +16,12 @@ export interface SnackBarProps {
   slideIn?: boolean;
 }
 
-export function SnackBar({ title, actions, width, slideIn = false }: SnackBarProps) {
+export function SnackBar({
+  title,
+  actions,
+  width,
+  slideIn = false,
+}: SnackBarProps) {
   const { getColor } = useTheme();
   const [currentHeight, setCurrentHeight] = useState(slideIn ? 0 : 1);
   const [showText, setShowText] = useState(!slideIn);
@@ -44,9 +49,11 @@ export function SnackBar({ title, actions, width, slideIn = false }: SnackBarPro
 
   // Format each action with proper styling
   const formatAction = (action: Action) => {
-    const keyIndex = action.label.toLowerCase().indexOf(action.key.toLowerCase());
-    let result = '';
+    const keyIndex = action.label
+      .toLowerCase()
+      .indexOf(action.key.toLowerCase());
 
+    let result: string;
     if (keyIndex !== -1) {
       // Key found in label - split and style
       const before = action.label.slice(0, keyIndex);
@@ -54,10 +61,18 @@ export function SnackBar({ title, actions, width, slideIn = false }: SnackBarPro
       const after = action.label.slice(keyIndex + 1);
 
       result =
-        textColor(before) + textColor('(') + textBold(keyChar) + textColor(')') + textColor(after);
+        textColor(before) +
+        textColor('(') +
+        textBold(keyChar) +
+        textColor(')') +
+        textColor(after);
     } else {
       // Key not found - prepend it
-      result = textColor('(') + textBold(action.key) + textColor(')') + textColor(action.label);
+      result =
+        textColor('(') +
+        textBold(action.key) +
+        textColor(')') +
+        textColor(action.label);
     }
 
     if (action.description) {

@@ -81,7 +81,7 @@ const color256ToHex = (color: number): string => {
 export const getTerminalChalkColor = (
   truecolor?: string,
   color256?: number,
-  named?: ChalkColorName,
+  named?: ChalkColorName
 ): any => {
   let chalkFunction: any;
   let resolvedHex: string = '#000000'; // Default fallback
@@ -96,10 +96,20 @@ export const getTerminalChalkColor = (
   // For hex value, use the appropriate color based on terminal capabilities
   const stdout = supportsColor.stdout;
 
-  if (stdout && typeof stdout === 'object' && 'has16m' in stdout && stdout.has16m) {
+  if (
+    stdout &&
+    typeof stdout === 'object' &&
+    'has16m' in stdout &&
+    stdout.has16m
+  ) {
     // Truecolor terminal - use truecolor hex
     resolvedHex = truecolor || (named && namedColorToHex[named]) || '#000000';
-  } else if (stdout && typeof stdout === 'object' && 'has256' in stdout && stdout.has256) {
+  } else if (
+    stdout &&
+    typeof stdout === 'object' &&
+    'has256' in stdout &&
+    stdout.has256
+  ) {
     // 256-color terminal - use color256 hex equivalent
     resolvedHex =
       (color256 && color256ToHex(color256)) ||
@@ -114,7 +124,12 @@ export const getTerminalChalkColor = (
   // Create chalk function based on terminal capabilities
 
   // Prefer truecolor (16 million colors) if terminal supports it
-  if (stdout && typeof stdout === 'object' && 'has16m' in stdout && stdout.has16m) {
+  if (
+    stdout &&
+    typeof stdout === 'object' &&
+    'has16m' in stdout &&
+    stdout.has16m
+  ) {
     if (truecolor) {
       chalkFunction = chalk.hex(truecolor);
     } else if (color256) {
@@ -124,7 +139,12 @@ export const getTerminalChalkColor = (
     }
   }
   // Fall back to 256-color mode if supported
-  else if (stdout && typeof stdout === 'object' && 'has256' in stdout && stdout.has256) {
+  else if (
+    stdout &&
+    typeof stdout === 'object' &&
+    'has256' in stdout &&
+    stdout.has256
+  ) {
     if (color256) {
       chalkFunction = chalk.ansi256(color256);
     } else if (truecolor) {
@@ -166,26 +186,29 @@ export const getTerminalChalkColor = (
 
 /**
  * Extracts the hex color value from a color function with fallback.
- * 
+ *
  * @param colorFunc - A color function with a .hex property
  * @param fallbackHex - Optional fallback hex color (defaults to '#ffffff')
  * @returns The hex color string
  */
-export const getColorHex = (colorFunc: any, fallbackHex: string = '#ffffff'): string => {
+export const getColorHex = (
+  colorFunc: any,
+  fallbackHex: string = '#ffffff'
+): string => {
   return colorFunc?.hex || fallbackHex;
 };
 
 /**
  * Maps a StatusType to its corresponding theme color.
  * Used for consistent status color handling across components.
- * 
+ *
  * @param statusType - The status type ('success', 'error', 'warning', 'info', 'active')
  * @param getColor - The getColor function from useTheme hook
  * @returns The chalk color function for the status
  */
 export const getStatusColor = (
   statusType: StatusType,
-  getColor: (colorPath: string) => any,
+  getColor: (colorPath: string) => any
 ) => {
   switch (statusType) {
     case 'active':
@@ -199,6 +222,10 @@ export const getStatusColor = (
     case 'error':
       return getColor('error');
     case 'loading':
+      return getColor('secondary');
+    case 'thinking':
+      return getColor('brand');
+    case 'paused':
       return getColor('secondary');
     default:
       return getColor('brand');

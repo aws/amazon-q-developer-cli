@@ -189,7 +189,7 @@ describe('Memory Regression', () => {
     const sizes = [10, 50, 100, 25, 75, 150];
 
     for (let i = 0; i < 20; i++) {
-      const sizeKb = sizes[i % sizes.length];
+      const sizeKb = sizes[i % sizes.length]!;
       await runTurn(t, i, assistantResponse(generatePayload(sizeKb)));
     }
 

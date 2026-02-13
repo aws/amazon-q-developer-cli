@@ -54,7 +54,8 @@ Provides methods to control bar appearance:
 import { useBarControl } from '../layout/Card';
 
 function MyComponent() {
-  const { setBarSegment, setBarRange, clearBarSegment, clearBarRange } = useBarControl();
+  const { setBarSegment, setBarRange, clearBarSegment, clearBarRange } =
+    useBarControl();
 
   // Control bar colors and characters...
 }
@@ -146,7 +147,11 @@ export function Message({ content, type }: MessageProps) {
 
   useEffect(() => {
     if (barControl && lineIndex !== undefined && lineCount > 0) {
-      barControl.setBarRange(lineIndex, lineIndex + lineCount - 1, getBarColor());
+      barControl.setBarRange(
+        lineIndex,
+        lineIndex + lineCount - 1,
+        getBarColor()
+      );
     }
 
     return () => {

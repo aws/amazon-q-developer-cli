@@ -1,5 +1,4 @@
-import React from 'react';
-import { Box } from 'ink';
+import { Box, Text as InkText } from 'ink';
 import { Text } from '../text/Text.js';
 import { useTheme } from '../../../hooks/useThemeContext.js';
 
@@ -44,17 +43,17 @@ export default function Chip({
     <Text>
       {prefix && getColor(ChipColor.SECONDARY)(prefix)}
       {wrap && getColor(ChipColor.SECONDARY)('(')}
-      {hexColor ? <Text color={hexColor}>{value}</Text> : getColor(color)(value)}
+      {hexColor ? (
+        <InkText color={hexColor}>{value}</InkText>
+      ) : (
+        getColor(color)(value)
+      )}
       {wrap && getColor(ChipColor.SECONDARY)(')')}
     </Text>
   );
 
   if (background) {
-    return (
-      <Box backgroundColor={getColor('muted').hex}>
-        {content}
-      </Box>
-    );
+    return <Box backgroundColor={getColor('muted').hex}>{content}</Box>;
   }
 
   return content;

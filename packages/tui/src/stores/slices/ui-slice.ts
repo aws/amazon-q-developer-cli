@@ -32,7 +32,10 @@ export interface UIActions {
   setLastTurnTokens: (tokens: LastTurnTokens) => void;
   toggleContextBreakdown: () => void;
   setShowContextBreakdown: (show: boolean) => void;
-  setShowHelpPanel: (show: boolean, commands?: Array<{ name: string; description: string; usage: string }>) => void;
+  setShowHelpPanel: (
+    show: boolean,
+    commands?: Array<{ name: string; description: string; usage: string }>
+  ) => void;
 }
 
 export type UISlice = UIState & UIActions;
@@ -58,7 +61,10 @@ export const createUISlice: StateCreator<UISlice> = (set) => ({
       if (state.exitTimer) clearTimeout(state.exitTimer);
       const newSequence = state.exitSequence + 1;
       if (newSequence >= 2) process.exit(0);
-      const timer = setTimeout(() => set({ exitSequence: 0, exitTimer: null }), 2000);
+      const timer = setTimeout(
+        () => set({ exitSequence: 0, exitTimer: null }),
+        2000
+      );
       return { exitSequence: newSequence, exitTimer: timer };
     });
   },
@@ -70,11 +76,14 @@ export const createUISlice: StateCreator<UISlice> = (set) => ({
     });
   },
 
-  toggleToolOutputsExpanded: () => set((state) => ({ toolOutputsExpanded: !state.toolOutputsExpanded })),
+  toggleToolOutputsExpanded: () =>
+    set((state) => ({ toolOutputsExpanded: !state.toolOutputsExpanded })),
   setHasExpandableToolOutputs: (has) => set({ hasExpandableToolOutputs: has }),
   setContextUsage: (percent) => set({ contextUsagePercent: percent }),
   setLastTurnTokens: (tokens) => set({ lastTurnTokens: tokens }),
-  toggleContextBreakdown: () => set((state) => ({ showContextBreakdown: !state.showContextBreakdown })),
+  toggleContextBreakdown: () =>
+    set((state) => ({ showContextBreakdown: !state.showContextBreakdown })),
   setShowContextBreakdown: (show) => set({ showContextBreakdown: show }),
-  setShowHelpPanel: (show, commands = []) => set({ showHelpPanel: show, helpCommands: commands }),
+  setShowHelpPanel: (show, commands = []) =>
+    set({ showHelpPanel: show, helpCommands: commands }),
 });

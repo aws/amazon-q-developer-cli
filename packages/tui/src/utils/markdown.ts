@@ -71,7 +71,9 @@ export const parseMarkdown = (text: string): MarkdownSegment[] => {
 
         // if we see ``` followed by new line or space, or EOF, then we treat it as closing the code block
         const isClosingFence =
-          afterFence >= text.length || text[afterFence] === '\n' || text[afterFence] === ' ';
+          afterFence >= text.length ||
+          text[afterFence] === '\n' ||
+          text[afterFence] === ' ';
 
         if (isClosingFence) {
           // Exiting code block - flush as complete
@@ -136,11 +138,13 @@ function parseInlineMarkdown(text: string): MarkdownSegment[] {
       }
       // Add styled text
       segments.push({
-        text: earliestMatch.match[1],
+        text: earliestMatch.match[1] ?? '',
         ...earliestMatch.style,
       });
       // Continue with remaining text
-      remaining = remaining.slice(earliestIndex + earliestMatch.match[0].length);
+      remaining = remaining.slice(
+        earliestIndex + earliestMatch.match[0].length
+      );
     } else {
       // No more matches, add remaining text
       segments.push({ text: remaining });

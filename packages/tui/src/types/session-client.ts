@@ -1,6 +1,10 @@
 import type { ContentBlock } from '@agentclientprotocol/sdk';
 import type { AgentStreamEvent } from './agent-events';
-import type { CommandOptionsResponse, CommandResult, TuiCommand } from './commands';
+import type {
+  CommandOptionsResponse,
+  CommandResult,
+  TuiCommand,
+} from './commands';
 
 /**
  * Light abstraction over the Agent Client Protocol (ACP) for interacting with the Kiro CLI agent.
@@ -21,7 +25,11 @@ export interface SessionClient {
    *
    * @returns Promise resolving to session info including ID and current model
    */
-  newSession(): Promise<{ sessionId: string; currentModel?: { id: string; name: string } }>;
+  newSession(): Promise<{
+    sessionId: string;
+    currentModel?: { id: string; name: string };
+    currentAgent?: { name: string };
+  }>;
 
   /**
    * Loads an existing agent session by ID (a `session/load` request in the ACP protocol).
@@ -67,7 +75,10 @@ export interface SessionClient {
    * @param commandName - The command name (e.g., "/model")
    * @param partial - Partial input for filtering options
    */
-  getCommandOptions(commandName: string, partial: string): Promise<CommandOptionsResponse>;
+  getCommandOptions(
+    commandName: string,
+    partial: string
+  ): Promise<CommandOptionsResponse>;
 
   /**
    * Executes a slash command via extension method.
@@ -82,4 +93,11 @@ export interface SessionClient {
    * For a real implementation, this would terminate the ACP process.
    */
   close(): void;
+
+  /**
+   * Sets the agent mode/persona.
+   *
+   * @param modeId - The mode ID to switch to
+   */
+  setMode(modeId: string): Promise<void>;
 }

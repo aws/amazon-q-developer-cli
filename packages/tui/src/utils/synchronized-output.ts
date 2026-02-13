@@ -68,7 +68,11 @@ export function enableAutoSync(): void {
   originalWrite = process.stdout.write.bind(process.stdout);
   isAutoSyncEnabled = true;
 
-  process.stdout.write = function (chunk: any, encoding?: any, callback?: any): boolean {
+  process.stdout.write = function (
+    chunk: any,
+    encoding?: any,
+    callback?: any
+  ): boolean {
     const content = chunk.toString();
     if (content.length > 5000) {
       beginSynchronizedUpdate();

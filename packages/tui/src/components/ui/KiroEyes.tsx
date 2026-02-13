@@ -25,7 +25,10 @@ interface KiroEyesProps {
   message?: string;
 }
 
-export const KiroEyes: React.FC<KiroEyesProps> = ({ isWaiting = false, message }) => {
+export const KiroEyes: React.FC<KiroEyesProps> = ({
+  isWaiting = false,
+  message,
+}) => {
   const [frameIndex, setFrameIndex] = useState(0);
   const { colors } = useTheme();
 
@@ -55,7 +58,12 @@ export const KiroEyes: React.FC<KiroEyesProps> = ({ isWaiting = false, message }
     const frame = THINKING_FRAMES[frameIndex % THINKING_FRAMES.length];
     if (!frame) return null;
     const [eyes, , label] = frame;
-    return <Text><Text color="white">{eyes}</Text> <Text color={colors.primary}>{label}</Text></Text>;
+    return (
+      <Text>
+        <Text color="white">{eyes}</Text>{' '}
+        <Text color={colors.primary}>{label}</Text>
+      </Text>
+    );
   }
 
   // Idle - just eyes blinking

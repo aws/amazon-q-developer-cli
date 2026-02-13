@@ -12,7 +12,11 @@ export interface CommandContext {
   /** Available slash commands from backend */
   slashCommands: SlashCommand[];
   /** Show transient alert */
-  showAlert: (message: string, status: 'success' | 'error', autoHideMs?: number) => void;
+  showAlert: (
+    message: string,
+    status: 'success' | 'error',
+    autoHideMs?: number
+  ) => void;
   /** Set loading message (shows shimmer) */
   setLoadingMessage: (message: string | null) => void;
   /** Set active command (for selection menus) */
@@ -24,7 +28,10 @@ export interface CommandContext {
   /** Show/hide context breakdown panel */
   setShowContextBreakdown: (show: boolean) => void;
   /** Show/hide help panel */
-  setShowHelpPanel: (show: boolean, commands?: Array<{ name: string; description: string; usage: string }>) => void;
+  setShowHelpPanel: (
+    show: boolean,
+    commands?: Array<{ name: string; description: string; usage: string }>
+  ) => void;
   /** Clear conversation messages */
   clearMessages: () => void;
   /** Clear all command UI state (menus, panels) */

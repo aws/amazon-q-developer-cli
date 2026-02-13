@@ -79,16 +79,21 @@ export const Ls = React.memo(function Ls({
 
   const target = dirPath || undefined;
 
-  const secondaryInfo = isFinished && entries.length > 0
-    ? `${entries.length} ${entries.length === 1 ? 'entry' : 'entries'}`
-    : null;
+  const secondaryInfo =
+    isFinished && entries.length > 0
+      ? `${entries.length} ${entries.length === 1 ? 'entry' : 'entries'}`
+      : null;
 
   const renderContent = () => {
     // Error state
     if (result?.status === 'error') {
       return (
         <Box flexDirection="column">
-          <StatusInfo title={title} target={dirPath || undefined} shimmer={!isFinished} />
+          <StatusInfo
+            title={title}
+            target={dirPath || undefined}
+            shimmer={!isFinished}
+          />
           <Box marginLeft={2}>
             <Text>{getColor('error')(result.error)}</Text>
           </Box>
@@ -98,7 +103,13 @@ export const Ls = React.memo(function Ls({
 
     // No result yet
     if (!isFinished || entries.length === 0) {
-      return <StatusInfo title={title} target={dirPath || undefined} shimmer={!isFinished} />;
+      return (
+        <StatusInfo
+          title={title}
+          target={dirPath || undefined}
+          shimmer={!isFinished}
+        />
+      );
     }
 
     // Static view: just summary

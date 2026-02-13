@@ -10,13 +10,16 @@ import type { SlashCommand } from '../stores/app-store.js';
 export type { CommandContext } from './types.js';
 
 /** Find command by exact or prefix match (alphabetical order for prefix) */
-function findCommand(commands: SlashCommand[], name: string): SlashCommand | undefined {
+function findCommand(
+  commands: SlashCommand[],
+  name: string
+): SlashCommand | undefined {
   const lower = name.toLowerCase();
-  
+
   // Exact match first
   const exact = commands.find((c) => c.name.toLowerCase() === `/${lower}`);
   if (exact) return exact;
-  
+
   // Prefix match - sort alphabetically so /clear < /compact < /context
   const sorted = [...commands].sort((a, b) => a.name.localeCompare(b.name));
   return sorted.find((c) => c.name.toLowerCase().startsWith(`/${lower}`));
@@ -25,7 +28,10 @@ function findCommand(commands: SlashCommand[], name: string): SlashCommand | und
 /**
  * Execute a slash command.
  */
-export async function executeCommand(input: string, ctx: CommandContext): Promise<boolean> {
+export async function executeCommand(
+  input: string,
+  ctx: CommandContext
+): Promise<boolean> {
   const { isCommand, name, args } = parseCommand(input);
   if (!isCommand) {
     return false;

@@ -5,7 +5,11 @@ import type {
   ApprovalRequestInfo,
 } from '../types/agent-events';
 import { AgentEventType } from '../types/agent-events';
-import type { CommandOptionsResponse, CommandResult, TuiCommand } from '../types/commands';
+import type {
+  CommandOptionsResponse,
+  CommandResult,
+  TuiCommand,
+} from '../types/commands';
 
 // Global reference for test commands
 let mockSessionClientInstance: MockSessionClient | null = null;
@@ -46,9 +50,16 @@ export class MockSessionClient implements SessionClient {
     // No-op for mock
   }
 
-  async newSession(): Promise<{ sessionId: string; currentModel?: { id: string; name: string } }> {
+  async newSession(): Promise<{
+    sessionId: string;
+    currentModel?: { id: string; name: string };
+    currentAgent?: { name: string };
+  }> {
     this.sessionId = 'mock-session-id';
-    return { sessionId: this.sessionId, currentModel: { id: 'mock-model', name: 'Mock Model' } };
+    return {
+      sessionId: this.sessionId,
+      currentModel: { id: 'mock-model', name: 'Mock Model' },
+    };
   }
 
   async loadSession(sessionId: string): Promise<void> {
@@ -75,6 +86,10 @@ export class MockSessionClient implements SessionClient {
   }
 
   close(): void {
+    // No-op for mock
+  }
+
+  async setMode(_modeId: string): Promise<void> {
     // No-op for mock
   }
 
@@ -106,7 +121,10 @@ export class MockSessionClient implements SessionClient {
     this.updateHandlers.forEach((handler) => handler(event));
   }
 
-  async getCommandOptions(_commandName: string, _partial: string): Promise<CommandOptionsResponse> {
+  async getCommandOptions(
+    _commandName: string,
+    _partial: string
+  ): Promise<CommandOptionsResponse> {
     return { options: [] };
   }
 

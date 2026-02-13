@@ -5,7 +5,13 @@ const meta = {
   component: PromptInput,
   parameters: {
     layout: 'fullscreen',
-    storyOrder: ['Ready', 'Processing', 'WithSlashTrigger', 'WithMultipleTriggers', 'NoTriggers'],
+    storyOrder: [
+      'Ready',
+      'Processing',
+      'WithSlashTrigger',
+      'WithMultipleTriggers',
+      'NoTriggers',
+    ],
   },
   tags: ['autodocs'],
 };

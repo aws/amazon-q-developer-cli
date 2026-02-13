@@ -8,7 +8,10 @@ export interface ActionHintProps {
   visible?: boolean;
 }
 
-export const ActionHint: React.FC<ActionHintProps> = ({ text, visible = true }) => {
+export const ActionHint: React.FC<ActionHintProps> = ({
+  text,
+  visible = true,
+}) => {
   const { getColor } = useTheme();
   const secondary = getColor('secondary');
 

@@ -16,14 +16,22 @@ export function useConversationContent() {
   const addChildWithBarControl = useCallback((child: React.ReactNode) => {
     setChildren((prev) => {
       const lineIndex = prev.length; // Next available line
-      const childWithProps = React.cloneElement(child as React.ReactElement, { lineIndex } as any);
+      const childWithProps = React.cloneElement(
+        child as React.ReactElement,
+        { lineIndex } as any
+      );
       return [...prev, childWithProps];
     });
   }, []);
 
-  const updateChild = useCallback((index: number, newChild: React.ReactNode) => {
-    setChildren((prev) => prev.map((child, i) => (i === index ? newChild : child)));
-  }, []);
+  const updateChild = useCallback(
+    (index: number, newChild: React.ReactNode) => {
+      setChildren((prev) =>
+        prev.map((child, i) => (i === index ? newChild : child))
+      );
+    },
+    []
+  );
 
   const removeChild = useCallback((index: number) => {
     setChildren((prev) => prev.filter((_, i) => i !== index));

@@ -76,7 +76,8 @@ export const Write = React.memo<WriteProps>(function Write({
   // Determine display values from parsed content or props
   const displayPath = parsedContent?.path || filePath;
   const displayOldText = parsedContent?.oldStr ?? oldText;
-  const displayNewText = parsedContent?.newStr ?? parsedContent?.content ?? newText;
+  const displayNewText =
+    parsedContent?.newStr ?? parsedContent?.content ?? newText;
 
   const hasContent = displayNewText && displayNewText.length > 0;
 
@@ -109,7 +110,8 @@ export const Write = React.memo<WriteProps>(function Write({
     for (const change of changes) {
       const lines = change.value.split('\n');
       // diffLines always adds a trailing empty string after the last newline
-      const count = lines[lines.length - 1] === '' ? lines.length - 1 : lines.length;
+      const count =
+        lines[lines.length - 1] === '' ? lines.length - 1 : lines.length;
       if (change.added) added += count;
       else if (change.removed) removed += count;
     }
@@ -130,13 +132,18 @@ export const Write = React.memo<WriteProps>(function Write({
 
   // Calculate available width for content
   const fillsEdgeMargin = process.env.TERM_PROGRAM === 'iTerm.app';
-  const terminalWidth = (process.stdout.columns || 80) - (fillsEdgeMargin ? 5 : 4);
+  const terminalWidth =
+    (process.stdout.columns || 80) - (fillsEdgeMargin ? 5 : 4);
   const contentWidth = terminalWidth - 7; // Line number (4) + prefix (3)
 
   const PREVIEW_DIFF_LINES = 20;
 
   // Use expandable output hook for collapsing large diffs
-  const { expanded: expandedFromHook, hiddenCount, expandHint } = useExpandableOutput({
+  const {
+    expanded: expandedFromHook,
+    hiddenCount,
+    expandHint,
+  } = useExpandableOutput({
     totalItems: totalDiffLines,
     previewCount: PREVIEW_DIFF_LINES,
     isStatic,
@@ -157,7 +164,9 @@ export const Write = React.memo<WriteProps>(function Write({
   const headerLines = content ? (hasDiffSummary ? 2 : 1) : 0;
 
   // Set bar colors for each diff line (only visible lines when collapsed)
-  const visibleDiffLines = expanded ? totalDiffLines : Math.min(totalDiffLines, PREVIEW_DIFF_LINES);
+  const visibleDiffLines = expanded
+    ? totalDiffLines
+    : Math.min(totalDiffLines, PREVIEW_DIFF_LINES);
 
   useEffect(() => {
     if (!statusBar) return;
@@ -192,11 +201,20 @@ export const Write = React.memo<WriteProps>(function Write({
         <StatusInfo title={title} target={displayPath} shimmer={!isFinished} />
         {hasDiffSummary && (
           <Text>
-            {linesAdded > 0 && getColor('diff.added.bar')(`added ${linesAdded} ${linesAdded === 1 ? 'line' : 'lines'}`)}
+            {linesAdded > 0 &&
+              getColor('diff.added.bar')(
+                `added ${linesAdded} ${linesAdded === 1 ? 'line' : 'lines'}`
+              )}
             {linesAdded > 0 && linesRemoved > 0 && getColor('secondary')(', ')}
-            {linesRemoved > 0 && getColor('diff.removed.bar')(`removed ${linesRemoved} ${linesRemoved === 1 ? 'line' : 'lines'}`)}
-            {parsedContent?.insertLine !== undefined && getColor('secondary')(` at L${parsedContent.insertLine}`)}
-            {getColor('secondary')(` in ${displayPath?.split('/').pop() || displayPath}`)}
+            {linesRemoved > 0 &&
+              getColor('diff.removed.bar')(
+                `removed ${linesRemoved} ${linesRemoved === 1 ? 'line' : 'lines'}`
+              )}
+            {parsedContent?.insertLine !== undefined &&
+              getColor('secondary')(` at L${parsedContent.insertLine}`)}
+            {getColor('secondary')(
+              ` in ${displayPath?.split('/').pop() || displayPath}`
+            )}
           </Text>
         )}
         {hasContent && (
@@ -325,11 +343,26 @@ const WriteContent: React.FC<WriteContentProps> = ({
     for (let j = 0; j < lines.length; j++) {
       const lineText = lines[j] ?? '';
       if (change.removed) {
-        allLines.push({ line: lineText, type: 'removed', lineNum: oldLineNum++, key: `${i}-${j}` });
+        allLines.push({
+          line: lineText,
+          type: 'removed',
+          lineNum: oldLineNum++,
+          key: `${i}-${j}`,
+        });
       } else if (change.added) {
-        allLines.push({ line: lineText, type: 'added', lineNum: newLineNum++, key: `${i}-${j}` });
+        allLines.push({
+          line: lineText,
+          type: 'added',
+          lineNum: newLineNum++,
+          key: `${i}-${j}`,
+        });
       } else {
-        allLines.push({ line: lineText, type: 'unchanged', lineNum: oldLineNum, key: `${i}-${j}` });
+        allLines.push({
+          line: lineText,
+          type: 'unchanged',
+          lineNum: oldLineNum,
+          key: `${i}-${j}`,
+        });
         oldLineNum++;
         newLineNum++;
       }
@@ -347,14 +380,20 @@ const WriteContent: React.FC<WriteContentProps> = ({
 
         if (dl.type === 'removed') {
           return (
-            <Box key={dl.key} backgroundColor={getColor('diff.removed.background').hex}>
+            <Box
+              key={dl.key}
+              backgroundColor={getColor('diff.removed.background').hex}
+            >
               <Text>{getColor('primary')(lineNumber)}</Text>
               <Text>{`-  ${highlighted}`}</Text>
             </Box>
           );
         } else if (dl.type === 'added') {
           return (
-            <Box key={dl.key} backgroundColor={getColor('diff.added.background').hex}>
+            <Box
+              key={dl.key}
+              backgroundColor={getColor('diff.added.background').hex}
+            >
               <Text>{getColor('primary')(lineNumber)}</Text>
               <Text>{`+  ${highlighted}`}</Text>
             </Box>

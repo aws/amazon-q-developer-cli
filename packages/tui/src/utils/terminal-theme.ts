@@ -61,7 +61,10 @@ export function detectTerminalThemeWithDetails(): DetectionResult {
   if (process.platform === 'darwin' || process.platform === 'win32') {
     return {
       theme: osTheme,
-      method: process.platform === 'darwin' ? 'macOS-AppleInterfaceStyle' : 'Windows-Registry',
+      method:
+        process.platform === 'darwin'
+          ? 'macOS-AppleInterfaceStyle'
+          : 'Windows-Registry',
       confidence: 'low',
     };
   }
@@ -126,10 +129,18 @@ function detectFromTerminalEnv(): DetectionResult | null {
   const vscodeTheme = process.env.VSCODE_TERMINAL_THEME?.toLowerCase();
   if (vscodeTerminal && vscodeTheme) {
     if (vscodeTheme.includes('light')) {
-      return { theme: 'light', method: 'VSCODE_TERMINAL_THEME', confidence: 'medium' };
+      return {
+        theme: 'light',
+        method: 'VSCODE_TERMINAL_THEME',
+        confidence: 'medium',
+      };
     }
     if (vscodeTheme.includes('dark')) {
-      return { theme: 'dark', method: 'VSCODE_TERMINAL_THEME', confidence: 'medium' };
+      return {
+        theme: 'dark',
+        method: 'VSCODE_TERMINAL_THEME',
+        confidence: 'medium',
+      };
     }
   }
 
@@ -153,17 +164,24 @@ function detectFromTerminalEnv(): DetectionResult | null {
 function detectLinuxTheme(): DetectionResult | null {
   // GNOME/GTK
   try {
-    const gtkTheme = execSync('gsettings get org.gnome.desktop.interface color-scheme', {
-      encoding: 'utf8',
-      stdio: ['pipe', 'pipe', 'ignore'],
-      timeout: 1000,
-    }).trim();
+    const gtkTheme = execSync(
+      'gsettings get org.gnome.desktop.interface color-scheme',
+      {
+        encoding: 'utf8',
+        stdio: ['pipe', 'pipe', 'ignore'],
+        timeout: 1000,
+      }
+    ).trim();
 
     if (gtkTheme.includes('dark')) {
       return { theme: 'dark', method: 'GNOME-color-scheme', confidence: 'low' };
     }
     if (gtkTheme.includes('light') || gtkTheme.includes('default')) {
-      return { theme: 'light', method: 'GNOME-color-scheme', confidence: 'low' };
+      return {
+        theme: 'light',
+        method: 'GNOME-color-scheme',
+        confidence: 'low',
+      };
     }
   } catch {
     // gsettings not available or GNOME not in use
@@ -171,11 +189,14 @@ function detectLinuxTheme(): DetectionResult | null {
 
   // KDE Plasma
   try {
-    const kdeConfig = execSync('kreadconfig5 --group General --key ColorScheme', {
-      encoding: 'utf8',
-      stdio: ['pipe', 'pipe', 'ignore'],
-      timeout: 1000,
-    })
+    const kdeConfig = execSync(
+      'kreadconfig5 --group General --key ColorScheme',
+      {
+        encoding: 'utf8',
+        stdio: ['pipe', 'pipe', 'ignore'],
+        timeout: 1000,
+      }
+    )
       .trim()
       .toLowerCase();
 

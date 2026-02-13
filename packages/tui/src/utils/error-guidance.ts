@@ -31,7 +31,7 @@ export interface ErrorGuidance {
  */
 export const simplifyErrorMessage = (errorMessage: string): string => {
   const lowerMessage = errorMessage.toLowerCase();
-  
+
   // Auth errors - show a simple message
   if (lowerMessage.includes('no token')) {
     return 'Not authenticated';
@@ -39,7 +39,7 @@ export const simplifyErrorMessage = (errorMessage: string): string => {
   if (lowerMessage.includes('token expired')) {
     return 'Session expired';
   }
-  
+
   // Network errors - simplify
   if (lowerMessage.includes('error sending request')) {
     return 'Network error - unable to connect';
@@ -52,22 +52,22 @@ export const simplifyErrorMessage = (errorMessage: string): string => {
     }
     return 'Network error';
   }
-  
+
   // Remove technical prefixes
   let simplified = errorMessage;
-  
+
   // Remove "Encountered an error in the response stream: " prefix
   const streamPrefix = 'Encountered an error in the response stream: ';
   if (simplified.startsWith(streamPrefix)) {
     simplified = simplified.slice(streamPrefix.length);
   }
-  
+
   // Remove "An unknown error occurred: " prefix
   const unknownPrefix = 'An unknown error occurred: ';
   if (simplified.startsWith(unknownPrefix)) {
     simplified = simplified.slice(unknownPrefix.length);
   }
-  
+
   // Simplify dispatch failure messages
   if (simplified.toLowerCase().startsWith('dispatch failure')) {
     // Extract the root cause after the last " - "
@@ -79,16 +79,18 @@ export const simplifyErrorMessage = (errorMessage: string): string => {
       }
     }
   }
-  
+
   return simplified;
 };
 
 /**
  * Get guidance for authentication errors
  */
-export const getAuthErrorGuidance = (errorType: AuthErrorType): ErrorGuidance => {
+export const getAuthErrorGuidance = (
+  errorType: AuthErrorType
+): ErrorGuidance => {
   const loginCmd = `${CLI_BINARY_NAME} login`;
-  
+
   switch (errorType) {
     case 'no_token':
       return {
@@ -131,7 +133,10 @@ export const getAuthErrorGuidance = (errorType: AuthErrorType): ErrorGuidance =>
 /**
  * Get guidance for session errors
  */
-export const getSessionErrorGuidance = (errorType: SessionErrorType, pid?: number): ErrorGuidance => {
+export const getSessionErrorGuidance = (
+  errorType: SessionErrorType,
+  pid?: number
+): ErrorGuidance => {
   switch (errorType) {
     case 'session_locked':
       return {
@@ -145,11 +150,13 @@ export const getSessionErrorGuidance = (errorType: SessionErrorType, pid?: numbe
       };
     case 'io_error':
       return {
-        message: 'Failed to access session data. Please check file permissions and try again.',
+        message:
+          'Failed to access session data. Please check file permissions and try again.',
       };
     case 'json_parse_error':
       return {
-        message: 'Session data is corrupted. Please try starting a new session.',
+        message:
+          'Session data is corrupted. Please try starting a new session.',
       };
     default:
       return {
@@ -161,18 +168,25 @@ export const getSessionErrorGuidance = (errorType: SessionErrorType, pid?: numbe
 /**
  * Get guidance for network-related errors
  */
-export const getNetworkErrorGuidance = (errorMessage: string): ErrorGuidance => {
+export const getNetworkErrorGuidance = (
+  errorMessage: string
+): ErrorGuidance => {
   const lowerMessage = errorMessage.toLowerCase();
 
   if (lowerMessage.includes('timeout')) {
     return {
-      message: 'Connection timed out. Please check your network connection and try again.',
+      message:
+        'Connection timed out. Please check your network connection and try again.',
     };
   }
 
-  if (lowerMessage.includes('econnrefused') || lowerMessage.includes('connection refused')) {
+  if (
+    lowerMessage.includes('econnrefused') ||
+    lowerMessage.includes('connection refused')
+  ) {
     return {
-      message: 'Connection refused. Please ensure the service is running and try again.',
+      message:
+        'Connection refused. Please ensure the service is running and try again.',
     };
   }
 
@@ -183,19 +197,26 @@ export const getNetworkErrorGuidance = (errorMessage: string): ErrorGuidance => 
   }
 
   return {
-    message: 'Network error occurred. Please check your connection and try again.',
+    message:
+      'Network error occurred. Please check your connection and try again.',
   };
 };
 
 /**
  * Get guidance for permission errors
  */
-export const getPermissionErrorGuidance = (errorMessage: string): ErrorGuidance => {
+export const getPermissionErrorGuidance = (
+  errorMessage: string
+): ErrorGuidance => {
   const lowerMessage = errorMessage.toLowerCase();
 
-  if (lowerMessage.includes('eacces') || lowerMessage.includes('permission denied')) {
+  if (
+    lowerMessage.includes('eacces') ||
+    lowerMessage.includes('permission denied')
+  ) {
     return {
-      message: 'Permission denied. Please check file permissions or run with appropriate privileges.',
+      message:
+        'Permission denied. Please check file permissions or run with appropriate privileges.',
     };
   }
 
@@ -213,7 +234,10 @@ export const getPermissionErrorGuidance = (errorMessage: string): ErrorGuidance 
 /**
  * Get guidance for MCP server errors
  */
-export const getMcpErrorGuidance = (serverName: string, error: string): ErrorGuidance => {
+export const getMcpErrorGuidance = (
+  serverName: string,
+  error: string
+): ErrorGuidance => {
   const lowerError = error.toLowerCase();
 
   if (lowerError.includes('not found') || lowerError.includes('enoent')) {
@@ -245,7 +269,10 @@ export const getRateLimitGuidance = (): ErrorGuidance => {
 /**
  * Get guidance for tool execution errors
  */
-export const getToolErrorGuidance = (toolName: string, error: string): ErrorGuidance => {
+export const getToolErrorGuidance = (
+  toolName: string,
+  error: string
+): ErrorGuidance => {
   const lowerError = error.toLowerCase();
 
   if (lowerError.includes('timeout')) {
@@ -279,16 +306,14 @@ export const detectErrorCategory = (errorMessage: string): ErrorCategory => {
     lowerMessage.includes('not authenticated') ||
     lowerMessage.includes('authentication required') ||
     // Dispatch failures with auth-related causes
-    (lowerMessage.includes('dispatch failure') && lowerMessage.includes('token'))
+    (lowerMessage.includes('dispatch failure') &&
+      lowerMessage.includes('token'))
   ) {
     return 'auth';
   }
 
   // Generic auth keywords (less specific)
-  if (
-    lowerMessage.includes('auth') ||
-    lowerMessage.includes('login')
-  ) {
+  if (lowerMessage.includes('auth') || lowerMessage.includes('login')) {
     return 'auth';
   }
 
@@ -321,7 +346,11 @@ export const detectErrorCategory = (errorMessage: string): ErrorCategory => {
     return 'mcp';
   }
 
-  if (lowerMessage.includes('rate limit') || lowerMessage.includes('throttle') || lowerMessage.includes('throttling')) {
+  if (
+    lowerMessage.includes('rate limit') ||
+    lowerMessage.includes('throttle') ||
+    lowerMessage.includes('throttling')
+  ) {
     return 'rate_limit';
   }
 
@@ -361,7 +390,8 @@ export const getErrorGuidance = (errorMessage: string): ErrorGuidance => {
       };
     case 'tool':
       return {
-        message: 'A tool execution error occurred. The conversation can continue.',
+        message:
+          'A tool execution error occurred. The conversation can continue.',
       };
     default:
       return {

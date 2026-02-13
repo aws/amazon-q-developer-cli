@@ -38,7 +38,7 @@ describe('CommandHistory', () => {
 
     history.navigate('up'); // third
     history.navigate('up'); // second
-    
+
     expect(history.navigate('down')).toBe('third');
     expect(history.navigate('down')).toBeNull(); // Return to current
   });
@@ -51,10 +51,10 @@ describe('CommandHistory', () => {
   test('reset index after adding command', () => {
     history.add('first');
     history.add('second');
-    
+
     history.navigate('up');
     history.add('third');
-    
+
     expect(history.navigate('up')).toBe('third');
   });
 

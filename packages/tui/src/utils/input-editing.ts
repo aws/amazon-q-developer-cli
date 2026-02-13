@@ -4,23 +4,37 @@
 
 // Segment types (shared with PromptInput)
 type TextSegment = { type: 'text'; value: string };
-type FileSegment = { type: 'file'; filePath: string; content: string; lineCount: number };
-type PasteSegment = { type: 'paste'; content: string; lineCount: number; charCount: number };
+type FileSegment = {
+  type: 'file';
+  filePath: string;
+  content: string;
+  lineCount: number;
+};
+type PasteSegment = {
+  type: 'paste';
+  content: string;
+  lineCount: number;
+  charCount: number;
+};
 export type Segment = TextSegment | FileSegment | PasteSegment;
 
 // Get cursor width of a segment (text = length, chip = 1)
-export const segmentWidth = (s: Segment): number => s.type === 'text' ? s.value.length : 1;
+export const segmentWidth = (s: Segment): number =>
+  s.type === 'text' ? s.value.length : 1;
 
 // Get total cursor width
-export const totalWidth = (segments: Segment[]): number => 
+export const totalWidth = (segments: Segment[]): number =>
   segments.reduce((sum, s) => sum + segmentWidth(s), 0);
 
 // Get visible text for trigger detection
-export const getVisibleText = (segments: Segment[]): string => 
-  segments.map(s => s.type === 'text' ? s.value : '\u200B').join('');
+export const getVisibleText = (segments: Segment[]): string =>
+  segments.map((s) => (s.type === 'text' ? s.value : '\u200B')).join('');
 
 // Find segment and offset for cursor position
-export const locateCursor = (segments: Segment[], cursor: number): { segIdx: number; offset: number } => {
+export const locateCursor = (
+  segments: Segment[],
+  cursor: number
+): { segIdx: number; offset: number } => {
   if (segments.length === 0) return { segIdx: 0, offset: 0 };
   let pos = 0;
   for (let i = 0; i < segments.length; i++) {
@@ -61,7 +75,10 @@ export interface EditResult {
 /**
  * Delete word backward (Ctrl+W) - delete from cursor to previous word boundary
  */
-export const deleteWordBackward = (segments: Segment[], cursor: number): EditResult => {
+export const deleteWordBackward = (
+  segments: Segment[],
+  cursor: number
+): EditResult => {
   if (cursor === 0) return { segments, cursor };
 
   const { segIdx, offset } = locateCursor(segments, cursor);
@@ -91,7 +108,10 @@ export const deleteWordBackward = (segments: Segment[], cursor: number): EditRes
     // On a chip - delete the previous segment
     const prevSeg = segments[segIdx - 1];
     if (prevSeg) {
-      const newSegs = [...segments.slice(0, segIdx - 1), ...segments.slice(segIdx)];
+      const newSegs = [
+        ...segments.slice(0, segIdx - 1),
+        ...segments.slice(segIdx),
+      ];
       return {
         segments: normalizeSegments(newSegs),
         cursor: cursor - segmentWidth(prevSeg),
@@ -114,7 +134,10 @@ export const killToEnd = (segments: Segment[], cursor: number): EditResult => {
   if (seg?.type === 'text') {
     // Delete from cursor to end of this segment, plus all following segments
     const newValue = seg.value.slice(0, offset);
-    const newSegs = [...segments.slice(0, segIdx), { type: 'text' as const, value: newValue }];
+    const newSegs = [
+      ...segments.slice(0, segIdx),
+      { type: 'text' as const, value: newValue },
+    ];
     return { segments: normalizeSegments(newSegs), cursor };
   } else {
     // On a chip - delete this and all following
@@ -126,7 +149,10 @@ export const killToEnd = (segments: Segment[], cursor: number): EditResult => {
 /**
  * Kill to beginning of line (Ctrl+U)
  */
-export const killToBeginning = (segments: Segment[], cursor: number): EditResult => {
+export const killToBeginning = (
+  segments: Segment[],
+  cursor: number
+): EditResult => {
   if (cursor === 0) return { segments, cursor };
 
   const { segIdx, offset } = locateCursor(segments, cursor);
@@ -135,7 +161,10 @@ export const killToBeginning = (segments: Segment[], cursor: number): EditResult
   if (seg?.type === 'text') {
     // Delete from start to cursor in this segment, plus all preceding segments
     const newValue = seg.value.slice(offset);
-    const newSegs = [{ type: 'text' as const, value: newValue }, ...segments.slice(segIdx + 1)];
+    const newSegs = [
+      { type: 'text' as const, value: newValue },
+      ...segments.slice(segIdx + 1),
+    ];
     return { segments: normalizeSegments(newSegs), cursor: 0 };
   } else {
     // On a chip - delete all preceding segments
@@ -147,7 +176,10 @@ export const killToBeginning = (segments: Segment[], cursor: number): EditResult
 /**
  * Move forward one word (Alt+F / Ctrl+Right)
  */
-export const moveWordForward = (segments: Segment[], cursor: number): number => {
+export const moveWordForward = (
+  segments: Segment[],
+  cursor: number
+): number => {
   const total = totalWidth(segments);
   if (cursor >= total) return cursor;
 
@@ -177,7 +209,10 @@ export const moveWordForward = (segments: Segment[], cursor: number): number => 
 /**
  * Move backward one word (Alt+B / Ctrl+Left)
  */
-export const moveWordBackward = (segments: Segment[], cursor: number): number => {
+export const moveWordBackward = (
+  segments: Segment[],
+  cursor: number
+): number => {
   if (cursor === 0) return 0;
 
   const { segIdx, offset } = locateCursor(segments, cursor);
@@ -213,7 +248,10 @@ export const moveWordBackward = (segments: Segment[], cursor: number): number =>
 /**
  * Transpose characters (Ctrl+T)
  */
-export const transposeChars = (segments: Segment[], cursor: number): EditResult => {
+export const transposeChars = (
+  segments: Segment[],
+  cursor: number
+): EditResult => {
   const { segIdx, offset } = locateCursor(segments, cursor);
   const seg = segments[segIdx];
 
@@ -222,19 +260,19 @@ export const transposeChars = (segments: Segment[], cursor: number): EditResult 
     let swapPos = offset;
     if (swapPos === 0) return { segments, cursor }; // Can't transpose at start
     if (swapPos >= seg.value.length) swapPos = seg.value.length - 1;
-    
+
     const chars = seg.value.split('');
     const temp = chars[swapPos - 1];
     chars[swapPos - 1] = chars[swapPos] ?? '';
     chars[swapPos] = temp ?? '';
-    
+
     const newSegs = [...segments];
     newSegs[segIdx] = { type: 'text', value: chars.join('') };
-    
+
     // Move cursor forward (unless at end)
     const total = totalWidth(segments);
     const newCursor = cursor < total ? cursor + 1 : cursor;
-    
+
     return { segments: newSegs, cursor: newCursor };
   }
   return { segments, cursor };

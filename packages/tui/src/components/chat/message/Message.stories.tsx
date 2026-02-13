@@ -1,5 +1,5 @@
 import React from 'react';
-import { Message, MessageType, MessageProps } from './Message.js';
+import { Message, MessageType, type MessageProps } from './Message.js';
 import { Card } from '../../ui/card/Card.js';
 
 const meta = {
@@ -102,7 +102,8 @@ export const InfoMessage = {
     </Card>
   ),
   args: {
-    content: 'Here is some additional information\nYou may want to review the documentation',
+    content:
+      'Here is some additional information\nYou may want to review the documentation',
     type: MessageType.AGENT,
     status: 'info',
   },
@@ -138,7 +139,8 @@ export const ErrorMessageWithStatus = {
     </Card>
   ),
   args: {
-    content: 'Failed to connect to server\nPlease check your network connection',
+    content:
+      'Failed to connect to server\nPlease check your network connection',
     type: MessageType.AGENT,
     status: 'error',
   },

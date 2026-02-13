@@ -39,14 +39,16 @@ export const NoFiles = {
     result: {
       status: 'success',
       output: {
-        items: [{
-          Json: {
-            filePaths: [],
-            totalFiles: 0,
-            truncated: false,
-            message: 'No files found matching pattern: **/*.xyz',
+        items: [
+          {
+            Json: {
+              filePaths: [],
+              totalFiles: 0,
+              truncated: false,
+              message: 'No files found matching pattern: **/*.xyz',
+            },
           },
-        }],
+        ],
       },
     },
   },
@@ -62,17 +64,19 @@ export const FewFiles = {
     result: {
       status: 'success',
       output: {
-        items: [{
-          Json: {
-            filePaths: [
-              'src/utils/helpers.test.ts',
-              'src/utils/math.test.ts',
-              'src/components/Button.test.ts',
-            ],
-            totalFiles: 3,
-            truncated: false,
+        items: [
+          {
+            Json: {
+              filePaths: [
+                'src/utils/helpers.test.ts',
+                'src/utils/math.test.ts',
+                'src/components/Button.test.ts',
+              ],
+              totalFiles: 3,
+              truncated: false,
+            },
           },
-        }],
+        ],
       },
     },
   },
@@ -88,24 +92,26 @@ export const ManyFiles = {
     result: {
       status: 'success',
       output: {
-        items: [{
-          Json: {
-            filePaths: [
-              'src/components/Button.tsx',
-              'src/components/Modal.tsx',
-              'src/components/Card.tsx',
-              'src/components/Form.tsx',
-              'src/components/Input.tsx',
-              'src/components/Select.tsx',
-              'src/components/Table.tsx',
-              'src/components/Tabs.tsx',
-              'src/pages/Home.tsx',
-              'src/pages/About.tsx',
-            ],
-            totalFiles: 10,
-            truncated: false,
+        items: [
+          {
+            Json: {
+              filePaths: [
+                'src/components/Button.tsx',
+                'src/components/Modal.tsx',
+                'src/components/Card.tsx',
+                'src/components/Form.tsx',
+                'src/components/Input.tsx',
+                'src/components/Select.tsx',
+                'src/components/Table.tsx',
+                'src/components/Tabs.tsx',
+                'src/pages/Home.tsx',
+                'src/pages/About.tsx',
+              ],
+              totalFiles: 10,
+              truncated: false,
+            },
           },
-        }],
+        ],
       },
     },
   },
@@ -121,21 +127,23 @@ export const Truncated = {
     result: {
       status: 'success',
       output: {
-        items: [{
-          Json: {
-            filePaths: [
-              'src/index.ts',
-              'src/types.ts',
-              'src/utils/helpers.ts',
-              'src/utils/math.ts',
-              'src/utils/string.ts',
-              'src/api/client.ts',
-              'src/api/types.ts',
-            ],
-            totalFiles: 150,
-            truncated: true,
+        items: [
+          {
+            Json: {
+              filePaths: [
+                'src/index.ts',
+                'src/types.ts',
+                'src/utils/helpers.ts',
+                'src/utils/math.ts',
+                'src/utils/string.ts',
+                'src/api/client.ts',
+                'src/api/types.ts',
+              ],
+              totalFiles: 150,
+              truncated: true,
+            },
           },
-        }],
+        ],
       },
     },
   },
@@ -165,16 +173,15 @@ export const Standalone = {
     result: {
       status: 'success',
       output: {
-        items: [{
-          Json: {
-            filePaths: [
-              'package.json',
-              'tsconfig.json',
-            ],
-            totalFiles: 2,
-            truncated: false,
+        items: [
+          {
+            Json: {
+              filePaths: ['package.json', 'tsconfig.json'],
+              totalFiles: 2,
+              truncated: false,
+            },
           },
-        }],
+        ],
       },
     },
   },

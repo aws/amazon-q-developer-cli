@@ -1,11 +1,17 @@
 import React from 'react';
-import { SnackBar, SnackBarProps, Action } from './SnackBar.js';
+import { SnackBar, type SnackBarProps } from './SnackBar.js';
 
 const meta = {
   component: SnackBar,
   parameters: {
     layout: 'fullscreen',
-    storyOrder: ['Basic', 'WithDescriptions', 'SlideIn', 'ManyActions', 'LongTitle'],
+    storyOrder: [
+      'Basic',
+      'WithDescriptions',
+      'SlideIn',
+      'ManyActions',
+      'LongTitle',
+    ],
   },
   tags: ['autodocs'],
 };
@@ -63,7 +69,8 @@ export const SlideIn = {
 export const ManyActions = {
   parameters: {
     docs: {
-      storyDescription: 'Action bar with multiple actions and mixed descriptions',
+      storyDescription:
+        'Action bar with multiple actions and mixed descriptions',
     },
   },
   args: {
@@ -97,7 +104,8 @@ export const LongTitle = {
 export const KeyNotInLabel = {
   parameters: {
     docs: {
-      storyDescription: 'Action bar where key characters are not found in labels',
+      storyDescription:
+        'Action bar where key characters are not found in labels',
     },
   },
   args: {

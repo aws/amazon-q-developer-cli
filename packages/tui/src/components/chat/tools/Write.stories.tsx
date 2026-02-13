@@ -7,13 +7,7 @@ const meta = {
   component: Write,
   parameters: {
     layout: 'fullscreen',
-    storyOrder: [
-      'Writing',
-      'Wrote',
-      'Created',
-      'Replaced',
-      'Inserted',
-    ],
+    storyOrder: ['Writing', 'Wrote', 'Created', 'Replaced', 'Inserted'],
   },
   tags: ['autodocs'],
 };
@@ -146,5 +140,3 @@ export const Inserted = {
     </Card>
   ),
 };
-
-

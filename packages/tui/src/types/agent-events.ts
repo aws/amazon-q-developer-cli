@@ -9,6 +9,11 @@ export enum AgentEventType {
   CommandsUpdate = 'commands_update',
   ContextUsage = 'context_usage',
   Metadata = 'metadata',
+  CompactionStatus = 'compaction_status',
+  McpServerInitFailure = 'mcp_server_init_failure',
+  RateLimitError = 'rate_limit_error',
+  AuthError = 'auth_error',
+  SessionError = 'session_error',
 }
 
 export enum ContentType {
@@ -25,11 +30,27 @@ export enum ToolCallStatus {
 }
 
 // Built-in tool name sets for matching
-export const WRITE_TOOL_NAMES: Set<string> = new Set([ToolNameAlias.FsWrite, ToolNameAlias.Write]);
-export const READ_TOOL_NAMES: Set<string> = new Set([ToolNameAlias.FsRead, ToolNameAlias.Read]);
-export const SHELL_TOOL_NAMES: Set<string> = new Set([ToolNameAlias.ExecuteBash, ToolNameAlias.ExecuteCmd, ToolNameAlias.Shell]);
-export const WEB_SEARCH_TOOL_NAMES: Set<string> = new Set(['web_search', 'Searching the web']);
-export const WEB_FETCH_TOOL_NAMES: Set<string> = new Set(['web_fetch', 'Fetching web content']);
+export const WRITE_TOOL_NAMES: Set<string> = new Set([
+  ToolNameAlias.FsWrite,
+  ToolNameAlias.Write,
+]);
+export const READ_TOOL_NAMES: Set<string> = new Set([
+  ToolNameAlias.FsRead,
+  ToolNameAlias.Read,
+]);
+export const SHELL_TOOL_NAMES: Set<string> = new Set([
+  ToolNameAlias.ExecuteBash,
+  ToolNameAlias.ExecuteCmd,
+  ToolNameAlias.Shell,
+]);
+export const WEB_SEARCH_TOOL_NAMES: Set<string> = new Set([
+  'web_search',
+  'Searching the web',
+]);
+export const WEB_FETCH_TOOL_NAMES: Set<string> = new Set([
+  'web_fetch',
+  'Fetching web content',
+]);
 export const GREP_TOOL_NAMES: Set<string> = new Set(['grep', 'grep_search']);
 export const GLOB_TOOL_NAMES: Set<string> = new Set(['glob', 'file_search']);
 export const LS_TOOL_NAMES: Set<string> = new Set([ToolNameAlias.Ls]);
@@ -94,7 +115,15 @@ export interface ToolCallEvent {
   type: AgentEventType.ToolCall;
   id: string;
   name: string;
+  kind?: ToolKind;
   args: Record<string, unknown>;
+  toolContent?: Array<{
+    type: 'diff';
+    path: string;
+    newText: string;
+    oldText?: string;
+  }>;
+  locations?: ToolCallLocation[];
 }
 
 export interface ToolCallUpdateEvent {
@@ -140,6 +169,39 @@ export interface MetadataEvent {
   cachedTokens?: number;
 }
 
+export interface CompactionStatusEvent {
+  type: AgentEventType.CompactionStatus;
+  status: 'started' | 'completed' | 'failed';
+  error?: string;
+}
+
+export interface McpServerInitFailureEvent {
+  type: AgentEventType.McpServerInitFailure;
+  serverName: string;
+  error: string;
+}
+
+export interface RateLimitErrorEvent {
+  type: AgentEventType.RateLimitError;
+  message: string;
+}
+
+export interface AuthErrorEvent {
+  type: AgentEventType.AuthError;
+  errorType: string;
+  message: string;
+}
+
+export interface SessionErrorEvent {
+  type: AgentEventType.SessionError;
+  errorType: string;
+  message: string;
+  pid?: number;
+}
+
+export type AuthErrorType = string;
+export type SessionErrorType = string;
+
 export type AgentStreamEvent =
   | AgentContentEvent
   | ToolCallEvent
@@ -148,4 +210,9 @@ export type AgentStreamEvent =
   | ApprovalRequestEvent
   | CommandsUpdateEvent
   | ContextUsageEvent
-  | MetadataEvent;
+  | MetadataEvent
+  | CompactionStatusEvent
+  | McpServerInitFailureEvent
+  | RateLimitErrorEvent
+  | AuthErrorEvent
+  | SessionErrorEvent;

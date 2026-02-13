@@ -42,19 +42,23 @@ const ConversationTurnCard = React.memo(function ConversationTurnCard({
   turn: ConversationTurn;
 }) {
   const { isProcessing } = useConversationState();
-  
+
   // Always use the stored agent name from the message
   // This preserves the color even when switching agents
-  const agentName = turn.userMessage.agentName;
+  const agentName =
+    'agentName' in turn.userMessage ? turn.userMessage.agentName : undefined;
   const agentBarColor = agentName ? getAgentColor(agentName).hex : undefined;
-  
+
   // Check if the last AI message is still active (streaming or executing)
   const lastAiMsg = turn.aiMessages[turn.aiMessages.length - 1];
   const hasActiveContent = lastAiMsg
     ? (lastAiMsg.role === MessageRole.ToolUse && !lastAiMsg.isFinished) ||
-      (lastAiMsg.role === MessageRole.Model && turn.isActive && isProcessing && !!lastAiMsg.content)
+      (lastAiMsg.role === MessageRole.Model &&
+        turn.isActive &&
+        isProcessing &&
+        !!lastAiMsg.content)
     : false;
-  
+
   // Show thinking when processing but no active content
   // (visible between tool calls, hidden while streaming)
   const showThinking = turn.isActive && isProcessing && !hasActiveContent;
@@ -126,7 +130,10 @@ const ConversationTurnCard = React.memo(function ConversationTurnCard({
 
       {/* Thinking indicator */}
       {showThinking && (
-        <ThinkingMessage key={`${turn.userMessage.id}-thinking`} barColor={agentBarColor} />
+        <ThinkingMessage
+          key={`${turn.userMessage.id}-thinking`}
+          barColor={agentBarColor}
+        />
       )}
     </Card>
   );
@@ -139,7 +146,8 @@ const StaticTurnCard = React.memo(function StaticTurnCard({
   turn: ConversationTurn;
 }) {
   // Use the stored agent name from the message
-  const agentName = turn.userMessage.agentName;
+  const agentName =
+    'agentName' in turn.userMessage ? turn.userMessage.agentName : undefined;
   const agentBarColor = agentName ? getAgentColor(agentName).hex : undefined;
 
   // Don't render if user message has no content

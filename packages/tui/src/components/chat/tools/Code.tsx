@@ -3,7 +3,10 @@ import { Box, Text } from 'ink';
 import { StatusBar } from '../status-bar/StatusBar.js';
 import { StatusInfo } from '../../ui/status/StatusInfo.js';
 import { useTheme } from '../../../hooks/useThemeContext.js';
-import { parseToolArg, unwrapResultOutput } from '../../../utils/tool-result.js';
+import {
+  parseToolArg,
+  unwrapResultOutput,
+} from '../../../utils/tool-result.js';
 import type { ToolResult } from '../../../stores/app-store.js';
 import type { StatusType } from '../../../types/componentTypes.js';
 
@@ -53,8 +56,14 @@ export const Code = React.memo(function Code({
 }: CodeProps) {
   const { getColor } = useTheme();
 
-  const operation = useMemo(() => parseToolArg(content, 'operation'), [content]);
-  const symbolName = useMemo(() => parseToolArg(content, 'symbol_name'), [content]);
+  const operation = useMemo(
+    () => parseToolArg(content, 'operation'),
+    [content]
+  );
+  const symbolName = useMemo(
+    () => parseToolArg(content, 'symbol_name'),
+    [content]
+  );
   const filePath = useMemo(() => parseToolArg(content, 'file_path'), [content]);
   const pattern = useMemo(() => parseToolArg(content, 'pattern'), [content]);
 
@@ -78,7 +87,10 @@ export const Code = React.memo(function Code({
 
     // Text results: take first few lines
     if (text) {
-      return text.split('\n').filter(l => l.trim()).slice(0, PREVIEW_LINES);
+      return text
+        .split('\n')
+        .filter((l) => l.trim())
+        .slice(0, PREVIEW_LINES);
     }
 
     // For structured results, extract a brief summary
@@ -86,9 +98,9 @@ export const Code = React.memo(function Code({
 
     // search_symbols / lookup_symbols — show matched symbol names
     if (Array.isArray(obj.symbols)) {
-      return (obj.symbols as any[]).slice(0, PREVIEW_LINES).map(
-        s => `→ ${s.name || s}`,
-      );
+      return (obj.symbols as any[])
+        .slice(0, PREVIEW_LINES)
+        .map((s) => `→ ${s.name || s}`);
     }
 
     // find_references — show count
@@ -98,14 +110,17 @@ export const Code = React.memo(function Code({
 
     // get_document_symbols
     if (Array.isArray(obj.documentSymbols)) {
-      return (obj.documentSymbols as any[]).slice(0, PREVIEW_LINES).map(
-        s => `→ ${s.name || s}`,
-      );
+      return (obj.documentSymbols as any[])
+        .slice(0, PREVIEW_LINES)
+        .map((s) => `→ ${s.name || s}`);
     }
 
     // Fallback: try text fields
     if (typeof obj.text === 'string') {
-      return (obj.text as string).split('\n').filter(l => l.trim()).slice(0, PREVIEW_LINES);
+      return (obj.text as string)
+        .split('\n')
+        .filter((l) => l.trim())
+        .slice(0, PREVIEW_LINES);
     }
 
     return [];
@@ -123,7 +138,12 @@ export const Code = React.memo(function Code({
       );
     }
 
-    if (!isFinished || summaryLines.length === 0 || isStatic || (operation && VERBOSE_OPS.has(operation))) {
+    if (
+      !isFinished ||
+      summaryLines.length === 0 ||
+      isStatic ||
+      (operation && VERBOSE_OPS.has(operation))
+    ) {
       return <StatusInfo title={title} target={target} shimmer={!isFinished} />;
     }
 

@@ -4,7 +4,10 @@ import { StatusBar } from '../status-bar/StatusBar.js';
 import { StatusInfo } from '../../ui/status/StatusInfo.js';
 import { useTheme } from '../../../hooks/useThemeContext.js';
 import { useExpandableOutput } from '../../../hooks/useExpandableOutput.js';
-import { parseToolArg, unwrapResultOutput } from '../../../utils/tool-result.js';
+import {
+  parseToolArg,
+  unwrapResultOutput,
+} from '../../../utils/tool-result.js';
 import type { ToolResult } from '../../../stores/app-store.js';
 import type { StatusType } from '../../../types/componentTypes.js';
 
@@ -61,7 +64,10 @@ export const Glob = React.memo(function Glob({
   const { getColor } = useTheme();
 
   // Parse glob pattern from content (tool args)
-  const globPattern = useMemo(() => parseToolArg(content, 'pattern'), [content]);
+  const globPattern = useMemo(
+    () => parseToolArg(content, 'pattern'),
+    [content]
+  );
 
   // Parse glob output from result
   const globOutput = useMemo((): GlobOutput | null => {
@@ -69,14 +75,16 @@ export const Glob = React.memo(function Glob({
     if (!obj) return null;
 
     return {
-      filePaths: Array.isArray(obj.filePaths) ? obj.filePaths as string[] : [],
+      filePaths: Array.isArray(obj.filePaths)
+        ? (obj.filePaths as string[])
+        : [],
       totalFiles: typeof obj.totalFiles === 'number' ? obj.totalFiles : 0,
       truncated: obj.truncated === true,
       message: typeof obj.message === 'string' ? obj.message : undefined,
     };
   }, [result]);
 
-  const title = isFinished ? 'Globbed' : (name || 'Globbing');
+  const title = isFinished ? 'Globbed' : name || 'Globbing';
   const filePaths = globOutput?.filePaths || [];
 
   // Use expandable output hook
@@ -127,7 +135,9 @@ export const Glob = React.memo(function Glob({
       return (
         <Box flexDirection="column">
           <StatusInfo title={title} target={target} shimmer={!isFinished} />
-          {secondarySummary && <Text>{getColor('secondary')(secondarySummary)}</Text>}
+          {secondarySummary && (
+            <Text>{getColor('secondary')(secondarySummary)}</Text>
+          )}
         </Box>
       );
     }
@@ -137,7 +147,9 @@ export const Glob = React.memo(function Glob({
       return (
         <Box flexDirection="column">
           <StatusInfo title={title} target={target} shimmer={!isFinished} />
-          {secondarySummary && <Text>{getColor('secondary')(secondarySummary)}</Text>}
+          {secondarySummary && (
+            <Text>{getColor('secondary')(secondarySummary)}</Text>
+          )}
         </Box>
       );
     }
@@ -147,7 +159,9 @@ export const Glob = React.memo(function Glob({
       return (
         <Box flexDirection="column">
           <StatusInfo title={title} target={target} shimmer={!isFinished} />
-          {secondarySummary && <Text>{getColor('secondary')(secondarySummary)}</Text>}
+          {secondarySummary && (
+            <Text>{getColor('secondary')(secondarySummary)}</Text>
+          )}
           {filePaths.map((filePath, i) => (
             <Box key={i} marginLeft={2}>
               <Text>{getColor('primary')(`→ ${getFileName(filePath)}`)}</Text>
@@ -155,7 +169,11 @@ export const Glob = React.memo(function Glob({
           ))}
           {globOutput.truncated && (
             <Box marginLeft={2}>
-              <Text>{getColor('warning')(`(showing ${filePaths.length} of ${globOutput.totalFiles} files)`)}</Text>
+              <Text>
+                {getColor('warning')(
+                  `(showing ${filePaths.length} of ${globOutput.totalFiles} files)`
+                )}
+              </Text>
             </Box>
           )}
         </Box>
@@ -166,7 +184,9 @@ export const Glob = React.memo(function Glob({
     return (
       <Box flexDirection="column">
         <StatusInfo title={title} target={target} shimmer={!isFinished} />
-        {secondarySummary && <Text>{getColor('secondary')(secondarySummary)}</Text>}
+        {secondarySummary && (
+          <Text>{getColor('secondary')(secondarySummary)}</Text>
+        )}
         {filePaths.slice(0, PREVIEW_FILES).map((filePath, i) => (
           <Box key={i} marginLeft={2}>
             <Text>{getColor('primary')(`→ ${getFileName(filePath)}`)}</Text>
@@ -175,9 +195,7 @@ export const Glob = React.memo(function Glob({
         {(hiddenCount > 0 || globOutput.truncated) && (
           <Box marginLeft={2}>
             <Text>
-              {getColor('secondary')(
-                expandHint || '(ctrl+o to toggle)'
-              )}
+              {getColor('secondary')(expandHint || '(ctrl+o to toggle)')}
             </Text>
           </Box>
         )}

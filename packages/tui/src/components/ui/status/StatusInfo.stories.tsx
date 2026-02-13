@@ -52,7 +52,7 @@ export const AlertExamples = {
       </Card>
       <Card active={true}>
         <StatusBar status="warning">
-          <StatusInfo title="Disk space low" useStatusColor={true}/>
+          <StatusInfo title="Disk space low" useStatusColor={true} />
         </StatusBar>
       </Card>
       <Card active={true}>

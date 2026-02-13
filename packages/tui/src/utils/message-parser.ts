@@ -56,7 +56,7 @@ export function parseMarkdownComplete(content: string): ContentBlock[] {
   let i = 0;
 
   while (i < lines.length) {
-    const line = lines[i];
+    const line = lines[i]!;
 
     if (line.startsWith('```')) {
       // Code block
@@ -64,8 +64,8 @@ export function parseMarkdownComplete(content: string): ContentBlock[] {
       i++; // Skip opening ```
 
       const codeLines: string[] = [];
-      while (i < lines.length && !lines[i].startsWith('```')) {
-        codeLines.push(lines[i]);
+      while (i < lines.length && !lines[i]!.startsWith('```')) {
+        codeLines.push(lines[i]!);
         i++;
       }
 
@@ -89,11 +89,11 @@ export function parseMarkdownComplete(content: string): ContentBlock[] {
       const textLines: string[] = [];
       while (
         i < lines.length &&
-        !lines[i].startsWith('```') &&
-        !lines[i].includes('Tool Call:') &&
-        !lines[i].includes('TOOL_CALL:')
+        !lines[i]!.startsWith('```') &&
+        !lines[i]!.includes('Tool Call:') &&
+        !lines[i]!.includes('TOOL_CALL:')
       ) {
-        textLines.push(lines[i]);
+        textLines.push(lines[i]!);
         i++;
       }
 

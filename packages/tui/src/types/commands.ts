@@ -21,6 +21,7 @@ export interface CommandMeta {
   inputType?: 'text' | 'selection' | 'multiselect' | 'panel';
   subcommands?: string[];
   hint?: string;
+  local?: boolean;
 }
 
 /** Command advertised by backend */
@@ -56,7 +57,9 @@ export function parseCommand(input: string): {
 }
 
 /** Group options by their group field */
-export function groupOptions(options: CommandOption[]): Map<string, CommandOption[]> {
+export function groupOptions(
+  options: CommandOption[]
+): Map<string, CommandOption[]> {
   const groups = new Map<string, CommandOption[]>();
 
   for (const opt of options) {

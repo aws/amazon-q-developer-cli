@@ -4,7 +4,10 @@ import { StatusBar } from '../status-bar/StatusBar.js';
 import { StatusInfo } from '../../ui/status/StatusInfo.js';
 import { useTheme } from '../../../hooks/useThemeContext.js';
 import { useExpandableOutput } from '../../../hooks/useExpandableOutput.js';
-import { parseToolArg, unwrapResultOutput } from '../../../utils/tool-result.js';
+import {
+  parseToolArg,
+  unwrapResultOutput,
+} from '../../../utils/tool-result.js';
 import type { ToolResult } from '../../../stores/app-store.js';
 import type { StatusType } from '../../../types/componentTypes.js';
 
@@ -71,7 +74,10 @@ export const Grep = React.memo(function Grep({
   const { getColor } = useTheme();
 
   // Parse search pattern from content (tool args)
-  const searchPattern = useMemo(() => parseToolArg(content, 'pattern'), [content]);
+  const searchPattern = useMemo(
+    () => parseToolArg(content, 'pattern'),
+    [content]
+  );
 
   // Parse grep output from result
   const grepOutput = useMemo((): GrepOutput | null => {
@@ -82,12 +88,14 @@ export const Grep = React.memo(function Grep({
       numMatches: typeof obj.numMatches === 'number' ? obj.numMatches : 0,
       numFiles: typeof obj.numFiles === 'number' ? obj.numFiles : 0,
       truncated: obj.truncated === true,
-      results: Array.isArray(obj.results) ? obj.results as GrepFileResult[] : undefined,
+      results: Array.isArray(obj.results)
+        ? (obj.results as GrepFileResult[])
+        : undefined,
       message: typeof obj.message === 'string' ? obj.message : undefined,
     };
   }, [result]);
 
-  const title = isFinished ? 'Grepped' : (name || 'Grepping');
+  const title = isFinished ? 'Grepped' : name || 'Grepping';
   const results = grepOutput?.results || [];
 
   // Use expandable output hook
@@ -138,7 +146,9 @@ export const Grep = React.memo(function Grep({
       return (
         <Box flexDirection="column">
           <StatusInfo title={title} target={target} shimmer={!isFinished} />
-          {secondarySummary && <Text>{getColor('secondary')(secondarySummary)}</Text>}
+          {secondarySummary && (
+            <Text>{getColor('secondary')(secondarySummary)}</Text>
+          )}
         </Box>
       );
     }
@@ -148,7 +158,9 @@ export const Grep = React.memo(function Grep({
       return (
         <Box flexDirection="column">
           <StatusInfo title={title} target={target} shimmer={!isFinished} />
-          {secondarySummary && <Text>{getColor('secondary')(secondarySummary)}</Text>}
+          {secondarySummary && (
+            <Text>{getColor('secondary')(secondarySummary)}</Text>
+          )}
         </Box>
       );
     }
@@ -158,12 +170,13 @@ export const Grep = React.memo(function Grep({
       return (
         <Box flexDirection="column">
           <StatusInfo title={title} target={target} shimmer={!isFinished} />
-          {secondarySummary && <Text>{getColor('secondary')(secondarySummary)}</Text>}
+          {secondarySummary && (
+            <Text>{getColor('secondary')(secondarySummary)}</Text>
+          )}
           {results.map((fileResult, i) => (
             <Box key={i} flexDirection="column" marginLeft={2}>
               <Text>
-                {getColor('primary')(`→ ${getFileName(fileResult.file)}`)}
-                {' '}
+                {getColor('primary')(`→ ${getFileName(fileResult.file)}`)}{' '}
                 {getColor('secondary')(`(${fileResult.count})`)}
               </Text>
               {fileResult.matches?.map((match, j) => (
@@ -186,22 +199,29 @@ export const Grep = React.memo(function Grep({
     return (
       <Box flexDirection="column">
         <StatusInfo title={title} target={target} shimmer={!isFinished} />
-        {secondarySummary && <Text>{getColor('secondary')(secondarySummary)}</Text>}
+        {secondarySummary && (
+          <Text>{getColor('secondary')(secondarySummary)}</Text>
+        )}
         {results.slice(0, PREVIEW_FILES).map((fileResult, i) => (
           <Box key={i} flexDirection="column" marginLeft={2}>
             <Text>
-              {getColor('primary')(`→ ${getFileName(fileResult.file)}`)}
-              {' '}
+              {getColor('primary')(`→ ${getFileName(fileResult.file)}`)}{' '}
               {getColor('secondary')(`(${fileResult.count})`)}
             </Text>
-            {fileResult.matches?.slice(0, PREVIEW_MATCHES_PER_FILE).map((match, j) => (
-              <Box key={j} marginLeft={2}>
-                <Text>{getColor('secondary')(match)}</Text>
-              </Box>
-            ))}
+            {fileResult.matches
+              ?.slice(0, PREVIEW_MATCHES_PER_FILE)
+              .map((match, j) => (
+                <Box key={j} marginLeft={2}>
+                  <Text>{getColor('secondary')(match)}</Text>
+                </Box>
+              ))}
             {(fileResult.matches?.length || 0) > PREVIEW_MATCHES_PER_FILE && (
               <Box marginLeft={2}>
-                <Text>{getColor('secondary')(`...+${(fileResult.matches?.length || 0) - PREVIEW_MATCHES_PER_FILE} more`)}</Text>
+                <Text>
+                  {getColor('secondary')(
+                    `...+${(fileResult.matches?.length || 0) - PREVIEW_MATCHES_PER_FILE} more`
+                  )}
+                </Text>
               </Box>
             )}
           </Box>
@@ -209,9 +229,7 @@ export const Grep = React.memo(function Grep({
         {(hiddenCount > 0 || grepOutput.truncated) && (
           <Box marginLeft={2}>
             <Text>
-              {getColor('secondary')(
-                expandHint || '(ctrl+o to toggle)'
-              )}
+              {getColor('secondary')(expandHint || '(ctrl+o to toggle)')}
             </Text>
           </Box>
         )}

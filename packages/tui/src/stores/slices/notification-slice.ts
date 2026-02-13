@@ -24,7 +24,9 @@ export interface NotificationActions {
 
 export type NotificationSlice = NotificationState & NotificationActions;
 
-export const createNotificationSlice: StateCreator<NotificationSlice> = (set) => ({
+export const createNotificationSlice: StateCreator<NotificationSlice> = (
+  set
+) => ({
   // State
   transientAlert: null,
   agentError: null,
@@ -33,5 +35,6 @@ export const createNotificationSlice: StateCreator<NotificationSlice> = (set) =>
   // Actions
   showTransientAlert: (alert) => set({ transientAlert: alert }),
   dismissTransientAlert: () => set({ transientAlert: null }),
-  setAgentError: (agentError, guidance) => set({ agentError, agentErrorGuidance: guidance ?? null }),
+  setAgentError: (agentError, guidance) =>
+    set({ agentError, agentErrorGuidance: guidance ?? null }),
 });

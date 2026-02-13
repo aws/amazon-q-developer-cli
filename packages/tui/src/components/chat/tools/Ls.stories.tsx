@@ -4,13 +4,7 @@ const meta = {
   component: Ls,
   parameters: {
     layout: 'fullscreen',
-    storyOrder: [
-      'Listing',
-      'Listed',
-      'ManyEntries',
-      'Error',
-      'Standalone',
-    ],
+    storyOrder: ['Listing', 'Listed', 'ManyEntries', 'Error', 'Standalone'],
   },
   tags: ['autodocs'],
 };
@@ -33,9 +27,11 @@ export const Listed = {
     result: {
       status: 'success',
       output: {
-        items: [{
-          Text: 'User id: 501\ndrwxr-xr-x  staff  160  Jan 15 10:30  Button\ndrwxr-xr-x  staff  128  Jan 14 09:15  Modal\n-rw-r--r--  staff  2048  Jan 13 14:22  index.ts',
-        }],
+        items: [
+          {
+            Text: 'User id: 501\ndrwxr-xr-x  staff  160  Jan 15 10:30  Button\ndrwxr-xr-x  staff  128  Jan 14 09:15  Modal\n-rw-r--r--  staff  2048  Jan 13 14:22  index.ts',
+          },
+        ],
       },
     },
   },
@@ -49,9 +45,11 @@ export const ManyEntries = {
     result: {
       status: 'success',
       output: {
-        items: [{
-          Text: 'User id: 501\ndrwxr-xr-x  staff  256  Feb 10 11:00  components\ndrwxr-xr-x  staff  192  Feb 09 16:30  hooks\ndrwxr-xr-x  staff  128  Feb 08 09:45  utils\ndrwxr-xr-x  staff  160  Feb 07 14:20  stores\ndrwxr-xr-x  staff  96   Feb 06 10:15  types\n-rw-r--r--  staff  4096  Feb 05 08:30  index.tsx\n-rw-r--r--  staff  1024  Feb 04 17:00  App.tsx\n-rw-r--r--  staff  512   Feb 03 12:45  kiro.ts',
-        }],
+        items: [
+          {
+            Text: 'User id: 501\ndrwxr-xr-x  staff  256  Feb 10 11:00  components\ndrwxr-xr-x  staff  192  Feb 09 16:30  hooks\ndrwxr-xr-x  staff  128  Feb 08 09:45  utils\ndrwxr-xr-x  staff  160  Feb 07 14:20  stores\ndrwxr-xr-x  staff  96   Feb 06 10:15  types\n-rw-r--r--  staff  4096  Feb 05 08:30  index.tsx\n-rw-r--r--  staff  1024  Feb 04 17:00  App.tsx\n-rw-r--r--  staff  512   Feb 03 12:45  kiro.ts',
+          },
+        ],
       },
     },
   },
@@ -78,9 +76,11 @@ export const Standalone = {
     result: {
       status: 'success',
       output: {
-        items: [{
-          Text: 'User id: 501\ndrwxr-xr-x  staff  256  Feb 10 11:00  src\n-rw-r--r--  staff  1024  Feb 09 16:30  package.json\n-rw-r--r--  staff  512   Feb 08 09:45  tsconfig.json',
-        }],
+        items: [
+          {
+            Text: 'User id: 501\ndrwxr-xr-x  staff  256  Feb 10 11:00  src\n-rw-r--r--  staff  1024  Feb 09 16:30  package.json\n-rw-r--r--  staff  512   Feb 08 09:45  tsconfig.json',
+          },
+        ],
       },
     },
   },

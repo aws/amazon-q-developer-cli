@@ -20,12 +20,12 @@ export const ListDirectory = {
       <Card active={true}>
         <Shell name="Bash" command="ls -la" status="success" />
         <Box flexDirection="column" marginTop={1}>
-          <Text>drwxr-xr-x  12 user  staff   384 Jan 14 10:30 .</Text>
-          <Text>drwxr-xr-x   8 user  staff   256 Jan 13 15:22 ..</Text>
-          <Text>-rw-r--r--   1 user  staff  1024 Jan 14 09:15 README.md</Text>
-          <Text>drwxr-xr-x   5 user  staff   160 Jan 12 14:30 src</Text>
-          <Text>-rw-r--r--   1 user  staff   512 Jan 11 16:45 package.json</Text>
-          <Text>drwxr-xr-x  15 user  staff   480 Jan 14 10:28 node_modules</Text>
+          <Text>drwxr-xr-x 12 user staff 384 Jan 14 10:30 .</Text>
+          <Text>drwxr-xr-x 8 user staff 256 Jan 13 15:22 ..</Text>
+          <Text>-rw-r--r-- 1 user staff 1024 Jan 14 09:15 README.md</Text>
+          <Text>drwxr-xr-x 5 user staff 160 Jan 12 14:30 src</Text>
+          <Text>-rw-r--r-- 1 user staff 512 Jan 11 16:45 package.json</Text>
+          <Text>drwxr-xr-x 15 user staff 480 Jan 14 10:28 node_modules</Text>
         </Box>
       </Card>
       <Card active={true}>

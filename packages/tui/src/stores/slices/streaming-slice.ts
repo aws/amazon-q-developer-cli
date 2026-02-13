@@ -25,5 +25,6 @@ export const createStreamingSlice: StateCreator<StreamingSlice> = (set) => ({
 
   // Actions
   setStreamingBuffer: (control) => set({ streamingBuffer: control }),
-  clearStreamingBuffer: () => set({ streamingBuffer: { startBuffering: null, stopBuffering: null } }),
+  clearStreamingBuffer: () =>
+    set({ streamingBuffer: { startBuffering: null, stopBuffering: null } }),
 });

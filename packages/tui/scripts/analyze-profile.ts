@@ -36,7 +36,7 @@ function getLatestProfile(dir: string): string | null {
   const files = readdirSync(dir).filter(f => f.endsWith('.cpuprofile'));
   if (files.length === 0) return null;
   files.sort((a, b) => b.localeCompare(a));
-  return path.join(dir, files[0]);
+  return path.join(dir, files[0]!);
 }
 
 function classifyFunction(url: string): 'our-code' | 'dependency' | 'runtime' {
@@ -155,7 +155,7 @@ function analyze(profilePath: string) {
       currentWindow = new Map();
       windowStart = elapsed;
     }
-    const node = nodes.get(profile.samples[i]);
+    const node = nodes.get(profile.samples[i]!);
     if (node) {
       const fn = node.callFrame.functionName || '(anonymous)';
       const file = node.callFrame.url.split('/').pop() || 'unknown';
@@ -214,7 +214,7 @@ function analyze(profilePath: string) {
   console.log('-------|', top3.map(() => '-'.repeat(20)).join('-|-'));
   
   for (let i = 0; i < windows.length; i++) {
-    const w = windows[i];
+    const w = windows[i]!;
     const values = top3.map(([fn]) => {
       const hits = w.get(fn) || 0;
       const ms = (hits * sampleInterval / 1000).toFixed(0);
@@ -295,14 +295,14 @@ function generateHtml(data: typeof reportData): string {
 <h2>🔥 Top 5 Hot Paths</h2>
 ${top5.map((f, i) => `
 <div class="hot-path">
-  <h3>#${i + 1}: ${escapeHtml(f.name.split(' @ ')[0])} (${f.selfTimeMs.toFixed(0)}ms self)</h3>
+  <h3>#${i + 1}: ${escapeHtml(f.name.split(' @ ')[0] ?? f.name)} (${f.selfTimeMs.toFixed(0)}ms self)</h3>
   <div><strong>Called by:</strong></div>
   ${Object.entries((f as any).callers || {}).slice(0, 3).map(([caller, count]) => 
-    `<div class="path-item">← ${escapeHtml(caller.split(' @ ')[0])} (${count}x)</div>`
+    `<div class="path-item">← ${escapeHtml(caller.split(' @ ')[0] ?? caller)} (${count}x)</div>`
   ).join('') || '<div class="path-item">← (root)</div>'}
   <div style="margin-top:10px"><strong>Calls:</strong></div>
   ${Object.entries((f as any).callees || {}).slice(0, 3).map(([callee, count]) => 
-    `<div class="path-item">→ ${escapeHtml(callee.split(' @ ')[0])} (${count}x)</div>`
+    `<div class="path-item">→ ${escapeHtml(callee.split(' @ ')[0] ?? callee)} (${count}x)</div>`
   ).join('') || '<div class="path-item">→ (leaf)</div>'}
 </div>
 `).join('')}
@@ -353,9 +353,8 @@ let reportData: {
   timestamp: string;
   durationS: number;
   samples: number;
-  functions: { name: string; selfTimeMs: number; totalTimeMs: number; calls: number; type: string; trend: number[] }[];
-  callTree: Record<string, { callers: Record<string, number>; callees: Record<string, number> }>;
-} = { timestamp: '', durationS: 0, samples: 0, functions: [], callTree: {} };
+  functions: { name: string; selfTimeMs: number; totalTimeMs: number; calls: number; type: string; trend: number[]; callers: Record<string, number>; callees: Record<string, number> }[];
+} = { timestamp: '', durationS: 0, samples: 0, functions: [] };
 
 // Main
 const profileDir = path.join(__dirname, '..', 'profiles');

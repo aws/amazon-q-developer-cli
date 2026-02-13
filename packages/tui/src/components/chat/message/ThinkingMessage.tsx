@@ -7,7 +7,9 @@ interface ThinkingMessageProps {
   barColor?: string;
 }
 
-export const ThinkingMessage: React.FC<ThinkingMessageProps> = ({ barColor }) => {
+export const ThinkingMessage: React.FC<ThinkingMessageProps> = ({
+  barColor,
+}) => {
   const { getColor } = useTheme();
   const secondaryColor = getColor('secondary');
 

@@ -113,7 +113,9 @@ export class AcpClient implements acp.Client, SessionClient {
       if (buffer.trim()) {
         try {
           messageController.enqueue(JSON.parse(buffer.trim()));
-        } catch { /* ignore */ }
+        } catch {
+          /* ignore */
+        }
       }
       messageController.close();
     });
@@ -218,10 +220,14 @@ export class AcpClient implements acp.Client, SessionClient {
           reject(new Error('Agent connection closed unexpectedly'));
           return;
         }
-        this.connection.signal.addEventListener('abort', () => {
-          logger.error('[acp] connection closed while prompt was pending');
-          reject(new Error('Agent connection closed unexpectedly'));
-        }, { once: true });
+        this.connection.signal.addEventListener(
+          'abort',
+          () => {
+            logger.error('[acp] connection closed while prompt was pending');
+            reject(new Error('Agent connection closed unexpectedly'));
+          },
+          { once: true }
+        );
       });
       // Suppress unhandled rejection if prompt wins the race
       connectionClosed.catch(() => {});

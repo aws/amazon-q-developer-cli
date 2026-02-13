@@ -1,6 +1,6 @@
 /**
  * Optimized selectors using useShallow to prevent unnecessary re-renders.
- * 
+ *
  * These hooks group related state and return stable references when values haven't changed.
  */
 import { useShallow } from 'zustand/react/shallow';

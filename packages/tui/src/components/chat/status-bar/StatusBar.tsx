@@ -1,11 +1,22 @@
 import { Box, measureElement } from 'ink';
-import React, { createContext, useCallback, useContext, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import React, {
+  createContext,
+  useCallback,
+  useContext,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
 import { useTheme } from '../../../hooks/useThemeContext.js';
 import { Text } from '../../ui/text/Text.js';
 import { Icon, IconType } from '../../ui/icon/Icon.js';
 import { Spinner } from '../../ui/spinner/Spinner.js';
 import { useCardContext } from '../../ui/card/Card.js';
-import { getStatusColor, getTerminalChalkColor } from '../../../utils/colorUtils.js';
+import {
+  getStatusColor,
+  getTerminalChalkColor,
+} from '../../../utils/colorUtils.js';
 import type { StatusType } from '../../../types/componentTypes.js';
 
 interface StatusBarContextType {
@@ -35,17 +46,19 @@ export interface StatusBarProps {
   status?: StatusType;
 }
 
-export const StatusBar = React.memo(function StatusBar({ 
-  children, 
-  barColor: barColorProp, 
-  status: statusProp 
+export const StatusBar = React.memo(function StatusBar({
+  children,
+  barColor: barColorProp,
+  status: statusProp,
 }: StatusBarProps) {
   const { getColor } = useTheme();
   const { active } = useCardContext();
   const contentRef = useRef<any>(null);
   const [lineCount, setLineCount] = useState(0);
   const [lineColors, setLineColors] = useState<Map<number, string>>(new Map());
-  const [statusOverride, setStatusOverride] = useState<StatusType | undefined>(undefined);
+  const [statusOverride, setStatusOverride] = useState<StatusType | undefined>(
+    undefined
+  );
   const currentLineIndexRef = useRef(0);
 
   // Child-set status takes precedence over prop
@@ -55,7 +68,7 @@ export const StatusBar = React.memo(function StatusBar({
 
   // Set color for a specific line
   const setLineColor = useCallback((lineIndex: number, color: string) => {
-    setLineColors(prev => {
+    setLineColors((prev) => {
       const newMap = new Map(prev);
       newMap.set(lineIndex, color);
       return newMap;
@@ -64,7 +77,7 @@ export const StatusBar = React.memo(function StatusBar({
 
   // Batch set colors for multiple lines at once
   const setLineColorsBatch = useCallback((colors: Map<number, string>) => {
-    setLineColors(prev => {
+    setLineColors((prev) => {
       const newMap = new Map(prev);
       for (const [index, color] of colors) {
         newMap.set(index, color);
@@ -89,7 +102,7 @@ export const StatusBar = React.memo(function StatusBar({
   const [remeasureKey, setRemeasureKey] = useState(0);
   const requestRemeasure = useCallback(() => {
     setLineCount(0); // Reset to force re-render with new measurement
-    setRemeasureKey(k => k + 1);
+    setRemeasureKey((k) => k + 1);
     setLineColors(new Map());
   }, []);
 
@@ -107,54 +120,80 @@ export const StatusBar = React.memo(function StatusBar({
     }
   }, [remeasureKey, children]);
 
-  const contextValue = useMemo(() => ({
-    setLineColor,
-    setLineColors: setLineColorsBatch,
-    getNextLineIndex,
-    requestRemeasure,
-    setStatus,
-    status,
-  }), [setLineColor, setLineColorsBatch, getNextLineIndex, requestRemeasure, setStatus, status]);
+  const contextValue = useMemo(
+    () => ({
+      setLineColor,
+      setLineColors: setLineColorsBatch,
+      getNextLineIndex,
+      requestRemeasure,
+      setStatus,
+      status,
+    }),
+    [
+      setLineColor,
+      setLineColorsBatch,
+      getNextLineIndex,
+      requestRemeasure,
+      setStatus,
+      status,
+    ]
+  );
 
   // Determine if status should show a dot on first line (not for 'active', 'thinking', or 'paused')
-  const showDot = status && status !== 'active' && status !== 'thinking' && status !== 'paused';
+  const showDot =
+    status &&
+    status !== 'active' &&
+    status !== 'thinking' &&
+    status !== 'paused';
   const showSpinner = status === 'thinking';
   const showArrowDown = status === 'paused';
 
   // Render the status bar column elements
   const barElements = useMemo(() => {
     if (lineCount === 0) return null;
-    
+
     const elements = [];
     for (let i = 0; i < lineCount; i++) {
       // First line gets spinner for thinking, arrow for paused, icon for other statuses
       if (i === 0 && showSpinner) {
-        const spinnerColor = barColorProp ? getTerminalChalkColor(barColorProp) : getStatusColor('thinking', getColor);
+        const spinnerColor = barColorProp
+          ? getTerminalChalkColor(barColorProp)
+          : getStatusColor('thinking', getColor);
         elements.push(
           <Box key={i}>
             <Spinner color={spinnerColor} />
-          </Box>,
+          </Box>
         );
       } else if (i === 0 && showArrowDown) {
         elements.push(
           <Box key={i}>
-            <Icon type={IconType.ARROW_DOWN} color={getStatusColor('paused', getColor)} />
-          </Box>,
+            <Icon
+              type={IconType.ARROW_DOWN}
+              color={getStatusColor('paused', getColor)}
+            />
+          </Box>
         );
       } else if (i === 0 && showDot) {
         elements.push(
           <Box key={i}>
-            <Icon type={IconType.DOT} color={getStatusColor(status!, getColor)} />
-          </Box>,
+            <Icon
+              type={IconType.DOT}
+              color={getStatusColor(status!, getColor)}
+            />
+          </Box>
         );
       } else if (active && status !== 'paused') {
         // Use line-specific override color, or barColor prop, or status color, or default
         // Don't show bar for paused status (only show the arrow icon)
-        const color = lineColors.get(i) || (status && status !== 'active' ? getStatusColor(status, getColor).hex : defaultBarColor);
+        const color =
+          lineColors.get(i) ||
+          (status && status !== 'active'
+            ? getStatusColor(status, getColor).hex
+            : defaultBarColor);
         elements.push(
           <Text key={i} backgroundColor={color}>
             {' '}
-          </Text>,
+          </Text>
         );
       } else {
         // Empty space for inactive cards or paused status
@@ -162,7 +201,17 @@ export const StatusBar = React.memo(function StatusBar({
       }
     }
     return elements;
-  }, [lineCount, status, showDot, showSpinner, showArrowDown, active, lineColors, defaultBarColor, getColor]);
+  }, [
+    lineCount,
+    status,
+    showDot,
+    showSpinner,
+    showArrowDown,
+    active,
+    lineColors,
+    defaultBarColor,
+    getColor,
+  ]);
 
   return (
     <StatusBarContext.Provider value={contextValue}>
@@ -171,7 +220,12 @@ export const StatusBar = React.memo(function StatusBar({
         <Box flexDirection="column" width={1}>
           {barElements}
         </Box>
-        <Box flexDirection="column" flexGrow={1} marginLeft={1} ref={contentRef}>
+        <Box
+          flexDirection="column"
+          flexGrow={1}
+          marginLeft={1}
+          ref={contentRef}
+        >
           {children}
         </Box>
       </Box>

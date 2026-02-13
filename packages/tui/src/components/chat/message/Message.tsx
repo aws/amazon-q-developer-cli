@@ -23,7 +23,12 @@ export interface MessageProps {
   barColor?: string;
 }
 
-export const Message = React.memo(function Message({ content, type, status, barColor }: MessageProps) {
+export const Message = React.memo(function Message({
+  content,
+  type,
+  status,
+  barColor,
+}: MessageProps) {
   const { getColor } = useTheme();
   const highlightCode = useSyntaxHighlight();
 
@@ -47,8 +52,9 @@ export const Message = React.memo(function Message({ content, type, status, barC
       getColor('primary').hex || '#ffffff'
     );
 
-    const backgroundColor = type === MessageType.DEVELOPER ? getColor('muted').hex : undefined;
-    
+    const backgroundColor =
+      type === MessageType.DEVELOPER ? getColor('muted').hex : undefined;
+
     if (type === MessageType.AGENT) {
       const segments = parseMarkdown(content);
 
@@ -86,8 +92,14 @@ export const Message = React.memo(function Message({ content, type, status, barC
           {blocks.map((block, i) => {
             if (block.type === 'code') {
               // Remove leading and trailing newlines from code to prevent extra spacing
-              const code = block.segment.codeBlock!.code.replace(/^\n+|\n+$/g, '');
-              const highlightedCode = highlightCode(code, block.segment.codeBlock!.language);
+              const code = block.segment.codeBlock!.code.replace(
+                /^\n+|\n+$/g,
+                ''
+              );
+              const highlightedCode = highlightCode(
+                code,
+                block.segment.codeBlock!.language
+              );
               return <Text key={i}>{highlightedCode}</Text>;
             } else {
               // Render text segments with formatting preserved

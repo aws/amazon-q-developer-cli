@@ -26,7 +26,10 @@ export class CommandHistory {
     try {
       if (existsSync(HISTORY_FILE)) {
         const content = readFileSync(HISTORY_FILE, 'utf-8');
-        return content.split('\n').filter(line => line.trim()).slice(-MAX_HISTORY_SIZE);
+        return content
+          .split('\n')
+          .filter((line) => line.trim())
+          .slice(-MAX_HISTORY_SIZE);
       }
     } catch (err) {
       logger.warn('Failed to load history:', err);
@@ -50,7 +53,7 @@ export class CommandHistory {
   add(command: string): void {
     const trimmed = command.trim();
     if (!trimmed) return;
-    
+
     this.history = [...this.history, trimmed].slice(-MAX_HISTORY_SIZE);
     this.currentIndex = -1;
     this.save();
@@ -60,9 +63,10 @@ export class CommandHistory {
     if (this.history.length === 0) return null;
 
     if (direction === 'up') {
-      this.currentIndex = this.currentIndex === -1 
-        ? this.history.length - 1 
-        : Math.max(0, this.currentIndex - 1);
+      this.currentIndex =
+        this.currentIndex === -1
+          ? this.history.length - 1
+          : Math.max(0, this.currentIndex - 1);
       return this.history[this.currentIndex] ?? null;
     } else {
       if (this.currentIndex === -1) return null;
