@@ -33,6 +33,7 @@ export const WEB_FETCH_TOOL_NAMES: Set<string> = new Set(['web_fetch', 'Fetching
 export const GREP_TOOL_NAMES: Set<string> = new Set(['grep', 'grep_search']);
 export const GLOB_TOOL_NAMES: Set<string> = new Set(['glob', 'file_search']);
 export const LS_TOOL_NAMES: Set<string> = new Set([ToolNameAlias.Ls]);
+export const CODE_TOOL_NAMES: Set<string> = new Set(['code']);
 
 export type ToolKind = 'edit' | 'read' | 'shell' | 'grep' | 'glob' | string;
 
