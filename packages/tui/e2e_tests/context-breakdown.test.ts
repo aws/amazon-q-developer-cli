@@ -42,7 +42,7 @@ describe('Context Breakdown', () => {
     await testCase.waitForText('context left', 10000);
     
     // Verify breakdown categories are shown
-    await testCase.waitForText('Context files', 5000);
+    await testCase.waitForText('Agent files', 5000);
     await testCase.waitForText('Tools', 2000);
     await testCase.waitForText('Kiro responses', 2000);
     await testCase.waitForText('Your prompts', 2000);
