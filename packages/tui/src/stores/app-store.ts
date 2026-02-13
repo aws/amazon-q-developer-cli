@@ -258,6 +258,9 @@ export interface AppState {
   // Abort controller for current stream
   currentAbortController: AbortController | null;
 
+  // Non-interactive mode
+  noInteractive: boolean;
+
   // Streaming buffer control (typed properly instead of `any`)
   streamingBuffer: {
     startBuffering: (() => void) | null;
@@ -270,10 +273,14 @@ export interface AppState {
 
 interface AppStoreProps {
   kiro: Kiro;
+  noInteractive?: boolean;
+  initialInput?: string;
 }
 
 interface AppStoreProps {
   kiro: Kiro;
+  noInteractive?: boolean;
+  initialInput?: string;
 }
 
 export const useAppStore = <T>(
@@ -326,6 +333,8 @@ export const createAppStore = (props: AppStoreProps) =>
     pendingFileAttachment: null,
     currentAbortController: null,
     streamingBuffer: { startBuffering: null, stopBuffering: null },
+
+    noInteractive: props.noInteractive ?? false,
 
     theme: getInitialTheme(),
 

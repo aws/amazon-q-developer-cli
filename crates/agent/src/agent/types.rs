@@ -147,6 +147,18 @@ impl AsRef<str> for ConversationSummary {
     }
 }
 
+/// Arguments forwarded from the TUI to the ACP backend process.
+#[typeshare]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AcpSpawnArgs {
+    /// Name of the agent to use when starting the first session.
+    pub agent: Option<String>,
+    /// Auto-approve all tool permission requests.
+    #[serde(default)]
+    pub trust_all_tools: bool,
+}
+
 /// Settings to modify the runtime behavior of the agent.
 #[typeshare]
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -156,6 +168,9 @@ pub struct AgentSettings {
     /// Disable automatic compaction when context window overflows.
     #[serde(default)]
     pub disable_auto_compact: bool,
+    /// When true, all tool permission checks are bypassed (auto-approve everything).
+    #[serde(default)]
+    pub trust_all_tools: bool,
 }
 
 impl AgentSettings {
@@ -167,6 +182,7 @@ impl Default for AgentSettings {
         Self {
             mcp_init_timeout: Self::DEFAULT_MCP_INIT_TIMEOUT,
             disable_auto_compact: false,
+            trust_all_tools: false,
         }
     }
 }
@@ -177,6 +193,7 @@ impl Default for AgentSettings {
 pub struct ConversationState {
     pub id: Uuid,
     #[serde(default)]
+    #[typeshare(skip)]
     event_log: EventLog,
     #[serde(skip)]
     messages_cache: Option<Vec<Message>>,

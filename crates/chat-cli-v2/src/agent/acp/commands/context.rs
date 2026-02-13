@@ -22,8 +22,7 @@ pub async fn execute(args: &ContextArgs, ctx: &CommandContext<'_>) -> CommandRes
     let context_window = ctx
         .rts_state
         .model_info()
-        .map(|m| m.context_window_tokens)
-        .unwrap_or(DEFAULT_CONTEXT_WINDOW_TOKENS);
+        .map_or(DEFAULT_CONTEXT_WINDOW_TOKENS, |m| m.context_window_tokens);
 
     let snapshot = match ctx.agent.create_snapshot().await {
         Ok(s) => s,

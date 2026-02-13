@@ -220,6 +220,7 @@ impl<'a> Subagent<'a> {
                 // one day
                 mcp_init_timeout: std::time::Duration::from_secs(86400),
                 disable_auto_compact: Default::default(),
+                trust_all_tools: false,
             },
             ..Default::default()
         };

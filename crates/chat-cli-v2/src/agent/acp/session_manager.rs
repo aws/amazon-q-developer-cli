@@ -73,6 +73,7 @@ pub struct SessionManagerBuilder {
     os: Option<Os>,
     local_mcp_path: Option<PathBuf>,
     global_mcp_path: Option<PathBuf>,
+    trust_all_tools: bool,
 }
 
 impl SessionManagerBuilder {
@@ -91,12 +92,18 @@ impl SessionManagerBuilder {
         self
     }
 
+    pub fn trust_all_tools(mut self, trust: bool) -> Self {
+        self.trust_all_tools = trust;
+        self
+    }
+
     pub fn spawn(self) -> SessionManagerHandle {
         let (tx, mut session_rx) = mpsc::channel::<SessionManagerRequest>(25);
         let Self {
             os,
             local_mcp_path,
             global_mcp_path,
+            trust_all_tools,
         } = self;
         let os = os.expect("Os not found");
 
@@ -126,6 +133,7 @@ impl SessionManagerBuilder {
                 global_mcp_path,
                 session_manager_handle_clone,
                 mock_registry,
+                trust_all_tools,
             );
 
             loop {
@@ -169,6 +177,8 @@ pub struct SessionManager {
     next_agent_name: Option<String>,
     /// Shared code intelligence client - lazily initialized, shared across all sessions
     code_intelligence: Option<Arc<RwLock<CodeIntelligence>>>,
+    /// When true, all tool permission checks are bypassed for new sessions
+    trust_all_tools: bool,
 }
 
 impl SessionManager {
@@ -183,6 +193,7 @@ impl SessionManager {
         global_mcp_path: Option<PathBuf>,
         session_manager_handle: SessionManagerHandle,
         mock_registry: Option<MockResponseRegistryHandle>,
+        trust_all_tools: bool,
     ) -> Self {
         Self {
             sessions: HashMap::new(),
@@ -194,6 +205,7 @@ impl SessionManager {
             mock_registry,
             next_agent_name: None,
             code_intelligence: None,
+            trust_all_tools,
         }
     }
 
@@ -250,7 +262,7 @@ impl SessionManager {
                 connection_cx,
                 resp_sender,
             } => {
-                // Resolve agent name: explicit > setting > default
+                // Resolve agent name: explicit config > CLI --agent flag > setting > default
                 let agent_name = config
                     .initial_agent_name
                     .clone()
@@ -310,7 +322,8 @@ impl SessionManager {
                     .user_embedded_msg(config.user_embedded_msg.as_deref())
                     .session_tx(self.session_manager_handle.clone())
                     .set_as_subagent(config.is_subagent)
-                    .code_intelligence(code_intel);
+                    .code_intelligence(code_intel)
+                    .trust_all_tools(self.trust_all_tools);
 
                 // Pass client connection to session (required)
                 if let Some(cx) = connection_cx {

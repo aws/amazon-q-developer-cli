@@ -44,7 +44,8 @@ export const InlineLayout: React.FC = () => {
   const { transientAlert, loadingMessage, agentError, agentErrorGuidance } =
     useNotificationState();
   const { dismissTransientAlert, setAgentError } = useNotificationActions();
-  const { isProcessing, isCompacting, pendingApproval } = useProcessingState();
+  const { isProcessing, isCompacting, pendingApproval, noInteractive } =
+    useProcessingState();
   const { respondToApproval, cancelApproval } = useApprovalState();
   const {
     toolOutputsExpanded,
@@ -299,7 +300,7 @@ export const InlineLayout: React.FC = () => {
             pendingApproval ? 'type permission (y/n/t) ↵' : undefined
           }
           hint={activeCommand?.command.meta?.hint as string | undefined}
-          hideInput={toolOutputsExpanded}
+          hideInput={toolOutputsExpanded || noInteractive}
         >
           <CommandMenu />
           {showContextBreakdown && (

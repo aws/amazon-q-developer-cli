@@ -7,7 +7,9 @@ const TUI_ROOT = resolve(import.meta.dir, "..");
 const CARGO_BIN = resolve(REPO_ROOT, "target/release/chat_cli_v2");
 const TUI_BUNDLE = resolve(TUI_ROOT, "dist/tui.js");
 
+const devFlags = new Set(["--skip-rust-build"]);
 const skipRustBuild = process.argv.includes("--skip-rust-build");
+const tuiArgs = process.argv.slice(2).filter((arg) => !devFlags.has(arg));
 
 function buildTUI() {
   console.log("Building TUI...");
@@ -29,7 +31,7 @@ function buildTUI() {
 
     console.log("Starting TUI in production mode...");
 
-    const bunProcess = spawn("bun", [TUI_BUNDLE], {
+    const bunProcess = spawn("bun", [TUI_BUNDLE, ...tuiArgs], {
       stdio: "inherit",
       cwd: TUI_ROOT,
       env: {

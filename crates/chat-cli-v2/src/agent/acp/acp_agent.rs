@@ -379,6 +379,8 @@ pub struct AcpSessionConfig {
     pub model_id: Option<String>,
     /// MCP servers provided by the ACP client
     pub mcp_servers: Vec<sacp::schema::McpServer>,
+    /// When true, all tool permission checks are bypassed
+    pub trust_all_tools: bool,
 }
 
 impl AcpSessionConfig {
@@ -392,6 +394,7 @@ impl AcpSessionConfig {
             is_subagent: false,
             model_id: None,
             mcp_servers: Vec::new(),
+            trust_all_tools: false,
         }
     }
 
@@ -442,6 +445,7 @@ pub struct AcpSessionBuilder<'a> {
     available_agents: Vec<super::session_manager::AgentInfo>,
     agent_configs: Vec<LoadedAgentConfig>,
     current_agent_name: Option<String>,
+    trust_all_tools: bool,
 }
 
 impl<'a> AcpSessionBuilder<'a> {
@@ -527,6 +531,11 @@ impl<'a> AcpSessionBuilder<'a> {
 
     pub fn current_agent_name(mut self, name: String) -> Self {
         self.current_agent_name = Some(name);
+        self
+    }
+
+    pub fn trust_all_tools(mut self, trust: bool) -> Self {
+        self.trust_all_tools = trust;
         self
     }
 
@@ -662,6 +671,12 @@ impl AcpSession {
         } else {
             let client = os.client.clone();
             (client.clone(), Arc::new(RtsModel::new(client, Arc::clone(&rts_state))))
+        };
+
+        let snapshot = {
+            let mut s = snapshot;
+            s.settings.trust_all_tools = builder.trust_all_tools;
+            s
         };
 
         let mut agent = Agent::new(
@@ -1517,7 +1532,7 @@ async fn update_model_info(os: &Os, rts_state: &RtsState, model: Option<&str>) -
 }
 
 /// Entry point for SACP agent
-pub async fn execute(os: &mut Os, initial_agent_name: Option<String>) -> eyre::Result<ExitCode> {
+pub async fn execute(os: &mut Os, args: agent::types::AcpSpawnArgs) -> eyre::Result<ExitCode> {
     use super::extensions::TerminateSessionNotification;
 
     let resolver = PathResolver::new(os);
@@ -1528,9 +1543,10 @@ pub async fn execute(os: &mut Os, initial_agent_name: Option<String>) -> eyre::R
         .os(os.clone())
         .local_mcp_path(local_mcp_path)
         .global_mcp_path(global_mcp_path)
+        .trust_all_tools(args.trust_all_tools)
         .spawn();
 
-    if let Some(n) = initial_agent_name {
+    if let Some(n) = args.agent {
         let _ = session_manager_handle.set_next_agent_name(n).await;
     }
 

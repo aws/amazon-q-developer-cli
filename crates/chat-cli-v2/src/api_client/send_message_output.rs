@@ -31,7 +31,9 @@ static RECORD_FILE: OnceLock<Option<Mutex<std::fs::File>>> = OnceLock::new();
 #[serde(tag = "kind", content = "data", rename_all = "camelCase")]
 pub enum MockStreamItem {
     Event(ChatResponseStream),
+    #[typeshare(skip)]
     StreamError(ConverseStreamError),
+    #[typeshare(skip)]
     SendError(ConverseStreamError),
 }
 

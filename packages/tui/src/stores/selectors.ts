@@ -68,6 +68,7 @@ export const useProcessingState = () =>
       isCompacting: state.isCompacting,
       pendingApproval: state.pendingApproval,
       cancelMessage: state.cancelMessage,
+      noInteractive: state.noInteractive,
     }))
   );
 

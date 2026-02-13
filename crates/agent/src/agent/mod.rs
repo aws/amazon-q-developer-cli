@@ -1995,6 +1995,9 @@ impl Agent {
     }
 
     async fn evaluate_tool_permission(&mut self, tool: &Tool) -> Result<PermissionEvalResult, AgentError> {
+        if self.settings.trust_all_tools {
+            return Ok(PermissionEvalResult::Allow);
+        }
         match evaluate_tool_permission(
             &self.permissions,
             self.agent_config.allowed_tools(),

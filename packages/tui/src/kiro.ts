@@ -54,7 +54,10 @@ export class Kiro {
     this.compactionHandler = handler;
   }
 
-  async initialize(agentPath: string): Promise<void> {
+  async initialize(
+    agentPath: string,
+    extraAcpArgs: string[] = []
+  ): Promise<void> {
     logger.debug('Kiro initializing with agent:', agentPath);
 
     if (process.env.KIRO_MOCK_ACP === 'true') {
@@ -64,7 +67,7 @@ export class Kiro {
       this.sessionClient = mockClient;
       setMockSessionClient(mockClient);
     } else {
-      this.sessionClient = new AcpClient(agentPath);
+      this.sessionClient = new AcpClient(agentPath, extraAcpArgs);
     }
 
     // Register handler for commands update before initialize

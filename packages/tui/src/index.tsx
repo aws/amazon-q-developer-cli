@@ -13,6 +13,7 @@ import {
 import { logger } from './utils/logger';
 import { Kiro } from './kiro';
 import { TestModeProvider } from './test-utils/TestModeProvider';
+import { parseCliArgs, buildAcpArgs } from './utils/cli-args';
 
 // Enable bracketed paste mode escape sequences
 const ENABLE_BRACKETED_PASTE = '\x1b[?2004h';
@@ -45,8 +46,14 @@ process.on('SIGHUP', () => {
 
 // Pre-create kiro and store outside of React to start initialization immediately
 const agentPath = getAgentPath();
+const cliArgs = parseCliArgs();
+const acpArgs = buildAcpArgs(cliArgs);
 const kiro = new Kiro();
-const appStore = createAppStore({ kiro });
+const appStore = createAppStore({
+  kiro,
+  noInteractive: cliArgs.noInteractive,
+  initialInput: cliArgs.input,
+});
 
 // Start initialization immediately (non-blocking)
 let initPromise: Promise<void> | null = null;
@@ -83,7 +90,7 @@ const startInitialization = () => {
   });
 
   initPromise = kiro
-    .initialize(agentPath)
+    .initialize(agentPath, acpArgs)
     .then(() => {
       appStore.setState({ sessionId: kiro.sessionId ?? null });
       logger.info('Kiro initialized successfully');
@@ -98,6 +105,59 @@ const startInitialization = () => {
 
 // Start initialization immediately
 startInitialization();
+
+// Handle non-interactive mode: bail early if no input provided
+if (cliArgs.noInteractive && !cliArgs.input) {
+  process.stderr.write(
+    'Error: Input must be supplied when running in non-interactive mode\n'
+  );
+  process.exit(1);
+}
+
+// Non-interactive mode: auto-submit input after init, exit after turn, error on approval
+if (cliArgs.noInteractive && cliArgs.input) {
+  const nonInteractiveInput = cliArgs.input;
+  let hasStartedProcessing = false;
+  let isExiting = false;
+
+  // Subscribe to store changes for exit-after-turn and approval-error
+  appStore.subscribe((state) => {
+    if (isExiting) return;
+
+    // Track when processing starts so we know when it ends
+    if (state.isProcessing) {
+      hasStartedProcessing = true;
+    }
+
+    // Error out if tool approval is requested in non-interactive mode
+    if (state.pendingApproval) {
+      isExiting = true;
+      appStore
+        .getState()
+        .setAgentError(
+          'Tool approval required but --no-interactive was specified.',
+          'Use --trust-all-tools to automatically approve tools.'
+        );
+      setTimeout(() => process.exit(1), 200);
+    }
+
+    // Exit after the turn completes
+    if (hasStartedProcessing && !state.isProcessing) {
+      isExiting = true;
+      // Give Ink a moment to flush the final render
+      setTimeout(() => {
+        kiro.close();
+        process.exit(0);
+      }, 100);
+    }
+  });
+
+  // Auto-submit after initialization completes
+  startInitialization().then(() => {
+    if (initError) return; // Error will be shown by the App component
+    appStore.getState().sendMessage(nonInteractiveInput);
+  });
+}
 
 // Clear screen and move cursor to top
 process.stdout.write('\x1b[2J\x1b[H');

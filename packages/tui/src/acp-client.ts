@@ -39,8 +39,8 @@ export class AcpClient implements acp.Client, SessionClient {
   private updateHandlers: Set<(event: AgentStreamEvent) => void> = new Set();
   private agentProcess: ChildProcess;
 
-  constructor(agentPath: string) {
-    this.agentProcess = spawn(agentPath, ['acp'], {
+  constructor(agentPath: string, extraAcpArgs: string[] = []) {
+    this.agentProcess = spawn(agentPath, ['acp', ...extraAcpArgs], {
       stdio: ['pipe', 'pipe', 'inherit'],
       env: process.env,
     });
