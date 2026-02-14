@@ -1,5 +1,6 @@
 import React, { useCallback, useMemo } from 'react';
 import { Box } from 'ink';
+import { AnimationPausedContext } from '../../contexts/AnimationPausedContext.js';
 import { ConversationView } from '../ui/ConversationView';
 import { ExitHint } from '../ui/ExitHint';
 import { CommandMenu } from '../ui/CommandMenu';
@@ -268,74 +269,83 @@ export const InlineLayout: React.FC = () => {
   }, [setAgentError]);
 
   return (
-    <Box flexDirection="column">
-      {agentError && (
-        <BlockingErrorAlert
-          message={agentError}
-          guidance={agentErrorGuidance ?? undefined}
-          onDismiss={handleDismissError}
-        />
-      )}
-
-      <ConversationView />
-
-      <NotificationBar
-        message={
-          !sessionId
-            ? 'Initializing...'
-            : (loadingMessage ?? transientAlert?.message)
-        }
-        status={
-          !sessionId || loadingMessage ? 'loading' : transientAlert?.status
-        }
-        autoHideMs={
-          !sessionId || loadingMessage ? undefined : transientAlert?.autoHideMs
-        }
-        onDismiss={
-          !sessionId || loadingMessage ? undefined : dismissTransientAlert
-        }
-      />
-
-      <Box marginBottom={1}>
-        <PromptBar
-          header={
-            showContextBreakdown || showHelpPanel ? undefined : promptBarHeader
-          }
-          onSubmit={handleSubmit}
-          triggerRules={TRIGGER_RULES}
-          onTriggerDetected={handleTriggerDetected}
-          isProcessing={
-            isProcessing ||
-            isCompacting ||
-            !!pendingApproval ||
-            !!activeCommand ||
-            !!agentError
-          }
-          placeholder={
-            pendingApproval ? 'type permission (y/n/t) ↵' : undefined
-          }
-          hint={activeCommand?.command.meta?.hint as string | undefined}
-          hideInput={toolOutputsExpanded || noInteractive}
-        >
-          <CommandMenu />
-          {showContextBreakdown && (
-            <ContextBreakdown
-              percent={contextUsagePercent}
-              breakdown={contextBreakdown ?? undefined}
-              model={currentModel?.name ?? null}
-              onClose={handleCloseContextBreakdown}
-            />
-          )}
-          {showHelpPanel && (
-            <HelpPanel commands={helpCommands} onClose={handleCloseHelpPanel} />
-          )}
-          <ActionHint
-            text="Showing detailed output · ctrl+o to toggle"
-            visible={toolOutputsExpanded}
+    <AnimationPausedContext.Provider value={!!pendingApproval}>
+      <Box flexDirection="column">
+        {agentError && (
+          <BlockingErrorAlert
+            message={agentError}
+            guidance={agentErrorGuidance ?? undefined}
+            onDismiss={handleDismissError}
           />
-          <ExitHint />
-        </PromptBar>
+        )}
+
+        <ConversationView />
+
+        <NotificationBar
+          message={
+            !sessionId
+              ? 'Initializing...'
+              : (loadingMessage ?? transientAlert?.message)
+          }
+          status={
+            !sessionId || loadingMessage ? 'loading' : transientAlert?.status
+          }
+          autoHideMs={
+            !sessionId || loadingMessage
+              ? undefined
+              : transientAlert?.autoHideMs
+          }
+          onDismiss={
+            !sessionId || loadingMessage ? undefined : dismissTransientAlert
+          }
+        />
+
+        <Box marginBottom={1}>
+          <PromptBar
+            header={
+              showContextBreakdown || showHelpPanel
+                ? undefined
+                : promptBarHeader
+            }
+            onSubmit={handleSubmit}
+            triggerRules={TRIGGER_RULES}
+            onTriggerDetected={handleTriggerDetected}
+            isProcessing={
+              isProcessing ||
+              isCompacting ||
+              !!pendingApproval ||
+              !!activeCommand ||
+              !!agentError
+            }
+            placeholder={
+              pendingApproval ? 'type permission (y/n/t) ↵' : undefined
+            }
+            hint={activeCommand?.command.meta?.hint as string | undefined}
+            hideInput={toolOutputsExpanded || noInteractive}
+          >
+            <CommandMenu />
+            {showContextBreakdown && (
+              <ContextBreakdown
+                percent={contextUsagePercent}
+                breakdown={contextBreakdown ?? undefined}
+                model={currentModel?.name ?? null}
+                onClose={handleCloseContextBreakdown}
+              />
+            )}
+            {showHelpPanel && (
+              <HelpPanel
+                commands={helpCommands}
+                onClose={handleCloseHelpPanel}
+              />
+            )}
+            <ActionHint
+              text="Showing detailed output · ctrl+o to toggle"
+              visible={toolOutputsExpanded}
+            />
+            <ExitHint />
+          </PromptBar>
+        </Box>
       </Box>
-    </Box>
+    </AnimationPausedContext.Provider>
   );
 };

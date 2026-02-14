@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { Text } from 'ink';
+import { useAnimationPaused } from '../../../contexts/AnimationPausedContext.js';
 
 export interface ShimmerTextProps {
   text: string;
@@ -11,13 +12,15 @@ export const ShimmerText = React.memo(function ShimmerText({
   color,
 }: ShimmerTextProps) {
   const [pos, setPos] = useState(0);
+  const paused = useAnimationPaused();
 
   useEffect(() => {
+    if (paused) return;
     const interval = setInterval(() => {
       setPos((p) => (p + 1) % (text.length + 5));
     }, 80);
     return () => clearInterval(interval);
-  }, [text.length]);
+  }, [text.length, paused]);
 
   return (
     <Text>
