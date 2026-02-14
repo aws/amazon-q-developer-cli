@@ -667,7 +667,7 @@ impl Knowledge {
         {
             PermissionEvalResult::Allow
         } else {
-            PermissionEvalResult::Ask
+            PermissionEvalResult::ask()
         }
     }
 

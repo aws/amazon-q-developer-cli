@@ -37,7 +37,7 @@ pub fn evaluate_shell_permission(command: &str, settings: &ShellPermissionSettin
     // Layer 1: Parse
     let parse_result = parse_command(command);
     if parse_result.parse_failed {
-        return PermissionEvalResult::Ask;
+        return PermissionEvalResult::ask();
     }
 
     // Layer 2: Detect
@@ -48,7 +48,7 @@ pub fn evaluate_shell_permission(command: &str, settings: &ShellPermissionSettin
 
     // Guard against tree-sitter misparses
     match result {
-        PermissionEvalResult::Allow if has_parser_blind_spots(command) => PermissionEvalResult::Ask,
+        PermissionEvalResult::Allow if has_parser_blind_spots(command) => PermissionEvalResult::ask(),
         other => other,
     }
 }
@@ -92,7 +92,7 @@ mod tests {
                 let result = evaluate_shell_permission(&tc.input, &group.settings);
                 let result_str = match &result {
                     PermissionEvalResult::Allow => "Allow",
-                    PermissionEvalResult::Ask => "Ask",
+                    PermissionEvalResult::Ask { .. } => "Ask",
                     PermissionEvalResult::Deny { .. } => "Deny",
                 };
 
@@ -123,7 +123,7 @@ mod tests {
             ..Default::default()
         };
         let result = evaluate_shell_permission("ls -la", &settings);
-        assert_eq!(result, PermissionEvalResult::Ask);
+        assert!(matches!(result, PermissionEvalResult::Ask { .. }));
     }
 
     #[test]
@@ -140,7 +140,7 @@ mod tests {
     fn test_dangerous_command_asks() {
         let settings = ShellPermissionSettings::default();
         let result = evaluate_shell_permission("find . -exec rm {} \\;", &settings);
-        assert_eq!(result, PermissionEvalResult::Ask);
+        assert!(matches!(result, PermissionEvalResult::Ask { .. }));
     }
 
     #[test]

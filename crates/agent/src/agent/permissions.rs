@@ -315,12 +315,12 @@ pub fn evaluate_tool_permission<P: SystemProvider>(
             BuiltInTool::WebFetch(_) => Ok(if is_allowed {
                 PermissionEvalResult::Allow
             } else {
-                PermissionEvalResult::Ask
+                PermissionEvalResult::ask()
             }),
             BuiltInTool::WebSearch(_) => Ok(if is_allowed {
                 PermissionEvalResult::Allow
             } else {
-                PermissionEvalResult::Ask
+                PermissionEvalResult::ask()
             }),
             BuiltInTool::Code(code) => Ok(if !code.is_write_operation() {
                 // Read operations always allowed
@@ -328,13 +328,13 @@ pub fn evaluate_tool_permission<P: SystemProvider>(
             } else if is_allowed {
                 PermissionEvalResult::Allow
             } else {
-                PermissionEvalResult::Ask
+                PermissionEvalResult::ask()
             }),
         },
         ToolKind::Mcp(_) => Ok(if is_allowed {
             PermissionEvalResult::Allow
         } else {
-            PermissionEvalResult::Ask
+            PermissionEvalResult::ask()
         }),
     }?;
 
@@ -382,7 +382,7 @@ fn evaluate_permission_for_aws_command(
     let deny = create_globset(denied_commands.iter());
 
     let (Ok((_, allow_set)), Ok((deny_items, deny_set))) = (allow, deny) else {
-        return Ok(PermissionEvalResult::Ask);
+        return Ok(PermissionEvalResult::ask());
     };
 
     let denied_matches = deny_set.matches(command);
@@ -409,7 +409,7 @@ fn evaluate_permission_for_aws_command(
     Ok(if is_allowed {
         PermissionEvalResult::Allow
     } else {
-        PermissionEvalResult::Ask
+        PermissionEvalResult::ask()
     })
 }
 
@@ -445,7 +445,7 @@ where
         }
     }
     Ok(if ask && !is_allowed {
-        PermissionEvalResult::Ask
+        PermissionEvalResult::ask()
     } else {
         PermissionEvalResult::Allow
     })
@@ -677,7 +677,7 @@ mod tests {
         // Test MCP tool not allowed should ask
         allowed_tools.clear();
         let result = evaluate_tool_permission(&perms, &allowed_tools, &settings, &mcp_tool, &provider);
-        assert!(matches!(result, Ok(PermissionEvalResult::Ask)));
+        assert!(matches!(result, Ok(PermissionEvalResult::Ask { .. })));
     }
 
     #[test]
@@ -804,7 +804,7 @@ mod tests {
 
         // Test normal ask behavior
         let result = evaluate_permission_for_shell_command(&[], &[], "rm file.txt", false, false, false).unwrap();
-        assert!(matches!(result, PermissionEvalResult::Ask));
+        assert!(matches!(result, PermissionEvalResult::Ask { .. }));
     }
 
     #[test]
@@ -956,7 +956,7 @@ mod tests {
 
         // No permissions - should ask
         let result = evaluate_tool_permission(&permissions, &allowed_tools, &settings, &fs_read_tool, &provider);
-        assert!(matches!(result, Ok(PermissionEvalResult::Ask)));
+        assert!(matches!(result, Ok(PermissionEvalResult::Ask { .. })));
 
         // Grant read - should allow read, still ask for write
         permissions.grant_path("~/file.txt", PathAccessType::Read, &provider);
@@ -970,7 +970,7 @@ mod tests {
         let result = evaluate_tool_permission(&permissions, &allowed_tools, &settings, &fs_read_tool, &provider);
         assert!(matches!(result, Ok(PermissionEvalResult::Allow)));
         let result = evaluate_tool_permission(&permissions, &allowed_tools, &settings, &fs_write_tool, &provider);
-        assert!(matches!(result, Ok(PermissionEvalResult::Ask)));
+        assert!(matches!(result, Ok(PermissionEvalResult::Ask { .. })));
 
         // Deny read - should deny (evicts from allowed)
         permissions.deny_path("~/file.txt", PathAccessType::Read, &provider);
@@ -1050,7 +1050,7 @@ mod tests {
             &provider,
         );
         assert!(
-            matches!(result, Ok(PermissionEvalResult::Ask)),
+            matches!(result, Ok(PermissionEvalResult::Ask { .. })),
             "outside CWD: {result:?}"
         );
 
@@ -1063,7 +1063,7 @@ mod tests {
             &provider,
         );
         assert!(
-            matches!(result, Ok(PermissionEvalResult::Ask)),
+            matches!(result, Ok(PermissionEvalResult::Ask { .. })),
             "parent of CWD: {result:?}"
         );
 

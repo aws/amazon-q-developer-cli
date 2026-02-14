@@ -314,7 +314,7 @@ impl Code {
         if is_trusted {
             PermissionEvalResult::Allow
         } else {
-            PermissionEvalResult::Ask
+            PermissionEvalResult::ask()
         }
     }
 

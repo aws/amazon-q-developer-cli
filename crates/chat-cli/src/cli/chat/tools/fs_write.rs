@@ -532,7 +532,7 @@ impl FsWrite {
                     Ok(settings) => settings,
                     Err(e) => {
                         error!("Failed to deserialize tool settings for fs_write: {:?}", e);
-                        return PermissionEvalResult::Ask;
+                        return PermissionEvalResult::ask();
                     },
                 };
                 let allow_set = {
@@ -576,7 +576,7 @@ impl FsWrite {
                             | Self::Append { path, .. }
                             | Self::StrReplace { path, .. } => {
                                 let Ok(canonical_path) = paths::canonicalizes_path(os, path) else {
-                                    return PermissionEvalResult::Ask;
+                                    return PermissionEvalResult::ask();
                                 };
                                 // Check both canonical path and original expanded path to handle symlinks
                                 // e.g., /tmp -> /private/tmp on macOS
@@ -620,7 +620,7 @@ impl FsWrite {
                             FallbackAction::Deny => {
                                 PermissionEvalResult::Deny(vec!["path not in allowed paths list".to_string()])
                             },
-                            FallbackAction::Interactive => PermissionEvalResult::Ask,
+                            FallbackAction::Interactive => PermissionEvalResult::ask(),
                         }
                     },
                     (allow_res, deny_res) => {
@@ -631,12 +631,12 @@ impl FsWrite {
                             warn!("fs_write failed to build deny set: {:?}", e);
                         }
                         warn!("One or more detailed args failed to parse, falling back to ask");
-                        PermissionEvalResult::Ask
+                        PermissionEvalResult::ask()
                     },
                 }
             },
             None if is_in_allowlist => PermissionEvalResult::Allow,
-            _ => PermissionEvalResult::Ask,
+            _ => PermissionEvalResult::ask(),
         }
     }
 }
@@ -1456,7 +1456,7 @@ mod tests {
         .unwrap();
 
         let res = tool_should_ask.eval_perm(&os, &agent);
-        assert!(matches!(res, PermissionEvalResult::Ask));
+        assert!(matches!(res, PermissionEvalResult::Ask { .. }));
 
         // Test path matching denied pattern - should deny
         let tool_should_deny = serde_json::from_value::<FsWrite>(serde_json::json!({

@@ -63,7 +63,7 @@ pub fn decide(
 
     // 4. Dangerous → Ask
     if detection.danger_level != DangerLevel::None {
-        return PermissionEvalResult::Ask;
+        return PermissionEvalResult::ask();
     }
 
     // 5. All readonly → Allow
@@ -79,7 +79,7 @@ pub fn decide(
     }
 
     // 7. Default: ask
-    PermissionEvalResult::Ask
+    PermissionEvalResult::ask()
 }
 
 /// Build rules from patterns with specified action.
@@ -176,7 +176,7 @@ mod tests {
 
             let result_type = match &result {
                 PermissionEvalResult::Allow => "Allow",
-                PermissionEvalResult::Ask => "Ask",
+                PermissionEvalResult::Ask { .. } => "Ask",
                 PermissionEvalResult::Deny { .. } => "Deny",
             };
 

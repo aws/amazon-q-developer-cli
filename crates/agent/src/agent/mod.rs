@@ -1452,7 +1452,7 @@ impl Agent {
             let result = self.evaluate_tool_permission(tool).await?;
             match &result {
                 PermissionEvalResult::Allow => (),
-                PermissionEvalResult::Ask => needs_approval.push(block.tool_use_id.clone()),
+                PermissionEvalResult::Ask { .. } => needs_approval.push(block.tool_use_id.clone()),
                 PermissionEvalResult::Deny { reason } => denied.push((block, tool, reason.clone())),
             }
             self.agent_event_buf
@@ -2008,7 +2008,7 @@ impl Agent {
             Ok(res) => Ok(res),
             Err(err) => {
                 warn!(?err, "failed to evaluate tool permission");
-                Ok(PermissionEvalResult::Ask)
+                Ok(PermissionEvalResult::ask())
             },
         }
     }

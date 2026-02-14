@@ -172,7 +172,7 @@ impl ExecuteCommand {
                 Ok(settings) => settings,
                 Err(e) => {
                     error!("Failed to deserialize tool settings for execute_bash: {:?}", e);
-                    return PermissionEvalResult::Ask;
+                    return PermissionEvalResult::ask();
                 },
             },
             None => Settings {
@@ -193,7 +193,7 @@ impl ExecuteCommand {
 
         match evaluate_shell_permission(command, &shell_settings) {
             agent::protocol::PermissionEvalResult::Allow => PermissionEvalResult::Allow,
-            agent::protocol::PermissionEvalResult::Ask => PermissionEvalResult::Ask,
+            agent::protocol::PermissionEvalResult::Ask { .. } => PermissionEvalResult::ask(),
             agent::protocol::PermissionEvalResult::Deny { reason } => PermissionEvalResult::Deny(vec![reason]),
         }
     }
@@ -253,7 +253,7 @@ mod tests {
             .unwrap();
             let res = tool.eval_perm(&os, agent);
 
-            let requires_acceptance = matches!(res, PermissionEvalResult::Ask | PermissionEvalResult::Deny(_));
+            let requires_acceptance = matches!(res, PermissionEvalResult::Ask { .. } | PermissionEvalResult::Deny(_));
             if requires_acceptance != *expected {
                 failures.push(format!(
                     "Command '{}': expected requires_acceptance={}, got {:?}",
@@ -449,7 +449,7 @@ mod tests {
         .unwrap();
 
         let res = tool_two.eval_perm(&os, &agent);
-        assert!(matches!(res, PermissionEvalResult::Ask));
+        assert!(matches!(res, PermissionEvalResult::Ask { .. }));
 
         let tool_allow_wild_card = serde_json::from_value::<ExecuteCommand>(serde_json::json!({
             "command": "allow_wild_card some_arg",
@@ -463,7 +463,7 @@ mod tests {
         }))
         .unwrap();
         let res = tool_allow_exact_should_ask.eval_perm(&os, &agent);
-        assert!(matches!(res, PermissionEvalResult::Ask));
+        assert!(matches!(res, PermissionEvalResult::Ask { .. }));
 
         let tool_allow_exact_should_allow = serde_json::from_value::<ExecuteCommand>(serde_json::json!({
             "command": "allow_exact",
@@ -497,7 +497,7 @@ mod tests {
         let agent = Agent::default();
         let res = readonly_cmd.eval_perm(&os, &agent);
         // Should ask for confirmation even for read-only commands by default
-        assert!(matches!(res, PermissionEvalResult::Ask));
+        assert!(matches!(res, PermissionEvalResult::Ask { .. }));
 
         // Test non-read-only command with default settings
         let write_cmd = serde_json::from_value::<ExecuteCommand>(serde_json::json!({
@@ -507,7 +507,7 @@ mod tests {
 
         let res = write_cmd.eval_perm(&os, &agent);
         // Should ask for confirmation for write commands
-        assert!(matches!(res, PermissionEvalResult::Ask));
+        assert!(matches!(res, PermissionEvalResult::Ask { .. }));
     }
 
     #[tokio::test]
@@ -548,7 +548,7 @@ mod tests {
 
         let res = write_cmd.eval_perm(&os, &agent);
         // Should still ask for confirmation for write commands
-        assert!(matches!(res, PermissionEvalResult::Ask));
+        assert!(matches!(res, PermissionEvalResult::Ask { .. }));
     }
 
     #[tokio::test]

@@ -334,7 +334,7 @@ impl Glob {
             Ok(s) => s,
             Err(e) => {
                 error!("Failed to deserialize glob settings: {:?}", e);
-                return PermissionEvalResult::Ask;
+                return PermissionEvalResult::ask();
             },
         };
 
@@ -343,13 +343,13 @@ impl Glob {
             Some(p) if !p.is_empty() => p.clone(),
             _ => match os.env.current_dir() {
                 Ok(cwd) => cwd.to_string_lossy().to_string(),
-                Err(_) => return PermissionEvalResult::Ask,
+                Err(_) => return PermissionEvalResult::ask(),
             },
         };
 
         let canonical_search_path = match paths::canonicalizes_path(os, &search_path) {
             Ok(p) => p,
-            Err(_) => return PermissionEvalResult::Ask,
+            Err(_) => return PermissionEvalResult::ask(),
         };
 
         // Build deny set
@@ -398,7 +398,7 @@ impl Glob {
 
         match allow_set {
             Ok(allow_set) if allow_set.is_match(&canonical_search_path) => PermissionEvalResult::Allow,
-            _ => PermissionEvalResult::Ask,
+            _ => PermissionEvalResult::ask(),
         }
     }
 }
@@ -599,7 +599,7 @@ mod tests {
         let default_agent = Agent::default();
         let result = tool_outside_cwd.eval_perm(&os, &default_agent);
         assert!(
-            matches!(result, PermissionEvalResult::Ask),
+            matches!(result, PermissionEvalResult::Ask { .. }),
             "Expected Ask for path outside CWD, got {result:?}",
         );
 

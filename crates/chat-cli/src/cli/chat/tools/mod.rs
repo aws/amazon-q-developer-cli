@@ -159,6 +159,9 @@ pub struct QueuedTool {
     pub accepted: bool,
     pub tool: Tool,
     pub tool_input: serde_json::Value,
+    /// Granular trust options for this tool (populated when permission is Ask)
+    #[allow(dead_code)]
+    pub trust_options: Vec<agent::protocol::TrustOption>,
 }
 
 /// The schema specification describing a tool's fields.

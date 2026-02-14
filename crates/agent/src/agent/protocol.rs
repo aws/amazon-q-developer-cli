@@ -386,18 +386,39 @@ pub struct ApprovalResult {
     pub reason: Option<String>,
 }
 
+/// A trust scope option that a tool can offer when permission is Ask.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct TrustOption {
+    /// Label shown in the selector
+    pub label: String,
+    /// User-friendly display
+    pub display: String,
+    /// The tool setting key to store the pattern in
+    pub setting_key: String,
+    /// The pattern to store for matching
+    pub pattern: String,
+}
+
 /// Result of evaluating tool permissions, indicating whether a tool should be allowed,
 /// require user confirmation, or be denied with specific reasons.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum PermissionEvalResult {
     /// Tool is allowed to execute without user confirmation
     Allow,
-    /// Tool requires user confirmation before execution
-    Ask,
+    /// Tool requires user confirmation before execution.
+    /// Optionally carries granular trust options the user can choose from.
+    Ask { trust_options: Vec<TrustOption> },
     /// Denial with specific reasons explaining why the tool was denied
     ///
     /// Tools are free to overload what these reasons are
     Deny { reason: String },
+}
+
+impl PermissionEvalResult {
+    /// Create an Ask result with no trust options (default behavior).
+    pub fn ask() -> Self {
+        Self::Ask { trust_options: vec![] }
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

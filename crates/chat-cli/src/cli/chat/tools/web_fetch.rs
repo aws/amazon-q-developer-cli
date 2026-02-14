@@ -84,7 +84,7 @@ impl WebFetch {
                 Ok(settings) => settings,
                 Err(e) => {
                     error!("Failed to deserialize tool settings for web_fetch: {:?}", e);
-                    return PermissionEvalResult::Ask;
+                    return PermissionEvalResult::ask();
                 },
             },
             None => ResourceSettings::default(),
@@ -382,7 +382,7 @@ mod tests {
         let os = Os::new().await.unwrap();
 
         let result = tool.eval_perm(&os, &agent);
-        assert!(matches!(result, PermissionEvalResult::Ask));
+        assert!(matches!(result, PermissionEvalResult::Ask { .. }));
     }
 
     #[tokio::test]

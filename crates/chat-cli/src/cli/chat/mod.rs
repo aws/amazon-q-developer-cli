@@ -3104,7 +3104,7 @@ impl ChatSession {
                     .get_active()
                     .is_some_and(|a| match tool.tool.requires_acceptance(os, a) {
                         PermissionEvalResult::Allow => true,
-                        PermissionEvalResult::Ask => false,
+                        PermissionEvalResult::Ask { .. } => false,
                         PermissionEvalResult::Deny(matches) => {
                             denied_match_set.replace(matches);
                             false
@@ -4162,6 +4162,7 @@ impl ChatSession {
                                 tool,
                                 accepted: false,
                                 tool_input,
+                                trust_options: vec![],
                             });
                         },
                         Err(err) => {

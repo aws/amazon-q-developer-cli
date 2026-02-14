@@ -282,7 +282,7 @@ impl CustomTool {
         if is_tool_in_allowlist(&agent.allowed_tools, &self.name, Some(&self.server_name)) {
             PermissionEvalResult::Allow
         } else {
-            PermissionEvalResult::Ask
+            PermissionEvalResult::ask()
         }
     }
 }

@@ -811,11 +811,21 @@ impl Agent {
 pub enum PermissionEvalResult {
     /// Tool is allowed to execute without user confirmation
     Allow,
-    /// Tool requires user confirmation before execution
-    Ask,
+    /// Tool requires user confirmation before execution.
+    /// Optionally carries granular trust options the user can choose from.
+    Ask {
+        trust_options: Vec<agent::protocol::TrustOption>,
+    },
     /// Denial with specific reasons explaining why the tool was denied
     /// Tools are free to overload what these reasons are
     Deny(Vec<String>),
+}
+
+impl PermissionEvalResult {
+    /// Create an Ask result with no trust options (default behavior).
+    pub fn ask() -> Self {
+        Self::Ask { trust_options: vec![] }
+    }
 }
 
 #[derive(Clone, Default, Debug)]

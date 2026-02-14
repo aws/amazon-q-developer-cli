@@ -181,7 +181,7 @@ impl UseSubagent {
                 if is_in_allowlist || tool_setting.is_some() {
                     PermissionEvalResult::Allow
                 } else {
-                    PermissionEvalResult::Ask
+                    PermissionEvalResult::ask()
                 }
             },
             UseSubagent::InvokeSubagents { subagents, .. } => match tool_setting.cloned() {
@@ -193,7 +193,7 @@ impl UseSubagent {
                         Ok(settings) => settings,
                         Err(e) => {
                             error!("Failed to deserialize tool settings for subagent: {:?}", e);
-                            return PermissionEvalResult::Ask;
+                            return PermissionEvalResult::ask();
                         },
                     };
 
@@ -226,14 +226,14 @@ impl UseSubagent {
                     {
                         PermissionEvalResult::Allow
                     } else {
-                        PermissionEvalResult::Ask
+                        PermissionEvalResult::ask()
                     }
                 },
                 None => {
                     if is_in_allowlist {
                         PermissionEvalResult::Allow
                     } else {
-                        PermissionEvalResult::Ask
+                        PermissionEvalResult::ask()
                     }
                 },
             },
@@ -491,7 +491,7 @@ mod tests {
         let tool = UseSubagent::ListAgents;
 
         let result = tool.eval_perm(&os, &agent);
-        assert_eq!(result, PermissionEvalResult::Ask);
+        assert!(matches!(result, PermissionEvalResult::Ask { .. }));
     }
 
     #[tokio::test]
@@ -565,7 +565,7 @@ mod tests {
         };
 
         let result = tool.eval_perm(&os, &agent);
-        assert_eq!(result, PermissionEvalResult::Ask);
+        assert!(matches!(result, PermissionEvalResult::Ask { .. }));
     }
 
     #[tokio::test]
@@ -619,7 +619,7 @@ mod tests {
         };
 
         let result = tool.eval_perm(&os, &agent);
-        assert_eq!(result, PermissionEvalResult::Ask);
+        assert!(matches!(result, PermissionEvalResult::Ask { .. }));
     }
 
     #[tokio::test]
@@ -691,7 +691,7 @@ mod tests {
         };
 
         let result = tool.eval_perm(&os, &agent);
-        assert_eq!(result, PermissionEvalResult::Ask);
+        assert!(matches!(result, PermissionEvalResult::Ask { .. }));
     }
 
     #[tokio::test]
@@ -742,7 +742,7 @@ mod tests {
 
         let result = tool.eval_perm(&os, &agent);
         // Should fall back to Ask when settings are invalid
-        assert_eq!(result, PermissionEvalResult::Ask);
+        assert!(matches!(result, PermissionEvalResult::Ask { .. }));
     }
 
     #[tokio::test]
@@ -769,7 +769,7 @@ mod tests {
         };
 
         let result = tool.eval_perm(&os, &agent);
-        assert_eq!(result, PermissionEvalResult::Ask);
+        assert!(matches!(result, PermissionEvalResult::Ask { .. }));
     }
 
     #[tokio::test]
@@ -789,7 +789,7 @@ mod tests {
         };
 
         let result = tool.eval_perm(&os, &agent);
-        assert_eq!(result, PermissionEvalResult::Ask);
+        assert!(matches!(result, PermissionEvalResult::Ask { .. }));
     }
 
     #[tokio::test]
@@ -844,7 +844,7 @@ mod tests {
             convo_id: None,
             tool_use_id: None,
         };
-        assert_eq!(tool3.eval_perm(&os, &agent), PermissionEvalResult::Ask);
+        assert_eq!(tool3.eval_perm(&os, &agent), PermissionEvalResult::ask());
     }
 
     #[tokio::test]
@@ -984,6 +984,6 @@ mod tests {
 
         let result = tool.eval_perm(&os, &agent);
         // Visible but not allowed → Ask
-        assert_eq!(result, PermissionEvalResult::Ask);
+        assert!(matches!(result, PermissionEvalResult::Ask { .. }));
     }
 }

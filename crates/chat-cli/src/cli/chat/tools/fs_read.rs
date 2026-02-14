@@ -145,7 +145,7 @@ impl FsRead {
                 Ok(settings) => settings,
                 Err(e) => {
                     error!("Failed to deserialize tool settings for fs_read: {:?}", e);
-                    return PermissionEvalResult::Ask;
+                    return PermissionEvalResult::ask();
                 },
             };
 
@@ -263,7 +263,7 @@ impl FsRead {
                             })
                         })
                     } else if ask {
-                        PermissionEvalResult::Ask
+                        PermissionEvalResult::ask()
                     } else {
                         PermissionEvalResult::Allow
                     }
@@ -276,7 +276,7 @@ impl FsRead {
                         warn!("fs_read failed to build deny set: {:?}", e);
                     }
                     warn!("One or more detailed args failed to parse, falling back to ask");
-                    PermissionEvalResult::Ask
+                    PermissionEvalResult::ask()
                 },
             }
         }
@@ -1729,7 +1729,7 @@ mod tests {
         }))
         .unwrap();
         let res = outside_tool.eval_perm(&os, &agent);
-        assert!(matches!(res, PermissionEvalResult::Ask));
+        assert!(matches!(res, PermissionEvalResult::Ask { .. }));
     }
 
     #[tokio::test]
@@ -1762,7 +1762,7 @@ mod tests {
         }))
         .unwrap();
         let res = outside_tool.eval_perm(&os, &agent);
-        assert!(matches!(res, PermissionEvalResult::Ask));
+        assert!(matches!(res, PermissionEvalResult::Ask { .. }));
     }
 
     #[tokio::test]
@@ -1788,7 +1788,7 @@ mod tests {
         }))
         .unwrap();
         let res = mixed_paths.eval_perm(&os, &agent);
-        assert!(matches!(res, PermissionEvalResult::Ask));
+        assert!(matches!(res, PermissionEvalResult::Ask { .. }));
 
         // Test: All allowed paths should ALLOW
         let all_allowed = serde_json::from_value::<FsRead>(serde_json::json!({

@@ -157,6 +157,6 @@ pub fn eval_permission(
     if is_tool_allowed {
         PermissionEvalResult::Allow
     } else {
-        PermissionEvalResult::Ask
+        PermissionEvalResult::ask()
     }
 }

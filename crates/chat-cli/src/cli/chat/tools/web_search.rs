@@ -55,7 +55,7 @@ impl WebSearch {
         if is_in_allowlist {
             PermissionEvalResult::Allow
         } else {
-            PermissionEvalResult::Ask
+            PermissionEvalResult::ask()
         }
     }
 

@@ -287,7 +287,7 @@ impl UseAws {
                     Ok(settings) => settings,
                     Err(e) => {
                         error!("Failed to deserialize tool settings for use_aws: {:?}", e);
-                        return PermissionEvalResult::Ask;
+                        return PermissionEvalResult::ask();
                     },
                 };
                 if settings.denied_services.contains(service_name) {
@@ -300,11 +300,11 @@ impl UseAws {
                 if settings.auto_allow_readonly && !self.requires_acceptance() {
                     return PermissionEvalResult::Allow;
                 }
-                PermissionEvalResult::Ask
+                PermissionEvalResult::ask()
             },
             None if is_in_allowlist => PermissionEvalResult::Allow,
             None if !self.requires_acceptance() => PermissionEvalResult::Allow,
-            _ => PermissionEvalResult::Ask,
+            _ => PermissionEvalResult::ask(),
         }
     }
 }
@@ -506,7 +506,7 @@ mod tests {
         }};
 
         let res = cmd_two.eval_perm(&os, &agent);
-        assert!(matches!(res, PermissionEvalResult::Ask));
+        assert!(matches!(res, PermissionEvalResult::Ask { .. }));
 
         agent.allowed_tools.insert("use_aws".to_string());
 
@@ -551,7 +551,7 @@ mod tests {
         let res = write_cmd.eval_perm(&os, &agent);
         // Should still ask for write operations
         assert!(
-            matches!(res, PermissionEvalResult::Ask),
+            matches!(res, PermissionEvalResult::Ask { .. }),
             "Write operations should still require confirmation"
         );
     }
@@ -599,7 +599,7 @@ mod tests {
 
         let res = write_cmd.eval_perm(&os, &agent);
         // Should still ask for confirmation for write operations
-        assert!(matches!(res, PermissionEvalResult::Ask));
+        assert!(matches!(res, PermissionEvalResult::Ask { .. }));
     }
 
     #[tokio::test]
