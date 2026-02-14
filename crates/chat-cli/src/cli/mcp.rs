@@ -167,7 +167,7 @@ pub struct AddArgs {
 impl AddArgs {
     pub async fn execute(self, os: &Os, output: &mut impl Write) -> Result<()> {
         // For non-enterprise users, skip registry check and allow custom servers
-        let is_enterprise = crate::auth::builder_id::is_idc_user(&os.database).await;
+        let is_enterprise = crate::auth::builder_id::is_enterprise_user(&os.database).await;
 
         if !is_enterprise {
             // Non-enterprise user - allow custom servers without registry check
@@ -502,7 +502,7 @@ impl ListArgs {
     pub async fn execute(self, os: &mut Os, output: &mut impl Write) -> Result<()> {
         // Check if registry mode is enabled
         // For non-enterprise users, skip the API call and default to enabled with no registry
-        let is_enterprise = crate::auth::builder_id::is_idc_user(&os.database).await;
+        let is_enterprise = crate::auth::builder_id::is_enterprise_user(&os.database).await;
         let (mcp_enabled, registry_url) = if !is_enterprise {
             (true, None)
         } else {
@@ -746,7 +746,7 @@ async fn get_mcp_server_configs(os: &mut Os) -> Result<BTreeMap<Scope, Vec<(Stri
     let mut stderr = std::io::stderr();
 
     // For non-enterprise users, skip the API call and default to enabled
-    let is_enterprise = crate::auth::builder_id::is_idc_user(&os.database).await;
+    let is_enterprise = crate::auth::builder_id::is_enterprise_user(&os.database).await;
     let (mcp_enabled, mcp_api_failure) = if !is_enterprise {
         (true, false)
     } else {

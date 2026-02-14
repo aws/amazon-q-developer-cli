@@ -669,6 +669,13 @@ pub async fn is_idc_user(database: &Database) -> bool {
     }
 }
 
+pub async fn is_enterprise_user(database: &Database) -> bool {
+    if cfg!(test) {
+        return false;
+    }
+    is_idc_user(database).await || crate::auth::external_idp::is_external_idp_logged_in(database).await
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

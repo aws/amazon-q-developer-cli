@@ -183,7 +183,7 @@ use crate::api_client::{
     ApiClientError,
 };
 use crate::auth::AuthError;
-use crate::auth::builder_id::is_idc_user;
+use crate::auth::builder_id::is_enterprise_user;
 use crate::cli::TodoListState;
 use crate::cli::agent::Agents;
 use crate::cli::chat::checkpoint::{
@@ -371,7 +371,7 @@ impl ChatArgs {
 
         // Check MCP status once at the beginning of the session
         // For non-enterprise users, skip the API call and default to enabled with no registry
-        let is_enterprise = crate::auth::builder_id::is_idc_user(&os.database).await;
+        let is_enterprise = crate::auth::builder_id::is_enterprise_user(&os.database).await;
         let (mut mcp_enabled, mcp_registry_url, mcp_api_failure) = if !is_enterprise {
             tracing::debug!("Non-enterprise user detected, enabling MCP without registry");
             (true, None, false)
@@ -1640,7 +1640,7 @@ impl ChatSession {
 
         if should_refresh_config {
             // For non-enterprise users, skip the API call
-            let is_enterprise = crate::auth::builder_id::is_idc_user(&os.database).await;
+            let is_enterprise = crate::auth::builder_id::is_enterprise_user(&os.database).await;
             if !is_enterprise {
                 // Non-enterprise user - just update the last checked time and keep MCP enabled
                 self.conversation.mcp_last_checked = Some(time::OffsetDateTime::now_utc());
@@ -4780,7 +4780,7 @@ enum ActualSubscriptionStatus {
 //
 // Also, it is currently not possible to subscribe or re-subscribe via console, only IDE/CLI.
 async fn get_subscription_status(os: &mut Os) -> Result<ActualSubscriptionStatus> {
-    if is_idc_user(&os.database).await {
+    if is_enterprise_user(&os.database).await {
         return Ok(ActualSubscriptionStatus::Active);
     }
 

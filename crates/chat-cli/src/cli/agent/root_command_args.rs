@@ -95,7 +95,7 @@ impl AgentArgs {
         let mut stderr = std::io::stderr();
 
         // For non-enterprise users, skip the API call and default to enabled
-        let is_enterprise = crate::auth::builder_id::is_idc_user(&os.database).await;
+        let is_enterprise = crate::auth::builder_id::is_enterprise_user(&os.database).await;
         let (mcp_enabled, mcp_api_failure) = if !is_enterprise {
             (true, false)
         } else {

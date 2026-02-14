@@ -3,7 +3,7 @@ use crossterm::{
     style,
 };
 
-use crate::auth::builder_id::is_idc_user;
+use crate::auth::builder_id::is_enterprise_user;
 use crate::cli::chat::{
     ChatError,
     ChatSession,
@@ -127,7 +127,7 @@ async fn render_available_billing(
         }
     }
 
-    let is_enterprise = is_idc_user(&os.database).await;
+    let is_enterprise = is_enterprise_user(&os.database).await;
 
     // Display all usage breakdowns
     for breakdown in &billing_data.usage_breakdowns {
