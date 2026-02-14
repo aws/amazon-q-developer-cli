@@ -147,7 +147,7 @@ export const InlineLayout: React.FC = () => {
   // Build the header - use SnackBar for approval, ContextBar otherwise
   const promptBarHeader = useMemo(() => {
     if (pendingApproval) {
-      // Find the tool message to get the tool name
+      // Find the tool message to get the tool name and details
       const toolMessage = messages.find(
         (msg) =>
           msg.role === 'tool_use' &&
@@ -155,6 +155,21 @@ export const InlineLayout: React.FC = () => {
       );
       const toolName =
         toolMessage && 'name' in toolMessage ? toolMessage.name : 'Tool';
+
+      // Try to extract a short description from the tool args
+      let detail = '';
+      if (toolMessage && 'content' in toolMessage && toolMessage.content) {
+        try {
+          const args = JSON.parse(toolMessage.content);
+          if (args.command) {
+            detail = `: ${args.command}`;
+          } else if (args.path) {
+            detail = `: ${args.path}`;
+          }
+        } catch {
+          // not JSON, ignore
+        }
+      }
 
       // Build actions array
       const actions = [];
@@ -182,7 +197,7 @@ export const InlineLayout: React.FC = () => {
 
       return (
         <SnackBar
-          title={`${toolName} requires approval`}
+          title={`${toolName}${detail} requires approval`}
           actions={actions}
           slideIn={true}
         />

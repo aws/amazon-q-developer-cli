@@ -4,6 +4,13 @@
  * These tests verify that tool messages are rendered correctly in the TUI
  * when receiving ToolUseEvent from the backend. The tests inject mock
  * responses and verify the tool UI elements appear on screen.
+ *
+ * The mock infrastructure replaces the LLM API stream but the Rust backend
+ * still executes tools for real. After tool execution the agent calls
+ * send_message again with tool results, so each test must push TWO mock
+ * response streams:
+ *   1. Tool use events (+ optional assistant text)
+ *   2. Final assistant response after tool execution
  */
 
 import { afterEach, describe, expect, it } from 'bun:test';
@@ -27,7 +34,7 @@ describe('Tool Messages', () => {
     await testCase.waitForText('ask a question', 10000);
     await testCase.getSessionId();
 
-    // Push shell tool call and response
+    // Stream 1: Tool use
     await testCase.pushSendMessageResponse([
       {
         kind: 'event',
@@ -36,14 +43,22 @@ describe('Tool Messages', () => {
           data: {
             tool_use_id: 'tool-1',
             name: 'execute_bash',
-            input: JSON.stringify({ command: 'ls -la' }),
+            input: JSON.stringify({ command: 'echo hello' }),
             stop: true,
           },
         },
       },
+    ]);
+    await testCase.pushSendMessageResponse(null);
+
+    // Stream 2: Assistant response after tool execution
+    await testCase.pushSendMessageResponse([
       {
         kind: 'event',
-        data: { kind: 'AssistantResponseEvent', data: { content: 'Command executed.' } },
+        data: {
+          kind: 'AssistantResponseEvent',
+          data: { content: 'Command executed.' },
+        },
       },
     ]);
     await testCase.pushSendMessageResponse(null);
@@ -53,15 +68,17 @@ describe('Tool Messages', () => {
     await testCase.sleepMs(100);
     await testCase.pressEnter();
 
-    // Wait for response to render
+    // Wait for tool to finish and assistant response to render
+    await testCase.waitForText('Bashed', 10000);
     await testCase.waitForText('Command executed', 10000);
 
     const snapshot = testCase.getSnapshot();
     console.log('Snapshot:\n' + testCase.getSnapshotFormatted());
 
-    // Verify shell tool indicator is displayed (shows "Bashed" for execute_bash)
     expect(snapshot.some((line) => line.includes('Bashed'))).toBe(true);
-    expect(snapshot.some((line) => line.includes('Command executed'))).toBe(true);
+    expect(snapshot.some((line) => line.includes('Command executed'))).toBe(
+      true
+    );
   }, 30000);
 
   it('renders read tool message', async () => {
@@ -72,7 +89,7 @@ describe('Tool Messages', () => {
     await testCase.waitForText('ask a question', 10000);
     await testCase.getSessionId();
 
-    // Push read tool call and response
+    // Stream 1: Tool use
     await testCase.pushSendMessageResponse([
       {
         kind: 'event',
@@ -81,14 +98,22 @@ describe('Tool Messages', () => {
           data: {
             tool_use_id: 'tool-2',
             name: 'fs_read',
-            input: JSON.stringify({ ops: [{ path: 'src/index.ts' }] }),
+            input: JSON.stringify({ ops: [{ path: 'package.json' }] }),
             stop: true,
           },
         },
       },
+    ]);
+    await testCase.pushSendMessageResponse(null);
+
+    // Stream 2: Assistant response after tool execution
+    await testCase.pushSendMessageResponse([
       {
         kind: 'event',
-        data: { kind: 'AssistantResponseEvent', data: { content: 'File contents here.' } },
+        data: {
+          kind: 'AssistantResponseEvent',
+          data: { content: 'File contents here.' },
+        },
       },
     ]);
     await testCase.pushSendMessageResponse(null);
@@ -98,13 +123,13 @@ describe('Tool Messages', () => {
     await testCase.sleepMs(100);
     await testCase.pressEnter();
 
-    // Wait for response to render
+    // Wait for tool to finish and assistant response to render
+    await testCase.waitForText('Read', 10000);
     await testCase.waitForText('File contents', 10000);
 
     const snapshot = testCase.getSnapshot();
     console.log('Snapshot:\n' + testCase.getSnapshotFormatted());
 
-    // Verify read tool indicator is displayed
     expect(snapshot.some((line) => line.includes('Read'))).toBe(true);
     expect(snapshot.some((line) => line.includes('File contents'))).toBe(true);
   }, 30000);
@@ -117,7 +142,7 @@ describe('Tool Messages', () => {
     await testCase.waitForText('ask a question', 10000);
     await testCase.getSessionId();
 
-    // Push write tool call and response
+    // Stream 1: Tool use
     await testCase.pushSendMessageResponse([
       {
         kind: 'event',
@@ -128,16 +153,24 @@ describe('Tool Messages', () => {
             name: 'fs_write',
             input: JSON.stringify({
               command: 'create',
-              path: 'src/new-file.ts',
+              path: '/tmp/kiro-e2e-test-file.txt',
               content: 'export const hello = "world";',
             }),
             stop: true,
           },
         },
       },
+    ]);
+    await testCase.pushSendMessageResponse(null);
+
+    // Stream 2: Assistant response after tool execution
+    await testCase.pushSendMessageResponse([
       {
         kind: 'event',
-        data: { kind: 'AssistantResponseEvent', data: { content: 'File created successfully.' } },
+        data: {
+          kind: 'AssistantResponseEvent',
+          data: { content: 'File created successfully.' },
+        },
       },
     ]);
     await testCase.pushSendMessageResponse(null);
@@ -147,13 +180,13 @@ describe('Tool Messages', () => {
     await testCase.sleepMs(100);
     await testCase.pressEnter();
 
-    // Wait for response to render
+    // Wait for tool to finish and assistant response to render
+    await testCase.waitForText('Created', 10000);
     await testCase.waitForText('File created', 10000);
 
     const snapshot = testCase.getSnapshot();
     console.log('Snapshot:\n' + testCase.getSnapshotFormatted());
 
-    // Verify write tool response is displayed (shows "Created" for fs_write create)
     expect(snapshot.some((line) => line.includes('Created'))).toBe(true);
     expect(snapshot.some((line) => line.includes('File created'))).toBe(true);
   }, 30000);
@@ -166,7 +199,7 @@ describe('Tool Messages', () => {
     await testCase.waitForText('ask a question', 10000);
     await testCase.getSessionId();
 
-    // Push multiple tool calls followed by response
+    // Stream 1: Multiple tool uses
     await testCase.pushSendMessageResponse([
       {
         kind: 'event',
@@ -185,21 +218,24 @@ describe('Tool Messages', () => {
         data: {
           kind: 'ToolUseEvent',
           data: {
-            tool_use_id: 'tool-write',
-            name: 'fs_write',
-            input: JSON.stringify({
-              command: 'strReplace',
-              path: 'package.json',
-              oldStr: '"version": "1.0.0"',
-              newStr: '"version": "1.1.0"',
-            }),
+            tool_use_id: 'tool-grep',
+            name: 'grep',
+            input: JSON.stringify({ pattern: 'version', path: '.' }),
             stop: true,
           },
         },
       },
+    ]);
+    await testCase.pushSendMessageResponse(null);
+
+    // Stream 2: Assistant response after tool execution
+    await testCase.pushSendMessageResponse([
       {
         kind: 'event',
-        data: { kind: 'AssistantResponseEvent', data: { content: 'Version bumped to 1.1.0' } },
+        data: {
+          kind: 'AssistantResponseEvent',
+          data: { content: 'Version bumped to 1.1.0' },
+        },
       },
     ]);
     await testCase.pushSendMessageResponse(null);
@@ -209,13 +245,13 @@ describe('Tool Messages', () => {
     await testCase.sleepMs(100);
     await testCase.pressEnter();
 
-    // Wait for response to render
+    // Wait for tools to finish and assistant response to render
+    await testCase.waitForText('Read', 10000);
     await testCase.waitForText('Version bumped', 10000);
 
     const snapshot = testCase.getSnapshot();
     console.log('Snapshot:\n' + testCase.getSnapshotFormatted());
 
-    // Verify both tool indicators and response are displayed
     expect(snapshot.some((line) => line.includes('Read'))).toBe(true);
     expect(snapshot.some((line) => line.includes('Version bumped'))).toBe(true);
   }, 30000);
@@ -228,7 +264,7 @@ describe('Tool Messages', () => {
     await testCase.waitForText('ask a question', 10000);
     await testCase.getSessionId();
 
-    // Push grep tool call and response
+    // Stream 1: Tool use
     await testCase.pushSendMessageResponse([
       {
         kind: 'event',
@@ -237,14 +273,22 @@ describe('Tool Messages', () => {
           data: {
             tool_use_id: 'tool-grep',
             name: 'grep',
-            input: JSON.stringify({ pattern: 'useState' }),
+            input: JSON.stringify({ pattern: 'useState', path: '.' }),
             stop: true,
           },
         },
       },
+    ]);
+    await testCase.pushSendMessageResponse(null);
+
+    // Stream 2: Assistant response after tool execution
+    await testCase.pushSendMessageResponse([
       {
         kind: 'event',
-        data: { kind: 'AssistantResponseEvent', data: { content: 'Found useState in 3 files.' } },
+        data: {
+          kind: 'AssistantResponseEvent',
+          data: { content: 'Found useState in 3 files.' },
+        },
       },
     ]);
     await testCase.pushSendMessageResponse(null);
@@ -254,13 +298,13 @@ describe('Tool Messages', () => {
     await testCase.sleepMs(100);
     await testCase.pressEnter();
 
-    // Wait for response to render
+    // Wait for tool to finish and assistant response to render
+    await testCase.waitForText('Grepped', 10000);
     await testCase.waitForText('Found useState', 10000);
 
     const snapshot = testCase.getSnapshot();
     console.log('Snapshot:\n' + testCase.getSnapshotFormatted());
 
-    // Verify grep tool indicator is displayed (shows "Grepped" for grep)
     expect(snapshot.some((line) => line.includes('Grepped'))).toBe(true);
     expect(snapshot.some((line) => line.includes('Found useState'))).toBe(true);
   }, 30000);
@@ -273,7 +317,7 @@ describe('Tool Messages', () => {
     await testCase.waitForText('ask a question', 10000);
     await testCase.getSessionId();
 
-    // Push glob tool call and response
+    // Stream 1: Tool use
     await testCase.pushSendMessageResponse([
       {
         kind: 'event',
@@ -287,9 +331,17 @@ describe('Tool Messages', () => {
           },
         },
       },
+    ]);
+    await testCase.pushSendMessageResponse(null);
+
+    // Stream 2: Assistant response after tool execution
+    await testCase.pushSendMessageResponse([
       {
         kind: 'event',
-        data: { kind: 'AssistantResponseEvent', data: { content: 'Found 15 TypeScript files.' } },
+        data: {
+          kind: 'AssistantResponseEvent',
+          data: { content: 'Found 15 TypeScript files.' },
+        },
       },
     ]);
     await testCase.pushSendMessageResponse(null);
@@ -299,14 +351,16 @@ describe('Tool Messages', () => {
     await testCase.sleepMs(100);
     await testCase.pressEnter();
 
-    // Wait for response to render
+    // Wait for tool to finish and assistant response to render
+    await testCase.waitForText('Globbed', 10000);
     await testCase.waitForText('Found 15', 10000);
 
     const snapshot = testCase.getSnapshot();
     console.log('Snapshot:\n' + testCase.getSnapshotFormatted());
 
-    // Verify glob tool indicator is displayed (shows "Globbed" for glob)
     expect(snapshot.some((line) => line.includes('Globbed'))).toBe(true);
-    expect(snapshot.some((line) => line.includes('TypeScript files'))).toBe(true);
+    expect(snapshot.some((line) => line.includes('TypeScript files'))).toBe(
+      true
+    );
   }, 30000);
 });

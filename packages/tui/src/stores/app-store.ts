@@ -218,6 +218,7 @@ export interface AppState {
   agentError: string | null;
   agentErrorGuidance: string | null;
   pendingApproval: ApprovalRequestInfo | null;
+  approvalQueue: ApprovalRequestInfo[];
   currentModel: { id: string; name: string } | null;
   currentAgent: { name: string } | null;
 
@@ -304,6 +305,7 @@ export const createAppStore = (props: AppStoreProps) =>
     agentError: null,
     agentErrorGuidance: null,
     pendingApproval: null,
+    approvalQueue: [],
     currentModel: null,
     currentAgent: null,
 
@@ -508,12 +510,7 @@ export const createAppStore = (props: AppStoreProps) =>
       const commitBufferedContent = () => {
         if (!bufferedContent) return;
         set((state) => {
-          const messages = state.messages.map((msg) => {
-            if (msg.role === MessageRole.ToolUse && !msg.isFinished) {
-              return { ...msg, isFinished: true };
-            }
-            return msg;
-          });
+          const messages = [...state.messages];
 
           const lastModelMsgIndex = messages.findLastIndex(
             (msg) => msg.role === MessageRole.Model
@@ -537,12 +534,7 @@ export const createAppStore = (props: AppStoreProps) =>
         if (!bufferedContent) return;
 
         set((state) => {
-          const messages = state.messages.map((msg) => {
-            if (msg.role === MessageRole.ToolUse && !msg.isFinished) {
-              return { ...msg, isFinished: true };
-            }
-            return msg;
-          });
+          const messages = [...state.messages];
 
           const lastMsg = messages[messages.length - 1];
           if (lastMsg?.role === MessageRole.Model) {
@@ -677,16 +669,9 @@ export const createAppStore = (props: AppStoreProps) =>
                 return state;
               }
 
-              const messages = state.messages.map((msg) => {
-                if (msg.role === MessageRole.ToolUse && !msg.isFinished) {
-                  return { ...msg, isFinished: true };
-                }
-                return msg;
-              });
-
               return {
                 messages: [
-                  ...messages,
+                  ...state.messages,
                   {
                     id: event.id,
                     role: MessageRole.ToolUse,
@@ -744,6 +729,7 @@ export const createAppStore = (props: AppStoreProps) =>
                     kind: toolMsg.kind,
                     content: toolMsg.content,
                     isFinished: true,
+                    status: toolMsg.status,
                     result: event.result,
                     locations: toolMsg.locations,
                     agentName: toolMsg.agentName,
@@ -754,7 +740,20 @@ export const createAppStore = (props: AppStoreProps) =>
             });
             break;
           case AgentEventType.ApprovalRequest:
-            set({ pendingApproval: event.value });
+            set((state) => {
+              const newQueue = [...state.approvalQueue, event.value];
+              const toolCallId = event.value.toolCall.toolCallId;
+              return {
+                approvalQueue: newQueue,
+                pendingApproval: state.pendingApproval ?? event.value,
+                // Mark the matching tool message as pending approval
+                messages: state.messages.map((msg) =>
+                  msg.role === MessageRole.ToolUse && msg.id === toolCallId
+                    ? { ...msg, status: ToolUseStatus.Pending }
+                    : msg
+                ),
+              };
+            });
             break;
           case AgentEventType.ContextUsage:
             get().setContextUsage(event.percent);
@@ -952,7 +951,7 @@ export const createAppStore = (props: AppStoreProps) =>
     },
 
     respondToApproval: (optionId: string) => {
-      const { pendingApproval } = get();
+      const { pendingApproval, approvalQueue } = get();
       if (pendingApproval) {
         const toolCallId = pendingApproval.toolCall.toolCallId;
         const isRejected =
@@ -960,6 +959,11 @@ export const createAppStore = (props: AppStoreProps) =>
           optionId === ApprovalOptionId.RejectAlways;
 
         // Update the tool call status based on user response
+        const remainingQueue = approvalQueue.filter(
+          (a) => a !== pendingApproval
+        );
+        const nextApproval = remainingQueue[0] ?? null;
+
         set((state) => ({
           messages: state.messages.map((msg) => {
             if (msg.role === MessageRole.ToolUse && msg.id === toolCallId) {
@@ -973,20 +977,26 @@ export const createAppStore = (props: AppStoreProps) =>
             }
             return msg;
           }),
+          approvalQueue: remainingQueue,
+          pendingApproval: nextApproval,
         }));
 
         pendingApproval.resolve({
           outcome: 'selected',
           optionId,
         });
-        set({ pendingApproval: null });
       }
     },
 
     cancelApproval: () => {
-      const { pendingApproval } = get();
+      const { pendingApproval, approvalQueue } = get();
       if (pendingApproval) {
         const toolCallId = pendingApproval.toolCall.toolCallId;
+
+        // Cancel all queued approvals, not just the current one
+        const remainingQueue = approvalQueue.filter(
+          (a) => a !== pendingApproval
+        );
 
         // Mark the tool call as cancelled
         set((state) => ({
@@ -1003,7 +1013,13 @@ export const createAppStore = (props: AppStoreProps) =>
         }));
 
         pendingApproval.resolve({ outcome: 'cancelled' });
-        set({ pendingApproval: null });
+
+        // Cancel all remaining queued approvals too
+        for (const queued of remainingQueue) {
+          queued.resolve({ outcome: 'cancelled' });
+        }
+
+        set({ pendingApproval: null, approvalQueue: [] });
       }
     },
 

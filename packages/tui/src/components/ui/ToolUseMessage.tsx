@@ -61,7 +61,7 @@ export const ToolUseMessage = React.memo<ToolUseMessageProps>(
       if (status === ToolUseStatus.Rejected) return 'error';
       if (result?.status === 'cancelled') return 'error';
       if (status === ToolUseStatus.Approved && isFinished) return 'success';
-      if (status === ToolUseStatus.Pending) return 'warning';
+      if (status === ToolUseStatus.Pending) return undefined;
       if (isFinished) return 'success';
       return undefined; // In progress, no icon
     }, [status, isFinished, result]);
@@ -103,6 +103,9 @@ function ToolUseContent({
   const { getColor } = useTheme();
   const { requestRemeasure } = useStatusBar();
 
+  // A tool is only visually complete if it's finished AND no longer pending approval
+  const effectiveFinished = isFinished && status !== ToolUseStatus.Pending;
+
   // Remeasure when status or isFinished changes — these change the rendered content height
   useEffect(() => {
     requestRemeasure();
@@ -126,19 +129,19 @@ function ToolUseContent({
         oldText=""
         newText=""
         content={content}
-        isFinished={isFinished}
+        isFinished={effectiveFinished}
         isStatic={isStatic}
       />
     );
   }
 
   if (READ_TOOL_NAMES.has(name)) {
-    const title = isFinished ? 'Read' : 'Reading';
+    const title = effectiveFinished ? 'Read' : 'Reading';
     return (
       <Read
         name={title}
         noStatusBar
-        isFinished={isFinished}
+        isFinished={effectiveFinished}
         isStatic={isStatic}
         content={content}
       />
@@ -146,7 +149,7 @@ function ToolUseContent({
   }
 
   if (SHELL_TOOL_NAMES.has(name)) {
-    const title = isFinished ? 'Bashed' : 'Bashing';
+    const title = effectiveFinished ? 'Bashed' : 'Bashing';
     let command: string | undefined;
     try {
       const parsed = JSON.parse(content);
@@ -159,7 +162,7 @@ function ToolUseContent({
         name={title}
         command={command}
         noStatusBar
-        isFinished={isFinished}
+        isFinished={effectiveFinished}
         isStatic={isStatic}
         result={result}
       />
@@ -169,7 +172,7 @@ function ToolUseContent({
   if (WEB_SEARCH_TOOL_NAMES.has(name)) {
     return (
       <WebSearch
-        isFinished={isFinished}
+        isFinished={effectiveFinished}
         isStatic={isStatic}
         content={content}
         result={result}
@@ -180,7 +183,7 @@ function ToolUseContent({
   if (WEB_FETCH_TOOL_NAMES.has(name)) {
     return (
       <WebFetch
-        isFinished={isFinished}
+        isFinished={effectiveFinished}
         isStatic={isStatic}
         content={content}
         result={result}
@@ -192,7 +195,7 @@ function ToolUseContent({
     return (
       <Grep
         noStatusBar
-        isFinished={isFinished}
+        isFinished={effectiveFinished}
         isStatic={isStatic}
         content={content}
         result={result}
@@ -204,7 +207,7 @@ function ToolUseContent({
     return (
       <Glob
         noStatusBar
-        isFinished={isFinished}
+        isFinished={effectiveFinished}
         isStatic={isStatic}
         content={content}
         result={result}
@@ -216,7 +219,7 @@ function ToolUseContent({
     return (
       <Ls
         noStatusBar
-        isFinished={isFinished}
+        isFinished={effectiveFinished}
         isStatic={isStatic}
         content={content}
         result={result}
@@ -228,7 +231,7 @@ function ToolUseContent({
     return (
       <Code
         noStatusBar
-        isFinished={isFinished}
+        isFinished={effectiveFinished}
         isStatic={isStatic}
         content={content}
         result={result}
@@ -241,7 +244,7 @@ function ToolUseContent({
     <Tool
       name={name}
       noStatusBar
-      isFinished={isFinished}
+      isFinished={effectiveFinished}
       isStatic={isStatic}
       result={result}
       locations={locations}
