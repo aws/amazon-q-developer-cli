@@ -20,7 +20,9 @@ export type Props = {
 export default function StreamingPanel({content, streaming, height, scrollbar = true, scrollbarColor, children}: Props) {
 	const lines = useMemo(() => content ? content.split('\n') : [], [content]);
 	const totalLines = lines.length;
-	const maxScroll = Math.max(0, totalLines - height);
+	const showScrollbar = scrollbar && totalLines > height;
+	const scrollHeight = showScrollbar ? height - 1 : height;
+	const maxScroll = Math.max(0, totalLines - scrollHeight);
 	const {scrollTop, scrollTo, scrollBy} = useScroll({isActive: true});
 	const userScrolledRef = useRef(false);
 	const prevScrollTopRef = useRef(0);
@@ -126,31 +128,37 @@ export default function StreamingPanel({content, streaming, height, scrollbar = 
 
 	const clampedScroll = Math.min(scrollTop, maxScroll);
 	const isScrolledUp = clampedScroll < maxScroll;
-	const showScrollbar = scrollbar && totalLines > height;
 	const showIndicator = clampedScroll > 0;
-	const effectiveHeight = showIndicator ? height - 1 : height;
+	const effectiveHeight = showIndicator ? scrollHeight - 1 : scrollHeight;
 
 	const visibleContent = useMemo(() => {
-		if (totalLines <= height) return content;
+		if (totalLines <= scrollHeight) return content;
 		return lines.slice(clampedScroll, clampedScroll + effectiveHeight).join('\n');
-	}, [lines, content, totalLines, height, clampedScroll, effectiveHeight]);
+	}, [lines, content, totalLines, scrollHeight, clampedScroll, effectiveHeight]);
 
 	return (
-		<Box flexDirection="row">
-			<Box width="99%" flexDirection="column">
-				{showIndicator && (
-					<Text dimColor>  ↑ {clampedScroll} lines above</Text>
+		<Box flexDirection="column">
+			<Box flexDirection="row">
+				<Box width="98%" flexDirection="column">
+					{showIndicator && (
+						<Text dimColor>  ↑ {clampedScroll} lines above</Text>
+					)}
+					{children(visibleContent, {scrollTop: clampedScroll, totalLines, isScrolledUp})}
+				</Box>
+				{showScrollbar && (
+					<Box width="2%">
+						<Scrollbar
+							scrollTop={clampedScroll}
+							totalLines={totalLines}
+							viewportHeight={scrollHeight}
+							color={scrollbarColor}
+						/>
+					</Box>
 				)}
-				{children(visibleContent, {scrollTop: clampedScroll, totalLines, isScrolledUp})}
 			</Box>
 			{showScrollbar && (
-				<Box width="1%">
-					<Scrollbar
-						scrollTop={clampedScroll}
-						totalLines={totalLines}
-						viewportHeight={height}
-						color={scrollbarColor}
-					/>
+				<Box paddingX={1}>
+					<Text dimColor italic>PgUp/PgDn to scroll</Text>
 				</Box>
 			)}
 		</Box>
