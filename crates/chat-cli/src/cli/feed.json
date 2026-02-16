@@ -12,6 +12,18 @@
     },
     {
       "type": "release",
+      "date": "2026-02-16",
+      "version": "1.26.1",
+      "title": "Version 1.26.1",
+       "changes": [
+        {
+          "type": "added",
+          "description": "External Identity Provider (IdP) login support"
+        }
+      ]
+    },
+    {
+      "type": "release",
       "date": "2026-02-12",
       "version": "1.26.0",
       "title": "Version 1.26.0",
