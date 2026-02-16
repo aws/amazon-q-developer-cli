@@ -300,6 +300,16 @@ export type Styles = {
 	Accepts the same values as `color` in the `<Text>` component.
 	*/
 	readonly backgroundColor?: LiteralUnion<ForegroundColorName, string>;
+
+	/**
+	Vertical scroll offset. Content is shifted up by this amount within overflow:hidden containers.
+	*/
+	readonly scrollTop?: number;
+
+	/**
+	Horizontal scroll offset. Content is shifted left by this amount within overflow:hidden containers.
+	*/
+	readonly scrollLeft?: number;
 };
 
 const applyPositionStyles = (node: YogaNode, style: Styles): void => {

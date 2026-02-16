@@ -1,5 +1,5 @@
-import React, { useState } from 'react';
-import { Box } from 'ink';
+import React, { useState, useEffect, useContext, useCallback } from 'react';
+import { Box, useMouse } from 'ink';
 import { useTheme } from '../../../hooks/useThemeContext.js';
 import { useTextStyle } from '../../../hooks/useTextStyle.js';
 import { useTerminalSize } from '../../../hooks/useTerminalSize.js';
@@ -87,6 +87,17 @@ export const Menu = React.memo(function Menu({
   );
   const endIndex = Math.min(startIndex + visibleItems, items.length);
   const visibleItemsSlice = items.slice(startIndex, endIndex);
+
+  const { height: termHeight } = useTerminalSize();
+
+  useMouse({
+    onScrollUp: useCallback(() => {
+      setSelectedIndex((prev) => Math.max(0, prev - 1));
+    }, []),
+    onScrollDown: useCallback(() => {
+      setSelectedIndex((prev) => Math.min(items.length - 1, prev + 1));
+    }, [items.length]),
+  });
 
   return (
     <Box flexDirection="column">

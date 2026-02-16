@@ -16,7 +16,9 @@ import StdoutContext from './StdoutContext.js';
 import StderrContext from './StderrContext.js';
 import FocusContext from './FocusContext.js';
 import CursorContext from './CursorContext.js';
+import MouseContext from './MouseContext.js';
 import ErrorBoundary from './ErrorBoundary.js';
+import {parseMouse, isMouseSequence} from '../parse-mouse.js';
 
 const tab = '\t';
 const shiftTab = '\u001B[Z';
@@ -66,6 +68,7 @@ function App({
 	// Count how many components enabled raw mode to avoid disabling
 	// raw mode until all components don't need it anymore
 	const rawModeEnabledCount = useRef(0);
+	const mouseTrackingCount = useRef(0);
 	// eslint-disable-next-line @typescript-eslint/naming-convention
 	const internal_eventEmitter = useRef(new EventEmitter());
 	// Each useInput hook adds a listener, so the count can legitimately exceed the default limit of 10.
@@ -122,6 +125,13 @@ function App({
 		let chunk;
 		// eslint-disable-next-line @typescript-eslint/ban-types
 		while ((chunk = stdin.read() as string | null) !== null) {
+			if (isMouseSequence(chunk)) {
+				const mouseEvent = parseMouse(chunk);
+				if (mouseEvent) {
+					internal_eventEmitter.current.emit('mouse', mouseEvent);
+					continue;
+				}
+			}
 			handleInput(chunk);
 			internal_eventEmitter.current.emit('input', chunk);
 		}
@@ -170,6 +180,19 @@ function App({
 		},
 		[isRawModeSupported, stdin, handleReadable],
 	);
+
+	const enableMouseTracking = useCallback((): void => {
+		if (mouseTrackingCount.current === 0) {
+			stdout.write('\x1b[?1002;1006h');
+		}
+		mouseTrackingCount.current++;
+	}, [stdout]);
+
+	const disableMouseTracking = useCallback((): void => {
+		if (--mouseTrackingCount.current === 0) {
+			stdout.write('\x1b[?1002;1006l');
+		}
+	}, [stdout]);
 
 	// Focus navigation helpers
 	const findNextFocusable = useCallback(
@@ -387,6 +410,11 @@ function App({
 		return () => {
 			cliCursor.show(stdout);
 
+			if (mouseTrackingCount.current > 0) {
+				stdout.write('\x1b[?1002;1006l');
+				mouseTrackingCount.current = 0;
+			}
+
 			// Disable raw mode on unmount if supported
 			if (isRawModeSupported && rawModeEnabledCount.current > 0) {
 				stdin.setRawMode(false);
@@ -444,6 +472,14 @@ function App({
 		[setCursorPosition],
 	);
 
+	const mouseContextValue = useMemo(
+		() => ({
+			enableMouseTracking,
+			disableMouseTracking,
+		}),
+		[enableMouseTracking, disableMouseTracking],
+	);
+
 	const focusContextValue = useMemo(
 		() => ({
 			activeId: activeFocusId,
@@ -478,7 +514,9 @@ function App({
 					<StderrContext.Provider value={stderrContextValue}>
 						<FocusContext.Provider value={focusContextValue}>
 							<CursorContext.Provider value={cursorContextValue}>
-								<ErrorBoundary onError={handleExit}>{children}</ErrorBoundary>
+								<MouseContext.Provider value={mouseContextValue}>
+									<ErrorBoundary onError={handleExit}>{children}</ErrorBoundary>
+								</MouseContext.Provider>
 							</CursorContext.Provider>
 						</FocusContext.Provider>
 					</StderrContext.Provider>

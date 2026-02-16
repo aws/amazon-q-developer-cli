@@ -195,10 +195,13 @@ const renderNodeToOutput = (
 		}
 
 		if (node.nodeName === 'ink-root' || node.nodeName === 'ink-box') {
+			const scrollTop = node.style.scrollTop ?? 0;
+			const scrollLeft = node.style.scrollLeft ?? 0;
+
 			for (const childNode of node.childNodes) {
 				renderNodeToOutput(childNode as DOMElement, output, {
-					offsetX: x,
-					offsetY: y,
+					offsetX: x - scrollLeft,
+					offsetY: y - scrollTop,
 					transformers: newTransformers,
 					skipStaticElements,
 				});

@@ -924,6 +924,22 @@ Default: `visible`
 
 A shortcut for setting `overflowX` and `overflowY` at the same time.
 
+#### Scroll
+
+##### scrollTop
+
+Type: `number`\
+Default: `0`
+
+Vertical scroll offset. Shifts child content up by this many lines within an `overflow="hidden"` container. Use with `useScroll` hook for keyboard/mouse-driven scrolling.
+
+##### scrollLeft
+
+Type: `number`\
+Default: `0`
+
+Horizontal scroll offset. Shifts child content left by this many columns within an `overflow="hidden"` container.
+
 #### Borders
 
 ##### borderStyle
@@ -1465,6 +1481,102 @@ Output of child components.
 Type: `number`
 
 The zero-indexed line number of the line that's currently being transformed.
+
+### `<StreamingPanel>`
+
+A scrollable viewport for streaming content. Slices content by line range based on scroll offset, with auto-follow during streaming and an optional scrollbar.
+
+```jsx
+import {StreamingPanel, Text} from 'ink';
+
+<StreamingPanel content={streamingText} streaming={isStreaming} height={20}>
+  {(visibleContent, {scrollTop, totalLines, isScrolledUp}) => (
+    <Text>{visibleContent}</Text>
+  )}
+</StreamingPanel>
+```
+
+During streaming, auto-scrolls to follow new content. Scroll up (keyboard ↑/PageUp or mouse wheel) to pause auto-follow. Scrolling back to the bottom resumes auto-follow.
+
+#### content
+
+Type: `string`
+
+The full text content.
+
+#### streaming
+
+Type: `boolean`
+
+Whether content is actively streaming. When `true`, auto-scrolls to bottom.
+
+#### height
+
+Type: `number`
+
+Viewport height in lines.
+
+#### scrollbar
+
+Type: `boolean`\
+Default: `true`
+
+Show a scrollbar on the right when content exceeds viewport height.
+
+#### scrollbarColor
+
+Type: `string`\
+Default: `'gray'`
+
+Color of the scrollbar track and thumb.
+
+#### children(content, scrollInfo)
+
+Type: `Function`
+
+Render function receiving the visible content slice and scroll info (`{scrollTop, totalLines, isScrolledUp}`).
+
+### `<Scrollbar>`
+
+A vertical scrollbar with ▲/▼ arrows and a proportional thumb. Use standalone with any scrollable layout.
+
+```jsx
+import {Box, Text, Scrollbar, useScroll} from 'ink';
+
+const {scrollTop} = useScroll();
+
+<Box flexDirection="row">
+  <Box width="99%"><Text>{content}</Text></Box>
+  <Box width="1%">
+    <Scrollbar scrollTop={scrollTop} totalLines={100} viewportHeight={20} />
+  </Box>
+</Box>
+```
+
+#### scrollTop
+
+Type: `number`
+
+Current scroll offset.
+
+#### totalLines
+
+Type: `number`
+
+Total number of content lines.
+
+#### viewportHeight
+
+Type: `number`
+
+Visible viewport height in lines.
+
+#### color
+
+Type: `string`\
+Default: `'gray'`
+
+Color of the scrollbar.
 
 ## Hooks
 
@@ -2068,6 +2180,110 @@ const Example = () => {
 	);
 };
 ```
+
+### useScroll(options?)
+
+Manages scroll state with keyboard navigation. Returns scroll position and control functions.
+
+```jsx
+import {useScroll, Box, Text} from 'ink';
+
+const MyList = () => {
+  const {scrollTop, scrollBy, scrollTo} = useScroll();
+
+  return (
+    <Box height={10} overflow="hidden" scrollTop={scrollTop} flexDirection="column">
+      {items.map(item => <Text key={item}>{item}</Text>)}
+    </Box>
+  );
+};
+```
+
+Arrow keys scroll by 1 line, PageUp/PageDown by `pageSize` (default 10).
+
+#### options
+
+##### isActive
+
+Type: `boolean`\
+Default: `true`
+
+Enable/disable keyboard input handling.
+
+##### pageSize
+
+Type: `number`\
+Default: `10`
+
+Lines to scroll per PageUp/PageDown press.
+
+#### Return value
+
+- `scrollTop` — current scroll offset
+- `scrollBy(delta)` — scroll relative to current position
+- `scrollTo(offset)` — scroll to absolute position
+
+### useMouse(options?)
+
+Handles mouse events. Enables SGR mouse tracking (mode 1002+1006) automatically. Returns a `ref` for optional bounding-box hit testing.
+
+```jsx
+import {useMouse, Box, Text} from 'ink';
+
+const ClickableBox = () => {
+  const {ref} = useMouse({
+    onClick: (event) => console.log(`Clicked at ${event.col},${event.row}`),
+    onScrollUp: () => console.log('Scroll up'),
+    onScrollDown: () => console.log('Scroll down'),
+  });
+
+  return (
+    <Box ref={ref}>
+      <Text>Click me</Text>
+    </Box>
+  );
+};
+```
+
+Works in any terminal supporting SGR mouse protocol (iTerm2, Terminal.app, Kitty, Alacritty, WezTerm, Ghostty, Windows Terminal, GNOME Terminal, xterm, VS Code terminal).
+
+#### options
+
+##### isActive
+
+Type: `boolean`\
+Default: `true`
+
+##### onClick
+
+Type: `(event: MouseEvent) => void`
+
+Called on left click.
+
+##### onRightClick
+
+Type: `(event: MouseEvent) => void`
+
+Called on right click.
+
+##### onScrollUp
+
+Type: `(event: MouseEvent) => void`
+
+Called on mouse wheel scroll up.
+
+##### onScrollDown
+
+Type: `(event: MouseEvent) => void`
+
+Called on mouse wheel scroll down.
+
+#### MouseEvent
+
+- `button` — `'left'` | `'right'` | `'middle'` | `'scrollUp'` | `'scrollDown'` | `'none'`
+- `col` — terminal column (1-based)
+- `row` — terminal row (1-based)
+- `type` — `'press'` | `'release'` | `'drag'`
 
 ## API
 
