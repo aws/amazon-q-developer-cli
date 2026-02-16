@@ -245,6 +245,7 @@ impl Clone for InnerService {
 #[derive(Debug)]
 pub struct RunningService {
     pub inner_service: InnerService,
+    pub transport_type: TransportType,
     auth_client: Option<AuthClientWrapper>,
 }
 
@@ -253,6 +254,7 @@ impl Clone for RunningService {
         RunningService {
             inner_service: self.inner_service.clone(),
             auth_client: self.auth_client.clone(),
+            transport_type: self.transport_type.clone(),
         }
     }
 }
@@ -261,6 +263,19 @@ impl RunningService {
     decorate_with_auth_retry!(CallToolRequestParams, call_tool, CallToolResult);
 
     decorate_with_auth_retry!(GetPromptRequestParams, get_prompt, GetPromptResult);
+
+    /// Returns true if the underlying transport to the MCP server has been closed.
+    ///
+    /// For stdio transports, this can happen if the server writes non-JSON-RPC output to
+    /// stdout, causing a parse error that rmcp interprets as stream closure, which in turn
+    /// closes stdin to the server process. For HTTP transports, this indicates the connection
+    /// was lost or the server terminated.
+    pub fn is_transport_closed(&self) -> bool {
+        match &self.inner_service {
+            InnerService::Original(rs) => rs.is_transport_closed(),
+            InnerService::Peer(peer) => peer.is_transport_closed(),
+        }
+    }
 }
 
 /// This struct implements the [Service] trait from rmcp. It is within this trait the logic of
@@ -288,6 +303,7 @@ impl McpClientService {
         let handle: JoinHandle<Result<RunningService, McpClientError>> = tokio::spawn(async move {
             let messenger_clone = self.messenger.clone();
             let server_name = self.server_name.clone();
+            let transport_type = self.config.inferred_type();
 
             let (service, child_stderr, auth_dropguard) = match self.into_service(&os_clone, &messenger_clone).await {
                 Ok((service, stderr, auth_dg)) => (service, stderr, auth_dg),
@@ -372,6 +388,7 @@ impl McpClientService {
 
             Ok(RunningService {
                 inner_service: InnerService::Original(service),
+                transport_type,
                 auth_client: auth_dropguard,
             })
         });

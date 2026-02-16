@@ -478,6 +478,19 @@ impl RunningMcpService {
             InnerService::Peer(_) => {},
         }
     }
+
+    /// Returns true if the underlying transport to the MCP server has been closed.
+    ///
+    /// For stdio transports, this can happen if the server writes non-JSON-RPC output to
+    /// stdout, causing a parse error that rmcp interprets as stream closure, which in turn
+    /// closes stdin to the server process. For HTTP transports, this indicates the connection
+    /// was lost or the server terminated.
+    pub fn is_transport_closed(&self) -> bool {
+        match &self.running_service {
+            InnerService::Original(rs) => rs.is_transport_closed(),
+            InnerService::Peer(peer) => peer.is_transport_closed(),
+        }
+    }
 }
 
 /// Wrapper around rmcp service types to enable cloning.

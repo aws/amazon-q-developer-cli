@@ -298,6 +298,29 @@ impl McpServerActor {
             McpServerActorRequest::GetTools => Ok(McpServerActorResponse::Tools(self.tools.clone())),
             McpServerActorRequest::GetPrompts => Ok(McpServerActorResponse::Prompts(self.prompts.clone())),
             McpServerActorRequest::ExecuteTool { name, args } => {
+                // Check transport health before executing the tool call. The rmcp library's
+                // serve loop exits (closing stdin) if it encounters a parse error on the MCP
+                // server's stdout (for stdio transports). Once closed, all subsequent calls
+                // fail with "Transport closed". Detect this early with an actionable error.
+                if self.service_handle.is_transport_closed() {
+                    warn!(
+                        server_name = &self.server_name,
+                        "Transport closed before tool execution"
+                    );
+                    let detail = match &self._config {
+                        McpServerConfig::Local(_) => format!(
+                            "Transport to MCP server '{}' is closed. The server may have written \
+                             non-JSON-RPC output to stdout which caused the connection to close.",
+                            self.server_name
+                        ),
+                        McpServerConfig::Remote(_) => format!(
+                            "Transport to MCP server '{}' is closed. The server may have \
+                             terminated or the connection was lost.",
+                            self.server_name
+                        ),
+                    };
+                    return Err(McpServerActorError::Custom(detail));
+                }
                 let (tx, rx) = oneshot::channel();
                 self.curr_tool_execution_id = self.curr_tool_execution_id.wrapping_add(1);
                 let request_id = self.curr_tool_execution_id;

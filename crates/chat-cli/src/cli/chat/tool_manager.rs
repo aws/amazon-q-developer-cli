@@ -1176,6 +1176,7 @@ impl ToolManager {
                 Tool::Custom(CustomTool {
                     name: tool_name.to_owned(),
                     server_name: server_name.to_owned(),
+                    transport_type: running_service.transport_type.clone(),
                     client: running_service.clone(),
                     params: value.args.as_object().cloned(),
                 })

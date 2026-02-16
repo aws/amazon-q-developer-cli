@@ -455,6 +455,8 @@ pub struct CustomTool {
     /// Optional parameters to pass to the tool when invoking the method.
     /// Structured as a JSON value to accommodate various parameter types and structures.
     pub params: Option<serde_json::Map<String, serde_json::Value>>,
+    /// The transport type used to communicate with the MCP server.
+    pub transport_type: TransportType,
 }
 
 impl CustomTool {
@@ -464,6 +466,27 @@ impl CustomTool {
     }
 
     pub async fn invoke(&self, _os: &Os, _updates: &mut impl Write) -> Result<InvokeOutput> {
+        // Check transport health before executing the tool call.
+        // For stdio transports, rmcp's serve loop exits (closing stdin) if it encounters a
+        // parse error on the server's stdout. Once closed, all subsequent tool calls fail
+        // with "Transport closed". Detect this early with an actionable error message.
+        if self.client.is_transport_closed() {
+            let msg = match self.transport_type {
+                TransportType::Stdio => format!(
+                    "Transport to MCP server '{}' is closed. The server may have written \
+                     non-JSON-RPC output to stdout which caused the connection to close. \
+                     Check the server's stdout output and restart the session.",
+                    self.server_name
+                ),
+                _ => format!(
+                    "Transport to MCP server '{}' is closed. The server may have \
+                     terminated or the connection was lost.",
+                    self.server_name
+                ),
+            };
+            eyre::bail!(msg);
+        }
+
         let params = CallToolRequestParams {
             name: Cow::from(self.name.clone()),
             arguments: self.params.clone(),

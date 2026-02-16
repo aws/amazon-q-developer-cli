@@ -553,8 +553,8 @@ mod tests {
 
                 // Check that embeddings are different
                 let mut different = false;
-                for i in 0..384 {
-                    if (embeddings[0][i] - embeddings[1][i]).abs() > 1e-5 {
+                for (a, b) in embeddings[0].iter().zip(embeddings[1].iter()).take(384) {
+                    if (a - b).abs() > 1e-5 {
                         different = true;
                         break;
                     }
