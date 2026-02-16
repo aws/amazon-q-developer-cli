@@ -1,5 +1,6 @@
 import { execSync } from 'child_process';
 import { getOSAppearance } from './os-appearance';
+import { queryTerminalBackground } from './osc-query';
 
 export type TerminalTheme = 'dark' | 'light';
 
@@ -11,10 +12,11 @@ interface DetectionResult {
 
 /**
  * Detects terminal theme using multiple methods in order of reliability:
- * 1. COLORFGBG environment variable (terminal-specific, high confidence)
- * 2. Terminal-specific environment variables (medium confidence)
- * 3. OS appearance preference (low confidence - may not match terminal)
- * 4. Default to dark (fallback)
+ * 1. OSC 11 query - directly asks the terminal for its background color (high confidence)
+ * 2. COLORFGBG environment variable (high confidence)
+ * 3. Terminal-specific environment variables (medium confidence)
+ * 4. OS appearance preference (low confidence - may not match terminal)
+ * 5. Default to dark (fallback)
  */
 export function detectTerminalTheme(): TerminalTheme {
   const result = detectTerminalThemeWithDetails();
@@ -26,7 +28,21 @@ export function detectTerminalTheme(): TerminalTheme {
  * Useful for debugging or logging.
  */
 export function detectTerminalThemeWithDetails(): DetectionResult {
-  // Method 1: COLORFGBG environment variable
+  // Method 1: OSC 11 query - directly query the terminal for its background color.
+  // This is the most reliable method as it reads the actual terminal background,
+  // regardless of OS theme, terminal profile name, or env var configuration.
+  // Supported by most modern terminals: iTerm2, Terminal.app, Ghostty, kitty,
+  // WezTerm, Alacritty, xterm, foot, etc.
+  const oscResult = queryTerminalBackground();
+  if (oscResult) {
+    return {
+      theme: oscResult,
+      method: 'OSC-11',
+      confidence: 'high',
+    };
+  }
+
+  // Method 2: COLORFGBG environment variable
   // Set by terminals like rxvt, xterm, and some others
   // Format: "foreground;background" or "foreground;background;cursor"
   // Common values: "15;0" (white on black = dark), "0;15" (black on white = light)
@@ -49,13 +65,13 @@ export function detectTerminalThemeWithDetails(): DetectionResult {
     }
   }
 
-  // Method 2: Terminal-specific environment variables
+  // Method 3: Terminal-specific environment variables
   const terminalTheme = detectFromTerminalEnv();
   if (terminalTheme) {
     return terminalTheme;
   }
 
-  // Method 3: OS appearance using existing detection (macOS/Windows)
+  // Method 4: OS appearance using existing detection (macOS/Windows)
   const osTheme = getOSAppearance();
   // Only trust OS detection on macOS/Windows where it's implemented
   if (process.platform === 'darwin' || process.platform === 'win32') {
@@ -69,13 +85,13 @@ export function detectTerminalThemeWithDetails(): DetectionResult {
     };
   }
 
-  // Method 4: Linux-specific detection
+  // Method 5: Linux-specific detection
   const linuxTheme = detectLinuxTheme();
   if (linuxTheme) {
     return linuxTheme;
   }
 
-  // Method 5: Default to dark
+  // Method 6: Default to dark
   return {
     theme: 'dark',
     method: 'default',
