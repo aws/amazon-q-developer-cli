@@ -462,7 +462,7 @@ async fn main() -> anyhow::Result<()> {
 
             println!("🔍 Inspecting server capabilities for: {}", file.display());
 
-            if let Some(capabilities) = client.get_server_capabilities().await {
+            if let Some(capabilities) = client.get_server_capabilities() {
                 println!("📋 Server Capabilities:");
 
                 // Check diagnostic capabilities
