@@ -1,0 +1,4 @@
+{
+  "type": "changed",
+  "description": "Improved tool validation error messages to show required fields and hide internal details from user display"
+}

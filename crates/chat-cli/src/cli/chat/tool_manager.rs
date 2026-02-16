@@ -1837,6 +1837,30 @@ fn spawn_orchestrator_task(
                                 .filter(|spec| tool_filter.should_include(&spec.name))
                                 .filter(|spec| !disabled_tools_set.contains(&spec.name))
                                 .collect::<Vec<_>>();
+
+                            // Validate that requested tools are actually available from the MCP server
+                            let tool_validation_warning = if let ToolFilter::List(ref requested_tools) = tool_filter {
+                                super::tools::custom_tool::validate_requested_tools(
+                                    requested_tools,
+                                    &result_tools,
+                                    &server_name,
+                                )
+                            } else {
+                                None
+                            };
+
+                            // Add user-facing warning to loading record if validation failed
+                            if let Some(ref warning_msg) = tool_validation_warning {
+                                load_record
+                                    .lock()
+                                    .await
+                                    .entry(server_name.clone())
+                                    .and_modify(|records| {
+                                        records.push(LoadingRecord::warn(warning_msg.clone()));
+                                    })
+                                    .or_insert(vec![LoadingRecord::warn(warning_msg.clone())]);
+                            }
+
                             let mut sanitized_mapping = HashMap::<ModelToolName, ToolInfo>::new();
                             let process_result = process_tool_specs(
                                 database,
@@ -1854,14 +1878,28 @@ fn spawn_orchestrator_task(
                             if let Some(sender) = &loading_status_sender {
                                 // Anomalies here are not considered fatal, thus we shall give
                                 // warnings.
-                                let msg = match process_result {
-                                    Ok(_) => LoadingMsg::Done {
+                                let msg = match (&process_result, &tool_validation_warning) {
+                                    // If we have both a process error AND tool validation warning
+                                    (Err(e), Some(validation_warn)) => LoadingMsg::Warn {
                                         name: server_name.clone(),
+                                        msg: eyre::eyre!("{}\n\n{}", validation_warn, e.to_string()),
                                         time: time_taken.clone(),
                                     },
-                                    Err(ref e) => LoadingMsg::Warn {
+                                    // Only process error
+                                    (Err(e), None) => LoadingMsg::Warn {
                                         name: server_name.clone(),
                                         msg: eyre::eyre!(e.to_string()),
+                                        time: time_taken.clone(),
+                                    },
+                                    // Only tool validation warning (process succeeded)
+                                    (Ok(_), Some(validation_warn)) => LoadingMsg::Warn {
+                                        name: server_name.clone(),
+                                        msg: eyre::eyre!(validation_warn.clone()),
+                                        time: time_taken.clone(),
+                                    },
+                                    // No warnings at all
+                                    (Ok(_), None) => LoadingMsg::Done {
+                                        name: server_name.clone(),
                                         time: time_taken.clone(),
                                     },
                                 };
@@ -2372,7 +2410,7 @@ fn queue_warn_message(name: &str, msg: &eyre::Report, time: &str, output: &mut i
         style::Print(format!(" {time} s")),
         StyledText::reset(),
         style::Print(" with the following warning:\n"),
-        style::Print(msg),
+        style::Print(format!("{msg}\n")),
         StyledText::reset(),
     )?)
 }

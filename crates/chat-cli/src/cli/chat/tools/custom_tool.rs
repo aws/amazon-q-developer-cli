@@ -1,5 +1,8 @@
 use std::borrow::Cow;
-use std::collections::HashMap;
+use std::collections::{
+    HashMap,
+    HashSet,
+};
 use std::io::Write;
 
 use crossterm::{
@@ -13,6 +16,7 @@ use serde::{
     Deserialize,
     Serialize,
 };
+use strsim::jaro_winkler;
 use tracing::warn;
 
 use super::InvokeOutput;
@@ -29,6 +33,7 @@ use crate::mcp_client::{
 use crate::os::Os;
 use crate::theme::StyledText;
 use crate::util::MCP_SERVER_TOOL_DELIMITER;
+use crate::util::ui::wrap_text_to_lines;
 
 #[derive(Clone, Serialize, Deserialize, Debug, Eq, PartialEq, JsonSchema)]
 #[serde(rename_all = "camelCase")]
@@ -167,6 +172,253 @@ fn is_empty_vec<T>(v: &[T]) -> bool {
 
 fn is_default_oauth_scopes(scopes: &Vec<String>) -> bool {
     *scopes == get_default_scopes()
+}
+
+// MCP-specific tool validation constants
+const MAX_SIMILAR_SUGGESTIONS: usize = 3;
+const SIMILARITY_THRESHOLD: f64 = 0.6;
+const MAX_TOOLS_TO_DISPLAY: usize = 10;
+const WARNING_LINE_WIDTH: usize = 80;
+
+/// Finds tools similar to `missing_tool` from `available_tools` using Jaro-Winkler string
+/// similarity. Returns up to `max_suggestions` tool names scoring at or above `threshold`.
+fn find_similar_tools(
+    missing_tool: &str,
+    available_tools: &[String],
+    max_suggestions: usize,
+    threshold: f64,
+) -> Vec<String> {
+    let mut scored: Vec<(f64, &String)> = available_tools
+        .iter()
+        .map(|tool| (jaro_winkler(missing_tool, tool), tool))
+        .filter(|(score, _)| *score >= threshold)
+        .collect();
+
+    scored.sort_by(|a, b| b.0.partial_cmp(&a.0).unwrap_or(std::cmp::Ordering::Equal));
+    scored
+        .into_iter()
+        .take(max_suggestions)
+        .map(|(_, tool)| tool.clone())
+        .collect()
+}
+
+/// Extracts a meaningful prefix from a tool name for grouping related tools.
+///
+/// Supports two naming conventions:
+/// - **CamelCase**: Finds the boundary where an uppercase letter is followed by a lowercase letter,
+///   and returns everything before that boundary. For example, `"DatabaseQuery"` → `"Database"`,
+///   `"HTTPClient"` → `"HTTP"`.
+/// - **snake_case**: Returns the segment before the first underscore. For example,
+///   `"database_query"` → `"database"`.
+///
+/// Returns `None` if no meaningful prefix can be extracted (e.g., single-word lowercase names).
+fn extract_tool_prefix(tool_name: &str) -> Option<String> {
+    let chars: Vec<char> = tool_name.chars().collect();
+    for i in 2..chars.len() {
+        if chars[i - 1].is_uppercase() && chars[i].is_lowercase() {
+            return Some(chars[..i - 1].iter().collect());
+        }
+    }
+
+    if tool_name.contains('_') {
+        tool_name.split('_').next().map(String::from)
+    } else {
+        None
+    }
+}
+
+fn build_fuzzy_suggestions(missing_tools: &[String], available_tools: &[String]) -> Vec<String> {
+    let mut lines = Vec::new();
+
+    for missing in missing_tools {
+        let similar = find_similar_tools(missing, available_tools, MAX_SIMILAR_SUGGESTIONS, SIMILARITY_THRESHOLD);
+        if !similar.is_empty() {
+            let formatted = format!(
+                "  Did you mean: {}?",
+                similar
+                    .iter()
+                    .map(|s| format!("\x1b[32m{}\x1b[0m", s))
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            );
+            lines.push(formatted);
+        }
+    }
+
+    lines
+}
+
+fn filter_available_tools(missing_tool: &str, available_tools: &[String]) -> (Vec<String>, String) {
+    if let Some(prefix) = extract_tool_prefix(missing_tool) {
+        let filtered: Vec<String> = available_tools
+            .iter()
+            .filter(|tool| tool.starts_with(&prefix))
+            .cloned()
+            .collect();
+        if !filtered.is_empty() {
+            return (filtered, prefix);
+        }
+    }
+
+    if let Some(first_char) = missing_tool.chars().next() {
+        let first_letter = first_char.to_lowercase().next().unwrap_or('_');
+        let filtered: Vec<String> = available_tools
+            .iter()
+            .filter(|tool| tool.chars().next().unwrap_or('_').to_lowercase().next().unwrap_or('_') == first_letter)
+            .cloned()
+            .collect();
+        if !filtered.is_empty() {
+            return (filtered, first_letter.to_string());
+        }
+    }
+
+    let filtered: Vec<String> = available_tools.iter().take(MAX_TOOLS_TO_DISPLAY).cloned().collect();
+    (filtered, String::new())
+}
+
+/// Validates that requested tools from an agent configuration are available from an MCP server.
+/// Returns a formatted warning message if any tools are missing, or None if all tools are
+/// available.
+pub(crate) fn validate_requested_tools(
+    requested_tools: &HashSet<String>,
+    available_tools: &[String],
+    server_name: &str,
+) -> Option<String> {
+    use crossterm::style;
+
+    let available_tools_set: HashSet<String> = available_tools.iter().cloned().collect();
+    let mut missing_tools: Vec<String> = requested_tools
+        .iter()
+        .filter(|tool_name| !available_tools_set.contains(*tool_name))
+        .cloned()
+        .collect();
+    missing_tools.sort();
+
+    if missing_tools.is_empty() {
+        return None;
+    }
+
+    warn!(
+        server = %server_name,
+        requested_tools = ?requested_tools.iter().collect::<Vec<_>>(),
+        available_tools = ?available_tools,
+        missing_tools = ?missing_tools,
+        "Agent config specifies tools not available from MCP server @{}: {} missing",
+        server_name,
+        missing_tools.len()
+    );
+
+    let mut buffer = Vec::new();
+    let tools_str = missing_tools.join(", ");
+    let indent = "  ";
+
+    let wrapped = wrap_text_to_lines(&tools_str, WARNING_LINE_WIDTH - indent.len());
+    for (i, line) in wrapped.iter().enumerate() {
+        if i == 0 {
+            let _ = queue!(
+                buffer,
+                StyledText::warning_fg(),
+                style::Print("WARNING: "),
+                StyledText::reset(),
+                style::Print("Agent config specifies "),
+                StyledText::warning_fg(),
+                style::Print(missing_tools.len()),
+                StyledText::reset(),
+                style::Print(format!(
+                    " unavailable {} from ",
+                    if missing_tools.len() == 1 { "tool" } else { "tools" }
+                )),
+                StyledText::info_fg(),
+                style::Print(format!("@{}", server_name)),
+                StyledText::reset(),
+                style::Print(": "),
+                StyledText::warning_fg(),
+                style::Print(line),
+                StyledText::reset(),
+                style::Print("\n")
+            );
+        } else {
+            let _ = queue!(
+                buffer,
+                style::Print(indent),
+                StyledText::warning_fg(),
+                style::Print(line),
+                StyledText::reset(),
+                style::Print("\n")
+            );
+        }
+    }
+
+    let suggestion_lines = build_fuzzy_suggestions(&missing_tools, available_tools);
+
+    for suggestion in &suggestion_lines {
+        let _ = queue!(buffer, style::Print(suggestion), style::Print("\n"));
+    }
+
+    if suggestion_lines.is_empty() {
+        let (filtered_tools, filter_desc) = filter_available_tools(&missing_tools[0], available_tools);
+
+        if !filtered_tools.is_empty() {
+            let header_text = if filter_desc.is_empty() {
+                format!("  Available tools from @{}: ", server_name)
+            } else {
+                format!("  Available tools from @{} matching '{}': ", server_name, filter_desc)
+            };
+            let header_len = header_text.len();
+
+            let tools_str = filtered_tools.join(", ");
+            let indent = "  ";
+
+            let first_line_width = WARNING_LINE_WIDTH.saturating_sub(header_len);
+            let continuation_width = WARNING_LINE_WIDTH - indent.len();
+
+            let mut wrapped = Vec::new();
+            let mut current_line = String::new();
+            let mut current_width = first_line_width;
+
+            for word in tools_str.split_whitespace() {
+                let word_with_space = if current_line.is_empty() {
+                    word.to_string()
+                } else {
+                    format!(" {}", word)
+                };
+
+                if current_line.len() + word_with_space.len() <= current_width {
+                    current_line.push_str(&word_with_space);
+                } else {
+                    wrapped.push(current_line);
+                    current_line = word.to_string();
+                    current_width = continuation_width;
+                }
+            }
+            if !current_line.is_empty() {
+                wrapped.push(current_line);
+            }
+
+            for (i, line) in wrapped.iter().enumerate() {
+                if i == 0 {
+                    let _ = queue!(
+                        buffer,
+                        style::Print(indent),
+                        style::Print("Available tools from "),
+                        StyledText::info_fg(),
+                        style::Print(format!("@{}", server_name)),
+                        StyledText::reset()
+                    );
+
+                    if !filter_desc.is_empty() {
+                        let _ = queue!(buffer, style::Print(format!(" matching '{}'", filter_desc)));
+                    }
+
+                    let _ = queue!(buffer, style::Print(": "), style::Print(line), style::Print("\n"));
+                } else {
+                    let _ = queue!(buffer, style::Print(indent), style::Print(line), style::Print("\n"));
+                }
+            }
+        }
+    }
+
+    Some(String::from_utf8_lossy(&buffer).to_string())
 }
 
 impl Default for CustomToolConfig {

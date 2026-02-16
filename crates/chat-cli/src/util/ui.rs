@@ -324,6 +324,47 @@ pub fn wrap_text(text: &str, available_width: usize, indent: &str) -> String {
     result
 }
 
+/// Wraps text at word boundaries, returning individual lines as a `Vec<String>`.
+///
+/// Unlike [`wrap_text`] which returns a single `String` with newlines and continuation
+/// indentation, this function returns each wrapped line separately - useful when each
+/// line needs different formatting (e.g., styled terminal output where the first line
+/// has a header prefix and continuation lines have plain indentation).
+///
+/// Words longer than `max_width` are split mid-character to avoid exceeding the width.
+/// No indentation is applied - that is the caller's responsibility.
+pub fn wrap_text_to_lines(text: &str, max_width: usize) -> Vec<String> {
+    let mut lines = Vec::new();
+    let mut current_line = String::new();
+
+    for word in text.split_whitespace() {
+        if current_line.is_empty() {
+            if word.len() > max_width {
+                let mut remaining = word;
+                while remaining.len() > max_width {
+                    lines.push(remaining[..max_width].to_string());
+                    remaining = &remaining[max_width..];
+                }
+                current_line = remaining.to_string();
+            } else {
+                current_line = word.to_string();
+            }
+        } else if current_line.len() + 1 + word.len() <= max_width {
+            current_line.push(' ');
+            current_line.push_str(word);
+        } else {
+            lines.push(current_line);
+            current_line = word.to_string();
+        }
+    }
+
+    if !current_line.is_empty() {
+        lines.push(current_line);
+    }
+
+    lines
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -381,5 +422,39 @@ mod tests {
     fn test_wrap_text_normalizes_whitespace() {
         // Multiple spaces should be normalized to single space
         assert_eq!(wrap_text("hello    world", 50, "  "), "hello world");
+    }
+
+    #[test]
+    fn test_wrap_text_to_lines_empty() {
+        let result: Vec<String> = wrap_text_to_lines("", 20);
+        assert!(result.is_empty());
+    }
+
+    #[test]
+    fn test_wrap_text_to_lines_no_wrapping() {
+        assert_eq!(wrap_text_to_lines("short text", 50), vec!["short text"]);
+    }
+
+    #[test]
+    fn test_wrap_text_to_lines_single_wrap() {
+        assert_eq!(wrap_text_to_lines("hello world", 8), vec!["hello", "world"]);
+    }
+
+    #[test]
+    fn test_wrap_text_to_lines_splits_long_word() {
+        let result = wrap_text_to_lines("abcdefghij", 4);
+        assert_eq!(result, vec!["abcd", "efgh", "ij"]);
+    }
+
+    #[test]
+    fn test_wrap_text_to_lines_mixed_content() {
+        let result = wrap_text_to_lines("tool_a, tool_b, tool_c, tool_d", 20);
+        assert_eq!(result, vec!["tool_a, tool_b,", "tool_c, tool_d"]);
+    }
+
+    #[test]
+    fn test_wrap_text_to_lines_normalizes_whitespace() {
+        let result = wrap_text_to_lines("hello    world", 50);
+        assert_eq!(result, vec!["hello world"]);
     }
 }

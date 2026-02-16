@@ -1,7 +1,7 @@
 ---
 doc_meta:
-  validated: 2026-01-27
-  commit: 85403a86
+  validated: 2026-02-10
+  commit: 69e517e1
   status: validated
   testable_headless: true
   category: feature
@@ -612,6 +612,22 @@ Checks JSON syntax and schema compliance.
 **Symptom**: Tool in config but not working  
 **Cause**: Tool name incorrect or MCP server not loaded  
 **Solution**: Check tool name spelling. For MCP tools, ensure server configured.
+
+### Issue: MCP Tool Validation Warning
+
+**Symptom**: Warning shows "Agent config specifies X unavailable tools from @server"  
+**Cause**: Agent configuration requests tools that don't exist on the MCP server  
+**Example Warning**:
+```
+WARNING: Agent config specifies 2 unavailable tools from @github: get_isues, list_prs
+  Did you mean: get_issues, list_pulls?
+  Available tools from @github: get_issues, list_pulls, create_issue, ...
+```
+**Solution**: 
+- Check tool name spelling (typos are common)
+- Use the fuzzy-match suggestions provided in the warning
+- Run `/tools` to see all available tools from MCP servers
+- Update agent config with correct tool names
 
 ### Issue: Glob Pattern Not Matching
 
