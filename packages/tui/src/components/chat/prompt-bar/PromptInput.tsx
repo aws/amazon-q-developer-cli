@@ -122,7 +122,6 @@ export const PromptInput = React.memo(function PromptInput({
 
   const placeholderColor = useMemo(() => getColor('secondary'), [getColor]);
 
-  // Sync from store
   useEffect(() => {
     const visibleText = getVisibleText(segments);
     const firstSeg = segments[0];
@@ -372,8 +371,6 @@ export const PromptInput = React.memo(function PromptInput({
   };
 
   useKeypress((userInput: string, key: Key) => {
-    if (isProcessing) return;
-
     if (key.paste) {
       handlePaste(userInput);
       return;
@@ -500,7 +497,7 @@ export const PromptInput = React.memo(function PromptInput({
 
   const renderContent = () => {
     const total = totalWidth(segments);
-    if (total === 0 && !isProcessing) {
+    if (total === 0) {
       return (
         <>
           <Text inverse> </Text>
@@ -508,7 +505,6 @@ export const PromptInput = React.memo(function PromptInput({
         </>
       );
     }
-    if (total === 0) return null;
 
     // Build flat array of <Text> children. Ink's squashTextNodes flattens
     // nested <Text>/<ink-virtual-text> into one ANSI string, then wrap-ansi
@@ -519,7 +515,7 @@ export const PromptInput = React.memo(function PromptInput({
     for (let i = 0; i < segments.length; i++) {
       const seg = segments[i]!;
       const w = segmentWidth(seg);
-      const cursorInSeg = !isProcessing && cursor >= pos && cursor <= pos + w;
+      const cursorInSeg = cursor >= pos && cursor <= pos + w;
 
       if (seg.type === 'text') {
         if (cursorInSeg) {
@@ -578,7 +574,7 @@ export const PromptInput = React.memo(function PromptInput({
     }
 
     // Trailing cursor after a chip at the end
-    if (!isProcessing && cursor === total) {
+    if (cursor === total) {
       const lastSeg = segments[segments.length - 1];
       if (lastSeg && lastSeg.type !== 'text') {
         parts.push(

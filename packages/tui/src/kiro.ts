@@ -25,6 +25,7 @@ export class Kiro {
   private agentHandler?: (agent: { name: string }) => void;
   private compactionHandler?: (event: AgentStreamEvent) => void;
   private globalUpdateUnsubscribe?: () => void;
+  private pendingPrompt: Promise<void> | null = null;
 
   get sessionId(): string | undefined {
     return this.sessionClient?.sessionId;
@@ -156,7 +157,6 @@ export class Kiro {
       const onAbort = () => {
         logger.info('[stream] signal aborted, cancelling');
         settle(() => {
-          this.cancel().catch(() => {});
           reject(new DOMException('Aborted', 'AbortError'));
         });
       };
@@ -200,7 +200,9 @@ export class Kiro {
         }
       }, INITIAL_RESPONSE_TIMEOUT_MS);
 
-      this.sessionClient!.prompt([{ type: 'text', text: content }])
+      const promptPromise = this.sessionClient!.prompt([
+        { type: 'text', text: content },
+      ])
         .then(() => {
           settle(() => resolve());
         })
@@ -227,6 +229,13 @@ export class Kiro {
           logger.error('[stream] prompt failed:', errorMessage);
           settle(() => reject(new Error(errorMessage)));
         });
+
+      // Track the prompt RPC so cancel can wait for the backend to actually
+      // clear pending_prompt_response before we send the next prompt.
+      this.pendingPrompt = promptPromise.then(
+        () => {},
+        () => {}
+      );
     });
   }
 
@@ -255,6 +264,10 @@ export class Kiro {
   async cancel(): Promise<void> {
     if (!this.sessionClient) return;
     await this.sessionClient.cancel();
+    if (this.pendingPrompt) {
+      await this.pendingPrompt;
+      this.pendingPrompt = null;
+    }
   }
 
   close(): void {

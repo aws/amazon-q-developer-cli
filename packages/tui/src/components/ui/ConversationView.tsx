@@ -1,10 +1,11 @@
 import React from 'react';
-import { Box, Static } from 'ink';
+import { Box, Static, Text as InkText } from 'ink';
 import {
   MessageRole,
   type MessageType as StoreMessageType,
 } from '../../stores/app-store';
-import { useConversationState, useContextState } from '../../stores/selectors';
+import { useConversationState } from '../../stores/selectors';
+import { QueueStack } from './QueueStack';
 import { Card } from '../ui/card/Card';
 import { Message, MessageType } from '../chat/message/Message';
 import { StreamingMessage } from '../chat/message/StreamingMessage';
@@ -153,6 +154,12 @@ const StaticTurnCard = React.memo(function StaticTurnCard({
   // Don't render if user message has no content
   if (!turn.userMessage.content) return null;
 
+  // A turn was cancelled if it has no AI messages with content
+  const hasAiContent = turn.aiMessages.some(
+    (msg) =>
+      msg.role === MessageRole.ToolUse || (msg.content && msg.content !== '')
+  );
+
   return (
     <Box marginBottom={1}>
       <Card active={false}>
@@ -194,6 +201,15 @@ const StaticTurnCard = React.memo(function StaticTurnCard({
             />
           );
         })}
+
+        {/* Cancelled indicator for turns with no AI response */}
+        {!hasAiContent && (
+          <StatusBar status="error">
+            <InkText dimColor italic>
+              Cancelled
+            </InkText>
+          </StatusBar>
+        )}
       </Card>
     </Box>
   );
@@ -319,6 +335,9 @@ export const ConversationView = React.memo(function ConversationView() {
           }}
         </Static>
       )}
+
+      {/* Queue stack shown above the active turn */}
+      <QueueStack />
 
       {/* Only the active turn is dynamically rendered */}
       {activeTurn && (

@@ -1,4 +1,4 @@
-import React, { useCallback, useMemo } from 'react';
+import React, { useCallback, useMemo, useRef } from 'react';
 import { Box } from 'ink';
 import { AnimationPausedContext } from '../../contexts/AnimationPausedContext.js';
 import { ConversationView } from '../ui/ConversationView';
@@ -28,6 +28,7 @@ import {
   useInputActions,
   useConversationState,
   useApprovalState,
+  useQueueState,
 } from '../../stores/selectors.js';
 import { useKeypress } from '../../hooks/useKeypress';
 import { getGitBranch } from '../../utils/git';
@@ -68,11 +69,17 @@ export const InlineLayout: React.FC = () => {
     currentModel,
     currentAgent,
   } = useContextState();
-  const { activeCommand } = useCommandState();
+  const { activeCommand, commandInputValue } = useCommandState();
   const { setActiveCommand, setActiveTrigger, clearCommandInput } =
     useCommandActions();
-  const { handleUserInput } = useInputActions();
+  const { handleUserInput, clearInput } = useInputActions();
   const { messages } = useConversationState();
+  const { queuedMessages } = useQueueState();
+
+  // Track latest commandInputValue in a ref so the keypress callback
+  // always sees the current value (not a stale closure).
+  const commandInputRef = useRef(commandInputValue);
+  commandInputRef.current = commandInputValue;
 
   // Cache git branch - only call once on mount to avoid blocking renders
   const gitBranch = useMemo(() => getGitBranch(), []);
@@ -85,8 +92,14 @@ export const InlineLayout: React.FC = () => {
       // Handle escape to cancel
       if (key.escape) {
         cancelApproval();
+        clearInput();
+        clearCommandInput();
         return;
       }
+
+      // Only treat y/n/t as approval keys when the input buffer is empty.
+      // If the user was mid-typing a message, the keystroke is theirs.
+      if (commandInputRef.current !== '') return;
 
       const inputLower = input.toLowerCase();
       let selectedOption;
@@ -108,22 +121,23 @@ export const InlineLayout: React.FC = () => {
 
       if (selectedOption) {
         respondToApproval(selectedOption.optionId);
+        clearCommandInput();
       }
     },
     { isActive: !!pendingApproval }
   );
 
-  // Handle Ctrl+O to toggle expansion mode (works both ways)
+  // Handle Ctrl+O to toggle expansion (single state for both tool outputs and queue)
   useKeypress(
     (input, key) => {
-      if (key.ctrl && input.toLowerCase() === 'o' && hasExpandableToolOutputs) {
+      if (key.ctrl && input.toLowerCase() === 'o') {
         toggleToolOutputsExpanded();
       }
     },
-    { isActive: hasExpandableToolOutputs }
+    { isActive: hasExpandableToolOutputs || queuedMessages.length > 0 }
   );
 
-  // Handle Esc to collapse expanded outputs (secondary shortcut)
+  // Handle Esc to collapse expanded outputs
   useKeypress(
     (_input, key) => {
       if (key.escape && toolOutputsExpanded) {

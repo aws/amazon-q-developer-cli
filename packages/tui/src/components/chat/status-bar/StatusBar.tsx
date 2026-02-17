@@ -150,10 +150,15 @@ export const StatusBar = React.memo(function StatusBar({
 
   // Render the status bar column elements
   const barElements = useMemo(() => {
-    if (lineCount === 0) return null;
+    // When lineCount is 0 but we have a status to show (e.g. inside Ink's <Static>
+    // where measureElement doesn't trigger), render at least the status icon
+    const hasStatusIcon = showDot || showSpinner || showArrowDown;
+    const effectiveLineCount = lineCount === 0 && hasStatusIcon ? 1 : lineCount;
+
+    if (effectiveLineCount === 0) return null;
 
     const elements = [];
-    for (let i = 0; i < lineCount; i++) {
+    for (let i = 0; i < effectiveLineCount; i++) {
       // First line gets spinner for thinking, arrow for paused, icon for other statuses
       if (i === 0 && showSpinner) {
         const spinnerColor = barColorProp

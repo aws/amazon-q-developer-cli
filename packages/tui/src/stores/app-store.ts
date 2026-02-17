@@ -139,6 +139,7 @@ interface BaseAppActions {
   clearMessages: () => void;
   queueMessage: (content: string) => void;
   processQueue: () => Promise<void>;
+  clearQueue: () => void;
   setSlashCommands: (commands: SlashCommand[]) => void;
 
   // Command UI actions
@@ -258,6 +259,7 @@ export interface AppState {
 
   // Abort controller for current stream
   currentAbortController: AbortController | null;
+  cancelInProgress: Promise<void> | null;
 
   // Non-interactive mode
   noInteractive: boolean;
@@ -334,6 +336,7 @@ export const createAppStore = (props: AppStoreProps) =>
     attachedFiles: [],
     pendingFileAttachment: null,
     currentAbortController: null,
+    cancelInProgress: null,
     streamingBuffer: { startBuffering: null, stopBuffering: null },
 
     noInteractive: props.noInteractive ?? false,
@@ -377,9 +380,8 @@ export const createAppStore = (props: AppStoreProps) =>
         agentErrorGuidance: null,
         messages: [...state.messages, userMessage],
         attachedFiles: [], // Clear attachments after sending
-        // Reset expandable state for new turn
+        // Reset expandable content flag for new turn (expanded state persists)
         hasExpandableToolOutputs: false,
-        toolOutputsExpanded: false,
       }));
 
       try {
@@ -422,11 +424,15 @@ export const createAppStore = (props: AppStoreProps) =>
             agentErrorGuidance: null,
           };
         });
+        await get().processQueue();
       } catch (error) {
         set({ currentAbortController: null });
         logger.error('[store] sendMessage: caught error', error);
-        if (error instanceof DOMException && error.name === 'AbortError')
+        if (error instanceof DOMException && error.name === 'AbortError') {
+          set({ isProcessing: false });
+          await get().processQueue();
           return;
+        }
         // Extract error message
         let errorMessage = 'Unknown error';
         if (error instanceof Error) {
@@ -484,6 +490,7 @@ export const createAppStore = (props: AppStoreProps) =>
             autoHideMs: 5000,
           });
           set({ isProcessing: false });
+          await get().processQueue();
         }
       }
     },
@@ -865,6 +872,11 @@ export const createAppStore = (props: AppStoreProps) =>
     cancelMessage: async () => {
       const { kiro, currentAbortController } = get();
       if (!kiro) return;
+      let resolveCancelPromise: () => void;
+      const cancelPromise = new Promise<void>((resolve) => {
+        resolveCancelPromise = resolve;
+      });
+      set({ cancelInProgress: cancelPromise });
 
       try {
         // Abort local stream first
@@ -876,10 +888,12 @@ export const createAppStore = (props: AppStoreProps) =>
         // Cancel any pending approval
         get().cancelApproval();
 
-        // Then notify backend
+        // Then notify backend — this must complete before a new prompt
+        // can be sent, otherwise the backend rejects with
+        // "Prompt already in progress".
         await kiro.cancel();
 
-        // Mark any unfinished tool uses as finished with cancelled status
+        // Mark any unfinished tool uses as finished with cancelled status.
         set((state) => {
           const hasUnfinishedToolCalls = state.messages.some(
             (msg) => msg.role === MessageRole.ToolUse && !msg.isFinished
@@ -896,26 +910,32 @@ export const createAppStore = (props: AppStoreProps) =>
                     }
                   : msg
               ),
-              isProcessing: false,
             };
           }
 
-          return { isProcessing: false };
+          return {};
         });
 
-        get().showTransientAlert({
-          message: 'Cancelled streaming',
-          status: 'info',
-          autoHideMs: 2000,
-        });
+        // Only show the alert when the queue is empty — if there are
+        // queued messages the next one will start immediately and the
+        // transient alert would just flash confusingly.
+        if (get().queuedMessages.length === 0) {
+          get().showTransientAlert({
+            message: 'Cancelled streaming',
+            status: 'info',
+            autoHideMs: 2000,
+          });
+        }
       } catch (error) {
         const errorMessage =
           error instanceof Error ? error.message : 'Cancel failed';
         set({
           agentError: errorMessage,
           agentErrorGuidance: getErrorGuidance(errorMessage).message,
-          isProcessing: false,
         });
+      } finally {
+        resolveCancelPromise!();
+        set({ cancelInProgress: null });
       }
     },
 
@@ -1108,16 +1128,27 @@ export const createAppStore = (props: AppStoreProps) =>
     },
 
     queueMessage: (content: string) => {
-      set((state) => ({ queuedMessages: [...state.queuedMessages, content] }));
+      const trimmed = content.trim();
+      if (!trimmed) return;
+      set((state) => ({ queuedMessages: [...state.queuedMessages, trimmed] }));
     },
 
     processQueue: async () => {
+      const { cancelInProgress } = get();
+      if (cancelInProgress) {
+        await cancelInProgress;
+      }
+
       const { queuedMessages } = get();
       const nextMessage = queuedMessages[0];
       if (!nextMessage) return;
 
       set((state) => ({ queuedMessages: state.queuedMessages.slice(1) }));
-      await get().handleUserInput(nextMessage);
+      await get().sendMessage(nextMessage);
+    },
+
+    clearQueue: () => {
+      set({ queuedMessages: [] });
     },
 
     // Input actions

@@ -188,3 +188,13 @@ export const useFileAttachmentActions = () =>
       consumePendingFileAttachment: state.consumePendingFileAttachment,
     }))
   );
+
+/**
+ * Queue state selector - for QueueStack and ConversationView queued messages
+ */
+export const useQueueState = () =>
+  useAppStore(
+    useShallow((state) => ({
+      queuedMessages: state.queuedMessages,
+    }))
+  );
