@@ -18,7 +18,16 @@ import type { AvailableCommand, CommandOption } from '../types/commands';
 import type { StatusType } from '../types/componentTypes';
 
 export interface ContextBreakdownData {
-  contextFiles: { percent: number; tokens: number };
+  contextFiles: {
+    percent: number;
+    tokens: number;
+    items?: Array<{
+      name: string;
+      tokens: number;
+      matched: boolean;
+      percent: number;
+    }>;
+  };
   tools: { percent: number; tokens: number };
   kiroResponses: { percent: number; tokens: number };
   yourPrompts: { percent: number; tokens: number };

@@ -69,47 +69,51 @@ struct CategoryBreakdown {
 }
 
 #[derive(serde::Serialize)]
-struct BreakdownItem {
+pub struct BreakdownItem {
     name: String,
     tokens: usize,
+    matched: bool,
+    percent: f32,
 }
 
 fn calculate_context_breakdown(
     snapshot: &AgentSnapshot,
-    context_usage_percent: Option<f32>,
+    _context_usage_percent: Option<f32>,
     context_window_tokens: usize,
 ) -> (ContextBreakdown, f32) {
-    let sizes = calculate_component_sizes(snapshot);
+    let mut sizes = calculate_component_sizes(snapshot);
+
     let total_tokens = sizes.context_files + sizes.tools + sizes.kiro + sizes.user;
 
     // Calculate our estimate
     let estimated_usage = (total_tokens as f32 / context_window_tokens as f32) * 100.0;
 
-    // Use backend percentage if available, otherwise use estimate
-    let used_percent = context_usage_percent.unwrap_or(estimated_usage);
+    let context_window_tokens_f = context_window_tokens as f32;
 
-    // Each category's percentage of the TOTAL context window
-    let total_f = total_tokens.max(1) as f32;
+    // Calculate percent for each context file item
+    for item in &mut sizes.context_file_items {
+        item.percent = (item.tokens as f32 / context_window_tokens_f) * 100.0;
+    }
 
     let breakdown = ContextBreakdown {
         context_files: CategoryBreakdown {
             tokens: sizes.context_files,
-            percentage: (sizes.context_files as f32 / total_f) * used_percent,
-            items: vec![],
+            percentage: (sizes.context_files as f32 / context_window_tokens_f) * 100.0,
+            items: sizes.context_file_items,
         },
         tools: CategoryBreakdown {
             tokens: sizes.tools,
-            percentage: (sizes.tools as f32 / total_f) * used_percent,
+            percentage: (sizes.tools as f32 / context_window_tokens_f) * 100.0,
             items: vec![],
         },
         kiro_responses: CategoryBreakdown {
             tokens: sizes.kiro,
-            percentage: (sizes.kiro as f32 / total_f) * used_percent,
+            percentage: (sizes.kiro as f32 / context_window_tokens_f) * 100.0,
             items: vec![],
         },
         your_prompts: CategoryBreakdown {
             tokens: sizes.user,
-            percentage: (sizes.user as f32 / total_f) * used_percent,
+            percentage: (sizes.user as f32 / context_window_tokens_f) * 100.0,
             items: vec![],
         },
         session_files: CategoryBreakdown {
@@ -129,34 +133,47 @@ fn calculate_context_breakdown(
 /// Component sizes in tokens for context breakdown
 pub struct ComponentSizes {
     pub context_files: usize,
+    pub context_file_items: Vec<BreakdownItem>,
     pub tools: usize,
     pub kiro: usize,
     pub user: usize,
 }
 
 pub fn calculate_component_sizes(snapshot: &AgentSnapshot) -> ComponentSizes {
+    let (context_files, context_file_items) = calculate_context_files_tokens(snapshot);
     ComponentSizes {
-        context_files: calculate_context_files_tokens(snapshot),
+        context_files,
+        context_file_items,
         tools: calculate_tools_tokens(snapshot),
         kiro: calculate_message_tokens(snapshot, Role::Assistant),
         user: calculate_message_tokens(snapshot, Role::User),
     }
 }
 
-fn calculate_context_files_tokens(snapshot: &AgentSnapshot) -> usize {
+fn calculate_context_files_tokens(snapshot: &AgentSnapshot) -> (usize, Vec<BreakdownItem>) {
     let resources = snapshot.agent_config.resources();
     if resources.is_empty() {
-        return 0;
+        return (0, vec![]);
     }
 
-    resources
-        .iter()
-        .map(|r| {
-            let path_str = r.as_ref();
-            let path = path_str.strip_prefix("file://").unwrap_or(path_str);
-            std::fs::metadata(path).map(|m| m.len() as usize / 4).unwrap_or(0)
-        })
-        .sum()
+    let mut items = Vec::new();
+    let mut total = 0;
+    for r in resources {
+        let path_str = r.as_ref();
+        let path = path_str.strip_prefix("file://").unwrap_or(path_str);
+        let (tokens, matched) = match std::fs::metadata(path) {
+            Ok(m) => (m.len() as usize / 4, true),
+            Err(_) => (0, false),
+        };
+        total += tokens;
+        items.push(BreakdownItem {
+            name: path.to_string(),
+            tokens,
+            matched,
+            percent: 0.0,
+        });
+    }
+    (total, items)
 }
 
 fn calculate_tools_tokens(snapshot: &AgentSnapshot) -> usize {

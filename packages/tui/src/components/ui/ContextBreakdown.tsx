@@ -9,11 +9,19 @@ interface ContextBreakdownProps {
   percent: number | null;
   breakdown?: CategoryBreakdown;
   model: string | null;
+  agentName: string | null;
   onClose: () => void;
 }
 
+interface ContextFileItem {
+  name: string;
+  tokens: number;
+  matched: boolean;
+  percent: number;
+}
+
 interface CategoryBreakdown {
-  contextFiles: { percent: number; tokens: number };
+  contextFiles: { percent: number; tokens: number; items?: ContextFileItem[] };
   tools: { percent: number; tokens: number };
   kiroResponses: { percent: number; tokens: number };
   yourPrompts: { percent: number; tokens: number };
@@ -96,6 +104,7 @@ function BreakdownItem({ label, percent, hexColor }: BreakdownItemProps) {
 export function ContextBreakdown({
   percent,
   breakdown,
+  agentName,
   onClose,
 }: ContextBreakdownProps) {
   const { getColor } = useTheme();
@@ -171,6 +180,36 @@ export function ContextBreakdown({
 
       {expanded && (
         <Box flexDirection="column" marginTop={1}>
+          <Divider />
+          <Box marginBottom={1}>
+            <Text>
+              {primary(`Active agent context: `)}
+              {dim(agentName ?? 'unknown')}
+            </Text>
+          </Box>
+          {breakdown?.contextFiles.items?.map((item, i) => (
+            <Text key={i}>
+              {'  '}
+              {dim('– ')}
+              {primary(item.name)}
+              {dim(` ${item.percent.toFixed(1)}%`)}
+              {!item.matched && dim(' (no matches)')}
+            </Text>
+          ))}
+          {(!breakdown?.contextFiles.items ||
+            breakdown.contextFiles.items.length === 0) && (
+            <Text> {dim(' <none>')}</Text>
+          )}
+
+          <Box marginTop={1} marginBottom={0}>
+            <Text>{primary('Session (temporary)')}</Text>
+          </Box>
+          {breakdown?.sessionFiles?.tokens ? (
+            <Text> {dim('files in session')}</Text>
+          ) : (
+            <Text> {dim(' <none>')}</Text>
+          )}
+
           <Divider />
           <Text>{dim('Tips:')}</Text>
           <Text>

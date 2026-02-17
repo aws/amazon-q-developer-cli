@@ -343,6 +343,7 @@ export const InlineLayout: React.FC = () => {
                 percent={contextUsagePercent}
                 breakdown={contextBreakdown ?? undefined}
                 model={currentModel?.name ?? null}
+                agentName={currentAgent?.name ?? null}
                 onClose={handleCloseContextBreakdown}
               />
             )}
