@@ -20,9 +20,10 @@ export type Props = {
 export default function StreamingPanel({content, streaming, height, scrollbar = true, scrollbarColor, children}: Props) {
 	const lines = useMemo(() => content ? content.split('\n') : [], [content]);
 	const totalLines = lines.length;
-	const showScrollbar = scrollbar && totalLines > height;
-	const scrollHeight = showScrollbar ? height - 1 : height;
-	const maxScroll = Math.max(0, totalLines - scrollHeight);
+	// Always reserve 1 row for the hint line so layout never shifts
+	const contentHeight = height - 1;
+	const showScrollbar = scrollbar && totalLines > contentHeight;
+	const maxScroll = Math.max(0, totalLines - contentHeight);
 	const {scrollTop, scrollTo, scrollBy} = useScroll({isActive: true});
 	const userScrolledRef = useRef(false);
 	const prevScrollTopRef = useRef(0);
@@ -35,10 +36,19 @@ export default function StreamingPanel({content, streaming, height, scrollbar = 
 	// Track whether mouse tracking is paused (scroll passed to terminal)
 	const mousePassthroughRef = useRef(false);
 
+	// Single effect for mouse tracking lifecycle — avoids cleanup ordering issues
 	useEffect(() => {
 		enableMouseTracking();
-		return () => disableMouseTracking();
-	}, [enableMouseTracking, disableMouseTracking]);
+		return () => {
+			// If passthrough was active, re-enable raw tracking before decrementing
+			// so the ref-counted disable produces the correct final state.
+			if (mousePassthroughRef.current) {
+				stdout.write('\x1b[?1002;1006h');
+				mousePassthroughRef.current = false;
+			}
+			disableMouseTracking();
+		};
+	}, [enableMouseTracking, disableMouseTracking, stdout]);
 
 	const pauseMouseTracking = useCallback(() => {
 		if (!mousePassthroughRef.current) {
@@ -52,15 +62,6 @@ export default function StreamingPanel({content, streaming, height, scrollbar = 
 			mousePassthroughRef.current = false;
 			stdout.write('\x1b[?1002;1006h');
 		}
-	}, [stdout]);
-
-	// Re-enable mouse tracking on unmount if paused
-	useEffect(() => {
-		return () => {
-			if (mousePassthroughRef.current) {
-				stdout.write('\x1b[?1002;1006h');
-			}
-		};
 	}, [stdout]);
 
 	// Resume mouse tracking when keyboard scrolls down (arrow/pagedown still work via useInput in raw mode)
@@ -112,6 +113,8 @@ export default function StreamingPanel({content, streaming, height, scrollbar = 
 				scrollTo(maxScroll);
 			}
 		} else {
+			// Streaming finished — restore passthrough state so ref count stays consistent
+			resumeMouseTracking();
 			userScrolledRef.current = false;
 		}
 	}, [streaming, maxScroll, scrollTo, resumeMouseTracking]);
@@ -129,16 +132,16 @@ export default function StreamingPanel({content, streaming, height, scrollbar = 
 	const clampedScroll = Math.min(scrollTop, maxScroll);
 	const isScrolledUp = clampedScroll < maxScroll;
 	const showIndicator = clampedScroll > 0;
-	const effectiveHeight = showIndicator ? scrollHeight - 1 : scrollHeight;
+	const effectiveHeight = showIndicator ? contentHeight - 1 : contentHeight;
 
 	const visibleContent = useMemo(() => {
-		if (totalLines <= scrollHeight) return content;
+		if (totalLines <= contentHeight) return content;
 		return lines.slice(clampedScroll, clampedScroll + effectiveHeight).join('\n');
-	}, [lines, content, totalLines, scrollHeight, clampedScroll, effectiveHeight]);
+	}, [lines, content, totalLines, contentHeight, clampedScroll, effectiveHeight]);
 
 	return (
-		<Box flexDirection="column">
-			<Box flexDirection="row">
+		<Box flexDirection="column" {...(showScrollbar ? {height} : {})}>
+			<Box flexDirection="row" flexGrow={1} overflow="hidden">
 				<Box width="98%" flexDirection="column">
 					{showIndicator && (
 						<Text dimColor>  ↑ {clampedScroll} lines above</Text>
@@ -150,16 +153,14 @@ export default function StreamingPanel({content, streaming, height, scrollbar = 
 						<Scrollbar
 							scrollTop={clampedScroll}
 							totalLines={totalLines}
-							viewportHeight={scrollHeight}
+							viewportHeight={contentHeight}
 							color={scrollbarColor}
 						/>
 					</Box>
 				)}
 			</Box>
 			{showScrollbar && (
-				<Box paddingX={1}>
-					<Text dimColor italic>PgUp/PgDn to scroll</Text>
-				</Box>
+				<Text dimColor italic>  PgUp/PgDn to scroll</Text>
 			)}
 		</Box>
 	);

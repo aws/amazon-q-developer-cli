@@ -3,7 +3,7 @@ import { StreamingPanel } from 'ink';
 import { useTerminalSize } from '../../../hooks/useTerminalSize.js';
 import { Message, MessageType, type StatusType } from './Message.js';
 
-const CHROME_LINES = 14;
+const CHROME_LINES = 13;
 
 export interface StreamingMessageProps {
   content: string;
