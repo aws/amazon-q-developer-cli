@@ -6,6 +6,11 @@ import { StatusInfo } from '../../ui/status/StatusInfo.js';
 import { useTheme } from '../../../hooks/useThemeContext.js';
 import { useExpandableOutput } from '../../../hooks/useExpandableOutput.js';
 import { parseToolArg, extractResultText } from '../../../utils/tool-result.js';
+import {
+  parseLsEntries,
+  getEntryName,
+  resolveLsDisplayPath,
+} from '../../../utils/ls-parse.js';
 import type { ToolResult } from '../../../stores/app-store.js';
 import type { StatusType } from '../../../types/componentTypes.js';
 
@@ -49,16 +54,20 @@ export const Ls = React.memo(function Ls({
 }: LsProps) {
   const { getColor } = useTheme();
 
-  const dirPath = useMemo(() => parseToolArg(content, 'path'), [content]);
+  const rawDirPath = useMemo(() => parseToolArg(content, 'path'), [content]);
 
-  // Parse the text result into lines, skipping the "User id:" prefix line
+  // Parse the text result into entry lines, filtering out prefix metadata
   const entries = useMemo((): string[] => {
     const text = extractResultText(result);
     if (!text) return [];
-    return text
-      .split('\n')
-      .filter((line) => line.length > 0 && !line.startsWith('User id:'));
+    return parseLsEntries(text);
   }, [result]);
+
+  // Resolve display path from entries when raw arg is relative (e.g. ".")
+  const dirPath = useMemo(
+    () => resolveLsDisplayPath(rawDirPath, entries),
+    [rawDirPath, entries]
+  );
 
   const title = isFinished ? 'Listed' : 'Listing';
 
@@ -68,14 +77,6 @@ export const Ls = React.memo(function Ls({
     isStatic,
     unit: 'entries',
   });
-
-  // Extract just the filename from an ls -la style line
-  const getEntryName = (line: string): string => {
-    // ls long format: "drwxr-xr-x  user  group  size  date  name"
-    // The name is the last whitespace-separated token
-    const parts = line.trimEnd().split(/\s+/);
-    return parts[parts.length - 1] || line;
-  };
 
   const target = dirPath || undefined;
 
