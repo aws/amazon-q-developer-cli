@@ -459,7 +459,7 @@ pub async fn create_agent(
             bail!("Path must be a directory");
         }
 
-        os.path_resolver().workspace().agents_dir_for_create()?
+        path
     } else {
         os.path_resolver().global().agents_dir_for_create()?
     };
@@ -475,7 +475,11 @@ pub async fn create_agent(
     }
 
     let prepopulated_content = if let Some(from) = from {
-        let mut agent_to_copy = agents.switch(from.as_str(), os).await?.clone();
+        let source_agent = agents
+            .agents
+            .get(from.as_str())
+            .ok_or_else(|| eyre::eyre!("No agent with name '{from}' found"))?;
+        let mut agent_to_copy = source_agent.clone();
         agent_to_copy.name = name.clone();
         agent_to_copy
     } else {

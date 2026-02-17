@@ -2389,6 +2389,9 @@ impl ChatSession {
 
     /// Generates a custom agent configuration (system prompt and tool config) based on user input.
     /// Uses an LLM to create the agent specifications from the provided name and description.
+    ///
+    /// # Arguments
+    /// * `save_path` - Optional path where the agent will be saved. If None, uses global directory.
     async fn generate_agent_config(
         &mut self,
         os: &mut Os,
@@ -2396,7 +2399,7 @@ impl ChatSession {
         agent_description: &str,
         selected_servers: &str,
         schema: &str,
-        is_global: bool,
+        save_path: Option<PathBuf>,
     ) -> Result<ChatState, ChatError> {
         // Same pattern as compact_history for handling ctrl+c interruption
         let request_metadata: Arc<Mutex<Option<RequestMetadata>>> = Arc::new(Mutex::new(None));
@@ -2404,7 +2407,7 @@ impl ChatSession {
         let mut ctrl_c_stream = self.ctrlc_rx.resubscribe();
 
         tokio::select! {
-            res = self.generate_agent_config_impl(os, agent_name, agent_description, selected_servers, schema, is_global, request_metadata_clone) => res,
+            res = self.generate_agent_config_impl(os, agent_name, agent_description, selected_servers, schema, save_path, request_metadata_clone) => res,
             Ok(_) = ctrl_c_stream.recv() => {
                 debug!(?request_metadata, "ctrlc received in generate agent config");
                 // Wait for handle_response to finish handling the ctrlc.
@@ -2434,7 +2437,7 @@ impl ChatSession {
         agent_description: &str,
         selected_servers: &str,
         schema: &str,
-        is_global: bool,
+        save_path: Option<PathBuf>,
         request_metadata_lock: Arc<Mutex<Option<RequestMetadata>>>,
     ) -> Result<ChatState, ChatError> {
         debug!(?agent_name, ?agent_description, "generating agent config");
@@ -2594,7 +2597,7 @@ impl ChatSession {
         };
 
         // Save the final agent config to file
-        if let Err(err) = save_agent_config(os, &final_agent_config, agent_name, is_global).await {
+        if let Err(err) = save_agent_config(os, &final_agent_config, agent_name, save_path.as_ref()).await {
             execute!(
                 self.stderr,
                 StyledText::error_fg(),
@@ -2605,13 +2608,33 @@ impl ChatSession {
         }
 
         // Add the newly generated agent to the agents HashMap so it's immediately available for swapping
-        // Only insert if: (1) it's a local agent, or (2) it's global and no local agent with same name
-        // exists
-        if !is_global || !self.conversation.agents.agents.contains_key(agent_name) {
-            self.conversation
-                .agents
-                .agents
-                .insert(agent_name.to_string(), final_agent_config);
+        // Only insert if no agent with the same name exists (local takes priority over global)
+        // Skip agents saved to custom paths — they're outside the session's search paths
+        if !self.conversation.agents.agents.contains_key(agent_name) {
+            let global_dir = os.path_resolver().global().agents_dir_for_create().ok();
+            let workspace_dir = os.path_resolver().workspace().agents_dir().ok();
+
+            let source_location = if let Some(ref path) = save_path {
+                if global_dir.as_ref() == Some(path) {
+                    Some(crate::cli::agent::AgentSourceLocation::Global)
+                } else if workspace_dir.as_ref() == Some(path) {
+                    Some(crate::cli::agent::AgentSourceLocation::Workspace)
+                } else {
+                    None // Custom path — don't load into session
+                }
+            } else {
+                // None defaults to global in save_agent_config
+                Some(crate::cli::agent::AgentSourceLocation::Global)
+            };
+
+            if let Some(location) = source_location {
+                let mut agent_to_insert = final_agent_config;
+                agent_to_insert.source_location = location;
+                self.conversation
+                    .agents
+                    .agents
+                    .insert(agent_name.to_string(), agent_to_insert);
+            }
         }
 
         execute!(
@@ -4873,18 +4896,19 @@ fn is_code_intelligence_active(
 }
 
 // Helper method to save the agent config to file
-async fn save_agent_config(os: &mut Os, config: &Agent, agent_name: &str, is_global: bool) -> Result<(), ChatError> {
+async fn save_agent_config(
+    os: &mut Os,
+    config: &Agent,
+    agent_name: &str,
+    save_path: Option<&PathBuf>,
+) -> Result<(), ChatError> {
     let resolver = os.path_resolver();
-    let config_dir = if is_global {
-        resolver
+    let config_dir = match save_path {
+        Some(path) => path.clone(),
+        None => resolver
             .global()
             .agents_dir_for_create()
-            .map_err(|e| ChatError::Custom(format!("Could not find global agent directory: {e}").into()))?
-    } else {
-        resolver
-            .workspace()
-            .agents_dir_for_create()
-            .map_err(|e| ChatError::Custom(format!("Could not find local agent directory: {e}").into()))?
+            .map_err(|e| ChatError::Custom(format!("Could not find global agent directory: {e}").into()))?,
     };
 
     tokio::fs::create_dir_all(&config_dir)

@@ -1,0 +1,4 @@
+{
+  "type": "fixed",
+  "description": "Fixed agents created with --directory flag being incorrectly placed in workspace folder"
+}

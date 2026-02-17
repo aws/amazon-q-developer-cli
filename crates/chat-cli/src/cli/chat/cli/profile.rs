@@ -1,6 +1,7 @@
 use std::borrow::Cow;
 use std::collections::HashMap;
 use std::io::Write;
+use std::path::PathBuf;
 
 use clap::Subcommand;
 use crossterm::style::{
@@ -44,6 +45,56 @@ use crate::os::Os;
 use crate::theme::StyledText;
 use crate::util::NullWriter;
 
+/// Represents the target directory scope for agent creation
+#[derive(Debug, Clone, PartialEq)]
+pub enum AgentDirectory {
+    /// Local workspace directory (.kiro/agents/)
+    Workspace,
+    /// Global directory (~/.kiro/agents/)
+    Global,
+    /// Custom path specified by user
+    Custom(PathBuf),
+}
+
+impl AgentDirectory {
+    /// Parse a directory string argument into an AgentDirectory enum
+    pub fn from_arg(arg: Option<&str>) -> Option<Self> {
+        match arg {
+            Some("workspace") => Some(Self::Workspace),
+            Some("global") => Some(Self::Global),
+            Some(path) => Some(Self::Custom(PathBuf::from(path))),
+            None => None,
+        }
+    }
+
+    /// Resolve the directory to an actual path string
+    pub fn resolve(&self, os: &Os) -> Result<PathBuf, ChatError> {
+        match self {
+            Self::Workspace => os
+                .path_resolver()
+                .workspace()
+                .agents_dir()
+                .map_err(|e| ChatError::Custom(format!("Failed to resolve workspace agents directory: {e}").into())),
+            Self::Global => os
+                .path_resolver()
+                .global()
+                .agents_dir()
+                .map_err(|e| ChatError::Custom(format!("Failed to resolve global agents directory: {e}").into())),
+            Self::Custom(path) => Ok(path.clone()),
+        }
+    }
+
+    /// Convert to Option<String> for create_agent function compatibility
+    pub fn to_path_string(&self, os: &Os) -> Result<Option<String>, ChatError> {
+        let path = self.resolve(os)?;
+        Ok(Some(
+            path.to_str()
+                .ok_or_else(|| ChatError::Custom("Invalid path encoding".into()))?
+                .to_string(),
+        ))
+    }
+}
+
 #[deny(missing_docs)]
 #[derive(Debug, PartialEq, Subcommand)]
 #[command(
@@ -60,17 +111,27 @@ Notes
 pub enum AgentSubcommand {
     /// List all available agents
     List,
-    /// Create a new agent with the specified name
+    /// Create a new agent with AI assistance (or use --manual for simple creation)
+    #[command(alias = "generate")]
     Create {
-        /// Name of the agent to be created
-        name: String,
-        /// The directory where the agent will be saved. If not provided, the agent will be saved in
-        /// the global agent directory
+        /// Name of the agent to be created (optional - will prompt if not provided)
+        name: Option<String>,
+        /// Description of the agent (optional - will prompt if not provided)
+        #[arg(long, short = 'D', conflicts_with_all = ["manual", "from"])]
+        description: Option<String>,
+        /// Directory for agent: "workspace", "global", or a custom path
+        /// (optional - will prompt if not provided)
         #[arg(long, short)]
         directory: Option<String>,
-        /// The name of an agent that shall be used as the starting point for the agent creation
+        /// MCP server to include (can be used multiple times)
+        #[arg(long, short = 'm', conflicts_with_all = ["manual", "from"])]
+        mcp_server: Vec<String>,
+        /// Name of an agent to use as template (implies --manual)
         #[arg(long, short)]
         from: Option<String>,
+        /// Use simple creation mode (opens editor instead of AI generation)
+        #[arg(long)]
+        manual: bool,
     },
     /// Edit an existing agent configuration
     Edit {
@@ -80,8 +141,6 @@ pub enum AgentSubcommand {
         #[arg(long)]
         path: Option<String>,
     },
-    /// Generate an agent configuration using AI
-    Generate {},
     /// Delete the specified agent
     #[command(hide = true)]
     Delete {
@@ -256,67 +315,22 @@ impl AgentSubcommand {
                 highlight_json(&mut session.stderr, pretty.as_str())
                     .map_err(|e| ChatError::Custom(format!("Error printing agent schema: {e}").into()))?;
             },
-            Self::Create { name, directory, from } => {
-                let mut agents = Agents::load(
-                    os,
-                    None,
-                    true,
-                    &mut session.stderr,
-                    session.conversation.mcp_enabled,
-                    session.conversation.mcp_disabled_due_to_api_failure,
-                )
-                .await
-                .0;
-                let path_with_file_name = create_agent(os, &mut agents, name.clone(), directory, from)
-                    .await
-                    .map_err(|e| ChatError::Custom(Cow::Owned(e.to_string())))?;
+            Self::Create {
+                name,
+                description,
+                directory,
+                mcp_server,
+                from,
+                manual,
+            } => {
+                let directory_arg = AgentDirectory::from_arg(directory.as_deref());
 
-                crate::util::editor::launch_editor(&path_with_file_name)
-                    .map_err(|e| ChatError::Custom(Cow::Owned(e.to_string())))?;
-
-                let new_agent = Agent::load(
-                    os,
-                    &path_with_file_name,
-                    &mut None,
-                    session.conversation.mcp_enabled,
-                    &mut session.stderr,
-                )
-                .await;
-                match new_agent {
-                    Ok(agent) => {
-                        session.conversation.agents.agents.insert(agent.name.clone(), agent);
-                    },
-                    Err(e) => {
-                        execute!(
-                            session.stderr,
-                            StyledText::error_fg(),
-                            style::Print("Error: "),
-                            StyledText::reset(),
-                            style::Print(&e),
-                            style::Print("\n"),
-                        )?;
-
-                        return Err(ChatError::Custom(
-                            format!("Post write validation failed for agent '{name}'. Malformed config detected: {e}")
-                                .into(),
-                        ));
-                    },
+                // If --from is provided, automatically use manual mode
+                if manual || from.is_some() {
+                    return create_agent_manual(os, session, name, directory_arg, from).await;
+                } else {
+                    return create_agent_ai_assisted(os, session, name, description, directory_arg, mcp_server).await;
                 }
-
-                execute!(
-                    session.stderr,
-                    StyledText::success_fg(),
-                    style::Print("Agent "),
-                    StyledText::brand_fg(),
-                    style::Print(name),
-                    StyledText::success_fg(),
-                    style::Print(" has been created successfully"),
-                    StyledText::reset(),
-                    style::Print("\n"),
-                    StyledText::warning_fg(),
-                    style::Print("Changes take effect on next launch"),
-                    StyledText::reset(),
-                )?;
             },
 
             Self::Edit { name, path } => {
@@ -462,100 +476,6 @@ impl AgentSubcommand {
                 }
             },
 
-            Self::Generate {} => {
-                let agent_name = match crate::util::input("Enter agent name: ", None) {
-                    Ok(input) => input.trim().to_string(),
-                    Err(_) => {
-                        return Ok(ChatState::PromptUser {
-                            skip_printing_tools: true,
-                        });
-                    },
-                };
-
-                let agent_description = match crate::util::input("Enter agent description: ", None) {
-                    Ok(input) => input.trim().to_string(),
-                    Err(_) => {
-                        return Ok(ChatState::PromptUser {
-                            skip_printing_tools: true,
-                        });
-                    },
-                };
-
-                let scope_options = vec!["Local (current workspace)", "Global (all workspaces)"];
-                let scope_selection = match Select::with_theme(&crate::util::dialoguer_theme())
-                    .with_prompt("Agent scope")
-                    .items(&scope_options)
-                    .default(0)
-                    .interact_on_opt(&dialoguer::console::Term::stdout())
-                {
-                    Ok(sel) => {
-                        let _ = crossterm::execute!(std::io::stdout(), StyledText::emphasis_fg());
-                        sel
-                    },
-                    // Ctrl‑C -> Err(Interrupted)
-                    Err(dialoguer::Error::IO(ref e)) if e.kind() == std::io::ErrorKind::Interrupted => {
-                        return Ok(ChatState::PromptUser {
-                            skip_printing_tools: true,
-                        });
-                    },
-                    Err(e) => return Err(ChatError::Custom(format!("Failed to get scope selection: {e}").into())),
-                };
-
-                let scope_selection = match scope_selection {
-                    Some(selection) => selection,
-                    None => {
-                        return Ok(ChatState::PromptUser {
-                            skip_printing_tools: true,
-                        });
-                    },
-                };
-
-                let is_global = scope_selection == 1;
-
-                let mcp_servers = get_enabled_mcp_servers(os)
-                    .await
-                    .map_err(|e| ChatError::Custom(e.to_string().into()))?;
-
-                let selected_servers = if mcp_servers.is_empty() {
-                    Vec::new()
-                } else {
-                    match prompt_mcp_server_selection(&mcp_servers)
-                        .map_err(|e| ChatError::Custom(e.to_string().into()))?
-                    {
-                        Some(servers) => servers,
-                        None => return Ok(ChatState::default()),
-                    }
-                };
-
-                let mcp_servers_json = if !selected_servers.is_empty() {
-                    let servers: std::collections::HashMap<String, serde_json::Value> = selected_servers
-                        .iter()
-                        .map(|server| {
-                            (
-                                server.name.clone(),
-                                serde_json::to_value(&server.config).unwrap_or_default(),
-                            )
-                        })
-                        .collect();
-                    serde_json::to_string(&servers).unwrap_or_default()
-                } else {
-                    "{}".to_string()
-                };
-                use schemars::schema_for;
-                let schema = schema_for!(Agent);
-                let schema_string = serde_json::to_string_pretty(&schema)
-                    .map_err(|e| ChatError::Custom(format!("Failed to serialize agent schema: {e}").into()))?;
-                return session
-                    .generate_agent_config(
-                        os,
-                        &agent_name,
-                        &agent_description,
-                        &mcp_servers_json,
-                        &schema_string,
-                        is_global,
-                    )
-                    .await;
-            },
             Self::Set { .. } | Self::Delete { .. } => {
                 // As part of the agent implementation, we are disabling the ability to
                 // switch / create profile after a session has started.
@@ -669,7 +589,6 @@ impl AgentSubcommand {
             Self::List => "list",
             Self::Create { .. } => "create",
             Self::Edit { .. } => "edit",
-            Self::Generate { .. } => "generate",
             Self::Delete { .. } => "delete",
             Self::Set { .. } => "set",
             Self::Schema => "schema",
@@ -757,4 +676,250 @@ pub async fn get_enabled_mcp_servers(os: &mut Os) -> Result<Vec<McpServerInfo>> 
         .into_iter()
         .filter(|server| !server.config.disabled)
         .collect())
+}
+
+/// Create an agent using manual mode (opens editor for configuration).
+/// This provides a simple creation flow similar to the original `/agent create` command.
+async fn create_agent_manual(
+    os: &mut Os,
+    session: &mut ChatSession,
+    name: Option<String>,
+    directory: Option<AgentDirectory>,
+    from: Option<String>,
+) -> Result<ChatState, ChatError> {
+    let agent_name = match name {
+        Some(n) => n,
+        None => match crate::util::input("Enter agent name: ", None) {
+            Ok(input) => input.trim().to_string(),
+            Err(_) => {
+                return Ok(ChatState::PromptUser {
+                    skip_printing_tools: true,
+                });
+            },
+        },
+    };
+
+    // Clone the session's already-loaded agents instead of reloading from disk
+    // (Agents::load scans all directories and parses every JSON file, which is slow)
+    let mut agents = session.conversation.agents.clone();
+
+    // Resolve directory using the enum
+    let resolved_directory = match &directory {
+        Some(dir) => dir.to_path_string(os)?,
+        None => None,
+    };
+
+    let path_with_file_name = create_agent(os, &mut agents, agent_name.clone(), resolved_directory, from)
+        .await
+        .map_err(|e| ChatError::Custom(Cow::Owned(e.to_string())))?;
+
+    crate::util::editor::launch_editor(&path_with_file_name)
+        .map_err(|e| ChatError::Custom(Cow::Owned(e.to_string())))?;
+
+    let new_agent = Agent::load(
+        os,
+        &path_with_file_name,
+        &mut None,
+        session.conversation.mcp_enabled,
+        &mut session.stderr,
+    )
+    .await;
+
+    match new_agent {
+        Ok(mut agent) => {
+            // Only load the agent into the current session if it's in a recognized location
+            // Custom paths are not part of the session's agent search paths
+            match &directory {
+                Some(AgentDirectory::Custom(_)) => {
+                    // Don't insert into session — agent is at a custom path outside
+                    // workspace/global
+                },
+                _ => {
+                    agent.source_location = match &directory {
+                        Some(AgentDirectory::Workspace) => crate::cli::agent::AgentSourceLocation::Workspace,
+                        Some(AgentDirectory::Global) => crate::cli::agent::AgentSourceLocation::Global,
+                        None => crate::cli::agent::AgentSourceLocation::Global,
+                        Some(AgentDirectory::Custom(_)) => unreachable!(),
+                    };
+                    session.conversation.agents.agents.insert(agent.name.clone(), agent);
+                },
+            }
+        },
+        Err(e) => {
+            execute!(
+                session.stderr,
+                StyledText::error_fg(),
+                style::Print("Error: "),
+                StyledText::reset(),
+                style::Print(&e),
+                style::Print("\n"),
+            )?;
+
+            return Err(ChatError::Custom(
+                format!(
+                    "Post write validation failed for agent '{}'. Malformed config detected: {e}",
+                    agent_name
+                )
+                .into(),
+            ));
+        },
+    }
+
+    execute!(
+        session.stderr,
+        StyledText::success_fg(),
+        style::Print("Agent "),
+        StyledText::brand_fg(),
+        style::Print(&agent_name),
+        StyledText::success_fg(),
+        style::Print(" has been created successfully"),
+        StyledText::reset(),
+        style::Print("\n"),
+    )?;
+
+    Ok(ChatState::PromptUser {
+        skip_printing_tools: true,
+    })
+}
+
+/// Create an agent using AI-assisted mode (default).
+/// Prompts for any missing values and uses AI to generate the agent configuration.
+async fn create_agent_ai_assisted(
+    os: &mut Os,
+    session: &mut ChatSession,
+    name: Option<String>,
+    description: Option<String>,
+    directory: Option<AgentDirectory>,
+    mcp_server: Vec<String>,
+) -> Result<ChatState, ChatError> {
+    // Get agent name (prompt if not provided)
+    let agent_name = match name {
+        Some(n) => n,
+        None => match crate::util::input("Enter agent name: ", None) {
+            Ok(input) => input.trim().to_string(),
+            Err(_) => {
+                return Ok(ChatState::PromptUser {
+                    skip_printing_tools: true,
+                });
+            },
+        },
+    };
+
+    // Get agent description (prompt if not provided)
+    let agent_description = match description {
+        Some(d) => d,
+        None => match crate::util::input("Enter agent description: ", None) {
+            Ok(input) => input.trim().to_string(),
+            Err(_) => {
+                return Ok(ChatState::PromptUser {
+                    skip_printing_tools: true,
+                });
+            },
+        },
+    };
+
+    // Get scope/directory (prompt if not provided)
+    let save_path: Option<PathBuf> = match directory {
+        Some(ref dir) => Some(dir.resolve(os)?),
+        None => {
+            // Prompt for scope selection
+            let scope_selection = prompt_directory_selection(&mut session.stderr)?;
+            match scope_selection {
+                Some(dir) => Some(dir.resolve(os)?),
+                None => {
+                    return Ok(ChatState::PromptUser {
+                        skip_printing_tools: true,
+                    });
+                },
+            }
+        },
+    };
+
+    // Get MCP servers (use provided or prompt for selection)
+    let mcp_servers = get_enabled_mcp_servers(os)
+        .await
+        .map_err(|e| ChatError::Custom(e.to_string().into()))?;
+
+    let selected_servers: Vec<&McpServerInfo> = if !mcp_server.is_empty() {
+        // Validate and filter provided MCP server names
+        let mut selected = Vec::new();
+        for server_name in &mcp_server {
+            if let Some(server) = mcp_servers.iter().find(|s| &s.name == server_name) {
+                selected.push(server);
+            } else {
+                execute!(
+                    session.stderr,
+                    StyledText::warning_fg(),
+                    style::Print(format!("Warning: MCP server '{}' not found, skipping.\n", server_name)),
+                    StyledText::reset(),
+                )?;
+            }
+        }
+        selected
+    } else if mcp_servers.is_empty() {
+        Vec::new()
+    } else {
+        // Prompt for MCP server selection
+        match prompt_mcp_server_selection(&mcp_servers).map_err(|e| ChatError::Custom(e.to_string().into()))? {
+            Some(servers) => servers,
+            None => return Ok(ChatState::default()),
+        }
+    };
+
+    let mcp_servers_json = if !selected_servers.is_empty() {
+        let servers: std::collections::HashMap<String, serde_json::Value> = selected_servers
+            .iter()
+            .map(|server| {
+                (
+                    server.name.clone(),
+                    serde_json::to_value(&server.config).unwrap_or_default(),
+                )
+            })
+            .collect();
+        serde_json::to_string(&servers).unwrap_or_default()
+    } else {
+        "{}".to_string()
+    };
+
+    use schemars::schema_for;
+    let schema = schema_for!(Agent);
+    let schema_string = serde_json::to_string_pretty(&schema)
+        .map_err(|e| ChatError::Custom(format!("Failed to serialize agent schema: {e}").into()))?;
+
+    session
+        .generate_agent_config(
+            os,
+            &agent_name,
+            &agent_description,
+            &mcp_servers_json,
+            &schema_string,
+            save_path,
+        )
+        .await
+}
+
+/// Prompt the user to select a directory scope (workspace or global)
+fn prompt_directory_selection<W: Write>(_stderr: &mut W) -> Result<Option<AgentDirectory>, ChatError> {
+    let scope_options = vec!["Local (current workspace)", "Global (all workspaces)"];
+    let scope_selection = match Select::with_theme(&crate::util::dialoguer_theme())
+        .with_prompt("Agent scope")
+        .items(&scope_options)
+        .default(0)
+        .interact_on_opt(&dialoguer::console::Term::stdout())
+    {
+        Ok(sel) => {
+            let _ = crossterm::execute!(std::io::stdout(), StyledText::emphasis_fg());
+            sel
+        },
+        Err(dialoguer::Error::IO(ref e)) if e.kind() == std::io::ErrorKind::Interrupted => {
+            return Ok(None);
+        },
+        Err(e) => return Err(ChatError::Custom(format!("Failed to get scope selection: {e}").into())),
+    };
+
+    match scope_selection {
+        Some(0) => Ok(Some(AgentDirectory::Workspace)),
+        Some(1) => Ok(Some(AgentDirectory::Global)),
+        _ => Ok(None),
+    }
 }

@@ -403,10 +403,6 @@ impl<'a> WorkspacePaths<'a> {
         resolve_local_migrated_path_with_env_fs(self.env, "cli-agents", "agents")
     }
 
-    pub fn agents_dir_for_create(&self) -> Result<PathBuf> {
-        Ok(self.env.current_dir()?.join(".kiro").join("agents"))
-    }
-
     pub fn prompts_dir(&self) -> Result<PathBuf> {
         resolve_local_migrated_path_with_env_fs(self.env, "prompts", "prompts")
     }
