@@ -71,6 +71,7 @@ export const useKeypress = (
       if (isPastingRef.current) {
         return;
       }
+
       inputMetrics.markKeypress(input);
       inputMetrics.markHandlerStart();
 
@@ -116,7 +117,17 @@ export const useKeypress = (
           const endIdx = remaining.indexOf(PASTE_END);
           const pastedContent = remaining.slice(0, endIdx);
           isPasting = false;
-          isPastingRef.current = false;
+
+          // Keep isPastingRef true until after this event loop tick.
+          // Ink's useInput handler also listens on the same 'input' event
+          // and fires for the same chunk. If we clear isPastingRef
+          // synchronously, useInput sees isPastingRef=false and lets
+          // the paste-end sequence (e.g. "[201~") leak through as
+          // printable text. Deferring the reset ensures useInput still
+          // skips this chunk.
+          queueMicrotask(() => {
+            isPastingRef.current = false;
+          });
 
           if (pastedContent) {
             handlerRef.current(pastedContent, {
@@ -151,7 +162,13 @@ export const useKeypress = (
           const endIdx = data.indexOf(PASTE_END);
           pasteBuffer += data.slice(0, endIdx);
           isPasting = false;
-          isPastingRef.current = false;
+
+          // Defer clearing isPastingRef so Ink's useInput handler
+          // (which fires for the same 'input' event) still sees the
+          // pasting flag and skips this chunk. See comment above.
+          queueMicrotask(() => {
+            isPastingRef.current = false;
+          });
 
           if (pasteBuffer) {
             handlerRef.current(pasteBuffer, {
