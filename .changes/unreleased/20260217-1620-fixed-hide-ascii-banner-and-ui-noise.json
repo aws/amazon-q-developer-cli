@@ -1,0 +1,4 @@
+{
+  "type": "fixed",
+  "description": "Hide ASCII banner and UI noise in non-interactive mode"
+}

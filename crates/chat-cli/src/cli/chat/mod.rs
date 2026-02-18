@@ -1912,115 +1912,117 @@ impl ChatSession {
     async fn spawn(&mut self, os: &mut Os) -> Result<()> {
         let is_small_screen = self.terminal_width() < GREETING_BREAK_POINT;
 
-        if os
-            .database
-            .settings
-            .get_bool(Setting::ChatGreetingEnabled)
-            .unwrap_or(true)
-        {
-            // Show ASCII art logo first
-            let welcome_text = match self.existing_conversation {
-                true => ui_text::resume_text(),
-                false => match is_small_screen {
-                    true => ui_text::small_screen_welcome(),
-                    false => ui_text::welcome_text(),
-                },
-            };
+        if self.interactive {
+            if os
+                .database
+                .settings
+                .get_bool(Setting::ChatGreetingEnabled)
+                .unwrap_or(true)
+            {
+                // Show ASCII art logo first
+                let welcome_text = match self.existing_conversation {
+                    true => ui_text::resume_text(),
+                    false => match is_small_screen {
+                        true => ui_text::small_screen_welcome(),
+                        false => ui_text::welcome_text(),
+                    },
+                };
 
-            execute!(self.stderr, style::Print(&welcome_text), style::Print("\n\n"),)?;
-        }
-
-        // This determines if user is new or existing
-        let changelog_version = os.database.get_changelog_last_version()?;
-        let is_new_user = changelog_version.is_none();
-
-        // Check if we should show welcome announcement (returns true if shown)
-        let showed_welcome_announcement = self.show_welcome_announcement(os, is_new_user).await?;
-
-        // Check if we should show the changelog (returns true if shown)
-        // Skip changelog if:
-        // 1. We're showing welcome message, OR
-        // 2. User is new (to avoid setting version during welcome period)
-        let showed_changelog = if !showed_welcome_announcement && !is_new_user {
-            self.show_changelog_announcement(os).await?
-        } else {
-            false
-        };
-
-        if os
-            .database
-            .settings
-            .get_bool(Setting::ChatGreetingEnabled)
-            .unwrap_or(true)
-        {
-            // Only show rotating tips if we're not showing welcome message or changelog
-            if !showed_welcome_announcement && !showed_changelog {
-                let rotating_tips = tips::get_rotating_tips();
-                let tip = &rotating_tips[usize::try_from(rand::random::<u32>()).unwrap_or(0) % rotating_tips.len()];
-                if is_small_screen {
-                    // If the screen is small, print the tip in a single line
-                    execute!(
-                        self.stderr,
-                        style::Print("💡 ".to_string()),
-                        style::Print(tip),
-                        style::Print("\n")
-                    )?;
-                } else {
-                    draw_box(
-                        &mut self.stderr,
-                        "Did you know?",
-                        tip,
-                        GREETING_BREAK_POINT,
-                        crate::theme::theme().ui.secondary_text,
-                    )?;
-                }
+                execute!(self.stderr, style::Print(&welcome_text), style::Print("\n\n"),)?;
             }
 
-            // Show model and plan information
-            if let Some(ref model_info) = self.conversation.model_info {
-                let (models, _default_model) = get_available_models(os).await?;
-                if let Some(model_option) = models.iter().find(|option| option.model_id == model_info.model_id) {
-                    let display_name = model_option.model_name.as_deref().unwrap_or(&model_option.model_id);
+            // This determines if user is new or existing
+            let changelog_version = os.database.get_changelog_last_version()?;
+            let is_new_user = changelog_version.is_none();
 
-                    let plan_name = crate::cli::chat::cli::usage::get_plan_name(os).await;
+            // Check if we should show welcome announcement (returns true if shown)
+            let showed_welcome_announcement = self.show_welcome_announcement(os, is_new_user).await?;
 
-                    execute!(
-                        self.stderr,
-                        style::Print("\n"),
-                        StyledText::secondary_fg(),
-                        style::Print("Model: "),
-                        StyledText::reset(),
-                        style::Print(display_name),
-                        StyledText::secondary_fg(),
-                        style::Print(" ("),
-                        StyledText::reset(),
-                        style::Print(&StyledText::command("/model")),
-                        StyledText::secondary_fg(),
-                        style::Print(" to change)"),
-                    )?;
+            // Check if we should show the changelog (returns true if shown)
+            // Skip changelog if:
+            // 1. We're showing welcome message, OR
+            // 2. User is new (to avoid setting version during welcome period)
+            let showed_changelog = if !showed_welcome_announcement && !is_new_user {
+                self.show_changelog_announcement(os).await?
+            } else {
+                false
+            };
 
-                    // Only show plan information if it's not "Unknown"
-                    if plan_name != "Unknown" {
+            if os
+                .database
+                .settings
+                .get_bool(Setting::ChatGreetingEnabled)
+                .unwrap_or(true)
+            {
+                // Only show rotating tips if we're not showing welcome message or changelog
+                if !showed_welcome_announcement && !showed_changelog {
+                    let rotating_tips = tips::get_rotating_tips();
+                    let tip = &rotating_tips[usize::try_from(rand::random::<u32>()).unwrap_or(0) % rotating_tips.len()];
+                    if is_small_screen {
+                        // If the screen is small, print the tip in a single line
                         execute!(
                             self.stderr,
+                            style::Print("💡 ".to_string()),
+                            style::Print(tip),
+                            style::Print("\n")
+                        )?;
+                    } else {
+                        draw_box(
+                            &mut self.stderr,
+                            "Did you know?",
+                            tip,
+                            GREETING_BREAK_POINT,
+                            crate::theme::theme().ui.secondary_text,
+                        )?;
+                    }
+                }
+
+                // Show model and plan information
+                if let Some(ref model_info) = self.conversation.model_info {
+                    let (models, _default_model) = get_available_models(os).await?;
+                    if let Some(model_option) = models.iter().find(|option| option.model_id == model_info.model_id) {
+                        let display_name = model_option.model_name.as_deref().unwrap_or(&model_option.model_id);
+
+                        let plan_name = crate::cli::chat::cli::usage::get_plan_name(os).await;
+
+                        execute!(
+                            self.stderr,
+                            style::Print("\n"),
                             StyledText::secondary_fg(),
-                            style::Print(" | Plan: "),
+                            style::Print("Model: "),
                             StyledText::reset(),
-                            style::Print(&plan_name),
+                            style::Print(display_name),
                             StyledText::secondary_fg(),
                             style::Print(" ("),
                             StyledText::reset(),
-                            style::Print(&StyledText::command("/usage")),
+                            style::Print(&StyledText::command("/model")),
                             StyledText::secondary_fg(),
-                            style::Print(" for more detail)"),
+                            style::Print(" to change)"),
                         )?;
+
+                        // Only show plan information if it's not "Unknown"
+                        if plan_name != "Unknown" {
+                            execute!(
+                                self.stderr,
+                                StyledText::secondary_fg(),
+                                style::Print(" | Plan: "),
+                                StyledText::reset(),
+                                style::Print(&plan_name),
+                                StyledText::secondary_fg(),
+                                style::Print(" ("),
+                                StyledText::reset(),
+                                style::Print(&StyledText::command("/usage")),
+                                StyledText::secondary_fg(),
+                                style::Print(" for more detail)"),
+                            )?;
+                        }
+
+                        execute!(self.stderr, style::Print("\n"), StyledText::reset(),)?;
                     }
-
-                    execute!(self.stderr, style::Print("\n"), StyledText::reset(),)?;
                 }
-            }
 
-            execute!(self.stderr, style::Print("\n"), StyledText::reset())?;
+                execute!(self.stderr, style::Print("\n"), StyledText::reset())?;
+            }
         }
 
         if self.all_tools_trusted() {
