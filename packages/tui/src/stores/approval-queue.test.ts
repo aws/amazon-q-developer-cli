@@ -239,3 +239,38 @@ describe('Tool approval status tracking', () => {
     }
   });
 });
+
+describe('Approval and input preservation', () => {
+  it('respondToApproval does not clear commandInputValue', () => {
+    const store = createTestStore();
+    const handler = store.getState().createStreamEventHandler();
+
+    handler(makeToolCallEvent('t1', 'execute_bash', 'git status'));
+    handler(makeApprovalEvent('t1'));
+
+    // Simulate user typing while approval is pending
+    store.getState().setCommandInput('hello world');
+    expect(store.getState().commandInputValue).toBe('hello world');
+
+    // Respond to approval
+    store.getState().respondToApproval('allow_once');
+
+    // Input should be preserved
+    expect(store.getState().commandInputValue).toBe('hello world');
+  });
+
+  it('cancelApproval does not clear commandInputValue', () => {
+    const store = createTestStore();
+    const handler = store.getState().createStreamEventHandler();
+
+    handler(makeToolCallEvent('t1', 'execute_bash', 'git status'));
+    handler(makeApprovalEvent('t1'));
+
+    store.getState().setCommandInput('draft message');
+
+    store.getState().cancelApproval();
+
+    // Input should be preserved after cancel too
+    expect(store.getState().commandInputValue).toBe('draft message');
+  });
+});

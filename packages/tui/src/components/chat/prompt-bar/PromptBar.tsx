@@ -18,6 +18,7 @@ export type PromptBarHeader =
 
 interface PromptBarProps {
   header?: PromptBarHeader;
+  subHeader?: React.ReactNode;
   children?: React.ReactNode;
   onSubmit: (command: string) => void;
   isProcessing: boolean;
@@ -33,6 +34,7 @@ interface PromptBarProps {
 
 export function PromptBar({
   header,
+  subHeader,
   children,
   onSubmit,
   isProcessing,
@@ -50,6 +52,7 @@ export function PromptBar({
       <Divider />
       <Box paddingLeft={fillsEdgeMargin ? 1 : 0} flexDirection="column">
         {header && <Box marginBottom={1}>{header}</Box>}
+        {subHeader}
         {!hideInput && (
           <Box>
             <PromptInput

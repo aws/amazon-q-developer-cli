@@ -11,7 +11,8 @@ export interface Action {
 
 export interface SnackBarProps {
   title: string;
-  actions: Action[];
+  actions?: Action[];
+  rightHint?: string;
   width?: number;
   slideIn?: boolean;
 }
@@ -19,6 +20,7 @@ export interface SnackBarProps {
 export function SnackBar({
   title,
   actions,
+  rightHint,
   width,
   slideIn = false,
 }: SnackBarProps) {
@@ -82,8 +84,13 @@ export function SnackBar({
     return result;
   };
 
-  const formattedActions = actions.map(formatAction).join(textColor(', '));
-  const content = textColor(title) + textColor(' | ') + formattedActions;
+  const formattedActions =
+    actions && actions.length > 0
+      ? actions.map(formatAction).join(textColor(', '))
+      : '';
+  const content = formattedActions
+    ? textColor(title) + textColor(' | ') + formattedActions
+    : textColor(title);
 
   return (
     <Box
@@ -95,8 +102,9 @@ export function SnackBar({
       flexDirection="column"
       justifyContent="center"
     >
-      <Box width="100%" flexShrink={1}>
+      <Box width="100%" flexShrink={1} justifyContent="space-between">
         {showText && <Text>{content}</Text>}
+        {showText && rightHint && <Text>{textBold(rightHint)}</Text>}
       </Box>
     </Box>
   );

@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React from 'react';
 import { Box } from 'ink';
 import { RadioButton } from './RadioButton.js';
 import { useTextStyle } from '../../../hooks/useTextStyle.js';
@@ -22,32 +22,25 @@ export interface RadioGroupProps {
 
 export const RadioGroup = React.memo(function RadioGroup({
   options = [],
-  selectedValue: initialSelectedValue,
+  selectedValue,
   onChange,
   disabled = false,
   direction = 'vertical',
   label,
 }: RadioGroupProps) {
-  const [selectedValue, setSelectedValue] = useState(
-    initialSelectedValue || options[0]?.value
-  );
+  // Use prop directly — parent controls the selected value
+  const currentValue = selectedValue ?? options[0]?.value;
 
   // Get text styling for the label
   const labelStyle = useTextStyle('label');
 
   const handleSelect = (optionValue: string) => {
     if (disabled) return;
-
-    // Update internal selected state
-    setSelectedValue(optionValue);
-
-    // Notify parent if onChange is provided
     if (onChange) {
       const selectedOption = options.find(
         (option) => option.value === optionValue
       );
-      const selectedLabel = selectedOption?.label || optionValue;
-      onChange(optionValue, selectedLabel);
+      onChange(optionValue, selectedOption?.label || optionValue);
     }
   };
 
@@ -58,9 +51,8 @@ export const RadioGroup = React.memo(function RadioGroup({
     const enabledOptions = options.filter((option) => !option.disabled);
     if (enabledOptions.length === 0) return;
 
-    // Find current position in enabled options based on selected value
     const currentEnabledIndex = enabledOptions.findIndex(
-      (option) => option.value === selectedValue
+      (option) => option.value === currentValue
     );
 
     let targetOption: RadioOption | undefined;
@@ -69,7 +61,6 @@ export const RadioGroup = React.memo(function RadioGroup({
       (key.upArrow && direction === 'vertical') ||
       (key.leftArrow && direction === 'horizontal')
     ) {
-      // Move to previous enabled option
       const prevEnabledIndex =
         currentEnabledIndex > 0
           ? currentEnabledIndex - 1
@@ -79,7 +70,6 @@ export const RadioGroup = React.memo(function RadioGroup({
       (key.downArrow && direction === 'vertical') ||
       (key.rightArrow && direction === 'horizontal')
     ) {
-      // Move to next enabled option
       const nextEnabledIndex =
         currentEnabledIndex < enabledOptions.length - 1
           ? currentEnabledIndex + 1
@@ -92,7 +82,6 @@ export const RadioGroup = React.memo(function RadioGroup({
     }
   });
 
-  // Handle empty or undefined options
   if (!options || options.length === 0) {
     return null;
   }
@@ -111,7 +100,7 @@ export const RadioGroup = React.memo(function RadioGroup({
             marginRight={direction === 'horizontal' ? 2 : 0}
           >
             <RadioButton
-              selected={selectedValue === option.value}
+              selected={currentValue === option.value}
               label={option.label}
               disabled={disabled || option.disabled}
               onSelect={() => handleSelect(option.value)}

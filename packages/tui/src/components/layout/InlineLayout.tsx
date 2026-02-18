@@ -1,4 +1,4 @@
-import React, { useCallback, useMemo, useRef } from 'react';
+import React, { useCallback, useMemo, useState } from 'react';
 import { Box } from 'ink';
 import { AnimationPausedContext } from '../../contexts/AnimationPausedContext.js';
 import { ConversationView } from '../ui/ConversationView';
@@ -16,6 +16,7 @@ import { NotificationBar } from '../chat/notification-bar/NotificationBar.js';
 import { BlockingErrorAlert } from '../ui/alert/BlockingErrorAlert.js';
 import { Chip, ChipColor, ProgressChip } from '../ui/chip/index.js';
 import { ContextBreakdown } from '../ui/ContextBreakdown';
+import { RadioGroup, type RadioOption } from '../ui/radio/RadioGroup.js';
 import {
   useNotificationState,
   useNotificationActions,
@@ -62,66 +63,81 @@ export const InlineLayout: React.FC = () => {
     setShowContextBreakdown,
     setShowHelpPanel,
   } = useUIActions();
-  const {
-    sessionId,
-    contextUsagePercent,
-    lastTurnTokens,
-    currentModel,
-    currentAgent,
-  } = useContextState();
-  const { activeCommand, commandInputValue } = useCommandState();
+  const { sessionId, contextUsagePercent, currentModel, currentAgent } =
+    useContextState();
+  const { activeCommand } = useCommandState();
   const { setActiveCommand, setActiveTrigger, clearCommandInput } =
     useCommandActions();
   const { handleUserInput, clearInput } = useInputActions();
   const { messages } = useConversationState();
   const { queuedMessages } = useQueueState();
 
-  // Track latest commandInputValue in a ref so the keypress callback
-  // always sees the current value (not a stale closure).
-  const commandInputRef = useRef(commandInputValue);
-  commandInputRef.current = commandInputValue;
-
   // Cache git branch - only call once on mount to avoid blocking renders
   const gitBranch = useMemo(() => getGitBranch(), []);
 
-  // Handle approval keypresses
-  useKeypress(
-    (input, key) => {
-      if (!pendingApproval) return;
+  // Build radio options from pending approval permissions
+  const approvalOptions = useMemo((): RadioOption[] => {
+    if (!pendingApproval) return [];
+    const opts: RadioOption[] = [];
+    const perms = pendingApproval.permissionOptions;
+    if (perms.find((opt) => opt.kind === ApprovalOptionId.RejectOnce)) {
+      opts.push({ value: ApprovalOptionId.RejectOnce, label: '(N)o' });
+    }
+    if (perms.find((opt) => opt.kind === ApprovalOptionId.AllowOnce)) {
+      opts.push({
+        value: ApprovalOptionId.AllowOnce,
+        label: '(Y)es, single permission',
+      });
+    }
+    if (perms.find((opt) => opt.kind === ApprovalOptionId.AllowAlways)) {
+      opts.push({
+        value: ApprovalOptionId.AllowAlways,
+        label: '(T)rust, always allow in this session',
+      });
+    }
+    return opts;
+  }, [pendingApproval]);
 
-      // Handle escape to cancel
+  // Default to "No" when approval appears
+  const [approvalSelected, setApprovalSelected] = useState<string>(
+    ApprovalOptionId.RejectOnce
+  );
+
+  // Reset selection when a new approval arrives
+  const approvalToolCallId = pendingApproval?.toolCall.toolCallId;
+  const [lastApprovalId, setLastApprovalId] = useState<string | undefined>();
+  if (approvalToolCallId && approvalToolCallId !== lastApprovalId) {
+    setLastApprovalId(approvalToolCallId);
+    setApprovalSelected(ApprovalOptionId.RejectOnce);
+  }
+
+  // Handle approval radio confirm (Enter)
+  const handleApprovalConfirm = useCallback(
+    (value: string) => {
+      if (!pendingApproval) return;
+      const selected = pendingApproval.permissionOptions.find(
+        (opt) => opt.kind === value
+      );
+      if (selected) {
+        respondToApproval(selected.optionId);
+      }
+    },
+    [pendingApproval, respondToApproval]
+  );
+
+  // Handle escape to cancel approval, Enter to confirm
+  useKeypress(
+    (_input, key) => {
+      if (!pendingApproval) return;
       if (key.escape) {
         cancelApproval();
         clearInput();
         clearCommandInput();
         return;
       }
-
-      // Only treat y/n/t as approval keys when the input buffer is empty.
-      // If the user was mid-typing a message, the keystroke is theirs.
-      if (commandInputRef.current !== '') return;
-
-      const inputLower = input.toLowerCase();
-      let selectedOption;
-
-      // Map keys to option kinds
-      if (inputLower === 't') {
-        selectedOption = pendingApproval.permissionOptions.find(
-          (opt) => opt.kind === ApprovalOptionId.AllowAlways
-        );
-      } else if (inputLower === 'y') {
-        selectedOption = pendingApproval.permissionOptions.find(
-          (opt) => opt.kind === ApprovalOptionId.AllowOnce
-        );
-      } else if (inputLower === 'n') {
-        selectedOption = pendingApproval.permissionOptions.find(
-          (opt) => opt.kind === ApprovalOptionId.RejectOnce
-        );
-      }
-
-      if (selectedOption) {
-        respondToApproval(selectedOption.optionId);
-        clearCommandInput();
+      // Confirm via Enter — always confirms radio selection during approval
+      if (key.return) {
+        handleApprovalConfirm(approvalSelected);
       }
     },
     { isActive: !!pendingApproval }
@@ -162,7 +178,6 @@ export const InlineLayout: React.FC = () => {
   // Build the header - use SnackBar for approval, ContextBar otherwise
   const promptBarHeader = useMemo(() => {
     if (pendingApproval) {
-      // Find the tool message to get the tool name and details
       const toolMessage = messages.find(
         (msg) =>
           msg.role === 'tool_use' &&
@@ -171,49 +186,22 @@ export const InlineLayout: React.FC = () => {
       const toolName =
         toolMessage && 'name' in toolMessage ? toolMessage.name : 'Tool';
 
-      // Try to extract a short description from the tool args
+      // Extract key detail (path, command, etc.) from tool args
       let detail = '';
       if (toolMessage && 'content' in toolMessage && toolMessage.content) {
         try {
-          const args = JSON.parse(toolMessage.content);
-          if (args.command) {
-            detail = `: ${args.command}`;
-          } else if (args.path) {
-            detail = `: ${args.path}`;
-          }
+          const parsed = JSON.parse(toolMessage.content);
+          const value = parsed.path || parsed.command || parsed.query || '';
+          if (value) detail = ` · ${value}`;
         } catch {
-          // not JSON, ignore
+          /* ignore parse errors */
         }
-      }
-
-      // Build actions array
-      const actions = [];
-      if (
-        pendingApproval.permissionOptions.find(
-          (opt) => opt.kind === ApprovalOptionId.AllowOnce
-        )
-      ) {
-        actions.push({ key: 'y', label: 'Yes' });
-      }
-      if (
-        pendingApproval.permissionOptions.find(
-          (opt) => opt.kind === ApprovalOptionId.RejectOnce
-        )
-      ) {
-        actions.push({ key: 'n', label: 'No' });
-      }
-      if (
-        pendingApproval.permissionOptions.find(
-          (opt) => opt.kind === ApprovalOptionId.AllowAlways
-        )
-      ) {
-        actions.push({ key: 't', label: 'Trust' });
       }
 
       return (
         <SnackBar
           title={`${toolName}${detail} requires approval`}
-          actions={actions}
+          rightHint="esc to cancel"
           slideIn={true}
         />
       ) as PromptBarHeader;
@@ -321,21 +309,29 @@ export const InlineLayout: React.FC = () => {
                 ? undefined
                 : promptBarHeader
             }
+            subHeader={
+              pendingApproval && approvalOptions.length > 0 ? (
+                <RadioGroup
+                  options={approvalOptions}
+                  selectedValue={approvalSelected}
+                  onChange={(value) => setApprovalSelected(value)}
+                  direction="vertical"
+                />
+              ) : undefined
+            }
             onSubmit={handleSubmit}
             triggerRules={TRIGGER_RULES}
             onTriggerDetected={handleTriggerDetected}
             isProcessing={
-              isProcessing ||
-              isCompacting ||
-              !!pendingApproval ||
-              !!activeCommand ||
-              !!agentError
+              isProcessing || isCompacting || !!activeCommand || !!agentError
             }
             placeholder={
-              pendingApproval ? 'type permission (y/n/t) ↵' : undefined
+              pendingApproval ? 'queue up your next message' : undefined
             }
             hint={activeCommand?.command.meta?.hint as string | undefined}
-            hideInput={toolOutputsExpanded || noInteractive}
+            hideInput={
+              toolOutputsExpanded || noInteractive || !!pendingApproval
+            }
           >
             <CommandMenu />
             {showContextBreakdown && (
