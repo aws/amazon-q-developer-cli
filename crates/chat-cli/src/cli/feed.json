@@ -12,6 +12,18 @@
     },
     {
       "type": "release",
+      "date": "2026-02-17",
+      "version": "1.26.2",
+      "title": "Version 1.26.2",
+       "changes": [
+        {
+          "type": "fixed",
+          "description": "Auto compaction for context window overflow errors"
+        }
+      ]
+    },
+    {
+      "type": "release",
       "date": "2026-02-16",
       "version": "1.26.1",
       "title": "Version 1.26.1",
