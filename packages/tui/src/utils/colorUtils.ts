@@ -88,10 +88,13 @@ export const getTerminalChalkColor = (
   let resolvedHex: string = '#000000'; // Default fallback
 
   // Special case: 'default' means use terminal's default foreground color
-  // Return text unchanged (no color codes applied)
+  // Return chalk.reset which applies no color but has .bold, .italic, etc. with chaining
   if (named === 'default') {
-    const colorWrapper = (text: string) => text;
+    const baseChalk = chalk.reset;
+    const colorWrapper = (text: string) => baseChalk(text);
     colorWrapper.hex = 'inherit'; // Special marker for components that need hex values
+    // Copy chalk modifiers to support chaining (e.g., messageColor.bold.italic)
+    Object.setPrototypeOf(colorWrapper, baseChalk);
     return colorWrapper;
   }
 
