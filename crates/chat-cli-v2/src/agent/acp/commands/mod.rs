@@ -7,6 +7,7 @@ pub mod context;
 pub mod exit;
 pub mod help;
 pub mod model;
+pub mod usage;
 
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -49,5 +50,6 @@ pub async fn execute(command: TuiCommand, ctx: &CommandContext<'_>) -> CommandRe
         TuiCommand::Compact(ref args) => compact::execute(args, ctx).await,
         TuiCommand::Clear(ref args) => clear::execute(args, ctx).await,
         TuiCommand::Quit(ref args) => exit::execute(args, ctx).await,
+        TuiCommand::Usage(_args) => usage::execute(ctx).await,
     }
 }

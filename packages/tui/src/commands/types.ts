@@ -34,6 +34,8 @@ export interface CommandContext {
     show: boolean,
     commands?: Array<{ name: string; description: string; usage: string }>
   ) => void;
+  /** Show/hide usage panel */
+  setShowUsagePanel: (show: boolean, data?: any) => void;
   /** Clear conversation messages */
   clearMessages: () => void;
   /** Clear all command UI state (menus, panels) */

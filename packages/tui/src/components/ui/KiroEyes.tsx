@@ -61,8 +61,7 @@ export const KiroEyes: React.FC<KiroEyesProps> = ({
     const [eyes, , label] = frame;
     return (
       <Text>
-        <Text color="white">{eyes}</Text>{' '}
-        <Text>{primaryColor(label)}</Text>
+        <Text color="white">{eyes}</Text> <Text>{primaryColor(label)}</Text>
       </Text>
     );
   }

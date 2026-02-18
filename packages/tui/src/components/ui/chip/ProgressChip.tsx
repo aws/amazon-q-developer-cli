@@ -32,7 +32,9 @@ export default function ProgressChip({
   const clampedValue = Math.max(0, Math.min(100, value));
 
   // Calculate filled and empty segments
-  const filledCount = Math.round((clampedValue / 100) * barWidth);
+  // When showRemaining, fill the bar to show remaining capacity (not usage)
+  const barValue = showRemaining ? 100 - clampedValue : clampedValue;
+  const filledCount = Math.round((barValue / 100) * barWidth);
   const emptyCount = barWidth - filledCount;
 
   const barColorFn = getColor(barColor);

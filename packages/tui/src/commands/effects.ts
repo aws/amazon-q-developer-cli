@@ -26,6 +26,7 @@ type EffectName =
   | 'updateAgent'
   | 'showContextPanel'
   | 'showHelpPanel'
+  | 'showUsagePanel'
   | 'clearMessages'
   | 'quit';
 
@@ -37,6 +38,7 @@ const commandEffects: Partial<Record<CommandName, EffectName>> = {
   model: 'updateModel',
   agent: 'updateAgent',
   context: 'showContextPanel',
+  usage: 'showUsagePanel',
   clear: 'clearMessages',
   quit: 'quit',
 };
@@ -84,6 +86,10 @@ const effectHandlers: Record<EffectName, EffectHandler> = {
     if (data?.commands) {
       ctx.setShowHelpPanel(true, data.commands);
     }
+  },
+
+  showUsagePanel: (result, ctx) => {
+    ctx.setShowUsagePanel(true, result?.data);
   },
 
   clearMessages: (result, ctx) => {

@@ -85,8 +85,10 @@ pub async fn get_command_options(
     match command {
         TuiCommandKind::Model => commands::model::get_options(partial, &ctx).await,
         TuiCommandKind::Agent => commands::agent::get_options(partial, &ctx),
-        TuiCommandKind::Context | TuiCommandKind::Compact | TuiCommandKind::Clear | TuiCommandKind::Quit => {
-            CommandOptionsResponse::default()
-        },
+        TuiCommandKind::Context
+        | TuiCommandKind::Compact
+        | TuiCommandKind::Clear
+        | TuiCommandKind::Quit
+        | TuiCommandKind::Usage => CommandOptionsResponse::default(),
     }
 }

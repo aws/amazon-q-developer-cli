@@ -1,4 +1,4 @@
-import { Box} from 'ink';
+import { Box } from 'ink';
 import React, {
   useEffect,
   useRef,

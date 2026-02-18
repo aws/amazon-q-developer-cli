@@ -1,11 +1,10 @@
 import { Box } from 'ink';
 import React, { useCallback, useMemo } from 'react';
 import { useTheme } from '../../../hooks/useThemeContext.js';
-import type { MarkdownSegment } from '../../../utils/index.js';
-import { parseMarkdown, normalizeLineEndings } from '../../../utils/index.js';
-import { useSyntaxHighlight } from '../../../utils/syntax-highlight.js';
+import { normalizeLineEndings } from '../../../utils/index.js';
 import { Text } from '../../ui/text/Text.js';
 import { StatusBar } from '../status-bar/StatusBar.js';
+import { MarkdownRenderer } from '../../ui/MarkdownRenderer.js';
 import type { StatusType } from '../../../types/componentTypes.js';
 
 export enum MessageType {
@@ -29,7 +28,6 @@ export const Message = React.memo(function Message({
   barColor,
 }: MessageProps) {
   const { getColor } = useTheme();
-  const highlightCode = useSyntaxHighlight();
 
   const messageColor = useMemo(() => {
     switch (type) {
@@ -42,88 +40,16 @@ export const Message = React.memo(function Message({
     }
   }, [type, getColor]);
 
-  // Determine status: use provided status or default to 'active'
   const messageStatus: StatusType = status || 'active';
 
   const renderContent = useCallback(() => {
-    const backgroundColor =
-      type === MessageType.DEVELOPER ? getColor('surface').hex : undefined;
-
     if (type === MessageType.AGENT) {
-      const segments = parseMarkdown(content);
-
-      // Group segments into blocks (text groups vs code blocks)
-      type RenderBlock =
-        | { type: 'text'; segments: MarkdownSegment[] }
-        | { type: 'code'; segment: MarkdownSegment };
-
-      const blocks: RenderBlock[] = [];
-      let currentTextGroup: MarkdownSegment[] = [];
-
-      segments.forEach((segment) => {
-        if (segment.codeBlock) {
-          // Flush current text group
-          if (currentTextGroup.length > 0) {
-            blocks.push({ type: 'text', segments: currentTextGroup });
-            currentTextGroup = [];
-          }
-          // Add code block
-          blocks.push({ type: 'code', segment });
-        } else {
-          // Collect text segments
-          currentTextGroup.push(segment);
-        }
-      });
-
-      // Flush remaining text
-      if (currentTextGroup.length > 0) {
-        blocks.push({ type: 'text', segments: currentTextGroup });
-      }
-
-      // Render blocks
-      return (
-        <Box flexDirection="column">
-          {blocks.map((block, i) => {
-            if (block.type === 'code') {
-              // Remove leading and trailing newlines from code to prevent extra spacing
-              const code = block.segment.codeBlock!.code.replace(
-                /^\n+|\n+$/g,
-                ''
-              );
-              const highlightedCode = highlightCode(
-                code,
-                block.segment.codeBlock!.language
-              );
-              return <Text key={i}>{highlightedCode}</Text>;
-            } else {
-              // Render text segments with formatting preserved
-              return (
-                <Text key={i} wrap="wrap">
-                  {block.segments.map((segment, j) => {
-                    let styledText = segment.text;
-                    // Apply bold/italic formatting via chalk
-                    if (segment.bold && segment.italic) {
-                      styledText = messageColor.bold.italic(styledText);
-                    } else if (segment.bold) {
-                      styledText = messageColor.bold(styledText);
-                    } else if (segment.italic) {
-                      styledText = messageColor.italic(styledText);
-                    } else {
-                      styledText = messageColor(styledText);
-                    }
-                    return <Text key={j}>{styledText}</Text>;
-                  })}
-                </Text>
-              );
-            }
-          })}
-        </Box>
-      );
+      return <MarkdownRenderer content={content} color={messageColor} />;
     }
 
-    // Developer messages - show full content with normalized line endings
+    // Developer messages
+    const backgroundColor = getColor('surface').hex;
     const displayContent = normalizeLineEndings(content);
-
     return (
       <Box>
         <Box backgroundColor={backgroundColor}>
@@ -131,7 +57,7 @@ export const Message = React.memo(function Message({
         </Box>
       </Box>
     );
-  }, [content, type, messageColor, getColor, highlightCode]);
+  }, [content, type, messageColor, getColor]);
 
   return (
     <StatusBar status={messageStatus} barColor={barColor}>

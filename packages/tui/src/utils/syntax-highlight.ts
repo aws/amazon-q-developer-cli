@@ -1,6 +1,7 @@
 import { highlight } from 'cli-highlight';
 import { useMemo } from 'react';
 import { useTheme } from '../hooks/useThemeContext.js';
+import { resolveHighlightLanguage } from './highlight-languages.js';
 
 // Hook for syntax highlighting using TUI theme colors
 export function useSyntaxHighlight() {
@@ -30,9 +31,10 @@ export function useSyntaxHighlight() {
   const highlightCode = useMemo(
     () =>
       (code: string, language?: string): string => {
+        const lang = resolveHighlightLanguage(language);
         try {
           return highlight(code, {
-            language: language,
+            language: lang,
             theme: syntaxTheme,
           });
         } catch {

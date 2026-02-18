@@ -50,7 +50,11 @@ export function PromptBar({
   return (
     <Box flexDirection="column" gap={0}>
       <Divider />
-      <Box paddingLeft={fillsEdgeMargin ? 1 : 0} flexDirection="column">
+      <Box
+        paddingLeft={fillsEdgeMargin ? 1 : 0}
+        flexDirection="column"
+        width="100%"
+      >
         {header && <Box marginBottom={1}>{header}</Box>}
         {subHeader}
         {!hideInput && (

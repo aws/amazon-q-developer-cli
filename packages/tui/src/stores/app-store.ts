@@ -32,6 +32,32 @@ export interface ContextBreakdownData {
   yourPrompts: { percent: number; tokens: number };
   sessionFiles?: { percent: number; tokens: number };
 }
+
+export interface UsageBreakdownItem {
+  displayName: string;
+  used: number;
+  limit: number;
+  percentage: number;
+  currentOverages: number;
+  overageRate: number;
+  overageCharges: number;
+  currency: string;
+}
+
+export interface BonusCredit {
+  name: string;
+  used: number;
+  total: number;
+  daysUntilExpiry: number;
+}
+
+export interface UsageData {
+  planName: string;
+  overagesEnabled: boolean;
+  isEnterprise: boolean;
+  usageBreakdowns: UsageBreakdownItem[];
+  bonusCredits: BonusCredit[];
+}
 import {
   executeCommand,
   executeCommandWithArg,
@@ -184,6 +210,7 @@ interface BaseAppActions {
     show: boolean,
     commands?: Array<{ name: string; description: string; usage: string }>
   ) => void;
+  setShowUsagePanel: (show: boolean, data?: any) => void;
 
   // File attachment actions
   attachFile: (path: string) => void;
@@ -249,6 +276,10 @@ export interface AppState {
   // Context usage state
   contextUsagePercent: number | null;
   lastTurnTokens: LastTurnTokens | null;
+
+  // Usage panel state
+  showUsagePanel: boolean;
+  usageData: UsageData | null;
 
   // File attachments
   attachedFiles: string[];
@@ -331,6 +362,8 @@ export const createAppStore = (props: AppStoreProps) =>
     contextBreakdown: null,
     showHelpPanel: false,
     helpCommands: [],
+    showUsagePanel: false,
+    usageData: null,
     attachedFiles: [],
     pendingFileAttachment: null,
     currentAbortController: null,
@@ -1110,13 +1143,16 @@ export const createAppStore = (props: AppStoreProps) =>
         setContextUsage: state.setContextUsage,
         setShowContextBreakdown: state.setShowContextBreakdown,
         setShowHelpPanel: state.setShowHelpPanel,
+        setShowUsagePanel: state.setShowUsagePanel,
         clearMessages: state.clearMessages,
         clearUIState: () =>
           set({
             activeCommand: null,
             showContextBreakdown: false,
             showHelpPanel: false,
+            showUsagePanel: false,
             contextBreakdown: null,
+            usageData: null,
           }),
       };
 
@@ -1347,6 +1383,10 @@ export const createAppStore = (props: AppStoreProps) =>
       set({ showHelpPanel: show, helpCommands: commands });
     },
 
+    setShowUsagePanel: (show, data) => {
+      set({ showUsagePanel: show, usageData: data ?? null });
+    },
+
     // File attachment actions
     attachFile: (path) => {
       set((state) => ({
@@ -1403,6 +1443,8 @@ export const createAppStore = (props: AppStoreProps) =>
       set({
         activeCommand: null,
         showContextBreakdown: false,
+        showHelpPanel: false,
+        showUsagePanel: false,
         commandInputValue: '',
         activeTrigger: null,
       });
@@ -1422,13 +1464,16 @@ export const createAppStore = (props: AppStoreProps) =>
           setContextUsage: state.setContextUsage,
           setShowContextBreakdown: state.setShowContextBreakdown,
           setShowHelpPanel: state.setShowHelpPanel,
+          setShowUsagePanel: state.setShowUsagePanel,
           clearMessages: state.clearMessages,
           clearUIState: () =>
             set({
               activeCommand: null,
               showContextBreakdown: false,
               showHelpPanel: false,
+              showUsagePanel: false,
               contextBreakdown: null,
+              usageData: null,
             }),
         };
         await executeCommand(trimmed, ctx);

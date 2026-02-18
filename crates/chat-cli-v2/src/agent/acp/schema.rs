@@ -45,6 +45,7 @@ pub enum TuiCommandKind {
     Compact,
     Clear,
     Quit,
+    Usage,
 }
 
 /// Request to get command options (autocomplete)

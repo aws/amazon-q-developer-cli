@@ -338,6 +338,10 @@ export interface ToolUseBlockStart {
 	name: string;
 }
 
+/** Arguments for /usage command */
+export interface UsageArgs {
+}
+
 export type StreamEvent = 
 	| { kind: "messageStart", data: MessageStartEvent }
 	| { kind: "messageStop", data: MessageStopEvent }
@@ -386,5 +390,7 @@ export type TuiCommand =
 	/** Clear the conversation history */
 	| { command: "clear", args: ClearArgs }
 	/** Quit the application */
-	| { command: "quit", args: QuitArgs };
+	| { command: "quit", args: QuitArgs }
+	/** Show billing and usage information */
+	| { command: "usage", args: UsageArgs };
 

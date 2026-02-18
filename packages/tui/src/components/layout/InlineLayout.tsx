@@ -17,6 +17,7 @@ import { BlockingErrorAlert } from '../ui/alert/BlockingErrorAlert.js';
 import { Chip, ChipColor, ProgressChip } from '../ui/chip/index.js';
 import { ContextBreakdown } from '../ui/ContextBreakdown';
 import { RadioGroup, type RadioOption } from '../ui/radio/RadioGroup.js';
+import { UsagePanel } from '../ui/UsagePanel';
 import {
   useNotificationState,
   useNotificationActions,
@@ -30,6 +31,7 @@ import {
   useConversationState,
   useApprovalState,
   useQueueState,
+  useKiroClient,
 } from '../../stores/selectors.js';
 import { useKeypress } from '../../hooks/useKeypress';
 import { getGitBranch } from '../../utils/git';
@@ -57,11 +59,14 @@ export const InlineLayout: React.FC = () => {
     contextBreakdown,
     showHelpPanel,
     helpCommands,
+    showUsagePanel,
+    usageData,
   } = useUIState();
   const {
     toggleToolOutputsExpanded,
     setShowContextBreakdown,
     setShowHelpPanel,
+    setShowUsagePanel,
   } = useUIActions();
   const { sessionId, contextUsagePercent, currentModel, currentAgent } =
     useContextState();
@@ -71,6 +76,7 @@ export const InlineLayout: React.FC = () => {
   const { handleUserInput, clearInput } = useInputActions();
   const { messages } = useConversationState();
   const { queuedMessages } = useQueueState();
+  const { kiro } = useKiroClient();
 
   // Cache git branch - only call once on mount to avoid blocking renders
   const gitBranch = useMemo(() => getGitBranch(), []);
@@ -174,6 +180,46 @@ export const InlineLayout: React.FC = () => {
     setActiveCommand(null);
     clearCommandInput();
   }, [setShowHelpPanel, setActiveCommand, clearCommandInput]);
+
+  const handleCloseUsagePanel = useCallback(() => {
+    setShowUsagePanel(false);
+    setActiveCommand(null);
+    clearCommandInput();
+  }, [setShowUsagePanel, setActiveCommand, clearCommandInput]);
+
+  const handleTabFromContext = useCallback(async () => {
+    setShowContextBreakdown(false);
+    try {
+      const result = await kiro.executeCommand({
+        command: 'usage',
+        args: {},
+      } as any);
+      if (result?.data) {
+        setShowUsagePanel(true, result.data);
+      }
+    } catch {
+      /* ignore */
+    }
+  }, [setShowContextBreakdown, setShowUsagePanel, kiro]);
+
+  const handleTabFromUsage = useCallback(async () => {
+    setShowUsagePanel(false);
+    try {
+      const result = await kiro.executeCommand({
+        command: 'context',
+        args: {},
+      } as any);
+      if (
+        result?.data &&
+        typeof result.data === 'object' &&
+        'breakdown' in result.data
+      ) {
+        setShowContextBreakdown(true, result.data.breakdown as any);
+      }
+    } catch {
+      /* ignore */
+    }
+  }, [setShowUsagePanel, setShowContextBreakdown, kiro]);
 
   // Build the header - use SnackBar for approval, ContextBar otherwise
   const promptBarHeader = useMemo(() => {
@@ -305,7 +351,7 @@ export const InlineLayout: React.FC = () => {
         <Box marginBottom={1}>
           <PromptBar
             header={
-              showContextBreakdown || showHelpPanel
+              showContextBreakdown || showHelpPanel || showUsagePanel
                 ? undefined
                 : promptBarHeader
             }
@@ -330,7 +376,12 @@ export const InlineLayout: React.FC = () => {
             }
             hint={activeCommand?.command.meta?.hint as string | undefined}
             hideInput={
-              toolOutputsExpanded || noInteractive || !!pendingApproval
+              toolOutputsExpanded ||
+              noInteractive ||
+              !!pendingApproval ||
+              showContextBreakdown ||
+              showHelpPanel ||
+              showUsagePanel
             }
           >
             <CommandMenu />
@@ -341,6 +392,14 @@ export const InlineLayout: React.FC = () => {
                 model={currentModel?.name ?? null}
                 agentName={currentAgent?.name ?? null}
                 onClose={handleCloseContextBreakdown}
+                onTabSwitch={handleTabFromContext}
+              />
+            )}
+            {showUsagePanel && (
+              <UsagePanel
+                data={usageData}
+                onClose={handleCloseUsagePanel}
+                onTabSwitch={handleTabFromUsage}
               />
             )}
             {showHelpPanel && (

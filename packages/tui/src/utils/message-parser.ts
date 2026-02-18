@@ -1,17 +1,11 @@
 import { highlight } from 'cli-highlight';
+import { resolveHighlightLanguage } from './highlight-languages.js';
 
 export interface ContentBlock {
   type: 'text' | 'code' | 'tool_call' | 'tool_output';
   content: string;
   language?: string;
   metadata?: Record<string, any>;
-}
-
-interface ParseState {
-  blocks: ContentBlock[];
-  currentBlock: string;
-  inCodeBlock: boolean;
-  codeLanguage?: string;
 }
 
 export function parseMarkdownChunk(chunk: string): ContentBlock[] {
@@ -114,11 +108,12 @@ export function renderContentBlock(block: ContentBlock): string {
     case 'code':
       try {
         // Use cli-highlight for syntax highlighting
+        const lang = resolveHighlightLanguage(block.language);
         return highlight(block.content, {
-          language: block.language || 'text',
+          language: lang,
           theme: 'default',
         });
-      } catch (error) {
+      } catch {
         // Fallback to plain text if highlighting fails
         return block.content;
       }

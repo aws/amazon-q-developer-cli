@@ -109,6 +109,8 @@ export const useUIState = () =>
       contextBreakdown: state.contextBreakdown,
       showHelpPanel: state.showHelpPanel,
       helpCommands: state.helpCommands,
+      showUsagePanel: state.showUsagePanel,
+      usageData: state.usageData,
     }))
   );
 
@@ -122,6 +124,7 @@ export const useUIActions = () =>
       setHasExpandableToolOutputs: state.setHasExpandableToolOutputs,
       setShowContextBreakdown: state.setShowContextBreakdown,
       setShowHelpPanel: state.setShowHelpPanel,
+      setShowUsagePanel: state.setShowUsagePanel,
     }))
   );
 
@@ -136,6 +139,16 @@ export const useContextState = () =>
       lastTurnTokens: state.lastTurnTokens,
       currentModel: state.currentModel,
       currentAgent: state.currentAgent,
+    }))
+  );
+
+/**
+ * Kiro client selector - for command execution
+ */
+export const useKiroClient = () =>
+  useAppStore(
+    useShallow((state) => ({
+      kiro: state.kiro,
     }))
   );
 

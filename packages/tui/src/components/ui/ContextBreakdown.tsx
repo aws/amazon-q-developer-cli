@@ -1,6 +1,7 @@
 import React from 'react';
 import { Box, useInput, Text as InkText } from 'ink';
 import { Text } from './text/Text.js';
+import { Panel } from './panel/Panel.js';
 import { Divider } from './divider/Divider.js';
 import { useTheme } from '../../hooks/useThemeContext.js';
 import { useTerminalSize } from '../../hooks/useTerminalSize.js';
@@ -11,6 +12,7 @@ interface ContextBreakdownProps {
   model: string | null;
   agentName: string | null;
   onClose: () => void;
+  onTabSwitch?: () => void;
 }
 
 interface ContextFileItem {
@@ -106,6 +108,7 @@ export function ContextBreakdown({
   breakdown,
   agentName,
   onClose,
+  onTabSwitch,
 }: ContextBreakdownProps) {
   const { getColor } = useTheme();
   const { width: termWidth } = useTerminalSize();
@@ -122,9 +125,6 @@ export function ContextBreakdown({
   const useHorizontalLayout = termWidth >= 90;
 
   useInput((_input, key) => {
-    if (key.escape) {
-      onClose();
-    }
     if (key.ctrl && _input === 'o') {
       setExpanded((e) => !e);
     }
@@ -159,10 +159,17 @@ export function ContextBreakdown({
   );
 
   return (
-    <Box flexDirection="column" paddingX={1} paddingY={0}>
-      <Text>{primary('/context')}</Text>
-      <Divider />
-
+    <Panel
+      title="/context"
+      onClose={onClose}
+      onTabSwitch={onTabSwitch}
+      showTabHint={true}
+      footerExtra={
+        <Text>
+          {primary('ctrl+o')} {dim(expanded ? 'to collapse' : 'to expand')}
+        </Text>
+      }
+    >
       <Box marginBottom={1}>
         <Text>{primary('Current context window:')}</Text>
       </Box>
@@ -222,16 +229,6 @@ export function ContextBreakdown({
           </Text>
         </Box>
       )}
-
-      <Divider />
-      <Box justifyContent="space-between">
-        <Text>
-          {primary('ESC')} {dim('to close')}
-        </Text>
-        <Text>
-          {primary('ctrl+o')} {dim(expanded ? 'to collapse' : 'to expand')}
-        </Text>
-      </Box>
-    </Box>
+    </Panel>
   );
 }

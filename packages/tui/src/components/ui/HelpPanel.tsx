@@ -1,8 +1,8 @@
 import React from 'react';
-import { Box, useInput } from 'ink';
-import { Text } from './text/Text';
-import { Divider } from './divider/Divider';
-import { useTheme } from '../../hooks/useThemeContext';
+import { Box } from 'ink';
+import { Text } from './text/Text.js';
+import { Panel } from './panel/index.js';
+import { useTheme } from '../../hooks/useThemeContext.js';
 
 interface Command {
   name: string;
@@ -17,33 +17,19 @@ interface HelpPanelProps {
 
 export const HelpPanel: React.FC<HelpPanelProps> = ({ commands, onClose }) => {
   const { getColor } = useTheme();
-
-  useInput((_input, key) => {
-    if (key.escape) {
-      onClose();
-    }
-  });
+  const primary = getColor('primary');
+  const dim = getColor('secondary');
 
   return (
-    <Box flexDirection="column" paddingX={1}>
-      <Box justifyContent="space-between" marginBottom={0}>
-        <Text>{getColor('primary')('/help')}</Text>
-        <Text>
-          {getColor('secondary')('(')}
-          {getColor('brand')('ESC')}
-          {getColor('secondary')(' to close)')}
-        </Text>
-      </Box>
-      <Divider />
+    <Panel title="/help" onClose={onClose}>
       {commands.map((cmd) => (
         <Box key={cmd.name} flexDirection="column">
           <Text>
-            {getColor('primary')(cmd.name)}{' '}
-            {getColor('secondary')(`- ${cmd.description}`)}
+            {primary(cmd.name)} {dim(`- ${cmd.description}`)}
           </Text>
-          <Text> {getColor('secondary')(cmd.usage)}</Text>
+          <Text> {dim(cmd.usage)}</Text>
         </Box>
       ))}
-    </Box>
+    </Panel>
   );
 };

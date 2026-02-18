@@ -34,6 +34,8 @@ pub enum TuiCommand {
     Clear(ClearArgs),
     /// Quit the application
     Quit(QuitArgs),
+    /// Show billing and usage information
+    Usage(UsageArgs),
 }
 
 /// Arguments for /help command
@@ -96,6 +98,12 @@ pub struct ClearArgs {}
 #[serde(rename_all = "camelCase")]
 pub struct QuitArgs {}
 
+/// Arguments for /usage command
+#[typeshare]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct UsageArgs {}
+
 impl TuiCommand {
     /// Command name with leading slash
     pub fn name(&self) -> &'static str {
@@ -107,6 +115,7 @@ impl TuiCommand {
             TuiCommand::Compact(_) => "/compact",
             TuiCommand::Clear(_) => "/clear",
             TuiCommand::Quit(_) => "/quit",
+            TuiCommand::Usage(_) => "/usage",
         }
     }
 
@@ -120,6 +129,7 @@ impl TuiCommand {
             TuiCommand::Compact(_) => "Compact conversation history",
             TuiCommand::Clear(_) => "Clear conversation history",
             TuiCommand::Quit(_) => "Quit the application",
+            TuiCommand::Usage(_) => "Show billing and usage information",
         }
     }
 
@@ -133,6 +143,7 @@ impl TuiCommand {
             TuiCommand::Compact(_) => "/compact",
             TuiCommand::Clear(_) => "/clear",
             TuiCommand::Quit(_) => "/quit",
+            TuiCommand::Usage(_) => "/usage",
         }
     }
 
@@ -170,6 +181,11 @@ impl TuiCommand {
                 Some(meta)
             },
             TuiCommand::Compact(_) => None,
+            TuiCommand::Usage(_) => {
+                let mut meta = serde_json::Map::new();
+                meta.insert("inputType".into(), "panel".into());
+                Some(meta)
+            },
         }
     }
 
@@ -183,6 +199,7 @@ impl TuiCommand {
             TuiCommand::Compact(CompactArgs::default()),
             TuiCommand::Clear(ClearArgs::default()),
             TuiCommand::Quit(QuitArgs::default()),
+            TuiCommand::Usage(UsageArgs::default()),
         ];
         commands.sort_by_key(|cmd| cmd.name());
         commands
