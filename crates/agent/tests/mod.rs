@@ -67,6 +67,12 @@ async fn test_mixed_file_and_skill_resources() {
     let requests = test.requests();
     assert!(!requests.is_empty(), "expected at least one request");
 
+    // Verify user prompt is included in the request
+    assert!(
+        requests[0].prompt_contains_text("test prompt"),
+        "expected user prompt in request"
+    );
+
     let first_msg = requests[0]
         .messages()
         .first()
@@ -726,5 +732,73 @@ async fn test_compaction_retry_on_context_overflow_failure() {
     assert!(
         matches!(snapshot.execution_state.active_state, ActiveState::Errored(_)),
         "expected agent to be in errored state after compaction failure"
+    );
+}
+
+#[tokio::test]
+async fn test_overflow_after_compaction_retry_truncates_user_message() {
+    let _ = tracing_subscriber::fmt::try_init();
+
+    // Flow: hello -> hello_ack -> large_prompt -> overflow -> compaction -> retry overflow -> truncate
+    // -> retry success
+    let responses = parse_response_streams(include_str!("./mock_responses/overflow_after_compaction_retry.jsonl"))
+        .await
+        .unwrap();
+
+    let mut test = TestCase::builder()
+        .test_name("overflow after compaction retry truncates user message")
+        .with_default_agent_config()
+        .with_responses(responses)
+        .build()
+        .await
+        .unwrap();
+
+    // First send hello to build up some history
+    test.send_prompt("hello".to_string()).await;
+    test.wait_until_agent_stop(Duration::from_secs(2)).await.unwrap();
+
+    // Send a large prompt that will overflow even after compaction
+    let large_prompt = "x".repeat(30_000);
+    test.send_prompt(large_prompt).await;
+    test.wait_until_agent_stop(Duration::from_secs(2)).await.unwrap();
+
+    // Verify compaction events: should have 1 Started and 1 Completed
+    // (truncation retries directly without another compaction)
+    let compaction_events = test.compaction_events();
+    let started_count = compaction_events
+        .iter()
+        .filter(|e| matches!(e, AgentEvent::Compaction(CompactionEvent::Started)))
+        .count();
+    let completed_count = compaction_events
+        .iter()
+        .filter(|e| matches!(e, AgentEvent::Compaction(CompactionEvent::Completed)))
+        .count();
+
+    assert_eq!(started_count, 1, "expected 1 CompactionEvent::Started");
+    assert_eq!(completed_count, 1, "expected 1 CompactionEvent::Completed");
+
+    // Verify agent ended in idle state (success)
+    let snapshot = test.create_snapshot().await;
+    assert!(
+        matches!(snapshot.execution_state.active_state, ActiveState::Idle),
+        "expected agent to be idle after successful retry"
+    );
+
+    // Verify the retry request had a truncated user message
+    // The last request (after truncation) should have the truncated message
+    let requests = test.requests();
+    let last_request = requests.last().unwrap();
+    let last_user_msg = last_request
+        .messages()
+        .iter()
+        .filter(|m| m.role == agent::agent_loop::types::Role::User)
+        .last()
+        .expect("expected user message in request");
+
+    let user_content = last_user_msg.text();
+    assert!(
+        user_content.ends_with("...truncated due to length"),
+        "expected user message to be truncated, got: {}...",
+        &user_content[..100.min(user_content.len())]
     );
 }

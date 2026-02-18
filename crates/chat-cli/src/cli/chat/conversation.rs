@@ -842,6 +842,12 @@ impl ConversationState {
         self.next_message = None;
     }
 
+    pub fn truncate_next_user_message(&mut self, max_bytes: usize) {
+        if let Some(msg) = self.next_message.as_mut() {
+            msg.truncate_safe(max_bytes);
+        }
+    }
+
     pub fn current_continuation_id(&self) -> &str {
         self.user_turn_metadata.continuation_id()
     }

@@ -191,6 +191,7 @@ use crate::cli::chat::checkpoint::{
     truncate_message,
 };
 use crate::cli::chat::cli::SlashCommand;
+use crate::cli::chat::cli::compact::DEFAULT_COMPACTION_MAX_MESSAGE_LENGTH;
 use crate::cli::chat::cli::editor::open_editor;
 use crate::cli::chat::cli::prompts::{
     FilePrompts,
@@ -792,6 +793,8 @@ pub enum ChatError {
     NonInteractiveToolApproval,
     #[error("The conversation history is too large to compact")]
     CompactHistoryFailure,
+    #[error("The prompt is too long even after truncation")]
+    PromptTooLong,
     #[error("Failed to swap to agent: {0}")]
     AgentSwapError(eyre::Report),
     #[error(transparent)]
@@ -812,6 +815,7 @@ impl ChatError {
             ChatError::GetPromptError(_) => None,
             ChatError::NonInteractiveToolApproval => None,
             ChatError::CompactHistoryFailure => None,
+            ChatError::PromptTooLong => None,
             ChatError::AgentSwapError(_) => None,
             ChatError::Conduit(_) => None,
         }
@@ -832,6 +836,7 @@ impl ReasonCode for ChatError {
             ChatError::Auth(_) => "AuthError".to_string(),
             ChatError::NonInteractiveToolApproval => "NonInteractiveToolApproval".to_string(),
             ChatError::CompactHistoryFailure => "CompactHistoryFailure".to_string(),
+            ChatError::PromptTooLong => "PromptTooLong".to_string(),
             ChatError::AgentSwapError(_) => "AgentSwapError".to_string(),
             ChatError::Conduit(_) => "ConduitError".to_string(),
         }
@@ -1174,12 +1179,15 @@ impl ChatSession {
                     Ok(_) = ctrl_c_stream.recv() => Err(ChatError::Interrupted { tool_uses: None })
                 }
             },
-            ChatState::HandleResponseStream(conversation_state) => {
+            ChatState::HandleResponseStream {
+                state,
+                is_compaction_retry,
+            } => {
                 let request_metadata: Arc<Mutex<Option<RequestMetadata>>> = Arc::new(Mutex::new(None));
                 let request_metadata_clone = Arc::clone(&request_metadata);
 
                 tokio::select! {
-                    res = self.handle_response(os, conversation_state, request_metadata_clone) => res,
+                    res = self.handle_response(os, state, request_metadata_clone, is_compaction_retry, false) => res,
                     Ok(_) = ctrl_c_stream.recv() => {
                         debug!(?request_metadata, "ctrlc received");
                         // Wait for handle_response to finish handling the ctrlc.
@@ -1292,6 +1300,18 @@ impl ChatSession {
                 )?;
                 ("Unable to compact the conversation history", eyre!(err), true)
             },
+            ChatError::PromptTooLong => {
+                execute!(
+                    self.stderr,
+                    StyledText::error_fg(),
+                    style::Print("Your prompt is too long even after truncation.\n"),
+                    StyledText::reset(),
+                    style::Print("Please try a shorter message.\n"),
+                    StyledText::reset_attributes(),
+                    style::Print("\n\n"),
+                )?;
+                ("Prompt too long", eyre!(err), true)
+            },
             ChatError::SendMessage(err) => match &err.source.kind {
                 // Errors from attempting to send too large of a conversation history. In
                 // this case, attempt to automatically compact the history for the user.
@@ -1331,7 +1351,7 @@ impl ChatSession {
                                 context_window_percent_to_exclude,
                                 truncate_large_messages: self.conversation.history().len() <= 2,
                                 max_message_length: if self.conversation.history().len() <= 2 {
-                                    25_000
+                                    DEFAULT_COMPACTION_MAX_MESSAGE_LENGTH
                                 } else {
                                     Default::default()
                                 },
@@ -1600,7 +1620,10 @@ pub enum ChatState {
     /// Execute the list of tools.
     ExecuteTools,
     /// Consume the response stream and display to the user.
-    HandleResponseStream(crate::api_client::model::ConversationState),
+    HandleResponseStream {
+        state: crate::api_client::model::ConversationState,
+        is_compaction_retry: bool,
+    },
     /// Compact the chat history.
     CompactHistory {
         /// Custom prompt to include as part of history compaction.
@@ -2199,7 +2222,7 @@ impl ChatSession {
                                 show_summary,
                                 strategy: CompactStrategy {
                                     truncate_large_messages: true,
-                                    max_message_length: 25_000,
+                                    max_message_length: DEFAULT_COMPACTION_MAX_MESSAGE_LENGTH,
                                     messages_to_exclude: 0,
                                     context_window_percent_to_exclude: adjusted_strategy
                                         .context_window_percent_to_exclude,
@@ -2224,7 +2247,7 @@ impl ChatSession {
                                 show_summary,
                                 strategy: CompactStrategy {
                                     truncate_large_messages: true,
-                                    max_message_length: 25_000,
+                                    max_message_length: DEFAULT_COMPACTION_MAX_MESSAGE_LENGTH,
                                     ..adjusted_strategy
                                 },
                             });
@@ -2374,11 +2397,19 @@ impl ChatSession {
         }
 
         if should_retry {
-            Ok(ChatState::HandleResponseStream(
-                self.conversation
+            execute!(
+                self.stderr,
+                StyledText::info_fg(),
+                style::Print("Retrying original prompt...\n\n"),
+                StyledText::reset(),
+            )?;
+            Ok(ChatState::HandleResponseStream {
+                state: self
+                    .conversation
                     .as_sendable_conversation_state(os, &mut self.stderr, false)
                     .await?,
-            ))
+                is_compaction_retry: true,
+            })
         } else {
             // Otherwise, return back to the prompt for any pending tool uses.
             Ok(ChatState::PromptUser {
@@ -2806,7 +2837,7 @@ impl ChatSession {
                                 .await;
 
                             if matches!(chat_state, ChatState::Exit)
-                                || matches!(chat_state, ChatState::HandleResponseStream(_))
+                                || matches!(chat_state, ChatState::HandleResponseStream { .. })
                                 || matches!(chat_state, ChatState::HandleInput { input: _ })
                                 // TODO(bskiser): this is just a hotfix for handling state changes
                                 // from manually running /compact, without impacting behavior of
@@ -3091,7 +3122,10 @@ impl ChatSession {
             self.spinner = Some(Spinner::new(Spinners::Dots, "Thinking...".to_owned()));
         }
 
-        Ok(ChatState::HandleResponseStream(conv_state))
+        Ok(ChatState::HandleResponseStream {
+            state: conv_state,
+            is_compaction_retry: false,
+        })
     }
 
     async fn tool_use_execute(&mut self, os: &mut Os) -> Result<ChatState, ChatError> {
@@ -3627,27 +3661,79 @@ impl ChatSession {
             .await;
         self.send_tool_use_telemetry(os).await;
 
-        return Ok(ChatState::HandleResponseStream(
-            self.conversation
+        return Ok(ChatState::HandleResponseStream {
+            state: self
+                .conversation
                 .as_sendable_conversation_state(os, &mut self.stderr, false)
                 .await?,
-        ));
+            is_compaction_retry: false,
+        });
     }
 
     /// Sends a [crate::api_client::ApiClient::send_message] request to the backend and consumes
     /// the response stream.
     ///
     /// In order to handle sigints while also keeping track of metadata about how the
-    /// response stream was handled, we need an extra parameter:
+    /// response stream was handled, we need extra parameters:
+    ///
     /// * `request_metadata_lock` - Updated with the [RequestMetadata] once it has been received
     ///   (either though a successful request, or on an error).
+    ///
+    /// ## Overflow Retry Parameters
+    ///
+    /// These parameters track state across recursive retries when handling context window overflow
+    /// after compaction:
+    ///
+    /// * `is_compaction_retry` - Whether this request is a retry after history compaction
+    ///   completed. When true and we still get overflow, we attempt to truncate the user message
+    ///   before failing.
+    ///
+    /// * `is_prompt_truncated` - Whether the user message has already been truncated in a previous
+    ///   retry attempt. When true and we still get overflow, we fail with `PromptTooLong` error
+    ///   since truncation didn't help.
     async fn handle_response(
         &mut self,
         os: &mut Os,
         state: api_client::model::ConversationState,
         request_metadata_lock: Arc<Mutex<Option<RequestMetadata>>>,
+        is_compaction_retry: bool,
+        is_prompt_truncated: bool,
     ) -> Result<ChatState, ChatError> {
-        let mut rx = self.send_message(os, state, request_metadata_lock, None).await?;
+        let rx = self
+            .send_message(os, state.clone(), request_metadata_lock.clone(), None)
+            .await;
+
+        let mut rx = match rx {
+            Ok(rx) => rx,
+            Err(ChatError::SendMessage(ref err))
+                if is_compaction_retry && matches!(err.source.kind, ConverseStreamErrorKind::ContextWindowOverflow) =>
+            {
+                if is_prompt_truncated {
+                    return Err(ChatError::PromptTooLong);
+                }
+                // Truncate the user message and retry
+                execute!(
+                    self.stderr,
+                    StyledText::warning_fg(),
+                    style::Print("Original prompt is too large to send. Truncating...\n\n"),
+                    StyledText::reset(),
+                )?;
+                let mut truncated_state = state;
+                const MAX_LEN: usize = 25_000;
+                truncated_state.truncate_user_input_message(MAX_LEN);
+                // Also truncate the conversation state so the stored message matches what was sent
+                self.conversation.truncate_next_user_message(MAX_LEN);
+                return Box::pin(self.handle_response(
+                    os,
+                    truncated_state,
+                    request_metadata_lock,
+                    is_compaction_retry,
+                    true,
+                ))
+                .await;
+            },
+            Err(e) => return Err(e),
+        };
 
         let request_id = rx.request_id().map(String::from);
 
@@ -3817,11 +3903,13 @@ impl ChatSession {
                                 )
                                 .await;
                             self.send_tool_use_telemetry(os).await;
-                            return Ok(ChatState::HandleResponseStream(
-                                self.conversation
+                            return Ok(ChatState::HandleResponseStream {
+                                state: self
+                                    .conversation
                                     .as_sendable_conversation_state(os, &mut self.stderr, false)
                                     .await?,
-                            ));
+                                is_compaction_retry: false,
+                            });
                         },
                         RecvErrorKind::UnexpectedToolUseEos {
                             tool_use_id,
@@ -3854,11 +3942,13 @@ impl ChatSession {
                                 }];
                             self.conversation.add_tool_results(tool_results);
                             self.send_tool_use_telemetry(os).await;
-                            return Ok(ChatState::HandleResponseStream(
-                                self.conversation
+                            return Ok(ChatState::HandleResponseStream {
+                                state: self
+                                    .conversation
                                     .as_sendable_conversation_state(os, &mut self.stderr, false)
                                     .await?,
-                            ));
+                                is_compaction_retry: false,
+                            });
                         },
                         RecvErrorKind::ToolValidationError {
                             tool_use_id,
@@ -3902,11 +3992,13 @@ impl ChatSession {
                             );
                             self.conversation.add_tool_results(tool_results);
                             self.send_tool_use_telemetry(os).await;
-                            return Ok(ChatState::HandleResponseStream(
-                                self.conversation
+                            return Ok(ChatState::HandleResponseStream {
+                                state: self
+                                    .conversation
                                     .as_sendable_conversation_state(os, &mut self.stderr, false)
                                     .await?,
-                            ));
+                                is_compaction_retry: false,
+                            });
                         },
                         _ => {
                             self.send_chat_telemetry(
@@ -4267,11 +4359,13 @@ impl ChatSession {
                 );
             }
 
-            return Ok(ChatState::HandleResponseStream(
-                self.conversation
+            return Ok(ChatState::HandleResponseStream {
+                state: self
+                    .conversation
                     .as_sendable_conversation_state(os, &mut self.stderr, false)
                     .await?,
-            ));
+                is_compaction_retry: false,
+            });
         }
 
         // Execute PreToolUse hooks for all validated tools
@@ -4337,11 +4431,13 @@ impl ChatSession {
             }
 
             self.conversation.add_tool_results(tool_results);
-            return Ok(ChatState::HandleResponseStream(
-                self.conversation
+            return Ok(ChatState::HandleResponseStream {
+                state: self
+                    .conversation
                     .as_sendable_conversation_state(os, &mut self.stderr, false)
                     .await?,
-            ));
+                is_compaction_retry: false,
+            });
         }
 
         self.tool_uses = queued_tools;
@@ -4372,11 +4468,13 @@ impl ChatSession {
             self.spinner = Some(Spinner::new(Spinners::Dots, "Thinking...".to_owned()));
         }
 
-        Ok(ChatState::HandleResponseStream(
-            self.conversation
+        Ok(ChatState::HandleResponseStream {
+            state: self
+                .conversation
                 .as_sendable_conversation_state(os, &mut self.stderr, true)
                 .await?,
-        ))
+            is_compaction_retry: false,
+        })
     }
 
     /// Apply program context to tools that Q may not have.
@@ -5951,7 +6049,7 @@ mod tests {
         let result = session.validate_tools(&os, tool_uses).await;
 
         // Should return HandleResponseStream (not ExecuteTools) when validation fails
-        assert!(matches!(result, Ok(ChatState::HandleResponseStream(_))));
+        assert!(matches!(result, Ok(ChatState::HandleResponseStream { .. })));
 
         // Verify next_message exists (tool results were added)
         assert!(
@@ -6062,7 +6160,7 @@ mod tests {
         let result = session.validate_tools(&os, tool_uses).await;
 
         // Should return HandleResponseStream with errors
-        assert!(matches!(result, Ok(ChatState::HandleResponseStream(_))));
+        assert!(matches!(result, Ok(ChatState::HandleResponseStream { .. })));
 
         // Verify next_message exists (tool results were added)
         assert!(

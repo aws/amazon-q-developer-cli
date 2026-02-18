@@ -1,0 +1,4 @@
+{
+  "type": "fixed",
+  "description": "Fix auto compaction for context window overflow errors"
+}

@@ -1,0 +1,26 @@
+// Test: overflow after compaction retry triggers user message truncation
+// Flow: hello -> hello_ack -> large_prompt -> overflow -> compaction -> retry overflow -> truncate -> retry success
+
+// hello -> hello_ack (build up some history first)
+{"result":"ok","data":{"kind":"messageStart","data":{"role":"assistant"}}}
+{"result":"ok","data":{"kind":"contentBlockDelta","data":{"delta":{"kind":"text","data":"Hello! How can I help you today?"},"contentBlockIndex":null}}}
+{"result":"ok","data":{"kind":"messageStop","data":{"stopReason":"endTurn"}}}
+{"result":"ok","data":{"kind":"metadata","data":{"metrics":{"requestStartTime":"2025-01-01T00:00:00.000000Z","requestEndTime":"2025-01-01T00:00:01.000000Z","timeToFirstChunk":{"secs":0,"nanos":100000000},"timeBetweenChunks":[],"responseStreamLen":30},"usage":null,"service":{"requestId":"hello-ack","statusCode":null}}}}
+
+// Large prompt response: context window overflow (triggers compaction)
+{"result":"error","data":{"original_request_id":"req-1","original_status_code":400,"original_message":null,"kind":{"kind":"contextWindowOverflow"}}}
+
+// Compaction summary response
+{"result":"ok","data":{"kind":"messageStart","data":{"role":"assistant"}}}
+{"result":"ok","data":{"kind":"contentBlockDelta","data":{"delta":{"kind":"text","data":"# Summary\n\nUser greeted the assistant."},"contentBlockIndex":null}}}
+{"result":"ok","data":{"kind":"messageStop","data":{"stopReason":"endTurn"}}}
+{"result":"ok","data":{"kind":"metadata","data":{"metrics":{"requestStartTime":"2025-01-01T00:00:02.000000Z","requestEndTime":"2025-01-01T00:00:03.000000Z","timeToFirstChunk":{"secs":0,"nanos":100000000},"timeBetweenChunks":[],"responseStreamLen":50},"usage":null,"service":{"requestId":"compaction-1","statusCode":null}}}}
+
+// Retry after compaction: still overflow (user message too large)
+{"result":"error","data":{"original_request_id":"req-2","original_status_code":400,"original_message":null,"kind":{"kind":"contextWindowOverflow"}}}
+
+// Final retry after truncation: success
+{"result":"ok","data":{"kind":"messageStart","data":{"role":"assistant"}}}
+{"result":"ok","data":{"kind":"contentBlockDelta","data":{"delta":{"kind":"text","data":"I can help you with that now."},"contentBlockIndex":null}}}
+{"result":"ok","data":{"kind":"messageStop","data":{"stopReason":"endTurn"}}}
+{"result":"ok","data":{"kind":"metadata","data":{"metrics":{"requestStartTime":"2025-01-01T00:00:04.000000Z","requestEndTime":"2025-01-01T00:00:05.000000Z","timeToFirstChunk":{"secs":0,"nanos":100000000},"timeBetweenChunks":[],"responseStreamLen":30},"usage":null,"service":{"requestId":"final-success","statusCode":null}}}}

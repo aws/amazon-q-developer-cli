@@ -793,7 +793,7 @@ impl Agent {
                 self.conversation_metadata.user_turn_metadatas.push(md.clone());
 
                 // Cancel the user message if needed
-                let should_cancel_prompt = matches!(self.active_state(), ActiveState::ExecutingRequest)
+                let should_cancel_prompt = matches!(self.active_state(), ActiveState::ExecutingRequest { .. })
                     && self
                         .conversation_state
                         .messages()
@@ -904,7 +904,7 @@ impl Agent {
         match self.active_state() {
             ActiveState::Idle
             | ActiveState::Errored(_)
-            | ActiveState::ExecutingRequest
+            | ActiveState::ExecutingRequest { .. }
             | ActiveState::Compacting { .. }
             | ActiveState::WaitingForApproval(_) => {},
             ActiveState::ExecutingHooks(executing_hooks) => {
@@ -924,7 +924,7 @@ impl Agent {
             match self.active_state() {
                 ActiveState::WaitingForApproval(_)
                 | ActiveState::ExecutingHooks(_)
-                | ActiveState::ExecutingRequest
+                | ActiveState::ExecutingRequest { .. }
                 | ActiveState::Compacting { .. }
                 | ActiveState::ExecutingTools(_) => {
                     self.agent_event_buf.push(AgentEvent::Stop(AgentStopReason::Cancelled));
@@ -994,10 +994,17 @@ impl Agent {
                     result: ToolCallResult::Error(ToolExecutionError::Custom(reason.to_string())),
                 });
             }
-            self.append_tool_results(content, results);
-            let args = self.format_request().await;
+            let pending = PendingUserMessage::ToolResults {
+                content: content.clone(),
+                results,
+            };
+            let args = self.format_request(&pending).await;
             self.send_request(args).await?;
-            self.set_active_state(ActiveState::ExecutingRequest).await;
+            self.set_active_state(ActiveState::ExecutingRequest {
+                compaction_retry: None,
+                pending_user_message: Some(pending),
+            })
+            .await;
             return Ok(AgentResponse::Success);
         }
 
@@ -1035,6 +1042,19 @@ impl Agent {
         match evt {
             AgentLoopEventKind::ResponseStreamEnd { result, metadata } => match result {
                 Ok(msg) => {
+                    // Append pending user message now that we have a successful response
+                    if let ActiveState::ExecutingRequest {
+                        pending_user_message: Some(pending),
+                        ..
+                    } = &self.execution_state.active_state
+                    {
+                        match pending.clone() {
+                            PendingUserMessage::Prompt(content) => self.append_user_message(content),
+                            PendingUserMessage::ToolResults { content, results } => {
+                                self.append_tool_results(content, results);
+                            },
+                        }
+                    }
                     self.append_assistant_message(msg.clone());
                     if !metadata.tool_uses.is_empty() {
                         self.handle_tool_uses(metadata.tool_uses.clone()).await?;
@@ -1093,7 +1113,7 @@ impl Agent {
 
     /// Handler for errors encountered while sending the request or while consuming the response.
     async fn handle_loop_error_on_stream_end(&mut self, err: &LoopError) -> Result<(), AgentError> {
-        debug_assert!(matches!(self.active_state(), ActiveState::ExecutingRequest));
+        debug_assert!(matches!(self.active_state(), ActiveState::ExecutingRequest { .. }));
         debug_assert!(self.agent_loop.is_some());
 
         match err {
@@ -1136,16 +1156,49 @@ impl Agent {
                 );
                 self.append_assistant_message(Message::new(Role::Assistant, assistant_content, Some(Utc::now())));
 
-                self.append_user_message(vec![ContentBlock::Text(
+                // Append the original pending user message since we got a (partial) response
+                if let ActiveState::ExecutingRequest {
+                    pending_user_message: Some(pending),
+                    ..
+                } = &self.execution_state.active_state
+                {
+                    match pending.clone() {
+                        PendingUserMessage::Prompt(content) => self.append_user_message(content),
+                        PendingUserMessage::ToolResults { content, results } => {
+                            self.append_tool_results(content, results);
+                        },
+                    }
+                }
+
+                // Set new pending for the retry prompt
+                let retry_pending = PendingUserMessage::Prompt(vec![ContentBlock::Text(
                     "The generated tool was too large, try again but this time split up the work between multiple tool uses"
                         .to_string(),
                 )]);
 
-                let args = self.format_request().await;
+                let args = self.format_request(&retry_pending).await;
+                self.execution_state.active_state = ActiveState::ExecutingRequest {
+                    compaction_retry: None,
+                    pending_user_message: Some(retry_pending),
+                };
                 self.send_request(args).await?;
             },
             LoopError::Stream(stream_err) => match &stream_err.kind {
                 StreamErrorKind::StreamTimeout { .. } => {
+                    // Append the original pending user message since we got a (partial) response
+                    if let ActiveState::ExecutingRequest {
+                        pending_user_message: Some(pending),
+                        ..
+                    } = &self.execution_state.active_state
+                    {
+                        match pending.clone() {
+                            PendingUserMessage::Prompt(content) => self.append_user_message(content),
+                            PendingUserMessage::ToolResults { content, results } => {
+                                self.append_tool_results(content, results);
+                            },
+                        }
+                    }
+
                     self.append_assistant_message(Message::new(
                         Role::Assistant,
                         vec![ContentBlock::Text(
@@ -1153,18 +1206,73 @@ impl Agent {
                         )],
                         Some(Utc::now()),
                     ));
-                    self.append_user_message(vec![ContentBlock::Text(
+
+                    // Set new pending for the retry prompt
+                    let retry_pending = PendingUserMessage::Prompt(vec![ContentBlock::Text(
                         "You took too long to respond - try to split up the work into smaller steps.".to_string(),
                     )]);
 
-                    let args = self.format_request().await;
+                    let args = self.format_request(&retry_pending).await;
+                    self.execution_state.active_state = ActiveState::ExecutingRequest {
+                        compaction_retry: None,
+                        pending_user_message: Some(retry_pending),
+                    };
                     self.send_request(args).await?;
                 },
                 StreamErrorKind::Interrupted => {
                     // nothing to do
                 },
                 StreamErrorKind::ContextWindowOverflow if !self.settings.disable_auto_compact => {
-                    self.start_compaction(CompactStrategy::default_strategy()).await?;
+                    // Check if this is a retry after compaction
+                    let compaction_retry = match self.active_state() {
+                        ActiveState::ExecutingRequest {
+                            compaction_retry: Some(r),
+                            ..
+                        } => Some(*r),
+                        _ => None,
+                    };
+                    info!("is compaction retry: {:?}", compaction_retry);
+
+                    if let Some(retry) = compaction_retry {
+                        if retry.is_prompt_truncated {
+                            error!("compaction retry failed after truncation, going to error state");
+                            // Already truncated and still overflow - fail
+                            self.set_active_state(ActiveState::Errored(err.clone().into())).await;
+                            self.agent_event_buf
+                                .push(AgentEvent::Stop(AgentStopReason::Error(err.clone().into())));
+                        } else {
+                            // Compaction succeeded but retry overflowed - truncate and retry
+                            warn!("compaction succeeded, but the retry overflowed - attempting again with truncation");
+
+                            // Get the current pending message and truncate it
+                            let truncated_pending = match self.active_state() {
+                                ActiveState::ExecutingRequest {
+                                    pending_user_message: Some(pending),
+                                    ..
+                                } => {
+                                    let mut msg = Message::new(Role::User, pending.content().to_vec(), None);
+                                    msg.truncate(compact::DEFAULT_MAX_MESSAGE_LEN, Some("...truncated due to length"));
+                                    PendingUserMessage::Prompt(msg.content)
+                                },
+                                _ => {
+                                    error!("expected ExecutingRequest with pending message");
+                                    return Ok(());
+                                },
+                            };
+
+                            let pending_request = self.format_request(&truncated_pending).await;
+                            self.set_active_state(ActiveState::ExecutingRequest {
+                                compaction_retry: Some(CompactionRetry {
+                                    is_prompt_truncated: true,
+                                }),
+                                pending_user_message: Some(truncated_pending),
+                            })
+                            .await;
+                            self.send_request(pending_request).await?;
+                        }
+                    } else {
+                        self.start_compaction(CompactStrategy::default_strategy()).await?;
+                    }
                 },
                 StreamErrorKind::Validation { .. }
                 | StreamErrorKind::ServiceFailure
@@ -1191,7 +1299,7 @@ impl Agent {
                 }
             },
             ActiveState::WaitingForApproval { .. } => (),
-            ActiveState::ExecutingRequest
+            ActiveState::ExecutingRequest { .. }
             | ActiveState::ExecutingHooks(_)
             | ActiveState::ExecutingTools { .. }
             | ActiveState::Compacting { .. } => {
@@ -1243,17 +1351,21 @@ impl Agent {
             user_msg_content.push(ContentBlock::Text(output.clone()));
         }
 
-        self.append_user_message(user_msg_content.clone());
+        let pending = PendingUserMessage::Prompt(user_msg_content.clone());
 
         // Create a new agent loop, and send the request.
         let loop_id = AgentLoopId::new(self.id.clone());
         let cancel_token = CancellationToken::new();
         self.agent_loop = Some(AgentLoop::new(loop_id.clone(), cancel_token).spawn());
-        let args = self.format_request().await;
+        let args = self.format_request(&pending).await;
         self.send_request(args)
             .await
             .expect("first agent loop request should never fail");
-        self.set_active_state(ActiveState::ExecutingRequest).await;
+        self.set_active_state(ActiveState::ExecutingRequest {
+            compaction_retry: None,
+            pending_user_message: Some(pending),
+        })
+        .await;
         Ok(AgentResponse::Success)
     }
 
@@ -1263,10 +1375,12 @@ impl Agent {
     /// The returned conversation history will:
     /// 1. Have context messages prepended to the start of the message history
     /// 2. Have conversation history invariants enforced, mutating messages as required
-    async fn format_request(&mut self) -> SendRequestArgs {
+    async fn format_request(&mut self, pending: &PendingUserMessage) -> SendRequestArgs {
         let latest_summary = self.conversation_state.event_log().latest_summary().map(String::from);
+        let mut messages = VecDeque::from(self.conversation_state.messages().to_vec());
+        messages.push_back(Message::new(Role::User, pending.content().to_vec(), None));
         format_request(
-            VecDeque::from(self.conversation_state.messages().to_vec()),
+            messages,
             self.make_tool_spec().await,
             &self.agent_config,
             self.agent_spawn_hooks.iter().map(|(_, c)| c),
@@ -1296,6 +1410,17 @@ impl Agent {
     async fn start_compaction(&mut self, strategy: CompactStrategy) -> Result<(), AgentError> {
         debug!(?strategy, "starting compaction");
 
+        // Preserve pending_user_message from ExecutingRequest state
+        let pending_user_message = match &self.execution_state.active_state {
+            ActiveState::ExecutingRequest {
+                pending_user_message, ..
+            } => pending_user_message.clone(),
+            ActiveState::Compacting {
+                pending_user_message, ..
+            } => pending_user_message.clone(),
+            _ => None,
+        };
+
         if !matches!(self.active_state(), ActiveState::Compacting { .. }) {
             self.agent_event_buf
                 .push(AgentEvent::Compaction(CompactionEvent::Started));
@@ -1324,7 +1449,11 @@ impl Agent {
             .push(AgentEvent::Internal(InternalEvent::RequestSent(compaction_request)));
 
         self.compaction_loop = Some(compaction_handle);
-        self.set_active_state(ActiveState::Compacting { strategy }).await;
+        self.set_active_state(ActiveState::Compacting {
+            strategy,
+            pending_user_message,
+        })
+        .await;
         Ok(())
     }
 
@@ -1337,7 +1466,11 @@ impl Agent {
             return Ok(());
         };
 
-        let ActiveState::Compacting { strategy } = self.execution_state.active_state else {
+        let ActiveState::Compacting {
+            strategy,
+            pending_user_message,
+        } = self.execution_state.active_state.clone()
+        else {
             return Err(AgentError::Custom("Not in compacting state".to_string()));
         };
 
@@ -1362,19 +1495,18 @@ impl Agent {
                     self.agent_event_buf
                         .push(AgentEvent::Compaction(CompactionEvent::Completed));
 
-                    // Retry if last message is from user, otherwise go idle
-                    if self
-                        .conversation_state
-                        .messages()
-                        .last()
-                        .is_some_and(|m| m.role == Role::User)
-                    {
-                        debug!("last message is from the user, retrying the request");
-                        let pending_request = self.format_request().await;
-                        self.set_active_state(ActiveState::ExecutingRequest).await;
+                    // Retry if we have a pending user message, otherwise go idle
+                    if let Some(pending) = pending_user_message {
+                        debug!("have pending user message, retrying the request");
+                        let pending_request = self.format_request(&pending).await;
+                        self.set_active_state(ActiveState::ExecutingRequest {
+                            compaction_retry: Some(CompactionRetry::default()),
+                            pending_user_message: Some(pending),
+                        })
+                        .await;
                         self.send_request(pending_request).await?;
                     } else {
-                        debug!("last message is not from the user, going to idle state");
+                        debug!("no pending user message, going to idle state");
                         self.set_active_state(ActiveState::Idle).await;
                     }
                 },
@@ -1417,7 +1549,7 @@ impl Agent {
     /// 5. *Execute tools*
     async fn handle_tool_uses(&mut self, tool_uses: Vec<ToolUseBlock>) -> Result<(), AgentError> {
         trace!(?tool_uses, "handling tool uses");
-        debug_assert!(matches!(self.active_state(), ActiveState::ExecutingRequest));
+        debug_assert!(matches!(self.active_state(), ActiveState::ExecutingRequest { .. }));
 
         // First, parse tool uses.
         let (tools, errors) = self.parse_tools(tool_uses).await;
@@ -1439,9 +1571,17 @@ impl Agent {
                     result: ToolCallResult::Error(ToolExecutionError::Custom(err_msg)),
                 });
             }
-            self.append_tool_results(content, results);
-            let args = self.format_request().await;
+            let pending = PendingUserMessage::ToolResults {
+                content: content.clone(),
+                results,
+            };
+            let args = self.format_request(&pending).await;
             self.send_request(args).await?;
+            self.set_active_state(ActiveState::ExecutingRequest {
+                compaction_retry: None,
+                pending_user_message: Some(pending),
+            })
+            .await;
             return Ok(());
         }
 
@@ -1478,9 +1618,17 @@ impl Agent {
                     result: ToolCallResult::Error(ToolExecutionError::Custom(err_msg)),
                 });
             }
-            self.append_tool_results(content, results);
-            let args = self.format_request().await;
+            let pending = PendingUserMessage::ToolResults {
+                content: content.clone(),
+                results,
+            };
+            let args = self.format_request(&pending).await;
             self.send_request(args).await?;
+            self.set_active_state(ActiveState::ExecutingRequest {
+                compaction_retry: None,
+                pending_user_message: Some(pending),
+            })
+            .await;
             return Ok(());
         }
 
@@ -1734,9 +1882,17 @@ impl Agent {
                             result: ToolCallResult::Error(ToolExecutionError::Custom(err_msg)),
                         });
                     }
-                    self.append_tool_results(content, results);
-                    let args = self.format_request().await;
+                    let pending = PendingUserMessage::ToolResults {
+                        content: content.clone(),
+                        results,
+                    };
+                    let args = self.format_request(&pending).await;
                     self.send_request(args).await?;
+                    self.set_active_state(ActiveState::ExecutingRequest {
+                        compaction_retry: None,
+                        pending_user_message: Some(pending),
+                    })
+                    .await;
                     return Ok(());
                 }
 
@@ -2222,10 +2378,17 @@ impl Agent {
             }
         }
 
-        self.append_tool_results(content, results);
-        let args = self.format_request().await;
+        let pending = PendingUserMessage::ToolResults {
+            content: content.clone(),
+            results,
+        };
+        let args = self.format_request(&pending).await;
         self.send_request(args).await?;
-        self.set_active_state(ActiveState::ExecutingRequest).await;
+        self.set_active_state(ActiveState::ExecutingRequest {
+            compaction_retry: None,
+            pending_user_message: Some(pending),
+        })
+        .await;
         Ok(())
     }
 
@@ -2769,6 +2932,35 @@ fn hook_matches_tool(config: &HookConfig, tool: &Tool) -> bool {
     }
 }
 
+/// Pending user message to be appended to the event log only after a successful assistant response.
+///
+/// User messages are not persisted immediately when sent to the model. Instead, they are held
+/// as "pending" until we receive a successful assistant response. This ensures we don't log
+/// messages for requests that fail and need to be retried (e.g., due to context window overflow).
+#[derive(Debug, Clone)]
+pub enum PendingUserMessage {
+    /// A user prompt (text, images, etc.)
+    Prompt(Vec<ContentBlock>),
+    /// Tool execution results sent back to the model.
+    ToolResults {
+        /// The content blocks sent to the model (ToolResultBlock items).
+        content: Vec<ContentBlock>,
+        /// Metadata for the event log: maps tool_use_id to the parsed tool and execution result.
+        /// This provides richer information than `content` alone for logging/debugging.
+        results: HashMap<String, LogToolResult>,
+    },
+}
+
+impl PendingUserMessage {
+    /// Returns the content blocks to be sent to the model.
+    pub fn content(&self) -> &[ContentBlock] {
+        match self {
+            PendingUserMessage::Prompt(content) => content,
+            PendingUserMessage::ToolResults { content, .. } => content,
+        }
+    }
+}
+
 /// Contains data related to the agent's current state of execution.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -2792,14 +2984,36 @@ pub enum ActiveState {
     /// Agent is handling a prompt
     ///
     /// The agent is not able to receive new prompts while in this state
-    ExecutingRequest,
+    ExecutingRequest {
+        /// If Some, this request is a retry after successful compaction.
+        /// Used to detect when overflow happens on retry, indicating the user message needs
+        /// truncation.
+        #[serde(default)]
+        compaction_retry: Option<CompactionRetry>,
+        /// User message that triggered this request, to be appended to the event log only after
+        /// receiving a successful assistant response. This ensures we don't persist user messages
+        /// that fail (e.g., due to ContextWindowOverflow) and need to be retried or truncated.
+        #[serde(skip)]
+        pending_user_message: Option<PendingUserMessage>,
+    },
     /// Agent is executing tools
     ExecutingTools(ExecutingTools),
     /// Agent is compacting conversation history
     Compacting {
         /// The strategy used for compaction
         strategy: CompactStrategy,
+        /// User message that caused ContextWindowOverflow, preserved during compaction so it can
+        /// be retried afterward. May be truncated if the retry also overflows.
+        #[serde(skip)]
+        pending_user_message: Option<PendingUserMessage>,
     },
+}
+
+/// Tracks state for retrying a request after compaction.
+#[derive(Debug, Clone, Copy, Default, Serialize, Deserialize)]
+pub struct CompactionRetry {
+    /// Whether the user message has been truncated in a previous retry attempt.
+    pub is_prompt_truncated: bool,
 }
 
 /// Tracks approval state for a single tool use.

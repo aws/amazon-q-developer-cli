@@ -133,6 +133,8 @@ pub struct CompactStrategy {
 pub const DEFAULT_COMPACTION_EXCLUDE_PERCENT: usize = 2;
 /// Default message pairs to exclude from compaction.
 pub const DEFAULT_COMPACTION_EXCLUDE_MESSAGES: usize = 2;
+/// Default maximum message length when truncating during compaction overflow.
+pub const DEFAULT_COMPACTION_MAX_MESSAGE_LENGTH: usize = 25_000;
 
 impl Default for CompactStrategy {
     fn default() -> Self {

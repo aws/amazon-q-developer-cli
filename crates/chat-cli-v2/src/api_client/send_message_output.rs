@@ -15,12 +15,18 @@ use typeshare::typeshare;
 
 use crate::api_client::ApiClientError;
 use crate::api_client::error::ConverseStreamError;
-use crate::api_client::model::ChatResponseStream;
+use crate::api_client::model::{
+    ChatResponseStream,
+    ConversationState,
+};
 
 /// Global file handle for recording API responses (lazy initialized).
 /// Mutex is required because `File` isn't `Sync`, even though in practice
 /// `recv()` is called sequentially from a single async task.
 static RECORD_FILE: OnceLock<Option<Mutex<std::fs::File>>> = OnceLock::new();
+
+/// Global file handle for recording API requests (lazy initialized).
+static RECORD_REQUESTS_FILE: OnceLock<Option<Mutex<std::fs::File>>> = OnceLock::new();
 
 /// A mock stream item for testing. Supports 3 scenarios:
 /// - `Event`: Normal streaming event, yielded from `recv()` as `Ok(Some(event))`
@@ -60,6 +66,29 @@ fn get_record_file() -> &'static Option<Mutex<std::fs::File>> {
                 .map(Mutex::new)
         })
     })
+}
+
+fn get_record_requests_file() -> &'static Option<Mutex<std::fs::File>> {
+    RECORD_REQUESTS_FILE.get_or_init(|| {
+        std::env::var("KIRO_RECORD_API_REQUESTS_PATH").ok().and_then(|path| {
+            OpenOptions::new()
+                .create(true)
+                .append(true)
+                .open(&path)
+                .ok()
+                .map(Mutex::new)
+        })
+    })
+}
+
+pub fn record_request(conversation: &ConversationState) {
+    if let Some(file) = get_record_requests_file()
+        && let Ok(mut f) = file.lock()
+        && let Ok(json) = serde_json::to_string(conversation)
+    {
+        let _ = writeln!(f, "{}", json);
+        let _ = writeln!(f);
+    }
 }
 
 fn record_event(event: Option<&ChatResponseStream>) {

@@ -34,10 +34,11 @@ use amzn_codewhisperer_streaming_client::config::endpoint::{
     Params,
     ResolveEndpoint,
 };
+use amzn_codewhisperer_streaming_client::operation::generate_assistant_response::GenerateAssistantResponseError;
+use amzn_codewhisperer_streaming_client::types::ValidationExceptionReason;
 use aws_config::retry::RetryConfig;
 use aws_config::timeout::TimeoutConfig;
 use aws_credential_types::Credentials;
-use aws_sdk_ssooidc::error::ProvideErrorMetadata;
 use aws_types::request_id::RequestId;
 use aws_types::sdk_config::StalledStreamProtectionConfig;
 pub use endpoints::Endpoint;
@@ -68,6 +69,7 @@ use crate::api_client::opt_out::OptOutInterceptor;
 use crate::api_client::send_message_output::{
     MockStreamItem,
     SendMessageOutput,
+    record_request,
     record_send_error,
 };
 use crate::auth::UnifiedBearerResolver;
@@ -767,6 +769,7 @@ impl RealApiClient {
         conversation: ConversationState,
     ) -> Result<SendMessageOutput, ConverseStreamError> {
         debug!("Sending conversation: {:#?}", conversation);
+        record_request(&conversation);
 
         let ConversationState {
             conversation_id,
@@ -1148,16 +1151,27 @@ impl ApiClient {
     }
 }
 
-fn classify_error_kind<T: ProvideErrorMetadata, R>(
+fn classify_error_kind<R>(
     status_code: Option<u16>,
     body: &[u8],
     model_id_opt: Option<&str>,
-    sdk_error: &error::SdkError<T, R>,
+    sdk_error: &error::SdkError<GenerateAssistantResponseError, R>,
 ) -> ConverseStreamErrorKind {
     let contains = |haystack: &[u8], needle: &[u8]| haystack.windows(needle.len()).any(|v| v == needle);
 
     let is_throttling = status_code.is_some_and(|status| status == 429);
-    let is_context_window_overflow = contains(body, b"Input is too long.") || contains(body, b"prompt is too long");
+    let is_context_window_overflow = sdk_error.as_service_error().is_some_and(|e| match e {
+        GenerateAssistantResponseError::ValidationError(err) => err
+            .reason()
+            .is_some_and(|r| r == &ValidationExceptionReason::ContentLengthExceedsThreshold),
+        _ => false,
+    });
+    // String match exactly on the ContentLengthExceedsThreshold exception reason.
+    //
+    // TODO: Figure out why the rust client returns GenerateAssistantResponseError::Unhandled
+    // instead of the well-modeled GenerateAssistantResponseError::ValidationError
+    let is_context_window_overflow = is_context_window_overflow || contains(body, b"CONTENT_LENGTH_EXCEEDS_THRESHOLD");
+
     let is_model_unavailable = contains(body, b"INSUFFICIENT_MODEL_CAPACITY")
         // Legacy error response fallback
         || (model_id_opt.is_some()
@@ -1361,10 +1375,27 @@ mod tests {
 
         #[allow(clippy::type_complexity)]
         let test_cases: Vec<(Option<u16>, &[u8], Option<&str>, ConverseStreamErrorKind)> = vec![
+            // ContextWindowOverflow checks
             (
                 Some(400),
                 b"Input is too long.",
                 None,
+                // Don't match on error message
+                ConverseStreamErrorKind::Unknown {
+                    reason_code: "test".to_string(),
+                },
+            ),
+            (
+                Some(400),
+                b"CONTENT_LENGTH_EXCEEDS_THRESHOLD",
+                None,
+                ConverseStreamErrorKind::ContextWindowOverflow,
+            ),
+            (
+                Some(429),
+                b"CONTENT_LENGTH_EXCEEDS_THRESHOLD",
+                None,
+                // Match on exact code
                 ConverseStreamErrorKind::ContextWindowOverflow,
             ),
             (
@@ -1390,24 +1421,6 @@ mod tests {
                 b"MONTHLY_REQUEST_COUNT exceeded",
                 None,
                 ConverseStreamErrorKind::MonthlyLimitReached,
-            ),
-            (
-                Some(429),
-                b"Input is too long.",
-                None,
-                ConverseStreamErrorKind::ContextWindowOverflow,
-            ),
-            (
-                Some(400),
-                b"prompt is too long",
-                None,
-                ConverseStreamErrorKind::ContextWindowOverflow,
-            ),
-            (
-                Some(429),
-                b"prompt is too long",
-                None,
-                ConverseStreamErrorKind::ContextWindowOverflow,
             ),
             (
                 Some(429),

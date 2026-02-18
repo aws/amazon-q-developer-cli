@@ -12,6 +12,7 @@ use serde::{
     Deserialize,
     Serialize,
 };
+use tracing::debug;
 
 use super::agent_loop::protocol::SendRequestArgs;
 use super::agent_loop::types::{
@@ -28,7 +29,7 @@ use super::{
 };
 
 const TRUNCATED_SUFFIX: &str = "...truncated due to length";
-const DEFAULT_MAX_MESSAGE_LEN: usize = 25_000;
+pub const DEFAULT_MAX_MESSAGE_LEN: usize = 25_000;
 /// Default (User, Assistant) message pairs to exclude from compaction.
 pub const DEFAULT_MESSAGE_PAIRS_TO_EXCLUDE: usize = 2;
 /// Default percentage of context window to exclude from compaction.
@@ -105,9 +106,7 @@ impl CompactStrategy {
             exclude_count
         };
 
-        // Ensure we leave at least 2 messages to summarize
-        let max_exclude = messages.len().saturating_sub(2);
-        exclude_count.min(max_exclude)
+        exclude_count.min(messages.len())
     }
 }
 
@@ -148,6 +147,11 @@ pub fn create_compaction_request(
 ) -> SendRequestArgs {
     let effective_exclude =
         strategy.effective_messages_to_exclude(messages, context_window_size.unwrap_or(DEFAULT_CONTEXT_WINDOW_SIZE));
+    debug!(
+        "history has {} messages, excluding the most recent {} from compaction",
+        messages.len(),
+        effective_exclude
+    );
 
     // Take messages to summarize (exclude recent ones)
     let end_idx = messages.len().saturating_sub(effective_exclude);
@@ -354,7 +358,7 @@ mod tests {
     }
 
     #[test]
-    fn test_effective_messages_to_exclude_small_history_leaves_messages_to_summarize() {
+    fn test_effective_messages_to_exclude_small_history_leaves_no_messages_to_summarize() {
         // 3 messages: User, Assistant, User (trailing)
         let messages = vec![
             Message::new(Role::User, vec![ContentBlock::Text("x".repeat(100000))], None),
@@ -368,8 +372,10 @@ mod tests {
             ..CompactStrategy::default_strategy()
         };
 
+        // trailing user (1) + 1 pair (2) = 3 messages excluded
+        // This means no messages to summarize, which is intentional
         let effective = strategy.effective_messages_to_exclude(&messages, TEST_CONTEXT_WINDOW);
-        assert_eq!(effective, 1);
+        assert_eq!(effective, 3);
     }
 
     #[test]
@@ -441,7 +447,7 @@ mod tests {
     fn test_default_compaction_strategy() {
         let mut conv = ConversationState::new(Uuid::new_v4(), Vec::new());
 
-        // Add 3 user/assistant pairs
+        // Add 3 user/assistant pairs with tiny messages
         for i in 0..3 {
             append_user(&mut conv, &format!("user {i}"));
             append_assistant(&mut conv, &format!("assistant {i}"));
@@ -454,14 +460,15 @@ mod tests {
         let request = create_compaction_request(conv.messages(), &strategy, Some(100_000), None::<String>, None);
         assert_valid_conversation(&request.messages);
 
-        // default excludes 2 pairs (4 messages), keeps 2 + compaction prompt = 3
-        assert_eq!(request.messages.len(), 3);
+        // 2% of 100K = 8000 bytes. All 6 tiny messages (~60 bytes) fit within budget.
+        // So all 6 messages are excluded, leaving just the compaction prompt.
+        assert_eq!(request.messages.len(), 1);
 
         let model_response = Message::new(Role::Assistant, vec![ContentBlock::Text("Summary".into())], None);
         let (entry, index) = finalize_compaction(&mut conv, model_response, &strategy, Some(100_000));
 
-        // After compaction: 4 messages remain (2 pairs excluded)
-        assert_eq!(conv.messages().len(), 4);
+        // After compaction: all 6 messages excluded, none remain
+        assert_eq!(conv.messages().len(), 6);
         assert_valid_conversation(conv.messages());
 
         match &entry {

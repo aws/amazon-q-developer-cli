@@ -108,6 +108,45 @@ pub struct ConversationState {
     pub agent_continuation_id: Option<String>,
 }
 
+impl ConversationState {
+    const TRUNCATED_SUFFIX: &'static str = "...truncated due to length";
+
+    /// Truncates the user input message content and tool results to fit within max_bytes.
+    pub fn truncate_user_input_message(&mut self, max_bytes: usize) {
+        use crate::cli::chat::util::truncate_safe_in_place;
+
+        // Truncate content
+        truncate_safe_in_place(&mut self.user_input_message.content, max_bytes, Self::TRUNCATED_SUFFIX);
+
+        // Truncate tool results if present
+        if let Some(ref mut ctx) = self.user_input_message.user_input_message_context
+            && let Some(ref mut tool_results) = ctx.tool_results
+            && !tool_results.is_empty()
+        {
+            let max_per_result = max_bytes / tool_results.len();
+            for result in tool_results {
+                for content in &mut result.content {
+                    match content {
+                        ToolResultContentBlock::Json(doc) => {
+                            // Use FigDocument wrapper to serialize
+                            let fig_doc = FigDocument::from(doc.clone());
+                            if let Ok(mut s) = serde_json::to_string(&fig_doc)
+                                && s.len() > max_per_result
+                            {
+                                truncate_safe_in_place(&mut s, max_per_result, Self::TRUNCATED_SUFFIX);
+                                *content = ToolResultContentBlock::Text(s);
+                            }
+                        },
+                        ToolResultContentBlock::Text(s) => {
+                            truncate_safe_in_place(s, max_per_result, Self::TRUNCATED_SUFFIX);
+                        },
+                    }
+                }
+            }
+        }
+    }
+}
+
 #[derive(Debug, Clone)]
 pub enum ChatMessage {
     AssistantResponseMessage(AssistantResponseMessage),
