@@ -42,12 +42,12 @@ export interface Theme {
     primary: TerminalColor;
     secondary: TerminalColor;
     muted: TerminalColor;
+    surface: TerminalColor;
     // background: TerminalColor;
     // backgroundElevated: TerminalColor;
     // backgroundOverlay: TerminalColor;
     link: TerminalColor;
     accent: TerminalColor;
-    border: TerminalColor;
     info: TerminalColor;
     success: TerminalColor;
     warning: TerminalColor;

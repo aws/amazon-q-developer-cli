@@ -3,11 +3,11 @@ import { Box } from 'ink';
 import { useTheme } from '../../../hooks/useThemeContext.js';
 
 export interface DividerProps {
-  color?: string; // Theme color path like 'border'
+  color?: string; // Theme color path like 'surface'
 }
 
 export const Divider = React.memo(function Divider({
-  color = 'border',
+  color = 'surface',
 }: DividerProps) {
   const { getColor } = useTheme();
   const dividerColor = getColor(color).hex;

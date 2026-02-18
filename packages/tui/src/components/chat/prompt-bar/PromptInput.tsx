@@ -121,7 +121,7 @@ export const PromptInput = React.memo(function PromptInput({
   const prevTriggerRef = useRef<TriggerInfo | null>(null);
 
   const primaryColor = useMemo(() => getColor('primary'), [getColor]);
-  const placeholderColor = useMemo(() => getColor('secondary'), [getColor]);
+  const placeholderColor = useMemo(() => getColor('muted'), [getColor]);
 
   useEffect(() => {
     const visibleText = getVisibleText(segments);

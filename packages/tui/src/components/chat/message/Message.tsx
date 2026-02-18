@@ -47,7 +47,7 @@ export const Message = React.memo(function Message({
 
   const renderContent = useCallback(() => {
     const backgroundColor =
-      type === MessageType.DEVELOPER ? getColor('muted').hex : undefined;
+      type === MessageType.DEVELOPER ? getColor('surface').hex : undefined;
 
     if (type === MessageType.AGENT) {
       const segments = parseMarkdown(content);

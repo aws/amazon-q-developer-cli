@@ -4,10 +4,10 @@ export const kiroDark: Theme = {
   colors: {
     primary: { named: 'default' },
     secondary: { truecolor: '#808080', color256: 244 }, // also 8
-    muted: { truecolor: '#303030', color256: 236 },
+    muted: { truecolor: '#626262', color256: 241 },
+    surface: { truecolor: '##262626', color256: 235 },
     link: { named: 'blue' },
     accent: { truecolor: '#ff00ff', color256: 13 },
-    border: { truecolor: '#262626', color256: 235 },
     info: { named: 'cyan' },
     success: { named: 'green' },
     warning: { named: 'yellow' },
