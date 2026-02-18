@@ -2630,43 +2630,51 @@ impl ChatSession {
         };
 
         // Save the final agent config to file
-        if let Err(err) = save_agent_config(os, &final_agent_config, agent_name, save_path.as_ref()).await {
-            execute!(
-                self.stderr,
-                StyledText::error_fg(),
-                style::Print(format!("✗ Failed to save agent config: {err}\n\n")),
-                StyledText::reset(),
-            )?;
-            return Err(err);
-        }
+        let config_file_path =
+            if let Err(err) = save_agent_config(os, &final_agent_config, agent_name, save_path.as_ref()).await {
+                execute!(
+                    self.stderr,
+                    StyledText::error_fg(),
+                    style::Print(format!("✗ Failed to save agent config: {err}\n\n")),
+                    StyledText::reset(),
+                )?;
+                return Err(err);
+            } else {
+                // Get the path where the agent was saved
+                let resolver = os.path_resolver();
+                let config_dir = match save_path.as_ref() {
+                    Some(path) => (*path).clone(),
+                    None => resolver
+                        .global()
+                        .agents_dir_for_create()
+                        .map_err(|e| ChatError::Custom(format!("Could not find global agent directory: {e}").into()))?,
+                };
+                config_dir.join(format!("{agent_name}.json"))
+            };
 
         // Add the newly generated agent to the agents HashMap so it's immediately available for swapping
         // Only insert if no agent with the same name exists (local takes priority over global)
-        // Skip agents saved to custom paths — they're outside the session's search paths
         if !self.conversation.agents.agents.contains_key(agent_name) {
-            let global_dir = os.path_resolver().global().agents_dir_for_create().ok();
-            let workspace_dir = os.path_resolver().workspace().agents_dir().ok();
-
-            let source_location = if let Some(ref path) = save_path {
-                if global_dir.as_ref() == Some(path) {
-                    Some(crate::cli::agent::AgentSourceLocation::Global)
-                } else if workspace_dir.as_ref() == Some(path) {
-                    Some(crate::cli::agent::AgentSourceLocation::Workspace)
-                } else {
-                    None // Custom path — don't load into session
-                }
-            } else {
-                // None defaults to global in save_agent_config
-                Some(crate::cli::agent::AgentSourceLocation::Global)
-            };
-
-            if let Some(location) = source_location {
-                let mut agent_to_insert = final_agent_config;
-                agent_to_insert.source_location = location;
-                self.conversation
-                    .agents
-                    .agents
-                    .insert(agent_name.to_string(), agent_to_insert);
+            // Load the agent from file to get correct source_location
+            match Agent::load(
+                os,
+                &config_file_path,
+                &mut None,
+                self.conversation.mcp_enabled,
+                &mut self.stderr,
+            )
+            .await
+            {
+                Ok(agent) => {
+                    // Only insert if source_location is Global or Workspace (not custom path)
+                    if agent.source_location != crate::cli::agent::AgentSourceLocation::BuiltIn {
+                        self.conversation.agents.agents.insert(agent_name.to_string(), agent);
+                    }
+                },
+                Err(e) => {
+                    // Log but don't fail - agent was saved successfully
+                    warn!("Failed to load newly created agent into session: {}", e);
+                },
             }
         }
 

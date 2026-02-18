@@ -759,10 +759,11 @@ impl Agent {
         mcp_enabled: bool,
         output: &mut impl Write,
     ) -> Result<Agent, AgentConfigError> {
-        let content = os.fs.read(&agent_path).await?;
+        let agent_path = agent_path.as_ref();
+        let content = os.fs.read(agent_path).await?;
         let mut agent = serde_json::from_slice::<Agent>(&content).map_err(|e| AgentConfigError::InvalidJson {
             error: e,
-            path: agent_path.as_ref().to_path_buf(),
+            path: agent_path.to_path_buf(),
         })?;
 
         if mcp_enabled {
@@ -772,12 +773,27 @@ impl Agent {
                     legacy_mcp_config.replace(config);
                 }
             }
-            agent.thaw(agent_path.as_ref(), legacy_mcp_config.as_ref(), output)?;
+            agent.thaw(agent_path, legacy_mcp_config.as_ref(), output)?;
         } else {
             agent.clear_mcp_configs();
             // Thaw the agent with empty MCP config to finalize normalization.
-            agent.thaw(agent_path.as_ref(), None, output)?;
+            agent.thaw(agent_path, None, output)?;
         }
+
+        // Set source_location based on the agent path
+        if let Some(parent) = agent_path.parent() {
+            let global_dir = os.path_resolver().global().agents_dir().ok();
+            let workspace_dir = os.path_resolver().workspace().agents_dir().ok();
+
+            agent.source_location = if global_dir.as_ref() == Some(&parent.to_path_buf()) {
+                AgentSourceLocation::Global
+            } else if workspace_dir.as_ref() == Some(&parent.to_path_buf()) {
+                AgentSourceLocation::Workspace
+            } else {
+                AgentSourceLocation::Global
+            };
+        }
+
         Ok(agent)
     }
 

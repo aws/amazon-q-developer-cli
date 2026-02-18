@@ -1,7 +1,7 @@
 ---
 doc_meta:
-  validated: 2026-02-11
-  commit: 78ada5ad
+  validated: 2026-02-17
+  commit: 86087ff5
   status: validated
   testable_headless: false
   category: slash_command
@@ -68,8 +68,27 @@ When specifying an agent name:
 
 ## Editor Behavior
 
-- Opens configuration file in default system editor
-- Changes are saved automatically when editor closes
+- Opens a temporary copy of the configuration in your default system editor
+- After saving and closing the editor, the configuration is validated
+- If validation succeeds, changes are saved to the original file
+- If validation fails, you're prompted to continue editing or cancel
+
+### Validation Error Handling
+
+If your edited configuration has errors (invalid JSON, missing required fields, etc.), you'll see the error and a prompt:
+
+```
+Error: Invalid JSON in agent config: expected `,` or `}` at line 5
+
+? What would you like to do?
+> Continue editing
+  Cancel
+```
+
+- **Continue editing**: Reopens the editor with your changes preserved
+- **Cancel**: Discards changes, original file remains unchanged
+
+This safe editing approach ensures you never corrupt an agent configuration file.
 
 ## Limitations
 

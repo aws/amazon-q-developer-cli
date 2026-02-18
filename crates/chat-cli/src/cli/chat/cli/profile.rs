@@ -413,38 +413,103 @@ impl AgentSubcommand {
                     },
                 };
 
-                crate::util::editor::launch_editor(&path_with_file_name)
+                // Create a temporary copy for editing
+                let original_content = os
+                    .fs
+                    .read(&path_with_file_name)
+                    .await
                     .map_err(|e| ChatError::Custom(Cow::Owned(e.to_string())))?;
 
-                let updated_agent = Agent::load(
-                    os,
-                    &path_with_file_name,
-                    &mut None,
-                    session.conversation.mcp_enabled,
-                    &mut session.stderr,
-                )
-                .await;
-                match updated_agent {
-                    Ok(agent) => {
-                        session.conversation.agents.agents.insert(agent.name.clone(), agent);
-                    },
-                    Err(e) => {
-                        execute!(
-                            session.stderr,
-                            StyledText::error_fg(),
-                            style::Print("Error: "),
-                            StyledText::reset(),
-                            style::Print(&e),
-                            style::Print("\n"),
-                        )?;
+                let temp_file = tempfile::Builder::new()
+                    .prefix(&format!("{}_", agent_name))
+                    .suffix(".json")
+                    .tempfile()
+                    .map_err(|e| ChatError::Custom(Cow::Owned(e.to_string())))?;
+                let temp_path = temp_file.path().to_path_buf();
 
-                        return Err(ChatError::Custom(
-                            format!(
-                                "Post edit validation failed for agent '{agent_name}'. Malformed config detected: {e}"
+                os.fs
+                    .write(&temp_path, &original_content)
+                    .await
+                    .map_err(|e| ChatError::Custom(Cow::Owned(e.to_string())))?;
+
+                loop {
+                    crate::util::editor::launch_editor(&temp_path)
+                        .map_err(|e| ChatError::Custom(Cow::Owned(e.to_string())))?;
+
+                    let updated_agent = Agent::load(
+                        os,
+                        &temp_path,
+                        &mut None,
+                        session.conversation.mcp_enabled,
+                        &mut session.stderr,
+                    )
+                    .await;
+
+                    match updated_agent {
+                        Ok(_agent) => {
+                            // Validation succeeded - copy temp file to actual location
+                            let temp_content = os
+                                .fs
+                                .read(&temp_path)
+                                .await
+                                .map_err(|e| ChatError::Custom(Cow::Owned(e.to_string())))?;
+                            os.fs
+                                .write(&path_with_file_name, &temp_content)
+                                .await
+                                .map_err(|e| ChatError::Custom(Cow::Owned(e.to_string())))?;
+
+                            // Reload from actual path to get correct source_location
+                            let final_agent = Agent::load(
+                                os,
+                                &path_with_file_name,
+                                &mut None,
+                                session.conversation.mcp_enabled,
+                                &mut session.stderr,
                             )
-                            .into(),
-                        ));
-                    },
+                            .await
+                            .map_err(|e| ChatError::Custom(Cow::Owned(e.to_string())))?;
+
+                            session
+                                .conversation
+                                .agents
+                                .agents
+                                .insert(final_agent.name.clone(), final_agent);
+                            break;
+                        },
+                        Err(e) => {
+                            execute!(
+                                session.stderr,
+                                StyledText::error_fg(),
+                                style::Print("Error: "),
+                                StyledText::reset(),
+                                style::Print(&e),
+                                style::Print("\n\n"),
+                            )?;
+
+                            let choices = vec!["Continue editing", "Cancel"];
+                            let selection = Select::new()
+                                .with_prompt("What would you like to do?")
+                                .items(&choices)
+                                .default(0)
+                                .interact_opt()
+                                .map_err(|e| ChatError::Custom(Cow::Owned(e.to_string())))?;
+
+                            if matches!(selection, Some(1) | None) {
+                                // Cancel - temp file will be cleaned up automatically
+                                execute!(
+                                    session.stderr,
+                                    StyledText::warning_fg(),
+                                    style::Print("✓ Edit cancelled, original file unchanged\n"),
+                                    StyledText::reset(),
+                                )?;
+
+                                return Ok(ChatState::PromptUser {
+                                    skip_printing_tools: true,
+                                });
+                            }
+                            // Continue editing (loop again)
+                        },
+                    }
                 }
 
                 execute!(
@@ -726,23 +791,11 @@ async fn create_agent_manual(
     .await;
 
     match new_agent {
-        Ok(mut agent) => {
+        Ok(agent) => {
             // Only load the agent into the current session if it's in a recognized location
             // Custom paths are not part of the session's agent search paths
-            match &directory {
-                Some(AgentDirectory::Custom(_)) => {
-                    // Don't insert into session — agent is at a custom path outside
-                    // workspace/global
-                },
-                _ => {
-                    agent.source_location = match &directory {
-                        Some(AgentDirectory::Workspace) => crate::cli::agent::AgentSourceLocation::Workspace,
-                        Some(AgentDirectory::Global) => crate::cli::agent::AgentSourceLocation::Global,
-                        None => crate::cli::agent::AgentSourceLocation::Global,
-                        Some(AgentDirectory::Custom(_)) => unreachable!(),
-                    };
-                    session.conversation.agents.agents.insert(agent.name.clone(), agent);
-                },
+            if agent.source_location != crate::cli::agent::AgentSourceLocation::BuiltIn {
+                session.conversation.agents.agents.insert(agent.name.clone(), agent);
             }
         },
         Err(e) => {
