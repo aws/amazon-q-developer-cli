@@ -1,4 +1,4 @@
-import { Box, Text as InkText } from 'ink';
+import { Box} from 'ink';
 import React, {
   useEffect,
   useRef,
@@ -120,6 +120,7 @@ export const PromptInput = React.memo(function PromptInput({
   const { getColor } = useTheme();
   const prevTriggerRef = useRef<TriggerInfo | null>(null);
 
+  const primaryColor = useMemo(() => getColor('primary'), [getColor]);
   const placeholderColor = useMemo(() => getColor('secondary'), [getColor]);
 
   useEffect(() => {
@@ -527,17 +528,18 @@ export const PromptInput = React.memo(function PromptInput({
               : '';
           parts.push(
             <React.Fragment key={i}>
-              <Text>{seg.value.slice(0, localCursor)}</Text>
+              <Text>{primaryColor(seg.value.slice(0, localCursor))}</Text>
               <Text inverse>{charAtCursor}</Text>
-              {after && <Text>{after}</Text>}
+              {after && <Text>{primaryColor(after)}</Text>}
             </React.Fragment>
           );
         } else {
-          parts.push(<Text key={i}>{seg.value}</Text>);
+          parts.push(<Text key={i}>{primaryColor(seg.value)}</Text>);
         }
       } else if (seg.type === 'file') {
         if (cursorInSeg && cursor === pos) {
           parts.push(
+            // Text color handled by FileChip component (uses theme colors internally)
             <React.Fragment key={i}>
               <Text inverse> </Text>
               <FileChip filePath={seg.filePath} lineCount={seg.lineCount} />
@@ -555,6 +557,7 @@ export const PromptInput = React.memo(function PromptInput({
       } else if (seg.type === 'paste') {
         if (cursorInSeg && cursor === pos) {
           parts.push(
+            // Text color handled by PastedChip component (uses theme colors internally)
             <React.Fragment key={i}>
               <Text inverse> </Text>
               <PastedChip lineCount={seg.lineCount} charCount={seg.charCount} />
@@ -574,6 +577,7 @@ export const PromptInput = React.memo(function PromptInput({
     }
 
     // Trailing cursor after a chip at the end
+    // inverse swaps fg/bg colors - no explicit color needed
     if (cursor === total) {
       const lastSeg = segments[segments.length - 1];
       if (lastSeg && lastSeg.type !== 'text') {
@@ -585,7 +589,7 @@ export const PromptInput = React.memo(function PromptInput({
       }
     }
 
-    return <InkText wrap="wrap">{parts}</InkText>;
+    return <Text wrap="wrap">{parts}</Text>;
   };
 
   return <Box>{renderContent()}</Box>;

@@ -1,5 +1,6 @@
 // Theme-related type definitions
 export type ChalkColorName =
+  | 'default' // Use terminal's default foreground color
   | 'black'
   | 'red'
   | 'green'

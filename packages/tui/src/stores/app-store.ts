@@ -1,6 +1,5 @@
 import { createStore, useStore } from 'zustand';
 import { Kiro } from '../kiro';
-import { type Theme, defaultTheme, noColorTheme } from '../types/theme';
 import { createContext, useContext } from 'react';
 import {
   AgentEventType,
@@ -199,16 +198,9 @@ interface BaseAppActions {
     triggerPosition: number;
   } | null;
 
-  // Theme actions
-  setTheme: (theme: Theme) => void;
-
   // Main orchestrator
   handleUserInput: (input: string) => Promise<void>;
 }
-
-const getInitialTheme = (): Theme => {
-  return process.env.NO_COLOR ? noColorTheme : defaultTheme;
-};
 
 export const AppStoreContext = createContext<AppStoreApi | null>(null);
 
@@ -278,9 +270,6 @@ export interface AppState {
     startBuffering: (() => void) | null;
     stopBuffering: (() => void) | null;
   };
-
-  // Theme state
-  theme: Theme;
 }
 
 interface AppStoreProps {
@@ -349,8 +338,6 @@ export const createAppStore = (props: AppStoreProps) =>
     streamingBuffer: { startBuffering: null, stopBuffering: null },
 
     noInteractive: props.noInteractive ?? false,
-
-    theme: getInitialTheme(),
 
     sendMessage: async (content: string) => {
       const { kiro, isProcessing, attachedFiles } = get();
@@ -1395,12 +1382,6 @@ export const createAppStore = (props: AppStoreProps) =>
 
     setHasExpandableToolOutputs: (has: boolean) => {
       set({ hasExpandableToolOutputs: has });
-    },
-
-    // Theme actions
-    setTheme: (theme) => {
-      const finalTheme = process.env.NO_COLOR ? noColorTheme : theme;
-      set({ theme: finalTheme });
     },
 
     // Main orchestrator

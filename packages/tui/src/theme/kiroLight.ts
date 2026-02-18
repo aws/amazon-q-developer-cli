@@ -2,7 +2,7 @@ import type { Theme } from './types.js';
 
 export const kiroLight: Theme = {
   colors: {
-    primary: { truecolor: '#000000', color256: 0, named: 'black' },
+    primary: { named: 'default' },
     secondary: { truecolor: '#9E9E9E', color256: 247 },
     muted: { truecolor: '#BCBCBC', color256: 250 },
     link: { named: 'blue' },

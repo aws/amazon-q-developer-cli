@@ -5,6 +5,7 @@ import type { StatusType } from '../types/componentTypes.js';
 
 // Named color to hex conversion
 const namedColorToHex: { [key in ChalkColorName]: string } = {
+  default: 'inherit', // Special marker for terminal default color
   black: '#000000',
   red: '#ff0000',
   green: '#00ff00',
@@ -75,7 +76,7 @@ const color256ToHex = (color: number): string => {
  *
  * @param truecolor - Optional hex color string (e.g., "#ff0000")
  * @param color256 - Optional ANSI 256 color index (0-255)
- * @param named - Optional named color (e.g., "magenta", "red", "blue")
+ * @param named - Optional named color (e.g., "magenta", "red", "blue", "default")
  * @returns A chalk chain instance with .hex property
  */
 export const getTerminalChalkColor = (
@@ -85,6 +86,14 @@ export const getTerminalChalkColor = (
 ): any => {
   let chalkFunction: any;
   let resolvedHex: string = '#000000'; // Default fallback
+
+  // Special case: 'default' means use terminal's default foreground color
+  // Return text unchanged (no color codes applied)
+  if (named === 'default') {
+    const colorWrapper = (text: string) => text;
+    colorWrapper.hex = 'inherit'; // Special marker for components that need hex values
+    return colorWrapper;
+  }
 
   // If no color values provided, return base chalk
   if (!truecolor && !color256 && !named) {

@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Text } from 'ink';
-import { useTheme } from '../../hooks/useTheme.js';
+import { useTheme } from '../../hooks/useThemeContext.js';
 
 // Idle: just normal blinking
 const IDLE_FRAMES: [string, number][] = [
@@ -30,7 +30,8 @@ export const KiroEyes: React.FC<KiroEyesProps> = ({
   message,
 }) => {
   const [frameIndex, setFrameIndex] = useState(0);
-  const { colors } = useTheme();
+  const { getColor } = useTheme();
+  const primaryColor = getColor('primary');
 
   // Reset frame when switching modes
   useEffect(() => {
@@ -51,7 +52,7 @@ export const KiroEyes: React.FC<KiroEyesProps> = ({
   }, [frameIndex, isWaiting]);
 
   if (message) {
-    return <Text color={colors.primary}>{message}</Text>;
+    return <Text>{primaryColor(message)}</Text>;
   }
 
   if (isWaiting) {
@@ -61,7 +62,7 @@ export const KiroEyes: React.FC<KiroEyesProps> = ({
     return (
       <Text>
         <Text color="white">{eyes}</Text>{' '}
-        <Text color={colors.primary}>{label}</Text>
+        <Text>{primaryColor(label)}</Text>
       </Text>
     );
   }

@@ -177,6 +177,20 @@ Optimize for concurrency: Assume React may render your components multiple times
 - Color paths use dot notation to access nested theme colors (e.g., `'primary'`, `'success'`, `'components.snackbar.background'`)
 - The chalk function automatically adapts to terminal capabilities (truecolor, 256-color, or basic)
 
+**Text Components**: Use the custom `<Text>` component from `components/ui/text/Text.js`, not Ink's `<Text>` directly:
+- The custom `<Text>` is a thin wrapper around Ink's `<Text>` that enforces consistent styling by removing color/style props
+- All text styling must be done via chalk functions passed as children
+- Do NOT use `<InkText color="red">` or similar - use `<Text>{getColor('error')('text')}</Text>` instead
+- For bold/italic, chain chalk modifiers: `<Text>{colorFn.bold('bold text')}</Text>`
+- Import pattern: `import { Text } from '../../ui/text/Text.js';`
+
+**CRITICAL - Theming System**: NEVER create a new theming system. Use the existing theme infrastructure:
+- Theme definitions: `src/theme/kiroDark.ts` and `src/theme/kiroLight.ts`
+- Theme types: `src/types/themeTypes.ts` (defines `TerminalColor`, `Theme`, etc.)
+- Theme context: `src/theme/ThemeProvider.tsx` with `useTheme()` from `hooks/useThemeContext.js`
+- Color utilities: `src/utils/colorUtils.ts` (handles terminal capability detection)
+- If you need a new color, add it to the existing theme files - do not create parallel theme systems
+
 ## Rust Development Instructions
 
 > These rules apply to changes made under `crates/`

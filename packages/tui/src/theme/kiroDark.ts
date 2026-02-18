@@ -2,7 +2,7 @@ import type { Theme } from './types.js';
 
 export const kiroDark: Theme = {
   colors: {
-    primary: { truecolor: '#FFFFFF', color256: 7, named: 'white' },
+    primary: { named: 'default' },
     secondary: { truecolor: '#808080', color256: 244 }, // also 8
     muted: { truecolor: '#303030', color256: 236 },
     link: { named: 'blue' },

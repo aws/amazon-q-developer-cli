@@ -1,11 +1,10 @@
-import { Box, Text as InkText } from 'ink';
-import React, { useCallback } from 'react';
+import { Box } from 'ink';
+import React, { useCallback, useMemo } from 'react';
 import { useTheme } from '../../../hooks/useThemeContext.js';
 import type { MarkdownSegment } from '../../../utils/index.js';
 import { parseMarkdown, normalizeLineEndings } from '../../../utils/index.js';
 import { useSyntaxHighlight } from '../../../utils/syntax-highlight.js';
 import { Text } from '../../ui/text/Text.js';
-import { getColorHex } from '../../../utils/colorUtils.js';
 import { StatusBar } from '../status-bar/StatusBar.js';
 import type { StatusType } from '../../../types/componentTypes.js';
 
@@ -32,7 +31,7 @@ export const Message = React.memo(function Message({
   const { getColor } = useTheme();
   const highlightCode = useSyntaxHighlight();
 
-  const getMessageColor = () => {
+  const messageColor = useMemo(() => {
     switch (type) {
       case MessageType.DEVELOPER:
         return getColor('secondary');
@@ -41,17 +40,12 @@ export const Message = React.memo(function Message({
       default:
         return getColor('primary');
     }
-  };
+  }, [type, getColor]);
 
   // Determine status: use provided status or default to 'active'
   const messageStatus: StatusType = status || 'active';
 
   const renderContent = useCallback(() => {
-    const messageColorHex = getColorHex(
-      getMessageColor(),
-      getColor('primary').hex || '#ffffff'
-    );
-
     const backgroundColor =
       type === MessageType.DEVELOPER ? getColor('muted').hex : undefined;
 
@@ -104,17 +98,22 @@ export const Message = React.memo(function Message({
             } else {
               // Render text segments with formatting preserved
               return (
-                <InkText key={i} wrap="wrap" color={messageColorHex}>
-                  {block.segments.map((segment, j) => (
-                    <InkText
-                      key={j}
-                      bold={segment.bold}
-                      italic={segment.italic}
-                    >
-                      {segment.text}
-                    </InkText>
-                  ))}
-                </InkText>
+                <Text key={i} wrap="wrap">
+                  {block.segments.map((segment, j) => {
+                    let styledText = segment.text;
+                    // Apply bold/italic formatting via chalk
+                    if (segment.bold && segment.italic) {
+                      styledText = messageColor.bold.italic(styledText);
+                    } else if (segment.bold) {
+                      styledText = messageColor.bold(styledText);
+                    } else if (segment.italic) {
+                      styledText = messageColor.italic(styledText);
+                    } else {
+                      styledText = messageColor(styledText);
+                    }
+                    return <Text key={j}>{styledText}</Text>;
+                  })}
+                </Text>
               );
             }
           })}
@@ -128,13 +127,11 @@ export const Message = React.memo(function Message({
     return (
       <Box>
         <Box backgroundColor={backgroundColor}>
-          <InkText wrap="wrap" color={messageColorHex}>
-            {displayContent}
-          </InkText>
+          <Text wrap="wrap">{messageColor(displayContent)}</Text>
         </Box>
       </Box>
     );
-  }, [content, type, getMessageColor, getColor, highlightCode]);
+  }, [content, type, messageColor, getColor, highlightCode]);
 
   return (
     <StatusBar status={messageStatus} barColor={barColor}>
