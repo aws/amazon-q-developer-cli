@@ -36,6 +36,9 @@ pub use crate::types::_diagnostic_location::DiagnosticLocation;
 pub use crate::types::_diagnostic_related_information::DiagnosticRelatedInformation;
 pub use crate::types::_diagnostic_severity::DiagnosticSeverity;
 pub use crate::types::_diagnostic_tag::DiagnosticTag;
+pub use crate::types::_document_block::DocumentBlock;
+pub use crate::types::_document_format::DocumentFormat;
+pub use crate::types::_document_source::DocumentSource;
 pub use crate::types::_document_symbol::DocumentSymbol;
 pub use crate::types::_dry_run_succeed_event::DryRunSucceedEvent;
 pub use crate::types::_editor_state::EditorState;
@@ -203,6 +206,12 @@ mod _diagnostic_related_information;
 mod _diagnostic_severity;
 
 mod _diagnostic_tag;
+
+mod _document_block;
+
+mod _document_format;
+
+mod _document_source;
 
 mod _document_symbol;
 

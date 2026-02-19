@@ -30,20 +30,32 @@ pub fn ser_user_input_message(
         }
         array_6.finish();
     }
-    if let Some(var_9) = &input.model_id {
-        object.key("modelId").string(var_9.as_str());
+    if let Some(var_9) = &input.documents {
+        let mut array_10 = object.key("documents").start_array();
+        for item_11 in var_9 {
+            {
+                #[allow(unused_mut)]
+                let mut object_12 = array_10.value().start_object();
+                crate::protocol_serde::shape_document_block::ser_document_block(&mut object_12, item_11)?;
+                object_12.finish();
+            }
+        }
+        array_10.finish();
     }
-    if let Some(var_10) = &input.cache_point {
-        #[allow(unused_mut)]
-        let mut object_11 = object.key("cachePoint").start_object();
-        crate::protocol_serde::shape_cache_point::ser_cache_point(&mut object_11, var_10)?;
-        object_11.finish();
+    if let Some(var_13) = &input.model_id {
+        object.key("modelId").string(var_13.as_str());
     }
-    if let Some(var_12) = &input.client_cache_config {
+    if let Some(var_14) = &input.cache_point {
         #[allow(unused_mut)]
-        let mut object_13 = object.key("clientCacheConfig").start_object();
-        crate::protocol_serde::shape_client_cache_config::ser_client_cache_config(&mut object_13, var_12)?;
-        object_13.finish();
+        let mut object_15 = object.key("cachePoint").start_object();
+        crate::protocol_serde::shape_cache_point::ser_cache_point(&mut object_15, var_14)?;
+        object_15.finish();
+    }
+    if let Some(var_16) = &input.client_cache_config {
+        #[allow(unused_mut)]
+        let mut object_17 = object.key("clientCacheConfig").start_object();
+        crate::protocol_serde::shape_client_cache_config::ser_client_cache_config(&mut object_17, var_16)?;
+        object_17.finish();
     }
     Ok(())
 }

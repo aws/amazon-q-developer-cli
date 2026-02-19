@@ -31,7 +31,7 @@ function update_pkg() {
 # Get the latest version from artifact links at: https://code.amazon.com/packages/AWSVectorConsolasRuntimeServiceRustClient/releases#
 # for example, https://prod.artifactbrowser.brazil.aws.dev/packages/AWSVectorConsolasRuntimeServiceRustClient/versions/0.1.8200.0/platforms/AL2_x86_64/flavors/DEV.STD.PTHREAD
 # Note that a `.0` is appended as part of the above script.
-CONSOLAS_VERSION="0.1.13922"
+CONSOLAS_VERSION="0.1.14474"
 
 update_pkg "AWSVectorConsolasRuntimeServiceRustClient" "$CONSOLAS_VERSION" "amzn-codewhisperer-client"
 update_pkg "AWSVectorConsolasRuntimeServiceRustClient" "$CONSOLAS_VERSION" "amzn-codewhisperer-streaming-client"

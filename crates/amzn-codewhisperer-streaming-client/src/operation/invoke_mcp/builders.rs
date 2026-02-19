@@ -119,6 +119,23 @@ impl InvokeMCPFluentBuilder {
         self
     }
 
+    /// The ARN of the profile to use for this request
+    pub fn profile_arn(mut self, input: impl ::std::convert::Into<::std::string::String>) -> Self {
+        self.inner = self.inner.profile_arn(input.into());
+        self
+    }
+
+    /// The ARN of the profile to use for this request
+    pub fn set_profile_arn(mut self, input: ::std::option::Option<::std::string::String>) -> Self {
+        self.inner = self.inner.set_profile_arn(input);
+        self
+    }
+
+    /// The ARN of the profile to use for this request
+    pub fn get_profile_arn(&self) -> &::std::option::Option<::std::string::String> {
+        self.inner.get_profile_arn()
+    }
+
     /// JSON-RPC protocol version
     pub fn jsonrpc(mut self, input: impl ::std::convert::Into<::std::string::String>) -> Self {
         self.inner = self.inner.jsonrpc(input.into());

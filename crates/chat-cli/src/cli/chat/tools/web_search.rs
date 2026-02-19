@@ -24,6 +24,7 @@ use crate::cli::agent::{
     PermissionEvalResult,
 };
 use crate::database::Database;
+use crate::database::settings::Setting;
 use crate::os::Os;
 
 #[derive(Debug, Clone, Deserialize)]
@@ -155,6 +156,20 @@ impl WebSearch {
                 .build(),
         );
 
+        // Resolve profile ARN (skip for custom endpoints, same pattern as generateAssistantResponse)
+        let profile_arn = if database.settings.get(Setting::ApiCodeWhispererService).is_none() {
+            match database.get_auth_profile() {
+                Ok(profile) => profile.map(|p| p.arn),
+                Err(err) => {
+                    tracing::error!("Failed to get auth profile: {err}");
+                    None
+                },
+            }
+        } else {
+            tracing::debug!("Custom endpoint detected, skipping profile ARN");
+            None
+        };
+
         // Build invoke_mcp request
         let params = aws_smithy_types::Document::Object(
             [
@@ -184,6 +199,7 @@ impl WebSearch {
             .id("1".into())
             .method(amzn_codewhisperer_streaming_client::types::McpMethod::ToolsCall)
             .params(params)
+            .set_profile_arn(profile_arn)
             .send()
             .await
             .wrap_err("Failed to invoke MCP")?;

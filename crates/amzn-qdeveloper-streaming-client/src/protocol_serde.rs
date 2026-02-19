@@ -117,6 +117,8 @@ pub(crate) mod shape_citation_target;
 
 pub(crate) mod shape_client_cache_config;
 
+pub(crate) mod shape_document_block;
+
 pub(crate) mod shape_followup_prompt;
 
 pub(crate) mod shape_image_block;
@@ -150,6 +152,8 @@ pub(crate) mod shape_app_studio_state;
 pub(crate) mod shape_console_state;
 
 pub(crate) mod shape_diagnostic;
+
+pub(crate) mod shape_document_source;
 
 pub(crate) mod shape_editor_state;
 

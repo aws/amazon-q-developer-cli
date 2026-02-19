@@ -3,17 +3,20 @@ pub fn ser_invoke_mcp_input_input(
     object: &mut ::aws_smithy_json::serialize::JsonObjectWriter,
     input: &crate::operation::invoke_mcp::InvokeMcpInput,
 ) -> ::std::result::Result<(), ::aws_smithy_types::error::operation::SerializationError> {
-    if let Some(var_1) = &input.jsonrpc {
-        object.key("jsonrpc").string(var_1.as_str());
+    if let Some(var_1) = &input.profile_arn {
+        object.key("profileArn").string(var_1.as_str());
     }
-    if let Some(var_2) = &input.id {
-        object.key("id").document(var_2);
+    if let Some(var_2) = &input.jsonrpc {
+        object.key("jsonrpc").string(var_2.as_str());
     }
-    if let Some(var_3) = &input.method {
-        object.key("method").string(var_3.as_str());
+    if let Some(var_3) = &input.id {
+        object.key("id").document(var_3);
     }
-    if let Some(var_4) = &input.params {
-        object.key("params").document(var_4);
+    if let Some(var_4) = &input.method {
+        object.key("method").string(var_4.as_str());
+    }
+    if let Some(var_5) = &input.params {
+        object.key("params").document(var_5);
     }
     Ok(())
 }

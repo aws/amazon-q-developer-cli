@@ -21,5 +21,8 @@ pub fn ser_console_state(
     if let Some(var_6) = &input.task_name {
         object.key("taskName").string(var_6.as_str());
     }
+    if let Some(var_7) = &input.ux_error_message {
+        object.key("uxErrorMessage").string(var_7.as_str());
+    }
     Ok(())
 }

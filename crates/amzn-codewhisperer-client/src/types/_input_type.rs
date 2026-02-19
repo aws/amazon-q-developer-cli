@@ -12,6 +12,7 @@
 /// ```text
 /// # let inputtype = unimplemented!();
 /// match inputtype {
+///     InputType::Document => { /* ... */ },
 ///     InputType::Image => { /* ... */ },
 ///     InputType::Text => { /* ... */ },
 ///     other @ _ if other.as_str() == "NewFeature" => { /* handles a case for `NewFeature` */ },
@@ -48,6 +49,8 @@
     ::std::hash::Hash,
 )]
 pub enum InputType {
+    /// Document-based input processing
+    Document,
     /// Image-based input processing
     Image,
     /// Text-based input processing
@@ -61,6 +64,7 @@ pub enum InputType {
 impl ::std::convert::From<&str> for InputType {
     fn from(s: &str) -> Self {
         match s {
+            "DOCUMENT" => InputType::Document,
             "IMAGE" => InputType::Image,
             "TEXT" => InputType::Text,
             other => InputType::Unknown(crate::primitives::sealed_enum_unknown::UnknownVariantValue(
@@ -80,6 +84,7 @@ impl InputType {
     /// Returns the `&str` value of the enum member.
     pub fn as_str(&self) -> &str {
         match self {
+            InputType::Document => "DOCUMENT",
             InputType::Image => "IMAGE",
             InputType::Text => "TEXT",
             InputType::Unknown(value) => value.as_str(),
@@ -88,7 +93,7 @@ impl InputType {
 
     /// Returns all the `&str` representations of the enum members.
     pub const fn values() -> &'static [&'static str] {
-        &["IMAGE", "TEXT"]
+        &["DOCUMENT", "IMAGE", "TEXT"]
     }
 }
 impl ::std::convert::AsRef<str> for InputType {
@@ -111,6 +116,7 @@ impl InputType {
 impl ::std::fmt::Display for InputType {
     fn fmt(&self, f: &mut ::std::fmt::Formatter) -> ::std::fmt::Result {
         match self {
+            InputType::Document => write!(f, "DOCUMENT"),
             InputType::Image => write!(f, "IMAGE"),
             InputType::Text => write!(f, "TEXT"),
             InputType::Unknown(value) => write!(f, "{value}"),

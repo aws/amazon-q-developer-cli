@@ -35,6 +35,7 @@ pub use crate::types::_dimension::DimensionBuilder;
 pub use crate::types::_doc_generation_event::DocGenerationEventBuilder;
 pub use crate::types::_doc_v2_acceptance_event::DocV2AcceptanceEventBuilder;
 pub use crate::types::_doc_v2_generation_event::DocV2GenerationEventBuilder;
+pub use crate::types::_document_block::DocumentBlockBuilder;
 pub use crate::types::_document_symbol::DocumentSymbolBuilder;
 pub use crate::types::_documentation_intent_context::DocumentationIntentContextBuilder;
 pub use crate::types::_edit::EditBuilder;

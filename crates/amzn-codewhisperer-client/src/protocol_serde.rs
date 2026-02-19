@@ -480,6 +480,8 @@ pub(crate) mod shape_cache_point;
 
 pub(crate) mod shape_client_cache_config;
 
+pub(crate) mod shape_document_block;
+
 pub(crate) mod shape_external_identity_details;
 
 pub(crate) mod shape_feature_list;
@@ -519,6 +521,8 @@ pub(crate) mod shape_app_studio_state;
 pub(crate) mod shape_console_state;
 
 pub(crate) mod shape_diagnostic;
+
+pub(crate) mod shape_document_source;
 
 pub(crate) mod shape_env_state;
 

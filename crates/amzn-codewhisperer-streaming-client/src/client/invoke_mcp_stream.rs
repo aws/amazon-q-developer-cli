@@ -5,6 +5,7 @@ impl super::Client {
     /// operation.
     ///
     /// - The fluent builder is configurable:
+    ///   - [`profile_arn(impl Into<String>)`](crate::operation::invoke_mcp_stream::builders::InvokeMCPStreamFluentBuilder::profile_arn) / [`set_profile_arn(Option<String>)`](crate::operation::invoke_mcp_stream::builders::InvokeMCPStreamFluentBuilder::set_profile_arn):<br>required: **false**<br>The ARN of the profile to use for this request<br>
     ///   - [`jsonrpc(impl Into<String>)`](crate::operation::invoke_mcp_stream::builders::InvokeMCPStreamFluentBuilder::jsonrpc) / [`set_jsonrpc(Option<String>)`](crate::operation::invoke_mcp_stream::builders::InvokeMCPStreamFluentBuilder::set_jsonrpc):<br>required: **false**<br>JSON-RPC protocol version<br>
     ///   - [`id(Document)`](crate::operation::invoke_mcp_stream::builders::InvokeMCPStreamFluentBuilder::id) / [`set_id(Option<Document>)`](crate::operation::invoke_mcp_stream::builders::InvokeMCPStreamFluentBuilder::set_id):<br>required: **false**<br>Request identifier for response correlation. Absent for notifications per JSON-RPC spec.<br>
     ///   - [`method(McpMethod)`](crate::operation::invoke_mcp_stream::builders::InvokeMCPStreamFluentBuilder::method) / [`set_method(Option<McpMethod>)`](crate::operation::invoke_mcp_stream::builders::InvokeMCPStreamFluentBuilder::set_method):<br>required: **true**<br>MCP method name<br>

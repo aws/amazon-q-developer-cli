@@ -4,6 +4,10 @@ impl super::Client {
     /// [`InvokeMCP`](crate::operation::invoke_mcp::builders::InvokeMCPFluentBuilder) operation.
     ///
     /// - The fluent builder is configurable:
+    ///   - [`profile_arn(impl
+    ///     Into<String>)`](crate::operation::invoke_mcp::builders::InvokeMCPFluentBuilder::profile_arn)
+    ///     / [`set_profile_arn(Option<String>)`](crate::operation::invoke_mcp::builders::InvokeMCPFluentBuilder::set_profile_arn):
+    ///     <br>required: **false**<br>The ARN of the profile to use for this request<br>
     ///   - [`jsonrpc(impl
     ///     Into<String>)`](crate::operation::invoke_mcp::builders::InvokeMCPFluentBuilder::jsonrpc)
     ///     / [`set_jsonrpc(Option<String>)`](crate::operation::invoke_mcp::builders::InvokeMCPFluentBuilder::set_jsonrpc):

@@ -16,6 +16,8 @@ pub struct ConsoleState {
     pub service_subconsole_page: ::std::option::Option<::std::string::String>,
     #[allow(missing_docs)] // documentation missing in model
     pub task_name: ::std::option::Option<::std::string::String>,
+    #[allow(missing_docs)] // documentation missing in model
+    pub ux_error_message: ::std::option::Option<::std::string::String>,
 }
 impl ConsoleState {
     #[allow(missing_docs)] // documentation missing in model
@@ -47,6 +49,11 @@ impl ConsoleState {
     pub fn task_name(&self) -> ::std::option::Option<&str> {
         self.task_name.as_deref()
     }
+
+    #[allow(missing_docs)] // documentation missing in model
+    pub fn ux_error_message(&self) -> ::std::option::Option<&str> {
+        self.ux_error_message.as_deref()
+    }
 }
 impl ::std::fmt::Debug for ConsoleState {
     fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
@@ -57,6 +64,7 @@ impl ::std::fmt::Debug for ConsoleState {
         formatter.field("service_console_page", &self.service_console_page);
         formatter.field("service_subconsole_page", &self.service_subconsole_page);
         formatter.field("task_name", &"*** Sensitive Data Redacted ***");
+        formatter.field("ux_error_message", &"*** Sensitive Data Redacted ***");
         formatter.finish()
     }
 }
@@ -78,6 +86,7 @@ pub struct ConsoleStateBuilder {
     pub(crate) service_console_page: ::std::option::Option<::std::string::String>,
     pub(crate) service_subconsole_page: ::std::option::Option<::std::string::String>,
     pub(crate) task_name: ::std::option::Option<::std::string::String>,
+    pub(crate) ux_error_message: ::std::option::Option<::std::string::String>,
 }
 impl ConsoleStateBuilder {
     #[allow(missing_docs)] // documentation missing in model
@@ -182,6 +191,23 @@ impl ConsoleStateBuilder {
         &self.task_name
     }
 
+    #[allow(missing_docs)] // documentation missing in model
+    pub fn ux_error_message(mut self, input: impl ::std::convert::Into<::std::string::String>) -> Self {
+        self.ux_error_message = ::std::option::Option::Some(input.into());
+        self
+    }
+
+    #[allow(missing_docs)] // documentation missing in model
+    pub fn set_ux_error_message(mut self, input: ::std::option::Option<::std::string::String>) -> Self {
+        self.ux_error_message = input;
+        self
+    }
+
+    #[allow(missing_docs)] // documentation missing in model
+    pub fn get_ux_error_message(&self) -> &::std::option::Option<::std::string::String> {
+        &self.ux_error_message
+    }
+
     /// Consumes the builder and constructs a [`ConsoleState`](crate::types::ConsoleState).
     pub fn build(self) -> crate::types::ConsoleState {
         crate::types::ConsoleState {
@@ -191,6 +217,7 @@ impl ConsoleStateBuilder {
             service_console_page: self.service_console_page,
             service_subconsole_page: self.service_subconsole_page,
             task_name: self.task_name,
+            ux_error_message: self.ux_error_message,
         }
     }
 }
@@ -203,6 +230,7 @@ impl ::std::fmt::Debug for ConsoleStateBuilder {
         formatter.field("service_console_page", &self.service_console_page);
         formatter.field("service_subconsole_page", &self.service_subconsole_page);
         formatter.field("task_name", &"*** Sensitive Data Redacted ***");
+        formatter.field("ux_error_message", &"*** Sensitive Data Redacted ***");
         formatter.finish()
     }
 }

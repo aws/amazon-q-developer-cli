@@ -67,6 +67,9 @@ pub use crate::types::_doc_interaction_type::DocInteractionType;
 pub use crate::types::_doc_user_decision::DocUserDecision;
 pub use crate::types::_doc_v2_acceptance_event::DocV2AcceptanceEvent;
 pub use crate::types::_doc_v2_generation_event::DocV2GenerationEvent;
+pub use crate::types::_document_block::DocumentBlock;
+pub use crate::types::_document_format::DocumentFormat;
+pub use crate::types::_document_source::DocumentSource;
 pub use crate::types::_document_symbol::DocumentSymbol;
 pub use crate::types::_documentation_intent_context::DocumentationIntentContext;
 pub use crate::types::_documentation_type::DocumentationType;
@@ -376,6 +379,12 @@ mod _doc_user_decision;
 mod _doc_v2_acceptance_event;
 
 mod _doc_v2_generation_event;
+
+mod _document_block;
+
+mod _document_format;
+
+mod _document_source;
 
 mod _document_symbol;
 

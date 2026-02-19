@@ -14,6 +14,8 @@ pub struct UserInputMessage {
     pub origin: ::std::option::Option<crate::types::Origin>,
     /// Images associated with the Chat Message.
     pub images: ::std::option::Option<::std::vec::Vec<crate::types::ImageBlock>>,
+    /// Documents associated with the Chat Message.
+    pub documents: ::std::option::Option<::std::vec::Vec<crate::types::DocumentBlock>>,
     /// Unique identifier for the model used in this conversation
     pub model_id: ::std::option::Option<::std::string::String>,
     /// Indicates whether to add a cache point after the current message
@@ -51,6 +53,14 @@ impl UserInputMessage {
         self.images.as_deref().unwrap_or_default()
     }
 
+    /// Documents associated with the Chat Message.
+    ///
+    /// If no value was sent for this field, a default will be set. If you want to determine if no
+    /// value was sent, use `.documents.is_none()`.
+    pub fn documents(&self) -> &[crate::types::DocumentBlock] {
+        self.documents.as_deref().unwrap_or_default()
+    }
+
     /// Unique identifier for the model used in this conversation
     pub fn model_id(&self) -> ::std::option::Option<&str> {
         self.model_id.as_deref()
@@ -74,6 +84,7 @@ impl ::std::fmt::Debug for UserInputMessage {
         formatter.field("user_intent", &self.user_intent);
         formatter.field("origin", &self.origin);
         formatter.field("images", &self.images);
+        formatter.field("documents", &self.documents);
         formatter.field("model_id", &self.model_id);
         formatter.field("cache_point", &self.cache_point);
         formatter.field("client_cache_config", &self.client_cache_config);
@@ -97,6 +108,7 @@ pub struct UserInputMessageBuilder {
     pub(crate) user_intent: ::std::option::Option<crate::types::UserIntent>,
     pub(crate) origin: ::std::option::Option<crate::types::Origin>,
     pub(crate) images: ::std::option::Option<::std::vec::Vec<crate::types::ImageBlock>>,
+    pub(crate) documents: ::std::option::Option<::std::vec::Vec<crate::types::DocumentBlock>>,
     pub(crate) model_id: ::std::option::Option<::std::string::String>,
     pub(crate) cache_point: ::std::option::Option<crate::types::CachePoint>,
     pub(crate) client_cache_config: ::std::option::Option<crate::types::ClientCacheConfig>,
@@ -197,6 +209,29 @@ impl UserInputMessageBuilder {
         &self.images
     }
 
+    /// Appends an item to `documents`.
+    ///
+    /// To override the contents of this collection use [`set_documents`](Self::set_documents).
+    ///
+    /// Documents associated with the Chat Message.
+    pub fn documents(mut self, input: crate::types::DocumentBlock) -> Self {
+        let mut v = self.documents.unwrap_or_default();
+        v.push(input);
+        self.documents = ::std::option::Option::Some(v);
+        self
+    }
+
+    /// Documents associated with the Chat Message.
+    pub fn set_documents(mut self, input: ::std::option::Option<::std::vec::Vec<crate::types::DocumentBlock>>) -> Self {
+        self.documents = input;
+        self
+    }
+
+    /// Documents associated with the Chat Message.
+    pub fn get_documents(&self) -> &::std::option::Option<::std::vec::Vec<crate::types::DocumentBlock>> {
+        &self.documents
+    }
+
     /// Unique identifier for the model used in this conversation
     pub fn model_id(mut self, input: impl ::std::convert::Into<::std::string::String>) -> Self {
         self.model_id = ::std::option::Option::Some(input.into());
@@ -265,6 +300,7 @@ impl UserInputMessageBuilder {
             user_intent: self.user_intent,
             origin: self.origin,
             images: self.images,
+            documents: self.documents,
             model_id: self.model_id,
             cache_point: self.cache_point,
             client_cache_config: self.client_cache_config,
@@ -279,6 +315,7 @@ impl ::std::fmt::Debug for UserInputMessageBuilder {
         formatter.field("user_intent", &self.user_intent);
         formatter.field("origin", &self.origin);
         formatter.field("images", &self.images);
+        formatter.field("documents", &self.documents);
         formatter.field("model_id", &self.model_id);
         formatter.field("cache_point", &self.cache_point);
         formatter.field("client_cache_config", &self.client_cache_config);

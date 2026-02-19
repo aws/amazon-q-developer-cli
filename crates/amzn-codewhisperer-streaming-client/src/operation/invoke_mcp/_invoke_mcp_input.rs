@@ -4,6 +4,8 @@
 #[non_exhaustive]
 #[derive(::std::clone::Clone, ::std::cmp::PartialEq)]
 pub struct InvokeMcpInput {
+    /// The ARN of the profile to use for this request
+    pub profile_arn: ::std::option::Option<::std::string::String>,
     /// JSON-RPC protocol version
     pub jsonrpc: ::std::option::Option<::std::string::String>,
     /// Request identifier for response correlation (string or number per MCP spec)
@@ -14,6 +16,11 @@ pub struct InvokeMcpInput {
     pub params: ::std::option::Option<::aws_smithy_types::Document>,
 }
 impl InvokeMcpInput {
+    /// The ARN of the profile to use for this request
+    pub fn profile_arn(&self) -> ::std::option::Option<&str> {
+        self.profile_arn.as_deref()
+    }
+
     /// JSON-RPC protocol version
     pub fn jsonrpc(&self) -> ::std::option::Option<&str> {
         self.jsonrpc.as_deref()
@@ -37,6 +44,7 @@ impl InvokeMcpInput {
 impl ::std::fmt::Debug for InvokeMcpInput {
     fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
         let mut formatter = f.debug_struct("InvokeMcpInput");
+        formatter.field("profile_arn", &self.profile_arn);
         formatter.field("jsonrpc", &self.jsonrpc);
         formatter.field("id", &self.id);
         formatter.field("method", &self.method);
@@ -56,12 +64,30 @@ impl InvokeMcpInput {
 #[derive(::std::clone::Clone, ::std::cmp::PartialEq, ::std::default::Default)]
 #[non_exhaustive]
 pub struct InvokeMcpInputBuilder {
+    pub(crate) profile_arn: ::std::option::Option<::std::string::String>,
     pub(crate) jsonrpc: ::std::option::Option<::std::string::String>,
     pub(crate) id: ::std::option::Option<::aws_smithy_types::Document>,
     pub(crate) method: ::std::option::Option<crate::types::McpMethod>,
     pub(crate) params: ::std::option::Option<::aws_smithy_types::Document>,
 }
 impl InvokeMcpInputBuilder {
+    /// The ARN of the profile to use for this request
+    pub fn profile_arn(mut self, input: impl ::std::convert::Into<::std::string::String>) -> Self {
+        self.profile_arn = ::std::option::Option::Some(input.into());
+        self
+    }
+
+    /// The ARN of the profile to use for this request
+    pub fn set_profile_arn(mut self, input: ::std::option::Option<::std::string::String>) -> Self {
+        self.profile_arn = input;
+        self
+    }
+
+    /// The ARN of the profile to use for this request
+    pub fn get_profile_arn(&self) -> &::std::option::Option<::std::string::String> {
+        &self.profile_arn
+    }
+
     /// JSON-RPC protocol version
     pub fn jsonrpc(mut self, input: impl ::std::convert::Into<::std::string::String>) -> Self {
         self.jsonrpc = ::std::option::Option::Some(input.into());
@@ -141,6 +167,7 @@ impl InvokeMcpInputBuilder {
         ::aws_smithy_types::error::operation::BuildError,
     > {
         ::std::result::Result::Ok(crate::operation::invoke_mcp::InvokeMcpInput {
+            profile_arn: self.profile_arn,
             jsonrpc: self.jsonrpc,
             id: self.id,
             method: self.method,
@@ -151,6 +178,7 @@ impl InvokeMcpInputBuilder {
 impl ::std::fmt::Debug for InvokeMcpInputBuilder {
     fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
         let mut formatter = f.debug_struct("InvokeMcpInputBuilder");
+        formatter.field("profile_arn", &self.profile_arn);
         formatter.field("jsonrpc", &self.jsonrpc);
         formatter.field("id", &self.id);
         formatter.field("method", &self.method);

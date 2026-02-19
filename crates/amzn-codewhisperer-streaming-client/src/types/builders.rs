@@ -20,6 +20,7 @@ pub use crate::types::_context_usage_event::ContextUsageEventBuilder;
 pub use crate::types::_conversation_state::ConversationStateBuilder;
 pub use crate::types::_diagnostic_location::DiagnosticLocationBuilder;
 pub use crate::types::_diagnostic_related_information::DiagnosticRelatedInformationBuilder;
+pub use crate::types::_document_block::DocumentBlockBuilder;
 pub use crate::types::_document_symbol::DocumentSymbolBuilder;
 pub use crate::types::_dry_run_succeed_event::DryRunSucceedEventBuilder;
 pub use crate::types::_editor_state::EditorStateBuilder;
