@@ -73,7 +73,7 @@ pub enum AgentSubcommands {
         #[arg(long)]
         force: bool,
     },
-    /// Define a default agent to use when q chat launches
+    /// Define a default agent to use when kiro-cli chat launches
     SetDefault {
         /// Name of the agent to set as default (can also be provided via --name for backwards
         /// compatibility)
