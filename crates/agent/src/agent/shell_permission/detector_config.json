@@ -1,31 +1,13 @@
 {
-  "dangerous_commands": ["eval", "source", "xargs", "del", "erase", "format", "move", "Start-Process", "Invoke-Item", "Remove-Item"],
   "dangerous_options": {
-    "find": ["-exec", "-execdir", "-delete", "-ok", "-okdir", "-fprint", "-fls"],
-    "grep": ["-P", "--perl-regexp"],
+    "find": ["-exec", "-execdir", "-ok", "-okdir"],
     "sed": ["/e"],
     "sort": ["--compress-program"],
     "man": ["--html", "--pager", "-H", "-P"],
     "rg": ["--pre"],
     "tar": ["--checkpoint-action"],
     "zip": ["-TT", "--unzip-command"],
-    "git": ["--upload-pack", "--receive-pack", "--exec", "core.sshCommand", "core.gitProxy"],
-    "base64": ["-d", "--decode", "-D"],
-    "history": ["-s", "-a", "-w"],
-    "rmdir": ["/s", "/q"],
-    "rd": ["/s", "/q"],
-    "start": ["http", "https"],
-    "sh": ["-c"],
-    "bash": ["-c"],
-    "zsh": ["-c"],
-    "dash": ["-c"],
-    "ksh": ["-c"],
-    "csh": ["-c"],
-    "tcsh": ["-c"],
-    "fish": ["-c"],
-    "nu": ["-c", "--commands"],
-    "pwsh": ["-c", "-Command"],
-    "powershell": ["-c", "-Command"]
+    "git": ["--upload-pack", "--receive-pack", "--exec", "core.sshCommand", "core.gitProxy"]
   },
   "dangerous_env_vars": [
     "PAGER", "EDITOR", "VISUAL", "BROWSER", "MANPAGER", "GIT_PAGER", "LESS", "LESSOPEN", "LESSCLOSE",
@@ -35,10 +17,9 @@
     "IFS", "PATH", "HOME", "SHELL", "PROMPT_COMMAND", "BASH_ENV", "ENV",
     "GIT_SSH", "GIT_SSH_COMMAND", "GIT_EXEC_PATH", "GIT_TEMPLATE_DIR"
   ],
-  "env_builtins": ["export", "typeset", "declare", "readonly", "local", "unset"],
   "shells": ["sh", "bash", "zsh", "dash", "ksh", "csh", "tcsh", "fish", "nu", "pwsh", "powershell"],
   "safe_commands": [
-    "ls", "cat", "echo", "pwd", "which", "head", "tail", "grep", "dir", "type", "wc", "cd", "find", "file", "df", "du",
+    "ls", "cat", "echo", "pwd", "which", "head", "tail", "dir", "type", "wc", "cd", "file", "df", "du",
     "whoami", "uname", "cal", "printenv", "id", "groups", "tty", "uptime", "free", "lsb_release"
   ],
   "safe_options": {
@@ -48,5 +29,9 @@
     "docker": ["ps", "images", "inspect", "logs", "version", "info", "top", "stats", "port", "history", "diff"],
     "kubectl": ["get", "describe", "logs", "version", "cluster-info", "top", "api-resources", "explain"],
     "rustup": ["show", "which", "version", "--version"]
+  },
+  "safe_except_options": {
+    "find": ["-delete", "-fprint", "-fprintf", "-fls"],
+    "grep": ["-P", "--perl-regexp"]
   }
 }

@@ -90,7 +90,7 @@
     "settings": {
       "allowed_commands": ["git .*"]
     },
-    "detection": { "danger_level": "Low", "is_readonly": false },
+    "detection": { "danger_level": "None", "is_readonly": false },
     "expected": "Allow"
   },
   {
@@ -99,7 +99,7 @@
     "settings": {
       "allowed_commands": ["git .*"]
     },
-    "detection": { "danger_level": "Low", "is_readonly": false },
+    "detection": { "danger_level": "None", "is_readonly": false },
     "expected": "Ask"
   },
   {

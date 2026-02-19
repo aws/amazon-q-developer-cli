@@ -402,7 +402,7 @@ mod tests {
             ("echo 'test' || rm file", true),
             ("echo 'test' & background", true),
             ("echo 'test data'; touch main.py", true),
-            ("echo $HOME", true),
+            ("echo $HOME", false),
             // New system correctly handles \n inside single quotes (literal string)
             ("echo 'test\nrm file'", false),
             ("echo 'test\rrm file'", true),

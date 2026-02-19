@@ -135,7 +135,6 @@ mod tests {
     fn parse_danger_level(s: &str) -> DangerLevel {
         match s {
             "None" => DangerLevel::None,
-            "Low" => DangerLevel::Low,
             "High" => DangerLevel::High,
             _ => panic!("Unknown danger level: {}", s),
         }
