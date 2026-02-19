@@ -44,10 +44,10 @@ pub fn evaluate_shell_permission(command: &str, settings: &ShellPermissionSettin
     let detection = detect(&parse_result.commands);
 
     // Layer 3: Decide
-    let result = decide(&parse_result.commands, &detection, settings);
+    let decider_result = decide(&parse_result.commands, &detection, settings);
 
     // Guard against tree-sitter misparses
-    match result {
+    match decider_result.result {
         PermissionEvalResult::Allow if has_parser_blind_spots(command) => PermissionEvalResult::ask(),
         other => other,
     }
