@@ -1,0 +1,61 @@
+{
+  "name": "oncall",
+  "description": "Kiro CLI oncall agent for ticket investigation, debugging, and operational tasks",
+  "model": "claude-opus-4.5",
+  "prompt": "file://resources/ONCALL_PROMPT.md",
+  "welcomeMessage": "Hi! I'm the Oncall agent.",
+  "tools": [
+    "@builder-mcp/TicketingReadActions",
+    "@builder-mcp/TicketingWriteActions",
+    "@builder-mcp/MechanicDiscoverTools",
+    "@builder-mcp/MechanicRunTool",
+    "@builder-mcp/ReadInternalWebsites",
+    "@builder-mcp/InternalCodeSearch",
+    "@builder-mcp/QuipEditor",
+    "@builder-mcp/GetPipelineHealth",
+    "@builder-mcp/OncallReadActions",
+    "read",
+    "write",
+    "shell",
+    "grep",
+    "glob",
+    "introspect",
+    "knowledge",
+    "subagent"
+  ],
+  "allowedTools": [
+    "read",
+    "grep",
+    "glob",
+    "introspect",
+    "knowledge",
+    "@builder-mcp/TicketingReadActions",
+    "@builder-mcp/ReadInternalWebsites",
+    "@builder-mcp/InternalCodeSearch"
+  ],
+  "toolsSettings": {
+    "subagent": {
+      "trustedAgents": [
+        "kiro-research-agent"
+      ],
+      "availableAgents": [
+        "kiro-research-agent"
+      ]
+    }
+  },
+  "resources": [
+    "skill://autodocs/README.md",
+    "file://AGENTS.md",
+    "file://README.md",
+    "skill://docs/oncall/*.md"
+  ],
+  "mcpServers": {
+    "builder-mcp": {
+      "command": "builder-mcp",
+      "env": {
+        "TOOL_PERSONALIZATION_ENABLED": "true",
+        "TOOL_PERSONALIZATION_ROLLOUT_PERCENTAGE": "100"
+      }
+    }
+  }
+}

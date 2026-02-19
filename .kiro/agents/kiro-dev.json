@@ -26,7 +26,7 @@
   ],
   "useLegacyMcpJson": true,
   "keyboardShortcut": "ctrl+1",
-  "welcomeMessage": "Hi! I'm the Kiro-Dev agent. What would you like to build today?\n\nAvailable workflows:\n- `@changelog` - Propose changelog entries for recent changes\n- `@release` - Generate release notes, bump version, and create PR with author attribution\n- `@docs` - Update autodocs for code changes",
+  "welcomeMessage": "Hi! I'm the Kiro-Dev agent. What would you like to build for the v1 of CLI today?\n\nAvailable agents:\n- `kiro-dev-v2` - For v2 focused development\n- `oncall` - For Kiro CLI oncall activities\n\n\n\nAvailable workflows:\n- `@changelog` - Propose changelog entries for recent changes\n- `@release` - Generate release notes, bump version, and create PR with author attribution\n- `@docs` - Update autodocs for code changes",
   "toolsSettings": {
     "execute_bash": {
       "autoAllowReadonly": true,
