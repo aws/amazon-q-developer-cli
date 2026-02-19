@@ -9,6 +9,7 @@ import { QueueStack } from './QueueStack';
 import { Card } from '../ui/card/Card';
 import { Message, MessageType } from '../chat/message/Message';
 import { StreamingMessage } from '../chat/message/StreamingMessage';
+import { ShellOutputMessage } from '../chat/message/ShellOutputMessage';
 import { ToolUseMessage } from './ToolUseMessage';
 import { ThinkingMessage } from '../chat/message/ThinkingMessage';
 import { StatusBar } from '../chat/status-bar/StatusBar';
@@ -119,6 +120,18 @@ const ConversationTurnCard = React.memo(function ConversationTurnCard({
           );
         }
 
+        // Shell output - use collapsible view when finished
+        if ('shellOutput' in message && message.shellOutput && !shouldStream) {
+          return (
+            <ShellOutputMessage
+              key={message.id}
+              content={message.content}
+              isStatic={!turn.isActive}
+              barColor={agentBarColor}
+            />
+          );
+        }
+
         return (
           <Message
             key={message.id}
@@ -192,6 +205,19 @@ const StaticTurnCard = React.memo(function StaticTurnCard({
           }
           // Only filter empty content for text messages
           if (!message.content || message.content === '') return null;
+
+          // Shell output - use collapsible view for static turns
+          if ('shellOutput' in message && message.shellOutput) {
+            return (
+              <ShellOutputMessage
+                key={message.id}
+                content={message.content}
+                isStatic={true}
+                barColor={agentBarColor}
+              />
+            );
+          }
+
           return (
             <Message
               key={message.id}

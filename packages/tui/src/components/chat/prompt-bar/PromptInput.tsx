@@ -121,6 +121,19 @@ export const PromptInput = React.memo(function PromptInput({
   const prevTriggerRef = useRef<TriggerInfo | null>(null);
 
   const primaryColor = useMemo(() => getColor('primary'), [getColor]);
+  const brandColor = useMemo(() => getColor('brand'), [getColor]);
+  const styleInputText = useCallback(
+    (text: string, isFirstSegment: boolean) => {
+      const fullText = getVisibleText(segments);
+      if (fullText.startsWith('!') && isFirstSegment && text.length > 0) {
+        if (text.startsWith('!')) {
+          return brandColor('!') + primaryColor(text.slice(1));
+        }
+      }
+      return primaryColor(text);
+    },
+    [segments, brandColor, primaryColor]
+  );
   const placeholderColor = useMemo(() => getColor('muted'), [getColor]);
 
   useEffect(() => {
@@ -528,13 +541,15 @@ export const PromptInput = React.memo(function PromptInput({
               : '';
           parts.push(
             <React.Fragment key={i}>
-              <Text>{primaryColor(seg.value.slice(0, localCursor))}</Text>
+              <Text>
+                {styleInputText(seg.value.slice(0, localCursor), i === 0)}
+              </Text>
               <Text inverse>{charAtCursor}</Text>
               {after && <Text>{primaryColor(after)}</Text>}
             </React.Fragment>
           );
         } else {
-          parts.push(<Text key={i}>{primaryColor(seg.value)}</Text>);
+          parts.push(<Text key={i}>{styleInputText(seg.value, i === 0)}</Text>);
         }
       } else if (seg.type === 'file') {
         if (cursorInSeg && cursor === pos) {

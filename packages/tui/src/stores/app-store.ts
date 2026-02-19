@@ -1,5 +1,6 @@
 import { createStore, useStore } from 'zustand';
 import { Kiro } from '../kiro';
+import chalk from 'chalk';
 import { createContext, useContext } from 'react';
 import {
   AgentEventType,
@@ -97,7 +98,13 @@ export type ToolResult =
 
 export type MessageType =
   | { id: string; role: MessageRole.User; content: string; agentName?: string }
-  | { id: string; role: MessageRole.Model; content: string; agentName?: string }
+  | {
+      id: string;
+      role: MessageRole.Model;
+      content: string;
+      agentName?: string;
+      shellOutput?: boolean;
+    }
   | {
       id: string;
       role: MessageRole.ToolUse;
@@ -1477,6 +1484,105 @@ export const createAppStore = (props: AppStoreProps) =>
             }),
         };
         await executeCommand(trimmed, ctx);
+        return;
+      }
+
+      // Handle shell escape commands
+      if (trimmed.startsWith('!')) {
+        const command = trimmed.slice(1).trim();
+        if (!command) return;
+
+        const { needsTTY, executeShellEscapeTTY, executeShellEscapeStreaming } =
+          await import('../utils/shell-escape.js');
+
+        // Add user message showing the command
+        const userMsgId = generateMessageId();
+        set((state) => ({
+          messages: [
+            ...state.messages,
+            {
+              id: userMsgId,
+              role: MessageRole.User,
+              content: chalk.hex('#C19AFF')('!') + command,
+              agentName: state.currentAgent?.name,
+            },
+          ],
+        }));
+
+        if (needsTTY(command)) {
+          // TTY mode: direct terminal access
+          const result = executeShellEscapeTTY(command);
+          if (result.exitCode !== 0) {
+            const msg = result.error || `Exited with status ${result.exitCode}`;
+            set((state) => ({
+              messages: [
+                ...state.messages,
+                {
+                  id: generateMessageId(),
+                  role: MessageRole.System,
+                  content: msg,
+                  success: false,
+                },
+              ],
+            }));
+          }
+        } else {
+          // Streaming mode: pipe output into conversation
+          const outputMsgId = generateMessageId();
+          let accumulated = '';
+
+          // Add initial empty model message and set processing
+          set((state) => ({
+            isProcessing: true,
+            messages: [
+              ...state.messages,
+              {
+                id: outputMsgId,
+                role: MessageRole.Model,
+                content: '',
+                agentName: state.currentAgent?.name,
+                shellOutput: true,
+              },
+            ],
+          }));
+
+          const { promise, kill } = executeShellEscapeStreaming(
+            command,
+            (chunk) => {
+              accumulated += chunk;
+              // Update the model message with accumulated output
+              set((state) => ({
+                messages: state.messages.map((msg) =>
+                  msg.id === outputMsgId
+                    ? { ...msg, content: accumulated }
+                    : msg
+                ),
+              }));
+            }
+          );
+
+          // Store kill function for Ctrl+C cancellation
+          const abortController = new AbortController();
+          const origKill = kill;
+          abortController.signal.addEventListener('abort', () => origKill());
+          set({ currentAbortController: abortController });
+
+          const result = await promise;
+
+          // Finalize
+          const finalContent = accumulated || '(no output)';
+          const exitSuffix =
+            result.exitCode !== 0 ? `\n\n[exit code: ${result.exitCode}]` : '';
+          set((state) => ({
+            isProcessing: false,
+            currentAbortController: null,
+            messages: state.messages.map((msg) =>
+              msg.id === outputMsgId
+                ? { ...msg, content: finalContent + exitSuffix }
+                : msg
+            ),
+          }));
+        }
         return;
       }
 
