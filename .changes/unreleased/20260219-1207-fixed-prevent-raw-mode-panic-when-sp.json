@@ -1,0 +1,4 @@
+{
+  "type": "fixed",
+  "description": "Prevent raw mode panic when spawned with piped stdio and no controlling terminal"
+}

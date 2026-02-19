@@ -3,7 +3,10 @@ use std::collections::{
     BTreeMap,
     HashMap,
 };
-use std::io::stdout;
+use std::io::{
+    IsTerminal,
+    stdout,
+};
 
 use crossterm::cursor::MoveTo;
 use crossterm::event::{
@@ -402,12 +405,16 @@ impl<'a> SubagentIndicator<'a> {
 
         impl RawModeGuard {
             pub fn new(end_turn_tx: tokio::sync::oneshot::Sender<()>, is_interactive: bool) -> Self {
-                if is_interactive {
+                // Only enable raw mode if interactive AND stdin is actually a TTY.
+                // When spawned with piped stdio (e.g., by AgentSpaces), stdin won't
+                // be a terminal and enable_raw_mode would fail with ENXIO.
+                let raw_mode_enabled = is_interactive && std::io::stdin().is_terminal();
+                if raw_mode_enabled {
                     crossterm::terminal::enable_raw_mode().expect("failed to enable raw mode");
                 }
                 Self {
                     end_turn_tx: Some(end_turn_tx),
-                    raw_mode_enabled: is_interactive,
+                    raw_mode_enabled,
                 }
             }
         }
