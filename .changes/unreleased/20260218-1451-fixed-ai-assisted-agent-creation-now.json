@@ -1,0 +1,4 @@
+{
+  "type": "fixed",
+  "description": "AI-assisted agent creation now defaults to global directory instead of prompting for location"
+}

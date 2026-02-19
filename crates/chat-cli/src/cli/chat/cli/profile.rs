@@ -871,20 +871,17 @@ async fn create_agent_ai_assisted(
         },
     };
 
-    // Get scope/directory (prompt if not provided)
+    // Get scope/directory (use global default if not provided)
     let save_path: Option<PathBuf> = match directory {
         Some(ref dir) => Some(dir.resolve(os)?),
         None => {
-            // Prompt for scope selection
-            let scope_selection = prompt_directory_selection(&mut session.stderr)?;
-            match scope_selection {
-                Some(dir) => Some(dir.resolve(os)?),
-                None => {
-                    return Ok(ChatState::PromptUser {
-                        skip_printing_tools: true,
-                    });
-                },
-            }
+            // Use global agents directory as default (same as manual creation)
+            Some(
+                os.path_resolver()
+                    .global()
+                    .agents_dir_for_create()
+                    .map_err(|e| ChatError::Custom(format!("Failed to resolve global agents directory: {e}").into()))?,
+            )
         },
     };
 
@@ -949,30 +946,4 @@ async fn create_agent_ai_assisted(
             save_path,
         )
         .await
-}
-
-/// Prompt the user to select a directory scope (workspace or global)
-fn prompt_directory_selection<W: Write>(_stderr: &mut W) -> Result<Option<AgentDirectory>, ChatError> {
-    let scope_options = vec!["Local (current workspace)", "Global (all workspaces)"];
-    let scope_selection = match Select::with_theme(&crate::util::dialoguer_theme())
-        .with_prompt("Agent scope")
-        .items(&scope_options)
-        .default(0)
-        .interact_on_opt(&dialoguer::console::Term::stdout())
-    {
-        Ok(sel) => {
-            let _ = crossterm::execute!(std::io::stdout(), StyledText::emphasis_fg());
-            sel
-        },
-        Err(dialoguer::Error::IO(ref e)) if e.kind() == std::io::ErrorKind::Interrupted => {
-            return Ok(None);
-        },
-        Err(e) => return Err(ChatError::Custom(format!("Failed to get scope selection: {e}").into())),
-    };
-
-    match scope_selection {
-        Some(0) => Ok(Some(AgentDirectory::Workspace)),
-        Some(1) => Ok(Some(AgentDirectory::Global)),
-        _ => Ok(None),
-    }
 }

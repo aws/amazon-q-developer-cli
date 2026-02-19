@@ -1,7 +1,7 @@
 ---
 doc_meta:
-  validated: 2026-02-16
-  commit: 36e7dac5
+  validated: 2026-02-18
+  commit: d42228e9
   status: validated
   testable_headless: false
   category: slash_command
@@ -127,7 +127,7 @@ Creates agent with all options specified, skipping interactive prompts.
 ## Default Behavior
 
 - **Mode**: AI-assisted creation (prompts for values not provided via CLI)
-- **Directory**: If not specified, prompts for Local vs Global selection
+- **Directory**: If not specified, defaults to Global directory (`~/.kiro/agents/`) - same as manual mode
 - **MCP Servers**: If not specified, shows selection dialog for available servers
 
 ## AI-Assisted Mode
