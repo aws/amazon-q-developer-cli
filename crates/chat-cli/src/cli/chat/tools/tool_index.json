@@ -705,5 +705,27 @@
       },
       "required": ["plan"]
     }
+  },
+  "session": {
+    "name": "session",
+    "description": "Adjust session settings temporarily (in-memory only, cleared on exit). CRITICAL: You MUST use introspect tool FIRST to verify setting names and understand their purpose before using set operation.\n\n## Session vs Persistent Settings\n- **session tool**: Temporary in-memory changes (cleared when chat exits) - Use for quick experiments or one-time adjustments\n- **fs_write tool**: Permanent changes saved to disk - Use when user says \"save\", \"persist\", \"permanently\", or \"always\"\n  - Global settings: ~/.kiro/settings.json\n  - Workspace settings: .kiro/settings.json\n\n## When to Use Each Tool\n- User: \"disable markdown\" → session tool (temporary)\n- User: \"disable markdown permanently\" → fs_write to ~/.kiro/settings.json (global) or .kiro/settings.json (workspace)\n- User: \"save this setting\" → fs_write (persistent)\n- User: \"try disabling markdown\" → session tool (temporary)\n\n## REQUIRED Workflow for Setting Changes\n1. User asks to change a setting\n2. Use introspect tool to find the correct setting name and understand what it does\n3. Determine if temporary (session) or permanent (fs_write)\n4. Use appropriate tool\n\n## Operations\n- **list**: Show currently configured session settings (non-default values only)\n- **get**: Get the current value of a specific setting\n- **set**: Change a setting value temporarily (MUST verify setting name with introspect first)\n- **reset**: Clear session override for a specific setting, or all session overrides if no key provided\n\n## Example Workflows\nTemporary change:\n  User: \"disable markdown\"\n  1. introspect(query=\"markdown setting\") → learn about chat.disableMarkdownRendering\n  2. session(operation=\"set\", key=\"chat.disableMarkdownRendering\", value=true)\n\nReset single setting:\n  User: \"reset markdown setting\"\n  session(operation=\"reset\", key=\"chat.disableMarkdownRendering\")\n\nReset all session overrides:\n  User: \"clear all my temporary settings\"\n  session(operation=\"reset\")\n\nPermanent change:\n  User: \"disable markdown permanently\"\n  1. introspect(query=\"markdown setting\") → learn about chat.disableMarkdownRendering\n  2. fs_write to modify ~/.kiro/settings.json with {\"chat.disableMarkdownRendering\": true}\n\nDO NOT guess setting names - always verify with introspect first.",
+    "input_schema": {
+      "type": "object",
+      "properties": {
+        "operation": {
+          "type": "string",
+          "enum": ["list", "get", "set", "reset"],
+          "description": "The operation to perform: 'list' shows configured settings, 'get' retrieves a specific setting, 'set' changes a setting value temporarily, 'reset' clears session override(s)"
+        },
+        "key": {
+          "type": "string",
+          "description": "Setting key (e.g., 'chat.disableMarkdownRendering'). Required for 'get' and 'set' operations. Optional for 'reset' (if omitted, resets all session overrides). MUST be verified with introspect tool first."
+        },
+        "value": {
+          "description": "Value to set. Type depends on the setting (boolean, string, or number). Required for 'set' operation"
+        }
+      },
+      "required": ["operation"]
+    }
   }
 }

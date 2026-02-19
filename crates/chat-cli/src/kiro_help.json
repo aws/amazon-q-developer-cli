@@ -4,6 +4,7 @@
   "tools": [
     "introspect",
     "fs_read",
+    "session",
     "fs_write"
   ],
   "includeMcpJson": false,

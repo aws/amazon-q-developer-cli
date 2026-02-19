@@ -138,6 +138,48 @@ impl Setting {
         use strum::EnumProperty;
         self.get_str("scope") != Some("global_only")
     }
+
+    /// Check if this setting can be safely changed via the session tool.
+    /// Uses whitelist approach - new settings are denied by default.
+    pub fn is_session_safe(&self) -> bool {
+        matches!(
+            self,
+            // Display/UX settings
+            Self::ChatDisableMarkdownRendering
+                | Self::ChatEnableNotifications
+                | Self::ChatGreetingEnabled
+                | Self::ChatEnableHistoryHints
+                | Self::EnabledContextUsageIndicator
+                | Self::ChatEditMode
+                | Self::UiMode
+                // Keybindings
+                | Self::SkimCommandKey
+                | Self::AutocompletionKey
+                | Self::TangentModeKey
+                | Self::DelegateModeKey
+                // Compaction tuning
+                | Self::CompactionExcludeContextWindowPercent
+                | Self::CompactionExcludeMessages
+                // Knowledge base settings
+                | Self::KnowledgeDefaultIncludePatterns
+                | Self::KnowledgeDefaultExcludePatterns
+                | Self::KnowledgeMaxFiles
+                | Self::KnowledgeChunkSize
+                | Self::KnowledgeChunkOverlap
+                | Self::KnowledgeIndexType
+                // Feature toggles
+                | Self::EnabledTangentMode
+                | Self::IntrospectTangentMode
+                | Self::ChatDisableAutoCompaction
+                | Self::EnabledThinking
+                | Self::EnabledKnowledge
+                | Self::EnabledCodeIntelligence
+                | Self::EnabledTodoList
+                | Self::EnabledCheckpoint
+                // Model selection
+                | Self::ChatDefaultModel
+        )
+    }
 }
 
 impl AsRef<str> for Setting {
@@ -258,12 +300,15 @@ pub struct Settings {
     global: Map<String, Value>,
     workspace: Option<Map<String, Value>>,
     workspace_settings_path: Option<std::path::PathBuf>,
+    /// Session-level overrides (not persisted, cleared when chat exits)
+    session: Map<String, Value>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SettingScope {
     Global,
     Workspace,
+    Session,
 }
 
 impl Settings {
@@ -296,6 +341,7 @@ impl Settings {
             global,
             workspace,
             workspace_settings_path,
+            session: Map::new(),
         })
     }
 
@@ -336,6 +382,11 @@ impl Settings {
     }
 
     pub fn get(&self, key: Setting) -> Option<&Value> {
+        // Session overrides take precedence
+        if let Some(value) = self.session.get(key.as_ref()) {
+            return Some(value);
+        }
+
         if key.is_workspace_overridable()
             && let Some(workspace) = &self.workspace
             && let Some(value) = workspace.get(key.as_ref())
@@ -346,6 +397,9 @@ impl Settings {
     }
 
     pub fn get_scope(&self, key: Setting) -> Option<SettingScope> {
+        if self.session.contains_key(key.as_ref()) {
+            return Some(SettingScope::Session);
+        }
         if key.is_workspace_overridable()
             && let Some(workspace) = &self.workspace
             && workspace.contains_key(key.as_ref())
@@ -379,6 +433,11 @@ impl Settings {
                 self.workspace.as_mut().unwrap().insert(key.to_string(), value.into());
                 self.save_workspace().await
             },
+            SettingScope::Session => {
+                // Session overrides are in-memory only, no persistence
+                self.session.insert(key.to_string(), value.into());
+                Ok(())
+            },
         }
     }
 
@@ -388,14 +447,21 @@ impl Settings {
         let removed = match scope {
             SettingScope::Global => self.global.remove(key.as_ref()),
             SettingScope::Workspace => self.workspace.as_mut().and_then(|ws| ws.remove(key.as_ref())),
+            SettingScope::Session => self.session.remove(key.as_ref()),
         };
 
         match scope {
             SettingScope::Global => self.save_global().await?,
             SettingScope::Workspace => self.save_workspace().await?,
+            SettingScope::Session => {}, // Session changes are in-memory only
         }
 
         Ok(removed)
+    }
+
+    /// Clear all session overrides
+    pub fn clear_session(&mut self) {
+        self.session.clear();
     }
 
     async fn save_global(&self) -> Result<(), DatabaseError> {

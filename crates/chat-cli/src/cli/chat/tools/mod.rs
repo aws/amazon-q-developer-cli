@@ -11,6 +11,7 @@ pub mod glob;
 pub mod grep;
 pub mod introspect;
 pub mod knowledge;
+pub mod session;
 pub mod switch_to_execution;
 pub mod thinking;
 pub mod todo;
@@ -73,6 +74,14 @@ pub struct ToolInfo {
     /// Names (preferred alias)
     // (e.g., ["execute_bash", "execute_cmd", "shell"])
     pub aliases: &'static [&'static str],
+}
+
+impl ToolInfo {
+    /// Check if this tool can be trusted. Defaults to true unless explicitly marked as
+    /// non-trustable. Currently only the session tool is non-trustable.
+    pub fn is_trustable(&self) -> bool {
+        self.spec_name != "session"
+    }
 }
 
 /// A tool specification to be sent to the model as part of a conversation. Maps to

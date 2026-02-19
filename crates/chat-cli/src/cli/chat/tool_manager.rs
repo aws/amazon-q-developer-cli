@@ -82,6 +82,7 @@ use crate::cli::chat::tools::glob::Glob;
 use crate::cli::chat::tools::grep::Grep;
 use crate::cli::chat::tools::introspect::Introspect;
 use crate::cli::chat::tools::knowledge::Knowledge;
+use crate::cli::chat::tools::session::Session;
 use crate::cli::chat::tools::switch_to_execution::SwitchToExecution;
 use crate::cli::chat::tools::thinking::Thinking;
 use crate::cli::chat::tools::todo::TodoList;
@@ -1137,6 +1138,9 @@ impl ToolManager {
             },
             name if name == ToolMetadata::SWITCH_TO_EXECUTION.spec_name => {
                 Tool::SwitchToExecution(serde_json::from_value::<SwitchToExecution>(value.args).map_err(&map_err)?)
+            },
+            name if name == ToolMetadata::SESSION.spec_name => {
+                Tool::Session(serde_json::from_value::<Session>(value.args).map_err(&map_err)?)
             },
             name => {
                 // Note: tn_map also has tools that underwent no transformation. In otherwords, if

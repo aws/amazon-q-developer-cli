@@ -112,6 +112,13 @@ static AVAILABLE_EXPERIMENTS: &[Experiment] = &[
 pub struct ExperimentManager;
 
 impl ExperimentManager {
+    /// Check if a setting controls an experiment that requires tool reload
+    pub fn is_experiment_setting(setting: Setting) -> bool {
+        AVAILABLE_EXPERIMENTS
+            .iter()
+            .any(|exp| exp.setting_key.as_ref() == setting.as_ref())
+    }
+
     /// Checks if an experiment is enabled
     /// Returns false if experiment is disabled or not found
     pub fn is_enabled(os: &Os, experiment_type: ExperimentName) -> bool {

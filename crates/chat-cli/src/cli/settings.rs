@@ -106,6 +106,7 @@ fn print_configured_settings(os: &Os, format: OutputFormat) -> Result<()> {
                     let scope_str = match scope {
                         Some(SettingScope::Global) => " (global)",
                         Some(SettingScope::Workspace) => " (workspace)",
+                        Some(SettingScope::Session) => " (session)",
                         None => "",
                     };
                     println!("{key} = {value}{scope_str}");
@@ -174,6 +175,7 @@ fn print_settings_plain(settings: &[SettingInfo]) {
                 let scope_str = match setting.scope {
                     Some(SettingScope::Global) => " (global)",
                     Some(SettingScope::Workspace) => " (workspace)",
+                    Some(SettingScope::Session) => " (session)",
                     None => "",
                 };
                 println!("  Current: {}{}", value.to_string().green(), scope_str);
@@ -285,6 +287,7 @@ impl SettingsArgs {
                             let scope_str = match scope {
                                 Some(SettingScope::Global) => " (global)",
                                 Some(SettingScope::Workspace) => " (workspace)",
+                                Some(SettingScope::Session) => " (session)",
                                 None => "",
                             };
 

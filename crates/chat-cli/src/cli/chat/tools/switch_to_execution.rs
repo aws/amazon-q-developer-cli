@@ -90,7 +90,7 @@ impl SwitchToExecution {
         &self,
         result: &super::InvokeOutput,
         session: &mut crate::cli::chat::ChatSession,
-        _os: &crate::os::Os,
+        _os: &mut crate::os::Os,
     ) -> eyre::Result<()> {
         if let super::OutputKind::Json(json) = &result.output {
             let response: SwitchResponse = serde_json::from_value(json.clone())?;

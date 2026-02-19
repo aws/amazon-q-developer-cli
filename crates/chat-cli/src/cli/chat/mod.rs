@@ -154,6 +154,7 @@ use tools::{
     OutputKind,
     QueuedTool,
     Tool,
+    ToolMetadata,
     ToolSpec,
     is_native_tool,
 };
@@ -2706,28 +2707,59 @@ impl ChatSession {
 
         let show_tool_use_confirmation_dialog = !skip_printing_tools && self.pending_tool_index.is_some();
         if show_tool_use_confirmation_dialog {
-            execute!(
-                self.stderr,
-                StyledText::secondary_fg(),
-                style::Print("\nAllow this action? Use '"),
-                StyledText::current_item_fg(),
-                style::Print("t"),
-                StyledText::secondary_fg(),
-                style::Print("' to trust (always allow) this tool for the session. ["),
-                StyledText::current_item_fg(),
-                style::Print("y"),
-                StyledText::secondary_fg(),
-                style::Print("/"),
-                StyledText::current_item_fg(),
-                style::Print("n"),
-                StyledText::secondary_fg(),
-                style::Print("/"),
-                StyledText::current_item_fg(),
-                style::Print("t"),
-                StyledText::secondary_fg(),
-                style::Print("]:\n\n"),
-                StyledText::reset(),
-            )?;
+            // Check if the pending tool is trustable
+            let tool_is_trustable = if let Some(index) = self.pending_tool_index {
+                if let Some(queued_tool) = self.tool_uses.get(index) {
+                    // Get ToolInfo to check if trustable
+                    ToolMetadata::get_by_spec_name(&queued_tool.name).is_none_or(|info| info.is_trustable()) // Default to trustable for unknown tools
+                } else {
+                    true
+                }
+            } else {
+                true
+            };
+
+            if tool_is_trustable {
+                // Show full prompt with trust option
+                execute!(
+                    self.stderr,
+                    StyledText::secondary_fg(),
+                    style::Print("\nAllow this action? Use '"),
+                    StyledText::current_item_fg(),
+                    style::Print("t"),
+                    StyledText::secondary_fg(),
+                    style::Print("' to trust (always allow) this tool for the session. ["),
+                    StyledText::current_item_fg(),
+                    style::Print("y"),
+                    StyledText::secondary_fg(),
+                    style::Print("/"),
+                    StyledText::current_item_fg(),
+                    style::Print("n"),
+                    StyledText::secondary_fg(),
+                    style::Print("/"),
+                    StyledText::current_item_fg(),
+                    style::Print("t"),
+                    StyledText::secondary_fg(),
+                    style::Print("]:\n\n"),
+                    StyledText::reset(),
+                )?;
+            } else {
+                // Show prompt without trust option for non-trustable tools
+                execute!(
+                    self.stderr,
+                    StyledText::secondary_fg(),
+                    style::Print("\nAllow this action? ["),
+                    StyledText::current_item_fg(),
+                    style::Print("y"),
+                    StyledText::secondary_fg(),
+                    style::Print("/"),
+                    StyledText::current_item_fg(),
+                    style::Print("n"),
+                    StyledText::secondary_fg(),
+                    style::Print("]:\n\n"),
+                    StyledText::reset(),
+                )?;
+            }
         }
 
         // Do this here so that the skim integration sees an updated view of the context *during the current
