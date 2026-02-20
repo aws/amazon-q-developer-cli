@@ -116,7 +116,8 @@ export class Kiro {
   async streamMessage(
     content: string,
     signal: AbortSignal,
-    onEvent: (event: AgentStreamEvent) => void
+    onEvent: (event: AgentStreamEvent) => void,
+    images?: Array<{ base64: string; mimeType: string }>
   ): Promise<void> {
     if (!this.sessionClient) {
       throw new Error('Kiro not initialized');
@@ -200,9 +201,22 @@ export class Kiro {
         }
       }, INITIAL_RESPONSE_TIMEOUT_MS);
 
-      const promptPromise = this.sessionClient!.prompt([
-        { type: 'text', text: content },
-      ])
+      const contentBlocks: Array<
+        | { type: 'text'; text: string }
+        | { type: 'image'; data: string; mimeType: string }
+      > = [];
+      if (images?.length) {
+        for (const img of images) {
+          contentBlocks.push({
+            type: 'image',
+            data: img.base64,
+            mimeType: img.mimeType,
+          });
+        }
+      }
+      contentBlocks.push({ type: 'text', text: content });
+
+      const promptPromise = this.sessionClient!.prompt(contentBlocks as any)
         .then(() => {
           settle(() => resolve());
         })

@@ -175,6 +175,8 @@ pub struct SessionManager {
     /// If session/new supports a `mode` parameter when creating/loading a session, this could
     /// likely be removed.
     next_agent_name: Option<String>,
+    /// Model ID to use for the next session, set via `--model` CLI flag.
+    next_model_id: Option<String>,
     /// Shared code intelligence client - lazily initialized, shared across all sessions
     code_intelligence: Option<Arc<RwLock<CodeIntelligence>>>,
     /// When true, all tool permission checks are bypassed for new sessions
@@ -204,6 +206,7 @@ impl SessionManager {
             session_manager_handle,
             mock_registry,
             next_agent_name: None,
+            next_model_id: None,
             code_intelligence: None,
             trust_all_tools,
         }
@@ -354,6 +357,12 @@ impl SessionManager {
                 builder = builder.agent_configs(self.agent_configs.clone());
                 builder = builder.current_agent_name(agent_name.clone());
 
+                // Pass CLI --model override to session builder
+                let next_model_id = self.next_model_id.take();
+                if let Some(ref model_id) = next_model_id {
+                    builder = builder.model_id(Some(model_id.as_str()));
+                }
+
                 // Fetch available models
                 let available_models = match get_available_models(&self.os).await {
                     Ok((models, _)) => models,
@@ -415,6 +424,13 @@ impl SessionManager {
                 self.next_agent_name = Some(next_agent_name);
                 _ = resp_sender.send(Ok(()));
             },
+            SessionManagerRequestData::SetNextModelId {
+                next_model_id,
+                resp_sender,
+            } => {
+                self.next_model_id = Some(next_model_id);
+                _ = resp_sender.send(Ok(()));
+            },
         }
     }
 }
@@ -444,6 +460,10 @@ pub(crate) enum SessionManagerRequestData {
     },
     SetNextAgentName {
         next_agent_name: String,
+        resp_sender: oneshot::Sender<Result<(), sacp::Error>>,
+    },
+    SetNextModelId {
+        next_model_id: String,
         resp_sender: oneshot::Sender<Result<(), sacp::Error>>,
     },
 }
@@ -529,5 +549,21 @@ impl SessionManagerHandle {
             .map_err(|_e| sacp::util::internal_error("Failed to send set_next_agent_name request"))?;
         rx.await
             .map_err(|_e| sacp::util::internal_error("Failed to receive set_next_agent_name response"))?
+    }
+
+    pub async fn set_next_model_id(&self, next_model_id: String) -> Result<(), sacp::Error> {
+        let (resp_sender, rx) = oneshot::channel();
+        self.tx
+            .send(SessionManagerRequest {
+                session_id: SessionId::new(String::new()),
+                data: SessionManagerRequestData::SetNextModelId {
+                    next_model_id,
+                    resp_sender,
+                },
+            })
+            .await
+            .map_err(|_e| sacp::util::internal_error("Failed to send set_next_model_id request"))?;
+        rx.await
+            .map_err(|_e| sacp::util::internal_error("Failed to receive set_next_model_id response"))?
     }
 }

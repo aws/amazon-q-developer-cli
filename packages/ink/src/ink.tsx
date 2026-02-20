@@ -87,7 +87,7 @@ export default class Ink {
 	private lastOutput: string;
 	private lastOutputToRender: string;
 	private lastOutputHeight: number;
-	private lastTerminalWidth: number;
+
 	private readonly container: FiberRoot;
 	private readonly rootNode: dom.DOMElement;
 	// This variable is used only in debug mode to store full static output
@@ -167,7 +167,6 @@ export default class Ink {
 		this.lastOutput = '';
 		this.lastOutputToRender = '';
 		this.lastOutputHeight = 0;
-		this.lastTerminalWidth = this.getTerminalWidth();
 
 		// This variable is used only in debug mode to store full static output
 		// so that it's rerendered every time, not just new static parts, like in non-debug mode
@@ -230,19 +229,22 @@ export default class Ink {
 	};
 
 	resized = () => {
-		const currentWidth = this.getTerminalWidth();
+		// Always clear the entire screen on resize. log-update tracks the number
+		// of *logical* newlines it wrote, but after a resize those lines may wrap
+		// differently, so eraseLines(previousLineCount) won't erase enough rows
+		// and leaves ghost/duplicate content. clearTerminal wipes everything.
+		this.options.stdout.write(ansiEscapes.clearTerminal);
+		this.log.clear();
+		this.lastOutput = '';
+		this.lastOutputToRender = '';
 
-		if (currentWidth < this.lastTerminalWidth) {
-			// We clear the screen when decreasing terminal width to prevent duplicate overlapping re-renders.
-			this.log.clear();
-			this.lastOutput = '';
-			this.lastOutputToRender = '';
+		// Re-emit any static output that was already flushed above the dynamic area
+		if (this.fullStaticOutput) {
+			this.options.stdout.write(this.fullStaticOutput);
 		}
 
 		this.calculateLayout();
 		this.onRender();
-
-		this.lastTerminalWidth = currentWidth;
 	};
 
 	resolveExitPromise: () => void = () => {};

@@ -665,6 +665,13 @@ impl AcpSession {
             warn!("Failed to set initial model: {}", e);
         }
 
+        // Override with CLI --model if provided
+        if let Some(model_id) = builder.model_id
+            && let Err(e) = update_model_info(&os, &rts_state, Some(model_id)).await
+        {
+            warn!("Failed to set CLI model override: {}", e);
+        }
+
         let (api_client, model): (ApiClient, Arc<dyn Model>) = if let Some(registry) = builder.mock_registry {
             let client = ApiClient::new_ipc_mock(registry);
             (client.clone(), Arc::new(RtsModel::new(client, Arc::clone(&rts_state))))
@@ -1551,6 +1558,10 @@ pub async fn execute(os: &mut Os, args: agent::types::AcpSpawnArgs) -> eyre::Res
 
     if let Some(n) = args.agent {
         let _ = session_manager_handle.set_next_agent_name(n).await;
+    }
+
+    if let Some(m) = args.model {
+        let _ = session_manager_handle.set_next_model_id(m).await;
     }
 
     // NOTE: It is _extremely_ easy to create a deadlock with sacp (read more about it

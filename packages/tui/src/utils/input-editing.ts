@@ -16,7 +16,16 @@ type PasteSegment = {
   lineCount: number;
   charCount: number;
 };
-export type Segment = TextSegment | FileSegment | PasteSegment;
+type ImageSegment = {
+  type: 'image';
+  /** Base64-encoded image data */
+  base64: string;
+  mimeType: string;
+  width: number;
+  height: number;
+  sizeBytes: number;
+};
+export type Segment = TextSegment | FileSegment | PasteSegment | ImageSegment;
 
 // Get cursor width of a segment (text = length, chip = 1)
 export const segmentWidth = (s: Segment): number =>
@@ -118,6 +127,46 @@ export const deleteWordBackward = (
       };
     }
   }
+  return { segments, cursor };
+};
+/**
+ * Delete character under cursor (Ctrl+D) - forward delete
+ */
+export const deleteForward = (
+  segments: Segment[],
+  cursor: number
+): EditResult => {
+  const total = totalWidth(segments);
+  if (cursor >= total) return { segments, cursor };
+
+  const { segIdx, offset } = locateCursor(segments, cursor);
+  const seg = segments[segIdx]!;
+
+  if (seg.type === 'text') {
+    if (offset < seg.value.length) {
+      // Delete char at cursor position
+      const newValue = seg.value.slice(0, offset) + seg.value.slice(offset + 1);
+      const newSegs = [...segments];
+      newSegs[segIdx] = { type: 'text', value: newValue };
+      return { segments: normalizeSegments(newSegs), cursor };
+    }
+    // At end of text segment — delete next segment (chip)
+    if (segIdx + 1 < segments.length) {
+      const newSegs = [
+        ...segments.slice(0, segIdx + 1),
+        ...segments.slice(segIdx + 2),
+      ];
+      return { segments: normalizeSegments(newSegs), cursor };
+    }
+  } else {
+    // On a chip — delete it
+    const newSegs = [
+      ...segments.slice(0, segIdx),
+      ...segments.slice(segIdx + 1),
+    ];
+    return { segments: normalizeSegments(newSegs), cursor };
+  }
+
   return { segments, cursor };
 };
 

@@ -24,6 +24,7 @@ export interface Key {
 }
 
 export type KeyHandler = (input: string, key: Key) => void;
+export type EmptyPasteHandler = () => void;
 
 // Bracketed paste escape sequences
 const PASTE_START = '\x1b[200~';
@@ -48,13 +49,17 @@ const CTRL_C = '\x03';
  */
 export const useKeypress = (
   handler: KeyHandler,
-  options: { isActive?: boolean } = {}
+  options: { isActive?: boolean; onEmptyPaste?: EmptyPasteHandler } = {}
 ) => {
-  const { isActive = true } = options;
+  const { isActive = true, onEmptyPaste } = options;
 
   // Store handler in ref to always call latest version
   const handlerRef = useRef(handler);
   handlerRef.current = handler;
+
+  // Store onEmptyPaste in ref for stable access
+  const onEmptyPasteRef = useRef(onEmptyPaste);
+  onEmptyPasteRef.current = onEmptyPaste;
 
   // Access internal event emitter for paste detection and multi-Ctrl+C handling
   const { internal_eventEmitter } = useStdin() as {
@@ -87,21 +92,12 @@ export const useKeypress = (
 
   // Listen for special sequences on the internal event emitter
   useEffect(() => {
-    // Debug: check if event emitter exists
-    logger.debug(
-      `[useKeypress] useEffect: isActive=${isActive} hasEventEmitter=${!!internal_eventEmitter}`
-    );
-
     if (!isActive || !internal_eventEmitter) return;
 
     let pasteBuffer = '';
     let isPasting = false;
 
     const handleInput = (data: string) => {
-      // Debug: log all raw input
-      const hex = Buffer.from(data).toString('hex');
-      logger.debug(`[useKeypress] Raw input: len=${data.length} hex=${hex}`);
-
       // Check for paste start
       if (data.includes(PASTE_START)) {
         isPasting = true;
@@ -149,6 +145,10 @@ export const useKeypress = (
               delete: false,
               paste: true,
             });
+          } else if (onEmptyPasteRef.current) {
+            // Empty bracketed paste — clipboard has no text (likely image data).
+            // Notify the caller so it can attempt an image paste.
+            onEmptyPasteRef.current();
           }
         } else {
           pasteBuffer = remaining;
@@ -190,6 +190,9 @@ export const useKeypress = (
               delete: false,
               paste: true,
             });
+          } else if (onEmptyPasteRef.current) {
+            // Empty bracketed paste (multi-chunk) — try image paste
+            onEmptyPasteRef.current();
           }
           pasteBuffer = '';
         } else {

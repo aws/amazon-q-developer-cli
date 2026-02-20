@@ -232,6 +232,17 @@ interface BaseAppActions {
     triggerPosition: number;
   } | null;
 
+  // Image attachment actions
+  addPendingImage: (image: {
+    base64: string;
+    mimeType: string;
+    width: number;
+    height: number;
+    sizeBytes: number;
+  }) => void;
+  removePendingImage: (index: number) => void;
+  clearPendingImages: () => void;
+
   // Main orchestrator
   handleUserInput: (input: string) => Promise<void>;
 }
@@ -291,6 +302,13 @@ export interface AppState {
   // File attachments
   attachedFiles: string[];
   pendingFileAttachment: { path: string; triggerPosition: number } | null;
+  pendingImages: Array<{
+    base64: string;
+    mimeType: string;
+    width: number;
+    height: number;
+    sizeBytes: number;
+  }>;
   showContextBreakdown: boolean;
   contextBreakdown: ContextBreakdownData | null;
   showHelpPanel: boolean;
@@ -373,17 +391,27 @@ export const createAppStore = (props: AppStoreProps) =>
     usageData: null,
     attachedFiles: [],
     pendingFileAttachment: null,
+    pendingImages: [],
     currentAbortController: null,
     cancelInProgress: null,
     streamingBuffer: { startBuffering: null, stopBuffering: null },
 
     noInteractive: props.noInteractive ?? false,
 
-    sendMessage: async (content: string) => {
-      const { kiro, isProcessing, attachedFiles } = get();
+    sendMessage: async (
+      content: string,
+      images?: Array<{ base64: string; mimeType: string }>
+    ) => {
+      const { kiro, isProcessing, attachedFiles, pendingImages } = get();
       if (isProcessing) {
         return;
       }
+
+      // Merge explicitly passed images with store pending images
+      const allImages = [
+        ...pendingImages.map(({ base64, mimeType }) => ({ base64, mimeType })),
+        ...(images ?? []),
+      ];
 
       logger.debug('[store] sendMessage', { contentLength: content.length });
 
@@ -416,6 +444,7 @@ export const createAppStore = (props: AppStoreProps) =>
         agentErrorGuidance: null,
         messages: [...state.messages, userMessage],
         attachedFiles: [], // Clear attachments after sending
+        pendingImages: [], // Clear pending images after sending
         // Reset expandable content flag for new turn (expanded state persists)
         hasExpandableToolOutputs: false,
       }));
@@ -425,7 +454,8 @@ export const createAppStore = (props: AppStoreProps) =>
         await kiro.streamMessage(
           expandedContent,
           abortController.signal,
-          eventHandler
+          eventHandler,
+          allImages.length > 0 ? allImages : undefined
         );
         (eventHandler as any).flush?.();
 
@@ -1421,6 +1451,20 @@ export const createAppStore = (props: AppStoreProps) =>
       const pending = get().pendingFileAttachment;
       set({ pendingFileAttachment: null });
       return pending;
+    },
+
+    addPendingImage: (image) => {
+      set((state) => ({ pendingImages: [...state.pendingImages, image] }));
+    },
+
+    removePendingImage: (index) => {
+      set((state) => ({
+        pendingImages: state.pendingImages.filter((_, i) => i !== index),
+      }));
+    },
+
+    clearPendingImages: () => {
+      set({ pendingImages: [] });
     },
 
     toggleToolOutputsExpanded: () => {

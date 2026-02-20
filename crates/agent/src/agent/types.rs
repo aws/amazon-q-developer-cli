@@ -154,6 +154,8 @@ impl AsRef<str> for ConversationSummary {
 pub struct AcpSpawnArgs {
     /// Name of the agent to use when starting the first session.
     pub agent: Option<String>,
+    /// Model ID to use when starting the first session.
+    pub model: Option<String>,
     /// Auto-approve all tool permission requests.
     #[serde(default)]
     pub trust_all_tools: bool,

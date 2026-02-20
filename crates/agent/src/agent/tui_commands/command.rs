@@ -36,6 +36,8 @@ pub enum TuiCommand {
     Quit(QuitArgs),
     /// Show billing and usage information
     Usage(UsageArgs),
+    /// Paste image from system clipboard (returns base64 PNG data)
+    PasteImage(PasteImageArgs),
 }
 
 /// Arguments for /help command
@@ -104,6 +106,12 @@ pub struct QuitArgs {}
 #[serde(rename_all = "camelCase")]
 pub struct UsageArgs {}
 
+/// Arguments for paste-image command (no user-facing slash command)
+#[typeshare]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PasteImageArgs {}
+
 impl TuiCommand {
     /// Command name with leading slash
     pub fn name(&self) -> &'static str {
@@ -116,6 +124,7 @@ impl TuiCommand {
             TuiCommand::Clear(_) => "/clear",
             TuiCommand::Quit(_) => "/quit",
             TuiCommand::Usage(_) => "/usage",
+            TuiCommand::PasteImage(_) => "paste-image",
         }
     }
 
@@ -130,6 +139,7 @@ impl TuiCommand {
             TuiCommand::Clear(_) => "Clear conversation history",
             TuiCommand::Quit(_) => "Quit the application",
             TuiCommand::Usage(_) => "Show billing and usage information",
+            TuiCommand::PasteImage(_) => "Paste image from clipboard",
         }
     }
 
@@ -144,6 +154,7 @@ impl TuiCommand {
             TuiCommand::Clear(_) => "/clear",
             TuiCommand::Quit(_) => "/quit",
             TuiCommand::Usage(_) => "/usage",
+            TuiCommand::PasteImage(_) => "paste-image",
         }
     }
 
@@ -186,6 +197,7 @@ impl TuiCommand {
                 meta.insert("inputType".into(), "panel".into());
                 Some(meta)
             },
+            TuiCommand::PasteImage(_) => None,
         }
     }
 

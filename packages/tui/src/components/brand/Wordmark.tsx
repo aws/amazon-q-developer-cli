@@ -2,6 +2,10 @@ import React, { useState, useEffect } from 'react';
 import { Box } from 'ink';
 import { Text } from '../ui/text/Text.js';
 import { useTheme } from '../../hooks/useThemeContext.js';
+import { useTerminalSize } from '../../hooks/useTerminalSize.js';
+
+// The ASCII art wordmark is ~72 columns wide
+const WORDMARK_MIN_WIDTH = 75;
 
 interface WordmarkProps {
   animate?: boolean;
@@ -125,6 +129,15 @@ export default function Wordmark({ animate = false }: WordmarkProps) {
   //      ‾‾‾‾‾‾‾`;
 
   const letters = [letterK, letterI, letterR, letterO];
+  const { width: termWidth } = useTerminalSize();
+
+  if (termWidth < WORDMARK_MIN_WIDTH) {
+    return (
+      <Box width="100%" justifyContent="center">
+        <Text>{brandColor('KIRO')}</Text>
+      </Box>
+    );
+  }
 
   return (
     <Box width="100%" justifyContent="center">

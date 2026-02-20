@@ -11,6 +11,7 @@ import {
   locateCursor,
   normalizeSegments,
   deleteWordBackward,
+  deleteForward,
   killToEnd,
   killToBeginning,
   moveWordForward,
@@ -231,6 +232,70 @@ describe('input-editing', () => {
 
       const result = deleteWordBackward(segments, cursor);
 
+      expect(result.cursor).toBe(0);
+    });
+  });
+
+  describe('deleteForward (Ctrl+D)', () => {
+    it('deletes character under cursor in text', () => {
+      const segments = [text('hello')];
+      const result = deleteForward(segments, 0);
+      expect(result.segments[0]).toEqual(text('ello'));
+      expect(result.cursor).toBe(0);
+    });
+
+    it('deletes character in middle of text', () => {
+      const segments = [text('hello')];
+      const result = deleteForward(segments, 2);
+      expect(result.segments[0]).toEqual(text('helo'));
+      expect(result.cursor).toBe(2);
+    });
+
+    it('no-op when cursor is at end of text', () => {
+      const segments = [text('hello')];
+      const result = deleteForward(segments, 5);
+      expect(result.segments[0]).toEqual(text('hello'));
+      expect(result.cursor).toBe(5);
+    });
+
+    it('no-op on empty text', () => {
+      const segments = [text('')];
+      const result = deleteForward(segments, 0);
+      expect(result.segments[0]).toEqual(text(''));
+      expect(result.cursor).toBe(0);
+    });
+
+    it('deletes chip when cursor is on chip', () => {
+      const segments = [text('before '), paste('content', 5), text(' after')];
+      // cursor 7 = start of chip
+      const result = deleteForward(segments, 7);
+      expect(result.segments).toEqual([text('before  after')]);
+      expect(result.cursor).toBe(7);
+    });
+
+    it('deletes next chip when cursor is at end of text segment', () => {
+      const segments = [text('hello'), paste('content', 5)];
+      // cursor 5 = end of "hello", which is at the chip boundary
+      const result = deleteForward(segments, 5);
+      expect(result.segments).toEqual([text('hello')]);
+      expect(result.cursor).toBe(5);
+    });
+
+    it('deletes file chip when cursor is on it', () => {
+      const segments = [
+        text('before '),
+        file('test.ts', 'code'),
+        text(' after'),
+      ];
+      const result = deleteForward(segments, 7);
+      expect(result.segments).toEqual([text('before  after')]);
+      expect(result.cursor).toBe(7);
+    });
+
+    it('deletes last character leaving empty text', () => {
+      const segments = [text('x')];
+      const result = deleteForward(segments, 0);
+      expect(result.segments).toEqual([text('')]);
       expect(result.cursor).toBe(0);
     });
   });

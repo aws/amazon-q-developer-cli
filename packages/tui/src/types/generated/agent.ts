@@ -6,6 +6,8 @@
 export interface AcpSpawnArgs {
   /** Name of the agent to use when starting the first session. */
   agent?: string;
+  /** Model ID to use when starting the first session. */
+  model?: string;
   /** Auto-approve all tool permission requests. */
   trustAllTools?: boolean;
 }
@@ -243,6 +245,9 @@ export interface ModelInfo {
   contextWindow?: number;
 }
 
+/** Arguments for paste-image command (no user-facing slash command) */
+export interface PasteImageArgs {}
+
 /** Arguments for /quit command */
 export interface QuitArgs {}
 
@@ -392,4 +397,6 @@ export type TuiCommand =
   /** Quit the application */
   | { command: 'quit'; args: QuitArgs }
   /** Show billing and usage information */
-  | { command: 'usage'; args: UsageArgs };
+  | { command: 'usage'; args: UsageArgs }
+  /** Paste image from system clipboard (returns base64 PNG data) */
+  | { command: 'pasteImage'; args: PasteImageArgs };

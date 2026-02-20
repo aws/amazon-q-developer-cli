@@ -7,6 +7,7 @@ pub mod context;
 pub mod exit;
 pub mod help;
 pub mod model;
+pub mod paste_image;
 pub mod usage;
 
 use std::path::PathBuf;
@@ -51,5 +52,6 @@ pub async fn execute(command: TuiCommand, ctx: &CommandContext<'_>) -> CommandRe
         TuiCommand::Clear(ref args) => clear::execute(args, ctx).await,
         TuiCommand::Quit(ref args) => exit::execute(args, ctx).await,
         TuiCommand::Usage(_args) => usage::execute(ctx).await,
+        TuiCommand::PasteImage(_) => paste_image::execute().await,
     }
 }

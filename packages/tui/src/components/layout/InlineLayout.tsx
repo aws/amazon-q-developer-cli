@@ -87,18 +87,18 @@ export const InlineLayout: React.FC = () => {
     const opts: RadioOption[] = [];
     const perms = pendingApproval.permissionOptions;
     if (perms.find((opt) => opt.kind === ApprovalOptionId.RejectOnce)) {
-      opts.push({ value: ApprovalOptionId.RejectOnce, label: '(N)o' });
+      opts.push({ value: ApprovalOptionId.RejectOnce, label: 'No' });
     }
     if (perms.find((opt) => opt.kind === ApprovalOptionId.AllowOnce)) {
       opts.push({
         value: ApprovalOptionId.AllowOnce,
-        label: '(Y)es, single permission',
+        label: 'Yes, single permission',
       });
     }
     if (perms.find((opt) => opt.kind === ApprovalOptionId.AllowAlways)) {
       opts.push({
         value: ApprovalOptionId.AllowAlways,
-        label: '(T)rust, always allow in this session',
+        label: 'Trust, always allow in this session',
       });
     }
     return opts;
@@ -237,8 +237,14 @@ export const InlineLayout: React.FC = () => {
       if (toolMessage && 'content' in toolMessage && toolMessage.content) {
         try {
           const parsed = JSON.parse(toolMessage.content);
-          const value = parsed.path || parsed.command || parsed.query || '';
-          if (value) detail = ` · ${value}`;
+          let value: string =
+            parsed.path || parsed.command || parsed.query || '';
+          if (value) {
+            // Collapse to first line and truncate long values (e.g. commands)
+            value = value.split('\n')[0]!;
+            if (value.length > 60) value = value.slice(0, 57) + '...';
+            detail = ` · ${value}`;
+          }
         } catch {
           /* ignore parse errors */
         }

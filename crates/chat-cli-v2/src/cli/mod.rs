@@ -127,6 +127,9 @@ pub enum RootSubcommand {
         /// Name of the agent to use when starting the first session
         #[arg(long)]
         agent: Option<String>,
+        /// Model ID to use when starting the first session
+        #[arg(long)]
+        model: Option<String>,
         /// Auto-approve all tool permission requests
         #[arg(long, short = 'a')]
         trust_all_tools: bool,
@@ -192,8 +195,16 @@ impl RootSubcommand {
             Self::Issue(args) => args.execute(os).await,
             Self::Version { changelog } => Cli::print_version(changelog),
             Self::Mcp(args) => args.execute(os, &mut std::io::stderr()).await,
-            Self::Acp { agent, trust_all_tools } => {
-                let spawn_args = ::agent::types::AcpSpawnArgs { agent, trust_all_tools };
+            Self::Acp {
+                agent,
+                model,
+                trust_all_tools,
+            } => {
+                let spawn_args = ::agent::types::AcpSpawnArgs {
+                    agent,
+                    model,
+                    trust_all_tools,
+                };
                 crate::agent::acp::acp_agent::execute(os, spawn_args).await
             },
             Self::AcpClient { agent } => crate::agent::acp::acp_client::execute(agent).await,

@@ -13,12 +13,16 @@ import { Text } from '../../ui/text/Text.js';
 import { PastedChip, shouldCollapsePaste } from './PastedChip.js';
 import { FileChip } from './FileChip.js';
 import { normalizeLineEndings, isPrintable } from '../../../utils/index.js';
+import { logger } from '../../../utils/logger.js';
 import { inputMetrics } from '../../../utils/inputMetrics.js';
 import {
   useCommandState,
   useCommandActions,
   useFileAttachmentState,
   useFileAttachmentActions,
+  useKiroClient,
+  useImageAttachmentActions,
+  useImageAttachmentState,
 } from '../../../stores/selectors.js';
 import {
   type Segment,
@@ -28,6 +32,7 @@ import {
   locateCursor,
   normalizeSegments,
   deleteWordBackward,
+  deleteForward,
   killToEnd,
   killToBeginning,
   moveWordForward,
@@ -68,6 +73,14 @@ type PasteSegment = {
   lineCount: number;
   charCount: number;
 };
+type ImageSegment = {
+  type: 'image';
+  base64: string;
+  mimeType: string;
+  width: number;
+  height: number;
+  sizeBytes: number;
+};
 
 // Build content for submission - use @file: markers for later expansion
 const buildContent = (segments: Segment[]): string => {
@@ -75,6 +88,7 @@ const buildContent = (segments: Segment[]): string => {
     if (s.type === 'text') return s.value;
     if (s.type === 'file') return ` @file:${s.filePath} `;
     if (s.type === 'paste') return s.content;
+    // Images are handled separately via extractImages
     return '';
   });
   return parts.join('').replace(/  +/g, ' ').trim();
@@ -112,6 +126,9 @@ export const PromptInput = React.memo(function PromptInput({
   const { setCommandInput, clearCommandInput } = useCommandActions();
   const { pendingFileAttachment } = useFileAttachmentState();
   const { consumePendingFileAttachment } = useFileAttachmentActions();
+  const { kiro } = useKiroClient();
+  const { pendingImages } = useImageAttachmentState();
+  const { addPendingImage } = useImageAttachmentActions();
   const [segments, setSegments] = useState<Segment[]>([
     { type: 'text', value: '' },
   ]);
@@ -326,6 +343,71 @@ export const PromptInput = React.memo(function PromptInput({
     insertText(normalized);
   };
 
+  const handlePasteImage = async () => {
+    try {
+      const result = await kiro.executeCommand({
+        command: 'pasteImage',
+        args: {},
+      });
+      if (!result.success) {
+        // No image in clipboard or error — fall back to normal paste
+        return false;
+      }
+      const data = result.data as {
+        data: string;
+        mimeType: string;
+        width: number;
+        height: number;
+        sizeBytes: number;
+      };
+      const imageSegment: ImageSegment = {
+        type: 'image',
+        base64: data.data,
+        mimeType: data.mimeType,
+        width: data.width,
+        height: data.height,
+        sizeBytes: data.sizeBytes,
+      };
+      // Insert image segment at cursor
+      const { segIdx, offset } = locateCursor(segments, cursor);
+      const seg = segments[segIdx];
+      if (seg?.type === 'text') {
+        const newSegs = normalizeSegments([
+          ...segments.slice(0, segIdx),
+          { type: 'text', value: seg.value.slice(0, offset) },
+          imageSegment,
+          { type: 'text', value: seg.value.slice(offset) },
+          ...segments.slice(segIdx + 1),
+        ]);
+        setSegments(newSegs);
+        // Position cursor after the chip
+        let newCursor = 0;
+        for (const s of newSegs) {
+          newCursor += segmentWidth(s);
+          if (
+            s === imageSegment ||
+            (s.type === 'image' && s.base64 === data.data)
+          ) {
+            break;
+          }
+        }
+        setCursor(newCursor);
+      }
+      // Also add to store so sendMessage includes it
+      addPendingImage({
+        base64: data.data,
+        mimeType: data.mimeType,
+        width: data.width,
+        height: data.height,
+        sizeBytes: data.sizeBytes,
+      });
+      return true;
+    } catch (e) {
+      logger.error('[PromptInput] handlePasteImage error:', e);
+      return false;
+    }
+  };
+
   const handleBackspace = () => {
     inputMetrics.markStateUpdate();
     if (cursor === 0) return;
@@ -384,130 +466,139 @@ export const PromptInput = React.memo(function PromptInput({
     syncToStore(result.segments);
   };
 
-  useKeypress((userInput: string, key: Key) => {
-    if (key.paste) {
-      handlePaste(userInput);
-      return;
-    }
+  useKeypress(
+    (userInput: string, key: Key) => {
+      if (key.paste) {
+        handlePaste(userInput);
+        return;
+      }
 
-    // Check if slash command menu is visible
-    const slashMenuVisible =
-      activeTrigger?.key === '/' && !commandInputValue.includes(' ');
-    // Check if file picker menu is visible
-    const filePickerVisible =
-      activeTrigger?.key === '@' && filePickerHasResults;
+      // Check if slash command menu is visible
+      const slashMenuVisible =
+        activeTrigger?.key === '/' && !commandInputValue.includes(' ');
+      // Check if file picker menu is visible
+      const filePickerVisible =
+        activeTrigger?.key === '@' && filePickerHasResults;
 
-    if (key.return) {
-      // Block Enter if file picker menu is visible with results
-      if (filePickerVisible) return;
-      // Block Enter if slash command menu is visible
-      if (slashMenuVisible) return;
-      const content = buildContent(segments);
-      if (content) {
-        clearAll();
-        onSubmit(content);
-      }
-    } else if (key.backspace || key.delete) {
-      handleBackspace();
-    } else if (key.leftArrow) {
-      inputMetrics.markStateUpdate();
-      if (key.ctrl || key.meta) {
-        // Ctrl+Left or Cmd+Left - move word backward
-        setCursor(moveWordBackward(segments, cursor));
-      } else {
-        setCursor(Math.max(0, cursor - 1));
-      }
-    } else if (key.rightArrow) {
-      inputMetrics.markStateUpdate();
-      if (key.ctrl || key.meta) {
-        // Ctrl+Right or Cmd+Right - move word forward
-        setCursor(moveWordForward(segments, cursor));
-      } else {
-        setCursor(Math.min(totalWidth(segments), cursor + 1));
-      }
-    } else if (key.upArrow) {
-      // Skip if menu is visible - let menu handle it
-      if (slashMenuVisible || filePickerVisible) return;
-      // Navigate to previous command in history
-      const command = CommandHistory.getInstance().navigate('up');
-      if (command) {
-        setSegments([{ type: 'text', value: command }]);
-        setCursor(command.length);
-      }
-    } else if (key.downArrow) {
-      // Skip if menu is visible - let menu handle it
-      if (slashMenuVisible || filePickerVisible) return;
-      // Navigate to next command in history
-      const command = CommandHistory.getInstance().navigate('down');
-      if (command) {
-        setSegments([{ type: 'text', value: command }]);
-        setCursor(command.length);
-      } else {
-        // Returned to current input
-        setSegments([{ type: 'text', value: '' }]);
-        setCursor(0);
-      }
-    } else if (key.home) {
-      inputMetrics.markStateUpdate();
-      setCursor(0);
-    } else if (key.end) {
-      inputMetrics.markStateUpdate();
-      setCursor(totalWidth(segments));
-    } else if (key.ctrl) {
-      // Emacs/readline shortcuts
-      switch (userInput) {
-        case 'a': // Ctrl+A - beginning of line
-          inputMetrics.markStateUpdate();
-          setCursor(0);
-          break;
-        case 'e': // Ctrl+E - end of line
-          inputMetrics.markStateUpdate();
-          setCursor(totalWidth(segments));
-          break;
-        case 'b': // Ctrl+B - back one char
-          inputMetrics.markStateUpdate();
-          setCursor(Math.max(0, cursor - 1));
-          break;
-        case 'f': // Ctrl+F - forward one char
-          inputMetrics.markStateUpdate();
-          setCursor(Math.min(totalWidth(segments), cursor + 1));
-          break;
-        case 'w': // Ctrl+W - delete word backward
-          applyEdit(deleteWordBackward(segments, cursor));
-          break;
-        case 'k': // Ctrl+K - kill to end of line
-          applyEdit(killToEnd(segments, cursor));
-          break;
-        case 'u': // Ctrl+U - kill to beginning of line
-          applyEdit(killToBeginning(segments, cursor));
-          break;
-        case 't': // Ctrl+T - transpose characters
-          applyEdit(transposeChars(segments, cursor));
-          break;
-        case 'j': // Ctrl+J - newline (existing)
-          insertText('\n');
-          break;
-        default:
-          break;
-      }
-    } else if (key.meta) {
-      // Alt/Meta shortcuts (word movement)
-      switch (userInput) {
-        case 'b': // Alt+B - back one word
-          inputMetrics.markStateUpdate();
+      if (key.return) {
+        // Block Enter if file picker menu is visible with results
+        if (filePickerVisible) return;
+        // Block Enter if slash command menu is visible
+        if (slashMenuVisible) return;
+        const content = buildContent(segments);
+        if (content) {
+          clearAll();
+          onSubmit(content);
+        }
+      } else if (key.backspace || key.delete) {
+        handleBackspace();
+      } else if (key.leftArrow) {
+        inputMetrics.markStateUpdate();
+        if (key.ctrl || key.meta) {
+          // Ctrl+Left or Cmd+Left - move word backward
           setCursor(moveWordBackward(segments, cursor));
-          break;
-        case 'f': // Alt+F - forward one word
-          inputMetrics.markStateUpdate();
+        } else {
+          setCursor(Math.max(0, cursor - 1));
+        }
+      } else if (key.rightArrow) {
+        inputMetrics.markStateUpdate();
+        if (key.ctrl || key.meta) {
+          // Ctrl+Right or Cmd+Right - move word forward
           setCursor(moveWordForward(segments, cursor));
-          break;
-        default:
-          break;
+        } else {
+          setCursor(Math.min(totalWidth(segments), cursor + 1));
+        }
+      } else if (key.upArrow) {
+        // Skip if menu is visible - let menu handle it
+        if (slashMenuVisible || filePickerVisible) return;
+        // Navigate to previous command in history
+        const command = CommandHistory.getInstance().navigate('up');
+        if (command) {
+          setSegments([{ type: 'text', value: command }]);
+          setCursor(command.length);
+        }
+      } else if (key.downArrow) {
+        // Skip if menu is visible - let menu handle it
+        if (slashMenuVisible || filePickerVisible) return;
+        // Navigate to next command in history
+        const command = CommandHistory.getInstance().navigate('down');
+        if (command) {
+          setSegments([{ type: 'text', value: command }]);
+          setCursor(command.length);
+        } else {
+          // Returned to current input
+          setSegments([{ type: 'text', value: '' }]);
+          setCursor(0);
+        }
+      } else if (key.home) {
+        inputMetrics.markStateUpdate();
+        setCursor(0);
+      } else if (key.end) {
+        inputMetrics.markStateUpdate();
+        setCursor(totalWidth(segments));
+      } else if (key.ctrl) {
+        // Emacs/readline shortcuts
+        switch (userInput) {
+          case 'a': // Ctrl+A - beginning of line
+            inputMetrics.markStateUpdate();
+            setCursor(0);
+            break;
+          case 'e': // Ctrl+E - end of line
+            inputMetrics.markStateUpdate();
+            setCursor(totalWidth(segments));
+            break;
+          case 'b': // Ctrl+B - back one char
+            inputMetrics.markStateUpdate();
+            setCursor(Math.max(0, cursor - 1));
+            break;
+          case 'f': // Ctrl+F - forward one char
+            inputMetrics.markStateUpdate();
+            setCursor(Math.min(totalWidth(segments), cursor + 1));
+            break;
+          case 'd': // Ctrl+D - delete char under cursor (forward delete)
+            applyEdit(deleteForward(segments, cursor));
+            break;
+          case 'w': // Ctrl+W - delete word backward
+            applyEdit(deleteWordBackward(segments, cursor));
+            break;
+          case 'k': // Ctrl+K - kill to end of line
+            applyEdit(killToEnd(segments, cursor));
+            break;
+          case 'u': // Ctrl+U - kill to beginning of line
+            applyEdit(killToBeginning(segments, cursor));
+            break;
+          case 't': // Ctrl+T - transpose characters
+            applyEdit(transposeChars(segments, cursor));
+            break;
+          case 'j': // Ctrl+J - newline (existing)
+            insertText('\n');
+            break;
+          case 'v': // Ctrl+V - paste image from clipboard
+            handlePasteImage();
+            break;
+          default:
+            break;
+        }
+      } else if (key.meta) {
+        // Alt/Meta shortcuts (word movement)
+        switch (userInput) {
+          case 'b': // Alt+B - back one word
+            inputMetrics.markStateUpdate();
+            setCursor(moveWordBackward(segments, cursor));
+            break;
+          case 'f': // Alt+F - forward one word
+            inputMetrics.markStateUpdate();
+            setCursor(moveWordForward(segments, cursor));
+            break;
+          default:
+            break;
+        }
+      } else if (userInput && isPrintable(userInput)) {
+        insertText(normalizeLineEndings(userInput));
       }
-    } else if (userInput && isPrintable(userInput)) {
-      insertText(normalizeLineEndings(userInput));
-    }
-  });
+    },
+    { onEmptyPaste: handlePasteImage }
+  );
 
   const renderContent = () => {
     const total = totalWidth(segments);
@@ -584,6 +675,30 @@ export const PromptInput = React.memo(function PromptInput({
               key={i}
               lineCount={seg.lineCount}
               charCount={seg.charCount}
+            />
+          );
+        }
+      } else if (seg.type === 'image') {
+        if (cursorInSeg && cursor === pos) {
+          parts.push(
+            <React.Fragment key={i}>
+              <Text inverse> </Text>
+              <PastedChip
+                type="image"
+                imageWidth={seg.width}
+                imageHeight={seg.height}
+                imageSizeBytes={seg.sizeBytes}
+              />
+            </React.Fragment>
+          );
+        } else {
+          parts.push(
+            <PastedChip
+              key={i}
+              type="image"
+              imageWidth={seg.width}
+              imageHeight={seg.height}
+              imageSizeBytes={seg.sizeBytes}
             />
           );
         }

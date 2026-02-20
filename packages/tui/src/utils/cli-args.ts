@@ -28,6 +28,7 @@ export interface CliArgs extends AcpSpawnArgs {
  *
  * Supports:
  *   --agent <name> / --profile <name>
+ *   --model <id>
  *   --trust-all-tools / -a
  *   --no-interactive / --non-interactive
  *   positional input (first non-flag argument after "chat")
@@ -50,6 +51,8 @@ export function parseCliArgs(): CliArgs {
 
     if (arg === '--agent' || arg === '--profile') {
       result.agent = args[++i];
+    } else if (arg === '--model') {
+      result.model = args[++i];
     } else if (arg === '--trust-all-tools' || arg === '-a') {
       result.trustAllTools = true;
     } else if (arg === '--no-interactive' || arg === '--non-interactive') {
@@ -80,6 +83,9 @@ export function buildAcpArgs(cliArgs: AcpSpawnArgs): string[] {
 
   if (cliArgs.agent) {
     args.push('--agent', cliArgs.agent);
+  }
+  if (cliArgs.model) {
+    args.push('--model', cliArgs.model);
   }
   if (cliArgs.trustAllTools) {
     args.push('--trust-all-tools');

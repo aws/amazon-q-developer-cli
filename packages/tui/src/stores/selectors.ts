@@ -203,6 +203,25 @@ export const useFileAttachmentActions = () =>
   );
 
 /**
+ * Image attachment selector
+ */
+export const useImageAttachmentState = () =>
+  useAppStore(
+    useShallow((state) => ({
+      pendingImages: state.pendingImages,
+    }))
+  );
+
+export const useImageAttachmentActions = () =>
+  useAppStore(
+    useShallow((state) => ({
+      addPendingImage: state.addPendingImage,
+      removePendingImage: state.removePendingImage,
+      clearPendingImages: state.clearPendingImages,
+    }))
+  );
+
+/**
  * Queue state selector - for QueueStack and ConversationView queued messages
  */
 export const useQueueState = () =>

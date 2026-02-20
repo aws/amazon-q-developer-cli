@@ -72,6 +72,8 @@ describe('parseCliArgs', () => {
       'chat',
       '--agent',
       'test',
+      '--model',
+      'claude-3',
       '--trust-all-tools',
       '--no-interactive',
       'do something'
@@ -79,26 +81,22 @@ describe('parseCliArgs', () => {
     const result = parseCliArgs();
     expect(result).toEqual({
       agent: 'test',
+      model: 'claude-3',
       trustAllTools: true,
       noInteractive: true,
       input: 'do something',
     });
   });
 
-  it('ignores unknown flags and their values', () => {
+  it('parses --model', () => {
     setArgs('chat', '--model', 'gpt-4');
-    const result = parseCliArgs();
-    expect(result.input).toBeUndefined();
-
-    setArgs('chat', '--resume', 'my input');
-    const result2 = parseCliArgs();
-    expect(result2.input).toBeUndefined();
-    expect(result2.trustAllTools).toBe(false);
+    expect(parseCliArgs().model).toBe('gpt-4');
   });
 
-  it('parses positional input after unknown flags with values', () => {
+  it('parses positional input after --model', () => {
     setArgs('chat', '--model', 'gpt-4', 'hello');
     const result = parseCliArgs();
+    expect(result.model).toBe('gpt-4');
     expect(result.input).toBe('hello');
   });
 
@@ -122,6 +120,13 @@ describe('buildAcpArgs', () => {
     ]);
   });
 
+  it('includes --model when set', () => {
+    expect(buildAcpArgs({ model: 'claude-3' })).toEqual([
+      '--model',
+      'claude-3',
+    ]);
+  });
+
   it('includes --trust-all-tools when set', () => {
     expect(buildAcpArgs({ trustAllTools: true })).toEqual([
       '--trust-all-tools',
@@ -141,5 +146,11 @@ describe('buildAcpArgs', () => {
       'test',
       '--trust-all-tools',
     ]);
+  });
+
+  it('combines all flags', () => {
+    expect(
+      buildAcpArgs({ agent: 'test', model: 'claude-3', trustAllTools: true })
+    ).toEqual(['--agent', 'test', '--model', 'claude-3', '--trust-all-tools']);
   });
 });
