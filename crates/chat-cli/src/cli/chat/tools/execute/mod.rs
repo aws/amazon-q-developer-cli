@@ -193,7 +193,7 @@ impl ExecuteCommand {
 
         match evaluate_shell_permission(command, &shell_settings) {
             agent::protocol::PermissionEvalResult::Allow => PermissionEvalResult::Allow,
-            agent::protocol::PermissionEvalResult::Ask { .. } => PermissionEvalResult::ask(),
+            agent::protocol::PermissionEvalResult::Ask { trust_options } => PermissionEvalResult::Ask { trust_options },
             agent::protocol::PermissionEvalResult::Deny { reason } => PermissionEvalResult::Deny(vec![reason]),
         }
     }

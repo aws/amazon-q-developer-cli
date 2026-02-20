@@ -8,11 +8,13 @@
 mod decider;
 mod detector;
 mod parser;
+mod trust_patterns;
 
 use decider::decide;
 use detector::detect;
 use parser::parse_command;
 use serde::Deserialize;
+pub use trust_patterns::generate_trust_patterns;
 
 use super::protocol::PermissionEvalResult;
 
@@ -46,9 +48,15 @@ pub fn evaluate_shell_permission(command: &str, settings: &ShellPermissionSettin
     // Layer 3: Decide
     let decider_result = decide(&parse_result.commands, &detection, settings);
 
-    // Guard against tree-sitter misparses
+    // Guard against tree-sitter misparses — downgrade Allow to Ask
+    if matches!(decider_result.result, PermissionEvalResult::Allow) && has_parser_blind_spots(command) {
+        return PermissionEvalResult::ask();
+    }
+
     match decider_result.result {
-        PermissionEvalResult::Allow if has_parser_blind_spots(command) => PermissionEvalResult::ask(),
+        PermissionEvalResult::Ask { .. } => {
+            PermissionEvalResult::ask_with_options(generate_trust_patterns(&decider_result.trustable_commands))
+        },
         other => other,
     }
 }

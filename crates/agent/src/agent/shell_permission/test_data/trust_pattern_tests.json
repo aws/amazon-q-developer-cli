@@ -1,0 +1,113 @@
+[
+  {
+    "name": "command_without_flags_subcommand",
+    "input": "ls",
+    "expected_option_count": 2,
+    "expected_options": [
+      { "label": "Full command", "display": "ls", "patterns": ["ls"] },
+      { "label": "Base command", "display": "ls *", "patterns": ["ls( .*)?"] }
+    ]
+  },
+  {
+    "name": "flags_only_no_subcommand",
+    "input": "df -h",
+    "expected_option_count": 2,
+    "expected_options": [
+      { "label": "Full command", "display": "df -h", "patterns": ["df \\-h"] },
+      { "label": "Base command", "display": "df *", "patterns": ["df( .*)?"] }
+    ]
+  },
+  {
+    "name": "subcommand_without_flags",
+    "input": "git status",
+    "expected_option_count": 3,
+    "expected_options": [
+      { "label": "Full command", "display": "git status", "patterns": ["git status"] },
+      { "label": "Partial command", "display": "git status *", "patterns": ["git status( .*)?"] },
+      { "label": "Base command", "display": "git *", "patterns": ["git( .*)?"] }
+    ]
+  },
+  {
+    "name": "subcommand_with_flags",
+    "input": "git commit -m \"test\"",
+    "expected_option_count": 3,
+    "expected_options": [
+      { "label": "Full command", "display": "git commit -m \"test\"", "patterns": ["git commit \\-m \"test\""] },
+      { "label": "Partial command", "display": "git commit *", "patterns": ["git commit( .*)?"] },
+      { "label": "Base command", "display": "git *", "patterns": ["git( .*)?"] }
+    ]
+  },
+  {
+    "name": "chained_flags_only",
+    "input": "du -sh | wc -l",
+    "expected_option_count": 2,
+    "expected_options": [
+      { "label": "Full command", "display": "du -sh , wc -l", "patterns": ["du \\-sh", "wc \\-l"] },
+      { "label": "Base command", "display": "du * , wc *", "patterns": ["du( .*)?", "wc( .*)?"] }
+    ]
+  },
+  {
+    "name": "chained_with_subcommands",
+    "input": "git stash && git pull --rebase",
+    "expected_option_count": 3,
+    "expected_options": [
+      { "label": "Full command", "display": "git stash , git pull --rebase", "patterns": ["git stash", "git pull \\-\\-rebase"] },
+      { "label": "Partial command", "display": "git stash * , git pull *", "patterns": ["git stash( .*)?", "git pull( .*)?"] },
+      { "label": "Base command", "display": "git *", "patterns": ["git( .*)?"] }
+    ]
+  },
+  {
+    "name": "chained_mixed_subcommand_and_flags_only",
+    "input": "df -h && git pull --rebase",
+    "expected_option_count": 3,
+    "expected_options": [
+      { "label": "Full command", "display": "df -h , git pull --rebase", "patterns": ["df \\-h", "git pull \\-\\-rebase"] },
+      { "label": "Partial command", "display": "df * , git pull *", "patterns": ["df( .*)?", "git pull( .*)?"] },
+      { "label": "Base command", "display": "df * , git *", "patterns": ["df( .*)?", "git( .*)?"] }
+    ]
+  },
+  {
+    "name": "empty_commands",
+    "input": "",
+    "expected_option_count": 0,
+    "expected_options": []
+  },
+  {
+    "name": "command_with_path_arg",
+    "input": "cat /etc/hosts",
+    "expected_option_count": 2,
+    "expected_options": [
+      { "label": "Full command", "display": "cat /etc/hosts", "patterns": ["cat /etc/hosts"] },
+      { "label": "Base command", "display": "cat *", "patterns": ["cat( .*)?"] }
+    ]
+  },
+  {
+    "name": "grep_with_flag_and_args",
+    "input": "grep -r TODO src/",
+    "expected_option_count": 2,
+    "expected_options": [
+      { "label": "Full command", "display": "grep -r TODO src/", "patterns": ["grep \\-r TODO src/"] },
+      { "label": "Base command", "display": "grep *", "patterns": ["grep( .*)?"] }
+    ]
+  },
+  {
+    "name": "regex_special_chars_in_arg",
+    "input": "echo hello.world",
+    "expected_option_count": 3,
+    "expected_options": [
+      { "label": "Full command", "display": "echo hello.world", "patterns": ["echo hello\\.world"] },
+      { "label": "Partial command", "display": "echo hello.world *", "patterns": ["echo hello\\.world( .*)?"] },
+      { "label": "Base command", "display": "echo *", "patterns": ["echo( .*)?"] }
+    ]
+  },
+  {
+    "name": "long_pipe_chain_mixed",
+    "input": "cat file | grep -i pattern | sort | wc -l",
+    "expected_option_count": 3,
+    "expected_options": [
+      { "label": "Full command", "display": "cat file , grep -i pattern , sort , wc -l", "patterns": ["cat file", "grep \\-i pattern", "sort", "wc \\-l"] },
+      { "label": "Partial command", "display": "cat file * , grep * , sort * , wc *", "patterns": ["cat file( .*)?", "grep( .*)?", "sort( .*)?", "wc( .*)?"] },
+      { "label": "Base command", "display": "cat * , grep * , sort * , wc *", "patterns": ["cat( .*)?", "grep( .*)?", "sort( .*)?", "wc( .*)?"] }
+    ]
+  }
+]

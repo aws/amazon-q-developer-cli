@@ -22,6 +22,7 @@ mod message;
 mod parse;
 #[cfg(test)]
 mod test_utils;
+mod trust_scope;
 mod turn_summary;
 use std::path::MAIN_SEPARATOR;
 pub mod checkpoint;
@@ -229,10 +230,7 @@ use crate::telemetry::{
     TelemetryResult,
     get_error_reason,
 };
-use crate::util::{
-    MCP_SERVER_TOOL_DELIMITER,
-    ui,
-};
+use crate::util::ui;
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq, ValueEnum)]
 pub enum WrapMode {
@@ -901,6 +899,11 @@ pub struct ChatSession {
     /// Additional context to be added to the next user message (e.g., delegate task summaries)
     pending_additional_context: Option<String>,
 }
+
+use trust_scope::{
+    apply_trust_selection,
+    prompt_trust_scope,
+};
 
 impl ChatSession {
     #[allow(clippy::too_many_arguments)]
@@ -3095,25 +3098,11 @@ impl ChatSession {
             let tool_use = &mut self.tool_uses[index];
             if is_approval_response(input_trimmed) {
                 if is_trust_response(input_trimmed) {
-                    let formatted_tool_name = self
-                        .conversation
-                        .tool_manager
-                        .tn_map
-                        .get(&tool_use.name)
-                        .map(|info| {
-                            format!(
-                                "@{}{MCP_SERVER_TOOL_DELIMITER}{}",
-                                info.server_name, info.host_tool_name
-                            )
-                        })
-                        .clone()
-                        .unwrap_or(tool_use.name.clone());
-                    self.conversation.agents.trust_tools(vec![formatted_tool_name]);
-
-                    if let Some(agent) = self.conversation.agents.get_active() {
-                        agent
-                            .print_overridden_permissions(&mut self.stderr)
-                            .map_err(|_e| ChatError::Custom("Failed to validate agent tool settings".into()))?;
+                    let selection = prompt_trust_scope(tool_use, &mut self.stderr, &mut self.stdout);
+                    if !apply_trust_selection(selection, tool_use, &mut self.conversation, &mut self.stderr)? {
+                        return Ok(ChatState::PromptUser {
+                            skip_printing_tools: true,
+                        });
                     }
                 }
                 tool_use.accepted = true;
@@ -3203,7 +3192,10 @@ impl ChatSession {
                     .get_active()
                     .is_some_and(|a| match tool.tool.requires_acceptance(os, a) {
                         PermissionEvalResult::Allow => true,
-                        PermissionEvalResult::Ask { .. } => false,
+                        PermissionEvalResult::Ask { trust_options } => {
+                            tool.trust_options = trust_options;
+                            false
+                        },
                         PermissionEvalResult::Deny(matches) => {
                             denied_match_set.replace(matches);
                             false

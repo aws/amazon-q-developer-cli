@@ -399,8 +399,8 @@ pub struct TrustOption {
     pub display: String,
     /// The tool setting key to store the pattern in
     pub setting_key: String,
-    /// The pattern to store for matching
-    pub pattern: String,
+    /// The patterns to store for matching
+    pub patterns: Vec<String>,
 }
 
 /// Result of evaluating tool permissions, indicating whether a tool should be allowed,
@@ -422,6 +422,11 @@ impl PermissionEvalResult {
     /// Create an Ask result with no trust options (default behavior).
     pub fn ask() -> Self {
         Self::Ask { trust_options: vec![] }
+    }
+
+    /// Create an Ask result with trust options.
+    pub fn ask_with_options(trust_options: Vec<TrustOption>) -> Self {
+        Self::Ask { trust_options }
     }
 }
 
