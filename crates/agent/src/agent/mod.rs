@@ -308,6 +308,30 @@ impl AgentHandle {
             other => Err(AgentError::Custom(format!("received unexpected response: {other:?}"))),
         }
     }
+
+    pub async fn get_mcp_server_info(&self) -> Result<Vec<tui_commands::McpServerInfo>, AgentError> {
+        match self
+            .sender
+            .send_recv(AgentRequest::GetMcpServerInfo)
+            .await
+            .unwrap_or(Err(AgentError::Channel))?
+        {
+            AgentResponse::McpServerInfo(info) => Ok(info),
+            other => Err(AgentError::Custom(format!("received unexpected response: {other:?}"))),
+        }
+    }
+
+    pub async fn get_tool_info(&self) -> Result<Vec<tui_commands::ToolInfo>, AgentError> {
+        match self
+            .sender
+            .send_recv(AgentRequest::GetToolInfo)
+            .await
+            .unwrap_or(Err(AgentError::Channel))?
+        {
+            AgentResponse::ToolInfo(info) => Ok(info),
+            other => Err(AgentError::Custom(format!("received unexpected response: {other:?}"))),
+        }
+    }
 }
 
 /// Core LLM agent that implements an [`AgentConfig`].
@@ -857,6 +881,101 @@ impl Agent {
                 }
                 self.clear_conversation();
                 Ok(AgentResponse::Success)
+            },
+            AgentRequest::GetMcpServerInfo => {
+                let mut servers = Vec::new();
+                for config in &self.cached_mcp_configs.configs {
+                    let server_name = &config.server_name;
+                    let (status, tool_count) = if !config.is_enabled() {
+                        (tui_commands::McpServerStatus::Disabled, 0)
+                    } else {
+                        match self.mcp_manager_handle.get_tool_specs(server_name.clone()).await {
+                            Ok(specs) => (tui_commands::McpServerStatus::Running, specs.len()),
+                            Err(
+                                mcp::McpManagerError::ServerNotInitialized { .. }
+                                | mcp::McpManagerError::ServerCurrentlyInitializing { .. },
+                            ) => (tui_commands::McpServerStatus::Loading, 0),
+                            Err(ref e) => {
+                                warn!(server_name, error = %e, "MCP server failed");
+                                (tui_commands::McpServerStatus::Failed, 0)
+                            },
+                        }
+                    };
+                    servers.push(tui_commands::McpServerInfo {
+                        name: server_name.clone(),
+                        status,
+                        tool_count,
+                    });
+                }
+                Ok(AgentResponse::McpServerInfo(servers))
+            },
+            AgentRequest::GetToolInfo => {
+                // Use cached tool specs if available, otherwise build them fresh
+                let tool_specs = if let Some(ref cached) = self.cached_tool_specs {
+                    cached.tool_map().clone()
+                } else {
+                    // Build tool specs (this also caches them)
+                    self.make_tool_spec().await;
+                    self.cached_tool_specs
+                        .as_ref()
+                        .map(|c| c.tool_map().clone())
+                        .unwrap_or_default()
+                };
+
+                let allowed_tools = self.agent_config.allowed_tools();
+
+                let mut tools: Vec<tui_commands::ToolInfo> = tool_specs
+                    .values()
+                    .map(|spec| {
+                        let canonical = spec.canonical_name();
+                        let source = match canonical {
+                            agent_config::parse::CanonicalToolName::BuiltIn(_) => "built-in".to_string(),
+                            agent_config::parse::CanonicalToolName::Mcp { server_name, .. } => {
+                                format!("mcp:{server_name}")
+                            },
+                            agent_config::parse::CanonicalToolName::Agent { agent_name } => {
+                                format!("agent:{agent_name}")
+                            },
+                        };
+
+                        let status = if self.permissions.is_tool_denied(canonical) {
+                            tui_commands::ToolStatus::Denied
+                        } else if self.permissions.is_tool_trusted(canonical) {
+                            tui_commands::ToolStatus::Allowed
+                        } else {
+                            // Check config-level allowed_tools
+                            let tool_name = canonical.as_full_name();
+                            let is_config_allowed = match canonical {
+                                agent_config::parse::CanonicalToolName::BuiltIn(_) => {
+                                    allowed_tools.contains("@builtin")
+                                        || allowed_tools.contains("@builtin/")
+                                        || allowed_tools.contains("@builtin/*")
+                                        || util::glob::matches_any_pattern(allowed_tools, &tool_name)
+                                },
+                                agent_config::parse::CanonicalToolName::Mcp { server_name, .. } => {
+                                    allowed_tools.contains(&format!("@{server_name}"))
+                                        || allowed_tools.contains(&format!("@{server_name}/"))
+                                        || util::glob::matches_any_pattern(allowed_tools, &tool_name)
+                                },
+                                agent_config::parse::CanonicalToolName::Agent { .. } => false,
+                            };
+                            if is_config_allowed {
+                                tui_commands::ToolStatus::Allowed
+                            } else {
+                                tui_commands::ToolStatus::RequiresApproval
+                            }
+                        };
+
+                        tui_commands::ToolInfo {
+                            name: spec.tool_spec().name.clone(),
+                            source,
+                            description: spec.tool_spec().description.clone(),
+                            status,
+                        }
+                    })
+                    .collect();
+                tools.sort_by(|a, b| a.source.cmp(&b.source).then(a.name.cmp(&b.name)));
+                Ok(AgentResponse::ToolInfo(tools))
             },
         }
     }

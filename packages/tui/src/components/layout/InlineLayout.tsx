@@ -6,6 +6,8 @@ import { ExitHint } from '../ui/ExitHint';
 import { CommandMenu } from '../ui/CommandMenu';
 import { ActionHint } from '../ui/hint/ActionHint.js';
 import { HelpPanel } from '../ui/HelpPanel';
+import { McpPanel } from '../ui/McpPanel';
+import { ToolsPanel } from '../ui/ToolsPanel';
 import {
   PromptBar,
   type PromptBarHeader,
@@ -61,12 +63,18 @@ export const InlineLayout: React.FC = () => {
     helpCommands,
     showUsagePanel,
     usageData,
+    showMcpPanel,
+    mcpServers,
+    showToolsPanel,
+    toolsList,
   } = useUIState();
   const {
     toggleToolOutputsExpanded,
     setShowContextBreakdown,
     setShowHelpPanel,
     setShowUsagePanel,
+    setShowMcpPanel,
+    setShowToolsPanel,
   } = useUIActions();
   const { sessionId, contextUsagePercent, currentModel, currentAgent } =
     useContextState();
@@ -221,6 +229,18 @@ export const InlineLayout: React.FC = () => {
     }
   }, [setShowUsagePanel, setShowContextBreakdown, kiro]);
 
+  const handleCloseMcpPanel = useCallback(() => {
+    setShowMcpPanel(false);
+    setActiveCommand(null);
+    clearCommandInput();
+  }, [setShowMcpPanel, setActiveCommand, clearCommandInput]);
+
+  const handleCloseToolsPanel = useCallback(() => {
+    setShowToolsPanel(false);
+    setActiveCommand(null);
+    clearCommandInput();
+  }, [setShowToolsPanel, setActiveCommand, clearCommandInput]);
+
   // Build the header - use SnackBar for approval, ContextBar otherwise
   const promptBarHeader = useMemo(() => {
     if (pendingApproval) {
@@ -357,7 +377,11 @@ export const InlineLayout: React.FC = () => {
         <Box marginBottom={1}>
           <PromptBar
             header={
-              showContextBreakdown || showHelpPanel || showUsagePanel
+              showContextBreakdown ||
+              showHelpPanel ||
+              showUsagePanel ||
+              showMcpPanel ||
+              showToolsPanel
                 ? undefined
                 : promptBarHeader
             }
@@ -387,7 +411,9 @@ export const InlineLayout: React.FC = () => {
               !!pendingApproval ||
               showContextBreakdown ||
               showHelpPanel ||
-              showUsagePanel
+              showUsagePanel ||
+              showMcpPanel ||
+              showToolsPanel
             }
           >
             <CommandMenu />
@@ -413,6 +439,12 @@ export const InlineLayout: React.FC = () => {
                 commands={helpCommands}
                 onClose={handleCloseHelpPanel}
               />
+            )}
+            {showMcpPanel && (
+              <McpPanel servers={mcpServers} onClose={handleCloseMcpPanel} />
+            )}
+            {showToolsPanel && (
+              <ToolsPanel tools={toolsList} onClose={handleCloseToolsPanel} />
             )}
             <ActionHint
               text="Showing detailed output · ctrl+o to toggle"

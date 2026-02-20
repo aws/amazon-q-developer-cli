@@ -46,6 +46,8 @@ pub enum TuiCommandKind {
     Clear,
     Quit,
     Usage,
+    Mcp,
+    Tools,
 }
 
 /// Request to get command options (autocomplete)

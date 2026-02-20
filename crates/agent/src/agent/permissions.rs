@@ -41,6 +41,16 @@ pub struct RuntimePermissions {
 }
 
 impl RuntimePermissions {
+    /// Check if a tool is trusted (auto-approve) for this session.
+    pub fn is_tool_trusted(&self, name: &CanonicalToolName) -> bool {
+        self.trusted_tools.contains(name)
+    }
+
+    /// Check if a tool is denied for this session.
+    pub fn is_tool_denied(&self, name: &CanonicalToolName) -> bool {
+        self.denied_tools.contains(name)
+    }
+
     /// Set CWD as allowed for read operations.
     pub fn with_cwd(mut self, cwd: &str) -> Self {
         self.filesystem.allowed_read_paths.insert(cwd.to_string());

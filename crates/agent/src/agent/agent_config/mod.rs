@@ -243,5 +243,28 @@ async fn load_mcp_config_from_path(path: impl AsRef<Path>) -> Result<McpServers,
     let contents = fs::read_to_string(path)
         .await
         .with_context(|| format!("Failed to read MCP config from path {:?}", path.to_string_lossy()))?;
-    Ok(serde_json::from_str(&contents)?)
+
+    // Parse the raw JSON first, then deserialize each server entry individually so that
+    // unrecognized formats (e.g. `"type": "registry"`) are skipped with a warning instead of
+    // causing the entire file to fail.
+    let raw: serde_json::Value = serde_json::from_str(&contents)?;
+    let servers_obj = raw
+        .get("mcpServers")
+        .and_then(|v| v.as_object())
+        .cloned()
+        .unwrap_or_default();
+
+    let mut mcp_servers = HashMap::new();
+    for (name, value) in servers_obj {
+        match serde_json::from_value::<McpServerConfig>(value) {
+            Ok(config) => {
+                mcp_servers.insert(name, config);
+            },
+            Err(err) => {
+                warn!(server_name = %name, ?err, "Skipping unrecognized MCP server config entry");
+            },
+        }
+    }
+
+    Ok(McpServers { mcp_servers })
 }

@@ -38,6 +38,10 @@ pub enum TuiCommand {
     Usage(UsageArgs),
     /// Paste image from system clipboard (returns base64 PNG data)
     PasteImage(PasteImageArgs),
+    /// Show configured MCP servers
+    Mcp(McpArgs),
+    /// Show available tools
+    Tools(ToolsArgs),
 }
 
 /// Arguments for /help command
@@ -112,6 +116,18 @@ pub struct UsageArgs {}
 #[serde(rename_all = "camelCase")]
 pub struct PasteImageArgs {}
 
+/// Arguments for /mcp command
+#[typeshare]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct McpArgs {}
+
+/// Arguments for /tools command
+#[typeshare]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ToolsArgs {}
+
 impl TuiCommand {
     /// Command name with leading slash
     pub fn name(&self) -> &'static str {
@@ -125,6 +141,8 @@ impl TuiCommand {
             TuiCommand::Quit(_) => "/quit",
             TuiCommand::Usage(_) => "/usage",
             TuiCommand::PasteImage(_) => "paste-image",
+            TuiCommand::Mcp(_) => "/mcp",
+            TuiCommand::Tools(_) => "/tools",
         }
     }
 
@@ -140,6 +158,8 @@ impl TuiCommand {
             TuiCommand::Quit(_) => "Quit the application",
             TuiCommand::Usage(_) => "Show billing and usage information",
             TuiCommand::PasteImage(_) => "Paste image from clipboard",
+            TuiCommand::Mcp(_) => "Show configured MCP servers",
+            TuiCommand::Tools(_) => "Show available tools",
         }
     }
 
@@ -155,6 +175,8 @@ impl TuiCommand {
             TuiCommand::Quit(_) => "/quit",
             TuiCommand::Usage(_) => "/usage",
             TuiCommand::PasteImage(_) => "paste-image",
+            TuiCommand::Mcp(_) => "/mcp",
+            TuiCommand::Tools(_) => "/tools",
         }
     }
 
@@ -198,6 +220,16 @@ impl TuiCommand {
                 Some(meta)
             },
             TuiCommand::PasteImage(_) => None,
+            TuiCommand::Mcp(_) => {
+                let mut meta = serde_json::Map::new();
+                meta.insert("inputType".into(), "panel".into());
+                Some(meta)
+            },
+            TuiCommand::Tools(_) => {
+                let mut meta = serde_json::Map::new();
+                meta.insert("inputType".into(), "panel".into());
+                Some(meta)
+            },
         }
     }
 
@@ -212,6 +244,8 @@ impl TuiCommand {
             TuiCommand::Clear(ClearArgs::default()),
             TuiCommand::Quit(QuitArgs::default()),
             TuiCommand::Usage(UsageArgs::default()),
+            TuiCommand::Mcp(McpArgs::default()),
+            TuiCommand::Tools(ToolsArgs::default()),
         ];
         commands.sort_by_key(|cmd| cmd.name());
         commands

@@ -173,6 +173,10 @@ export interface ImageBlock {
 	source: ImageSource;
 }
 
+/** Arguments for /mcp command */
+export interface McpArgs {
+}
+
 export enum Role {
 	User = "user",
 	Assistant = "assistant",
@@ -344,6 +348,10 @@ export interface ToolUseBlockStart {
 	name: string;
 }
 
+/** Arguments for /tools command */
+export interface ToolsArgs {
+}
+
 /** Arguments for /usage command */
 export interface UsageArgs {
 }
@@ -400,5 +408,9 @@ export type TuiCommand =
 	/** Show billing and usage information */
 	| { command: "usage", args: UsageArgs }
 	/** Paste image from system clipboard (returns base64 PNG data) */
-	| { command: "pasteImage", args: PasteImageArgs };
+	| { command: "pasteImage", args: PasteImageArgs }
+	/** Show configured MCP servers */
+	| { command: "mcp", args: McpArgs }
+	/** Show available tools */
+	| { command: "tools", args: ToolsArgs };
 

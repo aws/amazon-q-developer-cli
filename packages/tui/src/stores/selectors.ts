@@ -111,6 +111,10 @@ export const useUIState = () =>
       helpCommands: state.helpCommands,
       showUsagePanel: state.showUsagePanel,
       usageData: state.usageData,
+      showMcpPanel: state.showMcpPanel,
+      mcpServers: state.mcpServers,
+      showToolsPanel: state.showToolsPanel,
+      toolsList: state.toolsList,
     }))
   );
 
@@ -125,6 +129,8 @@ export const useUIActions = () =>
       setShowContextBreakdown: state.setShowContextBreakdown,
       setShowHelpPanel: state.setShowHelpPanel,
       setShowUsagePanel: state.setShowUsagePanel,
+      setShowMcpPanel: state.setShowMcpPanel,
+      setShowToolsPanel: state.setShowToolsPanel,
     }))
   );
 

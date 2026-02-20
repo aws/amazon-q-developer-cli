@@ -59,6 +59,20 @@ export interface UsageData {
   usageBreakdowns: UsageBreakdownItem[];
   bonusCredits: BonusCredit[];
 }
+
+export interface McpServerInfo {
+  name: string;
+  status: 'running' | 'loading' | 'failed' | 'disabled';
+  toolCount: number;
+}
+
+export interface ToolInfo {
+  name: string;
+  source: string;
+  description: string;
+  status: 'allowed' | 'requires-approval' | 'denied';
+}
+
 import {
   executeCommand,
   executeCommandWithArg,
@@ -218,6 +232,8 @@ interface BaseAppActions {
     commands?: Array<{ name: string; description: string; usage: string }>
   ) => void;
   setShowUsagePanel: (show: boolean, data?: any) => void;
+  setShowMcpPanel: (show: boolean, servers?: McpServerInfo[]) => void;
+  setShowToolsPanel: (show: boolean, tools?: ToolInfo[]) => void;
 
   // File attachment actions
   attachFile: (path: string) => void;
@@ -313,6 +329,10 @@ export interface AppState {
   contextBreakdown: ContextBreakdownData | null;
   showHelpPanel: boolean;
   helpCommands: Array<{ name: string; description: string; usage: string }>;
+  showMcpPanel: boolean;
+  mcpServers: McpServerInfo[];
+  showToolsPanel: boolean;
+  toolsList: ToolInfo[];
 
   // Abort controller for current stream
   currentAbortController: AbortController | null;
@@ -389,6 +409,10 @@ export const createAppStore = (props: AppStoreProps) =>
     helpCommands: [],
     showUsagePanel: false,
     usageData: null,
+    showMcpPanel: false,
+    mcpServers: [],
+    showToolsPanel: false,
+    toolsList: [],
     attachedFiles: [],
     pendingFileAttachment: null,
     pendingImages: [],
@@ -1181,6 +1205,8 @@ export const createAppStore = (props: AppStoreProps) =>
         setShowContextBreakdown: state.setShowContextBreakdown,
         setShowHelpPanel: state.setShowHelpPanel,
         setShowUsagePanel: state.setShowUsagePanel,
+        setShowMcpPanel: state.setShowMcpPanel,
+        setShowToolsPanel: state.setShowToolsPanel,
         clearMessages: state.clearMessages,
         clearUIState: () =>
           set({
@@ -1188,6 +1214,8 @@ export const createAppStore = (props: AppStoreProps) =>
             showContextBreakdown: false,
             showHelpPanel: false,
             showUsagePanel: false,
+            showMcpPanel: false,
+            showToolsPanel: false,
             contextBreakdown: null,
             usageData: null,
           }),
@@ -1424,6 +1452,14 @@ export const createAppStore = (props: AppStoreProps) =>
       set({ showUsagePanel: show, usageData: data ?? null });
     },
 
+    setShowMcpPanel: (show, servers = []) => {
+      set({ showMcpPanel: show, mcpServers: servers });
+    },
+
+    setShowToolsPanel: (show, tools = []) => {
+      set({ showToolsPanel: show, toolsList: tools });
+    },
+
     // File attachment actions
     attachFile: (path) => {
       set((state) => ({
@@ -1516,6 +1552,8 @@ export const createAppStore = (props: AppStoreProps) =>
           setShowContextBreakdown: state.setShowContextBreakdown,
           setShowHelpPanel: state.setShowHelpPanel,
           setShowUsagePanel: state.setShowUsagePanel,
+          setShowMcpPanel: state.setShowMcpPanel,
+          setShowToolsPanel: state.setShowToolsPanel,
           clearMessages: state.clearMessages,
           clearUIState: () =>
             set({
@@ -1523,6 +1561,8 @@ export const createAppStore = (props: AppStoreProps) =>
               showContextBreakdown: false,
               showHelpPanel: false,
               showUsagePanel: false,
+              showMcpPanel: false,
+              showToolsPanel: false,
               contextBreakdown: null,
               usageData: null,
             }),

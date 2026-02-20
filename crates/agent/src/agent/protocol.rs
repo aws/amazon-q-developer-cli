@@ -205,6 +205,10 @@ pub enum AgentRequest {
     CompactConversation,
     /// Clear conversation history
     ClearConversation,
+    /// Get information about configured MCP servers
+    GetMcpServerInfo,
+    /// Get information about available tools
+    GetToolInfo,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -459,6 +463,8 @@ pub enum AgentResponse {
     McpPrompts(HashMap<String, Vec<Prompt>>),
     TerminateAcknowledged,
     SwapComplete,
+    McpServerInfo(Vec<super::tui_commands::McpServerInfo>),
+    ToolInfo(Vec<super::tui_commands::ToolInfo>),
     Unknown,
 }
 

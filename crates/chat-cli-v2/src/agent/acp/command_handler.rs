@@ -89,6 +89,8 @@ pub async fn get_command_options(
         | TuiCommandKind::Compact
         | TuiCommandKind::Clear
         | TuiCommandKind::Quit
-        | TuiCommandKind::Usage => CommandOptionsResponse::default(),
+        | TuiCommandKind::Usage
+        | TuiCommandKind::Mcp
+        | TuiCommandKind::Tools => CommandOptionsResponse::default(),
     }
 }

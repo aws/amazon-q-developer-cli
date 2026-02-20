@@ -10,6 +10,7 @@
 
 import type { CommandContext } from './types.js';
 import type { CommandResult, TuiCommand } from '../types/commands.js';
+import type { McpServerInfo, ToolInfo } from '../stores/app-store.js';
 
 /** Effect handler function */
 type EffectHandler = (
@@ -27,13 +28,15 @@ type EffectName =
   | 'showContextPanel'
   | 'showHelpPanel'
   | 'showUsagePanel'
+  | 'showMcpPanel'
+  | 'showToolsPanel'
   | 'clearMessages'
   | 'quit';
 
 /**
  * Command → Effect mapping.
  */
-const commandEffects: Partial<Record<CommandName, EffectName>> = {
+const commandEffects: Partial<Record<CommandName | 'mcp', EffectName>> = {
   help: 'showHelpPanel',
   model: 'updateModel',
   agent: 'updateAgent',
@@ -41,6 +44,8 @@ const commandEffects: Partial<Record<CommandName, EffectName>> = {
   usage: 'showUsagePanel',
   clear: 'clearMessages',
   quit: 'quit',
+  mcp: 'showMcpPanel',
+  tools: 'showToolsPanel',
 };
 
 /**
@@ -90,6 +95,16 @@ const effectHandlers: Record<EffectName, EffectHandler> = {
 
   showUsagePanel: (result, ctx) => {
     ctx.setShowUsagePanel(true, result?.data);
+  },
+
+  showMcpPanel: (result, ctx) => {
+    const data = result?.data as { servers?: McpServerInfo[] } | undefined;
+    ctx.setShowMcpPanel(true, data?.servers ?? []);
+  },
+
+  showToolsPanel: (result, ctx) => {
+    const data = result?.data as { tools?: ToolInfo[] } | undefined;
+    ctx.setShowToolsPanel(true, data?.tools ?? []);
   },
 
   clearMessages: (result, ctx) => {

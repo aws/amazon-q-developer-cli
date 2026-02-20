@@ -3,7 +3,12 @@
  */
 
 import type { Kiro } from '../kiro.js';
-import type { SlashCommand, ActiveCommand } from '../stores/app-store.js';
+import type {
+  SlashCommand,
+  ActiveCommand,
+  McpServerInfo,
+  ToolInfo,
+} from '../stores/app-store.js';
 
 /** Context passed to command handlers */
 export interface CommandContext {
@@ -36,6 +41,10 @@ export interface CommandContext {
   ) => void;
   /** Show/hide usage panel */
   setShowUsagePanel: (show: boolean, data?: any) => void;
+  /** Show/hide MCP servers panel */
+  setShowMcpPanel: (show: boolean, servers?: McpServerInfo[]) => void;
+  /** Show/hide tools panel */
+  setShowToolsPanel: (show: boolean, tools?: ToolInfo[]) => void;
   /** Clear conversation messages */
   clearMessages: () => void;
   /** Clear all command UI state (menus, panels) */

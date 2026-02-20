@@ -166,6 +166,22 @@ export class E2ETestCase {
   }
 
   /**
+   * Waits for slash commands to be registered from the backend.
+   * This avoids a race condition where typing a command before
+   * the `commands/available` notification arrives results in "Unknown command".
+   */
+  async waitForSlashCommands(timeout = 10000): Promise<void> {
+    const start = Date.now();
+    while (Date.now() - start < timeout) {
+      const store = await this.getStore();
+      if (store.slashCommands.length > 0) return;
+      await this.sleepMs(100);
+    }
+    throw new Error('Timeout waiting for slash commands to be registered');
+  }
+
+
+  /**
    * Gets TUI application state (Zustand store).
    */
   async getStore(): Promise<AppState> {
