@@ -74,6 +74,34 @@ const startInitialization = () => {
     );
   });
 
+  // Wire up prompts handler before initialize
+  kiro.onPromptsUpdate((prompts) => {
+    logger.info('[tui] prompts update received:', prompts.length, 'prompts');
+    const store = appStore.getState();
+    store.setPrompts(prompts);
+
+    // Register prompts as slash commands
+    const promptCommands = prompts.map((prompt) => ({
+      name: `/${prompt.name}`,
+      description: prompt.description || `Prompt from ${prompt.serverName}`,
+      source: 'backend' as const,
+      meta: {
+        type: 'prompt' as const,
+        arguments: prompt.arguments,
+        serverName: prompt.serverName,
+      } as import('./types/commands').CommandMeta,
+    }));
+
+    // Add prompt commands to existing slash commands
+    // Replace prompt commands directly in state (bypass setSlashCommands to avoid double-keep);
+    appStore.setState((s) => ({
+      slashCommands: [
+        ...s.slashCommands.filter((c) => c.meta?.type !== 'prompt'),
+        ...promptCommands,
+      ],
+    }));
+  });
+
   // Wire up model handler before initialize
   kiro.onModelUpdate((model) => {
     appStore.getState().setCurrentModel(model);

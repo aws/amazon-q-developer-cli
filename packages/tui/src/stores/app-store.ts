@@ -196,6 +196,18 @@ interface BaseAppActions {
   processQueue: () => Promise<void>;
   clearQueue: () => void;
   setSlashCommands: (commands: SlashCommand[]) => void;
+  setPrompts: (
+    prompts: Array<{
+      name: string;
+      description?: string;
+      arguments: Array<{
+        name: string;
+        description?: string;
+        required?: boolean;
+      }>;
+      serverName: string;
+    }>
+  ) => void;
 
   // Command UI actions
   setActiveCommand: (command: ActiveCommand | null) => void;
@@ -205,6 +217,7 @@ interface BaseAppActions {
     trigger: { key: string; position: number; type: 'start' | 'inline' } | null
   ) => void;
   setFilePickerHasResults: (hasResults: boolean) => void;
+  setPromptHint: (hint: string | null) => void;
   clearCommandInput: () => void;
 
   navigateHistory: (direction: 'up' | 'down') => string | null;
@@ -231,6 +244,7 @@ interface BaseAppActions {
     show: boolean,
     commands?: Array<{ name: string; description: string; usage: string }>
   ) => void;
+  setShowPromptsPanel: (show: boolean) => void;
   setShowUsagePanel: (show: boolean, data?: any) => void;
   setShowMcpPanel: (show: boolean, servers?: McpServerInfo[]) => void;
   setShowToolsPanel: (show: boolean, tools?: ToolInfo[]) => void;
@@ -272,6 +286,16 @@ export interface AppState {
   messages: MessageType[];
   queuedMessages: string[];
   slashCommands: SlashCommand[];
+  prompts: Array<{
+    name: string;
+    description?: string;
+    arguments: Array<{
+      name: string;
+      description?: string;
+      required?: boolean;
+    }>;
+    serverName: string;
+  }>;
 
   // Kiro/Agent state
   kiro: Kiro;
@@ -294,6 +318,7 @@ export interface AppState {
     type: 'start' | 'inline';
   } | null;
   filePickerHasResults: boolean;
+  promptHint: string | null;
 
   // Input state
   input: InputBufferState;
@@ -333,7 +358,7 @@ export interface AppState {
   mcpServers: McpServerInfo[];
   showToolsPanel: boolean;
   toolsList: ToolInfo[];
-
+  showPromptsPanel: boolean;
   // Abort controller for current stream
   currentAbortController: AbortController | null;
   cancelInProgress: Promise<void> | null;
@@ -373,7 +398,15 @@ export const createAppStore = (props: AppStoreProps) =>
     // Initial state
     messages: [],
     queuedMessages: [],
-    slashCommands: [], // Backend sends all commands via CommandsUpdate
+    slashCommands: [
+      {
+        name: '/prompts',
+        description: 'List available MCP prompts',
+        source: 'local' as const,
+        meta: { local: true, inputType: 'panel' as const },
+      },
+    ], // Backend sends all commands via CommandsUpdate
+    prompts: [],
     kiro: props.kiro,
     sessionId: null,
     isProcessing: false,
@@ -389,6 +422,7 @@ export const createAppStore = (props: AppStoreProps) =>
     commandInputValue: '',
     activeTrigger: null,
     filePickerHasResults: false,
+    promptHint: null,
 
     input: initialInputBufferState(),
 
@@ -407,6 +441,7 @@ export const createAppStore = (props: AppStoreProps) =>
     contextBreakdown: null,
     showHelpPanel: false,
     helpCommands: [],
+    showPromptsPanel: false,
     showUsagePanel: false,
     usageData: null,
     showMcpPanel: false,
@@ -1154,10 +1189,14 @@ export const createAppStore = (props: AppStoreProps) =>
     setSlashCommands: (commands: SlashCommand[]) => {
       set((state) => {
         const localCommands = state.slashCommands.filter(
-          (cmd) => cmd.source === 'local'
+          (cmd) => cmd.source === 'local' || cmd.meta?.type === 'prompt'
         );
         return { slashCommands: [...localCommands, ...commands] };
       });
+    },
+
+    setPrompts: (prompts) => {
+      set({ prompts });
     },
 
     setActiveCommand: (command: ActiveCommand | null) => {
@@ -1176,11 +1215,16 @@ export const createAppStore = (props: AppStoreProps) =>
       set({ filePickerHasResults: hasResults });
     },
 
+    setPromptHint: (hint) => {
+      set({ promptHint: hint });
+    },
+
     clearCommandInput: () => {
       set({
         commandInputValue: '',
         activeTrigger: null,
         filePickerHasResults: false,
+        promptHint: null,
       });
     },
 
@@ -1195,6 +1239,7 @@ export const createAppStore = (props: AppStoreProps) =>
       const ctx: CommandContext = {
         kiro: state.kiro,
         slashCommands: state.slashCommands,
+        prompts: state.prompts,
         showAlert: (message, status, autoHideMs = 3000) =>
           state.showTransientAlert({ message, status, autoHideMs }),
         setLoadingMessage: state.setLoadingMessage,
@@ -1204,15 +1249,18 @@ export const createAppStore = (props: AppStoreProps) =>
         setContextUsage: state.setContextUsage,
         setShowContextBreakdown: state.setShowContextBreakdown,
         setShowHelpPanel: state.setShowHelpPanel,
+        setShowPromptsPanel: state.setShowPromptsPanel,
         setShowUsagePanel: state.setShowUsagePanel,
         setShowMcpPanel: state.setShowMcpPanel,
         setShowToolsPanel: state.setShowToolsPanel,
         clearMessages: state.clearMessages,
+        sendMessage: state.sendMessage,
         clearUIState: () =>
           set({
             activeCommand: null,
             showContextBreakdown: false,
             showHelpPanel: false,
+            showPromptsPanel: false,
             showUsagePanel: false,
             showMcpPanel: false,
             showToolsPanel: false,
@@ -1351,7 +1399,7 @@ export const createAppStore = (props: AppStoreProps) =>
         input: initialInputBufferState(),
       }));
     },
-    moveCursor: (dir: MoveCursorDir) => {
+    moveCursor: (_dir: MoveCursorDir) => {
       set((state) => {
         // todo
         return state;
@@ -1448,6 +1496,10 @@ export const createAppStore = (props: AppStoreProps) =>
       set({ showHelpPanel: show, helpCommands: commands });
     },
 
+    setShowPromptsPanel: (show) => {
+      set({ showPromptsPanel: show });
+    },
+
     setShowUsagePanel: (show, data) => {
       set({ showUsagePanel: show, usageData: data ?? null });
     },
@@ -1531,9 +1583,11 @@ export const createAppStore = (props: AppStoreProps) =>
         activeCommand: null,
         showContextBreakdown: false,
         showHelpPanel: false,
+        showPromptsPanel: false,
         showUsagePanel: false,
         commandInputValue: '',
         activeTrigger: null,
+        promptHint: null,
       });
       state.clearInput();
 
@@ -1542,6 +1596,7 @@ export const createAppStore = (props: AppStoreProps) =>
         const ctx: CommandContext = {
           kiro: state.kiro,
           slashCommands: state.slashCommands,
+          prompts: state.prompts,
           showAlert: (message, status, autoHideMs = 3000) =>
             state.showTransientAlert({ message, status, autoHideMs }),
           setLoadingMessage: state.setLoadingMessage,
@@ -1551,15 +1606,18 @@ export const createAppStore = (props: AppStoreProps) =>
           setContextUsage: state.setContextUsage,
           setShowContextBreakdown: state.setShowContextBreakdown,
           setShowHelpPanel: state.setShowHelpPanel,
+          setShowPromptsPanel: state.setShowPromptsPanel,
           setShowUsagePanel: state.setShowUsagePanel,
           setShowMcpPanel: state.setShowMcpPanel,
           setShowToolsPanel: state.setShowToolsPanel,
           clearMessages: state.clearMessages,
+          sendMessage: state.sendMessage,
           clearUIState: () =>
             set({
               activeCommand: null,
               showContextBreakdown: false,
               showHelpPanel: false,
+              showPromptsPanel: false,
               showUsagePanel: false,
               showMcpPanel: false,
               showToolsPanel: false,

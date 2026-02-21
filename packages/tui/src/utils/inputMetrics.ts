@@ -92,7 +92,7 @@ class InputMetrics {
   /**
    * Start timing a render phase (for detailed breakdown)
    */
-  startRenderPhase(componentName: string): void {
+  startRenderPhase(_componentName: string): void {
     if (!this.enabled) return;
     this.currentRenderStart = performance.now();
   }

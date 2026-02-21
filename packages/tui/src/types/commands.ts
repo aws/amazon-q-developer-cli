@@ -11,6 +11,11 @@ export type {
   ModelArgs,
   ContextArgs,
   CompactArgs,
+  HelpArgs,
+  AgentArgs,
+  ClearArgs,
+  QuitArgs,
+  UsageArgs,
 } from './generated/agent';
 
 import type { CommandOption } from './generated/agent';
@@ -22,6 +27,13 @@ export interface CommandMeta {
   subcommands?: string[];
   hint?: string;
   local?: boolean;
+  type?: 'action' | 'prompt';
+  arguments?: Array<{
+    name: string;
+    description?: string;
+    required?: boolean;
+  }>;
+  serverName?: string;
 }
 
 /** Command advertised by backend */

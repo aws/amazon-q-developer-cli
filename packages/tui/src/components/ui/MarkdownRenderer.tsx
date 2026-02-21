@@ -89,13 +89,23 @@ export const MarkdownRenderer = React.memo(function MarkdownRenderer({
   });
   flushTextGroup();
 
-  // Normalize: strip trailing newlines from text blocks before headers only
-  // Headers get marginTop for consistent spacing regardless of LLM output
-  for (let b = 0; b < blocks.length - 1; b++) {
+  // Normalize: strip excessive newlines around code blocks and headers
+  for (let b = 0; b < blocks.length; b++) {
     const blk = blocks[b];
-    if (blk && blk.type === 'text' && blocks[b + 1]?.type === 'header') {
+    const next = blocks[b + 1];
+    const prev = blocks[b - 1];
+
+    if (blk && blk.type === 'text') {
       const last = blk.segments[blk.segments.length - 1];
-      if (last) last.text = last.text.replace(/\n+$/, '');
+      // Strip trailing newlines before code blocks and headers (keep at most 1)
+      if (last && (next?.type === 'code' || next?.type === 'header')) {
+        last.text = last.text.replace(/\n{2,}$/, '\n');
+      }
+      // Strip leading newlines after code blocks (keep at most 1)
+      const first = blk.segments[0];
+      if (first && prev?.type === 'code') {
+        first.text = first.text.replace(/^\n{2,}/, '\n');
+      }
     }
   }
 

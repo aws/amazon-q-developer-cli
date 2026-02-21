@@ -541,7 +541,6 @@ describe('input-editing', () => {
     });
 
     it('Ctrl+A moves to beginning (cursor = 0)', () => {
-      const cursor = 5;
       const newCursor = 0;
       expect(newCursor).toBe(0);
     });

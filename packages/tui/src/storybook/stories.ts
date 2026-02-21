@@ -40,7 +40,7 @@ function deriveTitleFromPath(importPath: string): string {
   // Try to match components folder pattern
   let match = importPath.match(/components\/([^/]+)\/([^/]+)\.stories/);
   if (match) {
-    const [, _folder, component] = match;
+    const [, , component] = match;
     // Use "Components" as the category for all components in original-ui/components
     return `Components/${component!}`;
   }

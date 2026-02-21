@@ -1,4 +1,5 @@
 use std::borrow::Cow;
+use std::collections::HashMap;
 use std::path::PathBuf;
 use std::process::ExitCode;
 use std::str::FromStr;
@@ -21,6 +22,7 @@ use agent::event_log::{
     LogEntry,
     LogEntryV1,
 };
+use agent::mcp::types::Prompt;
 use agent::mcp::{
     McpManager,
     McpServerEvent,
@@ -132,6 +134,7 @@ use super::extensions::{
     SubagentInfo,
     methods,
 };
+use super::slash_router;
 use super::subagent_tool::{
     handle_internal_prompt,
     handle_subagent_request,
@@ -203,6 +206,20 @@ pub enum AcpSessionRequest {
         command: super::schema::TuiCommandKind,
         partial: String,
         respond_to: oneshot::Sender<CommandOptionsResponse>,
+    },
+    /// Get MCP prompts from all servers.
+    GetMcpPrompts {
+        respond_to: oneshot::Sender<Result<HashMap<String, Vec<Prompt>>, String>>,
+    },
+    /// Get file-based prompts from .kiro/prompts/ directories.
+    GetFilePrompts {
+        respond_to: oneshot::Sender<Result<HashMap<String, Vec<Prompt>>, String>>,
+    },
+    /// Get a specific MCP prompt with arguments.
+    GetMcpPrompt {
+        name: String,
+        arguments: HashMap<String, String>,
+        respond_to: oneshot::Sender<Result<Vec<serde_json::Value>, String>>,
     },
 }
 
@@ -360,6 +377,59 @@ impl AcpSessionHandle {
             return CommandOptionsResponse::default();
         }
         rx.await.unwrap_or_default()
+    }
+
+    /// Get MCP prompts from all servers
+    pub async fn get_mcp_prompts(&self) -> Result<HashMap<String, Vec<Prompt>>, String> {
+        let (respond_to, rx) = oneshot::channel();
+        if self
+            .tx
+            .send(AcpSessionRequest::GetMcpPrompts { respond_to })
+            .await
+            .is_err()
+        {
+            return Err("Channel closed".to_string());
+        }
+        rx.await
+            .map_err(|e| format!("Response channel closed: {e}").to_string())?
+    }
+
+    /// Get file-based prompts from .kiro/prompts/ directories
+    pub async fn get_file_prompts(&self) -> Result<HashMap<String, Vec<Prompt>>, String> {
+        let (respond_to, rx) = oneshot::channel();
+        if self
+            .tx
+            .send(AcpSessionRequest::GetFilePrompts { respond_to })
+            .await
+            .is_err()
+        {
+            return Err("Channel closed".to_string());
+        }
+        rx.await
+            .map_err(|e| format!("Response channel closed: {e}").to_string())?
+    }
+
+    /// Get a specific MCP prompt with arguments
+    pub async fn get_mcp_prompt(
+        &self,
+        name: String,
+        arguments: HashMap<String, String>,
+    ) -> Result<Vec<serde_json::Value>, String> {
+        let (respond_to, rx) = oneshot::channel();
+        if self
+            .tx
+            .send(AcpSessionRequest::GetMcpPrompt {
+                name,
+                arguments,
+                respond_to,
+            })
+            .await
+            .is_err()
+        {
+            return Err("Channel closed".to_string());
+        }
+        rx.await
+            .map_err(|e| format!("Response channel closed: {e}").to_string())?
     }
 }
 
@@ -580,6 +650,7 @@ impl<'a> AcpSessionBuilder<'a> {
 /// - Custom extension handlers (slash commands, etc.)
 struct AcpSession {
     session_id: SessionId,
+    session_id_str: String,
     agent: AgentHandle,
     request_rx: mpsc::Receiver<AcpSessionRequest>,
     session_db: Arc<SessionDb>,
@@ -594,9 +665,26 @@ struct AcpSession {
     connection_cx: JrConnectionCx<AgentToClient>,
     pending_prompt_response: Option<tokio::sync::Mutex<JrRequestCx<PromptResponse>>>,
     os: Os,
+    cwd: PathBuf,
 }
 
 impl AcpSession {
+    /// Create a CommandContext from the current session state
+    fn command_context(&self) -> super::commands::CommandContext<'_> {
+        super::commands::CommandContext {
+            api_client: &self.api_client,
+            rts_state: &self.rts_state,
+            agent: &self.agent,
+            session_tx: &self.session_tx,
+            available_agents: &self.available_agents,
+            agent_configs: &self.agent_configs,
+            local_mcp_path: self.local_mcp_path.as_ref(),
+            global_mcp_path: self.global_mcp_path.as_ref(),
+            session_id: &self.session_id_str,
+            current_agent_name: &self.current_agent_name,
+        }
+    }
+
     async fn with_builder(
         os: Os,
         request_rx: mpsc::Receiver<AcpSessionRequest>,
@@ -697,7 +785,7 @@ impl AcpSession {
         )
         .await?;
 
-        agent.set_sys_provider(super::acp_provider::AcpProvider::new(cwd));
+        agent.set_sys_provider(super::acp_provider::AcpProvider::new(cwd.clone()));
 
         if let Some(msg) = builder.user_embedded_msg {
             agent.prepend_embedded_user_msg(msg);
@@ -706,7 +794,8 @@ impl AcpSession {
         let agent = agent.spawn();
 
         Ok(Self {
-            session_id: SessionId::new(session_id_str),
+            session_id: SessionId::new(session_id_str.clone()),
+            session_id_str,
             agent,
             request_rx,
             session_tx,
@@ -721,6 +810,7 @@ impl AcpSession {
             api_client,
             pending_prompt_response: None,
             os,
+            cwd,
         })
     }
 
@@ -775,7 +865,7 @@ impl AcpSession {
 
     fn send_turn_metadata(&self, metadata: &agent::agent_loop::protocol::UserTurnMetadata) -> Result<(), sacp::Error> {
         let notification = super::schema::MetadataNotification {
-            session_id: self.session_id.to_string(),
+            session_id: self.session_id_str.clone(),
             context_usage_percentage: metadata.context_usage_percentage,
         };
         self.connection_cx.send_notification(notification)
@@ -803,15 +893,103 @@ impl AcpSession {
                     return;
                 }
 
-                let agent = self.agent.clone();
+                // Check for slash command
+                if let Some(route) = slash_router::parse(&request.prompt) {
+                    match route {
+                        slash_router::SlashRoute::Action(command) => {
+                            self.pending_prompt_response = Some(tokio::sync::Mutex::new(request_cx));
 
+                            // Clone needed data for the spawned task
+                            let api_client = self.api_client.clone();
+                            let rts_state = self.rts_state.clone();
+                            let agent = self.agent.clone();
+                            let session_tx = self.session_tx.clone();
+                            let available_agents = self.available_agents.clone();
+                            let agent_configs = self.agent_configs.clone();
+                            let local_mcp_path = self.local_mcp_path.clone();
+                            let global_mcp_path = self.global_mcp_path.clone();
+                            let session_id = self.session_id_str.clone();
+                            let current_agent_name = self.current_agent_name.clone();
+
+                            tokio::spawn(async move {
+                                let ctx = super::commands::CommandContext {
+                                    api_client: &api_client,
+                                    rts_state: &rts_state,
+                                    agent: &agent,
+                                    session_tx: &session_tx,
+                                    available_agents: &available_agents,
+                                    agent_configs: &agent_configs,
+                                    local_mcp_path: local_mcp_path.as_ref(),
+                                    global_mcp_path: global_mcp_path.as_ref(),
+                                    session_id: &session_id,
+                                    current_agent_name: &current_agent_name,
+                                };
+                                let _result = super::commands::execute(command, &ctx).await;
+                                // Response sent via unified egress
+                            });
+                        },
+                        slash_router::SlashRoute::Prompt { name, args } => {
+                            self.pending_prompt_response = Some(tokio::sync::Mutex::new(request_cx));
+                            let agent = self.agent.clone();
+                            let cwd = self.cwd.clone();
+                            tokio::spawn(async move {
+                                match agent.get_mcp_prompt(name.clone(), args).await {
+                                    Ok(messages) => {
+                                        let resolved_text = slash_router::extract_prompt_text(&messages);
+                                        if !resolved_text.is_empty() {
+                                            let _ = agent
+                                                .send_prompt(SendPromptArgs {
+                                                    content: vec![agent::protocol::ContentChunk::Text(resolved_text)],
+                                                    should_continue_turn: None,
+                                                })
+                                                .await;
+                                        }
+                                    },
+                                    Err(_) => {
+                                        // Try file-based prompt
+                                        let local_path = cwd.join(".kiro").join("prompts").join(format!("{}.md", name));
+                                        let global_path = dirs::home_dir()
+                                            .map(|h| h.join(".kiro").join("prompts").join(format!("{}.md", name)));
+
+                                        let content = std::fs::read_to_string(&local_path)
+                                            .ok()
+                                            .or_else(|| global_path.and_then(|p| std::fs::read_to_string(p).ok()));
+
+                                        if let Some(text) = content {
+                                            let _ = agent
+                                                .send_prompt(SendPromptArgs {
+                                                    content: vec![agent::protocol::ContentChunk::Text(text)],
+                                                    should_continue_turn: None,
+                                                })
+                                                .await;
+                                        } else {
+                                            // Not a known prompt - send as regular message
+                                            let _ = agent
+                                                .send_prompt(SendPromptArgs {
+                                                    content: vec![agent::protocol::ContentChunk::Text(format!(
+                                                        "/{}",
+                                                        name
+                                                    ))],
+                                                    should_continue_turn: None,
+                                                })
+                                                .await;
+                                        }
+                                    },
+                                }
+                            });
+                        },
+                    }
+                    return;
+                }
+
+                // Normal prompt - no slash command
+                let agent = self.agent.clone();
                 tokio::spawn(async move {
                     if let Err(e) = handle_prompt_request(request, agent).await {
                         error!("Failed to handle prompt request: {e}");
                     }
                 });
 
-                // Store the response channel for unified egress to use
                 self.pending_prompt_response = Some(tokio::sync::Mutex::new(request_cx));
             },
             AcpSessionRequest::InternalPrompt { query, respond_to } => {
@@ -863,42 +1041,62 @@ impl AcpSession {
                 error!("cancel called on agent handle");
             },
             AcpSessionRequest::ExecuteCommand { command, respond_to } => {
-                let result = super::command_handler::execute_command(
-                    command,
-                    &self.api_client,
-                    &self.rts_state,
-                    &self.agent,
-                    &self.session_tx,
-                    &self.available_agents,
-                    &self.agent_configs,
-                    self.local_mcp_path.as_ref(),
-                    self.global_mcp_path.as_ref(),
-                    &self.session_id.to_string(),
-                    &self.current_agent_name,
-                )
-                .await;
+                let is_agent_swap = matches!(&command, TuiCommand::Agent(args) if args.agent_name.is_some());
+                let ctx = self.command_context();
+                let result = super::commands::execute(command, &ctx).await;
                 let _ = respond_to.send(result);
+                // TODO: This is a workaround. Ideally the agent swap flow should
+                // emit an event that triggers re-advertisement through the normal
+                // MCP event pipeline instead of being special-cased here.
+                if is_agent_swap && let Err(e) = self.advertise_commands_and_prompts().await {
+                    warn!("Failed to advertise commands after agent swap: {}", e);
+                }
             },
             AcpSessionRequest::GetCommandOptions {
                 command,
                 partial,
                 respond_to,
             } => {
-                let result = super::command_handler::get_command_options(
-                    command,
-                    &partial,
-                    &self.api_client,
-                    &self.rts_state,
-                    &self.agent,
-                    &self.session_tx,
-                    &self.available_agents,
-                    &self.agent_configs,
-                    self.local_mcp_path.as_ref(),
-                    self.global_mcp_path.as_ref(),
-                    &self.session_id.to_string(),
-                    &self.current_agent_name,
-                )
-                .await;
+                let ctx = self.command_context();
+                let result = match command {
+                    super::schema::TuiCommandKind::Model => super::commands::model::get_options(&partial, &ctx).await,
+                    super::schema::TuiCommandKind::Agent => super::commands::agent::get_options(&partial, &ctx),
+                    super::schema::TuiCommandKind::Context
+                    | super::schema::TuiCommandKind::Compact
+                    | super::schema::TuiCommandKind::Clear
+                    | super::schema::TuiCommandKind::Quit
+                    | super::schema::TuiCommandKind::Usage
+                    | super::schema::TuiCommandKind::Mcp
+                    | super::schema::TuiCommandKind::Tools => agent::tui_commands::CommandOptionsResponse::default(),
+                };
+                let _ = respond_to.send(result);
+            },
+            AcpSessionRequest::GetMcpPrompts { respond_to } => {
+                let result = self
+                    .agent
+                    .get_mcp_prompts()
+                    .await
+                    .map_err(|e| format!("Failed to get MCP prompts: {}", e));
+                let _ = respond_to.send(result);
+            },
+            AcpSessionRequest::GetFilePrompts { respond_to } => {
+                let result = self
+                    .agent
+                    .get_file_prompts()
+                    .await
+                    .map_err(|e| format!("Failed to get file prompts: {}", e));
+                let _ = respond_to.send(result);
+            },
+            AcpSessionRequest::GetMcpPrompt {
+                name,
+                arguments,
+                respond_to,
+            } => {
+                let result = self
+                    .agent
+                    .get_mcp_prompt(name, arguments)
+                    .await
+                    .map_err(|e| format!("Failed to get MCP prompt: {}", e));
                 let _ = respond_to.send(result);
             },
         }
@@ -1069,7 +1267,10 @@ impl AcpSession {
                 self.send_ext_notification(methods::MCP_SERVER_INITIALIZED, McpServerInitializedNotification {
                     session_id: self.session_id.clone(),
                     server_name,
-                })
+                })?;
+
+                // Re-advertise commands + prompts now that a new MCP server is ready
+                self.advertise_commands_and_prompts().await
             },
             McpServerEvent::InitializeError { server_name, error } => {
                 info!(?server_name, ?error, "Forwarding MCP server init failure to client");
@@ -1083,6 +1284,73 @@ impl AcpSession {
             McpServerEvent::Initializing { .. } => Ok(()),
         }
     }
+
+    async fn advertise_commands_and_prompts(&self) -> Result<(), sacp::Error> {
+        advertise_commands_and_prompts_to_client(&self.session_id_str, &self.agent, &self.connection_cx).await
+    }
+}
+
+async fn advertise_commands_and_prompts_to_client(
+    session_id: &str,
+    agent_handle: &AgentHandle,
+    client_cx: &JrConnectionCx<AgentToClient>,
+) -> Result<(), sacp::Error> {
+    let commands: Vec<super::schema::AvailableCommand> = TuiCommand::all_commands()
+        .into_iter()
+        .map(|cmd| super::schema::AvailableCommand {
+            name: cmd.name().to_string(),
+            description: cmd.description().to_string(),
+            meta: cmd.meta(),
+        })
+        .collect();
+
+    let mut prompts: Vec<super::schema::PromptInfo> = match agent_handle.get_mcp_prompts().await {
+        Ok(mcp_prompts) => mcp_prompts
+            .into_iter()
+            .flat_map(|(server_name, server_prompts)| {
+                server_prompts.into_iter().map(move |prompt| super::schema::PromptInfo {
+                    name: prompt.name,
+                    description: prompt.description,
+                    arguments: prompt
+                        .arguments
+                        .unwrap_or_default()
+                        .into_iter()
+                        .map(|arg| super::schema::PromptArgumentInfo {
+                            name: arg.name,
+                            description: arg.description,
+                            required: arg.required.unwrap_or(false),
+                        })
+                        .collect(),
+                    server_name: server_name.clone(),
+                })
+            })
+            .collect(),
+        Err(e) => {
+            warn!("Failed to get MCP prompts: {}", e);
+            Vec::new()
+        },
+    };
+
+    // Add file-based prompts
+    if let Ok(file_prompts) = agent_handle.get_file_prompts().await {
+        for (source, source_prompts) in file_prompts {
+            for prompt in source_prompts {
+                prompts.push(super::schema::PromptInfo {
+                    name: prompt.name,
+                    description: prompt.description,
+                    arguments: Vec::new(),
+                    server_name: source.clone(),
+                });
+            }
+        }
+    }
+
+    let notification = super::schema::CommandsAvailableNotification {
+        session_id: session_id.to_string(),
+        commands,
+        prompts,
+    };
+    client_cx.send_notification(notification)
 }
 
 async fn handle_approval_request(
@@ -1601,7 +1869,7 @@ pub async fn execute(os: &mut Os, args: agent::types::AcpSpawnArgs) -> eyre::Res
                 async move |request: NewSessionRequest, request_cx, cx: JrConnectionCx<AgentToClient>| {
                     let session_id = SessionId::new(Uuid::new_v4().to_string());
 
-                    let config = AcpSessionConfig::new(session_id.to_string(), request.cwd)
+                    let config = AcpSessionConfig::new(session_id.to_string(), request.cwd.clone())
                         .mcp_servers(request.mcp_servers);
                     let result = session_tx.start_session(&session_id, config, Some(cx.clone())).await?;
 
@@ -1625,9 +1893,54 @@ pub async fn execute(os: &mut Os, args: agent::types::AcpSpawnArgs) -> eyre::Res
                         })
                         .collect();
 
+                    // Collect MCP prompts from the session
+                    let mut prompts = match result.handle.get_mcp_prompts().await {
+                        Ok(mcp_prompts) => {
+                            mcp_prompts
+                                .into_iter()
+                                .flat_map(|(server_name, server_prompts)| {
+                                    server_prompts.into_iter().map(move |prompt| {
+                                        super::schema::PromptInfo {
+                                            name: prompt.name,
+                                            description: prompt.description,
+                                            arguments: prompt.arguments.unwrap_or_default()
+                                                .into_iter()
+                                                .map(|arg| super::schema::PromptArgumentInfo {
+                                                    name: arg.name,
+                                                    description: arg.description,
+                                                    required: arg.required.unwrap_or(false),
+                                                })
+                                                .collect(),
+                                            server_name: server_name.clone(),
+                                        }
+                                    })
+                                })
+                                .collect()
+                        },
+                        Err(e) => {
+                            warn!("Failed to get MCP prompts: {}", e);
+                            Vec::new()
+                        }
+                    };
+
+                    // Add file-based prompts
+                    if let Ok(file_prompts) = result.handle.get_file_prompts().await {
+                        for (source, source_prompts) in file_prompts {
+                            for prompt in source_prompts {
+                                prompts.push(super::schema::PromptInfo {
+                                    name: prompt.name,
+                                    description: prompt.description,
+                                    arguments: Vec::new(),
+                                    server_name: source.clone(),
+                                });
+                            }
+                        }
+                    }
+
                     let notification = super::schema::CommandsAvailableNotification {
                         session_id: session_id.to_string(),
                         commands,
+                        prompts,
                     };
                     let _ = cx.send_notification(notification);
 
@@ -1641,7 +1954,7 @@ pub async fn execute(os: &mut Os, args: agent::types::AcpSpawnArgs) -> eyre::Res
                 let session_tx = session_manager_handle.clone();
                 async move |request: LoadSessionRequest, request_cx, cx: JrConnectionCx<AgentToClient>| {
                     // Convert ACP MCP servers to agent configs
-                    let config = AcpSessionConfig::new(request.session_id.to_string(), request.cwd)
+                    let config = AcpSessionConfig::new(request.session_id.to_string(), request.cwd.clone())
                         .load(true)
                         .mcp_servers(request.mcp_servers);
                     match session_tx.start_session(&request.session_id, config, Some(cx.clone())).await {
@@ -1665,9 +1978,54 @@ pub async fn execute(os: &mut Os, args: agent::types::AcpSpawnArgs) -> eyre::Res
                                 })
                                 .collect();
 
+                            // Collect MCP prompts from the session
+                            let mut prompts = match result.handle.get_mcp_prompts().await {
+                                Ok(mcp_prompts) => {
+                                    mcp_prompts
+                                        .into_iter()
+                                        .flat_map(|(server_name, server_prompts)| {
+                                            server_prompts.into_iter().map(move |prompt| {
+                                                super::schema::PromptInfo {
+                                                    name: prompt.name,
+                                                    description: prompt.description,
+                                                    arguments: prompt.arguments.unwrap_or_default()
+                                                        .into_iter()
+                                                        .map(|arg| super::schema::PromptArgumentInfo {
+                                                            name: arg.name,
+                                                            description: arg.description,
+                                                            required: arg.required.unwrap_or(false),
+                                                        })
+                                                        .collect(),
+                                                    server_name: server_name.clone(),
+                                                }
+                                            })
+                                        })
+                                        .collect()
+                                },
+                                Err(e) => {
+                                    warn!("Failed to get MCP prompts: {}", e);
+                                    Vec::new()
+                                }
+                            };
+
+                            // Add file-based prompts
+                            if let Ok(file_prompts) = result.handle.get_file_prompts().await {
+                                for (source, source_prompts) in file_prompts {
+                                    for prompt in source_prompts {
+                                        prompts.push(super::schema::PromptInfo {
+                                            name: prompt.name,
+                                            description: prompt.description,
+                                            arguments: Vec::new(),
+                                            server_name: source.clone(),
+                                        });
+                                    }
+                                }
+                            }
+
                             let notification = super::schema::CommandsAvailableNotification {
                                 session_id: request.session_id.to_string(),
                                 commands,
+                                prompts,
                             };
                             let _ = cx.send_notification(notification);
 
@@ -1727,6 +2085,7 @@ pub async fn execute(os: &mut Os, args: agent::types::AcpSpawnArgs) -> eyre::Res
             },
             sacp::on_receive_request!(),
         )
+
         // Handle command options via typed request
         .on_receive_request(
             {

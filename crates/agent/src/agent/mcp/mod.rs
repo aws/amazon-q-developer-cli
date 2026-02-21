@@ -229,6 +229,29 @@ impl McpManagerHandle {
         }
     }
 
+    pub async fn get_prompt(
+        &self,
+        server_name: String,
+        name: String,
+        arguments: HashMap<String, String>,
+    ) -> Result<Vec<serde_json::Value>, McpManagerError> {
+        match self
+            .request_tx
+            .send_recv(McpManagerRequest::GetPrompt {
+                server_name,
+                name,
+                arguments,
+            })
+            .await
+            .unwrap_or(Err(McpManagerError::Channel))?
+        {
+            McpManagerResponse::Prompt(v) => Ok(v),
+            other => Err(McpManagerError::Custom(format!(
+                "received unexpected response: {other:?}"
+            ))),
+        }
+    }
+
     pub async fn execute_tool(
         &self,
         server_name: String,
@@ -375,6 +398,14 @@ impl McpManager {
                 Some(handle) => Ok(McpManagerResponse::Prompts(handle.get_prompts().await?)),
                 None => Err(McpManagerError::ServerNotInitialized { name: server_name }),
             },
+            McpManagerRequest::GetPrompt {
+                server_name,
+                name,
+                arguments,
+            } => match self.servers.get(&server_name) {
+                Some(handle) => Ok(McpManagerResponse::Prompt(handle.get_prompt(name, arguments).await?)),
+                None => Err(McpManagerError::ServerNotInitialized { name: server_name }),
+            },
             McpManagerRequest::ExecuteTool {
                 server_name,
                 tool_name,
@@ -456,6 +487,11 @@ pub enum McpManagerRequest {
     GetPrompts {
         server_name: String,
     },
+    GetPrompt {
+        server_name: String,
+        name: String,
+        arguments: HashMap<String, String>,
+    },
     ExecuteTool {
         server_name: String,
         tool_name: String,
@@ -470,6 +506,7 @@ pub enum McpManagerResponse {
     LaunchServer(oneshot::Receiver<LaunchServerResult>),
     ToolSpecs(Vec<ToolSpec>),
     Prompts(Vec<Prompt>),
+    Prompt(Vec<serde_json::Value>),
     ExecuteTool(oneshot::Receiver<ExecuteToolResult>),
     TerminateAcknowledged,
 }

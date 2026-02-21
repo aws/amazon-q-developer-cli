@@ -250,6 +250,29 @@ impl TuiCommand {
         commands.sort_by_key(|cmd| cmd.name());
         commands
     }
+
+    /// Parse a command from name (without leading slash) and argument string.
+    pub fn parse(name: &str, args: &str) -> Option<Self> {
+        match name {
+            "help" => Some(Self::Help(HelpArgs::default())),
+            "model" => Some(Self::Model(ModelArgs {
+                model_name: (!args.is_empty()).then(|| args.to_string()),
+            })),
+            "agent" => Some(Self::Agent(AgentArgs {
+                agent_name: (!args.is_empty()).then(|| args.to_string()),
+            })),
+            "context" => Some(Self::Context(ContextArgs::default())),
+            "compact" => Some(Self::Compact(CompactArgs {
+                target_tokens: args.parse().ok(),
+            })),
+            "clear" => Some(Self::Clear(ClearArgs::default())),
+            "quit" => Some(Self::Quit(QuitArgs::default())),
+            "usage" => Some(Self::Usage(UsageArgs::default())),
+            "mcp" => Some(Self::Mcp(McpArgs::default())),
+            "tools" => Some(Self::Tools(ToolsArgs::default())),
+            _ => None,
+        }
+    }
 }
 
 #[cfg(test)]

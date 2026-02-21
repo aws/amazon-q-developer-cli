@@ -5,6 +5,7 @@ pub mod consts;
 pub mod event_log;
 pub mod mcp;
 pub mod permissions;
+pub mod prompts;
 pub mod protocol;
 pub mod shell_permission;
 pub mod task_executor;
@@ -68,6 +69,7 @@ use event_log::{
 };
 use futures::stream::FuturesUnordered;
 use mcp::McpServerEvent;
+use mcp::types::Prompt;
 use permissions::{
     RuntimePermissions,
     apply_approval_to_permissions,
@@ -241,6 +243,46 @@ impl AgentHandle {
             .unwrap_or(Err(AgentError::Channel))?
         {
             AgentResponse::Success => Ok(()),
+            other => Err(AgentError::Custom(format!("received unexpected response: {other:?}"))),
+        }
+    }
+
+    pub async fn get_mcp_prompts(&self) -> Result<HashMap<String, Vec<Prompt>>, AgentError> {
+        match self
+            .sender
+            .send_recv(AgentRequest::GetMcpPrompts)
+            .await
+            .unwrap_or(Err(AgentError::Channel))?
+        {
+            AgentResponse::McpPrompts(prompts) => Ok(prompts),
+            other => Err(AgentError::Custom(format!("received unexpected response: {other:?}"))),
+        }
+    }
+
+    pub async fn get_file_prompts(&self) -> Result<HashMap<String, Vec<Prompt>>, AgentError> {
+        match self
+            .sender
+            .send_recv(AgentRequest::GetFilePrompts)
+            .await
+            .unwrap_or(Err(AgentError::Channel))?
+        {
+            AgentResponse::FilePrompts(prompts) => Ok(prompts),
+            other => Err(AgentError::Custom(format!("received unexpected response: {other:?}"))),
+        }
+    }
+
+    pub async fn get_mcp_prompt(
+        &self,
+        name: String,
+        arguments: HashMap<String, String>,
+    ) -> Result<Vec<serde_json::Value>, AgentError> {
+        match self
+            .sender
+            .send_recv(AgentRequest::GetMcpPrompt { name, arguments })
+            .await
+            .unwrap_or(Err(AgentError::Channel))?
+        {
+            AgentResponse::McpPrompt(messages) => Ok(messages),
             other => Err(AgentError::Custom(format!("received unexpected response: {other:?}"))),
         }
     }
@@ -859,6 +901,51 @@ impl Agent {
                     }
                 }
                 Ok(AgentResponse::McpPrompts(response))
+            },
+            AgentRequest::GetFilePrompts => {
+                let response = match self.sys_provider.cwd() {
+                    Ok(cwd) => prompts::discover(&cwd),
+                    Err(_) => HashMap::new(),
+                };
+                Ok(AgentResponse::FilePrompts(response))
+            },
+            AgentRequest::GetMcpPrompt { name, arguments } => {
+                // Parse server name from prompt name (format: server_name/prompt_name)
+                let (server_name, prompt_name) = match name.split_once('/') {
+                    Some((server, prompt)) => (server.to_string(), prompt.to_string()),
+                    None => {
+                        // If no server specified, find which server has this prompt
+                        let mut found_server = None;
+                        for server_name in self.cached_mcp_configs.server_names() {
+                            if let Ok(prompts) = self.mcp_manager_handle.get_prompts(server_name.clone()).await
+                                && prompts.iter().any(|p| p.name == name)
+                            {
+                                if found_server.is_some() {
+                                    return Err(AgentError::Custom(format!(
+                                        "Ambiguous prompt name '{}'. Multiple servers have this prompt. Use server_name/{} format.",
+                                        name, name
+                                    )));
+                                }
+                                found_server = Some(server_name);
+                            }
+                        }
+                        match found_server {
+                            Some(server) => (server, name),
+                            None => {
+                                return Err(AgentError::Custom(format!("Prompt '{}' not found in any server", name)));
+                            },
+                        }
+                    },
+                };
+
+                match self
+                    .mcp_manager_handle
+                    .get_prompt(server_name, prompt_name, arguments)
+                    .await
+                {
+                    Ok(messages) => Ok(AgentResponse::McpPrompt(messages)),
+                    Err(err) => Err(AgentError::Custom(format!("Failed to get prompt: {}", err))),
+                }
             },
             AgentRequest::Terminate => {
                 // TODO: Fill this in to ensure a full clean up

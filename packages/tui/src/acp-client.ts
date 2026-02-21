@@ -413,6 +413,12 @@ export class AcpClient implements acp.Client, SessionClient {
     method: string,
     params: Record<string, unknown>
   ): Promise<void> {
+    logger.info(
+      '[acp] extNotification:',
+      method,
+      'has prompts:',
+      !!(params as any)?.prompts?.length
+    );
     logger.debug('Extension notification received:', method, params);
     // Handle custom commands available notification (SDK strips leading _)
     const handler = this.extNotificationHandlers[method];
@@ -450,6 +456,28 @@ export class AcpClient implements acp.Client, SessionClient {
         description: cmd.description,
         meta: cmd.meta,
       })),
+    });
+
+    const prompts =
+      (params.prompts as Array<{
+        name: string;
+        description?: string;
+        arguments: Array<{
+          name: string;
+          description?: string;
+          required?: boolean;
+        }>;
+        serverName: string;
+      }>) || [];
+    logger.info(
+      '[acp] commands advertising: commands=',
+      commands.length,
+      'prompts=',
+      prompts.length
+    );
+    this.broadcastStreamEvent({
+      type: AgentEventType.PromptsUpdate,
+      prompts,
     });
   }
 

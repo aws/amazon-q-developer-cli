@@ -198,6 +198,13 @@ pub enum AgentRequest {
     /// Creates a serializable snapshot of the agent's current state
     CreateSnapshot,
     GetMcpPrompts,
+    /// Get file-based prompts from .kiro/prompts/ directories
+    GetFilePrompts,
+    /// Get a specific MCP prompt with arguments
+    GetMcpPrompt {
+        name: String,
+        arguments: HashMap<String, String>,
+    },
     Terminate,
     /// Swap to a different agent configuration
     SwapAgent(Box<SwapAgentArgs>),
@@ -466,6 +473,8 @@ pub enum AgentResponse {
     Success,
     Snapshot(AgentSnapshot),
     McpPrompts(HashMap<String, Vec<Prompt>>),
+    FilePrompts(HashMap<String, Vec<Prompt>>),
+    McpPrompt(Vec<serde_json::Value>),
     TerminateAcknowledged,
     SwapComplete,
     McpServerInfo(Vec<super::tui_commands::McpServerInfo>),

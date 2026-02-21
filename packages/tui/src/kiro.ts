@@ -21,6 +21,18 @@ export class Kiro {
       meta?: Record<string, unknown>;
     }>
   ) => void;
+  private promptsHandler?: (
+    prompts: Array<{
+      name: string;
+      description?: string;
+      arguments: Array<{
+        name: string;
+        description?: string;
+        required?: boolean;
+      }>;
+      serverName: string;
+    }>
+  ) => void;
   private modelHandler?: (model: { id: string; name: string }) => void;
   private agentHandler?: (agent: { name: string }) => void;
   private compactionHandler?: (event: AgentStreamEvent) => void;
@@ -41,6 +53,23 @@ export class Kiro {
     ) => void
   ): void {
     this.commandsHandler = handler;
+  }
+
+  onPromptsUpdate(
+    handler: (
+      prompts: Array<{
+        name: string;
+        description?: string;
+        arguments: Array<{
+          name: string;
+          description?: string;
+          required?: boolean;
+        }>;
+        serverName: string;
+      }>
+    ) => void
+  ): void {
+    this.promptsHandler = handler;
   }
 
   onModelUpdate(handler: (model: { id: string; name: string }) => void): void {
@@ -79,6 +108,17 @@ export class Kiro {
           this.commandsHandler
         ) {
           this.commandsHandler(event.commands);
+        }
+        if (
+          event.type === AgentEventType.PromptsUpdate &&
+          this.promptsHandler
+        ) {
+          logger.info(
+            '[kiro] received PromptsUpdate event with',
+            event.prompts.length,
+            'prompts'
+          );
+          this.promptsHandler(event.prompts);
         }
         // Forward compaction and context usage events (arrive after command returns)
         if (

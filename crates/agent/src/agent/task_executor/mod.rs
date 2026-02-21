@@ -130,6 +130,11 @@ impl TaskExecutor {
         }
     }
 
+    /// Get the current working directory from the system provider
+    pub fn cwd(&self) -> Result<std::path::PathBuf, std::io::Error> {
+        self.sys_provider.cwd()
+    }
+
     fn handle_execute_request(&mut self, req: ExecuteRequest) {
         debug!(?req, "background executor received new request");
         match req {

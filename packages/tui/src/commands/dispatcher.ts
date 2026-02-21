@@ -24,9 +24,16 @@ export async function dispatch(
   args: string,
   ctx: CommandContext
 ): Promise<void> {
-  const { inputType } = cmd.meta ?? {};
+  const { inputType, type } = cmd.meta ?? {};
   const isLocal = cmd.meta?.local === true;
   const cmdName = cmd.name.replace(/^\//, '');
+
+  // Handle prompt commands - send as regular message, backend resolves via session/prompt interception
+  if (type === 'prompt') {
+    const message = args ? `/${cmdName} ${args}` : `/${cmdName}`;
+    await ctx.sendMessage(message);
+    return;
+  }
 
   // 1. Input gathering (when no args provided)
   if (!args) {

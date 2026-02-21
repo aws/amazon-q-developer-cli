@@ -4,10 +4,7 @@
  * These hooks group related state and return stable references when values haven't changed.
  */
 import { useShallow } from 'zustand/react/shallow';
-import { useAppStore, type AppState } from './app-store.js';
-
-// Type for actions (functions) - these are stable references from the store
-type AppActions = ReturnType<typeof useAppStore>;
+import { useAppStore } from './app-store.js';
 
 /**
  * Notification state selector - for NotificationBar and BlockingErrorAlert
@@ -42,6 +39,7 @@ export const useCommandState = () =>
       commandInputValue: state.commandInputValue,
       activeTrigger: state.activeTrigger,
       filePickerHasResults: state.filePickerHasResults,
+      promptHint: state.promptHint,
     }))
   );
 
@@ -53,6 +51,7 @@ export const useCommandActions = () =>
       setCommandInput: state.setCommandInput,
       setActiveTrigger: state.setActiveTrigger,
       setFilePickerHasResults: state.setFilePickerHasResults,
+      setPromptHint: state.setPromptHint,
       clearCommandInput: state.clearCommandInput,
       executeCommandWithArg: state.executeCommandWithArg,
     }))
@@ -109,6 +108,8 @@ export const useUIState = () =>
       contextBreakdown: state.contextBreakdown,
       showHelpPanel: state.showHelpPanel,
       helpCommands: state.helpCommands,
+      showPromptsPanel: state.showPromptsPanel,
+      prompts: state.prompts,
       showUsagePanel: state.showUsagePanel,
       usageData: state.usageData,
       showMcpPanel: state.showMcpPanel,
@@ -128,6 +129,7 @@ export const useUIActions = () =>
       setHasExpandableToolOutputs: state.setHasExpandableToolOutputs,
       setShowContextBreakdown: state.setShowContextBreakdown,
       setShowHelpPanel: state.setShowHelpPanel,
+      setShowPromptsPanel: state.setShowPromptsPanel,
       setShowUsagePanel: state.setShowUsagePanel,
       setShowMcpPanel: state.setShowMcpPanel,
       setShowToolsPanel: state.setShowToolsPanel,

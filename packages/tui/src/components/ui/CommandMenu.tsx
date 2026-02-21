@@ -1,4 +1,10 @@
-import React, { useCallback, useMemo, useState, useEffect } from 'react';
+import React, {
+  useCallback,
+  useMemo,
+  useState,
+  useEffect,
+  useRef,
+} from 'react';
 import { Menu } from '../ui/menu/Menu';
 import { useAppStore } from '../../stores/app-store';
 import { searchFiles } from '../../utils/file-search.js';
@@ -22,9 +28,44 @@ export const CommandMenu: React.FC = () => {
     (state) => state.setFilePickerHasResults
   );
   const setActiveTrigger = useAppStore((state) => state.setActiveTrigger);
+  const setPromptHint = useAppStore((state) => state.setPromptHint);
 
   // File search state
   const [fileResults, setFileResults] = useState<string[]>([]);
+
+  // Add at the top of the component, after the existing useState/useCallback hooks:
+  const highlightedRef = useRef<{ label: string; description: string } | null>(
+    null
+  );
+
+  const handleCommandHighlight = useCallback(
+    (item: { label: string; description: string }) => {
+      highlightedRef.current = item;
+    },
+    []
+  );
+
+  const handleTabComplete = useCallback(() => {
+    if (highlightedRef.current) {
+      const fullCommand = `/${highlightedRef.current.label}`;
+      const cmd = slashCommands.find((c) => c.name === fullCommand);
+      const isPrompt = cmd?.meta?.type === 'prompt';
+
+      // Fill the command into input with trailing space
+      setCommandInput(`${fullCommand} `);
+
+      // Show arg hints for prompts
+      if (isPrompt && cmd?.meta?.arguments?.length) {
+        setPromptHint(
+          cmd.meta.arguments
+            .map((a) => (a.required ? `<${a.name}>` : `[${a.name}]`))
+            .join(' ')
+        );
+      } else {
+        setPromptHint(null);
+      }
+    }
+  }, [slashCommands, setCommandInput, setPromptHint]);
 
   // Extract @query from input
   const fileQuery = useMemo(() => {
@@ -57,10 +98,22 @@ export const CommandMenu: React.FC = () => {
 
   const menuItems = useMemo(
     () =>
-      filteredCommands.map((cmd) => ({
-        label: cmd.name.slice(1),
-        description: cmd.description,
-      })),
+      filteredCommands.map((cmd) => {
+        const isPrompt = cmd.meta?.type === 'prompt';
+        const argHints =
+          isPrompt && cmd.meta?.arguments
+            ? cmd.meta.arguments
+                .map((arg) =>
+                  arg.required ? `<${arg.name}>` : `[${arg.name}]`
+                )
+                .join(' ')
+            : '';
+
+        return {
+          label: cmd.name.slice(1),
+          description: `${cmd.description}${isPrompt ? ' (prompt)' : ''}${argHints ? ` ${argHints}` : ''}`,
+        };
+      }),
     [filteredCommands]
   );
 
@@ -81,14 +134,26 @@ export const CommandMenu: React.FC = () => {
       const fullCommand = `/${item.label}`;
       const cmd = slashCommands.find((c) => c.name === fullCommand);
       const isSelectionCommand = cmd?.meta?.inputType === 'selection';
+      const isPrompt = cmd?.meta?.type === 'prompt';
 
+      // For prompts with args, prefill command and show arg hints
+      if (isPrompt && cmd?.meta?.arguments?.length) {
+        const argHint = cmd.meta.arguments
+          .map((a) => (a.required ? `<${a.name}>` : `[${a.name}]`))
+          .join(' ');
+        setCommandInput(`${fullCommand} `);
+        setPromptHint(argHint);
+        return;
+      }
+
+      setPromptHint(null);
       await handleUserInput(fullCommand);
 
       if (isSelectionCommand) {
         setCommandInput(fullCommand);
       }
     },
-    [handleUserInput, slashCommands, setCommandInput]
+    [handleUserInput, slashCommands, setCommandInput, setPromptHint]
   );
 
   const handleFileSelect = useCallback(
@@ -103,7 +168,8 @@ export const CommandMenu: React.FC = () => {
 
   const handleFilePickerEscape = useCallback(() => {
     setActiveTrigger(null);
-  }, [setActiveTrigger]);
+    setPromptHint(null);
+  }, [setActiveTrigger, setPromptHint]);
 
   if (showFilePicker && !activeCommand) {
     return (
@@ -122,7 +188,12 @@ export const CommandMenu: React.FC = () => {
         items={menuItems}
         prefix="/"
         onSelect={handleCommandSelect}
-        onEscape={clearCommandInput}
+        onHighlight={handleCommandHighlight}
+        onTabComplete={handleTabComplete}
+        onEscape={() => {
+          clearCommandInput();
+          setPromptHint(null);
+        }}
       />
     );
   }
@@ -145,6 +216,7 @@ export const CommandMenu: React.FC = () => {
         onEscape={() => {
           setActiveCommand(null);
           clearCommandInput();
+          setPromptHint(null);
         }}
         showSelectedIndicator={true}
       />

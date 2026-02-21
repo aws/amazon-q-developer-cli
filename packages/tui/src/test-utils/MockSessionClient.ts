@@ -71,7 +71,7 @@ export class MockSessionClient implements SessionClient {
     return () => this.updateHandlers.delete(handler);
   }
 
-  async prompt(messages: ContentBlock[]): Promise<void> {
+  async prompt(_messages: ContentBlock[]): Promise<void> {
     // Process any queued events
     setTimeout(() => {
       while (this.eventQueue.length > 0) {

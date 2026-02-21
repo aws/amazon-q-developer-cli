@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::path::PathBuf;
 use std::process::Stdio;
 use std::time::{
@@ -426,6 +427,56 @@ impl RunningMcpService {
     decorate_with_auth_retry!(list_all_tools, Vec<RmcpTool>);
 
     decorate_with_auth_retry!(list_all_prompts, Vec<RmcpPrompt>);
+
+    pub async fn get_prompt(
+        &self,
+        name: String,
+        arguments: HashMap<String, String>,
+    ) -> Result<rmcp::model::GetPromptResult, rmcp::ServiceError> {
+        use rmcp::model::GetPromptRequestParams;
+        let arguments_map: Option<serde_json::Map<String, serde_json::Value>> = if arguments.is_empty() {
+            None
+        } else {
+            Some(
+                arguments
+                    .into_iter()
+                    .map(|(k, v)| (k, serde_json::Value::String(v)))
+                    .collect(),
+            )
+        };
+
+        let params = GetPromptRequestParams {
+            name,
+            arguments: arguments_map,
+            meta: None,
+        };
+
+        let first_attempt = match &self.running_service {
+            InnerService::Original(rs) => rs.get_prompt(params.clone()).await,
+            InnerService::Peer(peer) => peer.get_prompt(params.clone()).await,
+        };
+
+        match first_attempt {
+            Ok(result) => Ok(result),
+            Err(e) => {
+                if let Some(auth_client) = self.auth_client.as_ref() {
+                    let refresh_result = auth_client.refresh_token().await;
+                    match refresh_result {
+                        Ok(_) => {
+                            info!("Token refreshed");
+                            match &self.running_service {
+                                InnerService::Original(rs) => rs.get_prompt(params).await,
+                                InnerService::Peer(peer) => peer.get_prompt(params).await,
+                            }
+                        },
+                        Err(_) => Err(e),
+                    }
+                } else {
+                    Err(e)
+                }
+            },
+        }
+    }
 
     fn new(
         server_name: String,

@@ -8,6 +8,7 @@ import { ActionHint } from '../ui/hint/ActionHint.js';
 import { HelpPanel } from '../ui/HelpPanel';
 import { McpPanel } from '../ui/McpPanel';
 import { ToolsPanel } from '../ui/ToolsPanel';
+import { PromptsPanel } from '../ui/PromptsPanel';
 import {
   PromptBar,
   type PromptBarHeader,
@@ -61,6 +62,8 @@ export const InlineLayout: React.FC = () => {
     contextBreakdown,
     showHelpPanel,
     helpCommands,
+    showPromptsPanel,
+    prompts,
     showUsagePanel,
     usageData,
     showMcpPanel,
@@ -72,13 +75,14 @@ export const InlineLayout: React.FC = () => {
     toggleToolOutputsExpanded,
     setShowContextBreakdown,
     setShowHelpPanel,
+    setShowPromptsPanel,
     setShowUsagePanel,
     setShowMcpPanel,
     setShowToolsPanel,
   } = useUIActions();
   const { sessionId, contextUsagePercent, currentModel, currentAgent } =
     useContextState();
-  const { activeCommand } = useCommandState();
+  const { activeCommand, promptHint } = useCommandState();
   const { setActiveCommand, setActiveTrigger, clearCommandInput } =
     useCommandActions();
   const { handleUserInput, clearInput } = useInputActions();
@@ -188,6 +192,12 @@ export const InlineLayout: React.FC = () => {
     setActiveCommand(null);
     clearCommandInput();
   }, [setShowHelpPanel, setActiveCommand, clearCommandInput]);
+
+  const handleClosePromptsPanel = useCallback(() => {
+    setShowPromptsPanel(false);
+    setActiveCommand(null);
+    clearCommandInput();
+  }, [setShowPromptsPanel, setActiveCommand, clearCommandInput]);
 
   const handleCloseUsagePanel = useCallback(() => {
     setShowUsagePanel(false);
@@ -381,7 +391,8 @@ export const InlineLayout: React.FC = () => {
               showHelpPanel ||
               showUsagePanel ||
               showMcpPanel ||
-              showToolsPanel
+              showToolsPanel ||
+              showPromptsPanel
                 ? undefined
                 : promptBarHeader
             }
@@ -404,7 +415,10 @@ export const InlineLayout: React.FC = () => {
             placeholder={
               pendingApproval ? 'queue up your next message' : undefined
             }
-            hint={activeCommand?.command.meta?.hint as string | undefined}
+            hint={
+              promptHint ||
+              (activeCommand?.command.meta?.hint as string | undefined)
+            }
             hideInput={
               toolOutputsExpanded ||
               noInteractive ||
@@ -413,7 +427,8 @@ export const InlineLayout: React.FC = () => {
               showHelpPanel ||
               showUsagePanel ||
               showMcpPanel ||
-              showToolsPanel
+              showToolsPanel ||
+              showPromptsPanel
             }
           >
             <CommandMenu />
@@ -445,6 +460,12 @@ export const InlineLayout: React.FC = () => {
             )}
             {showToolsPanel && (
               <ToolsPanel tools={toolsList} onClose={handleCloseToolsPanel} />
+            )}
+            {showPromptsPanel && (
+              <PromptsPanel
+                prompts={prompts}
+                onClose={handleClosePromptsPanel}
+              />
             )}
             <ActionHint
               text="Showing detailed output · ctrl+o to toggle"

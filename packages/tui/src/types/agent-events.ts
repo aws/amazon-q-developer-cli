@@ -7,6 +7,7 @@ export enum AgentEventType {
   ToolCallFinished = 'tool_call_finished',
   ApprovalRequest = 'approval_request',
   CommandsUpdate = 'commands_update',
+  PromptsUpdate = 'prompts_update',
   ContextUsage = 'context_usage',
   Metadata = 'metadata',
   CompactionStatus = 'compaction_status',
@@ -156,6 +157,20 @@ export interface CommandsUpdateEvent {
   }>;
 }
 
+export interface PromptsUpdateEvent {
+  type: AgentEventType.PromptsUpdate;
+  prompts: Array<{
+    name: string;
+    description?: string;
+    arguments: Array<{
+      name: string;
+      description?: string;
+      required?: boolean;
+    }>;
+    serverName: string;
+  }>;
+}
+
 export interface ContextUsageEvent {
   type: AgentEventType.ContextUsage;
   percent: number;
@@ -209,6 +224,7 @@ export type AgentStreamEvent =
   | ToolCallFinishedEvent
   | ApprovalRequestEvent
   | CommandsUpdateEvent
+  | PromptsUpdateEvent
   | ContextUsageEvent
   | MetadataEvent
   | CompactionStatusEvent

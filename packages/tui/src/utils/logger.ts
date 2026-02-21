@@ -1,5 +1,4 @@
 import { writeFileSync, appendFileSync, existsSync } from 'fs';
-import { join } from 'path';
 
 type LogLevel = 'error' | 'warn' | 'info' | 'debug' | 'trace';
 

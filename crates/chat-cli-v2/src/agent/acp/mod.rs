@@ -7,4 +7,5 @@ pub mod extensions;
 pub mod mcp_conversion;
 pub mod schema;
 pub mod session_manager;
+mod slash_router;
 pub mod subagent_tool;

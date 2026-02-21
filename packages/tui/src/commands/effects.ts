@@ -30,18 +30,20 @@ type EffectName =
   | 'showUsagePanel'
   | 'showMcpPanel'
   | 'showToolsPanel'
+  | 'showPromptsPanel'
   | 'clearMessages'
   | 'quit';
 
 /**
  * Command → Effect mapping.
  */
-const commandEffects: Partial<Record<CommandName | 'mcp', EffectName>> = {
+const commandEffects: Partial<Record<string, EffectName>> = {
   help: 'showHelpPanel',
   model: 'updateModel',
   agent: 'updateAgent',
   context: 'showContextPanel',
   usage: 'showUsagePanel',
+  prompts: 'showPromptsPanel',
   clear: 'clearMessages',
   quit: 'quit',
   mcp: 'showMcpPanel',
@@ -105,6 +107,10 @@ const effectHandlers: Record<EffectName, EffectHandler> = {
   showToolsPanel: (result, ctx) => {
     const data = result?.data as { tools?: ToolInfo[] } | undefined;
     ctx.setShowToolsPanel(true, data?.tools ?? []);
+  },
+
+  showPromptsPanel: (result, ctx) => {
+    ctx.setShowPromptsPanel(true);
   },
 
   clearMessages: (result, ctx) => {

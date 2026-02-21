@@ -121,9 +121,10 @@ export const PromptInput = React.memo(function PromptInput({
   onTriggerDetected,
   placeholder = 'ask a question, or describe a task ↵',
 }: PromptInputProps) {
-  const { activeTrigger, filePickerHasResults, commandInputValue } =
+  const { activeTrigger, filePickerHasResults, commandInputValue, promptHint } =
     useCommandState();
-  const { setCommandInput, clearCommandInput } = useCommandActions();
+  const { setCommandInput, clearCommandInput, setPromptHint } =
+    useCommandActions();
   const { pendingFileAttachment } = useFileAttachmentState();
   const { consumePendingFileAttachment } = useFileAttachmentActions();
   const { kiro } = useKiroClient();
@@ -262,9 +263,15 @@ export const PromptInput = React.memo(function PromptInput({
 
   const syncToStore = useCallback(
     (segs: Segment[]) => {
-      setCommandInput(getVisibleText(segs));
+      const text = getVisibleText(segs);
+      setCommandInput(text);
+
+      // Clear promptHint when user starts typing args (space after command)
+      if (promptHint && text.startsWith('/') && text.includes(' ')) {
+        setPromptHint(null);
+      }
     },
-    [setCommandInput]
+    [setCommandInput, setPromptHint, promptHint]
   );
 
   const clearAll = () => {

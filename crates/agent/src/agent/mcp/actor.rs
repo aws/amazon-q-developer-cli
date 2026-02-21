@@ -82,6 +82,24 @@ impl McpServerActorHandle {
         }
     }
 
+    pub async fn get_prompt(
+        &self,
+        name: String,
+        arguments: HashMap<String, String>,
+    ) -> Result<Vec<serde_json::Value>, McpServerActorError> {
+        match self
+            .sender
+            .send_recv(McpServerActorRequest::GetPrompt { name, arguments })
+            .await
+            .unwrap_or(Err(McpServerActorError::Channel))?
+        {
+            McpServerActorResponse::Prompt(messages) => Ok(messages),
+            other => Err(McpServerActorError::Custom(format!(
+                "received unexpected response: {other:?}"
+            ))),
+        }
+    }
+
     pub async fn execute_tool(
         &self,
         name: String,
@@ -109,6 +127,10 @@ impl McpServerActorHandle {
 pub enum McpServerActorRequest {
     GetTools,
     GetPrompts,
+    GetPrompt {
+        name: String,
+        arguments: HashMap<String, String>,
+    },
     ExecuteTool {
         name: String,
         args: Option<serde_json::Map<String, Value>>,
@@ -120,6 +142,7 @@ pub enum McpServerActorRequest {
 enum McpServerActorResponse {
     Tools(Vec<ToolSpec>),
     Prompts(Vec<Prompt>),
+    Prompt(Vec<serde_json::Value>),
     ExecuteTool(oneshot::Receiver<ExecuteToolResult>),
     TerminateAcknowledged,
 }
@@ -297,6 +320,35 @@ impl McpServerActor {
         match req {
             McpServerActorRequest::GetTools => Ok(McpServerActorResponse::Tools(self.tools.clone())),
             McpServerActorRequest::GetPrompts => Ok(McpServerActorResponse::Prompts(self.prompts.clone())),
+            McpServerActorRequest::GetPrompt { name, arguments } => {
+                if self.service_handle.is_transport_closed() {
+                    warn!(
+                        server_name = &self.server_name,
+                        "Transport closed before prompt execution"
+                    );
+                    let detail = match &self._config {
+                        McpServerConfig::Local(_) => format!(
+                            "Transport to MCP server '{}' is closed. The server may have written \
+                             non-JSON-RPC output to stdout which caused the connection to close.",
+                            self.server_name
+                        ),
+                        McpServerConfig::Remote(_) => format!(
+                            "Transport to MCP server '{}' is closed. The server may have \
+                             terminated or the connection was lost.",
+                            self.server_name
+                        ),
+                    };
+                    return Err(McpServerActorError::Custom(detail));
+                }
+
+                let result = self.service_handle.get_prompt(name, arguments).await?;
+                let messages: Vec<serde_json::Value> = result
+                    .messages
+                    .into_iter()
+                    .map(|msg| serde_json::to_value(msg).unwrap_or(serde_json::Value::Null))
+                    .collect();
+                Ok(McpServerActorResponse::Prompt(messages))
+            },
             McpServerActorRequest::ExecuteTool { name, args } => {
                 // Check transport health before executing the tool call. The rmcp library's
                 // serve loop exits (closing stdin) if it encounters a parse error on the MCP

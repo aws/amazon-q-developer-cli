@@ -79,6 +79,8 @@ impl From<CommandOptionsResponse> for CommandOptionsResponseWrapper {
 pub struct CommandsAvailableNotification {
     pub session_id: String,
     pub commands: Vec<AvailableCommand>,
+    #[serde(default)]
+    pub prompts: Vec<PromptInfo>,
 }
 
 /// A command available for execution
@@ -89,6 +91,25 @@ pub struct AvailableCommand {
     pub description: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub meta: Option<serde_json::Map<String, serde_json::Value>>,
+}
+
+/// A prompt available for execution
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PromptInfo {
+    pub name: String,
+    pub description: Option<String>,
+    pub arguments: Vec<PromptArgumentInfo>,
+    pub server_name: String,
+}
+
+/// Argument information for a prompt
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PromptArgumentInfo {
+    pub name: String,
+    pub description: Option<String>,
+    pub required: bool,
 }
 
 /// Metadata update sent as a session notification (extensible)
