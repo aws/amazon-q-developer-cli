@@ -1,0 +1,4 @@
+{
+  "type": "fixed",
+  "description": "Reset context usage percentage when switching to a model with a different context window size via /model"
+}

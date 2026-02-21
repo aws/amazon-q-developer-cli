@@ -226,6 +226,12 @@ pub async fn select_model(os: &Os, session: &mut ChatSession) -> Result<Option<C
 
         // Use that index to get the actual model
         let selected = model_infos[selected_idx].model_info.clone();
+
+        // Reset stale context usage if the new model has a different context window
+        let old_context_window = context_window_tokens(session.conversation.model_info.as_ref());
+        if selected.context_window_tokens != old_context_window {
+            session.conversation.reset_context_usage_percentages();
+        }
         session.conversation.model_info = Some(selected.clone());
         let display_name = selected.display_name();
 
@@ -249,6 +255,12 @@ async fn select_model_by_name(os: &Os, session: &mut ChatSession, name: &str) ->
     let (models, _) = get_available_models(os).await?;
 
     if let Some(model) = find_model(&models, name) {
+        // Reset stale context usage if the new model has a different context window
+        let old_context_window = context_window_tokens(session.conversation.model_info.as_ref());
+        if model.context_window_tokens != old_context_window {
+            session.conversation.reset_context_usage_percentages();
+        }
+
         session.conversation.model_info = Some(model.clone());
         let display_name = model.display_name();
 

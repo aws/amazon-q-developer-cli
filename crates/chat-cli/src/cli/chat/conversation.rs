@@ -1224,9 +1224,10 @@ impl ConversationState {
         self.reset_context_usage_percentages();
     }
 
-    /// Clears context usage percentage from all remaining history entries.
-    /// Called after compaction to prevent displaying stale pre-compaction percentages.
-    fn reset_context_usage_percentages(&mut self) {
+    /// Clears context usage percentage from all remaining history entries. Called after
+    /// compaction or model switch to prevent displaying stale percentages that were
+    /// calculated against a different model's context window.
+    pub(crate) fn reset_context_usage_percentages(&mut self) {
         for entry in self.history.iter_mut() {
             if let Some(ref mut metadata) = entry.request_metadata {
                 metadata.context_usage_percentage = None;
