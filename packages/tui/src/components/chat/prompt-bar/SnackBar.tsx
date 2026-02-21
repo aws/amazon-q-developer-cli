@@ -103,8 +103,16 @@ export function SnackBar({
       justifyContent="center"
     >
       <Box width="100%" flexShrink={1} justifyContent="space-between">
-        {showText && <Text wrap="truncate-end">{content}</Text>}
-        {showText && rightHint && <Text>{textBold(rightHint)}</Text>}
+        {showText && (
+          <Box flexShrink={1}>
+            <Text wrap="truncate-end">{content}</Text>
+          </Box>
+        )}
+        {showText && rightHint && (
+          <Box flexShrink={0}>
+            <Text>{textBold(rightHint)}</Text>
+          </Box>
+        )}
       </Box>
     </Box>
   );

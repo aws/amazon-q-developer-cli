@@ -64,12 +64,7 @@ export const Shell = React.memo(function Shell({
     setStatus: () => {},
   };
 
-  // Truncate command for display if too long
-  const displayCommand = command
-    ? command.length > 60
-      ? command.slice(0, 57) + '...'
-      : command
-    : undefined;
+  const displayCommand = command || undefined;
 
   // Check for timeout error in result
   const isTimeoutError = useMemo(() => {

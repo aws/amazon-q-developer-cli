@@ -1,7 +1,7 @@
 import React, { useMemo, useState } from 'react';
 import { Box, useInput } from 'ink';
 import { Text } from '../../ui/text/Text.js';
-import { StatusBar } from '../status-bar/StatusBar.js';
+import { StatusBar, useStatusBar } from '../status-bar/StatusBar.js';
 import { useTheme } from '../../../hooks/useThemeContext.js';
 import { useTerminalSize } from '../../../hooks/useTerminalSize.js';
 import type { StatusType } from '../../../types/componentTypes.js';
@@ -22,8 +22,23 @@ export const ShellOutputMessage = React.memo(function ShellOutputMessage({
   status,
   barColor,
 }: ShellOutputMessageProps) {
+  return (
+    <StatusBar status={status || 'active'} barColor={barColor}>
+      <ShellOutputContent content={content} isStatic={isStatic} />
+    </StatusBar>
+  );
+});
+
+function ShellOutputContent({
+  content,
+  isStatic,
+}: {
+  content: string;
+  isStatic: boolean;
+}) {
   const { getColor } = useTheme();
   const { height: termHeight } = useTerminalSize();
+  const { requestRemeasure } = useStatusBar();
   const primaryColor = getColor('primary');
   const secondaryColor = getColor('secondary');
 
@@ -37,6 +52,7 @@ export const ShellOutputMessage = React.memo(function ShellOutputMessage({
     (_input, key) => {
       if (key.ctrl && _input === 'o' && hasMore) {
         setExpanded((prev) => !prev);
+        requestRemeasure();
       }
     },
     { isActive: !isStatic && hasMore }
@@ -56,37 +72,35 @@ export const ShellOutputMessage = React.memo(function ShellOutputMessage({
   }, [lines, hasMore, expanded, tailLines]);
 
   return (
-    <StatusBar status={status || 'active'} barColor={barColor}>
-      <Box flexDirection="column">
-        {Array.isArray(renderLines) ? (
-          <>
-            {renderLines.map((line, i) => (
-              <Text key={i}>{primaryColor(line)}</Text>
-            ))}
-            {expanded && lines.length > MAX_EXPANDED_LINES && (
-              <Text>
-                {secondaryColor(
-                  `[truncated, showing ${MAX_EXPANDED_LINES} of ${lines.length} lines]`
-                )}
-              </Text>
-            )}
-          </>
-        ) : (
-          <>
-            {renderLines.head.map((line, i) => (
-              <Text key={`h${i}`}>{primaryColor(line)}</Text>
-            ))}
+    <Box flexDirection="column">
+      {Array.isArray(renderLines) ? (
+        <>
+          {renderLines.map((line, i) => (
+            <Text key={i}>{primaryColor(line)}</Text>
+          ))}
+          {expanded && lines.length > MAX_EXPANDED_LINES && (
             <Text>
               {secondaryColor(
-                `... [${renderLines.hidden} lines hidden${isStatic ? '' : ', ctrl+o to expand'}] ...`
+                `[truncated, showing ${MAX_EXPANDED_LINES} of ${lines.length} lines]`
               )}
             </Text>
-            {renderLines.tail.map((line, i) => (
-              <Text key={`t${i}`}>{primaryColor(line)}</Text>
-            ))}
-          </>
-        )}
-      </Box>
-    </StatusBar>
+          )}
+        </>
+      ) : (
+        <>
+          {renderLines.head.map((line, i) => (
+            <Text key={`h${i}`}>{primaryColor(line)}</Text>
+          ))}
+          <Text>
+            {secondaryColor(
+              `... [${renderLines.hidden} lines hidden${isStatic ? '' : ', ctrl+o to expand'}] ...`
+            )}
+          </Text>
+          {renderLines.tail.map((line, i) => (
+            <Text key={`t${i}`}>{primaryColor(line)}</Text>
+          ))}
+        </>
+      )}
+    </Box>
   );
-});
+}
