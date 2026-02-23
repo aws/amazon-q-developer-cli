@@ -119,9 +119,9 @@ r2d2_sqlite = "0.25.0"
 rand = "0.9.0"
 rayon = "1.10.0"
 regex = "1.7.0"
-reqwest = { version = "0.12.14", default-features = false, features = ["http2", "charset", "rustls-tls", "rustls-tls-native-roots", "gzip", "json", "socks", "cookies", "stream"] }
+reqwest = { version = "0.13.2", default-features = false, features = ["http2", "charset", "rustls", "gzip", "json", "socks", "cookies", "stream", "form"] }
 ring = "0.17.14"
-rmcp = { version = "0.15.0", features = ["client", "reqwest", "transport-streamable-http-client-reqwest", "transport-child-process", "tower", "auth"] }
+rmcp = { version = "0.16.0", features = ["client", "reqwest", "transport-streamable-http-client-reqwest", "transport-child-process", "tower", "auth"] }
 rusqlite = { version = "0.32.1", features = ["bundled", "serde_json"] }
 rustls = "0.23.23"
 rustls-native-certs = "0.8.1"
