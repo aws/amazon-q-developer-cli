@@ -451,11 +451,23 @@ export class AcpClient implements acp.Client, SessionClient {
       }>) || [];
     this.broadcastStreamEvent({
       type: AgentEventType.CommandsUpdate,
-      commands: commands.map((cmd) => ({
-        name: cmd.name,
-        description: cmd.description,
-        meta: cmd.meta,
-      })),
+      commands: commands.map((cmd) => {
+        // Enrich /tools and /mcp descriptions with metadata counts
+        let description = cmd.description;
+        if (cmd.name === 'tools' && tools.length > 0) {
+          description = `${cmd.description} (${tools.length} available)`;
+        } else if (cmd.name === 'mcp' && mcpServers.length > 0) {
+          const running = mcpServers.filter(
+            (s) => s.status === 'running'
+          ).length;
+          description = `${cmd.description} (${running}/${mcpServers.length} running)`;
+        }
+        return {
+          name: cmd.name,
+          description,
+          meta: cmd.meta,
+        };
+      }),
     });
 
     const prompts =
@@ -469,11 +481,30 @@ export class AcpClient implements acp.Client, SessionClient {
         }>;
         serverName: string;
       }>) || [];
+
+    const tools =
+      (params.tools as Array<{
+        name: string;
+        description: string;
+        source: string;
+      }>) || [];
+
+    const mcpServers =
+      (params.mcpServers as Array<{
+        name: string;
+        status: string;
+        toolCount: number;
+      }>) || [];
+
     logger.info(
       '[acp] commands advertising: commands=',
       commands.length,
       'prompts=',
-      prompts.length
+      prompts.length,
+      'tools=',
+      tools.length,
+      'mcpServers=',
+      mcpServers.length
     );
     this.broadcastStreamEvent({
       type: AgentEventType.PromptsUpdate,

@@ -114,6 +114,7 @@ export const Replaced = {
 };`,
           })}
           isFinished={true}
+          startLine={42}
         />
       </StatusBar>
     </Card>

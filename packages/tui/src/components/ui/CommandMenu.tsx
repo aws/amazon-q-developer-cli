@@ -109,9 +109,11 @@ export const CommandMenu: React.FC = () => {
                 .join(' ')
             : '';
 
+        const typeLabel = isPrompt ? ' (prompt)' : '';
+
         return {
           label: cmd.name.slice(1),
-          description: `${cmd.description}${isPrompt ? ' (prompt)' : ''}${argHints ? ` ${argHints}` : ''}`,
+          description: `${cmd.description}${typeLabel}${argHints ? ` ${argHints}` : ''}`,
         };
       }),
     [filteredCommands]

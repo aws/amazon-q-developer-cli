@@ -10,7 +10,7 @@ import {
 } from '../../../utils/tool-result.js';
 import type { ToolResult } from '../../../stores/app-store.js';
 import type { StatusType } from '../../../types/componentTypes.js';
-
+import { getToolLabel } from '../../../types/tool-status.js';
 const PREVIEW_FILES = 3;
 
 /** Parsed glob output structure */
@@ -84,7 +84,9 @@ export const Glob = React.memo(function Glob({
     };
   }, [result]);
 
-  const title = isFinished ? 'Globbed' : name || 'Globbing';
+  const title = isFinished
+    ? getToolLabel('glob', true)
+    : name || getToolLabel('glob', false);
   const filePaths = globOutput?.filePaths || [];
 
   // Use expandable output hook

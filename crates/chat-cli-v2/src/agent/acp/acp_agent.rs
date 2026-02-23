@@ -221,6 +221,14 @@ pub enum AcpSessionRequest {
         arguments: HashMap<String, String>,
         respond_to: oneshot::Sender<Result<Vec<serde_json::Value>, String>>,
     },
+    /// Get tool info for advertising.
+    GetToolInfo {
+        respond_to: oneshot::Sender<Result<Vec<agent::tui_commands::ToolInfo>, String>>,
+    },
+    /// Get MCP server info for advertising.
+    GetMcpServerInfo {
+        respond_to: oneshot::Sender<Result<Vec<agent::tui_commands::McpServerInfo>, String>>,
+    },
 }
 
 #[derive(Debug)]
@@ -423,6 +431,34 @@ impl AcpSessionHandle {
                 arguments,
                 respond_to,
             })
+            .await
+            .is_err()
+        {
+            return Err("Channel closed".to_string());
+        }
+        rx.await
+            .map_err(|e| format!("Response channel closed: {e}").to_string())?
+    }
+
+    pub async fn get_tool_info(&self) -> Result<Vec<agent::tui_commands::ToolInfo>, String> {
+        let (respond_to, rx) = oneshot::channel();
+        if self
+            .tx
+            .send(AcpSessionRequest::GetToolInfo { respond_to })
+            .await
+            .is_err()
+        {
+            return Err("Channel closed".to_string());
+        }
+        rx.await
+            .map_err(|e| format!("Response channel closed: {e}").to_string())?
+    }
+
+    pub async fn get_mcp_server_info(&self) -> Result<Vec<agent::tui_commands::McpServerInfo>, String> {
+        let (respond_to, rx) = oneshot::channel();
+        if self
+            .tx
+            .send(AcpSessionRequest::GetMcpServerInfo { respond_to })
             .await
             .is_err()
         {
@@ -1123,6 +1159,22 @@ impl AcpSession {
                     .map_err(|e| format!("Failed to get MCP prompt: {}", e));
                 let _ = respond_to.send(result);
             },
+            AcpSessionRequest::GetToolInfo { respond_to } => {
+                let result = self
+                    .agent
+                    .get_tool_info()
+                    .await
+                    .map_err(|e| format!("Failed to get tool info: {}", e));
+                let _ = respond_to.send(result);
+            },
+            AcpSessionRequest::GetMcpServerInfo { respond_to } => {
+                let result = self
+                    .agent
+                    .get_mcp_server_info()
+                    .await
+                    .map_err(|e| format!("Failed to get MCP server info: {}", e));
+                let _ = respond_to.send(result);
+            },
         }
     }
 
@@ -1370,10 +1422,52 @@ async fn advertise_commands_and_prompts_to_client(
         }
     }
 
+    // Collect tool advertisements
+    let tools: Vec<super::schema::ToolAdvertisement> = match agent_handle.get_tool_info().await {
+        Ok(tool_infos) => tool_infos
+            .into_iter()
+            .map(|t| super::schema::ToolAdvertisement {
+                name: t.name,
+                description: t.description,
+                source: t.source,
+            })
+            .collect(),
+        Err(e) => {
+            warn!("Failed to get tool info for advertising: {}", e);
+            Vec::new()
+        },
+    };
+
+    // Collect MCP server advertisements
+    let mcp_servers: Vec<super::schema::McpServerAdvertisement> = match agent_handle.get_mcp_server_info().await {
+        Ok(server_infos) => server_infos
+            .into_iter()
+            .map(|s| {
+                let status = match s.status {
+                    agent::tui_commands::McpServerStatus::Running => "running",
+                    agent::tui_commands::McpServerStatus::Loading => "loading",
+                    agent::tui_commands::McpServerStatus::Failed => "failed",
+                    agent::tui_commands::McpServerStatus::Disabled => "disabled",
+                };
+                super::schema::McpServerAdvertisement {
+                    name: s.name,
+                    status: status.to_string(),
+                    tool_count: s.tool_count,
+                }
+            })
+            .collect(),
+        Err(e) => {
+            warn!("Failed to get MCP server info for advertising: {}", e);
+            Vec::new()
+        },
+    };
+
     let notification = super::schema::CommandsAvailableNotification {
         session_id: session_id.to_string(),
         commands,
         prompts,
+        tools,
+        mcp_servers,
     };
     client_cx.send_notification(notification)
 }
@@ -1760,7 +1854,11 @@ fn get_tool_content(tool: &Tool) -> Vec<ToolCallContent> {
         AgentToolKind::BuiltIn(BuiltInTool::FileWrite(fs_write)) => {
             let path = fs_write.path();
             let (old_text, new_text) = match fs_write {
-                FsWrite::Create(create) => (None, create.content.clone()),
+                FsWrite::Create(create) => {
+                    // Read existing file content for proper diffing when overwriting
+                    let old = std::fs::read_to_string(path).ok();
+                    (old, create.content.clone())
+                },
                 FsWrite::StrReplace(str_replace) => (Some(str_replace.old_str.clone()), str_replace.new_str.clone()),
                 FsWrite::Insert(_) => return vec![],
             };
@@ -1964,10 +2062,52 @@ pub async fn execute(os: &mut Os, args: agent::types::AcpSpawnArgs) -> eyre::Res
                         }
                     }
 
+                    // Collect tool advertisements
+                    let tools: Vec<super::schema::ToolAdvertisement> = match result.handle.get_tool_info().await {
+                        Ok(tool_infos) => tool_infos
+                            .into_iter()
+                            .map(|t| super::schema::ToolAdvertisement {
+                                name: t.name,
+                                description: t.description,
+                                source: t.source,
+                            })
+                            .collect(),
+                        Err(e) => {
+                            warn!("Failed to get tool info for advertising: {}", e);
+                            Vec::new()
+                        },
+                    };
+
+                    // Collect MCP server advertisements
+                    let mcp_servers: Vec<super::schema::McpServerAdvertisement> = match result.handle.get_mcp_server_info().await {
+                        Ok(server_infos) => server_infos
+                            .into_iter()
+                            .map(|s| {
+                                let status = match s.status {
+                                    agent::tui_commands::McpServerStatus::Running => "running",
+                                    agent::tui_commands::McpServerStatus::Loading => "loading",
+                                    agent::tui_commands::McpServerStatus::Failed => "failed",
+                                    agent::tui_commands::McpServerStatus::Disabled => "disabled",
+                                };
+                                super::schema::McpServerAdvertisement {
+                                    name: s.name,
+                                    status: status.to_string(),
+                                    tool_count: s.tool_count,
+                                }
+                            })
+                            .collect(),
+                        Err(e) => {
+                            warn!("Failed to get MCP server info for advertising: {}", e);
+                            Vec::new()
+                        },
+                    };
+
                     let notification = super::schema::CommandsAvailableNotification {
                         session_id: session_id.to_string(),
                         commands,
                         prompts,
+                        tools,
+                        mcp_servers,
                     };
                     let _ = cx.send_notification(notification);
 
@@ -2049,10 +2189,52 @@ pub async fn execute(os: &mut Os, args: agent::types::AcpSpawnArgs) -> eyre::Res
                                 }
                             }
 
+                            // Collect tool advertisements
+                            let tools: Vec<super::schema::ToolAdvertisement> = match result.handle.get_tool_info().await {
+                                Ok(tool_infos) => tool_infos
+                                    .into_iter()
+                                    .map(|t| super::schema::ToolAdvertisement {
+                                        name: t.name,
+                                        description: t.description,
+                                        source: t.source,
+                                    })
+                                    .collect(),
+                                Err(e) => {
+                                    warn!("Failed to get tool info for advertising: {}", e);
+                                    Vec::new()
+                                },
+                            };
+
+                            // Collect MCP server advertisements
+                            let mcp_servers: Vec<super::schema::McpServerAdvertisement> = match result.handle.get_mcp_server_info().await {
+                                Ok(server_infos) => server_infos
+                                    .into_iter()
+                                    .map(|s| {
+                                        let status = match s.status {
+                                            agent::tui_commands::McpServerStatus::Running => "running",
+                                            agent::tui_commands::McpServerStatus::Loading => "loading",
+                                            agent::tui_commands::McpServerStatus::Failed => "failed",
+                                            agent::tui_commands::McpServerStatus::Disabled => "disabled",
+                                        };
+                                        super::schema::McpServerAdvertisement {
+                                            name: s.name,
+                                            status: status.to_string(),
+                                            tool_count: s.tool_count,
+                                        }
+                                    })
+                                    .collect(),
+                                Err(e) => {
+                                    warn!("Failed to get MCP server info for advertising: {}", e);
+                                    Vec::new()
+                                },
+                            };
+
                             let notification = super::schema::CommandsAvailableNotification {
                                 session_id: request.session_id.to_string(),
                                 commands,
                                 prompts,
+                                tools,
+                                mcp_servers,
                             };
                             let _ = cx.send_notification(notification);
 

@@ -5,7 +5,7 @@ import { useTheme } from '../../../hooks/useThemeContext.js';
 import { StatusInfo } from '../../ui/status/StatusInfo.js';
 import { parseToolArg, getResultSummary } from '../../../utils/tool-result.js';
 import type { ToolResult } from '../../../stores/app-store.js';
-
+import { getToolLabel } from '../../../types/tool-status.js';
 export interface WebFetchProps {
   /** Whether the fetch has finished */
   isFinished?: boolean;
@@ -34,7 +34,9 @@ export const WebFetch = React.memo(function WebFetch({
 
   const url = useMemo(() => parseToolArg(content, 'url'), [content]);
 
-  const title = isFinished ? 'Fetched' : 'Fetching';
+  const title = isFinished
+    ? getToolLabel('web_fetch', true)
+    : getToolLabel('web_fetch', false);
 
   // Truncate URL for display — show hostname + path
   const displayUrl = useMemo(() => {

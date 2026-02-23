@@ -24,9 +24,11 @@ import {
   GLOB_TOOL_NAMES,
   LS_TOOL_NAMES,
   CODE_TOOL_NAMES,
+  resolveToolId,
   type ToolKind,
   type ToolCallLocation,
 } from '../../types/agent-events.js';
+import { getToolLabel } from '../../types/tool-status.js';
 
 export interface ToolUseMessageProps {
   id: string;
@@ -124,6 +126,8 @@ function ToolUseContent({
   }
 
   if (WRITE_TOOL_NAMES.has(name)) {
+    // Extract start line from locations for accurate diff line numbers
+    const startLine = locations?.[0]?.line;
     return (
       <Write
         oldText=""
@@ -131,15 +135,15 @@ function ToolUseContent({
         content={content}
         isFinished={effectiveFinished}
         isStatic={isStatic}
+        startLine={startLine}
       />
     );
   }
 
   if (READ_TOOL_NAMES.has(name)) {
-    const title = effectiveFinished ? 'Read' : 'Reading';
     return (
       <Read
-        name={title}
+        name={getToolLabel('read', effectiveFinished)}
         noStatusBar
         isFinished={effectiveFinished}
         isStatic={isStatic}
@@ -149,7 +153,7 @@ function ToolUseContent({
   }
 
   if (SHELL_TOOL_NAMES.has(name)) {
-    const title = effectiveFinished ? 'Bashed' : 'Bashing';
+    const title = getToolLabel('shell', effectiveFinished);
     let command: string | undefined;
     try {
       const parsed = JSON.parse(content);
@@ -240,9 +244,11 @@ function ToolUseContent({
   }
 
   // Fallback: use generic Tool component
+  const toolId = resolveToolId(name);
+  const fallbackName = toolId ? getToolLabel(toolId, effectiveFinished) : name;
   return (
     <Tool
-      name={name}
+      name={fallbackName}
       noStatusBar
       isFinished={effectiveFinished}
       isStatic={isStatic}

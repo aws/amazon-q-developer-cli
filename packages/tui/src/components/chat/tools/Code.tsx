@@ -9,7 +9,7 @@ import {
 } from '../../../utils/tool-result.js';
 import type { ToolResult } from '../../../stores/app-store.js';
 import type { StatusType } from '../../../types/componentTypes.js';
-
+import { getToolLabel } from '../../../types/tool-status.js';
 const PREVIEW_LINES = 3;
 
 /** Operation labels for display */
@@ -69,8 +69,8 @@ export const Code = React.memo(function Code({
 
   const labels = operation ? OP_LABELS[operation] : null;
   const title = isFinished
-    ? (labels?.[1] ?? 'Used code')
-    : (labels?.[0] ?? name ?? 'Using code');
+    ? (labels?.[1] ?? getToolLabel('code', true))
+    : (labels?.[0] ?? name ?? getToolLabel('code', false));
 
   // Build a concise target string
   const target = useMemo(() => {

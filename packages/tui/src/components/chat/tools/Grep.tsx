@@ -10,7 +10,7 @@ import {
 } from '../../../utils/tool-result.js';
 import type { ToolResult } from '../../../stores/app-store.js';
 import type { StatusType } from '../../../types/componentTypes.js';
-
+import { getToolLabel } from '../../../types/tool-status.js';
 const PREVIEW_FILES = 3;
 const PREVIEW_MATCHES_PER_FILE = 3;
 
@@ -95,7 +95,9 @@ export const Grep = React.memo(function Grep({
     };
   }, [result]);
 
-  const title = isFinished ? 'Grepped' : name || 'Grepping';
+  const title = isFinished
+    ? getToolLabel('grep', true)
+    : name || getToolLabel('grep', false);
   const results = grepOutput?.results || [];
 
   // Use expandable output hook

@@ -15,14 +15,22 @@
 
 import { afterEach, describe, expect, it } from 'bun:test';
 import { E2ETestCase } from './E2ETestCase';
+import * as fs from 'fs';
+import * as os from 'os';
+import * as path from 'path';
 
 describe('Tool Messages', () => {
   let testCase: E2ETestCase | null = null;
+  let tempDir: string = '';
 
   afterEach(async () => {
     if (testCase) {
       await testCase.cleanup();
       testCase = null;
+    }
+    if (tempDir) {
+      try { fs.rmSync(tempDir, { recursive: true }); } catch { /* ignore */ }
+      tempDir = '';
     }
   });
 
@@ -69,13 +77,13 @@ describe('Tool Messages', () => {
     await testCase.pressEnter();
 
     // Wait for tool to finish and assistant response to render
-    await testCase.waitForText('Bashed', 10000);
+    await testCase.waitForText('Ran', 10000);
     await testCase.waitForText('Command executed', 10000);
 
     const snapshot = testCase.getSnapshot();
     console.log('Snapshot:\n' + testCase.getSnapshotFormatted());
 
-    expect(snapshot.some((line) => line.includes('Bashed'))).toBe(true);
+    expect(snapshot.some((line) => line.includes('Ran'))).toBe(true);
     expect(snapshot.some((line) => line.includes('Command executed'))).toBe(
       true
     );
@@ -181,13 +189,13 @@ describe('Tool Messages', () => {
     await testCase.pressEnter();
 
     // Wait for tool to finish and assistant response to render
-    await testCase.waitForText('Created', 10000);
+    await testCase.waitForText('Wrote', 10000);
     await testCase.waitForText('File created', 10000);
 
     const snapshot = testCase.getSnapshot();
     console.log('Snapshot:\n' + testCase.getSnapshotFormatted());
 
-    expect(snapshot.some((line) => line.includes('Created'))).toBe(true);
+    expect(snapshot.some((line) => line.includes('Wrote'))).toBe(true);
     expect(snapshot.some((line) => line.includes('File created'))).toBe(true);
   }, 30000);
 
@@ -299,13 +307,13 @@ describe('Tool Messages', () => {
     await testCase.pressEnter();
 
     // Wait for tool to finish and assistant response to render
-    await testCase.waitForText('Grepped', 10000);
+    await testCase.waitForText('Searched', 10000);
     await testCase.waitForText('Found useState', 10000);
 
     const snapshot = testCase.getSnapshot();
     console.log('Snapshot:\n' + testCase.getSnapshotFormatted());
 
-    expect(snapshot.some((line) => line.includes('Grepped'))).toBe(true);
+    expect(snapshot.some((line) => line.includes('Searched'))).toBe(true);
     expect(snapshot.some((line) => line.includes('Found useState'))).toBe(true);
   }, 30000);
 
@@ -352,15 +360,146 @@ describe('Tool Messages', () => {
     await testCase.pressEnter();
 
     // Wait for tool to finish and assistant response to render
-    await testCase.waitForText('Globbed', 10000);
+    await testCase.waitForText('Found', 10000);
     await testCase.waitForText('Found 15', 10000);
 
     const snapshot = testCase.getSnapshot();
     console.log('Snapshot:\n' + testCase.getSnapshotFormatted());
 
-    expect(snapshot.some((line) => line.includes('Globbed'))).toBe(true);
+    expect(snapshot.some((line) => line.includes('Found'))).toBe(true);
     expect(snapshot.some((line) => line.includes('TypeScript files'))).toBe(
       true
     );
+  }, 30000);
+
+  it('write strReplace sends correct start line via ACP', async () => {
+    // Create a temp file where the replacement target is on line 5 (1-indexed).
+    tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'kiro-e2e-write-'));
+    const filePath = path.join(tempDir, 'test-file.py');
+    fs.writeFileSync(filePath, [
+      'import os',
+      'import sys',
+      '',
+      'def main():',
+      '    print("hello world")',
+      '    return 0',
+      '',
+      'if __name__ == "__main__":',
+      '    main()',
+    ].join('\n'));
+
+    testCase = await E2ETestCase.builder()
+      .withTestName('write-str-replace')
+      .withTerminal({ width: 120, height: 40 })
+      .launch();
+
+    await testCase.waitForText('ask a question', 10000);
+    await testCase.getSessionId();
+
+    await testCase.pushSendMessageResponse([
+      {
+        kind: 'event',
+        data: {
+          kind: 'ToolUseEvent',
+          data: {
+            tool_use_id: 'tool-str-replace-1',
+            name: 'write',
+            input: JSON.stringify({
+              command: 'strReplace',
+              path: filePath,
+              oldStr: '    print("hello world")',
+              newStr: '    print("hello, world!")\n    print("goodbye, world!")',
+            }),
+            stop: true,
+          },
+        },
+      },
+    ]);
+    await testCase.pushSendMessageResponse(null);
+    await testCase.pushSendMessageResponse([
+      { kind: 'event', data: { kind: 'AssistantResponseEvent', data: { content: 'Done.' } } },
+    ]);
+    await testCase.pushSendMessageResponse(null);
+
+    await testCase.sendKeys('update print');
+    await testCase.sleepMs(100);
+    await testCase.pressEnter();
+
+    // Wait for the approval dialog — ToolCall event has been fully processed by then
+    await testCase.waitForText('requires approval', 15000);
+
+    // Verify the snapshot shows the correct line number in the diff summary
+    const snapshot = testCase.getSnapshot();
+    expect(snapshot.some((line) => line.includes('at L5'))).toBe(true);
+
+    // Verify the store has correct locations and diff content
+    const store = await testCase.getStore();
+    const toolMsg = store.messages.find((m) => m.role === 'tool_use');
+    expect(toolMsg).toBeDefined();
+
+    if (!('locations' in toolMsg!)) throw new Error('no locations on tool msg');
+    expect(toolMsg!.locations![0]!.line).toBe(5);
+
+    const parsed = JSON.parse((toolMsg as any).content);
+    expect(parsed.command).toBe('strReplace');
+    expect(parsed.oldStr).toContain('print("hello world")');
+    expect(parsed.newStr).toContain('print("hello, world!")');
+  }, 30000);
+
+  it('write create overwrite preserves new content in store', async () => {
+    tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'kiro-e2e-create-'));
+    const filePath = path.join(tempDir, 'game.py');
+    fs.writeFileSync(filePath, 'def play():\n    print("playing")\n    return True\n');
+
+    testCase = await E2ETestCase.builder()
+      .withTestName('write-create-overwrite')
+      .withTerminal({ width: 120, height: 40 })
+      .launch();
+
+    await testCase.waitForText('ask a question', 10000);
+    await testCase.getSessionId();
+
+    const newContent = 'def play():\n    print("playing game")\n    score = 0\n    return score';
+
+    await testCase.pushSendMessageResponse([
+      {
+        kind: 'event',
+        data: {
+          kind: 'ToolUseEvent',
+          data: {
+            tool_use_id: 'tool-create-1',
+            name: 'write',
+            input: JSON.stringify({ command: 'create', path: filePath, content: newContent }),
+            stop: true,
+          },
+        },
+      },
+    ]);
+    await testCase.pushSendMessageResponse(null);
+    await testCase.pushSendMessageResponse([
+      { kind: 'event', data: { kind: 'AssistantResponseEvent', data: { content: 'Done.' } } },
+    ]);
+    await testCase.pushSendMessageResponse(null);
+
+    await testCase.sendKeys('update game');
+    await testCase.sleepMs(100);
+    await testCase.pressEnter();
+
+    await testCase.waitForText('requires approval', 15000);
+
+    // Verify the store has the tool message with correct content
+    const store = await testCase.getStore();
+    const toolMsg = store.messages.find((m) => m.role === 'tool_use');
+    expect(toolMsg).toBeDefined();
+
+    const parsed = JSON.parse((toolMsg as any).content);
+    expect(parsed.command).toBe('create');
+    expect(parsed.newStr).toContain('print("playing game")');
+    expect(parsed.newStr).toContain('return score');
+
+    // Verify locations exist (start_line = 1 for create)
+    if ('locations' in toolMsg!) {
+      expect(toolMsg!.locations![0]!.line).toBe(1);
+    }
   }, 30000);
 });

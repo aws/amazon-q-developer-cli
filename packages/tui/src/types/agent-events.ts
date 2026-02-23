@@ -1,4 +1,5 @@
 import { ToolNameAlias } from '../../e2e_tests/types/agent.js';
+import type { BuiltinToolId } from './tool-status.js';
 
 export enum AgentEventType {
   Content = 'content',
@@ -56,6 +57,20 @@ export const GREP_TOOL_NAMES: Set<string> = new Set(['grep', 'grep_search']);
 export const GLOB_TOOL_NAMES: Set<string> = new Set(['glob', 'file_search']);
 export const LS_TOOL_NAMES: Set<string> = new Set([ToolNameAlias.Ls]);
 export const CODE_TOOL_NAMES: Set<string> = new Set(['code']);
+
+/** Map a wire tool name to its BuiltinToolId, or undefined for MCP/unknown tools. */
+export function resolveToolId(name: string): BuiltinToolId | undefined {
+  if (WRITE_TOOL_NAMES.has(name)) return 'write';
+  if (READ_TOOL_NAMES.has(name)) return 'read';
+  if (SHELL_TOOL_NAMES.has(name)) return 'shell';
+  if (WEB_SEARCH_TOOL_NAMES.has(name)) return 'web_search';
+  if (WEB_FETCH_TOOL_NAMES.has(name)) return 'web_fetch';
+  if (GREP_TOOL_NAMES.has(name)) return 'grep';
+  if (GLOB_TOOL_NAMES.has(name)) return 'glob';
+  if (LS_TOOL_NAMES.has(name)) return 'ls';
+  if (CODE_TOOL_NAMES.has(name)) return 'code';
+  return undefined;
+}
 
 export type ToolKind = 'edit' | 'read' | 'shell' | 'grep' | 'glob' | string;
 

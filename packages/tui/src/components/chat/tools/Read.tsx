@@ -6,6 +6,7 @@ import { Text } from '../../ui/text/Text.js';
 import { useTheme } from '../../../hooks/useThemeContext.js';
 import { useExpandableOutput } from '../../../hooks/useExpandableOutput.js';
 import type { StatusType } from '../../../types/componentTypes.js';
+import { getToolLabel } from '../../../types/tool-status.js';
 
 const PREVIEW_FILES = 5;
 
@@ -89,7 +90,7 @@ export const Read = React.memo(function Read({
     unit: 'files',
   });
 
-  const title = isFinished ? 'Read' : name;
+  const title = isFinished ? getToolLabel('read', true) : name;
 
   // Extract filename from path
   const getFileName = (path: string): string => {

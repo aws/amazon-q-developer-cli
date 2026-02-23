@@ -81,6 +81,10 @@ pub struct CommandsAvailableNotification {
     pub commands: Vec<AvailableCommand>,
     #[serde(default)]
     pub prompts: Vec<PromptInfo>,
+    #[serde(default)]
+    pub tools: Vec<ToolAdvertisement>,
+    #[serde(default)]
+    pub mcp_servers: Vec<McpServerAdvertisement>,
 }
 
 /// A command available for execution
@@ -110,6 +114,24 @@ pub struct PromptArgumentInfo {
     pub name: String,
     pub description: Option<String>,
     pub required: bool,
+}
+
+/// A tool advertised for slash command autocomplete
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ToolAdvertisement {
+    pub name: String,
+    pub description: String,
+    pub source: String,
+}
+
+/// An MCP server advertised for slash command autocomplete
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct McpServerAdvertisement {
+    pub name: String,
+    pub status: String,
+    pub tool_count: usize,
 }
 
 /// Metadata update sent as a session notification (extensible)

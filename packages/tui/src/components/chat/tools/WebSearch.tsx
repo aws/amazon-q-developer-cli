@@ -5,7 +5,7 @@ import { useTheme } from '../../../hooks/useThemeContext.js';
 import { StatusInfo } from '../../ui/status/StatusInfo.js';
 import { parseToolArg, getResultSummary } from '../../../utils/tool-result.js';
 import type { ToolResult } from '../../../stores/app-store.js';
-
+import { getToolLabel } from '../../../types/tool-status.js';
 export interface WebSearchProps {
   /** Whether the search has finished */
   isFinished?: boolean;
@@ -34,7 +34,9 @@ export const WebSearch = React.memo(function WebSearch({
 
   const query = useMemo(() => parseToolArg(content, 'query'), [content]);
 
-  const title = isFinished ? 'Searched' : 'Searching';
+  const title = isFinished
+    ? getToolLabel('web_search', true)
+    : getToolLabel('web_search', false);
   const target = query ? `"${query}"` : 'the web';
 
   const summary = useMemo(() => getResultSummary(result), [result]);

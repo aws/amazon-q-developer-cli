@@ -7,6 +7,7 @@ import { useStatusBar } from '../status-bar/StatusBar.js';
 import { StatusInfo } from '../../ui/status/StatusInfo.js';
 import { useExpandableOutput } from '../../../hooks/useExpandableOutput.js';
 import { diffLines, type Change } from 'diff';
+import { getToolLabel } from '../../../types/tool-status.js';
 
 export interface WriteProps {
   /** Old text content for diff (empty string for new files) */
@@ -20,6 +21,9 @@ export interface WriteProps {
 
   /** Line offset for status bar coloring */
   lineOffset?: number;
+
+  /** 1-based start line in the original file (for strReplace diffs) */
+  startLine?: number;
 
   /** Whether the write operation has finished */
   isFinished?: boolean;
@@ -48,6 +52,7 @@ export const Write = React.memo<WriteProps>(function Write({
   newText,
   filePath,
   lineOffset = 0,
+  startLine,
   isFinished = false,
   isStatic = false,
   content,
@@ -81,24 +86,12 @@ export const Write = React.memo<WriteProps>(function Write({
 
   const hasContent = displayNewText && displayNewText.length > 0;
 
-  // Determine title based on command type
-  const title = useMemo(() => {
-    if (!parsedContent) {
-      return isFinished ? 'Wrote' : 'Writing';
-    }
+  // Determine title based on tool status
+  const title = getToolLabel('write', isFinished);
 
-    const { command, insertLine } = parsedContent;
-    switch (command) {
-      case 'create':
-        return isFinished ? 'Created' : 'Creating';
-      case 'strReplace':
-        return isFinished ? 'Replaced' : 'Replacing';
-      case 'insert':
-        return isFinished ? 'Inserted' : 'Inserting';
-      default:
-        return isFinished ? 'Wrote' : 'Writing';
-    }
-  }, [parsedContent, isFinished]);
+  // Line numbers should reflect the actual position in the source file.
+  // startLine is the 1-based line number from the backend's ToolCallLocation.
+  const diffStartLine = startLine ?? 1;
 
   const language = displayPath?.split('.').pop()?.toLowerCase();
   const changes = diffLines(displayOldText || '', displayNewText || '');
@@ -212,6 +205,9 @@ export const Write = React.memo<WriteProps>(function Write({
               )}
             {parsedContent?.insertLine !== undefined &&
               getColor('secondary')(` at L${parsedContent.insertLine}`)}
+            {diffStartLine > 1 &&
+              parsedContent?.insertLine === undefined &&
+              getColor('secondary')(` at L${diffStartLine}`)}
             {getColor('secondary')(
               ` in ${displayPath?.split('/').pop() || displayPath}`
             )}
@@ -227,6 +223,7 @@ export const Write = React.memo<WriteProps>(function Write({
               truncateLine={truncateLine}
               getColor={getColor}
               maxLines={expanded ? undefined : PREVIEW_DIFF_LINES}
+              diffStartLine={diffStartLine}
             />
           </Box>
         )}
@@ -242,8 +239,8 @@ export const Write = React.memo<WriteProps>(function Write({
     return null;
   }
 
-  let oldLineNum = 1;
-  let newLineNum = 1;
+  let oldLineNum = diffStartLine;
+  let newLineNum = diffStartLine;
 
   // Standalone diff view (no header)
   return (
@@ -311,6 +308,8 @@ interface WriteContentProps {
   truncateLine: (line: string, maxWidth: number) => string;
   getColor: (path: string) => any;
   maxLines?: number;
+  /** 1-based start line for the diff (defaults to 1) */
+  diffStartLine?: number;
 }
 
 /** A single flattened diff line with its metadata */
@@ -329,11 +328,12 @@ const WriteContent: React.FC<WriteContentProps> = ({
   truncateLine,
   getColor,
   maxLines,
+  diffStartLine = 1,
 }) => {
   // Flatten all changes into individual lines
   const allLines: DiffLine[] = [];
-  let oldLineNum = 1;
-  let newLineNum = 1;
+  let oldLineNum = diffStartLine;
+  let newLineNum = diffStartLine;
 
   for (let i = 0; i < changes.length; i++) {
     const change = changes[i]!;

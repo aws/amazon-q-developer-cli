@@ -13,7 +13,7 @@ import {
 } from '../../../utils/ls-parse.js';
 import type { ToolResult } from '../../../stores/app-store.js';
 import type { StatusType } from '../../../types/componentTypes.js';
-
+import { getToolLabel } from '../../../types/tool-status.js';
 const PREVIEW_ENTRIES = 5;
 
 export interface LsProps {
@@ -69,7 +69,9 @@ export const Ls = React.memo(function Ls({
     [rawDirPath, entries]
   );
 
-  const title = isFinished ? 'Listed' : 'Listing';
+  const title = isFinished
+    ? getToolLabel('ls', true)
+    : getToolLabel('ls', false);
 
   const { expanded, expandHint } = useExpandableOutput({
     totalItems: entries.length,
