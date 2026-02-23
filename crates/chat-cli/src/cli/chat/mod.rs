@@ -437,13 +437,14 @@ impl ChatArgs {
             .build(os, Box::new(std::io::stderr()), !self.no_interactive)
             .await?;
         let tool_config = tool_manager.load_tools(os, &mut stderr).await?;
-
+        let input_source = InputSource::new(os, prompt_request_sender, prompt_response_receiver)?;
+        
         ChatSession::new(
             os,
             &conversation_id,
             agents,
             input,
-            InputSource::new(os, prompt_request_sender, prompt_response_receiver)?,
+            input_source,
             self.resume,
             || terminal::window_size().map(|s| s.columns.into()).ok(),
             tool_manager,

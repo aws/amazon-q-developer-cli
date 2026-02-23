@@ -587,9 +587,18 @@ pub fn rl(
     rl.set_helper(Some(h));
 
     // Load history from CLI bash history file
-    if let Err(e) = rl.load_history(&rl.helper().unwrap().get_history_path()) {
-        if !matches!(e, ReadlineError::Io(ref io_err) if io_err.kind() == std::io::ErrorKind::NotFound) {
-            eprintln!("Warning: Failed to load history: {}", e);
+    // Use a separate thread to prevent indefinite blocking on corrupted files
+    let history_path = rl.helper().unwrap().get_history_path();
+    let history_path_clone = history_path.clone();
+    
+    let load_handle = std::thread::spawn(move || {
+        std::fs::read_to_string(&history_path_clone)
+    });
+    
+    // Wait up to 100ms for history to load
+    if let Ok(Ok(contents)) = load_handle.join() {
+        for line in contents.lines() {
+            let _ = rl.add_history_entry(line);
         }
     }
 

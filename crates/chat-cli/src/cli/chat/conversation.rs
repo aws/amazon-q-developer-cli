@@ -177,13 +177,7 @@ impl ConversationState {
         mcp_enabled: bool,
     ) -> Self {
         let model = if let Some(model_id) = current_model_id {
-            match get_model_info(&model_id, os).await {
-                Ok(info) => Some(info),
-                Err(e) => {
-                    tracing::warn!("Failed to get model info for {}: {}, using default", model_id, e);
-                    Some(ModelInfo::from_id(model_id))
-                },
-            }
+            Some(ModelInfo::from_id(model_id))
         } else {
             None
         };
