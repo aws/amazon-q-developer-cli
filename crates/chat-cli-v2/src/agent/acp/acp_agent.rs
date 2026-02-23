@@ -814,13 +814,37 @@ impl AcpSession {
         })
     }
 
-    async fn main_loop(mut self, ready_tx: oneshot::Sender<()>) {
+    async fn initialize(&mut self) -> eyre::Result<()> {
         // Emit historical notifications for loaded sessions
         if let Err(e) = self.emit_historical_notifications().await {
             warn!("Failed to emit historical notifications: {}", e);
         }
 
-        // Signal that session is ready
+        // Wait for agent to finish initialization
+        loop {
+            match self.agent.recv().await {
+                Ok(AgentEvent::Initialized) => return Ok(()),
+                Ok(AgentEvent::InitializeUpdate(init_event)) => {
+                    let agent::protocol::InitializeUpdateEvent::Mcp(mcp_event) = init_event;
+                    if let Err(e) = self.handle_mcp_event(mcp_event).await {
+                        error!("Failed to handle MCP event during initialization: {}", e);
+                    }
+                },
+                Ok(event) => {
+                    warn!("Unexpected event during initialization: {:?}", event);
+                },
+                Err(_) => {
+                    return Err(eyre::eyre!("Agent channel closed during initialization"));
+                },
+            }
+        }
+    }
+
+    async fn main_loop(mut self, ready_tx: oneshot::Sender<()>) {
+        if let Err(e) = self.initialize().await {
+            error!("Failed to initialize session: {}", e);
+            return;
+        }
         let _ = ready_tx.send(());
 
         loop {
@@ -1227,9 +1251,10 @@ impl AcpSession {
                 }
             },
             AgentEvent::Internal(InternalEvent::AgentLoop(loop_event)) => {
-                // Handle ToolUseStart to show immediate feedback in the TUI
+                // TODO: This should NOT emit an ACP ToolCall event. ACP expects full tool uses,
+                // and this results in InProgress tools being sent before Pending. Instead, use
+                // a custom extension notification for early tool use feedback.
                 if let AgentLoopEventKind::ToolUseStart { id, name } = loop_event.kind {
-                    // Send a pending tool call notification
                     let tool_call = ToolCall::new(ToolCallId::new(id), name.clone())
                         .kind(get_tool_kind(&name))
                         .status(ToolCallStatus::InProgress);
@@ -1873,10 +1898,12 @@ pub async fn execute(os: &mut Os, args: agent::types::AcpSpawnArgs) -> eyre::Res
                         .mcp_servers(request.mcp_servers);
                     let result = session_tx.start_session(&session_id, config, Some(cx.clone())).await?;
 
+                    // Wait for agent initialization to complete before responding
+                    let _ = result.ready_rx.await;
+
                     let modes = to_session_mode_state(result.current_agent_name, result.available_agents);
                     let models = to_session_model_state(result.current_model_id, result.available_models);
 
-                    // Respond to session/new FIRST (per ACP spec)
                     request_cx.respond(
                         NewSessionResponse::new(session_id.clone())
                             .modes(modes)

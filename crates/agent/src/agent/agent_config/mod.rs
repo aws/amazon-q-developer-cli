@@ -121,7 +121,10 @@ impl From<UtilError> for AgentConfigError {
     }
 }
 
-pub use load::load_agents;
+pub use load::{
+    build_default_agent,
+    load_agents,
+};
 
 #[derive(Debug, Clone)]
 pub struct LoadedMcpServerConfig {

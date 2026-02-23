@@ -781,10 +781,6 @@ impl Agent {
         }
     }
 
-    async fn get_agent_config(&self) -> &AgentConfig {
-        &self.agent_config
-    }
-
     fn get_hooks(&self, trigger: HookTrigger) -> Vec<Hook> {
         let config = &self.agent_config;
         let hooks_config = config.hooks();
@@ -2195,7 +2191,7 @@ impl Agent {
             names
         };
 
-        let config = self.get_agent_config().await;
+        let config = &self.agent_config;
 
         for tool_name in config.tools() {
             if let Ok(kind) = ToolNameKind::parse(&tool_name) {

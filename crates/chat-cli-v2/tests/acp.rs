@@ -20,7 +20,6 @@ use tokio::time::sleep;
 use crate::common::PermissionResponse;
 
 #[tokio::test]
-#[ignore = "disabled for ux-refresh merge"]
 #[timeout(10000)]
 #[serial]
 async fn initialize() {
@@ -46,8 +45,57 @@ async fn initialize() {
     );
 }
 
+/// Verifies that new_session waits for MCP server initialization before returning.
 #[tokio::test]
-#[ignore = "disabled for ux-refresh merge"]
+#[timeout(30000)]
+#[serial]
+async fn new_session_waits_for_mcp_server_initialization() {
+    use std::path::PathBuf;
+    use std::time::Instant;
+
+    use mock_mcp_server::prebuild_bin;
+    use sacp::schema::McpServerStdio;
+
+    prebuild_bin().expect("failed to build mock-mcp-server");
+
+    let binary_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .parent()
+        .unwrap()
+        .parent()
+        .unwrap()
+        .join("target/debug/mock-mcp-server");
+
+    let config_path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/mcp_configs/stdio_server.jsonl");
+
+    let (harness, client) = AcpTestHarnessBuilder::new("new_session_mcp_init")
+        .with_trust_all(true)
+        .build()
+        .await;
+
+    let cwd = harness.paths.cwd.clone();
+    let mcp_server = sacp::schema::McpServer::Stdio(McpServerStdio::new("test-mcp", binary_path).args(vec![
+        "--config".to_string(),
+        config_path.to_str().unwrap().to_string(),
+        "--startup-delay-ms".to_string(),
+        "2000".to_string(),
+    ]));
+
+    let start = Instant::now();
+    let _resp = client
+        .new_session_with_mcp(cwd, vec![mcp_server])
+        .await
+        .expect("new_session failed");
+    let elapsed = start.elapsed();
+
+    // new_session should have waited for the 2s server startup delay
+    assert!(
+        elapsed.as_millis() >= 2000,
+        "new_session returned in {}ms, expected >= 2000ms (should wait for MCP server init)",
+        elapsed.as_millis()
+    );
+}
+
+#[tokio::test]
 #[timeout(10000)]
 #[serial]
 async fn new_session_creates_files() {
@@ -68,7 +116,6 @@ async fn new_session_creates_files() {
 }
 
 #[tokio::test]
-#[ignore = "disabled for ux-refresh merge"]
 #[timeout(10000)]
 #[serial]
 async fn load_session_emits_history() {
@@ -127,7 +174,6 @@ async fn load_session_emits_history() {
 }
 
 #[tokio::test]
-#[ignore = "disabled for ux-refresh merge"]
 #[timeout(10000)]
 #[serial]
 async fn prompt_with_send_error() {
@@ -145,7 +191,6 @@ async fn prompt_with_send_error() {
 }
 
 #[tokio::test]
-#[ignore = "disabled for ux-refresh merge"]
 #[serial]
 async fn captured_request_contains_conversation_state() {
     let (mut harness, client, session_id, _) =
@@ -187,7 +232,6 @@ async fn captured_request_contains_conversation_state() {
 }
 
 #[tokio::test]
-#[ignore = "disabled for ux-refresh merge"]
 #[timeout(10000)]
 #[serial]
 async fn default_agent_setting_used_as_initial_mode() {
@@ -218,7 +262,6 @@ async fn default_agent_setting_used_as_initial_mode() {
 }
 
 #[tokio::test]
-#[ignore = "disabled for ux-refresh merge"]
 #[timeout(10000)]
 #[serial]
 async fn set_mode_switches_agent() {
@@ -310,7 +353,6 @@ async fn set_mode_switches_agent() {
 }
 
 #[tokio::test]
-#[ignore = "disabled for ux-refresh merge"]
 #[timeout(10000)]
 #[serial]
 async fn session_cancel_notification() {
@@ -374,7 +416,7 @@ async fn cancel_mid_stream_partial_response() {
 }
 
 #[tokio::test(flavor = "multi_thread")]
-#[ignore = "disabled for ux-refresh merge"]
+#[ignore = "TODO: Test times out waiting for tool approval flow - likely issue with how cancellation interacts with pending tool approval state"]
 #[timeout(10000)]
 #[serial]
 async fn cancel_during_tool_approval_allows_new_prompt() {
@@ -459,7 +501,6 @@ async fn cancel_during_tool_approval_allows_new_prompt() {
 }
 
 #[tokio::test]
-#[ignore = "disabled for ux-refresh merge"]
 #[timeout(10000)]
 #[serial]
 async fn prompt_with_resource_link() {
@@ -508,7 +549,7 @@ async fn prompt_with_resource_link() {
 }
 
 #[tokio::test]
-#[ignore = "disabled for ux-refresh merge"]
+#[ignore = "TODO: times out in CI but passes locally, needs investigation"]
 #[timeout(10000)]
 #[serial]
 async fn set_model_changes_model_id() {
@@ -551,7 +592,6 @@ async fn set_model_changes_model_id() {
 }
 
 #[tokio::test]
-#[ignore = "disabled for ux-refresh merge"]
 #[timeout(10000)]
 #[serial]
 async fn prompt_with_image() {
@@ -607,7 +647,6 @@ async fn prompt_with_image() {
 }
 
 #[tokio::test]
-#[ignore = "disabled for ux-refresh merge"]
 #[timeout(30000)]
 #[serial]
 async fn http_mcp_server_tool_call_triggers_permission_request() {
@@ -689,7 +728,6 @@ async fn http_mcp_server_tool_call_triggers_permission_request() {
 }
 
 #[tokio::test]
-#[ignore = "disabled for ux-refresh merge"]
 #[timeout(30000)]
 #[serial]
 async fn mcp_stdio_server_tool_call() {
@@ -749,7 +787,6 @@ async fn mcp_stdio_server_tool_call() {
 }
 
 #[tokio::test]
-#[ignore = "disabled for ux-refresh merge"]
 #[timeout(30000)]
 #[serial]
 async fn http_mcp_server_oauth_request_triggers_ext_notification() {
@@ -844,7 +881,7 @@ async fn http_mcp_server_oauth_request_triggers_ext_notification() {
 /// other tests that may run in parallel. The process check at the end greps for
 /// the full command including these unique config file names.
 #[tokio::test]
-#[ignore = "disabled for ux-refresh merge"]
+#[ignore = "TODO: MCP tool execution fails - ToolCallUpdate with Completed status not received, possibly MCP server initialization or tool result handling issue"]
 #[timeout(30000)]
 #[serial]
 async fn agent_swap_reloads_mcp_servers() {
@@ -1013,7 +1050,6 @@ async fn agent_swap_reloads_mcp_servers() {
 }
 
 #[tokio::test]
-#[ignore = "disabled for ux-refresh merge"]
 #[timeout(10000)]
 #[serial]
 async fn auto_compaction_on_context_overflow() {
@@ -1095,7 +1131,7 @@ async fn auto_compaction_on_context_overflow() {
 }
 
 #[tokio::test]
-#[ignore = "disabled for ux-refresh merge"]
+#[ignore = "TODO: don't emit ToolCall on ToolUseStart parsing"]
 #[timeout(10000)]
 #[serial]
 async fn str_replace_tool_call_includes_location_with_line_number() {
@@ -1263,7 +1299,7 @@ async fn get_tool_call_locations(
 }
 
 #[tokio::test]
-#[ignore = "disabled for ux-refresh merge"]
+#[ignore = "TODO: don't emit ToolCall on ToolUseStart parsing"]
 #[timeout(10000)]
 async fn tool_call_has_descriptive_title_fs_read() {
     let (mut harness, client, session_id, _) = AcpTestHarnessBuilder::new("tool_fs_read").build_with_session().await;
@@ -1273,20 +1309,35 @@ async fn tool_call_has_descriptive_title_fs_read() {
         .await
         .expect("failed to create test file");
 
-    let title = get_tool_call_title(
-        &mut harness,
-        &client,
-        &session_id,
-        "tests/mock_responses/tool_fs_read.jsonl",
-        "read the test file",
-    )
-    .await;
+    harness
+        .push_mock_responses_from_file(&session_id.0, "tests/mock_responses/tool_fs_read.jsonl")
+        .await;
+
+    client
+        .prompt_text(session_id.clone(), "read the test file")
+        .await
+        .expect("prompt failed");
+
+    let captured = client.captured().await;
+    // Debug: print all captured session updates
+    for (i, update) in captured.session_updates.iter().enumerate() {
+        eprintln!("Update {}: {:?}", i, update);
+    }
+
+    let title = captured
+        .session_updates
+        .iter()
+        .find_map(|u| match u {
+            SessionUpdate::ToolCall(tc) => Some(tc.title.clone()),
+            _ => None,
+        })
+        .expect("should have a ToolCall");
 
     assert_eq!(title, "Reading test_file.txt:11-60");
 }
 
 #[tokio::test]
-#[ignore = "disabled for ux-refresh merge"]
+#[ignore = "TODO: don't emit ToolCall on ToolUseStart parsing"]
 #[timeout(10000)]
 async fn tool_call_has_descriptive_title_fs_write_create() {
     let (mut harness, client, session_id, _) = AcpTestHarnessBuilder::new("tool_fs_write_create")
@@ -1307,7 +1358,7 @@ async fn tool_call_has_descriptive_title_fs_write_create() {
 }
 
 #[tokio::test]
-#[ignore = "disabled for ux-refresh merge"]
+#[ignore = "TODO: don't emit ToolCall on ToolUseStart parsing"]
 #[timeout(10000)]
 async fn tool_call_has_descriptive_title_grep() {
     let (mut harness, client, session_id, _) = AcpTestHarnessBuilder::new("tool_grep")
@@ -1328,7 +1379,7 @@ async fn tool_call_has_descriptive_title_grep() {
 }
 
 #[tokio::test]
-#[ignore = "disabled for ux-refresh merge"]
+#[ignore = "TODO: don't emit ToolCall on ToolUseStart parsing"]
 #[timeout(10000)]
 async fn tool_call_has_descriptive_title_execute_bash() {
     let (mut harness, client, session_id, _) = AcpTestHarnessBuilder::new("tool_execute_bash")
@@ -1349,7 +1400,7 @@ async fn tool_call_has_descriptive_title_execute_bash() {
 }
 
 #[tokio::test]
-#[ignore = "disabled for ux-refresh merge"]
+#[ignore = "TODO: don't emit ToolCall on ToolUseStart parsing"]
 #[timeout(10000)]
 async fn tool_call_has_locations_fs_read_multiple() {
     let (mut harness, client, session_id, _) = AcpTestHarnessBuilder::new("tool_fs_read_multi")
@@ -1378,7 +1429,7 @@ async fn tool_call_has_locations_fs_read_multiple() {
 }
 
 #[tokio::test]
-#[ignore = "disabled for ux-refresh merge"]
+#[ignore = "TODO: don't emit ToolCall on ToolUseStart parsing"]
 #[timeout(10000)]
 async fn tool_call_has_locations_fs_read_with_line() {
     let (mut harness, client, session_id, _) = AcpTestHarnessBuilder::new("tool_fs_read_offset")
@@ -1408,7 +1459,6 @@ async fn tool_call_has_locations_fs_read_with_line() {
 }
 
 #[tokio::test]
-#[ignore = "disabled for ux-refresh merge"]
 #[timeout(10000)]
 async fn fs_read_in_cwd_does_not_require_permission() {
     let (mut harness, client, session_id, _) = AcpTestHarnessBuilder::new("fs_read_cwd_permission")
@@ -1438,7 +1488,6 @@ async fn fs_read_in_cwd_does_not_require_permission() {
 }
 
 #[tokio::test]
-#[ignore = "disabled for ux-refresh merge"]
 #[timeout(10000)]
 async fn permissions_are_applied_and_loaded() {
     let (mut harness, client, session_id, cwd) = AcpTestHarnessBuilder::new("permissions_are_applied_and_loaded")

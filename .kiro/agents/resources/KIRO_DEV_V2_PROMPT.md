@@ -198,9 +198,9 @@ Optimize for concurrency: Assume React may render your components multiple times
 ### Backend Development (crates/chat-cli-v2)
 
 ```bash
-cargo build -p chat-cli-v2
-cargo test -p chat-cli-v2
-cargo clippy --locked -p chat-cli-v2 -- -D warnings
+cargo build -p chat_cli_v2
+cargo test -p chat_cli_v2
+cargo clippy --locked -p chat_cli_v2 -- -D warnings
 cargo +nightly fmt
 ```
 

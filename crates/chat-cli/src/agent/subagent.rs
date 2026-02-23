@@ -2,7 +2,10 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use agent::AgentHandle;
-use agent::agent_config::load_agents;
+use agent::agent_config::{
+    build_default_agent,
+    load_agents,
+};
 use agent::agent_loop::protocol::{
     LoopEndReason,
     UserTurnMetadata,
@@ -246,13 +249,23 @@ impl<'a> Subagent<'a> {
             ))
         };
 
-        if let Some(name) = self.agent_name {
-            let (configs, _) = load_agents(&RealProvider).await?;
-            if let Some(cfg) = configs.into_iter().find(|c| c.name() == name) {
-                snapshot.agent_config = cfg.config().clone();
-            } else {
-                bail!("unable to find agent with name: {}", name);
-            }
+        match self.agent_name {
+            Some(name) if name == DEFAULT_AGENT_NAME => {
+                // Use build_default_agent for default agent to ensure use_legacy_mcp_json is true
+                snapshot.agent_config = build_default_agent(&RealProvider).config().clone();
+            },
+            Some(name) => {
+                let (configs, _) = load_agents(&RealProvider).await?;
+                if let Some(cfg) = configs.into_iter().find(|c| c.name() == name) {
+                    snapshot.agent_config = cfg.config().clone();
+                } else {
+                    bail!("unable to find agent with name: {}", name);
+                }
+            },
+            None => {
+                // When no agent name specified, use default agent with use_legacy_mcp_json enabled
+                snapshot.agent_config = build_default_agent(&RealProvider).config().clone();
+            },
         };
 
         let mcp_manager_handle = McpManager::default().spawn();

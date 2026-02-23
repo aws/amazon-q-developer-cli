@@ -40,7 +40,10 @@ use crate::agent::acp::acp_agent::{
 };
 use crate::agent::acp::mcp_conversion::convert_mcp_server;
 use crate::agent::ipc_server::IpcServer;
-use crate::api_client::MockResponseRegistryHandle;
+use crate::api_client::{
+    ApiClient,
+    MockResponseRegistryHandle,
+};
 use crate::cli::chat::legacy::model::{
     ModelInfo,
     get_available_models,
@@ -363,13 +366,22 @@ impl SessionManager {
                     builder = builder.model_id(Some(model_id.as_str()));
                 }
 
-                // Fetch available models
-                let available_models = match get_available_models(&self.os).await {
-                    Ok((models, _)) => models,
-                    Err(e) => {
-                        warn!("Failed to fetch available models: {}", e);
-                        vec![]
-                    },
+                // Fetch available models (use mock client in test mode to avoid network calls)
+                let available_models = if let Some(ref registry) = self.mock_registry {
+                    let mock_client = ApiClient::new_ipc_mock(registry.clone());
+                    mock_client
+                        .list_available_models_cached()
+                        .await
+                        .map(|r| r.models.iter().map(ModelInfo::from_api_model).collect())
+                        .unwrap_or_default()
+                } else {
+                    match get_available_models(&self.os).await {
+                        Ok((models, _)) => models,
+                        Err(e) => {
+                            warn!("Failed to fetch available models: {}", e);
+                            vec![]
+                        },
+                    }
                 };
 
                 match builder

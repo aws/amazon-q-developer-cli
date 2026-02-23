@@ -90,6 +90,14 @@ fn resolve_workspace_agents_dir(system: &dyn SystemProvider) -> Option<PathBuf> 
 }
 
 fn resolve_global_agents_dir(system: &dyn SystemProvider) -> Option<PathBuf> {
+    // Check test override first
+    if let Ok(test_dir) = std::env::var("KIRO_TEST_AGENTS_DIR") {
+        let path = PathBuf::from(test_dir);
+        if path.exists() {
+            return Some(path);
+        }
+    }
+
     let home = system.home()?;
     let kiro_path = home.join(".kiro").join("agents");
     if kiro_path.exists() {

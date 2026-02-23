@@ -1,6 +1,7 @@
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::Arc;
+use std::time::Duration;
 
 use anyhow::Result;
 use clap::{
@@ -51,6 +52,10 @@ struct Args {
     /// HTTP status code to return for probe requests (e.g., 401 or 403 to trigger OAuth)
     #[arg(long)]
     probe_status: Option<u16>,
+
+    /// Delay in milliseconds before starting the server (simulates slow startup)
+    #[arg(long)]
+    startup_delay_ms: Option<u64>,
 }
 
 #[derive(Clone)]
@@ -248,6 +253,10 @@ async fn run_http(server: MockMcpServer, port: u16, probe_status: Option<u16>) -
 #[tokio::main]
 async fn main() -> Result<()> {
     let args = Args::parse();
+
+    if let Some(delay_ms) = args.startup_delay_ms {
+        tokio::time::sleep(Duration::from_millis(delay_ms)).await;
+    }
 
     let server = MockMcpServer::from_config(&args.config)?;
 
