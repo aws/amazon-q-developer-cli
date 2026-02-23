@@ -1269,7 +1269,7 @@ impl ChatSession {
                         let _ = self
                             .conversation
                             .as_sendable_conversation_state(os, &mut self.stderr, false)
-                            .await?;
+                            .await;
                         self.conversation.push_assistant_message(
                             os,
                             AssistantMessage::new_response(

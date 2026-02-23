@@ -1,0 +1,4 @@
+{
+  "type": "fixed",
+  "description": "Ctrl+C now correctly interrupts and returns to prompt instead of exiting the CLI"
+}
