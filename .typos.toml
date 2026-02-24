@@ -1,4 +1,18 @@
 [files]
+extend-exclude = [
+  "packages/ink/",
+  "**/__tests__/",
+  "**/e2e_tests/",
+  "**/tests/",
+  "**/*.test.*",
+  "**/*.spec.*",
+]
+
+[default]
+extend-ignore-re = [
+  # Commit SHAs (hex strings of 7+ chars)
+  "\\b[0-9a-f]{7,40}\\b",
+]
 
 [default.extend-words]
 mmaped = "mmaped"
@@ -6,3 +20,4 @@ caf = "caf" # used in chat tools test
 braket = "braket" # AWS Braket quantum computing service
 nd = "nd" # ndjson (newline-delimited JSON)
 hel = "hel" # used in test data
+isues = "isues" # intentional typo in agent-configuration.md example

@@ -128,7 +128,7 @@ New detections like:
 New safe options:
 - `git status`, `git log`, `git diff`, `git show`
 
-Dangerous optinos options still need approval:
+Dangerous options still need approval:
 - `--upload-pack`, `--receive-pack`, `--exec`
 
 ## References
