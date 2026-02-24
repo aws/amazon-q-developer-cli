@@ -33,7 +33,7 @@ if (skipRustBuild) {
   runTests();
 } else {
   console.log("Building chat_cli...");
-  const cargo = spawn("cargo", ["build", "--bin", "chat_cli_v2"], { cwd: REPO_ROOT, stdio: "inherit" });
+  const cargo = spawn("cargo", ["build", "-p", "chat_cli_v2", "--bin", "chat_cli_v2"], { cwd: REPO_ROOT, stdio: "inherit" });
 
   cargo.on("exit", (code) => {
     if (code !== 0) {

@@ -43,6 +43,16 @@ scripts/                 # Build, dev, and analysis scripts
 
 ---
 
+## Getting Started
+
+```bash
+bun install                    # Install dependencies
+bun run dev                    # Start the TUI in development mode (builds Rust + types + Ink)
+bun run dev --skip-rust-build  # Start the TUI without recompiling Rust
+```
+
+---
+
 ## Component Patterns
 
 ### UI Primitives (`src/components/ui/`)

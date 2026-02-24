@@ -134,18 +134,34 @@ try {
   const store = await testCase.getStore();
   const agentState = await testCase.getAgentState();
 
-  // Inject mock LLM response (ChatResponseStream events)
+  // Inject mock LLM response (MockStreamItem[] — each event wrapped in { kind: 'event', data: ... })
   await testCase.pushSendMessageResponse([
-    { kind: 'AssistantResponseEvent', data: { content: 'Hello!' } },
+    { kind: 'event', data: { kind: 'AssistantResponseEvent', data: { content: 'Hello!' } } },
   ]);
   await testCase.pushSendMessageResponse(null); // Signal end of response
 
+  // NOTE: Push mock responses BEFORE sending user input, so the agent has data to return
   await testCase.sendKeys('hi\n');
   await testCase.waitForVisibleText('Hello!', 10000);
 } finally {
   await testCase.cleanup();
 }
 ```
+
+### Recording Live API Responses
+
+To capture real LLM traffic for use as mock test data:
+
+```bash
+KIRO_RECORD_API_RESPONSES_PATH=/tmp/my-test.jsonl kv2
+```
+
+> [!note]
+> In the future, if `kv2` supports a headless mode, we can use that instead of manually running the command.
+
+The output is JSONL with one `ChatResponseStream` event per line. Blank lines separate response streams (one stream per `send_message` call). Lines starting with `//` are treated as comments and ignored when parsing.
+
+The recorded events can be used directly with `pushSendMessageResponse()` in E2E tests.
 
 ### Running E2E Tests
 
