@@ -1,0 +1,58 @@
+{
+  "test_cases": [
+    {
+      "name": "single_file_under_cwd",
+      "cwd": "/home/user/project",
+      "paths": ["/home/user/project/src/main.rs"],
+      "expected": [
+        {"label": "Specific paths", "display": "src/main.rs", "setting_key": "runtime_read_paths", "patterns": ["/home/user/project/src/main.rs"]},
+        {"label": "Complete directory", "display": "src", "setting_key": "runtime_read_paths", "patterns": ["/home/user/project/src"]}
+      ]
+    },
+    {
+      "name": "single_file_outside_cwd",
+      "cwd": "/home/user/project",
+      "paths": ["/etc/nginx/nginx.conf"],
+      "expected": [
+        {"label": "Specific paths", "display": "/etc/nginx/nginx.conf", "setting_key": "runtime_read_paths", "patterns": ["/etc/nginx/nginx.conf"]},
+        {"label": "Complete directory", "display": "/etc/nginx", "setting_key": "runtime_read_paths", "patterns": ["/etc/nginx"]}
+      ]
+    },
+    {
+      "name": "multiple_files_same_parent_write",
+      "cwd": "/home/user/project",
+      "paths": ["/home/user/project/src/main.rs", "/home/user/project/src/lib.rs"],
+      "access_type": "write",
+      "expected": [
+        {"label": "Specific paths", "display": "src/main.rs, src/lib.rs", "setting_key": "runtime_write_paths", "patterns": ["/home/user/project/src/main.rs", "/home/user/project/src/lib.rs"]},
+        {"label": "Complete directory", "display": "src", "setting_key": "runtime_write_paths", "patterns": ["/home/user/project/src"]}
+      ]
+    },
+    {
+      "name": "multiple_files_common_ancestor",
+      "cwd": "/home/user/other",
+      "paths": ["/home/user/project/src/main.rs", "/home/user/project/tests/test.rs"],
+      "expected": [
+        {"label": "Specific paths", "display": "/home/user/project/src/main.rs, /home/user/project/tests/test.rs", "setting_key": "runtime_read_paths", "patterns": ["/home/user/project/src/main.rs", "/home/user/project/tests/test.rs"]},
+        {"label": "Complete directory", "display": "/home/user/project", "setting_key": "runtime_read_paths", "patterns": ["/home/user/project"]}
+      ]
+    },
+    {
+      "name": "unrelated_paths_skip_tier2",
+      "cwd": "/home/user/project",
+      "paths": ["/usr/local/bin/tool", "/etc/hosts"],
+      "expected": [
+        {"label": "Specific paths", "display": "/usr/local/bin/tool, /etc/hosts", "setting_key": "runtime_read_paths", "patterns": ["/usr/local/bin/tool", "/etc/hosts"]}
+      ]
+    },
+    {
+      "name": "many_paths_truncated_display",
+      "cwd": "/home/user/project",
+      "paths": ["/home/user/project/a.rs", "/home/user/project/b.rs", "/home/user/project/c.rs", "/home/user/project/d.rs"],
+      "expected": [
+        {"label": "Specific paths", "display": "a.rs, b.rs, c.rs, ... (+1 more)", "setting_key": "runtime_read_paths", "patterns": ["/home/user/project/a.rs", "/home/user/project/b.rs", "/home/user/project/c.rs", "/home/user/project/d.rs"]},
+        {"label": "Complete directory", "display": "project", "setting_key": "runtime_read_paths", "patterns": ["/home/user/project"]}
+      ]
+    }
+  ]
+}

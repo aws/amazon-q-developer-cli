@@ -6,6 +6,8 @@ use std::path::{
 };
 use std::sync::LazyLock;
 
+use agent::permissions::PathAccessType;
+use agent::tool_permission::file_trust::generate_file_trust_options;
 use crossterm::queue;
 use crossterm::style::{
     self,
@@ -518,6 +520,15 @@ impl FsWrite {
             .aliases
             .iter()
             .any(|alias| is_tool_in_allowlist(&agent.allowed_tools, alias, None));
+
+        // Get the path being written to
+        let target_path = match self {
+            Self::Create { path, .. }
+            | Self::Insert { path, .. }
+            | Self::Append { path, .. }
+            | Self::StrReplace { path, .. } => path.clone(),
+        };
+
         match Self::INFO
             .aliases
             .iter()
@@ -525,7 +536,7 @@ impl FsWrite {
         {
             Some(settings) => {
                 let Settings {
-                    allowed_paths,
+                    mut allowed_paths,
                     denied_paths,
                     fallback_action,
                 } = match serde_json::from_value::<Settings>(settings.clone()) {
@@ -535,6 +546,12 @@ impl FsWrite {
                         return PermissionEvalResult::ask();
                     },
                 };
+
+                // Merge runtime_permissions allowed_write_paths
+                for path in agent.runtime_permissions.allowed_write_paths() {
+                    allowed_paths.push(path.clone());
+                }
+
                 let allow_set = {
                     let mut builder = GlobSetBuilder::new();
                     for path in &allowed_paths {
@@ -576,7 +593,7 @@ impl FsWrite {
                             | Self::Append { path, .. }
                             | Self::StrReplace { path, .. } => {
                                 let Ok(canonical_path) = paths::canonicalizes_path(os, path) else {
-                                    return PermissionEvalResult::ask();
+                                    return Self::ask_with_trust_options(os, &target_path);
                                 };
                                 // Check both canonical path and original expanded path to handle symlinks
                                 // e.g., /tmp -> /private/tmp on macOS
@@ -620,7 +637,7 @@ impl FsWrite {
                             FallbackAction::Deny => {
                                 PermissionEvalResult::Deny(vec!["path not in allowed paths list".to_string()])
                             },
-                            FallbackAction::Interactive => PermissionEvalResult::ask(),
+                            FallbackAction::Interactive => Self::ask_with_trust_options(os, &target_path),
                         }
                     },
                     (allow_res, deny_res) => {
@@ -631,13 +648,45 @@ impl FsWrite {
                             warn!("fs_write failed to build deny set: {:?}", e);
                         }
                         warn!("One or more detailed args failed to parse, falling back to ask");
-                        PermissionEvalResult::ask()
+                        Self::ask_with_trust_options(os, &target_path)
                     },
                 }
             },
             None if is_in_allowlist => PermissionEvalResult::Allow,
-            _ => PermissionEvalResult::ask(),
+            _ => {
+                // Check runtime_permissions even when no tools_settings exist
+                if !agent.runtime_permissions.allowed_write_paths().is_empty() {
+                    let canonical_path =
+                        paths::canonicalizes_path(os, &target_path).unwrap_or_else(|_| target_path.clone());
+                    let mut builder = GlobSetBuilder::new();
+                    for path in agent.runtime_permissions.allowed_write_paths() {
+                        let Ok(path) = paths::canonicalizes_path(os, path) else {
+                            continue;
+                        };
+                        let _ = paths::add_gitignore_globs(&mut builder, path.as_str());
+                    }
+                    if let Ok(allow_set) = builder.build()
+                        && allow_set.is_match(canonical_path.as_str())
+                    {
+                        return PermissionEvalResult::Allow;
+                    }
+                }
+                Self::ask_with_trust_options(os, &target_path)
+            },
         }
+    }
+
+    /// Generate Ask result with trust options for the given path.
+    fn ask_with_trust_options(os: &Os, path: &str) -> PermissionEvalResult {
+        let trust_options = if let Ok(canonical_path) = paths::canonicalizes_path(os, path) {
+            match os.env.current_dir() {
+                Ok(cwd) => generate_file_trust_options(&[canonical_path], PathAccessType::Write, &cwd),
+                Err(_) => vec![],
+            }
+        } else {
+            vec![]
+        };
+        PermissionEvalResult::Ask { trust_options }
     }
 }
 

@@ -1,5 +1,6 @@
 use std::io::Write;
 
+use agent::permissions::PathAccessType;
 use crossterm::{
     execute,
     queue,
@@ -32,15 +33,21 @@ pub enum TrustScopeSelection {
     Cancelled,
 }
 
+/// Check if a tool supports granular trust options.
+fn supports_granular_trust(tool: &Tool) -> bool {
+    matches!(tool, Tool::ExecuteCommand(_) | Tool::FsRead(_) | Tool::FsWrite(_))
+}
+
 /// Prompt user to select trust scope from available options.
-/// For ExecuteCommand tools, shows granular options. For all others, returns TrustTool directly.
+/// For tools with granular options (ExecuteCommand, FsRead, FsWrite), shows options.
+/// For all others, returns TrustTool directly.
 pub fn prompt_trust_scope(
     tool_use: &QueuedTool,
     stderr: &mut impl Write,
     stdout: &mut impl Write,
 ) -> TrustScopeSelection {
-    if !matches!(tool_use.tool, Tool::ExecuteCommand(_)) {
-        // Currently, granular options are supported only for ExecuteCommand
+    if !supports_granular_trust(&tool_use.tool) {
+        // No granular options for this tool type
         return TrustScopeSelection::TrustTool;
     }
 
@@ -128,18 +135,29 @@ pub fn apply_trust_selection(
     match selection {
         TrustScopeSelection::Pattern(selected) => {
             if let Some(agent) = conversation.agents.get_active_mut() {
-                let settings = agent
-                    .tools_settings
-                    .entry(ToolSettingTarget(tool_use.name.clone()))
-                    .or_insert_with(|| serde_json::json!({ &selected.setting_key: [] }));
-
-                if let Some(obj) = settings.as_object_mut() {
-                    let arr: &mut serde_json::Value = obj
-                        .entry(&selected.setting_key)
-                        .or_insert_with(|| serde_json::json!([]));
-                    if let Some(arr) = arr.as_array_mut() {
-                        for pattern in &selected.patterns {
-                            arr.push(serde_json::Value::String(pattern.clone()));
+                // Check if this is a filesystem path trust (runtime_read_paths or runtime_write_paths)
+                if let Some(access_type) = PathAccessType::from_setting_key(&selected.setting_key) {
+                    // Store in runtime_permissions (session-scoped, not persisted)
+                    for path in &selected.patterns {
+                        agent
+                            .runtime_permissions
+                            .grant_path_canonicalized(path.clone(), access_type);
+                    }
+                } else {
+                    // For other tools (e.g., execute_bash with command patterns),
+                    // store in tools_settings (persisted to agent config)
+                    let settings = agent
+                        .tools_settings
+                        .entry(ToolSettingTarget(tool_use.name.clone()))
+                        .or_insert_with(|| serde_json::json!({ &selected.setting_key: [] }));
+                    if let Some(obj) = settings.as_object_mut() {
+                        let arr: &mut serde_json::Value = obj
+                            .entry(&selected.setting_key)
+                            .or_insert_with(|| serde_json::json!([]));
+                        if let Some(arr) = arr.as_array_mut() {
+                            for pattern in &selected.patterns {
+                                arr.push(serde_json::Value::String(pattern.clone()));
+                            }
                         }
                     }
                 }

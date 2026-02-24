@@ -436,6 +436,10 @@ pub struct Agent {
     /// This is set during loading and used for display purposes.
     #[serde(skip)]
     pub source_location: AgentSourceLocation,
+    /// Runtime permissions accumulated during the session (not persisted).
+    #[serde(skip)]
+    #[schemars(skip)]
+    pub runtime_permissions: agent::permissions::RuntimePermissions,
 }
 
 impl Default for Agent {
@@ -463,6 +467,7 @@ impl Default for Agent {
             welcome_message: None,
             path: None,
             source_location: AgentSourceLocation::default(),
+            runtime_permissions: Default::default(),
         }
     }
 }
@@ -1940,6 +1945,7 @@ mod tests {
             welcome_message: None,
             path: None,
             source_location: AgentSourceLocation::default(),
+            runtime_permissions: Default::default(),
         };
 
         agents.agents.insert("test-agent".to_string(), agent);

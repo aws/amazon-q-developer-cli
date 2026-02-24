@@ -1,5 +1,6 @@
 //! Tool permission utilities.
 
+pub mod file_trust;
 mod pattern_matcher;
 
 pub use pattern_matcher::{

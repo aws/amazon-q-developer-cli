@@ -2,6 +2,8 @@ use std::collections::VecDeque;
 use std::fs::Metadata;
 use std::io::Write;
 
+use agent::permissions::PathAccessType;
+use agent::tool_permission::file_trust::generate_file_trust_options;
 use crossterm::queue;
 use crossterm::style::{
     self,
@@ -154,6 +156,11 @@ impl FsRead {
                 allowed_paths.push(cwd.to_string_lossy().to_string());
             }
 
+            // Merge runtime_permissions allowed_read_paths
+            for path in agent.runtime_permissions.allowed_read_paths() {
+                allowed_paths.push(path.clone());
+            }
+
             let allow_set = {
                 let mut builder = GlobSetBuilder::new();
                 for path in &allowed_paths {
@@ -191,17 +198,18 @@ impl FsRead {
                 (Ok(allow_set), Ok(deny_set)) => {
                     let mut deny_list = Vec::<PermissionEvalResult>::new();
                     let mut ask = false;
+                    let mut ask_paths = Vec::new();
 
                     for op in &self.operations {
                         match op {
                             FsReadOperation::Line(FsLine { path, .. })
                             | FsReadOperation::Directory(FsDirectory { path, .. })
                             | FsReadOperation::Search(FsSearch { path, .. }) => {
-                                let Ok(path) = paths::canonicalizes_path(os, path) else {
+                                let Ok(canonical_path) = paths::canonicalizes_path(os, path) else {
                                     ask = true;
                                     continue;
                                 };
-                                let denied_match_set = deny_set.matches(path.as_ref() as &str);
+                                let denied_match_set = deny_set.matches(canonical_path.as_ref() as &str);
                                 if !denied_match_set.is_empty() {
                                     let deny_res = PermissionEvalResult::Deny({
                                         denied_match_set
@@ -215,13 +223,17 @@ impl FsRead {
 
                                 // We only want to ask if we are not allowing read only
                                 // operation
-                                if !is_in_allowlist && !allow_read_only && !allow_set.is_match(path.as_ref() as &str) {
+                                if !is_in_allowlist
+                                    && !allow_read_only
+                                    && !allow_set.is_match(canonical_path.as_ref() as &str)
+                                {
                                     ask = true;
+                                    ask_paths.push(canonical_path);
                                 }
                             },
                             FsReadOperation::Image(fs_image) => {
-                                let paths = &fs_image.image_paths;
-                                let denied_match_set = paths
+                                let img_paths = &fs_image.image_paths;
+                                let denied_match_set = img_paths
                                     .iter()
                                     .flat_map(|path| {
                                         let Ok(path) = paths::canonicalizes_path(os, path) else {
@@ -245,9 +257,14 @@ impl FsRead {
                                 // operation
                                 if !is_in_allowlist
                                     && !allow_read_only
-                                    && !paths.iter().all(|path| allow_set.is_match(path))
+                                    && !img_paths.iter().all(|path| allow_set.is_match(path))
                                 {
                                     ask = true;
+                                    for path in img_paths {
+                                        if let Ok(canonical) = paths::canonicalizes_path(os, path) {
+                                            ask_paths.push(canonical);
+                                        }
+                                    }
                                 }
                             },
                         }
@@ -263,7 +280,12 @@ impl FsRead {
                             })
                         })
                     } else if ask {
-                        PermissionEvalResult::ask()
+                        // Generate trust options for the paths that need permission
+                        let trust_options = match os.env.current_dir() {
+                            Ok(cwd) => generate_file_trust_options(&ask_paths, PathAccessType::Read, &cwd),
+                            Err(_) => vec![],
+                        };
+                        PermissionEvalResult::Ask { trust_options }
                     } else {
                         PermissionEvalResult::Allow
                     }

@@ -14,6 +14,7 @@
     "todo_list",
     "subagent",
     "delegate",
+    "@ht-mcp",
     "@builder-mcp/ReadInternalWebsites",
     "@builder-mcp/InternalSearch"
   ],
@@ -22,7 +23,8 @@
     "grep",
     "glob",
     "introspect",
-    "knowledge"
+    "knowledge",
+    "@ht-mcp"
   ],
   "useLegacyMcpJson": true,
   "keyboardShortcut": "ctrl+1",

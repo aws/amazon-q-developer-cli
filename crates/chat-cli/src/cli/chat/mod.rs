@@ -5291,8 +5291,9 @@ mod tests {
                 "create a new file".to_string(),
                 "y".to_string(),
                 "create a new file".to_string(),
-                "t".to_string(),
-                "create a new file".to_string(), // should make without prompting due to 't'
+                "y".to_string(),
+                "/tools trust fs_write".to_string(),
+                "create a new file".to_string(), // should make without prompting due to trust
                 "/tools untrust fs_write".to_string(),
                 "create a file".to_string(), // prompt again due to untrust
                 "n".to_string(),             // cancel
@@ -5395,7 +5396,8 @@ mod tests {
             None,
             InputSource::new_mock(vec![
                 "create 2 new files parallel".to_string(),
-                "t".to_string(),
+                "y".to_string(),
+                "y".to_string(),
                 "/tools reset".to_string(),
                 "create 2 new files parallel".to_string(),
                 "y".to_string(),

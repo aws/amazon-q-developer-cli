@@ -29,7 +29,7 @@ use crate::agent::util::error::UtilError;
 use crate::agent::util::glob::matches_any_pattern;
 
 /// Runtime permissions accumulated during a session.
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct RuntimePermissions {
     filesystem: FileSystemPermissions,
     /// Tools trusted at the tool level (auto-approve all uses)
@@ -68,18 +68,7 @@ impl RuntimePermissions {
                 return;
             },
         };
-        match access {
-            PathAccessType::Read => {
-                self.filesystem.allowed_read_paths.insert(path.clone());
-                self.filesystem.denied_read_paths.remove(&path);
-            },
-            PathAccessType::Write => {
-                self.filesystem.allowed_write_paths.insert(path.clone());
-                self.filesystem.allowed_read_paths.insert(path.clone());
-                self.filesystem.denied_write_paths.remove(&path);
-                self.filesystem.denied_read_paths.remove(&path);
-            },
-        }
+        self.grant_path_canonicalized(path, access);
     }
 
     /// Deny permission for a path.
@@ -103,12 +92,42 @@ impl RuntimePermissions {
             },
         }
     }
+
+    /// Get the allowed read paths.
+    pub fn allowed_read_paths(&self) -> &HashSet<String> {
+        &self.filesystem.allowed_read_paths
+    }
+
+    /// Get the allowed write paths.
+    pub fn allowed_write_paths(&self) -> &HashSet<String> {
+        &self.filesystem.allowed_write_paths
+    }
+
+    /// Grant permission for an already-canonicalized path.
+    /// Write permission also grants read permission.
+    /// Removes the path from the corresponding denied set.
+    ///
+    /// Use this when the path is already canonicalized (e.g., from file_trust options).
+    pub fn grant_path_canonicalized(&mut self, path: String, access: PathAccessType) {
+        match access {
+            PathAccessType::Read => {
+                self.filesystem.denied_read_paths.remove(&path);
+                self.filesystem.allowed_read_paths.insert(path);
+            },
+            PathAccessType::Write => {
+                self.filesystem.denied_write_paths.remove(&path);
+                self.filesystem.denied_read_paths.remove(&path);
+                self.filesystem.allowed_write_paths.insert(path.clone());
+                self.filesystem.allowed_read_paths.insert(path);
+            },
+        }
+    }
 }
 
 /// Filesystem permissions with separate read and write path sets.
 /// - Each path supports glob matching
 /// - Write permissions imply read permissions.
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 struct FileSystemPermissions {
     allowed_read_paths: HashSet<String>,
     allowed_write_paths: HashSet<String>,
@@ -121,6 +140,23 @@ struct FileSystemPermissions {
 pub enum PathAccessType {
     Read,
     Write,
+}
+
+impl PathAccessType {
+    pub fn setting_key(&self) -> &'static str {
+        match self {
+            Self::Read => "runtime_read_paths",
+            Self::Write => "runtime_write_paths",
+        }
+    }
+
+    pub fn from_setting_key(key: &str) -> Option<Self> {
+        match key {
+            "runtime_read_paths" => Some(Self::Read),
+            "runtime_write_paths" => Some(Self::Write),
+            _ => None,
+        }
+    }
 }
 
 /// Updates runtime permissions based on an "Always" approval result.
