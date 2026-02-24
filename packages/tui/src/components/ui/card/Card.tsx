@@ -11,7 +11,7 @@ interface CardContextType {
   active: boolean;
 }
 
-const CardContext = createContext<CardContextType>({ active: false });
+export const CardContext = createContext<CardContextType>({ active: false });
 
 export const useCardContext = () => useContext(CardContext);
 
