@@ -43,7 +43,9 @@ pub async fn run_command<W: Write>(
         .envs(env_vars)
         .stdin(Stdio::inherit())
         .stdout(Stdio::piped())
-        .stderr(Stdio::piped());
+        .stderr(Stdio::piped())
+        // Create a new process group so we can kill all child processes on Ctrl+C
+        .process_group(0);
 
     if let Some(dir) = working_dir {
         cmd.current_dir(dir);
@@ -52,6 +54,27 @@ pub async fn run_command<W: Write>(
     let mut child = cmd
         .spawn()
         .wrap_err_with(|| format!("Unable to spawn command '{command}'"))?;
+
+    // Get the child PID for process group cleanup
+    let child_pid = child.id();
+
+    // Guard to kill process group on drop (e.g., when Ctrl+C cancels the future)
+    struct ProcessGroupGuard {
+        pid: Option<u32>,
+    }
+
+    impl Drop for ProcessGroupGuard {
+        fn drop(&mut self) {
+            if let Some(pid) = self.pid {
+                // Kill the entire process group (negative PID)
+                unsafe {
+                    libc::kill(-(pid as i32), libc::SIGTERM);
+                }
+            }
+        }
+    }
+
+    let mut guard = ProcessGroupGuard { pid: child_pid };
 
     let stdout_final: String;
     let stderr_final: String;
@@ -184,6 +207,9 @@ pub async fn run_command<W: Write>(
         stdout_final = String::from_utf8_lossy(&output.stdout).to_string();
         stderr_final = String::from_utf8_lossy(&output.stderr).to_string();
     }
+
+    // Process completed normally, don't kill it
+    guard.pid = None;
 
     Ok(CommandResult {
         exit_status: exit_status.code(),
