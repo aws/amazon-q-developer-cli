@@ -35,8 +35,13 @@ export interface SessionClient {
    * Loads an existing agent session by ID (a `session/load` request in the ACP protocol).
    *
    * @param sessionId - The session ID to load
+   * @returns Promise resolving to session info including ID and current model/agent
    */
-  loadSession(sessionId: string): Promise<void>;
+  loadSession(sessionId: string): Promise<{
+    sessionId: string;
+    currentModel?: { id: string; name: string };
+    currentAgent?: { name: string };
+  }>;
 
   /**
    * Registers a callback to receive events about the agent's execution during a prompt turn lifecycle.

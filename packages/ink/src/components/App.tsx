@@ -75,6 +75,14 @@ function App({
 	internal_eventEmitter.current.setMaxListeners(Infinity);
 	// Store the currently attached readable listener to avoid stale closure issues
 	const readableListenerRef = useRef<(() => void) | undefined>(undefined);
+	// Store the currently attached data listener (used under Bun)
+	const dataListenerRef = useRef<((chunk: string) => void) | undefined>(
+		undefined,
+	);
+
+	// Bun's process.stdin does not reliably emit 'readable' events
+	// (readableFlowing stays `false` instead of `null`). Detect once.
+	const isBun = typeof (globalThis as any).Bun !== 'undefined';
 
 	// Determines if TTY is supported on the provided stdin
 	const isRawModeSupported = stdin.isTTY;
@@ -87,6 +95,11 @@ function App({
 				if (readableListenerRef.current) {
 					stdin.removeListener('readable', readableListenerRef.current);
 					readableListenerRef.current = undefined;
+				}
+
+				if (dataListenerRef.current) {
+					stdin.removeListener('data', dataListenerRef.current);
+					dataListenerRef.current = undefined;
 				}
 
 				stdin.unref();
@@ -137,6 +150,24 @@ function App({
 		}
 	}, [stdin, handleInput]);
 
+	// Bun-compatible data handler: receives chunks directly instead of
+	// pulling via stdin.read(), which avoids the broken 'readable' event.
+	const handleData = useCallback(
+		(chunk: string): void => {
+			if (isMouseSequence(chunk)) {
+				const mouseEvent = parseMouse(chunk);
+				if (mouseEvent) {
+					internal_eventEmitter.current.emit('mouse', mouseEvent);
+					return;
+				}
+			}
+
+			handleInput(chunk);
+			internal_eventEmitter.current.emit('input', chunk);
+		},
+		[handleInput],
+	);
+
 	const handleSetRawMode = useCallback(
 		(isEnabled: boolean): void => {
 			if (!isRawModeSupported) {
@@ -158,9 +189,17 @@ function App({
 				if (rawModeEnabledCount.current === 0) {
 					stdin.ref();
 					stdin.setRawMode(true);
-					// Store the listener reference to avoid stale closure when removing
-					readableListenerRef.current = handleReadable;
-					stdin.addListener('readable', handleReadable);
+
+					if (isBun) {
+						// Under Bun, use 'data' events which work reliably
+						dataListenerRef.current = handleData;
+						stdin.addListener('data', handleData);
+						stdin.resume();
+					} else {
+						// Under Node.js, use 'readable' events (pull mode)
+						readableListenerRef.current = handleReadable;
+						stdin.addListener('readable', handleReadable);
+					}
 				}
 
 				rawModeEnabledCount.current++;
@@ -170,15 +209,21 @@ function App({
 			// Disable raw mode only when no components left that are using it
 			if (--rawModeEnabledCount.current === 0) {
 				stdin.setRawMode(false);
+
 				if (readableListenerRef.current) {
 					stdin.removeListener('readable', readableListenerRef.current);
 					readableListenerRef.current = undefined;
 				}
 
+				if (dataListenerRef.current) {
+					stdin.removeListener('data', dataListenerRef.current);
+					dataListenerRef.current = undefined;
+				}
+
 				stdin.unref();
 			}
 		},
-		[isRawModeSupported, stdin, handleReadable],
+		[isRawModeSupported, stdin, handleReadable, handleData, isBun],
 	);
 
 	const enableMouseTracking = useCallback((): void => {
@@ -421,6 +466,11 @@ function App({
 				if (readableListenerRef.current) {
 					stdin.removeListener('readable', readableListenerRef.current);
 					readableListenerRef.current = undefined;
+				}
+
+				if (dataListenerRef.current) {
+					stdin.removeListener('data', dataListenerRef.current);
+					dataListenerRef.current = undefined;
 				}
 
 				stdin.unref();

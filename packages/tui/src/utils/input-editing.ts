@@ -169,6 +169,63 @@ export const deleteForward = (
 
   return { segments, cursor };
 };
+/**
+ * Delete word forward (Alt+D) - delete from cursor to next word boundary
+ */
+export const deleteWordForward = (
+  segments: Segment[],
+  cursor: number
+): EditResult => {
+  const total = totalWidth(segments);
+  if (cursor >= total) return { segments, cursor };
+
+  const { segIdx, offset } = locateCursor(segments, cursor);
+  const seg = segments[segIdx];
+
+  if (seg?.type === 'text') {
+    const textAfter = seg.value.slice(offset);
+    if (textAfter.length === 0 && segIdx + 1 < segments.length) {
+      // At end of text segment — delete next segment (chip)
+      const newSegs = [
+        ...segments.slice(0, segIdx + 1),
+        ...segments.slice(segIdx + 2),
+      ];
+      return { segments: normalizeSegments(newSegs), cursor };
+    }
+    // Find word boundary - skip word chars, then skip spaces
+    let deleteEnd = 0;
+    // Skip word characters
+    while (
+      deleteEnd < textAfter.length &&
+      /\S/.test(textAfter[deleteEnd] ?? '')
+    ) {
+      deleteEnd++;
+    }
+    // Skip spaces
+    while (
+      deleteEnd < textAfter.length &&
+      /\s/.test(textAfter[deleteEnd] ?? '')
+    ) {
+      deleteEnd++;
+    }
+    if (deleteEnd === 0) deleteEnd = 1; // At least delete one
+    const newValue =
+      seg.value.slice(0, offset) + seg.value.slice(offset + deleteEnd);
+    const newSegs = [...segments];
+    newSegs[segIdx] = { type: 'text', value: newValue };
+    return {
+      segments: normalizeSegments(newSegs),
+      cursor,
+    };
+  } else {
+    // On a chip - delete it
+    const newSegs = [
+      ...segments.slice(0, segIdx),
+      ...segments.slice(segIdx + 1),
+    ];
+    return { segments: normalizeSegments(newSegs), cursor };
+  }
+};
 
 /**
  * Kill to end of line (Ctrl+K)
@@ -325,4 +382,418 @@ export const transposeChars = (
     return { segments: newSegs, cursor: newCursor };
   }
   return { segments, cursor };
+};
+
+/**
+ * Uppercase word (Alt+U) - uppercase from cursor to end of current word
+ */
+export const uppercaseWord = (
+  segments: Segment[],
+  cursor: number
+): EditResult => {
+  const total = totalWidth(segments);
+  if (cursor >= total) return { segments, cursor };
+
+  const { segIdx, offset } = locateCursor(segments, cursor);
+  const seg = segments[segIdx];
+
+  if (seg?.type === 'text') {
+    const textAfter = seg.value.slice(offset);
+    let end = 0;
+    while (end < textAfter.length && /\S/.test(textAfter[end] ?? '')) {
+      end++;
+    }
+    if (end === 0) {
+      // Skip spaces first, then find word
+      while (end < textAfter.length && /\s/.test(textAfter[end] ?? '')) {
+        end++;
+      }
+      while (end < textAfter.length && /\S/.test(textAfter[end] ?? '')) {
+        end++;
+      }
+    }
+    if (end === 0) return { segments, cursor };
+    const newValue =
+      seg.value.slice(0, offset) +
+      textAfter.slice(0, end).toUpperCase() +
+      textAfter.slice(end);
+    const newSegs = [...segments];
+    newSegs[segIdx] = { type: 'text', value: newValue };
+    return { segments: normalizeSegments(newSegs), cursor: cursor + end };
+  }
+  return { segments, cursor };
+};
+
+/**
+ * Lowercase word (Alt+L) - lowercase from cursor to end of current word
+ */
+export const lowercaseWord = (
+  segments: Segment[],
+  cursor: number
+): EditResult => {
+  const total = totalWidth(segments);
+  if (cursor >= total) return { segments, cursor };
+
+  const { segIdx, offset } = locateCursor(segments, cursor);
+  const seg = segments[segIdx];
+
+  if (seg?.type === 'text') {
+    const textAfter = seg.value.slice(offset);
+    let end = 0;
+    while (end < textAfter.length && /\S/.test(textAfter[end] ?? '')) {
+      end++;
+    }
+    if (end === 0) {
+      while (end < textAfter.length && /\s/.test(textAfter[end] ?? '')) {
+        end++;
+      }
+      while (end < textAfter.length && /\S/.test(textAfter[end] ?? '')) {
+        end++;
+      }
+    }
+    if (end === 0) return { segments, cursor };
+    const newValue =
+      seg.value.slice(0, offset) +
+      textAfter.slice(0, end).toLowerCase() +
+      textAfter.slice(end);
+    const newSegs = [...segments];
+    newSegs[segIdx] = { type: 'text', value: newValue };
+    return { segments: normalizeSegments(newSegs), cursor: cursor + end };
+  }
+  return { segments, cursor };
+};
+
+/**
+ * Capitalize word (Alt+C) - capitalize first char, lowercase rest, from cursor to end of word
+ */
+export const capitalizeWord = (
+  segments: Segment[],
+  cursor: number
+): EditResult => {
+  const total = totalWidth(segments);
+  if (cursor >= total) return { segments, cursor };
+
+  const { segIdx, offset } = locateCursor(segments, cursor);
+  const seg = segments[segIdx];
+
+  if (seg?.type === 'text') {
+    const textAfter = seg.value.slice(offset);
+    // Skip leading spaces
+    let start = 0;
+    while (start < textAfter.length && /\s/.test(textAfter[start] ?? '')) {
+      start++;
+    }
+    let end = start;
+    while (end < textAfter.length && /\S/.test(textAfter[end] ?? '')) {
+      end++;
+    }
+    if (end === start) return { segments, cursor };
+    const word = textAfter.slice(start, end);
+    const capitalized = word[0]!.toUpperCase() + word.slice(1).toLowerCase();
+    const newValue =
+      seg.value.slice(0, offset) +
+      textAfter.slice(0, start) +
+      capitalized +
+      textAfter.slice(end);
+    const newSegs = [...segments];
+    newSegs[segIdx] = { type: 'text', value: newValue };
+    return { segments: normalizeSegments(newSegs), cursor: cursor + end };
+  }
+  return { segments, cursor };
+};
+
+/**
+ * Transpose words (Alt+T) - swap the word before cursor with the word after cursor
+ */
+export const transposeWords = (
+  segments: Segment[],
+  cursor: number
+): EditResult => {
+  const { segIdx, offset } = locateCursor(segments, cursor);
+  const seg = segments[segIdx];
+
+  if (seg?.type !== 'text' || seg.value.length < 3) return { segments, cursor };
+
+  const text = seg.value;
+
+  // Find the word boundary around cursor
+  // Find end of current/next word
+  let rightEnd = offset;
+  // Skip spaces after cursor
+  while (rightEnd < text.length && /\s/.test(text[rightEnd] ?? '')) {
+    rightEnd++;
+  }
+  // Find end of right word
+  while (rightEnd < text.length && /\S/.test(text[rightEnd] ?? '')) {
+    rightEnd++;
+  }
+  // Find start of right word
+  let rightStart = rightEnd;
+  while (rightStart > offset && /\S/.test(text[rightStart - 1] ?? '')) {
+    rightStart--;
+  }
+
+  // Find the word before cursor
+  let leftEnd = offset;
+  // If cursor is in the middle of a word, leftEnd = start of that word's right boundary
+  while (leftEnd > 0 && /\s/.test(text[leftEnd - 1] ?? '')) {
+    leftEnd--;
+  }
+  let leftStart = leftEnd;
+  while (leftStart > 0 && /\S/.test(text[leftStart - 1] ?? '')) {
+    leftStart--;
+  }
+
+  // Need two distinct words with whitespace between them
+  if (
+    leftStart === leftEnd ||
+    rightStart === rightEnd ||
+    leftEnd >= rightStart
+  ) {
+    return { segments, cursor };
+  }
+
+  const leftWord = text.slice(leftStart, leftEnd);
+  const middle = text.slice(leftEnd, rightStart);
+  const rightWord = text.slice(rightStart, rightEnd);
+
+  const newValue =
+    text.slice(0, leftStart) +
+    rightWord +
+    middle +
+    leftWord +
+    text.slice(rightEnd);
+  const newSegs = [...segments];
+  newSegs[segIdx] = { type: 'text', value: newValue };
+  return {
+    segments: normalizeSegments(newSegs),
+    cursor: cursor + (rightEnd - offset),
+  };
+};
+
+/**
+ * Check if the input content spans multiple lines (literal newlines only).
+ */
+export const isMultiLine = (segments: Segment[]): boolean => {
+  return getVisibleText(segments).includes('\n');
+};
+
+/**
+ * Check if the input visually spans multiple lines, considering both
+ * literal newlines and visual wrapping at the given terminal width.
+ */
+export const isVisuallyMultiLine = (
+  segments: Segment[],
+  wrapWidth: number
+): boolean => {
+  if (wrapWidth <= 0) return isMultiLine(segments);
+  const text = getVisibleText(segments);
+  if (text.includes('\n')) return true;
+  return text.length > wrapWidth;
+};
+
+/**
+ * Get line info for cursor position in multi-line content.
+ * Returns the line index, column, and array of line lengths.
+ */
+export const getCursorLineInfo = (
+  segments: Segment[],
+  cursor: number
+): { lineIndex: number; col: number; lineLengths: number[] } => {
+  const text = getVisibleText(segments);
+  const lines = text.split('\n');
+  const lineLengths = lines.map((l) => l.length);
+
+  let remaining = cursor;
+  for (let i = 0; i < lines.length; i++) {
+    const lineLen = lineLengths[i]!;
+    if (remaining <= lineLen) {
+      return { lineIndex: i, col: remaining, lineLengths };
+    }
+    // +1 for the \n character
+    remaining -= lineLen + 1;
+  }
+  // Fallback: cursor at end of last line
+  return {
+    lineIndex: lines.length - 1,
+    col: lineLengths[lineLengths.length - 1] ?? 0,
+    lineLengths,
+  };
+};
+
+/**
+ * Move cursor up one line in multi-line content.
+ * Returns the new cursor position, or null if already on the first line.
+ */
+export const moveCursorUp = (
+  segments: Segment[],
+  cursor: number
+): number | null => {
+  const { lineIndex, col, lineLengths } = getCursorLineInfo(segments, cursor);
+  if (lineIndex === 0) return null; // Already on first line
+
+  const targetLine = lineIndex - 1;
+  const targetCol = Math.min(col, lineLengths[targetLine]!);
+
+  // Compute flat offset: sum of all lines before targetLine + their \n chars + targetCol
+  let offset = 0;
+  for (let i = 0; i < targetLine; i++) {
+    offset += lineLengths[i]! + 1; // +1 for \n
+  }
+  offset += targetCol;
+  return offset;
+};
+
+/**
+ * Move cursor down one line in multi-line content.
+ * Returns the new cursor position, or null if already on the last line.
+ */
+export const moveCursorDown = (
+  segments: Segment[],
+  cursor: number
+): number | null => {
+  const { lineIndex, col, lineLengths } = getCursorLineInfo(segments, cursor);
+  if (lineIndex >= lineLengths.length - 1) return null; // Already on last line
+
+  const targetLine = lineIndex + 1;
+  const targetCol = Math.min(col, lineLengths[targetLine]!);
+
+  let offset = 0;
+  for (let i = 0; i < targetLine; i++) {
+    offset += lineLengths[i]! + 1;
+  }
+  offset += targetCol;
+  return offset;
+};
+
+/**
+ * Split text into visual lines considering both literal newlines and
+ * wrapping at the given width. Each visual line tracks its start offset
+ * in the original flat text and its length.
+ */
+export const getVisualLines = (
+  text: string,
+  wrapWidth: number
+): { start: number; length: number }[] => {
+  if (wrapWidth <= 0) {
+    // No wrapping — treat each literal line as a visual line
+    const lines: { start: number; length: number }[] = [];
+    let offset = 0;
+    for (const line of text.split('\n')) {
+      lines.push({ start: offset, length: line.length });
+      offset += line.length + 1; // +1 for \n
+    }
+    return lines;
+  }
+
+  const lines: { start: number; length: number }[] = [];
+  let offset = 0;
+
+  for (const logicalLine of text.split('\n')) {
+    if (logicalLine.length === 0) {
+      // Empty line (e.g. consecutive \n)
+      lines.push({ start: offset, length: 0 });
+    } else {
+      let remaining = logicalLine.length;
+      let lineOffset = offset;
+      while (remaining > 0) {
+        const len = Math.min(remaining, wrapWidth);
+        lines.push({ start: lineOffset, length: len });
+        lineOffset += len;
+        remaining -= len;
+      }
+    }
+    offset += logicalLine.length + 1; // +1 for \n
+  }
+
+  return lines;
+};
+
+/**
+ * Get visual line info for cursor position, accounting for wrapping.
+ */
+export const getVisualCursorLineInfo = (
+  segments: Segment[],
+  cursor: number,
+  wrapWidth: number
+): { lineIndex: number; col: number; lineCount: number } => {
+  const text = getVisibleText(segments);
+  const vlines = getVisualLines(text, wrapWidth);
+
+  for (let i = 0; i < vlines.length; i++) {
+    const vl = vlines[i]!;
+    const lineEnd = vl.start + vl.length;
+    // Cursor is on this visual line if it falls within [start, start+length]
+    // For the last visual line of a logical line (before \n), the \n char
+    // sits at lineEnd, so cursor === lineEnd belongs to this line unless
+    // there's a next visual line starting at the same offset.
+    if (cursor >= vl.start && cursor <= lineEnd) {
+      // If cursor is exactly at lineEnd and the next visual line starts
+      // at the same position (i.e. wrap boundary), cursor belongs to next line
+      if (
+        cursor === lineEnd &&
+        i + 1 < vlines.length &&
+        vlines[i + 1]!.start === lineEnd
+      ) {
+        continue;
+      }
+      return { lineIndex: i, col: cursor - vl.start, lineCount: vlines.length };
+    }
+  }
+
+  // Fallback
+  const lastLine = vlines[vlines.length - 1]!;
+  return {
+    lineIndex: vlines.length - 1,
+    col: cursor - lastLine.start,
+    lineCount: vlines.length,
+  };
+};
+
+/**
+ * Move cursor up one visual line (accounting for wrapping).
+ * Returns the new cursor position, or null if already on the first visual line.
+ */
+export const moveCursorUpVisual = (
+  segments: Segment[],
+  cursor: number,
+  wrapWidth: number
+): number | null => {
+  const text = getVisibleText(segments);
+  const vlines = getVisualLines(text, wrapWidth);
+  const { lineIndex, col } = getVisualCursorLineInfo(
+    segments,
+    cursor,
+    wrapWidth
+  );
+
+  if (lineIndex === 0) return null;
+
+  const targetLine = vlines[lineIndex - 1]!;
+  const targetCol = Math.min(col, targetLine.length);
+  return targetLine.start + targetCol;
+};
+
+/**
+ * Move cursor down one visual line (accounting for wrapping).
+ * Returns the new cursor position, or null if already on the last visual line.
+ */
+export const moveCursorDownVisual = (
+  segments: Segment[],
+  cursor: number,
+  wrapWidth: number
+): number | null => {
+  const text = getVisibleText(segments);
+  const vlines = getVisualLines(text, wrapWidth);
+  const { lineIndex, col } = getVisualCursorLineInfo(
+    segments,
+    cursor,
+    wrapWidth
+  );
+
+  if (lineIndex >= vlines.length - 1) return null;
+
+  const targetLine = vlines[lineIndex + 1]!;
+  const targetCol = Math.min(col, targetLine.length);
+  return targetLine.start + targetCol;
 };

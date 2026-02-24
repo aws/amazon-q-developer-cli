@@ -18,6 +18,20 @@ import {
   moveWordBackward,
   transposeChars,
   getVisibleText,
+  deleteWordForward,
+  isMultiLine,
+  isVisuallyMultiLine,
+  getCursorLineInfo,
+  moveCursorUp,
+  moveCursorDown,
+  getVisualLines,
+  getVisualCursorLineInfo,
+  moveCursorUpVisual,
+  moveCursorDownVisual,
+  uppercaseWord,
+  lowercaseWord,
+  capitalizeWord,
+  transposeWords,
 } from '../input-editing.js';
 
 // Helper to create segments
@@ -689,6 +703,339 @@ describe('input-editing', () => {
         .join('')
         .trim();
       expect(content).toBe('');
+    });
+  });
+
+  describe('deleteWordForward (Alt+D)', () => {
+    it('deletes word forward from cursor', () => {
+      const segments = [text('hello world')];
+      const result = deleteWordForward(segments, 0);
+      // Deletes "hello " (word + trailing spaces)
+      expect(result.segments[0]).toEqual(text('world'));
+      expect(result.cursor).toBe(0);
+    });
+
+    it('deletes word from middle of text', () => {
+      const segments = [text('hello world foo')];
+      const result = deleteWordForward(segments, 6);
+      // Cursor at 'w', deletes "world "
+      expect(result.segments[0]).toEqual(text('hello foo'));
+      expect(result.cursor).toBe(6);
+    });
+
+    it('no-op when cursor is at end', () => {
+      const segments = [text('hello')];
+      const result = deleteWordForward(segments, 5);
+      expect(result.segments[0]).toEqual(text('hello'));
+      expect(result.cursor).toBe(5);
+    });
+
+    it('deletes chip when cursor is on chip', () => {
+      const segments = [text('before '), paste('content', 3), text(' after')];
+      const result = deleteWordForward(segments, 7); // On the chip (width of 'before ' is 7, chip starts at 7)
+      expect(result.segments).toHaveLength(1);
+      expect(result.segments[0]).toEqual(text('before  after'));
+      expect(result.cursor).toBe(7);
+    });
+  });
+
+  describe('isMultiLine', () => {
+    it('returns false for single-line text', () => {
+      expect(isMultiLine([text('hello world')])).toBe(false);
+    });
+
+    it('returns true for text with newlines', () => {
+      expect(isMultiLine([text('hello\nworld')])).toBe(true);
+    });
+
+    it('returns false for empty text', () => {
+      expect(isMultiLine([text('')])).toBe(false);
+    });
+  });
+
+  describe('getCursorLineInfo', () => {
+    it('returns correct info for single line', () => {
+      const segments = [text('hello')];
+      const info = getCursorLineInfo(segments, 3);
+      expect(info.lineIndex).toBe(0);
+      expect(info.col).toBe(3);
+      expect(info.lineLengths).toEqual([5]);
+    });
+
+    it('returns correct info for cursor on first line of multi-line', () => {
+      // "hello\nworld" -> lines: ["hello", "world"], lengths: [5, 5]
+      const segments = [text('hello\nworld')];
+      const info = getCursorLineInfo(segments, 3);
+      expect(info.lineIndex).toBe(0);
+      expect(info.col).toBe(3);
+      expect(info.lineLengths).toEqual([5, 5]);
+    });
+
+    it('returns correct info for cursor on second line', () => {
+      // "hello\nworld" -> cursor 8 = line 1, col 2 (past "hello\n" = 6 chars, then 2 more)
+      const segments = [text('hello\nworld')];
+      const info = getCursorLineInfo(segments, 8);
+      expect(info.lineIndex).toBe(1);
+      expect(info.col).toBe(2);
+    });
+
+    it('returns correct info for cursor at start of second line', () => {
+      const segments = [text('hello\nworld')];
+      const info = getCursorLineInfo(segments, 6); // right after \n
+      expect(info.lineIndex).toBe(1);
+      expect(info.col).toBe(0);
+    });
+
+    it('handles three lines', () => {
+      // "ab\ncd\nef" -> lines: ["ab","cd","ef"], lengths: [2,2,2]
+      const segments = [text('ab\ncd\nef')];
+      const info = getCursorLineInfo(segments, 7); // "ab\ncd\ne" -> line 2, col 1
+      expect(info.lineIndex).toBe(2);
+      expect(info.col).toBe(1);
+      expect(info.lineLengths).toEqual([2, 2, 2]);
+    });
+  });
+
+  describe('moveCursorUp', () => {
+    it('returns null on single line', () => {
+      const segments = [text('hello')];
+      expect(moveCursorUp(segments, 3)).toBeNull();
+    });
+
+    it('returns null when already on first line', () => {
+      const segments = [text('hello\nworld')];
+      expect(moveCursorUp(segments, 3)).toBeNull();
+    });
+
+    it('moves from second line to first line preserving column', () => {
+      // "hello\nworld", cursor at 8 (line 1, col 2) -> should go to col 2 on line 0 = offset 2
+      const segments = [text('hello\nworld')];
+      expect(moveCursorUp(segments, 8)).toBe(2);
+    });
+
+    it('clamps column when upper line is shorter', () => {
+      // "ab\nworld", cursor at 7 (line 1, col 4) -> line 0 has length 2, so clamp to col 2 = offset 2
+      const segments = [text('ab\nworld')];
+      expect(moveCursorUp(segments, 7)).toBe(2);
+    });
+
+    it('moves from third line to second line', () => {
+      // "ab\ncd\nef", cursor at 7 (line 2, col 1) -> line 1, col 1 = offset 3+1 = 4
+      const segments = [text('ab\ncd\nef')];
+      expect(moveCursorUp(segments, 7)).toBe(4);
+    });
+  });
+
+  describe('moveCursorDown', () => {
+    it('returns null on single line', () => {
+      const segments = [text('hello')];
+      expect(moveCursorDown(segments, 3)).toBeNull();
+    });
+
+    it('returns null when already on last line', () => {
+      const segments = [text('hello\nworld')];
+      expect(moveCursorDown(segments, 8)).toBeNull();
+    });
+
+    it('moves from first line to second line preserving column', () => {
+      // "hello\nworld", cursor at 3 (line 0, col 3) -> line 1, col 3 = offset 6+3 = 9
+      const segments = [text('hello\nworld')];
+      expect(moveCursorDown(segments, 3)).toBe(9);
+    });
+
+    it('clamps column when lower line is shorter', () => {
+      // "hello\nab", cursor at 4 (line 0, col 4) -> line 1 has length 2, clamp to col 2 = offset 6+2 = 8
+      const segments = [text('hello\nab')];
+      expect(moveCursorDown(segments, 4)).toBe(8);
+    });
+
+    it('moves from first line to second in three-line text', () => {
+      // "ab\ncd\nef", cursor at 1 (line 0, col 1) -> line 1, col 1 = offset 3+1 = 4
+      const segments = [text('ab\ncd\nef')];
+      expect(moveCursorDown(segments, 1)).toBe(4);
+    });
+  });
+
+  describe('uppercaseWord (Alt+U)', () => {
+    it('uppercases word from cursor', () => {
+      const segments = [text('hello world')];
+      const result = uppercaseWord(segments, 0);
+      expect(result.segments[0]).toEqual(text('HELLO world'));
+      expect(result.cursor).toBe(5);
+    });
+
+    it('uppercases from mid-word', () => {
+      const segments = [text('hello world')];
+      const result = uppercaseWord(segments, 2);
+      expect(result.segments[0]).toEqual(text('heLLO world'));
+      expect(result.cursor).toBe(5);
+    });
+
+    it('no-op at end of text', () => {
+      const segments = [text('hello')];
+      const result = uppercaseWord(segments, 5);
+      expect(result.segments[0]).toEqual(text('hello'));
+    });
+  });
+
+  describe('lowercaseWord (Alt+L)', () => {
+    it('lowercases word from cursor', () => {
+      const segments = [text('HELLO WORLD')];
+      const result = lowercaseWord(segments, 0);
+      expect(result.segments[0]).toEqual(text('hello WORLD'));
+      expect(result.cursor).toBe(5);
+    });
+  });
+
+  describe('capitalizeWord (Alt+C)', () => {
+    it('capitalizes word from cursor', () => {
+      const segments = [text('hello world')];
+      const result = capitalizeWord(segments, 0);
+      expect(result.segments[0]).toEqual(text('Hello world'));
+      expect(result.cursor).toBe(5);
+    });
+
+    it('capitalizes from space before word', () => {
+      const segments = [text('hello world')];
+      const result = capitalizeWord(segments, 5);
+      expect(result.segments[0]).toEqual(text('hello World'));
+      expect(result.cursor).toBe(11);
+    });
+  });
+
+  describe('transposeWords (Alt+T)', () => {
+    it('swaps words around cursor', () => {
+      const segments = [text('hello world')];
+      const result = transposeWords(segments, 5); // at space between words
+      expect(result.segments[0]).toEqual(text('world hello'));
+    });
+
+    it('no-op with single word', () => {
+      const segments = [text('hello')];
+      const result = transposeWords(segments, 3);
+      expect(result.segments[0]).toEqual(text('hello'));
+    });
+  });
+
+  describe('isVisuallyMultiLine', () => {
+    it('returns false for short text within width', () => {
+      expect(isVisuallyMultiLine([text('hello')], 80)).toBe(false);
+    });
+
+    it('returns true for text exceeding width', () => {
+      expect(isVisuallyMultiLine([text('a'.repeat(81))], 80)).toBe(true);
+    });
+
+    it('returns true for text with literal newlines', () => {
+      expect(isVisuallyMultiLine([text('hello\nworld')], 80)).toBe(true);
+    });
+
+    it('returns false for text exactly at width', () => {
+      expect(isVisuallyMultiLine([text('a'.repeat(80))], 80)).toBe(false);
+    });
+
+    it('falls back to literal newline check when width <= 0', () => {
+      expect(isVisuallyMultiLine([text('a'.repeat(200))], 0)).toBe(false);
+      expect(isVisuallyMultiLine([text('hello\nworld')], 0)).toBe(true);
+    });
+  });
+
+  describe('getVisualLines', () => {
+    it('returns single line for short text', () => {
+      const lines = getVisualLines('hello', 80);
+      expect(lines).toEqual([{ start: 0, length: 5 }]);
+    });
+
+    it('wraps long text into multiple visual lines', () => {
+      // 15 chars at width 10 -> 2 visual lines: [0..10), [10..15)
+      const lines = getVisualLines('a'.repeat(15), 10);
+      expect(lines).toEqual([
+        { start: 0, length: 10 },
+        { start: 10, length: 5 },
+      ]);
+    });
+
+    it('wraps text exactly at width boundary', () => {
+      const lines = getVisualLines('a'.repeat(20), 10);
+      expect(lines).toEqual([
+        { start: 0, length: 10 },
+        { start: 10, length: 10 },
+      ]);
+    });
+
+    it('handles literal newlines within wrapping', () => {
+      // "abcde\nfghij" at width 3 -> "abc", "de", "fgh", "ij"
+      const lines = getVisualLines('abcde\nfghij', 3);
+      expect(lines).toEqual([
+        { start: 0, length: 3 },
+        { start: 3, length: 2 },
+        { start: 6, length: 3 },
+        { start: 9, length: 2 },
+      ]);
+    });
+
+    it('handles empty lines from consecutive newlines', () => {
+      const lines = getVisualLines('a\n\nb', 80);
+      expect(lines).toEqual([
+        { start: 0, length: 1 },
+        { start: 2, length: 0 },
+        { start: 3, length: 1 },
+      ]);
+    });
+  });
+
+  describe('moveCursorUpVisual', () => {
+    it('returns null on single visual line', () => {
+      expect(moveCursorUpVisual([text('hello')], 3, 80)).toBeNull();
+    });
+
+    it('moves up in visually wrapped text', () => {
+      // "abcdefghij" (10 chars) at width 5 -> line 0: [0..5), line 1: [5..10)
+      // cursor at 7 (line 1, col 2) -> should go to line 0, col 2 = offset 2
+      expect(moveCursorUpVisual([text('abcdefghij')], 7, 5)).toBe(2);
+    });
+
+    it('clamps column when upper line is shorter', () => {
+      // "ab\ncdefghij" at width 5 -> line 0: "ab" (start 0, len 2), line 1: "cdefg" (start 3, len 5), line 2: "hij" (start 8, len 3)
+      // cursor at 7 (line 1, col 4) -> line 0 has length 2, clamp to col 2 = offset 2
+      expect(moveCursorUpVisual([text('ab\ncdefghij')], 7, 5)).toBe(2);
+    });
+
+    it('returns null when already on first visual line', () => {
+      expect(moveCursorUpVisual([text('abcdefghij')], 3, 5)).toBeNull();
+    });
+
+    it('works with literal newlines and wrapping combined', () => {
+      // "hello\nworld_is_great" at width 10
+      // line 0: "hello" (start 0, len 5)
+      // line 1: "world_is_g" (start 6, len 10)
+      // line 2: "reat" (start 16, len 4)
+      // cursor at 18 (line 2, col 2) -> line 1, col 2 = offset 8
+      expect(moveCursorUpVisual([text('hello\nworld_is_great')], 18, 10)).toBe(
+        8
+      );
+    });
+  });
+
+  describe('moveCursorDownVisual', () => {
+    it('returns null on single visual line', () => {
+      expect(moveCursorDownVisual([text('hello')], 3, 80)).toBeNull();
+    });
+
+    it('moves down in visually wrapped text', () => {
+      // "abcdefghij" at width 5 -> line 0: [0..5), line 1: [5..10)
+      // cursor at 2 (line 0, col 2) -> line 1, col 2 = offset 7
+      expect(moveCursorDownVisual([text('abcdefghij')], 2, 5)).toBe(7);
+    });
+
+    it('clamps column when lower line is shorter', () => {
+      // "abcdefgh" (8 chars) at width 5 -> line 0: [0..5), line 1: [5..8)
+      // cursor at 4 (line 0, col 4) -> line 1 has length 3, clamp to col 3 = offset 8
+      expect(moveCursorDownVisual([text('abcdefgh')], 4, 5)).toBe(8);
+    });
+
+    it('returns null when already on last visual line', () => {
+      expect(moveCursorDownVisual([text('abcdefghij')], 7, 5)).toBeNull();
     });
   });
 });

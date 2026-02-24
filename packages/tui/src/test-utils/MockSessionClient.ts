@@ -62,8 +62,16 @@ export class MockSessionClient implements SessionClient {
     };
   }
 
-  async loadSession(sessionId: string): Promise<void> {
+  async loadSession(sessionId: string): Promise<{
+    sessionId: string;
+    currentModel?: { id: string; name: string };
+    currentAgent?: { name: string };
+  }> {
     this.sessionId = sessionId;
+    return {
+      sessionId,
+      currentModel: { id: 'mock-model', name: 'Mock Model' },
+    };
   }
 
   onUpdate(handler: (event: AgentStreamEvent) => void): () => void {

@@ -21,6 +21,8 @@ describe('parseCliArgs', () => {
     expect(parseCliArgs()).toEqual({
       trustAllTools: false,
       noInteractive: false,
+      resume: false,
+      resumePicker: false,
     });
   });
 
@@ -29,6 +31,8 @@ describe('parseCliArgs', () => {
     expect(parseCliArgs()).toEqual({
       trustAllTools: false,
       noInteractive: false,
+      resume: false,
+      resumePicker: false,
     });
   });
 
@@ -84,6 +88,8 @@ describe('parseCliArgs', () => {
       model: 'claude-3',
       trustAllTools: true,
       noInteractive: true,
+      resume: false,
+      resumePicker: false,
       input: 'do something',
     });
   });
@@ -105,6 +111,28 @@ describe('parseCliArgs', () => {
     const result = parseCliArgs();
     expect(result.agent).toBe('direct');
     expect(result.input).toBe('some input');
+  });
+
+  it('parses --resume', () => {
+    setArgs('chat', '--resume');
+    expect(parseCliArgs().resume).toBe(true);
+  });
+
+  it('parses -r as resume shorthand', () => {
+    setArgs('chat', '-r');
+    expect(parseCliArgs().resume).toBe(true);
+  });
+
+  it('parses --resume-picker', () => {
+    setArgs('chat', '--resume-picker');
+    expect(parseCliArgs().resumePicker).toBe(true);
+  });
+
+  it('resume flags default to false', () => {
+    setArgs('chat');
+    const result = parseCliArgs();
+    expect(result.resume).toBe(false);
+    expect(result.resumePicker).toBe(false);
   });
 });
 

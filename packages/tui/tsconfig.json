@@ -28,6 +28,6 @@
 
     "types": ["@types/bun", "node"]
   },
-  "include": ["src/**/*", "scripts/**/*", "e2e_tests/**/*"],
+  "include": ["src/**/*", "scripts/**/*", "e2e_tests/**/*", "integ_tests/**/*"],
   "exclude": ["node_modules"]
 }

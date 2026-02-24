@@ -13,6 +13,8 @@ interface TestCaseOptions {
   logLevel?: 'debug' | 'info' | 'warn' | 'error';
   timeout?: number;
   testName?: string;
+  /** Extra environment variables merged into the spawned process env. */
+  extraEnv?: Record<string, string>;
 }
 
 /**
@@ -71,6 +73,7 @@ export class TestCase {
         KIRO_TEST_TUI_IPC_SOCKET_PATH: this.paths.tuiIpcSocket,
         KIRO_TUI_LOG_FILE: this.paths.tuiLogFile,
         KIRO_AGENT_PATH: 'mock-agent-path',
+        ...options.extraEnv,
       },
     });
 
@@ -96,22 +99,52 @@ export class TestCase {
    * @throws Error if IPC connection fails to establish within timeout
    */
   async launch(): Promise<TestCase> {
+    await this.startIpcServer();
+    this.spawnTui();
+    await this.waitForConnection();
+    return this;
+  }
+
+  /**
+   * Launches the TUI process without waiting for IPC connection.
+   *
+   * Use this when the TUI shows a pre-Ink UI (e.g. --resume-picker) that
+   * blocks before the React app renders and IPC connects. After interacting
+   * with the pre-Ink UI, call {@link waitForReady} to wait for IPC.
+   */
+  async launchWithoutWaiting(): Promise<TestCase> {
+    await this.startIpcServer();
+    this.spawnTui();
+    return this;
+  }
+
+  /**
+   * Waits for the IPC connection to be established.
+   * Call after {@link launchWithoutWaiting} once any pre-Ink UI interaction is done.
+   */
+  async waitForReady(): Promise<void> {
+    await this.waitForConnection();
+  }
+
+  private async startIpcServer(): Promise<void> {
     await new Promise<void>((resolve, reject) => {
       this.ipcServer!.listen(this.paths.tuiIpcSocket, (error?: Error) => {
         if (error) reject(error);
         else resolve();
       });
     });
+  }
 
-    this.ptyManager.spawn('bun', ['run', 'src/index.tsx']);
+  private spawnTui(): void {
+    this.ptyManager.spawn('bun', [
+      'run',
+      'src/index.tsx',
+      ...(this.options.args || []),
+    ]);
 
     console.log(`TUI logs: ${this.paths.tuiLogFile}`);
     console.log(`Rust logs: ${this.paths.rustLogFile}`);
     console.log(`Snapshot: ${this.paths.snapshotHtmlFile}`);
-
-    await this.waitForConnection();
-
-    return this;
   }
 
   /**
@@ -307,6 +340,13 @@ export class TestCase {
     return this.ptyManager.expectExit();
   }
 
+  /**
+   * Returns the test paths for this test case (log files, output dir, etc.).
+   */
+  getTestPaths(): TestPaths {
+    return this.paths;
+  }
+
   private waitForConnection(): Promise<void> {
     return new Promise((resolve, reject) => {
       const timer = setTimeout(() => {
@@ -386,6 +426,17 @@ export class TestCaseBuilder {
   }
 
   /**
+   * Sets extra environment variables for the spawned TUI process.
+   *
+   * @param env - Key-value pairs to merge into the process environment
+   * @returns This builder for method chaining
+   */
+  withEnv(env: Record<string, string>): TestCaseBuilder {
+    this.options.extraEnv = { ...this.options.extraEnv, ...env };
+    return this;
+  }
+
+  /**
    * Creates and launches the configured TestCase.
    *
    * @returns Promise resolving to the launched TestCase instance
@@ -393,5 +444,14 @@ export class TestCaseBuilder {
   async launch(): Promise<TestCase> {
     const testCase = new TestCase(this.options);
     return testCase.launch();
+  }
+
+  /**
+   * Creates and launches the configured TestCase without waiting for IPC.
+   * Use for tests that need to interact with pre-Ink UI (e.g. --resume-picker).
+   */
+  async launchWithoutWaiting(): Promise<TestCase> {
+    const testCase = new TestCase(this.options);
+    return testCase.launchWithoutWaiting();
   }
 }

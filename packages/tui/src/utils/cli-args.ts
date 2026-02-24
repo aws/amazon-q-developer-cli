@@ -14,13 +14,17 @@ export type { AcpSpawnArgs };
  * Parsed CLI arguments.
  *
  * ACP-forwarded fields come from the generated {@link AcpSpawnArgs}.
- * TUI-only fields (noInteractive, input) are local additions.
+ * TUI-only fields (noInteractive, input, resume, resumePicker) are local additions.
  */
 export interface CliArgs extends AcpSpawnArgs {
   /** Run without expecting user input (--no-interactive / --non-interactive). TUI-only. */
   noInteractive: boolean;
   /** The first question to ask (positional arg). TUI-only. */
   input?: string;
+  /** Resume the most recent conversation from this directory (--resume / -r). TUI-only. */
+  resume: boolean;
+  /** Interactively select a conversation to resume (--resume-picker). TUI-only. */
+  resumePicker: boolean;
 }
 
 /**
@@ -38,6 +42,8 @@ export function parseCliArgs(): CliArgs {
   const result: CliArgs = {
     trustAllTools: false,
     noInteractive: false,
+    resume: false,
+    resumePicker: false,
   };
 
   // Skip past "chat" subcommand if present
@@ -57,6 +63,10 @@ export function parseCliArgs(): CliArgs {
       result.trustAllTools = true;
     } else if (arg === '--no-interactive' || arg === '--non-interactive') {
       result.noInteractive = true;
+    } else if (arg === '--resume' || arg === '-r') {
+      result.resume = true;
+    } else if (arg === '--resume-picker') {
+      result.resumePicker = true;
     } else if (arg.startsWith('-')) {
       // Unknown flag — skip its value if the next arg looks like a value (not another flag)
       const next = args[i + 1];

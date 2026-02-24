@@ -139,16 +139,15 @@ export class AcpClient implements acp.Client, SessionClient {
   // ===========
 
   async initialize(): Promise<void> {
-    logger.debug('Initializing ACP connection');
-
     const initResult = await this.connection.initialize({
       protocolVersion: acp.PROTOCOL_VERSION,
       clientCapabilities: {},
     });
 
-    logger.debug('ACP connection initialized', {
-      protocolVersion: initResult.protocolVersion,
-    });
+    logger.debug(
+      '[acp-client] ACP handshake done, protocolVersion:',
+      initResult.protocolVersion
+    );
   }
 
   async newSession(): Promise<{
@@ -191,9 +190,44 @@ export class AcpClient implements acp.Client, SessionClient {
     return { sessionId: this.sessionId, currentModel, currentAgent };
   }
 
-  async loadSession(sessionId: string): Promise<void> {
+  async loadSession(sessionId: string): Promise<{
+    sessionId: string;
+    currentModel?: { id: string; name: string };
+    currentAgent?: { name: string };
+  }> {
+    const sessionResult = await this.connection.loadSession({
+      sessionId,
+      cwd: process.cwd(),
+      mcpServers: [],
+    });
+    logger.debug('[acp-client] loadSession completed for session:', sessionId);
+
     this.sessionId = sessionId;
-    // Implementation depends on ACP protocol support for loading sessions
+    logger.debug('ACP session loaded', {
+      sessionId: this.sessionId,
+    });
+
+    // Extract current model info from session response
+    let currentModel: { id: string; name: string } | undefined;
+    if (
+      sessionResult.models?.currentModelId &&
+      sessionResult.models?.availableModels
+    ) {
+      const modelInfo = sessionResult.models.availableModels.find(
+        (m) => m.modelId === sessionResult.models?.currentModelId
+      );
+      if (modelInfo) {
+        currentModel = { id: modelInfo.modelId, name: modelInfo.name };
+      }
+    }
+
+    // Extract current agent info from session response
+    let currentAgent: { name: string } | undefined;
+    if (sessionResult.modes?.currentModeId) {
+      currentAgent = { name: sessionResult.modes.currentModeId };
+    }
+
+    return { sessionId, currentModel, currentAgent };
   }
 
   onUpdate(handler: (event: AgentStreamEvent) => void): () => void {
@@ -354,6 +388,7 @@ export class AcpClient implements acp.Client, SessionClient {
   async sessionUpdate(params: acp.SessionNotification): Promise<void> {
     const { update } = params;
     if (update) {
+      logger.debug('[acp] sessionUpdate received:', update.sessionUpdate);
       const event = this.convertAcpUpdateToEvent(update);
       if (event) {
         this.broadcastStreamEvent(event);
@@ -414,13 +449,7 @@ export class AcpClient implements acp.Client, SessionClient {
     method: string,
     params: Record<string, unknown>
   ): Promise<void> {
-    logger.info(
-      '[acp] extNotification:',
-      method,
-      'has prompts:',
-      !!(params as any)?.prompts?.length
-    );
-    logger.debug('Extension notification received:', method, params);
+    logger.debug('[acp] extNotification:', method);
     // Handle custom commands available notification (SDK strips leading _)
     const handler = this.extNotificationHandlers[method];
     if (handler) {
@@ -498,7 +527,7 @@ export class AcpClient implements acp.Client, SessionClient {
         toolCount: number;
       }>) || [];
 
-    logger.info(
+    logger.debug(
       '[acp] commands advertising: commands=',
       commands.length,
       'prompts=',
@@ -598,6 +627,19 @@ export class AcpClient implements acp.Client, SessionClient {
     update: AcpSessionUpdate
   ): AgentStreamEvent | null {
     switch (update.sessionUpdate) {
+      case 'user_message_chunk': {
+        switch (update.content.type) {
+          case 'text':
+            return {
+              type: AgentEventType.UserMessage,
+              id: uuidv4(),
+              content: { type: ContentType.Text, text: update.content.text },
+            };
+          default:
+            return null;
+        }
+      }
+
       case 'agent_message_chunk': {
         switch (update.content.type) {
           case 'text':

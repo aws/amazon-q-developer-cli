@@ -36,6 +36,7 @@ export class Kiro {
   private modelHandler?: (model: { id: string; name: string }) => void;
   private agentHandler?: (agent: { name: string }) => void;
   private compactionHandler?: (event: AgentStreamEvent) => void;
+  private historyHandler?: (event: AgentStreamEvent) => void;
   private globalUpdateUnsubscribe?: () => void;
   private pendingPrompt: Promise<void> | null = null;
 
@@ -84,11 +85,19 @@ export class Kiro {
     this.compactionHandler = handler;
   }
 
+  onHistoryEvent(handler: (event: AgentStreamEvent) => void): void {
+    this.historyHandler = handler;
+  }
+
   async initialize(
     agentPath: string,
-    extraAcpArgs: string[] = []
+    extraAcpArgs: string[] = [],
+    resumeSessionId?: string
   ): Promise<void> {
-    logger.debug('Kiro initializing with agent:', agentPath);
+    logger.debug(
+      '[kiro] initialize() called, resumeSessionId:',
+      resumeSessionId ?? 'none'
+    );
 
     if (process.env.KIRO_MOCK_ACP === 'true') {
       const { MockSessionClient, setMockSessionClient } =
@@ -99,6 +108,7 @@ export class Kiro {
     } else {
       this.sessionClient = new AcpClient(agentPath, extraAcpArgs);
     }
+    logger.debug('[kiro] AcpClient created');
 
     // Register handler for commands update before initialize
     this.globalUpdateUnsubscribe = this.sessionClient.onUpdate(
@@ -113,7 +123,7 @@ export class Kiro {
           event.type === AgentEventType.PromptsUpdate &&
           this.promptsHandler
         ) {
-          logger.info(
+          logger.debug(
             '[kiro] received PromptsUpdate event with',
             event.prompts.length,
             'prompts'
@@ -128,11 +138,28 @@ export class Kiro {
         ) {
           this.compactionHandler(event);
         }
+        // Forward historical content events (user messages, assistant text,
+        // tool calls) so the store can populate the message list on resume.
+        if (
+          event.type === AgentEventType.UserMessage ||
+          event.type === AgentEventType.Content ||
+          event.type === AgentEventType.ToolCall ||
+          event.type === AgentEventType.ToolCallUpdate ||
+          event.type === AgentEventType.ToolCallFinished
+        ) {
+          if (this.historyHandler) {
+            this.historyHandler(event);
+          }
+        }
       }
     );
 
     await this.sessionClient.initialize();
-    const sessionResult = await this.sessionClient.newSession();
+
+    // Use loadSession if resuming, otherwise create new session
+    const sessionResult = resumeSessionId
+      ? await this.sessionClient.loadSession(resumeSessionId)
+      : await this.sessionClient.newSession();
 
     // Notify about current model if available
     if (sessionResult.currentModel && this.modelHandler) {
@@ -144,7 +171,11 @@ export class Kiro {
       this.agentHandler(sessionResult.currentAgent);
     }
 
-    logger.info('Kiro initialized successfully');
+    logger.debug(
+      resumeSessionId
+        ? `Kiro initialized with resumed session: ${resumeSessionId}`
+        : 'Kiro initialized successfully'
+    );
   }
 
   /**
@@ -163,7 +194,7 @@ export class Kiro {
       throw new Error('Kiro not initialized');
     }
 
-    logger.info('[stream] streamMessage called', {
+    logger.debug('[stream] streamMessage called', {
       contentLength: content.length,
     });
 
@@ -196,7 +227,7 @@ export class Kiro {
 
       // Handle abort signal
       const onAbort = () => {
-        logger.info('[stream] signal aborted, cancelling');
+        logger.debug('[stream] signal aborted, cancelling');
         settle(() => {
           reject(new DOMException('Aborted', 'AbortError'));
         });
@@ -212,6 +243,13 @@ export class Kiro {
         // response and notifications race in the ACP SDK, so late
         // notifications must still reach the store.  The store's event
         // handler is idempotent so duplicate delivery is harmless.
+        //
+        // Filter out UserMessage events — those are historical replays
+        // from the backend during session load, not live prompt responses.
+        // Processing them here would duplicate the already-loaded history.
+        if (event.type === AgentEventType.UserMessage) {
+          return;
+        }
         receivedFirstEvent = true;
         // Clear the initial-response timeout once we get any event
         if (timeoutId) {

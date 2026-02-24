@@ -33,14 +33,23 @@ import {
   locateCursor,
   normalizeSegments,
   deleteWordBackward,
+  deleteWordForward,
   deleteForward,
   killToEnd,
   killToBeginning,
   moveWordForward,
   moveWordBackward,
   transposeChars,
+  uppercaseWord,
+  lowercaseWord,
+  capitalizeWord,
+  transposeWords,
+  isVisuallyMultiLine,
+  moveCursorUpVisual,
+  moveCursorDownVisual,
 } from '../../../utils/input-editing.js';
 import { CommandHistory } from '../../../utils/command-history.js';
+import { useTerminalSize } from '../../../hooks/useTerminalSize.js';
 
 export interface TriggerRule {
   key: string;
@@ -142,6 +151,7 @@ export const PromptInput = React.memo(function PromptInput({
   const [cursor, setCursor] = useState(0);
 
   const { getColor } = useTheme();
+  const { width: termWidth } = useTerminalSize();
   const prevTriggerRef = useRef<TriggerInfo | null>(null);
 
   const primaryColor = useMemo(() => getColor('primary'), [getColor]);
@@ -502,17 +512,27 @@ export const PromptInput = React.memo(function PromptInput({
         activeTrigger?.key === '@' && filePickerHasResults;
 
       if (key.return) {
-        // Block Enter if file picker menu is visible with results
-        if (filePickerVisible) return;
-        // Block Enter if slash command menu is visible
-        if (slashMenuVisible) return;
-        const content = buildContent(segments);
-        if (content) {
-          clearAll();
-          onSubmit(content);
+        if (key.meta) {
+          // Alt+Enter - insert newline (matches V1 rustyline behavior)
+          insertText('\n');
+        } else {
+          // Block Enter if file picker menu is visible with results
+          if (filePickerVisible) return;
+          // Block Enter if slash command menu is visible
+          if (slashMenuVisible) return;
+          const content = buildContent(segments);
+          if (content) {
+            clearAll();
+            onSubmit(content);
+          }
         }
       } else if (key.backspace || key.delete) {
-        handleBackspace();
+        if (key.meta) {
+          // Alt+Backspace / Alt+Delete - delete word backward (matches V1 rustyline behavior)
+          applyEdit(deleteWordBackward(segments, cursor));
+        } else {
+          handleBackspace();
+        }
       } else if (key.leftArrow) {
         inputMetrics.markStateUpdate();
         if (key.ctrl || key.meta) {
@@ -532,7 +552,16 @@ export const PromptInput = React.memo(function PromptInput({
       } else if (key.upArrow) {
         // Skip if menu is visible - let menu handle it
         if (slashMenuVisible || filePickerVisible) return;
-        // Navigate to previous command in history
+        // Multi-line or visually wrapped: move cursor up a visual line
+        if (isVisuallyMultiLine(segments, termWidth)) {
+          const newPos = moveCursorUpVisual(segments, cursor, termWidth);
+          if (newPos !== null) {
+            inputMetrics.markStateUpdate();
+            setCursor(newPos);
+            return;
+          }
+        }
+        // Single-line or already on first line: navigate history
         const command = CommandHistory.getInstance().navigate('up');
         if (command) {
           setSegments([{ type: 'text', value: command }]);
@@ -541,7 +570,16 @@ export const PromptInput = React.memo(function PromptInput({
       } else if (key.downArrow) {
         // Skip if menu is visible - let menu handle it
         if (slashMenuVisible || filePickerVisible) return;
-        // Navigate to next command in history
+        // Multi-line or visually wrapped: move cursor down a visual line
+        if (isVisuallyMultiLine(segments, termWidth)) {
+          const newPos = moveCursorDownVisual(segments, cursor, termWidth);
+          if (newPos !== null) {
+            inputMetrics.markStateUpdate();
+            setCursor(newPos);
+            return;
+          }
+        }
+        // Single-line or already on last line: navigate history
         const command = CommandHistory.getInstance().navigate('down');
         if (command) {
           setSegments([{ type: 'text', value: command }]);
@@ -594,6 +632,52 @@ export const PromptInput = React.memo(function PromptInput({
           case 'j': // Ctrl+J - newline (existing)
             insertText('\n');
             break;
+          case 'p': // Ctrl+P - move cursor up / previous history
+            {
+              if (slashMenuVisible || filePickerVisible) break;
+              if (isVisuallyMultiLine(segments, termWidth)) {
+                const newPos = moveCursorUpVisual(segments, cursor, termWidth);
+                if (newPos !== null) {
+                  inputMetrics.markStateUpdate();
+                  setCursor(newPos);
+                  break;
+                }
+              }
+              const command = CommandHistory.getInstance().navigate('up');
+              if (command) {
+                setSegments([{ type: 'text', value: command }]);
+                setCursor(command.length);
+              }
+            }
+            break;
+          case 'n': // Ctrl+N - move cursor down / next history
+            {
+              if (slashMenuVisible || filePickerVisible) break;
+              if (isVisuallyMultiLine(segments, termWidth)) {
+                const newPos = moveCursorDownVisual(
+                  segments,
+                  cursor,
+                  termWidth
+                );
+                if (newPos !== null) {
+                  inputMetrics.markStateUpdate();
+                  setCursor(newPos);
+                  break;
+                }
+              }
+              const command = CommandHistory.getInstance().navigate('down');
+              if (command) {
+                setSegments([{ type: 'text', value: command }]);
+                setCursor(command.length);
+              } else {
+                setSegments([{ type: 'text', value: '' }]);
+                setCursor(0);
+              }
+            }
+            break;
+          case 'l': // Ctrl+L - clear screen
+            process.stdout.write('\x1b[2J\x1b[H');
+            break;
           case 'v': // Ctrl+V - paste image from clipboard
             handlePasteImage();
             break;
@@ -601,7 +685,7 @@ export const PromptInput = React.memo(function PromptInput({
             break;
         }
       } else if (key.meta) {
-        // Alt/Meta shortcuts (word movement)
+        // Alt/Meta shortcuts (word movement and deletion)
         switch (userInput) {
           case 'b': // Alt+B - back one word
             inputMetrics.markStateUpdate();
@@ -610,6 +694,21 @@ export const PromptInput = React.memo(function PromptInput({
           case 'f': // Alt+F - forward one word
             inputMetrics.markStateUpdate();
             setCursor(moveWordForward(segments, cursor));
+            break;
+          case 'd': // Alt+D - delete word forward
+            applyEdit(deleteWordForward(segments, cursor));
+            break;
+          case 't': // Alt+T - transpose words
+            applyEdit(transposeWords(segments, cursor));
+            break;
+          case 'u': // Alt+U - uppercase word
+            applyEdit(uppercaseWord(segments, cursor));
+            break;
+          case 'l': // Alt+L - lowercase word
+            applyEdit(lowercaseWord(segments, cursor));
+            break;
+          case 'c': // Alt+C - capitalize word
+            applyEdit(capitalizeWord(segments, cursor));
             break;
           default:
             break;

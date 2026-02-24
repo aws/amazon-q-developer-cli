@@ -315,8 +315,10 @@ export const ConversationView = React.memo(function ConversationView() {
 
   const staticItems: StaticItem[] = [];
 
-  // Add welcome screen to static ONCE when first message arrives
-  if (hasMessages && !welcomeInStaticRef.current) {
+  // Always include welcome screen in static items once messages exist.
+  // <Static> tracks items by array index, so the welcome must remain in
+  // the array on every render to keep indices stable for new items.
+  if (hasMessages) {
     staticItems.push({ type: 'welcome', id: '__welcome__' });
     welcomeInStaticRef.current = true;
   }

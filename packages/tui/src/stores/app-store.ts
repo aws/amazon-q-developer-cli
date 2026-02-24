@@ -500,16 +500,18 @@ export const createAppStore = (props: AppStoreProps) =>
         agentName: get().currentAgent?.name,
       };
 
-      set((state) => ({
-        isProcessing: true,
-        agentError: null,
-        agentErrorGuidance: null,
-        messages: [...state.messages, userMessage],
-        attachedFiles: [], // Clear attachments after sending
-        pendingImages: [], // Clear pending images after sending
-        // Reset expandable content flag for new turn (expanded state persists)
-        hasExpandableToolOutputs: false,
-      }));
+      set((state) => {
+        return {
+          isProcessing: true,
+          agentError: null,
+          agentErrorGuidance: null,
+          messages: [...state.messages, userMessage],
+          attachedFiles: [], // Clear attachments after sending
+          pendingImages: [], // Clear pending images after sending
+          // Reset expandable content flag for new turn (expanded state persists)
+          hasExpandableToolOutputs: false,
+        };
+      });
 
       try {
         const eventHandler = get().createStreamEventHandler();
@@ -711,6 +713,35 @@ export const createAppStore = (props: AppStoreProps) =>
 
       const handler = (event: AgentStreamEvent) => {
         switch (event.type) {
+          case AgentEventType.UserMessage:
+            // Historical user message from a resumed session.
+            // Flush any buffered assistant content from the previous turn
+            // before adding the user message so turns don't bleed together.
+            if (pendingContentFlush) {
+              clearTimeout(pendingContentFlush);
+              pendingContentFlush = null;
+              flushContentToStore();
+            }
+            // Reset buffer for the next assistant turn
+            bufferedContent = '';
+            lastContentEventId = null;
+
+            if (event.content.type === 'text') {
+              const text = event.content.text;
+              const id = event.id;
+              set((state) => ({
+                messages: [
+                  ...state.messages,
+                  {
+                    id,
+                    role: MessageRole.User,
+                    content: text,
+                    agentName: state.currentAgent?.name,
+                  },
+                ],
+              }));
+            }
+            break;
           case AgentEventType.Content:
             if (event.content.type === 'text') {
               const text = event.content.text;

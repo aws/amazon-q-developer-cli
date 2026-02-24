@@ -14,6 +14,9 @@ import { logger } from './utils/logger';
 import { Kiro } from './kiro';
 import { TestModeProvider } from './test-utils/TestModeProvider';
 import { parseCliArgs, buildAcpArgs } from './utils/cli-args';
+import { getMostRecentSessionId } from './utils/sessions';
+import { pickSession } from './utils/session-picker';
+import type { AgentStreamEvent } from './types/agent-events';
 
 // Enable bracketed paste mode escape sequences
 const ENABLE_BRACKETED_PASTE = '\x1b[?2004h';
@@ -55,12 +58,34 @@ const appStore = createAppStore({
   initialInput: cliArgs.input,
 });
 
+// Resolve resume session ID.
+// --resume: pick the most recent session for cwd (synchronous disk read).
+// --resume-picker: interactive selection (async, must run before Ink).
+// Both fall back to a new session if nothing is found.
+let resumeSessionId: string | undefined;
+if (cliArgs.resume) {
+  resumeSessionId = getMostRecentSessionId(process.cwd());
+  if (!resumeSessionId) {
+    process.stderr.write(
+      'No saved sessions found for this directory. Starting new session.\n'
+    );
+  }
+}
+
 // Start initialization immediately (non-blocking)
 let initPromise: Promise<void> | null = null;
 let initError: string | null = null;
 
-const startInitialization = () => {
-  if (initPromise) return initPromise;
+// Buffer history events during init so store updates don't trigger React
+// re-renders that cycle Ink's stdin listener (which breaks input under Bun).
+let pendingHistoryEvents: AgentStreamEvent[] = [];
+
+const wireUpHandlers = () => {
+  // Wire up history event handler so resumed sessions populate the message list.
+  // Events are buffered during init and replayed in one batch afterwards.
+  kiro.onHistoryEvent((event) => {
+    pendingHistoryEvents.push(event);
+  });
 
   // Wire up commands handler before initialize
   kiro.onCommandsUpdate((commands) => {
@@ -76,7 +101,7 @@ const startInitialization = () => {
 
   // Wire up prompts handler before initialize
   kiro.onPromptsUpdate((prompts) => {
-    logger.info('[tui] prompts update received:', prompts.length, 'prompts');
+    logger.debug('[tui] prompts update received:', prompts.length, 'prompts');
     const store = appStore.getState();
     store.setPrompts(prompts);
 
@@ -121,115 +146,185 @@ const startInitialization = () => {
   kiro.onCompactionStatus((event) => {
     appStore.getState().handleCompactionEvent(event);
   });
+};
+
+const startInitialization = (sessionId?: string) => {
+  if (initPromise) return initPromise;
+
+  wireUpHandlers();
 
   initPromise = kiro
-    .initialize(agentPath, acpArgs)
+    .initialize(agentPath, acpArgs, sessionId)
     .then(() => {
+      // Replay buffered history events in one batch now that init is done.
+      // We defer to setTimeout(0) so Ink's first render cycle completes and
+      // stdin listeners are stable before we trigger store updates.
       appStore.setState({ sessionId: kiro.sessionId ?? null });
-      logger.info('Kiro initialized successfully');
+
+      const events = pendingHistoryEvents;
+      pendingHistoryEvents = [];
+      // Clear the history handler so future events (from live streaming)
+      // don't get buffered.
+      kiro.onHistoryEvent(() => {});
+
+      if (events.length > 0) {
+        setTimeout(() => {
+          logger.debug('[index] replaying', events.length, 'history events');
+          const handler = appStore.getState().createStreamEventHandler();
+          for (const event of events) {
+            handler(event);
+          }
+          (handler as any).flush?.();
+        }, 0);
+      }
     })
     .catch((error) => {
       logger.error('Failed to initialize Kiro:', error);
-      initError = error.message || 'Initialization failed';
+      // Extract the most useful error message from the RPC error
+      let errorMsg = 'Initialization failed';
+      let guidance: string | undefined;
+      if (typeof error === 'object' && error !== null) {
+        if ('data' in error && typeof error.data === 'string' && error.data) {
+          errorMsg = error.data;
+        } else if (error.message && error.message !== 'Internal error') {
+          errorMsg = error.message;
+        }
+      } else if (typeof error === 'string') {
+        errorMsg = error;
+      }
+      // Provide guidance for common init errors
+      if (errorMsg.includes('active in another process')) {
+        guidance =
+          'Close the other session first, or start a new session without --resume.';
+      }
+      initError = errorMsg;
+      // Push into the store so React re-renders and shows the error
+      appStore.getState().setAgentError(errorMsg, guidance);
     });
 
   return initPromise;
 };
 
-// Start initialization immediately
-startInitialization();
-
-// Handle non-interactive mode: bail early if no input provided
-if (cliArgs.noInteractive && !cliArgs.input) {
-  process.stderr.write(
-    'Error: Input must be supplied when running in non-interactive mode\n'
-  );
-  process.exit(1);
-}
-
-// Non-interactive mode: auto-submit input after init, exit after turn, error on approval
-if (cliArgs.noInteractive && cliArgs.input) {
-  const nonInteractiveInput = cliArgs.input;
-  let hasStartedProcessing = false;
-  let isExiting = false;
-
-  // Subscribe to store changes for exit-after-turn and approval-error
-  appStore.subscribe((state) => {
-    if (isExiting) return;
-
-    // Track when processing starts so we know when it ends
-    if (state.isProcessing) {
-      hasStartedProcessing = true;
+// For --resume-picker, we need to run the interactive picker before Ink renders.
+// We wrap the entire startup in an async IIFE so the picker can await user input.
+const startApp = async () => {
+  // Handle --resume-picker: interactive session selection before Ink starts
+  if (cliArgs.resumePicker) {
+    const pickedId = await pickSession(process.cwd());
+    if (pickedId) {
+      resumeSessionId = pickedId;
+    } else {
+      process.stderr.write('No session selected. Starting new session.\n');
     }
-
-    // Error out if tool approval is requested in non-interactive mode
-    if (state.pendingApproval) {
-      isExiting = true;
-      appStore
-        .getState()
-        .setAgentError(
-          'Tool approval required but --no-interactive was specified.',
-          'Use --trust-all-tools to automatically approve tools.'
-        );
-      setTimeout(() => process.exit(1), 200);
-    }
-
-    // Exit after the turn completes
-    if (hasStartedProcessing && !state.isProcessing) {
-      isExiting = true;
-      // Give Ink a moment to flush the final render
-      setTimeout(() => {
-        kiro.close();
-        process.exit(0);
-      }, 100);
-    }
-  });
-
-  // Auto-submit after initialization completes
-  startInitialization().then(() => {
-    if (initError) return; // Error will be shown by the App component
-    appStore.getState().sendMessage(nonInteractiveInput);
-  });
-}
-
-// Clear screen and move cursor to top
-process.stdout.write('\x1b[2J\x1b[H');
-
-function App() {
-  const appStoreRef = useRef<AppStoreApi>(appStore);
-
-  // Enable bracketed paste mode on mount
-  useEffect(() => {
-    process.stdout.write(ENABLE_BRACKETED_PASTE);
-    return () => {
-      process.stdout.write(DISABLE_BRACKETED_PASTE);
-    };
-  }, []);
-
-  // Wait for initialization to complete (UI renders immediately)
-  useEffect(() => {
-    startInitialization();
-  }, []);
-
-  if (initError) {
-    return <Text color="red">Error: {initError}</Text>;
   }
 
-  return (
-    <ErrorBoundary>
-      <ThemeProvider>
-        <AppStoreContext.Provider value={appStoreRef.current}>
-          <TestModeProvider>
-            <AppContainer />
-          </TestModeProvider>
-        </AppStoreContext.Provider>
-      </ThemeProvider>
-    </ErrorBoundary>
-  );
-}
+  // Start initialization (non-blocking for the UI)
+  startInitialization(resumeSessionId);
 
-render(<App />, {
-  exitOnCtrlC: false,
-  patchConsole: false,
-  incrementalRendering: false,
-});
+  // Handle non-interactive mode: bail early if no input provided
+  if (cliArgs.noInteractive && !cliArgs.input) {
+    process.stderr.write(
+      'Error: Input must be supplied when running in non-interactive mode\n'
+    );
+    process.exit(1);
+  }
+
+  // Non-interactive mode: auto-submit input after init, exit after turn, error on approval
+  if (cliArgs.noInteractive && cliArgs.input) {
+    const nonInteractiveInput = cliArgs.input;
+    let hasStartedProcessing = false;
+    let isExiting = false;
+
+    // Subscribe to store changes for exit-after-turn and approval-error
+    appStore.subscribe((state) => {
+      if (isExiting) return;
+
+      // Track when processing starts so we know when it ends
+      if (state.isProcessing) {
+        hasStartedProcessing = true;
+      }
+
+      // Error out if tool approval is requested in non-interactive mode
+      if (state.pendingApproval) {
+        isExiting = true;
+        appStore
+          .getState()
+          .setAgentError(
+            'Tool approval required but --no-interactive was specified.',
+            'Use --trust-all-tools to automatically approve tools.'
+          );
+        setTimeout(() => process.exit(1), 200);
+      }
+
+      // Exit after the turn completes
+      if (hasStartedProcessing && !state.isProcessing) {
+        isExiting = true;
+        // Give Ink a moment to flush the final render
+        setTimeout(() => {
+          kiro.close();
+          process.exit(0);
+        }, 100);
+      }
+    });
+
+    // Auto-submit after initialization completes
+    startInitialization(resumeSessionId).then(() => {
+      if (initError) return; // Error will be shown by the App component
+      appStore.getState().sendMessage(nonInteractiveInput);
+    });
+  }
+
+  // Interactive mode with initial input: auto-submit after init, then stay interactive (V1 behavior)
+  if (!cliArgs.noInteractive && cliArgs.input) {
+    const interactiveInput = cliArgs.input;
+    startInitialization(resumeSessionId).then(() => {
+      if (initError) return;
+      appStore.getState().sendMessage(interactiveInput);
+    });
+  }
+
+  // Clear screen and move cursor to top
+  process.stdout.write('\x1b[2J\x1b[H');
+
+  function App() {
+    const appStoreRef = useRef<AppStoreApi>(appStore);
+
+    // Enable bracketed paste mode on mount
+    useEffect(() => {
+      process.stdout.write(ENABLE_BRACKETED_PASTE);
+      return () => {
+        process.stdout.write(DISABLE_BRACKETED_PASTE);
+      };
+    }, []);
+
+    // Wait for initialization to complete (UI renders immediately)
+    useEffect(() => {
+      startInitialization(resumeSessionId);
+    }, []);
+
+    if (initError) {
+      return <Text color="red">Error: {initError}</Text>;
+    }
+
+    return (
+      <ErrorBoundary>
+        <ThemeProvider>
+          <AppStoreContext.Provider value={appStoreRef.current}>
+            <TestModeProvider>
+              <AppContainer />
+            </TestModeProvider>
+          </AppStoreContext.Provider>
+        </ThemeProvider>
+      </ErrorBoundary>
+    );
+  }
+
+  render(<App />, {
+    exitOnCtrlC: false,
+    patchConsole: false,
+    incrementalRendering: false,
+  });
+};
+
+// Launch the app
+startApp();
