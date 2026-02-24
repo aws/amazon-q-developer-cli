@@ -5,30 +5,22 @@ db-urls = ["https://github.com/rustsec/advisory-db"]
 yanked = "deny"
 
 ignore = [
-  # yaml-rust is required for syntect
+  # boxfnonce is obsolete, transitive dep via sacp
+  "RUSTSEC-2019-0040",
+  # yaml-rust is unmaintained, transitive dep via syntect
   "RUSTSEC-2024-0320",
-  # proc-macro-error is a transitive dependency of a number of dependencies, 
-  # this is allowed for now til the ecosystem migrates away
-  "RUSTSEC-2024-0370",
-  # blocked on portable-pty migrating away from serial
-  "RUSTSEC-2017-0008",
-  # gtk3-rs is used by tao/wry, we can not remove these til the migrate
-  "RUSTSEC-2024-0411",
-  "RUSTSEC-2024-0412",
-  "RUSTSEC-2024-0413",
-  "RUSTSEC-2024-0414",
-  "RUSTSEC-2024-0415",
-  "RUSTSEC-2024-0416",
-  "RUSTSEC-2024-0417",
-  "RUSTSEC-2024-0418",
-  "RUSTSEC-2024-0419",
-  "RUSTSEC-2024-0420",
-  # glib is required by gtk via tao, depends on upgrading those dependencies
-  "RUSTSEC-2024-0429",
-  # paste is used in core deps
+  # instant is unmaintained, transitive dep via notify-types
+  "RUSTSEC-2024-0384",
+  # paste is unmaintained, used in core deps
   "RUSTSEC-2024-0436",
-  # fxhash is unmaintained but used by bm25, waiting for bm25 to migrate
+  # fxhash is unmaintained, transitive dep via bm25
   "RUSTSEC-2025-0057",
+  # number_prefix is unmaintained, transitive dep via indicatif and tokenizers
+  "RUSTSEC-2025-0119",
+  # rustls-pemfile is unmaintained, migration requires code changes
+  "RUSTSEC-2025-0134",
+  # bincode v1 is unmaintained, transitive dep via hnsw_rs and syntect
+  "RUSTSEC-2025-0141",
 ]
 
 [licenses]
@@ -54,6 +46,7 @@ allow = [
   "Unicode-3.0",
   "Zlib",
   "CDLA-Permissive-2.0",
+  "bzip2-1.0.6",
 ]
 
 [[licenses.clarify]]
