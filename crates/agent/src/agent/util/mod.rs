@@ -5,6 +5,7 @@ pub mod glob;
 pub mod path;
 pub mod providers;
 pub mod request_channel;
+pub mod steering;
 pub mod test;
 
 use std::collections::HashMap;

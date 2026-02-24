@@ -1389,6 +1389,25 @@ impl AcpSession {
             },
             AgentEvent::Clear(_) => {
                 tracing::info!("Received clear event");
+                // Compute baseline context usage (tools + system prompt) instead of None
+                if let Ok(snapshot) = self.agent.create_snapshot().await {
+                    let context_window = self.rts_state.model_info().map_or(200_000, |m| m.context_window_tokens);
+                    let sizes = super::commands::context::calculate_component_sizes(&snapshot);
+                    let baseline_tokens = sizes.tools;
+                    let baseline_percentage = (baseline_tokens as f32 / context_window as f32) * 100.0;
+                    self.rts_state.set_context_usage_percentage(Some(baseline_percentage));
+                } else {
+                    self.rts_state.set_context_usage_percentage(None);
+                }
+
+                let notification = super::schema::MetadataNotification {
+                    session_id: self.session_id_str.clone(),
+                    context_usage_percentage: self.rts_state.context_usage_percentage(),
+                };
+                if let Err(e) = self.connection_cx.send_notification(notification) {
+                    warn!("Failed to send metadata after clear: {}", e);
+                }
+
                 if let Err(e) = self.send_ext_notification(methods::CLEAR_STATUS, ClearStatusNotification {
                     session_id: self.session_id.clone(),
                 }) {

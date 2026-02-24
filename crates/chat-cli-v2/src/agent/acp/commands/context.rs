@@ -10,6 +10,10 @@ use agent::tui_commands::{
     ContextArgs,
 };
 use agent::types::AgentSnapshot;
+use agent::util::steering::{
+    is_steering_file,
+    should_include_steering_file,
+};
 use serde_json::json;
 
 use super::CommandContext;
@@ -17,6 +21,7 @@ use super::CommandContext;
 const DEFAULT_CONTEXT_WINDOW_TOKENS: usize = 200_000;
 
 pub async fn execute(args: &ContextArgs, ctx: &CommandContext<'_>) -> CommandResult {
+    // Default behavior - show context usage
     let model = ctx.rts_state.model_id().unwrap_or_else(|| "default".to_string());
     let backend_usage = ctx.rts_state.context_usage_percentage();
     let context_window = ctx
@@ -158,22 +163,83 @@ fn calculate_context_files_tokens(snapshot: &AgentSnapshot) -> (usize, Vec<Break
 
     let mut items = Vec::new();
     let mut total = 0;
+
     for r in resources {
         let path_str = r.as_ref();
         let path = path_str.strip_prefix("file://").unwrap_or(path_str);
-        let (tokens, matched) = match std::fs::metadata(path) {
-            Ok(m) => (m.len() as usize / 4, true),
-            Err(_) => (0, false),
+
+        // Expand ~ in paths
+        let expanded_path = if path.starts_with('~') {
+            if let Ok(home_dir) = std::env::var("HOME") {
+                path.replacen('~', &home_dir, 1)
+            } else {
+                path.to_string()
+            }
+        } else {
+            path.to_string()
         };
-        total += tokens;
-        items.push(BreakdownItem {
-            name: path.to_string(),
-            tokens,
-            matched,
-            percent: 0.0,
-        });
+
+        // Handle glob patterns
+        if expanded_path.contains('*') || expanded_path.contains('?') || expanded_path.contains('[') {
+            match glob::glob(&expanded_path) {
+                Ok(entries) => {
+                    for file_path in entries.flatten() {
+                        if file_path.is_file() {
+                            let path_str = file_path.to_string_lossy().to_string();
+                            let (tokens, matched) = calculate_file_tokens(&path_str);
+                            if matched {
+                                total += tokens;
+                                items.push(BreakdownItem {
+                                    name: path_str,
+                                    tokens,
+                                    matched,
+                                    percent: 0.0,
+                                });
+                            }
+                        }
+                    }
+                },
+                Err(_) => {
+                    // Invalid glob pattern - add as unmatched
+                    items.push(BreakdownItem {
+                        name: expanded_path,
+                        tokens: 0,
+                        matched: false,
+                        percent: 0.0,
+                    });
+                },
+            }
+        } else {
+            // Regular file path
+            let (tokens, matched) = calculate_file_tokens(&expanded_path);
+            total += tokens;
+            items.push(BreakdownItem {
+                name: expanded_path,
+                tokens,
+                matched,
+                percent: 0.0,
+            });
+        }
     }
     (total, items)
+}
+
+fn calculate_file_tokens(path: &str) -> (usize, bool) {
+    match std::fs::read_to_string(path) {
+        Ok(content) => {
+            // Apply steering file filtering
+            if is_steering_file(path) {
+                if should_include_steering_file(&content) {
+                    (content.len() / 4, true)
+                } else {
+                    (0, false) // Excluded by frontmatter
+                }
+            } else {
+                (content.len() / 4, true)
+            }
+        },
+        Err(_) => (0, false),
+    }
 }
 
 fn calculate_tools_tokens(snapshot: &AgentSnapshot) -> usize {
@@ -210,5 +276,16 @@ fn estimate_content_size(content: &ContentBlock) -> usize {
                 ToolResultContentBlock::Image(_) => 1000,
             })
             .sum(),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use agent::tui_commands::ContextArgs;
+
+    #[test]
+    fn test_context_args_default() {
+        let args = ContextArgs::default();
+        assert!(!args.verbose);
     }
 }

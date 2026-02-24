@@ -2,6 +2,11 @@ use std::collections::HashMap;
 use std::io::Write;
 use std::path::Path;
 
+use agent::util::steering::{
+    extract_yaml_frontmatter,
+    is_steering_file,
+    should_include_steering_file,
+};
 use eyre::{
     Result,
     eyre,
@@ -463,7 +468,7 @@ async fn add_file_to_context(
     let content = os.fs.read_to_string(path).await?;
 
     // Check if this is a steering file that needs front matter filtering
-    if filename.contains(".kiro/steering") && filename.ends_with(".md") && !should_include_steering_file(&content)? {
+    if is_steering_file(&filename) && !should_include_steering_file(&content) {
         return Ok(());
     }
 
@@ -479,35 +484,9 @@ async fn add_file_to_context(
 }
 
 #[derive(Debug, Deserialize)]
-struct FrontMatter {
-    inclusion: Option<String>,
-}
-
-#[derive(Debug, Deserialize)]
 struct AutoLoadContextFileMetadata {
     name: Option<String>,
     description: Option<String>,
-}
-
-/// Extract YAML frontmatter from file content
-fn extract_yaml_frontmatter(content: &str) -> Option<String> {
-    if !content.starts_with("---\n") {
-        return None;
-    }
-
-    let lines: Vec<&str> = content.lines().collect();
-    let mut end_index = None;
-
-    for (i, line) in lines.iter().enumerate().skip(1) {
-        if line.trim() == "---" {
-            end_index = Some(i);
-            break;
-        }
-    }
-
-    let end_index = end_index?;
-    let front_matter_lines = &lines[1..end_index];
-    Some(front_matter_lines.join("\n"))
 }
 
 /// Create Auto ContextFile from content, fallback to Full file
@@ -535,30 +514,6 @@ fn create_auto_load_context_file(filename: String, content: String, context_file
 /// Parse frontmatter for auto files to extract name and description
 fn parse_auto_load_metadata(yaml: &str) -> Result<AutoLoadContextFileMetadata> {
     serde_yaml::from_str::<AutoLoadContextFileMetadata>(yaml).map_err(|e| eyre!("Failed to parse frontmatter: {}", e))
-}
-
-/// Check if a steering file should be included based on its front matter
-fn should_include_steering_file(content: &str) -> Result<bool> {
-    let front_matter_yaml = match extract_yaml_frontmatter(content) {
-        Some(yaml) => yaml,
-        None => return Ok(true), // No front matter - include the file
-    };
-
-    match serde_yaml::from_str::<FrontMatter>(&front_matter_yaml) {
-        Ok(front_matter) => {
-            match front_matter.inclusion.as_deref() {
-                Some("always") => Ok(true),
-                Some("fileMatch") => Ok(false), // Exclude fileMatch files
-                Some("manual") => Ok(false),    // Exclude manual files
-                None => Ok(true),               // No inclusion field - include
-                Some(_) => Ok(true),            // Unknown inclusion value - include
-            }
-        },
-        Err(_) => {
-            // Failed to parse front matter - include the file
-            Ok(true)
-        },
-    }
 }
 
 #[cfg(test)]
@@ -657,33 +612,35 @@ mod tests {
 
     #[test]
     fn test_should_include_steering_file() {
+        use agent::util::steering::should_include_steering_file;
+
         // Test file without front matter - should be included
         let content_no_frontmatter = "# Regular markdown file\nSome content here.";
-        assert!(should_include_steering_file(content_no_frontmatter).unwrap());
+        assert!(should_include_steering_file(content_no_frontmatter));
 
         // Test file with inclusion: always - should be included
         let content_always = "---\ninclusion: always\n---\n# Always included\nContent here.";
-        assert!(should_include_steering_file(content_always).unwrap());
+        assert!(should_include_steering_file(content_always));
 
         // Test file with inclusion: fileMatch - should be excluded
         let content_filematch = "---\ninclusion: fileMatch\n---\n# File match only\nContent here.";
-        assert!(!should_include_steering_file(content_filematch).unwrap());
+        assert!(!should_include_steering_file(content_filematch));
 
         // Test file with inclusion: manual - should be excluded
         let content_manual = "---\ninclusion: manual\n---\n# Manual only\nContent here.";
-        assert!(!should_include_steering_file(content_manual).unwrap());
+        assert!(!should_include_steering_file(content_manual));
 
         // Test file with no inclusion field - should be included
         let content_no_inclusion = "---\ntitle: Some Title\n---\n# No inclusion field\nContent here.";
-        assert!(should_include_steering_file(content_no_inclusion).unwrap());
+        assert!(should_include_steering_file(content_no_inclusion));
 
         // Test file with malformed front matter - should be included
         let content_malformed = "---\ninvalid yaml: [\n---\n# Malformed\nContent here.";
-        assert!(should_include_steering_file(content_malformed).unwrap());
+        assert!(should_include_steering_file(content_malformed));
 
         // Test file with incomplete front matter - should be included
         let content_incomplete = "---\ninclusion: always\n# Missing closing ---\nContent here.";
-        assert!(should_include_steering_file(content_incomplete).unwrap());
+        assert!(should_include_steering_file(content_incomplete));
     }
 
     #[test]

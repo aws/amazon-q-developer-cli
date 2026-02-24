@@ -110,8 +110,11 @@ export const InlineLayout: React.FC = () => {
     }))
   );
 
-  // Cache git branch - only call once on mount to avoid blocking renders
-  const gitBranch = useMemo(() => getGitBranch(), []);
+  const [gitBranch, setGitBranch] = useState(() => getGitBranch());
+
+  useEffect(() => {
+    if (!isProcessing) setGitBranch(getGitBranch());
+  }, [isProcessing]);
 
   // Build radio options from pending approval permissions
   const approvalOptions = useMemo((): RadioOption[] => {
@@ -267,7 +270,6 @@ export const InlineLayout: React.FC = () => {
   }, [setShowUsagePanel, setActiveCommand, clearCommandInput]);
 
   const handleTabFromContext = useCallback(async () => {
-    setShowContextBreakdown(false);
     try {
       const result = await kiro.executeCommand({
         command: 'usage',
@@ -275,6 +277,7 @@ export const InlineLayout: React.FC = () => {
       } as any);
       if (result?.data) {
         setShowUsagePanel(true, result.data);
+        setShowContextBreakdown(false);
       }
     } catch {
       /* ignore */
@@ -282,7 +285,6 @@ export const InlineLayout: React.FC = () => {
   }, [setShowContextBreakdown, setShowUsagePanel, kiro]);
 
   const handleTabFromUsage = useCallback(async () => {
-    setShowUsagePanel(false);
     try {
       const result = await kiro.executeCommand({
         command: 'context',
@@ -294,6 +296,7 @@ export const InlineLayout: React.FC = () => {
         'breakdown' in result.data
       ) {
         setShowContextBreakdown(true, result.data.breakdown as any);
+        setShowUsagePanel(false);
       }
     } catch {
       /* ignore */
@@ -364,12 +367,14 @@ export const InlineLayout: React.FC = () => {
             />
           </>
         )}
-        <ProgressChip
-          value={contextUsagePercent ?? 0}
-          barColor="success"
-          label="context remaining"
-          showRemaining={true}
-        />
+        {contextUsagePercent != null && (
+          <ProgressChip
+            value={contextUsagePercent}
+            barColor="success"
+            label="context remaining"
+            showRemaining={true}
+          />
+        )}
         <Chip value={shortenPath(process.cwd())} color={ChipColor.BRAND} />
         {gitBranch && (
           <Chip
@@ -396,8 +401,9 @@ export const InlineLayout: React.FC = () => {
   const handleSubmit = useCallback(
     (value: string) => {
       handleUserInput(value);
+      setGitBranch(getGitBranch());
     },
-    [handleUserInput]
+    [handleUserInput, setGitBranch]
   );
 
   const handleTriggerDetected = useCallback(

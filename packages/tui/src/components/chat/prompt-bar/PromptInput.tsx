@@ -122,8 +122,13 @@ export const PromptInput = React.memo(function PromptInput({
   onTriggerDetected,
   placeholder = 'ask a question, or describe a task ↵',
 }: PromptInputProps) {
-  const { activeTrigger, filePickerHasResults, commandInputValue, promptHint } =
-    useCommandState();
+  const {
+    activeTrigger,
+    filePickerHasResults,
+    commandInputValue,
+    promptHint,
+    slashCommands,
+  } = useCommandState();
   const { setCommandInput, clearCommandInput, setPromptHint } =
     useCommandActions();
   const { pendingFileAttachment } = useFileAttachmentState();
@@ -481,9 +486,17 @@ export const PromptInput = React.memo(function PromptInput({
         return;
       }
 
-      // Check if slash command menu is visible
-      const slashMenuVisible =
-        activeTrigger?.key === '/' && !commandInputValue.includes(' ');
+      // Check if slash command menu is visible (has matching commands)
+      const hasMatchingSlashCommands =
+        activeTrigger?.key === '/' && !commandInputValue.includes(' ')
+          ? slashCommands.some((cmd) =>
+              cmd.name
+                .slice(1)
+                .toLowerCase()
+                .startsWith(commandInputValue.slice(1).toLowerCase())
+            )
+          : false;
+      const slashMenuVisible = hasMatchingSlashCommands;
       // Check if file picker menu is visible
       const filePickerVisible =
         activeTrigger?.key === '@' && filePickerHasResults;
