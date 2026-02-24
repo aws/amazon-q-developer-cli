@@ -191,7 +191,16 @@ impl RootSubcommand {
             Self::Settings(settings_args) => settings_args.execute(os).await,
             Self::Issue(args) => args.execute(os).await,
             Self::Version { changelog } => Cli::print_version(changelog),
-            Self::Chat(args) => args.execute(os).await,
+            Self::Chat(args) => {
+                if args.should_launch_tui(os) && crate::embedded_tui::are_assets_embedded(os) {
+                    crate::embedded_tui::launch_v2(os).await
+                } else {
+                    if args.should_launch_tui(os) {
+                        tracing::error!("TUI requested but assets not embedded, falling back to legacy UI");
+                    }
+                    args.execute(os).await
+                }
+            },
             Self::Mcp(args) => args.execute(os, &mut std::io::stderr()).await,
             Self::Acp {
                 agent,
@@ -427,6 +436,8 @@ mod test {
                 no_interactive: false,
                 wrap: None,
                 require_mcp_startup: false,
+                tui: false,
+                legacy_ui: false,
             })),
             verbose: 2,
             help_all: false,
@@ -471,6 +482,8 @@ mod test {
                 no_interactive: false,
                 wrap: None,
                 require_mcp_startup: false,
+                tui: false,
+                legacy_ui: false,
             })
         );
     }
@@ -492,6 +505,8 @@ mod test {
                 no_interactive: false,
                 wrap: None,
                 require_mcp_startup: false,
+                tui: false,
+                legacy_ui: false,
             })
         );
     }
@@ -513,6 +528,8 @@ mod test {
                 no_interactive: false,
                 wrap: None,
                 require_mcp_startup: false,
+                tui: false,
+                legacy_ui: false,
             })
         );
     }
@@ -534,6 +551,8 @@ mod test {
                 no_interactive: true,
                 wrap: None,
                 require_mcp_startup: false,
+                tui: false,
+                legacy_ui: false,
             })
         );
         assert_parse!(
@@ -551,6 +570,8 @@ mod test {
                 no_interactive: true,
                 wrap: None,
                 require_mcp_startup: false,
+                tui: false,
+                legacy_ui: false,
             })
         );
     }
@@ -572,6 +593,8 @@ mod test {
                 no_interactive: false,
                 wrap: None,
                 require_mcp_startup: false,
+                tui: false,
+                legacy_ui: false,
             })
         );
     }
@@ -593,6 +616,8 @@ mod test {
                 no_interactive: false,
                 wrap: None,
                 require_mcp_startup: false,
+                tui: false,
+                legacy_ui: false,
             })
         );
     }
@@ -614,6 +639,8 @@ mod test {
                 no_interactive: false,
                 wrap: None,
                 require_mcp_startup: false,
+                tui: false,
+                legacy_ui: false,
             })
         );
     }
@@ -635,6 +662,8 @@ mod test {
                 no_interactive: false,
                 wrap: None,
                 require_mcp_startup: true,
+                tui: false,
+                legacy_ui: false,
             })
         );
     }
@@ -656,6 +685,8 @@ mod test {
                 no_interactive: false,
                 wrap: Some(Never),
                 require_mcp_startup: false,
+                tui: false,
+                legacy_ui: false,
             })
         );
         assert_parse!(
@@ -673,6 +704,8 @@ mod test {
                 no_interactive: false,
                 wrap: Some(Always),
                 require_mcp_startup: false,
+                tui: false,
+                legacy_ui: false,
             })
         );
         assert_parse!(
@@ -690,6 +723,8 @@ mod test {
                 no_interactive: false,
                 wrap: Some(Auto),
                 require_mcp_startup: false,
+                tui: false,
+                legacy_ui: false,
             })
         );
     }

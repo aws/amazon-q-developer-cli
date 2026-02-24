@@ -131,6 +131,8 @@ pub enum Setting {
     UiMode,
     #[strum(message = "External diff tool command (string)")]
     ChatDiffTool,
+    #[strum(message = "Chat UI mode: 'legacy' or 'tui' (string)")]
+    ChatUi,
 }
 
 impl Setting {
@@ -231,6 +233,7 @@ impl AsRef<str> for Setting {
             Self::EnabledCodeIntelligence => "chat.enableCodeIntelligence",
             Self::UiMode => "chat.uiMode",
             Self::ChatDiffTool => "chat.diffTool",
+            Self::ChatUi => "chat.ui",
         }
     }
 }
@@ -290,6 +293,7 @@ impl TryFrom<&str> for Setting {
             "chat.enableCodeIntelligence" => Ok(Self::EnabledCodeIntelligence),
             "chat.uiMode" => Ok(Self::UiMode),
             "chat.diffTool" => Ok(Self::ChatDiffTool),
+            "chat.ui" => Ok(Self::ChatUi),
             _ => Err(DatabaseError::InvalidSetting(value.to_string())),
         }
     }

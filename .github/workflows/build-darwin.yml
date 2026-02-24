@@ -24,6 +24,10 @@ on:
       commit_sha:
         type: string
         required: true
+      include_v2:
+        type: boolean
+        required: false
+        default: false
 
 env:
   AWS_REGION: "us-east-1"
@@ -65,6 +69,10 @@ jobs:
         with:
           targets: aarch64-apple-darwin,x86_64-apple-darwin
 
+      - name: Setup Bun
+        if: inputs.include_v2
+        uses: oven-sh/setup-bun@v2
+
       - name: Cache Rust dependencies
         uses: Swatinem/rust-cache@v2
 
@@ -78,7 +86,7 @@ jobs:
       - name: Build macOS Universal Binary
         run: |
           python3 ./scripts/main.py build \
-            --skip-lints --skip-tests \
+            --skip-lints --skip-tests ${{ inputs.include_v2 && '--include-v2' || '' }} \
             --stage-name "${{ env.STAGE_NAME }}"
 
       - name: Upload artifacts to S3

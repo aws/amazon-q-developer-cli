@@ -91,6 +91,8 @@ fn main() {
     #[cfg(target_os = "macos")]
     write_plist();
 
+    embed_bun_and_tui();
+
     let outdir = std::env::var("OUT_DIR").unwrap();
 
     let data = serde_json::from_str::<Def>(DEF).unwrap();
@@ -382,5 +384,28 @@ fn download_feed_json() {
         Err(e) => {
             panic!("Failed to execute curl: {e}");
         },
+    }
+}
+
+/// Writes bun and TUI assets to OUT_DIR for embedding via include_bytes!.
+/// If env vars are not set, writes empty files so the build always succeeds.
+fn embed_bun_and_tui() {
+    let out_dir = std::env::var("OUT_DIR").expect("OUT_DIR not set");
+
+    let bun_dest = std::path::Path::new(&out_dir).join("bun_embedded");
+    let tui_dest = std::path::Path::new(&out_dir).join("tui_embedded.js");
+
+    if let Ok(path) = std::env::var("BUN_EXECUTABLE_PATH") {
+        println!("cargo:rerun-if-changed={path}");
+        std::fs::copy(&path, &bun_dest).expect("Failed to copy bun executable to OUT_DIR");
+    } else {
+        std::fs::write(&bun_dest, b"").unwrap();
+    }
+
+    if let Ok(path) = std::env::var("TUI_JS_PATH") {
+        println!("cargo:rerun-if-changed={path}");
+        std::fs::copy(&path, &tui_dest).expect("Failed to copy TUI js to OUT_DIR");
+    } else {
+        std::fs::write(&tui_dest, b"").unwrap();
     }
 }

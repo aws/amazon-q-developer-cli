@@ -92,6 +92,26 @@ fn data_dir() -> Result<PathBuf> {
         .join(CLI_NAME))
 }
 
+/// Path to extracted Bun executable
+pub fn bun_path() -> Result<PathBuf> {
+    Ok(data_dir()?.join("bun"))
+}
+
+/// Path to sha256 of the extracted Bun executable
+pub fn bun_sha256_path() -> Result<PathBuf> {
+    Ok(data_dir()?.join("bun.sha256"))
+}
+
+/// Path to extracted TUI JavaScript bundle
+pub fn tui_js_path() -> Result<PathBuf> {
+    Ok(data_dir()?.join("tui.js"))
+}
+
+/// Path to sha256 of the extracted TUI JavaScript bundle
+pub fn tui_js_sha256_path() -> Result<PathBuf> {
+    Ok(data_dir()?.join("tui.js.sha256"))
+}
+
 /// Hash a path to create a unique directory name
 fn hash_path(path: &std::path::Path) -> String {
     use std::collections::hash_map::DefaultHasher;

@@ -148,7 +148,10 @@ pub mod env_var {
         CODESPACES = "CODESPACES",
 
         /// CI environment
-        CI = "CI"
+        CI = "CI",
+
+        /// Chat UI mode override: "legacy" or "tui"
+        KIRO_CHAT_UI = "KIRO_CHAT_UI"
     }
 }
 

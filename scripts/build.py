@@ -1,5 +1,6 @@
 import base64
 from dataclasses import dataclass
+import hashlib
 import json
 import pathlib
 from functools import cache
@@ -10,6 +11,7 @@ from typing import Any, Mapping, Sequence, List, Optional
 from const import APPLE_TEAM_ID, CHAT_BINARY_NAME, CHAT_PACKAGE_NAME
 from util import debug, info, isDarwin, isLinux, run_cmd, run_cmd_output, warn
 from rust import cargo_cmd_name, rust_env, rust_targets, build_hash, build_datetime
+from build_v2 import download_bun, build_tui
 from importlib import import_module
 
 Args = Sequence[str | os.PathLike]
@@ -64,10 +66,21 @@ def run_clippy():
     )
 
 
+def calculate_sha256(file_path: pathlib.Path) -> str:
+    """Calculate SHA256 hash of a file."""
+    sha256_hash = hashlib.sha256()
+    with open(file_path, "rb") as f:
+        for chunk in iter(lambda: f.read(4096), b""):
+            sha256_hash.update(chunk)
+    return sha256_hash.hexdigest()
+
+
 def build_chat_bin(
     release: bool,
     output_name: str | None = None,
     targets: Sequence[str] = [],
+    bun_executable_path: pathlib.Path | None = None,
+    tui_js_path: pathlib.Path | None = None,
 ):
     package = CHAT_PACKAGE_NAME
 
@@ -82,13 +95,24 @@ def build_chat_bin(
     else:
         target_subdir = "debug"
 
-    run_cmd(
-        args,
-        env={
-            **os.environ,
-            **rust_env(release=release),
-        },
-    )
+    build_env = {
+        **os.environ,
+        **rust_env(release=release),
+    }
+
+    if bun_executable_path:
+        build_env["BUN_EXECUTABLE_PATH"] = str(bun_executable_path.absolute())
+        bun_sha = calculate_sha256(bun_executable_path)
+        build_env["BUN_RUNTIME_SHA256"] = bun_sha
+        info(f"Embedding Bun executable: {bun_executable_path.absolute()} (SHA256: {bun_sha})")
+
+    if tui_js_path:
+        build_env["TUI_JS_PATH"] = str(tui_js_path.absolute())
+        tui_sha = calculate_sha256(tui_js_path)
+        build_env["TUI_JS_SHA256"] = tui_sha
+        info(f"Embedding TUI JS: {tui_js_path.absolute()} (SHA256: {tui_sha})")
+
+    run_cmd(args, env=build_env)
 
     # create "universal" binary for macos
     if isDarwin():
@@ -554,8 +578,19 @@ def build(
     stage_name: str | None = None,
     run_lints: bool = True,
     run_test: bool = True,
+    include_v2: bool = False,
+    run_autodocs_embeddings: bool = True,
 ):
     BUILD_DIR.mkdir(exist_ok=True)
+
+    bun_executable_path = None
+    tui_js_path = None
+
+    if include_v2:
+        info("Building TUI (--include-v2)")
+        tui_js_path = build_tui()
+        info("Downloading Bun runtime (--include-v2)")
+        bun_executable_path = download_bun()
 
     disable_signing = os.environ.get("DISABLE_SIGNING")
 
@@ -600,14 +635,17 @@ def build(
         info("Running cargo clippy")
         run_clippy()
 
-    info("Generating documentation embeddings")
-    run_cmd(["./scripts/generate-embeddings.sh"])
+    if run_autodocs_embeddings:
+        info("Generating documentation embeddings")
+        run_cmd(["./scripts/generate-embeddings.sh"])
 
     info("Building", CHAT_PACKAGE_NAME)
     chat_path = build_chat_bin(
         release=release,
         output_name=CHAT_BINARY_NAME,
         targets=targets,
+        bun_executable_path=bun_executable_path,
+        tui_js_path=tui_js_path,
     )
 
     if isDarwin():

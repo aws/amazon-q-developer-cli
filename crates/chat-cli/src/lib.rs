@@ -9,6 +9,7 @@ pub mod aws_common;
 pub mod cli;
 pub mod constants;
 pub mod database;
+pub mod embedded_tui;
 pub mod feature_flags;
 pub mod logging;
 pub mod mcp_client;

@@ -35,6 +35,16 @@ build_subparser.add_argument(
     action="store_true",
     help="Skip running lints",
 )
+build_subparser.add_argument(
+    "--include-v2",
+    action="store_true",
+    help="Build and embed the V2 TUI (bun + tui.js) into the binary",
+)
+build_subparser.add_argument(
+    "--skip-autodocs-embeddings",
+    action="store_true",
+    help="Skip generating documentation embeddings",
+)
 
 args = parser.parse_args()
 
@@ -45,6 +55,8 @@ match args.subparser:
             stage_name=args.stage_name,
             run_lints=not args.skip_lints,
             run_test=not args.skip_tests,
+            include_v2=args.include_v2,
+            run_autodocs_embeddings=not args.skip_autodocs_embeddings,
         )
     case _:
         raise ValueError(f"Unsupported subparser {args.subparser}")

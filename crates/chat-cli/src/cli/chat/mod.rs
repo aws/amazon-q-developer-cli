@@ -284,9 +284,40 @@ pub struct ChatArgs {
     /// Require all enabled MCP servers to start successfully; exit with code 3 if any fail
     #[arg(long)]
     pub require_mcp_startup: bool,
+    /// Use the new terminal UI
+    #[arg(long, conflicts_with = "legacy_ui")]
+    pub tui: bool,
+    /// Use the legacy terminal UI
+    #[arg(long, conflicts_with = "tui")]
+    pub legacy_ui: bool,
 }
 
 impl ChatArgs {
+    /// Resolve whether to launch the TUI.
+    /// Precedence: CLI flag > env var KIRO_CHAT_UI > setting chat.ui > default (legacy)
+    pub fn should_launch_tui(&self, os: &Os) -> bool {
+        // CLI flags take highest precedence
+        if self.tui {
+            return true;
+        }
+        if self.legacy_ui {
+            return false;
+        }
+
+        // Env var next
+        if let Ok(val) = std::env::var(crate::util::consts::env_var::KIRO_CHAT_UI) {
+            return val.eq_ignore_ascii_case("tui");
+        }
+
+        // Setting next
+        if let Some(val) = os.database.settings.get_string(Setting::ChatUi) {
+            return val.eq_ignore_ascii_case("tui");
+        }
+
+        // Default: legacy
+        false
+    }
+
     pub async fn execute(mut self, os: &mut Os) -> Result<ExitCode> {
         // Handle --list-sessions flag
         if self.list_sessions {
