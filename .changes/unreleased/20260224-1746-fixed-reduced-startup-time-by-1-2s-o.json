@@ -1,0 +1,4 @@
+{
+  "type": "fixed",
+  "description": "Reduced startup time by 1-2s on macOS by caching TLS certificate loading"
+}

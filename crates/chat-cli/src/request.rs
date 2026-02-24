@@ -50,15 +50,19 @@ pub fn create_default_root_cert_store() -> RootCertStore {
 }
 
 fn client_config() -> ClientConfig {
-    let provider = rustls::crypto::CryptoProvider::get_default()
-        .cloned()
-        .unwrap_or_else(|| Arc::new(rustls::crypto::aws_lc_rs::default_provider()));
+    static TLS_CONFIG: LazyLock<ClientConfig> = LazyLock::new(|| {
+        let provider = rustls::crypto::CryptoProvider::get_default()
+            .cloned()
+            .unwrap_or_else(|| Arc::new(rustls::crypto::aws_lc_rs::default_provider()));
 
-    ClientConfig::builder_with_provider(provider)
-        .with_protocol_versions(rustls::DEFAULT_VERSIONS)
-        .expect("Failed to set supported TLS versions")
-        .with_root_certificates(create_default_root_cert_store())
-        .with_no_client_auth()
+        ClientConfig::builder_with_provider(provider)
+            .with_protocol_versions(rustls::DEFAULT_VERSIONS)
+            .expect("Failed to set supported TLS versions")
+            .with_root_certificates(create_default_root_cert_store())
+            .with_no_client_auth()
+    });
+
+    TLS_CONFIG.clone()
 }
 
 static USER_AGENT: LazyLock<String> = LazyLock::new(|| {
