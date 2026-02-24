@@ -2186,6 +2186,7 @@ impl Agent {
             names.retain(|name| {
                 name != &CanonicalToolName::BuiltIn(tools::BuiltInToolName::SpawnSubagent)
                     && name != &CanonicalToolName::BuiltIn(tools::BuiltInToolName::Summary)
+                    && name != &CanonicalToolName::BuiltIn(tools::BuiltInToolName::SwitchToExecution)
             });
 
             names
@@ -2347,6 +2348,7 @@ impl Agent {
                     .validate(&self.sys_provider)
                     .await
                     .map_err(ToolParseErrorKind::invalid_args),
+                BuiltInTool::SwitchToExecution(_) => Ok(()),
             },
             ToolKind::Mcp(_) => Ok(()),
         }
@@ -2486,6 +2488,7 @@ impl Agent {
                         }
                     })
                 },
+                BuiltInTool::SwitchToExecution(t) => Box::pin(async move { Ok(t.execute()) }),
             },
             ToolKind::Mcp(t) => {
                 let mcp_tool = t.clone();

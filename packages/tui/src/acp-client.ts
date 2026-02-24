@@ -28,6 +28,7 @@ const EXT_METHODS = {
   CLEAR_STATUS: 'kiro.dev/clear/status',
   MCP_SERVER_INIT_FAILURE: 'kiro.dev/mcp/server_init_failure',
   RATE_LIMIT_ERROR: 'kiro.dev/error/rate_limit',
+  AGENT_SWITCHED: 'kiro.dev/agent/switched',
 } as const;
 
 /**
@@ -440,6 +441,7 @@ export class AcpClient implements acp.Client, SessionClient {
       this.handleMcpServerInitFailure(params),
     [EXT_METHODS.RATE_LIMIT_ERROR]: (params) =>
       this.handleRateLimitError(params),
+    [EXT_METHODS.AGENT_SWITCHED]: (params) => this.handleAgentSwitched(params),
   };
 
   private handleCommandsAdvertising(params: Record<string, unknown>) {
@@ -572,6 +574,15 @@ export class AcpClient implements acp.Client, SessionClient {
     this.broadcastStreamEvent({
       type: AgentEventType.RateLimitError,
       message,
+    });
+  }
+
+  private handleAgentSwitched(params: Record<string, unknown>) {
+    const payload = params as { agentName: string; previousAgentName?: string };
+    this.broadcastStreamEvent({
+      type: AgentEventType.AgentSwitched,
+      agentName: payload.agentName,
+      previousAgentName: payload.previousAgentName,
     });
   }
 

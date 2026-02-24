@@ -25,6 +25,7 @@ export const useNotificationActions = () =>
       showTransientAlert: state.showTransientAlert,
       dismissTransientAlert: state.dismissTransientAlert,
       setAgentError: state.setAgentError,
+      setLoadingMessage: state.setLoadingMessage,
     }))
   );
 
@@ -147,6 +148,7 @@ export const useContextState = () =>
       lastTurnTokens: state.lastTurnTokens,
       currentModel: state.currentModel,
       currentAgent: state.currentAgent,
+      previousAgentName: state.previousAgentName,
     }))
   );
 

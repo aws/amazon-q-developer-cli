@@ -41,6 +41,7 @@ const commandEffects: Partial<Record<string, EffectName>> = {
   help: 'showHelpPanel',
   model: 'updateModel',
   agent: 'updateAgent',
+  plan: 'updateAgent',
   context: 'showContextPanel',
   usage: 'showUsagePanel',
   prompts: 'showPromptsPanel',

@@ -1,4 +1,5 @@
 pub const DEFAULT_AGENT_NAME: &str = "kiro_default";
+pub const PLANNER_AGENT_NAME: &str = "kiro_planner";
 
 /// Resources always included for the default agent
 pub const DEFAULT_AGENT_RESOURCES: &[&str] = &[

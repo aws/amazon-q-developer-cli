@@ -9,6 +9,7 @@ pub mod help;
 pub mod mcp;
 pub mod model;
 pub mod paste_image;
+pub mod plan;
 pub mod tools;
 pub mod usage;
 
@@ -57,5 +58,6 @@ pub async fn execute(command: TuiCommand, ctx: &CommandContext<'_>) -> CommandRe
         TuiCommand::PasteImage(_) => paste_image::execute().await,
         TuiCommand::Mcp(_) => mcp::execute(ctx).await,
         TuiCommand::Tools(_) => tools::execute(ctx).await,
+        TuiCommand::Plan(ref args) => plan::execute(args.prompt.as_deref(), ctx).await,
     }
 }

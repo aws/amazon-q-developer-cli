@@ -20,6 +20,8 @@ pub mod methods {
     pub const COMPACTION_STATUS: &str = "_kiro.dev/compaction/status";
     /// Clear status notification
     pub const CLEAR_STATUS: &str = "_kiro.dev/clear/status";
+    /// Agent switched notification
+    pub const AGENT_SWITCHED: &str = "_kiro.dev/agent/switched";
 }
 
 /// Notification to terminate a subagent session.
@@ -107,4 +109,13 @@ pub enum CompactionStatus {
 #[serde(rename_all = "camelCase")]
 pub struct ClearStatusNotification {
     pub session_id: SessionId,
+}
+
+/// Agent switched notification payload.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AgentSwitchedNotification {
+    pub session_id: SessionId,
+    pub agent_name: String,
+    pub previous_agent_name: Option<String>,
 }

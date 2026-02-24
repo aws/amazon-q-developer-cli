@@ -16,6 +16,7 @@ export enum AgentEventType {
   RateLimitError = 'rate_limit_error',
   AuthError = 'auth_error',
   SessionError = 'session_error',
+  AgentSwitched = 'agent_switched',
 }
 
 export enum ContentType {
@@ -229,6 +230,12 @@ export interface SessionErrorEvent {
   pid?: number;
 }
 
+export interface AgentSwitchedEvent {
+  type: AgentEventType.AgentSwitched;
+  agentName: string;
+  previousAgentName?: string;
+}
+
 export type AuthErrorType = string;
 export type SessionErrorType = string;
 
@@ -246,4 +253,5 @@ export type AgentStreamEvent =
   | McpServerInitFailureEvent
   | RateLimitErrorEvent
   | AuthErrorEvent
-  | SessionErrorEvent;
+  | SessionErrorEvent
+  | AgentSwitchedEvent;

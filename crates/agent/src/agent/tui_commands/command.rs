@@ -42,6 +42,8 @@ pub enum TuiCommand {
     Mcp(McpArgs),
     /// Show available tools
     Tools(ToolsArgs),
+    /// Switch to Plan agent for breaking down ideas into implementation plans.
+    Plan(PlanArgs),
 }
 
 /// Arguments for /help command
@@ -128,6 +130,15 @@ pub struct McpArgs {}
 #[serde(rename_all = "camelCase")]
 pub struct ToolsArgs {}
 
+/// Arguments for /plan command
+#[typeshare]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PlanArgs {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub prompt: Option<String>,
+}
+
 impl TuiCommand {
     /// Command name with leading slash
     pub fn name(&self) -> &'static str {
@@ -143,6 +154,7 @@ impl TuiCommand {
             TuiCommand::PasteImage(_) => "paste-image",
             TuiCommand::Mcp(_) => "/mcp",
             TuiCommand::Tools(_) => "/tools",
+            TuiCommand::Plan(_) => "/plan",
         }
     }
 
@@ -160,6 +172,7 @@ impl TuiCommand {
             TuiCommand::PasteImage(_) => "Paste image from clipboard",
             TuiCommand::Mcp(_) => "Show configured MCP servers",
             TuiCommand::Tools(_) => "Show available tools",
+            TuiCommand::Plan(_) => "Switch to Plan agent for breaking down ideas into implementation plans",
         }
     }
 
@@ -177,6 +190,7 @@ impl TuiCommand {
             TuiCommand::PasteImage(_) => "paste-image",
             TuiCommand::Mcp(_) => "/mcp",
             TuiCommand::Tools(_) => "/tools",
+            TuiCommand::Plan(_) => "/plan [prompt]",
         }
     }
 
@@ -230,6 +244,7 @@ impl TuiCommand {
                 meta.insert("inputType".into(), "panel".into());
                 Some(meta)
             },
+            TuiCommand::Plan(_) => None,
         }
     }
 
@@ -246,6 +261,7 @@ impl TuiCommand {
             TuiCommand::Usage(UsageArgs::default()),
             TuiCommand::Mcp(McpArgs::default()),
             TuiCommand::Tools(ToolsArgs::default()),
+            TuiCommand::Plan(PlanArgs::default()),
         ];
         commands.sort_by_key(|cmd| cmd.name());
         commands
@@ -270,6 +286,9 @@ impl TuiCommand {
             "usage" => Some(Self::Usage(UsageArgs::default())),
             "mcp" => Some(Self::Mcp(McpArgs::default())),
             "tools" => Some(Self::Tools(ToolsArgs::default())),
+            "plan" => Some(Self::Plan(PlanArgs {
+                prompt: (!args.is_empty()).then(|| args.to_string()),
+            })),
             _ => None,
         }
     }

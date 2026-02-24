@@ -1,5 +1,11 @@
-import React, { useCallback, useMemo, useState } from 'react';
-import { Box } from 'ink';
+import React, {
+  useCallback,
+  useMemo,
+  useState,
+  useEffect,
+  useRef,
+} from 'react';
+import { Box, Text } from 'ink';
 import { AnimationPausedContext } from '../../contexts/AnimationPausedContext.js';
 import { ConversationView } from '../ui/ConversationView';
 import { ExitHint } from '../ui/ExitHint';
@@ -36,6 +42,8 @@ import {
   useQueueState,
   useKiroClient,
 } from '../../stores/selectors.js';
+import { useAppStore } from '../../stores/app-store.js';
+import { useShallow } from 'zustand/react/shallow';
 import { useKeypress } from '../../hooks/useKeypress';
 import { getGitBranch } from '../../utils/git';
 import { shortenPath } from '../../utils/string';
@@ -51,7 +59,8 @@ export const InlineLayout: React.FC = () => {
   // Grouped selectors using useShallow - prevents re-render cascades
   const { transientAlert, loadingMessage, agentError, agentErrorGuidance } =
     useNotificationState();
-  const { dismissTransientAlert, setAgentError } = useNotificationActions();
+  const { dismissTransientAlert, setAgentError, setLoadingMessage } =
+    useNotificationActions();
   const { isProcessing, isCompacting, pendingApproval, noInteractive } =
     useProcessingState();
   const { respondToApproval, cancelApproval } = useApprovalState();
@@ -80,8 +89,13 @@ export const InlineLayout: React.FC = () => {
     setShowMcpPanel,
     setShowToolsPanel,
   } = useUIActions();
-  const { sessionId, contextUsagePercent, currentModel, currentAgent } =
-    useContextState();
+  const {
+    sessionId,
+    contextUsagePercent,
+    currentModel,
+    currentAgent,
+    previousAgentName,
+  } = useContextState();
   const { activeCommand, promptHint } = useCommandState();
   const { setActiveCommand, setActiveTrigger, clearCommandInput } =
     useCommandActions();
@@ -89,6 +103,12 @@ export const InlineLayout: React.FC = () => {
   const { messages } = useConversationState();
   const { queuedMessages } = useQueueState();
   const { kiro } = useKiroClient();
+  const { setCurrentAgent, setPreviousAgentName } = useAppStore(
+    useShallow((s) => ({
+      setCurrentAgent: s.setCurrentAgent,
+      setPreviousAgentName: s.setPreviousAgentName,
+    }))
+  );
 
   // Cache git branch - only call once on mount to avoid blocking renders
   const gitBranch = useMemo(() => getGitBranch(), []);
@@ -179,6 +199,47 @@ export const InlineLayout: React.FC = () => {
       }
     },
     { isActive: toolOutputsExpanded }
+  );
+
+  // Handle Shift+Tab for agent switching
+  useKeypress(
+    (_input, key) => {
+      if (key.tab && key.shift) {
+        const currentName = currentAgent?.name;
+        if (currentName === 'kiro_planner') {
+          const target = previousAgentName;
+          if (!target) return;
+          setLoadingMessage(`Agent changing to ${target}`);
+          kiro
+            .executeCommand({ command: 'agent', args: { agentName: target } })
+            .then((result) => {
+              setLoadingMessage(null);
+              if (result?.success) {
+                const name = (result.data as any)?.agent?.name;
+                if (name) setCurrentAgent({ name });
+              }
+            })
+            .catch(() => setLoadingMessage(null));
+        } else {
+          if (currentName) setPreviousAgentName(currentName);
+          setLoadingMessage('Agent changing to kiro_planner');
+          kiro
+            .executeCommand({
+              command: 'agent',
+              args: { agentName: 'kiro_planner' },
+            })
+            .then((result) => {
+              setLoadingMessage(null);
+              if (result?.success) {
+                const name = (result.data as any)?.agent?.name;
+                if (name) setCurrentAgent({ name });
+              }
+            })
+            .catch(() => setLoadingMessage(null));
+        }
+      }
+    },
+    { isActive: true }
   );
 
   const handleCloseContextBreakdown = useCallback(() => {
@@ -292,11 +353,16 @@ export const InlineLayout: React.FC = () => {
     return (
       <ContextBar>
         {currentAgent && (
-          <Chip
-            value={currentAgent.name}
-            hexColor={getAgentColor(currentAgent.name).hex}
-            prefix="agent:"
-          />
+          <>
+            {currentAgent.name === 'kiro_planner' && (
+              <Text color="magenta">[plan] </Text>
+            )}
+            <Chip
+              value={currentAgent.name}
+              hexColor={getAgentColor(currentAgent.name).hex}
+              prefix="agent:"
+            />
+          </>
         )}
         <ProgressChip
           value={contextUsagePercent ?? 0}
@@ -413,7 +479,11 @@ export const InlineLayout: React.FC = () => {
               isProcessing || isCompacting || !!activeCommand || !!agentError
             }
             placeholder={
-              pendingApproval ? 'queue up your next message' : undefined
+              pendingApproval
+                ? 'queue up your next message'
+                : currentAgent?.name === 'kiro_planner'
+                  ? 'ask a question, or describe a task ↵  ·  exit plan mode: shift+tab'
+                  : undefined
             }
             hint={
               promptHint ||

@@ -12,6 +12,7 @@ pub mod mcp;
 pub mod mkdir;
 pub mod rm;
 pub mod summary;
+pub mod switch_to_execution;
 pub mod use_aws;
 pub mod use_subagent;
 pub mod web_fetch;
@@ -46,6 +47,7 @@ use serde::{
 };
 use strum::IntoEnumIterator;
 use summary::Summary;
+use switch_to_execution::SwitchToExecution;
 use typeshare::typeshare;
 use use_aws::UseAws;
 pub use use_subagent::{
@@ -174,6 +176,8 @@ pub enum BuiltInToolName {
     WebSearch,
     #[strum(serialize = "code")]
     Code,
+    #[strum(serialize = "switch_to_execution")]
+    SwitchToExecution,
 }
 
 impl BuiltInToolName {
@@ -192,6 +196,7 @@ impl BuiltInToolName {
             BuiltInToolName::WebFetch => WebFetch::aliases(),
             BuiltInToolName::WebSearch => WebSearch::aliases(),
             BuiltInToolName::Code => Code::aliases(),
+            BuiltInToolName::SwitchToExecution => SwitchToExecution::aliases(),
         }
     }
 }
@@ -366,6 +371,7 @@ pub enum BuiltInTool {
     WebFetch(WebFetch),
     WebSearch(WebSearch),
     Code(Code),
+    SwitchToExecution(SwitchToExecution),
 }
 
 impl BuiltInTool {
@@ -410,6 +416,9 @@ impl BuiltInTool {
             BuiltInToolName::Code => serde_json::from_value::<Code>(args)
                 .map(Self::Code)
                 .map_err(ToolParseErrorKind::schema_failure),
+            BuiltInToolName::SwitchToExecution => serde_json::from_value::<SwitchToExecution>(args)
+                .map(Self::SwitchToExecution)
+                .map_err(ToolParseErrorKind::schema_failure),
         }
     }
 
@@ -432,6 +441,7 @@ impl BuiltInTool {
             BuiltInToolName::WebFetch => generate_tool_spec_from_trait::<WebFetch>(),
             BuiltInToolName::WebSearch => generate_tool_spec_from_trait::<WebSearch>(),
             BuiltInToolName::Code => get_code_tool_spec(lsp_initialized),
+            BuiltInToolName::SwitchToExecution => generate_tool_spec_from_trait::<SwitchToExecution>(),
         }
     }
 
@@ -452,6 +462,7 @@ impl BuiltInTool {
             BuiltInTool::WebFetch(_) => BuiltInToolName::WebFetch,
             BuiltInTool::WebSearch(_) => BuiltInToolName::WebSearch,
             BuiltInTool::Code(_) => BuiltInToolName::Code,
+            BuiltInTool::SwitchToExecution(_) => BuiltInToolName::SwitchToExecution,
         }
     }
 
@@ -472,6 +483,7 @@ impl BuiltInTool {
             BuiltInTool::WebFetch(_) => BuiltInToolName::WebFetch.into(),
             BuiltInTool::WebSearch(_) => BuiltInToolName::WebSearch.into(),
             BuiltInTool::Code(_) => BuiltInToolName::Code.into(),
+            BuiltInTool::SwitchToExecution(_) => BuiltInToolName::SwitchToExecution.into(),
         }
     }
 
@@ -492,6 +504,7 @@ impl BuiltInTool {
             BuiltInTool::WebFetch(_) => WebFetch::aliases(),
             BuiltInTool::WebSearch(_) => WebSearch::aliases(),
             BuiltInTool::Code(_) => Code::aliases(),
+            BuiltInTool::SwitchToExecution(_) => SwitchToExecution::aliases(),
         }
     }
 }

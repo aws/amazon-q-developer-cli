@@ -109,7 +109,12 @@ const startInitialization = () => {
 
   // Wire up agent handler before initialize
   kiro.onAgentUpdate((agent) => {
-    appStore.getState().setCurrentAgent(agent);
+    const state = appStore.getState();
+    // On first agent update, initialize previousAgentName so Shift+Tab always has a fallback
+    if (!state.previousAgentName && agent.name !== 'kiro_planner') {
+      appStore.setState({ previousAgentName: agent.name });
+    }
+    state.setCurrentAgent(agent);
   });
 
   // Wire up compaction status handler

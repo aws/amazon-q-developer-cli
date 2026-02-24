@@ -698,6 +698,9 @@ struct AcpSession {
     local_mcp_path: Option<PathBuf>,
     global_mcp_path: Option<PathBuf>,
     current_agent_name: String,
+    previous_agent_name: Option<String>,
+    pending_plan: Option<String>,
+    pending_swap: Option<agent::agent_config::definitions::AgentConfig>,
     connection_cx: JrConnectionCx<AgentToClient>,
     pending_prompt_response: Option<tokio::sync::Mutex<JrRequestCx<PromptResponse>>>,
     os: Os,
@@ -840,6 +843,9 @@ impl AcpSession {
             local_mcp_path: builder.local_mcp_path.cloned(),
             global_mcp_path: builder.global_mcp_path.cloned(),
             current_agent_name: builder.current_agent_name.unwrap_or_default(),
+            previous_agent_name: None,
+            pending_plan: None,
+            pending_swap: None,
             connection_cx,
             session_db: Arc::new(session_db),
             rts_state,
@@ -1073,6 +1079,8 @@ impl AcpSession {
                 let resolver = PathResolver::new(&self.os);
                 let local_mcp_path = resolver.workspace().mcp_config().ok();
                 let global_mcp_path = resolver.global().mcp_config().ok();
+
+                let new_name = agent_config.name().to_string();
                 let result = self
                     .agent
                     .swap_agent(agent::protocol::SwapAgentArgs {
@@ -1081,6 +1089,11 @@ impl AcpSession {
                         global_mcp_path,
                     })
                     .await;
+
+                if result.is_ok() {
+                    self.previous_agent_name = Some(std::mem::replace(&mut self.current_agent_name, new_name));
+                }
+
                 let _ = respond_to.send(result);
             },
             AcpSessionRequest::SetModel { model_id, respond_to } => {
@@ -1104,6 +1117,15 @@ impl AcpSession {
                 let is_agent_swap = matches!(&command, TuiCommand::Agent(args) if args.agent_name.is_some());
                 let ctx = self.command_context();
                 let result = super::commands::execute(command, &ctx).await;
+
+                if is_agent_swap
+                    && result.success
+                    && let Some(data) = &result.data
+                    && let Some(name) = data.get("agent").and_then(|a| a.get("name")).and_then(|n| n.as_str())
+                {
+                    self.previous_agent_name = Some(std::mem::replace(&mut self.current_agent_name, name.to_string()));
+                }
+
                 let _ = respond_to.send(result);
                 // TODO: This is a workaround. Ideally the agent swap flow should
                 // emit an event that triggers re-advertisement through the normal
@@ -1191,8 +1213,34 @@ impl AcpSession {
                     error!("Failed to handle MCP event during initialization: {}", e);
                 }
             },
-            AgentEvent::Update(update_event) => {
-                if let Some(update) = convert_update_event_to_session_update(update_event) {
+            AgentEvent::Update(ref update_event) => {
+                // Intercept switch_to_execution before forwarding to TUI
+                if let UpdateEvent::ToolCallFinished { tool_call, result } = update_event
+                    && tool_call.tool_use_block.name == "switch_to_execution"
+                    && let ToolCallResult::Success(output) = result
+                {
+                    #[derive(serde::Deserialize)]
+                    struct SwitchResult {
+                        approved: bool,
+                        plan: String,
+                    }
+                    let json_str = output
+                        .items
+                        .first()
+                        .and_then(|item| match item {
+                            agent::tools::ToolExecutionOutputItem::Text(s) => Some(s.as_str()),
+                            _ => None,
+                        })
+                        .unwrap_or_default();
+                    if let Ok(sr) = serde_json::from_str::<SwitchResult>(json_str)
+                        && sr.approved
+                    {
+                        self.handle_switch_to_execution(sr.plan).await;
+                        return; // Do NOT forward to TUI as a regular tool call
+                    }
+                }
+                // Normal path — forward to TUI
+                if let Some(update) = convert_update_event_to_session_update(update_event.clone()) {
                     let _ = self.send_session_notification(update);
                 }
             },
@@ -1247,6 +1295,51 @@ impl AcpSession {
                         _ => StopReason::EndTurn,
                     };
                     let _ = respond_to.respond(PromptResponse::new(stop_reason));
+                }
+                // Execute pending swap from switch_to_execution (deferred because agent must be idle)
+                if let Some(agent_config) = self.pending_swap.take() {
+                    let target_name = agent_config.name().to_string();
+                    let resolver = crate::util::paths::PathResolver::new(&self.os);
+                    let local_mcp_path = resolver.workspace().mcp_config().ok();
+                    let global_mcp_path = resolver.global().mcp_config().ok();
+                    if let Err(e) = self
+                        .agent
+                        .swap_agent(agent::protocol::SwapAgentArgs {
+                            agent_config,
+                            local_mcp_path,
+                            global_mcp_path,
+                        })
+                        .await
+                    {
+                        tracing::error!("deferred switch_to_execution swap failed: {e}");
+                        self.pending_plan = None; // discard plan if swap failed
+                    } else {
+                        self.previous_agent_name =
+                            Some(std::mem::replace(&mut self.current_agent_name, target_name.clone()));
+                        let _ = self.send_ext_notification(
+                            crate::agent::acp::extensions::methods::AGENT_SWITCHED,
+                            crate::agent::acp::extensions::AgentSwitchedNotification {
+                                session_id: self.session_id.clone(),
+                                agent_name: target_name.clone(),
+                                previous_agent_name: self.previous_agent_name.clone(),
+                            },
+                        );
+                        if let Err(e) = self.advertise_commands_and_prompts().await {
+                            tracing::warn!("Failed to advertise after switch_to_execution: {e}");
+                        }
+                    }
+                }
+                // Inject pending plan after swap
+                if let Some(plan_prompt) = self.pending_plan.take() {
+                    let agent = self.agent.clone();
+                    tokio::spawn(async move {
+                        let _ = agent
+                            .send_prompt(agent::protocol::SendPromptArgs {
+                                content: vec![agent::protocol::ContentChunk::Text(plan_prompt)],
+                                should_continue_turn: None,
+                            })
+                            .await;
+                    });
                 }
             },
             AgentEvent::Stop(AgentStopReason::Error(agent_error)) => {
@@ -1364,6 +1457,25 @@ impl AcpSession {
 
     async fn advertise_commands_and_prompts(&self) -> Result<(), sacp::Error> {
         advertise_commands_and_prompts_to_client(&self.session_id_str, &self.agent, &self.connection_cx).await
+    }
+
+    async fn handle_switch_to_execution(&mut self, plan: String) {
+        let target = self
+            .previous_agent_name
+            .clone()
+            .unwrap_or_else(|| crate::constants::DEFAULT_AGENT_NAME.to_string());
+
+        let agent_config = match self.agent_configs.iter().find(|c| c.name() == target) {
+            Some(c) => c.config().clone(),
+            None => {
+                tracing::error!("switch_to_execution: target agent '{}' not found", target);
+                return;
+            },
+        };
+
+        // Defer swap and plan injection to after EndTurn (agent must be idle for swap_agent)
+        self.pending_swap = Some(agent_config);
+        self.pending_plan = Some(format!("Implement this plan:\n{}", plan));
     }
 }
 
@@ -1742,6 +1854,7 @@ fn get_tool_kind(tool_name: &str) -> ToolKind {
             BuiltInToolName::WebFetch => ToolKind::Read,
             BuiltInToolName::WebSearch => ToolKind::Search,
             BuiltInToolName::Code => ToolKind::Read, // Default, actual kind determined by operation
+            BuiltInToolName::SwitchToExecution => ToolKind::Other,
         }
     } else {
         ToolKind::Other
@@ -1824,6 +1937,7 @@ pub(crate) fn get_tool_title(tool: &Tool) -> String {
                     Code::InitializeWorkspace => "Initializing workspace".to_string(),
                 }
             },
+            BuiltInTool::SwitchToExecution(_) => "Switching to execution agent".to_string(),
         },
         AgentToolKind::Mcp(mcp) => format!("Running: @{}/{}", mcp.server_name, mcp.tool_name),
     }

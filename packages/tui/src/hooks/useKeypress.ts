@@ -98,6 +98,31 @@ export const useKeypress = (
     let isPasting = false;
 
     const handleInput = (data: string) => {
+      // Handle Shift+Tab
+      if (data.includes('\u001B[Z')) {
+        isPastingRef.current = false;
+        handlerRef.current('', {
+          upArrow: false,
+          downArrow: false,
+          leftArrow: false,
+          rightArrow: false,
+          pageUp: false,
+          pageDown: false,
+          home: false,
+          end: false,
+          return: false,
+          escape: false,
+          ctrl: false,
+          shift: true,
+          meta: false,
+          tab: true,
+          backspace: false,
+          delete: false,
+          paste: false,
+        });
+        return;
+      }
+
       // Check for paste start
       if (data.includes(PASTE_START)) {
         isPasting = true;

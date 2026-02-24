@@ -257,6 +257,11 @@ export interface ModelInfo {
 export interface PasteImageArgs {
 }
 
+/** Arguments for /plan command */
+export interface PlanArgs {
+	prompt?: string;
+}
+
 /** Arguments for /quit command */
 export interface QuitArgs {
 }
@@ -412,5 +417,7 @@ export type TuiCommand =
 	/** Show configured MCP servers */
 	| { command: "mcp", args: McpArgs }
 	/** Show available tools */
-	| { command: "tools", args: ToolsArgs };
+	| { command: "tools", args: ToolsArgs }
+	/** Switch to Plan agent for breaking down ideas into implementation plans. */
+	| { command: "plan", args: PlanArgs };
 

@@ -16,6 +16,7 @@ export type {
   ClearArgs,
   QuitArgs,
   UsageArgs,
+  PlanArgs,
 } from './generated/agent';
 
 import type { CommandOption } from './generated/agent';

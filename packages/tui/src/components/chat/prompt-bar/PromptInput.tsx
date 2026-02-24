@@ -23,6 +23,7 @@ import {
   useKiroClient,
   useImageAttachmentActions,
   useImageAttachmentState,
+  useContextState,
 } from '../../../stores/selectors.js';
 import {
   type Segment,

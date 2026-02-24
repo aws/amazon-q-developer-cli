@@ -188,6 +188,7 @@ interface BaseAppActions {
   cancelApproval: () => void;
   setCurrentModel: (model: { id: string; name: string } | null) => void;
   setCurrentAgent: (agent: { name: string } | null) => void;
+  setPreviousAgentName: (name: string | null) => void;
   handleCompactionEvent: (event: AgentStreamEvent) => void;
 
   // Chat actions
@@ -308,6 +309,7 @@ export interface AppState {
   approvalQueue: ApprovalRequestInfo[];
   currentModel: { id: string; name: string } | null;
   currentAgent: { name: string } | null;
+  previousAgentName: string | null;
 
   // Command UI state
   activeCommand: ActiveCommand | null;
@@ -417,6 +419,7 @@ export const createAppStore = (props: AppStoreProps) =>
     approvalQueue: [],
     currentModel: null,
     currentAgent: null,
+    previousAgentName: null,
 
     activeCommand: null,
     commandInputValue: '',
@@ -963,6 +966,12 @@ export const createAppStore = (props: AppStoreProps) =>
               });
             }
             break;
+          case AgentEventType.AgentSwitched:
+            get().setCurrentAgent({ name: event.agentName });
+            if (event.previousAgentName) {
+              set({ previousAgentName: event.previousAgentName });
+            }
+            break;
         }
       };
 
@@ -1069,6 +1078,7 @@ export const createAppStore = (props: AppStoreProps) =>
       set({ agentError, agentErrorGuidance: guidance ?? null }),
     setCurrentModel: (currentModel) => set({ currentModel }),
     setCurrentAgent: (currentAgent) => set({ currentAgent }),
+    setPreviousAgentName: (previousAgentName) => set({ previousAgentName }),
 
     handleCompactionEvent: (event) => {
       if (event.type === AgentEventType.ContextUsage) {

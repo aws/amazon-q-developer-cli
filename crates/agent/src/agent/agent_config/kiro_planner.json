@@ -1,0 +1,26 @@
+{
+  "name": "kiro_planner",
+  "description": "Specialized planning agent that helps break down ideas into implementation plans",
+  "tools": [
+    "read",
+    "glob",
+    "grep",
+    "web_fetch",
+    "web_search",
+    "report",
+    "shell",
+    "todo",
+    "knowledge",
+    "introspect",
+    "switch_to_execution"
+  ],
+  "toolsSettings": {
+    "shell": {
+      "autoAllowReadonly": true,
+      "denyByDefault": true
+    }
+  },
+  "includeMcpJson": false,
+  "keyboardShortcut": "shift+tab",
+  "welcomeMessage": "Transform any idea into fully working code. What do you want to build today?"
+}

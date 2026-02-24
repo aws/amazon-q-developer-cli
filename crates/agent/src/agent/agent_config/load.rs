@@ -70,6 +70,7 @@ pub async fn load_agents(
 
     // Add default agent
     agent_configs.push(build_default_agent(system));
+    agent_configs.push(build_planner_agent());
 
     info!(?agent_configs, "loaded agent configs");
 
@@ -161,6 +162,13 @@ pub fn build_default_agent(system: &dyn SystemProvider) -> LoadedAgentConfig {
         ..Default::default()
     };
 
+    LoadedAgentConfig::new(AgentConfig::V2025_08_22(config), ConfigSource::BuiltIn)
+}
+
+pub fn build_planner_agent() -> LoadedAgentConfig {
+    let mut config: AgentConfigV2025_08_22 =
+        serde_json::from_str(include_str!("kiro_planner.json")).expect("Invalid kiro_planner.json");
+    config.system_prompt = Some(include_str!("planner_prompt.md").to_string());
     LoadedAgentConfig::new(AgentConfig::V2025_08_22(config), ConfigSource::BuiltIn)
 }
 
@@ -321,12 +329,17 @@ mod tests {
         let (agents, errors) = load_agents(base.provider()).await.unwrap();
 
         assert!(errors.is_empty(), "expected no errors, got: {:?}", errors);
-        assert_eq!(agents.len(), 3, "expected 3 agents (workspace, global, default)");
+        assert_eq!(
+            agents.len(),
+            4,
+            "expected 4 agents (workspace, global, default, planner)"
+        );
 
         let names: Vec<&str> = agents.iter().map(|a| a.name()).collect();
         assert!(names.contains(&"workspace-agent"));
         assert!(names.contains(&"global-agent"));
         assert!(names.contains(&DEFAULT_AGENT_NAME));
+        assert!(names.contains(&"kiro_planner"));
         assert!(!names.contains(&"backup-agent"), "should not load .json.bak files");
     }
 }
