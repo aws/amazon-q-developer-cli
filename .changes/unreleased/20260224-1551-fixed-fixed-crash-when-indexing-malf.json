@@ -1,0 +1,4 @@
+{
+  "type": "fixed",
+  "description": "Fixed crash when indexing malformed PDF files in knowledge base"
+}

@@ -119,13 +119,29 @@ pub fn process_file_with_config(
 
     let content = match file_type {
         FileType::Pdf => {
-            // Extract text from PDF
-            pdf_extract::extract_text(path).map_err(|e| {
-                SemanticSearchError::IoError(std::io::Error::new(
-                    std::io::ErrorKind::InvalidData,
-                    format!("Failed to extract text from PDF {}: {}", path.display(), e),
-                ))
-            })?
+            // Extract text from PDF, catching panics from malformed files.
+            // Note: the default panic hook will still print a backtrace to stderr before
+            // catch_unwind intercepts the unwind. We accept this rather than temporarily
+            // swapping in a no-op hook, which would be racy with other threads.
+            let path_owned = path.to_path_buf();
+            std::panic::catch_unwind(|| pdf_extract::extract_text(&path_owned))
+                .unwrap_or_else(|panic| {
+                    let msg = panic
+                        .downcast_ref::<String>()
+                        .map(|s| s.as_str())
+                        .or_else(|| panic.downcast_ref::<&str>().copied())
+                        .unwrap_or("unknown");
+                    Err(pdf_extract::OutputError::IoError(std::io::Error::new(
+                        std::io::ErrorKind::InvalidData,
+                        format!("PDF extraction panicked: {}", msg),
+                    )))
+                })
+                .map_err(|e| {
+                    SemanticSearchError::IoError(std::io::Error::new(
+                        std::io::ErrorKind::InvalidData,
+                        format!("Failed to extract text from PDF {}: {}", path.display(), e),
+                    ))
+                })?
         },
         _ => {
             // Read as text file
