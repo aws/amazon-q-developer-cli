@@ -84,7 +84,10 @@ export const Write = React.memo<WriteProps>(function Write({
   const displayNewText =
     parsedContent?.newStr ?? parsedContent?.content ?? newText;
 
-  const hasContent = displayNewText && displayNewText.length > 0;
+  // Show diff content when there's either new text or old text (deletions)
+  const hasContent =
+    (displayNewText && displayNewText.length > 0) ||
+    (displayOldText && displayOldText.length > 0);
 
   // Determine title based on tool status
   const title = getToolLabel('write', isFinished);
@@ -94,7 +97,13 @@ export const Write = React.memo<WriteProps>(function Write({
   const diffStartLine = startLine ?? 1;
 
   const language = displayPath?.split('.').pop()?.toLowerCase();
-  const changes = diffLines(displayOldText || '', displayNewText || '');
+
+  // Normalize trailing newlines before diffing to prevent phantom
+  // "added 1 line" entries caused by mismatched trailing newlines
+  // between oldStr and newStr.
+  const normalizedOld = (displayOldText || '').replace(/\r?\n$/, '');
+  const normalizedNew = (displayNewText || '').replace(/\r?\n$/, '');
+  const changes = diffLines(normalizedOld, normalizedNew);
 
   // Count added and removed lines
   const { linesAdded, linesRemoved } = useMemo(() => {
