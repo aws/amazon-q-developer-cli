@@ -797,3 +797,76 @@ export const moveCursorDownVisual = (
   const targetCol = Math.min(col, targetLine.length);
   return targetLine.start + targetCol;
 };
+
+/**
+ * Move cursor to start of current visual line (Ctrl+A in multi-line).
+ */
+export const moveToVisualLineStart = (
+  segments: Segment[],
+  cursor: number,
+  wrapWidth: number
+): number => {
+  const text = getVisibleText(segments);
+  const vlines = getVisualLines(text, wrapWidth);
+  const { lineIndex } = getVisualCursorLineInfo(segments, cursor, wrapWidth);
+  return vlines[lineIndex]!.start;
+};
+
+/**
+ * Move cursor to end of current visual line (Ctrl+E in multi-line).
+ */
+export const moveToVisualLineEnd = (
+  segments: Segment[],
+  cursor: number,
+  wrapWidth: number
+): number => {
+  const text = getVisibleText(segments);
+  const vlines = getVisualLines(text, wrapWidth);
+  const { lineIndex } = getVisualCursorLineInfo(segments, cursor, wrapWidth);
+  const vl = vlines[lineIndex]!;
+  return vl.start + vl.length;
+};
+
+/**
+ * Kill from cursor to end of current visual line (Ctrl+K in multi-line).
+ */
+export const killToVisualLineEnd = (
+  segments: Segment[],
+  cursor: number,
+  wrapWidth: number
+): EditResult => {
+  const text = getVisibleText(segments);
+  const vlines = getVisualLines(text, wrapWidth);
+  const { lineIndex } = getVisualCursorLineInfo(segments, cursor, wrapWidth);
+  const vl = vlines[lineIndex]!;
+  const lineEnd = vl.start + vl.length;
+  if (cursor >= lineEnd) return { segments, cursor };
+
+  // Delete text from cursor to end of visual line in the flat text
+  const newText = text.slice(0, cursor) + text.slice(lineEnd);
+  return {
+    segments: normalizeSegments([{ type: 'text', value: newText }]),
+    cursor,
+  };
+};
+
+/**
+ * Kill from cursor to beginning of current visual line (Ctrl+U in multi-line).
+ */
+export const killToVisualLineBeginning = (
+  segments: Segment[],
+  cursor: number,
+  wrapWidth: number
+): EditResult => {
+  const text = getVisibleText(segments);
+  const vlines = getVisualLines(text, wrapWidth);
+  const { lineIndex } = getVisualCursorLineInfo(segments, cursor, wrapWidth);
+  const lineStart = vlines[lineIndex]!.start;
+  if (cursor <= lineStart) return { segments, cursor };
+
+  const newText = text.slice(0, lineStart) + text.slice(cursor);
+  return {
+    segments: normalizeSegments([{ type: 'text', value: newText }]),
+    cursor: lineStart,
+  };
+};

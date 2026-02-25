@@ -47,6 +47,10 @@ import {
   isVisuallyMultiLine,
   moveCursorUpVisual,
   moveCursorDownVisual,
+  moveToVisualLineStart,
+  moveToVisualLineEnd,
+  killToVisualLineEnd,
+  killToVisualLineBeginning,
 } from '../../../utils/input-editing.js';
 import { CommandHistory } from '../../../utils/command-history.js';
 import { useTerminalSize } from '../../../hooks/useTerminalSize.js';
@@ -580,12 +584,14 @@ export const PromptInput = React.memo(function PromptInput({
           }
         }
         // Single-line or already on last line: navigate history
+        // Skip if user is just editing (not browsing history) to avoid clearing input
+        if (!CommandHistory.getInstance().isNavigating()) return;
         const command = CommandHistory.getInstance().navigate('down');
         if (command) {
           setSegments([{ type: 'text', value: command }]);
           setCursor(command.length);
         } else {
-          // Returned to current input
+          // Returned to current input after browsing history
           setSegments([{ type: 'text', value: '' }]);
           setCursor(0);
         }
@@ -600,11 +606,11 @@ export const PromptInput = React.memo(function PromptInput({
         switch (userInput) {
           case 'a': // Ctrl+A - beginning of line
             inputMetrics.markStateUpdate();
-            setCursor(0);
+            setCursor(moveToVisualLineStart(segments, cursor, termWidth));
             break;
           case 'e': // Ctrl+E - end of line
             inputMetrics.markStateUpdate();
-            setCursor(totalWidth(segments));
+            setCursor(moveToVisualLineEnd(segments, cursor, termWidth));
             break;
           case 'b': // Ctrl+B - back one char
             inputMetrics.markStateUpdate();
@@ -621,10 +627,10 @@ export const PromptInput = React.memo(function PromptInput({
             applyEdit(deleteWordBackward(segments, cursor));
             break;
           case 'k': // Ctrl+K - kill to end of line
-            applyEdit(killToEnd(segments, cursor));
+            applyEdit(killToVisualLineEnd(segments, cursor, termWidth));
             break;
           case 'u': // Ctrl+U - kill to beginning of line
-            applyEdit(killToBeginning(segments, cursor));
+            applyEdit(killToVisualLineBeginning(segments, cursor, termWidth));
             break;
           case 't': // Ctrl+T - transpose characters
             applyEdit(transposeChars(segments, cursor));
@@ -665,6 +671,8 @@ export const PromptInput = React.memo(function PromptInput({
                   break;
                 }
               }
+              // Skip if user is just editing (not browsing history) to avoid clearing input
+              if (!CommandHistory.getInstance().isNavigating()) break;
               const command = CommandHistory.getInstance().navigate('down');
               if (command) {
                 setSegments([{ type: 'text', value: command }]);
@@ -745,10 +753,12 @@ export const PromptInput = React.memo(function PromptInput({
       if (seg.type === 'text') {
         if (cursorInSeg) {
           const localCursor = cursor - pos;
-          const charAtCursor = seg.value[localCursor] ?? ' ';
+          const onNewline = seg.value[localCursor] === '\n';
+          const charAtCursor = onNewline ? ' ' : (seg.value[localCursor] ?? ' ');
+          const afterStart = onNewline ? localCursor : localCursor + 1;
           const after =
-            localCursor < seg.value.length
-              ? seg.value.slice(localCursor + 1)
+            afterStart < seg.value.length
+              ? seg.value.slice(afterStart)
               : '';
           parts.push(
             <React.Fragment key={i}>

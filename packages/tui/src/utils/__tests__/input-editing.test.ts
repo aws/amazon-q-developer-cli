@@ -28,6 +28,10 @@ import {
   getVisualCursorLineInfo,
   moveCursorUpVisual,
   moveCursorDownVisual,
+  moveToVisualLineStart,
+  moveToVisualLineEnd,
+  killToVisualLineEnd,
+  killToVisualLineBeginning,
   uppercaseWord,
   lowercaseWord,
   capitalizeWord,
@@ -1036,6 +1040,123 @@ describe('input-editing', () => {
 
     it('returns null when already on last visual line', () => {
       expect(moveCursorDownVisual([text('abcdefghij')], 7, 5)).toBeNull();
+    });
+  });
+
+  describe('moveToVisualLineStart (Ctrl+A multi-line)', () => {
+    it('returns 0 for single line', () => {
+      expect(moveToVisualLineStart([text('hello')], 3, 80)).toBe(0);
+    });
+
+    it('moves to start of current logical line', () => {
+      // "hello\nworld", cursor at 8 (line 1, col 2) -> start of line 1 = 6
+      expect(moveToVisualLineStart([text('hello\nworld')], 8, 80)).toBe(6);
+    });
+
+    it('moves to start of wrapped visual line', () => {
+      // "abcdefghij" at width 5 -> line 0: [0..5), line 1: [5..10)
+      // cursor at 7 (line 1, col 2) -> start of visual line 1 = 5
+      expect(moveToVisualLineStart([text('abcdefghij')], 7, 5)).toBe(5);
+    });
+
+    it('handles cursor already at line start', () => {
+      expect(moveToVisualLineStart([text('hello\nworld')], 6, 80)).toBe(6);
+    });
+
+    it('works with wrapping and newlines combined', () => {
+      // "hello\nworld_is_great" at width 10
+      // line 0: "hello" (start 0, len 5)
+      // line 1: "world_is_g" (start 6, len 10)
+      // line 2: "reat" (start 16, len 4)
+      // cursor at 18 (line 2, col 2) -> start of line 2 = 16
+      expect(moveToVisualLineStart([text('hello\nworld_is_great')], 18, 10)).toBe(16);
+    });
+  });
+
+  describe('moveToVisualLineEnd (Ctrl+E multi-line)', () => {
+    it('returns total width for single line', () => {
+      expect(moveToVisualLineEnd([text('hello')], 2, 80)).toBe(5);
+    });
+
+    it('moves to end of current logical line', () => {
+      // "hello\nworld", cursor at 8 (line 1, col 2) -> end of line 1 = 11
+      expect(moveToVisualLineEnd([text('hello\nworld')], 8, 80)).toBe(11);
+    });
+
+    it('moves to end of first line, not entire input', () => {
+      // "hello\nworld", cursor at 2 (line 0, col 2) -> end of line 0 = 5
+      expect(moveToVisualLineEnd([text('hello\nworld')], 2, 80)).toBe(5);
+    });
+
+    it('moves to end of wrapped visual line', () => {
+      // "abcdefghij" at width 5 -> line 0: [0..5), line 1: [5..10)
+      // cursor at 2 (line 0, col 2) -> end of visual line 0 = 5
+      expect(moveToVisualLineEnd([text('abcdefghij')], 2, 5)).toBe(5);
+    });
+
+    it('handles cursor already at line end', () => {
+      expect(moveToVisualLineEnd([text('hello\nworld')], 5, 80)).toBe(5);
+    });
+  });
+
+  describe('killToVisualLineEnd (Ctrl+K multi-line)', () => {
+    it('kills to end of current line only', () => {
+      // "hello\nworld", cursor at 2 -> kill "llo" from line 0, keep "\nworld"
+      const result = killToVisualLineEnd([text('hello\nworld')], 2, 80);
+      expect(result.segments[0]).toEqual(text('he\nworld'));
+      expect(result.cursor).toBe(2);
+    });
+
+    it('kills to end of second line only', () => {
+      // "hello\nworld\nfoo", cursor at 8 (line 1, col 2) -> kill "rld", keep rest
+      const result = killToVisualLineEnd([text('hello\nworld\nfoo')], 8, 80);
+      expect(result.segments[0]).toEqual(text('hello\nwo\nfoo'));
+      expect(result.cursor).toBe(8);
+    });
+
+    it('no-op when cursor is at end of visual line', () => {
+      // "hello\nworld", cursor at 5 (end of line 0)
+      const result = killToVisualLineEnd([text('hello\nworld')], 5, 80);
+      expect(result.segments[0]).toEqual(text('hello\nworld'));
+      expect(result.cursor).toBe(5);
+    });
+
+    it('kills to end of wrapped visual line', () => {
+      // "abcdefghij" at width 5 -> line 0: [0..5), line 1: [5..10)
+      // cursor at 2 -> kill "cde" (to end of visual line 0), keep "fghij"
+      const result = killToVisualLineEnd([text('abcdefghij')], 2, 5);
+      expect(result.segments[0]).toEqual(text('abfghij'));
+      expect(result.cursor).toBe(2);
+    });
+  });
+
+  describe('killToVisualLineBeginning (Ctrl+U multi-line)', () => {
+    it('kills to beginning of current line only', () => {
+      // "hello\nworld", cursor at 8 (line 1, col 2) -> kill "wo", keep rest
+      const result = killToVisualLineBeginning([text('hello\nworld')], 8, 80);
+      expect(result.segments[0]).toEqual(text('hello\nrld'));
+      expect(result.cursor).toBe(6);
+    });
+
+    it('preserves other lines', () => {
+      // "hello\nworld\nfoo", cursor at 8 (line 1, col 2) -> kill "wo"
+      const result = killToVisualLineBeginning([text('hello\nworld\nfoo')], 8, 80);
+      expect(result.segments[0]).toEqual(text('hello\nrld\nfoo'));
+      expect(result.cursor).toBe(6);
+    });
+
+    it('no-op when cursor is at beginning of visual line', () => {
+      const result = killToVisualLineBeginning([text('hello\nworld')], 6, 80);
+      expect(result.segments[0]).toEqual(text('hello\nworld'));
+      expect(result.cursor).toBe(6);
+    });
+
+    it('kills to beginning of wrapped visual line', () => {
+      // "abcdefghij" at width 5 -> line 0: [0..5), line 1: [5..10)
+      // cursor at 7 (line 1, col 2) -> kill "fg" (from start of visual line 1), keep rest
+      const result = killToVisualLineBeginning([text('abcdefghij')], 7, 5);
+      expect(result.segments[0]).toEqual(text('abcdehij'));
+      expect(result.cursor).toBe(5);
     });
   });
 });

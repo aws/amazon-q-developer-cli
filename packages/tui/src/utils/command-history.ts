@@ -79,6 +79,10 @@ export class CommandHistory {
     }
   }
 
+  isNavigating(): boolean {
+    return this.currentIndex !== -1;
+  }
+
   reset(): void {
     this.currentIndex = -1;
   }
