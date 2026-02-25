@@ -753,6 +753,9 @@ export const PromptInput = React.memo(function PromptInput({
       if (seg.type === 'text') {
         if (cursorInSeg) {
           const localCursor = cursor - pos;
+          // Handle the case that cursor is on the newline at the end of a line:
+          // render a visible space for the cursor block, and keep the \n in `after`
+          // so the line break still renders.
           const onNewline = seg.value[localCursor] === '\n';
           const charAtCursor = onNewline ? ' ' : (seg.value[localCursor] ?? ' ');
           const afterStart = onNewline ? localCursor : localCursor + 1;
