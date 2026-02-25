@@ -18,7 +18,7 @@ use serde_json::json;
 
 use super::CommandContext;
 
-const DEFAULT_CONTEXT_WINDOW_TOKENS: usize = 200_000;
+pub const DEFAULT_CONTEXT_WINDOW_TOKENS: usize = 200_000;
 
 pub async fn execute(args: &ContextArgs, ctx: &CommandContext<'_>) -> CommandResult {
     // Default behavior - show context usage

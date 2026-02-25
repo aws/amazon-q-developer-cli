@@ -865,7 +865,11 @@ impl AcpSession {
         // Wait for agent to finish initialization
         loop {
             match self.agent.recv().await {
-                Ok(AgentEvent::Initialized) => return Ok(()),
+                Ok(AgentEvent::Initialized) => {
+                    // Emit initial context usage so TUI shows it immediately
+                    self.emit_initial_context_usage().await;
+                    return Ok(());
+                },
                 Ok(AgentEvent::InitializeUpdate(init_event)) => {
                     let agent::protocol::InitializeUpdateEvent::Mcp(mcp_event) = init_event;
                     if let Err(e) = self.handle_mcp_event(mcp_event).await {
@@ -935,6 +939,30 @@ impl AcpSession {
             context_usage_percentage: metadata.context_usage_percentage,
         };
         self.connection_cx.send_notification(notification)
+    }
+
+    async fn emit_initial_context_usage(&self) {
+        let snapshot = match self.agent.create_snapshot().await {
+            Ok(s) => s,
+            Err(_) => return,
+        };
+        let context_window = self
+            .rts_state
+            .model_info()
+            .map_or(super::commands::context::DEFAULT_CONTEXT_WINDOW_TOKENS, |m| {
+                m.context_window_tokens
+            });
+        let sizes = super::commands::context::calculate_component_sizes(&snapshot);
+        let total_tokens = sizes.context_files + sizes.tools + sizes.kiro + sizes.user;
+        let estimated_pct = (total_tokens as f32 / context_window as f32) * 100.0;
+
+        let notification = super::schema::MetadataNotification {
+            session_id: self.session_id_str.clone(),
+            context_usage_percentage: Some(estimated_pct),
+        };
+        if let Err(e) = self.connection_cx.send_notification(notification) {
+            warn!("Failed to send initial context usage: {}", e);
+        }
     }
 
     async fn emit_historical_notifications(&self) -> Result<(), sacp::Error> {
