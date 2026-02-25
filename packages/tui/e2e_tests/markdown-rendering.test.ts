@@ -62,6 +62,12 @@ describe('Markdown Rendering', () => {
     // Code and surrounding text should both be visible
     expect(snapshot.some(line => line.includes('print'))).toBe(true);
     expect(snapshot.some(line => line.includes('Done'))).toBe(true);
+    // Code block should be surrounded by blank lines
+    const introIdx = snapshot.findIndex(l => l.includes('Here is code'));
+    const codeIdx = snapshot.findIndex(l => l.includes('print'));
+    const doneIdx = snapshot.findIndex(l => l.includes('Done'));
+    expect(codeIdx - introIdx).toBeGreaterThanOrEqual(2);
+    expect(doneIdx - codeIdx).toBeGreaterThanOrEqual(2);
   }, 30000);
 
   it('renders inline code', async () => {
