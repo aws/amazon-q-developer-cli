@@ -6,6 +6,7 @@ export interface MarkdownSegment {
   quote?: boolean;
   blockquote?: boolean;
   header?: number;
+  boldHeading?: boolean;
   horizontalRule?: boolean;
   link?: { url: string };
   listItem?: { ordered: boolean; number?: number; indent: number };
@@ -39,13 +40,14 @@ export const parseMarkdown = (text: string): MarkdownSegment[] => {
 
   const flushSegment = (isComplete = false) => {
     if (state === State.TEXT && currentText) {
-      // Process line-by-line if there are headers, lists, or blockquotes
+      // Process line-by-line if there are headers, lists, bold headings, or blockquotes
       if (
         currentText.includes('#') ||
         currentText.includes('-') ||
         /^\s*\d+\./.test(currentText) ||
         currentText.includes('>') ||
-        currentText.includes('|')
+        currentText.includes('|') ||
+        /(?:^|\n)\*\*[^*]+\*\*\s*$/m.test(currentText)
       ) {
         const lines = currentText.split('\n');
         let textAccumulator = '';
@@ -112,15 +114,30 @@ export const parseMarkdown = (text: string): MarkdownSegment[] => {
           }
 
           const headerMatch = line.match(/^(#{1,6})\s+(.+)$/);
+          const boldHeadingMatch = line.match(/^\*\*([^*]+)\*\*\s*$/);
           const unorderedListMatch = line.match(/^(\s*)([-*+])\s+(.+)$/);
           const orderedListMatch = line.match(/^(\s*)(\d+)\.\s+(.+)$/);
           const blockquoteMatch = line.match(/^>\s?(.*)$/);
+          const hrMatch = line.match(/^\s*(-{3,}|\*{3,}|_{3,})\s*$/);
+
+          // Trim trailing newlines from accumulated text before block elements
+          // \n\n before a block element is a markdown separator, not content
+          const isBlockElement = headerMatch || boldHeadingMatch || unorderedListMatch || orderedListMatch || blockquoteMatch || hrMatch;
+          if (isBlockElement) {
+            textAccumulator = textAccumulator.replace(/\n+$/, '');
+          }
 
           if (headerMatch && headerMatch[1] && headerMatch[2]) {
             flushText();
             segments.push({
               text: headerMatch[2],
               header: headerMatch[1].length,
+            });
+          } else if (boldHeadingMatch && boldHeadingMatch[1]) {
+            flushText();
+            segments.push({
+              text: boldHeadingMatch[1],
+              boldHeading: true,
             });
           } else if (
             unorderedListMatch &&
@@ -152,7 +169,7 @@ export const parseMarkdown = (text: string): MarkdownSegment[] => {
               text: blockquoteMatch[1] || '',
               blockquote: true,
             });
-          } else if (line.match(/^\s*(-{3,}|\*{3,}|_{3,})\s*$/)) {
+          } else if (hrMatch) {
             flushText();
             segments.push({ text: '', horizontalRule: true });
           } else {
@@ -237,7 +254,28 @@ export const parseMarkdown = (text: string): MarkdownSegment[] => {
 
   // Handle remaining content
   flushSegment();
-  return segments;
+
+  // Post-pass: trim newlines at text↔code block boundaries and leading newlines
+  for (let s = 0; s < segments.length; s++) {
+    const seg = segments[s];
+    if (seg && seg.text && !seg.codeBlock && !seg.header && !seg.boldHeading && !seg.listItem && !seg.blockquote && !seg.horizontalRule && !seg.table) {
+      // Trim leading newlines from the very first segment
+      if (s === 0) {
+        seg.text = seg.text.replace(/^\n+/, '');
+      }
+      // Trim trailing newlines before code blocks
+      if (segments[s + 1]?.codeBlock) {
+        seg.text = seg.text.replace(/\n+$/, '');
+      }
+      // Trim leading newlines after code blocks
+      if (segments[s - 1]?.codeBlock) {
+        seg.text = seg.text.replace(/^\n+/, '');
+      }
+    }
+  }
+
+  // Remove empty text segments created by trimming
+  return segments.filter(seg => seg.text || seg.codeBlock || seg.header || seg.boldHeading || seg.listItem || seg.blockquote || seg.horizontalRule || seg.table);
 };
 
 /**

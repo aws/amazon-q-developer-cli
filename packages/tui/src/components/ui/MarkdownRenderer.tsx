@@ -68,7 +68,7 @@ export const MarkdownRenderer = React.memo(function MarkdownRenderer({
     if (segment.codeBlock) {
       flushTextGroup();
       blocks.push({ type: 'code', segment });
-    } else if (segment.header) {
+    } else if (segment.header || segment.boldHeading) {
       flushTextGroup();
       blocks.push({ type: 'header', segment });
     } else if (segment.listItem) {
@@ -88,26 +88,6 @@ export const MarkdownRenderer = React.memo(function MarkdownRenderer({
     }
   });
   flushTextGroup();
-
-  // Normalize: strip excessive newlines around code blocks and headers
-  for (let b = 0; b < blocks.length; b++) {
-    const blk = blocks[b];
-    const next = blocks[b + 1];
-    const prev = blocks[b - 1];
-
-    if (blk && blk.type === 'text') {
-      const last = blk.segments[blk.segments.length - 1];
-      // Strip trailing newlines before code blocks and headers (keep at most 1)
-      if (last && (next?.type === 'code' || next?.type === 'header')) {
-        last.text = last.text.replace(/\n{2,}$/, '\n');
-      }
-      // Strip leading newlines after code blocks (keep at most 1)
-      const first = blk.segments[0];
-      if (first && prev?.type === 'code') {
-        first.text = first.text.replace(/^\n{2,}/, '\n');
-      }
-    }
-  }
 
   return (
     <Box flexDirection="column">

@@ -172,3 +172,6 @@ bun run test:e2e
 # Skip Rust build if binary is already up to date
 bun run test:e2e --skip-rust-build
 ```
+
+> [!important]
+> E2E tests run against the pre-built `dist/tui.js` bundle, not the source files. If you're running individual test files directly (e.g., `bun test ./e2e_tests/my-test.ts`), you must run `bun run build` first.

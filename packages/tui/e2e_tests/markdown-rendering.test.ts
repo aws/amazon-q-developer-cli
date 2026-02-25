@@ -438,6 +438,34 @@ describe('Markdown Rendering', () => {
     expect(s2).toBeGreaterThan(s1);
     // Headers should not be on same line as content
     expect(snapshot[s1]!.includes('Content here')).toBe(false);
+    // Headers should have a blank line before them
+    const introIdx = snapshot.findIndex(l => l.includes('Intro text'));
+    expect(s1 - introIdx).toBeGreaterThanOrEqual(2);
+  }, 30000);
+
+  it('renders **bold heading** with spacing like ## heading', async () => {
+    testCase = await E2ETestCase.builder()
+      .withTestName('markdown-bold-heading')
+      .withTerminal({ width: 80, height: 24 })
+      .launch();
+    await testCase.waitForText('ask a question', 10000);
+    await testCase.getSessionId();
+    await testCase.pushSendMessageResponse([
+      { kind: 'event', data: { kind: 'AssistantResponseEvent', data: { content: '**Pancake Sort**\n- slow\n\n**Quick Sort**\n- fast' } } },
+    ]);
+    await testCase.pushSendMessageResponse(null);
+    await testCase.sendKeys('test');
+    await testCase.sleepMs(100);
+    await testCase.pressEnter();
+    await testCase.waitForText('fast', 10000);
+    await testCase.sleepMs(500);
+    const snapshot = testCase.getSnapshot();
+    const slowIdx = snapshot.findIndex(l => l.includes('slow'));
+    const quickIdx = snapshot.findIndex(l => l.includes('Quick Sort'));
+    expect(slowIdx).toBeGreaterThan(-1);
+    expect(quickIdx).toBeGreaterThan(-1);
+    // **Quick Sort** should have a blank line before it (like a ## heading would)
+    expect(quickIdx - slowIdx).toBeGreaterThanOrEqual(2);
   }, 30000);
 
   it('renders complete markdown document', async () => {

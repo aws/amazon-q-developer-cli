@@ -22,7 +22,7 @@ describe('parseMarkdown', () => {
   // 2. Inline Markdown
   describe('Inline Markdown', () => {
     it('should parse bold text', () => {
-      expect(parseMarkdown('**bold**')).toEqual([{ text: 'bold', bold: true }]);
+      expect(parseMarkdown('**bold**')).toEqual([{ text: 'bold', boldHeading: true }]);
     });
 
     it('should parse italic text', () => {
@@ -105,7 +105,6 @@ describe('parseMarkdown', () => {
           text: '',
           codeBlock: { code: 'code1\n', language: 'rust', isComplete: true },
         },
-        { text: '\n' },
         {
           text: '',
           codeBlock: { code: 'code2\n', language: 'python', isComplete: true },
@@ -118,12 +117,11 @@ describe('parseMarkdown', () => {
         parseMarkdown('**Bold** text\n```rust\ncode\n```\n*italic*')
       ).toEqual([
         { text: 'Bold', bold: true },
-        { text: ' text\n' },
+        { text: ' text' },
         {
           text: '',
           codeBlock: { code: 'code\n', language: 'rust', isComplete: true },
         },
-        { text: '\n' },
         { text: 'italic', italic: true },
       ]);
     });
@@ -462,6 +460,184 @@ describe('parseMarkdown', () => {
       const result = parseMarkdown('# First\nParagraph\n## Second');
       expect(result[0]?.header).toBe(1);
       expect(result[2]?.header).toBe(2);
+    });
+  });
+
+  describe('Block Separator Handling', () => {
+    // 1. Leading newlines
+    describe('Leading newlines', () => {
+      it('should strip leading \\n from first segment', () => {
+        const result = parseMarkdown('\nHello world');
+        expect(result).toEqual([{ text: 'Hello world' }]);
+      });
+
+      it('should strip leading \\n\\n from first segment', () => {
+        const result = parseMarkdown('\n\nHello world');
+        expect(result).toEqual([{ text: 'Hello world' }]);
+      });
+
+      it('should strip leading \\n\\n\\n from first segment', () => {
+        const result = parseMarkdown('\n\n\nHello world');
+        expect(result).toEqual([{ text: 'Hello world' }]);
+      });
+
+      it('should strip leading \\n\\n before a header as first content', () => {
+        const result = parseMarkdown('\n\n## Title');
+        expect(result).toEqual([{ text: 'Title', header: 2 }]);
+      });
+
+      it('should strip leading \\n\\n before a code block as first content', () => {
+        const result = parseMarkdown('\n\n```python\ncode\n```');
+        expect(result).toEqual([
+          { text: '', codeBlock: { code: 'code\n', language: 'python', isComplete: true } },
+        ]);
+      });
+    });
+
+    // 2. Text & header interaction
+    describe('Text and header interaction', () => {
+      it('should strip \\n\\n between text and header', () => {
+        const result = parseMarkdown('Hello\n\n## Title');
+        expect(result).toEqual([
+          { text: 'Hello' },
+          { text: 'Title', header: 2 },
+        ]);
+      });
+
+      it('should strip \\n\\n\\n between text and header', () => {
+        const result = parseMarkdown('Hello\n\n\n## Title');
+        expect(result).toEqual([
+          { text: 'Hello' },
+          { text: 'Title', header: 2 },
+        ]);
+      });
+
+      it('should strip \\n between text and header', () => {
+        const result = parseMarkdown('Hello\n## Title');
+        expect(result).toEqual([
+          { text: 'Hello' },
+          { text: 'Title', header: 2 },
+        ]);
+      });
+
+      it('should preserve \\n\\n between plain text paragraphs', () => {
+        expect(parseMarkdown('First paragraph.\n\nSecond paragraph.')).toEqual([
+          { text: 'First paragraph.\n\nSecond paragraph.' },
+        ]);
+      });
+
+      it('should strip \\n\\n between text and list item', () => {
+        const result = parseMarkdown('Hello\n\n- item');
+        expect(result).toEqual([
+          { text: 'Hello' },
+          { text: 'item', listItem: { ordered: false, indent: 0 } },
+        ]);
+      });
+
+      it('should strip \\n\\n between text and blockquote', () => {
+        const result = parseMarkdown('Hello\n\n> quote');
+        expect(result).toEqual([
+          { text: 'Hello' },
+          { text: 'quote', blockquote: true },
+        ]);
+      });
+
+      it('should strip \\n\\n between text and horizontal rule', () => {
+        const result = parseMarkdown('Hello\n\n---');
+        expect(result).toEqual([
+          { text: 'Hello' },
+          { text: '', horizontalRule: true },
+        ]);
+      });
+    });
+
+    // 3. Header & code block interaction
+    describe('Header and code block interaction', () => {
+      it('should strip \\n\\n between header and code block', () => {
+        const result = parseMarkdown('## Title\n\n```python\ncode\n```');
+        expect(result).toEqual([
+          { text: 'Title', header: 2 },
+          { text: '', codeBlock: { code: 'code\n', language: 'python', isComplete: true } },
+        ]);
+      });
+
+      it('should strip \\n\\n between code block and header', () => {
+        const result = parseMarkdown('```python\ncode\n```\n\n## Title');
+        expect(result).toEqual([
+          { text: '', codeBlock: { code: 'code\n', language: 'python', isComplete: true } },
+          { text: 'Title', header: 2 },
+        ]);
+      });
+
+      it('should strip \\n\\n between code block and text', () => {
+        const result = parseMarkdown('```python\ncode\n```\n\nSome text');
+        expect(result).toEqual([
+          { text: '', codeBlock: { code: 'code\n', language: 'python', isComplete: true } },
+          { text: 'Some text' },
+        ]);
+      });
+
+      it('should strip \\n\\n between text and code block', () => {
+        const result = parseMarkdown('Some text\n\n```python\ncode\n```');
+        expect(result).toEqual([
+          { text: 'Some text' },
+          { text: '', codeBlock: { code: 'code\n', language: 'python', isComplete: true } },
+        ]);
+      });
+    });
+
+    // 4. All three combined: text + header + code
+    describe('Combined text, header, and code block', () => {
+      it('should handle text → header → code with \\n\\n separators', () => {
+        const result = parseMarkdown('Hello\n\n## Title\n\n```python\ncode\n```');
+        expect(result).toEqual([
+          { text: 'Hello' },
+          { text: 'Title', header: 2 },
+          { text: '', codeBlock: { code: 'code\n', language: 'python', isComplete: true } },
+        ]);
+      });
+
+      it('should handle code → text → header with \\n\\n separators', () => {
+        const result = parseMarkdown('```python\ncode\n```\n\nSome text\n\n## Title');
+        expect(result).toEqual([
+          { text: '', codeBlock: { code: 'code\n', language: 'python', isComplete: true } },
+          { text: 'Some text' },
+          { text: 'Title', header: 2 },
+        ]);
+      });
+
+      it('should handle leading \\n\\n + text + header + code', () => {
+        const result = parseMarkdown('\n\nHello\n\n## Title\n\n```python\ncode\n```');
+        expect(result).toEqual([
+          { text: 'Hello' },
+          { text: 'Title', header: 2 },
+          { text: '', codeBlock: { code: 'code\n', language: 'python', isComplete: true } },
+        ]);
+      });
+
+      it('should handle LLM-style response with multiple sections', () => {
+        const result = parseMarkdown(
+          '\n\nHere are both algorithms:\n\n## Pancake Sort\n\n```python\ndef pancake_sort(arr):\n    pass\n```\n\n## Quick Sort\n\n```python\ndef quick_sort(arr):\n    pass\n```\n\nBoth are comparison sorts.'
+        );
+        expect(result).toEqual([
+          { text: 'Here are both algorithms:' },
+          { text: 'Pancake Sort', header: 2 },
+          { text: '', codeBlock: { code: 'def pancake_sort(arr):\n    pass\n', language: 'python', isComplete: true } },
+          { text: 'Quick Sort', header: 2 },
+          { text: '', codeBlock: { code: 'def quick_sort(arr):\n    pass\n', language: 'python', isComplete: true } },
+          { text: 'Both are comparison sorts.' },
+        ]);
+      });
+
+      it('should handle code → header → list with \\n\\n separators', () => {
+        const result = parseMarkdown('```js\ncode\n```\n\n## Notes\n\n- item1\n- item2');
+        expect(result).toEqual([
+          { text: '', codeBlock: { code: 'code\n', language: 'js', isComplete: true } },
+          { text: 'Notes', header: 2 },
+          { text: 'item1', listItem: { ordered: false, indent: 0 } },
+          { text: 'item2', listItem: { ordered: false, indent: 0 } },
+        ]);
+      });
     });
   });
 });
