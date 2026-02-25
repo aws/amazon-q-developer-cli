@@ -269,7 +269,7 @@ async fn set_mode_switches_agent() {
 
     let swapped_config = AgentConfigV2025_08_22 {
         name: "swapped_agent".to_string(),
-        system_prompt: Some("You are the swapped agent".to_string()),
+        global_prompt: Some("You are the swapped agent".to_string()),
         tools: vec!["read".to_string(), "ls".to_string()],
         ..Default::default()
     };

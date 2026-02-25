@@ -414,6 +414,17 @@ pub fn find_model<'a>(models: &'a [ModelInfo], name: &str) -> Option<&'a ModelIn
     })
 }
 
+/// Validates a model name against available models and returns the model_id if valid.
+pub async fn validate_model(os: &crate::os::Os, requested: &str) -> Option<String> {
+    match get_available_models(os).await {
+        Ok((models, _)) => find_model(&models, requested).map(|m| m.model_id.clone()),
+        Err(e) => {
+            tracing::warn!(?e, "failed to fetch available models");
+            None
+        },
+    }
+}
+
 /// Find the closest matching model name using fuzzy string matching.
 /// Returns the best match if it exceeds the similarity threshold.
 fn find_similar_model(models: &[ModelInfo], query: &str) -> Option<String> {

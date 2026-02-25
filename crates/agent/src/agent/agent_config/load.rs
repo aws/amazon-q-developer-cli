@@ -20,25 +20,31 @@ use super::{
     AgentConfigError,
     ConfigSource,
     LoadedAgentConfig,
+    ResolvedGlobalPrompt,
 };
 use crate::agent::consts::{
     DEFAULT_AGENT_NAME,
     DEFAULT_AGENT_RESOURCES,
 };
+use crate::agent::util::path::canonicalize_path_sys;
 use crate::agent::util::providers::SystemProvider;
 
 /// Load all agent configs from workspace and global directories.
-pub async fn load_agents(
-    system: &dyn SystemProvider,
+pub async fn load_agents<P: SystemProvider>(
+    system: &P,
 ) -> Result<(Vec<LoadedAgentConfig>, Vec<AgentConfigError>), AgentConfigError> {
     let mut agent_configs = Vec::new();
     let mut errors = Vec::new();
 
     // Load workspace agents
     if let Some(workspace_agents_dir) = resolve_workspace_agents_dir(system) {
-        match load_agents_from_dir(&workspace_agents_dir, ConfigSource::Workspace {
-            path: workspace_agents_dir.clone(),
-        })
+        match load_agents_from_dir(
+            &workspace_agents_dir,
+            ConfigSource::Workspace {
+                path: workspace_agents_dir.clone(),
+            },
+            system,
+        )
         .await
         {
             Ok((mut valid, mut invalid)) => {
@@ -53,9 +59,13 @@ pub async fn load_agents(
 
     // Load global agents
     if let Some(global_agents_dir) = resolve_global_agents_dir(system) {
-        match load_agents_from_dir(&global_agents_dir, ConfigSource::Global {
-            path: global_agents_dir.clone(),
-        })
+        match load_agents_from_dir(
+            &global_agents_dir,
+            ConfigSource::Global {
+                path: global_agents_dir.clone(),
+            },
+            system,
+        )
         .await
         {
             Ok((mut valid, mut invalid)) => {
@@ -111,6 +121,18 @@ fn resolve_global_agents_dir(system: &dyn SystemProvider) -> Option<PathBuf> {
     None
 }
 
+/// Load an AgentConfig into a LoadedAgentConfig, resolving file:// URIs in the global prompt.
+/// `base_dir` is used to resolve relative paths in file:// URIs.
+pub async fn load_agent_config<P: SystemProvider>(
+    config: AgentConfig,
+    source: ConfigSource,
+    base_dir: &Path,
+    system: &P,
+) -> LoadedAgentConfig {
+    let resolved_prompt = resolve_global_prompt(config.global_prompt(), base_dir, system).await;
+    LoadedAgentConfig::new(config, source, resolved_prompt)
+}
+
 pub fn build_default_agent(system: &dyn SystemProvider) -> LoadedAgentConfig {
     let mut resources: Vec<ResourcePath> = DEFAULT_AGENT_RESOURCES
         .iter()
@@ -155,26 +177,37 @@ pub fn build_default_agent(system: &dyn SystemProvider) -> LoadedAgentConfig {
     let config = AgentConfigV2025_08_22 {
         name: DEFAULT_AGENT_NAME.to_string(),
         description: Some("The default agent for Kiro CLI".to_string()),
-        system_prompt: Some(include_str!("default_agent_prompt.md").to_string()),
+        global_prompt: Some(include_str!("default_agent_prompt.md").to_string()),
         tools: vec!["*".to_string()],
         use_legacy_mcp_json: true,
         resources,
         ..Default::default()
     };
 
-    LoadedAgentConfig::new(AgentConfig::V2025_08_22(config), ConfigSource::BuiltIn)
+    let resolved_prompt = config
+        .global_prompt
+        .clone()
+        .map(ResolvedGlobalPrompt::Resolved)
+        .unwrap_or_default();
+    LoadedAgentConfig::new(AgentConfig::V2025_08_22(config), ConfigSource::BuiltIn, resolved_prompt)
 }
 
 pub fn build_planner_agent() -> LoadedAgentConfig {
     let mut config: AgentConfigV2025_08_22 =
         serde_json::from_str(include_str!("kiro_planner.json")).expect("Invalid kiro_planner.json");
-    config.system_prompt = Some(include_str!("planner_prompt.md").to_string());
-    LoadedAgentConfig::new(AgentConfig::V2025_08_22(config), ConfigSource::BuiltIn)
+    config.global_prompt = Some(include_str!("planner_prompt.md").to_string());
+    let resolved_prompt = config
+        .global_prompt
+        .clone()
+        .map(ResolvedGlobalPrompt::Resolved)
+        .unwrap_or_default();
+    LoadedAgentConfig::new(AgentConfig::V2025_08_22(config), ConfigSource::BuiltIn, resolved_prompt)
 }
 
-async fn load_agents_from_dir(
+async fn load_agents_from_dir<P: SystemProvider>(
     dir: &Path,
     source: ConfigSource,
+    system: &P,
 ) -> Result<(Vec<LoadedAgentConfig>, Vec<AgentConfigError>), AgentConfigError> {
     let mut read_dir = match tokio::fs::read_dir(dir).await {
         Ok(rd) => rd,
@@ -218,7 +251,7 @@ async fn load_agents_from_dir(
                     continue;
                 };
 
-                match serde_json::from_str(&entry_contents) {
+                match serde_json::from_str::<AgentConfig>(&entry_contents) {
                     Ok(config) => {
                         let source = match &source {
                             ConfigSource::Workspace { .. } => ConfigSource::Workspace {
@@ -227,9 +260,11 @@ async fn load_agents_from_dir(
                             ConfigSource::Global { .. } => ConfigSource::Global {
                                 path: entry_path.clone(),
                             },
-                            ConfigSource::BuiltIn => ConfigSource::BuiltIn,
+                            ConfigSource::BuiltIn | ConfigSource::Ephemeral => source.clone(),
                         };
-                        agents.push(LoadedAgentConfig::new(config, source));
+                        let base_dir = entry_path.parent().unwrap_or(dir);
+                        let resolved_prompt = resolve_global_prompt(config.global_prompt(), base_dir, system).await;
+                        agents.push(LoadedAgentConfig::new(config, source, resolved_prompt));
                     },
                     Err(e) => {
                         invalid_agents.push(AgentConfigError::InvalidAgentConfig {
@@ -248,6 +283,59 @@ async fn load_agents_from_dir(
     }
 
     Ok((agents, invalid_agents))
+}
+
+/// Resolves a global prompt, handling file:// URIs.
+/// Relative paths are resolved relative to `base_dir`.
+async fn resolve_global_prompt<P: SystemProvider>(
+    prompt: Option<&str>,
+    base_dir: &Path,
+    system: &P,
+) -> ResolvedGlobalPrompt {
+    let prompt = match prompt {
+        Some(p) => p,
+        None => return ResolvedGlobalPrompt::None,
+    };
+
+    if !prompt.starts_with("file://") {
+        return ResolvedGlobalPrompt::Resolved(prompt.to_string());
+    }
+
+    let path_str = prompt.trim_start_matches("file://");
+    if path_str.is_empty() {
+        warn!("Invalid file URI (empty path): {}", prompt);
+        return ResolvedGlobalPrompt::ResolutionFailed;
+    }
+
+    // Absolute paths, tilde, or env vars should not be joined with base_dir
+    let is_absolute = path_str.starts_with('/') || path_str.starts_with('~') || path_str.starts_with('$');
+    let path_to_resolve = if is_absolute {
+        path_str.to_string()
+    } else {
+        match canonicalize_path_sys(base_dir.to_string_lossy(), system) {
+            Ok(base) => Path::new(&base).join(path_str).to_string_lossy().to_string(),
+            Err(e) => {
+                warn!(?e, "Failed to canonicalize base_dir: {}", base_dir.display());
+                return ResolvedGlobalPrompt::ResolutionFailed;
+            },
+        }
+    };
+
+    let resolved_path = match canonicalize_path_sys(&path_to_resolve, system) {
+        Ok(p) => p,
+        Err(e) => {
+            warn!(?e, "Failed to resolve file URI path: {}", prompt);
+            return ResolvedGlobalPrompt::ResolutionFailed;
+        },
+    };
+
+    match tokio::fs::read_to_string(&resolved_path).await {
+        Ok(content) => ResolvedGlobalPrompt::Resolved(content),
+        Err(e) => {
+            warn!(?e, "Failed to read prompt file: {}", resolved_path);
+            ResolvedGlobalPrompt::ResolutionFailed
+        },
+    }
 }
 
 #[cfg(test)]
@@ -341,5 +429,55 @@ mod tests {
         assert!(names.contains(&DEFAULT_AGENT_NAME));
         assert!(names.contains(&"kiro_planner"));
         assert!(!names.contains(&"backup-agent"), "should not load .json.bak files");
+    }
+
+    #[tokio::test]
+    async fn test_load_agent_prompt_resolution() {
+        let base = TestBase::new()
+            .await
+            .with_file((
+                ".kiro/agents/inline.json",
+                r#"{"name": "inline", "prompt": "inline text"}"#,
+            ))
+            .await
+            .with_file((".kiro/agents/no-prompt.json", r#"{"name": "no-prompt"}"#))
+            .await
+            .with_file((
+                ".kiro/agents/relative.json",
+                r#"{"name": "relative", "prompt": "file://prompt.md"}"#,
+            ))
+            .await
+            .with_file((".kiro/agents/prompt.md", "relative content"))
+            .await
+            .with_file((
+                ".kiro/agents/tilde.json",
+                r#"{"name": "tilde", "prompt": "file://~/prompt.md"}"#,
+            ))
+            .await
+            .with_file(("~/prompt.md", "home content"))
+            .await
+            .with_file((
+                ".kiro/agents/missing.json",
+                r#"{"name": "missing", "prompt": "file://missing.md"}"#,
+            ))
+            .await;
+
+        let (agents, _) = load_agents(base.provider()).await.unwrap();
+
+        let cases = [
+            ("inline", Some("inline text")),
+            ("no-prompt", None),
+            ("relative", Some("relative content")),
+            ("tilde", Some("home content")),
+            ("missing", None),
+        ];
+
+        for (name, expected) in cases {
+            let agent = agents
+                .iter()
+                .find(|a| a.name() == name)
+                .expect(&format!("{name}: agent not found"));
+            assert_eq!(agent.global_prompt().as_deref(), expected, "case: {name}");
+        }
     }
 }

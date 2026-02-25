@@ -802,3 +802,54 @@ async fn test_overflow_after_compaction_retry_truncates_user_message() {
         &user_content[..100.min(user_content.len())]
     );
 }
+
+/// Tests that file:// URIs in global_prompt are resolved correctly.
+#[tokio::test]
+async fn test_file_uri_global_prompt() {
+    let _ = tracing_subscriber::fmt::try_init();
+
+    const PROMPT_FILE_CONTENT: &str = "You are a helpful coding assistant. Always explain your reasoning.";
+
+    let agent_config = AgentConfig::V2025_08_22(AgentConfigV2025_08_22 {
+        global_prompt: Some("file://prompts/system.md".to_string()),
+        ..Default::default()
+    });
+
+    let mut test = TestCase::builder()
+        .test_name("file uri system prompt")
+        .with_agent_config(agent_config)
+        .with_file(("prompts/system.md", PROMPT_FILE_CONTENT))
+        .with_responses(
+            parse_response_streams(include_str!("./mock_responses/single_turn.jsonl"))
+                .await
+                .unwrap(),
+        )
+        .build()
+        .await
+        .unwrap();
+
+    test.send_prompt("hello".to_string()).await;
+    test.wait_until_agent_stop(Duration::from_secs(2)).await.unwrap();
+
+    let requests = test.requests();
+    assert!(!requests.is_empty(), "expected at least one request");
+
+    let first_msg = requests[0]
+        .messages()
+        .first()
+        .expect("first message should exist")
+        .text();
+
+    // The resolved file content should be in the context message
+    assert!(
+        first_msg.contains(PROMPT_FILE_CONTENT),
+        "expected resolved file content in context, got: {}",
+        first_msg
+    );
+
+    // The file:// URI should NOT appear literally
+    assert!(
+        !first_msg.contains("file://prompts/system.md"),
+        "file:// URI should be resolved, not appear literally"
+    );
+}

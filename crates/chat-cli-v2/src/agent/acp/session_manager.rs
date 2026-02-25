@@ -11,6 +11,7 @@ use std::sync::Arc;
 use agent::agent_config::{
     ConfigSource,
     LoadedAgentConfig,
+    ResolvedGlobalPrompt,
     load_agents,
 };
 use agent::consts::DEFAULT_AGENT_NAME;
@@ -251,7 +252,7 @@ impl SessionManager {
             .ok_or_else(|| sacp::util::internal_error(format!("Mode '{}' not found", mode_id)))?;
 
         session
-            .swap_agent(agent_config.config().clone())
+            .swap_agent(agent_config.clone())
             .await
             .map_err(|e| sacp::util::internal_error(format!("Failed to swap agent: {}", e)))?;
 
@@ -309,7 +310,12 @@ impl SessionManager {
                         warn!(?overridden, "ACP MCP servers override existing servers in agent config");
                     }
 
-                    LoadedAgentConfig::new(ephemeral, ConfigSource::BuiltIn)
+                    // Preserve the resolved global prompt from the base config
+                    let resolved_prompt = base_agent_config
+                        .global_prompt()
+                        .map_or(ResolvedGlobalPrompt::None, ResolvedGlobalPrompt::Resolved);
+
+                    LoadedAgentConfig::new(ephemeral, ConfigSource::BuiltIn, resolved_prompt)
                 } else {
                     base_agent_config.clone()
                 };

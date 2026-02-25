@@ -228,44 +228,44 @@ impl<'a> Subagent<'a> {
             ..Default::default()
         };
 
-        let model = {
-            let rts_state: RtsModelState = snapshot
-                .model_state
-                .as_ref()
-                .and_then(|s| {
-                    serde_json::from_value(s.clone())
-                        .map_err(|err| error!(?err, ?s, "failed to deserialize RTS state"))
-                        .ok()
-                })
-                .unwrap_or({
-                    let state = RtsModelState::new();
-                    info!(?state.conversation_id, "generated new conversation id");
-                    state
-                });
-            Arc::new(RtsModel::new(
-                os.client.clone(),
-                rts_state.conversation_id,
-                rts_state.model_id,
-            ))
-        };
-
+        // Load agent config first so we can extract model_id for RtsModel
         match self.agent_name {
             Some(name) if name == DEFAULT_AGENT_NAME => {
-                // Use build_default_agent for default agent to ensure use_legacy_mcp_json is true
-                snapshot.agent_config = build_default_agent(&RealProvider).config().clone();
+                snapshot.agent_config = build_default_agent(&RealProvider);
             },
             Some(name) => {
                 let (configs, _) = load_agents(&RealProvider).await?;
                 if let Some(cfg) = configs.into_iter().find(|c| c.name() == name) {
-                    snapshot.agent_config = cfg.config().clone();
+                    snapshot.agent_config = cfg;
                 } else {
                     bail!("unable to find agent with name: {}", name);
                 }
             },
             None => {
-                // When no agent name specified, use default agent with use_legacy_mcp_json enabled
-                snapshot.agent_config = build_default_agent(&RealProvider).config().clone();
+                snapshot.agent_config = build_default_agent(&RealProvider);
             },
+        };
+
+        // TODO: V1 uses a separate RtsModel implementation from V2 (chat-cli-v2/src/agent/rts)
+        // because they have incompatible ApiClient types. V2's RtsModel has additional features
+        // (token usage, context usage %, context_window_size) that V1 lacks, but these are only
+        // used for telemetry/compaction which subagents don't need. Consider unifying if ApiClient
+        // is ever consolidated.
+        let model = {
+            use crate::cli::chat::cli::model::validate_model;
+
+            let state = RtsModelState::new();
+            info!(?state.conversation_id, "generated new conversation id");
+
+            let model_id = match snapshot.agent_config.config().model() {
+                Some(requested) => validate_model(os, requested).await.or_else(|| {
+                    warn!(model = requested, "agent config specifies invalid model, using default");
+                    None
+                }),
+                None => None,
+            };
+
+            Arc::new(RtsModel::new(os.client.clone(), state.conversation_id, model_id))
         };
 
         let mcp_manager_handle = McpManager::default().spawn();

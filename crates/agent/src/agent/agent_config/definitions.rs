@@ -47,9 +47,9 @@ impl AgentConfig {
         }
     }
 
-    pub fn system_prompt(&self) -> Option<&str> {
+    pub fn global_prompt(&self) -> Option<&str> {
         match self {
-            AgentConfig::V2025_08_22(a) => a.system_prompt.as_deref(),
+            AgentConfig::V2025_08_22(a) => a.global_prompt.as_deref(),
         }
     }
 
@@ -107,10 +107,10 @@ impl AgentConfig {
         }
     }
 
-    pub fn append_to_system_prompt(&mut self, incoming: &str) {
+    pub fn append_to_global_prompt(&mut self, incoming: &str) {
         match self {
             AgentConfig::V2025_08_22(a) => {
-                if let Some(prompt) = a.system_prompt.as_mut() {
+                if let Some(prompt) = a.global_prompt.as_mut() {
                     prompt.push_str("\n\n");
                     prompt.push_str(incoming);
                 }
@@ -118,10 +118,10 @@ impl AgentConfig {
         }
     }
 
-    pub fn prepend_to_system_prompt(&mut self, incoming: &str) {
+    pub fn prepend_to_global_prompt(&mut self, incoming: &str) {
         match self {
             AgentConfig::V2025_08_22(a) => {
-                if let Some(prompt) = a.system_prompt.as_mut() {
+                if let Some(prompt) = a.global_prompt.as_mut() {
                     let mut new_prompt = format!("{incoming}\n\n{prompt}");
                     std::mem::swap(prompt, &mut new_prompt);
                 }
@@ -194,9 +194,9 @@ pub struct AgentConfigV2025_08_22 {
     /// This field is not passed to the model as context.
     #[serde(default)]
     pub description: Option<String>,
-    /// A system prompt for guiding the agent's behavior.
-    #[serde(alias = "prompt", default)]
-    pub system_prompt: Option<String>,
+    /// A global prompt for guiding the agent's behavior.
+    #[serde(rename = "prompt", alias = "systemPrompt", default)]
+    pub global_prompt: Option<String>,
 
     // tools
     /// The list of tools available to the agent.

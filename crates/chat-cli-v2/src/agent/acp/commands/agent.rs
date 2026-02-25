@@ -77,7 +77,7 @@ async fn switch_agent(name: &str, ctx: &CommandContext<'_>) -> CommandResult {
     if let Err(e) = ctx
         .agent
         .swap_agent(SwapAgentArgs {
-            agent_config: agent_config.config().clone(),
+            agent_config: agent_config.clone(),
             local_mcp_path: ctx.local_mcp_path.cloned(),
             global_mcp_path: ctx.global_mcp_path.cloned(),
         })

@@ -1,0 +1,4 @@
+{
+  "type": "fixed",
+  "description": "Subagent and ACP agent config system prompts now resolve file:// URIs relative to the config file location"
+}

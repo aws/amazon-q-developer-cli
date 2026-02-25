@@ -8,12 +8,16 @@ use std::time::{
     Instant,
 };
 
+use agent::agent_config::ConfigSource;
 use agent::agent_config::definitions::{
     AgentConfig,
     HookConfig,
     HookTrigger,
 };
-use agent::agent_config::load::build_default_agent;
+use agent::agent_config::load::{
+    build_default_agent,
+    load_agent_config,
+};
 use agent::agent_loop::model::{
     MockModel,
     MockResponse,
@@ -136,10 +140,17 @@ impl TestCaseBuilder {
             test_base = test_base.with_file(file).await;
         }
 
+        let cwd = test_base.cwd().unwrap();
         let mut agent_config = if self.use_default_agent {
-            build_default_agent(&*test_base.provider()).config().clone()
+            build_default_agent(&*test_base.provider())
         } else {
-            self.agent_config.unwrap_or_default()
+            load_agent_config(
+                self.agent_config.unwrap_or_default(),
+                ConfigSource::Ephemeral,
+                &cwd,
+                &*test_base.provider(),
+            )
+            .await
         };
 
         for (trigger, config) in self.hooks {
@@ -150,7 +161,7 @@ impl TestCaseBuilder {
 
         let cwd = match &self.cwd_subdir {
             Some(subdir) => test_base.join(subdir).to_string_lossy().to_string(),
-            None => test_base.cwd().unwrap().to_string_lossy().to_string(),
+            None => cwd.to_string_lossy().to_string(),
         };
         snapshot.permissions = snapshot.permissions.with_cwd(&cwd);
 

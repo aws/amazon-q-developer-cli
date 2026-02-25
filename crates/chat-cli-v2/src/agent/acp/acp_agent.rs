@@ -184,7 +184,7 @@ pub enum AcpSessionRequest {
     },
     /// Swap to a different agent configuration (e.g., switching modes).
     SwapAgent {
-        agent_config: Box<agent::agent_config::definitions::AgentConfig>,
+        agent_config: Box<agent::agent_config::LoadedAgentConfig>,
         respond_to: oneshot::Sender<Result<(), agent::protocol::AgentError>>,
     },
     /// Set the model ID for this session.
@@ -313,7 +313,7 @@ impl AcpSessionHandle {
     /// Swap to a different agent configuration
     pub async fn swap_agent(
         &self,
-        agent_config: agent::agent_config::definitions::AgentConfig,
+        agent_config: agent::agent_config::LoadedAgentConfig,
     ) -> Result<(), agent::protocol::AgentError> {
         let (respond_to, rx) = oneshot::channel();
         self.tx
@@ -576,7 +576,7 @@ impl<'a> AcpSessionBuilder<'a> {
     }
 
     pub fn initial_agent_config(mut self, agent_config: Cow<'a, LoadedAgentConfig>) -> Self {
-        self.initial_agent_config.replace(agent_config);
+        self.initial_agent_config = Some(agent_config);
         self
     }
 
@@ -700,7 +700,7 @@ struct AcpSession {
     current_agent_name: String,
     previous_agent_name: Option<String>,
     pending_plan: Option<String>,
-    pending_swap: Option<agent::agent_config::definitions::AgentConfig>,
+    pending_swap: Option<agent::agent_config::LoadedAgentConfig>,
     connection_cx: JrConnectionCx<AgentToClient>,
     pending_prompt_response: Option<tokio::sync::Mutex<JrRequestCx<PromptResponse>>>,
     os: Os,
@@ -733,6 +733,10 @@ impl AcpSession {
             .session_id
             .ok_or_else(|| eyre::eyre!("session_id is required"))?;
         let cwd = builder.cwd.ok_or_else(|| eyre::eyre!("cwd is required"))?;
+        let initial_agent_config = builder
+            .initial_agent_config
+            .ok_or_else(|| eyre::eyre!("initial_agent_config is required"))?
+            .into_owned();
         let session_tx = builder.session_tx.expect("Missing session request sender");
         let connection_cx = builder.client_cx.expect("Missing client connection");
 
@@ -747,11 +751,7 @@ impl AcpSession {
                 .map_err(|_e| eyre::eyre!("Invalid session ID '{}': must be a valid UUID", session_id_str))?;
             let conversation_state = ConversationState::new(conversation_id, entries);
             let snapshot = AgentSnapshot {
-                agent_config: if let Some(agent_config) = builder.initial_agent_config {
-                    agent_config.config().clone()
-                } else {
-                    Default::default()
-                },
+                agent_config: initial_agent_config,
                 conversation_state,
                 conversation_metadata: state.conversation_metadata().clone(),
                 permissions: state.permissions().clone().with_cwd(&cwd.to_string_lossy()),
@@ -765,11 +765,7 @@ impl AcpSession {
                 .map_err(|_e| eyre::eyre!("Invalid session ID '{}': must be a valid UUID", session_id_str))?;
             let permissions = RuntimePermissions::default().with_cwd(&cwd.to_string_lossy());
             let snapshot = AgentSnapshot {
-                agent_config: if let Some(agent_config) = builder.initial_agent_config {
-                    agent_config.config().clone()
-                } else {
-                    Default::default()
-                },
+                agent_config: initial_agent_config,
                 conversation_state: ConversationState::new(conversation_id, Vec::new()),
                 permissions: permissions.clone(),
                 ..Default::default()
@@ -1513,7 +1509,7 @@ impl AcpSession {
             .unwrap_or_else(|| crate::constants::DEFAULT_AGENT_NAME.to_string());
 
         let agent_config = match self.agent_configs.iter().find(|c| c.name() == target) {
-            Some(c) => c.config().clone(),
+            Some(c) => c.clone(),
             None => {
                 tracing::error!("switch_to_execution: target agent '{}' not found", target);
                 return;

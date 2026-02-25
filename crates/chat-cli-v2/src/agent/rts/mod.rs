@@ -99,9 +99,8 @@ impl RtsModel {
         cancel_token: CancellationToken,
         messages: Vec<Message>,
         tool_specs: Option<Vec<ToolSpec>>,
-        system_prompt: Option<String>,
     ) {
-        let state = match self.make_conversation_state(messages, tool_specs, system_prompt) {
+        let state = match self.make_conversation_state(messages, tool_specs) {
             Ok(s) => s,
             Err(msg) => {
                 error!(?msg, "failed to create conversation state");
@@ -193,7 +192,6 @@ impl RtsModel {
         &self,
         mut messages: Vec<Message>,
         tool_specs: Option<Vec<ToolSpec>>,
-        system_prompt: Option<String>,
     ) -> Result<ConversationState, String> {
         debug!(?messages, ?tool_specs, "creating conversation state");
         let tools = tool_specs.map(|v| {
@@ -228,19 +226,6 @@ impl RtsModel {
         };
 
         let mut history = Vec::<rts::ChatMessage>::new();
-        if let Some(system_prompt) = system_prompt {
-            history.push(rts::ChatMessage::UserInputMessage(UserInputMessage {
-                content: system_prompt,
-                user_input_message_context: None,
-                user_intent: None,
-                images: None,
-                model_id: None,
-            }));
-            history.push(rts::ChatMessage::AssistantResponseMessage(rts::AssistantResponseMessage {
-                message_id: None,
-                content: "I will fully incorporate this information when generating my responses, and explicitly acknowledge relevant parts of the summary when answering questions.".to_string(),
-                tool_uses: None }));
-        }
 
         history.append(
             &mut messages
@@ -353,7 +338,7 @@ impl Model for RtsModel {
         &self,
         messages: Vec<Message>,
         tool_specs: Option<Vec<ToolSpec>>,
-        system_prompt: Option<String>,
+        _system_prompt: Option<String>,
         cancel_token: CancellationToken,
     ) -> Pin<Box<dyn Stream<Item = StreamResult> + Send + 'static>> {
         let (tx, rx) = mpsc::channel(16);
@@ -363,7 +348,7 @@ impl Model for RtsModel {
 
         tokio::spawn(async move {
             self_clone
-                .converse_stream_rts(tx, cancel_token_clone, messages, tool_specs, system_prompt)
+                .converse_stream_rts(tx, cancel_token_clone, messages, tool_specs)
                 .await;
         });
 

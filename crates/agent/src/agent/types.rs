@@ -25,7 +25,7 @@ use super::event_log::{
 };
 use super::permissions::RuntimePermissions;
 use crate::agent::ExecutionState;
-use crate::agent::agent_config::definitions::AgentConfig;
+use crate::agent::agent_config::LoadedAgentConfig;
 use crate::agent::tools::ToolState;
 
 /// A point-in-time snapshot of an agent's state.
@@ -46,7 +46,8 @@ pub struct AgentSnapshot {
     pub id: AgentId,
     /// Agent config
     #[typeshare(skip)]
-    pub agent_config: AgentConfig,
+    #[serde(default)]
+    pub agent_config: LoadedAgentConfig,
     /// Agent conversation state
     pub conversation_state: ConversationState,
     /// Agent conversation metadata
@@ -73,24 +74,7 @@ pub struct AgentSnapshot {
 }
 
 impl AgentSnapshot {
-    pub fn new_empty(agent_config: AgentConfig) -> Self {
-        Self {
-            id: agent_config.name().into(),
-            agent_config,
-            conversation_state: ConversationState::new(Uuid::new_v4(), Vec::new()),
-            conversation_metadata: Default::default(),
-            execution_state: Default::default(),
-            model_state: Default::default(),
-            tool_state: Default::default(),
-            settings: Default::default(),
-            permissions: Default::default(),
-            tool_specs: Default::default(),
-        }
-    }
-
-    /// Creates a new snapshot using the built-in agent default.
-    pub fn new_built_in_agent() -> Self {
-        let agent_config = AgentConfig::default();
+    pub fn new_empty(agent_config: LoadedAgentConfig) -> Self {
         Self {
             id: agent_config.name().into(),
             agent_config,

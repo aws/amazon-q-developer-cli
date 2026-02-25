@@ -7,7 +7,7 @@ use serde::{
 };
 
 use super::ExecutionState;
-use super::agent_config::definitions::AgentConfig;
+use super::agent_config::LoadedAgentConfig;
 use super::agent_loop::protocol::{
     AgentLoopEvent,
     AgentLoopResponseError,
@@ -460,7 +460,7 @@ impl From<ImageBlock> for ContentChunk {
 #[derive(Debug, Clone)]
 pub struct SwapAgentArgs {
     /// The new agent configuration to use
-    pub agent_config: AgentConfig,
+    pub agent_config: LoadedAgentConfig,
     /// Path to workspace-level mcp.json
     pub local_mcp_path: Option<PathBuf>,
     /// Path to global mcp.json

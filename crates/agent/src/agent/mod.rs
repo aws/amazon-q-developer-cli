@@ -24,9 +24,7 @@ use std::collections::{
 use std::path::PathBuf;
 use std::sync::Arc;
 
-use agent_config::LoadedMcpServerConfigs;
 use agent_config::definitions::{
-    AgentConfig,
     HookConfig,
     HookTrigger,
 };
@@ -34,6 +32,10 @@ use agent_config::parse::{
     CanonicalToolName,
     ResourceKind,
     ToolNameKind,
+};
+use agent_config::{
+    LoadedAgentConfig,
+    LoadedMcpServerConfigs,
 };
 use agent_loop::model::Model;
 use agent_loop::protocol::{
@@ -382,7 +384,7 @@ impl AgentHandle {
 #[derive(Debug)]
 pub struct Agent {
     id: AgentId,
-    agent_config: AgentConfig,
+    agent_config: LoadedAgentConfig,
 
     conversation_state: ConversationState,
     conversation_metadata: ConversationMetadata,
@@ -2602,14 +2604,14 @@ impl Agent {
         self.agent_event_buf.push(converted_evt);
     }
 
-    /// This prepends the embedded user msg to the system prompt field of the agent
+    /// This prepends the embedded user msg to the global prompt field of the agent
     pub fn prepend_embedded_user_msg(&mut self, msg: &str) {
-        self.agent_config.prepend_to_system_prompt(msg);
+        self.agent_config.set_global_prompt_prefix(msg);
     }
 
-    /// This appends the embedded user msg to the system prompt field of the agent
+    /// This appends the embedded user msg to the global prompt field of the agent
     pub fn append_embedded_user_msg(&mut self, msg: &str) {
-        self.agent_config.append_to_system_prompt(msg);
+        self.agent_config.set_global_prompt_suffix(msg);
     }
 
     /// Append a user message to the conversation and emit the log event.
@@ -2644,7 +2646,7 @@ impl Agent {
 async fn format_request<T, U, P>(
     mut messages: VecDeque<Message>,
     mut tool_spec: Vec<ToolSpec>,
-    agent_config: &AgentConfig,
+    agent_config: &LoadedAgentConfig,
     agent_spawn_hooks: T,
     provider: &P,
     latest_summary: Option<String>,
@@ -2664,7 +2666,7 @@ where
     SendRequestArgs::new(
         messages.into(),
         if tool_spec.is_empty() { None } else { Some(tool_spec) },
-        agent_config.system_prompt().map(String::from),
+        agent_config.global_prompt(),
     )
 }
 
@@ -2684,7 +2686,7 @@ where
 ///
 /// We use context messages since the API does not allow any system prompt parameterization.
 async fn create_context_messages<T, U, P>(
-    agent_config: &AgentConfig,
+    agent_config: &LoadedAgentConfig,
     agent_spawn_hooks: T,
     latest_summary: Option<String>,
     provider: &P,
@@ -2694,11 +2696,11 @@ where
     U: AsRef<str>,
     P: SystemProvider,
 {
-    let system_prompt = agent_config.system_prompt();
+    let global_prompt = agent_config.global_prompt();
     let (files, skills) = collect_resources(agent_config.resources(), provider).await;
 
     let content = format_user_context_message(
-        system_prompt,
+        global_prompt.as_deref(),
         files.iter().map(|r| &r.content),
         skills.iter().map(|r| &r.content),
         agent_spawn_hooks,
