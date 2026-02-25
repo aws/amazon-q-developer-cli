@@ -112,6 +112,9 @@ def build_chat_bin(
         build_env["TUI_JS_SHA256"] = tui_sha
         info(f"Embedding TUI JS: {tui_js_path.absolute()} (SHA256: {tui_sha})")
 
+    if bun_executable_path or tui_js_path:
+        build_env["DISABLE_V2_BUN"] = "true"
+
     run_cmd(args, env=build_env)
 
     # create "universal" binary for macos

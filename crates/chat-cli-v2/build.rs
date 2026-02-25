@@ -394,6 +394,12 @@ fn embed_bun_and_tui() {
     println!("cargo:rustc-check-cfg=cfg(bun_executable_path)");
     println!("cargo:rustc-check-cfg=cfg(tui_js_path)");
 
+    let disable_embedding = std::env::var("DISABLE_V2_BUN").ok();
+    if disable_embedding.is_some() {
+        println!("cargo:warning=DISABLE_V2_BUN is set, not embedding bun for chat_cli_v2");
+        return;
+    }
+
     let out_dir = std::env::var("OUT_DIR").expect("OUT_DIR not set");
     let bun_path = std::env::var("BUN_EXECUTABLE_PATH").ok();
     let tui_path = std::env::var("TUI_JS_PATH").ok();
