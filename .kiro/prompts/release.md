@@ -59,13 +59,7 @@ Look for `feat:` or `fix:` commits. If any are missing from the release:
 1. Create a fragment in `.changes/released/v<VERSION>/`
 2. Add the entry to `feed.json`
 
-### 6. Update autodocs index
-
-```bash
-python3 autodocs/meta/scripts/build-doc-index.py
-```
-
-### 7. Get authors for each change (use git login)
+### 6. Get authors for each change (use git login)
 
 ```bash
 for f in .changes/released/v<VERSION>/*.json; do
@@ -75,7 +69,7 @@ for f in .changes/released/v<VERSION>/*.json; do
 done
 ```
 
-### 8. Create release branch and PR
+### 7. Create release branch and PR
 
 ```bash
 git checkout -b release/versionBump@<VERSION>
@@ -86,13 +80,12 @@ git commit -m "chore: release v<VERSION>
 - Update Cargo.lock
 - Generate release notes for N changes
 - Move changelog fragments to .changes/released/v<VERSION>/
-- Update feed.json with new release entry
-- Update autodocs index"
+- Update feed.json with new release entry"
 git push -u origin release/versionBump@<VERSION>
 gh pr create --title "chore: release v<VERSION>" --body "<PR_BODY>" --base main
 ```
 
-### 9. PR body format
+### 8. PR body format
 
 Group changes by type (Added/Changed/Fixed) with git login attribution:
 
@@ -109,7 +102,7 @@ Group changes by type (Added/Changed/Fixed) with git login attribution:
 - Description (@github-login)
 ```
 
-### 10. Report completion
+### 9. Report completion
 
 Tell the user:
 - Number of changes included

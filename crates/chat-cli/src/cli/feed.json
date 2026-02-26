@@ -12,10 +12,126 @@
     },
     {
       "type": "release",
+      "date": "2026-02-27",
+      "version": "1.26.3",
+      "title": "Version 1.26.3",
+      "changes": [
+        {
+          "type": "added",
+          "description": "Enable embeddings on Linux ARM (aarch64)"
+        },
+        {
+          "type": "added",
+          "description": "Granular path trust for read/write tools - trust specific paths, parent directories, or workspace instead of trusting all file operations"
+        },
+        {
+          "type": "changed",
+          "description": "Improved tool validation error messages to show required fields and hide internal details from user display"
+        },
+        {
+          "type": "fixed",
+          "description": "Reset context usage percentage on agent swap to prevent displaying stale values"
+        },
+        {
+          "type": "added",
+          "description": "Interactive agent selection for /agent edit and /agent set-default commands"
+        },
+        {
+          "type": "added",
+          "description": "session tool for temporary in-memory settings management"
+        },
+        {
+          "type": "fixed",
+          "description": "Improved MCP transport-closed error messages to be more actionable and transport-aware"
+        },
+        {
+          "type": "fixed",
+          "description": "Prefer $VISUAL over $EDITOR environment variable per Unix convention"
+        },
+        {
+          "type": "added",
+          "description": "Tree-sitter fallback for document symbols when LSP server does not support textDocument/documentSymbol"
+        },
+        {
+          "type": "fixed",
+          "description": "LSP client now respects server capabilities and dynamic registration before sending requests"
+        },
+        {
+          "type": "changed",
+          "description": "Merged /agent create and /agent generate commands - /agent create now defaults to AI-assisted mode with --manual flag for editor-based creation"
+        },
+        {
+          "type": "fixed",
+          "description": "Fixed /agent list to correctly display source location for newly created agents"
+        },
+        {
+          "type": "added",
+          "description": "Added support for specifying agent creation arguments at invocation time, bypassing interactive menu"
+        },
+        {
+          "type": "added",
+          "description": "Added 'workspace' and 'global' special values for --directory flag that resolve to system agent directories"
+        },
+        {
+          "type": "fixed",
+          "description": "Fixed agents created with --directory flag being incorrectly placed in workspace folder"
+        },
+        {
+          "type": "fixed",
+          "description": "Improved --from flag performance during agent creation"
+        },
+        {
+          "type": "fixed",
+          "description": "Hide ASCII banner and UI noise in non-interactive mode"
+        },
+        {
+          "type": "fixed",
+          "description": "Agent edit command now uses temporary file validation to prevent corruption of original config"
+        },
+        {
+          "type": "fixed",
+          "description": "AI-assisted agent creation now defaults to global directory instead of prompting for location"
+        },
+        {
+          "type": "fixed",
+          "description": "Prevent raw mode panic when spawned with piped stdio and no controlling terminal"
+        },
+        {
+          "type": "fixed",
+          "description": "Subagent and ACP agent config system prompts now resolve file:// URIs relative to the config file location"
+        },
+        {
+          "type": "fixed",
+          "description": "Reset context usage percentage when switching to a model with a different context window size via /model"
+        },
+        {
+          "type": "fixed",
+          "description": "Ctrl+C now correctly interrupts and returns to prompt instead of exiting the CLI"
+        },
+        {
+          "type": "fixed",
+          "description": "Fix subagents not respecting the model field"
+        },
+        {
+          "type": "fixed",
+          "description": "Ctrl+C now restores cursor and kills child processes instead of leaving orphans"
+        },
+        {
+          "type": "fixed",
+          "description": "Fixed crash when indexing malformed PDF files in knowledge base"
+        },
+        {
+          "type": "fixed",
+          "description": "Reduced startup time by 1-2s on macOS by caching TLS certificate loading"
+        }
+      ]
+    },
+    {
+      "type": "release",
       "date": "2026-02-17",
       "version": "1.26.2",
       "title": "Version 1.26.2",
-       "changes": [
+      "changes": [
         {
           "type": "fixed",
           "description": "Auto compaction for context window overflow errors"
@@ -27,7 +143,7 @@
       "date": "2026-02-16",
       "version": "1.26.1",
       "title": "Version 1.26.1",
-       "changes": [
+      "changes": [
         {
           "type": "added",
           "description": "External Identity Provider (IdP) login support"

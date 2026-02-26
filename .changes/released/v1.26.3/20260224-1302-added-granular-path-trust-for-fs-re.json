@@ -1,0 +1,4 @@
+{
+  "type": "added",
+  "description": "Granular path trust for read/write tools - trust specific paths, parent directories, or workspace instead of trusting all file operations"
+}
