@@ -2150,8 +2150,11 @@ impl ChatSession {
                                 )
                                 .await;
 
-                            if matches!(chat_state, ChatState::Exit)
-                                || matches!(chat_state, ChatState::HandleResponseStream(_))
+                            if matches!(chat_state, ChatState::Exit) {
+                                std::process::exit(0);
+                            }
+                            
+                            if matches!(chat_state, ChatState::HandleResponseStream(_))
                                 || matches!(chat_state, ChatState::HandleInput { input: _ })
                                 // TODO(bskiser): this is just a hotfix for handling state changes
                                 // from manually running /compact, without impacting behavior of
