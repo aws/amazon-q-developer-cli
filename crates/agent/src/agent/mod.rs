@@ -2460,7 +2460,7 @@ impl Agent {
                 },
                 BuiltInTool::ExecuteCmd(t) => Box::pin(async move { t.execute(&provider).await }),
                 BuiltInTool::ImageRead(t) => Box::pin(async move { t.execute().await }),
-                BuiltInTool::Introspect(_) => panic!("unimplemented"),
+                BuiltInTool::Introspect(t) => Box::pin(async move { t.execute().await }),
                 BuiltInTool::Grep(t) => Box::pin(async move { t.execute(&provider).await }),
                 BuiltInTool::Glob(t) => Box::pin(async move { t.execute(&provider).await }),
                 BuiltInTool::Ls(t) => Box::pin(async move { t.execute(&provider).await }),

@@ -10,6 +10,7 @@ import { Grep } from '../chat/tools/Grep.js';
 import { Glob } from '../chat/tools/Glob.js';
 import { Ls } from '../chat/tools/Ls.js';
 import { Code } from '../chat/tools/Code.js';
+import { Introspect } from '../chat/tools/Introspect.js';
 import { WebSearch } from '../chat/tools/WebSearch.js';
 import { WebFetch } from '../chat/tools/WebFetch.js';
 import { Tool } from '../chat/tools/Tool.js';
@@ -25,6 +26,7 @@ import {
   LS_TOOL_NAMES,
   CODE_TOOL_NAMES,
   resolveToolId,
+  INTROSPECT_TOOL_NAMES,
   type ToolKind,
   type ToolCallLocation,
 } from '../../types/agent-events.js';
@@ -235,6 +237,17 @@ function ToolUseContent({
     return (
       <Code
         noStatusBar
+        isFinished={effectiveFinished}
+        isStatic={isStatic}
+        content={content}
+        result={result}
+      />
+    );
+  }
+
+  if (INTROSPECT_TOOL_NAMES.has(name)) {
+    return (
+      <Introspect
         isFinished={effectiveFinished}
         isStatic={isStatic}
         content={content}

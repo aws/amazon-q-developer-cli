@@ -59,6 +59,7 @@ export const GREP_TOOL_NAMES: Set<string> = new Set(['grep', 'grep_search']);
 export const GLOB_TOOL_NAMES: Set<string> = new Set(['glob', 'file_search']);
 export const LS_TOOL_NAMES: Set<string> = new Set([ToolNameAlias.Ls]);
 export const CODE_TOOL_NAMES: Set<string> = new Set(['code']);
+export const INTROSPECT_TOOL_NAMES: Set<string> = new Set(['introspect']);
 
 /** Map a wire tool name to its BuiltinToolId, or undefined for MCP/unknown tools. */
 export function resolveToolId(name: string): BuiltinToolId | undefined {

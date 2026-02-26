@@ -1898,6 +1898,7 @@ fn get_tool_kind(tool_name: &str) -> ToolKind {
             BuiltInToolName::WebSearch => ToolKind::Search,
             BuiltInToolName::Code => ToolKind::Read, // Default, actual kind determined by operation
             BuiltInToolName::SwitchToExecution => ToolKind::Other,
+            BuiltInToolName::Introspect => ToolKind::Read,
         }
     } else {
         ToolKind::Other

@@ -178,6 +178,8 @@ pub enum BuiltInToolName {
     Code,
     #[strum(serialize = "switch_to_execution")]
     SwitchToExecution,
+    #[strum(serialize = "introspect")]
+    Introspect,
 }
 
 impl BuiltInToolName {
@@ -197,6 +199,7 @@ impl BuiltInToolName {
             BuiltInToolName::WebSearch => WebSearch::aliases(),
             BuiltInToolName::Code => Code::aliases(),
             BuiltInToolName::SwitchToExecution => SwitchToExecution::aliases(),
+            BuiltInToolName::Introspect => Introspect::aliases(),
         }
     }
 }
@@ -419,6 +422,9 @@ impl BuiltInTool {
             BuiltInToolName::SwitchToExecution => serde_json::from_value::<SwitchToExecution>(args)
                 .map(Self::SwitchToExecution)
                 .map_err(ToolParseErrorKind::schema_failure),
+            BuiltInToolName::Introspect => serde_json::from_value::<Introspect>(args)
+                .map(Self::Introspect)
+                .map_err(ToolParseErrorKind::schema_failure),
         }
     }
 
@@ -442,6 +448,7 @@ impl BuiltInTool {
             BuiltInToolName::WebSearch => generate_tool_spec_from_trait::<WebSearch>(),
             BuiltInToolName::Code => get_code_tool_spec(lsp_initialized),
             BuiltInToolName::SwitchToExecution => generate_tool_spec_from_trait::<SwitchToExecution>(),
+            BuiltInToolName::Introspect => generate_tool_spec_from_trait::<Introspect>(),
         }
     }
 
@@ -455,7 +462,7 @@ impl BuiltInTool {
             BuiltInTool::Mkdir(_) => panic!("unimplemented"),
             BuiltInTool::ImageRead(_) => BuiltInToolName::ImageRead,
             BuiltInTool::ExecuteCmd(_) => BuiltInToolName::ExecuteCmd,
-            BuiltInTool::Introspect(_) => panic!("unimplemented"),
+            BuiltInTool::Introspect(_) => BuiltInToolName::Introspect,
             BuiltInTool::Summary(_) => BuiltInToolName::Summary,
             BuiltInTool::SpawnSubagent(_) => BuiltInToolName::SpawnSubagent,
             BuiltInTool::UseAws(_) => BuiltInToolName::UseAws,
@@ -476,7 +483,7 @@ impl BuiltInTool {
             BuiltInTool::Mkdir(_) => panic!("unimplemented"),
             BuiltInTool::ImageRead(_) => BuiltInToolName::ImageRead.into(),
             BuiltInTool::ExecuteCmd(_) => BuiltInToolName::ExecuteCmd.into(),
-            BuiltInTool::Introspect(_) => panic!("unimplemented"),
+            BuiltInTool::Introspect(_) => BuiltInToolName::Introspect.into(),
             BuiltInTool::Summary(_) => BuiltInToolName::Summary.into(),
             BuiltInTool::SpawnSubagent(_) => BuiltInToolName::SpawnSubagent.into(),
             BuiltInTool::UseAws(_) => BuiltInToolName::UseAws.into(),
@@ -497,7 +504,7 @@ impl BuiltInTool {
             BuiltInTool::Mkdir(_) => panic!("unimplemented"),
             BuiltInTool::ImageRead(_) => ImageRead::aliases(),
             BuiltInTool::ExecuteCmd(_) => ExecuteCmd::aliases(),
-            BuiltInTool::Introspect(_) => panic!("unimplemented"),
+            BuiltInTool::Introspect(_) => Introspect::aliases(),
             BuiltInTool::Summary(_) => Summary::aliases(),
             BuiltInTool::SpawnSubagent(_) => UseSubagent::aliases(),
             BuiltInTool::UseAws(_) => UseAws::aliases(),
