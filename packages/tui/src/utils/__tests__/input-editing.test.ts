@@ -1069,7 +1069,9 @@ describe('input-editing', () => {
       // line 1: "world_is_g" (start 6, len 10)
       // line 2: "reat" (start 16, len 4)
       // cursor at 18 (line 2, col 2) -> start of line 2 = 16
-      expect(moveToVisualLineStart([text('hello\nworld_is_great')], 18, 10)).toBe(16);
+      expect(
+        moveToVisualLineStart([text('hello\nworld_is_great')], 18, 10)
+      ).toBe(16);
     });
   });
 
@@ -1140,7 +1142,11 @@ describe('input-editing', () => {
 
     it('preserves other lines', () => {
       // "hello\nworld\nfoo", cursor at 8 (line 1, col 2) -> kill "wo"
-      const result = killToVisualLineBeginning([text('hello\nworld\nfoo')], 8, 80);
+      const result = killToVisualLineBeginning(
+        [text('hello\nworld\nfoo')],
+        8,
+        80
+      );
       expect(result.segments[0]).toEqual(text('hello\nrld\nfoo'));
       expect(result.cursor).toBe(6);
     });

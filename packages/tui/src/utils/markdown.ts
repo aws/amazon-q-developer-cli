@@ -122,7 +122,13 @@ export const parseMarkdown = (text: string): MarkdownSegment[] => {
 
           // Trim trailing newlines from accumulated text before block elements
           // \n\n before a block element is a markdown separator, not content
-          const isBlockElement = headerMatch || boldHeadingMatch || unorderedListMatch || orderedListMatch || blockquoteMatch || hrMatch;
+          const isBlockElement =
+            headerMatch ||
+            boldHeadingMatch ||
+            unorderedListMatch ||
+            orderedListMatch ||
+            blockquoteMatch ||
+            hrMatch;
           if (isBlockElement) {
             textAccumulator = textAccumulator.replace(/\n+$/, '');
           }
@@ -258,7 +264,17 @@ export const parseMarkdown = (text: string): MarkdownSegment[] => {
   // Post-pass: trim newlines at text↔code block boundaries and leading newlines
   for (let s = 0; s < segments.length; s++) {
     const seg = segments[s];
-    if (seg && seg.text && !seg.codeBlock && !seg.header && !seg.boldHeading && !seg.listItem && !seg.blockquote && !seg.horizontalRule && !seg.table) {
+    if (
+      seg &&
+      seg.text &&
+      !seg.codeBlock &&
+      !seg.header &&
+      !seg.boldHeading &&
+      !seg.listItem &&
+      !seg.blockquote &&
+      !seg.horizontalRule &&
+      !seg.table
+    ) {
       // Trim leading newlines from the very first segment
       if (s === 0) {
         seg.text = seg.text.replace(/^\n+/, '');
@@ -275,7 +291,17 @@ export const parseMarkdown = (text: string): MarkdownSegment[] => {
   }
 
   // Remove empty text segments created by trimming
-  return segments.filter(seg => seg.text || seg.codeBlock || seg.header || seg.boldHeading || seg.listItem || seg.blockquote || seg.horizontalRule || seg.table);
+  return segments.filter(
+    (seg) =>
+      seg.text ||
+      seg.codeBlock ||
+      seg.header ||
+      seg.boldHeading ||
+      seg.listItem ||
+      seg.blockquote ||
+      seg.horizontalRule ||
+      seg.table
+  );
 };
 
 /**

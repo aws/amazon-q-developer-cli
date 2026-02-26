@@ -566,7 +566,11 @@ export const PromptInput = React.memo(function PromptInput({
           }
         }
         // Single-line or already on first line: navigate history
-        const command = CommandHistory.getInstance().navigate('up');
+        const currentText = buildContent(segments);
+        const command = CommandHistory.getInstance().navigate(
+          'up',
+          currentText
+        );
         if (command) {
           setSegments([{ type: 'text', value: command }]);
           setCursor(command.length);
@@ -587,7 +591,7 @@ export const PromptInput = React.memo(function PromptInput({
         // Skip if user is just editing (not browsing history) to avoid clearing input
         if (!CommandHistory.getInstance().isNavigating()) return;
         const command = CommandHistory.getInstance().navigate('down');
-        if (command) {
+        if (command !== null) {
           setSegments([{ type: 'text', value: command }]);
           setCursor(command.length);
         } else {
@@ -757,12 +761,12 @@ export const PromptInput = React.memo(function PromptInput({
           // render a visible space for the cursor block, and keep the \n in `after`
           // so the line break still renders.
           const onNewline = seg.value[localCursor] === '\n';
-          const charAtCursor = onNewline ? ' ' : (seg.value[localCursor] ?? ' ');
+          const charAtCursor = onNewline
+            ? ' '
+            : (seg.value[localCursor] ?? ' ');
           const afterStart = onNewline ? localCursor : localCursor + 1;
           const after =
-            afterStart < seg.value.length
-              ? seg.value.slice(afterStart)
-              : '';
+            afterStart < seg.value.length ? seg.value.slice(afterStart) : '';
           parts.push(
             <React.Fragment key={i}>
               <Text>

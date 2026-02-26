@@ -40,7 +40,7 @@ describe('CommandHistory', () => {
     history.navigate('up'); // second
 
     expect(history.navigate('down')).toBe('third');
-    expect(history.navigate('down')).toBeNull(); // Return to current
+    expect(history.navigate('down')).toBe(''); // Restored to saved input
   });
 
   test('navigate down from current returns null', () => {

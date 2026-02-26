@@ -10,6 +10,7 @@ export class CommandHistory {
   private static instance: CommandHistory;
   private history: string[] = [];
   private currentIndex = -1;
+  private savedInput: string | null = null;
 
   private constructor() {
     this.history = this.load();
@@ -59,10 +60,14 @@ export class CommandHistory {
     this.save();
   }
 
-  navigate(direction: 'up' | 'down'): string | null {
+  navigate(direction: 'up' | 'down', currentInput?: string): string | null {
     if (this.history.length === 0) return null;
 
     if (direction === 'up') {
+      // Save current input before first navigation
+      if (this.currentIndex === -1) {
+        this.savedInput = currentInput ?? '';
+      }
       this.currentIndex =
         this.currentIndex === -1
           ? this.history.length - 1
@@ -72,8 +77,11 @@ export class CommandHistory {
       if (this.currentIndex === -1) return null;
       this.currentIndex++;
       if (this.currentIndex >= this.history.length) {
+        // Restore saved input when returning past newest history entry
+        const restored = this.savedInput;
         this.currentIndex = -1;
-        return null;
+        this.savedInput = null;
+        return restored ?? '';
       }
       return this.history[this.currentIndex] ?? null;
     }
@@ -85,11 +93,13 @@ export class CommandHistory {
 
   reset(): void {
     this.currentIndex = -1;
+    this.savedInput = null;
   }
 
   clear(): void {
     this.history = [];
     this.currentIndex = -1;
+    this.savedInput = null;
   }
 
   getAll(): string[] {

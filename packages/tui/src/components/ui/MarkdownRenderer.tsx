@@ -95,7 +95,11 @@ export const MarkdownRenderer = React.memo(function MarkdownRenderer({
         if (block.type === 'code') {
           const code = block.segment.codeBlock!.code.replace(/^\n+|\n+$/g, '');
           return (
-            <Box key={i} marginTop={i > 0 ? 1 : 0} marginBottom={i < blocks.length - 1 ? 1 : 0}>
+            <Box
+              key={i}
+              marginTop={i > 0 ? 1 : 0}
+              marginBottom={i < blocks.length - 1 ? 1 : 0}
+            >
               <Text>
                 {highlightCode(code, block.segment.codeBlock!.language)}
               </Text>
