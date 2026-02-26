@@ -24,10 +24,6 @@ on:
       commit_sha:
         type: string
         required: true
-      bun_version:
-        type: string
-        required: false
-        default: "1.2.4"
 
 env:
   AWS_REGION: "us-east-1"
@@ -39,8 +35,51 @@ permissions:
   contents: read
 
 jobs:
+  notarize-bun:
+    name: Notarize Bun (${{ inputs.environment }})
+    runs-on: macos-latest
+    environment: ${{ inputs.environment }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.commit_sha }}
+
+      - name: Configure environment from secrets
+        run: |
+          {
+            echo "AWS_GITHUB_ACTIONS_ROLE_ARN=${{ secrets.AWS_GITHUB_ACTIONS_ROLE_ARN }}"
+            echo "AWS_ACCOUNT_ID=${{ secrets.AWS_ACCOUNT_ID }}"
+            echo "SIGNING_BUCKET_NAME=${{ secrets.SIGNING_BUCKET_NAME }}"
+          } >> "$GITHUB_ENV"
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install Python dependencies
+        run: pip install -r scripts/requirements.txt
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ env.AWS_GITHUB_ACTIONS_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+          role-duration-seconds: 7200
+
+      - name: Download, notarize and upload bun
+        env:
+          SIGNING_BUCKET_NAME: ${{ secrets.SIGNING_BUCKET_NAME }}
+          SIGNING_ROLE_ARN: ${{ secrets.SIGNING_ROLE_ARN }}
+          SIGNING_APPLE_NOTARIZING_SECRET_ARN: ${{ secrets.SIGNING_APPLE_NOTARIZING_SECRET_ARN }}
+        run: |
+          python3 ./scripts/main_v2.py sign-bun \
+            --branch-name "${{ inputs.branch_name }}" \
+            --commit-sha "${{ inputs.commit_sha }}"
+
   build-darwin:
     name: Build V2 Darwin Universal Binary (${{ inputs.environment }})
+    needs: notarize-bun
     runs-on: macos-latest
     environment: ${{ inputs.environment }}
     steps:
@@ -79,6 +118,16 @@ jobs:
           aws-region: ${{ env.AWS_REGION }}
           role-duration-seconds: 7200
 
+      - name: Download notarized bun
+        run: |
+          BRANCH_NAME="${{ inputs.branch_name }}"
+          COMMIT_ID="${{ inputs.commit_sha }}"
+          mkdir -p build/bun
+          aws s3 cp "s3://${{ env.SIGNING_BUCKET_NAME }}/${BRANCH_NAME}/notarized-bun/${COMMIT_ID}/bun" build/bun/bun-notarized
+          chmod +x build/bun/bun-notarized
+          echo "BUN_EXECUTABLE_PATH=$(pwd)/build/bun/bun-notarized" >> "$GITHUB_ENV"
+          echo "✓ Downloaded notarized bun"
+
       - name: Build macOS Universal Binary (unsigned)
         env:
           DISABLE_SIGNING: "1"
@@ -100,7 +149,6 @@ jobs:
   sign-and-notarize-darwin:
     name: Sign and Notarize (${{ inputs.environment }})
     needs: build-darwin
-    if: startsWith(inputs.branch_name, 'v2-nightly')
     runs-on: macos-latest
     environment: ${{ inputs.environment }}
     steps:

@@ -820,3 +820,38 @@ def sign_macos(binary_path: str):
     generate_sha(zip_path)
 
     info(f"✓ Signed binary ready: {zip_path}")
+
+
+def sign_bun(branch_name: str, commit_sha: str):
+    """Downloads, notarizes, and uploads the bun binary to S3 for use in the build.
+
+    Must run on macOS with signing credentials available. The notarized bun is
+    uploaded to S3 so the build job can embed it instead of the raw binary."""
+    signing_role_arn = os.environ.get("SIGNING_ROLE_ARN")
+    signing_bucket_name = os.environ.get("SIGNING_BUCKET_NAME")
+    signing_apple_notarizing_secret_arn = os.environ.get("SIGNING_APPLE_NOTARIZING_SECRET_ARN")
+
+    if not all([signing_role_arn, signing_bucket_name, signing_apple_notarizing_secret_arn]):
+        raise ValueError(
+            "Missing signing environment variables: SIGNING_ROLE_ARN, SIGNING_BUCKET_NAME, SIGNING_APPLE_NOTARIZING_SECRET_ARN"
+        )
+
+    signing_data = CdSigningData(
+        bucket_name=signing_bucket_name,
+        apple_notarizing_secret_arn=signing_apple_notarizing_secret_arn,
+        signing_role_arn=signing_role_arn,
+    )
+
+    BUILD_DIR.mkdir(exist_ok=True)
+
+    info(f"Downloading bun v{BUN_VERSION}")
+    bun_path = download_bun()
+
+    info(f"Signing and notarizing bun at {bun_path}")
+    notarized_bun = sign_and_notarize(signing_data, bun_path)
+
+    # Upload notarized bun to S3 for the build job to consume
+    s3_path = f"{branch_name}/notarized-bun/{commit_sha}/bun"
+    info(f"Uploading notarized bun to s3://{signing_bucket_name}/{s3_path}")
+    run_cmd(["aws", "s3", "cp", str(notarized_bun), f"s3://{signing_bucket_name}/{s3_path}"])
+    info(f"✓ Notarized bun uploaded to s3://{signing_bucket_name}/{s3_path}")
