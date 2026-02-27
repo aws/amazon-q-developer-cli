@@ -86,6 +86,17 @@ jobs:
         if: inputs.include_v2
         uses: oven-sh/setup-bun@v2
 
+      - name: Free Disk Space
+        uses: jlumbroso/free-disk-space@v1.3.1
+        with:
+          tool-cache: false
+          android: true
+          dotnet: true
+          haskell: true
+          large-packages: true
+          docker-images: false
+          swap-storage: false
+
       - name: Cache Rust dependencies
         uses: Swatinem/rust-cache@v2
 
