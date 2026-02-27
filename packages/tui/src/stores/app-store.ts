@@ -1634,6 +1634,7 @@ export const createAppStore = (props: AppStoreProps) =>
 
       // Handle slash commands via command registry
       if (trimmed.startsWith('/')) {
+        CommandHistory.getInstance().add(trimmed);
         const ctx: CommandContext = {
           kiro: state.kiro,
           slashCommands: state.slashCommands,

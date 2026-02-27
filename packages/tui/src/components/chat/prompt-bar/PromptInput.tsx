@@ -157,6 +157,7 @@ export const PromptInput = React.memo(function PromptInput({
   const { getColor } = useTheme();
   const { width: termWidth } = useTerminalSize();
   const prevTriggerRef = useRef<TriggerInfo | null>(null);
+  const suppressNextTriggerRef = useRef(false);
 
   const primaryColor = useMemo(() => getColor('primary'), [getColor]);
   const brandColor = useMemo(() => getColor('brand'), [getColor]);
@@ -263,6 +264,13 @@ export const PromptInput = React.memo(function PromptInput({
   // Trigger detection
   useEffect(() => {
     if (!onTriggerDetected) return;
+    // Skip trigger detection when content was restored from history navigation
+    if (suppressNextTriggerRef.current) {
+      suppressNextTriggerRef.current = false;
+      onTriggerDetected(null);
+      prevTriggerRef.current = null;
+      return;
+    }
     const text = getVisibleText(segments);
     const trigger = detectTrigger(text, cursor, triggerRules);
     const prev = prevTriggerRef.current;
@@ -572,6 +580,8 @@ export const PromptInput = React.memo(function PromptInput({
           currentText
         );
         if (command) {
+          // Suppress trigger so slash commands from history don't open the menu
+          suppressNextTriggerRef.current = true;
           setSegments([{ type: 'text', value: command }]);
           setCursor(command.length);
         }
@@ -592,12 +602,9 @@ export const PromptInput = React.memo(function PromptInput({
         if (!CommandHistory.getInstance().isNavigating()) return;
         const command = CommandHistory.getInstance().navigate('down');
         if (command !== null) {
+          suppressNextTriggerRef.current = true;
           setSegments([{ type: 'text', value: command }]);
           setCursor(command.length);
-        } else {
-          // Returned to current input after browsing history
-          setSegments([{ type: 'text', value: '' }]);
-          setCursor(0);
         }
       } else if (key.home) {
         inputMetrics.markStateUpdate();
