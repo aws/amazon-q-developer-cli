@@ -13,8 +13,8 @@
     {
       "type": "release",
       "date": "2026-02-27",
-      "version": "1.26.3",
-      "title": "Version 1.26.3",
+      "version": "1.27.0",
+      "title": "Version 1.27.0",
       "changes": [
         {
           "type": "added",
