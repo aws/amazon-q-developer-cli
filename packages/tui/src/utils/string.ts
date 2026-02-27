@@ -9,10 +9,12 @@ export const normalizeLineEndings = (str: string): string =>
  */
 export const isPrintable = (str: string): boolean =>
   Array.from(str).every((c) => {
-    const code = c.charCodeAt(0);
-    // Allow: printable ASCII (32-126), tab (9), newline (10), carriage return (13)
+    const code = c.codePointAt(0)!;
+    // Allow: tab (9), newline (10), carriage return (13), and anything >= 32
+    // except DEL (127) and C1 control characters (128-159)
     return (
-      (code >= 32 && code < 127) || code === 9 || code === 10 || code === 13
+      code === 9 || code === 10 || code === 13 ||
+      (code >= 32 && code !== 127 && !(code >= 128 && code <= 159))
     );
   });
 
