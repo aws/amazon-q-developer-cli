@@ -396,7 +396,12 @@ impl<'a> SubagentIndicator<'a> {
         } else {
             None::<u16>
         };
-        let is_interactive = self.is_interactive;
+        // Gate interactive mode on BOTH the caller's flag AND actual TTY availability.
+        // AgentSpaces spawns kiro-cli with piped stdio (no TTY), and the LLM may still
+        // set is_interactive: true in the use_subagent tool call. Without this guard,
+        // the interactive UI path would crash on crossterm calls (size(), cursor::position(),
+        // event::poll(), etc.) that require a real terminal.
+        let is_interactive = self.is_interactive && std::io::stdin().is_terminal();
 
         struct RawModeGuard {
             end_turn_tx: Option<tokio::sync::oneshot::Sender<()>>,
@@ -405,10 +410,7 @@ impl<'a> SubagentIndicator<'a> {
 
         impl RawModeGuard {
             pub fn new(end_turn_tx: tokio::sync::oneshot::Sender<()>, is_interactive: bool) -> Self {
-                // Only enable raw mode if interactive AND stdin is actually a TTY.
-                // When spawned with piped stdio (e.g., by AgentSpaces), stdin won't
-                // be a terminal and enable_raw_mode would fail with ENXIO.
-                let raw_mode_enabled = is_interactive && std::io::stdin().is_terminal();
+                let raw_mode_enabled = is_interactive;
                 if raw_mode_enabled {
                     crossterm::terminal::enable_raw_mode().expect("failed to enable raw mode");
                 }
