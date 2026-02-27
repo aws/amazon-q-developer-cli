@@ -12,4 +12,5 @@ passthrough = [
     "BUN_RUNTIME_SHA256",
     "TUI_JS_PATH",
     "TUI_JS_SHA256",
+    "DISABLE_V2_BUN",
 ]

@@ -101,16 +101,28 @@ def build_chat_bin(
     }
 
     if bun_executable_path:
-        build_env["BUN_EXECUTABLE_PATH"] = str(bun_executable_path.absolute())
+        # For cross builds, use /project prefix since that's where the workspace is mounted in the container
+        if cargo_cmd_name() == "cross":
+            rel_path = bun_executable_path.relative_to(pathlib.Path.cwd())
+            bun_path_str = f"/project/{rel_path}"
+        else:
+            bun_path_str = str(bun_executable_path.absolute())
+        build_env["BUN_EXECUTABLE_PATH"] = bun_path_str
         bun_sha = calculate_sha256(bun_executable_path)
         build_env["BUN_RUNTIME_SHA256"] = bun_sha
-        info(f"Embedding Bun executable: {bun_executable_path.absolute()} (SHA256: {bun_sha})")
+        info(f"Embedding Bun executable: {bun_path_str} (SHA256: {bun_sha})")
 
     if tui_js_path:
-        build_env["TUI_JS_PATH"] = str(tui_js_path.absolute())
+        # For cross builds, use /project prefix since that's where the workspace is mounted in the container
+        if cargo_cmd_name() == "cross":
+            rel_path = tui_js_path.relative_to(pathlib.Path.cwd())
+            tui_path_str = f"/project/{rel_path}"
+        else:
+            tui_path_str = str(tui_js_path.absolute())
+        build_env["TUI_JS_PATH"] = tui_path_str
         tui_sha = calculate_sha256(tui_js_path)
         build_env["TUI_JS_SHA256"] = tui_sha
-        info(f"Embedding TUI JS: {tui_js_path.absolute()} (SHA256: {tui_sha})")
+        info(f"Embedding TUI JS: {tui_path_str} (SHA256: {tui_sha})")
 
     if bun_executable_path or tui_js_path:
         build_env["DISABLE_V2_BUN"] = "true"
