@@ -212,6 +212,7 @@ export interface CompactionStatusEvent {
   type: AgentEventType.CompactionStatus;
   status: 'started' | 'completed' | 'failed';
   error?: string;
+  summary?: string;
 }
 
 export interface McpServerInitFailureEvent {

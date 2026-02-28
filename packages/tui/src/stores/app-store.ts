@@ -938,16 +938,11 @@ export const createAppStore = (props: AppStoreProps) =>
             break;
           case AgentEventType.CompactionStatus:
             if (event.status === 'started') {
-              set({ isCompacting: true });
+              set({ isCompacting: true, loadingMessage: null });
             } else if (event.status === 'completed') {
-              set({ isCompacting: false });
-              get().showTransientAlert({
-                message: 'Conversation compacted',
-                status: 'success',
-                autoHideMs: 3000,
-              });
+              set({ isCompacting: false, loadingMessage: null });
             } else if (event.status === 'failed') {
-              set({ isCompacting: false });
+              set({ isCompacting: false, loadingMessage: null });
               get().showTransientAlert({
                 message: `Compaction failed: ${event.error ?? 'unknown error'}`,
                 status: 'error',
@@ -1113,21 +1108,38 @@ export const createAppStore = (props: AppStoreProps) =>
 
     handleCompactionEvent: (event) => {
       if (event.type === AgentEventType.ContextUsage) {
+        logger.info(
+          '[context-usage] ContextUsage event in compactionHandler, percent=',
+          event.percent
+        );
         get().setContextUsage(event.percent);
         return;
       }
       if (event.type !== AgentEventType.CompactionStatus) return;
       if (event.status === 'started') {
-        set({ isCompacting: true });
+        set((state) => ({
+          isCompacting: true,
+          isProcessing: true,
+          messages: [
+            ...state.messages,
+            { id: crypto.randomUUID(), role: MessageRole.User, content: '' },
+          ],
+        }));
       } else if (event.status === 'completed') {
-        set({ isCompacting: false });
-        get().showTransientAlert({
-          message: 'Conversation compacted',
-          status: 'success',
-          autoHideMs: 3000,
+        const summary = event.summary;
+        set((state) => {
+          const messages = [...state.messages];
+          if (summary) {
+            messages.push({
+              id: crypto.randomUUID(),
+              role: MessageRole.Model,
+              content: summary,
+            });
+          }
+          return { isCompacting: false, isProcessing: false, messages };
         });
       } else if (event.status === 'failed') {
-        set({ isCompacting: false });
+        set({ isCompacting: false, isProcessing: false });
         get().showTransientAlert({
           message: `Compaction failed: ${event.error ?? 'unknown error'}`,
           status: 'error',
@@ -1518,6 +1530,7 @@ export const createAppStore = (props: AppStoreProps) =>
 
     // Context usage actions
     setContextUsage: (percent) => {
+      logger.info('[context-usage] setContextUsage called, percent=', percent);
       set({ contextUsagePercent: percent });
     },
 

@@ -465,7 +465,7 @@ export class AcpClient implements acp.Client, SessionClient {
     [EXT_METHODS.METADATA]: (params) => this.handleMetadataUpdate(params),
     [EXT_METHODS.COMPACTION_STATUS]: (params) =>
       this.handleCompactionStatus(params),
-    [EXT_METHODS.CLEAR_STATUS]: () => this.handleClearStatus(),
+    [EXT_METHODS.CLEAR_STATUS]: (params) => this.handleClearStatus(params),
     [EXT_METHODS.MCP_SERVER_INIT_FAILURE]: (params) =>
       this.handleMcpServerInitFailure(params),
     [EXT_METHODS.RATE_LIMIT_ERROR]: (params) =>
@@ -554,35 +554,26 @@ export class AcpClient implements acp.Client, SessionClient {
     }
   }
 
-  private handleClearStatus() {
+  private handleClearStatus(_params: Record<string, unknown>) {
     logger.debug('Clear status received');
-    // TODO: Show "calculating..." or similar UX until next real message provides accurate context usage
-    this.broadcastStreamEvent({
-      type: AgentEventType.ContextUsage,
-      percent: 0,
-    });
+    // Context usage will be updated by the next METADATA notification
   }
 
   private handleCompactionStatus(params: Record<string, unknown>) {
     const status = params.status as {
       type: string;
       error?: string;
-      contextUsagePercentage?: number;
     };
+    const summary = params.summary as string | undefined;
     logger.debug('Compaction status received:', status);
     if (status) {
       this.broadcastStreamEvent({
         type: AgentEventType.CompactionStatus,
         status: status.type as 'started' | 'completed' | 'failed',
         error: status.error,
+        summary,
       });
-      // TODO: Show "calculating..." or similar UX until next real message provides accurate context usage
-      if (status.type === 'completed') {
-        this.broadcastStreamEvent({
-          type: AgentEventType.ContextUsage,
-          percent: 0,
-        });
-      }
+      // Context usage will be updated by the next METADATA notification after compaction
     }
   }
 

@@ -13,7 +13,9 @@ export const isPrintable = (str: string): boolean =>
     // Allow: tab (9), newline (10), carriage return (13), and anything >= 32
     // except DEL (127) and C1 control characters (128-159)
     return (
-      code === 9 || code === 10 || code === 13 ||
+      code === 9 ||
+      code === 10 ||
+      code === 13 ||
       (code >= 32 && code !== 127 && !(code >= 128 && code <= 159))
     );
   });

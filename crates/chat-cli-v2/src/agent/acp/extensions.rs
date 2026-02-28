@@ -93,6 +93,7 @@ pub struct RateLimitErrorNotification {
 pub struct CompactionStatusNotification {
     pub session_id: SessionId,
     pub status: CompactionStatus,
+    pub summary: Option<String>,
 }
 
 /// Status of a compaction operation.

@@ -703,6 +703,7 @@ struct AcpSession {
     pending_swap: Option<agent::agent_config::LoadedAgentConfig>,
     connection_cx: JrConnectionCx<AgentToClient>,
     pending_prompt_response: Option<tokio::sync::Mutex<JrRequestCx<PromptResponse>>>,
+    compaction_summary: Option<String>,
     os: Os,
     cwd: PathBuf,
 }
@@ -847,6 +848,7 @@ impl AcpSession {
             rts_state,
             api_client,
             pending_prompt_response: None,
+            compaction_summary: None,
             os,
             cwd,
         })
@@ -949,8 +951,21 @@ impl AcpSession {
                 m.context_window_tokens
             });
         let sizes = super::commands::context::calculate_component_sizes(&snapshot);
-        let total_tokens = sizes.context_files + sizes.tools + sizes.kiro + sizes.user;
+        let total_tokens = sizes.context_files + sizes.tools + sizes.kiro + sizes.user + sizes.system;
         let estimated_pct = (total_tokens as f32 / context_window as f32) * 100.0;
+
+        tracing::debug!(
+            context_files = sizes.context_files,
+            tools = sizes.tools,
+            kiro = sizes.kiro,
+            user = sizes.user,
+            system = sizes.system,
+            total_tokens,
+            context_window,
+            estimated_pct,
+            tool_specs_count = snapshot.tool_specs.len(),
+            "emit_initial_context_usage"
+        );
 
         let notification = super::schema::MetadataNotification {
             session_id: self.session_id_str.clone(),
@@ -1284,10 +1299,14 @@ impl AcpSession {
                 if let Err(e) = session_db.append_log_entry(&entry) {
                     warn!("Failed to persist log entry: {}", e);
                 }
+                if let LogEntry::V1(LogEntryV1::Compaction { summary, .. }) = &entry {
+                    self.compaction_summary = Some(summary.clone());
+                }
             },
             AgentEvent::EndTurn(md) => {
                 // Update context usage in rts state and send to TUI
                 if let Some(p) = md.context_usage_percentage {
+                    tracing::debug!(backend_context_usage_pct = p, "EndTurn: backend context usage");
                     rts_state.set_context_usage_percentage(Some(p));
                 }
                 if let Err(e) = self.send_turn_metadata(&md) {
@@ -1399,16 +1418,52 @@ impl AcpSession {
             },
             AgentEvent::Compaction(compaction_event) => {
                 tracing::info!("Received compaction event: {:?}", compaction_event);
-                let status = match compaction_event {
+                let status = match &compaction_event {
                     CompactionEvent::Started => CompactionStatus::Started,
                     CompactionEvent::Completed => CompactionStatus::Completed,
-                    CompactionEvent::Failed { error } => CompactionStatus::Failed { error },
+                    CompactionEvent::Failed { error } => CompactionStatus::Failed { error: error.clone() },
+                };
+                let summary = if matches!(compaction_event, CompactionEvent::Completed) {
+                    self.compaction_summary.take()
+                } else {
+                    None
                 };
                 if let Err(e) = self.send_ext_notification(methods::COMPACTION_STATUS, CompactionStatusNotification {
                     session_id: self.session_id.clone(),
                     status,
+                    summary,
                 }) {
                     error!("Failed to send compaction notification: {}", e);
+                }
+                // After compaction completes, recompute and emit updated context usage
+                if matches!(compaction_event, CompactionEvent::Completed) {
+                    if let Ok(snapshot) = self.agent.create_snapshot().await {
+                        let context_window = self.rts_state.model_info().map_or(200_000, |m| m.context_window_tokens);
+                        let sizes = super::commands::context::calculate_component_sizes(&snapshot);
+                        let baseline_tokens =
+                            sizes.tools + sizes.context_files + sizes.kiro + sizes.user + sizes.system;
+                        let baseline_percentage = (baseline_tokens as f32 / context_window as f32) * 100.0;
+                        tracing::debug!(
+                            tools = sizes.tools,
+                            context_files = sizes.context_files,
+                            system = sizes.system,
+                            kiro = sizes.kiro,
+                            user = sizes.user,
+                            baseline_tokens,
+                            context_window,
+                            baseline_percentage,
+                            tool_specs_count = snapshot.tool_specs.len(),
+                            "compact: recomputed context usage"
+                        );
+                        self.rts_state.set_context_usage_percentage(Some(baseline_percentage));
+                    }
+                    let notification = super::schema::MetadataNotification {
+                        session_id: self.session_id_str.clone(),
+                        context_usage_percentage: self.rts_state.context_usage_percentage(),
+                    };
+                    if let Err(e) = self.connection_cx.send_notification(notification) {
+                        warn!("Failed to send metadata after compaction: {}", e);
+                    }
                 }
             },
             AgentEvent::Clear(_) => {
@@ -1417,8 +1472,18 @@ impl AcpSession {
                 if let Ok(snapshot) = self.agent.create_snapshot().await {
                     let context_window = self.rts_state.model_info().map_or(200_000, |m| m.context_window_tokens);
                     let sizes = super::commands::context::calculate_component_sizes(&snapshot);
-                    let baseline_tokens = sizes.tools;
+                    let baseline_tokens = sizes.tools + sizes.context_files + sizes.system;
                     let baseline_percentage = (baseline_tokens as f32 / context_window as f32) * 100.0;
+                    tracing::debug!(
+                        tools = sizes.tools,
+                        context_files = sizes.context_files,
+                        system = sizes.system,
+                        baseline_tokens,
+                        context_window,
+                        baseline_percentage,
+                        tool_specs_count = snapshot.tool_specs.len(),
+                        "clear: recomputed context usage"
+                    );
                     self.rts_state.set_context_usage_percentage(Some(baseline_percentage));
                 } else {
                     self.rts_state.set_context_usage_percentage(None);

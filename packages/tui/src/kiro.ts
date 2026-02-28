@@ -130,10 +130,11 @@ export class Kiro {
           );
           this.promptsHandler(event.prompts);
         }
-        // Forward compaction and context usage events (arrive after command returns)
+        // Forward compaction, context usage, and compaction summary content events
         if (
           (event.type === AgentEventType.CompactionStatus ||
-            event.type === AgentEventType.ContextUsage) &&
+            event.type === AgentEventType.ContextUsage ||
+            event.type === AgentEventType.Content) &&
           this.compactionHandler
         ) {
           this.compactionHandler(event);

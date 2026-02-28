@@ -88,7 +88,7 @@ fn calculate_context_breakdown(
 ) -> (ContextBreakdown, f32) {
     let mut sizes = calculate_component_sizes(snapshot);
 
-    let total_tokens = sizes.context_files + sizes.tools + sizes.kiro + sizes.user;
+    let total_tokens = sizes.context_files + sizes.tools + sizes.kiro + sizes.user + sizes.system;
 
     // Calculate our estimate
     let estimated_usage = (total_tokens as f32 / context_window_tokens as f32) * 100.0;
@@ -101,11 +101,12 @@ fn calculate_context_breakdown(
 
     // Calculate percentages - use backend-scaled if available, otherwise use estimates
     let (context_files_final, tools_final, kiro_final, user_final) = if let Some(backend_pct) = backend_usage_percent {
-        // Adjust components: keep context_files/tools stable, fill remaining to kiro+user
+        // Backend handles the total accurately — don't add system to avoid inflation
         adjust_component_percentages(context_files_pct, tools_pct, kiro_pct, user_pct, backend_pct)
     } else {
-        // Fall back to estimates when backend value not available
-        (context_files_pct, tools_pct, kiro_pct, user_pct)
+        // No backend (e.g. post-/compact or /clear): fold system prompt into yourPrompts
+        let user_pct_with_system = ((sizes.user + sizes.system) as f32 / cw) * 100.0;
+        (context_files_pct, tools_pct, kiro_pct, user_pct_with_system)
     };
 
     for item in &mut sizes.context_file_items {
@@ -129,7 +130,11 @@ fn calculate_context_breakdown(
             items: vec![],
         },
         your_prompts: CategoryBreakdown {
-            tokens: sizes.user,
+            tokens: if backend_usage_percent.is_none() {
+                sizes.user + sizes.system
+            } else {
+                sizes.user
+            },
             percentage: user_final,
             items: vec![],
         },
@@ -210,6 +215,7 @@ pub struct ComponentSizes {
     pub tools: usize,
     pub kiro: usize,
     pub user: usize,
+    pub system: usize,
 }
 
 pub fn calculate_component_sizes(snapshot: &AgentSnapshot) -> ComponentSizes {
@@ -220,6 +226,7 @@ pub fn calculate_component_sizes(snapshot: &AgentSnapshot) -> ComponentSizes {
         tools: calculate_tools_tokens(snapshot),
         kiro: calculate_message_tokens(snapshot, Role::Assistant),
         user: calculate_message_tokens(snapshot, Role::User),
+        system: snapshot.agent_config.global_prompt().map_or(0, |s| s.len() / 4),
     }
 }
 
