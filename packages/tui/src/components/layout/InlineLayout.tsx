@@ -55,6 +55,51 @@ const TRIGGER_RULES = [
   { key: '@', type: 'inline' as const },
 ];
 
+function triggerEasterEgg() {
+  const cols = process.stdout.columns || 60;
+  const rows = process.stdout.rows || 20;
+  const COUNT = 8;
+  const TICK = 150;
+  const DURATION = 4000;
+  const emoji = '👻';
+  const save = '\x1b7';
+  const restore = '\x1b8';
+  const moveTo = (r: number, c: number) => `\x1b[${r};${c}H`;
+
+  const ghosts = Array.from({ length: COUNT }, () => ({
+    x: Math.floor(Math.random() * (cols - 2)),
+    y: Math.floor(Math.random() * (rows - 2)),
+    dx: Math.random() > 0.5 ? 2 : -2,
+    dy: Math.random() > 0.5 ? 1 : -1,
+  }));
+  let prev = ghosts.map((g) => ({ x: g.x, y: g.y }));
+
+  const interval = setInterval(() => {
+    let out = save;
+    for (const p of prev) out += moveTo(p.y + 1, p.x + 1) + '  ';
+    for (const g of ghosts) {
+      g.x += g.dx;
+      g.y += g.dy;
+      if (g.x <= 0 || g.x >= cols - 2) g.dx = -g.dx;
+      if (g.y <= 0 || g.y >= rows - 2) g.dy = -g.dy;
+      g.x = Math.max(0, Math.min(cols - 2, g.x));
+      g.y = Math.max(0, Math.min(rows - 2, g.y));
+      out += moveTo(g.y + 1, g.x + 1) + emoji;
+    }
+    prev = ghosts.map((g) => ({ x: g.x, y: g.y }));
+    out += restore;
+    process.stdout.write(out);
+  }, TICK);
+
+  setTimeout(() => {
+    clearInterval(interval);
+    let out = save;
+    for (const p of prev) out += moveTo(p.y + 1, p.x + 1) + '  ';
+    out += restore;
+    process.stdout.write(out);
+  }, DURATION);
+}
+
 export const InlineLayout: React.FC = () => {
   // Grouped selectors using useShallow - prevents re-render cascades
   const { transientAlert, loadingMessage, agentError, agentErrorGuidance } =
@@ -400,6 +445,10 @@ export const InlineLayout: React.FC = () => {
 
   const handleSubmit = useCallback(
     (value: string) => {
+      if (value.trim().toLowerCase() === '/kiro') {
+        triggerEasterEgg();
+        return;
+      }
       handleUserInput(value);
       setGitBranch(getGitBranch());
     },
