@@ -151,7 +151,7 @@ pub enum SlashCommand {
     )]
     Checkpoint(CheckpointSubcommand),
     /// View, manage, and resume to-do lists
-    #[command(subcommand)]
+    #[command(subcommand, alias = "todo")]
     Todos(TodoSubcommand),
     /// Paste an image from clipboard
     Paste(PasteArgs),

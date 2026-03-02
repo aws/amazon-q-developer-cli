@@ -217,3 +217,18 @@ fn fuzzy_select_todos(entries: &[TodoDisplayEntry], prompt_str: &str) -> Option<
         .interact_opt()
         .unwrap_or(None)
 }
+
+#[cfg(test)]
+mod tests {
+    use clap::Parser;
+
+    use super::super::SlashCommand;
+    use super::TodoSubcommand;
+
+    #[test]
+    fn test_todo_alias_parses_as_todos() {
+        let result = SlashCommand::try_parse_from(["slash_command", "todo", "view"]);
+        assert!(result.is_ok());
+        assert!(matches!(result.unwrap(), SlashCommand::Todos(TodoSubcommand::View)));
+    }
+}
