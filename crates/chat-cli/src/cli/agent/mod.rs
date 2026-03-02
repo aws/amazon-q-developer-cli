@@ -1043,20 +1043,20 @@ impl Agents {
         let mut global_mcp_config = None::<McpServerConfig>;
 
         let mut local_agents = 'local: {
-            // We could be launching from the home dir, in which case the global and local agents
-            // are the same set of agents. If that is the case, we simply skip this.
-            match (std::env::current_dir(), paths::home_dir(os)) {
-                (Ok(cwd), Ok(home_dir)) if cwd == home_dir => break 'local Vec::<Agent>::new(),
-                _ => {
-                    // noop, we keep going with the extraction of local agents (even if we have an
-                    // error retrieving cwd or home_dir)
-                },
-            }
-
-            let Ok(path) = resolver.workspace().agents_dir() else {
+            let Ok(workspace_agents_path) = resolver.workspace().agents_dir() else {
                 break 'local Vec::<Agent>::new();
             };
-            let Ok(files) = os.fs.read_dir(path).await else {
+            let Ok(global_agents_path) = resolver.global().agents_dir() else {
+                break 'local Vec::<Agent>::new();
+            };
+
+            // Skip workspace loading if it points to same directory as global (e.g., when running from home
+            // directory)
+            if PathResolver::workspace_equals_global(&workspace_agents_path, &global_agents_path) {
+                break 'local Vec::<Agent>::new();
+            }
+
+            let Ok(files) = os.fs.read_dir(workspace_agents_path).await else {
                 break 'local Vec::<Agent>::new();
             };
 

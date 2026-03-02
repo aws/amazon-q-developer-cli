@@ -2,6 +2,7 @@
 
 use std::env::VarError;
 use std::path::{
+    Path,
     PathBuf,
     StripPrefixError,
 };
@@ -240,6 +241,7 @@ fn resolve_local_migrated_path_with_env_fs(env: &Env, amazonq_subpath: &str, kir
 /// - Linux: /home/Alice
 /// - MacOS: /Users/Alice
 /// - Windows: C:\Users\Alice
+#[allow(dead_code)]
 pub fn home_dir(#[cfg_attr(windows, allow(unused_variables))] os: &Os) -> Result<PathBuf> {
     home_dir_from_env(&os.env)
 }
@@ -408,6 +410,16 @@ impl<'a> PathResolver<'a> {
         GlobalPaths {
             env: self.env,
             fs: self.fs,
+        }
+    }
+
+    /// Check if workspace and global paths resolve to the same directory.
+    /// Returns true if both paths exist and canonicalize to the same location.
+    /// Useful for avoiding duplicate loading when running from home directory.
+    pub fn workspace_equals_global(workspace_path: &Path, global_path: &Path) -> bool {
+        match (workspace_path.canonicalize(), global_path.canonicalize()) {
+            (Ok(ws_canon), Ok(global_canon)) => ws_canon == global_canon,
+            _ => false,
         }
     }
 }

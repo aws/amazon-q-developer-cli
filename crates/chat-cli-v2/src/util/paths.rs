@@ -2,6 +2,7 @@
 
 use std::env::VarError;
 use std::path::{
+    Path,
     PathBuf,
     StripPrefixError,
 };
@@ -406,6 +407,16 @@ impl<'a> PathResolver<'a> {
     /// Get global-scoped path resolver  
     pub fn global(&self) -> GlobalPaths<'_> {
         GlobalPaths { os: self.os }
+    }
+
+    /// Check if workspace and global paths resolve to the same directory.
+    /// Returns true if both paths exist and canonicalize to the same location.
+    /// Useful for avoiding duplicate loading when running from home directory.
+    pub fn workspace_equals_global(workspace_path: &Path, global_path: &Path) -> bool {
+        match (workspace_path.canonicalize(), global_path.canonicalize()) {
+            (Ok(ws_canon), Ok(global_canon)) => ws_canon == global_canon,
+            _ => false,
+        }
     }
 }
 
