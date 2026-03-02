@@ -19,7 +19,7 @@ const statusLabels: Record<ToolInfo['status'], string> = {
 
 /** Extract a short one-liner from a potentially multi-line description. */
 function shortDescription(desc: string, maxLen: number): string {
-  const firstLine = desc.split('\n')[0] ?? '';
+  const firstLine = desc.trim().split('\n')[0] ?? '';
   const firstSentence = firstLine.split('. ')[0] ?? firstLine;
   const clean = firstSentence.replace(/\s+/g, ' ').trim();
   if (clean.length <= maxLen) return clean;

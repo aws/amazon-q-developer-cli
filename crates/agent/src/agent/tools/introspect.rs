@@ -17,7 +17,24 @@ use super::{
     ToolExecutionResult,
 };
 
-const INTROSPECT_DESCRIPTION: &str = "Use ONLY when the user is asking about this chat application's own features, slash commands, settings, or capabilities. Do NOT use for general coding questions, AWS help, or tasks the user wants you to perform. When mentioning commands in your response, always prefix them with '/' (e.g., '/save', '/load', '/context'). CRITICAL: Only provide information explicitly documented. If details about any tool, feature, or command are not documented, clearly state the information is not available rather than generating assumptions.";
+const INTROSPECT_DESCRIPTION: &str = r#"
+Look up documentation about this chat application's own features, slash commands, settings, or capabilities.
+
+WHEN TO USE:
+- User asks about this assistant's features, commands, or settings
+- User wants to know what slash commands are available
+- User asks how to use a specific feature of this chat application
+
+WHEN NOT TO USE:
+- General coding questions, AWS help, or tasks the user wants you to perform
+- Questions unrelated to this chat application itself
+
+HOW TO USE:
+- Provide a query to search the documentation
+- Or provide a doc_path to retrieve a specific document
+- When mentioning commands in your response, always prefix them with '/' (e.g., '/save', '/load', '/context')
+- CRITICAL: Only provide information explicitly documented. If details are not documented, clearly state the information is not available rather than generating assumptions.
+"#;
 
 const INTROSPECT_SCHEMA: &str = r#"
 {
