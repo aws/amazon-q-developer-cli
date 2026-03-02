@@ -116,8 +116,18 @@ impl SessionManagerBuilder {
 
         tokio::spawn(async move {
             // Load agent configs once at startup
-            let agent_configs: Vec<LoadedAgentConfig> =
-                load_agents(&RealProvider).await.map(|(c, _)| c).unwrap_or_default();
+            let agent_configs: Vec<LoadedAgentConfig> = match load_agents(&RealProvider).await {
+                Ok((configs, errors)) => {
+                    for err in &errors {
+                        error!(%err, "Failed to load agent config");
+                    }
+                    configs
+                },
+                Err(e) => {
+                    error!(%e, "Failed to load agents");
+                    Vec::new()
+                },
+            };
 
             // In test mode, spawn IpcServer and MockResponseRegistry
             let mock_registry = if std::env::var("KIRO_TEST_MODE").is_ok() {

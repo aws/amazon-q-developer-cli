@@ -257,18 +257,43 @@ pub struct AgentConfigV2025_08_22 {
 #[derive(Debug, Clone, Default, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct ToolsSettings {
+    // NOTE: serde alias attributes must stay in sync with ALIAS_GROUPS below.
+    // Aliases cover: snake_case (V1 configs), camelCase (serde default), and display names.
     #[serde(default, alias = "read", alias = "fs_read")]
     pub fs_read: FsReadSettings,
     #[serde(default, alias = "write", alias = "fs_write")]
     pub fs_write: FsWriteSettings,
-    #[serde(default, alias = "execute_bash", alias = "executeCmd", alias = "execute_cmd")]
+    #[serde(
+        default,
+        alias = "execute_bash",
+        alias = "executeBash",
+        alias = "executeCmd",
+        alias = "execute_cmd"
+    )]
     pub shell: ExecuteCmdSettings,
     #[serde(default)]
     pub grep: GrepSettings,
     #[serde(default)]
     pub glob: GlobSettings,
-    #[serde(default, alias = "aws")]
+    #[serde(default, alias = "use_aws", alias = "aws")]
     pub use_aws: UseAwsSettings,
+}
+
+impl ToolsSettings {
+    /// Groups of JSON keys that are aliases for the same field.
+    ///
+    /// Used by [`normalize_agent_json`](super::load::normalize_agent_json) to deduplicate
+    /// before serde deserialization (which rejects duplicate alias keys).
+    /// First element is the canonical name (tool's display name), followed by aliases.
+    ///
+    /// Aliases cover: snake_case (V1 configs), camelCase (serde default), and display names.
+    /// This ensures configs written for V1 or with any alias form work correctly in V2.
+    pub const ALIAS_GROUPS: &[&[&str]] = &[
+        &["read", "fsRead", "fs_read"],
+        &["write", "fsWrite", "fs_write"],
+        &["shell", "execute_bash", "executeBash", "executeCmd", "execute_cmd"],
+        &["use_aws", "useAws", "aws"],
+    ];
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize, JsonSchema)]

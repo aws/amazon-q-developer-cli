@@ -1031,11 +1031,20 @@ impl Agent {
                             // Check config-level allowed_tools
                             let tool_name = canonical.as_full_name();
                             let is_config_allowed = match canonical {
-                                agent_config::parse::CanonicalToolName::BuiltIn(_) => {
+                                agent_config::parse::CanonicalToolName::BuiltIn(built_in) => {
                                     allowed_tools.contains("@builtin")
                                         || allowed_tools.contains("@builtin/")
                                         || allowed_tools.contains("@builtin/*")
                                         || util::glob::matches_any_pattern(allowed_tools, &tool_name)
+                                        || built_in.aliases().is_some_and(|aliases| {
+                                            aliases.iter().any(|alias| {
+                                                util::glob::matches_any_pattern(allowed_tools, alias)
+                                                    || util::glob::matches_any_pattern(
+                                                        allowed_tools,
+                                                        format!("@builtin/{alias}"),
+                                                    )
+                                            })
+                                        })
                                 },
                                 agent_config::parse::CanonicalToolName::Mcp { server_name, .. } => {
                                     allowed_tools.contains(&format!("@{server_name}"))

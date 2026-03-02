@@ -14,6 +14,7 @@ use tracing::{
 use super::definitions::{
     AgentConfig,
     AgentConfigV2025_08_22,
+    ToolsSettings,
 };
 use super::types::ResourcePath;
 use super::{
@@ -204,6 +205,59 @@ pub fn build_planner_agent() -> LoadedAgentConfig {
     LoadedAgentConfig::new(AgentConfig::V2025_08_22(config), ConfigSource::BuiltIn, resolved_prompt)
 }
 
+/// Pre-process agent JSON to normalize alias keys in `toolsSettings` to canonical names.
+///
+/// V1 used `HashMap<String, Value>` for tool settings, so multiple alias forms for the same
+/// field (e.g. both `"write"` and `"fs_write"`) coexisted as separate entries. V2 uses a typed
+/// struct with serde aliases, which rejects duplicates. This function normalizes the JSON by
+/// renaming any alias key to the canonical name (first in each ALIAS_GROUPS entry), logging
+/// a warning for any duplicates.
+fn normalize_agent_json(contents: &str, path: &Path) -> String {
+    let Ok(mut value) = serde_json::from_str::<serde_json::Value>(contents) else {
+        return contents.to_string();
+    };
+
+    let Some(ts) = value.get_mut("toolsSettings").and_then(|v| v.as_object_mut()) else {
+        return contents.to_string();
+    };
+
+    let mut changed = false;
+    for group in ToolsSettings::ALIAS_GROUPS {
+        let canonical = group[0];
+        let present: Vec<&str> = group.iter().filter(|k| ts.contains_key(**k)).copied().collect();
+
+        if present.len() > 1 {
+            warn!(
+                ?path,
+                ?present,
+                canonical,
+                "Agent config has duplicate toolsSettings alias keys, merging to canonical"
+            );
+        }
+
+        // Rename first found alias to canonical name (if not already canonical)
+        if let Some(&first) = present.first() {
+            if first != canonical
+                && let Some(val) = ts.remove(first)
+            {
+                ts.insert(canonical.to_string(), val);
+                changed = true;
+            }
+            // Remove any remaining duplicates
+            for &key in &present[1..] {
+                ts.remove(key);
+                changed = true;
+            }
+        }
+    }
+
+    if changed {
+        serde_json::to_string(&value).unwrap_or_else(|_| contents.to_string())
+    } else {
+        contents.to_string()
+    }
+}
+
 async fn load_agents_from_dir<P: SystemProvider>(
     dir: &Path,
     source: ConfigSource,
@@ -250,6 +304,8 @@ async fn load_agents_from_dir<P: SystemProvider>(
                 }) else {
                     continue;
                 };
+
+                let entry_contents = normalize_agent_json(&entry_contents, &entry_path);
 
                 match serde_json::from_str::<AgentConfig>(&entry_contents) {
                     Ok(config) => {
@@ -479,5 +535,105 @@ mod tests {
                 .expect(&format!("{name}: agent not found"));
             assert_eq!(agent.global_prompt().as_deref(), expected, "case: {name}");
         }
+    }
+
+    #[tokio::test]
+    async fn test_normalize_deduplicates_alias_keys() {
+        let agent_json = r#"{
+            "name": "test-agent",
+            "toolsSettings": {
+                "write": {"allowedPaths": ["./**"]},
+                "fs_write": {"allowedPaths": ["./src/**"]}
+            }
+        }"#;
+
+        // Without normalization this would fail with "duplicate field fsWrite"
+        let normalized = normalize_agent_json(agent_json, Path::new("test.json"));
+        let config: AgentConfig = serde_json::from_str(&normalized).unwrap();
+        assert_eq!(config.name(), "test-agent");
+        assert!(config.tool_settings().is_some());
+    }
+
+    #[tokio::test]
+    async fn test_normalize_preserves_valid_json() {
+        let agent_json = r#"{
+            "name": "test-agent",
+            "toolsSettings": {
+                "shell": {"allowedCommands": ["jj *"]}
+            }
+        }"#;
+
+        let normalized = normalize_agent_json(agent_json, Path::new("test.json"));
+        let config: AgentConfig = serde_json::from_str(&normalized).unwrap();
+        assert_eq!(config.tool_settings().unwrap().shell.allowed_commands, vec!["jj *"]);
+    }
+
+    #[tokio::test]
+    async fn test_normalize_handles_invalid_json() {
+        let bad_json = "not json at all";
+        let result = normalize_agent_json(bad_json, Path::new("test.json"));
+        assert_eq!(result, bad_json, "should return original string for invalid JSON");
+    }
+
+    #[tokio::test]
+    async fn test_normalize_handles_no_tools_settings() {
+        let agent_json = r#"{"name": "test-agent"}"#;
+        let result = normalize_agent_json(agent_json, Path::new("test.json"));
+        let config: AgentConfig = serde_json::from_str(&result).unwrap();
+        assert_eq!(config.name(), "test-agent");
+    }
+
+    #[tokio::test]
+    async fn test_normalize_renames_to_canonical() {
+        // fsRead should be renamed to "read" (the canonical/display name)
+        let agent_json = r#"{
+            "name": "test-agent",
+            "toolsSettings": {
+                "fsRead": {"allowedPaths": ["./**"]}
+            }
+        }"#;
+
+        let normalized = normalize_agent_json(agent_json, Path::new("test.json"));
+        // Verify the JSON now has "read" instead of "fsRead"
+        assert!(normalized.contains("\"read\""), "should rename fsRead to read");
+        assert!(!normalized.contains("\"fsRead\""), "should not contain fsRead");
+
+        let config: AgentConfig = serde_json::from_str(&normalized).unwrap();
+        assert_eq!(config.tool_settings().unwrap().fs_read.allowed_paths, vec!["./**"]);
+    }
+
+    #[tokio::test]
+    async fn test_normalize_real_world_config() {
+        // Matches ~/.kiro/agents/*default.json pattern with execute_bash and duplicate write/fs_write
+        let agent_json = r#"{
+            "name": "default",
+            "toolsSettings": {
+                "execute_bash": {
+                    "autoAllowReadonly": true,
+                    "allowedCommands": ["^git status$", "^ls "]
+                },
+                "use_aws": {
+                    "allowedServices": ["cloudformation"],
+                    "autoAllowReadonly": true
+                },
+                "write": {"allowedPaths": ["./**"]},
+                "fs_write": {"allowedPaths": ["./**"]}
+            }
+        }"#;
+
+        let normalized = normalize_agent_json(agent_json, Path::new("default.json"));
+        let config: AgentConfig = serde_json::from_str(&normalized).unwrap();
+        let ts = config.tool_settings().unwrap();
+
+        // execute_bash should be renamed to shell
+        assert_eq!(ts.shell.allowed_commands, vec!["^git status$", "^ls "]);
+        assert!(ts.shell.auto_allow_readonly);
+
+        // write/fs_write duplicates should be merged to write
+        assert_eq!(ts.fs_write.allowed_paths, vec!["./**"]);
+
+        // use_aws should remain as useAws (canonical)
+        assert_eq!(ts.use_aws.allowed_services, vec!["cloudformation"]);
+        assert!(ts.use_aws.auto_allow_readonly);
     }
 }
