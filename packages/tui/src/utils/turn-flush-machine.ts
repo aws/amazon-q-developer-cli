@@ -19,7 +19,14 @@ export interface FlushableMessage {
  *   Model   → done when followed by any message (i.e. not the last), OR when !isProcessing
  *
  * The tail (messages NOT flushed) is everything from flushCount onward.
- * Callers keep at least TAIL_SIZE messages in the tail regardless.
+ * Callers keep at least TAIL_SIZE messages in the tail regardless — this
+ * ensures the last active tool and streaming model text stay visible in the
+ * dynamic area while the turn is live. The tail is only flushed to <Static>
+ * when the turn completes (moves to completedTurns in ConversationView).
+ *
+ * The tailSize cap applies unconditionally (even when !isProcessing) because
+ * the intent is: keep the tail visible until the NEXT turn starts, not until
+ * processing stops. ConversationView's completedTurns path handles the final flush.
  */
 export function computeFlushCount(
   messages: FlushableMessage[],

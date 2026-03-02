@@ -228,8 +228,92 @@ const StaticTurnCard = React.memo(function StaticTurnCard({
   );
 });
 
+/**
+ * # ConversationView — Incremental Static Rendering
+ *
+ * ## Architecture overview
+ *
+ * The terminal has two rendering zones:
+ *
+ *   ┌─────────────────────────────────────┐
+ *   │  <Static>  — permanent, scrollback  │  ← completed content lives here
+ *   │  (printed once, never redrawn)      │
+ *   ├─────────────────────────────────────┤
+ *   │  Dynamic tail — redrawn every frame │  ← active tool + streaming text
+ *   └─────────────────────────────────────┘
+ *
+ * Ink's `<Static>` works as a **length cursor**, not an ID map:
+ *
+ *   const [index, setIndex] = useState(0);
+ *   const itemsToRender = useMemo(() => items.slice(index), [items, index]);
+ *   useLayoutEffect(() => setIndex(items.length), [items.length]);
+ *
+ * Consequences:
+ *   1. The `items` array must be **append-only** — never remove or reorder items.
+ *   2. `items` must be a **new array reference** each render so `useMemo` fires.
+ *      Passing the same mutated reference makes `<Static>` blind to new items.
+ *   3. There is **no ID deduplication** — re-emitting an item prints it again.
+ *
+ * ## Persistent ref pattern
+ *
+ * `staticItemsRef` is the single source of truth for all items ever emitted to
+ * `<Static>`. It only grows. Each render we:
+ *   1. Compute `newlyFlushed` — messages ready to leave the dynamic tail.
+ *   2. Call `appendStatic()` for each new item (guarded by `emittedIds`).
+ *   3. Pass `[...staticItemsRef.current]` to `<Static>` — new reference, same
+ *      contents — so `useMemo([items, index])` re-evaluates correctly.
+ *
+ * ## Turn lifecycle
+ *
+ *   ACTIVE TURN
+ *     │  computeFlushCount() decides how many leading messages are "done"
+ *     │  keeping the last TAIL_SIZE in the dynamic area.
+ *     │  newlyFlushed = toFlush − already in flushedRef  →  appendStatic()
+ *     │  tail = last TAIL_SIZE messages  →  rendered in dynamic Card/CardContext
+ *     ▼
+ *   TURN COMPLETES (new user message arrives)
+ *     │  Turn moves from activeTurn → completedTurns
+ *     ├─ Never flushed (short turn, ≤ TAIL_SIZE messages):
+ *     │    appendStatic({ type: 'turn' })  →  StaticTurnCard renders everything
+ *     └─ Partially flushed (long turn):
+ *          append only the unflushed tail (allMsgs − flushedIds)
+ *          with isLast=true on the final message for bottom spacing
+ *
+ * ## Why TAIL_SIZE = 2
+ *
+ * We always keep the last finished tool + the current streaming model message
+ * (or the running tool) visible in the dynamic area. This gives the user live
+ * feedback without flickering. They move to `<Static>` only when the next turn
+ * starts, so the transition is seamless.
+ *
+ * ## flushedRef
+ *
+ * `Map<turnId, Set<messageId>>` — tracks which message IDs have been appended
+ * to `staticItemsRef` for each turn. Used for:
+ *   - `newlyFlushed` computation (filter out already-emitted messages)
+ *   - `completedTurns` path (know which messages are the unflushed tail)
+ *   - Tail rendering condition (`flushedRef.has(turnId)` → use CardContext not Card)
+ */
+
 // How many messages to keep in the dynamic tail
 const TAIL_SIZE = 2;
+
+type StaticItem =
+  | { type: 'welcome'; id: string }
+  | {
+      type: 'system';
+      id: string;
+      message: StoreMessageType & { role: MessageRole.System };
+    }
+  | { type: 'turn'; id: string; turn: ConversationTurn }
+  | { type: 'divider'; id: string }
+  | {
+      type: 'msg';
+      id: string;
+      msg: StoreMessageType;
+      agentBarColor: string | undefined;
+      isLast: boolean;
+    };
 
 export const ConversationView = React.memo(function ConversationView() {
   const { messages, isProcessing } = useConversationState();
@@ -238,6 +322,9 @@ export const ConversationView = React.memo(function ConversationView() {
   const welcomeInStaticRef = React.useRef(false);
   // Per-turn set of message IDs already flushed to <Static>
   const flushedRef = React.useRef<Map<string, Set<string>>>(new Map());
+  // Persistent, append-only array of static items — never shrinks.
+  // <Static> uses array length as its index, so items must stay at stable positions.
+  const staticItemsRef = React.useRef<StaticItem[]>([]);
 
   if (messages.length > 0) hadMessagesRef.current = true;
 
@@ -297,84 +384,78 @@ export const ConversationView = React.memo(function ConversationView() {
   const tailMessages = activeAllMessages.slice(flushCount);
 
   // Track which turns had incremental flushing (so StaticTurnCard skips them on completion).
-  // Use a ref keyed by turnId — only needs to know IF a turn was flushed, not which messages.
+  // Compute newly-flushed messages BEFORE updating flushedRef so we know what's new this render.
+  let newlyFlushed: StoreMessageType[] = [];
   if (activeTurn && toFlush.length > 0) {
     const turnId = activeTurn.userMessage.id;
     if (!flushedRef.current.has(turnId)) {
       flushedRef.current.set(turnId, new Set());
     }
-    // Record flushed IDs so completed turn path knows what to skip.
-    // Safe to do here because we only add IDs, never remove them.
     const flushedIds = flushedRef.current.get(turnId)!;
-    toFlush.forEach((msg) => flushedIds.add(msg.id));
+    newlyFlushed = toFlush.filter((msg) => !flushedIds.has(msg.id));
+    newlyFlushed.forEach((msg) => flushedIds.add(msg.id));
   }
 
-  // --- Build static items ---
-  type StaticItem =
-    | { type: 'welcome'; id: string }
-    | {
-        type: 'system';
-        id: string;
-        message: StoreMessageType & { role: MessageRole.System };
-      }
-    | { type: 'turn'; id: string; turn: ConversationTurn }
-    | { type: 'divider'; id: string }
-    | {
-        type: 'msg';
-        id: string;
-        msg: StoreMessageType;
-        agentBarColor: string | undefined;
-        isLast: boolean;
-      };
+  // --- Append new items to the persistent staticItems ref ---
+  // <Static> uses array length as its cursor — items must never be removed or reordered.
+  // We track emitted IDs/keys in emittedStaticIds to avoid double-appending.
+  const emittedIds = new Set(staticItemsRef.current.map((i) => i.id));
 
-  const staticItems: StaticItem[] = [];
+  const appendStatic = (item: StaticItem) => {
+    if (!emittedIds.has(item.id)) {
+      emittedIds.add(item.id);
+      staticItemsRef.current.push(item);
+    }
+  };
 
-  // Always include welcome screen in static items once messages exist.
-  // <Static> tracks items by array index, so the welcome must remain in
-  // the array on every render to keep indices stable for new items.
-  if (hasMessages) {
-    staticItems.push({ type: 'welcome', id: '__welcome__' });
+  // Welcome screen — emitted once when messages first appear
+  if (hasMessages && !welcomeInStaticRef.current) {
     welcomeInStaticRef.current = true;
+    appendStatic({ type: 'welcome', id: '__welcome__' });
   }
 
+  // System messages
   systemMessages.forEach((msg) =>
-    staticItems.push({ type: 'system', id: msg.id, message: msg })
+    appendStatic({ type: 'system', id: msg.id, message: msg })
   );
 
-  // Completed turns: if they were incrementally flushed, emit remaining messages.
-  // Ink's <Static> deduplicates by ID — already-printed items are no-ops.
+  // Completed turns that were never incrementally flushed → StaticTurnCard.
+  // Turns that WERE incrementally flushed → append only the unflushed tail messages.
   completedTurns.forEach((turn) => {
     const flushedIds = flushedRef.current.get(turn.userMessage.id);
-    if (flushedIds && flushedIds.size > 0) {
+    if (!flushedIds || flushedIds.size === 0) {
+      // Never flushed — render as a single card
+      appendStatic({ type: 'turn', id: turn.userMessage.id, turn });
+    } else {
+      // Partially flushed — append the tail (messages not yet in static)
       const agentName =
-        'agentName' in turn.userMessage
-          ? turn.userMessage.agentName
-          : undefined;
-      const agentBarColor = agentName
-        ? getAgentColor(agentName).hex
-        : undefined;
+        'agentName' in turn.userMessage ? turn.userMessage.agentName : undefined;
+      const agentBarColor = agentName ? getAgentColor(agentName).hex : undefined;
       const allMsgs = [turn.userMessage, ...turn.aiMessages];
-      allMsgs.forEach((msg, i) => {
-        staticItems.push({
+      const tailMsgs = allMsgs.filter((msg) => !flushedIds.has(msg.id));
+      tailMsgs.forEach((msg, i) => {
+        appendStatic({
           type: 'msg',
           id: msg.id,
           msg,
           agentBarColor,
-          isLast: i === allMsgs.length - 1,
+          isLast: i === tailMsgs.length - 1,
         });
+        flushedIds.add(msg.id);
       });
-    } else {
-      staticItems.push({ type: 'turn', id: turn.userMessage.id, turn });
     }
   });
 
-  // Active turn: emit divider + all toFlush messages every render.
-  // Ink's <Static> only renders each ID once — re-emitting is a no-op.
-  if (activeTurn && toFlush.length > 0) {
+  // Active turn: append divider + newly-flushed messages
+  if (activeTurn && newlyFlushed.length > 0) {
     const turnId = activeTurn.userMessage.id;
-    staticItems.push({ type: 'divider', id: `${turnId}__divider` });
-    toFlush.forEach((msg) => {
-      staticItems.push({
+    const flushedIds = flushedRef.current.get(turnId)!;
+    // Divider only on first flush
+    if (flushedIds.size === newlyFlushed.length) {
+      appendStatic({ type: 'divider', id: `${turnId}__divider` });
+    }
+    newlyFlushed.forEach((msg) => {
+      appendStatic({
         type: 'msg',
         id: msg.id,
         msg,
@@ -383,6 +464,10 @@ export const ConversationView = React.memo(function ConversationView() {
       });
     });
   }
+
+  // Spread into a new array each render so <Static>'s useMemo([items, index]) fires.
+  // staticItemsRef holds the persistent contents; the new reference triggers the memo.
+  const staticItems = [...staticItemsRef.current];
 
   return (
     <Box flexDirection="column">
@@ -438,7 +523,7 @@ export const ConversationView = React.memo(function ConversationView() {
           No Card/Divider — those are already in <Static> once flushing starts.
           Before any flushing (short turns), use full Card for correct divider. */}
       {activeTurn &&
-        (toFlush.length > 0 ? (
+        (flushedRef.current.has(activeTurn.userMessage.id) ? (
           // Flushing has started — render tail without Card (divider already in static)
           <CardContext.Provider value={{ active: true }}>
             <Box flexDirection="column" width="100%">
