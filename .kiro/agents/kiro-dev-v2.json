@@ -1,7 +1,7 @@
 {
   "name": "kiro-dev-v2",
   "description": "Kiro CLI V2 development agent for TUI (TypeScript/React/Ink) and chat-cli-v2 (Rust/ACP)",
-  "model": "claude-opus-4.5",
+  "model": "claude-opus-4.6-1m",
   "prompt": "file://resources/KIRO_DEV_V2_PROMPT.md",
   "tools": [
     "fs_read",

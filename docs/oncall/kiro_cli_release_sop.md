@@ -72,16 +72,18 @@ The current approach is to bug bash the nightly build.
    git checkout main && git pull origin main
    git checkout -b sync-prod-vX.X.X
    git push origin sync-prod-vX.X.X
+   gh pr create --repo kiro-team/kiro-cli --base prod --head sync-prod-vX.X.X --title "Sync main to prod for vX.X.X" --body "Standard release sync for vX.X.X"
    ```
-   Create a PR from `sync-prod-vX.X.X` → `prod` and merge after approval.
+   Merge after approval.
 
 2. In the `kiro-team/kiro-cli-autocomplete` repo:
    ```bash
    git checkout main && git pull origin main
    git checkout -b sync-prod-vX.X.X
    git push origin sync-prod-vX.X.X
+   gh pr create --repo kiro-team/kiro-cli-autocomplete --base prod --head sync-prod-vX.X.X --title "Sync main to prod for vX.X.X" --body "Standard release sync for vX.X.X"
    ```
-   Create a PR from `sync-prod-vX.X.X` → `prod` and merge after approval.
+   Merge after approval.
 
 **For hotfix release:**
 
@@ -91,8 +93,9 @@ The current approach is to bug bash the nightly build.
    git checkout -b hotfix-vX.X.X
    git cherry-pick <commit-sha> # cherry pick all commits as required
    git push origin hotfix-vX.X.X
+   gh pr create --repo kiro-team/kiro-cli --base prod --head hotfix-vX.X.X --title "Hotfix vX.X.X" --body "Hotfix release for vX.X.X"
    ```
-   Create a PR from `hotfix-vX.X.X` → `prod` and merge after approval.
+   Merge after approval.
 
 2. In the `kiro-team/kiro-cli-autocomplete` repo:
    ```bash
@@ -100,8 +103,9 @@ The current approach is to bug bash the nightly build.
    git checkout -b hotfix-vX.X.X
    git cherry-pick <commit-sha> # cherry pick all commits as required
    git push origin hotfix-vX.X.X
+   gh pr create --repo kiro-team/kiro-cli-autocomplete --base prod --head hotfix-vX.X.X --title "Hotfix vX.X.X" --body "Hotfix release for vX.X.X"
    ```
-   Create a PR from `hotfix-vX.X.X` → `prod` and merge after approval.
+   Merge after approval.
 
 > **Note: Out-of-Sync Branches**
 >
@@ -136,6 +140,7 @@ The current approach is to bug bash the nightly build.
    ```bash
    gh workflow run release-kiro-cli.yml \
      --repo kiro-team/kiro-cli-autocomplete \
+     --ref prod \
      -f commit=<COMMIT_SHA> \
      -f version=<VERSION> \
      -f channel=beta \
@@ -168,6 +173,7 @@ The current approach is to bug bash the nightly build.
    ```bash
    gh workflow run release-kiro-cli-prod.yml \
      --repo kiro-team/kiro-cli-autocomplete \
+     --ref prod \
      -f commit=<COMMIT_SHA> \
      -f version=<VERSION> \
      -f channel=stable \

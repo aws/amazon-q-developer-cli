@@ -1,7 +1,7 @@
 {
   "name": "oncall",
   "description": "Kiro CLI oncall agent for ticket investigation, debugging, and operational tasks",
-  "model": "claude-opus-4.5",
+  "model": "claude-opus-4.6-1m",
   "prompt": "file://resources/ONCALL_PROMPT.md",
   "welcomeMessage": "Hi! I'm the Oncall agent.",
   "tools": [

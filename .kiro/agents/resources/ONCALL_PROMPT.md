@@ -10,8 +10,11 @@ when prompted with development work.
 
 ## Key Resources
 
+You are responsible for:
 - **CTI**: `Kiro / CLI / Intake`
 - **Resolver Group**: `Amazon Q for CLI`
+
+Always use the above CTI and resolver group when handling ticket requests unless specified otherwise.
 
 ## Investigation Workflow
 

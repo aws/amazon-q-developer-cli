@@ -30,9 +30,13 @@ Resolver Group: `Amazon Q for CLI`
 
 See [Metrics and Telemetry](metrics_and_telemetry.md) for dashboards, telemetry events, and error codes.
 
-### RTS Graphs/Alarms
+### CloudWatch Alarms (Client-Side)
 
-[CloudWatch Alarms](https://isengard.amazon.com/federate?account=678005972646&role=ReadOnly&destination=https%3A%2F%2Fus-east-1.console.aws.amazon.com%2Fcloudwatch%2Fdeeplink.js%3Fregion%3Dus-east-1%23alarmsV2%3Aalarm%2FConsolasRTS-prod-IAD-ChatAlarms-ChatAPIs-Availability%2BAlarm-GenerateAssistantComponentExecution-CLI-Critical%3F~(search~%27cli))
+See [CloudWatch Alarms](cloudwatch_alarms_and_dashboard.md) for alarm definitions, metric pipeline, thresholds, and investigation guide. These are our client-side alarms in account `421629052180`.
+
+### RTS Graphs/Alarms (Backend)
+
+[CloudWatch Alarms](https://isengard.amazon.com/federate?account=678005972646&role=ReadOnly&destination=https%3A%2F%2Fus-east-1.console.aws.amazon.com%2Fcloudwatch%2Fdeeplink.js%3Fregion%3Dus-east-1%23alarmsV2%3Aalarm%2FConsolasRTS-prod-IAD-ChatAlarms-ChatAPIs-Availability%2BAlarm-GenerateAssistantComponentExecution-CLI-Critical%3F~(search~%27cli)) — these are backend/RTS alarms in account `678005972646`, owned by the Consolas RTS team.
 
 ### Slack Channels
 
@@ -60,7 +64,6 @@ See [Metrics and Telemetry](metrics_and_telemetry.md) for dashboards, telemetry 
 
 ## SOPs
 
-
 ### Q CLI Success Rate Drops
 
 We have alarms for when API call success rate drops.
@@ -73,7 +76,7 @@ First, cross-check with spikes in failures and system failures to see what cause
 
 ### Deploying a new version of the app
 
-See [Kiro CLI Release SOP](kiro_cli_release_sop.md). 
+See [Kiro CLI Release SOP](kiro_cli_release_sop.md).
 
 ### Install Script Infra Setup and Deployment Process
 
@@ -105,16 +108,17 @@ See [Kiro CLI Release SOP](kiro_cli_release_sop.md).
     * You must be on macOS
 
 To run the script:
+
 1. Export AWS Account Credentials
-  * Gamma - Admin Role
-  * Prod - McmDeploy Role
+   * Gamma - Admin Role
+   * Prod - McmDeploy Role
 2. Run the script - this will perform a dry run:
-  * Gamma: `env $(ada cred print --account 230592382359 --role Admin --format env) ./scripts/deploy_install_script.py --stage gamma`
-  * Prod: `env $(ada cred print --account 158872659206 --role McmDeploy --format env) ./scripts/deploy_install_script.py --stage prod`
+   * Gamma: `env $(ada cred print --account 230592382359 --role Admin --format env) ./scripts/deploy_install_script.py --stage gamma`
+   * Prod: `env $(ada cred print --account 158872659206 --role McmDeploy --format env) ./scripts/deploy_install_script.py --stage prod`
 3. By default the script runs in `Dry Run` mode, to actually upload the install script and create Cloudfront invalidation, re-run the script with `--execute` flag, e.g. `./scripts/deploy_install_script.py --stage gamma --execute`
 4. Validation - Download the script and confirm URLs, AppName etc. are correct
-  * Gamma (on VPN) - `curl -fsSL https://gamma.cli.kiro.dev/install > install.sh`
-  * Prod - `curl -fsSL https://cli.kiro.dev/install > install.sh`
+   * Gamma (on VPN) - `curl -fsSL https://gamma.cli.kiro.dev/install > install.sh`
+   * Prod - `curl -fsSL https://cli.kiro.dev/install > install.sh`
 
 ### Deploying a new version of a Mini-Model
 
@@ -131,6 +135,7 @@ We auto-generate internal amzn clients and commit them directly to the codebase.
 * [Script for generating the clients](https://drive.corp.amazon.com/documents/Q%20CLI/Oncall%20Scripts/generate-clients.sh)
 
 Steps for updating the clients:
+
 1. Create a new branch
 2. Download the above script, and update the Brazil version parameter according to the latest release in [AWSVectorConsolasRuntimeServiceRustClient releases](https://code.amazon.com/packages/AWSVectorConsolasRuntimeServiceRustClient/releases)
 3. Run the script, and manually fix cargo clippy errors
@@ -207,6 +212,10 @@ The way to get the documentation updated is:
 * Create a branch on the github docs repo: [kiro-docs](https://github.com/kiro-team/kiro-docs)
 * Submit a PR to merge your branch into the `staging` branch
 * The approvers are @cbonif and @dombjose
+
+### Granting GitHub Repo Access
+
+Our repos are private. Anyone needing access (including security reviewers) must follow the standard process on the [Kiro Contribution Wiki](https://wiki.amazon.com/bin/view/KiroLabs/Contribute#HGitHubAccess).
 
 ### Handling customer requests for quota increase
 
