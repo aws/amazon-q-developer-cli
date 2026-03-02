@@ -988,6 +988,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "aws-smithy-mocks"
+version = "0.2.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "943deb750d91da9f788024482ff1f3393cefb017d0dc30fc5cecb11e1be15770"
+dependencies = [
+ "aws-smithy-http-client",
+ "aws-smithy-runtime-api",
+ "aws-smithy-types",
+ "http 1.4.0",
+]
+
+[[package]]
 name = "aws-smithy-observability"
 version = "0.2.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1706,6 +1718,7 @@ dependencies = [
  "aws-sdk-cognitoidentity",
  "aws-sdk-ssooidc",
  "aws-smithy-async",
+ "aws-smithy-mocks",
  "aws-smithy-runtime-api",
  "aws-smithy-types",
  "aws-types",
@@ -1849,6 +1862,7 @@ dependencies = [
  "aws-sdk-cognitoidentity",
  "aws-sdk-ssooidc",
  "aws-smithy-async",
+ "aws-smithy-mocks",
  "aws-smithy-runtime-api",
  "aws-smithy-types",
  "aws-types",

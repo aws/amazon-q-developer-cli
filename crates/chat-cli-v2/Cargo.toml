@@ -153,6 +153,7 @@ winreg.workspace = true
 
 [dev-dependencies]
 assert_cmd.workspace = true
+aws-smithy-mocks.workspace = true
 criterion.workspace = true
 mock-mcp-server = { path = "../mock-mcp-server" }
 mockito.workspace = true

@@ -22,19 +22,20 @@ use crate::database::{
 };
 use crate::telemetry::TelemetryStage;
 
-pub async fn get_cognito_credentials_send(
-    database: &mut Database,
-    telemetry_stage: &TelemetryStage,
-) -> Result<Credentials, CredentialsError> {
-    trace!("Creating new cognito credentials");
-
+fn create_cognito_client(telemetry_stage: &TelemetryStage) -> aws_sdk_cognitoidentity::Client {
     let conf = aws_sdk_cognitoidentity::Config::builder()
         .behavior_version(BehaviorVersion::v2026_01_12())
         .region(telemetry_stage.region.clone())
         .app_name(app_name())
         .build();
-    let client = aws_sdk_cognitoidentity::Client::from_conf(conf);
+    aws_sdk_cognitoidentity::Client::from_conf(conf)
+}
 
+async fn send_cognito_request(
+    client: &aws_sdk_cognitoidentity::Client,
+    database: &mut Database,
+    telemetry_stage: &TelemetryStage,
+) -> Result<Credentials, CredentialsError> {
     let identity_id = client
         .get_id()
         .identity_pool_id(telemetry_stage.cognito_pool_id)
@@ -72,6 +73,15 @@ pub async fn get_cognito_credentials_send(
         credentials.expiration.and_then(|dt| dt.try_into().ok()),
         "",
     ))
+}
+
+pub async fn get_cognito_credentials_send(
+    database: &mut Database,
+    telemetry_stage: &TelemetryStage,
+) -> Result<Credentials, CredentialsError> {
+    trace!("Creating new cognito credentials");
+    let client = create_cognito_client(telemetry_stage);
+    send_cognito_request(&client, database, telemetry_stage).await
 }
 
 pub async fn get_cognito_credentials(
@@ -164,12 +174,48 @@ fn is_expired(expiration: Option<&String>) -> bool {
 
 #[cfg(test)]
 mod test {
+    use aws_sdk_cognitoidentity::operation::get_credentials_for_identity::GetCredentialsForIdentityOutput;
+    use aws_sdk_cognitoidentity::operation::get_id::GetIdOutput;
+    use aws_sdk_cognitoidentity::types::Credentials as CognitoCredentials;
+    use aws_smithy_mocks::{
+        RuleMode,
+        mock,
+        mock_client,
+    };
+
     use super::*;
 
     #[tokio::test]
     async fn pools() {
+        let get_id_rule = mock!(aws_sdk_cognitoidentity::Client::get_id)
+            .sequence()
+            .output(|| GetIdOutput::builder().identity_id("us-east-1:test-identity-id").build())
+            .times(2)
+            .build();
+
+        let get_creds_rule = mock!(aws_sdk_cognitoidentity::Client::get_credentials_for_identity)
+            .sequence()
+            .output(|| {
+                GetCredentialsForIdentityOutput::builder()
+                    .credentials(
+                        CognitoCredentials::builder()
+                            .access_key_id("test_access_key")
+                            .secret_key("test_secret_key")
+                            .session_token("test_session_token")
+                            .build(),
+                    )
+                    .build()
+            })
+            .times(2)
+            .build();
+
+        let client = mock_client!(aws_sdk_cognitoidentity, RuleMode::MatchAny, [
+            &get_id_rule,
+            &get_creds_rule
+        ]);
+
         for telemetry_stage in [TelemetryStage::BETA, TelemetryStage::EXTERNAL_PROD] {
-            get_cognito_credentials_send(&mut Database::new().await.unwrap(), &telemetry_stage)
+            send_cognito_request(&client, &mut Database::new().await.unwrap(), &telemetry_stage)
                 .await
                 .unwrap();
         }
