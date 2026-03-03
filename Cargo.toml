@@ -143,7 +143,7 @@ shell-words = "1.1.1"
 shellexpand = "3.0.0"
 shlex = "1.3.0"
 similar = "2.7.0"
-skim = { version = "0.16.2" }
+skim = { version = "0.18.0" }
 spinners = "4.1.0"
 strip-ansi-escapes = "0.2.1"
 strum = { version = "0.27.1", features = ["derive"] }
