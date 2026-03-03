@@ -1002,36 +1002,49 @@ impl AcpSession {
                 if let Some(route) = slash_router::parse(&request.prompt) {
                     match route {
                         slash_router::SlashRoute::Action(command) => {
-                            self.pending_prompt_response = Some(tokio::sync::Mutex::new(request_cx));
+                            let is_agent_swap =
+                                matches!(&command, TuiCommand::Agent(args) if args.agent_name.is_some());
+                            let ctx = self.command_context();
+                            let result = super::commands::execute(command, &ctx).await;
 
-                            // Clone needed data for the spawned task
-                            let api_client = self.api_client.clone();
-                            let rts_state = self.rts_state.clone();
-                            let agent = self.agent.clone();
-                            let session_tx = self.session_tx.clone();
-                            let available_agents = self.available_agents.clone();
-                            let agent_configs = self.agent_configs.clone();
-                            let local_mcp_path = self.local_mcp_path.clone();
-                            let global_mcp_path = self.global_mcp_path.clone();
-                            let session_id = self.session_id_str.clone();
-                            let current_agent_name = self.current_agent_name.clone();
+                            // Mirror ExecuteCommand: update current_agent_name on successful swap
+                            if is_agent_swap
+                                && result.success
+                                && let Some(data) = &result.data
+                                && let Some(name) =
+                                    data.get("agent").and_then(|a| a.get("name")).and_then(|n| n.as_str())
+                            {
+                                self.previous_agent_name =
+                                    Some(std::mem::replace(&mut self.current_agent_name, name.to_string()));
 
-                            tokio::spawn(async move {
-                                let ctx = super::commands::CommandContext {
-                                    api_client: &api_client,
-                                    rts_state: &rts_state,
-                                    agent: &agent,
-                                    session_tx: &session_tx,
-                                    available_agents: &available_agents,
-                                    agent_configs: &agent_configs,
-                                    local_mcp_path: local_mcp_path.as_ref(),
-                                    global_mcp_path: global_mcp_path.as_ref(),
-                                    session_id: &session_id,
-                                    current_agent_name: &current_agent_name,
-                                };
-                                let _result = super::commands::execute(command, &ctx).await;
-                                // Response sent via unified egress
-                            });
+                                // Notify TUI so it updates the displayed agent name
+                                let _ = self.send_ext_notification(
+                                    super::extensions::methods::AGENT_SWITCHED,
+                                    super::extensions::AgentSwitchedNotification {
+                                        session_id: self.session_id.clone(),
+                                        agent_name: self.current_agent_name.clone(),
+                                        previous_agent_name: self.previous_agent_name.clone(),
+                                    },
+                                );
+
+                                if let Err(e) = self.advertise_commands_and_prompts().await {
+                                    warn!("Failed to advertise commands after slash agent swap: {}", e);
+                                }
+                            }
+
+                            // Send result message as a text chunk so the TUI displays it
+                            if !result.message.is_empty() {
+                                let _ = self.send_session_notification(SessionUpdate::AgentMessageChunk(
+                                    SacpContentChunk::new(ContentBlock::Text(TextContent::new(result.message))),
+                                ));
+                            }
+
+                            // Respond directly — slash commands don't go through the agent loop
+                            // so EndTurn never fires. Commands that also call send_prompt (e.g.
+                            // /plan) will have their agent turn run in the background independently.
+                            if let Err(e) = request_cx.respond(PromptResponse::new(StopReason::EndTurn)) {
+                                error!("Failed to respond to slash command: {e}");
+                            }
                         },
                         slash_router::SlashRoute::Prompt { name, args } => {
                             self.pending_prompt_response = Some(tokio::sync::Mutex::new(request_cx));
@@ -1165,12 +1178,17 @@ impl AcpSession {
                     && name != self.current_agent_name
                 {
                     self.previous_agent_name = Some(std::mem::replace(&mut self.current_agent_name, name.to_string()));
+                    let _ = self.send_ext_notification(
+                        super::extensions::methods::AGENT_SWITCHED,
+                        super::extensions::AgentSwitchedNotification {
+                            session_id: self.session_id.clone(),
+                            agent_name: self.current_agent_name.clone(),
+                            previous_agent_name: self.previous_agent_name.clone(),
+                        },
+                    );
                 }
 
                 let _ = respond_to.send(result);
-                // TODO: This is a workaround. Ideally the agent swap flow should
-                // emit an event that triggers re-advertisement through the normal
-                // MCP event pipeline instead of being special-cased here.
                 if is_agent_swap && let Err(e) = self.advertise_commands_and_prompts().await {
                     warn!("Failed to advertise commands after agent swap: {}", e);
                 }
