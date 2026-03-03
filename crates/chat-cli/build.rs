@@ -389,13 +389,37 @@ fn download_feed_json() {
 
 /// Writes bun and TUI assets to OUT_DIR for embedding via include_bytes!.
 /// If env vars are not set, writes empty files so the build always succeeds.
+///
+/// On macOS, per-arch bun binaries are provided via BUN_EXECUTABLE_PATH_X86_64 and
+/// BUN_EXECUTABLE_PATH_AARCH64. CARGO_CFG_TARGET_ARCH selects the correct one since
+/// build scripts run once per target. This avoids lipo-ing bun into a universal binary
+/// which would invalidate its code signature and require re-signing.
 fn embed_bun_and_tui() {
     let out_dir = std::env::var("OUT_DIR").expect("OUT_DIR not set");
 
     let bun_dest = std::path::Path::new(&out_dir).join("bun_embedded");
     let tui_dest = std::path::Path::new(&out_dir).join("tui_embedded.js");
 
-    if let Ok(path) = std::env::var("BUN_EXECUTABLE_PATH") {
+    // Per-arch bun paths (macOS): select based on CARGO_CFG_TARGET_ARCH
+    let bun_path = if std::env::var("BUN_EXECUTABLE_PATH_X86_64").is_ok()
+        || std::env::var("BUN_EXECUTABLE_PATH_AARCH64").is_ok()
+    {
+        let arch = std::env::var("CARGO_CFG_TARGET_ARCH").expect("CARGO_CFG_TARGET_ARCH not set");
+        let (path_var, sha_var) = match arch.as_str() {
+            "x86_64" => ("BUN_EXECUTABLE_PATH_X86_64", "BUN_RUNTIME_SHA256_X86_64"),
+            "aarch64" => ("BUN_EXECUTABLE_PATH_AARCH64", "BUN_RUNTIME_SHA256_AARCH64"),
+            other => panic!("Unsupported target arch for per-arch bun: {other}"),
+        };
+        // Re-export the arch-specific SHA as BUN_RUNTIME_SHA256 for option_env! in embedded_tui.rs
+        if let Ok(sha) = std::env::var(sha_var) {
+            println!("cargo:rustc-env=BUN_RUNTIME_SHA256={sha}");
+        }
+        std::env::var(path_var).ok()
+    } else {
+        std::env::var("BUN_EXECUTABLE_PATH").ok()
+    };
+
+    if let Some(path) = bun_path {
         println!("cargo:rerun-if-changed={path}");
         std::fs::copy(&path, &bun_dest).expect("Failed to copy bun executable to OUT_DIR");
     } else {

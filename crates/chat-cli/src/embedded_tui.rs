@@ -5,7 +5,10 @@ use std::path::{
 use std::process::ExitCode;
 use std::time::Instant;
 
-use eyre::Result;
+use eyre::{
+    Context as _,
+    Result,
+};
 use tracing::{
     debug,
     info,
@@ -165,10 +168,20 @@ async fn extract_asset_if_needed(
         if !os.fs.exists(asset_path) {
             debug!(?asset_path, "path does not exist, extracting");
             true
+        } else if !os.fs.exists(asset_sha_path) {
+            debug!(?asset_sha_path, "sha file does not exist, extracting");
+            true
         } else {
-            let existing_sha = os.fs.read(asset_sha_path).await?;
+            let existing_sha = os
+                .fs
+                .read(asset_sha_path)
+                .await
+                .with_context(|| format!("failed to read sha file: {}", asset_sha_path.display()))?;
             if existing_sha != embedded_asset_sha {
-                debug!("existing hash is different from embedded hash, extracting");
+                debug!(
+                    ?asset_sha_path,
+                    "existing hash is different from embedded hash, extracting"
+                );
                 true
             } else {
                 false

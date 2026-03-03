@@ -3,15 +3,18 @@ from dataclasses import dataclass
 import hashlib
 import json
 import pathlib
+import platform
 from functools import cache
 import os
+import requests
 import shutil
 import time
+import zipfile
 from typing import Any, Mapping, Sequence, List, Optional
 from const import APPLE_TEAM_ID, CHAT_BINARY_NAME, CHAT_PACKAGE_NAME
+from const_v2 import BUN_VERSION
 from util import debug, info, isDarwin, isLinux, run_cmd, run_cmd_output, warn
 from rust import cargo_cmd_name, rust_env, rust_targets, build_hash, build_datetime
-from build_v2 import download_bun, build_tui
 from importlib import import_module
 
 Args = Sequence[str | os.PathLike]
@@ -75,11 +78,104 @@ def calculate_sha256(file_path: pathlib.Path) -> str:
     return sha256_hash.hexdigest()
 
 
+@dataclass
+class BunPaths:
+    """Bun executable paths keyed by architecture. On macOS both are set, on Linux only one."""
+    x86_64: Optional[pathlib.Path] = None
+    aarch64: Optional[pathlib.Path] = None
+
+
+def download_bun() -> BunPaths:
+    """Download bun executables for embedding. On macOS, returns per-arch paths.
+    On Linux, returns a single path for the native arch."""
+    system = platform.system().lower()
+    machine = platform.machine().lower()
+
+    downloads: list[tuple[str, str]] = []  # (url, filename)
+    match system:
+        case "darwin":
+            for arch in ["x64", "aarch64"]:
+                fname = f"bun-{system}-{arch}.zip"
+                downloads.append((f"https://github.com/oven-sh/bun/releases/download/bun-v{BUN_VERSION}/{fname}", fname))
+        case "linux":
+            arch = "x64" if machine in ["x86_64", "amd64"] else "aarch64" if machine in ["aarch64", "arm64"] else None
+            if not arch:
+                raise ValueError(f"Unsupported architecture: {machine}")
+            fname = f"bun-{system}-{arch}.zip"
+            downloads.append((f"https://github.com/oven-sh/bun/releases/download/bun-v{BUN_VERSION}/{fname}", fname))
+        case _:
+            raise ValueError(f"Unsupported system: {system}")
+
+    bun_dir = BUILD_DIR / "bun"
+    shutil.rmtree(bun_dir, ignore_errors=True)
+    bun_dir.mkdir(exist_ok=True)
+
+    result = BunPaths()
+
+    for url, fname in downloads:
+        zip_path = bun_dir / fname
+        info(f"Downloading Bun from {url}")
+        response = requests.get(url, stream=True)
+        response.raise_for_status()
+        with open(zip_path, "wb") as f:
+            for chunk in response.iter_content(chunk_size=8192):
+                f.write(chunk)
+
+        with zipfile.ZipFile(zip_path, "r") as zip_ref:
+            zip_ref.extractall(bun_dir)
+
+        extract_dir = fname.replace(".zip", "")
+        for root, _, files in os.walk(bun_dir / extract_dir):
+            if "bun" in files:
+                bun_exe = pathlib.Path(root) / "bun"
+                os.chmod(bun_exe, 0o755)
+                if "x64" in extract_dir:
+                    result.x86_64 = bun_exe.absolute()
+                elif "aarch64" in extract_dir:
+                    result.aarch64 = bun_exe.absolute()
+                break
+
+    if not result.x86_64 and not result.aarch64:
+        raise FileNotFoundError("Bun executable not found in downloaded archive")
+
+    info(f"Downloaded bun: x86_64={result.x86_64}, aarch64={result.aarch64}")
+    return result
+
+
+def build_tui() -> pathlib.Path:
+    """Build the TypeScript TUI, returning an absolute path to the output JS file."""
+    tui_dir = pathlib.Path("packages/tui")
+    ink_dir = pathlib.Path("packages/ink")
+
+    info("Installing dependencies")
+    run_cmd(["bun", "install", "--frozen-lockfile"])
+
+    info("Building local ink package")
+    run_cmd(["bun", "run", "build"], cwd=ink_dir)
+
+    info("Building TUI")
+    run_cmd(["bun", "run", "build"], cwd=tui_dir)
+
+    tui_js_path = tui_dir / "dist" / "tui.js"
+    if not tui_js_path.exists():
+        raise FileNotFoundError(f"TUI build output not found at {tui_js_path}")
+
+    return tui_js_path.absolute()
+
+
+def _resolve_bun_path(path: pathlib.Path) -> str:
+    """Resolve bun path for the build environment, handling cross-compilation."""
+    if cargo_cmd_name() == "cross":
+        rel_path = path.relative_to(pathlib.Path.cwd())
+        return f"/project/{rel_path}"
+    return str(path.absolute())
+
+
 def build_chat_bin(
     release: bool,
     output_name: str | None = None,
     targets: Sequence[str] = [],
-    bun_executable_path: pathlib.Path | None = None,
+    bun_paths: BunPaths | None = None,
     tui_js_path: pathlib.Path | None = None,
 ):
     package = CHAT_PACKAGE_NAME
@@ -100,17 +196,13 @@ def build_chat_bin(
         **rust_env(release=release),
     }
 
-    if bun_executable_path:
-        # For cross builds, use /project prefix since that's where the workspace is mounted in the container
-        if cargo_cmd_name() == "cross":
-            rel_path = bun_executable_path.relative_to(pathlib.Path.cwd())
-            bun_path_str = f"/project/{rel_path}"
-        else:
-            bun_path_str = str(bun_executable_path.absolute())
-        build_env["BUN_EXECUTABLE_PATH"] = bun_path_str
-        bun_sha = calculate_sha256(bun_executable_path)
-        build_env["BUN_RUNTIME_SHA256"] = bun_sha
-        info(f"Embedding Bun executable: {bun_path_str} (SHA256: {bun_sha})")
+    if bun_paths:
+        for suffix, path in [("X86_64", bun_paths.x86_64), ("AARCH64", bun_paths.aarch64)]:
+            if path:
+                path_str = _resolve_bun_path(path)
+                build_env[f"BUN_EXECUTABLE_PATH_{suffix}"] = path_str
+                build_env[f"BUN_RUNTIME_SHA256_{suffix}"] = calculate_sha256(path)
+                info(f"Embedding Bun {suffix}: {path_str} (SHA256: {build_env[f'BUN_RUNTIME_SHA256_{suffix}']})")
 
     if tui_js_path:
         # For cross builds, use /project prefix since that's where the workspace is mounted in the container
@@ -124,7 +216,7 @@ def build_chat_bin(
         build_env["TUI_JS_SHA256"] = tui_sha
         info(f"Embedding TUI JS: {tui_path_str} (SHA256: {tui_sha})")
 
-    if bun_executable_path or tui_js_path:
+    if bun_paths or tui_js_path:
         build_env["DISABLE_V2_BUN"] = "true"
 
     run_cmd(args, env=build_env)
@@ -598,14 +690,14 @@ def build(
 ):
     BUILD_DIR.mkdir(exist_ok=True)
 
-    bun_executable_path = None
+    bun_paths = None
     tui_js_path = None
 
     if include_v2:
         info("Building TUI (--include-v2)")
         tui_js_path = build_tui()
         info("Downloading Bun runtime (--include-v2)")
-        bun_executable_path = download_bun()
+        bun_paths = download_bun()
 
     disable_signing = os.environ.get("DISABLE_SIGNING")
 
@@ -659,7 +751,7 @@ def build(
         release=release,
         output_name=CHAT_BINARY_NAME,
         targets=targets,
-        bun_executable_path=bun_executable_path,
+        bun_paths=bun_paths,
         tui_js_path=tui_js_path,
     )
 
