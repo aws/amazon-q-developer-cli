@@ -415,9 +415,15 @@ export const InlineLayout: React.FC = () => {
         {contextUsagePercent != null && (
           <ProgressChip
             value={contextUsagePercent}
-            barColor="success"
-            label="context remaining"
-            showRemaining={true}
+            barColor={
+              contextUsagePercent >= 80
+                ? 'error'
+                : contextUsagePercent >= 60
+                  ? 'warning'
+                  : 'success'
+            }
+            label="context used"
+            showRemaining={false}
           />
         )}
         <Chip value={shortenPath(process.cwd())} color={ChipColor.BRAND} />

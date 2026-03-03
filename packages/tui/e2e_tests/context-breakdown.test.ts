@@ -39,7 +39,7 @@ describe('Context Breakdown', () => {
     await testCase.sleepMs(1000);
 
     // Verify context panel appears with breakdown
-    await testCase.waitForText('context left', 10000);
+    await testCase.waitForText('context used', 10000);
     
     // Verify breakdown categories are shown
     await testCase.waitForText('Agent files', 5000);
@@ -74,7 +74,7 @@ describe('Context Breakdown', () => {
     await testCase.sendKeys('\r');
     await testCase.sleepMs(1000);
 
-    await testCase.waitForText('context left', 10000);
+    await testCase.waitForText('context used', 10000);
 
     // Verify panel is open
     let store = await testCase.getStore();

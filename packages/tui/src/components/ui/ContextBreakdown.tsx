@@ -117,7 +117,6 @@ export function ContextBreakdown({
   const dim = getColor('secondary');
 
   const displayPercent = percent ?? 0;
-  const contextLeft = 100 - displayPercent;
   const barWidth = Math.max(20, termWidth - 24);
   const [expanded, setExpanded] = React.useState(false);
 
@@ -180,7 +179,7 @@ export function ContextBreakdown({
           breakdown={breakdown}
           width={barWidth}
         />
-        <Text> {primary(`${contextLeft.toFixed(0)}% context left`)}</Text>
+        <Text> {primary(`${displayPercent.toFixed(0)}% context used`)}</Text>
       </Box>
 
       <Box marginBottom={0}>{categories}</Box>

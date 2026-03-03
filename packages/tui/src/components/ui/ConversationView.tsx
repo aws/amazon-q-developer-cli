@@ -429,8 +429,12 @@ export const ConversationView = React.memo(function ConversationView() {
     } else {
       // Partially flushed — append the tail (messages not yet in static)
       const agentName =
-        'agentName' in turn.userMessage ? turn.userMessage.agentName : undefined;
-      const agentBarColor = agentName ? getAgentColor(agentName).hex : undefined;
+        'agentName' in turn.userMessage
+          ? turn.userMessage.agentName
+          : undefined;
+      const agentBarColor = agentName
+        ? getAgentColor(agentName).hex
+        : undefined;
       const allMsgs = [turn.userMessage, ...turn.aiMessages];
       const tailMsgs = allMsgs.filter((msg) => !flushedIds.has(msg.id));
       tailMsgs.forEach((msg, i) => {
