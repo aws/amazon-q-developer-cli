@@ -25,7 +25,7 @@ anyhow = "1.0"
 arboard = { version = "3.6.1", default-features = false, features = ["image-data"] }
 assert_cmd = "2.0"
 async-stream = "0.3"
-ast-grep-core = "0.40.2"
+ast-grep-core = "0.40.5"
 ast-grep-language = { version = "0.40.2", default-features = false, features = [
     "tree-sitter-bash",
     "tree-sitter-c",
