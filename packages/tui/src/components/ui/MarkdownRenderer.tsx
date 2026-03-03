@@ -33,7 +33,7 @@ export const MarkdownRenderer = React.memo(function MarkdownRenderer({
   const highlightCode = useSyntaxHighlight();
   const { getColor } = useTheme();
   const linkColor = getColor('link');
-  const inlineCodeColor = getColor('syntax.string');
+  const inlineCodeColor = getColor('highlight');
   const secondaryColor = getColor('secondary');
 
   const styleSegment = (seg: MarkdownSegment): string => {

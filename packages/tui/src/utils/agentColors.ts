@@ -1,4 +1,3 @@
-import { kiroDark } from '../theme/kiroDark.js';
 import { getTerminalChalkColor } from './colorUtils.js';
 
 export const DEFAULT_AGENT_NAME = 'kiro_default';
@@ -39,13 +38,16 @@ function hashString(str: string): number {
 /**
  * Returns a chalk color function for the given agent name.
  * Uses brand color for default agent, otherwise hashes to a color from the palette.
+ *
+ * @param name - The agent name
+ * @param getColor - Theme color getter function (from useTheme hook)
  */
 export function getAgentColor(
-  name: string
+  name: string,
+  getColor: (colorPath: string) => any
 ): ReturnType<typeof getTerminalChalkColor> {
   if (name === DEFAULT_AGENT_NAME) {
-    const brand = kiroDark.colors.brand;
-    return getTerminalChalkColor(brand.truecolor, brand.color256);
+    return getColor('brand');
   }
   const color = AGENT_COLORS[hashString(name) % AGENT_COLORS.length]!;
   return getTerminalChalkColor(color.truecolor, color.color256);

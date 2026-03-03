@@ -49,6 +49,7 @@ import { getGitBranch } from '../../utils/git';
 import { shortenPath } from '../../utils/string';
 import { getAgentColor } from '../../utils/agentColors.js';
 import { ApprovalOptionId } from '../../types/agent-events.js';
+import { useTheme } from '../../hooks/useThemeContext.js';
 
 const TRIGGER_RULES = [
   { key: '/', type: 'start' as const },
@@ -101,6 +102,7 @@ function triggerEasterEgg() {
 }
 
 export const InlineLayout: React.FC = () => {
+  const { getColor } = useTheme();
   // Grouped selectors using useShallow - prevents re-render cascades
   const { transientAlert, loadingMessage, agentError, agentErrorGuidance } =
     useNotificationState();
@@ -407,7 +409,7 @@ export const InlineLayout: React.FC = () => {
             )}
             <Chip
               value={currentAgent.name}
-              hexColor={getAgentColor(currentAgent.name).hex}
+              hexColor={getAgentColor(currentAgent.name, getColor).hex}
               prefix="agent:"
             />
           </>

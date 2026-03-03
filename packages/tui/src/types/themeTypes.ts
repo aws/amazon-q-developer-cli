@@ -54,6 +54,7 @@ export interface Theme {
     error: TerminalColor;
     brand: TerminalColor;
     brandMuted: TerminalColor;
+    highlight: TerminalColor;
     components: {
       snackbar: {
         background: TerminalColor;

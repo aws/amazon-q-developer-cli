@@ -14,6 +14,7 @@ export const kiroDark: Theme = {
     error: { named: 'red' },
     brand: { truecolor: '#C19AFF', color256: 141 },
     brandMuted: { truecolor: '#8700FF', color256: 93 },
+    highlight: { truecolor: '#0087FF', color256: 33 },    
     components: {
       snackbar: {
         background: { truecolor: '#552B99', color256: 57 }, // Always dark purple (same as dark mode)

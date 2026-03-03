@@ -18,6 +18,7 @@ import { Text } from '../ui/text/Text';
 import { WelcomeScreen } from '../welcome-screen/index.js';
 import { getAgentColor } from '../../utils/agentColors.js';
 import { computeFlushCount } from '../../utils/turn-flush-machine.js';
+import { useTheme } from '../../hooks/useThemeContext.js';
 
 interface ConversationTurn {
   userMessage: StoreMessageType;
@@ -190,9 +191,10 @@ const StaticTurnCard = React.memo(function StaticTurnCard({
 }: {
   turn: ConversationTurn;
 }) {
+  const { getColor } = useTheme();
   const agentName =
     'agentName' in turn.userMessage ? turn.userMessage.agentName : undefined;
-  const agentBarColor = agentName ? getAgentColor(agentName).hex : undefined;
+  const agentBarColor = agentName ? getAgentColor(agentName, getColor).hex : undefined;
 
   if (!turn.userMessage.content) return null;
 
@@ -317,6 +319,7 @@ type StaticItem =
 
 export const ConversationView = React.memo(function ConversationView() {
   const { messages, isProcessing } = useConversationState();
+  const { getColor } = useTheme();
 
   const hadMessagesRef = React.useRef(false);
   const welcomeInStaticRef = React.useRef(false);
@@ -368,7 +371,7 @@ export const ConversationView = React.memo(function ConversationView() {
       ? activeTurn.userMessage.agentName
       : undefined;
   const activeAgentBarColor = activeAgentName
-    ? getAgentColor(activeAgentName).hex
+    ? getAgentColor(activeAgentName, getColor).hex
     : undefined;
 
   // --- Compute what to flush for the active turn via state machine ---
