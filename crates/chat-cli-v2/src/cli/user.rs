@@ -28,12 +28,17 @@ use tracing::{
 
 use super::OutputFormat;
 use crate::api_client::list_available_profiles;
+use crate::api_client::profile::list_all_available_profiles;
 use crate::auth::builder_id::{
     BuilderIdToken,
     PollCreateToken,
     TokenType,
     poll_create_token,
     start_device_authorization,
+};
+use crate::auth::external_idp::{
+    ExternalIdpToken,
+    is_external_idp_logged_in,
 };
 use crate::auth::pkce::start_pkce_authorization;
 use crate::auth::portal::{
@@ -123,6 +128,11 @@ impl LoginArgs {
                     info!("Completing internal authentication");
                     complete_sso_auth(os, issuer_url, idc_region, true).await?;
                 },
+                PortalResult::ExternalIdp { metadata, portal_port } => {
+                    pre_portal_spinner.stop_with_message("".into());
+                    info!(issuer_url = %metadata.issuer_url, "Completing External IdP authentication");
+                    complete_external_idp_auth(os, metadata, Some(portal_port)).await?;
+                },
             }
         } else {
             // REMOTE ENVIRONMENT: Use existing device flow for BuilderID/IdC only
@@ -187,7 +197,7 @@ impl LoginArgs {
                     try_device_authorization(os, start_url.clone(), region.clone()).await?;
 
                     if login_method == AuthMethod::IdentityCenter {
-                        select_profile_interactive(os, true).await?;
+                        select_profile_interactive(os, true, Some(region.as_ref().unwrap())).await?;
                     }
                 },
                 AuthMethod::Social(_) => unreachable!(),
@@ -222,7 +232,6 @@ async fn complete_sso_auth(os: &mut Os, issuer_url: String, idc_region: String, 
                     exit(1);
                 },
             }
-            os.telemetry.send_user_logged_in().ok();
             spinner.stop_with_message("Logged in".into());
         },
         // If we are unable to open the link with the browser, then fallback to
@@ -236,15 +245,52 @@ async fn complete_sso_auth(os: &mut Os, issuer_url: String, idc_region: String, 
     }
 
     if requires_profile {
-        select_profile_interactive(os, true).await?;
+        select_profile_interactive(os, true, Some(&idc_region)).await?;
     }
 
+    // delay telemetry until we have refreshed the telemetry thread
+    os.telemetry.send_user_logged_in().ok();
+
+    Ok(())
+}
+
+/// Complete External IdP authentication after portal selection - CLI initiates OAuth flow with IdP
+async fn complete_external_idp_auth(
+    os: &mut Os,
+    metadata: crate::auth::external_idp::ExternalIdpMetadata,
+    exclude_port: Option<u16>,
+) -> Result<()> {
+    let mut spinner = Spinner::new(vec![
+        SpinnerComponent::Spinner,
+        SpinnerComponent::Text(" Authenticating with External IdP...".into()),
+    ]);
+
+    let ctrl_c_stream = ctrl_c();
+    tokio::select! {
+        res = crate::auth::external_idp::start_external_idp_auth(&mut os.database, metadata, exclude_port) => {
+            match res {
+                Ok(()) => spinner.stop_with_message("Logged in with External IdP".into()),
+                Err(err) => { spinner.stop(); return Err(err.into()); }
+            }
+        },
+        Ok(_) = ctrl_c_stream => {
+            spinner.stop();
+            #[allow(clippy::exit)]
+            exit(1);
+        },
+    }
+
+    // Select profile
+    select_profile_interactive(os, true, None).await?;
+
+    os.telemetry.send_user_logged_in().ok();
     Ok(())
 }
 
 pub async fn logout(os: &mut Os) -> Result<ExitCode> {
     let _ = crate::auth::logout(&mut os.database).await;
     let _ = crate::auth::social::logout_social(&os.database).await;
+    let _ = crate::auth::external_idp::logout_external_idp(&os.database).await;
 
     eprintln!("You are now logged out");
     eprintln!(
@@ -259,8 +305,12 @@ pub async fn is_logged_in(db: &mut Database) -> bool {
     if crate::auth::is_builder_id_logged_in(db).await {
         return true;
     }
-    crate::auth::social::is_social_logged_in(&*db).await
+    if crate::auth::social::is_social_logged_in(&*db).await {
+        return true;
+    }
+    is_external_idp_logged_in(&*db).await
 }
+
 #[derive(Args, Debug, PartialEq, Eq, Clone, Default)]
 pub struct WhoamiArgs {
     /// Output format to use
@@ -318,6 +368,19 @@ impl WhoamiArgs {
             return Ok(ExitCode::SUCCESS);
         }
 
+        // Check for External IdP token
+        if let Ok(Some(_external_idp_token)) = ExternalIdpToken::load(&os.database).await {
+            self.format.print(
+                || "Logged in with External IdP".to_string(),
+                || {
+                    json!({
+                        "accountType": "ExternalIdP",
+                    })
+                },
+            );
+            return Ok(ExitCode::SUCCESS);
+        }
+
         self.format.print(|| "Not logged in", || json!({ "account": null }));
         Ok(ExitCode::FAILURE)
     }
@@ -332,15 +395,26 @@ pub enum LicenseType {
 }
 
 pub async fn profile(os: &mut Os) -> Result<ExitCode> {
+    // Check for IAM Identity Center
     if let Ok(Some(token)) = BuilderIdToken::load(&os.database, Some(&os.telemetry)).await
-        && matches!(token.token_type(), TokenType::BuilderId)
+        && matches!(token.token_type(), TokenType::IamIdentityCenter)
     {
-        bail!("This command is only available for Pro users");
+        if let Ok(Some(profile)) = os.database.get_auth_profile() {
+            let region = profile.arn.split(':').nth(3).unwrap_or_default().to_owned();
+            select_profile_interactive(os, false, Some(&region)).await?;
+        } else {
+            bail!("Failed to load profile from the database");
+        }
+        return Ok(ExitCode::SUCCESS);
     }
 
-    select_profile_interactive(os, false).await?;
+    // Check for External IdP
+    if is_external_idp_logged_in(&os.database).await {
+        select_profile_interactive(os, false, None).await?;
+        return Ok(ExitCode::SUCCESS);
+    }
 
-    Ok(ExitCode::SUCCESS)
+    bail!("This command is only available for Pro users");
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -425,15 +499,22 @@ async fn try_device_authorization(os: &mut Os, start_url: Option<String>, region
     Ok(())
 }
 
-async fn select_profile_interactive(os: &mut Os, whoami: bool) -> Result<()> {
+async fn select_profile_interactive(os: &mut Os, whoami: bool, region: Option<&str>) -> Result<()> {
     let mut spinner = Spinner::new(vec![
         SpinnerComponent::Spinner,
         SpinnerComponent::Text(" Fetching profiles...".into()),
     ]);
-    let profiles = list_available_profiles(&os.env, &os.fs, &mut os.database).await?;
+    let profiles = match region {
+        Some(r) => list_available_profiles(&os.env, &os.fs, &mut os.database, r).await?,
+        None => list_all_available_profiles(&os.env, &os.fs, &mut os.database).await?,
+    };
     if profiles.is_empty() {
         spinner.stop_with_message(String::new());
-        error!("No profiles available for IdC user");
+        if region.is_some() {
+            error!("No profiles available for IdC user");
+        } else {
+            error!("No profiles available for Idp user");
+        }
         bail!("No profiles available. Please contact your administrator.");
     }
 
@@ -441,6 +522,9 @@ async fn select_profile_interactive(os: &mut Os, whoami: bool) -> Result<()> {
     let total_profiles = profiles.len() as i64;
 
     if whoami && profiles.len() == 1 {
+        spinner.stop_with_message(String::new());
+        os.set_auth_profile(&profiles[0]).await?;
+
         if let Some(profile_region) = profiles[0].arn.split(':').nth(3) {
             os.telemetry
                 .send_profile_state(
@@ -451,9 +535,6 @@ async fn select_profile_interactive(os: &mut Os, whoami: bool) -> Result<()> {
                 )
                 .ok();
         }
-
-        spinner.stop_with_message(String::new());
-        os.database.set_auth_profile(&profiles[0])?;
         return Ok(());
     }
 
@@ -499,7 +580,7 @@ async fn select_profile_interactive(os: &mut Os, whoami: bool) -> Result<()> {
         );
     }
 
-    os.database.set_auth_profile(chosen)?;
+    os.set_auth_profile(chosen).await?;
 
     if let Some(profile_region) = chosen.arn.split(':').nth(3) {
         let intent = if whoami {

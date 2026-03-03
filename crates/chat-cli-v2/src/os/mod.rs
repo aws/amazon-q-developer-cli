@@ -11,7 +11,11 @@ pub use fs::Fs;
 pub use sysinfo::SysInfo;
 
 use crate::api_client::ApiClient;
-use crate::database::Database;
+use crate::auth::builder_id::BuilderIdToken;
+use crate::database::{
+    AuthProfile,
+    Database,
+};
 use crate::telemetry::TelemetryThread;
 
 const WINDOWS_USER_HOME: &str = "C:\\Users\\testuser";
@@ -46,7 +50,9 @@ impl Os {
         let fs = Fs::new();
         let mut database = Database::new().await?;
         let client = ApiClient::new(&env, &fs, &mut database, None).await?;
-        let telemetry = TelemetryThread::new(&env, &fs, &mut database).await?;
+        let token = BuilderIdToken::load(&database, None).await?;
+        let region = token.as_ref().and_then(|t| t.region.as_deref());
+        let telemetry = TelemetryThread::new(&env, &fs, &mut database, region).await?;
 
         Ok(Self {
             env,
@@ -57,11 +63,36 @@ impl Os {
             telemetry,
         })
     }
+
+    /// This method is for "refreshing" or re-initializing resources (ApiClient and TelemetryThread)
+    /// that can be initialized before the application is aware of the region that these resources
+    /// should be configured with, namely before login occurs.
+    /// Ideally these resources should be refactored out of the Os struct
+    pub async fn set_auth_profile(&mut self, profile: &AuthProfile) -> Result<()> {
+        self.database.set_auth_profile(profile)?;
+
+        // reconstruct api client
+        self.client
+            .refresh_auth_profile(&self.env, &self.fs, &mut self.database)
+            .await?;
+
+        let region = profile.arn.split(':').nth(3);
+
+        // reconstruct telemetry thread and clients
+        let old_telemetry = std::mem::replace(
+            &mut self.telemetry,
+            TelemetryThread::new(&self.env, &self.fs, &mut self.database, region).await?,
+        );
+
+        old_telemetry.finish().await?;
+        Ok(())
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::database::AuthProfile;
 
     #[tokio::test]
     async fn test_context_builder_with_test_home() {
@@ -82,5 +113,19 @@ mod tests {
         }
 
         assert_eq!(os.env.get("hello").unwrap(), "world");
+    }
+
+    #[tokio::test]
+    async fn test_set_auth_profile() {
+        let mut os = Os::new().await.unwrap();
+
+        let profile = AuthProfile {
+            arn: "arn:aws-us-gov:codewhisperer:us-gov-east-1:123456789012:profile/C39QMYEDUAKW".to_string(),
+            profile_name: "test-gov-east-profile".to_string(),
+        };
+
+        os.set_auth_profile(&profile).await.unwrap();
+        assert_eq!(os.database.get_auth_profile().unwrap().unwrap(), profile);
+        assert_eq!(os.client.get_profile().unwrap(), profile);
     }
 }

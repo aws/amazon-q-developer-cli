@@ -26,18 +26,12 @@ use tracing::{
 
 use crate::auth::AuthError;
 use crate::auth::consts::SOCIAL_AUTH_SERVICE_ENDPOINT;
+pub use crate::auth::oauth_callback::CALLBACK_PORTS;
 use crate::database::{
     Database,
     Secret,
 };
 
-// NOTE: We use a fixed set of callback ports (not random) because:
-// - IdP/Cognito only accepts pre-registered redirect URIs.
-// - This list must match the Cognito allowlist
-// - Bind only on loopback (127.0.0.1); never expose externally.
-// - If all ports are in use, show a clear error.
-// IMPORTANT: Do not change without auth service coordination.
-pub const CALLBACK_PORTS: &[u16] = &[3128, 4649, 6588, 8008, 9091, 49153, 50153, 51153, 52153, 53153];
 const USER_AGENT: &str = "Kiro-CLI";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, clap::ValueEnum)]

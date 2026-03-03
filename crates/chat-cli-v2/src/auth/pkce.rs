@@ -19,8 +19,6 @@
 //! Once access/refresh tokens are received, there is no difference between PKCE
 //! and device code (as already implemented in [crate::builder_id]).
 
-use std::future::Future;
-use std::pin::Pin;
 use std::time::Duration;
 
 pub use aws_sdk_ssooidc::client::Client;
@@ -29,16 +27,6 @@ pub use aws_sdk_ssooidc::operation::register_client::RegisterClientOutput;
 pub use aws_types::region::Region;
 use base64::Engine;
 use base64::engine::general_purpose::URL_SAFE;
-use bytes::Bytes;
-use http_body_util::Full;
-use hyper::body::Incoming;
-use hyper::server::conn::http1;
-use hyper::service::Service;
-use hyper::{
-    Request,
-    Response,
-};
-use hyper_util::rt::TokioIo;
 use percent_encoding::{
     NON_ALPHANUMERIC,
     utf8_percent_encode,
@@ -52,6 +40,7 @@ use tracing::{
 
 use crate::auth::builder_id::*;
 use crate::auth::consts::*;
+use crate::auth::oauth_callback::wait_for_callback;
 use crate::auth::{
     AuthError,
     START_URL,
@@ -233,7 +222,7 @@ impl PkceRegistration {
     /// Only the first connection will be served.
     pub async fn finish<C: PkceClient>(self, client: &C, database: Option<&mut Database>) -> Result<(), AuthError> {
         let code = tokio::select! {
-            code = Self::recv_code(self.listener, self.state) => {
+            code = wait_for_callback(self.listener, self.state, self.timeout, 1) => {
                 code?
             },
             _ = tokio::time::sleep(self.timeout) => {
@@ -280,145 +269,6 @@ impl PkceRegistration {
         }
 
         Ok(())
-    }
-
-    async fn recv_code(listener: TcpListener, expected_state: String) -> Result<String, AuthError> {
-        let (code_tx, mut code_rx) = tokio::sync::mpsc::channel::<Result<(String, String), AuthError>>(1);
-        let (stream, _) = listener.accept().await?;
-        let stream = TokioIo::new(stream); // Wrapper to implement Hyper IO traits for Tokio types.
-        let host = listener.local_addr()?.to_string();
-        tokio::spawn(async move {
-            if let Err(err) = http1::Builder::new()
-                .serve_connection(stream, PkceHttpService {
-                    code_tx: std::sync::Arc::new(code_tx),
-                    host,
-                })
-                .await
-            {
-                error!(?err, "Error occurred serving the connection");
-            }
-        });
-        match code_rx.recv().await {
-            Some(Ok((code, state))) => {
-                debug!(code = "<redacted>", state, "Received code and state");
-                if state != expected_state {
-                    return Err(AuthError::OAuthStateMismatch {
-                        actual: state,
-                        expected: expected_state,
-                    });
-                }
-                // Give time for the user to be redirected to index.html.
-                tokio::time::sleep(Duration::from_millis(200)).await;
-                Ok(code)
-            },
-            Some(Err(err)) => {
-                // Give time for the user to be redirected to index.html.
-                tokio::time::sleep(Duration::from_millis(200)).await;
-                Err(err)
-            },
-            None => Err(AuthError::OAuthMissingCode),
-        }
-    }
-}
-
-type CodeSender = std::sync::Arc<tokio::sync::mpsc::Sender<Result<(String, String), AuthError>>>;
-type ServiceError = AuthError;
-type ServiceResponse = Response<Full<Bytes>>;
-type ServiceFuture = Pin<Box<dyn Future<Output = Result<ServiceResponse, ServiceError>> + Send>>;
-
-#[derive(Debug, Clone)]
-struct PkceHttpService {
-    /// [`tokio::sync::mpsc::Sender`] for a (code, state) pair.
-    code_tx: CodeSender,
-
-    /// The host being served - ie, the hostname and port.
-    /// Used for responding with redirects.
-    host: String,
-}
-
-impl PkceHttpService {
-    /// Handles the browser redirect to `"http://{host}/oauth/callback"` which contains either the
-    /// code and state query params, or an error query param. Redirects to "/index.html".
-    ///
-    /// The [`Request`] doesn't actually contain the host, hence the `host` argument.
-    async fn handle_oauth_callback(
-        code_tx: CodeSender,
-        host: String,
-        req: Request<Incoming>,
-    ) -> Result<ServiceResponse, AuthError> {
-        let query_params = req
-            .uri()
-            .query()
-            .map(|query| {
-                query
-                    .split('&')
-                    .filter_map(|kv| kv.split_once('='))
-                    .collect::<std::collections::HashMap<_, _>>()
-            })
-            .ok_or(AuthError::OAuthCustomError("query parameters are missing".into()))?;
-
-        // Error handling: if something goes wrong at the authorization endpoint, the
-        // client will be redirected to the redirect url with "error" and
-        // "error_description" query parameters.
-        if let Some(error) = query_params.get("error") {
-            let error_description = query_params.get("error_description").unwrap_or(&"");
-            let _ = code_tx
-                .send(Err(AuthError::OAuthCustomError(format!(
-                    "error occurred during authorization: {error:?}, {error_description:?}"
-                ))))
-                .await;
-            return Self::redirect_to_index(&host, &format!("?error={error}"));
-        } else {
-            let code = query_params.get("code");
-            let state = query_params.get("state");
-            if let (Some(code), Some(state)) = (code, state) {
-                let _ = code_tx.send(Ok(((*code).to_string(), (*state).to_string()))).await;
-            } else {
-                let _ = code_tx
-                    .send(Err(AuthError::OAuthCustomError(
-                        "missing code and/or state in the query parameters".into(),
-                    )))
-                    .await;
-                return Self::redirect_to_index(&host, "?error=missing%20required%20query%20parameters");
-            }
-        }
-
-        Self::redirect_to_index(&host, "")
-    }
-
-    fn redirect_to_index(host: &str, query_params: &str) -> Result<ServiceResponse, AuthError> {
-        Ok(Response::builder()
-            .status(302)
-            .header("Location", format!("http://{host}/index.html{query_params}"))
-            .body("".into())
-            .expect("is valid builder, should not panic"))
-    }
-}
-
-impl Service<Request<Incoming>> for PkceHttpService {
-    type Error = ServiceError;
-    type Future = ServiceFuture;
-    type Response = ServiceResponse;
-
-    fn call(&self, req: Request<Incoming>) -> Self::Future {
-        let code_tx: CodeSender = std::sync::Arc::clone(&self.code_tx);
-        let host = self.host.clone();
-        Box::pin(async move {
-            debug!(?req, "Handling connection");
-            match req.uri().path() {
-                "/oauth/callback" | "/oauth/callback/" => Self::handle_oauth_callback(code_tx, host, req).await,
-                "/index.html" => Ok(Response::builder()
-                    .status(200)
-                    .header("Content-Type", "text/html")
-                    .header("Connection", "close")
-                    .body(include_str!("./index.html").into())
-                    .expect("valid builder will not panic")),
-                _ => Ok(Response::builder()
-                    .status(404)
-                    .body("".into())
-                    .expect("valid builder will not panic")),
-            }
-        })
     }
 }
 

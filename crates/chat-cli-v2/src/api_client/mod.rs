@@ -8,6 +8,7 @@ pub mod opt_out;
 pub mod profile;
 mod retry_classifier;
 pub mod send_message_output;
+pub mod token_type_interceptor;
 
 use std::collections::{
     HashMap,
@@ -72,7 +73,9 @@ use crate::api_client::send_message_output::{
     record_request,
     record_send_error,
 };
+use crate::api_client::token_type_interceptor::TokenTypeInterceptor;
 use crate::auth::UnifiedBearerResolver;
+use crate::auth::external_idp::ExternalIdpToken;
 use crate::aws_common::{
     UserAgentOverrideInterceptor,
     app_name,
@@ -509,6 +512,12 @@ impl RealApiClient {
     ) -> Result<Self, ApiClientError> {
         let endpoint = endpoint.unwrap_or(Endpoint::configured_value(database));
 
+        // Check if using External IdP authentication
+        let is_external_idp = ExternalIdpToken::load(database)
+            .await
+            .map(|t| t.is_some())
+            .unwrap_or(false);
+
         let credentials = Credentials::new("xxx", "xxx", None, None, "xxx");
         let bearer_sdk_config = aws_config::defaults(behavior_version())
             .region(endpoint.region.clone())
@@ -523,6 +532,7 @@ impl RealApiClient {
                 .http_client(crate::aws_common::http_client::client())
                 .interceptor(OptOutInterceptor::new(database))
                 .interceptor(UserAgentOverrideInterceptor::new())
+                .interceptor(TokenTypeInterceptor::new(is_external_idp))
                 .bearer_token_resolver(UnifiedBearerResolver)
                 .app_name(app_name())
                 .endpoint_resolver(StaticCodewhispererEndpointResolver::new(endpoint.url().to_string()))
@@ -553,6 +563,7 @@ impl RealApiClient {
                 .interceptor(OptOutInterceptor::new(database))
                 .interceptor(UserAgentOverrideInterceptor::new())
                 .interceptor(DelayTrackingInterceptor::new())
+                .interceptor(TokenTypeInterceptor::new(is_external_idp))
                 .bearer_token_resolver(UnifiedBearerResolver)
                 .app_name(app_name())
                 .endpoint_resolver(StaticEndpointResolver::new(endpoint.url().to_string()))
@@ -955,6 +966,46 @@ impl RealApiClient {
 
         serde_json::from_str(&content_text).map_err(|e| ApiClientError::Other(format!("Failed to parse result: {e}")))
     }
+
+    /// Method to be used to reconstruct the client in the Os struct after auth changes.
+    /// In the case that a user logs in with a non-commercial account the client associated
+    /// with the Os struct will need to be reconstructed (as it is default initialized when
+    /// there are no valid credentials in the secret store) to allow for subsequent calls from said
+    /// client to succeed.
+    pub async fn refresh_auth_profile(
+        &mut self,
+        env: &Env,
+        fs: &Fs,
+        database: &mut Database,
+    ) -> Result<(), ApiClientError> {
+        let use_profile = !is_custom_endpoint(database);
+        if use_profile {
+            match database.get_auth_profile() {
+                Ok(profile) => {
+                    tracing::debug!("Refreshed auth profile: {:?}", profile);
+
+                    if profile.is_some() {
+                        let endpoint = Endpoint::configured_value(database);
+                        tracing::debug!("Recreating client with endpoint: {:?}", endpoint);
+
+                        let mut new_client = Self::new(env, fs, database, Some(endpoint)).await?;
+                        new_client.profile = profile.clone();
+                        *self = new_client;
+                    }
+                },
+                Err(err) => {
+                    error!("Failed to refresh auth profile: {err}");
+                },
+            }
+        } else {
+            debug!("Custom endpoint detected, skipping profile refresh");
+        }
+        Ok(())
+    }
+
+    pub fn get_profile(&self) -> Option<AuthProfile> {
+        self.profile.clone()
+    }
 }
 
 fn is_custom_endpoint(database: &Database) -> bool {
@@ -1147,6 +1198,26 @@ impl ApiClient {
         match &self.inner {
             ApiClientInner::Real(c) => c.invoke_mcp(tool_name, arguments).await,
             ApiClientInner::IpcMock(_) => Err(ApiClientError::Other("invoke_mcp not supported on IpcMock".into())),
+        }
+    }
+
+    /// Recreate the API client with the current auth profile's endpoint.
+    pub async fn refresh_auth_profile(
+        &mut self,
+        env: &Env,
+        fs: &Fs,
+        database: &mut Database,
+    ) -> Result<(), ApiClientError> {
+        match &mut self.inner {
+            ApiClientInner::Real(c) => c.refresh_auth_profile(env, fs, database).await,
+            ApiClientInner::IpcMock(_) => Ok(()),
+        }
+    }
+
+    pub fn get_profile(&self) -> Option<AuthProfile> {
+        match &self.inner {
+            ApiClientInner::Real(c) => c.get_profile(),
+            ApiClientInner::IpcMock(_) => None,
         }
     }
 }

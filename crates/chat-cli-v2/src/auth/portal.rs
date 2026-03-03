@@ -24,6 +24,7 @@ use tracing::{
 };
 
 use crate::auth::AuthError;
+use crate::auth::external_idp::ExternalIdpMetadata;
 use crate::auth::pkce::{
     generate_code_challenge,
     generate_code_verifier,
@@ -49,6 +50,11 @@ struct AuthPortalCallback {
     path: String,
     error: Option<String>,
     error_description: Option<String>,
+    // External IdP specific fields
+    client_id: Option<String>,
+    scopes: Option<String>,
+    login_hint: Option<String>,
+    audience: Option<String>,
 }
 
 pub enum PortalResult {
@@ -65,6 +71,11 @@ pub enum PortalResult {
     Internal {
         issuer_url: String,
         idc_region: String,
+    },
+    /// External Identity Provider (Enterprise SSO)
+    ExternalIdp {
+        metadata: ExternalIdpMetadata,
+        portal_port: u16,
     },
 }
 
@@ -182,6 +193,13 @@ async fn process_portal_callback(
                 idc_region: sso_region,
             })
         },
+        "external_idp" => {
+            let metadata = extract_external_idp_metadata(&callback)?;
+            Ok(PortalResult::ExternalIdp {
+                metadata,
+                portal_port: port,
+            })
+        },
         other => Err(AuthError::OAuthCustomError(format!("Unknown login_option: {other}"))),
     }
 }
@@ -226,6 +244,41 @@ fn extract_sso_params(callback: &AuthPortalCallback, auth_type: &str) -> Result<
     Ok((issuer_url, sso_region))
 }
 
+/// Extract External IdP metadata from callback
+fn extract_external_idp_metadata(callback: &AuthPortalCallback) -> Result<ExternalIdpMetadata, AuthError> {
+    debug!(?callback, "Extracting External IdP metadata from callback");
+
+    let issuer_url = callback
+        .issuer_url
+        .clone()
+        .ok_or_else(|| AuthError::OAuthCustomError("Missing issuer_url for external_idp auth".into()))?;
+
+    let client_id = callback
+        .client_id
+        .clone()
+        .ok_or_else(|| AuthError::OAuthCustomError("Missing client_id for external_idp auth".into()))?;
+
+    let mut scopes = callback
+        .scopes
+        .clone()
+        .ok_or_else(|| AuthError::OAuthCustomError("Missing scopes for external_idp auth".into()))?;
+
+    // Ensure offline_access scope is included for refresh token support
+    if !scopes.split_whitespace().any(|s| s == "offline_access") {
+        scopes = format!("{} offline_access", scopes);
+    }
+
+    info!(%issuer_url, %client_id, %scopes, "External IdP metadata extracted");
+
+    Ok(ExternalIdpMetadata {
+        issuer_url,
+        client_id,
+        scopes,
+        login_hint: callback.login_hint.clone(),
+        audience: callback.audience.clone(),
+    })
+}
+
 async fn wait_for_auth_callback(
     listener: TcpListener,
     expected_state: String,
@@ -251,7 +304,10 @@ async fn wait_for_auth_callback(
                     let service = AuthCallbackService { tx: tx.clone() };
 
                     tokio::spawn(async move {
-                        let _ = http1::Builder::new().serve_connection(io, service).await;
+                        let _ = http1::Builder::new()
+                            .keep_alive(false)
+                            .serve_connection(io, service)
+                            .await;
                     });
                 },
                 Err(e) => {
@@ -263,16 +319,15 @@ async fn wait_for_auth_callback(
     });
 
     let callback = tokio::select! {
-        result = rx.recv() => {
-            result.ok_or(AuthError::OAuthCustomError("Failed to receive callback".into()))?
-        },
+        result = rx.recv() => result.ok_or(AuthError::OAuthCustomError("Failed to receive callback".into()))?,
         _ = tokio::time::sleep(DEFAULT_AUTHORIZATION_TIMEOUT) => {
+            server_handle.abort();
             return Err(AuthError::OAuthTimeout);
         }
     };
 
     server_handle.abort();
-
+    tokio::time::sleep(Duration::from_millis(200)).await;
     if callback.state != expected_state {
         return Err(AuthError::OAuthStateMismatch {
             actual: callback.state,
@@ -321,10 +376,13 @@ async fn handle_valid_callback(
             query
                 .split('&')
                 .filter_map(|kv| {
-                    kv.split_once('=')
-                        .map(|(k, v)| (k.to_string(), urlencoding::decode(v).unwrap_or_default().to_string()))
+                    kv.split_once('=').map(|(k, v)| {
+                        // In URL query strings, + represents space (application/x-www-form-urlencoded)
+                        let v = v.replace('+', " ");
+                        (k.to_string(), urlencoding::decode(&v).unwrap_or_default().to_string())
+                    })
                 })
-                .collect::<std::collections::HashMap<String, String>>() // 
+                .collect::<std::collections::HashMap<String, String>>()
         })
         .ok_or(AuthError::OAuthCustomError("query parameters are missing".into()))?;
 
@@ -337,6 +395,10 @@ async fn handle_valid_callback(
         path: path.to_string(),
         error: query_params.get("error").cloned(),
         error_description: query_params.get("error_description").cloned(),
+        client_id: query_params.get("client_id").cloned(),
+        scopes: query_params.get("scopes").cloned(),
+        login_hint: query_params.get("login_hint").cloned(),
+        audience: query_params.get("audience").cloned(),
     };
 
     let _ = tx.send(callback.clone()).await;
