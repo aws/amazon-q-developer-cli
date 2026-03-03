@@ -276,64 +276,83 @@ async fn load_agents_from_dir<P: SystemProvider>(
         },
     };
 
-    let mut agents = Vec::new();
+    let mut agents: Vec<LoadedAgentConfig> = Vec::new();
     let mut invalid_agents = Vec::new();
 
+    // Collect and sort entries by filename for deterministic processing order
+    let mut entries = Vec::new();
     loop {
         match read_dir.next_entry().await {
-            Ok(Some(entry)) => {
-                let entry_path = entry.path();
-
-                if entry_path.extension().is_none_or(|ext| ext != "json") {
-                    continue;
-                }
-
-                let Ok(md) = entry.metadata().await.map_err(|e| {
-                    error!(?e, "failed to read metadata for {:?}", entry_path);
-                }) else {
-                    continue;
-                };
-
-                if !md.is_file() {
-                    warn!("skipping agent for path {:?}: not a file", entry_path);
-                    continue;
-                }
-
-                let Ok(entry_contents) = tokio::fs::read_to_string(&entry_path).await.map_err(|e| {
-                    error!(?e, "failed to read agent config at {:?}", entry_path);
-                }) else {
-                    continue;
-                };
-
-                let entry_contents = normalize_agent_json(&entry_contents, &entry_path);
-
-                match serde_json::from_str::<AgentConfig>(&entry_contents) {
-                    Ok(config) => {
-                        let source = match &source {
-                            ConfigSource::Workspace { .. } => ConfigSource::Workspace {
-                                path: entry_path.clone(),
-                            },
-                            ConfigSource::Global { .. } => ConfigSource::Global {
-                                path: entry_path.clone(),
-                            },
-                            ConfigSource::BuiltIn | ConfigSource::Ephemeral => source.clone(),
-                        };
-                        let base_dir = entry_path.parent().unwrap_or(dir);
-                        let resolved_prompt = resolve_global_prompt(config.global_prompt(), base_dir, system).await;
-                        agents.push(LoadedAgentConfig::new(config, source, resolved_prompt));
-                    },
-                    Err(e) => {
-                        invalid_agents.push(AgentConfigError::InvalidAgentConfig {
-                            path: entry_path.to_string_lossy().to_string(),
-                            message: e.to_string(),
-                        });
-                    },
-                }
-            },
+            Ok(Some(entry)) => entries.push(entry.path()),
             Ok(None) => break,
             Err(e) => {
                 error!(?e, "failed to read directory entry in {:?}", dir);
                 break;
+            },
+        }
+    }
+    entries.sort();
+
+    for entry_path in entries {
+        if entry_path.extension().is_none_or(|ext| ext != "json") {
+            continue;
+        }
+
+        // Follow symlinks
+        let Ok(md) = tokio::fs::metadata(&entry_path).await.map_err(|e| {
+            error!(?e, "failed to read metadata for {:?}", entry_path);
+        }) else {
+            continue;
+        };
+
+        if !md.is_file() {
+            warn!("skipping agent for path {:?}: not a file", entry_path);
+            continue;
+        }
+
+        let Ok(entry_contents) = tokio::fs::read_to_string(&entry_path).await.map_err(|e| {
+            error!(?e, "failed to read agent config at {:?}", entry_path);
+        }) else {
+            continue;
+        };
+
+        let entry_contents = normalize_agent_json(&entry_contents, &entry_path);
+
+        match serde_json::from_str::<AgentConfig>(&entry_contents) {
+            Ok(config) => {
+                if let Some(existing) = agents.iter().find(|a| a.name() == config.name()) {
+                    let existing_path = match existing.source() {
+                        ConfigSource::Workspace { path } | ConfigSource::Global { path } => {
+                            path.to_string_lossy().to_string()
+                        },
+                        _ => "built-in".to_string(),
+                    };
+                    warn!(
+                        "skipping duplicate agent {:?} from {:?} (already loaded from {:?})",
+                        config.name(),
+                        entry_path,
+                        existing_path
+                    );
+                    continue;
+                }
+                let source = match &source {
+                    ConfigSource::Workspace { .. } => ConfigSource::Workspace {
+                        path: entry_path.clone(),
+                    },
+                    ConfigSource::Global { .. } => ConfigSource::Global {
+                        path: entry_path.clone(),
+                    },
+                    ConfigSource::BuiltIn | ConfigSource::Ephemeral => source.clone(),
+                };
+                let base_dir = entry_path.parent().unwrap_or(dir);
+                let resolved_prompt = resolve_global_prompt(config.global_prompt(), base_dir, system).await;
+                agents.push(LoadedAgentConfig::new(config, source, resolved_prompt));
+            },
+            Err(e) => {
+                invalid_agents.push(AgentConfigError::InvalidAgentConfig {
+                    path: entry_path.to_string_lossy().to_string(),
+                    message: e.to_string(),
+                });
             },
         }
     }
@@ -635,5 +654,90 @@ mod tests {
         // use_aws should remain as useAws (canonical)
         assert_eq!(ts.use_aws.allowed_services, vec!["cloudformation"]);
         assert!(ts.use_aws.auto_allow_readonly);
+    }
+
+    #[tokio::test]
+    #[cfg(unix)]
+    async fn test_load_agents_follows_symlinks() {
+        let real_agent = r#"{"name": "real-agent", "tools": ["*"]}"#;
+
+        let base = TestBase::new()
+            .await
+            .with_file((".kiro/agents/real.json", real_agent))
+            .await;
+
+        // Create a symlink to the real agent file
+        let agents_dir = base.join(".kiro/agents");
+        let real_path = agents_dir.join("real.json");
+        let link_path = agents_dir.join("linked.json");
+        std::os::unix::fs::symlink(&real_path, &link_path).unwrap();
+
+        let (agents, errors) = load_agents(base.provider()).await.unwrap();
+
+        assert!(errors.is_empty(), "expected no errors, got: {:?}", errors);
+
+        let names: Vec<&str> = agents.iter().map(|a| a.name()).collect();
+        assert!(names.contains(&"real-agent"), "symlinked agent should be loaded");
+
+        // The symlink has the same agent name, so it should be deduplicated
+        let real_count = names.iter().filter(|&&n| n == "real-agent").count();
+        assert_eq!(
+            real_count, 1,
+            "duplicate agent name from symlink should be deduplicated"
+        );
+    }
+
+    #[tokio::test]
+    #[cfg(unix)]
+    async fn test_load_agents_skips_broken_symlink() {
+        let real_agent = r#"{"name": "real-agent", "tools": ["*"]}"#;
+
+        let base = TestBase::new()
+            .await
+            .with_file((".kiro/agents/real.json", real_agent))
+            .await;
+
+        // Create a symlink pointing to a nonexistent target
+        let agents_dir = base.join(".kiro/agents");
+        let link_path = agents_dir.join("broken.json");
+        std::os::unix::fs::symlink("/nonexistent/target.json", &link_path).unwrap();
+
+        let (agents, errors) = load_agents(base.provider()).await.unwrap();
+
+        assert!(errors.is_empty(), "broken symlink should not produce a parse error");
+
+        let names: Vec<&str> = agents.iter().map(|a| a.name()).collect();
+        assert!(names.contains(&"real-agent"), "valid agent should still load");
+        assert!(
+            !names.iter().any(|n| n.contains("broken")),
+            "broken symlink should be skipped"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_load_agents_deduplicates_same_name() {
+        let agent_a = r#"{"name": "my-agent", "tools": ["*"]}"#;
+        let agent_b = r#"{"name": "my-agent", "tools": ["fs_read"]}"#;
+
+        let base = TestBase::new()
+            .await
+            .with_file((".kiro/agents/aaa.json", agent_a))
+            .await
+            .with_file((".kiro/agents/zzz.json", agent_b))
+            .await;
+
+        let (agents, errors) = load_agents(base.provider()).await.unwrap();
+
+        assert!(errors.is_empty(), "expected no errors, got: {:?}", errors);
+
+        let my_agents: Vec<_> = agents.iter().filter(|a| a.name() == "my-agent").collect();
+        assert_eq!(my_agents.len(), 1, "duplicate agent name should be deduplicated");
+
+        // The first file alphabetically (aaa.json) should win
+        assert_eq!(
+            my_agents[0].tools(),
+            vec!["*"],
+            "first file alphabetically should take precedence"
+        );
     }
 }

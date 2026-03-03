@@ -1,0 +1,4 @@
+{
+  "type": "fixed",
+  "description": "Fix agent loading to follow symlinks and deduplicate agent configs with the same name within a directory"
+}
