@@ -66,7 +66,7 @@ dependencies = [
  "code-agent-sdk",
  "color-eyre",
  "color-print",
- "convert_case 0.8.0",
+ "convert_case 0.11.0",
  "criterion",
  "crossterm",
  "dialoguer",
@@ -1129,7 +1129,7 @@ name = "aws-toolkit-telemetry-definitions"
 version = "0.1.0"
 dependencies = [
  "amzn-toolkit-telemetry-client",
- "convert_case 0.8.0",
+ "convert_case 0.11.0",
  "prettyplease",
  "quote",
  "serde",
@@ -1746,7 +1746,7 @@ dependencies = [
  "code-agent-sdk",
  "color-eyre",
  "color-print",
- "convert_case 0.8.0",
+ "convert_case 0.11.0",
  "cookie",
  "criterion",
  "crossterm",
@@ -1834,7 +1834,7 @@ dependencies = [
  "tracing-appender",
  "tracing-subscriber",
  "tracing-test",
- "typed-path 0.11.0",
+ "typed-path",
  "unicode-width 0.2.0",
  "url",
  "urlencoding",
@@ -1888,7 +1888,7 @@ dependencies = [
  "code-agent-sdk",
  "color-eyre",
  "color-print",
- "convert_case 0.8.0",
+ "convert_case 0.11.0",
  "cookie",
  "criterion",
  "crossterm",
@@ -1910,7 +1910,7 @@ dependencies = [
  "hyper-util",
  "ignore",
  "image",
- "indicatif",
+ "indicatif 0.17.11",
  "indoc",
  "insta",
  "jsonschema",
@@ -1978,7 +1978,7 @@ dependencies = [
  "tracing-appender",
  "tracing-subscriber",
  "tracing-test",
- "typed-path 0.11.0",
+ "typed-path",
  "typeshare",
  "unicode-width 0.2.0",
  "url",
@@ -2350,18 +2350,18 @@ checksum = "7c74b8349d32d297c9134b8c88677813a227df8f779daa29bfc29c183fe3dca6"
 
 [[package]]
 name = "convert_case"
-version = "0.11.0"
+version = "0.10.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "affbf0190ed2caf063e3def54ff444b449371d55c58e513a95ab98eca50adb49"
+checksum = "633458d4ef8c78b72454de2d54fd6ab2e60f9e02be22f3c6104cdc8a4e0fceb9"
 dependencies = [
  "unicode-segmentation",
 ]
 
 [[package]]
 name = "convert_case"
-version = "0.10.0"
+version = "0.11.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "633458d4ef8c78b72454de2d54fd6ab2e60f9e02be22f3c6104cdc8a4e0fceb9"
+checksum = "affbf0190ed2caf063e3def54ff444b449371d55c58e513a95ab98eca50adb49"
 dependencies = [
  "unicode-segmentation",
 ]
@@ -8959,12 +8959,6 @@ dependencies = [
 
 [[package]]
 name = "typed-path"
-version = "0.12.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3015e6ce46d5ad8751e4a772543a30c7511468070e98e64e20165f8f81155b64"
-
-[[package]]
-name = "typed-path"
 version = "0.12.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8e28f89b80c87b8fb0cf04ab448d5dd0dd0ade2f8891bae878de66a75a28600e"
@@ -10571,7 +10565,7 @@ dependencies = [
  "crc32fast",
  "indexmap",
  "memchr",
- "typed-path 0.12.3",
+ "typed-path",
 ]
 
 [[package]]
