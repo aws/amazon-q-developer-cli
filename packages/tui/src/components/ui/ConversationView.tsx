@@ -436,7 +436,7 @@ export const ConversationView = React.memo(function ConversationView() {
           ? turn.userMessage.agentName
           : undefined;
       const agentBarColor = agentName
-        ? getAgentColor(agentName).hex
+        ? getAgentColor(agentName, getColor).hex
         : undefined;
       const allMsgs = [turn.userMessage, ...turn.aiMessages];
       const tailMsgs = allMsgs.filter((msg) => !flushedIds.has(msg.id));
