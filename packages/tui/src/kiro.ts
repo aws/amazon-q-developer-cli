@@ -113,6 +113,7 @@ export class Kiro {
     // Register handler for commands update before initialize
     this.globalUpdateUnsubscribe = this.sessionClient.onUpdate(
       (event: AgentStreamEvent) => {
+        logger.debug('[kiro] global handler event:', event.type);
         if (
           event.type === AgentEventType.CommandsUpdate &&
           this.commandsHandler
@@ -138,6 +139,14 @@ export class Kiro {
           this.compactionHandler
         ) {
           this.compactionHandler(event);
+        }
+        // Handle backend-initiated agent switch (e.g. switch_to_execution)
+        if (
+          event.type === AgentEventType.AgentSwitched &&
+          this.agentHandler
+        ) {
+          logger.debug('[kiro] AgentSwitched received:', event.agentName);
+          this.agentHandler({ name: event.agentName });
         }
         // Forward historical content events (user messages, assistant text,
         // tool calls) so the store can populate the message list on resume.

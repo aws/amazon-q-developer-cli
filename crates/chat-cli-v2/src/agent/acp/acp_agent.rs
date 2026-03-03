@@ -1153,7 +1153,8 @@ impl AcpSession {
                 error!("cancel called on agent handle");
             },
             AcpSessionRequest::ExecuteCommand { command, respond_to } => {
-                let is_agent_swap = matches!(&command, TuiCommand::Agent(args) if args.agent_name.is_some());
+                let is_agent_swap = matches!(&command, TuiCommand::Agent(args) if args.agent_name.is_some())
+                    || matches!(&command, TuiCommand::Plan(_));
                 let ctx = self.command_context();
                 let result = super::commands::execute(command, &ctx).await;
 
@@ -1161,6 +1162,7 @@ impl AcpSession {
                     && result.success
                     && let Some(data) = &result.data
                     && let Some(name) = data.get("agent").and_then(|a| a.get("name")).and_then(|n| n.as_str())
+                    && name != self.current_agent_name
                 {
                     self.previous_agent_name = Some(std::mem::replace(&mut self.current_agent_name, name.to_string()));
                 }
@@ -1568,10 +1570,13 @@ impl AcpSession {
     }
 
     async fn handle_switch_to_execution(&mut self, plan: String) {
+        // Use previous_agent_name if it's not the planner itself, otherwise fall back to default
         let target = self
             .previous_agent_name
-            .clone()
-            .unwrap_or_else(|| crate::constants::DEFAULT_AGENT_NAME.to_string());
+            .as_deref()
+            .filter(|name| *name != crate::constants::PLANNER_AGENT_NAME)
+            .unwrap_or(crate::constants::DEFAULT_AGENT_NAME)
+            .to_string();
 
         let agent_config = match self.agent_configs.iter().find(|c| c.name() == target) {
             Some(c) => c.clone(),
