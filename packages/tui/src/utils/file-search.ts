@@ -49,47 +49,51 @@ function loadGitignore(cwd: string) {
   return ig;
 }
 
+/** Max results to collect before sorting and truncating */
+const MAX_COLLECT = 200;
+
 /**
- * Recursively search for files matching query
+ * Recursively collect all files matching query (no early limit cutoff)
  */
-function searchFilesRecursive(
+function collectMatchingFiles(
   dir: string,
   query: string,
   depth: number,
   maxDepth: number,
-  limit: number,
+  maxCollect: number,
   results: string[],
   basePath: string,
   ig: ReturnType<typeof ignore>
 ): void {
-  if (depth > maxDepth || results.length >= limit) return;
+  if (depth > maxDepth || results.length >= maxCollect) return;
 
   try {
     const entries = readdirSync(dir, { withFileTypes: true });
 
     for (const entry of entries) {
-      if (results.length >= limit) break;
+      if (results.length >= maxCollect) break;
 
       const fullPath = join(dir, entry.name);
       const relativePath = relative(basePath, fullPath);
 
-      // Check if ignored by .gitignore rules
       if (ig.ignores(relativePath)) continue;
 
       if (entry.isDirectory()) {
-        searchFilesRecursive(
+        collectMatchingFiles(
           fullPath,
           query,
           depth + 1,
           maxDepth,
-          limit,
+          maxCollect,
           results,
           basePath,
           ig
         );
       } else if (entry.isFile()) {
-        // Case-insensitive match
-        if (entry.name.toLowerCase().includes(query.toLowerCase())) {
+        const lowerName = entry.name.toLowerCase();
+        const lowerPath = relativePath.toLowerCase();
+        const lowerQuery = query.toLowerCase();
+        if (lowerName.includes(lowerQuery) || lowerPath.includes(lowerQuery)) {
           results.push(relativePath);
         }
       }
@@ -100,8 +104,25 @@ function searchFilesRecursive(
 }
 
 /**
+ * Rank a file path by relevance to query.
+ * Lower score = better match.
+ */
+function rankMatch(filePath: string, query: string): number {
+  const lowerQuery = query.toLowerCase();
+  const fileName = filePath.split('/').pop()?.toLowerCase() ?? '';
+  const depth = filePath.split('/').length;
+
+  // Filename starts with query
+  if (fileName.startsWith(lowerQuery)) return depth;
+  // Filename contains query
+  if (fileName.includes(lowerQuery)) return 100 + depth;
+  // Path contains query
+  return 200 + depth;
+}
+
+/**
  * Search for files matching a query (case insensitive).
- * Returns up to `limit` file paths relative to cwd.
+ * Returns up to `limit` file paths relative to cwd, ranked by relevance.
  * Respects .gitignore patterns.
  */
 export function searchFiles(query: string, limit = 20): string[] {
@@ -111,18 +132,20 @@ export function searchFiles(query: string, limit = 20): string[] {
   const ig = loadGitignore(cwd);
   const results: string[] = [];
 
-  searchFilesRecursive(
+  collectMatchingFiles(
     cwd,
     query,
     0,
     MAX_SEARCH_DEPTH,
-    limit,
+    MAX_COLLECT,
     results,
     cwd,
     ig
   );
 
-  return results;
+  results.sort((a, b) => rankMatch(a, query) - rankMatch(b, query));
+
+  return results.slice(0, limit);
 }
 
 /**
