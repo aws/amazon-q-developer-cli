@@ -1,7 +1,7 @@
 ---
 doc_meta:
-  validated: 2025-12-19
-  commit: 57090ffe
+  validated: 2026-03-02
+  commit: 037d6929
   status: validated
   testable_headless: false
   category: slash_command
@@ -18,6 +18,8 @@ Create GitHub issue or feature request with pre-filled template.
 ## Overview
 
 The `/issue` command opens browser with GitHub issue template pre-filled with conversation context, transcript, and environment details. Same as report_issue tool.
+
+**Alias**: `/report`
 
 ## Usage
 
