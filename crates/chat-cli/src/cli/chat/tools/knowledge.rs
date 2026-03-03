@@ -17,6 +17,7 @@ use crate::cli::agent::{
     Agent,
     PermissionEvalResult,
 };
+use crate::cli::chat::util::truncate_safe;
 use crate::cli::experiment::experiment_manager::{
     ExperimentManager,
     ExperimentName,
@@ -561,7 +562,7 @@ impl Knowledge {
                             if let Some(text) = result.text() {
                                 let display_text = if let Some(max_len) = search.snippet_length {
                                     if text.len() > max_len {
-                                        format!("{}...", &text[..max_len])
+                                        format!("{}...", truncate_safe(text, max_len))
                                     } else {
                                         text.to_string()
                                     }

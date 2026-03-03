@@ -249,6 +249,12 @@ mod tests {
         assert_eq!(truncate_safe("Hello ", 5), "Hello");
         assert_eq!(truncate_safe("Hello World", 11), "Hello World");
         assert_eq!(truncate_safe("Hello World", 15), "Hello World");
+        // Multi-byte: em dash U+2014 is 3 bytes (0xE2 0x80 0x94)
+        // "Hello—World" = 5 + 3 + 5 = 13 bytes
+        // Truncating at byte 6, 7, or 8 should all stop before the em dash
+        assert_eq!(truncate_safe("Hello—World", 6), "Hello");
+        assert_eq!(truncate_safe("Hello—World", 7), "Hello");
+        assert_eq!(truncate_safe("Hello—World", 8), "Hello—");
     }
 
     #[test]

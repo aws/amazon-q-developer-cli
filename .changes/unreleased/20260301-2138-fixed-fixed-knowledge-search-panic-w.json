@@ -1,0 +1,4 @@
+{
+  "type": "fixed",
+  "description": "Fixed knowledge search panic when snippet_length lands on a multi-byte UTF-8 character boundary"
+}
