@@ -44,4 +44,4 @@ pdf-extract.workspace = true
 candle-core = { version = "0.9.1", features = [] }
 candle-nn = "0.9.1"
 candle-transformers = "0.9.1"
-tokenizers = "0.21.1"
+tokenizers = "0.22.2"
