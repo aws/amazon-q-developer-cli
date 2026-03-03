@@ -326,7 +326,7 @@ impl Grep {
             });
         }
 
-        file_results.sort_by(|a, b| b.1.len().cmp(&a.1.len()));
+        file_results.sort_by_key(|b| std::cmp::Reverse(b.1.len()));
 
         let max_files_output = max_files.min(file_results.len());
         let mut output_results: Vec<serde_json::Value> = Vec::new();
@@ -397,7 +397,7 @@ impl Grep {
             });
         }
 
-        file_counts.sort_by(|a, b| b.1.cmp(&a.1));
+        file_counts.sort_by_key(|b| std::cmp::Reverse(b.1));
         let total_files = file_counts.len();
         let truncated = total_files > max_files;
 
@@ -450,7 +450,7 @@ impl Grep {
             });
         }
 
-        file_counts.sort_by(|a, b| b.1.cmp(&a.1));
+        file_counts.sort_by_key(|b| std::cmp::Reverse(b.1));
         let total_files = file_counts.len();
         let truncated = total_files > max_files;
 

@@ -36,7 +36,7 @@ pub fn get_options(partial: &str, ctx: &CommandContext<'_>) -> CommandOptionsRes
             group: None,
         })
         .collect();
-    options.sort_by(|a, b| a.label.to_lowercase().cmp(&b.label.to_lowercase()));
+    options.sort_by_key(|a| a.label.to_lowercase());
     CommandOptionsResponse {
         options,
         has_more: false,

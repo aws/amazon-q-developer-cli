@@ -89,7 +89,7 @@ impl GitignoreMatcher {
         }
 
         // Sort by depth (deepest first) for proper precedence
-        gitignores.sort_by(|a, b| b.0.components().count().cmp(&a.0.components().count()));
+        gitignores.sort_by_key(|b| std::cmp::Reverse(b.0.components().count()));
 
         tracing::trace!("Loaded {} .gitignore files", gitignores.len());
         Ok(Self { gitignores })

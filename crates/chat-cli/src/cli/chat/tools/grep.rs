@@ -1,3 +1,4 @@
+use std::cmp::Reverse;
 use std::io::Write;
 use std::path::PathBuf;
 
@@ -328,7 +329,7 @@ impl Grep {
         }
 
         // Sort by match count descending
-        file_results.sort_by(|a, b| b.1.len().cmp(&a.1.len()));
+        file_results.sort_by_key(|b| Reverse(b.1.len()));
 
         // Build output with file-grouped matches using configured limits
         let max_files_output = max_files.min(file_results.len());
@@ -412,7 +413,7 @@ impl Grep {
         }
 
         // Sort by match count descending
-        file_counts.sort_by(|a, b| b.1.cmp(&a.1));
+        file_counts.sort_by_key(|b| Reverse(b.1));
 
         let total_files = file_counts.len();
         let truncated = total_files > max_files;
@@ -482,7 +483,7 @@ impl Grep {
         }
 
         // Sort by count descending
-        file_counts.sort_by(|a, b| b.1.cmp(&a.1));
+        file_counts.sort_by_key(|b| Reverse(b.1));
 
         let total_files = file_counts.len();
         let truncated = total_files > max_files;

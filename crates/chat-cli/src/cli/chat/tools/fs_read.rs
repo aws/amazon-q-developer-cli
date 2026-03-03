@@ -1,3 +1,4 @@
+use std::cmp::Reverse;
 use std::collections::VecDeque;
 use std::fs::Metadata;
 use std::io::Write;
@@ -919,7 +920,7 @@ impl FsDirectory {
         }
 
         // Sort by timestamp descending (most recent first)
-        entries.sort_by(|a, b| b.timestamp.cmp(&a.timestamp));
+        entries.sort_by_key(|b| Reverse(b.timestamp));
 
         // Apply offset and limit
         let total_collected = entries.len();

@@ -474,8 +474,8 @@ impl CodeIntelligenceServer {
                 "symbol_name": request.symbol_name,
                 "total_found": symbols.len(),
                 "limit_applied": request.limit,
-                "scope": if request.file_path.is_some() {
-                    format!("file: {}", request.file_path.as_ref().unwrap().display())
+                "scope": if let Some(ref file_path) = request.file_path {
+                    format!("file: {}", file_path.display())
                 } else {
                     "workspace".to_string()
                 }

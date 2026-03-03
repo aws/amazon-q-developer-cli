@@ -385,16 +385,14 @@ fn is_git_installed() -> bool {
     Command::new("git")
         .arg("--version")
         .output()
-        .map(|o| o.status.success())
-        .unwrap_or(false)
+        .is_ok_and(|o| o.status.success())
 }
 
 fn is_in_git_repo() -> bool {
     Command::new("git")
         .args(["rev-parse", "--is-inside-work-tree"])
         .output()
-        .map(|o| o.status.success())
-        .unwrap_or(false)
+        .is_ok_and(|o| o.status.success())
 }
 
 fn configure_git(shadow_path: &str) -> Result<()> {

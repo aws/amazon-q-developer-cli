@@ -729,7 +729,7 @@ fn get_lines_with_context(
         start_line.saturating_sub(1).clamp(0, line_count - 1),
         end_line.saturating_sub(1).clamp(0, line_count - 1),
     );
-    let new_start_line = 0.max(start_line.saturating_sub(context_lines));
+    let new_start_line = start_line.saturating_sub(context_lines);
     let new_end_line = (line_count - 1).min(end_line + context_lines);
 
     // Build prefix

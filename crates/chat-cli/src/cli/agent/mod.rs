@@ -151,7 +151,7 @@ impl AgentListDisplayInfo {
         // Calculate description column position and available width
         // Format: "* " (2) + name + "    " (4) + source + "    " (4) + description
         let desc_column_start = 2 + max_name_length + 4 + max_source_length + 4;
-        let term_width = terminal::size().map(|(w, _)| w as usize).unwrap_or(120);
+        let term_width = terminal::size().map_or(120, |(w, _)| w as usize);
         let desc_available_width = term_width.saturating_sub(desc_column_start);
         let indent = " ".repeat(desc_column_start);
 

@@ -92,13 +92,11 @@ pub fn validate_regex(pattern: &str) -> Result<(), String> {
 
 fn matches_regex(value: &str, pattern: &str) -> bool {
     let anchored = anchor_regex(pattern);
-    Regex::new(&anchored).map(|r| r.is_match(value)).unwrap_or(false)
+    Regex::new(&anchored).is_ok_and(|r| r.is_match(value))
 }
 
 fn matches_glob(value: &str, pattern: &str) -> bool {
-    Glob::new(pattern)
-        .map(|g| g.compile_matcher().is_match(value))
-        .unwrap_or(false)
+    Glob::new(pattern).is_ok_and(|g| g.compile_matcher().is_match(value))
 }
 
 fn matches_prefix(value: &str, prefix: &str) -> bool {

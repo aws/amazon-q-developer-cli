@@ -553,8 +553,7 @@ fn is_process_alive(pid: u32) -> bool {
         std::process::Command::new("kill")
             .args(["-0", &pid.to_string()])
             .output()
-            .map(|output| output.status.success())
-            .unwrap_or(false)
+            .is_ok_and(|output| output.status.success())
     }
 
     #[cfg(not(unix))]

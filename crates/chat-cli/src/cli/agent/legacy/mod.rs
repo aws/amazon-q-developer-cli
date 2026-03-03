@@ -159,17 +159,11 @@ pub async fn migrate(os: &mut Os, force: bool) -> eyre::Result<Option<Vec<Agent>
             hooks: HashMap::from([
                 (
                     super::HookTrigger::AgentSpawn,
-                    create_hooks
-                        .into_iter()
-                        .filter_map(|(_, hook)| Option::<Hook>::from(hook))
-                        .collect(),
+                    create_hooks.into_values().filter_map(Option::<Hook>::from).collect(),
                 ),
                 (
                     super::HookTrigger::UserPromptSubmit,
-                    prompt_hooks
-                        .into_iter()
-                        .filter_map(|(_, hook)| Option::<Hook>::from(hook))
-                        .collect(),
+                    prompt_hooks.into_values().filter_map(Option::<Hook>::from).collect(),
                 ),
             ]),
             mcp_servers: mcp_servers.clone().unwrap_or_default(),
@@ -200,17 +194,11 @@ pub async fn migrate(os: &mut Os, force: bool) -> eyre::Result<Option<Vec<Agent>
             hooks: HashMap::from([
                 (
                     super::HookTrigger::AgentSpawn,
-                    create_hooks
-                        .into_iter()
-                        .filter_map(|(_, hook)| Option::<Hook>::from(hook))
-                        .collect(),
+                    create_hooks.into_values().filter_map(Option::<Hook>::from).collect(),
                 ),
                 (
                     super::HookTrigger::UserPromptSubmit,
-                    prompt_hooks
-                        .into_iter()
-                        .filter_map(|(_, hook)| Option::<Hook>::from(hook))
-                        .collect(),
+                    prompt_hooks.into_values().filter_map(Option::<Hook>::from).collect(),
                 ),
             ]),
             mcp_servers: mcp_servers.clone().unwrap_or_default(),

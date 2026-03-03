@@ -33,9 +33,7 @@ pub(crate) fn is_enabled(_os: &Os) -> bool {
     if !crate::feature_flags::FeatureFlags::CODE_INTELLIGENCE_ENABLED {
         return false;
     }
-    std::env::current_dir()
-        .map(|cwd| code_agent_sdk::ConfigManager::lsp_config_exists(&cwd))
-        .unwrap_or(false)
+    std::env::current_dir().is_ok_and(|cwd| code_agent_sdk::ConfigManager::lsp_config_exists(&cwd))
 }
 
 /// Check if an operation is a write operation
@@ -1041,11 +1039,8 @@ impl Code {
                             let completions = &completion_info.items;
 
                             if completions.is_empty() {
-                                let msg = if params.filter.is_some() {
-                                    format!(
-                                        "No completions found matching filter '{}'",
-                                        params.filter.as_ref().unwrap()
-                                    )
+                                let msg = if let Some(filter) = &params.filter {
+                                    format!("No completions found matching filter '{}'", filter)
                                 } else {
                                     "No completions available".to_string()
                                 };
@@ -1064,23 +1059,23 @@ impl Code {
                                     style::Print(" completions"),
                                 )?;
 
-                                if params.symbol_type.is_some() {
+                                if let Some(symbol_type) = &params.symbol_type {
                                     queue!(
                                         _stdout,
                                         style::Print(" of type '"),
                                         StyledText::info_fg(),
-                                        style::Print(params.symbol_type.as_ref().unwrap()),
+                                        style::Print(symbol_type),
                                         StyledText::reset(),
                                         style::Print("'"),
                                     )?;
                                 }
 
-                                if params.filter.is_some() {
+                                if let Some(filter) = &params.filter {
                                     queue!(
                                         _stdout,
                                         style::Print(" matching '"),
                                         StyledText::info_fg(),
-                                        style::Print(params.filter.as_ref().unwrap()),
+                                        style::Print(filter),
                                         StyledText::reset(),
                                         style::Print("'"),
                                     )?;

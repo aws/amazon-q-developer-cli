@@ -162,10 +162,7 @@ impl ApiClient {
         let endpoint = endpoint.unwrap_or(Endpoint::configured_value(database));
 
         // Check if using External IdP authentication
-        let is_external_idp = ExternalIdpToken::load(database)
-            .await
-            .map(|t| t.is_some())
-            .unwrap_or(false);
+        let is_external_idp = ExternalIdpToken::load(database).await.is_ok_and(|t| t.is_some());
 
         let credentials = Credentials::new("xxx", "xxx", None, None, "xxx");
         let bearer_sdk_config = aws_config::defaults(behavior_version())

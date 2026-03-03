@@ -1,3 +1,4 @@
+use std::cmp::Reverse;
 use std::collections::HashSet;
 use std::io::Write;
 use std::path::PathBuf;
@@ -209,7 +210,7 @@ pub async fn get_active_todo(os: &Os) -> Result<Option<TodoListState>> {
         return Ok(None);
     }
 
-    incomplete_with_mtime.sort_by(|a, b| b.1.cmp(&a.1));
+    incomplete_with_mtime.sort_by_key(|b| Reverse(b.1));
 
     Ok(Some(incomplete_with_mtime.into_iter().next().unwrap().0))
 }
