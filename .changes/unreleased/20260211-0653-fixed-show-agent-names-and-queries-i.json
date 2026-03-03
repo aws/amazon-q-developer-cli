@@ -1,0 +1,4 @@
+{
+  "type": "fixed",
+  "description": "Show agent names and queries in multi-subagent permission prompt"
+}

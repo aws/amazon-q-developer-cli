@@ -388,7 +388,7 @@ impl UseSubagent {
                     )?;
                     super::display_tool_use(tool, output)?;
                 } else {
-                    // Multiple subagents - display as batch
+                    // Multiple subagents - display as batch with details
                     queue!(
                         output,
                         style::Print("Invoking "),
@@ -398,6 +398,19 @@ impl UseSubagent {
                         style::Print(" subagents in parallel"),
                     )?;
                     super::display_tool_use(tool, output)?;
+                    for (i, subagent) in subagents.iter().enumerate() {
+                        queue!(
+                            output,
+                            style::Print("\n  "),
+                            style::Print(i + 1),
+                            style::Print(". "),
+                            StyledText::brand_fg(),
+                            style::Print(subagent.agent_name.as_deref().unwrap_or(DEFAULT_AGENT_NAME)),
+                            StyledText::reset(),
+                            style::Print(": "),
+                            style::Print(&subagent.query),
+                        )?;
+                    }
                     queue!(output, style::Print("\n"))?;
                 }
             },

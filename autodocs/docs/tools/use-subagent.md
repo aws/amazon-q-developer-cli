@@ -1,7 +1,7 @@
 ---
 doc_meta:
-  validated: 2026-01-27
-  commit: 85403a86
+  validated: 2026-02-11
+  commit: cc1d0d0b
   status: validated
   testable_headless: true
   category: tool
@@ -164,6 +164,15 @@ Real-time status display shows:
 - Tool approval requests
 - MCP server loading status
 - Execution summary (tool uses, duration)
+
+When multiple subagents are invoked in parallel, the display shows each agent's name and query:
+
+```
+Invoking 3 subagents in parallel
+  1. research-agent: Research React performance
+  2. research-agent: Research Vue.js performance
+  3. research-agent: Research Angular performance
+```
 
 **Controls**:
 - `j/↓` - Navigate down
