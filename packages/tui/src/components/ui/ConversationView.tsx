@@ -194,7 +194,9 @@ const StaticTurnCard = React.memo(function StaticTurnCard({
   const { getColor } = useTheme();
   const agentName =
     'agentName' in turn.userMessage ? turn.userMessage.agentName : undefined;
-  const agentBarColor = agentName ? getAgentColor(agentName, getColor).hex : undefined;
+  const agentBarColor = agentName
+    ? getAgentColor(agentName, getColor).hex
+    : undefined;
 
   if (!turn.userMessage.content) return null;
 

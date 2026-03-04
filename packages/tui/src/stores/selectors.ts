@@ -79,8 +79,10 @@ export const useApprovalState = () =>
   useAppStore(
     useShallow((state) => ({
       pendingApproval: state.pendingApproval,
+      approvalMode: state.approvalMode,
       respondToApproval: state.respondToApproval,
       cancelApproval: state.cancelApproval,
+      setApprovalMode: state.setApprovalMode,
     }))
   );
 

@@ -96,7 +96,6 @@ export function SnackBar({
     <Box
       height={currentHeight}
       width={width || '100%'}
-      backgroundColor={getColor('components.snackbar.background').hex}
       paddingX={1}
       paddingY={0}
       flexDirection="column"

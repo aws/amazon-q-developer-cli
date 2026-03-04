@@ -17,6 +17,7 @@ export const AppContainer: React.FC = () => {
   const queuedMessages = useAppStore((state) => state.queuedMessages);
   const clearQueue = useAppStore((state) => state.clearQueue);
   const showTransientAlert = useAppStore((state) => state.showTransientAlert);
+  const pendingApproval = useAppStore((state) => state.pendingApproval);
 
   useKeypress((userInput, key) => {
     if (key.ctrl && userInput === 'c') {
@@ -29,7 +30,7 @@ export const AppContainer: React.FC = () => {
         incrementExitSequence();
       }
     } else if (key.escape) {
-      if (isProcessing) {
+      if (isProcessing && !pendingApproval) {
         const hadQueuedMessages = queuedMessages.length > 0;
         clearQueue();
         cancelMessage();

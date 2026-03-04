@@ -1,5 +1,4 @@
 import React from 'react';
-import { Box, Text } from 'ink';
 import { PromptBar, type PromptBarHeader } from './PromptBar.js';
 import { ContextBar } from './ContextBar.js';
 import { Chip, ChipColor } from '../../ui/chip/index.js';
@@ -8,71 +7,35 @@ import { Menu } from '../../ui/menu/Menu.js';
 
 // Pre-create header elements to avoid type inference issues
 const contextBarBasic = React.createElement(ContextBar, {
-  children: [
-    React.createElement(Chip, {
-      key: 'workspace',
-      value: '~/developer/my-project',
-      color: ChipColor.BRAND,
-    }),
-    React.createElement(Chip, {
-      key: 'git',
-      value: 'main',
-      color: ChipColor.PRIMARY,
-      prefix: 'git:',
-      wrap: true,
-    }),
-    React.createElement(Chip, {
-      key: 'model',
-      value: 'claude-3.5-sonnet',
-      color: ChipColor.PRIMARY,
-    }),
+  primaryItems: [
+    React.createElement(Chip, { key: 'workspace', value: '~/developer/my-project', color: ChipColor.BRAND }),
+    React.createElement(Chip, { key: 'model', value: 'claude-3.5-sonnet', color: ChipColor.PRIMARY }),
+  ],
+  secondaryItems: [
+    React.createElement(Chip, { key: 'git', value: 'main', color: ChipColor.PRIMARY, prefix: 'git:', wrap: true }),
   ],
 }) as PromptBarHeader;
 
 const contextBarProcessing = React.createElement(ContextBar, {
-  children: [
-    React.createElement(Chip, {
-      key: 'workspace',
-      value: '~/developer/my-project',
-      color: ChipColor.BRAND,
-    }),
-    React.createElement(Chip, {
-      key: 'git',
-      value: 'feature/new-component',
-      color: ChipColor.PRIMARY,
-      prefix: 'git:',
-      wrap: true,
-    }),
-    React.createElement(Chip, {
-      key: 'model',
-      value: 'gpt-4',
-      color: ChipColor.PRIMARY,
-    }),
+  primaryItems: [
+    React.createElement(Chip, { key: 'workspace', value: '~/developer/my-project', color: ChipColor.BRAND }),
+    React.createElement(Chip, { key: 'model', value: 'gpt-4', color: ChipColor.PRIMARY }),
+  ],
+  secondaryItems: [
+    React.createElement(Chip, { key: 'git', value: 'feature/new-component', color: ChipColor.PRIMARY, prefix: 'git:', wrap: true }),
   ],
 }) as PromptBarHeader;
 
 const contextBarNoGit = React.createElement(ContextBar, {
-  children: [
-    React.createElement(Chip, {
-      key: 'workspace',
-      value: '~/developer/my-project',
-      color: ChipColor.BRAND,
-    }),
-    React.createElement(Chip, {
-      key: 'model',
-      value: 'claude-3.5-sonnet',
-      color: ChipColor.PRIMARY,
-    }),
+  primaryItems: [
+    React.createElement(Chip, { key: 'workspace', value: '~/developer/my-project', color: ChipColor.BRAND }),
+    React.createElement(Chip, { key: 'model', value: 'claude-3.5-sonnet', color: ChipColor.PRIMARY }),
   ],
 }) as PromptBarHeader;
 
 const contextBarMinimal = React.createElement(ContextBar, {
-  children: [
-    React.createElement(Chip, {
-      key: 'model',
-      value: 'gpt-4',
-      color: ChipColor.PRIMARY,
-    }),
+  primaryItems: [
+    React.createElement(Chip, { key: 'model', value: 'gpt-4', color: ChipColor.PRIMARY }),
   ],
 }) as PromptBarHeader;
 

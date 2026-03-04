@@ -24,7 +24,7 @@ import { NotificationBar } from '../chat/notification-bar/NotificationBar.js';
 import { BlockingErrorAlert } from '../ui/alert/BlockingErrorAlert.js';
 import { Chip, ChipColor, ProgressChip } from '../ui/chip/index.js';
 import { ContextBreakdown } from '../ui/ContextBreakdown';
-import { RadioGroup, type RadioOption } from '../ui/radio/RadioGroup.js';
+import { ApprovalRequest } from '../ui/ApprovalRequest.js';
 import { UsagePanel } from '../ui/UsagePanel';
 import {
   useNotificationState,
@@ -47,7 +47,6 @@ import { useKeypress } from '../../hooks/useKeypress';
 import { getGitBranch } from '../../utils/git';
 import { shortenPath } from '../../utils/string';
 import { getAgentColor } from '../../utils/agentColors.js';
-import { ApprovalOptionId } from '../../types/agent-events.js';
 import { useTheme } from '../../hooks/useThemeContext.js';
 
 const TRIGGER_RULES = [
@@ -109,7 +108,8 @@ export const InlineLayout: React.FC = () => {
     useNotificationActions();
   const { isProcessing, isCompacting, pendingApproval, noInteractive } =
     useProcessingState();
-  const { respondToApproval, cancelApproval } = useApprovalState();
+  const { cancelApproval, approvalMode } =
+    useApprovalState();
   const {
     toolOutputsExpanded,
     hasExpandableToolOutputs,
@@ -145,7 +145,7 @@ export const InlineLayout: React.FC = () => {
   const { activeCommand, promptHint } = useCommandState();
   const { setActiveCommand, setActiveTrigger, clearCommandInput } =
     useCommandActions();
-  const { handleUserInput, clearInput } = useInputActions();
+  const { handleUserInput } = useInputActions();
   const { messages } = useConversationState();
   const { queuedMessages } = useQueueState();
   const { kiro } = useKiroClient();
@@ -161,74 +161,6 @@ export const InlineLayout: React.FC = () => {
   useEffect(() => {
     if (!isProcessing) setGitBranch(getGitBranch());
   }, [isProcessing]);
-
-  // Build radio options from pending approval permissions
-  const approvalOptions = useMemo((): RadioOption[] => {
-    if (!pendingApproval) return [];
-    const opts: RadioOption[] = [];
-    const perms = pendingApproval.permissionOptions;
-    if (perms.find((opt) => opt.kind === ApprovalOptionId.RejectOnce)) {
-      opts.push({ value: ApprovalOptionId.RejectOnce, label: 'No' });
-    }
-    if (perms.find((opt) => opt.kind === ApprovalOptionId.AllowOnce)) {
-      opts.push({
-        value: ApprovalOptionId.AllowOnce,
-        label: 'Yes, single permission',
-      });
-    }
-    if (perms.find((opt) => opt.kind === ApprovalOptionId.AllowAlways)) {
-      opts.push({
-        value: ApprovalOptionId.AllowAlways,
-        label: 'Trust, always allow in this session',
-      });
-    }
-    return opts;
-  }, [pendingApproval]);
-
-  // Default to "No" when approval appears
-  const [approvalSelected, setApprovalSelected] = useState<string>(
-    ApprovalOptionId.RejectOnce
-  );
-
-  // Reset selection when a new approval arrives
-  const approvalToolCallId = pendingApproval?.toolCall.toolCallId;
-  const [lastApprovalId, setLastApprovalId] = useState<string | undefined>();
-  if (approvalToolCallId && approvalToolCallId !== lastApprovalId) {
-    setLastApprovalId(approvalToolCallId);
-    setApprovalSelected(ApprovalOptionId.RejectOnce);
-  }
-
-  // Handle approval radio confirm (Enter)
-  const handleApprovalConfirm = useCallback(
-    (value: string) => {
-      if (!pendingApproval) return;
-      const selected = pendingApproval.permissionOptions.find(
-        (opt) => opt.kind === value
-      );
-      if (selected) {
-        respondToApproval(selected.optionId);
-      }
-    },
-    [pendingApproval, respondToApproval]
-  );
-
-  // Handle escape to cancel approval, Enter to confirm
-  useKeypress(
-    (_input, key) => {
-      if (!pendingApproval) return;
-      if (key.escape) {
-        cancelApproval();
-        clearInput();
-        clearCommandInput();
-        return;
-      }
-      // Confirm via Enter — always confirms radio selection during approval
-      if (key.return) {
-        handleApprovalConfirm(approvalSelected);
-      }
-    },
-    { isActive: !!pendingApproval }
-  );
 
   // Handle Ctrl+O to toggle expansion (single state for both tool outputs and queue)
   useKeypress(
@@ -361,7 +293,7 @@ export const InlineLayout: React.FC = () => {
     clearCommandInput();
   }, [setShowToolsPanel, setActiveCommand, clearCommandInput]);
 
-  // Build the header - use SnackBar for approval, ContextBar otherwise
+  // Build the header - ContextBar
   const promptBarHeader = useMemo(() => {
     if (pendingApproval) {
       const toolMessage = messages.find(
@@ -436,17 +368,15 @@ export const InlineLayout: React.FC = () => {
     return (
       <ContextBar primaryItems={primaryItems} secondaryItems={secondaryItems} />
     ) as PromptBarHeader;
-  }, [
-    pendingApproval,
-    messages,
-    currentAgent,
-    contextUsagePercent,
-    gitBranch,
-    currentModel,
-  ]);
+  }, [pendingApproval, messages, currentAgent, contextUsagePercent, gitBranch, currentModel, getColor]);
 
   const handleSubmit = useCallback(
     (value: string) => {
+      if (approvalMode === 'drill-in') {
+        cancelApproval();
+        if (value.trim()) handleUserInput(value.trim());
+        return;
+      }
       if (value.trim().toLowerCase() === '/kiro') {
         triggerEasterEgg();
         return;
@@ -454,7 +384,7 @@ export const InlineLayout: React.FC = () => {
       handleUserInput(value);
       setGitBranch(getGitBranch());
     },
-    [handleUserInput, setGitBranch]
+    [approvalMode, cancelApproval, handleUserInput, setGitBranch]
   );
 
   const handleTriggerDetected = useCallback(
@@ -515,20 +445,12 @@ export const InlineLayout: React.FC = () => {
               showUsagePanel ||
               showMcpPanel ||
               showToolsPanel ||
-              showPromptsPanel
+              showPromptsPanel ||
+              !!pendingApproval
                 ? undefined
                 : promptBarHeader
             }
-            subHeader={
-              pendingApproval && approvalOptions.length > 0 ? (
-                <RadioGroup
-                  options={approvalOptions}
-                  selectedValue={approvalSelected}
-                  onChange={(value) => setApprovalSelected(value)}
-                  direction="vertical"
-                />
-              ) : undefined
-            }
+            subHeader={undefined}
             onSubmit={handleSubmit}
             triggerRules={TRIGGER_RULES}
             onTriggerDetected={handleTriggerDetected}
@@ -559,6 +481,9 @@ export const InlineLayout: React.FC = () => {
             }
           >
             <CommandMenu />
+            {pendingApproval && (
+              <ApprovalRequest onDrillInSubmit={handleSubmit} />
+            )}
             {showContextBreakdown && (
               <ContextBreakdown
                 percent={contextUsagePercent}

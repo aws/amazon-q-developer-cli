@@ -1,7 +1,6 @@
 import React, { useEffect, useMemo } from 'react';
-import { useTheme } from '../../hooks/useThemeContext.js';
-import { Text } from '../ui/text/Text.js';
 import { StatusBar, useStatusBar } from '../chat/status-bar/StatusBar.js';
+import { StatusInfo } from './status/StatusInfo.js';
 import type { StatusType } from '../../types/componentTypes.js';
 import { Write } from '../chat/tools/Write.js';
 import { Read } from '../chat/tools/Read.js';
@@ -47,18 +46,15 @@ export interface ToolUseMessageProps {
 
 export const ToolUseMessage = React.memo<ToolUseMessageProps>(
   function ToolUseMessage({
-    id,
     name,
     content,
     isFinished = false,
     status,
     result,
-    kind,
     locations,
     barColor,
     isStatic = false,
   }) {
-    const { getColor } = useTheme();
 
     // Map tool status to StatusBar status icon
     const statusIcon: StatusType | undefined = useMemo(() => {
@@ -104,7 +100,6 @@ function ToolUseContent({
   isStatic: boolean;
   locations?: ToolCallLocation[];
 }) {
-  const { getColor } = useTheme();
   const { requestRemeasure } = useStatusBar();
 
   // A tool is only visually complete if it's finished AND no longer pending approval
@@ -120,10 +115,10 @@ function ToolUseContent({
       const parsed = JSON.parse(content);
       const path = parsed.path || parsed.command || 'file';
       const label = result?.status === 'cancelled' ? 'Cancelled' : 'Rejected';
-      return <Text>{getColor('error')(`${label}: ${path}`)}</Text>;
+      return <StatusInfo title={label} target={path} />;
     } catch {
       const label = result?.status === 'cancelled' ? 'Cancelled' : 'Rejected';
-      return <Text>{getColor('error')(`${label}: ${name}`)}</Text>;
+      return <StatusInfo title={label} target={name} />;
     }
   }
 

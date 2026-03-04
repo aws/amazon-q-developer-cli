@@ -141,10 +141,7 @@ export class Kiro {
           this.compactionHandler(event);
         }
         // Handle backend-initiated agent switch (e.g. switch_to_execution)
-        if (
-          event.type === AgentEventType.AgentSwitched &&
-          this.agentHandler
-        ) {
+        if (event.type === AgentEventType.AgentSwitched && this.agentHandler) {
           logger.debug('[kiro] AgentSwitched received:', event.agentName);
           this.agentHandler({ name: event.agentName });
         }

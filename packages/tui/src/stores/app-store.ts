@@ -186,6 +186,7 @@ interface BaseAppActions {
   setAgentError: (error: string | null, guidance?: string | null) => void;
   respondToApproval: (optionId: string) => void;
   cancelApproval: () => void;
+  setApprovalMode: (mode: 'dropdown' | 'drill-in') => void;
   setCurrentModel: (model: { id: string; name: string } | null) => void;
   setCurrentAgent: (agent: { name: string } | null) => void;
   setPreviousAgentName: (name: string | null) => void;
@@ -307,6 +308,7 @@ export interface AppState {
   agentErrorGuidance: string | null;
   pendingApproval: ApprovalRequestInfo | null;
   approvalQueue: ApprovalRequestInfo[];
+  approvalMode: 'dropdown' | 'drill-in';
   currentModel: { id: string; name: string } | null;
   currentAgent: { name: string } | null;
   previousAgentName: string | null;
@@ -417,6 +419,7 @@ export const createAppStore = (props: AppStoreProps) =>
     agentErrorGuidance: null,
     pendingApproval: null,
     approvalQueue: [],
+    approvalMode: 'dropdown',
     currentModel: null,
     currentAgent: null,
     previousAgentName: null,
@@ -1177,6 +1180,7 @@ export const createAppStore = (props: AppStoreProps) =>
           }),
           approvalQueue: remainingQueue,
           pendingApproval: nextApproval,
+          approvalMode: 'dropdown',
         }));
 
         pendingApproval.resolve({
@@ -1217,9 +1221,15 @@ export const createAppStore = (props: AppStoreProps) =>
           queued.resolve({ outcome: 'cancelled' });
         }
 
-        set({ pendingApproval: null, approvalQueue: [] });
+        set({
+          pendingApproval: null,
+          approvalQueue: [],
+          approvalMode: 'dropdown',
+        });
       }
     },
+
+    setApprovalMode: (mode) => set({ approvalMode: mode }),
 
     // Clear conversation but keep last turn visible in UI
     clearMessages: () => {

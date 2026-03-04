@@ -12,6 +12,8 @@ export interface PanelProps {
   onTabSwitch?: () => void;
   showTabHint?: boolean;
   footerExtra?: React.ReactNode;
+  footerLeft?: React.ReactNode;
+  hideTitleDivider?: boolean;
 }
 
 export const Panel: React.FC<PanelProps> = ({
@@ -21,6 +23,8 @@ export const Panel: React.FC<PanelProps> = ({
   onTabSwitch,
   showTabHint = false,
   footerExtra,
+  footerLeft,
+  hideTitleDivider = false,
 }) => {
   const { getColor } = useTheme();
   const { width: termWidth } = useTerminalSize();
@@ -39,7 +43,7 @@ export const Panel: React.FC<PanelProps> = ({
       <Box paddingX={1}>
         <Text>{getColor('primary')(title)}</Text>
       </Box>
-      <Divider />
+      {!hideTitleDivider && <Divider />}
 
       <Box flexDirection="column" paddingX={1}>
         {children}
@@ -47,9 +51,13 @@ export const Panel: React.FC<PanelProps> = ({
 
       <Divider />
       <Box justifyContent="space-between" paddingX={1}>
-        <Text>
-          {getColor('primary')('ESC')} {getColor('secondary')('to close')}
-        </Text>
+        <Box>
+          <Text>
+            {getColor('primary')('ESC')} {getColor('secondary')('to close')}
+          </Text>
+          {footerLeft && <Text>{getColor('secondary')(' | ')}</Text>}
+          {footerLeft}
+        </Box>
         <Box>
           {footerExtra}
           {footerExtra && showTabHint && (
