@@ -3,7 +3,7 @@
   "description": "Kiro CLI oncall agent for ticket investigation, debugging, and operational tasks",
   "model": "claude-opus-4.6-1m",
   "prompt": "file://resources/ONCALL_PROMPT.md",
-  "welcomeMessage": "Hi! I'm the Oncall agent.",
+  "welcomeMessage": "Hi! I'm the Oncall agent. Here's what I can help with:\n\n**Prompts:**\n• `@pr-triage` — classify open PRs, check dependabot status, apply labels, get a prioritized action list\n• `@pr-report` — generate a full classified markdown report of all open PRs\n• `@triage` — review active Sev-2 tickets and recommend what to work on\n\n**Workflows:**\n• `@changelog` — propose changelog entries for recent changes\n• `@release` — generate release notes, bump version, and create PR with author attribution\n• `@docs` — update autodocs for code changes\n\nScripts are in `scripts/` — see `scripts/classify_prs.py` for PR classification.",
   "tools": [
     "@builder-mcp/TicketingReadActions",
     "@builder-mcp/TicketingWriteActions",

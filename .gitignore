@@ -53,7 +53,12 @@ run-build.sh
 .amazonq/
 
 chat.log
-.kiro/
+.kiro/tasks/
+.kiro/projects/
+.kiro/settings/
+.kiro/knowledge/
+.kiro/skills/
+.kiro/code/
 
 # Generated doc embeddings and indexes
 autodocs/meta/plans/
