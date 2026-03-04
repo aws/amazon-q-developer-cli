@@ -367,24 +367,51 @@ impl Database {
         self.set_entry(Table::State, PROFILE_MIGRATION_KEY, true)
     }
 
-    /// Check if daily heartbeat should be sent
-    pub fn should_send_heartbeat(&self) -> bool {
+    /// Atomically check and record daily heartbeat. Returns true if heartbeat should be sent.
+    /// Uses BEGIN IMMEDIATE to prevent TOCTOU races between concurrent CLI processes.
+    pub fn record_heartbeat_if_needed(&self) -> bool {
         use chrono::Utc;
         let today = Utc::now().format("%Y-%m-%d").to_string();
 
-        match self.get_entry::<String>(Table::State, HEARTBEAT_DATE_KEY) {
-            Ok(Some(last_date)) => last_date != today,
-            Ok(None) => true, // First time - definitely send
-            Err(_) => false,  // Database error - don't send (might have already sent)
+        let conn = match self.pool.get() {
+            Ok(c) => c,
+            Err(_) => return false,
+        };
+
+        if conn.execute_batch("BEGIN IMMEDIATE").is_err() {
+            return false;
         }
-    }
 
-    /// Record that heartbeat was sent today
-    pub fn record_heartbeat_sent(&self) -> Result<(), DatabaseError> {
-        use chrono::Utc;
-        let today = Utc::now().format("%Y-%m-%d").to_string();
-        self.set_entry(Table::State, HEARTBEAT_DATE_KEY, today)?;
-        Ok(())
+        let needs_send = match conn.query_row(
+            &format!("SELECT value FROM {} WHERE key = ?1", Table::State),
+            [HEARTBEAT_DATE_KEY],
+            |row| row.get::<_, String>(0),
+        ) {
+            Ok(last_date) => last_date != today,
+            Err(rusqlite::Error::QueryReturnedNoRows) => true,
+            Err(_) => {
+                conn.execute_batch("ROLLBACK").ok();
+                return false;
+            },
+        };
+
+        if !needs_send {
+            conn.execute_batch("ROLLBACK").ok();
+            return false;
+        }
+
+        let ok = conn
+            .execute(
+                &format!("INSERT OR REPLACE INTO {} (key, value) VALUES (?1, ?2)", Table::State),
+                params![HEARTBEAT_DATE_KEY, &today],
+            )
+            .is_ok()
+            && conn.execute_batch("COMMIT").is_ok();
+
+        if !ok {
+            conn.execute_batch("ROLLBACK").ok();
+        }
+        ok
     }
 
     // /// Get the model id used for last conversation state.
@@ -778,6 +805,60 @@ mod tests {
         assert_eq!(store.get_secret(key).await.unwrap().unwrap().0, "1234");
         store.delete_secret(key).await.unwrap();
         assert_eq!(store.get_secret(key).await.unwrap(), None);
+    }
+
+    #[tokio::test]
+    async fn test_record_heartbeat_if_needed_first_call_returns_true() {
+        let db = Database::new_default().await.unwrap();
+        // First call ever — no date stored, should return true
+        assert!(db.record_heartbeat_if_needed());
+    }
+
+    #[tokio::test]
+    async fn test_record_heartbeat_if_needed_second_call_returns_false() {
+        let db = Database::new_default().await.unwrap();
+        assert!(db.record_heartbeat_if_needed());
+        // Same day, second call — should return false
+        assert!(!db.record_heartbeat_if_needed());
+    }
+
+    #[tokio::test]
+    async fn test_record_heartbeat_if_needed_persists_date() {
+        let db = Database::new_default().await.unwrap();
+        assert!(db.record_heartbeat_if_needed());
+
+        // Verify the date was actually written to the DB
+        let stored = db.get_entry::<String>(Table::State, HEARTBEAT_DATE_KEY).unwrap();
+        assert!(stored.is_some());
+
+        let today = chrono::Utc::now().format("%Y-%m-%d").to_string();
+        assert_eq!(stored.unwrap(), today);
+    }
+
+    #[tokio::test]
+    async fn test_record_heartbeat_if_needed_stale_date_returns_true() {
+        let db = Database::new_default().await.unwrap();
+        // Manually write a stale date
+        db.set_entry(Table::State, HEARTBEAT_DATE_KEY, "2020-01-01").unwrap();
+
+        // Should return true since stored date != today
+        assert!(db.record_heartbeat_if_needed());
+        // And now it should return false
+        assert!(!db.record_heartbeat_if_needed());
+    }
+
+    #[tokio::test]
+    async fn test_record_heartbeat_if_needed_concurrent_same_db() {
+        let db = Database::new_default().await.unwrap();
+        // Simulate rapid sequential calls (same process, same connection pool)
+        let mut true_count = 0;
+        for _ in 0..10 {
+            if db.record_heartbeat_if_needed() {
+                true_count += 1;
+            }
+        }
+        // Exactly one should succeed
+        assert_eq!(true_count, 1);
     }
 
     #[tokio::test]

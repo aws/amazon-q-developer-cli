@@ -165,8 +165,8 @@ impl RootSubcommand {
         }
 
         // Daily heartbeat check
-        if os.database.should_send_heartbeat() && os.telemetry.send_daily_heartbeat().is_ok() {
-            os.database.record_heartbeat_sent().ok();
+        if os.database.record_heartbeat_if_needed() {
+            os.telemetry.send_daily_heartbeat().ok();
         }
 
         // Send executed telemetry.
