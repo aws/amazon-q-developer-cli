@@ -452,15 +452,7 @@ impl SymbolService for LspSymbolService {
             }
         }
 
-        // LSP unavailable or doesn't support documentSymbol — fall back to tree-sitter
-        tracing::debug!(
-            "LSP did not return document symbols for {:?}, falling back to tree-sitter",
-            file_path
-        );
-        Ok(crate::tree_sitter::workspace_analyzer::parse_file_symbols_safe(
-            &canonical_path,
-            workspace_manager.workspace_root(),
-        ))
+        Ok(vec![])
     }
 
     async fn goto_definition(
@@ -1042,41 +1034,5 @@ mod tests {
     fn test_new_symbol_service() {
         let _service = create_test_service();
         // Just verify it constructs successfully without panicking
-    }
-
-    #[test]
-    fn test_tree_sitter_fallback_returns_symbols() {
-        // Verify that the tree-sitter fallback path used when LSP doesn't
-        // support documentSymbol actually produces symbols for real code.
-        use tempfile::TempDir;
-
-        let temp_dir = TempDir::new().unwrap();
-        let rust_file = temp_dir.path().join("example.rs");
-        std::fs::write(
-            &rust_file,
-            r#"
-pub struct Config {
-    pub name: String,
-}
-
-impl Config {
-    pub fn new(name: &str) -> Self {
-        Self { name: name.to_string() }
-    }
-}
-
-fn main() {}
-"#,
-        )
-        .unwrap();
-
-        let symbols = crate::tree_sitter::workspace_analyzer::parse_file_symbols_safe(&rust_file, temp_dir.path());
-        assert!(
-            !symbols.is_empty(),
-            "tree-sitter fallback should produce symbols for Rust code"
-        );
-        let names: Vec<&str> = symbols.iter().map(|s| s.name.as_str()).collect();
-        assert!(names.contains(&"Config"), "should find struct Config");
-        assert!(names.contains(&"main"), "should find fn main");
     }
 }

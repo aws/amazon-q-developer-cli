@@ -1,10 +1,6 @@
 use std::collections::HashMap;
 use std::process::Stdio;
-use std::sync::{
-    Arc,
-    OnceLock,
-    RwLock,
-};
+use std::sync::Arc;
 
 use anyhow::Result;
 use lsp_types::*;
@@ -31,78 +27,6 @@ use url::Url;
 use crate::lsp::protocol::*;
 use crate::model::entities::DiagnosticEvent;
 use crate::types::LanguageServerConfig;
-
-/// Tracks both static (from `InitializeResult`) and dynamic (from
-/// `client/registerCapability` / `client/unregisterCapability`) server
-/// capabilities.
-///
-/// Static capabilities are set once during initialization via [`OnceLock`] for
-/// zero-cost reads.  Dynamic overrides are stored in a [`RwLock`]-protected
-/// [`HashMap`] and take precedence over the static snapshot.
-pub(crate) struct CapabilityTracker {
-    /// Capabilities returned by the server in `InitializeResult`.
-    static_caps: OnceLock<ServerCapabilities>,
-    /// Dynamic overrides keyed by LSP method name.
-    /// `true` = dynamically registered, `false` = dynamically unregistered.
-    dynamic_overrides: RwLock<HashMap<String, bool>>,
-}
-
-impl CapabilityTracker {
-    fn new() -> Self {
-        Self {
-            static_caps: OnceLock::new(),
-            dynamic_overrides: RwLock::new(HashMap::new()),
-        }
-    }
-
-    /// Cache the static capabilities from `InitializeResult`.
-    /// Only the first call has an effect; subsequent calls are no-ops.
-    fn set_static(&self, caps: ServerCapabilities) {
-        let _ = self.static_caps.set(caps);
-    }
-
-    /// Record a dynamic capability registration for `method`.
-    fn register(&self, method: &str) {
-        self.dynamic_overrides
-            .write()
-            .expect("capability tracker lock poisoned")
-            .insert(method.to_string(), true);
-    }
-
-    /// Record a dynamic capability unregistration for `method`.
-    fn unregister(&self, method: &str) {
-        self.dynamic_overrides
-            .write()
-            .expect("capability tracker lock poisoned")
-            .insert(method.to_string(), false);
-    }
-
-    /// Check whether `method` is supported.
-    ///
-    /// Evaluation order:
-    /// 1. Dynamic overrides (from `client/registerCapability` / `client/unregisterCapability`)
-    /// 2. Static capabilities (from `InitializeResult`)
-    ///
-    /// Returns `false` when the server has not been initialized yet.
-    fn supports(&self, static_check: fn(&ServerCapabilities) -> bool, method: &str) -> bool {
-        // Dynamic overrides take precedence
-        if let Some(&supported) = self
-            .dynamic_overrides
-            .read()
-            .expect("capability tracker lock poisoned")
-            .get(method)
-        {
-            return supported;
-        }
-        // Fall back to static capabilities from initialization
-        self.static_caps.get().is_some_and(static_check)
-    }
-
-    /// Return the full static capabilities snapshot, if available.
-    fn get_static(&self) -> Option<&ServerCapabilities> {
-        self.static_caps.get()
-    }
-}
 
 type ResponseCallback = Box<dyn FnOnce(Result<Value>) + Send>;
 
@@ -143,8 +67,6 @@ pub struct LspClient {
     pub(crate) init_duration: Arc<Mutex<Option<std::time::Duration>>>,
     /// Whether server supports pull diagnostics (textDocument/diagnostic)
     pub(crate) supports_pull_diagnostics: Arc<Mutex<bool>>,
-    /// Capability tracker for static + dynamic capability checking
-    pub(crate) capabilities: Arc<CapabilityTracker>,
 }
 
 impl LspClient {
@@ -212,7 +134,6 @@ impl LspClient {
             init_start: std::time::Instant::now(),
             init_duration: Arc::new(Mutex::new(None)),
             supports_pull_diagnostics: Arc::new(Mutex::new(false)),
-            capabilities: Arc::new(CapabilityTracker::new()),
         };
 
         // Start stderr monitoring - LSPs often write info/debug to stderr
@@ -354,9 +275,6 @@ impl LspClient {
 
         // Store the initialization result and update status
         *self.init_result.lock().await = Some(init_result.clone());
-        // Cache capabilities for zero-cost reads on every LSP request
-        self.capabilities.set_static(init_result.capabilities.clone());
-
         *self.status.lock().await = LspStatus::Initialized;
         *self.init_duration.lock().await = Some(self.init_start.elapsed());
 
@@ -384,8 +302,12 @@ impl LspClient {
     }
 
     /// Get the server capabilities from initialization
-    pub fn get_server_capabilities(&self) -> Option<ServerCapabilities> {
-        self.capabilities.get_static().cloned()
+    pub async fn get_server_capabilities(&self) -> Option<ServerCapabilities> {
+        self.init_result
+            .lock()
+            .await
+            .as_ref()
+            .map(|result| result.capabilities.clone())
     }
 
     /// Check if the LSP server has been successfully initialized
@@ -417,12 +339,6 @@ impl LspClient {
     /// # Returns
     /// * `Result<Option<GotoDefinitionResponse>>` - Definition location or None
     pub async fn goto_definition(&self, params: GotoDefinitionParams) -> Result<Option<GotoDefinitionResponse>> {
-        if !self
-            .capabilities
-            .supports(|c| c.definition_provider.is_some(), "textDocument/definition")
-        {
-            return Ok(None);
-        }
         self.send_lsp_request("textDocument/definition", params).await
     }
 
@@ -434,12 +350,6 @@ impl LspClient {
     /// # Returns
     /// * `Result<Option<Vec<Location>>>` - Reference locations or None
     pub async fn find_references(&self, params: ReferenceParams) -> Result<Option<Vec<Location>>> {
-        if !self
-            .capabilities
-            .supports(|c| c.references_provider.is_some(), "textDocument/references")
-        {
-            return Ok(None);
-        }
         self.send_lsp_request("textDocument/references", params).await
     }
 
@@ -451,12 +361,6 @@ impl LspClient {
     /// # Returns
     /// * `Result<Option<Vec<WorkspaceSymbol>>>` - Matching symbols or None
     pub async fn workspace_symbols(&self, params: WorkspaceSymbolParams) -> Result<Option<Vec<WorkspaceSymbol>>> {
-        if !self
-            .capabilities
-            .supports(|c| c.workspace_symbol_provider.is_some(), "workspace/symbol")
-        {
-            return Ok(None);
-        }
         self.send_lsp_request("workspace/symbol", params).await
     }
 
@@ -468,12 +372,6 @@ impl LspClient {
     /// # Returns
     /// * `Result<Option<DocumentSymbolResponse>>` - Document symbols or None
     pub async fn document_symbols(&self, params: DocumentSymbolParams) -> Result<Option<DocumentSymbolResponse>> {
-        if !self
-            .capabilities
-            .supports(|c| c.document_symbol_provider.is_some(), "textDocument/documentSymbol")
-        {
-            return Ok(None);
-        }
         self.send_lsp_request("textDocument/documentSymbol", params).await
     }
 
@@ -488,12 +386,6 @@ impl LspClient {
         &self,
         params: DocumentDiagnosticParams,
     ) -> Result<Option<DocumentDiagnosticReport>> {
-        if !self
-            .capabilities
-            .supports(|c| c.diagnostic_provider.is_some(), "textDocument/diagnostic")
-        {
-            return Ok(None);
-        }
         self.send_lsp_request("textDocument/diagnostic", params).await
     }
 
@@ -506,12 +398,6 @@ impl LspClient {
     /// * `Result<Option<WorkspaceEdit>>` - Workspace changes or None
     pub async fn rename(&self, params: RenameParams) -> Result<Option<WorkspaceEdit>> {
         tracing::trace!("LSP rename request: method=textDocument/rename, params={:?}", params);
-        if !self
-            .capabilities
-            .supports(|c| c.rename_provider.is_some(), "textDocument/rename")
-        {
-            return Ok(None);
-        }
         let result = self.send_lsp_request("textDocument/rename", params).await;
         tracing::trace!("LSP rename response: {:?}", result);
         result
@@ -525,12 +411,6 @@ impl LspClient {
     /// # Returns
     /// * `Result<Option<Vec<TextEdit>>>` - Formatting changes or None
     pub async fn format_document(&self, params: DocumentFormattingParams) -> Result<Option<Vec<TextEdit>>> {
-        if !self
-            .capabilities
-            .supports(|c| c.document_formatting_provider.is_some(), "textDocument/formatting")
-        {
-            return Ok(None);
-        }
         self.send_lsp_request("textDocument/formatting", params).await
     }
 
@@ -542,12 +422,6 @@ impl LspClient {
     /// # Returns
     /// * `Result<Option<Hover>>` - Hover information or None
     pub async fn hover(&self, params: HoverParams) -> Result<Option<Hover>> {
-        if !self
-            .capabilities
-            .supports(|c| c.hover_provider.is_some(), "textDocument/hover")
-        {
-            return Ok(None);
-        }
         self.send_lsp_request("textDocument/hover", params).await
     }
 
@@ -559,12 +433,6 @@ impl LspClient {
     /// # Returns
     /// * `Result<Option<CompletionResponse>>` - Completion suggestions or None
     pub async fn completion(&self, params: CompletionParams) -> Result<Option<CompletionResponse>> {
-        if !self
-            .capabilities
-            .supports(|c| c.completion_provider.is_some(), "textDocument/completion")
-        {
-            return Ok(None);
-        }
         self.send_lsp_request("textDocument/completion", params).await
     }
 
@@ -621,12 +489,6 @@ impl LspClient {
         &self,
         params: DocumentDiagnosticParams,
     ) -> Result<Option<DocumentDiagnosticReport>> {
-        if !self
-            .capabilities
-            .supports(|c| c.diagnostic_provider.is_some(), "textDocument/diagnostic")
-        {
-            return Ok(None);
-        }
         self.send_lsp_request("textDocument/diagnostic", params).await
     }
 
@@ -704,13 +566,11 @@ impl LspClient {
         let diagnostic_sender = self.diagnostic_sender.clone();
         let stdin = self.stdin.clone();
         let supports_pull_diagnostics = self.supports_pull_diagnostics.clone();
-        let capabilities = self.capabilities.clone();
         tokio::spawn(async move {
             let mut reader = BufReader::new(stdout);
 
             while let Ok(content) = read_lsp_message(&mut reader).await {
                 if let Err(e) = Self::process_message(
-                    &capabilities,
                     &content,
                     &pending_requests,
                     &diagnostic_sender,
@@ -768,7 +628,6 @@ impl LspClient {
 
     /// Process a single LSP message and handle response callbacks
     async fn process_message(
-        capabilities: &Arc<CapabilityTracker>,
         content: &str,
         pending_requests: &Arc<Mutex<HashMap<String, ResponseCallback>>>,
         diagnostic_sender: &broadcast::Sender<DiagnosticEvent>,
@@ -863,36 +722,22 @@ impl LspClient {
             // Server→client request - must respond
             match message.method.as_str() {
                 "client/registerCapability" => {
-                    if let Some(ref params) = message.params {
-                        match serde_json::from_value::<RegistrationParams>(params.clone()) {
-                            Ok(reg_params) => {
-                                for reg in &reg_params.registrations {
-                                    tracing::info!("LSP server dynamically registering: {}", reg.method);
-                                    capabilities.register(&reg.method);
-                                }
-                            },
-                            Err(e) => {
-                                tracing::warn!("Failed to parse registerCapability params: {}", e);
-                            },
-                        }
-                    }
+                    tracing::info!(
+                        "LSP server registering capabilities: {}",
+                        serde_json::to_string_pretty(&message.params)
+                            .unwrap_or_else(|_| "Failed to serialize".to_string())
+                    );
                     Self::send_response(stdin, &id_value, json!(null)).await?;
+                    tracing::info!("Capability registration acknowledged");
                 },
                 "client/unregisterCapability" => {
-                    if let Some(ref params) = message.params {
-                        match serde_json::from_value::<UnregistrationParams>(params.clone()) {
-                            Ok(unreg_params) => {
-                                for unreg in &unreg_params.unregisterations {
-                                    tracing::info!("LSP server dynamically unregistering: {}", unreg.method);
-                                    capabilities.unregister(&unreg.method);
-                                }
-                            },
-                            Err(e) => {
-                                tracing::warn!("Failed to parse unregisterCapability params: {}", e);
-                            },
-                        }
-                    }
+                    tracing::info!(
+                        "LSP server unregistering capabilities: {}",
+                        serde_json::to_string_pretty(&message.params)
+                            .unwrap_or_else(|_| "Failed to serialize".to_string())
+                    );
                     Self::send_response(stdin, &id_value, json!(null)).await?;
+                    tracing::info!("Capability unregistration acknowledged");
                 },
                 "workspace/configuration" => {
                     tracing::info!(
@@ -1088,143 +933,5 @@ impl Drop for LspClient {
         {
             let _ = child.start_kill();
         }
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    // ─── CapabilityTracker unit tests ───────────────────────────────────
-
-    fn caps_with(configure: fn(&mut ServerCapabilities)) -> ServerCapabilities {
-        let mut caps = ServerCapabilities::default();
-        configure(&mut caps);
-        caps
-    }
-
-    #[test]
-    fn supports_returns_false_when_not_initialized() {
-        let tracker = CapabilityTracker::new();
-        assert!(!tracker.supports(|c| c.definition_provider.is_some(), "textDocument/definition",));
-    }
-
-    #[test]
-    fn supports_returns_true_for_advertised_capability() {
-        let tracker = CapabilityTracker::new();
-        tracker.set_static(caps_with(|c| {
-            c.definition_provider = Some(OneOf::Left(true));
-        }));
-        assert!(tracker.supports(|c| c.definition_provider.is_some(), "textDocument/definition",));
-    }
-
-    #[test]
-    fn supports_returns_false_for_missing_capability() {
-        let tracker = CapabilityTracker::new();
-        tracker.set_static(caps_with(|c| {
-            c.definition_provider = Some(OneOf::Left(true));
-        }));
-        assert!(!tracker.supports(|c| c.document_symbol_provider.is_some(), "textDocument/documentSymbol",));
-    }
-
-    #[test]
-    fn dynamic_registration_overrides_missing_static() {
-        let tracker = CapabilityTracker::new();
-        tracker.set_static(ServerCapabilities::default());
-        // Static caps have no document symbol support
-        assert!(!tracker.supports(|c| c.document_symbol_provider.is_some(), "textDocument/documentSymbol",));
-        // Dynamically register it
-        tracker.register("textDocument/documentSymbol");
-        assert!(tracker.supports(|c| c.document_symbol_provider.is_some(), "textDocument/documentSymbol",));
-    }
-
-    #[test]
-    fn dynamic_unregistration_overrides_present_static() {
-        let tracker = CapabilityTracker::new();
-        tracker.set_static(caps_with(|c| {
-            c.definition_provider = Some(OneOf::Left(true));
-        }));
-        assert!(tracker.supports(|c| c.definition_provider.is_some(), "textDocument/definition",));
-        // Dynamically unregister it
-        tracker.unregister("textDocument/definition");
-        assert!(!tracker.supports(|c| c.definition_provider.is_some(), "textDocument/definition",));
-    }
-
-    #[test]
-    fn dynamic_register_then_unregister() {
-        let tracker = CapabilityTracker::new();
-        tracker.set_static(ServerCapabilities::default());
-
-        tracker.register("textDocument/hover");
-        assert!(tracker.supports(|c| c.hover_provider.is_some(), "textDocument/hover"));
-
-        tracker.unregister("textDocument/hover");
-        assert!(!tracker.supports(|c| c.hover_provider.is_some(), "textDocument/hover"));
-    }
-
-    #[test]
-    fn get_static_returns_none_before_init() {
-        let tracker = CapabilityTracker::new();
-        assert!(tracker.get_static().is_none());
-    }
-
-    #[test]
-    fn get_static_returns_caps_after_init() {
-        let tracker = CapabilityTracker::new();
-        tracker.set_static(caps_with(|c| {
-            c.hover_provider = Some(HoverProviderCapability::Simple(true));
-        }));
-        let caps = tracker.get_static().expect("should have caps");
-        assert!(caps.hover_provider.is_some());
-    }
-
-    #[test]
-    fn set_static_only_takes_effect_once() {
-        let tracker = CapabilityTracker::new();
-        tracker.set_static(caps_with(|c| {
-            c.definition_provider = Some(OneOf::Left(true));
-        }));
-        // Second set is a no-op
-        tracker.set_static(caps_with(|c| {
-            c.hover_provider = Some(HoverProviderCapability::Simple(true));
-        }));
-        let caps = tracker.get_static().unwrap();
-        assert!(caps.definition_provider.is_some());
-        assert!(caps.hover_provider.is_none()); // second call was ignored
-    }
-
-    // ─── process_message dynamic registration tests ────────────────────
-    // These test the JSON deserialization + CapabilityTracker integration
-    // without requiring a real ChildStdin (which can't be mocked easily).
-
-    #[test]
-    fn register_capability_json_round_trip() {
-        let json = r#"{"registrations":[{"id":"1","method":"textDocument/documentSymbol"},{"id":"2","method":"textDocument/hover"}]}"#;
-        let params: RegistrationParams = serde_json::from_str(json).unwrap();
-        let tracker = CapabilityTracker::new();
-        tracker.set_static(ServerCapabilities::default());
-        for reg in &params.registrations {
-            tracker.register(&reg.method);
-        }
-        assert!(tracker.supports(|c| c.document_symbol_provider.is_some(), "textDocument/documentSymbol",));
-        assert!(tracker.supports(|c| c.hover_provider.is_some(), "textDocument/hover",));
-        // Unrelated capabilities remain unsupported
-        assert!(!tracker.supports(|c| c.definition_provider.is_some(), "textDocument/definition",));
-    }
-
-    #[test]
-    fn unregister_capability_json_round_trip() {
-        // Note: lsp_types mirrors the LSP spec typo "unregisterations"
-        let json = r#"{"unregisterations":[{"id":"1","method":"textDocument/definition"}]}"#;
-        let params: UnregistrationParams = serde_json::from_str(json).unwrap();
-        let tracker = CapabilityTracker::new();
-        tracker.set_static(caps_with(|c| {
-            c.definition_provider = Some(OneOf::Left(true));
-        }));
-        assert!(tracker.supports(|c| c.definition_provider.is_some(), "textDocument/definition",));
-        for unreg in &params.unregisterations {
-            tracker.unregister(&unreg.method);
-        }
-        assert!(!tracker.supports(|c| c.definition_provider.is_some(), "textDocument/definition",));
     }
 }

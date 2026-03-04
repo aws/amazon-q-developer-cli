@@ -763,7 +763,7 @@ fn count_nodes<D: ast_grep_core::Doc>(root: &ast_grep_core::Node<'_, D>, kinds: 
 }
 
 /// Safe symbol parsing that doesn't fail
-pub(crate) fn parse_file_symbols_safe(path: &Path, workspace_root: &Path) -> Vec<SymbolInfo> {
+fn parse_file_symbols_safe(path: &Path, workspace_root: &Path) -> Vec<SymbolInfo> {
     let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("");
     if let Some(lang_name) = lang_from_extension(ext)
         && let Ok(lang) = lang_name.parse::<SupportLang>()
