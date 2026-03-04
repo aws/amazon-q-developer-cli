@@ -7,8 +7,12 @@ use agent::tui_commands::{
     ModelArgs,
     ModelInfo,
 };
+use strsim::jaro_winkler;
 
 use super::CommandContext;
+
+/// Minimum similarity score (0.0-1.0) for suggesting a model name
+const MODEL_SIMILARITY_THRESHOLD: f64 = 0.6;
 
 pub async fn execute(args: &ModelArgs, ctx: &CommandContext<'_>) -> CommandResult {
     match &args.model_name {
@@ -17,30 +21,25 @@ pub async fn execute(args: &ModelArgs, ctx: &CommandContext<'_>) -> CommandResul
     }
 }
 
-pub async fn get_options(partial: &str, ctx: &CommandContext<'_>) -> CommandOptionsResponse {
+pub async fn get_options(_partial: &str, ctx: &CommandContext<'_>) -> CommandOptionsResponse {
     match fetch_models(ctx).await {
         Ok(models) => {
-            let partial_lower = partial.to_lowercase();
-            let options: Vec<CommandOption> = models
-                .into_iter()
-                .filter(|m| {
-                    partial.is_empty()
-                        || m.id.to_lowercase().contains(&partial_lower)
-                        || m.display_name.to_lowercase().contains(&partial_lower)
-                })
-                .map(|m| CommandOption {
-                    value: m.id.clone(),
-                    label: m.display_name,
-                    description: m.context_window.map(|w| format!("Context: {}k tokens", w / 1000)),
-                    group: m.provider,
-                })
-                .collect();
+            let options: Vec<CommandOption> = models.into_iter().map(to_command_option).collect();
             CommandOptionsResponse {
                 options,
                 has_more: false,
             }
         },
         Err(_) => CommandOptionsResponse::default(),
+    }
+}
+
+fn to_command_option(m: ModelInfo) -> CommandOption {
+    CommandOption {
+        value: m.id.clone(),
+        label: m.display_name,
+        description: m.context_window.map(|w| format!("Context: {}k tokens", w / 1000)),
+        group: m.provider,
     }
 }
 
@@ -68,24 +67,56 @@ async fn switch_model(name: &str, ctx: &CommandContext<'_>) -> CommandResult {
         Err(e) => return CommandResult::error(format!("Failed to fetch models: {}", e)),
     };
 
-    let model = match models.iter().find(|m| m.id == name) {
-        Some(m) => crate::cli::chat::legacy::model::ModelInfo {
-            model_id: m.id.clone(),
-            model_name: Some(m.display_name.clone()),
-            description: None,
-            context_window_tokens: m.context_window.unwrap_or(200_000) as usize,
-            rate_multiplier: None,
-            rate_unit: None,
-        },
-        None => return CommandResult::error(format!("Unknown model: {}", name)),
-    };
+    // Exact match — switch immediately
+    if let Some(m) = models.iter().find(|m| m.id == name) {
+        let model = to_legacy_model_info(m);
+        let display_name = m.display_name.clone();
+        let id = m.id.clone();
+        ctx.rts_state.set_model_info(Some(model));
+        return CommandResult::success_with_data(
+            format!("Model changed to {}", display_name),
+            serde_json::json!({ "model": { "id": id, "name": display_name } }),
+        );
+    }
 
-    let display_name = model.model_name.clone().unwrap_or_else(|| name.to_string());
-    ctx.rts_state.set_model_info(Some(model));
-    CommandResult::success_with_data(
-        format!("Model changed to {}", name),
-        serde_json::json!({ "model": { "id": name, "name": display_name } }),
-    )
+    // Fuzzy match — suggest, don't switch
+    if let Some(m) = find_similar_model(&models, name) {
+        return CommandResult::error(format!(
+            "Model '{}' not found. Did you mean {}? Run /model to browse available models.",
+            name, m.display_name
+        ));
+    }
+
+    CommandResult::error(format!(
+        "Unknown model: {}. Run /model to browse available models.",
+        name
+    ))
+}
+
+fn to_legacy_model_info(m: &ModelInfo) -> crate::cli::chat::legacy::model::ModelInfo {
+    crate::cli::chat::legacy::model::ModelInfo {
+        model_id: m.id.clone(),
+        model_name: Some(m.display_name.clone()),
+        description: None,
+        context_window_tokens: m.context_window.unwrap_or(200_000) as usize,
+        rate_multiplier: None,
+        rate_unit: None,
+    }
+}
+
+/// Find the closest matching model using fuzzy string matching.
+fn find_similar_model<'a>(models: &'a [ModelInfo], query: &str) -> Option<&'a ModelInfo> {
+    let query_lower = query.to_lowercase();
+    models
+        .iter()
+        .map(|m| {
+            let name_score = jaro_winkler(&query_lower, &m.display_name.to_lowercase());
+            let id_score = jaro_winkler(&query_lower, &m.id.to_lowercase());
+            (name_score.max(id_score), m)
+        })
+        .filter(|(score, _)| *score >= MODEL_SIMILARITY_THRESHOLD)
+        .max_by(|a, b| a.0.partial_cmp(&b.0).unwrap_or(std::cmp::Ordering::Equal))
+        .map(|(_, m)| m)
 }
 
 async fn fetch_models(ctx: &CommandContext<'_>) -> Result<Vec<ModelInfo>, String> {

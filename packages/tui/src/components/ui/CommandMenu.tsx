@@ -150,10 +150,6 @@ export const CommandMenu: React.FC = () => {
 
       setPromptHint(null);
       await handleUserInput(fullCommand);
-
-      if (isSelectionCommand) {
-        setCommandInput(fullCommand);
-      }
     },
     [handleUserInput, slashCommands, setCommandInput, setPromptHint]
   );
@@ -221,6 +217,9 @@ export const CommandMenu: React.FC = () => {
           setPromptHint(null);
         }}
         showSelectedIndicator={true}
+        searchable={true}
+        searchLabel={`Select ${activeCommand.command.name.slice(1)}`}
+        searchPlaceholder="type to search, ↑↓ to navigate"
       />
     );
   }

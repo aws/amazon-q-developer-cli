@@ -1,4 +1,10 @@
-import React, { useState, useEffect, useContext, useCallback } from 'react';
+import React, {
+  useState,
+  useEffect,
+  useContext,
+  useCallback,
+  useMemo,
+} from 'react';
 import { Box, useMouse } from 'ink';
 import { useTheme } from '../../../hooks/useThemeContext.js';
 import { useTextStyle } from '../../../hooks/useTextStyle.js';
@@ -21,6 +27,46 @@ export interface MenuProps {
   onTabComplete?: () => void;
   visibleItems?: number; // defaults to 8
   showSelectedIndicator?: boolean; // show chevron indicator for selected item
+  /** When true, renders a search input line above the list for type-to-filter. */
+  searchable?: boolean;
+  /** Label shown before the search input (e.g. "Select model"). */
+  searchLabel?: string;
+  /** Placeholder shown when search input is empty. */
+  searchPlaceholder?: string;
+}
+
+/**
+ * Fuzzy subsequence match scoring. Returns 0 if query is not a subsequence of target.
+ * Higher score = better match. Rewards:
+ * - consecutive character runs
+ * - matches at word boundaries (after - _ . or space)
+ * - match at the start of the string
+ */
+function fuzzyScore(query: string, target: string): number {
+  let qi = 0;
+  let score = 0;
+  let consecutive = 0;
+  let prevMatchIdx = -2;
+
+  for (let ti = 0; ti < target.length && qi < query.length; ti++) {
+    if (target[ti] === query[qi]) {
+      qi++;
+      score += 1;
+      // Bonus for consecutive matches
+      if (ti === prevMatchIdx + 1) {
+        consecutive++;
+        score += consecutive;
+      } else {
+        consecutive = 0;
+      }
+      // Bonus for word boundary match
+      if (ti === 0 || '-_ .'.includes(target[ti - 1]!)) {
+        score += 2;
+      }
+      prevMatchIdx = ti;
+    }
+  }
+  return qi === query.length ? score : 0;
 }
 
 export const Menu = React.memo(function Menu({
@@ -32,8 +78,12 @@ export const Menu = React.memo(function Menu({
   onTabComplete,
   visibleItems = 8,
   showSelectedIndicator = false,
+  searchable = false,
+  searchLabel = 'search',
+  searchPlaceholder = 'type to search',
 }: MenuProps) {
   const [selectedIndex, setSelectedIndex] = useState(0);
+  const [searchText, setSearchText] = useState('');
   const { getColor } = useTheme();
   const { width: terminalWidth } = useTerminalSize();
 
@@ -41,10 +91,33 @@ export const Menu = React.memo(function Menu({
   const label = useTextStyle('label');
   const selectedLabel = useTextStyle('selectedLabel');
   const description = getColor('secondary');
+  const dimText = getColor('secondary');
+  const brandText = getColor('primary');
+
+  // Filter items when searchable using fuzzy subsequence matching + scoring
+  const displayItems = useMemo(() => {
+    if (!searchable || !searchText) return items;
+    const query = searchText.toLowerCase();
+    const scored: { item: MenuItem; score: number }[] = [];
+    for (const item of items) {
+      const labelScore = fuzzyScore(query, item.label.toLowerCase());
+      const descScore = fuzzyScore(query, item.description.toLowerCase());
+      const best = Math.max(labelScore, descScore);
+      if (best > 0) scored.push({ item, score: best });
+    }
+    scored.sort((a, b) => b.score - a.score);
+    return scored.map((s) => s.item);
+  }, [items, searchText, searchable]);
+
+  // Reset selection when filter changes
+  useEffect(() => {
+    setSelectedIndex(0);
+  }, [searchText]);
 
   // Calculate the maximum item label length for consistent column alignment
   const maxLabelLength =
-    Math.max(...items.map((item) => item.label.length)) + prefix.length;
+    Math.max(...displayItems.map((item) => item.label.length), 0) +
+    prefix.length;
 
   // Calculate available width for description
   const indicatorWidth = showSelectedIndicator ? 3 : 0; // chevron + 2 spaces
@@ -53,20 +126,20 @@ export const Menu = React.memo(function Menu({
     terminalWidth - indicatorWidth - maxLabelLength - spacerWidth - 5; // -5 for margin
 
   // Call onHighlight when selectedIndex changes
-  React.useEffect(() => {
-    const selectedItem = items[selectedIndex];
+  useEffect(() => {
+    const selectedItem = displayItems[selectedIndex];
     if (onHighlight && selectedIndex >= 0 && selectedItem) {
       onHighlight(selectedItem);
     }
-  }, [selectedIndex, onHighlight, items]);
+  }, [selectedIndex, onHighlight, displayItems]);
 
-  useKeypress((_input, key) => {
+  useKeypress((input, key) => {
     if (key.upArrow) {
       setSelectedIndex((prev) => Math.max(0, prev - 1));
     } else if (key.downArrow) {
-      setSelectedIndex((prev) => Math.min(items.length - 1, prev + 1));
-    } else if ((key.return || key.rightArrow) && selectedIndex >= 0) {
-      const selectedItem = items[selectedIndex];
+      setSelectedIndex((prev) => Math.min(displayItems.length - 1, prev + 1));
+    } else if (key.return && selectedIndex >= 0) {
+      const selectedItem = displayItems[selectedIndex];
       if (selectedItem) {
         onSelect(selectedItem);
       }
@@ -74,6 +147,21 @@ export const Menu = React.memo(function Menu({
       onEscape();
     } else if (key.tab && onTabComplete) {
       onTabComplete();
+    } else if (!searchable) {
+      // Non-searchable: rightArrow selects
+      if (key.rightArrow && selectedIndex >= 0) {
+        const selectedItem = displayItems[selectedIndex];
+        if (selectedItem) {
+          onSelect(selectedItem);
+        }
+      }
+    } else if (!key.ctrl && !key.meta) {
+      // Searchable: capture text input
+      if (key.backspace || key.delete) {
+        setSearchText((prev) => prev.slice(0, -1));
+      } else if (input && input.length === 1 && input >= ' ') {
+        setSearchText((prev) => prev + input);
+      }
     }
   });
 
@@ -82,11 +170,11 @@ export const Menu = React.memo(function Menu({
     0,
     Math.min(
       selectedIndex - Math.floor(visibleItems / 2),
-      items.length - visibleItems
+      displayItems.length - visibleItems
     )
   );
-  const endIndex = Math.min(startIndex + visibleItems, items.length);
-  const visibleItemsSlice = items.slice(startIndex, endIndex);
+  const endIndex = Math.min(startIndex + visibleItems, displayItems.length);
+  const visibleItemsSlice = displayItems.slice(startIndex, endIndex);
 
   const { height: termHeight } = useTerminalSize();
 
@@ -95,12 +183,20 @@ export const Menu = React.memo(function Menu({
       setSelectedIndex((prev) => Math.max(0, prev - 1));
     }, []),
     onScrollDown: useCallback(() => {
-      setSelectedIndex((prev) => Math.min(items.length - 1, prev + 1));
-    }, [items.length]),
+      setSelectedIndex((prev) => Math.min(displayItems.length - 1, prev + 1));
+    }, [displayItems.length]),
   });
 
   return (
     <Box flexDirection="column">
+      {searchable && (
+        <Box>
+          <Text>{dimText(`${searchLabel}: `)}</Text>
+          {searchText ? <Text>{brandText(searchText)}</Text> : null}
+          <Text inverse> </Text>
+          {!searchText && <Text>{dimText(` ${searchPlaceholder}`)}</Text>}
+        </Box>
+      )}
       {visibleItemsSlice.map((item, visibleIndex) => {
         const actualIndex = startIndex + visibleIndex;
         const itemText = `${prefix}${item.label}`;

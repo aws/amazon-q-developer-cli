@@ -141,6 +141,7 @@ export const PromptInput = React.memo(function PromptInput({
     commandInputValue,
     promptHint,
     slashCommands,
+    activeCommand,
   } = useCommandState();
   const { setCommandInput, clearCommandInput, setPromptHint } =
     useCommandActions();
@@ -503,6 +504,9 @@ export const PromptInput = React.memo(function PromptInput({
 
   useKeypress(
     (userInput: string, key: Key) => {
+      // Don't process input when selection menu is open (Menu handles its own input)
+      if (activeCommand) return;
+
       if (key.paste) {
         handlePaste(userInput);
         return;
@@ -740,6 +744,12 @@ export const PromptInput = React.memo(function PromptInput({
   );
 
   const renderContent = () => {
+    // When selection menu is open, show the command name statically (no cursor)
+    if (activeCommand) {
+      const cmdName = activeCommand.command.name;
+      return <Text>{styleInputText(cmdName, true)}</Text>;
+    }
+
     const total = totalWidth(segments);
     if (total === 0) {
       return (

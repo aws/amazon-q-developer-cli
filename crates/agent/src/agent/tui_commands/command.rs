@@ -206,14 +206,14 @@ impl TuiCommand {
                 let mut meta = serde_json::Map::new();
                 meta.insert("optionsMethod".into(), "_kiro.dev/commands/model/options".into());
                 meta.insert("inputType".into(), "selection".into());
-                meta.insert("hint".into(), "↑↓ to choose model".into());
+                meta.insert("hint".into(), "".into());
                 Some(meta)
             },
             TuiCommand::Agent(_) => {
                 let mut meta = serde_json::Map::new();
                 meta.insert("optionsMethod".into(), "_kiro.dev/commands/agent/options".into());
                 meta.insert("inputType".into(), "selection".into());
-                meta.insert("hint".into(), "↑↓ to choose agent".into());
+                meta.insert("hint".into(), "".into());
                 Some(meta)
             },
             TuiCommand::Context(_) => {
