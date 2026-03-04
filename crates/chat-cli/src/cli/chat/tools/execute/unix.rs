@@ -7,6 +7,7 @@ use eyre::{
 };
 use tokio::io::AsyncReadExt;
 use tokio::select;
+use tokio::time::Duration;
 use tracing::error;
 
 use super::{
@@ -41,11 +42,9 @@ pub async fn run_command<W: Write>(
     cmd.arg("-c")
         .arg(command)
         .envs(env_vars)
-        .stdin(Stdio::inherit())
+        .stdin(Stdio::null())
         .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        // Create a new process group so we can kill all child processes on Ctrl+C
-        .process_group(0);
+        .stderr(Stdio::piped());
 
     if let Some(dir) = working_dir {
         cmd.current_dir(dir);
@@ -55,26 +54,26 @@ pub async fn run_command<W: Write>(
         .spawn()
         .wrap_err_with(|| format!("Unable to spawn command '{command}'"))?;
 
-    // Get the child PID for process group cleanup
+    // Get the child PID for cleanup on cancellation (e.g., Ctrl+C)
     let child_pid = child.id();
 
-    // Guard to kill process group on drop (e.g., when Ctrl+C cancels the future)
-    struct ProcessGroupGuard {
+    // Guard to kill child process tree on drop (e.g., when Ctrl+C cancels the future).
+    // We send SIGTERM to the child; bash propagates it to its children.
+    struct ChildGuard {
         pid: Option<u32>,
     }
 
-    impl Drop for ProcessGroupGuard {
+    impl Drop for ChildGuard {
         fn drop(&mut self) {
             if let Some(pid) = self.pid {
-                // Kill the entire process group (negative PID)
                 unsafe {
-                    libc::kill(-(pid as i32), libc::SIGTERM);
+                    libc::kill(pid as i32, libc::SIGTERM);
                 }
             }
         }
     }
 
-    let mut guard = ProcessGroupGuard { pid: child_pid };
+    let mut guard = ChildGuard { pid: child_pid };
 
     let stdout_final: String;
     let stderr_final: String;
@@ -144,13 +143,17 @@ pub async fn run_command<W: Write>(
                 },
                 exit_status = child.wait() => {
                     // Process exited, but we need to drain any remaining output
-                    // that might still be in the pipe buffers
+                    // that might still be in the pipe buffers. Use a timeout so
+                    // we don't block forever if a background process (e.g. a
+                    // daemon) inherited the pipe FDs and is still holding them
+                    // open; child exit does not imply pipe EOF.
+                    const DRAIN_TIMEOUT: Duration = Duration::from_millis(10);
                     loop {
                         let mut drained = false;
                         if !stdout_done {
-                            match stdout.read(&mut stdout_chunk).await {
-                                Ok(0) => stdout_done = true,
-                                Ok(n) => {
+                            match tokio::time::timeout(DRAIN_TIMEOUT, stdout.read(&mut stdout_chunk)).await {
+                                Ok(Ok(0)) => stdout_done = true,
+                                Ok(Ok(n)) => {
                                     let chunk = &stdout_chunk[..n];
                                     u.write_all(chunk)?;
                                     if stdout_accumulated.len() + n > MAX_ACCUMULATED {
@@ -160,13 +163,13 @@ pub async fn run_command<W: Write>(
                                     stdout_accumulated.extend_from_slice(chunk);
                                     drained = true;
                                 },
-                                Err(_) => stdout_done = true,
+                                Ok(Err(_)) | Err(_) => stdout_done = true,
                             }
                         }
                         if !stderr_done {
-                            match stderr.read(&mut stderr_chunk).await {
-                                Ok(0) => stderr_done = true,
-                                Ok(n) => {
+                            match tokio::time::timeout(DRAIN_TIMEOUT, stderr.read(&mut stderr_chunk)).await {
+                                Ok(Ok(0)) => stderr_done = true,
+                                Ok(Ok(n)) => {
                                     let chunk = &stderr_chunk[..n];
                                     u.write_all(chunk)?;
                                     if stderr_accumulated.len() + n > MAX_ACCUMULATED {
@@ -176,7 +179,7 @@ pub async fn run_command<W: Write>(
                                     stderr_accumulated.extend_from_slice(chunk);
                                     drained = true;
                                 },
-                                Err(_) => stderr_done = true,
+                                Ok(Err(_)) | Err(_) => stderr_done = true,
                             }
                         }
                         if !drained || (stdout_done && stderr_done) {
@@ -284,6 +287,30 @@ mod tests {
         }
     }
 
+    /// Verify that run_command doesn't hang when the child spawns a
+    /// background daemon that inherits the piped stdout/stderr FDs.
+    /// Child exit does not imply pipe EOF — the drain loop must time out.
+    #[tokio::test]
+    async fn test_run_command_does_not_hang_when_daemon_holds_pipe_fds() {
+        use super::run_command;
+
+        let os = Os::new().await.unwrap();
+        // Fork a background process that inherits stdout/stderr FDs and sleeps.
+        // The parent exits immediately, but the daemon keeps the pipes open.
+        let cmd = r#"echo "before"; perl -e 'exit 0 if fork; sleep 300'; echo "after""#;
+
+        let result = tokio::time::timeout(
+            std::time::Duration::from_secs(5),
+            run_command(&os, cmd, None, Some(std::io::stdout())),
+        )
+        .await
+        .expect("run_command hung — drain loop blocked on daemon-held pipe FDs")
+        .unwrap();
+
+        assert_eq!(result.exit_status, Some(0));
+        assert!(result.stdout.contains("before"));
+        assert!(result.stdout.contains("after"));
+    }
     #[tokio::test]
     async fn test_run_command_with_working_dir() {
         use super::run_command;
