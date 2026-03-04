@@ -4,28 +4,44 @@ import { Icon, IconType } from '../../ui/icon/Icon.js';
 import { useTheme } from '../../../hooks/useThemeContext.js';
 
 interface ContextBarProps {
-  children: React.ReactNode;
+  primaryItems?: React.ReactNode[];
+  secondaryItems?: React.ReactNode[];
 }
 
-export function ContextBar({ children }: ContextBarProps) {
+export function ContextBar({ primaryItems = [], secondaryItems = [] }: ContextBarProps) {
   const { getColor } = useTheme();
 
-  // Convert children to array and filter out falsy values
-  const items = React.Children.toArray(children).filter(Boolean);
-  const [firstItem, ...restItems] = items;
+  // Filter out falsy items
+  const filteredPrimary = primaryItems.filter(Boolean);
+  const filteredSecondary = secondaryItems.filter(Boolean);
 
   return (
     <Box flexDirection="row" gap={0} width="100%" flexWrap="wrap">
-      {/* First item on the left - grows to push others right, never wraps */}
-      <Box flexGrow={1} flexShrink={0}>
-        {firstItem}
+      {/* Primary items - left aligned, grows to push secondary right */}
+      <Box flexDirection="row" gap={0} flexGrow={1}>
+        {filteredPrimary.map((item, index) => (
+          <Box key={index} flexDirection="row" flexShrink={0}>
+            {item}
+            {/* Show dot after item only if there's another primary item */}
+            {index < filteredPrimary.length - 1 && (
+              <Box paddingX={1}>
+                <Icon type={IconType.SMALL_DOT} color={getColor('secondary')} />
+              </Box>
+            )}
+          </Box>
+        ))}
       </Box>
 
-      {/* Remaining items with separators - each chip+separator wraps as a unit */}
-      {restItems.map((item, index) => (
-        <Box key={index + 1} flexDirection="row" gap={1} flexShrink={0}>
-          <Icon type={IconType.SMALL_DOT} color={getColor('secondary')} />
+      {/* Secondary items - right aligned */}
+      {filteredSecondary.map((item, index) => (
+        <Box key={filteredPrimary.length + index} flexDirection="row" flexShrink={0}>
           {item}
+          {/* Show dot after item if there's a next item in secondary */}
+          {index < filteredSecondary.length - 1 && (
+            <Box paddingX={1}>
+              <Icon type={IconType.SMALL_DOT} color={getColor('secondary')} />
+            </Box>
+          )}
         </Box>
       ))}
     </Box>

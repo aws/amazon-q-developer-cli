@@ -99,7 +99,7 @@ export const getTerminalChalkColor = (
   }
 
   // If no color values provided, return base chalk
-  if (!truecolor && !color256 && !named) {
+  if (!truecolor && color256 === undefined && !named) {
     const colorWrapper = (text: string) => chalk(text);
     colorWrapper.hex = resolvedHex;
     return colorWrapper;
@@ -124,7 +124,7 @@ export const getTerminalChalkColor = (
   ) {
     // 256-color terminal - use color256 hex equivalent
     resolvedHex =
-      (color256 && color256ToHex(color256)) ||
+      (color256 !== undefined && color256ToHex(color256)) ||
       truecolor ||
       (named && namedColorToHex[named]) ||
       '#000000';
@@ -144,7 +144,7 @@ export const getTerminalChalkColor = (
   ) {
     if (truecolor) {
       chalkFunction = chalk.hex(truecolor);
-    } else if (color256) {
+    } else if (color256 !== undefined) {
       chalkFunction = chalk.ansi256(color256);
     } else if (named) {
       chalkFunction = (chalk as any)[named] || chalk;
@@ -157,7 +157,7 @@ export const getTerminalChalkColor = (
     'has256' in stdout &&
     stdout.has256
   ) {
-    if (color256) {
+    if (color256 !== undefined) {
       chalkFunction = chalk.ansi256(color256);
     } else if (truecolor) {
       chalkFunction = chalk.hex(truecolor);
@@ -173,7 +173,7 @@ export const getTerminalChalkColor = (
   else {
     if (truecolor) {
       chalkFunction = chalk.hex(truecolor);
-    } else if (color256) {
+    } else if (color256 !== undefined) {
       chalkFunction = chalk.ansi256(color256);
     } else if (named) {
       chalkFunction = (chalk as any)[named] || chalk;

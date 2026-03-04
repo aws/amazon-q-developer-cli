@@ -1,6 +1,5 @@
 export * from './colorUtils.js';
 export * from './markdown.js';
-export * from './terminal-capabilities.js';
 export * from './os-appearance.js';
 export * from './terminal-theme.js';
 export * from './string.js';

@@ -6,6 +6,10 @@ export enum IconType {
   SMALL_DOT = 'small-dot',
   CHEVRON_RIGHT = 'chevron-right',
   ARROW_DOWN = 'arrow-down',
+  PROGRESS_25 = 'progress-25',
+  PROGRESS_25_FILLED = 'progress-25-filled',
+  PROGRESS_50_FILLED = 'progress-50-filled',
+  PROGRESS_75_FILLED = 'progress-75-filled',
 }
 
 const ICON_MAP: Record<IconType, string> = {
@@ -13,6 +17,10 @@ const ICON_MAP: Record<IconType, string> = {
   [IconType.SMALL_DOT]: '·',
   [IconType.CHEVRON_RIGHT]: '❯',
   [IconType.ARROW_DOWN]: '↓',
+  [IconType.PROGRESS_25]: '◷',
+  [IconType.PROGRESS_25_FILLED]: '◔',
+  [IconType.PROGRESS_50_FILLED]: '◑',
+  [IconType.PROGRESS_75_FILLED]: '◕',
 };
 
 export interface IconProps {

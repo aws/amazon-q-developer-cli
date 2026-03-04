@@ -4,6 +4,7 @@
   "type": "module",
   "scripts": {
     "dev": "bun run scripts/start-dev.ts",
+    "dev:256": "COLORTERM= bun run scripts/start-dev.ts",
     "release": "bun run scripts/start-release.ts",
     "dev:storybook": "bun --watch src/storybook/run-storybook.tsx",
     "build": "NODE_ENV=production bun build src/index.tsx --outfile dist/tui.js --target bun",

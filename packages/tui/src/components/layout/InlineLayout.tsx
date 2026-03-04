@@ -3,7 +3,6 @@ import React, {
   useMemo,
   useState,
   useEffect,
-  useRef,
 } from 'react';
 import { Box, Text } from 'ink';
 import { AnimationPausedContext } from '../../contexts/AnimationPausedContext.js';
@@ -400,47 +399,42 @@ export const InlineLayout: React.FC = () => {
       ) as PromptBarHeader;
     }
 
-    return (
-      <ContextBar>
-        {currentAgent && (
-          <>
-            {currentAgent.name === 'kiro_planner' && (
-              <Text color="magenta">[plan] </Text>
-            )}
-            <Chip
-              value={currentAgent.name}
-              hexColor={getAgentColor(currentAgent.name, getColor).hex}
-              prefix="agent:"
-            />
-          </>
-        )}
-        {contextUsagePercent != null && (
-          <ProgressChip
-            value={contextUsagePercent}
-            barColor={
-              contextUsagePercent >= 80
-                ? 'error'
-                : contextUsagePercent >= 60
-                  ? 'warning'
-                  : 'success'
-            }
-            label="context used"
-            showRemaining={false}
-          />
-        )}
-        <Chip value={shortenPath(process.cwd())} color={ChipColor.BRAND} />
-        {gitBranch && (
+    const primaryItems = [
+      currentAgent && (
+        <>
+          {currentAgent.name === 'kiro_planner' && (
+            <Text color="magenta">[plan] </Text>
+          )}
           <Chip
-            value={gitBranch}
-            color={ChipColor.PRIMARY}
-            prefix="git:"
-            wrap={true}
+            value={currentAgent.name === 'kiro_default' ? 'Kiro' : currentAgent.name}
+            color={getAgentColor(currentAgent.name, getColor)}
           />
-        )}
-        {currentModel && (
-          <Chip value={currentModel.name} color={ChipColor.PRIMARY} />
-        )}
-      </ContextBar>
+        </>
+      ),
+      currentModel && (
+        <Chip value={currentModel.name} color={ChipColor.PRIMARY} />
+      ),
+      contextUsagePercent != null && (
+        <ProgressChip
+          value={contextUsagePercent}
+          warningThreshold={60}
+        />
+      )
+    ];
+
+    const secondaryItems = [
+      <Chip value={shortenPath(process.cwd())} color={ChipColor.BRAND} />,
+      gitBranch && (
+        <Chip
+          value={gitBranch}
+          color={ChipColor.PRIMARY}
+          wrap={true}
+        />
+      )
+    ];
+
+    return (
+      <ContextBar primaryItems={primaryItems} secondaryItems={secondaryItems} />
     ) as PromptBarHeader;
   }, [
     pendingApproval,

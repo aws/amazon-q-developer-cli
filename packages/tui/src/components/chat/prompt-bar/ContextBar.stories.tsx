@@ -6,7 +6,7 @@ const meta = {
   component: ContextBar,
   parameters: {
     layout: 'fullscreen',
-    storyOrder: ['FullInfo', 'NoGit', 'Minimal', 'CustomChips'],
+    storyOrder: ['FullInfo', 'NoGit', 'Minimal', 'CustomChips', 'PrimaryAndSecondary'],
   },
   tags: ['autodocs'],
 };
@@ -21,11 +21,15 @@ export const FullInfo = {
     },
   },
   render: () => (
-    <ContextBar>
-      <Chip value="~/developer/my-project" color={ChipColor.BRAND} />
-      <Chip value="main" color={ChipColor.PRIMARY} prefix="git:" wrap={true} />
-      <Chip value="claude-3.5-sonnet" color={ChipColor.PRIMARY} />
-    </ContextBar>
+    <ContextBar
+      primaryItems={[
+        <Chip value="~/developer/my-project" color={ChipColor.BRAND} />,
+      ]}
+      secondaryItems={[
+        <Chip value="main" color={ChipColor.PRIMARY} prefix="git:" wrap={true} />,
+        <Chip value="claude-3.5-sonnet" color={ChipColor.PRIMARY} />,
+      ]}
+    />
   ),
 };
 
@@ -36,10 +40,14 @@ export const NoGit = {
     },
   },
   render: () => (
-    <ContextBar>
-      <Chip value="~/developer/my-project" color={ChipColor.BRAND} />
-      <Chip value="gpt-4" color={ChipColor.PRIMARY} />
-    </ContextBar>
+    <ContextBar
+      primaryItems={[
+        <Chip value="~/developer/my-project" color={ChipColor.BRAND} />,
+      ]}
+      secondaryItems={[
+        <Chip value="gpt-4" color={ChipColor.PRIMARY} />,
+      ]}
+    />
   ),
 };
 
@@ -50,9 +58,11 @@ export const Minimal = {
     },
   },
   render: () => (
-    <ContextBar>
-      <Chip value="claude-3.5-sonnet" color={ChipColor.PRIMARY} />
-    </ContextBar>
+    <ContextBar
+      primaryItems={[
+        <Chip value="claude-3.5-sonnet" color={ChipColor.PRIMARY} />,
+      ]}
+    />
   ),
 };
 
@@ -63,16 +73,36 @@ export const CustomChips = {
     },
   },
   render: () => (
-    <ContextBar>
-      <Chip value="online" color={ChipColor.SUCCESS} prefix="● " />
-      <Chip
-        value="feature/new-ui"
-        color={ChipColor.PRIMARY}
-        prefix="git:"
-        wrap={true}
-      />
-      <Chip value="processing" color={ChipColor.WARNING} prefix="⟳ " />
-      <Chip value="claude-3.5-sonnet" color={ChipColor.PRIMARY} />
-    </ContextBar>
+    <ContextBar
+      primaryItems={[
+        <Chip value="online" color={ChipColor.SUCCESS} prefix="● " />,
+      ]}
+      secondaryItems={[
+        <Chip value="feature/new-ui" color={ChipColor.PRIMARY} prefix="git:" wrap={true} />,
+        <Chip value="processing" color={ChipColor.WARNING} prefix="⟳ " />,
+        <Chip value="claude-3.5-sonnet" color={ChipColor.PRIMARY} />,
+      ]}
+    />
+  ),
+};
+
+export const PrimaryAndSecondary = {
+  parameters: {
+    docs: {
+      storyDescription: 'Demonstrates primary items on left, secondary on right',
+    },
+  },
+  render: () => (
+    <ContextBar
+      primaryItems={[
+        <Chip value="my-agent" color={ChipColor.PRIMARY} prefix="agent:" />,
+        <Chip value="45%" color={ChipColor.SUCCESS} prefix="context:" />,
+      ]}
+      secondaryItems={[
+        <Chip value="~/project" color={ChipColor.BRAND} />,
+        <Chip value="main" color={ChipColor.PRIMARY} prefix="git:" />,
+        <Chip value="claude-3.5-sonnet" color={ChipColor.PRIMARY} />,
+      ]}
+    />
   ),
 };

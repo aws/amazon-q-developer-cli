@@ -8,58 +8,50 @@ interface ProgressChipProps {
   value: number;
   /** Optional text label to show after the percentage */
   label?: string;
-  /** Whether to show percentage text after the bar */
+  /** Whether to show percentage text after the icon */
   showPercentage?: boolean;
-  /** Width of the progress bar in characters (default: 5) */
-  barWidth?: number;
-  /** Color for the filled portion of the bar (default: 'primary') */
-  barColor?: 'primary' | 'success' | 'warning' | 'error' | 'info' | 'brand';
-  /** Show remaining percentage (100 - value) instead of value */
-  showRemaining?: boolean;
+  /** Threshold percentage where color changes from green to yellow (default: 60) */
+  warningThreshold?: number;
 }
 
 export default function ProgressChip({
   value,
   label,
   showPercentage = true,
-  barWidth = 5,
-  barColor = 'primary',
-  showRemaining = false,
+  warningThreshold = 60,
 }: ProgressChipProps) {
   const { getColor } = useTheme();
 
   // Clamp value between 0 and 100
   const clampedValue = Math.max(0, Math.min(100, value));
 
-  // Calculate filled and empty segments
-  // When showRemaining, fill the bar to show remaining capacity (not usage)
-  const barValue = showRemaining ? 100 - clampedValue : clampedValue;
-  const filledCount = Math.round((barValue / 100) * barWidth);
-  const emptyCount = barWidth - filledCount;
+  // Determine icon and color based on value
+  let icon: string;
+  let colorFn: (text: string) => string;
 
-  const barColorFn = getColor(barColor);
-  const primaryColor = getColor('primary');
+  if (clampedValue === 0) {
+    icon = '◷';
+    colorFn = getColor('success');
+  } else if (clampedValue <= 25) {
+    icon = '◔';
+    colorFn = getColor('success');
+  } else if (clampedValue <= 50) {
+    icon = '◑';
+    colorFn = getColor('success');
+  } else if (clampedValue < warningThreshold) {
+    icon = '◑';
+    colorFn = getColor('warning');
+  } else {
+    icon = '◕';
+    colorFn = getColor('warning');
+  }
+
   const secondaryColor = getColor('secondary');
-  const mutedColor = getColor('muted');
-
-  // Build the progress bar
-  const filledBar = '█'.repeat(filledCount);
-  const emptyBar = '░'.repeat(emptyCount);
-
-  // Calculate display percentage
-  const displayPercentage = showRemaining ? 100 - clampedValue : clampedValue;
 
   return (
     <Box flexDirection="row" gap={1}>
-      <Text>
-        {mutedColor('[')}
-        {barColorFn(filledBar)}
-        {secondaryColor(emptyBar)}
-        {mutedColor(']')}
-      </Text>
-      {showPercentage && (
-        <Text>{primaryColor(`${Math.round(displayPercentage)}%`)}</Text>
-      )}
+      <Text>{colorFn(icon)}</Text>
+      {showPercentage && <Text>{colorFn(`${Math.round(clampedValue)}%`)}</Text>}
       {label && <Text>{secondaryColor(label)}</Text>}
     </Box>
   );

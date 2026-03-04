@@ -1,4 +1,4 @@
-import { Box, Text as InkText } from 'ink';
+import { Box } from 'ink';
 import { Text } from '../text/Text.js';
 import { useTheme } from '../../../hooks/useThemeContext.js';
 
@@ -11,13 +11,14 @@ export enum ChipColor {
   ERROR = 'error',
 }
 
+/** Chalk color function type */
+type ChalkColorFn = (text: string) => string;
+
 interface ChipProps {
   /** The value/name to display */
   value: string;
-  /** Color preset for the chip */
-  color?: ChipColor;
-  /** Custom hex color (overrides color preset) */
-  hexColor?: string;
+  /** Color preset (ChipColor enum) or custom chalk function */
+  color?: ChipColor | ChalkColorFn;
   /** Prefix text to display before the value */
   prefix?: string;
   /** Whether to wrap the value in parentheses */
@@ -29,7 +30,6 @@ interface ChipProps {
 export default function Chip({
   value,
   color = ChipColor.PRIMARY,
-  hexColor,
   prefix,
   wrap = false,
   background = false,
@@ -39,15 +39,14 @@ export default function Chip({
   // Don't render anything if no value
   if (!value) return null;
 
+  // Use custom chalk function if provided, otherwise use theme color
+  const valueColor = typeof color === 'function' ? color : getColor(color);
+
   const content = (
     <Text>
       {prefix && getColor(ChipColor.SECONDARY)(prefix)}
       {wrap && getColor(ChipColor.SECONDARY)('(')}
-      {hexColor ? (
-        <InkText color={hexColor}>{value}</InkText>
-      ) : (
-        getColor(color)(value)
-      )}
+      {valueColor(value)}
       {wrap && getColor(ChipColor.SECONDARY)(')')}
     </Text>
   );
