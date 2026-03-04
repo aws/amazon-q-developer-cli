@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState, useCallback } from 'react';
 import { Box } from 'ink';
 import { Text } from './text/Text.js';
 import { Panel } from './panel/index.js';
@@ -23,90 +23,87 @@ interface PromptsPanelProps {
   onClose: () => void;
 }
 
-function truncate(str: string, max: number): string {
-  if (str.length <= max) return str;
-  return max > 3 ? str.slice(0, max - 3) + '...' : str.slice(0, max);
+const GAP = 2;
+
+function shortDescription(desc: string | undefined, maxLen: number): string {
+  if (!desc) return '(file prompt)';
+  const firstLine = desc.trim().split('\n')[0] ?? '';
+  const clean = firstLine.replace(/\s+/g, ' ').trim();
+  if (clean.length <= maxLen) return clean;
+  return clean.slice(0, maxLen - 3) + '...';
 }
 
-export const PromptsPanel = React.memo(function PromptsPanel({
-  prompts,
-  onClose,
-}: PromptsPanelProps) {
+export const PromptsPanel = React.memo(function PromptsPanel({ prompts, onClose }: PromptsPanelProps) {
   const { getColor } = useTheme();
-  const { width } = useTerminalSize();
-
+  const { width: termWidth, height: termHeight } = useTerminalSize();
   const primary = getColor('primary');
-  const secondary = getColor('secondary');
-  const muted = getColor('muted');
+  const dim = getColor('secondary');
   const brand = getColor('brand');
+  const info = getColor('info');
 
-  const indent = 2;
-  const usable = width - indent - 2;
-  const nameCol = Math.min(35, Math.floor(usable * 0.25));
-  const descCol = Math.floor(usable * 0.45);
-  const argsCol = usable - nameCol - descCol;
+  const maxVisible = Math.max(termHeight - 9, 5);
+  const [scrollOffset, setScrollOffset] = useState(0);
+  const [search, setSearch] = useState('');
 
-  const grouped: Record<string, Prompt[]> = {};
-  for (const p of prompts) {
-    (grouped[p.serverName] ??= []).push(p);
-  }
+  const sorted = [...prompts].sort((a, b) =>
+    a.serverName.localeCompare(b.serverName) || a.name.localeCompare(b.name)
+  );
 
-  const divider = '\u2500'.repeat(Math.min(width - 6, usable));
+  const q = search.toLowerCase();
+  const filtered = search
+    ? sorted.filter((p) => p.name.toLowerCase().includes(q) || p.serverName.toLowerCase().includes(q) || (p.description ?? '').toLowerCase().includes(q))
+    : sorted;
+
+  const canScrollDown = scrollOffset + maxVisible < filtered.length;
+  const visible = filtered.slice(scrollOffset, scrollOffset + maxVisible);
+
+  const maxNameLen = prompts.reduce((max, p) => Math.max(max, p.name.length + 1), 0);
+  const nameCol = Math.max(maxNameLen, 12) + GAP;
+  const maxServerLen = prompts.reduce((max, p) => Math.max(max, p.serverName.length), 0);
+  const serverCol = Math.max(maxServerLen, 10) + GAP;
+  const argsCol = 24 + GAP;
+  const descCol = Math.max(termWidth - nameCol - serverCol - argsCol - 2, 10);
+
+  const serverColor = (serverName: string) => serverName === 'built-in' ? brand : info;
+
+  const handleSearchChange = useCallback((s: string) => { setSearch(s); setScrollOffset(0); }, []);
 
   return (
-    <Panel title="/prompts" onClose={onClose}>
-      <Box>
-        <Text wrap="truncate">
-          {'  '}
-          {primary.bold('Prompt'.padEnd(nameCol))}
-          {primary.bold('Description'.padEnd(descCol))}
-          {primary.bold('Arguments (* = required)')}
-        </Text>
-      </Box>
-      <Box>
-        <Text>
-          {'  '}
-          {muted(divider)}
-        </Text>
-      </Box>
-      {Object.entries(grouped).map(([server, serverPrompts]) => (
-        <Box key={server} flexDirection="column" marginBottom={1}>
-          <Text>
-            {'  '}
-            {brand(server + ':')}
-          </Text>
-          {serverPrompts.map((prompt) => {
-            const name = truncate('/' + prompt.name, nameCol - 1);
-            const descText = prompt.description
-              ? truncate(prompt.description, descCol - 1)
-              : '(file prompt)';
-            const descStyled = prompt.description
-              ? secondary(descText.padEnd(descCol))
-              : muted(descText.padEnd(descCol));
-            const args =
-              prompt.arguments.length > 0
-                ? truncate(
-                    prompt.arguments
-                      .map((a: PromptArg) =>
-                        a.required ? a.name + '*' : a.name
-                      )
-                      .join(', '),
-                    argsCol
-                  )
-                : '';
+    <Panel
+      title={`/prompts · ${prompts.length} prompt${prompts.length === 1 ? '' : 's'}`}
+      onClose={onClose}
+      searchable={true}
+      onSearchChange={handleSearchChange}
+      canScrollUp={scrollOffset > 0}
+      canScrollDown={canScrollDown}
+      onScrollUp={() => setScrollOffset((p) => Math.max(0, p - 1))}
+      onScrollDown={() => setScrollOffset((p) => Math.min(Math.max(0, filtered.length - maxVisible), p + 1))}
+    >
+      {prompts.length === 0 ? (
+        <Text>{dim('No prompts available')}</Text>
+      ) : (
+        <Box flexDirection="column">
+          <Box>
+            <Box width={nameCol}><Text>{dim('Name')}</Text></Box>
+            <Box width={serverCol}><Text>{dim('Server')}</Text></Box>
+            <Box width={argsCol}><Text>{dim('Arguments (* = required)')}</Text></Box>
+            <Text>{dim('Description')}</Text>
+          </Box>
+          {visible.map((prompt) => {
+            const args = prompt.arguments.length > 0
+              ? prompt.arguments.map((a) => a.required ? a.name + '*' : a.name).join(', ')
+              : '';
             return (
-              <Box key={prompt.name}>
-                <Text wrap="truncate">
-                  {'  '}
-                  {primary(name.padEnd(nameCol))}
-                  {descStyled}
-                  {muted(args)}
-                </Text>
+              <Box key={`${prompt.serverName}:${prompt.name}`}>
+                <Box width={nameCol}><Text>{primary('/' + prompt.name)}</Text></Box>
+                <Box width={serverCol}><Text>{serverColor(prompt.serverName)(prompt.serverName)}</Text></Box>
+                <Box width={argsCol}><Text>{dim(args.length > argsCol - 2 ? args.slice(0, argsCol - 5) + '...' : args)}</Text></Box>
+                <Text>{dim(shortDescription(prompt.description, descCol))}</Text>
               </Box>
             );
           })}
         </Box>
-      ))}
+      )}
     </Panel>
   );
 });

@@ -1,7 +1,7 @@
-import React, { useState } from 'react';
-import { Box, useInput, Text as InkText } from 'ink';
+import React, { useState, useCallback } from 'react';
+import { Box } from 'ink';
 import { Text } from './text/Text';
-import { Divider } from './divider/Divider';
+import { Panel } from './panel/index.js';
 import { useTheme } from '../../hooks/useThemeContext';
 import { useTerminalSize } from '../../hooks/useTerminalSize';
 import type { ToolInfo } from '../../stores/app-store.js';
@@ -17,7 +17,6 @@ const statusLabels: Record<ToolInfo['status'], string> = {
   denied: '✕ denied',
 };
 
-/** Extract a short one-liner from a potentially multi-line description. */
 function shortDescription(desc: string, maxLen: number): string {
   const firstLine = desc.trim().split('\n')[0] ?? '';
   const firstSentence = firstLine.split('. ')[0] ?? firstLine;
@@ -39,117 +38,76 @@ export const ToolsPanel: React.FC<ToolsPanelProps> = ({ tools, onClose }) => {
   const warning = getColor('warning');
   const error = getColor('error');
 
-  const maxVisible = Math.max(termHeight - 7, 5);
+  const maxVisible = Math.max(termHeight - 9, 5);
   const [scrollOffset, setScrollOffset] = useState(0);
+  const [search, setSearch] = useState('');
 
-  useInput((_input, key) => {
-    if (key.escape) {
-      onClose();
-    } else if (key.upArrow) {
-      setScrollOffset((prev) => Math.max(0, prev - 1));
-    } else if (key.downArrow) {
-      setScrollOffset((prev) =>
-        Math.min(Math.max(0, tools.length - maxVisible), prev + 1)
-      );
-    }
-  });
-
-  // Column widths with gap
-  const maxNameLen = tools.reduce((max, t) => Math.max(max, t.name.length), 0);
-  const nameCol = Math.max(maxNameLen, 12) + GAP;
-  const maxSourceLen = tools.reduce(
-    (max, t) => Math.max(max, t.source.length),
-    0
-  );
-  const sourceCol = Math.max(maxSourceLen, 10) + GAP;
-  const statusCol = 20 + GAP;
-  const descCol = Math.max(termWidth - nameCol - sourceCol - statusCol - 2, 10);
-
-  // Sort: built-in first, then alphabetical by source
   const sorted = [...tools].sort((a, b) => {
     if (a.source === 'built-in' && b.source !== 'built-in') return -1;
     if (b.source === 'built-in' && a.source !== 'built-in') return 1;
     return a.source.localeCompare(b.source) || a.name.localeCompare(b.name);
   });
 
-  const visible = sorted.slice(scrollOffset, scrollOffset + maxVisible);
-  const canScrollUp = scrollOffset > 0;
-  const canScrollDown = scrollOffset + maxVisible < sorted.length;
+  const q = search.toLowerCase();
+  const filtered = search
+    ? sorted.filter((t) => t.name.toLowerCase().includes(q) || t.source.toLowerCase().includes(q) || t.description.toLowerCase().includes(q))
+    : sorted;
+
+  const canScrollDown = scrollOffset + maxVisible < filtered.length;
+  const visible = filtered.slice(scrollOffset, scrollOffset + maxVisible);
+
+  const maxNameLen = tools.reduce((max, t) => Math.max(max, t.name.length), 0);
+  const nameCol = Math.max(maxNameLen, 12) + GAP;
+  const maxSourceLen = tools.reduce((max, t) => Math.max(max, t.source.length), 0);
+  const sourceCol = Math.max(maxSourceLen, 10) + GAP;
+  const statusCol = 20 + GAP;
+  const descCol = Math.max(termWidth - nameCol - sourceCol - statusCol - 2, 10);
 
   const statusColor = (status: ToolInfo['status']) => {
     switch (status) {
-      case 'allowed':
-        return success;
-      case 'requires-approval':
-        return warning;
-      case 'denied':
-        return error;
+      case 'allowed': return success;
+      case 'requires-approval': return warning;
+      case 'denied': return error;
     }
   };
+  const sourceColor = (source: string) => source === 'built-in' ? brand : info;
 
-  const sourceColor = (source: string) =>
-    source === 'built-in' ? brand : info;
+  const handleSearchChange = useCallback((s: string) => { setSearch(s); setScrollOffset(0); }, []);
 
   return (
-    <Box flexDirection="column" paddingX={1} paddingY={0} width={termWidth}>
-      <Text>
-        {primary(
-          `/tools · ${tools.length} tool${tools.length === 1 ? '' : 's'}`
-        )}
-      </Text>
-      <Divider />
-
+    <Panel
+      title={`/tools · ${tools.length} tool${tools.length === 1 ? '' : 's'}`}
+      onClose={onClose}
+      searchable={true}
+      onSearchChange={handleSearchChange}
+      canScrollUp={scrollOffset > 0}
+      canScrollDown={canScrollDown}
+      onScrollUp={() => setScrollOffset((p) => Math.max(0, p - 1))}
+      onScrollDown={() => setScrollOffset((p) => Math.min(Math.max(0, filtered.length - maxVisible), p + 1))}
+    >
       {tools.length === 0 ? (
-        <Box marginBottom={1}>
-          <Text>{dim('No tools available')}</Text>
-        </Box>
+        <Text>{dim('No tools available')}</Text>
       ) : (
-        <Box flexDirection="column" marginBottom={0}>
-          {/* Header row */}
+        <Box flexDirection="column">
           <Box>
-            <Box width={nameCol}>
-              <Text>{dim('Name')}</Text>
-            </Box>
-            <Box width={sourceCol}>
-              <Text>{dim('Source')}</Text>
-            </Box>
-            <Box width={statusCol}>
-              <Text>{dim('Status')}</Text>
-            </Box>
+            <Box width={nameCol}><Text>{dim('Name')}</Text></Box>
+            <Box width={sourceCol}><Text>{dim('Source')}</Text></Box>
+            <Box width={statusCol}><Text>{dim('Status')}</Text></Box>
             <Text>{dim('Description')}</Text>
           </Box>
-
-          {canScrollUp && <Text>{dim('  ↑ more')}</Text>}
-
           {visible.map((tool) => {
             const st = tool.status ?? 'requires-approval';
             return (
               <Box key={`${tool.source}:${tool.name}`}>
-                <Box width={nameCol}>
-                  <Text>{primary(tool.name)}</Text>
-                </Box>
-                <Box width={sourceCol}>
-                  <Text>{sourceColor(tool.source)(tool.source)}</Text>
-                </Box>
-                <Box width={statusCol}>
-                  <Text>{statusColor(st)(statusLabels[st])}</Text>
-                </Box>
+                <Box width={nameCol}><Text>{primary(tool.name)}</Text></Box>
+                <Box width={sourceCol}><Text>{sourceColor(tool.source)(tool.source)}</Text></Box>
+                <Box width={statusCol}><Text>{statusColor(st)(statusLabels[st])}</Text></Box>
                 <Text>{dim(shortDescription(tool.description, descCol))}</Text>
               </Box>
             );
           })}
-
-          {canScrollDown && <Text>{dim('  ↓ more')}</Text>}
         </Box>
       )}
-
-      <Divider />
-      <Box justifyContent="space-between">
-        <Text>
-          {primary('ESC')} {dim('to close')}
-          {sorted.length > maxVisible ? dim(' · ↑↓ to scroll') : ''}
-        </Text>
-      </Box>
-    </Box>
+    </Panel>
   );
 };
