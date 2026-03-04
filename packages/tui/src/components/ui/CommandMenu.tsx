@@ -197,6 +197,7 @@ export const CommandMenu: React.FC = () => {
   }
 
   if (activeCommand) {
+    const isSelection = activeCommand.command.meta?.inputType === 'selection';
     return (
       <Menu
         items={activeCommand.options.map((opt) => ({
@@ -218,9 +219,15 @@ export const CommandMenu: React.FC = () => {
           setPromptHint(null);
         }}
         showSelectedIndicator={true}
-        searchable={true}
-        searchLabel={`Select ${activeCommand.command.name.slice(1)}`}
-        searchPlaceholder="type to search, ↑↓ to navigate"
+        searchable={isSelection}
+        searchLabel={
+          isSelection
+            ? `Select ${activeCommand.command.name.slice(1)}`
+            : undefined
+        }
+        searchPlaceholder={
+          isSelection ? 'type to search, ↑↓ to navigate' : undefined
+        }
       />
     );
   }
