@@ -35,11 +35,14 @@ pub async fn get_options(_partial: &str, ctx: &CommandContext<'_>) -> CommandOpt
 }
 
 fn to_command_option(m: ModelInfo) -> CommandOption {
+    let credits = m
+        .rate_multiplier
+        .map_or_else(|| "----- credits".to_string(), |r| format!("{r:.2}x credits"));
     CommandOption {
         value: m.id.clone(),
         label: m.display_name,
-        description: m.context_window.map(|w| format!("Context: {}k tokens", w / 1000)),
-        group: m.provider,
+        description: m.description,
+        group: Some(credits),
     }
 }
 
@@ -133,7 +136,9 @@ async fn fetch_models(ctx: &CommandContext<'_>) -> Result<Vec<ModelInfo>, String
             id: m.model_id().to_string(),
             display_name: m.model_name().unwrap_or(m.model_id()).to_string(),
             provider: None,
-            context_window: None,
+            context_window: m.token_limits().and_then(|l| l.max_input_tokens()).map(|t| t as u32),
+            description: m.description().map(|s| s.to_string()),
+            rate_multiplier: m.rate_multiplier(),
         })
         .collect())
 }

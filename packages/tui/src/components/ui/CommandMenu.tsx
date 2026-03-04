@@ -202,6 +202,7 @@ export const CommandMenu: React.FC = () => {
         items={activeCommand.options.map((opt) => ({
           label: opt.label,
           description: opt.description ?? '',
+          group: opt.group,
         }))}
         prefix=""
         onSelect={(item) => {

@@ -57,6 +57,7 @@ use crate::os::Os;
 pub struct AgentInfo {
     pub name: String,
     pub description: Option<String>,
+    pub source: String,
 }
 
 /// Result returned when starting or loading a session.
@@ -366,6 +367,12 @@ impl SessionManager {
                     .map(|c| AgentInfo {
                         name: c.name().to_string(),
                         description: c.config().description().map(|s| s.to_string()),
+                        source: match c.source() {
+                            agent::agent_config::ConfigSource::Workspace { .. } => "Workspace".to_string(),
+                            agent::agent_config::ConfigSource::Global { .. } => "Global".to_string(),
+                            agent::agent_config::ConfigSource::BuiltIn => "Built-in".to_string(),
+                            agent::agent_config::ConfigSource::Ephemeral => "".to_string(),
+                        },
                     })
                     .collect();
                 // Dedupe by name (keep first occurrence)

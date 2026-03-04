@@ -251,6 +251,8 @@ export interface ModelInfo {
 	displayName: string;
 	provider?: string;
 	contextWindow?: number;
+	description?: string;
+	rateMultiplier?: number;
 }
 
 /** Arguments for paste-image command (no user-facing slash command) */

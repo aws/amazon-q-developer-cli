@@ -35,7 +35,11 @@ fn to_agent_option(a: &AgentInfo) -> CommandOption {
         value: a.name.clone(),
         label: a.name.clone(),
         description: a.description.clone(),
-        group: None,
+        group: if a.source.is_empty() {
+            None
+        } else {
+            Some(a.source.clone())
+        },
     }
 }
 

@@ -16,6 +16,7 @@ import { useKeypress } from '../../../hooks/useKeypress.js';
 export interface MenuItem {
   label: string;
   description: string;
+  group?: string;
 }
 
 export interface MenuProps {
@@ -119,11 +120,23 @@ export const Menu = React.memo(function Menu({
     Math.max(...displayItems.map((item) => item.label.length), 0) +
     prefix.length;
 
+  // Calculate max group column width (0 if no items have groups)
+  const hasGroups = displayItems.some((item) => item.group);
+  const maxGroupLength = hasGroups
+    ? Math.max(...displayItems.map((item) => item.group?.length ?? 0), 0)
+    : 0;
+
   // Calculate available width for description
   const indicatorWidth = showSelectedIndicator ? 3 : 0; // chevron + 2 spaces
   const spacerWidth = 4; // Box width={4}
+  const groupWidth = hasGroups ? maxGroupLength + spacerWidth : 0;
   const availableDescWidth =
-    terminalWidth - indicatorWidth - maxLabelLength - spacerWidth - 5; // -5 for margin
+    terminalWidth -
+    indicatorWidth -
+    maxLabelLength -
+    spacerWidth -
+    groupWidth -
+    5; // -5 for margin
 
   // Call onHighlight when selectedIndex changes
   useEffect(() => {
@@ -225,6 +238,14 @@ export const Menu = React.memo(function Menu({
               {isSelected ? selectedLabel(paddedItem) : label(paddedItem)}
             </Text>
             <Box width={4} />
+            {hasGroups && (
+              <>
+                <Text>
+                  {dimText((item.group ?? '').padEnd(maxGroupLength))}
+                </Text>
+                <Box width={4} />
+              </>
+            )}
             <Text>{description(truncatedDesc)}</Text>
           </Box>
         );
