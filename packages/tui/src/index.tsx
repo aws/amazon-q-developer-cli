@@ -323,6 +323,10 @@ const startApp = async () => {
     exitOnCtrlC: false,
     patchConsole: false,
     incrementalRendering: false,
+    kittyKeyboard: {
+      mode: 'auto',
+      flags: ['disambiguateEscapeCodes'],
+    },
   });
 };
 

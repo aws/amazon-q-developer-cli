@@ -691,7 +691,8 @@ export default class Ink {
 			'KITTY_WINDOW_ID' in process.env ||
 			term === 'xterm-kitty' ||
 			termProgram === 'WezTerm' ||
-			termProgram === 'ghostty';
+			termProgram === 'ghostty' ||
+			termProgram === 'iTerm.app';
 
 		if (!isInCi && isKnownSupportingTerminal) {
 			this.confirmKittySupport(flags);

@@ -528,8 +528,8 @@ export const PromptInput = React.memo(function PromptInput({
         activeTrigger?.key === '@' && filePickerHasResults;
 
       if (key.return) {
-        if (key.meta) {
-          // Alt+Enter - insert newline (matches V1 rustyline behavior)
+        if (key.meta || key.shift) {
+          // Alt+Enter or Shift+Enter - insert newline
           insertText('\n');
         } else {
           // Block Enter if file picker menu is visible with results

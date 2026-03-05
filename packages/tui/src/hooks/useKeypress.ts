@@ -33,6 +33,13 @@ const PASTE_END = '\x1b[201~';
 // Ctrl+C byte
 const CTRL_C = '\x03';
 
+// Shift+Enter escape sequences from various terminals
+const SHIFT_ENTER_SEQUENCES = [
+  '\x1b[27;2;13~', // Ghostty, modern terminals
+  '\x1b[13;2~', // Alternative format
+  '\x1bOM', // Some terminals
+];
+
 /**
  * Hook for handling keyboard input.
  *
@@ -69,12 +76,22 @@ export const useKeypress = (
   // Track whether we're currently in a paste operation to prevent useInput from processing paste content
   const isPastingRef = useRef(false);
 
+  // Ink strips the leading \x1b from escape sequences, so we match the remainder
+  const SHIFT_ENTER_STRIPPED = ['[27;2;13~', '[13;2~', 'OM'];
+
   // Use Ink's useInput for regular keys - it handles batching properly
   // Skip processing when we're in the middle of a bracketed paste
   useInput(
     (input, key) => {
       if (isPastingRef.current) {
         return;
+      }
+
+      // Filter out Shift+Enter sequences (Ink strips leading \x1b)
+      for (const seq of SHIFT_ENTER_STRIPPED) {
+        if (input === seq || input.includes(seq)) {
+          return;
+        }
       }
 
       inputMetrics.markKeypress(input);
@@ -98,6 +115,34 @@ export const useKeypress = (
     let isPasting = false;
 
     const handleInput = (data: string) => {
+      // Check for Shift+Enter escape sequences
+      for (const seq of SHIFT_ENTER_SEQUENCES) {
+        if (data === seq || data.includes(seq)) {
+          isPastingRef.current = true;
+          handlerRef.current('\n', {
+            upArrow: false,
+            downArrow: false,
+            leftArrow: false,
+            rightArrow: false,
+            pageUp: false,
+            pageDown: false,
+            home: false,
+            end: false,
+            return: true,
+            escape: false,
+            ctrl: false,
+            shift: true,
+            meta: false,
+            tab: false,
+            backspace: false,
+            delete: false,
+            paste: false,
+          });
+          isPastingRef.current = false;
+          return;
+        }
+      }
+
       // Handle Shift+Tab
       if (data.includes('\u001B[Z')) {
         isPastingRef.current = false;
