@@ -33,10 +33,14 @@ export function useSyntaxHighlight() {
       (code: string, language?: string): string => {
         const lang = resolveHighlightLanguage(language);
         try {
-          return highlight(code, {
-            language: lang,
-            theme: syntaxTheme,
-          });
+          const noop = () => {};
+          const origError = console.error;
+          console.error = noop;
+          try {
+            return highlight(code, { language: lang, theme: syntaxTheme });
+          } finally {
+            console.error = origError;
+          }
         } catch {
           return code;
         }
