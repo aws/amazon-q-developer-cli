@@ -55,15 +55,30 @@ export const Panel: React.FC<PanelProps> = ({
       }
       return;
     }
-    if (key.tab && onTabSwitch) { onTabSwitch(); return; }
-    if (key.upArrow) { onScrollUp?.(); return; }
-    if (key.downArrow) { onScrollDown?.(); return; }
+    if (key.tab && onTabSwitch) {
+      onTabSwitch();
+      return;
+    }
+    if (key.upArrow) {
+      onScrollUp?.();
+      return;
+    }
+    if (key.downArrow) {
+      onScrollDown?.();
+      return;
+    }
     if (searchable) {
       if (key.backspace || key.delete) {
         const next = search.slice(0, -1);
         setSearch(next);
         onSearchChange?.(next);
-      } else if (_input && _input.length === 1 && _input >= ' ' && !key.ctrl && !key.meta) {
+      } else if (
+        _input &&
+        _input.length === 1 &&
+        _input >= ' ' &&
+        !key.ctrl &&
+        !key.meta
+      ) {
         const next = search + _input;
         setSearch(next);
         onSearchChange?.(next);
@@ -97,8 +112,9 @@ export const Panel: React.FC<PanelProps> = ({
       <Box justifyContent="space-between" paddingX={1}>
         <Box>
           <Text>
-            {primary('ESC')} {dim(searchable && search ? 'to clear search' : 'to close')}
-            {(canScrollUp || canScrollDown) ? dim(' · ↑↓ to scroll') : ''}
+            {primary('ESC')}{' '}
+            {dim(searchable && search ? 'to clear search' : 'to close')}
+            {canScrollUp || canScrollDown ? dim(' · ↑↓ to scroll') : ''}
           </Text>
           {footerLeft && <Text>{dim(' | ')}</Text>}
           {footerLeft}
@@ -107,7 +123,9 @@ export const Panel: React.FC<PanelProps> = ({
           {footerExtra}
           {footerExtra && showTabHint && <Text>{dim(' | ')}</Text>}
           {showTabHint && (
-            <Text>{primary('Tab')} {dim('to switch view')}</Text>
+            <Text>
+              {primary('Tab')} {dim('to switch view')}
+            </Text>
           )}
         </Box>
       </Box>

@@ -4,6 +4,7 @@ import { Text } from './text/Text.js';
 import { Panel } from './panel/index.js';
 import { useTheme } from '../../hooks/useThemeContext.js';
 import { useTerminalSize } from '../../hooks/useTerminalSize.js';
+import { fuzzyScore } from '../../utils/fuzzyScore.js';
 
 interface PromptArg {
   name: string;
@@ -33,7 +34,10 @@ function shortDescription(desc: string | undefined, maxLen: number): string {
   return clean.slice(0, maxLen - 3) + '...';
 }
 
-export const PromptsPanel = React.memo(function PromptsPanel({ prompts, onClose }: PromptsPanelProps) {
+export const PromptsPanel = React.memo(function PromptsPanel({
+  prompts,
+  onClose,
+}: PromptsPanelProps) {
   const { getColor } = useTheme();
   const { width: termWidth, height: termHeight } = useTerminalSize();
   const primary = getColor('primary');
@@ -45,28 +49,50 @@ export const PromptsPanel = React.memo(function PromptsPanel({ prompts, onClose 
   const [scrollOffset, setScrollOffset] = useState(0);
   const [search, setSearch] = useState('');
 
-  const sorted = [...prompts].sort((a, b) =>
-    a.serverName.localeCompare(b.serverName) || a.name.localeCompare(b.name)
+  const sorted = [...prompts].sort(
+    (a, b) =>
+      a.serverName.localeCompare(b.serverName) || a.name.localeCompare(b.name)
   );
 
   const q = search.toLowerCase();
   const filtered = search
-    ? sorted.filter((p) => p.name.toLowerCase().includes(q) || p.serverName.toLowerCase().includes(q) || (p.description ?? '').toLowerCase().includes(q))
+    ? sorted
+        .map((p) => ({
+          p,
+          score: Math.max(
+            fuzzyScore(q, p.name.toLowerCase()),
+            fuzzyScore(q, p.serverName.toLowerCase()),
+            fuzzyScore(q, (p.description ?? '').toLowerCase())
+          ),
+        }))
+        .filter(({ score }) => score > 0)
+        .sort((a, b) => b.score - a.score)
+        .map(({ p }) => p)
     : sorted;
 
   const canScrollDown = scrollOffset + maxVisible < filtered.length;
   const visible = filtered.slice(scrollOffset, scrollOffset + maxVisible);
 
-  const maxNameLen = prompts.reduce((max, p) => Math.max(max, p.name.length + 1), 0);
+  const maxNameLen = prompts.reduce(
+    (max, p) => Math.max(max, p.name.length + 1),
+    0
+  );
   const nameCol = Math.max(maxNameLen, 12) + GAP;
-  const maxServerLen = prompts.reduce((max, p) => Math.max(max, p.serverName.length), 0);
+  const maxServerLen = prompts.reduce(
+    (max, p) => Math.max(max, p.serverName.length),
+    0
+  );
   const serverCol = Math.max(maxServerLen, 10) + GAP;
   const argsCol = 24 + GAP;
   const descCol = Math.max(termWidth - nameCol - serverCol - argsCol - 2, 10);
 
-  const serverColor = (serverName: string) => serverName === 'built-in' ? brand : info;
+  const serverColor = (serverName: string) =>
+    serverName === 'built-in' ? brand : info;
 
-  const handleSearchChange = useCallback((s: string) => { setSearch(s); setScrollOffset(0); }, []);
+  const handleSearchChange = useCallback((s: string) => {
+    setSearch(s);
+    setScrollOffset(0);
+  }, []);
 
   return (
     <Panel
@@ -77,28 +103,57 @@ export const PromptsPanel = React.memo(function PromptsPanel({ prompts, onClose 
       canScrollUp={scrollOffset > 0}
       canScrollDown={canScrollDown}
       onScrollUp={() => setScrollOffset((p) => Math.max(0, p - 1))}
-      onScrollDown={() => setScrollOffset((p) => Math.min(Math.max(0, filtered.length - maxVisible), p + 1))}
+      onScrollDown={() =>
+        setScrollOffset((p) =>
+          Math.min(Math.max(0, filtered.length - maxVisible), p + 1)
+        )
+      }
     >
       {prompts.length === 0 ? (
         <Text>{dim('No prompts available')}</Text>
       ) : (
         <Box flexDirection="column">
           <Box>
-            <Box width={nameCol}><Text>{dim('Name')}</Text></Box>
-            <Box width={serverCol}><Text>{dim('Server')}</Text></Box>
-            <Box width={argsCol}><Text>{dim('Arguments (* = required)')}</Text></Box>
+            <Box width={nameCol}>
+              <Text>{dim('Name')}</Text>
+            </Box>
+            <Box width={serverCol}>
+              <Text>{dim('Server')}</Text>
+            </Box>
+            <Box width={argsCol}>
+              <Text>{dim('Arguments (* = required)')}</Text>
+            </Box>
             <Text>{dim('Description')}</Text>
           </Box>
           {visible.map((prompt) => {
-            const args = prompt.arguments.length > 0
-              ? prompt.arguments.map((a) => a.required ? a.name + '*' : a.name).join(', ')
-              : '';
+            const args =
+              prompt.arguments.length > 0
+                ? prompt.arguments
+                    .map((a) => (a.required ? a.name + '*' : a.name))
+                    .join(', ')
+                : '';
             return (
               <Box key={`${prompt.serverName}:${prompt.name}`}>
-                <Box width={nameCol}><Text>{primary('/' + prompt.name)}</Text></Box>
-                <Box width={serverCol}><Text>{serverColor(prompt.serverName)(prompt.serverName)}</Text></Box>
-                <Box width={argsCol}><Text>{dim(args.length > argsCol - 2 ? args.slice(0, argsCol - 5) + '...' : args)}</Text></Box>
-                <Text>{dim(shortDescription(prompt.description, descCol))}</Text>
+                <Box width={nameCol}>
+                  <Text>{primary('/' + prompt.name)}</Text>
+                </Box>
+                <Box width={serverCol}>
+                  <Text>
+                    {serverColor(prompt.serverName)(prompt.serverName)}
+                  </Text>
+                </Box>
+                <Box width={argsCol}>
+                  <Text>
+                    {dim(
+                      args.length > argsCol - 2
+                        ? args.slice(0, argsCol - 5) + '...'
+                        : args
+                    )}
+                  </Text>
+                </Box>
+                <Text>
+                  {dim(shortDescription(prompt.description, descCol))}
+                </Text>
               </Box>
             );
           })}

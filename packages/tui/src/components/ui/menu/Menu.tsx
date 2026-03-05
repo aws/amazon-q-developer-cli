@@ -36,39 +36,7 @@ export interface MenuProps {
   searchPlaceholder?: string;
 }
 
-/**
- * Fuzzy subsequence match scoring. Returns 0 if query is not a subsequence of target.
- * Higher score = better match. Rewards:
- * - consecutive character runs
- * - matches at word boundaries (after - _ . or space)
- * - match at the start of the string
- */
-function fuzzyScore(query: string, target: string): number {
-  let qi = 0;
-  let score = 0;
-  let consecutive = 0;
-  let prevMatchIdx = -2;
-
-  for (let ti = 0; ti < target.length && qi < query.length; ti++) {
-    if (target[ti] === query[qi]) {
-      qi++;
-      score += 1;
-      // Bonus for consecutive matches
-      if (ti === prevMatchIdx + 1) {
-        consecutive++;
-        score += consecutive;
-      } else {
-        consecutive = 0;
-      }
-      // Bonus for word boundary match
-      if (ti === 0 || '-_ .'.includes(target[ti - 1]!)) {
-        score += 2;
-      }
-      prevMatchIdx = ti;
-    }
-  }
-  return qi === query.length ? score : 0;
-}
+import { fuzzyScore } from '../../../utils/fuzzyScore.js';
 
 export const Menu = React.memo(function Menu({
   items,

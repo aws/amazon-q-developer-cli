@@ -9,7 +9,7 @@ export const kiroDark: Theme = {
     link: { named: 'blue' },
     accent: { truecolor: '#ff00ff', color256: 13 },
     info: { named: 'cyan' },
-    success: { truecolor: "#00D787", color256: 42 },
+    success: { truecolor: '#00D787', color256: 42 },
     warning: { named: 'yellow' },
     error: { named: 'red' },
     brand: { truecolor: '#C19AFF', color256: 141 },

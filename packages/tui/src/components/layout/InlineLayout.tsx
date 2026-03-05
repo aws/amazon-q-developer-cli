@@ -1,9 +1,4 @@
-import React, {
-  useCallback,
-  useMemo,
-  useState,
-  useEffect,
-} from 'react';
+import React, { useCallback, useMemo, useState, useEffect } from 'react';
 import { Box, Text } from 'ink';
 import { AnimationPausedContext } from '../../contexts/AnimationPausedContext.js';
 import { ConversationView } from '../ui/ConversationView';
@@ -108,8 +103,7 @@ export const InlineLayout: React.FC = () => {
     useNotificationActions();
   const { isProcessing, isCompacting, pendingApproval, noInteractive } =
     useProcessingState();
-  const { cancelApproval, approvalMode } =
-    useApprovalState();
+  const { cancelApproval, approvalMode } = useApprovalState();
   const {
     toolOutputsExpanded,
     hasExpandableToolOutputs,
@@ -338,7 +332,9 @@ export const InlineLayout: React.FC = () => {
             <Text color="magenta">[plan] </Text>
           )}
           <Chip
-            value={currentAgent.name === 'kiro_default' ? 'Kiro' : currentAgent.name}
+            value={
+              currentAgent.name === 'kiro_default' ? 'Kiro' : currentAgent.name
+            }
             color={getAgentColor(currentAgent.name, getColor)}
           />
         </>
@@ -347,28 +343,29 @@ export const InlineLayout: React.FC = () => {
         <Chip value={currentModel.name} color={ChipColor.PRIMARY} />
       ),
       contextUsagePercent != null && (
-        <ProgressChip
-          value={contextUsagePercent}
-          warningThreshold={60}
-        />
-      )
+        <ProgressChip value={contextUsagePercent} warningThreshold={60} />
+      ),
     ];
 
     const secondaryItems = [
       <Chip value={shortenPath(process.cwd())} color={ChipColor.BRAND} />,
       gitBranch && (
-        <Chip
-          value={gitBranch}
-          color={ChipColor.PRIMARY}
-          wrap={true}
-        />
-      )
+        <Chip value={gitBranch} color={ChipColor.PRIMARY} wrap={true} />
+      ),
     ];
 
     return (
       <ContextBar primaryItems={primaryItems} secondaryItems={secondaryItems} />
     ) as PromptBarHeader;
-  }, [pendingApproval, messages, currentAgent, contextUsagePercent, gitBranch, currentModel, getColor]);
+  }, [
+    pendingApproval,
+    messages,
+    currentAgent,
+    contextUsagePercent,
+    gitBranch,
+    currentModel,
+    getColor,
+  ]);
 
   const handleSubmit = useCallback(
     (value: string) => {

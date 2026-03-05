@@ -69,7 +69,8 @@ export const Half = {
 export const AboveThreshold = {
   parameters: {
     docs: {
-      storyDescription: 'Progress at 55% - shows ◑ in yellow (above default 60% threshold)',
+      storyDescription:
+        'Progress at 55% - shows ◑ in yellow (above default 60% threshold)',
     },
   },
   args: {

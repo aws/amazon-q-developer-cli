@@ -4,6 +4,7 @@ import { Text } from './text/Text';
 import { Panel } from './panel/index.js';
 import { useTheme } from '../../hooks/useThemeContext';
 import { useTerminalSize } from '../../hooks/useTerminalSize';
+import { fuzzyScore } from '../../utils/fuzzyScore.js';
 import type { ToolInfo } from '../../stores/app-store.js';
 
 interface ToolsPanelProps {
@@ -50,7 +51,18 @@ export const ToolsPanel: React.FC<ToolsPanelProps> = ({ tools, onClose }) => {
 
   const q = search.toLowerCase();
   const filtered = search
-    ? sorted.filter((t) => t.name.toLowerCase().includes(q) || t.source.toLowerCase().includes(q) || t.description.toLowerCase().includes(q))
+    ? sorted
+        .map((t) => ({
+          t,
+          score: Math.max(
+            fuzzyScore(q, t.name.toLowerCase()),
+            fuzzyScore(q, t.source.toLowerCase()),
+            fuzzyScore(q, t.description.toLowerCase())
+          ),
+        }))
+        .filter(({ score }) => score > 0)
+        .sort((a, b) => b.score - a.score)
+        .map(({ t }) => t)
     : sorted;
 
   const canScrollDown = scrollOffset + maxVisible < filtered.length;
@@ -58,21 +70,31 @@ export const ToolsPanel: React.FC<ToolsPanelProps> = ({ tools, onClose }) => {
 
   const maxNameLen = tools.reduce((max, t) => Math.max(max, t.name.length), 0);
   const nameCol = Math.max(maxNameLen, 12) + GAP;
-  const maxSourceLen = tools.reduce((max, t) => Math.max(max, t.source.length), 0);
+  const maxSourceLen = tools.reduce(
+    (max, t) => Math.max(max, t.source.length),
+    0
+  );
   const sourceCol = Math.max(maxSourceLen, 10) + GAP;
   const statusCol = 20 + GAP;
   const descCol = Math.max(termWidth - nameCol - sourceCol - statusCol - 2, 10);
 
   const statusColor = (status: ToolInfo['status']) => {
     switch (status) {
-      case 'allowed': return success;
-      case 'requires-approval': return warning;
-      case 'denied': return error;
+      case 'allowed':
+        return success;
+      case 'requires-approval':
+        return warning;
+      case 'denied':
+        return error;
     }
   };
-  const sourceColor = (source: string) => source === 'built-in' ? brand : info;
+  const sourceColor = (source: string) =>
+    source === 'built-in' ? brand : info;
 
-  const handleSearchChange = useCallback((s: string) => { setSearch(s); setScrollOffset(0); }, []);
+  const handleSearchChange = useCallback((s: string) => {
+    setSearch(s);
+    setScrollOffset(0);
+  }, []);
 
   return (
     <Panel
@@ -83,25 +105,41 @@ export const ToolsPanel: React.FC<ToolsPanelProps> = ({ tools, onClose }) => {
       canScrollUp={scrollOffset > 0}
       canScrollDown={canScrollDown}
       onScrollUp={() => setScrollOffset((p) => Math.max(0, p - 1))}
-      onScrollDown={() => setScrollOffset((p) => Math.min(Math.max(0, filtered.length - maxVisible), p + 1))}
+      onScrollDown={() =>
+        setScrollOffset((p) =>
+          Math.min(Math.max(0, filtered.length - maxVisible), p + 1)
+        )
+      }
     >
       {tools.length === 0 ? (
         <Text>{dim('No tools available')}</Text>
       ) : (
         <Box flexDirection="column">
           <Box>
-            <Box width={nameCol}><Text>{dim('Name')}</Text></Box>
-            <Box width={sourceCol}><Text>{dim('Source')}</Text></Box>
-            <Box width={statusCol}><Text>{dim('Status')}</Text></Box>
+            <Box width={nameCol}>
+              <Text>{dim('Name')}</Text>
+            </Box>
+            <Box width={sourceCol}>
+              <Text>{dim('Source')}</Text>
+            </Box>
+            <Box width={statusCol}>
+              <Text>{dim('Status')}</Text>
+            </Box>
             <Text>{dim('Description')}</Text>
           </Box>
           {visible.map((tool) => {
             const st = tool.status ?? 'requires-approval';
             return (
               <Box key={`${tool.source}:${tool.name}`}>
-                <Box width={nameCol}><Text>{primary(tool.name)}</Text></Box>
-                <Box width={sourceCol}><Text>{sourceColor(tool.source)(tool.source)}</Text></Box>
-                <Box width={statusCol}><Text>{statusColor(st)(statusLabels[st])}</Text></Box>
+                <Box width={nameCol}>
+                  <Text>{primary(tool.name)}</Text>
+                </Box>
+                <Box width={sourceCol}>
+                  <Text>{sourceColor(tool.source)(tool.source)}</Text>
+                </Box>
+                <Box width={statusCol}>
+                  <Text>{statusColor(st)(statusLabels[st])}</Text>
+                </Box>
                 <Text>{dim(shortDescription(tool.description, descCol))}</Text>
               </Box>
             );

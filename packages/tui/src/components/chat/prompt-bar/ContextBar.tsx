@@ -8,7 +8,10 @@ interface ContextBarProps {
   secondaryItems?: React.ReactNode[];
 }
 
-export function ContextBar({ primaryItems = [], secondaryItems = [] }: ContextBarProps) {
+export function ContextBar({
+  primaryItems = [],
+  secondaryItems = [],
+}: ContextBarProps) {
   const { getColor } = useTheme();
 
   // Filter out falsy items
@@ -34,7 +37,11 @@ export function ContextBar({ primaryItems = [], secondaryItems = [] }: ContextBa
 
       {/* Secondary items - right aligned */}
       {filteredSecondary.map((item, index) => (
-        <Box key={filteredPrimary.length + index} flexDirection="row" flexShrink={0}>
+        <Box
+          key={filteredPrimary.length + index}
+          flexDirection="row"
+          flexShrink={0}
+        >
           {item}
           {/* Show dot after item if there's a next item in secondary */}
           {index < filteredSecondary.length - 1 && (

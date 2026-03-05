@@ -55,7 +55,6 @@ export const ToolUseMessage = React.memo<ToolUseMessageProps>(
     barColor,
     isStatic = false,
   }) {
-
     // Map tool status to StatusBar status icon
     const statusIcon: StatusType | undefined = useMemo(() => {
       if (status === ToolUseStatus.Rejected) return 'error';

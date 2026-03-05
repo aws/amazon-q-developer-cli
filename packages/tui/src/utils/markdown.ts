@@ -46,7 +46,7 @@ export const parseMarkdown = (text: string): MarkdownSegment[] => {
         currentText.includes('-') ||
         /^\s*\d+\./.test(currentText) ||
         currentText.includes('>') ||
-        currentText.includes('|') ||
+        currentText.includes('|') && /^\s*\||\n[^\n]*\|[^\n]*\|/m.test(currentText) ||
         /(?:^|\n)\*\*[^*]+\*\*\s*$/m.test(currentText)
       ) {
         const lines = currentText.split('\n');
@@ -105,8 +105,11 @@ export const parseMarkdown = (text: string): MarkdownSegment[] => {
         };
 
         for (const line of lines) {
-          // Table detection
-          if (line.includes('|')) {
+          // Table detection: line must start with | or have | as column separators
+          // (at least two | chars), not just any line containing |
+          const isTableLine =
+            /^\s*\|/.test(line) || (line.split('|').length - 1 >= 2 && !/`[^`]*\|[^`]*`/.test(line));
+          if (isTableLine) {
             tableLines.push(line);
             continue;
           } else if (tableLines.length > 0) {
