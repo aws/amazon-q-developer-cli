@@ -129,7 +129,18 @@ The current approach is to bug bash the nightly build.
 
 3. Wait for all builds to show `completed` with `success` conclusion.
 
-## Step 6: Deploy to Toolbox Beta Channel
+## Step 6: Create Release Tracking Ticket
+
+Create a tracking ticket for the release:
+
+- **Title**: `Kiro CLI <VERSION>`
+- **CTI**: `Kiro / CLI / Intake`
+- **Severity**: Sev-5
+- **Description**: `Tracking ticket for the release of Kiro CLI <VERSION>`
+
+Document each deployment step (toolbox beta, prod, CloudFront) as comments on this ticket with the `gh workflow run` commands used and links to the GitHub Actions runs.
+
+## Step 7: Deploy to Toolbox Beta Channel
 
 1. Get the commit SHA from the autocomplete prod build:
    ```bash
@@ -150,7 +161,7 @@ The current approach is to bug bash the nightly build.
      -f release_to_toolbox=true
    ```
 
-## Step 7: Verify Toolbox Beta Installation
+## Step 8: Verify Toolbox Beta Installation
 
 1. Install from toolbox beta:
    ```bash
@@ -167,7 +178,7 @@ The current approach is to bug bash the nightly build.
    - Expected version number
    - Commit hash matching `origin/prod` from their respective repos
 
-## Step 8: Run Release Prod Workflow
+## Step 9: Run Release Prod Workflow
 
 1. Trigger the production release:
    ```bash
@@ -183,7 +194,7 @@ The current approach is to bug bash the nightly build.
 
 2. Approve the release in GitHub UI (`prod-release` environment requires manual approval).
 
-## Step 9: Verify Release Workflow Completes
+## Step 10: Verify Release Workflow Completes
 
 1. Monitor the release workflow:
    ```bash
@@ -192,7 +203,7 @@ The current approach is to bug bash the nightly build.
 
 2. Wait for status to show `completed` with `success` conclusion.
 
-## Step 10: Verify Stable Release
+## Step 11: Verify Stable Release
 
 1. Install from toolbox stable:
    ```bash

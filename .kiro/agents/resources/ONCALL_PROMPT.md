@@ -61,6 +61,12 @@ Example: "Use subagent to research how the authentication flow works in kiro-cli
 - **code tool**: For semantic code analysis (find symbols, references, definitions)
 - **grep tool**: For text pattern matching in files
 
+## GitHub Investigations
+
+When investigating anything related to GitHub (workflow failures, PRs, actions, etc.), use the `gh` CLI via `execute_bash`. The internal website reader does not support github.com URLs.
+
+When a user shares a GitHub Actions URL, extract the run ID from the URL and use `gh run view` to fetch the logs.
+
 ## Important Notes
 
 - Never bypass contingent authorization (CAZ) - Mechanic tools have built-in safety guardrails

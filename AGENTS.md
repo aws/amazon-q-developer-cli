@@ -1,8 +1,8 @@
 ## Codebase Overview
 
 > **Note:** Kiro CLI has two architectures under active development:
-> - **V1** (`chat_cli`) - Currently released in production
-> - **V2** (`chat_cli_v2` + `packages/tui`) - In development, not yet released
+> - **V1** (`chat_cli`)
+> - **V2** (`chat_cli_v2` + `packages/tui`)
 >
 > Both versions are actively maintained with ongoing feature development.
 
@@ -29,7 +29,7 @@ TUI (TypeScript) ←─ ACP Protocol over stdio ─→ chat_cli_v2 (Rust) ─→
 Kiro CLI V1 uses an integrated architecture where the terminal UI is built directly into the Rust binary:
 
 - **Single Binary**: `chat_cli` crate contains both CLI and terminal UI using crossterm
-- **Legacy Agent**: Main agent implementation in `cli/chat/` (~6k LOC)
+- **Legacy Agent**: Main agent implementation in `cli/chat/`
 - **Subagent Support**: Uses the `agent` crate for `use_subagent` tool functionality only
 
 ### Architecture Note: `agent` vs `chat_cli` vs `chat_cli_v2` Crates
@@ -37,21 +37,21 @@ Kiro CLI V1 uses an integrated architecture where the terminal UI is built direc
 The `agent` crate is a reusable agent execution engine extracted from `chat_cli`:
 
 **Current state:**
-- `chat_cli` - CLI with integrated terminal UI (V1, production)
-- `chat_cli_v2` - ACP-based backend for TUI frontend (V2, in development)
-- `agent` - Core agent execution engine used by both V1 and V2
+- `chat_cli` - CLI binary entrypoint. Contains legacy V1 UI
+- `chat_cli_v2` - Library containing the Agent Client Protocol (ACP) implementation
+- `agent` - Core agent execution engine used by V1 subagent tool and V2 ACP implementation
 
 **Usage by version:**
 - **V1 (chat_cli)**: Uses `agent` crate **only for subagent functionality** via `use_subagent` tool; main agent uses code in `cli/chat/`
 - **V2 (chat_cli_v2)**: Uses `agent` crate as the **primary agent engine** for both main agents and subagents
 
 **Dependency relationship:**
-- `chat_cli` depends on `chat_cli_v2` (uses it as a library for ACP commands)
+- `chat_cli` depends on `chat_cli_v2` for ACP
 - Both `chat_cli` and `chat_cli_v2` depend on `agent`
 
 **During this transition:**
 - Active feature development occurs on both V1 and V2
-- Some functionality exists in multiple crates (e.g., MCP client code, tool implementations)
+- Some functionality exists in multiple crates (e.g., authentication, MCP client code, tool implementations)
 
 ### Core Crates
 
@@ -157,10 +157,103 @@ The `agent` crate is a reusable agent execution engine extracted from `chat_cli`
 - **Authentication**: `chat_cli/src/auth/`
 - **Checkpoints**: `chat_cli/src/cli/chat/checkpoint.rs`
 
-## Testing
+## TUI Development (TypeScript/React/Ink/ACP)
 
-- Run single test: `cargo test -p chat_cli --bin chat_cli cli::chat::cli::persist::tests::test_save_and_load_file` or - `cargo test -p agent --lib test_mcp_server_config_stdio_deser`
-- Run all tests in a module: `cargo test -p chat_cli --bin chat_cli persist::tests` (all tests in a module)
+### Development Commands
+
+Run from `packages/tui`:
+
+```bash
+bun install
+bun run dev                    # Builds rust binary + launches TUI with hot-reload
+bun run dev --skip-rust-build  # Skip rust binary rebuild
+
+# Validation before check-in:
+bun run typecheck
+bun test              # unit tests
+bun run test:integ    # integration tests
+bun run test:e2e      # E2E tests (builds Rust binary first)
+bun run lint
+bun run format
+
+bun run test:e2e --skip-rust-build
+bun test ./e2e_tests/ -t "test name here"  # single test
+bun run build         # production build
+```
+
+### Type Generation
+
+TypeScript types in `packages/tui/e2e_tests/types/` are auto-generated from Rust using `typeshare`. Do not manually edit.
+
+```bash
+cargo install typeshare-cli --version 1.13.4
+./scripts/generate-types.sh
+```
+
+Add `#[typeshare]` attribute to Rust types (requires `use typeshare::typeshare;`), then run the script.
+
+### Logging
+
+- **TypeScript**: `KIRO_TUI_LOG_LEVEL` (`debug`/`info`/`warn`/`error`), writes to `KIRO_TUI_LOG_FILE`
+- **Rust**: `KIRO_LOG_LEVEL` (e.g. `chat_cli::api_client=trace,agent=debug`), writes to `KIRO_CHAT_LOG_FILE`
+
+### TypeScript Best Practices
+
+- **Avoid `any` type**: Use specific types, unions, or generics.
+- **Use tagged unions**: Discriminated unions with a `type` field rather than generic objects with `any` payloads.
+- **Use Bun** instead of Node.js for all tooling (`bun install`, `bun test`, `bun run`, etc.)
+
+### React Guidelines
+
+- Use functional components with Hooks only (no class components)
+- Keep components pure — side effects in `useEffect` or event handlers only
+- Respect one-way data flow; lift state up or use Zustand store
+- Never mutate state directly — use immutable updates
+- Avoid `useEffect` when possible; prefer event handlers. Never `setState` inside `useEffect`
+- Follow Rules of Hooks (top-level, unconditional calls only)
+- Use `useRef` only when genuinely needed (focus, animation, non-React integration)
+- Prefer composition and small components; extract custom Hooks for shared logic
+- Write concurrent-safe code (functional state updates, cleanup functions in effects)
+
+### TUI Library (`packages/tui/src/components/original-ui`)
+
+**Storybook Stories:**
+- Use `args` to pass props (not `props` or wrappers)
+- After creating `.stories.tsx`, register in `packages/tui/src/components/original-ui/storybook/stories.ts`
+
+**Color System:**
+- Use `useTheme()` hook → `getColor(colorPath)` returns chalk function with `.hex` property
+- Text: `<Text>{getColor('primary')('colored text')}</Text>`
+- Background: `<Box backgroundColor={getColor('primary').hex}>content</Box>`
+- Color paths use dot notation (e.g. `'components.snackbar.background'`)
+
+**Text Components:**
+- Use custom `<Text>` from `components/ui/text/Text.js`, NOT Ink's `<Text>` directly
+- All styling via chalk functions as children: `<Text>{colorFn.bold('bold')}</Text>`
+- Do NOT use `<InkText color="red">` — use `<Text>{getColor('error')('text')}</Text>`
+
+**Theming:**
+- NEVER create a new theming system. Use existing infrastructure:
+  - `src/theme/kiroDark.ts`, `src/theme/kiroLight.ts`
+  - `src/types/themeTypes.ts`
+  - `src/theme/ThemeProvider.tsx` with `useTheme()` from `hooks/useThemeContext.js`
+  - `src/utils/colorUtils.ts`
+- Need a new color? Add to existing theme files.
+
+### Agent Client Protocol (ACP)
+
+ACP standardizes communication between the TUI frontend and Rust backend via JSON-RPC over stdio.
+
+**Protocol Flow:**
+1. Client calls `initialize` to negotiate capabilities
+2. Client sends `session/prompt` with user message
+3. Agent streams `session/update` notifications (content, tool calls, approvals)
+4. Tool results sent back; cycle continues until completion
+
+**SDK Usage:**
+- **TypeScript**: `@agentclientprotocol/sdk` — `AcpClient` implements ACP `Client` + `SessionClient`
+- **Rust**: `sacp` crate — ACP server in `crates/chat-cli-v2`
+
 
 ## Setup
 
@@ -180,10 +273,6 @@ cargo clippy --locked --workspace --color always -- -D warnings
 
 # Formatting
 cargo +nightly fmt
-cargo +nightly fmt --check -- --color always
-
-# Running
-cargo run --bin chat_cli --
 ```
 
 ## Log Files

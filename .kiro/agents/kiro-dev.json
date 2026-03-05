@@ -54,7 +54,11 @@
         "^tail[^&;|]*$",
         "^grep[^&;|]*$",
         "^find[^&;|]*$",
-        "^mkdir[^&;|]*$"
+        "^mkdir[^&;|]*$",
+        "^gh pr view[^&;|]*$",
+        "^gh pr list[^&;|]*$",
+        "^gh pr diff[^&;|]*$",
+        "^gh issue view[^&;|]*$"
       ]
     },
     "subagent": {

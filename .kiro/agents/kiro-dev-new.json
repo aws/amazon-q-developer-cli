@@ -1,8 +1,8 @@
 {
-  "name": "kiro-dev-v2",
-  "description": "Kiro CLI V2 development agent for TUI (TypeScript/React/Ink) and chat-cli-v2 (Rust/ACP)",
+  "name": "kiro-dev-new",
+  "description": "Kiro CLI development agent",
   "model": "claude-opus-4.6-1m",
-  "prompt": "file://resources/KIRO_DEV_V2_PROMPT.md",
+  "prompt": "file://resources/KIRO_DEV_PROMPT.md",
   "tools": [
     "fs_read",
     "fs_write",
@@ -13,17 +13,24 @@
     "introspect",
     "knowledge",
     "todo_list",
-    "subagent"
+    "subagent",
+    "web_fetch",
+    "web_search",
+    "@ht-mcp",
+    "@builder-mcp/ReadInternalWebsites",
+    "@builder-mcp/InternalSearch"
   ],
   "allowedTools": [
     "fs_read",
     "grep",
     "glob",
     "introspect",
-    "knowledge"
+    "knowledge",
+    "@ht-mcp"
   ],
-  "keyboardShortcut": "ctrl+3",
-  "welcomeMessage": "Hi! I'm the Kiro-Dev-V2 agent for TUI and ACP backend development. What would you like to build?",
+  "useLegacyMcpJson": true,
+  "keyboardShortcut": "ctrl+1",
+  "welcomeMessage": "Hi! I'm the Kiro-Dev agent for CLI development.\n\nAvailable agents:\n- `oncall` - For Kiro CLI oncall activities\n\nAvailable workflows:\n- `@changelog` - Propose changelog entries for recent changes\n- `@release` - Generate release notes, bump version, and create PR\n- `@docs` - Update autodocs for code changes",
   "toolsSettings": {
     "execute_bash": {
       "autoAllowReadonly": true,
@@ -32,7 +39,9 @@
         "^git diff[^&;|]*$",
         "^git log[^&;|]*$",
         "^git add[^&;|]*$",
+        "^git pull[^&;|]*$",
         "^git commit[^&;|]*$",
+        "^git checkout[^&;|]*$",
         "^cargo clippy[^&;]*$",
         "^cargo \\+nightly fmt[^&;]*$",
         "^cargo build[^&;]*$",
@@ -41,9 +50,16 @@
         "^bun test[^&;|]*$",
         "^bun run[^&;|]*$",
         "^\\./scripts/generate-types\\.sh$",
+        "^jq[^&;|]*$",
         "^cat[^&;|]*$",
         "^ls[^&;|]*$",
         "^pwd$",
+        "^wc[^&;|]*$",
+        "^head[^&;|]*$",
+        "^tail[^&;|]*$",
+        "^grep[^&;|]*$",
+        "^find[^&;|]*$",
+        "^mkdir[^&;|]*$",
         "^gh pr view[^&;|]*$",
         "^gh pr list[^&;|]*$",
         "^gh pr diff[^&;|]*$",
@@ -51,15 +67,19 @@
       ]
     },
     "subagent": {
-      "trustedAgents": ["kiro-research-agent"],
-      "availableAgents": ["kiro-research-agent", "kiro_default"]
+      "trustedAgents": [
+        "kiro-research-agent"
+      ],
+      "availableAgents": [
+        "kiro-research-agent",
+        "kiro_default"
+      ]
     }
   },
   "resources": [
+    "skill://autodocs/README.md",
     "file://AGENTS.md",
-    "file://README.md",
-    "file://crates/chat-cli-v2/README.md",
-    "file://packages/tui/TESTING.md"
+    "file://README.md"
   ],
   "hooks": {
     "agentSpawn": [

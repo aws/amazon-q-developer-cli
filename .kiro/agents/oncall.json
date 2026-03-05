@@ -34,6 +34,14 @@
     "@builder-mcp/InternalCodeSearch"
   ],
   "toolsSettings": {
+    "shell": {
+      "allowedCommands": [
+        "^gh pr view[^&;|]*$",
+        "^gh pr list[^&;|]*$",
+        "^gh pr diff[^&;|]*$",
+        "^gh issue view[^&;|]*$"
+      ]
+    },
     "subagent": {
       "trustedAgents": [
         "kiro-research-agent"
