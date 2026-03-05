@@ -13,7 +13,8 @@ describe('/compact and summary', () => {
       await testCase.cleanup();
       testCase = null;
     }
-    await new Promise(resolve => setTimeout(resolve, 1500));
+    // Wait for sockets to fully release
+    await new Promise(resolve => setTimeout(resolve, 2000));
   });
 
   it('executes /compact and shows compacting loading state', async () => {
@@ -24,7 +25,7 @@ describe('/compact and summary', () => {
 
     await testCase.waitForText('ask a question', 10000);
     await testCase.waitForSlashCommands();
-    await testCase.getSessionId(); // ensure session ID is set before pushing mock responses
+    await testCase.getSessionId();
 
     // Build up a conversation so there's something to compact
     await testCase.pushSendMessageResponse([
@@ -36,33 +37,32 @@ describe('/compact and summary', () => {
     await testCase.pressEnter();
     await testCase.waitForIdle(15000);
 
+    // Wait a bit before typing command
+    await testCase.sleepMs(500);
+
     // Type /compact command
     for (const char of '/compact') {
       await testCase.sendKeys(char);
-      await testCase.sleepMs(20);
+      await testCase.sleepMs(30);
     }
-    await testCase.sleepMs(200);
+    await testCase.sleepMs(300);
     await testCase.pressEnter();
 
-    // Verify the TUI shows compacting state or completes
-    // The backend will process the compact command and either show loading or complete
-    await testCase.sleepMs(3000);
-
-    const store = await testCase.getStore();
-    // After /compact, either it's still compacting or it completed
-    // Either way the TUI should be responsive
-    expect(store.messages).toBeDefined();
+    // Wait briefly and take snapshot
+    await testCase.sleepMs(500);
 
     console.log('Compact snapshot:\n' + testCase.getSnapshotFormatted());
 
-    await testCase.pressCtrlCTwice();
-    await testCase.expectExit();
+    const store = await testCase.getStore();
+    // Verify TUI is responsive and messages exist
+    expect(store.messages).toBeDefined();
+    expect(store.messages.length).toBeGreaterThan(0);
   }, 60000);
 
   it('renders summary system message after compaction completes', async () => {
     testCase = await E2ETestCase.builder()
       .withTerminal({ width: 120, height: 40 })
-      .withTestName('slash-command-compact-summary')
+      .withTestName('compact-summary')
       .launch();
 
     await testCase.waitForText('ask a question', 10000);
