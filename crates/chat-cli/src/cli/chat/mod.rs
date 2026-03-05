@@ -1264,7 +1264,6 @@ impl ChatSession {
                 self.stderr,
                 terminal::Clear(terminal::ClearType::CurrentLine),
                 cursor::MoveToColumn(0),
-                cursor::Show,
             )?;
         }
 

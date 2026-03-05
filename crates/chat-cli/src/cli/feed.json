@@ -12,6 +12,18 @@
     },
     {
       "type": "release",
+      "date": "2026-03-05",
+      "version": "1.27.1",
+      "title": "Version 1.27.1",
+      "changes": [
+        {
+          "type": "fixed",
+          "description": "Prevent bash commands from hanging when processes access the terminal (SIGTTIN)"
+        }
+      ]
+    },
+    {
+      "type": "release",
       "date": "2026-02-27",
       "version": "1.27.0",
       "title": "Version 1.27.0",

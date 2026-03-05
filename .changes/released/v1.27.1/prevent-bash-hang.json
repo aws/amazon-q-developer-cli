@@ -1,0 +1,4 @@
+{
+  "type": "fixed",
+  "description": "Prevent bash commands from hanging when processes access the terminal (SIGTTIN)"
+}
