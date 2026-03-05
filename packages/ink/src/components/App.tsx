@@ -227,17 +227,12 @@ function App({
 	);
 
 	const enableMouseTracking = useCallback((): void => {
-		if (mouseTrackingCount.current === 0) {
-			stdout.write('\x1b[?1002;1006h');
-		}
 		mouseTrackingCount.current++;
-	}, [stdout]);
+	}, []);
 
 	const disableMouseTracking = useCallback((): void => {
-		if (--mouseTrackingCount.current === 0) {
-			stdout.write('\x1b[?1002;1006l');
-		}
-	}, [stdout]);
+		mouseTrackingCount.current--;
+	}, []);
 
 	// Focus navigation helpers
 	const findNextFocusable = useCallback(
@@ -454,11 +449,6 @@ function App({
 	useEffect(() => {
 		return () => {
 			cliCursor.show(stdout);
-
-			if (mouseTrackingCount.current > 0) {
-				stdout.write('\x1b[?1002;1006l');
-				mouseTrackingCount.current = 0;
-			}
 
 			// Disable raw mode on unmount if supported
 			if (isRawModeSupported && rawModeEnabledCount.current > 0) {

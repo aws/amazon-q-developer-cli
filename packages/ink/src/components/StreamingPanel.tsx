@@ -1,12 +1,9 @@
-import React, {useEffect, useRef, useContext, useCallback, useMemo, type ReactNode} from 'react';
+import React, {useEffect, useRef, useMemo, type ReactNode} from 'react';
 import Box from './Box.js';
 import Text from './Text.js';
 import Scrollbar from './Scrollbar.js';
 import useScroll from '../hooks/use-scroll.js';
-import StdinContext from './StdinContext.js';
-import MouseContext from './MouseContext.js';
-import StdoutContext from './StdoutContext.js';
-import {type MouseEvent} from '../parse-mouse.js';
+import {isMac} from '../utils/os.js';
 
 export type Props = {
 	readonly content: string;
@@ -24,100 +21,19 @@ export default function StreamingPanel({content, streaming, height, scrollbar = 
 	const contentHeight = height - 1;
 	const showScrollbar = scrollbar && totalLines > contentHeight;
 	const maxScroll = Math.max(0, totalLines - contentHeight);
-	const {scrollTop, scrollTo, scrollBy} = useScroll({isActive: true});
+	const {scrollTop, scrollTo} = useScroll({isActive: true});
 	const userScrolledRef = useRef(false);
 	const prevScrollTopRef = useRef(0);
-
-	// Mouse wheel support
-	const {enableMouseTracking, disableMouseTracking} = useContext(MouseContext);
-	const {internal_eventEmitter} = useContext(StdinContext);
-	const {stdout} = useContext(StdoutContext);
-
-	// Track whether mouse tracking is paused (scroll passed to terminal)
-	const mousePassthroughRef = useRef(false);
-
-	// Single effect for mouse tracking lifecycle — avoids cleanup ordering issues
-	useEffect(() => {
-		enableMouseTracking();
-		return () => {
-			// If passthrough was active, re-enable raw tracking before decrementing
-			// so the ref-counted disable produces the correct final state.
-			if (mousePassthroughRef.current) {
-				stdout.write('\x1b[?1002;1006h');
-				mousePassthroughRef.current = false;
-			}
-			disableMouseTracking();
-		};
-	}, [enableMouseTracking, disableMouseTracking, stdout]);
-
-	const pauseMouseTracking = useCallback(() => {
-		if (!mousePassthroughRef.current) {
-			mousePassthroughRef.current = true;
-			stdout.write('\x1b[?1002;1006l');
-		}
-	}, [stdout]);
-
-	const resumeMouseTracking = useCallback(() => {
-		if (mousePassthroughRef.current) {
-			mousePassthroughRef.current = false;
-			stdout.write('\x1b[?1002;1006h');
-		}
-	}, [stdout]);
-
-	// Resume mouse tracking when keyboard scrolls down (arrow/pagedown still work via useInput in raw mode)
-	useEffect(() => {
-		if (scrollTop > 0 && mousePassthroughRef.current) {
-			resumeMouseTracking();
-		}
-	}, [scrollTop, resumeMouseTracking]);
-
-	const draggingRef = useRef(false);
-	const scrollTopRef = useRef(scrollTop);
-	scrollTopRef.current = scrollTop;
-
-	const handleMouse = useCallback((event: MouseEvent) => {
-		if (event.button === 'scrollUp') {
-			if (scrollTopRef.current <= 0) {
-				pauseMouseTracking();
-				return;
-			}
-			scrollBy(-3);
-			userScrolledRef.current = true;
-		} else if (event.button === 'scrollDown') {
-			resumeMouseTracking();
-			scrollBy(3);
-		} else if (event.button === 'left' && event.type === 'press') {
-			draggingRef.current = true;
-		} else if (event.type === 'release') {
-			draggingRef.current = false;
-		}
-
-		// Drag on scrollbar: map row position to scroll offset
-		if (draggingRef.current && (event.type === 'press' || event.type === 'drag')) {
-			resumeMouseTracking();
-			const ratio = Math.max(0, Math.min(1, (event.row - 1) / Math.max(1, height)));
-			scrollTo(Math.round(ratio * maxScroll));
-			userScrolledRef.current = true;
-		}
-	}, [scrollBy, scrollTo, height, maxScroll, pauseMouseTracking, resumeMouseTracking]);
-
-	useEffect(() => {
-		internal_eventEmitter?.on('mouse', handleMouse);
-		return () => { internal_eventEmitter?.removeListener('mouse', handleMouse); };
-	}, [internal_eventEmitter, handleMouse]);
 
 	useEffect(() => {
 		if (streaming) {
 			if (!userScrolledRef.current) {
-				resumeMouseTracking();
 				scrollTo(maxScroll);
 			}
 		} else {
-			// Streaming finished — restore passthrough state so ref count stays consistent
-			resumeMouseTracking();
 			userScrolledRef.current = false;
 		}
-	}, [streaming, maxScroll, scrollTo, resumeMouseTracking]);
+	}, [streaming, maxScroll, scrollTo]);
 
 	useEffect(() => {
 		if (streaming && scrollTop < prevScrollTopRef.current) {
@@ -160,7 +76,7 @@ export default function StreamingPanel({content, streaming, height, scrollbar = 
 				)}
 			</Box>
 			{showScrollbar && (
-				<Text dimColor italic>  PgUp/PgDn to scroll</Text>
+				<Text dimColor italic>  {isMac ? 'Fn+↑/↓' : 'PgUp/PgDn'} to scroll</Text>
 			)}
 		</Box>
 	);
