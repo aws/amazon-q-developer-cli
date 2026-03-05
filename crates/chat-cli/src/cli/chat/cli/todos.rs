@@ -231,11 +231,4 @@ mod tests {
         assert!(result.is_ok());
         assert!(matches!(result.unwrap(), SlashCommand::Todos(TodoSubcommand::View)));
     }
-
-    #[test]
-    fn test_report_alias_parses_as_issue() {
-        let result = SlashCommand::try_parse_from(["slash_command", "report"]);
-        assert!(result.is_ok());
-        assert!(matches!(result.unwrap(), SlashCommand::Issue(_)));
-    }
 }

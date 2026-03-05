@@ -98,7 +98,6 @@ pub enum SlashCommand {
     /// View tools and permissions
     Tools(ToolsArgs),
     /// Create a new Github issue or make a feature request
-    #[command(alias = "report")]
     Issue(issue::IssueArgs),
     /// Create a zip file with logs for support investigation
     Logdump(LogdumpArgs),
