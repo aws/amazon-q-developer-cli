@@ -219,10 +219,11 @@ impl UseSubagent {
                         }
                     }
 
-                    // Second check: trustedAgents
-                    if agents_to_spawn
-                        .iter()
-                        .all(|agent| trusted_agents.iter().any(|trusted_agent| trusted_agent == *agent))
+                    // Second check: runtime trust (user typed 't') or trustedAgents
+                    if is_in_allowlist
+                        || agents_to_spawn
+                            .iter()
+                            .all(|agent| trusted_agents.iter().any(|trusted_agent| trusted_agent == *agent))
                     {
                         PermissionEvalResult::Allow
                     } else {
@@ -959,6 +960,99 @@ mod tests {
             subagents: vec![InvokeSubagent {
                 query: "test query".to_string(),
                 agent_name: Some("agent1".to_string()),
+                relevant_context: None,
+                dangerously_trust_all_tools: false,
+                is_interactive: false,
+            }],
+            convo_id: None,
+            tool_use_id: None,
+        };
+
+        let result = tool.eval_perm(&os, &agent);
+        assert_eq!(result, PermissionEvalResult::Allow);
+    }
+
+    /// Regression test: when toolsSettings exist and the tool has been runtime-trusted
+    /// (added to allowed_tools via user typing 't'), InvokeSubagents should return Allow
+    /// even if the agent is not in trustedAgents.
+    #[tokio::test]
+    async fn test_eval_perm_invoke_subagents_runtime_trust_with_settings() {
+        let os = Os::new().await.unwrap();
+        let mut settings = HashMap::new();
+        settings.insert(
+            "subagent",
+            json!({
+                "trustedAgents": ["other-agent"]
+            }),
+        );
+        // Simulate user having typed 't' — tool added to allowed_tools
+        let agent = create_test_agent(vec!["use_subagent"], settings);
+        let tool = UseSubagent::InvokeSubagents {
+            subagents: vec![InvokeSubagent {
+                query: "test query".to_string(),
+                agent_name: Some("untrusted-agent".to_string()),
+                relevant_context: None,
+                dangerously_trust_all_tools: false,
+                is_interactive: false,
+            }],
+            convo_id: None,
+            tool_use_id: None,
+        };
+
+        let result = tool.eval_perm(&os, &agent);
+        // Should be Allow because the tool was runtime-trusted via allowlist
+        assert_eq!(result, PermissionEvalResult::Allow);
+    }
+
+    /// Regression test: runtime trust via allowlist should still respect availableAgents deny.
+    #[tokio::test]
+    async fn test_eval_perm_invoke_subagents_runtime_trust_still_respects_available_agents() {
+        let os = Os::new().await.unwrap();
+        let mut settings = HashMap::new();
+        settings.insert(
+            "subagent",
+            json!({
+                "availableAgents": ["agent1"],
+                "trustedAgents": []
+            }),
+        );
+        // Tool is in allowlist (runtime trusted), but agent is not in availableAgents
+        let agent = create_test_agent(vec!["use_subagent"], settings);
+        let tool = UseSubagent::InvokeSubagents {
+            subagents: vec![InvokeSubagent {
+                query: "test query".to_string(),
+                agent_name: Some("blocked-agent".to_string()),
+                relevant_context: None,
+                dangerously_trust_all_tools: false,
+                is_interactive: false,
+            }],
+            convo_id: None,
+            tool_use_id: None,
+        };
+
+        let result = tool.eval_perm(&os, &agent);
+        // availableAgents restriction should still be enforced even with runtime trust
+        assert!(matches!(result, PermissionEvalResult::Deny(_)));
+    }
+
+    /// Regression test: runtime trust with the "subagent" alias should also work
+    /// when toolsSettings exist.
+    #[tokio::test]
+    async fn test_eval_perm_invoke_subagents_runtime_trust_via_alias_with_settings() {
+        let os = Os::new().await.unwrap();
+        let mut settings = HashMap::new();
+        settings.insert(
+            "subagent",
+            json!({
+                "trustedAgents": ["other-agent"]
+            }),
+        );
+        // Trust via the "subagent" alias instead of "use_subagent"
+        let agent = create_test_agent(vec!["subagent"], settings);
+        let tool = UseSubagent::InvokeSubagents {
+            subagents: vec![InvokeSubagent {
+                query: "test query".to_string(),
+                agent_name: Some("untrusted-agent".to_string()),
                 relevant_context: None,
                 dangerously_trust_all_tools: false,
                 is_interactive: false,

@@ -1,7 +1,7 @@
 ---
 doc_meta:
-  validated: 2026-02-11
-  commit: cc1d0d0b
+  validated: 2026-02-19
+  commit: d171e67b
   status: validated
   testable_headless: true
   category: tool
@@ -124,7 +124,8 @@ Control which agents can be used as subagents via toolsSettings in your agent co
 
 **Permission Flow**:
 1. Check if agent is in `availableAgents` → If not, deny with error
-2. Check if agent is in `trustedAgents` → If yes, auto-approve; otherwise, ask for confirmation
+2. Check if tool was runtime-trusted (user typed `t` to trust) → If yes, auto-approve
+3. Check if agent is in `trustedAgents` → If yes, auto-approve; otherwise, ask for confirmation
 
 Enable subagent feature:
 
