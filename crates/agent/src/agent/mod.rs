@@ -329,6 +329,13 @@ impl AgentHandle {
         _ = self.sender.try_blocking_send_recv(AgentRequest::Terminate);
     }
 
+    /// Async version of [`terminate`](Self::terminate) that awaits the agent's cleanup
+    /// (including MCP server shutdown) before returning. Use this during graceful shutdown
+    /// to ensure child processes are cleaned up before the tokio runtime exits.
+    pub async fn shutdown(&self) {
+        _ = self.sender.send_recv(AgentRequest::Terminate).await;
+    }
+
     pub async fn compact_conversation(&self) -> Result<(), AgentError> {
         match self
             .sender
@@ -946,9 +953,8 @@ impl Agent {
                 }
             },
             AgentRequest::Terminate => {
-                // TODO: Fill this in to ensure a full clean up
                 _ = self.handle_cancel_request().await;
-                self.mcp_manager_handle.terminate();
+                self.mcp_manager_handle.shutdown().await;
 
                 Ok(AgentResponse::TerminateAcknowledged)
             },

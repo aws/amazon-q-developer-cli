@@ -448,6 +448,28 @@ impl SessionManager {
                     warn!(?session_id, "Attempted to terminate non-existent session");
                 }
             },
+            SessionManagerRequestData::Shutdown { resp_sender } => {
+                // Terminate all sessions' agents so MCP child processes are cleaned up
+                // before the tokio runtime exits. Each session gets its own timeout so
+                // a stuck session doesn't block the others.
+                let sessions: Vec<_> = self.sessions.drain().collect();
+                let futs: Vec<_> = sessions
+                    .iter()
+                    .map(|(id, h)| {
+                        let id = id.clone();
+                        async move {
+                            if tokio::time::timeout(std::time::Duration::from_secs(4), h.shutdown())
+                                .await
+                                .is_err()
+                            {
+                                warn!(?id, "Session did not shut down within timeout");
+                            }
+                        }
+                    })
+                    .collect();
+                futures::future::join_all(futs).await;
+                _ = resp_sender.send(());
+            },
             SessionManagerRequestData::SetMode { mode_id, resp_sender } => {
                 let result = self.handle_set_mode(&session_id, &mode_id).await;
                 _ = resp_sender.send(result);
@@ -489,6 +511,9 @@ pub(crate) enum SessionManagerRequestData {
         resp_sender: oneshot::Sender<Result<AcpSessionHandle, sacp::Error>>,
     },
     TerminateSession,
+    Shutdown {
+        resp_sender: oneshot::Sender<()>,
+    },
     SetMode {
         mode_id: String,
         resp_sender: oneshot::Sender<Result<(), sacp::Error>>,
@@ -553,6 +578,19 @@ impl SessionManagerHandle {
                 data: SessionManagerRequestData::TerminateSession,
             })
             .await;
+    }
+
+    /// Gracefully shut down all sessions, awaiting MCP server cleanup.
+    pub async fn shutdown(&self) {
+        let (resp_sender, rx) = oneshot::channel();
+        let _ = self
+            .tx
+            .send(SessionManagerRequest {
+                session_id: SessionId::new(String::new()),
+                data: SessionManagerRequestData::Shutdown { resp_sender },
+            })
+            .await;
+        _ = rx.await;
     }
 
     pub async fn set_mode(&self, session_id: &SessionId, mode_id: String) -> Result<(), sacp::Error> {

@@ -121,6 +121,11 @@ impl McpServerActorHandle {
     pub fn terminate(&self) {
         _ = self.sender.try_blocking_send_recv(McpServerActorRequest::Terminate);
     }
+
+    /// Async version of [`terminate`](Self::terminate) that awaits server cleanup.
+    pub async fn shutdown(&self) {
+        _ = self.sender.send_recv(McpServerActorRequest::Terminate).await;
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

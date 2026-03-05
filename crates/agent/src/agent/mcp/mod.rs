@@ -118,6 +118,7 @@ use actor::{
     McpServerActorEvent,
     McpServerActorHandle,
 };
+use futures::future::join_all;
 use rmcp::model::CallToolResult;
 use serde::{
     Deserialize,
@@ -285,6 +286,11 @@ impl McpManagerHandle {
     pub fn terminate(&self) {
         _ = self.request_tx.try_blocking_send_recv(McpManagerRequest::Terminate);
     }
+
+    /// Async version of [`terminate`](Self::terminate) that awaits MCP server shutdown.
+    pub async fn shutdown(&self) {
+        _ = self.request_tx.send_recv(McpManagerRequest::Terminate).await;
+    }
 }
 
 /// Actor that manages the lifecycle of multiple MCP servers.
@@ -417,9 +423,22 @@ impl McpManager {
                 None => Err(McpManagerError::ServerNotInitialized { name: server_name }),
             },
             McpManagerRequest::Terminate => {
-                for server in self.servers.values() {
-                    server.terminate();
-                }
+                let futs: Vec<_> = self
+                    .servers
+                    .iter()
+                    .map(|(name, s)| {
+                        let name = name.clone();
+                        async move {
+                            if tokio::time::timeout(Duration::from_secs(4), s.shutdown())
+                                .await
+                                .is_err()
+                            {
+                                warn!(server_name = %name, "MCP server did not shut down within timeout");
+                            }
+                        }
+                    })
+                    .collect();
+                join_all(futs).await;
                 Ok(McpManagerResponse::TerminateAcknowledged)
             },
         }

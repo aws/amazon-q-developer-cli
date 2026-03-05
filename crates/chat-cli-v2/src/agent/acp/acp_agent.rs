@@ -229,6 +229,8 @@ pub enum AcpSessionRequest {
     GetMcpServerInfo {
         respond_to: oneshot::Sender<Result<Vec<agent::tui_commands::McpServerInfo>, String>>,
     },
+    /// Graceful shutdown: terminate the agent and await MCP cleanup.
+    Shutdown { respond_to: oneshot::Sender<()> },
 }
 
 #[derive(Debug)]
@@ -466,6 +468,15 @@ impl AcpSessionHandle {
         }
         rx.await
             .map_err(|e| format!("Response channel closed: {e}").to_string())?
+    }
+
+    /// Gracefully shut down this session, awaiting MCP server cleanup.
+    pub async fn shutdown(&self) {
+        let (respond_to, rx) = oneshot::channel();
+        if self.tx.send(AcpSessionRequest::Shutdown { respond_to }).await.is_err() {
+            return;
+        }
+        _ = rx.await;
     }
 }
 
@@ -1255,6 +1266,10 @@ impl AcpSession {
                     .await
                     .map_err(|e| format!("Failed to get MCP server info: {}", e));
                 let _ = respond_to.send(result);
+            },
+            AcpSessionRequest::Shutdown { respond_to } => {
+                self.agent.shutdown().await;
+                let _ = respond_to.send(());
             },
         }
     }
@@ -2619,6 +2634,16 @@ pub async fn execute(os: &mut Os, args: agent::types::AcpSpawnArgs) -> eyre::Res
         ))
         .await
         .map_err(|e| eyre::eyre!("Connection error: {}", e))?;
+
+    // Gracefully shut down all sessions so MCP child processes are cleaned up
+    // before the tokio runtime exits. Timeout ensures we don't hang indefinitely
+    // if an actor is stuck.
+    if tokio::time::timeout(std::time::Duration::from_secs(8), session_manager_handle.shutdown())
+        .await
+        .is_err()
+    {
+        warn!("Graceful shutdown timed out, some MCP processes may not have been cleaned up");
+    }
 
     Ok(ExitCode::SUCCESS)
 }
