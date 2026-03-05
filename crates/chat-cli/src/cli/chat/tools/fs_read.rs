@@ -255,14 +255,15 @@ impl FsRead {
                                 }
 
                                 // We only want to ask if we are not allowing read only
-                                // operation
-                                if !is_in_allowlist
-                                    && !allow_read_only
-                                    && !img_paths.iter().all(|path| allow_set.is_match(path))
-                                {
-                                    ask = true;
+                                // operation — canonicalize paths before checking allow set
+                                if !is_in_allowlist && !allow_read_only {
                                     for path in img_paths {
-                                        if let Ok(canonical) = paths::canonicalizes_path(os, path) {
+                                        let Ok(canonical) = paths::canonicalizes_path(os, path) else {
+                                            ask = true;
+                                            continue;
+                                        };
+                                        if !allow_set.is_match(canonical.as_ref() as &str) {
+                                            ask = true;
                                             ask_paths.push(canonical);
                                         }
                                     }

@@ -3,10 +3,10 @@
     {
       "name": "single_file_under_cwd",
       "cwd": "/home/user/project",
-      "paths": ["/home/user/project/src/main.rs"],
+      "paths": ["/home/user/project/src/crates/main.rs"],
       "expected": [
-        {"label": "Specific paths", "display": "src/main.rs", "setting_key": "runtime_read_paths", "patterns": ["/home/user/project/src/main.rs"]},
-        {"label": "Complete directory", "display": "src", "setting_key": "runtime_read_paths", "patterns": ["/home/user/project/src"]}
+        {"label": "Specific paths", "display": "src/crates/main.rs", "setting_key": "runtime_read_paths", "patterns": ["/home/user/project/src/crates/main.rs"]},
+        {"label": "Complete directory", "display": "src/crates", "setting_key": "runtime_read_paths", "patterns": ["/home/user/project/src/crates"]}
       ]
     },
     {
@@ -51,7 +51,7 @@
       "paths": ["/home/user/project/a.rs", "/home/user/project/b.rs", "/home/user/project/c.rs", "/home/user/project/d.rs"],
       "expected": [
         {"label": "Specific paths", "display": "a.rs, b.rs, c.rs, ... (+1 more)", "setting_key": "runtime_read_paths", "patterns": ["/home/user/project/a.rs", "/home/user/project/b.rs", "/home/user/project/c.rs", "/home/user/project/d.rs"]},
-        {"label": "Complete directory", "display": "project", "setting_key": "runtime_read_paths", "patterns": ["/home/user/project"]}
+        {"label": "Complete directory", "display": "/home/user/project", "setting_key": "runtime_read_paths", "patterns": ["/home/user/project"]}
       ]
     }
   ]

@@ -170,4 +170,28 @@ mod tests {
         let result = evaluate_shell_permission("git status", &settings);
         assert_eq!(result, PermissionEvalResult::Allow);
     }
+
+    #[test]
+    fn test_multiline_command_with_allowed_pattern() {
+        let settings = ShellPermissionSettings {
+            allowed_commands: vec!["ssh( .*)?".into()],
+            auto_allow_readonly: true,
+            ..Default::default()
+        };
+        // Single line - should match
+        let single = r#"ssh -i ~/.ssh/key.pem ubuntu@host "sudo apt-get install -y tmux""#;
+        let r = evaluate_shell_permission(single, &settings);
+        println!("single line: {:?}", r);
+        assert!(matches!(r, PermissionEvalResult::Allow), "single line should Allow");
+
+        // Multi-line with backslash continuation - this is what the LLM sends
+        let multi = "ssh -i ~/.ssh/key.pem ubuntu@host \\\n  \"sudo apt-get install -y tmux 2>&1 | tail -3\"";
+        let r = evaluate_shell_permission(multi, &settings);
+        println!("multi line: {:?}", r);
+        assert!(
+            matches!(r, PermissionEvalResult::Allow),
+            "multi-line should Allow but got: {:?}",
+            r
+        );
+    }
 }

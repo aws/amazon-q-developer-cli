@@ -92,7 +92,9 @@ pub fn validate_regex(pattern: &str) -> Result<(), String> {
 
 fn matches_regex(value: &str, pattern: &str) -> bool {
     let anchored = anchor_regex(pattern);
-    Regex::new(&anchored).is_ok_and(|r| r.is_match(value))
+    // Enable dotall mode (?s) so `.` matches newlines in multi-line commands
+    let dotall = format!("(?s){anchored}");
+    Regex::new(&dotall).is_ok_and(|r| r.is_match(value))
 }
 
 fn matches_glob(value: &str, pattern: &str) -> bool {

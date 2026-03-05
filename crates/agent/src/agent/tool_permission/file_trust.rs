@@ -66,13 +66,9 @@ fn common_ancestor<'a>(paths: &[&'a Path]) -> Option<&'a Path> {
 }
 
 fn make_dir_option(dir: &Path, cwd: &Path, setting_key: &str) -> TrustOption {
-    let display = if dir.starts_with(cwd) {
-        dir.file_name().map_or_else(
-            || dir.to_string_lossy().into_owned(),
-            |n| n.to_string_lossy().into_owned(),
-        )
-    } else {
-        dir.to_string_lossy().into_owned()
+    let display = match dir.strip_prefix(cwd) {
+        Ok(rel) if !rel.as_os_str().is_empty() => rel.to_string_lossy().into_owned(),
+        _ => dir.to_string_lossy().into_owned(),
     };
     TrustOption {
         label: "Complete directory".into(),
