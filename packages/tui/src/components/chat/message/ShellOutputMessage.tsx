@@ -4,6 +4,7 @@ import { Text } from '../../ui/text/Text.js';
 import { StatusBar, useStatusBar } from '../status-bar/StatusBar.js';
 import { useTheme } from '../../../hooks/useThemeContext.js';
 import { useTerminalSize } from '../../../hooks/useTerminalSize.js';
+import { expandTabs } from '../../../utils/string.js';
 import type { StatusType } from '../../../types/componentTypes.js';
 
 const HEAD_LINES = 5;
@@ -44,7 +45,7 @@ function ShellOutputContent({
 
   const [expanded, setExpanded] = useState(false);
 
-  const lines = useMemo(() => content.split('\n'), [content]);
+  const lines = useMemo(() => expandTabs(content).split('\n'), [content]);
   const tailLines = Math.max(5, termHeight - 10);
   const hasMore = lines.length > HEAD_LINES + tailLines;
 

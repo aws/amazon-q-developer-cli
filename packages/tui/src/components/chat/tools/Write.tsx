@@ -3,6 +3,7 @@ import { Box } from 'ink';
 import { Text } from '../../ui/text/Text.js';
 import { useTheme } from '../../../hooks/useThemeContext.js';
 import { useSyntaxHighlight } from '../../../utils/syntax-highlight.js';
+import { expandTabs } from '../../../utils/string.js';
 import { useStatusBar } from '../status-bar/StatusBar.js';
 import { StatusInfo } from '../../ui/status/StatusInfo.js';
 import { useExpandableOutput } from '../../../hooks/useExpandableOutput.js';
@@ -261,7 +262,7 @@ export const Write = React.memo<WriteProps>(function Write({
         }
 
         return lines.map((line: string, lineIdx: number) => {
-          const truncatedLine = truncateLine(line, contentWidth);
+          const truncatedLine = truncateLine(expandTabs(line), contentWidth);
           const highlightedLine = highlightCode(truncatedLine, language);
 
           if (change.removed) {
@@ -383,7 +384,7 @@ const WriteContent: React.FC<WriteContentProps> = ({
   return (
     <Box flexDirection="column" width="90%">
       {visibleLines.map((dl) => {
-        const truncated = truncateLine(dl.line, contentWidth);
+        const truncated = truncateLine(expandTabs(dl.line), contentWidth);
         const highlighted = highlightCode(truncated, language);
         const lineNumber = String(dl.lineNum).padStart(4);
 

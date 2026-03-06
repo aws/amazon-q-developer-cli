@@ -1,7 +1,7 @@
 import { Box } from 'ink';
 import React, { useCallback, useMemo } from 'react';
 import { useTheme } from '../../../hooks/useThemeContext.js';
-import { normalizeLineEndings } from '../../../utils/index.js';
+import { normalizeLineEndings, expandTabs } from '../../../utils/index.js';
 import { Text } from '../../ui/text/Text.js';
 import { StatusBar } from '../status-bar/StatusBar.js';
 import { MarkdownRenderer } from '../../ui/MarkdownRenderer.js';
@@ -49,7 +49,7 @@ export const Message = React.memo(function Message({
 
     // Developer messages
     const backgroundColor = getColor('surface').hex;
-    const displayContent = normalizeLineEndings(content);
+    const displayContent = expandTabs(normalizeLineEndings(content));
     return (
       <Box>
         <Box backgroundColor={backgroundColor}>

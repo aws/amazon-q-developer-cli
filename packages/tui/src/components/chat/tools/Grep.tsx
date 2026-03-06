@@ -8,6 +8,7 @@ import {
   parseToolArg,
   unwrapResultOutput,
 } from '../../../utils/tool-result.js';
+import { expandTabs } from '../../../utils/string.js';
 import type { ToolResult } from '../../../stores/app-store.js';
 import type { StatusType } from '../../../types/componentTypes.js';
 import { getToolLabel } from '../../../types/tool-status.js';
@@ -89,7 +90,10 @@ export const Grep = React.memo(function Grep({
       numFiles: typeof obj.numFiles === 'number' ? obj.numFiles : 0,
       truncated: obj.truncated === true,
       results: Array.isArray(obj.results)
-        ? (obj.results as GrepFileResult[])
+        ? (obj.results as GrepFileResult[]).map((r) => ({
+            ...r,
+            matches: r.matches?.map(expandTabs),
+          }))
         : undefined,
       message: typeof obj.message === 'string' ? obj.message : undefined,
     };

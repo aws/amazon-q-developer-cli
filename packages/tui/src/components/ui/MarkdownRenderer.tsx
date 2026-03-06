@@ -6,6 +6,7 @@ import {
   parseInlineMarkdown,
   type MarkdownSegment,
 } from '../../utils/markdown.js';
+import { expandTabs } from '../../utils/string.js';
 import { Text } from './text/Text.js';
 import { Divider } from './divider/Divider.js';
 import { useTheme } from '../../hooks/useThemeContext.js';
@@ -93,7 +94,7 @@ export const MarkdownRenderer = React.memo(function MarkdownRenderer({
     <Box flexDirection="column">
       {blocks.map((block, i) => {
         if (block.type === 'code') {
-          const code = block.segment.codeBlock!.code.replace(/^\n+|\n+$/g, '');
+          const code = expandTabs(block.segment.codeBlock!.code.replace(/^\n+|\n+$/g, ''));
           return (
             <Box
               key={i}

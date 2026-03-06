@@ -5,6 +5,38 @@ export const normalizeLineEndings = (str: string): string =>
   str.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
 
 /**
+ * Expand tab characters to spaces, respecting tab stop positions.
+ *
+ * Terminals render tabs by advancing to the next tab stop (every `tabWidth`
+ * columns), but `string-width` (used by Ink) reports them as width 0. This
+ * mismatch causes Ink to undercount line widths, leading to incorrect wrapping
+ * and rendering artifacts. Converting tabs to the correct number of spaces
+ * makes the measured width match the visual width.
+ */
+export function expandTabs(text: string, tabWidth = 2): string {
+  if (!text.includes('\t')) return text;
+  const lines = text.split('\n');
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i]!;
+    if (!line.includes('\t')) continue;
+    let result = '';
+    let col = 0;
+    for (const ch of line) {
+      if (ch === '\t') {
+        const spaces = tabWidth - (col % tabWidth);
+        result += ' '.repeat(spaces);
+        col += spaces;
+      } else {
+        result += ch;
+        col++;
+      }
+    }
+    lines[i] = result;
+  }
+  return lines.join('\n');
+}
+
+/**
  * Check if string contains only printable characters (including newlines and tabs)
  */
 export const isPrintable = (str: string): boolean =>
