@@ -27,6 +27,253 @@ enum State {
   CODE_BLOCK,
 }
 
+const INLINE_CONTROL_MARKER_REGEX = /[`*_[\]~|>]/;
+const BLOCK_CONTROL_MARKER_REGEX =
+  /(^|\n)\s*(#{1,6}\s|[-+]\s|\d+\.\s|\|[^\n]*\||-{3,}|_{3,}|\*{3,})/;
+
+interface CodeBlockTailContext {
+  isInCodeBlock: boolean;
+  inLanguageLine: boolean;
+  languageLine?: string;
+}
+
+const getCodeBlockTailContext = (content: string): CodeBlockTailContext => {
+  let state = State.TEXT;
+  let inLanguageLine = false;
+  let index = 0;
+  let languageLineStart: number | null = null;
+
+  while (index < content.length) {
+    if (content.slice(index, index + 3) === '```') {
+      if (state === State.TEXT) {
+        state = State.CODE_BLOCK;
+        inLanguageLine = true;
+
+        index += 3;
+        languageLineStart = index;
+        while (index < content.length && content[index] !== '\n') {
+          index++;
+        }
+        if (index < content.length && content[index] === '\n') {
+          index++;
+          inLanguageLine = false;
+        }
+        continue;
+      }
+
+      const afterFence = index + 3;
+      const isClosingFence =
+        afterFence >= content.length ||
+        content[afterFence] === '\n' ||
+        content[afterFence] === ' ';
+
+      if (isClosingFence) {
+        state = State.TEXT;
+        inLanguageLine = false;
+        languageLineStart = null;
+        index += 3;
+      } else {
+        index += 3;
+      }
+      continue;
+    }
+
+    if (state === State.CODE_BLOCK && inLanguageLine && content[index] === '\n') {
+      inLanguageLine = false;
+    }
+    index++;
+  }
+
+  return {
+    isInCodeBlock: state === State.CODE_BLOCK,
+    inLanguageLine: state === State.CODE_BLOCK && inLanguageLine,
+    languageLine:
+      state === State.CODE_BLOCK && inLanguageLine && languageLineStart !== null
+        ? content.slice(languageLineStart)
+        : undefined,
+  };
+};
+
+const isIncrementalCodeBlockDeltaSafe = (delta: string): boolean =>
+  !delta.includes('```');
+
+const isPlainTextSegment = (segment: MarkdownSegment): boolean =>
+  !!segment.text &&
+  !segment.bold &&
+  !segment.italic &&
+  !segment.strikethrough &&
+  !segment.quote &&
+  !segment.blockquote &&
+  !segment.header &&
+  !segment.boldHeading &&
+  !segment.horizontalRule &&
+  !segment.link &&
+  !segment.listItem &&
+  !segment.codeBlock &&
+  !segment.table;
+
+const isBlockSeparatorSegment = (segment: MarkdownSegment): boolean =>
+  !!segment.header ||
+  !!segment.boldHeading ||
+  !!segment.listItem ||
+  !!segment.blockquote ||
+  !!segment.horizontalRule ||
+  !!segment.table ||
+  (!!segment.codeBlock && segment.codeBlock.isComplete);
+
+const hasAmbiguousTrailingBlockPrefix = (content: string): boolean => {
+  const lastLineBreak = Math.max(content.lastIndexOf('\n'), content.lastIndexOf('\r'));
+  const lastLine = content.slice(lastLineBreak + 1);
+  return /^(?:\s*[-+*]\s*|\s*\d+\.\s*|\s*#{1,6}\s*|\s*>\s*)$/.test(lastLine);
+};
+
+export function isIncrementalMarkdownDeltaSafe(delta: string): boolean {
+  if (!delta) {
+    return true;
+  }
+
+  if (INLINE_CONTROL_MARKER_REGEX.test(delta)) {
+    return false;
+  }
+
+  if (BLOCK_CONTROL_MARKER_REGEX.test(delta)) {
+    return false;
+  }
+
+  return true;
+}
+
+/**
+ * Incrementally append a streaming delta to an already parsed markdown segment list.
+ *
+ * Returns `null` when the delta may change markdown semantics and a full re-parse is required.
+ */
+export function tryAppendMarkdownDelta(
+  previousSegments: MarkdownSegment[],
+  delta: string,
+  previousRawContent?: string
+): MarkdownSegment[] | null {
+  if (!delta) {
+    return previousSegments;
+  }
+
+  const lastSegment = previousSegments[previousSegments.length - 1];
+  const nextSegments = previousSegments.slice();
+
+  if (lastSegment?.codeBlock && !lastSegment.codeBlock.isComplete) {
+    if (!isIncrementalCodeBlockDeltaSafe(delta)) {
+      return null;
+    }
+
+    if (previousRawContent) {
+      const tailContext = getCodeBlockTailContext(previousRawContent);
+      if (!tailContext.isInCodeBlock) {
+        return null;
+      }
+
+      if (tailContext.inLanguageLine) {
+        const newlineIndex = delta.indexOf('\n');
+        const languageDelta = newlineIndex === -1 ? delta : delta.slice(0, newlineIndex);
+        const codeDelta = newlineIndex === -1 ? '' : delta.slice(newlineIndex + 1);
+
+        const languageLine = `${tailContext.languageLine || ''}${languageDelta}`;
+        const updatedLanguage = languageLine.trim();
+        const updatedLastSegment: MarkdownSegment = {
+          ...lastSegment,
+          codeBlock: {
+            ...lastSegment.codeBlock,
+            language: updatedLanguage || undefined,
+            code: `${lastSegment.codeBlock.code}${codeDelta}`,
+          },
+        };
+        nextSegments[nextSegments.length - 1] = updatedLastSegment;
+        return nextSegments;
+      }
+    }
+
+    const updatedLastSegment: MarkdownSegment = {
+      ...lastSegment,
+      codeBlock: {
+        ...lastSegment.codeBlock,
+        code: `${lastSegment.codeBlock.code}${delta}`,
+      },
+    };
+    nextSegments[nextSegments.length - 1] = updatedLastSegment;
+    return nextSegments;
+  }
+
+  if (
+    lastSegment?.codeBlock?.isComplete &&
+    previousRawContent?.endsWith('```') &&
+    delta[0] !== '\n' &&
+    delta[0] !== ' '
+  ) {
+    return null;
+  }
+
+  if (lastSegment?.table && !delta.startsWith('\n')) {
+    return null;
+  }
+
+  if (lastSegment?.boldHeading && !delta.startsWith('\n')) {
+    return null;
+  }
+
+  if (
+    lastSegment &&
+    (lastSegment.header ||
+      lastSegment.blockquote ||
+      lastSegment.listItem) &&
+    !delta.startsWith('\n') &&
+    delta.includes('\n')
+  ) {
+    return null;
+  }
+
+  if (
+    lastSegment &&
+    (lastSegment.header ||
+      lastSegment.blockquote ||
+      lastSegment.listItem) &&
+    !(previousRawContent ? /\r?\n$/.test(previousRawContent) : false) &&
+    !delta.includes('\n') &&
+    isIncrementalMarkdownDeltaSafe(delta)
+  ) {
+    nextSegments[nextSegments.length - 1] = {
+      ...lastSegment,
+      text: `${lastSegment.text}${delta}`,
+    };
+    return nextSegments;
+  }
+
+  if (!isIncrementalMarkdownDeltaSafe(delta)) {
+    return null;
+  }
+
+  let normalizedDelta = delta;
+  if (!lastSegment || isBlockSeparatorSegment(lastSegment)) {
+    normalizedDelta = normalizedDelta.replace(/^\n+/, '');
+    if (!normalizedDelta) {
+      return nextSegments;
+    }
+  }
+
+  if (lastSegment && isPlainTextSegment(lastSegment)) {
+    if (previousRawContent && hasAmbiguousTrailingBlockPrefix(previousRawContent)) {
+      return null;
+    }
+
+    nextSegments[nextSegments.length - 1] = {
+      ...lastSegment,
+      text: `${lastSegment.text}${normalizedDelta}`,
+    };
+  } else {
+    nextSegments.push({ text: normalizedDelta });
+  }
+
+  return nextSegments;
+}
+
 /**
  * Simple markdown processor for basic formatting
  * Supports: **bold**, *italic*, `code`, and ```language code blocks

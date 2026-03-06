@@ -1,5 +1,9 @@
 import { describe, it, expect } from 'bun:test';
-import { parseMarkdown } from '../markdown.js';
+import {
+  isIncrementalMarkdownDeltaSafe,
+  parseMarkdown,
+  tryAppendMarkdownDelta,
+} from '../markdown.js';
 
 describe('parseMarkdown', () => {
   // 1. Basic Text (no markdown)
@@ -690,5 +694,190 @@ describe('parseMarkdown', () => {
         ]);
       });
     });
+  });
+});
+
+describe('tryAppendMarkdownDelta', () => {
+  it('appends plain text delta to a text segment', () => {
+    const base = parseMarkdown('Hello');
+    const appended = tryAppendMarkdownDelta(base, ' world', 'Hello');
+    expect(appended).toEqual([{ text: 'Hello world' }]);
+  });
+
+  it('appends plain text to incomplete code blocks', () => {
+    const content = '```ts\nconst value = 1;';
+    const base = parseMarkdown(content);
+    const appended = tryAppendMarkdownDelta(base, '\nconsole.log(value);', content);
+    expect(appended).toEqual([
+      {
+        text: '',
+        codeBlock: {
+          code: 'const value = 1;\nconsole.log(value);',
+          language: 'ts',
+          isComplete: false,
+        },
+      },
+    ]);
+  });
+
+  it('trims leading newlines when appending after a complete code block', () => {
+    const content = '```js\nconst a = 1;\n```';
+    const base = parseMarkdown(content);
+    const appended = tryAppendMarkdownDelta(base, '\n\nNext line', content);
+    expect(appended).toEqual([
+      {
+        text: '',
+        codeBlock: {
+          code: 'const a = 1;\n',
+          language: 'js',
+          isComplete: true,
+        },
+      },
+      { text: 'Next line' },
+    ]);
+  });
+
+  it('trims leading newlines when appending after a header block', () => {
+    const content = '## Header';
+    const base = parseMarkdown(content);
+    const appended = tryAppendMarkdownDelta(base, '\n\nNext paragraph', content);
+    expect(appended).toEqual([{ text: 'Header', header: 2 }, { text: 'Next paragraph' }]);
+  });
+
+  it('returns null for markdown control deltas that require full re-parse', () => {
+    const base = parseMarkdown('Hello');
+    expect(tryAppendMarkdownDelta(base, ' **bold**', 'Hello')).toBeNull();
+    expect(tryAppendMarkdownDelta(base, '\n- list item', 'Hello')).toBeNull();
+  });
+
+  it('extends code block language while still on fence line', () => {
+    const content = '```';
+    const base = parseMarkdown(content);
+    const appended = tryAppendMarkdownDelta(base, ' text', content);
+    expect(appended).toEqual([
+      {
+        text: '',
+        codeBlock: {
+          code: '',
+          language: 'text',
+          isComplete: false,
+        },
+      },
+    ]);
+  });
+
+  it('moves from language line to code body after newline', () => {
+    const content = '```';
+    const base = parseMarkdown(content);
+    const appended = tryAppendMarkdownDelta(base, 'ts\nconst x = 1;', content);
+    expect(appended).toEqual([
+      {
+        text: '',
+        codeBlock: {
+          code: 'const x = 1;',
+          language: 'ts',
+          isComplete: false,
+        },
+      },
+    ]);
+  });
+
+  it('keeps language-line spacing while appending before newline', () => {
+    const content = '```ts * ';
+    const delta = '`inline`';
+    const base = parseMarkdown(content);
+    const appended = tryAppendMarkdownDelta(base, delta, content);
+    expect(appended).toEqual(parseMarkdown(content + delta));
+  });
+
+  it('returns null when delta contains code fence markers', () => {
+    const content = '```ts\nconst x = 1;';
+    const base = parseMarkdown(content);
+    expect(tryAppendMarkdownDelta(base, '```', content)).toBeNull();
+  });
+
+  it('returns null when appending text directly after eof-closing fence', () => {
+    const content = '```js\nconst a = 1;\n```';
+    const base = parseMarkdown(content);
+    expect(tryAppendMarkdownDelta(base, 'text', content)).toBeNull();
+  });
+
+  it('allows appending text after code fence followed by newline', () => {
+    const content = '```js\nconst a = 1;\n```\n';
+    const base = parseMarkdown(content);
+    const appended = tryAppendMarkdownDelta(base, 'Next', content);
+    expect(appended).toEqual([
+      {
+        text: '',
+        codeBlock: {
+          code: 'const a = 1;\n',
+          language: 'js',
+          isComplete: true,
+        },
+      },
+      { text: 'Next' },
+    ]);
+  });
+
+  it('extends header text when delta continues same line', () => {
+    const content = '## Header';
+    const base = parseMarkdown(content);
+    const appended = tryAppendMarkdownDelta(base, ' title', content);
+    expect(appended).toEqual([{ text: 'Header title', header: 2 }]);
+  });
+
+  it('does not extend header text after a newline has ended the line', () => {
+    const content = '## Header\n';
+    const base = parseMarkdown(content);
+    const appended = tryAppendMarkdownDelta(base, 'tail', content);
+    expect(appended).toEqual([{ text: 'Header', header: 2 }, { text: 'tail' }]);
+  });
+
+  it('extends list item text when delta continues same line', () => {
+    const content = '- item';
+    const base = parseMarkdown(content);
+    const appended = tryAppendMarkdownDelta(base, ' more', content);
+    expect(appended).toEqual([
+      { text: 'item more', listItem: { ordered: false, indent: 0 } },
+    ]);
+  });
+
+  it('returns null when list item delta spans into a new line', () => {
+    const content = '- item';
+    const base = parseMarkdown(content);
+    expect(tryAppendMarkdownDelta(base, ' more\nnext', content)).toBeNull();
+  });
+
+  it('returns null when extending table separator line without newline', () => {
+    const content = '| a | b |\n|---|---|';
+    const base = parseMarkdown(content);
+    expect(tryAppendMarkdownDelta(base, 'x', content)).toBeNull();
+  });
+
+  it('returns null when trailing text could become a list marker', () => {
+    const content = 'text\n * ';
+    const base = parseMarkdown(content);
+    expect(tryAppendMarkdownDelta(base, 'item', content)).toBeNull();
+  });
+
+  it('returns null when appending to bold-heading lines', () => {
+    const content = '**bold**';
+    const base = parseMarkdown(content);
+    expect(tryAppendMarkdownDelta(base, ' tail', content)).toBeNull();
+  });
+});
+
+describe('isIncrementalMarkdownDeltaSafe', () => {
+  it('marks plain prose as safe', () => {
+    expect(isIncrementalMarkdownDeltaSafe(' just more plain text')).toBe(true);
+    expect(isIncrementalMarkdownDeltaSafe('\nmore plain text')).toBe(true);
+  });
+
+  it('marks markdown controls as unsafe', () => {
+    expect(isIncrementalMarkdownDeltaSafe('**bold**')).toBe(false);
+    expect(isIncrementalMarkdownDeltaSafe('`code`')).toBe(false);
+    expect(isIncrementalMarkdownDeltaSafe('\n## Header')).toBe(false);
+    expect(isIncrementalMarkdownDeltaSafe('\n1. item')).toBe(false);
+    expect(isIncrementalMarkdownDeltaSafe('\n| a | b |')).toBe(false);
   });
 });

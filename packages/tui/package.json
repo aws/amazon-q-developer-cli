@@ -15,7 +15,8 @@
     "test": "bun test",
     "test:watch": "bun test --watch",
     "test:integ": "bun test ./integ_tests/",
-    "test:e2e": "bun run scripts/run-e2e.ts"
+    "test:e2e": "bun run scripts/run-e2e.ts",
+    "bench:markdown": "bun run scripts/benchmark-markdown.ts"
   },
   "dependencies": {
     "@agentclientprotocol/sdk": "^0.5.1",

@@ -4,6 +4,7 @@ import { useSyntaxHighlight } from '../../utils/syntax-highlight.js';
 import {
   parseMarkdown,
   parseInlineMarkdown,
+  tryAppendMarkdownDelta,
   type MarkdownSegment,
 } from '../../utils/markdown.js';
 import { expandTabs } from '../../utils/string.js';
@@ -37,15 +38,72 @@ export const MarkdownRenderer = React.memo(function MarkdownRenderer({
   const inlineCodeColor = getColor('highlight');
   const secondaryColor = getColor('secondary');
 
+  const parseCacheRef = React.useRef<{
+    content: string;
+    segments: MarkdownSegment[];
+  } | null>(null);
+  const styledSegmentCacheRef = React.useRef<WeakMap<MarkdownSegment, string>>(
+    new WeakMap()
+  );
+
+  React.useEffect(() => {
+    styledSegmentCacheRef.current = new WeakMap();
+  }, [color, inlineCodeColor, linkColor, secondaryColor]);
+
+  const segments = React.useMemo(() => {
+    const cached = parseCacheRef.current;
+    if (cached) {
+      if (content === cached.content) {
+        return cached.segments;
+      }
+
+      if (content.startsWith(cached.content)) {
+        const delta = content.slice(cached.content.length);
+        const incrementallyAppended = tryAppendMarkdownDelta(
+          cached.segments,
+          delta,
+          cached.content
+        );
+        if (incrementallyAppended) {
+          parseCacheRef.current = {
+            content,
+            segments: incrementallyAppended,
+          };
+          return incrementallyAppended;
+        }
+      }
+    }
+
+    const parsed = parseMarkdown(content);
+    parseCacheRef.current = { content, segments: parsed };
+    return parsed;
+  }, [content]);
+
   const styleSegment = (seg: MarkdownSegment): string => {
-    if (seg.quote) return inlineCodeColor(seg.text);
-    if (seg.link)
-      return linkColor(seg.text) + secondaryColor(` (${seg.link.url})`);
-    let styled = seg.text;
+    const cached = styledSegmentCacheRef.current.get(seg);
+    if (cached !== undefined) {
+      return cached;
+    }
+
+    let styled: string;
+    if (seg.quote) {
+      styled = inlineCodeColor(seg.text);
+      styledSegmentCacheRef.current.set(seg, styled);
+      return styled;
+    }
+    if (seg.link) {
+      styled = linkColor(seg.text) + secondaryColor(` (${seg.link.url})`);
+      styledSegmentCacheRef.current.set(seg, styled);
+      return styled;
+    }
+    styled = seg.text;
     if (seg.bold) styled = chalk.bold(styled);
     if (seg.italic) styled = chalk.italic(styled);
     if (seg.strikethrough) styled = chalk.strikethrough(styled);
-    return color(styled);
+
+    const colored = color(styled);
+    styledSegmentCacheRef.current.set(seg, colored);
+    return colored;
   };
 
   const renderInlineText = (text: string): string => {
@@ -53,42 +111,45 @@ export const MarkdownRenderer = React.memo(function MarkdownRenderer({
       .map((seg) => styleSegment(seg))
       .join('');
   };
-  const segments = parseMarkdown(content);
 
-  const blocks: RenderBlock[] = [];
-  let currentTextGroup: MarkdownSegment[] = [];
+  const blocks = React.useMemo(() => {
+    const computedBlocks: RenderBlock[] = [];
+    let currentTextGroup: MarkdownSegment[] = [];
 
-  const flushTextGroup = () => {
-    if (currentTextGroup.length > 0) {
-      blocks.push({ type: 'text', segments: currentTextGroup });
-      currentTextGroup = [];
-    }
-  };
+    const flushTextGroup = () => {
+      if (currentTextGroup.length > 0) {
+        computedBlocks.push({ type: 'text', segments: currentTextGroup });
+        currentTextGroup = [];
+      }
+    };
 
-  segments.forEach((segment) => {
-    if (segment.codeBlock) {
-      flushTextGroup();
-      blocks.push({ type: 'code', segment });
-    } else if (segment.header || segment.boldHeading) {
-      flushTextGroup();
-      blocks.push({ type: 'header', segment });
-    } else if (segment.listItem) {
-      flushTextGroup();
-      blocks.push({ type: 'listItem', segment });
-    } else if (segment.blockquote) {
-      flushTextGroup();
-      blocks.push({ type: 'blockquote', segment });
-    } else if (segment.horizontalRule) {
-      flushTextGroup();
-      blocks.push({ type: 'horizontalRule' } as RenderBlock);
-    } else if (segment.table) {
-      flushTextGroup();
-      blocks.push({ type: 'table', segment });
-    } else {
-      currentTextGroup.push(segment);
-    }
-  });
-  flushTextGroup();
+    segments.forEach((segment) => {
+      if (segment.codeBlock) {
+        flushTextGroup();
+        computedBlocks.push({ type: 'code', segment });
+      } else if (segment.header || segment.boldHeading) {
+        flushTextGroup();
+        computedBlocks.push({ type: 'header', segment });
+      } else if (segment.listItem) {
+        flushTextGroup();
+        computedBlocks.push({ type: 'listItem', segment });
+      } else if (segment.blockquote) {
+        flushTextGroup();
+        computedBlocks.push({ type: 'blockquote', segment });
+      } else if (segment.horizontalRule) {
+        flushTextGroup();
+        computedBlocks.push({ type: 'horizontalRule' });
+      } else if (segment.table) {
+        flushTextGroup();
+        computedBlocks.push({ type: 'table', segment });
+      } else {
+        currentTextGroup.push(segment);
+      }
+    });
+    flushTextGroup();
+
+    return computedBlocks;
+  }, [segments]);
 
   return (
     <Box flexDirection="column">
