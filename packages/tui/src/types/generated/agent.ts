@@ -173,6 +173,10 @@ export interface ImageBlock {
 	source: ImageSource;
 }
 
+/** Arguments for /issue command */
+export interface IssueArgs {
+}
+
 /** Arguments for /mcp command */
 export interface McpArgs {
 }
@@ -421,5 +425,7 @@ export type TuiCommand =
 	/** Show available tools */
 	| { command: "tools", args: ToolsArgs }
 	/** Switch to Plan agent for breaking down ideas into implementation plans. */
-	| { command: "plan", args: PlanArgs };
+	| { command: "plan", args: PlanArgs }
+	/** Report an issue (currently internal Amazon users only) */
+	| { command: "issue", args: IssueArgs };
 

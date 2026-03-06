@@ -3,7 +3,7 @@ import { spawn, spawnSync } from "node:child_process";
 import { resolve } from "node:path";
 
 const REPO_ROOT = resolve(import.meta.dir, "../../..");
-const CARGO_BIN = resolve(REPO_ROOT, "target/debug/chat_cli_v2");
+const CARGO_BIN = resolve(REPO_ROOT, "target/debug/chat_cli");
 const INK_DIR = resolve(REPO_ROOT, "packages/ink");
 
 // Separate dev-script flags from flags to forward to the TUI
@@ -52,7 +52,7 @@ if (skipRustBuild) {
   console.log("Building chat_cli...");
 
   // Build the Rust binary
-  const cargoBuild = spawn("cargo", ["build", "-p", "chat_cli_v2", "--bin", "chat_cli_v2"], {
+  const cargoBuild = spawn("cargo", ["build", "-p", "chat_cli", "--bin", "chat_cli"], {
     cwd: REPO_ROOT,
     stdio: "inherit"
   });

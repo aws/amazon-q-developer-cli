@@ -10,12 +10,17 @@
 
 import type { CommandContext } from './types.js';
 import type { CommandResult, TuiCommand } from '../types/commands.js';
-import type { McpServerInfo, ToolInfo } from '../stores/app-store.js';
+import type {
+  McpServerInfo,
+  SlashCommand,
+  ToolInfo,
+} from '../stores/app-store.js';
 
 /** Effect handler function */
 type EffectHandler = (
   result: CommandResult | null,
-  ctx: CommandContext
+  ctx: CommandContext,
+  cmd: SlashCommand
 ) => void;
 
 /** Extract command name from TuiCommand union type */
@@ -32,7 +37,8 @@ type EffectName =
   | 'showToolsPanel'
   | 'showPromptsPanel'
   | 'clearMessages'
-  | 'quit';
+  | 'quit'
+  | 'showIssueUrl';
 
 /**
  * Command → Effect mapping.
@@ -49,6 +55,7 @@ const commandEffects: Partial<Record<string, EffectName>> = {
   quit: 'quit',
   mcp: 'showMcpPanel',
   tools: 'showToolsPanel',
+  issue: 'showIssueUrl',
 };
 
 /**
@@ -122,18 +129,27 @@ const effectHandlers: Record<EffectName, EffectHandler> = {
     ctx.kiro.close();
     process.exit(0);
   },
+
+  showIssueUrl: (result, ctx, cmd) => {
+    const data = result?.data as { url?: string } | undefined;
+    if (data?.url) {
+      ctx.setActiveCommand({ command: cmd, options: [] });
+      ctx.setShowIssuePanel(true, data.url);
+    }
+  },
 };
 
 /**
  * Run effect for a command.
  */
 export function runEffect(
-  commandName: string,
+  cmd: SlashCommand,
   result: CommandResult | null,
   ctx: CommandContext
 ): void {
-  const effectName = commandEffects[commandName as CommandName];
+  const cmdName = cmd.name.replace(/^\//, '');
+  const effectName = commandEffects[cmdName as CommandName];
   if (effectName) {
-    effectHandlers[effectName]?.(result, ctx);
+    effectHandlers[effectName]?.(result, ctx, cmd);
   }
 }

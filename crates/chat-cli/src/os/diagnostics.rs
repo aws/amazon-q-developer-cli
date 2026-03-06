@@ -173,7 +173,7 @@ impl CurrentEnvironment {
             .map(|path| path.to_string_lossy().replace(&username, "/USER"));
 
         let cli_path = env
-            .current_dir()
+            .current_exe()
             .ok()
             .map(|path| path.to_string_lossy().replace(&username, "/USER"));
 

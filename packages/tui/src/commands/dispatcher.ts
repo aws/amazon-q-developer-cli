@@ -62,6 +62,9 @@ export async function dispatch(
     if (cmdName === 'agent' && args) {
       ctx.setLoadingMessage(`Agent changing to ${args}`);
     }
+    if (cmdName === 'issue') {
+      ctx.setLoadingMessage('Opening issue form...');
+    }
     try {
       result = await ctx.kiro.executeCommand({
         command: cmdName,
@@ -77,7 +80,7 @@ export async function dispatch(
   }
 
   // 3. Run effect
-  runEffect(cmdName, result, ctx);
+  runEffect(cmd, result, ctx);
 
   // 4. Show result message (skip for panel commands - they show their own UI)
   if (result?.message && inputType !== 'panel') {

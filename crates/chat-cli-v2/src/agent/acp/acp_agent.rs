@@ -231,6 +231,8 @@ pub enum AcpSessionRequest {
     },
     /// Graceful shutdown: terminate the agent and await MCP cleanup.
     Shutdown { respond_to: oneshot::Sender<()> },
+    /// Trigger command/prompt advertising to the client.
+    AdvertiseCommands,
 }
 
 #[derive(Debug)]
@@ -477,6 +479,11 @@ impl AcpSessionHandle {
             return;
         }
         _ = rx.await;
+    }
+
+    /// Fire-and-forget: tell the session to advertise commands/prompts to the client.
+    pub async fn advertise_commands(&self) {
+        let _ = self.tx.send(AcpSessionRequest::AdvertiseCommands).await;
     }
 }
 
@@ -733,6 +740,7 @@ impl AcpSession {
             global_mcp_path: self.global_mcp_path.as_ref(),
             session_id: &self.session_id_str,
             current_agent_name: &self.current_agent_name,
+            env: &self.os.env,
         }
     }
 
@@ -1271,6 +1279,11 @@ impl AcpSession {
                 self.agent.shutdown().await;
                 let _ = respond_to.send(());
             },
+            AcpSessionRequest::AdvertiseCommands => {
+                if let Err(e) = self.advertise_commands_and_prompts().await {
+                    warn!("Failed to advertise commands: {}", e);
+                }
+            },
         }
     }
 
@@ -1599,7 +1612,13 @@ impl AcpSession {
     }
 
     async fn advertise_commands_and_prompts(&self) -> Result<(), sacp::Error> {
-        advertise_commands_and_prompts_to_client(&self.session_id_str, &self.agent, &self.connection_cx).await
+        advertise_commands_and_prompts_to_client(
+            &self.session_id_str,
+            &self.agent,
+            &self.connection_cx,
+            &self.os.database,
+        )
+        .await
     }
 
     async fn handle_switch_to_execution(&mut self, plan: String) {
@@ -1629,9 +1648,16 @@ async fn advertise_commands_and_prompts_to_client(
     session_id: &str,
     agent_handle: &AgentHandle,
     client_cx: &JrConnectionCx<AgentToClient>,
+    database: &crate::database::Database,
 ) -> Result<(), sacp::Error> {
+    let is_amzn = matches!(
+        crate::auth::builder_id::BuilderIdToken::load(database, None).await,
+        Ok(Some(token)) if token.is_amzn_user()
+    );
+
     let commands: Vec<super::schema::AvailableCommand> = TuiCommand::all_commands()
         .into_iter()
+        .filter(|cmd| is_amzn || !matches!(cmd, TuiCommand::Issue(_)))
         .map(|cmd| super::schema::AvailableCommand {
             name: cmd.name().to_string(),
             description: cmd.description().to_string(),
@@ -2269,108 +2295,8 @@ pub async fn execute(os: &mut Os, args: agent::types::AcpSpawnArgs) -> eyre::Res
                             .models(models),
                     )?;
 
-                    // Send available commands via custom extension notification
-                    let commands: Vec<super::schema::AvailableCommand> = TuiCommand::all_commands()
-                        .into_iter()
-                        .map(|cmd| super::schema::AvailableCommand {
-                            name: cmd.name().to_string(),
-                            description: cmd.description().to_string(),
-                            meta: cmd.meta(),
-                        })
-                        .collect();
-
-                    // Collect MCP prompts from the session
-                    let mut prompts = match result.handle.get_mcp_prompts().await {
-                        Ok(mcp_prompts) => {
-                            mcp_prompts
-                                .into_iter()
-                                .flat_map(|(server_name, server_prompts)| {
-                                    server_prompts.into_iter().map(move |prompt| {
-                                        super::schema::PromptInfo {
-                                            name: prompt.name,
-                                            description: prompt.description,
-                                            arguments: prompt.arguments.unwrap_or_default()
-                                                .into_iter()
-                                                .map(|arg| super::schema::PromptArgumentInfo {
-                                                    name: arg.name,
-                                                    description: arg.description,
-                                                    required: arg.required.unwrap_or(false),
-                                                })
-                                                .collect(),
-                                            server_name: server_name.clone(),
-                                        }
-                                    })
-                                })
-                                .collect()
-                        },
-                        Err(e) => {
-                            warn!("Failed to get MCP prompts: {}", e);
-                            Vec::new()
-                        }
-                    };
-
-                    // Add file-based prompts
-                    if let Ok(file_prompts) = result.handle.get_file_prompts().await {
-                        for (source, source_prompts) in file_prompts {
-                            for prompt in source_prompts {
-                                prompts.push(super::schema::PromptInfo {
-                                    name: prompt.name,
-                                    description: prompt.description,
-                                    arguments: Vec::new(),
-                                    server_name: source.clone(),
-                                });
-                            }
-                        }
-                    }
-
-                    // Collect tool advertisements
-                    let tools: Vec<super::schema::ToolAdvertisement> = match result.handle.get_tool_info().await {
-                        Ok(tool_infos) => tool_infos
-                            .into_iter()
-                            .map(|t| super::schema::ToolAdvertisement {
-                                name: t.name,
-                                description: t.description,
-                                source: t.source,
-                            })
-                            .collect(),
-                        Err(e) => {
-                            warn!("Failed to get tool info for advertising: {}", e);
-                            Vec::new()
-                        },
-                    };
-
-                    // Collect MCP server advertisements
-                    let mcp_servers: Vec<super::schema::McpServerAdvertisement> = match result.handle.get_mcp_server_info().await {
-                        Ok(server_infos) => server_infos
-                            .into_iter()
-                            .map(|s| {
-                                let status = match s.status {
-                                    agent::tui_commands::McpServerStatus::Running => "running",
-                                    agent::tui_commands::McpServerStatus::Loading => "loading",
-                                    agent::tui_commands::McpServerStatus::Failed => "failed",
-                                    agent::tui_commands::McpServerStatus::Disabled => "disabled",
-                                };
-                                super::schema::McpServerAdvertisement {
-                                    name: s.name,
-                                    status: status.to_string(),
-                                    tool_count: s.tool_count,
-                                }
-                            })
-                            .collect(),
-                        Err(e) => {
-                            warn!("Failed to get MCP server info for advertising: {}", e);
-                            Vec::new()
-                        },
-                    };
-
-                    let notification = super::schema::CommandsAvailableNotification {
-                        session_id: session_id.to_string(),
-                        commands,
-                        prompts,
-                        tools,
-                        mcp_servers,
-                    };
-                    let _ = cx.send_notification(notification);
+                    // Advertise after responding so the TUI has processed the session response
+                    result.handle.advertise_commands().await;
 
                     Ok(())
                 }
@@ -2393,111 +2319,10 @@ pub async fn execute(os: &mut Os, args: agent::types::AcpSpawnArgs) -> eyre::Res
                             let modes = to_session_mode_state(result.current_agent_name, result.available_agents);
                             let models = to_session_model_state(result.current_model_id, result.available_models);
 
-                            // Respond FIRST
                             request_cx.respond(LoadSessionResponse::new().modes(modes).models(models))?;
 
-                            // Send available commands via custom extension notification
-                            let commands: Vec<super::schema::AvailableCommand> = TuiCommand::all_commands()
-                                .into_iter()
-                                .map(|cmd| super::schema::AvailableCommand {
-                                    name: cmd.name().to_string(),
-                                    description: cmd.description().to_string(),
-                                    meta: cmd.meta(),
-                                })
-                                .collect();
-
-                            // Collect MCP prompts from the session
-                            let mut prompts = match result.handle.get_mcp_prompts().await {
-                                Ok(mcp_prompts) => {
-                                    mcp_prompts
-                                        .into_iter()
-                                        .flat_map(|(server_name, server_prompts)| {
-                                            server_prompts.into_iter().map(move |prompt| {
-                                                super::schema::PromptInfo {
-                                                    name: prompt.name,
-                                                    description: prompt.description,
-                                                    arguments: prompt.arguments.unwrap_or_default()
-                                                        .into_iter()
-                                                        .map(|arg| super::schema::PromptArgumentInfo {
-                                                            name: arg.name,
-                                                            description: arg.description,
-                                                            required: arg.required.unwrap_or(false),
-                                                        })
-                                                        .collect(),
-                                                    server_name: server_name.clone(),
-                                                }
-                                            })
-                                        })
-                                        .collect()
-                                },
-                                Err(e) => {
-                                    warn!("Failed to get MCP prompts: {}", e);
-                                    Vec::new()
-                                }
-                            };
-
-                            // Add file-based prompts
-                            if let Ok(file_prompts) = result.handle.get_file_prompts().await {
-                                for (source, source_prompts) in file_prompts {
-                                    for prompt in source_prompts {
-                                        prompts.push(super::schema::PromptInfo {
-                                            name: prompt.name,
-                                            description: prompt.description,
-                                            arguments: Vec::new(),
-                                            server_name: source.clone(),
-                                        });
-                                    }
-                                }
-                            }
-
-                            // Collect tool advertisements
-                            let tools: Vec<super::schema::ToolAdvertisement> = match result.handle.get_tool_info().await {
-                                Ok(tool_infos) => tool_infos
-                                    .into_iter()
-                                    .map(|t| super::schema::ToolAdvertisement {
-                                        name: t.name,
-                                        description: t.description,
-                                        source: t.source,
-                                    })
-                                    .collect(),
-                                Err(e) => {
-                                    warn!("Failed to get tool info for advertising: {}", e);
-                                    Vec::new()
-                                },
-                            };
-
-                            // Collect MCP server advertisements
-                            let mcp_servers: Vec<super::schema::McpServerAdvertisement> = match result.handle.get_mcp_server_info().await {
-                                Ok(server_infos) => server_infos
-                                    .into_iter()
-                                    .map(|s| {
-                                        let status = match s.status {
-                                            agent::tui_commands::McpServerStatus::Running => "running",
-                                            agent::tui_commands::McpServerStatus::Loading => "loading",
-                                            agent::tui_commands::McpServerStatus::Failed => "failed",
-                                            agent::tui_commands::McpServerStatus::Disabled => "disabled",
-                                        };
-                                        super::schema::McpServerAdvertisement {
-                                            name: s.name,
-                                            status: status.to_string(),
-                                            tool_count: s.tool_count,
-                                        }
-                                    })
-                                    .collect(),
-                                Err(e) => {
-                                    warn!("Failed to get MCP server info for advertising: {}", e);
-                                    Vec::new()
-                                },
-                            };
-
-                            let notification = super::schema::CommandsAvailableNotification {
-                                session_id: request.session_id.to_string(),
-                                commands,
-                                prompts,
-                                tools,
-                                mcp_servers,
-                            };
-                            let _ = cx.send_notification(notification);
+                            // Advertise after responding so the TUI has processed the session response
+                            result.handle.advertise_commands().await;
 
                             Ok(())
                         },

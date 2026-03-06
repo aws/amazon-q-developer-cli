@@ -247,6 +247,7 @@ interface BaseAppActions {
     commands?: Array<{ name: string; description: string; usage: string }>
   ) => void;
   setShowPromptsPanel: (show: boolean) => void;
+  setShowIssuePanel: (show: boolean, url?: string) => void;
   setShowUsagePanel: (show: boolean, data?: any) => void;
   setShowMcpPanel: (show: boolean, servers?: McpServerInfo[]) => void;
   setShowToolsPanel: (show: boolean, tools?: ToolInfo[]) => void;
@@ -363,6 +364,8 @@ export interface AppState {
   showToolsPanel: boolean;
   toolsList: ToolInfo[];
   showPromptsPanel: boolean;
+  showIssuePanel: boolean;
+  issueUrl: string | null;
   // Abort controller for current stream
   currentAbortController: AbortController | null;
   cancelInProgress: Promise<void> | null;
@@ -448,6 +451,8 @@ export const createAppStore = (props: AppStoreProps) =>
     showHelpPanel: false,
     helpCommands: [],
     showPromptsPanel: false,
+    showIssuePanel: false,
+    issueUrl: null,
     showUsagePanel: false,
     usageData: null,
     showMcpPanel: false,
@@ -1313,6 +1318,7 @@ export const createAppStore = (props: AppStoreProps) =>
         setShowContextBreakdown: state.setShowContextBreakdown,
         setShowHelpPanel: state.setShowHelpPanel,
         setShowPromptsPanel: state.setShowPromptsPanel,
+        setShowIssuePanel: state.setShowIssuePanel,
         setShowUsagePanel: state.setShowUsagePanel,
         setShowMcpPanel: state.setShowMcpPanel,
         setShowToolsPanel: state.setShowToolsPanel,
@@ -1324,6 +1330,7 @@ export const createAppStore = (props: AppStoreProps) =>
             showContextBreakdown: false,
             showHelpPanel: false,
             showPromptsPanel: false,
+            showIssuePanel: false,
             showUsagePanel: false,
             showMcpPanel: false,
             showToolsPanel: false,
@@ -1564,6 +1571,10 @@ export const createAppStore = (props: AppStoreProps) =>
       set({ showPromptsPanel: show });
     },
 
+    setShowIssuePanel: (show, url) => {
+      set({ showIssuePanel: show, issueUrl: url ?? null });
+    },
+
     setShowUsagePanel: (show, data) => {
       set({ showUsagePanel: show, usageData: data ?? null });
     },
@@ -1648,6 +1659,7 @@ export const createAppStore = (props: AppStoreProps) =>
         showContextBreakdown: false,
         showHelpPanel: false,
         showPromptsPanel: false,
+        showIssuePanel: false,
         showUsagePanel: false,
         commandInputValue: '',
         activeTrigger: null,
@@ -1672,6 +1684,7 @@ export const createAppStore = (props: AppStoreProps) =>
           setShowContextBreakdown: state.setShowContextBreakdown,
           setShowHelpPanel: state.setShowHelpPanel,
           setShowPromptsPanel: state.setShowPromptsPanel,
+          setShowIssuePanel: state.setShowIssuePanel,
           setShowUsagePanel: state.setShowUsagePanel,
           setShowMcpPanel: state.setShowMcpPanel,
           setShowToolsPanel: state.setShowToolsPanel,
@@ -1683,6 +1696,7 @@ export const createAppStore = (props: AppStoreProps) =>
               showContextBreakdown: false,
               showHelpPanel: false,
               showPromptsPanel: false,
+              showIssuePanel: false,
               showUsagePanel: false,
               showMcpPanel: false,
               showToolsPanel: false,

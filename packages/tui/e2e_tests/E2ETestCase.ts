@@ -49,7 +49,7 @@ export class E2ETestCase {
     const testName = this.options.testName || `e2e-${Date.now()}`;
     this.paths = createTestDir(testName);
 
-    const chatPath = path.join(__dirname, '../../../target/debug/chat_cli_v2');
+    const chatPath = path.join(__dirname, '../../../target/debug/chat_cli');
     const tuiJsPath = path.join(__dirname, '../dist/tui.js');
 
     this.ptyManager = new PtyManager({
@@ -108,7 +108,7 @@ export class E2ETestCase {
     ]);
 
     // Spawn the real CLI
-    const chatPath = path.join(__dirname, '../../../target/debug/chat_cli_v2');
+    const chatPath = path.join(__dirname, '../../../target/debug/chat_cli');
     this.ptyManager.spawn(chatPath, ['chat']);
 
     console.log(`TUI logs: ${this.paths.tuiLogFile}`);

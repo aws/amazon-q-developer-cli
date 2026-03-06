@@ -6,6 +6,7 @@ import { ExitHint } from '../ui/ExitHint';
 import { CommandMenu } from '../ui/CommandMenu';
 import { ActionHint } from '../ui/hint/ActionHint.js';
 import { HelpPanel } from '../ui/HelpPanel';
+import { IssuePanel } from '../ui/IssuePanel';
 import { McpPanel } from '../ui/McpPanel';
 import { ToolsPanel } from '../ui/ToolsPanel';
 import { PromptsPanel } from '../ui/PromptsPanel';
@@ -113,6 +114,8 @@ export const InlineLayout: React.FC = () => {
     helpCommands,
     showPromptsPanel,
     prompts,
+    showIssuePanel,
+    issueUrl,
     showUsagePanel,
     usageData,
     showMcpPanel,
@@ -125,6 +128,7 @@ export const InlineLayout: React.FC = () => {
     setShowContextBreakdown,
     setShowHelpPanel,
     setShowPromptsPanel,
+    setShowIssuePanel,
     setShowUsagePanel,
     setShowMcpPanel,
     setShowToolsPanel,
@@ -234,6 +238,12 @@ export const InlineLayout: React.FC = () => {
     setActiveCommand(null);
     clearCommandInput();
   }, [setShowPromptsPanel, setActiveCommand, clearCommandInput]);
+
+  const handleCloseIssuePanel = useCallback(() => {
+    setShowIssuePanel(false);
+    setActiveCommand(null);
+    clearCommandInput();
+  }, [setShowIssuePanel, setActiveCommand, clearCommandInput]);
 
   const handleCloseUsagePanel = useCallback(() => {
     setShowUsagePanel(false);
@@ -443,7 +453,8 @@ export const InlineLayout: React.FC = () => {
               showMcpPanel ||
               showToolsPanel ||
               showPromptsPanel ||
-              !!pendingApproval
+              !!pendingApproval ||
+              showIssuePanel
                 ? undefined
                 : promptBarHeader
             }
@@ -474,7 +485,8 @@ export const InlineLayout: React.FC = () => {
               showUsagePanel ||
               showMcpPanel ||
               showToolsPanel ||
-              showPromptsPanel
+              showPromptsPanel ||
+              showIssuePanel
             }
           >
             <CommandMenu />
@@ -514,6 +526,13 @@ export const InlineLayout: React.FC = () => {
               <PromptsPanel
                 prompts={prompts}
                 onClose={handleClosePromptsPanel}
+              />
+            )}
+            {showIssuePanel && issueUrl && (
+              <IssuePanel
+                url={issueUrl}
+                message="Open this URL to report an issue:"
+                onClose={handleCloseIssuePanel}
               />
             )}
             <ActionHint

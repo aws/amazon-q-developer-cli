@@ -153,6 +153,7 @@ pub struct CurrentEnvironment {
     pub cli_path: Option<String>,
     #[serde(serialize_with = "serialize_display")]
     pub install_method: InstallMethod,
+    pub terminal: Option<String>,
     #[serde(skip_serializing_if = "is_false")]
     pub in_ssh: bool,
     #[serde(skip_serializing_if = "is_false")]
@@ -173,7 +174,7 @@ impl CurrentEnvironment {
             .map(|path| path.to_string_lossy().replace(&username, "/USER"));
 
         let cli_path = env
-            .current_dir()
+            .current_exe()
             .ok()
             .map(|path| path.to_string_lossy().replace(&username, "/USER"));
 
@@ -184,16 +185,55 @@ impl CurrentEnvironment {
         let in_wsl = crate::util::system_info::in_wsl();
         let in_codespaces = crate::util::system_info::in_codespaces();
 
+        let terminal = detect_terminal(env);
+
         CurrentEnvironment {
             cwd,
             cli_path,
             install_method,
+            terminal,
             in_ssh,
             in_ci,
             in_wsl,
             in_codespaces,
         }
     }
+}
+
+/// We could consider implementing a more robust check, borrowing from
+/// https://github.com/kiro-team/kiro-cli-autocomplete/blob/main/crates/fig_util/src/terminal.rs
+/// Opting for simple env vars currently for simplicity
+fn detect_terminal(env: &Env) -> Option<String> {
+    // Check for multiplexers first
+    if env.get("TMUX").is_ok() {
+        return Some("tmux".to_string());
+    }
+    if env.get("ZELLIJ").is_ok() {
+        return Some("zellij".to_string());
+    }
+
+    // Check TERM_PROGRAM (set by most modern terminals)
+    if let Ok(term) = env.get("TERM_PROGRAM") {
+        let version = env.get("TERM_PROGRAM_VERSION").unwrap_or_default();
+        return Some(if version.is_empty() {
+            term
+        } else {
+            format!("{term} {version}")
+        });
+    }
+
+    // macOS bundle ID fallback
+    #[cfg(target_os = "macos")]
+    if let Ok(bundle) = env.get("__CFBundleIdentifier") {
+        return Some(bundle);
+    }
+
+    // Check TERMINAL_EMULATOR (JetBrains IDEs)
+    if let Ok(term) = env.get("TERMINAL_EMULATOR") {
+        return Some(term);
+    }
+
+    None
 }
 
 #[derive(Clone, Debug, Serialize)]

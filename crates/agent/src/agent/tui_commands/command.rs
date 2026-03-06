@@ -44,6 +44,8 @@ pub enum TuiCommand {
     Tools(ToolsArgs),
     /// Switch to Plan agent for breaking down ideas into implementation plans.
     Plan(PlanArgs),
+    /// Report an issue (currently internal Amazon users only)
+    Issue(IssueArgs),
 }
 
 /// Arguments for /help command
@@ -139,6 +141,12 @@ pub struct PlanArgs {
     pub prompt: Option<String>,
 }
 
+/// Arguments for /issue command
+#[typeshare]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct IssueArgs {}
+
 impl TuiCommand {
     /// Command name with leading slash
     pub fn name(&self) -> &'static str {
@@ -155,6 +163,7 @@ impl TuiCommand {
             TuiCommand::Mcp(_) => "/mcp",
             TuiCommand::Tools(_) => "/tools",
             TuiCommand::Plan(_) => "/plan",
+            TuiCommand::Issue(_) => "/issue",
         }
     }
 
@@ -173,6 +182,7 @@ impl TuiCommand {
             TuiCommand::Mcp(_) => "Show configured MCP servers",
             TuiCommand::Tools(_) => "Show available tools",
             TuiCommand::Plan(_) => "Switch to Plan agent for breaking down ideas into implementation plans",
+            TuiCommand::Issue(_) => "Report an issue",
         }
     }
 
@@ -191,6 +201,7 @@ impl TuiCommand {
             TuiCommand::Mcp(_) => "/mcp",
             TuiCommand::Tools(_) => "/tools",
             TuiCommand::Plan(_) => "/plan [prompt]",
+            TuiCommand::Issue(_) => "/issue",
         }
     }
 
@@ -245,6 +256,7 @@ impl TuiCommand {
                 Some(meta)
             },
             TuiCommand::Plan(_) => None,
+            TuiCommand::Issue(_) => None,
         }
     }
 
@@ -262,6 +274,7 @@ impl TuiCommand {
             TuiCommand::Mcp(McpArgs::default()),
             TuiCommand::Tools(ToolsArgs::default()),
             TuiCommand::Plan(PlanArgs::default()),
+            TuiCommand::Issue(IssueArgs::default()),
         ];
         commands.sort_by_key(|cmd| cmd.name());
         commands
@@ -289,6 +302,7 @@ impl TuiCommand {
             "plan" => Some(Self::Plan(PlanArgs {
                 prompt: (!args.is_empty()).then(|| args.to_string()),
             })),
+            "issue" => Some(Self::Issue(IssueArgs::default())),
             _ => None,
         }
     }

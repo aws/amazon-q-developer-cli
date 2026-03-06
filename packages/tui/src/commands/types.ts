@@ -52,6 +52,8 @@ export interface CommandContext {
   ) => void;
   /** Show/hide prompts panel */
   setShowPromptsPanel: (show: boolean) => void;
+  /** Show/hide issue panel */
+  setShowIssuePanel: (show: boolean, url?: string) => void;
   /** Show/hide usage panel */
   setShowUsagePanel: (show: boolean, data?: any) => void;
   /** Show/hide MCP servers panel */

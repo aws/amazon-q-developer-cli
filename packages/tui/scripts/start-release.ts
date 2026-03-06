@@ -4,7 +4,7 @@ import { resolve } from "node:path";
 
 const REPO_ROOT = resolve(import.meta.dir, "../../..");
 const TUI_ROOT = resolve(import.meta.dir, "..");
-const CARGO_BIN = resolve(REPO_ROOT, "target/release/chat_cli_v2");
+const CARGO_BIN = resolve(REPO_ROOT, "target/release/chat_cli");
 const TUI_BUNDLE = resolve(TUI_ROOT, "dist/tui.js");
 
 const devFlags = new Set(["--skip-rust-build"]);
@@ -53,7 +53,7 @@ if (skipRustBuild) {
 } else {
   console.log("Building chat_cli...");
 
-  const cargoBuild = spawn("cargo", ["build", "--release", "-p", "chat_cli_v2", "--bin", "chat_cli_v2"], {
+  const cargoBuild = spawn("cargo", ["build", "--release", "-p", "chat_cli", "--bin", "chat_cli"], {
     cwd: REPO_ROOT,
     stdio: "inherit"
   });
