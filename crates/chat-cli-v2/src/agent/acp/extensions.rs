@@ -119,4 +119,5 @@ pub struct AgentSwitchedNotification {
     pub session_id: SessionId,
     pub agent_name: String,
     pub previous_agent_name: Option<String>,
+    pub welcome_message: Option<String>,
 }

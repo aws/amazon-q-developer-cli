@@ -76,3 +76,5 @@ autodocs/meta/doc-search-index.tar.gz
 
 # Generated Info.plist from rust build script
 crates/**/Info.plist
+packages/.kiro/
+packages/tui/.kiro/

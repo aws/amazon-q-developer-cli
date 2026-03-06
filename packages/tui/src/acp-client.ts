@@ -34,6 +34,22 @@ const EXT_METHODS = {
 /**
  * ACP client implementation that converts ACP protocol to app domain types
  */
+function extractCurrentAgent(
+  modes?: {
+    currentModeId?: string;
+    availableModes?: Array<{ id: string; _meta?: Record<string, unknown> }>;
+  } | null
+): { name: string; welcomeMessage?: string } | undefined {
+  if (!modes?.currentModeId) return undefined;
+  const currentMode = modes.availableModes?.find(
+    (m) => m.id === modes.currentModeId
+  );
+  return {
+    name: modes.currentModeId,
+    welcomeMessage: currentMode?._meta?.welcomeMessage as string | undefined,
+  };
+}
+
 export class AcpClient implements acp.Client, SessionClient {
   private connection: acp.ClientSideConnection;
   public sessionId?: string;
@@ -153,7 +169,7 @@ export class AcpClient implements acp.Client, SessionClient {
   async newSession(): Promise<{
     sessionId: string;
     currentModel?: { id: string; name: string };
-    currentAgent?: { name: string };
+    currentAgent?: { name: string; welcomeMessage?: string };
   }> {
     const sessionResult = await this.connection.newSession({
       cwd: process.cwd(),
@@ -182,10 +198,7 @@ export class AcpClient implements acp.Client, SessionClient {
     }
 
     // Extract current agent info from session response
-    let currentAgent: { name: string } | undefined;
-    if (sessionResult.modes?.currentModeId) {
-      currentAgent = { name: sessionResult.modes.currentModeId };
-    }
+    const currentAgent = extractCurrentAgent(sessionResult.modes);
 
     return { sessionId: this.sessionId, currentModel, currentAgent };
   }
@@ -193,7 +206,7 @@ export class AcpClient implements acp.Client, SessionClient {
   async loadSession(sessionId: string): Promise<{
     sessionId: string;
     currentModel?: { id: string; name: string };
-    currentAgent?: { name: string };
+    currentAgent?: { name: string; welcomeMessage?: string };
   }> {
     const sessionResult = await this.connection.loadSession({
       sessionId,
@@ -222,10 +235,7 @@ export class AcpClient implements acp.Client, SessionClient {
     }
 
     // Extract current agent info from session response
-    let currentAgent: { name: string } | undefined;
-    if (sessionResult.modes?.currentModeId) {
-      currentAgent = { name: sessionResult.modes.currentModeId };
-    }
+    const currentAgent = extractCurrentAgent(sessionResult.modes);
 
     return { sessionId, currentModel, currentAgent };
   }
@@ -598,11 +608,16 @@ export class AcpClient implements acp.Client, SessionClient {
   }
 
   private handleAgentSwitched(params: Record<string, unknown>) {
-    const payload = params as { agentName: string; previousAgentName?: string };
+    const payload = params as {
+      agentName: string;
+      previousAgentName?: string;
+      welcomeMessage?: string;
+    };
     this.broadcastStreamEvent({
       type: AgentEventType.AgentSwitched,
       agentName: payload.agentName,
       previousAgentName: payload.previousAgentName,
+      welcomeMessage: payload.welcomeMessage,
     });
   }
 

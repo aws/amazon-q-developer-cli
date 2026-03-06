@@ -34,7 +34,10 @@ export class Kiro {
     }>
   ) => void;
   private modelHandler?: (model: { id: string; name: string }) => void;
-  private agentHandler?: (agent: { name: string }) => void;
+  private agentHandler?: (agent: {
+    name: string;
+    welcomeMessage?: string;
+  }) => void;
   private compactionHandler?: (event: AgentStreamEvent) => void;
   private historyHandler?: (event: AgentStreamEvent) => void;
   private globalUpdateUnsubscribe?: () => void;
@@ -77,7 +80,9 @@ export class Kiro {
     this.modelHandler = handler;
   }
 
-  onAgentUpdate(handler: (agent: { name: string }) => void): void {
+  onAgentUpdate(
+    handler: (agent: { name: string; welcomeMessage?: string }) => void
+  ): void {
     this.agentHandler = handler;
   }
 
@@ -141,9 +146,14 @@ export class Kiro {
           this.compactionHandler(event);
         }
         // Handle backend-initiated agent switch (e.g. switch_to_execution)
-        if (event.type === AgentEventType.AgentSwitched && this.agentHandler) {
+        if (event.type === AgentEventType.AgentSwitched) {
           logger.debug('[kiro] AgentSwitched received:', event.agentName);
-          this.agentHandler({ name: event.agentName });
+          if (this.agentHandler) {
+            this.agentHandler({
+              name: event.agentName,
+              welcomeMessage: event.welcomeMessage,
+            });
+          }
         }
         // Forward historical content events (user messages, assistant text,
         // tool calls) so the store can populate the message list on resume.

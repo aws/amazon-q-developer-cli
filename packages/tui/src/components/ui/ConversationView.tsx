@@ -200,19 +200,33 @@ const StaticTurnCard = React.memo(function StaticTurnCard({
 
   if (!turn.userMessage.content) return null;
 
-  const hasAiContent = turn.aiMessages.some(
-    (msg) =>
-      msg.role === MessageRole.ToolUse || (msg.content && msg.content !== '')
-  );
+  // Orphan model message (e.g. welcome message) — render as standalone AI response
+  const isOrphanModel = turn.userMessage.role === MessageRole.Model;
+
+  const hasAiContent =
+    isOrphanModel ||
+    turn.aiMessages.some(
+      (msg) =>
+        msg.role === MessageRole.ToolUse || (msg.content && msg.content !== '')
+    );
 
   return (
     <Box marginBottom={1}>
       <Card active={false}>
-        <Message
-          content={turn.userMessage.content}
-          type={MessageType.DEVELOPER}
-          barColor={agentBarColor}
-        />
+        {isOrphanModel ? (
+          <Message
+            content={turn.userMessage.content}
+            type={MessageType.AGENT}
+            barColor={agentBarColor}
+            status="success"
+          />
+        ) : (
+          <Message
+            content={turn.userMessage.content}
+            type={MessageType.DEVELOPER}
+            barColor={agentBarColor}
+          />
+        )}
         {turn.aiMessages.map((message) => (
           <StaticMessage
             key={message.id}
@@ -359,8 +373,19 @@ export const ConversationView = React.memo(function ConversationView() {
         turns.push(currentTurn);
       }
       currentTurn = { userMessage: msg, aiMessages: [], isActive: true };
+    } else if (msg.role === MessageRole.Model && (msg as any).standalone) {
+      // Standalone model message (e.g. welcome) — close current turn and create its own
+      if (currentTurn) {
+        currentTurn.isActive = false;
+        turns.push(currentTurn);
+        currentTurn = null;
+      }
+      turns.push({ userMessage: msg, aiMessages: [], isActive: false });
     } else if (currentTurn) {
       currentTurn.aiMessages.push(msg);
+    } else {
+      // Orphan model message — standalone turn
+      turns.push({ userMessage: msg, aiMessages: [], isActive: false });
     }
   });
   if (currentTurn) turns.push(currentTurn);

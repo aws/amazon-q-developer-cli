@@ -47,6 +47,12 @@ impl AgentConfig {
         }
     }
 
+    pub fn welcome_message(&self) -> Option<&str> {
+        match self {
+            AgentConfig::V2025_08_22(a) => a.welcome_message.as_deref(),
+        }
+    }
+
     pub fn global_prompt(&self) -> Option<&str> {
         match self {
             AgentConfig::V2025_08_22(a) => a.global_prompt.as_deref(),
@@ -197,6 +203,9 @@ pub struct AgentConfigV2025_08_22 {
     /// A global prompt for guiding the agent's behavior.
     #[serde(rename = "prompt", alias = "systemPrompt", default)]
     pub global_prompt: Option<String>,
+    /// Welcome message displayed when the agent is activated.
+    #[serde(default, alias = "welcomeMessage")]
+    pub welcome_message: Option<String>,
 
     // tools
     /// The list of tools available to the agent.

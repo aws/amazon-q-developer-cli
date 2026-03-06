@@ -118,6 +118,7 @@ export type MessageType =
       content: string;
       agentName?: string;
       shellOutput?: boolean;
+      standalone?: boolean;
     }
   | {
       id: string;
@@ -188,7 +189,9 @@ interface BaseAppActions {
   cancelApproval: () => void;
   setApprovalMode: (mode: 'dropdown' | 'drill-in') => void;
   setCurrentModel: (model: { id: string; name: string } | null) => void;
-  setCurrentAgent: (agent: { name: string } | null) => void;
+  setCurrentAgent: (
+    agent: { name: string; welcomeMessage?: string } | null
+  ) => void;
   setPreviousAgentName: (name: string | null) => void;
   handleCompactionEvent: (event: AgentStreamEvent) => void;
 
@@ -1001,7 +1004,10 @@ export const createAppStore = (props: AppStoreProps) =>
             }
             break;
           case AgentEventType.AgentSwitched:
-            get().setCurrentAgent({ name: event.agentName });
+            get().setCurrentAgent({
+              name: event.agentName,
+              welcomeMessage: event.welcomeMessage,
+            });
             if (event.previousAgentName) {
               set({ previousAgentName: event.previousAgentName });
             }
@@ -1111,7 +1117,23 @@ export const createAppStore = (props: AppStoreProps) =>
     setAgentError: (agentError, guidance) =>
       set({ agentError, agentErrorGuidance: guidance ?? null }),
     setCurrentModel: (currentModel) => set({ currentModel }),
-    setCurrentAgent: (currentAgent) => set({ currentAgent }),
+    setCurrentAgent: (agent) => {
+      set({ currentAgent: agent ? { name: agent.name } : null });
+      if (agent?.welcomeMessage) {
+        set((state) => ({
+          messages: [
+            ...state.messages,
+            {
+              id: generateMessageId(),
+              role: MessageRole.Model,
+              content: agent.welcomeMessage!,
+              agentName: agent.name,
+              standalone: true,
+            },
+          ],
+        }));
+      }
+    },
     setPreviousAgentName: (previousAgentName) => set({ previousAgentName }),
 
     handleCompactionEvent: (event) => {

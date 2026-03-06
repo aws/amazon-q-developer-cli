@@ -727,6 +727,13 @@ struct AcpSession {
 }
 
 impl AcpSession {
+    fn welcome_message_for(&self, agent_name: &str) -> Option<String> {
+        self.available_agents
+            .iter()
+            .find(|a| a.name == agent_name)
+            .and_then(|a| a.welcome_message.clone())
+    }
+
     /// Create a CommandContext from the current session state
     fn command_context(&self) -> super::commands::CommandContext<'_> {
         super::commands::CommandContext {
@@ -1043,6 +1050,7 @@ impl AcpSession {
                                         session_id: self.session_id.clone(),
                                         agent_name: self.current_agent_name.clone(),
                                         previous_agent_name: self.previous_agent_name.clone(),
+                                        welcome_message: self.welcome_message_for(&self.current_agent_name),
                                     },
                                 );
 
@@ -1203,6 +1211,7 @@ impl AcpSession {
                             session_id: self.session_id.clone(),
                             agent_name: self.current_agent_name.clone(),
                             previous_agent_name: self.previous_agent_name.clone(),
+                            welcome_message: self.welcome_message_for(&self.current_agent_name),
                         },
                     );
                 }
@@ -1413,6 +1422,7 @@ impl AcpSession {
                                 session_id: self.session_id.clone(),
                                 agent_name: target_name.clone(),
                                 previous_agent_name: self.previous_agent_name.clone(),
+                                welcome_message: self.welcome_message_for(&target_name),
                             },
                         );
                         if let Err(e) = self.advertise_commands_and_prompts().await {
@@ -2480,6 +2490,11 @@ fn to_session_mode_state(current: String, agents: Vec<AgentInfo>) -> SessionMode
             let mut mode = SessionMode::new(agent.name.clone(), agent.name);
             if let Some(desc) = agent.description {
                 mode = mode.description(desc);
+            }
+            if let Some(welcome) = agent.welcome_message {
+                let mut meta = serde_json::Map::new();
+                meta.insert("welcomeMessage".to_string(), serde_json::Value::String(welcome));
+                mode = mode.meta(meta);
             }
             mode
         })

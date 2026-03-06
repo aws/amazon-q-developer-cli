@@ -53,19 +53,24 @@ export class MockSessionClient implements SessionClient {
   async newSession(): Promise<{
     sessionId: string;
     currentModel?: { id: string; name: string };
-    currentAgent?: { name: string };
+    currentAgent?: { name: string; welcomeMessage?: string };
   }> {
     this.sessionId = 'mock-session-id';
+    const agentName = process.env.KIRO_MOCK_AGENT_NAME;
+    const welcomeMessage = process.env.KIRO_MOCK_WELCOME_MESSAGE;
     return {
       sessionId: this.sessionId,
       currentModel: { id: 'mock-model', name: 'Mock Model' },
+      ...(agentName
+        ? { currentAgent: { name: agentName, welcomeMessage } }
+        : {}),
     };
   }
 
   async loadSession(sessionId: string): Promise<{
     sessionId: string;
     currentModel?: { id: string; name: string };
-    currentAgent?: { name: string };
+    currentAgent?: { name: string; welcomeMessage?: string };
   }> {
     this.sessionId = sessionId;
     return {

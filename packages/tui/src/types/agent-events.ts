@@ -243,6 +243,7 @@ export interface AgentSwitchedEvent {
   type: AgentEventType.AgentSwitched;
   agentName: string;
   previousAgentName?: string;
+  welcomeMessage?: string;
 }
 
 export type AuthErrorType = string;

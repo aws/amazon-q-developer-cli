@@ -58,6 +58,7 @@ pub struct AgentInfo {
     pub name: String,
     pub description: Option<String>,
     pub source: String,
+    pub welcome_message: Option<String>,
 }
 
 /// Result returned when starting or loading a session.
@@ -373,6 +374,7 @@ impl SessionManager {
                             agent::agent_config::ConfigSource::BuiltIn => "Built-in".to_string(),
                             agent::agent_config::ConfigSource::Ephemeral => "".to_string(),
                         },
+                        welcome_message: c.config().welcome_message().map(|s| s.to_string()),
                     })
                     .collect();
                 // Dedupe by name (keep first occurrence)

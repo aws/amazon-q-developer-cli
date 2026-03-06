@@ -28,7 +28,7 @@ export interface SessionClient {
   newSession(): Promise<{
     sessionId: string;
     currentModel?: { id: string; name: string };
-    currentAgent?: { name: string };
+    currentAgent?: { name: string; welcomeMessage?: string };
   }>;
 
   /**
@@ -40,7 +40,7 @@ export interface SessionClient {
   loadSession(sessionId: string): Promise<{
     sessionId: string;
     currentModel?: { id: string; name: string };
-    currentAgent?: { name: string };
+    currentAgent?: { name: string; welcomeMessage?: string };
   }>;
 
   /**
