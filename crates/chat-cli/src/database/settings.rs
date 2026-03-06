@@ -133,6 +133,8 @@ pub enum Setting {
     ChatDiffTool,
     #[strum(message = "Chat UI mode: 'legacy' or 'tui' (string)")]
     ChatUi,
+    #[strum(message = "Disable granular trust options for tool permissions (boolean)")]
+    ChatDisableGranularTrust,
 }
 
 impl Setting {
@@ -180,6 +182,8 @@ impl Setting {
                 | Self::EnabledCheckpoint
                 // Model selection
                 | Self::ChatDefaultModel
+                // Trust UI
+                | Self::ChatDisableGranularTrust
         )
     }
 }
@@ -234,6 +238,7 @@ impl AsRef<str> for Setting {
             Self::UiMode => "chat.uiMode",
             Self::ChatDiffTool => "chat.diffTool",
             Self::ChatUi => "chat.ui",
+            Self::ChatDisableGranularTrust => "chat.disableGranularTrust",
         }
     }
 }
@@ -294,6 +299,7 @@ impl TryFrom<&str> for Setting {
             "chat.uiMode" => Ok(Self::UiMode),
             "chat.diffTool" => Ok(Self::ChatDiffTool),
             "chat.ui" => Ok(Self::ChatUi),
+            "chat.disableGranularTrust" => Ok(Self::ChatDisableGranularTrust),
             _ => Err(DatabaseError::InvalidSetting(value.to_string())),
         }
     }

@@ -3129,7 +3129,7 @@ impl ChatSession {
             let tool_use = &mut self.tool_uses[index];
             if is_approval_response(input_trimmed) {
                 if is_trust_response(input_trimmed) {
-                    let selection = prompt_trust_scope(tool_use, &mut self.stderr, &mut self.stdout);
+                    let selection = prompt_trust_scope(tool_use, &mut self.stderr, &mut self.stdout, os);
                     if !apply_trust_selection(selection, tool_use, &mut self.conversation, &mut self.stderr)? {
                         return Ok(ChatState::PromptUser {
                             skip_printing_tools: true,

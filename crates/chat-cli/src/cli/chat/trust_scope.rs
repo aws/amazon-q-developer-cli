@@ -15,6 +15,8 @@ use super::tools::{
     Tool,
 };
 use crate::cli::agent::wrapper_types::ToolSettingTarget;
+use crate::database::settings::Setting;
+use crate::os::Os;
 use crate::theme::StyledText;
 use crate::util::{
     MCP_SERVER_TOOL_DELIMITER,
@@ -45,8 +47,14 @@ pub fn prompt_trust_scope(
     tool_use: &QueuedTool,
     stderr: &mut impl Write,
     stdout: &mut impl Write,
+    os: &Os,
 ) -> TrustScopeSelection {
-    if !supports_granular_trust(&tool_use.tool) {
+    let disable_granular_trust = os
+        .database
+        .settings
+        .get_bool(Setting::ChatDisableGranularTrust)
+        .unwrap_or(false);
+    if disable_granular_trust || !supports_granular_trust(&tool_use.tool) {
         // No granular options for this tool type
         return TrustScopeSelection::TrustTool;
     }
