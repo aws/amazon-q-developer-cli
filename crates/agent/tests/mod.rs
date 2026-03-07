@@ -853,3 +853,73 @@ async fn test_file_uri_global_prompt() {
         "file:// URI should be resolved, not appear literally"
     );
 }
+
+/// Tests that the InvalidJson error path correctly recovers when the model
+/// produces truncated JSON in a tool use. This reproduces a bug where the
+/// conversation history invariant was violated because the fake assistant
+/// message was appended before the pending user message.
+///
+/// The sequence is:
+/// 1. Send prompt
+/// 2. Model responds with a tool use containing truncated JSON
+/// 3. Agent detects InvalidJson, appends messages, and retries
+/// 4. Retry succeeds with endTurn
+///
+/// Before the fix, step 3 would fail with "invalid conversation history received"
+/// because the assistant message was appended before the user message, breaking
+/// the User→Assistant alternation invariant.
+#[tokio::test]
+async fn test_invalid_json_recovery() {
+    let _ = tracing_subscriber::fmt::try_init();
+
+    let mut test = TestCase::builder()
+        .test_name("invalid json recovery")
+        .with_default_agent_config()
+        .with_trust_all_tools(true)
+        .with_responses(
+            parse_response_streams(include_str!("./mock_responses/invalid_json_recovery.jsonl"))
+                .await
+                .unwrap(),
+        )
+        .build()
+        .await
+        .unwrap();
+
+    test.send_prompt("write a summary to summary.md".to_string()).await;
+    test.wait_until_agent_stop(Duration::from_secs(2)).await.unwrap();
+
+    // Verify two requests were sent: the original and the retry
+    let requests = test.requests();
+    assert!(
+        requests.len() >= 2,
+        "expected at least 2 requests (original + retry), got {}",
+        requests.len()
+    );
+
+    // The retry prompt should contain the "too large" message
+    assert!(
+        requests[1].prompt_contains_text("split up the work"),
+        "retry prompt should ask model to split up the work"
+    );
+
+    // Verify conversation history in the retry request maintains proper alternation
+    let retry_messages = requests[1].messages();
+    for pair in retry_messages.windows(2) {
+        let curr = &pair[0];
+        let next = &pair[1];
+        match curr.role {
+            Role::User => assert_eq!(
+                next.role,
+                Role::Assistant,
+                "User message at should be followed by Assistant, messages: {:?}",
+                retry_messages.iter().map(|m| &m.role).collect::<Vec<_>>()
+            ),
+            Role::Assistant => assert_eq!(
+                next.role,
+                Role::User,
+                "Assistant message should be followed by User, messages: {:?}",
+                retry_messages.iter().map(|m| &m.role).collect::<Vec<_>>()
+            ),
+        }
+    }
+}

@@ -1,0 +1,15 @@
+// Response 1: Assistant starts a tool use with truncated JSON (simulates EOF mid-stream)
+// The tool use JSON is incomplete - missing closing brace
+{"result":"ok","data":{"kind":"messageStart","data":{"role":"assistant"}}}
+{"result":"ok","data":{"kind":"contentBlockDelta","data":{"delta":{"kind":"text","data":"I'll write the summary file."},"contentBlockIndex":null}}}
+{"result":"ok","data":{"kind":"contentBlockStart","data":{"contentBlockStart":{"kind":"toolUse","data":{"toolUseId":"tooluse_truncated","name":"write"}},"contentBlockIndex":null}}}
+{"result":"ok","data":{"kind":"contentBlockDelta","data":{"delta":{"kind":"toolUse","data":{"input":"{\"command\": \"create\", \"path\": \"summary.md\""}},"contentBlockIndex":null}}}
+{"result":"ok","data":{"kind":"contentBlockStop","data":{"contentBlockIndex":null}}}
+{"result":"ok","data":{"kind":"messageStop","data":{"stopReason":"toolUse"}}}
+{"result":"ok","data":{"kind":"metadata","data":{"metrics":{"requestStartTime":"2025-10-23T21:04:30.000000Z","requestEndTime":"2025-10-23T21:04:31.000000Z","timeToFirstChunk":{"secs":0,"nanos":100000000},"timeBetweenChunks":[],"responseStreamLen":30},"usage":null,"service":{"requestId":"truncated-json-response","statusCode":null}}}}
+
+// Response 2: Retry succeeds - assistant splits the work into a simpler tool use
+{"result":"ok","data":{"kind":"messageStart","data":{"role":"assistant"}}}
+{"result":"ok","data":{"kind":"contentBlockDelta","data":{"delta":{"kind":"text","data":"I'll split this into smaller steps. Let me create the file first."},"contentBlockIndex":null}}}
+{"result":"ok","data":{"kind":"messageStop","data":{"stopReason":"endTurn"}}}
+{"result":"ok","data":{"kind":"metadata","data":{"metrics":{"requestStartTime":"2025-10-23T21:04:32.000000Z","requestEndTime":"2025-10-23T21:04:33.000000Z","timeToFirstChunk":{"secs":0,"nanos":100000000},"timeBetweenChunks":[],"responseStreamLen":30},"usage":null,"service":{"requestId":"retry-success-response","statusCode":null}}}}

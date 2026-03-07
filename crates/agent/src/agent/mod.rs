@@ -1373,8 +1373,6 @@ impl Agent {
                         })
                         .collect(),
                 );
-                self.append_assistant_message(Message::new(Role::Assistant, assistant_content, Some(Utc::now())));
-
                 // Append the original pending user message since we got a (partial) response
                 if let ActiveState::ExecutingRequest {
                     pending_user_message: Some(pending),
@@ -1388,6 +1386,8 @@ impl Agent {
                         },
                     }
                 }
+
+                self.append_assistant_message(Message::new(Role::Assistant, assistant_content, Some(Utc::now())));
 
                 // Set new pending for the retry prompt
                 let retry_pending = PendingUserMessage::Prompt(vec![ContentBlock::Text(
