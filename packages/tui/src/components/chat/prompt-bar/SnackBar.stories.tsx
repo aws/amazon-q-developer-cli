@@ -1,4 +1,3 @@
-import React from 'react';
 import { SnackBar, type SnackBarProps } from './SnackBar.js';
 
 const meta = {

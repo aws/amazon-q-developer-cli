@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it } from 'bun:test';
+import { afterEach, describe, it } from 'bun:test';
 import { E2ETestCase } from './E2ETestCase';
 
 describe('Scroll during streaming', () => {

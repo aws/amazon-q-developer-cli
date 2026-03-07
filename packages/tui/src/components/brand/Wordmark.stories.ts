@@ -1,4 +1,3 @@
-import React from 'react';
 import Wordmark from './Wordmark.js';
 
 const meta = {

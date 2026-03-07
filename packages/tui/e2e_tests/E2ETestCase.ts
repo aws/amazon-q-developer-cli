@@ -58,6 +58,7 @@ export class E2ETestCase {
       cwd: process.cwd(),
       env: {
         CI: 'false', // Disable CI detection so Ink uses normal terminal rendering inside the PTY
+        KIRO_CHAT_UI: 'tui',
         KIRO_TEST_MODE: '1',
         KIRO_INPUT_METRICS: 'true',
         KIRO_TEST_TUI_IPC_SOCKET_PATH: this.paths.tuiIpcSocket,

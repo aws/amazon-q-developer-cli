@@ -1,4 +1,3 @@
-import React from 'react';
 import { PastedChip, type PastedChipProps } from './PastedChip.js';
 
 const meta = {

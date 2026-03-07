@@ -7,7 +7,6 @@ import {
 } from '../../stores/app-store';
 
 export const ExpandedLayout: React.FC = () => {
-  const setMode = useAppStore((s: AppState & AppActions) => s.setMode);
   const messages = useAppStore((s: AppState & AppActions) => s.messages);
   const currentMessage = null; // Not in store - placeholder for future
 

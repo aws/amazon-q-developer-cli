@@ -4,10 +4,21 @@ import { resolve } from "node:path";
 
 const REPO_ROOT = resolve(import.meta.dir, "../../..");
 const TUI_ROOT = resolve(import.meta.dir, "..");
+const INK_ROOT = resolve(import.meta.dir, "../../ink");
 
 const skipRustBuild = process.argv.includes("--skip-rust-build");
 
+function buildInk(): boolean {
+  console.log("Building ink...");
+  const result = spawnSync("bun", ["run", "build"], { cwd: INK_ROOT, stdio: "inherit" });
+  return result.status === 0;
+}
+
 function buildTui(): boolean {
+  if (!buildInk()) {
+    console.error("ink build failed");
+    return false;
+  }
   console.log("Building TUI...");
   const result = spawnSync("bun", ["run", "build"], { 
     cwd: TUI_ROOT, 

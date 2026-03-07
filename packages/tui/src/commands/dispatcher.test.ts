@@ -1,4 +1,4 @@
-import { describe, it, expect, mock, beforeEach } from 'bun:test';
+import { describe, it, expect, mock } from 'bun:test';
 import { dispatch } from './dispatcher';
 import type { CommandContext } from './types';
 import type { SlashCommand } from '../stores/app-store';

@@ -25,7 +25,6 @@ import {
   moveCursorUp,
   moveCursorDown,
   getVisualLines,
-  getVisualCursorLineInfo,
   moveCursorUpVisual,
   moveCursorDownVisual,
   moveToVisualLineStart,

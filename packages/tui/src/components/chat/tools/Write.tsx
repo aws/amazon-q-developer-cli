@@ -142,11 +142,7 @@ export const Write = React.memo<WriteProps>(function Write({
   const PREVIEW_DIFF_LINES = 20;
 
   // Use expandable output hook for collapsing large diffs
-  const {
-    expanded: expandedFromHook,
-    hiddenCount,
-    expandHint,
-  } = useExpandableOutput({
+  const { expanded: expandedFromHook, expandHint } = useExpandableOutput({
     totalItems: totalDiffLines,
     previewCount: PREVIEW_DIFF_LINES,
     isStatic,
@@ -180,7 +176,7 @@ export const Write = React.memo<WriteProps>(function Write({
     for (const change of changes) {
       const lines = change.value.split('\n');
       if (lines[lines.length - 1] === '') lines.pop();
-      for (const _ of lines) {
+      for (let i = 0; i < lines.length; i++) {
         if (diffLineCount >= visibleDiffLines) break;
         if (change.removed) {
           colors.set(currentLine, getColor('diff.removed.bar').hex);

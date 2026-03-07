@@ -1,4 +1,3 @@
-import React from 'react';
 import { ProgressChip } from './ProgressChip.js';
 
 const meta = {

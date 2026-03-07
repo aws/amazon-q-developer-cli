@@ -1,4 +1,3 @@
-import React from 'react';
 import { WelcomeScreen } from './WelcomeScreen.js';
 
 const meta = {

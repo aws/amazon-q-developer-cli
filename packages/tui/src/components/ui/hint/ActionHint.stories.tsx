@@ -1,4 +1,3 @@
-import React from 'react';
 import { ActionHint, type ActionHintProps } from './ActionHint.js';
 
 const meta = {

@@ -1,5 +1,8 @@
 use crate::theme::StyledText;
-use crate::util::consts::env_var::KIRO_CHAT_LOG_FILE;
+use crate::util::consts::env_var::{
+    KIRO_CHAT_LOG_FILE,
+    KIRO_TEST_TUI_JS_PATH,
+};
 use crate::util::env_var::is_log_stdout_enabled;
 pub mod agent;
 pub mod chat;
@@ -151,7 +154,7 @@ impl RootSubcommand {
 
     pub async fn execute(self, os: &mut Os) -> Result<ExitCode> {
         // Check for auth on subcommands that require it.
-        if !is_logged_in(&mut os.database).await {
+        if !is_logged_in(&mut os.database).await && std::env::var("KIRO_TEST_MODE").is_err() {
             if matches!(self, Self::Chat(_)) {
                 let options = ["Yes", "No"];
                 match crate::util::choose(" You are not logged in. Login now?", &options)? {
@@ -192,11 +195,13 @@ impl RootSubcommand {
             Self::Issue(args) => args.execute(os).await,
             Self::Version { changelog } => Cli::print_version(changelog),
             Self::Chat(args) => {
-                if args.should_launch_tui(os) && crate::embedded_tui::are_assets_embedded(os) {
+                let tui_available =
+                    crate::embedded_tui::are_assets_embedded(os) || std::env::var(KIRO_TEST_TUI_JS_PATH).is_ok();
+                if args.should_launch_tui(os) && tui_available {
                     crate::embedded_tui::launch_v2(os).await
                 } else {
                     if args.should_launch_tui(os) {
-                        tracing::error!("TUI requested but assets not embedded, falling back to legacy UI");
+                        tracing::error!("TUI requested but assets not available, falling back to legacy UI");
                     }
                     args.execute(os).await
                 }

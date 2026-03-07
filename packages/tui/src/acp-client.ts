@@ -147,7 +147,7 @@ export class AcpClient implements acp.Client, SessionClient {
     const ndJson = acp.ndJsonStream(writable, dummyReadable);
     const stream = { readable: parsedMessages, writable: ndJson.writable };
 
-    this.connection = new acp.ClientSideConnection((_agent) => this, stream);
+    this.connection = new acp.ClientSideConnection(() => this, stream);
   }
 
   // ===========
@@ -407,50 +407,59 @@ export class AcpClient implements acp.Client, SessionClient {
   }
 
   async writeTextFile?(
-    params: acp.WriteTextFileRequest
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    _params: acp.WriteTextFileRequest
   ): Promise<acp.WriteTextFileResponse> {
     throw new Error('writeTextFile not implemented');
   }
 
   async readTextFile?(
-    params: acp.ReadTextFileRequest
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    _params: acp.ReadTextFileRequest
   ): Promise<acp.ReadTextFileResponse> {
     throw new Error('readTextFile not implemented');
   }
 
   async createTerminal?(
-    params: acp.CreateTerminalRequest
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    _params: acp.CreateTerminalRequest
   ): Promise<acp.CreateTerminalResponse> {
     throw new Error('createTerminal not implemented');
   }
 
   async terminalOutput?(
-    params: acp.TerminalOutputRequest
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    _params: acp.TerminalOutputRequest
   ): Promise<acp.TerminalOutputResponse> {
     throw new Error('terminalOutput not implemented');
   }
 
   async releaseTerminal?(
-    params: acp.ReleaseTerminalRequest
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    _params: acp.ReleaseTerminalRequest
   ): Promise<acp.ReleaseTerminalResponse | void> {
     throw new Error('releaseTerminal not implemented');
   }
 
   async waitForTerminalExit?(
-    params: acp.WaitForTerminalExitRequest
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    _params: acp.WaitForTerminalExitRequest
   ): Promise<acp.WaitForTerminalExitResponse> {
     throw new Error('waitForTerminalExit not implemented');
   }
 
   async killTerminal?(
-    params: acp.KillTerminalCommandRequest
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    _params: acp.KillTerminalCommandRequest
   ): Promise<acp.KillTerminalResponse | void> {
     throw new Error('killTerminal not implemented');
   }
 
   async extMethod?(
-    method: string,
-    params: Record<string, unknown>
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    _method: string,
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    _params: Record<string, unknown>
   ): Promise<Record<string, unknown>> {
     throw new Error('extMethod not implemented');
   }
@@ -475,7 +484,7 @@ export class AcpClient implements acp.Client, SessionClient {
     [EXT_METHODS.METADATA]: (params) => this.handleMetadataUpdate(params),
     [EXT_METHODS.COMPACTION_STATUS]: (params) =>
       this.handleCompactionStatus(params),
-    [EXT_METHODS.CLEAR_STATUS]: (params) => this.handleClearStatus(params),
+    [EXT_METHODS.CLEAR_STATUS]: () => this.handleClearStatus(),
     [EXT_METHODS.MCP_SERVER_INIT_FAILURE]: (params) =>
       this.handleMcpServerInitFailure(params),
     [EXT_METHODS.RATE_LIMIT_ERROR]: (params) =>
@@ -564,7 +573,7 @@ export class AcpClient implements acp.Client, SessionClient {
     }
   }
 
-  private handleClearStatus(_params: Record<string, unknown>) {
+  private handleClearStatus() {
     logger.debug('Clear status received');
     // Context usage will be updated by the next METADATA notification
   }

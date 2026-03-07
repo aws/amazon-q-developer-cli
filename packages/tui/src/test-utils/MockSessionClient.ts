@@ -84,6 +84,7 @@ export class MockSessionClient implements SessionClient {
     return () => this.updateHandlers.delete(handler);
   }
 
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   async prompt(_messages: ContentBlock[]): Promise<void> {
     // Process any queued events
     setTimeout(() => {
@@ -102,6 +103,7 @@ export class MockSessionClient implements SessionClient {
     // No-op for mock
   }
 
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   async setMode(_modeId: string): Promise<void> {
     // No-op for mock
   }
@@ -135,12 +137,15 @@ export class MockSessionClient implements SessionClient {
   }
 
   async getCommandOptions(
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
     _commandName: string,
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
     _partial: string
   ): Promise<CommandOptionsResponse> {
     return { options: [] };
   }
 
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   async executeCommand(_command: TuiCommand): Promise<CommandResult> {
     return { success: true, message: 'Mock command executed' };
   }

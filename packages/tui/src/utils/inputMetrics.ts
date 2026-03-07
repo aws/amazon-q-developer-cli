@@ -92,6 +92,7 @@ class InputMetrics {
   /**
    * Start timing a render phase (for detailed breakdown)
    */
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   startRenderPhase(_componentName: string): void {
     if (!this.enabled) return;
     this.currentRenderStart = performance.now();

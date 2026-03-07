@@ -1,6 +1,5 @@
 import React from 'react';
 import { Box } from 'ink';
-import type { StatusInfoProps } from './StatusInfo.js';
 import { StatusInfo } from './StatusInfo.js';
 import { StatusBar } from '../../chat/status-bar/StatusBar.js';
 import { Card } from '../card/Card.js';

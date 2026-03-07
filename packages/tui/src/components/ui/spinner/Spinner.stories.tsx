@@ -6,7 +6,7 @@ type Meta<T> = {
   parameters?: Record<string, unknown>;
 };
 
-type StoryObj<T> = {
+type StoryObj = {
   args?: Record<string, unknown>;
 };
 
@@ -23,7 +23,7 @@ const meta: Meta<typeof Spinner> = {
 };
 
 export default meta;
-type Story = StoryObj<typeof Spinner>;
+type Story = StoryObj;
 
 export const Default: Story = {
   args: {},

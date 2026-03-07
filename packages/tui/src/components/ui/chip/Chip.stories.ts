@@ -1,4 +1,3 @@
-import React from 'react';
 import Chip, { ChipColor } from './Chip.js';
 
 const meta = {

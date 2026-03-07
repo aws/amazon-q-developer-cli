@@ -155,7 +155,9 @@ export const MarkdownRenderer = React.memo(function MarkdownRenderer({
     <Box flexDirection="column">
       {blocks.map((block, i) => {
         if (block.type === 'code') {
-          const code = expandTabs(block.segment.codeBlock!.code.replace(/^\n+|\n+$/g, ''));
+          const code = expandTabs(
+            block.segment.codeBlock!.code.replace(/^\n+|\n+$/g, '')
+          );
           return (
             <Box
               key={i}

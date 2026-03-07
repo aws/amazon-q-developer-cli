@@ -22,8 +22,6 @@ import {
   useFileAttachmentActions,
   useKiroClient,
   useImageAttachmentActions,
-  useImageAttachmentState,
-  useContextState,
 } from '../../../stores/selectors.js';
 import {
   type Segment,
@@ -35,8 +33,6 @@ import {
   deleteWordBackward,
   deleteWordForward,
   deleteForward,
-  killToEnd,
-  killToBeginning,
   moveWordForward,
   moveWordBackward,
   transposeChars,
@@ -130,7 +126,6 @@ const detectTrigger = (
 
 export const PromptInput = React.memo(function PromptInput({
   onSubmit,
-  isProcessing,
   triggerRules = [],
   onTriggerDetected,
   placeholder = 'ask a question, or describe a task ↵',
@@ -148,7 +143,6 @@ export const PromptInput = React.memo(function PromptInput({
   const { pendingFileAttachment } = useFileAttachmentState();
   const { consumePendingFileAttachment } = useFileAttachmentActions();
   const { kiro } = useKiroClient();
-  const { pendingImages } = useImageAttachmentState();
   const { addPendingImage } = useImageAttachmentActions();
   const [segments, setSegments] = useState<Segment[]>([
     { type: 'text', value: '' },

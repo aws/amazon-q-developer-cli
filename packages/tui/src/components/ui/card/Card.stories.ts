@@ -1,7 +1,6 @@
 import React from 'react';
 import { Card } from './Card.js';
 import { Message, MessageType } from '../../chat/message/Message.js';
-import { StatusBar } from '../../chat/status-bar/StatusBar.js';
 
 const meta = {
   component: Card,

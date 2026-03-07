@@ -1491,6 +1491,7 @@ export const createAppStore = (props: AppStoreProps) =>
         input: initialInputBufferState(),
       }));
     },
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
     moveCursor: (_dir: MoveCursorDir) => {
       set((state) => {
         // todo

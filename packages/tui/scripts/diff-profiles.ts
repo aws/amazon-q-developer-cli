@@ -30,9 +30,6 @@ console.log('\n📊 Profile Comparison\n');
 console.log(`Baseline: ${baseline.timestamp} (${baseline.durationS.toFixed(1)}s)`);
 console.log(`Current:  ${current.timestamp} (${current.durationS.toFixed(1)}s)\n`);
 
-// Normalize by duration
-const durationRatio = current.durationS / baseline.durationS;
-
 console.log('Function                            | Base Self | Curr Self | Change');
 console.log('------------------------------------|-----------|-----------|--------');
 

@@ -14,7 +14,6 @@ export const RadioButton = React.memo(function RadioButton({
   selected,
   label: labelText,
   disabled = false,
-  onSelect,
 }: RadioButtonProps) {
   const { getColor } = useTheme();
 

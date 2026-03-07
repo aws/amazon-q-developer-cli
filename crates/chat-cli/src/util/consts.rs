@@ -151,7 +151,10 @@ pub mod env_var {
         CI = "CI",
 
         /// Chat UI mode override: "legacy" or "tui"
-        KIRO_CHAT_UI = "KIRO_CHAT_UI"
+        KIRO_CHAT_UI = "KIRO_CHAT_UI",
+
+        /// Used for E2E tests
+        KIRO_TEST_TUI_JS_PATH = "KIRO_TEST_TUI_JS_PATH"
     }
 }
 

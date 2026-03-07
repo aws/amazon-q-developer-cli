@@ -40,10 +40,7 @@ export function PromptBar({
   isProcessing,
   triggerRules,
   onTriggerDetected,
-  onInputChange,
   placeholder = 'ask a question, or describe a task ↵',
-  clearOnSubmit = true,
-  value,
   hint,
   hideInput = false,
 }: PromptBarProps) {

@@ -51,7 +51,7 @@ pub async fn extract_tui_assets_if_needed(os: &Os) -> Result<TuiAssetPaths> {
             test_tui_path
         );
         return Ok(TuiAssetPaths {
-            bun_path: bun_path()?,
+            bun_path: PathBuf::from("bun"), // Use system bun
             tui_js_path: PathBuf::from(test_tui_path),
         });
     }

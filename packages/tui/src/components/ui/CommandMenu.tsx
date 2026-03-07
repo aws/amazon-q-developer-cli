@@ -135,7 +135,6 @@ export const CommandMenu: React.FC = () => {
     async (item: { label: string; description: string }) => {
       const fullCommand = `/${item.label}`;
       const cmd = slashCommands.find((c) => c.name === fullCommand);
-      const isSelectionCommand = cmd?.meta?.inputType === 'selection';
       const isPrompt = cmd?.meta?.type === 'prompt';
 
       // For prompts with args, prefill command and show arg hints

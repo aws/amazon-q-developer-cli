@@ -224,8 +224,8 @@ function analyze(profilePath: string) {
   }
 
   // Summary
-  const ourCode = sorted.filter(([_, d]) => d.type === 'our-code');
-  const deps = sorted.filter(([_, d]) => d.type === 'dependency');
+  const ourCode = sorted.filter(([, d]) => d.type === 'our-code');
+  const deps = sorted.filter(([, d]) => d.type === 'dependency');
   
   console.log('\n📋 Summary:');
   console.log(`   Our code in top 20: ${ourCode.length}`);

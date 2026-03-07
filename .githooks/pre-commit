@@ -1,22 +1,32 @@
 #!/bin/sh
 # Pre-commit hook for kiro-cli
 
-# Check if any Rust files are staged
-if ! git diff --cached --name-only | grep -qE '\.(rs|toml)$'; then
+# Rust checks
+if git diff --cached --name-only | grep -qE '\.(rs|toml)$'; then
+    echo "Running cargo fmt check..."
+    if ! cargo +nightly fmt --check -- --color always; then
+        echo "❌ Formatting check failed. Run 'cargo +nightly fmt' to fix."
+        exit 1
+    fi
+
+    echo "Running cargo clippy..."
+    if ! cargo clippy --locked --workspace --color always -- -D warnings; then
+        echo "❌ Clippy check failed. Fix the warnings above."
+        exit 1
+    fi
+else
     echo "⏭️  No Rust files changed, skipping fmt and clippy"
-    exit 0
 fi
 
-echo "Running cargo fmt check..."
-if ! cargo +nightly fmt --check -- --color always; then
-    echo "❌ Formatting check failed. Run 'cargo +nightly fmt' to fix."
-    exit 1
-fi
-
-echo "Running cargo clippy..."
-if ! cargo clippy --locked --workspace --color always -- -D warnings; then
-    echo "❌ Clippy check failed. Fix the warnings above."
-    exit 1
+# TUI checks
+if git diff --cached --name-only | grep -q '^packages/tui/'; then
+    echo "Running bun lint..."
+    if ! bun run --cwd packages/tui lint; then
+        echo "❌ TUI lint failed. Run 'bun run lint:fix' in packages/tui to fix."
+        exit 1
+    fi
+else
+    echo "⏭️  No TUI files changed, skipping lint"
 fi
 
 exit 0

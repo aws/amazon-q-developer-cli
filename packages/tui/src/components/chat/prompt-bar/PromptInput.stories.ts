@@ -1,4 +1,3 @@
-import React from 'react';
 import { PromptInput } from './PromptInput.js';
 
 const meta = {

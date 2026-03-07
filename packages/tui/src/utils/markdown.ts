@@ -78,7 +78,11 @@ const getCodeBlockTailContext = (content: string): CodeBlockTailContext => {
       continue;
     }
 
-    if (state === State.CODE_BLOCK && inLanguageLine && content[index] === '\n') {
+    if (
+      state === State.CODE_BLOCK &&
+      inLanguageLine &&
+      content[index] === '\n'
+    ) {
       inLanguageLine = false;
     }
     index++;
@@ -122,7 +126,10 @@ const isBlockSeparatorSegment = (segment: MarkdownSegment): boolean =>
   (!!segment.codeBlock && segment.codeBlock.isComplete);
 
 const hasAmbiguousTrailingBlockPrefix = (content: string): boolean => {
-  const lastLineBreak = Math.max(content.lastIndexOf('\n'), content.lastIndexOf('\r'));
+  const lastLineBreak = Math.max(
+    content.lastIndexOf('\n'),
+    content.lastIndexOf('\r')
+  );
   const lastLine = content.slice(lastLineBreak + 1);
   return /^(?:\s*[-+*]\s*|\s*\d+\.\s*|\s*#{1,6}\s*|\s*>\s*)$/.test(lastLine);
 };
@@ -173,8 +180,10 @@ export function tryAppendMarkdownDelta(
 
       if (tailContext.inLanguageLine) {
         const newlineIndex = delta.indexOf('\n');
-        const languageDelta = newlineIndex === -1 ? delta : delta.slice(0, newlineIndex);
-        const codeDelta = newlineIndex === -1 ? '' : delta.slice(newlineIndex + 1);
+        const languageDelta =
+          newlineIndex === -1 ? delta : delta.slice(0, newlineIndex);
+        const codeDelta =
+          newlineIndex === -1 ? '' : delta.slice(newlineIndex + 1);
 
         const languageLine = `${tailContext.languageLine || ''}${languageDelta}`;
         const updatedLanguage = languageLine.trim();
@@ -221,9 +230,7 @@ export function tryAppendMarkdownDelta(
 
   if (
     lastSegment &&
-    (lastSegment.header ||
-      lastSegment.blockquote ||
-      lastSegment.listItem) &&
+    (lastSegment.header || lastSegment.blockquote || lastSegment.listItem) &&
     !delta.startsWith('\n') &&
     delta.includes('\n')
   ) {
@@ -232,9 +239,7 @@ export function tryAppendMarkdownDelta(
 
   if (
     lastSegment &&
-    (lastSegment.header ||
-      lastSegment.blockquote ||
-      lastSegment.listItem) &&
+    (lastSegment.header || lastSegment.blockquote || lastSegment.listItem) &&
     !(previousRawContent ? /\r?\n$/.test(previousRawContent) : false) &&
     !delta.includes('\n') &&
     isIncrementalMarkdownDeltaSafe(delta)
@@ -259,7 +264,10 @@ export function tryAppendMarkdownDelta(
   }
 
   if (lastSegment && isPlainTextSegment(lastSegment)) {
-    if (previousRawContent && hasAmbiguousTrailingBlockPrefix(previousRawContent)) {
+    if (
+      previousRawContent &&
+      hasAmbiguousTrailingBlockPrefix(previousRawContent)
+    ) {
       return null;
     }
 

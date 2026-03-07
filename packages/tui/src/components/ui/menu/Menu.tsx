@@ -1,10 +1,4 @@
-import React, {
-  useState,
-  useEffect,
-  useContext,
-  useCallback,
-  useMemo,
-} from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { Box, useMouse } from 'ink';
 import { useTheme } from '../../../hooks/useThemeContext.js';
 import { useTextStyle } from '../../../hooks/useTextStyle.js';
@@ -156,8 +150,6 @@ export const Menu = React.memo(function Menu({
   );
   const endIndex = Math.min(startIndex + visibleItems, displayItems.length);
   const visibleItemsSlice = displayItems.slice(startIndex, endIndex);
-
-  const { height: termHeight } = useTerminalSize();
 
   useMouse({
     onScrollUp: useCallback(() => {

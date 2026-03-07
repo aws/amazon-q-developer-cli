@@ -707,7 +707,11 @@ describe('tryAppendMarkdownDelta', () => {
   it('appends plain text to incomplete code blocks', () => {
     const content = '```ts\nconst value = 1;';
     const base = parseMarkdown(content);
-    const appended = tryAppendMarkdownDelta(base, '\nconsole.log(value);', content);
+    const appended = tryAppendMarkdownDelta(
+      base,
+      '\nconsole.log(value);',
+      content
+    );
     expect(appended).toEqual([
       {
         text: '',
@@ -740,8 +744,15 @@ describe('tryAppendMarkdownDelta', () => {
   it('trims leading newlines when appending after a header block', () => {
     const content = '## Header';
     const base = parseMarkdown(content);
-    const appended = tryAppendMarkdownDelta(base, '\n\nNext paragraph', content);
-    expect(appended).toEqual([{ text: 'Header', header: 2 }, { text: 'Next paragraph' }]);
+    const appended = tryAppendMarkdownDelta(
+      base,
+      '\n\nNext paragraph',
+      content
+    );
+    expect(appended).toEqual([
+      { text: 'Header', header: 2 },
+      { text: 'Next paragraph' },
+    ]);
   });
 
   it('returns null for markdown control deltas that require full re-parse', () => {

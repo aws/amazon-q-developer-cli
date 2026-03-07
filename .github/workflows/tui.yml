@@ -111,8 +111,8 @@ jobs:
             target/
           key: cargo-e2e-${{ runner.os }}-${{ hashFiles('**/Cargo.lock') }}
 
-      - name: Build chat_cli_v2
-        run: cargo build -p chat_cli_v2
+      - name: Build chat_cli
+        run: cargo build -p chat_cli
 
       - uses: oven-sh/setup-bun@v2
 
