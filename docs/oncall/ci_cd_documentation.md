@@ -16,7 +16,8 @@ This document provides comprehensive documentation of the CI/CD workflows, depen
 5. [Workflow Reference](#workflow-reference)
 6. [Secrets Reference](#secrets-reference)
 7. [Cross-Repository Triggers](#cross-repository-triggers)
-8. [Troubleshooting](#troubleshooting)
+8. [Security Monitoring](#security-monitoring)
+9. [Troubleshooting](#troubleshooting)
 
 ---
 
@@ -73,6 +74,8 @@ The chat binary - the core CLI functionality.
 | `validate-commits.yml` | Validates changelog fragments | PR |
 | `check-merge-conflicts.yml` | Checks for conflicts with main | PR |
 | `typos.yml` | Spell checking | Push |
+| `check-bun-version.yml` | Checks for new Bun releases, opens issue if outdated | Schedule (daily 9 UTC), manual |
+| `osv-scan.yml` | OSV vulnerability scanning (bun.lock, bundled Bun binary) | PR, push to main, schedule (daily 9 UTC), manual |
 
 ### kiro-cli-autocomplete (Desktop Repository)
 
@@ -699,6 +702,46 @@ gh run view --repo kiro-team/kiro-cli <run_id>
 
 ---
 
+## Security Monitoring
+
+### Bundled Bun Runtime
+
+The CLI embeds a Bun binary (version pinned in `scripts/const_v2.py` as `BUN_VERSION`). Since this is a raw binary download and not a package manager dependency, Dependabot cannot track it. Two workflows provide security coverage:
+
+#### Check Bun Version (`check-bun-version.yml`)
+
+Runs daily (9 UTC) and compares the bundled `BUN_VERSION` against the latest release from `oven-sh/bun`. If outdated, it opens a GitHub issue with update instructions. Deduplicates by searching for existing open issues before creating a new one.
+
+**Manual trigger:**
+```bash
+gh workflow run check-bun-version.yml --repo kiro-team/kiro-cli
+```
+
+#### OSV Vulnerability Scan (`osv-scan.yml`)
+
+Runs on PRs, pushes to main, and daily (9 UTC). Scans for known vulnerabilities using [OSV Scanner](https://github.com/google/osv-scanner) across two sources:
+- `bun.lock` — JavaScript dependencies (not covered by Dependabot)
+- Custom `osv-scanner-custom.json` — Generated at scan time from `BUN_VERSION` in `scripts/const_v2.py`, registers the bundled Bun binary as `npm/bun` so CVEs against the Bun runtime itself are detected
+
+Results are uploaded as SARIF to the GitHub Security tab.
+
+**Manual trigger:**
+```bash
+gh workflow run osv-scan.yml --repo kiro-team/kiro-cli
+```
+
+**Viewing results:** Go to the repository's Security tab → Code scanning alerts.
+
+### Dependabot
+
+Dependabot is configured in `.github/dependabot.yml` for:
+- **github-actions**: Daily updates for workflow action versions
+- **cargo**: Daily updates for Rust dependencies (grouped by `aws-*` and `clap*`)
+
+Note: Dependabot does not cover the bundled Bun binary (see above) or JavaScript dependencies in `bun.lock` (not a supported ecosystem). The OSV scanner fills this gap.
+
+---
+
 ## Troubleshooting
 
 ### Common Issues
@@ -856,4 +899,4 @@ If a secret exists at multiple levels, the environment-level secret takes preced
 
 ---
 
-*Last updated: 2026-01-30*
+*Last updated: 2026-03-09*

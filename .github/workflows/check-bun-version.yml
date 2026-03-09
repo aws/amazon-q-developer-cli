@@ -1,0 +1,58 @@
+name: "Security: Check Bun Version"
+
+on:
+  schedule:
+    - cron: "0 9 * * *" # Daily at 9:00 UTC
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  check-bun-version:
+    name: Check for new Bun releases
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Compare bundled vs latest Bun version
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          CURRENT=$(grep 'BUN_VERSION' scripts/const_v2.py | sed 's/.*"\(.*\)"/\1/')
+          LATEST=$(gh api repos/oven-sh/bun/releases/latest --jq '.tag_name' | sed 's/bun-v//')
+
+          echo "Current: $CURRENT"
+          echo "Latest:  $LATEST"
+
+          if [ "$CURRENT" = "$LATEST" ]; then
+            echo "✅ Bun is up to date"
+            exit 0
+          fi
+
+          echo "⚠️ Bun update available: $CURRENT → $LATEST"
+
+          # Check if an issue already exists
+          EXISTING=$(gh issue list --repo "$GITHUB_REPOSITORY" --search "Bun update available: $LATEST" --state open --json number --jq 'length')
+          if [ "$EXISTING" -gt 0 ]; then
+            echo "Issue already exists, skipping"
+            exit 0
+          fi
+
+          gh issue create \
+            --repo "$GITHUB_REPOSITORY" \
+            --title "Bun update available: $CURRENT → $LATEST" \
+            --body "A new version of [Bun](https://github.com/oven-sh/bun) has been released.
+
+          **Current bundled version:** \`$CURRENT\`
+          **Latest release:** \`$LATEST\`
+
+          Release notes: https://github.com/oven-sh/bun/releases/tag/bun-v$LATEST
+
+          ### Update steps
+          1. Update \`BUN_VERSION\` in \`scripts/const_v2.py\`
+          2. Test the build locally
+          3. Verify TUI launches correctly with the new version" \
+            --label "dependencies"

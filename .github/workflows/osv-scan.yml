@@ -1,0 +1,59 @@
+name: "Security: OSV Vulnerability Scan"
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  schedule:
+    - cron: "0 9 * * *" # Daily at 9:00 UTC
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  security-events: write
+  actions: read
+
+jobs:
+  osv-scan:
+    name: OSV Scanner
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Generate custom lockfile for bundled Bun
+        run: |
+          BUN_VERSION=$(grep 'BUN_VERSION' scripts/const_v2.py | sed 's/.*"\(.*\)"/\1/')
+          cat > osv-scanner-custom.json <<EOF
+          {
+            "results": [
+              {
+                "packages": [
+                  {
+                    "package": {
+                      "name": "bun",
+                      "version": "$BUN_VERSION",
+                      "ecosystem": "npm"
+                    }
+                  }
+                ]
+              }
+            ]
+          }
+          EOF
+
+      - name: Run OSV Scanner
+        uses: google/osv-scanner-action/osv-scanner-action@v2.3.3
+        continue-on-error: true
+        with:
+          scan-args: |-
+            --lockfile=bun.lock
+            --lockfile=osv-scanner:osv-scanner-custom.json
+            --format=sarif
+            --output=osv-results.sarif
+
+      - name: Upload SARIF results
+        if: always()
+        uses: github/codeql-action/upload-sarif@v4
+        with:
+          sarif_file: osv-results.sarif
