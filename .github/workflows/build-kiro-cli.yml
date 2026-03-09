@@ -30,7 +30,7 @@ on:
         description: 'Include V2 TUI in the build'
         type: boolean
         required: false
-        default: false
+        default: true
   schedule:
     - cron: "21 6 * * *"
   push:
@@ -262,8 +262,7 @@ jobs:
       environment: ${{ matrix.environment }}
       branch_name: ${{ needs.UpdateVersionNumber.outputs.branch_name }}
       commit_sha: ${{ needs.UpdateVersionNumber.outputs.commit_sha }}
-      # Include v2 for nightly builds
-      include_v2: ${{ inputs.include_v2 || github.event_name == 'schedule' }}
+      include_v2: true
 
   TriggerLinuxBuild:
     needs: [check_nightly_skip, determine_branch, UpdateVersionNumber]
@@ -282,7 +281,7 @@ jobs:
       environment: ${{ matrix.environment }}
       branch_name: ${{ needs.UpdateVersionNumber.outputs.branch_name }}
       commit_sha: ${{ needs.UpdateVersionNumber.outputs.commit_sha }}
-      include_v2: ${{ inputs.include_v2 || github.event_name == 'schedule' }}
+      include_v2: true
 
   TriggerAutocompleteBuild:
     name: Trigger Autocomplete Build
