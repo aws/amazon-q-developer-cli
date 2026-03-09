@@ -37,9 +37,10 @@ function startTUI() {
 
   // Start bun with watch mode and KIRO_AGENT_PATH set
   // Forward any extra CLI args (e.g. --agent <name>) to the TUI process
-  const bunProcess = spawn("bun", ["--watch", "./src/index.tsx", ...tuiArgs], {
+  // Use absolute path to entry file so the caller's cwd is preserved
+  const entryFile = resolve(import.meta.dir, "../src/index.tsx");
+  const bunProcess = spawn("bun", ["--watch", entryFile, ...tuiArgs], {
     stdio: "inherit",
-    cwd: resolve(import.meta.dir, ".."),
     env: {
       ...process.env,
       KIRO_AGENT_PATH: CARGO_BIN,

@@ -33,7 +33,6 @@ function buildTUI() {
 
     const bunProcess = spawn("bun", [TUI_BUNDLE, ...tuiArgs], {
       stdio: "inherit",
-      cwd: TUI_ROOT,
       env: {
         ...process.env,
         KIRO_AGENT_PATH: CARGO_BIN,
