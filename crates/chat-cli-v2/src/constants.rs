@@ -38,3 +38,31 @@ pub const RESERVED_KEYBOARD_SHORTCUTS: &[&str] = &[
 
 /// MCP safety and security documentation URL
 pub const MCP_SECURITY_DOC_URL: &str = "https://kiro.dev/docs/cli/mcp/security/";
+
+/// Agent name advertised in ACP InitializeResponse
+pub const AGENT_NAME: &str = "Kiro CLI Agent";
+
+/// ACP client name used by the built-in Kiro TUI.
+/// The TUI must send this exact value in `InitializeRequest.client_info.name`
+/// to be identified as V2 (vs generic ACP).
+pub const KIRO_ACP_CLIENT_NAME: &str = "kiro-tui";
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn tui_package_json_version_matches_cargo_version() {
+        let cargo_version = env!("CARGO_PKG_VERSION");
+        let manifest_dir = env!("CARGO_MANIFEST_DIR");
+        let pkg_json_path = std::path::Path::new(manifest_dir).join("../../packages/tui/package.json");
+        let pkg_json: serde_json::Value = serde_json::from_str(
+            &std::fs::read_to_string(&pkg_json_path)
+                .unwrap_or_else(|e| panic!("failed to read {}: {e}", pkg_json_path.display())),
+        )
+        .expect("failed to parse package.json");
+        let tui_version = pkg_json["version"].as_str().expect("missing version in package.json");
+        assert_eq!(
+            cargo_version, tui_version,
+            "packages/tui/package.json version ({tui_version}) must match Cargo workspace version ({cargo_version})"
+        );
+    }
+}

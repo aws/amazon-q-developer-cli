@@ -188,6 +188,52 @@ async fn prompt_with_send_error() {
     // Prompt should return an error because send_message fails
     let result = client.prompt_text(session_id, "hello").await;
     assert!(result.is_err(), "expected prompt to fail with send error");
+
+    // Verify telemetry events capture the failure
+    let events = harness.get_captured_telemetry_events().await;
+
+    // addChatMessage with Failed
+    let add_msg = events
+        .iter()
+        .find(|e| matches!(&e.ty, chat_cli_v2::telemetry::core::EventType::ChatAddedMessage { .. }))
+        .expect("expected addChatMessage event");
+    if let chat_cli_v2::telemetry::core::EventType::ChatAddedMessage { result, data, .. } = &add_msg.ty {
+        assert_eq!(*result, chat_cli_v2::telemetry::TelemetryResult::Failed);
+        assert_eq!(data.reason.as_deref(), Some("QuotaBreachError"));
+    }
+
+    // messageResponseError
+    let err_event = events
+        .iter()
+        .find(|e| {
+            matches!(
+                &e.ty,
+                chat_cli_v2::telemetry::core::EventType::MessageResponseError { .. }
+            )
+        })
+        .expect("expected messageResponseError event");
+    if let chat_cli_v2::telemetry::core::EventType::MessageResponseError {
+        reason, status_code, ..
+    } = &err_event.ty
+    {
+        assert_eq!(reason.as_deref(), Some("QuotaBreachError"));
+        assert_eq!(*status_code, Some(429));
+    }
+
+    // recordUserTurnCompletion with Failed
+    let turn = events
+        .iter()
+        .find(|e| {
+            matches!(
+                &e.ty,
+                chat_cli_v2::telemetry::core::EventType::RecordUserTurnCompletion { .. }
+            )
+        })
+        .expect("expected recordUserTurnCompletion event");
+    if let chat_cli_v2::telemetry::core::EventType::RecordUserTurnCompletion { result, args, .. } = &turn.ty {
+        assert_eq!(*result, chat_cli_v2::telemetry::TelemetryResult::Failed);
+        assert_eq!(args.reason.as_deref(), Some("QuotaBreachError"));
+    }
 }
 
 #[tokio::test]
@@ -1128,6 +1174,57 @@ async fn auto_compaction_on_context_overflow() {
             .any(|n| n.params.get().contains("\"type\":\"completed\"")),
         "expected compaction completed notification"
     );
+
+    // Verify telemetry events
+    let events = harness.get_captured_telemetry_events().await;
+
+    // At least 2 addChatMessage events (original tool call response + retry after compaction)
+    let add_msgs: Vec<_> = events
+        .iter()
+        .filter(|e| matches!(&e.ty, chat_cli_v2::telemetry::core::EventType::ChatAddedMessage { .. }))
+        .collect();
+    assert!(
+        add_msgs.len() >= 2,
+        "expected at least 2 addChatMessage events, got {}",
+        add_msgs.len()
+    );
+
+    // One messageResponseError for the context overflow
+    let err_event = events
+        .iter()
+        .find(|e| {
+            matches!(
+                &e.ty,
+                chat_cli_v2::telemetry::core::EventType::MessageResponseError { .. }
+            )
+        })
+        .expect("expected messageResponseError for context overflow");
+    if let chat_cli_v2::telemetry::core::EventType::MessageResponseError { reason, .. } = &err_event.ty {
+        assert_eq!(reason.as_deref(), Some("ContextWindowOverflow"));
+    }
+
+    // recordUserTurnCompletion with Succeeded (compaction recovered)
+    let turn = events
+        .iter()
+        .find(|e| {
+            matches!(
+                &e.ty,
+                chat_cli_v2::telemetry::core::EventType::RecordUserTurnCompletion { .. }
+            )
+        })
+        .expect("expected recordUserTurnCompletion event");
+    if let chat_cli_v2::telemetry::core::EventType::RecordUserTurnCompletion { result, .. } = &turn.ty {
+        assert_eq!(*result, chat_cli_v2::telemetry::TelemetryResult::Succeeded);
+    }
+
+    // toolUseSuggested for the ls tool call
+    let tool_event = events
+        .iter()
+        .find(|e| matches!(&e.ty, chat_cli_v2::telemetry::core::EventType::ToolUseSuggested { .. }))
+        .expect("expected toolUseSuggested event");
+    if let chat_cli_v2::telemetry::core::EventType::ToolUseSuggested { tool_name, .. } = &tool_event.ty {
+        assert_eq!(tool_name.as_deref(), Some("ls"));
+    }
 }
 
 #[tokio::test]
@@ -1485,6 +1582,59 @@ async fn fs_read_in_cwd_does_not_require_permission() {
         "fs_read in CWD should not require permission, got: {:?}",
         captured.permission_requests
     );
+
+    // Verify telemetry events were emitted
+    let events = harness.get_captured_telemetry_events().await;
+
+    let add_chat_msgs: Vec<_> = events
+        .iter()
+        .filter(|e| matches!(&e.ty, chat_cli_v2::telemetry::core::EventType::ChatAddedMessage { .. }))
+        .collect();
+    assert_eq!(
+        add_chat_msgs.len(),
+        2,
+        "expected 2 addChatMessage events (tool use + text response)"
+    );
+
+    // All events should have app_type = "V2" (no client_info sent, but default is ACP — however
+    // the TUI sends client_info in initialize, so this depends on the test client)
+    for event in &events {
+        assert!(event.app_type.is_some(), "app_type should be set on all events");
+    }
+
+    let tool_use_events: Vec<_> = events
+        .iter()
+        .filter(|e| matches!(&e.ty, chat_cli_v2::telemetry::core::EventType::ToolUseSuggested { .. }))
+        .collect();
+    assert_eq!(tool_use_events.len(), 1, "expected 1 toolUseSuggested event");
+    if let chat_cli_v2::telemetry::core::EventType::ToolUseSuggested {
+        tool_name,
+        is_accepted,
+        is_success,
+        ..
+    } = &tool_use_events[0].ty
+    {
+        assert_eq!(tool_name.as_deref(), Some("read"));
+        assert!(is_accepted, "tool should be accepted");
+        assert_eq!(*is_success, Some(true), "tool should succeed");
+    }
+
+    let turn_completions: Vec<_> = events
+        .iter()
+        .filter(|e| {
+            matches!(
+                &e.ty,
+                chat_cli_v2::telemetry::core::EventType::RecordUserTurnCompletion { .. }
+            )
+        })
+        .collect();
+    assert_eq!(turn_completions.len(), 1, "expected 1 recordUserTurnCompletion event");
+    if let chat_cli_v2::telemetry::core::EventType::RecordUserTurnCompletion { result, args, .. } =
+        &turn_completions[0].ty
+    {
+        assert_eq!(*result, chat_cli_v2::telemetry::TelemetryResult::Succeeded);
+        assert!(args.reason.is_none(), "successful turn should have no reason");
+    }
 }
 
 #[tokio::test]

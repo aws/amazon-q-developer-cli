@@ -47,6 +47,7 @@ use crate::telemetry::definitions::types::{
     CodewhispererterminalToolsPerMcpServer,
     CodewhispererterminalUserInputId,
     CodewhispererterminalUtteranceId,
+    KirocliAppType,
 };
 
 /// A serializable telemetry event that can be sent or queued.
@@ -57,6 +58,9 @@ pub struct Event {
     pub credential_start_url: Option<String>,
     pub sso_region: Option<String>,
     pub client_application: Option<String>,
+    pub app_type: Option<String>,
+    pub acp_client_name: Option<String>,
+    pub acp_client_version: Option<String>,
     #[serde(flatten)]
     pub ty: EventType,
 }
@@ -69,6 +73,9 @@ impl Event {
             credential_start_url: None,
             sso_region: None,
             client_application: None,
+            app_type: None,
+            acp_client_name: None,
+            acp_client_version: None,
         }
     }
 
@@ -85,6 +92,12 @@ impl Event {
     }
 
     pub fn into_metric_datum(self) -> Option<MetricDatum> {
+        let app_type_enum = self.app_type.as_deref().and_then(|s| match s {
+            "V1" => Some(KirocliAppType::V1),
+            "V2" => Some(KirocliAppType::V2),
+            "ACP" => Some(KirocliAppType::Acp),
+            _ => None,
+        });
         match self.ty {
             EventType::UserLoggedIn {} => Some(
                 CodewhispererterminalUserLoggedIn {
@@ -224,6 +237,9 @@ impl Event {
                             .into(),
                     ),
                     codewhispererterminal_client_application: self.client_application.map(Into::into),
+                    kirocli_app_type: app_type_enum.clone(),
+                    kirocli_acp_client_name: self.acp_client_name.map(Into::into),
+                    kirocli_acp_client_version: self.acp_client_version.map(Into::into),
                 }
                 .into_metric_datum(),
             ),
@@ -292,6 +308,9 @@ impl Event {
                     ),
                     codewhispererterminal_is_subagent: Some(is_subagent.into()),
                     codewhispererterminal_parent_tool_use_id: parent_tool_use_id.map(Into::into),
+                    kirocli_app_type: app_type_enum.clone(),
+                    kirocli_acp_client_name: self.acp_client_name.map(Into::into),
+                    kirocli_acp_client_version: self.acp_client_version.map(Into::into),
                 }
                 .into_metric_datum(),
             ),
@@ -377,6 +396,9 @@ impl Event {
                     codewhispererterminal_client_application: self.client_application.map(Into::into),
                     codewhispererterminal_aws_service_name: aws_service_name.map(Into::into),
                     codewhispererterminal_aws_operation_name: aws_operation_name.map(Into::into),
+                    kirocli_app_type: app_type_enum.clone(),
+                    kirocli_acp_client_name: self.acp_client_name.map(Into::into),
+                    kirocli_acp_client_version: self.acp_client_version.map(Into::into),
                 }
                 .into_metric_datum(),
             ),
@@ -516,6 +538,9 @@ impl Event {
                     request_id: request_id.map(Into::into),
                     codewhispererterminal_utterance_id: message_id.map(Into::into),
                     codewhispererterminal_client_application: self.client_application.map(Into::into),
+                    kirocli_app_type: app_type_enum,
+                    kirocli_acp_client_name: self.acp_client_name.map(Into::into),
+                    kirocli_acp_client_version: self.acp_client_version.map(Into::into),
                 }
                 .into_metric_datum(),
             ),

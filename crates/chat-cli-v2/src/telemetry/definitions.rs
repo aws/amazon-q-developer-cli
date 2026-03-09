@@ -44,6 +44,9 @@ mod tests {
             codewhispererterminal_assistant_response_length: Some(20.into()),
             codewhispererterminal_chat_message_meta_tags: Some([MessageMetaTag::Compact.to_string()].join(",").into()),
             codewhispererterminal_client_application: None,
+            kirocli_app_type: None,
+            kirocli_acp_client_name: None,
+            kirocli_acp_client_version: None,
         });
 
         let s = serde_json::to_string_pretty(&metric_datum_init).unwrap();

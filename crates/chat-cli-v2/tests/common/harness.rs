@@ -167,6 +167,7 @@ impl AcpTestHarness {
             .stdout(std::process::Stdio::piped())
             .stderr(std::process::Stdio::piped())
             .env("KIRO_TEST_MODE", "1")
+            .env("HOME", &paths.home_dir)
             .env("KIRO_TEST_SESSIONS_DIR", &paths.sessions_dir)
             .env("KIRO_TEST_AGENTS_DIR", &paths.agents_dir)
             .env("KIRO_TEST_SETTINGS_PATH", &paths.settings_path)
@@ -273,6 +274,14 @@ impl AcpTestHarness {
             .await
         {
             TestResponse::GetCapturedRequests { requests } => requests,
+            other => panic!("unexpected response: {:?}", other),
+        }
+    }
+
+    /// Get captured telemetry events (drains the capture buffer).
+    pub async fn get_captured_telemetry_events(&mut self) -> Vec<chat_cli_v2::telemetry::core::Event> {
+        match self.send_ipc_command(TestCommand::GetCapturedTelemetryEvents).await {
+            TestResponse::GetCapturedTelemetryEvents { events } => events,
             other => panic!("unexpected response: {:?}", other),
         }
     }

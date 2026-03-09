@@ -40,7 +40,10 @@ use crate::agent::acp::acp_agent::{
     AcpSessionHandle,
 };
 use crate::agent::acp::mcp_conversion::convert_mcp_server;
-use crate::agent::ipc_server::IpcServer;
+use crate::agent::ipc_server::{
+    IpcServer,
+    TelemetryEventStore,
+};
 use crate::api_client::{
     ApiClient,
     MockResponseRegistryHandle,
@@ -51,6 +54,7 @@ use crate::cli::chat::legacy::model::{
 };
 use crate::database::settings::Setting;
 use crate::os::Os;
+use crate::util::consts::env_var::KIRO_TEST_MODE;
 
 /// Metadata about an available agent configuration.
 #[derive(Debug, Clone, serde::Serialize)]
@@ -132,14 +136,15 @@ impl SessionManagerBuilder {
             };
 
             // In test mode, spawn IpcServer and MockResponseRegistry
-            let mock_registry = if std::env::var("KIRO_TEST_MODE").is_ok() {
+            let (mock_registry, telemetry_event_store) = if std::env::var(KIRO_TEST_MODE).is_ok() {
                 let registry = MockResponseRegistryHandle::spawn();
-                if let Err(e) = IpcServer::spawn(registry.clone()) {
+                let capture = TelemetryEventStore::default();
+                if let Err(e) = IpcServer::spawn(registry.clone(), capture.clone()) {
                     error!("Failed to spawn IPC server: {}", e);
                 }
-                Some(registry)
+                (Some(registry), Some(capture))
             } else {
-                None
+                (None, None)
             };
 
             let mut session_manager = SessionManager::new(
@@ -150,6 +155,7 @@ impl SessionManagerBuilder {
                 session_manager_handle_clone,
                 mock_registry,
                 trust_all_tools,
+                telemetry_event_store,
             );
 
             loop {
@@ -197,6 +203,11 @@ pub struct SessionManager {
     code_intelligence: Option<Arc<RwLock<CodeIntelligence>>>,
     /// When true, all tool permission checks are bypassed for new sessions
     trust_all_tools: bool,
+    /// ACP client identity from InitializeRequest, propagated to all sessions
+    acp_client_info: Option<crate::telemetry::observer::AcpClientInfo>,
+    /// Telemetry event store for recording events in test scenarios.
+    /// Shared with the IPC server so tests can drain and assert on events. `None` in production.
+    telemetry_event_store: Option<TelemetryEventStore>,
 }
 
 impl SessionManager {
@@ -204,6 +215,7 @@ impl SessionManager {
         Default::default()
     }
 
+    #[allow(clippy::too_many_arguments)]
     fn new(
         agent_configs: Vec<LoadedAgentConfig>,
         os: Os,
@@ -212,6 +224,7 @@ impl SessionManager {
         session_manager_handle: SessionManagerHandle,
         mock_registry: Option<MockResponseRegistryHandle>,
         trust_all_tools: bool,
+        telemetry_event_store: Option<TelemetryEventStore>,
     ) -> Self {
         Self {
             sessions: HashMap::new(),
@@ -225,6 +238,8 @@ impl SessionManager {
             next_model_id: None,
             code_intelligence: None,
             trust_all_tools,
+            acp_client_info: None,
+            telemetry_event_store,
         }
     }
 
@@ -347,7 +362,9 @@ impl SessionManager {
                     .session_tx(self.session_manager_handle.clone())
                     .set_as_subagent(config.is_subagent)
                     .code_intelligence(code_intel)
-                    .trust_all_tools(self.trust_all_tools);
+                    .trust_all_tools(self.trust_all_tools)
+                    .acp_client_info(self.acp_client_info.clone())
+                    .telemetry_event_store(self.telemetry_event_store.clone());
 
                 // Pass client connection to session (required)
                 if let Some(cx) = connection_cx {
@@ -490,6 +507,14 @@ impl SessionManager {
                 self.next_model_id = Some(next_model_id);
                 _ = resp_sender.send(Ok(()));
             },
+            SessionManagerRequestData::Initialize {
+                name,
+                version,
+                resp_sender,
+            } => {
+                self.acp_client_info = Some(crate::telemetry::observer::AcpClientInfo::new(name, version));
+                _ = resp_sender.send(Ok(()));
+            },
         }
     }
 }
@@ -526,6 +551,11 @@ pub(crate) enum SessionManagerRequestData {
     },
     SetNextModelId {
         next_model_id: String,
+        resp_sender: oneshot::Sender<Result<(), sacp::Error>>,
+    },
+    Initialize {
+        name: String,
+        version: String,
         resp_sender: oneshot::Sender<Result<(), sacp::Error>>,
     },
 }
@@ -640,5 +670,22 @@ impl SessionManagerHandle {
             .map_err(|_e| sacp::util::internal_error("Failed to send set_next_model_id request"))?;
         rx.await
             .map_err(|_e| sacp::util::internal_error("Failed to receive set_next_model_id response"))?
+    }
+
+    pub async fn initialize(&self, name: String, version: String) -> Result<(), sacp::Error> {
+        let (resp_sender, rx) = oneshot::channel();
+        self.tx
+            .send(SessionManagerRequest {
+                session_id: SessionId::new(String::new()), // session-agnostic request; empty ID is intentional
+                data: SessionManagerRequestData::Initialize {
+                    name,
+                    version,
+                    resp_sender,
+                },
+            })
+            .await
+            .map_err(|_e| sacp::util::internal_error("Failed to send initialize request"))?;
+        rx.await
+            .map_err(|_e| sacp::util::internal_error("Failed to receive initialize response"))?
     }
 }

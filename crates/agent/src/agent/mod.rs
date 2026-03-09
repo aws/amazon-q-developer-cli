@@ -701,9 +701,7 @@ impl Agent {
                     let evt = res;
                     if let Err(e) = self.handle_agent_loop_event(evt).await {
                         error!(?e, "failed to handle agent loop event");
-                        self.agent_event_buf
-                            .push(AgentEvent::Stop(AgentStopReason::Error(e.clone())));
-                        self.set_active_state(ActiveState::Errored(e)).await;
+                        self.enter_error_state(e).await;
                     }
                 },
 
@@ -805,6 +803,16 @@ impl Agent {
         self.agent_loop
             .as_mut()
             .ok_or(AgentError::Custom("Agent is not executing a turn".to_string()))
+    }
+
+    /// Transition to error state, emit `Stop(Error)`, then end the current turn
+    /// so that `EndTurn` is always emitted as the final event.
+    async fn enter_error_state(&mut self, err: AgentError) {
+        self.set_active_state(ActiveState::Errored(err.clone())).await;
+        self.agent_event_buf.push(AgentEvent::Stop(AgentStopReason::Error(err)));
+        if let Err(e) = self.end_current_turn().await {
+            warn!(?e, "failed to end current turn after entering error state");
+        }
     }
 
     /// Ends the current user turn by cancelling [Self::agent_loop] if it exists.
@@ -1455,10 +1463,7 @@ impl Agent {
                     if let Some(retry) = compaction_retry {
                         if retry.is_prompt_truncated {
                             error!("compaction retry failed after truncation, going to error state");
-                            // Already truncated and still overflow - fail
-                            self.set_active_state(ActiveState::Errored(err.clone().into())).await;
-                            self.agent_event_buf
-                                .push(AgentEvent::Stop(AgentStopReason::Error(err.clone().into())));
+                            self.enter_error_state(err.clone().into()).await;
                         } else {
                             // Compaction succeeded but retry overflowed - truncate and retry
                             warn!("compaction succeeded, but the retry overflowed - attempting again with truncation");
@@ -1497,10 +1502,8 @@ impl Agent {
                 | StreamErrorKind::ServiceFailure
                 | StreamErrorKind::ContextWindowOverflow
                 | StreamErrorKind::Throttling
-                | StreamErrorKind::Other(_) => {
-                    self.set_active_state(ActiveState::Errored(err.clone().into())).await;
-                    self.agent_event_buf
-                        .push(AgentEvent::Stop(AgentStopReason::Error(err.clone().into())));
+                | StreamErrorKind::Other { .. } => {
+                    self.enter_error_state(err.clone().into()).await;
                 },
             },
         }
@@ -1746,9 +1749,7 @@ impl Agent {
                             .push(AgentEvent::Compaction(CompactionEvent::Failed {
                                 error: err.to_string(),
                             }));
-                        self.set_active_state(ActiveState::Errored(err.clone().into())).await;
-                        self.agent_event_buf
-                            .push(AgentEvent::Stop(AgentStopReason::Error(err.into())));
+                        self.enter_error_state(err.into()).await;
                     }
                 },
             }
@@ -1816,6 +1817,7 @@ impl Agent {
             }
             self.agent_event_buf
                 .push(AgentEvent::Internal(InternalEvent::ToolPermissionEvalResult {
+                    tool_use_id: block.tool_use_id.clone(),
                     tool: tool.clone(),
                     result,
                 }));

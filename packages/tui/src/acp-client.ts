@@ -16,6 +16,10 @@ import type {
 } from './types/commands';
 import { v4 as uuidv4 } from 'uuid';
 
+import packageJson from '../package.json';
+
+const TUI_VERSION: string = packageJson.version;
+
 export type AcpSessionUpdate = acp.SessionNotification['update'];
 
 /** Custom extension method names (without leading underscore - SDK strips it) */
@@ -158,6 +162,10 @@ export class AcpClient implements acp.Client, SessionClient {
     const initResult = await this.connection.initialize({
       protocolVersion: acp.PROTOCOL_VERSION,
       clientCapabilities: {},
+      clientInfo: {
+        name: 'kiro-tui',
+        version: TUI_VERSION,
+      },
     });
 
     logger.debug(

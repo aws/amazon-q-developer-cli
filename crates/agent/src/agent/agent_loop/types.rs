@@ -140,7 +140,12 @@ pub enum StreamErrorKind {
     /// The stream was closed to due being interrupted (for example, on ctrl+c).
     Interrupted,
     /// Catch-all for errors not modeled in [StreamErrorKind].
-    Other(String),
+    Other {
+        /// Service reason code, if available (e.g. from `ConverseStreamError::reason_code()`).
+        reason_code: Option<String>,
+        /// Human-readable error description.
+        message: String,
+    },
 }
 
 impl std::fmt::Display for StreamErrorKind {
@@ -156,7 +161,7 @@ impl std::fmt::Display for StreamErrorKind {
             )
             .into(),
             StreamErrorKind::Interrupted => "The stream was interrupted".into(),
-            StreamErrorKind::Other(msg) => msg.as_str().into(),
+            StreamErrorKind::Other { message, .. } => message.as_str().into(),
         };
         write!(f, "{msg}")
     }

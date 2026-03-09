@@ -1271,28 +1271,11 @@ fn classify_error_kind<R>(
         return ConverseStreamErrorKind::MonthlyLimitReached;
     }
 
-    // For dispatch failures (like auth errors), include the full error chain
-    // to provide better error messages to the user
-    let reason_code = match sdk_error {
-        error::SdkError::DispatchFailure(e) => {
-            // Build a more descriptive error message from the error chain
-            let mut msg = String::from("dispatch failure");
-            if let Some(connector_error) = e.as_connector_error() {
-                use std::error::Error;
-                msg.push_str(&format!(": {}", connector_error));
-                // Walk the error chain to find the root cause
-                let mut source = connector_error.source();
-                while let Some(err) = source {
-                    msg.push_str(&format!(" - {}", err));
-                    source = err.source();
-                }
-            }
-            msg
-        },
-        _ => error::sdk_error_code(sdk_error),
-    };
-
-    ConverseStreamErrorKind::Unknown { reason_code }
+    ConverseStreamErrorKind::Unknown {
+        // do not change - we currently use sdk_error_code for mapping from an arbitrary sdk error
+        // to a reason code.
+        reason_code: error::sdk_error_code(sdk_error),
+    }
 }
 
 fn timeout_config(database: &Database) -> TimeoutConfig {

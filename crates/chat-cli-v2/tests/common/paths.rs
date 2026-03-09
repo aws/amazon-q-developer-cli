@@ -7,6 +7,7 @@ use std::path::PathBuf;
 pub struct TestPaths {
     pub base_dir: PathBuf,
     pub cwd: PathBuf,
+    pub home_dir: PathBuf,
     pub sessions_dir: PathBuf,
     pub agents_dir: PathBuf,
     pub settings_path: PathBuf,
@@ -24,10 +25,12 @@ pub fn create_test_dir(test_name: &str) -> TestPaths {
     fs::create_dir_all(&base_dir).expect("failed to create test dir");
 
     let cwd = base_dir.join("cwd");
+    let home_dir = cwd.join("home");
     let sessions_dir = base_dir.join("sessions");
     let agents_dir = base_dir.join("agents");
 
     fs::create_dir_all(&cwd).expect("failed to create test cwd");
+    fs::create_dir_all(&home_dir).expect("failed to create test home dir");
     fs::create_dir_all(&sessions_dir).expect("failed to create test sessions dir");
     fs::create_dir_all(&agents_dir).expect("failed to create test agents dir");
 
@@ -42,6 +45,7 @@ pub fn create_test_dir(test_name: &str) -> TestPaths {
 
     TestPaths {
         cwd: cwd.clone(),
+        home_dir,
         sessions_dir,
         agents_dir,
         settings_path,

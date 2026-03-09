@@ -76,6 +76,7 @@ use crate::api_client::{
 };
 use crate::cli::chat::legacy::model::ModelInfo;
 use crate::cli::chat::legacy::util::serde_value_to_document;
+use crate::telemetry::ReasonCode;
 
 /// A [Model] implementation using the RTS backend.
 #[derive(Debug, Clone)]
@@ -169,10 +170,16 @@ impl RtsModel {
                 error!(?err, ?request_duration, "failed to send rts request");
                 let kind = match err.kind {
                     ConverseStreamErrorKind::Throttling => StreamErrorKind::Throttling,
-                    ConverseStreamErrorKind::MonthlyLimitReached => StreamErrorKind::Other(err.to_string()),
+                    ConverseStreamErrorKind::MonthlyLimitReached => StreamErrorKind::Other {
+                        reason_code: Some(err.reason_code()),
+                        message: err.to_string(),
+                    },
                     ConverseStreamErrorKind::ContextWindowOverflow => StreamErrorKind::ContextWindowOverflow,
                     ConverseStreamErrorKind::ModelOverloadedError => StreamErrorKind::Throttling,
-                    ConverseStreamErrorKind::Unknown { .. } => StreamErrorKind::Other(err.to_string()),
+                    ConverseStreamErrorKind::Unknown { .. } => StreamErrorKind::Other {
+                        reason_code: Some(err.reason_code()),
+                        message: err.to_string(),
+                    },
                 };
                 let request_id = err.request_id.clone();
                 tx.send(StreamResult::Err(
@@ -750,13 +757,15 @@ impl ResponseParser {
     }
 
     fn recv_error_to_stream_error(&self, err: RecvError) -> StreamError {
+        let reason_code = err.reason_code();
         match err {
             RecvError::Timeout { source, duration } => StreamError::new(StreamErrorKind::StreamTimeout { duration })
                 .set_original_request_id(self.request_id.clone())
                 .with_source(Arc::new(source)),
-            RecvError::Other { source } => StreamError::new(StreamErrorKind::Other(format!(
-                "An unexpected error occurred during the response stream: {source:?}"
-            )))
+            RecvError::Other { source } => StreamError::new(StreamErrorKind::Other {
+                reason_code: Some(reason_code),
+                message: format!("An unexpected error occurred during the response stream: {source:?}"),
+            })
             .set_original_request_id(self.request_id.clone())
             .with_source(Arc::new(source)),
         }
@@ -800,6 +809,15 @@ impl ResponseParser {
 enum RecvError {
     Timeout { source: ApiClientError, duration: Duration },
     Other { source: ApiClientError },
+}
+
+impl RecvError {
+    fn reason_code(&self) -> String {
+        match self {
+            Self::Timeout { .. } => "StreamTimeout".to_string(),
+            Self::Other { .. } => "RecvErrorUnknown".to_string(),
+        }
+    }
 }
 
 #[cfg(test)]

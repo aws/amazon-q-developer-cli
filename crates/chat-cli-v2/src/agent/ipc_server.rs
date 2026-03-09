@@ -22,6 +22,30 @@ use tracing::{
 use crate::api_client::MockResponseRegistryHandle;
 use crate::api_client::model::ConversationState;
 use crate::api_client::send_message_output::MockStreamItem;
+use crate::telemetry::core::Event;
+
+/// Shared store for capturing telemetry events in test scenarios.
+///
+/// The observer's forwarding task pushes events here; the IPC test server
+/// and test harness drain them for assertion.
+#[derive(Clone, Debug, Default)]
+pub struct TelemetryEventStore {
+    events: std::sync::Arc<tokio::sync::Mutex<Vec<Event>>>,
+}
+
+impl TelemetryEventStore {
+    pub async fn push(&self, event: Event) {
+        self.events.lock().await.push(event);
+    }
+
+    pub async fn get_all(&self) -> Vec<Event> {
+        self.events.lock().await.clone()
+    }
+
+    pub async fn drain(&self) -> Vec<Event> {
+        std::mem::take(&mut *self.events.lock().await)
+    }
+}
 
 /// Test command from external test process
 #[derive(Debug, Serialize, Deserialize)]
@@ -37,6 +61,9 @@ pub enum TestCommand {
     /// Get captured LLM requests for a session.
     #[serde(rename = "GET_CAPTURED_REQUESTS")]
     GetCapturedRequests { session_id: String },
+    /// Get captured telemetry events (all sessions).
+    #[serde(rename = "GET_CAPTURED_TELEMETRY_EVENTS")]
+    GetCapturedTelemetryEvents,
 }
 
 /// Test response to external test process
@@ -47,6 +74,8 @@ pub enum TestResponse {
     PushSendMessageResponse,
     #[serde(rename = "GET_CAPTURED_REQUESTS")]
     GetCapturedRequests { requests: Vec<ConversationState> },
+    #[serde(rename = "GET_CAPTURED_TELEMETRY_EVENTS")]
+    GetCapturedTelemetryEvents { events: Vec<Event> },
     #[serde(rename = "ERROR")]
     Error { error: String },
 }
@@ -80,12 +109,12 @@ pub struct IpcServer;
 
 impl IpcServer {
     /// Spawn the IPC server, routing mock responses to the registry.
-    pub fn spawn(registry: MockResponseRegistryHandle) -> Result<()> {
+    pub fn spawn(registry: MockResponseRegistryHandle, telemetry_event_store: TelemetryEventStore) -> Result<()> {
         let socket_path = std::env::var("KIRO_TEST_CHAT_IPC_SOCKET_PATH")
             .map_err(|_e| eyre::eyre!("KIRO_TEST_CHAT_IPC_SOCKET_PATH not set"))?;
 
         tokio::spawn(async move {
-            if let Err(e) = Self::run(socket_path, registry).await {
+            if let Err(e) = Self::run(socket_path, registry, telemetry_event_store).await {
                 error!("IPC server error: {}", e);
             }
         });
@@ -93,7 +122,11 @@ impl IpcServer {
         Ok(())
     }
 
-    async fn run(socket_path: String, registry: MockResponseRegistryHandle) -> Result<()> {
+    async fn run(
+        socket_path: String,
+        registry: MockResponseRegistryHandle,
+        telemetry_event_store: TelemetryEventStore,
+    ) -> Result<()> {
         let stream = UnixStream::connect(&socket_path).await?;
         info!("IPC server connected to {}", socket_path);
 
@@ -118,6 +151,10 @@ impl IpcServer {
                         TestCommand::GetCapturedRequests { session_id } => {
                             let requests = registry.get_captured_requests(&session_id).await;
                             TestResponse::GetCapturedRequests { requests }
+                        },
+                        TestCommand::GetCapturedTelemetryEvents => {
+                            let events = telemetry_event_store.get_all().await;
+                            TestResponse::GetCapturedTelemetryEvents { events }
                         },
                     };
                     TestMessageResponse {

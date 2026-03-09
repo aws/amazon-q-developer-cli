@@ -3,6 +3,7 @@ pub mod core;
 pub mod definitions;
 pub mod endpoint;
 mod install_method;
+pub mod observer;
 
 use core::{
     AgentConfigInitArgs,
@@ -259,6 +260,11 @@ impl TelemetryThread {
 
     pub fn send_user_logged_in(&self) -> Result<(), TelemetryError> {
         Ok(self.tx.send(Event::new(EventType::UserLoggedIn {}))?)
+    }
+
+    /// Send a pre-built telemetry event directly (used by TelemetryObserver).
+    pub fn send_event(&self, event: Event) -> Result<(), TelemetryError> {
+        Ok(self.tx.send(event)?)
     }
 
     pub fn send_auth_failed(
@@ -548,7 +554,7 @@ impl TelemetryThread {
     }
 }
 
-async fn set_event_metadata(database: &Database, event: &mut Event) {
+pub(crate) async fn set_event_metadata(database: &Database, event: &mut Event) {
     let (start_url, region) = get_start_url_and_region(database).await;
     if let Some(start_url) = start_url {
         event.set_start_url(start_url);

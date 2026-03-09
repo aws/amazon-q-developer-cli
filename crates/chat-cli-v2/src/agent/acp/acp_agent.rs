@@ -162,6 +162,12 @@ use crate::cli::chat::legacy::model::{
     get_available_models,
 };
 use crate::os::Os;
+use crate::telemetry::observer::{
+    AcpClientInfo,
+    TelemetryContext,
+    TelemetryObserver,
+    TelemetryObserverHandle,
+};
 use crate::util::paths::PathResolver;
 
 /// Messages that can be sent to an [`AcpSession`] actor via [`AcpSessionHandle`].
@@ -505,6 +511,8 @@ pub struct AcpSessionConfig {
     pub mcp_servers: Vec<sacp::schema::McpServer>,
     /// When true, all tool permission checks are bypassed
     pub trust_all_tools: bool,
+    /// ACP client identity from InitializeRequest
+    pub acp_client_info: Option<AcpClientInfo>,
 }
 
 impl AcpSessionConfig {
@@ -519,6 +527,7 @@ impl AcpSessionConfig {
             model_id: None,
             mcp_servers: Vec::new(),
             trust_all_tools: false,
+            acp_client_info: None,
         }
     }
 
@@ -570,6 +579,9 @@ pub struct AcpSessionBuilder<'a> {
     agent_configs: Vec<LoadedAgentConfig>,
     current_agent_name: Option<String>,
     trust_all_tools: bool,
+    acp_client_info: Option<AcpClientInfo>,
+    /// Telemetry event store for recording events in test scenarios. `None` in production.
+    telemetry_event_store: Option<crate::agent::ipc_server::TelemetryEventStore>,
 }
 
 impl<'a> AcpSessionBuilder<'a> {
@@ -663,6 +675,16 @@ impl<'a> AcpSessionBuilder<'a> {
         self
     }
 
+    pub fn acp_client_info(mut self, info: Option<AcpClientInfo>) -> Self {
+        self.acp_client_info = info;
+        self
+    }
+
+    pub fn telemetry_event_store(mut self, store: Option<crate::agent::ipc_server::TelemetryEventStore>) -> Self {
+        self.telemetry_event_store = store;
+        self
+    }
+
     /// Spawns a new ACP session actor and returns a handle to communicate with it.
     ///
     /// The returned `ready_rx` resolves after historical notifications have been emitted
@@ -724,6 +746,7 @@ struct AcpSession {
     compaction_summary: Option<String>,
     os: Os,
     cwd: PathBuf,
+    telemetry_observer: TelemetryObserverHandle,
 }
 
 impl AcpSession {
@@ -855,6 +878,15 @@ impl AcpSession {
 
         let agent = agent.spawn();
 
+        // Create telemetry observer actor
+        let telemetry_context = TelemetryContext::new(Arc::clone(&rts_state), builder.acp_client_info.clone());
+        let telemetry_observer = TelemetryObserver::spawn(
+            telemetry_context,
+            os.telemetry.clone(),
+            os.database.clone(),
+            builder.telemetry_event_store,
+        );
+
         Ok(Self {
             session_id: SessionId::new(session_id_str.clone()),
             session_id_str,
@@ -877,6 +909,7 @@ impl AcpSession {
             compaction_summary: None,
             os,
             cwd,
+            telemetry_observer,
         })
     }
 
@@ -1297,6 +1330,9 @@ impl AcpSession {
     }
 
     async fn handle_agent_event(&mut self, event: AgentEvent) {
+        self.telemetry_observer
+            .send_event(self.session_id_str.clone(), event.clone());
+
         let session_db = Arc::clone(&self.session_db);
         let rts_state = Arc::clone(&self.rts_state);
 
@@ -2263,23 +2299,31 @@ pub async fn execute(os: &mut Os, args: agent::types::AcpSpawnArgs) -> eyre::Res
     AgentToClient::builder()
         .name("kiro-cli-agent")
         .on_receive_request(
-            // TODO: use the InitializeRequest param passed in
-            async move |_request: InitializeRequest, request_cx, _cx| {
-                request_cx.respond(
-                    InitializeResponse::new(ProtocolVersion::LATEST)
-                        .agent_capabilities(
-                            AgentCapabilities::default()
-                                .load_session(true)
-                                .prompt_capabilities(PromptCapabilities::default().image(true)),
-                        )
-                        .agent_info(
-                            Implementation::new("Kiro Agent", env!("CARGO_PKG_VERSION").to_string())
-                                .title("Kiro Agent"),
-                        )
-                        .auth_methods(vec![AuthMethod::new("kiro-login", "Kiro Login").description(
-                            "Run 'kiro-cli login' in terminal to authenticate. See https://kiro.dev/docs/cli/authentication/",
-                        )]),
-                )
+            {
+                let session_tx = session_manager_handle.clone();
+                async move |request: InitializeRequest, request_cx, _cx| {
+                    // Store client info for telemetry (V2 vs ACP distinction)
+                    if let Some(info) = request.client_info {
+                        let _ = session_tx
+                            .initialize(info.name, info.version)
+                            .await;
+                    }
+                    request_cx.respond(
+                        InitializeResponse::new(ProtocolVersion::LATEST)
+                            .agent_capabilities(
+                                AgentCapabilities::default()
+                                    .load_session(true)
+                                    .prompt_capabilities(PromptCapabilities::default().image(true)),
+                            )
+                            .agent_info(
+                                Implementation::new(crate::constants::AGENT_NAME, env!("CARGO_PKG_VERSION").to_string())
+                                    .title(crate::constants::AGENT_NAME),
+                            )
+                            .auth_methods(vec![AuthMethod::new("kiro-login", "Kiro Login").description(
+                                format!("Run '{} login' in terminal to authenticate. See https://kiro.dev/docs/cli/authentication/", crate::constants::CLI_NAME),
+                            )]),
+                    )
+                }
             },
             sacp::on_receive_request!(),
         )

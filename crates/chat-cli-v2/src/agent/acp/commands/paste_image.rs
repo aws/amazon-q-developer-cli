@@ -9,10 +9,12 @@ use image::{
 };
 use serde_json::json;
 
+use crate::util::consts::env_var::KIRO_TEST_MODE;
+
 pub async fn execute() -> CommandResult {
     // In test mode, return deterministic mock image data instead of reading the
     // real system clipboard (which is non-deterministic in CI / E2E tests).
-    if std::env::var("KIRO_TEST_MODE").is_ok() {
+    if std::env::var(KIRO_TEST_MODE).is_ok() {
         return mock_paste_image();
     }
 

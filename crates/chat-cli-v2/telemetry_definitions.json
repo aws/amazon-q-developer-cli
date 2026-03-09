@@ -328,6 +328,22 @@
       "name": "codewhispererterminal_parentToolUseId",
       "type": "string",
       "description": "Tool use id that spawns this subagent"
+    },
+    {
+      "name": "kirocli_appType",
+      "type": "string",
+      "allowedValues": ["V1", "V2", "ACP"],
+      "description": "The application type emitting the telemetry event. V1 = legacy chat_cli, V2 = embedded TUI via ACP, ACP = external ACP client."
+    },
+    {
+      "name": "kirocli_acpClientName",
+      "type": "string",
+      "description": "The name of the ACP client as reported in the InitializeRequest client_info."
+    },
+    {
+      "name": "kirocli_acpClientVersion",
+      "type": "string",
+      "description": "The version of the ACP client as reported in the InitializeRequest client_info."
     }
   ],
   "metrics": [
@@ -364,7 +380,10 @@
         { "type": "codewhispererterminal_toolName", "required": false },
         { "type": "codewhispererterminal_assistantResponseLength", "required": false },
         { "type": "codewhispererterminal_chatMessageMetaTags", "required": false },
-        { "type": "codewhispererterminal_clientApplication" }
+        { "type": "codewhispererterminal_clientApplication" },
+        { "type": "kirocli_appType", "required": false },
+        { "type": "kirocli_acpClientName", "required": false },
+        { "type": "kirocli_acpClientVersion", "required": false }
       ]
     },
     {
@@ -389,7 +408,10 @@
         { "type": "codewhispererterminal_followUpCount" },
         { "type": "codewhispererterminal_chatMessageMetaTags", "required": false },
         { "type": "codewhispererterminal_isSubagent", "required": false },
-        { "type": "codewhispererterminal_parentToolUseId", "required": false }
+        { "type": "codewhispererterminal_parentToolUseId", "required": false },
+        { "type": "kirocli_appType", "required": false },
+        { "type": "kirocli_acpClientName", "required": false },
+        { "type": "kirocli_acpClientVersion", "required": false }
       ]
     },
     {
@@ -494,7 +516,10 @@
         { "type": "codewhispererterminal_isToolUseTrusted", "required": false },
         { "type": "codewhispererterminal_clientApplication" },
         { "type": "codewhispererterminal_AwsServiceName", "required": false },
-        { "type": "codewhispererterminal_AwsOperationName", "required": false }
+        { "type": "codewhispererterminal_AwsOperationName", "required": false },
+        { "type": "kirocli_appType", "required": false },
+        { "type": "kirocli_acpClientName", "required": false },
+        { "type": "kirocli_acpClientVersion", "required": false }
       ]
     },
     {
@@ -583,7 +608,10 @@
           { "type": "reason", "required": false },
           { "type": "reasonDesc", "required": false },
           { "type": "statusCode", "required": false },
-          { "type": "codewhispererterminal_clientApplication" }
+          { "type": "codewhispererterminal_clientApplication" },
+          { "type": "kirocli_appType", "required": false },
+          { "type": "kirocli_acpClientName", "required": false },
+          { "type": "kirocli_acpClientVersion", "required": false }
       ]
     },
     {

@@ -129,6 +129,9 @@ pub mod env_var {
         /// Flag for running integration tests
         CLI_IS_INTEG_TEST = "Q_CLI_IS_INTEG_TEST",
 
+        /// Test mode for ACP integration tests
+        KIRO_TEST_MODE = "KIRO_TEST_MODE",
+
         /// Amazon Q chat shell
         AMAZON_Q_CHAT_SHELL = "AMAZON_Q_CHAT_SHELL",
 

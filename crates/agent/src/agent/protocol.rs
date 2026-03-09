@@ -518,7 +518,11 @@ pub enum InternalEvent {
     /// The agent has changed state.
     StateChange { from: ExecutionState, to: ExecutionState },
     /// A tool use was requested by the model, and the permission was evaluated
-    ToolPermissionEvalResult { tool: Tool, result: PermissionEvalResult },
+    ToolPermissionEvalResult {
+        tool_use_id: String,
+        tool: Tool,
+        result: PermissionEvalResult,
+    },
     /// Events specific to tool and hook execution
     TaskExecutor(Box<TaskExecutorEvent>),
 }
