@@ -3,6 +3,7 @@ pub mod delay_interceptor;
 mod endpoints;
 pub mod error;
 pub mod error_utils;
+mod internal_redirect_interceptor;
 pub mod model;
 pub mod opt_out;
 pub mod profile;
@@ -73,6 +74,7 @@ use crate::api_client::send_message_output::{
     record_request,
     record_send_error,
 };
+use crate::api_client::internal_redirect_interceptor::InternalRedirectInterceptor;
 use crate::api_client::token_type_interceptor::TokenTypeInterceptor;
 use crate::auth::UnifiedBearerResolver;
 use crate::auth::external_idp::ExternalIdpToken;
@@ -518,6 +520,9 @@ impl RealApiClient {
             .map(|t| t.is_some())
             .unwrap_or(false);
 
+        // Detect Amazon-internal users by checking for the mwinit Midway auth tool.
+        let is_internal = crate::util::system_info::is_mwinit_available();
+
         let credentials = Credentials::new("xxx", "xxx", None, None, "xxx");
         let bearer_sdk_config = aws_config::defaults(behavior_version())
             .region(endpoint.region.clone())
@@ -564,6 +569,7 @@ impl RealApiClient {
                 .interceptor(UserAgentOverrideInterceptor::new())
                 .interceptor(DelayTrackingInterceptor::new())
                 .interceptor(TokenTypeInterceptor::new(is_external_idp))
+                .interceptor(InternalRedirectInterceptor::new(is_internal))
                 .bearer_token_resolver(UnifiedBearerResolver)
                 .app_name(app_name())
                 .endpoint_resolver(StaticEndpointResolver::new(endpoint.url().to_string()))

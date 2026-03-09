@@ -3,6 +3,7 @@ pub mod delay_interceptor;
 mod endpoints;
 pub mod error;
 pub mod error_utils;
+mod internal_redirect_interceptor;
 pub mod model;
 pub mod opt_out;
 pub mod profile;
@@ -59,6 +60,7 @@ use crate::api_client::model::{
 };
 use crate::api_client::opt_out::OptOutInterceptor;
 use crate::api_client::send_message_output::SendMessageOutput;
+use crate::api_client::internal_redirect_interceptor::InternalRedirectInterceptor;
 use crate::api_client::token_type_interceptor::TokenTypeInterceptor;
 use crate::auth::UnifiedBearerResolver;
 use crate::auth::external_idp::ExternalIdpToken;
@@ -164,6 +166,10 @@ impl ApiClient {
         // Check if using External IdP authentication
         let is_external_idp = ExternalIdpToken::load(database).await.is_ok_and(|t| t.is_some());
 
+        // Detect Amazon-internal users by checking for the mwinit Midway auth tool.
+        // Internal users are routed to KRS via RTS ALB using the redirect-for-internal header.
+        let is_internal = crate::util::system_info::is_mwinit_available();
+
         let credentials = Credentials::new("xxx", "xxx", None, None, "xxx");
         let bearer_sdk_config = aws_config::defaults(behavior_version())
             .region(endpoint.region.clone())
@@ -209,6 +215,7 @@ impl ApiClient {
                 .interceptor(UserAgentOverrideInterceptor::new())
                 .interceptor(DelayTrackingInterceptor::new())
                 .interceptor(TokenTypeInterceptor::new(is_external_idp))
+                .interceptor(InternalRedirectInterceptor::new(is_internal))
                 .bearer_token_resolver(UnifiedBearerResolver)
                 .app_name(app_name())
                 .endpoint_resolver(StaticEndpointResolver::new(endpoint.url().to_string()))
