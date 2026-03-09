@@ -12,6 +12,30 @@
     },
     {
       "type": "release",
+      "date": "2026-03-09",
+      "version": "1.27.2",
+      "title": "Version 1.27.2",
+      "changes": [
+        {
+          "type": "fixed",
+          "description": "Show agent names and queries in multi-subagent permission prompt"
+        },
+        {
+          "type": "fixed",
+          "description": "Fix agent loading to follow symlinks and deduplicate agent configs with the same name within a directory"
+        },
+        {
+          "type": "fixed",
+          "description": "Fixed knowledge search panic when snippet_length lands on a multi-byte UTF-8 character boundary"
+        },
+        {
+          "type": "fixed",
+          "description": "Prevent spurious agent conflict warnings when running from home directory"
+        }
+      ]
+    },
+    {
+      "type": "release",
       "date": "2026-03-05",
       "version": "1.27.1",
       "title": "Version 1.27.1",
