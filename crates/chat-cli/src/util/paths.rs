@@ -556,6 +556,15 @@ impl<'a> GlobalPaths<'a> {
         Ok(home_dir_from_env(self.env)?.join(".aws").join("sso").join("cache"))
     }
 
+    /// Path to CLI session storage directory.
+    /// Can be overridden via `KIRO_TEST_SESSIONS_DIR` env var for testing.
+    pub fn sessions_dir(&self) -> Result<PathBuf> {
+        if let Ok(test_dir) = self.env.get("KIRO_TEST_SESSIONS_DIR") {
+            return Ok(PathBuf::from(test_dir));
+        }
+        Ok(home_dir_from_env(self.env)?.join(".kiro").join("sessions").join("cli"))
+    }
+
     /// Static method for database path that doesn't require Os (to avoid circular dependency)
     pub fn database_path_static() -> Result<PathBuf> {
         Ok(dirs::data_local_dir()

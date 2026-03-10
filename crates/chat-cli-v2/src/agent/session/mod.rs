@@ -172,8 +172,7 @@ fn log_path(sessions_dir: &Path, session_id: &str) -> PathBuf {
     sessions_dir.join(format!("{}.jsonl", session_id))
 }
 
-#[allow(dead_code)]
-fn acquire_lock(sessions_dir: &Path, session_id: &str) -> Result<SessionLockGuard, SessionError> {
+pub fn acquire_lock(sessions_dir: &Path, session_id: &str) -> Result<SessionLockGuard, SessionError> {
     acquire_lock_impl(&lock_path(sessions_dir, session_id), is_pid_alive, std::process::id())
 }
 

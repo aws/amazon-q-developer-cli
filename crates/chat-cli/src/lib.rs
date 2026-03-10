@@ -6,6 +6,7 @@ pub mod agent;
 pub mod api_client;
 pub mod auth;
 pub mod aws_common;
+pub mod cleanup;
 pub mod cli;
 pub mod constants;
 pub mod database;

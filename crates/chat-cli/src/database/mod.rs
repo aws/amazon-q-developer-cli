@@ -536,6 +536,30 @@ impl Database {
         Ok(())
     }
 
+    /// Delete conversations older than the specified timestamp (in milliseconds since epoch).
+    pub fn delete_conversations_older_than(&self, cutoff_ms: i64) -> Result<usize, DatabaseError> {
+        Ok(self
+            .pool
+            .get()?
+            .execute("DELETE FROM conversations_v2 WHERE updated_at < ?1", [cutoff_ms])?)
+    }
+
+    /// Insert a conversation with a specific timestamp. Test-only.
+    #[cfg(test)]
+    pub fn insert_conversation_with_timestamp(
+        &self,
+        path: &str,
+        conversation_id: &str,
+        value: &str,
+        timestamp_ms: i64,
+    ) -> Result<(), DatabaseError> {
+        self.pool.get()?.execute(
+            "INSERT INTO conversations_v2 (key, conversation_id, value, created_at, updated_at) VALUES (?1, ?2, ?3, ?4, ?4)",
+            params![path, conversation_id, value, timestamp_ms],
+        )?;
+        Ok(())
+    }
+
     pub async fn get_secret(&self, key: &str) -> Result<Option<Secret>, DatabaseError> {
         trace!(key, "getting secret");
         Ok(self.get_entry::<String>(Table::Auth, key)?.map(Into::into))

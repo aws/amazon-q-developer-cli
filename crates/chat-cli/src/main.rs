@@ -2,6 +2,7 @@ mod agent;
 mod api_client;
 mod auth;
 mod aws_common;
+mod cleanup;
 mod cli;
 mod constants;
 mod database;

@@ -195,6 +195,16 @@ impl RootSubcommand {
             Self::Issue(args) => args.execute(os).await,
             Self::Version { changelog } => Cli::print_version(changelog),
             Self::Chat(args) => {
+                // Run cleanup before chat starts; show a message if it takes >3 seconds
+                let msg_handle = tokio::spawn(async {
+                    tokio::time::sleep(std::time::Duration::from_secs(3)).await;
+                    eprintln!("Cleaning up old conversations...");
+                });
+                if let Err(e) = crate::cleanup::cleanup_old_data(&os.env, &os.fs, &os.database).await {
+                    tracing::error!("Cleanup failed: {}", e);
+                }
+                msg_handle.abort();
+
                 let tui_available =
                     crate::embedded_tui::are_assets_embedded(os) || std::env::var(KIRO_TEST_TUI_JS_PATH).is_ok();
                 if args.should_launch_tui(os) && tui_available {
