@@ -137,6 +137,9 @@ pub struct SessionData {
     pub created_at: DateTime<Utc>,
     /// Timestamp of the last update to session metadata.
     pub updated_at: DateTime<Utc>,
+    /// Human-readable title derived from the first user prompt.
+    #[serde(default)]
+    pub title: Option<String>,
     /// Serialized conversation and model state.
     pub session_state: SessionState,
 }
@@ -352,6 +355,7 @@ impl SessionDb {
             cwd: cwd.to_path_buf(),
             created_at: now,
             updated_at: now,
+            title: None,
             session_state: state,
         };
 
@@ -447,6 +451,19 @@ impl SessionDb {
         Ok(())
     }
 
+    /// Set a human-readable title for the session (typically from the first user prompt).
+    pub fn set_title(&self, title: String) -> Result<(), SessionError> {
+        let mut session = self.session.lock().unwrap();
+        session.title = Some(title);
+        session.updated_at = Utc::now();
+
+        let meta_path = metadata_path(&self.sessions_dir, &session.session_id);
+        let content = serde_json::to_string_pretty(&*session)
+            .map_err(|e| SessionError::json(e, format!("failed to serialize session {:?}", session.session_id)))?;
+        atomic_write(&meta_path, &content)?;
+        Ok(())
+    }
+
     /// Load all log entries from the session's JSONL file.
     pub fn load_log_entries(&self) -> Result<Vec<LogEntry>, SessionError> {
         let session_id = self.session.lock().unwrap().session_id.clone();
@@ -477,17 +494,39 @@ impl SessionDb {
     }
 }
 
-/// List all sessions for a given working directory.
-pub fn list_sessions_by_cwd(cwd: &Path) -> Result<Vec<SessionData>, SessionError> {
-    list_sessions_by_cwd_impl(&sessions_dir()?, cwd)
+/// Create a human-readable session title from prompt content blocks.
+///
+/// Takes the first text block, collapses to a single line, and truncates to 30 characters.
+pub fn create_session_title(content: &[agent::agent_loop::types::ContentBlock]) -> Option<String> {
+    const MAX_TITLE_LEN: usize = 30;
+    const SUFFIX: &str = "...";
+
+    let text = content.iter().find_map(|b| b.text())?;
+    let single_line = text.lines().next().unwrap_or(text).trim();
+    if single_line.is_empty() {
+        return None;
+    }
+    if single_line.len() <= MAX_TITLE_LEN {
+        return Some(single_line.to_string());
+    }
+    let truncated = agent::util::truncate_safe(single_line, MAX_TITLE_LEN - SUFFIX.len());
+    Some(format!("{}{}", truncated, SUFFIX))
 }
 
-fn list_sessions_by_cwd_impl(sessions_dir: &Path, cwd: &Path) -> Result<Vec<SessionData>, SessionError> {
+/// Lists available sessions, filtered by cwd if provided.
+///
+/// When `cwd` is `Some`, only sessions matching that working directory are returned.
+/// When `cwd` is `None`, all sessions are returned.
+pub fn list_sessions(cwd: Option<&Path>) -> Result<Vec<SessionData>, SessionError> {
+    list_sessions_impl(&sessions_dir()?, cwd)
+}
+
+fn list_sessions_impl(sessions_dir: &Path, cwd: Option<&Path>) -> Result<Vec<SessionData>, SessionError> {
     if !sessions_dir.exists() {
         return Ok(Vec::new());
     }
 
-    let canonical_cwd = cwd.canonicalize().unwrap_or_else(|_| cwd.to_path_buf());
+    let canonical_cwd = cwd.map(|p| p.canonicalize().unwrap_or_else(|_| p.to_path_buf()));
     let mut sessions = Vec::new();
 
     let read_dir = fs::read_dir(sessions_dir)
@@ -508,13 +547,17 @@ fn list_sessions_by_cwd_impl(sessions_dir: &Path, cwd: &Path) -> Result<Vec<Sess
                 Ok(m) => m,
                 Err(_) => continue,
             };
-            let session_cwd = session.cwd.canonicalize().unwrap_or_else(|_| session.cwd.clone());
-            if session_cwd == canonical_cwd {
-                sessions.push(session);
+            if let Some(ref filter_cwd) = canonical_cwd {
+                let session_cwd = session.cwd.canonicalize().unwrap_or_else(|_| session.cwd.clone());
+                if session_cwd != *filter_cwd {
+                    continue;
+                }
             }
+            sessions.push(session);
         }
     }
 
+    sessions.sort_by(|a, b| b.updated_at.cmp(&a.updated_at));
     Ok(sessions)
 }
 
@@ -586,6 +629,15 @@ mod tests {
         // Should be able to load
         let loaded = SessionDb::load_impl(sessions_dir, &session_id, None, pid_always_dead, 1000).unwrap();
         assert_eq!(loaded.session().cwd, cwd);
+        assert!(loaded.session().title.is_none());
+
+        // Set title and verify it persists across reload
+        loaded.set_title("Test title".to_string()).unwrap();
+        assert_eq!(loaded.session().title.as_deref(), Some("Test title"));
+        drop(loaded);
+
+        let reloaded = SessionDb::load_impl(sessions_dir, &session_id, None, pid_always_dead, 2000).unwrap();
+        assert_eq!(reloaded.session().title.as_deref(), Some("Test title"));
     }
 
     #[test]
@@ -745,10 +797,87 @@ mod tests {
         .unwrap();
         drop(s3);
 
-        let cwd1_sessions = list_sessions_by_cwd_impl(sessions_dir, &cwd1).unwrap();
+        let cwd1_sessions = list_sessions_impl(sessions_dir, Some(&cwd1)).unwrap();
         assert_eq!(cwd1_sessions.len(), 2);
 
-        let cwd2_sessions = list_sessions_by_cwd_impl(sessions_dir, &cwd2).unwrap();
+        let cwd2_sessions = list_sessions_impl(sessions_dir, Some(&cwd2)).unwrap();
         assert_eq!(cwd2_sessions.len(), 1);
+
+        // None returns all sessions
+        let all_sessions = list_sessions_impl(sessions_dir, None).unwrap();
+        assert_eq!(all_sessions.len(), 3);
+    }
+
+    #[test]
+    fn test_create_session_title_short() {
+        use agent::agent_loop::types::ContentBlock;
+        let content = vec![ContentBlock::Text("Fix the login bug".to_string())];
+        assert_eq!(create_session_title(&content).as_deref(), Some("Fix the login bug"));
+    }
+
+    #[test]
+    fn test_create_session_title_truncates_at_30() {
+        use agent::agent_loop::types::ContentBlock;
+        let content = vec![ContentBlock::Text(
+            "This is a very long prompt that should be truncated".to_string(),
+        )];
+        let title = create_session_title(&content).unwrap();
+        assert_eq!(title, "This is a very long prompt ...");
+        assert_eq!(title.len(), 30);
+    }
+
+    #[test]
+    fn test_create_session_title_uses_first_line() {
+        use agent::agent_loop::types::ContentBlock;
+        let content = vec![ContentBlock::Text("First line\nSecond line\nThird".to_string())];
+        assert_eq!(create_session_title(&content).as_deref(), Some("First line"));
+    }
+
+    #[test]
+    fn test_create_session_title_skips_non_text() {
+        use agent::agent_loop::types::ContentBlock;
+        let content = vec![ContentBlock::Text("Hello".to_string())];
+        assert_eq!(create_session_title(&content).as_deref(), Some("Hello"));
+        assert_eq!(create_session_title(&[]).as_deref(), None);
+    }
+
+    #[test]
+    fn test_list_sessions_includes_title() {
+        let temp_dir = TempDir::new().unwrap();
+        let sessions_dir = temp_dir.path();
+        let cwd = temp_dir.path().join("project");
+        fs::create_dir_all(&cwd).unwrap();
+
+        let db = SessionDb::new_impl(
+            sessions_dir,
+            "lt1".to_string(),
+            &cwd,
+            test_state(),
+            pid_always_dead,
+            1000,
+        )
+        .unwrap();
+        db.set_title("Session with title".to_string()).unwrap();
+        drop(db);
+
+        let db2 = SessionDb::new_impl(
+            sessions_dir,
+            "lt2".to_string(),
+            &cwd,
+            test_state(),
+            pid_always_dead,
+            1000,
+        )
+        .unwrap();
+        drop(db2);
+
+        let sessions = list_sessions_impl(sessions_dir, Some(&cwd)).unwrap();
+        assert_eq!(sessions.len(), 2);
+
+        let titled = sessions.iter().find(|s| s.session_id == "lt1").unwrap();
+        assert_eq!(titled.title.as_deref(), Some("Session with title"));
+
+        let untitled = sessions.iter().find(|s| s.session_id == "lt2").unwrap();
+        assert!(untitled.title.is_none());
     }
 }

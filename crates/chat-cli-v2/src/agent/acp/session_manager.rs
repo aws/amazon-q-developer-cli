@@ -515,6 +515,10 @@ impl SessionManager {
                 self.acp_client_info = Some(crate::telemetry::observer::AcpClientInfo::new(name, version));
                 _ = resp_sender.send(Ok(()));
             },
+            SessionManagerRequestData::ListSessions { cwd, resp_sender } => {
+                let result = crate::agent::session::list_sessions(cwd.as_deref());
+                _ = resp_sender.send(result);
+            },
         }
     }
 }
@@ -557,6 +561,11 @@ pub(crate) enum SessionManagerRequestData {
         name: String,
         version: String,
         resp_sender: oneshot::Sender<Result<(), sacp::Error>>,
+    },
+    ListSessions {
+        cwd: Option<PathBuf>,
+        resp_sender:
+            oneshot::Sender<Result<Vec<crate::agent::session::SessionData>, crate::agent::session::SessionError>>,
     },
 }
 
@@ -687,5 +696,23 @@ impl SessionManagerHandle {
             .map_err(|_e| sacp::util::internal_error("Failed to send initialize request"))?;
         rx.await
             .map_err(|_e| sacp::util::internal_error("Failed to receive initialize response"))?
+    }
+
+    /// Lists available sessions, filtered by cwd if provided.
+    pub async fn list_sessions(
+        &self,
+        cwd: Option<PathBuf>,
+    ) -> Result<Vec<crate::agent::session::SessionData>, sacp::Error> {
+        let (resp_sender, rx) = oneshot::channel();
+        self.tx
+            .send(SessionManagerRequest {
+                session_id: SessionId::new(String::new()),
+                data: SessionManagerRequestData::ListSessions { cwd, resp_sender },
+            })
+            .await
+            .map_err(|_e| sacp::util::internal_error("Failed to send list_sessions request"))?;
+        rx.await
+            .map_err(|_e| sacp::util::internal_error("Failed to receive list_sessions response"))?
+            .map_err(|e| sacp::util::internal_error(format!("Failed to list sessions: {}", e)))
     }
 }

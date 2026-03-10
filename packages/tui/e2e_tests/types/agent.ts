@@ -317,7 +317,12 @@ export type StreamErrorKind =
 	/** The stream was closed to due being interrupted (for example, on ctrl+c). */
 	| { kind: "interrupted", data?: undefined }
 	/** Catch-all for errors not modeled in [StreamErrorKind]. */
-	| { kind: "other", data: string };
+	| { kind: "other", data: {
+	/** Service reason code, if available (e.g. from `ConverseStreamError::reason_code()`). */
+	reason_code?: string;
+	/** Human-readable error description. */
+	message: string;
+}};
 
 export interface StreamError {
 	/** The request id returned by the model provider, if available */

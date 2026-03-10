@@ -144,3 +144,52 @@ pub struct MetadataNotification {
     pub context_usage_percentage: Option<f32>,
     // Future fields can be added here
 }
+
+// ---------------------------------------------------------------------------
+// session/list types — defined locally because sacp 10.x does not yet have
+// native ListSessionsRequest / ListSessionsResponse support.
+//
+// TODO: Replace these with types from `sacp::schema` (or re-exported from
+// `agent_client_protocol_schema`) once sacp adds first-class session/list
+// support. The wire format intentionally matches the ACP session/list RFD
+// (https://agentclientprotocol.com/rfds/session-list) and the types in
+// `agent-client-protocol-schema` ≥ 0.11.
+// ---------------------------------------------------------------------------
+
+/// Request parameters for `session/list`.
+///
+/// NOTE: The method is registered as `_kiro.dev/session/list` to match the Kiro
+/// extension method namespace. This is a temporary extension until sacp adds
+/// native session/list support, at which point this should use `session/list`.
+/// TODO: Change method to `session/list` once sacp adds native handler support.
+#[derive(Debug, Clone, Default, Serialize, Deserialize, JrRequest)]
+#[request(method = "_kiro.dev/session/list", response = ListSessionsResponse)]
+#[serde(rename_all = "camelCase")]
+pub struct ListSessionsRequest {
+    /// Filter sessions by working directory. Required.
+    pub cwd: Option<std::path::PathBuf>,
+    /// Opaque cursor for pagination (unused for now).
+    #[serde(default)]
+    pub cursor: Option<String>,
+}
+
+/// Response from `session/list`.
+#[derive(Debug, Clone, Serialize, Deserialize, JrResponsePayload)]
+#[serde(rename_all = "camelCase")]
+pub struct ListSessionsResponse {
+    pub sessions: Vec<SessionInfoEntry>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub next_cursor: Option<String>,
+}
+
+/// A single session in the `session/list` response.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SessionInfoEntry {
+    pub session_id: String,
+    pub cwd: std::path::PathBuf,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub title: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub updated_at: Option<String>,
+}

@@ -1707,3 +1707,54 @@ async fn permissions_are_applied_and_loaded() {
         "Expected no permission requests - write should be auto-allowed from persisted permissions"
     );
 }
+
+#[tokio::test]
+#[timeout(30000)]
+#[serial]
+async fn session_list_returns_sessions_with_title() {
+    let (mut harness, client) = AcpTestHarnessBuilder::new("session_list_returns_sessions_with_title")
+        .with_trust_all(true)
+        .build()
+        .await;
+    let cwd = harness.paths.cwd.clone();
+
+    // Create 3 sessions with prompts, small delays between them for distinct timestamps.
+    let prompts = ["First session prompt", "Second session prompt", "Third session prompt"];
+    let mut session_ids = Vec::new();
+    for prompt in &prompts {
+        let resp = client.new_session(cwd.clone()).await.expect("new_session failed");
+        let sid = resp.session_id.clone();
+
+        harness
+            .push_mock_responses_from_file(&sid.0, "tests/mock_responses/write_hello_world_in_bash.jsonl")
+            .await;
+        client.prompt_text(sid.clone(), prompt).await.expect("prompt failed");
+        session_ids.push(sid);
+        sleep(Duration::from_millis(50)).await;
+    }
+
+    let result = client.list_sessions(cwd.clone()).await.expect("list_sessions failed");
+    assert_eq!(result.sessions.len(), 3, "should have exactly 3 sessions");
+
+    // Results are most→least recent, so reverse of creation order.
+    // Walk both iterators in lockstep to verify ordering, titles, and metadata.
+    for (entry, (sid, prompt)) in result
+        .sessions
+        .iter()
+        .zip(session_ids.iter().rev().zip(prompts.iter().rev()))
+    {
+        assert_eq!(entry.session_id, sid.0.as_ref(), "ordering should be most→least recent");
+        assert!(
+            entry.title.as_ref().is_some_and(|t| t.starts_with(prompt)),
+            "title should start with '{}', got: {:?}",
+            prompt,
+            entry.title
+        );
+        assert!(entry.updated_at.is_some(), "should have updatedAt");
+        assert_eq!(
+            std::path::Path::new(&entry.cwd).canonicalize().ok(),
+            cwd.canonicalize().ok(),
+            "cwd should match"
+        );
+    }
+}

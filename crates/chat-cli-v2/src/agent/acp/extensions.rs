@@ -22,6 +22,8 @@ pub mod methods {
     pub const CLEAR_STATUS: &str = "_kiro.dev/clear/status";
     /// Agent switched notification
     pub const AGENT_SWITCHED: &str = "_kiro.dev/agent/switched";
+    /// List sessions (temporary extension until sacp adds native session/list)
+    pub const SESSION_LIST: &str = "_kiro.dev/session/list";
 }
 
 /// Notification to terminate a subagent session.

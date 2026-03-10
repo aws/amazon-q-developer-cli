@@ -54,13 +54,13 @@ use tracing::{
 };
 
 use crate::api_client::delay_interceptor::DelayTrackingInterceptor;
+use crate::api_client::internal_redirect_interceptor::InternalRedirectInterceptor;
 use crate::api_client::model::{
     ChatResponseStream,
     ConversationState,
 };
 use crate::api_client::opt_out::OptOutInterceptor;
 use crate::api_client::send_message_output::SendMessageOutput;
-use crate::api_client::internal_redirect_interceptor::InternalRedirectInterceptor;
 use crate::api_client::token_type_interceptor::TokenTypeInterceptor;
 use crate::auth::UnifiedBearerResolver;
 use crate::auth::external_idp::ExternalIdpToken;

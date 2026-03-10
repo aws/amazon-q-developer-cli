@@ -1416,6 +1416,14 @@ impl AcpSession {
                 if let Err(e) = session_db.append_log_entry(&entry) {
                     warn!("Failed to persist log entry: {}", e);
                 }
+                // Set session title from the first user prompt
+                if let LogEntry::V1(LogEntryV1::Prompt { content, .. }) = &entry
+                    && session_db.session().title.is_none()
+                    && let Some(title) = crate::agent::session::create_session_title(content)
+                    && let Err(e) = session_db.set_title(title)
+                {
+                    warn!("Failed to set session title: {}", e);
+                }
                 if let LogEntry::V1(LogEntryV1::Compaction { summary, .. }) = &entry {
                     self.compaction_summary = Some(summary.clone());
                 }
@@ -2474,6 +2482,31 @@ pub async fn execute(os: &mut Os, args: agent::types::AcpSpawnArgs) -> eyre::Res
                         }
                         Err(e) => request_cx.respond_with_error(e),
                     }
+                }
+            },
+            sacp::on_receive_request!(),
+        )
+        // TODO: Replace with native sacp on_receive_request handler once sacp
+        // adds ListSessionsRequest / ListSessionsResponse support. The wire
+        // format matches the ACP session/list RFD and agent-client-protocol-schema >= 0.11.
+        .on_receive_request(
+            {
+                let session_tx = session_manager_handle.clone();
+                async move |request: super::schema::ListSessionsRequest, request_cx, _cx| {
+                    let sessions = session_tx.list_sessions(request.cwd).await?;
+                    let entries: Vec<super::schema::SessionInfoEntry> = sessions
+                        .into_iter()
+                        .map(|s| super::schema::SessionInfoEntry {
+                            session_id: s.session_id,
+                            cwd: s.cwd,
+                            title: s.title,
+                            updated_at: Some(s.updated_at.to_rfc3339()),
+                        })
+                        .collect();
+                    request_cx.respond(super::schema::ListSessionsResponse {
+                        sessions: entries,
+                        next_cursor: None,
+                    })
                 }
             },
             sacp::on_receive_request!(),

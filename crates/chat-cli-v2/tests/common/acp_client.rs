@@ -18,6 +18,7 @@ use agent_client_protocol::{
     Agent as _,
     PromptResponse,
 };
+use chat_cli_v2::agent::acp::schema::ListSessionsResponse;
 use tokio::process::{
     ChildStdin,
     ChildStdout,
@@ -91,6 +92,10 @@ enum Command {
     Cancel {
         session_id: acp::SessionId,
         reply: oneshot::Sender<acp::Result<()>>,
+    },
+    ListSessions {
+        cwd: PathBuf,
+        reply: oneshot::Sender<acp::Result<ListSessionsResponse>>,
     },
     GetCaptured {
         reply: oneshot::Sender<CapturedNotifications>,
@@ -373,6 +378,16 @@ impl AcpTestClient {
         rx.await.unwrap()
     }
 
+    pub async fn list_sessions(&self, cwd: PathBuf) -> acp::Result<ListSessionsResponse> {
+        let (reply, rx) = oneshot::channel();
+        self.tx.send(Command::ListSessions { cwd, reply }).await.ok();
+        rx.await.map_err(|_| acp::Error {
+            code: -1,
+            message: "list_sessions actor channel closed".to_string(),
+            data: None,
+        })?
+    }
+
     pub async fn captured(&self) -> CapturedNotifications {
         let (reply, rx) = oneshot::channel();
         self.tx.send(Command::GetCaptured { reply }).await.ok();
@@ -491,6 +506,31 @@ async fn run_actor(stdin: ChildStdin, stdout: ChildStdout, mut rx: mpsc::Receive
                     let conn = conn.clone();
                     async move {
                         let result = conn.cancel(acp::CancelNotification { session_id, meta: None }).await;
+                        let _ = reply.send(result);
+                    }
+                });
+            },
+            // TODO: Replace ext_method with typed conn.list_sessions() once sacp /
+            // agent-client-protocol adds native session/list support.
+            Command::ListSessions { cwd, reply } => {
+                tokio::task::spawn_local({
+                    let conn = conn.clone();
+                    async move {
+                        let params = serde_json::json!({ "cwd": cwd });
+                        let raw_params = acp::RawValue::from_string(serde_json::to_string(&params).unwrap()).unwrap();
+                        let result = conn
+                            .ext_method(acp::ExtRequest {
+                                method: "kiro.dev/session/list".into(),
+                                params: raw_params.into(),
+                            })
+                            .await
+                            .and_then(|resp| {
+                                serde_json::from_str::<ListSessionsResponse>(resp.get()).map_err(|e| acp::Error {
+                                    code: -1,
+                                    message: e.to_string(),
+                                    data: None,
+                                })
+                            });
                         let _ = reply.send(result);
                     }
                 });

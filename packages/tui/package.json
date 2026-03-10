@@ -1,6 +1,6 @@
 {
   "name": "@kiro/tui",
-  "version": "1.27.1",
+  "version": "1.27.2",
   "type": "module",
   "scripts": {
     "dev": "bun run scripts/start-dev.ts",
