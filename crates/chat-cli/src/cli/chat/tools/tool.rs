@@ -178,6 +178,7 @@ impl Tool {
         line_tracker: &mut HashMap<String, FileLineTracker>,
         agents: &crate::cli::agent::Agents,
         code_intelligence_client: &Option<std::sync::Arc<tokio::sync::RwLock<code_agent_sdk::CodeIntelligence>>>,
+        session_id: Option<&str>,
     ) -> Result<super::InvokeOutput> {
         let active_agent = agents.get_active();
         match self {
@@ -191,7 +192,7 @@ impl Tool {
             Tool::Knowledge(knowledge) => knowledge.invoke(os, stdout, active_agent).await,
             Tool::Code(code) => code.invoke(os, stdout, code_intelligence_client).await,
             Tool::Thinking(think) => think.invoke(stdout).await,
-            Tool::Todo(todo) => todo.invoke(os, stdout).await,
+            Tool::Todo(todo) => todo.invoke(os, stdout, session_id).await,
             Tool::Delegate(delegate) => delegate.invoke(os, stdout, agents).await,
             Tool::WebSearch(web_search) => web_search.invoke(os, stdout).await,
             Tool::WebFetch(web_fetch) => web_fetch.invoke(os, stdout).await,

@@ -2356,7 +2356,14 @@ impl ChatSession {
 
         // Fork to a new conversation ID so the original history is preserved in the database.
         // This makes compaction reversible - users can resume the original session if needed.
-        self.conversation.fork_conversation();
+        let old_conversation_id = self.conversation.fork_conversation();
+
+        // Update the active todo's session_id so it follows the forked conversation.
+        if let Err(e) =
+            tools::todo::migrate_todo_session_id(os, &old_conversation_id, self.conversation.conversation_id()).await
+        {
+            debug!("Failed to migrate todo session_id after compaction: {e}");
+        }
 
         // Save the new compacted conversation immediately
         if let Ok(cwd) = std::env::current_dir() {
@@ -3403,6 +3410,7 @@ impl ChatSession {
                 error!("Failed to receive user prompting acknowledgement from UI: {:?}", e);
             }
 
+            let conversation_id = self.conversation.conversation_id().to_owned();
             let invoke_result = tool
                 .tool
                 .invoke(
@@ -3411,6 +3419,7 @@ impl ChatSession {
                     &mut self.conversation.file_line_tracker,
                     &self.conversation.agents,
                     &self.conversation.code_intelligence_client,
+                    Some(&conversation_id),
                 )
                 .await;
 

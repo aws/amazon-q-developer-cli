@@ -58,6 +58,10 @@ pub struct TodoListState {
     pub context: Vec<String>,
     pub modified_files: Vec<String>,
     pub id: String,
+    /// The session (conversation) this todo list belongs to.
+    /// None for todo lists created before session scoping was added.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub session_id: Option<String>,
 }
 
 impl TodoListState {
@@ -185,8 +189,9 @@ pub async fn get_all_todos(os: &Os) -> Result<(Vec<TodoListState>, Vec<Report>)>
     Ok((todos, errors))
 }
 
-/// Retrieves the most recently modified incomplete TODO list for the current workspace
-pub async fn get_active_todo(os: &Os) -> Result<Option<TodoListState>> {
+/// Retrieves the most recently modified incomplete TODO list for the current workspace.
+/// When `session_id` is provided, only returns todos belonging to that session.
+pub async fn get_active_todo(os: &Os, session_id: Option<&str>) -> Result<Option<TodoListState>> {
     if !TodoList::is_enabled(os) {
         return Ok(None);
     }
@@ -197,6 +202,15 @@ pub async fn get_active_todo(os: &Os) -> Result<Option<TodoListState>> {
 
     for todo in todos {
         if todo.tasks.iter().any(|t| !t.completed) {
+            // When a session_id filter is provided, skip todos from other sessions.
+            // Legacy todos (session_id: None) are included so they remain visible
+            // after upgrading rather than silently disappearing.
+            if let Some(sid) = session_id
+                && todo.session_id.is_some()
+                && todo.session_id.as_deref() != Some(sid)
+            {
+                continue;
+            }
             let path = id_to_path(os, &todo.id)?;
             if let Ok(metadata) = os.fs.symlink_metadata(&path).await
                 && let Ok(modified) = metadata.modified()
@@ -213,6 +227,20 @@ pub async fn get_active_todo(os: &Os) -> Result<Option<TodoListState>> {
     incomplete_with_mtime.sort_by_key(|b| Reverse(b.1));
 
     Ok(Some(incomplete_with_mtime.into_iter().next().unwrap().0))
+}
+
+/// After compaction forks the conversation_id, update the active todo's session_id
+/// so it remains visible in the new session.
+pub async fn migrate_todo_session_id(os: &Os, old_session_id: &str, new_session_id: &str) -> Result<()> {
+    if let Some(mut todo) = get_active_todo(os, Some(old_session_id)).await? {
+        // Only migrate todos that explicitly belong to the old session.
+        // Legacy todos (session_id: None) are already visible to all sessions.
+        if todo.session_id.as_deref() == Some(old_session_id) {
+            todo.session_id = Some(new_session_id.to_string());
+            todo.save(os, &todo.id).await?;
+        }
+    }
+    Ok(())
 }
 
 /// Formats a TODO list as a context entry string
@@ -337,7 +365,7 @@ impl TodoList {
         ExperimentManager::is_enabled(os, ExperimentName::TodoList)
     }
 
-    pub async fn invoke(&self, os: &Os, output: &mut impl Write) -> Result<InvokeOutput> {
+    pub async fn invoke(&self, os: &Os, output: &mut impl Write, session_id: Option<&str>) -> Result<InvokeOutput> {
         if !Self::is_enabled(os) {
             queue!(
                 output,
@@ -380,6 +408,7 @@ impl TodoList {
                     context: Vec::new(),
                     modified_files: Vec::new(),
                     id: new_id.clone(),
+                    session_id: session_id.map(String::from),
                 };
                 state.save(os, &new_id).await?;
                 state.display_list(output)?;
@@ -424,7 +453,18 @@ impl TodoList {
                 (state, id.clone())
             },
             TodoList::Load { load_id: id } => {
-                let state = TodoListState::load(os, id).await?;
+                let mut state = TodoListState::load(os, id).await?;
+                // Adopt the todo into the current session when loaded
+                if session_id.is_some() && state.session_id.as_deref() != session_id {
+                    if state.session_id.is_some() {
+                        queue!(
+                            output,
+                            style::Print("Note: This todo list was adopted from another session.\n".yellow())
+                        )?;
+                    }
+                    state.session_id = session_id.map(String::from);
+                    state.save(os, id).await?;
+                }
                 state.display_list(output)?;
                 (state, id.clone())
             },
@@ -599,4 +639,92 @@ where
 {
     let mut seen = HashSet::with_capacity(vec.len());
     vec.iter().any(|item| !seen.insert(item))
+}
+
+#[cfg(test)]
+mod tests {
+    use tempfile::TempDir;
+
+    use super::*;
+    use crate::database::settings::{
+        Setting,
+        SettingScope,
+    };
+
+    async fn make_os_with_todo_enabled(temp_dir: &TempDir) -> Os {
+        let mut os = Os::new().await.unwrap();
+        os.env.set_current_dir_for_test(temp_dir.path().to_path_buf());
+        os.database
+            .settings
+            .set(Setting::EnabledTodoList, true, Some(SettingScope::Session))
+            .await
+            .unwrap();
+        os
+    }
+
+    #[tokio::test]
+    async fn test_migrate_todo_session_id() {
+        let temp_dir = TempDir::new().unwrap();
+        let os = make_os_with_todo_enabled(&temp_dir).await;
+
+        // Create a todo with the old session_id
+        let old_id = "old-conversation-id";
+        let new_id = "new-conversation-id";
+        let todo_id = generate_new_todo_id();
+        let state = TodoListState {
+            tasks: vec![Task {
+                task_description: "test task".to_string(),
+                completed: false,
+                details: None,
+            }],
+            description: "test todo".to_string(),
+            context: Vec::new(),
+            modified_files: Vec::new(),
+            id: todo_id.clone(),
+            session_id: Some(old_id.to_string()),
+        };
+        state.save(&os, &todo_id).await.unwrap();
+
+        // Before migration: visible under old session, not under new
+        assert!(get_active_todo(&os, Some(old_id)).await.unwrap().is_some());
+        assert!(get_active_todo(&os, Some(new_id)).await.unwrap().is_none());
+
+        // Migrate
+        migrate_todo_session_id(&os, old_id, new_id).await.unwrap();
+
+        // After migration: visible under new session, not under old
+        assert!(get_active_todo(&os, Some(new_id)).await.unwrap().is_some());
+        assert!(get_active_todo(&os, Some(old_id)).await.unwrap().is_none());
+    }
+
+    #[tokio::test]
+    async fn test_migrate_does_not_affect_legacy_todos() {
+        let temp_dir = TempDir::new().unwrap();
+        let os = make_os_with_todo_enabled(&temp_dir).await;
+
+        // Create a legacy todo (no session_id)
+        let todo_id = generate_new_todo_id();
+        let state = TodoListState {
+            tasks: vec![Task {
+                task_description: "legacy task".to_string(),
+                completed: false,
+                details: None,
+            }],
+            description: "legacy todo".to_string(),
+            context: Vec::new(),
+            modified_files: Vec::new(),
+            id: todo_id.clone(),
+            session_id: None,
+        };
+        state.save(&os, &todo_id).await.unwrap();
+
+        // Migration for an unrelated session should not touch the legacy todo
+        migrate_todo_session_id(&os, "some-session", "new-session")
+            .await
+            .unwrap();
+
+        // Legacy todo should still have no session_id
+        let reloaded = TodoListState::load(&os, &todo_id).await.unwrap();
+        assert!(reloaded.session_id.is_none());
+    }
 }

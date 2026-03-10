@@ -1356,8 +1356,10 @@ Return only the JSON configuration, no additional text."
         }
 
         if ExperimentManager::is_enabled(os, ExperimentName::TodoList) {
-            // Add active TODO list if available
-            if let Ok(Some(todo)) = crate::cli::chat::tools::todo::get_active_todo(os).await {
+            // Add active TODO list if available (scoped to this session)
+            if let Ok(Some(todo)) =
+                crate::cli::chat::tools::todo::get_active_todo(os, Some(&self.conversation_id)).await
+            {
                 context_content.push_str(CONTEXT_ENTRY_START_HEADER);
                 context_content.push_str(&crate::cli::chat::tools::todo::format_todo_as_context(&todo));
                 context_content.push_str(CONTEXT_ENTRY_END_HEADER);
