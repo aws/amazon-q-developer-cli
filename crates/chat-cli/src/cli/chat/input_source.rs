@@ -115,11 +115,10 @@ impl InputSource {
     }
 
     pub fn read_line(&mut self, prompt: Option<&str>) -> Result<Option<String>, ReadlineError> {
-        match &mut self.inner {
+        let result = match &mut self.inner {
             inner::Inner::Readline(rl) => {
                 let prompt = prompt.unwrap_or_default();
-                let curr_line = rl.readline(prompt);
-                match curr_line {
+                match rl.readline(prompt) {
                     Ok(line) => {
                         if Self::should_append_history(&line) {
                             let _ = rl.add_history_entry(line.as_str());
@@ -134,7 +133,14 @@ impl InputSource {
                 *index += 1;
                 Ok(lines.get(*index - 1).cloned())
             },
+        };
+
+        // Persist history after each input to prevent loss on crash/reboot
+        if matches!(&result, Ok(Some(_))) {
+            let _ = self.save_history();
         }
+
+        result
     }
 
     fn should_append_history(line: &str) -> bool {
@@ -154,6 +160,7 @@ impl InputSource {
             // Add to history so user can access it with up arrow
             let _ = rl.add_history_entry(content);
         }
+        let _ = self.save_history();
     }
 
     /// Check if clipboard pastes were triggered and return all paths
@@ -186,5 +193,24 @@ mod tests {
         assert_eq!(input.read_line(None).unwrap().unwrap(), l2);
         assert_eq!(input.read_line(None).unwrap().unwrap(), l3);
         assert!(input.read_line(None).unwrap().is_none());
+    }
+
+    #[test]
+    fn test_should_append_history_filters_empty_and_short_responses() {
+        assert!(!InputSource::should_append_history(""));
+        assert!(!InputSource::should_append_history("   "));
+        assert!(!InputSource::should_append_history("y"));
+        assert!(!InputSource::should_append_history("n"));
+        assert!(!InputSource::should_append_history("t"));
+        assert!(!InputSource::should_append_history("Y"));
+        assert!(!InputSource::should_append_history(" N "));
+    }
+
+    #[test]
+    fn test_should_append_history_keeps_real_input() {
+        assert!(InputSource::should_append_history("hello world"));
+        assert!(InputSource::should_append_history("/quit"));
+        assert!(InputSource::should_append_history("yes"));
+        assert!(InputSource::should_append_history("no"));
     }
 }
