@@ -1,0 +1,4 @@
+{
+  "type": "fixed",
+  "description": "Skip unreadable files in glob expansion and isolate resource errors so one bad path does not drop all context"
+}

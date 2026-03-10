@@ -282,15 +282,19 @@ impl ContextManager {
         let mut context_files = Vec::new();
 
         for path in &self.paths {
-            // Use is_validation=false to handle non-matching globs gracefully
-            process_path(
+            // Skip individual paths that fail so one bad resource doesn't prevent
+            // all others from loading (e.g. a glob matching unreadable files).
+            if let Err(e) = process_path(
                 os,
                 path.get_path_as_str(),
                 &mut context_files,
                 false,
                 path.get_inclusion(),
             )
-            .await?;
+            .await
+            {
+                tracing::warn!("Skipping context path '{}': {}", path.get_path_as_str(), e);
+            }
         }
 
         context_files.sort_by(|a, b| a.filepath().cmp(b.filepath()));
@@ -398,22 +402,37 @@ async fn process_path(
         match glob(&full_path) {
             Ok(entries) => {
                 let mut found_any = false;
+                let mut skipped = 0usize;
 
                 for entry in entries {
                     match entry {
                         Ok(path) => {
                             if path.is_file() {
-                                add_file_to_context(os, &path, context_files, inclusion).await?;
+                                if let Err(e) = add_file_to_context(os, &path, context_files, inclusion).await {
+                                    tracing::warn!("Skipping file '{}': {}", path.display(), e);
+                                    skipped += 1;
+                                    continue;
+                                }
                                 found_any = true;
                             }
                         },
-                        Err(e) => return Err(eyre!("Glob error: {}", e)),
+                        Err(e) => {
+                            tracing::warn!("Glob entry error: {}", e);
+                            skipped += 1;
+                        },
                     }
                 }
 
                 if !found_any && is_validation {
-                    // When validating paths (e.g., for /context add), error if no files match
-                    return Err(eyre!("No files found matching glob pattern '{}'", full_path));
+                    let msg = if skipped > 0 {
+                        format!(
+                            "No readable files found matching glob pattern '{}' ({} skipped)",
+                            full_path, skipped
+                        )
+                    } else {
+                        format!("No files found matching glob pattern '{}'", full_path)
+                    };
+                    return Err(eyre!(msg));
                 }
                 // When just showing expanded files (e.g., for /context show --expand),
                 // silently skip non-matching patterns (don't add anything to context_files)
@@ -431,8 +450,10 @@ async fn process_path(
                 let mut read_dir = os.fs.read_dir(path).await?;
                 while let Some(entry) = read_dir.next_entry().await? {
                     let path = entry.path();
-                    if path.is_file() {
-                        add_file_to_context(os, &path, context_files, inclusion).await?;
+                    if path.is_file()
+                        && let Err(e) = add_file_to_context(os, &path, context_files, inclusion).await
+                    {
+                        tracing::warn!("Skipping file '{}': {}", path.display(), e);
                     }
                 }
             }
@@ -801,5 +822,77 @@ mod tests {
             "Expected reasonable token count, got: {}",
             size
         );
+    }
+
+    /// A glob matching an unreadable (binary) file should skip it and still
+    /// load other matched files and other resources. Regression test for #5877.
+    #[tokio::test]
+    async fn test_glob_skips_unreadable_files() -> Result<()> {
+        let os = Os::new().await?;
+        let mut manager = create_test_context_manager(None)?;
+
+        os.fs.create_dir_all("res").await?;
+        os.fs.write("res/good.md", "good content").await?;
+        os.fs.write("res/binary.bin", &[0xff, 0xfe, 0x00]).await?;
+
+        manager.add_paths(&os, vec!["res/*".to_string()], true).await?;
+
+        let files = manager.get_context_files(&os).await?;
+        assert_eq!(files.len(), 1);
+        assert!(files[0].filepath().contains("good.md"));
+
+        Ok(())
+    }
+
+    /// Validation error for a glob matching only unreadable files should mention
+    /// skipped files rather than claiming no files were found.
+    #[tokio::test]
+    async fn test_glob_validation_reports_skipped_files() -> Result<()> {
+        let os = Os::new().await?;
+        let mut manager = create_test_context_manager(None)?;
+
+        os.fs.create_dir_all("res").await?;
+        os.fs.write("res/binary.bin", &[0xff, 0xfe]).await?;
+
+        let err = manager
+            .add_paths(&os, vec!["res/*".to_string()], false)
+            .await
+            .unwrap_err();
+        let msg = err.to_string();
+        assert!(msg.contains("No readable files found"), "got: {msg}");
+        assert!(msg.contains("1 skipped"), "got: {msg}");
+
+        Ok(())
+    }
+
+    /// One failing resource path should not prevent other resources from loading.
+    /// Regression test for #5877.
+    #[tokio::test]
+    async fn test_bad_resource_does_not_poison_others() -> Result<()> {
+        use crate::cli::agent::Agent;
+        use crate::cli::agent::wrapper_types::ResourcePath;
+
+        let os = Os::new().await?;
+
+        os.fs.write("good.md", "good content").await?;
+        os.fs.create_dir_all("mixed").await?;
+        os.fs.write("mixed/binary.bin", &[0xff, 0xfe]).await?;
+
+        let mut agent = Agent::default();
+        agent.name = "TestAgent".to_string();
+        agent
+            .resources
+            .push(ResourcePath::FilePath("file://mixed/*".to_string()));
+        agent
+            .resources
+            .push(ResourcePath::FilePath("file://good.md".to_string()));
+
+        let manager = ContextManager::from_agent(&agent, 150_000)?;
+        let files = manager.get_context_files(&os).await?;
+
+        assert_eq!(files.len(), 1);
+        assert!(files[0].filepath().contains("good.md"));
+
+        Ok(())
     }
 }
