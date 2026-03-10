@@ -147,6 +147,7 @@ type ModelCache = Arc<RwLock<Option<ModelListResult>>>;
 #[derive(Clone, Debug)]
 pub struct ApiClient {
     client: CodewhispererClient,
+    telemetry_client: CodewhispererClient,
     streaming_client: Option<CodewhispererStreamingClient>,
     mock_client: Option<Arc<Mutex<std::vec::IntoIter<Vec<ChatResponseStream>>>>>,
     profile: Option<AuthProfile>,
@@ -179,7 +180,22 @@ impl ApiClient {
             .load()
             .await;
 
+        // Control plane client for CPS operations — redirect header routes internal users to CPS
         let client = CodewhispererClient::from_conf(
+            amzn_codewhisperer_client::config::Builder::from(&bearer_sdk_config)
+                .http_client(crate::aws_common::http_client::client())
+                .interceptor(OptOutInterceptor::new(database))
+                .interceptor(UserAgentOverrideInterceptor::new())
+                .interceptor(TokenTypeInterceptor::new(is_external_idp))
+                .interceptor(InternalRedirectInterceptor::new(is_internal))
+                .bearer_token_resolver(UnifiedBearerResolver)
+                .app_name(app_name())
+                .endpoint_resolver(StaticCodewhispererEndpointResolver::new(endpoint.url().to_string()))
+                .build(),
+        );
+
+        // Telemetry client — send_telemetry_event stays on RTS, must NOT have the redirect header
+        let telemetry_client = CodewhispererClient::from_conf(
             amzn_codewhisperer_client::config::Builder::from(&bearer_sdk_config)
                 .http_client(crate::aws_common::http_client::client())
                 .interceptor(OptOutInterceptor::new(database))
@@ -194,6 +210,7 @@ impl ApiClient {
         if cfg!(test) && !is_integ_test() {
             let mut this = Self {
                 client,
+                telemetry_client,
                 streaming_client: None,
                 mock_client: None,
                 profile: None,
@@ -241,6 +258,7 @@ impl ApiClient {
 
         Ok(Self {
             client,
+            telemetry_client,
             streaming_client,
             mock_client: None,
             profile,
@@ -259,7 +277,7 @@ impl ApiClient {
             return Ok(());
         }
 
-        self.client
+        self.telemetry_client
             .send_telemetry_event()
             .telemetry_event(telemetry_event)
             .user_context(user_context)
