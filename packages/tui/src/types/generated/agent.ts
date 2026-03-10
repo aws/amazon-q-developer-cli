@@ -177,6 +177,12 @@ export interface ImageBlock {
 export interface IssueArgs {
 }
 
+/** Arguments for /knowledge command */
+export interface KnowledgeArgs {
+	/** Subcommand: show, add, remove, update, clear, cancel */
+	subcommand?: string;
+}
+
 /** Arguments for /mcp command */
 export interface McpArgs {
 }
@@ -427,5 +433,7 @@ export type TuiCommand =
 	/** Switch to Plan agent for breaking down ideas into implementation plans. */
 	| { command: "plan", args: PlanArgs }
 	/** Report an issue (currently internal Amazon users only) */
-	| { command: "issue", args: IssueArgs };
+	| { command: "issue", args: IssueArgs }
+	/** Manage knowledge base */
+	| { command: "knowledge", args: KnowledgeArgs };
 

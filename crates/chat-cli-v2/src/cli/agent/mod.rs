@@ -585,7 +585,17 @@ impl Agents {
         // Sync resources for the newly active agent
         if let Some(agent) = self.agents.get(name) {
             use crate::util::knowledge_store::KnowledgeStore;
-            let _ = KnowledgeStore::sync_agent_resources(agent, os).await;
+            // Convert cli::Agent resources to agent crate types via serde
+            let resources: Vec<agent::agent_config::types::ResourcePath> = agent
+                .resources
+                .iter()
+                .filter_map(|r| {
+                    serde_json::to_value(r)
+                        .ok()
+                        .and_then(|v| serde_json::from_value(v).ok())
+                })
+                .collect();
+            let _ = KnowledgeStore::sync_agent_resources(&agent.name, agent.path.as_deref(), &resources, os).await;
         }
 
         self.agents
@@ -947,7 +957,18 @@ impl Agents {
         // Sync resources for the active agent
         if let Some(agent) = agents.get(&active_idx) {
             use crate::util::knowledge_store::KnowledgeStore;
-            if let Err(e) = KnowledgeStore::sync_agent_resources(&agent.clone(), os).await {
+            let resources: Vec<agent::agent_config::types::ResourcePath> = agent
+                .resources
+                .iter()
+                .filter_map(|r| {
+                    serde_json::to_value(r)
+                        .ok()
+                        .and_then(|v| serde_json::from_value(v).ok())
+                })
+                .collect();
+            if let Err(e) =
+                KnowledgeStore::sync_agent_resources(&agent.name, agent.path.as_deref(), &resources, os).await
+            {
                 let _ = execute!(
                     output,
                     StyledText::warning_fg(),

@@ -121,6 +121,9 @@ export const useUIState = () =>
       mcpServers: state.mcpServers,
       showToolsPanel: state.showToolsPanel,
       toolsList: state.toolsList,
+      showKnowledgePanel: state.showKnowledgePanel,
+      knowledgeEntries: state.knowledgeEntries,
+      knowledgeStatus: state.knowledgeStatus,
     }))
   );
 
@@ -139,6 +142,7 @@ export const useUIActions = () =>
       setShowUsagePanel: state.setShowUsagePanel,
       setShowMcpPanel: state.setShowMcpPanel,
       setShowToolsPanel: state.setShowToolsPanel,
+      setShowKnowledgePanel: state.setShowKnowledgePanel,
     }))
   );
 

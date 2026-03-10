@@ -249,6 +249,7 @@ mod tests {
             agent::mcp::McpManager::default().spawn(),
             true,
             None,
+            None,
         )
         .await
         .expect("Failed to create agent")

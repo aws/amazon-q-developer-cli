@@ -449,6 +449,8 @@ pub struct Agent {
     is_subagent: bool,
     /// Shared code intelligence client for LSP operations (optional)
     code_intelligence: Option<Arc<RwLock<CodeIntelligence>>>,
+    /// Knowledge base provider (optional, injected by the host)
+    knowledge_provider: Option<Arc<dyn tools::KnowledgeProvider>>,
 }
 
 impl Agent {
@@ -465,6 +467,8 @@ impl Agent {
     /// * `mcp_manager_handle` - Handle to an actor managing MCP servers
     /// * `is_subagent` - whether or not the agent is spawned as a subagent
     /// * `code_intelligence` - Shared code intelligence client (optional)
+    /// * `knowledge_provider` - Knowledge base provider (optional)
+    #[allow(clippy::too_many_arguments)]
     pub async fn new(
         snapshot: AgentSnapshot,
         local_mcp_path: Option<&PathBuf>,
@@ -473,6 +477,7 @@ impl Agent {
         mcp_manager_handle: McpManagerHandle,
         is_subagent: bool,
         code_intelligence: Option<Arc<RwLock<CodeIntelligence>>>,
+        knowledge_provider: Option<Arc<dyn tools::KnowledgeProvider>>,
     ) -> eyre::Result<Agent> {
         debug!(?snapshot, "initializing agent from snapshot");
 
@@ -508,6 +513,7 @@ impl Agent {
             sys_provider,
             is_subagent,
             code_intelligence,
+            knowledge_provider,
         })
     }
 
@@ -2208,6 +2214,11 @@ impl Agent {
                     && name != &CanonicalToolName::BuiltIn(tools::BuiltInToolName::SwitchToExecution)
             });
 
+            // Only include knowledge tool when a provider is available
+            if self.knowledge_provider.is_none() {
+                names.retain(|name| name != &CanonicalToolName::BuiltIn(tools::BuiltInToolName::Knowledge));
+            }
+
             names
         };
 
@@ -2368,6 +2379,7 @@ impl Agent {
                     .await
                     .map_err(ToolParseErrorKind::invalid_args),
                 BuiltInTool::SwitchToExecution(_) => Ok(()),
+                BuiltInTool::Knowledge(_) => Ok(()),
             },
             ToolKind::Mcp(_) => Ok(()),
         }
@@ -2508,6 +2520,17 @@ impl Agent {
                     })
                 },
                 BuiltInTool::SwitchToExecution(t) => Box::pin(async move { Ok(t.execute()) }),
+                BuiltInTool::Knowledge(t) => {
+                    let provider = self.knowledge_provider.clone();
+                    Box::pin(async move {
+                        match provider {
+                            Some(p) => t.execute(&*p).await,
+                            None => Err(ToolExecutionError::Custom(
+                                "Knowledge tool is not available in this session.".to_string(),
+                            )),
+                        }
+                    })
+                },
             },
             ToolKind::Mcp(t) => {
                 let mcp_tool = t.clone();

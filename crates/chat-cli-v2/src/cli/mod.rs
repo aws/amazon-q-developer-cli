@@ -17,7 +17,6 @@ use std::io::{
 };
 use std::process::ExitCode;
 
-pub use agent::Agent;
 use agent::AgentArgs;
 use anstream::println;
 use clap::{

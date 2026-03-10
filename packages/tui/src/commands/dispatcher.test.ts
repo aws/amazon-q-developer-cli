@@ -36,6 +36,7 @@ function createMockCtx(): CommandContext & {
     setShowUsagePanel: spy('setShowUsagePanel') as any,
     setShowMcpPanel: spy('setShowMcpPanel') as any,
     setShowToolsPanel: spy('setShowToolsPanel') as any,
+    setShowKnowledgePanel: spy('setShowKnowledgePanel') as any,
     clearMessages: spy('clearMessages') as any,
     sendMessage: spy('sendMessage') as any,
     clearUIState: spy('clearUIState') as any,

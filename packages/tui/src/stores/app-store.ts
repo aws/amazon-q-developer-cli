@@ -73,6 +73,14 @@ export interface ToolInfo {
   status: 'allowed' | 'requires-approval' | 'denied';
 }
 
+export interface KnowledgeEntry {
+  name: string;
+  id: string;
+  description: string;
+  item_count: number;
+  path: string | null;
+}
+
 import {
   executeCommand,
   executeCommandWithArg,
@@ -254,6 +262,11 @@ interface BaseAppActions {
   setShowUsagePanel: (show: boolean, data?: any) => void;
   setShowMcpPanel: (show: boolean, servers?: McpServerInfo[]) => void;
   setShowToolsPanel: (show: boolean, tools?: ToolInfo[]) => void;
+  setShowKnowledgePanel: (
+    show: boolean,
+    entries?: KnowledgeEntry[],
+    status?: string
+  ) => void;
 
   // File attachment actions
   attachFile: (path: string) => void;
@@ -366,6 +379,9 @@ export interface AppState {
   mcpServers: McpServerInfo[];
   showToolsPanel: boolean;
   toolsList: ToolInfo[];
+  showKnowledgePanel: boolean;
+  knowledgeEntries: KnowledgeEntry[];
+  knowledgeStatus: string | null;
   showPromptsPanel: boolean;
   showIssuePanel: boolean;
   issueUrl: string | null;
@@ -462,6 +478,9 @@ export const createAppStore = (props: AppStoreProps) =>
     mcpServers: [],
     showToolsPanel: false,
     toolsList: [],
+    showKnowledgePanel: false,
+    knowledgeEntries: [],
+    knowledgeStatus: null,
     attachedFiles: [],
     pendingFileAttachment: null,
     pendingImages: [],
@@ -1344,6 +1363,7 @@ export const createAppStore = (props: AppStoreProps) =>
         setShowUsagePanel: state.setShowUsagePanel,
         setShowMcpPanel: state.setShowMcpPanel,
         setShowToolsPanel: state.setShowToolsPanel,
+        setShowKnowledgePanel: state.setShowKnowledgePanel,
         clearMessages: state.clearMessages,
         sendMessage: state.sendMessage,
         clearUIState: () =>
@@ -1356,6 +1376,7 @@ export const createAppStore = (props: AppStoreProps) =>
             showUsagePanel: false,
             showMcpPanel: false,
             showToolsPanel: false,
+            showKnowledgePanel: false,
             contextBreakdown: null,
             usageData: null,
           }),
@@ -1610,6 +1631,14 @@ export const createAppStore = (props: AppStoreProps) =>
       set({ showToolsPanel: show, toolsList: tools });
     },
 
+    setShowKnowledgePanel: (show, entries = [], status) => {
+      set({
+        showKnowledgePanel: show,
+        knowledgeEntries: entries,
+        knowledgeStatus: status ?? null,
+      });
+    },
+
     // File attachment actions
     attachFile: (path) => {
       set((state) => ({
@@ -1711,6 +1740,7 @@ export const createAppStore = (props: AppStoreProps) =>
           setShowUsagePanel: state.setShowUsagePanel,
           setShowMcpPanel: state.setShowMcpPanel,
           setShowToolsPanel: state.setShowToolsPanel,
+          setShowKnowledgePanel: state.setShowKnowledgePanel,
           clearMessages: state.clearMessages,
           sendMessage: state.sendMessage,
           clearUIState: () =>
@@ -1723,6 +1753,7 @@ export const createAppStore = (props: AppStoreProps) =>
               showUsagePanel: false,
               showMcpPanel: false,
               showToolsPanel: false,
+              showKnowledgePanel: false,
               contextBreakdown: null,
               usageData: null,
             }),

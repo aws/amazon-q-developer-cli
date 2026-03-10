@@ -173,6 +173,7 @@ impl TestCaseBuilder {
             McpManager::default().spawn(),
             false,
             None, // code_intelligence not needed for tests
+            None, // knowledge_provider not needed for tests
         )
         .await?;
 

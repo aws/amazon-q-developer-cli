@@ -7,6 +7,7 @@ pub mod glob;
 pub mod grep;
 pub mod image_read;
 pub mod introspect;
+pub mod knowledge;
 pub mod ls;
 pub mod mcp;
 pub mod mkdir;
@@ -36,6 +37,10 @@ use glob::Glob;
 use grep::Grep;
 use image_read::ImageRead;
 use introspect::Introspect;
+pub use knowledge::{
+    Knowledge,
+    KnowledgeProvider,
+};
 pub use ls::IGNORE_PATTERNS;
 use ls::Ls;
 use mcp::McpTool;
@@ -180,6 +185,8 @@ pub enum BuiltInToolName {
     SwitchToExecution,
     #[strum(serialize = "introspect")]
     Introspect,
+    #[strum(serialize = "knowledge")]
+    Knowledge,
 }
 
 impl BuiltInToolName {
@@ -200,6 +207,7 @@ impl BuiltInToolName {
             BuiltInToolName::Code => Code::aliases(),
             BuiltInToolName::SwitchToExecution => SwitchToExecution::aliases(),
             BuiltInToolName::Introspect => Introspect::aliases(),
+            BuiltInToolName::Knowledge => Knowledge::aliases(),
         }
     }
 }
@@ -368,6 +376,7 @@ pub enum BuiltInTool {
     ImageRead(ImageRead),
     ExecuteCmd(ExecuteCmd),
     Introspect(Introspect),
+    Knowledge(Knowledge),
     Summary(Summary),
     SpawnSubagent(UseSubagent),
     UseAws(UseAws),
@@ -425,6 +434,9 @@ impl BuiltInTool {
             BuiltInToolName::Introspect => serde_json::from_value::<Introspect>(args)
                 .map(Self::Introspect)
                 .map_err(ToolParseErrorKind::schema_failure),
+            BuiltInToolName::Knowledge => serde_json::from_value::<Knowledge>(args)
+                .map(Self::Knowledge)
+                .map_err(ToolParseErrorKind::schema_failure),
         }
     }
 
@@ -449,6 +461,7 @@ impl BuiltInTool {
             BuiltInToolName::Code => get_code_tool_spec(lsp_initialized),
             BuiltInToolName::SwitchToExecution => generate_tool_spec_from_trait::<SwitchToExecution>(),
             BuiltInToolName::Introspect => generate_tool_spec_from_trait::<Introspect>(),
+            BuiltInToolName::Knowledge => generate_tool_spec_from_trait::<Knowledge>(),
         }
     }
 
@@ -463,6 +476,7 @@ impl BuiltInTool {
             BuiltInTool::ImageRead(_) => BuiltInToolName::ImageRead,
             BuiltInTool::ExecuteCmd(_) => BuiltInToolName::ExecuteCmd,
             BuiltInTool::Introspect(_) => BuiltInToolName::Introspect,
+            BuiltInTool::Knowledge(_) => BuiltInToolName::Knowledge,
             BuiltInTool::Summary(_) => BuiltInToolName::Summary,
             BuiltInTool::SpawnSubagent(_) => BuiltInToolName::SpawnSubagent,
             BuiltInTool::UseAws(_) => BuiltInToolName::UseAws,
@@ -484,6 +498,7 @@ impl BuiltInTool {
             BuiltInTool::ImageRead(_) => BuiltInToolName::ImageRead.into(),
             BuiltInTool::ExecuteCmd(_) => BuiltInToolName::ExecuteCmd.into(),
             BuiltInTool::Introspect(_) => BuiltInToolName::Introspect.into(),
+            BuiltInTool::Knowledge(_) => BuiltInToolName::Knowledge.into(),
             BuiltInTool::Summary(_) => BuiltInToolName::Summary.into(),
             BuiltInTool::SpawnSubagent(_) => BuiltInToolName::SpawnSubagent.into(),
             BuiltInTool::UseAws(_) => BuiltInToolName::UseAws.into(),
@@ -505,6 +520,7 @@ impl BuiltInTool {
             BuiltInTool::ImageRead(_) => ImageRead::aliases(),
             BuiltInTool::ExecuteCmd(_) => ExecuteCmd::aliases(),
             BuiltInTool::Introspect(_) => Introspect::aliases(),
+            BuiltInTool::Knowledge(_) => Knowledge::aliases(),
             BuiltInTool::Summary(_) => Summary::aliases(),
             BuiltInTool::SpawnSubagent(_) => UseSubagent::aliases(),
             BuiltInTool::UseAws(_) => UseAws::aliases(),

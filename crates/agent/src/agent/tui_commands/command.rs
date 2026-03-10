@@ -46,6 +46,8 @@ pub enum TuiCommand {
     Plan(PlanArgs),
     /// Report an issue (currently internal Amazon users only)
     Issue(IssueArgs),
+    /// Manage knowledge base
+    Knowledge(KnowledgeArgs),
 }
 
 /// Arguments for /help command
@@ -147,6 +149,16 @@ pub struct PlanArgs {
 #[serde(rename_all = "camelCase")]
 pub struct IssueArgs {}
 
+/// Arguments for /knowledge command
+#[typeshare]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct KnowledgeArgs {
+    /// Subcommand: show, add, remove, update, clear, cancel
+    #[serde(alias = "value", skip_serializing_if = "Option::is_none")]
+    pub subcommand: Option<String>,
+}
+
 impl TuiCommand {
     /// Command name with leading slash
     pub fn name(&self) -> &'static str {
@@ -164,6 +176,7 @@ impl TuiCommand {
             TuiCommand::Tools(_) => "/tools",
             TuiCommand::Plan(_) => "/plan",
             TuiCommand::Issue(_) => "/issue",
+            TuiCommand::Knowledge(_) => "/knowledge",
         }
     }
 
@@ -183,6 +196,7 @@ impl TuiCommand {
             TuiCommand::Tools(_) => "Show available tools",
             TuiCommand::Plan(_) => "Switch to Plan agent for breaking down ideas into implementation plans",
             TuiCommand::Issue(_) => "Report an issue",
+            TuiCommand::Knowledge(_) => "Manage knowledge base (show, add, remove, update, clear, cancel)",
         }
     }
 
@@ -202,6 +216,9 @@ impl TuiCommand {
             TuiCommand::Tools(_) => "/tools",
             TuiCommand::Plan(_) => "/plan [prompt]",
             TuiCommand::Issue(_) => "/issue",
+            TuiCommand::Knowledge(_) => {
+                "/knowledge [show|add <name> <path>|remove <name|path>|update <path>|clear|cancel]"
+            },
         }
     }
 
@@ -257,6 +274,11 @@ impl TuiCommand {
             },
             TuiCommand::Plan(_) => None,
             TuiCommand::Issue(_) => None,
+            TuiCommand::Knowledge(_) => {
+                let mut meta = serde_json::Map::new();
+                meta.insert("inputType".into(), "panel".into());
+                Some(meta)
+            },
         }
     }
 
@@ -275,6 +297,7 @@ impl TuiCommand {
             TuiCommand::Tools(ToolsArgs::default()),
             TuiCommand::Plan(PlanArgs::default()),
             TuiCommand::Issue(IssueArgs::default()),
+            TuiCommand::Knowledge(KnowledgeArgs::default()),
         ];
         commands.sort_by_key(|cmd| cmd.name());
         commands
@@ -303,6 +326,9 @@ impl TuiCommand {
                 prompt: (!args.is_empty()).then(|| args.to_string()),
             })),
             "issue" => Some(Self::Issue(IssueArgs::default())),
+            "knowledge" => Some(Self::Knowledge(KnowledgeArgs {
+                subcommand: (!args.is_empty()).then(|| args.to_string()),
+            })),
             _ => None,
         }
     }

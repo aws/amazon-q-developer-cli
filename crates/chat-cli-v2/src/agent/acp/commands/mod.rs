@@ -7,6 +7,7 @@ pub mod context;
 pub mod exit;
 pub mod help;
 pub mod issue;
+pub mod knowledge;
 pub mod mcp;
 pub mod model;
 pub mod paste_image;
@@ -43,7 +44,7 @@ pub struct CommandContext<'a> {
     pub global_mcp_path: Option<&'a PathBuf>,
     pub session_id: &'a str,
     pub current_agent_name: &'a str,
-    pub env: &'a crate::os::Env,
+    pub os: &'a crate::os::Os,
 }
 
 /// Execute a slash command by dispatching to the appropriate module
@@ -62,5 +63,6 @@ pub async fn execute(command: TuiCommand, ctx: &CommandContext<'_>) -> CommandRe
         TuiCommand::Tools(_) => tools::execute(ctx).await,
         TuiCommand::Plan(ref args) => plan::execute(args.prompt.as_deref(), ctx).await,
         TuiCommand::Issue(_) => issue::execute().await,
+        TuiCommand::Knowledge(ref args) => knowledge::execute(args, ctx).await,
     }
 }

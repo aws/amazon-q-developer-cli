@@ -9,6 +9,7 @@ import { HelpPanel } from '../ui/HelpPanel';
 import { IssuePanel } from '../ui/IssuePanel';
 import { McpPanel } from '../ui/McpPanel';
 import { ToolsPanel } from '../ui/ToolsPanel';
+import { KnowledgePanel } from '../ui/KnowledgePanel';
 import { PromptsPanel } from '../ui/PromptsPanel';
 import {
   PromptBar,
@@ -122,6 +123,9 @@ export const InlineLayout: React.FC = () => {
     mcpServers,
     showToolsPanel,
     toolsList,
+    showKnowledgePanel,
+    knowledgeEntries,
+    knowledgeStatus,
   } = useUIState();
   const {
     toggleToolOutputsExpanded,
@@ -132,6 +136,7 @@ export const InlineLayout: React.FC = () => {
     setShowUsagePanel,
     setShowMcpPanel,
     setShowToolsPanel,
+    setShowKnowledgePanel,
   } = useUIActions();
   const {
     sessionId,
@@ -297,6 +302,12 @@ export const InlineLayout: React.FC = () => {
     clearCommandInput();
   }, [setShowToolsPanel, setActiveCommand, clearCommandInput]);
 
+  const handleCloseKnowledgePanel = useCallback(() => {
+    setShowKnowledgePanel(false);
+    setActiveCommand(null);
+    clearCommandInput();
+  }, [setShowKnowledgePanel, setActiveCommand, clearCommandInput]);
+
   // Build the header - ContextBar
   const promptBarHeader = useMemo(() => {
     if (pendingApproval) {
@@ -452,6 +463,7 @@ export const InlineLayout: React.FC = () => {
               showUsagePanel ||
               showMcpPanel ||
               showToolsPanel ||
+              showKnowledgePanel ||
               showPromptsPanel ||
               !!pendingApproval ||
               showIssuePanel
@@ -485,6 +497,7 @@ export const InlineLayout: React.FC = () => {
               showUsagePanel ||
               showMcpPanel ||
               showToolsPanel ||
+              showKnowledgePanel ||
               showPromptsPanel ||
               showIssuePanel
             }
@@ -521,6 +534,13 @@ export const InlineLayout: React.FC = () => {
             )}
             {showToolsPanel && (
               <ToolsPanel tools={toolsList} onClose={handleCloseToolsPanel} />
+            )}
+            {showKnowledgePanel && (
+              <KnowledgePanel
+                entries={knowledgeEntries}
+                status={knowledgeStatus}
+                onClose={handleCloseKnowledgePanel}
+              />
             )}
             {showPromptsPanel && (
               <PromptsPanel

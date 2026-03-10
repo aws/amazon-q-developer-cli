@@ -1,4 +1,7 @@
-use std::path::PathBuf;
+use std::path::{
+    Path,
+    PathBuf,
+};
 use std::sync::{
     Arc,
     LazyLock as Lazy,
@@ -39,8 +42,14 @@ pub fn format_knowledge_bases_as_context(contexts: &[Arc<KnowledgeContext>]) -> 
 }
 
 /// Retrieves and formats available knowledge bases for context injection
-pub async fn get_available_knowledge_bases(os: &Os, agent: Option<&crate::cli::Agent>) -> Option<String> {
-    let store = KnowledgeStore::get_async_instance(os, agent).await.ok()?;
+pub async fn get_available_knowledge_bases(
+    os: &Os,
+    agent_name: Option<&str>,
+    agent_path: Option<&Path>,
+) -> Option<String> {
+    let store = KnowledgeStore::get_async_instance(os, agent_name, agent_path)
+        .await
+        .ok()?;
     let store_guard = store.lock().await;
     let contexts = store_guard.get_all().await.ok()?;
 
@@ -52,27 +61,31 @@ pub async fn get_available_knowledge_bases(os: &Os, agent: Option<&crate::cli::A
 }
 
 /// Generate a unique identifier for an agent based on its path and name
-fn generate_agent_unique_id(agent: &crate::cli::Agent) -> String {
+fn generate_agent_unique_id(name: &str, path: Option<&Path>) -> String {
     use std::collections::hash_map::DefaultHasher;
     use std::hash::{
         Hash,
         Hasher,
     };
 
-    if let Some(path) = &agent.path {
+    if let Some(path) = path {
         let mut hasher = DefaultHasher::new();
         path.hash(&mut hasher);
         let path_hash = hasher.finish();
-        format!("{}_{:x}", agent.name, path_hash)
+        format!("{}_{:x}", name, path_hash)
     } else {
-        agent.name.clone()
+        name.to_string()
     }
 }
 
 /// Get the knowledge base directory path for a specific agent
-fn agent_knowledge_dir(os: &Os, agent: Option<&crate::cli::Agent>) -> Result<PathBuf, paths::DirectoryError> {
-    let unique_id = if let Some(agent) = agent {
-        generate_agent_unique_id(agent)
+fn agent_knowledge_dir(
+    os: &Os,
+    agent_name: Option<&str>,
+    agent_path: Option<&Path>,
+) -> Result<PathBuf, paths::DirectoryError> {
+    let unique_id = if let Some(name) = agent_name {
+        generate_agent_unique_id(name, agent_path)
     } else {
         DEFAULT_AGENT_NAME.to_string()
     };
@@ -176,19 +189,20 @@ impl KnowledgeStore {
     /// Get singleton instance with optional agent
     pub async fn get_async_instance(
         os: &Os,
-        agent: Option<&crate::cli::Agent>,
+        agent_name: Option<&str>,
+        agent_path: Option<&Path>,
     ) -> Result<Arc<Mutex<Self>>, paths::DirectoryError> {
         static ASYNC_INSTANCE: Lazy<tokio::sync::Mutex<Option<Arc<Mutex<KnowledgeStore>>>>> =
             Lazy::new(|| tokio::sync::Mutex::new(None));
 
         if cfg!(test) {
             // For tests, create a new instance each time
-            let store = Self::new_with_os_settings(os, agent)
+            let store = Self::new_with_os_settings(os, agent_name, agent_path)
                 .await
                 .map_err(|_e| paths::DirectoryError::Io(std::io::Error::other("Failed to create store")))?;
             Ok(Arc::new(Mutex::new(store)))
         } else {
-            let current_agent_dir = agent_knowledge_dir(os, agent)?;
+            let current_agent_dir = agent_knowledge_dir(os, agent_name, agent_path)?;
 
             let mut instance_guard = ASYNC_INSTANCE.lock().await;
 
@@ -204,7 +218,7 @@ impl KnowledgeStore {
                 // Check for migration before initializing the client
                 Self::migrate_legacy_knowledge_base(&current_agent_dir).await;
 
-                let store = Self::new_with_os_settings(os, agent)
+                let store = Self::new_with_os_settings(os, agent_name, agent_path)
                     .await
                     .map_err(|_e| paths::DirectoryError::Io(std::io::Error::other("Failed to create store")))?;
                 *instance_guard = Some(Arc::new(Mutex::new(store)));
@@ -303,8 +317,12 @@ impl KnowledgeStore {
     }
 
     /// Create instance with database settings from OS
-    async fn new_with_os_settings(os: &crate::os::Os, agent: Option<&crate::cli::Agent>) -> Result<Self> {
-        let agent_dir = agent_knowledge_dir(os, agent)?;
+    async fn new_with_os_settings(
+        os: &crate::os::Os,
+        agent_name: Option<&str>,
+        agent_path: Option<&Path>,
+    ) -> Result<Self> {
+        let agent_dir = agent_knowledge_dir(os, agent_name, agent_path)?;
         let agent_config = Self::create_config_from_db_settings(os, agent_dir.clone());
         let agent_client = AsyncSemanticSearchClient::with_config(&agent_dir, agent_config)
             .await
@@ -502,7 +520,7 @@ impl KnowledgeStore {
     /// Clear all contexts immediately (synchronous operation)
     pub async fn clear_immediate(&mut self) -> Result<String, String> {
         match self.agent_client.clear_all_immediate().await {
-            Ok(count) => Ok(format!("✅ Successfully cleared {count} knowledge base entries")),
+            Ok(count) => Ok(format!("Successfully cleared {count} knowledge base entries")),
             Err(e) => Err(format!("Failed to clear knowledge base: {e}")),
         }
     }
@@ -626,18 +644,22 @@ impl KnowledgeStore {
     /// - Resources from agent schema are marked as auto_sync=true
     /// - Only auto-synced resources are removed when removed from schema
     /// - Manual /knowledge add resources (auto_sync=false) persist across schema changes
-    pub async fn sync_agent_resources(agent: &crate::cli::Agent, os: &Os) -> Result<(), String> {
-        let knowledge_store_arc = Self::get_async_instance(os, Some(agent))
+    pub async fn sync_agent_resources(
+        name: &str,
+        path: Option<&Path>,
+        resources: &[agent::agent_config::types::ResourcePath],
+        os: &Os,
+    ) -> Result<(), String> {
+        let knowledge_store_arc = Self::get_async_instance(os, Some(name), path)
             .await
             .map_err(|e| e.to_string())?;
         let mut knowledge_store = knowledge_store_arc.lock().await;
 
         // Extract indexed resources from agent config
-        let current_indexed_resources: Vec<_> = agent
-            .resources
+        let current_indexed_resources: Vec<_> = resources
             .iter()
             .filter_map(|resource| {
-                use crate::cli::agent::wrapper_types::{
+                use agent::agent_config::types::{
                     ComplexResource,
                     ResourcePath,
                 };
@@ -723,13 +745,272 @@ impl KnowledgeStore {
         Ok(())
     }
 
-    fn index_type_to_string(index_type: Option<&crate::cli::agent::wrapper_types::IndexType>) -> Option<String> {
-        use crate::cli::agent::wrapper_types::IndexType;
+    fn index_type_to_string(index_type: Option<&agent::agent_config::types::IndexType>) -> Option<String> {
+        use agent::agent_config::types::IndexType;
         index_type.map(|it| match it {
             IndexType::Fast => "fast".to_string(),
             IndexType::Best => "best".to_string(),
         })
     }
+}
+
+/// Wraps an `Arc<Mutex<KnowledgeStore>>` so it can be injected into the agent
+/// crate as a `dyn KnowledgeProvider`.
+pub struct KnowledgeStoreProvider {
+    store: Arc<Mutex<KnowledgeStore>>,
+}
+
+impl KnowledgeStoreProvider {
+    pub fn new(store: Arc<Mutex<KnowledgeStore>>) -> Self {
+        Self { store }
+    }
+}
+
+impl std::fmt::Debug for KnowledgeStoreProvider {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("KnowledgeStoreProvider").finish()
+    }
+}
+
+#[async_trait::async_trait]
+impl agent::tools::KnowledgeProvider for KnowledgeStoreProvider {
+    async fn execute(&self, command: agent::tools::Knowledge) -> agent::tools::ToolExecutionResult {
+        use agent::tools::{
+            Knowledge,
+            ToolExecutionError,
+            ToolExecutionOutput,
+            ToolExecutionOutputItem,
+        };
+
+        let result = {
+            let mut store = self.store.lock().await;
+            match command {
+                Knowledge::Show => format_show(&store).await,
+                Knowledge::Status => format_status(&store).await,
+                Knowledge::Add { name, value } => {
+                    let options = AddOptions::new();
+                    match store.add(&name, &value, options).await {
+                        Ok(id) => Ok(format!(
+                            "Added '{name}' to knowledge base with ID: {id}. Use 'show' to track progress."
+                        )),
+                        Err(e) => Err(format!("Failed to add: {e}")),
+                    }
+                },
+                Knowledge::Remove { name, context_id, path } => {
+                    execute_remove(&mut store, &name, &context_id, &path).await
+                },
+                Knowledge::Clear => store.clear().await,
+                Knowledge::Search {
+                    query,
+                    context_id,
+                    limit,
+                    offset,
+                    snippet_length,
+                    sort_by,
+                    file_type,
+                } => {
+                    execute_search(&store, &query, SearchParams {
+                        context_id: context_id.as_deref(),
+                        limit,
+                        offset,
+                        snippet_length,
+                        sort_by: sort_by.as_deref(),
+                        file_type: file_type.as_deref(),
+                    })
+                    .await
+                },
+                Knowledge::Update { path, context_id, name } => {
+                    execute_update(&mut store, &path, &context_id, &name).await
+                },
+                Knowledge::Cancel { operation_id } => store.cancel_operation(operation_id.as_deref()).await,
+            }
+        };
+
+        result
+            .map(|text| ToolExecutionOutput::new(vec![ToolExecutionOutputItem::Text(text)]))
+            .map_err(ToolExecutionError::Custom)
+    }
+}
+
+async fn execute_remove(
+    store: &mut KnowledgeStore,
+    name: &str,
+    context_id: &str,
+    path: &str,
+) -> Result<String, String> {
+    if !context_id.is_empty() {
+        store
+            .remove_by_id(context_id)
+            .await
+            .map(|()| format!("Removed context '{context_id}'"))
+    } else if !name.is_empty() {
+        store
+            .remove_by_name(name)
+            .await
+            .map(|()| format!("Removed context '{name}'"))
+    } else if !path.is_empty() {
+        store
+            .remove_by_path(path)
+            .await
+            .map(|()| format!("Removed context with path '{path}'"))
+    } else {
+        Err("No identifier provided. Specify name, context_id, or path.".into())
+    }
+}
+
+struct SearchParams<'a> {
+    context_id: Option<&'a str>,
+    limit: Option<usize>,
+    offset: Option<usize>,
+    snippet_length: Option<usize>,
+    sort_by: Option<&'a str>,
+    file_type: Option<&'a str>,
+}
+
+async fn execute_search(store: &KnowledgeStore, query: &str, params: SearchParams<'_>) -> Result<String, String> {
+    let mut results = store
+        .search_paginated(query, params.context_id, params.limit, params.offset)
+        .await
+        .map_err(|e| e.to_string())?;
+
+    if let Some(ft) = params.file_type {
+        results.retain(|r| {
+            r.point
+                .payload
+                .get("file_type")
+                .and_then(|v| v.as_str())
+                .is_some_and(|t| t.to_lowercase().contains(&ft.to_lowercase()))
+        });
+    }
+
+    if let Some(sort) = params.sort_by {
+        match sort {
+            "path" | "name" => results.sort_by(|a, b| {
+                let pa = a.point.payload.get("path").and_then(|v| v.as_str()).unwrap_or("");
+                let pb = b.point.payload.get("path").and_then(|v| v.as_str()).unwrap_or("");
+                pa.cmp(pb)
+            }),
+            "relevance" => {
+                results.sort_by(|a, b| a.distance.partial_cmp(&b.distance).unwrap_or(std::cmp::Ordering::Equal));
+            },
+            _ => {},
+        }
+    }
+
+    if results.is_empty() {
+        return Ok(format!("No results found for '{query}'"));
+    }
+
+    let mut out = format!("Found {} results for '{query}'\n\n", results.len());
+    for (i, r) in results.iter().enumerate() {
+        let path = r
+            .point
+            .payload
+            .get("path")
+            .and_then(|v| v.as_str())
+            .unwrap_or("unknown");
+        let chunk = r.point.payload.get("chunk_index").and_then(|v| v.as_u64()).unwrap_or(0);
+        let total = r
+            .point
+            .payload
+            .get("total_chunks")
+            .and_then(|v| v.as_u64())
+            .unwrap_or(1);
+        let ft = r
+            .point
+            .payload
+            .get("file_type")
+            .and_then(|v| v.as_str())
+            .unwrap_or("unknown");
+        out.push_str(&format!(
+            "Result {}:\nFile: {path}\nChunk: {}/{total} | Type: {ft} | Score: {:.4}\n",
+            i + 1,
+            chunk + 1,
+            r.distance
+        ));
+        if let Some(text) = r.text() {
+            let display = match params.snippet_length {
+                Some(max) if text.len() > max => format!("{}...", &text[..max]),
+                _ => text.to_string(),
+            };
+            out.push_str(&format!("---\n{display}\n---\n\n"));
+        }
+    }
+    Ok(out)
+}
+
+async fn execute_update(
+    store: &mut KnowledgeStore,
+    path: &str,
+    context_id: &str,
+    name: &str,
+) -> Result<String, String> {
+    if path.is_empty() {
+        return Err("No path provided for update.".into());
+    }
+    if !context_id.is_empty() {
+        store.update_context_by_id(context_id, path).await
+    } else if !name.is_empty() {
+        store.update_context_by_name(name, path).await
+    } else {
+        store.update_by_path(path).await
+    }
+}
+
+async fn format_show(store: &KnowledgeStore) -> Result<String, String> {
+    let contexts = store.get_all().await.unwrap_or_default();
+    let status = store.get_status_data().await;
+
+    let mut out = String::new();
+    if contexts.is_empty() {
+        out.push_str("No knowledge base entries found\n");
+    } else {
+        out.push_str("Knowledge base entries:\n");
+        for c in &contexts {
+            out.push_str(&format!(
+                "- ID: {}\n  Name: {}\n  Description: {}\n  Items: {}\n\n",
+                c.id, c.name, c.description, c.item_count
+            ));
+        }
+    }
+    if let Ok(s) = status {
+        out.push_str(&format_status_display(&s));
+    }
+    Ok(out)
+}
+
+async fn format_status(store: &KnowledgeStore) -> Result<String, String> {
+    let status = store.get_status_data().await?;
+    Ok(format_status_display(&status))
+}
+
+fn format_status_display(status: &semantic_search_client::SystemStatus) -> String {
+    if status.operations.is_empty() {
+        return "No active operations".to_string();
+    }
+    let mut out = String::new();
+    for op in &status.operations {
+        out.push_str(&format!("{} ({})\n", op.operation_type.display_name(), &op.short_id));
+        let desc = match &op.operation_type {
+            semantic_search_client::OperationType::Indexing { path, .. } => path.clone(),
+            semantic_search_client::OperationType::Clearing => op.message.clone(),
+        };
+        out.push_str(&format!("   {desc}\n"));
+        if op.is_cancelled {
+            out.push_str("   Cancelled\n");
+        } else if op.is_failed {
+            out.push_str("   Failed\n");
+        } else if op.total > 0 {
+            let pct = (op.current as f64 / op.total as f64 * 100.0) as u8;
+            match op.eta {
+                Some(eta) => out.push_str(&format!("   {pct}% • ETA: {}s\n", eta.as_secs())),
+                None => out.push_str(&format!("   {pct}%\n")),
+            }
+        } else {
+            out.push_str("   In progress\n");
+        }
+    }
+    out.trim_end().to_string()
 }
 
 #[cfg(test)]

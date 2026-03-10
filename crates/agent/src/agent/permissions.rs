@@ -377,6 +377,11 @@ pub fn evaluate_tool_permission<P: SystemProvider>(
                 PermissionEvalResult::ask()
             }),
             BuiltInTool::SwitchToExecution(_) => Ok(PermissionEvalResult::Allow),
+            BuiltInTool::Knowledge(_) => Ok(if is_allowed {
+                PermissionEvalResult::Allow
+            } else {
+                PermissionEvalResult::ask()
+            }),
         },
         ToolKind::Mcp(_) => Ok(if is_allowed {
             PermissionEvalResult::Allow

@@ -113,7 +113,9 @@ impl RunArgs {
         } else {
             McpManager::default().spawn()
         };
-        let agent = Agent::new(snapshot, model, mcp_manager_handle).await?.spawn();
+        let agent = Agent::new(snapshot, None, None, model, mcp_manager_handle, false, None, None)
+            .await?
+            .spawn();
 
         self.main_loop(agent).await
     }

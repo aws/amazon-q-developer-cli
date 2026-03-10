@@ -277,6 +277,7 @@ impl<'a> Subagent<'a> {
             mcp_manager_handle,
             true,
             self.code_intelligence.clone(),
+            None,
         )
         .await?;
 

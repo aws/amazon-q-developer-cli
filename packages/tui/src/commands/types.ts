@@ -6,6 +6,7 @@ import type { Kiro } from '../kiro.js';
 import type {
   SlashCommand,
   ActiveCommand,
+  KnowledgeEntry,
   McpServerInfo,
   ToolInfo,
 } from '../stores/app-store.js';
@@ -60,6 +61,12 @@ export interface CommandContext {
   setShowMcpPanel: (show: boolean, servers?: McpServerInfo[]) => void;
   /** Show/hide tools panel */
   setShowToolsPanel: (show: boolean, tools?: ToolInfo[]) => void;
+  /** Show/hide knowledge panel */
+  setShowKnowledgePanel: (
+    show: boolean,
+    entries?: KnowledgeEntry[],
+    status?: string
+  ) => void;
   /** Clear conversation messages */
   clearMessages: () => void;
   /** Clear all command UI state (menus, panels) */

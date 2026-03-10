@@ -11,6 +11,7 @@
 import type { CommandContext } from './types.js';
 import type { CommandResult, TuiCommand } from '../types/commands.js';
 import type {
+  KnowledgeEntry,
   McpServerInfo,
   SlashCommand,
   ToolInfo,
@@ -35,6 +36,7 @@ type EffectName =
   | 'showUsagePanel'
   | 'showMcpPanel'
   | 'showToolsPanel'
+  | 'showKnowledgePanel'
   | 'showPromptsPanel'
   | 'clearMessages'
   | 'quit'
@@ -56,6 +58,7 @@ const commandEffects: Partial<Record<string, EffectName>> = {
   mcp: 'showMcpPanel',
   tools: 'showToolsPanel',
   issue: 'showIssueUrl',
+  knowledge: 'showKnowledgePanel',
 };
 
 /**
@@ -115,6 +118,21 @@ const effectHandlers: Record<EffectName, EffectHandler> = {
   showToolsPanel: (result, ctx) => {
     const data = result?.data as { tools?: ToolInfo[] } | undefined;
     ctx.setShowToolsPanel(true, data?.tools ?? []);
+  },
+
+  showKnowledgePanel: (result, ctx) => {
+    const data = result?.data as
+      | { entries?: KnowledgeEntry[]; status?: string }
+      | undefined;
+    if (data?.entries) {
+      ctx.setShowKnowledgePanel(true, data.entries, data.status);
+    } else {
+      ctx.setShowKnowledgePanel(false);
+      if (result?.message) {
+        const firstLine = result.message.split('\n')[0] ?? result.message;
+        ctx.showAlert(firstLine, result.success ? 'success' : 'error');
+      }
+    }
   },
 
   showPromptsPanel: (result, ctx) => {

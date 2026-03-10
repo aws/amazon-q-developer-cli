@@ -770,7 +770,7 @@ impl AcpSession {
             global_mcp_path: self.global_mcp_path.as_ref(),
             session_id: &self.session_id_str,
             current_agent_name: &self.current_agent_name,
-            env: &self.os.env,
+            os: &self.os,
         }
     }
 
@@ -859,6 +859,29 @@ impl AcpSession {
             s
         };
 
+        // Build knowledge provider if available
+        let knowledge_provider: Option<std::sync::Arc<dyn agent::tools::KnowledgeProvider>> = {
+            let name = builder.current_agent_name.as_deref().unwrap_or_default();
+            let agent_config = builder.agent_configs.iter().find(|c| c.name() == name);
+            let agent_path = agent_config.and_then(|c| match c.source() {
+                agent::agent_config::ConfigSource::Workspace { path }
+                | agent::agent_config::ConfigSource::Global { path } => Some(path.clone()),
+                _ => None,
+            });
+            match crate::util::knowledge_store::KnowledgeStore::get_async_instance(
+                &os,
+                Some(name),
+                agent_path.as_deref(),
+            )
+            .await
+            {
+                Ok(store) => Some(std::sync::Arc::new(
+                    crate::util::knowledge_store::KnowledgeStoreProvider::new(store),
+                )),
+                Err(_) => None,
+            }
+        };
+
         let mut agent = Agent::new(
             snapshot,
             builder.local_mcp_path,
@@ -867,6 +890,7 @@ impl AcpSession {
             McpManager::default().spawn(),
             builder.is_subagent,
             builder.code_intelligence,
+            knowledge_provider,
         )
         .await?;
 
@@ -2074,6 +2098,7 @@ fn get_tool_kind(tool_name: &str) -> ToolKind {
             BuiltInToolName::Code => ToolKind::Read, // Default, actual kind determined by operation
             BuiltInToolName::SwitchToExecution => ToolKind::Other,
             BuiltInToolName::Introspect => ToolKind::Read,
+            BuiltInToolName::Knowledge => ToolKind::Other,
         }
     } else {
         ToolKind::Other
@@ -2157,6 +2182,7 @@ pub(crate) fn get_tool_title(tool: &Tool) -> String {
                 }
             },
             BuiltInTool::SwitchToExecution(_) => "Switching to execution agent".to_string(),
+            BuiltInTool::Knowledge(_) => "Querying knowledge base".to_string(),
         },
         AgentToolKind::Mcp(mcp) => format!("Running: @{}/{}", mcp.server_name, mcp.tool_name),
     }
