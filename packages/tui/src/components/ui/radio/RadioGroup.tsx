@@ -1,5 +1,5 @@
 import React from 'react';
-import { Box } from 'ink';
+import { Box } from './../../../renderer.js';
 import { RadioButton } from './RadioButton.js';
 import { useTextStyle } from '../../../hooks/useTextStyle.js';
 import { Text } from '../text/Text.js';

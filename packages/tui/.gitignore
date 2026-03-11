@@ -37,3 +37,6 @@ integ_tests/test-outputs/
 
 # samples folder
 samples
+.kiro
+profiles/
+reports/

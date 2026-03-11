@@ -1,7 +1,7 @@
 #!/usr/bin/env bun
 import { useEffect, useRef } from 'react';
-import { render } from 'ink';
-import { Text } from 'ink';
+import { Text } from './renderer.js';
+const { render } = await import(process.env.KIRO_RENDERER === 'twinki' ? 'twinki' : 'ink');
 import { ErrorBoundary } from './components/ui/ErrorBoundary';
 import { AppContainer } from './components/layout/AppContainer';
 import { ThemeProvider } from './theme';
@@ -319,7 +319,7 @@ const startApp = async () => {
     );
   }
 
-  render(<App />, {
+  const instance = render(<App />, {
     exitOnCtrlC: false,
     patchConsole: false,
     incrementalRendering: false,
@@ -327,6 +327,17 @@ const startApp = async () => {
       mode: 'auto',
       flags: ['disambiguateEscapeCodes'],
     },
+  });
+
+  // Expose render instance for dev metrics
+  if (instance && typeof instance === 'object' && 'getMetrics' in instance) {
+    (globalThis as any).__TWINKI_INSTANCE__ = instance;
+  }
+
+  // Ensure twinki unmounts cleanly on exit to prevent stale terminal writes
+  appStore.setState({ onExit: () => instance.unmount() });
+  process.on('exit', () => {
+    instance.unmount();
   });
 };
 

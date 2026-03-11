@@ -1,6 +1,6 @@
 import React from 'react';
 import path from 'path';
-import { Text } from 'ink';
+import { Text } from './../../../renderer.js';
 import { useTheme } from '../../../hooks/useThemeContext.js';
 
 export interface FileChipProps {

@@ -1,5 +1,5 @@
 import React, { useMemo } from 'react';
-import { Box, Text } from 'ink';
+import { Box, Text } from './../../../renderer.js';
 import { useTheme } from '../../../hooks/useThemeContext.js';
 import { StatusBar } from '../status-bar/StatusBar.js';
 import { useExpandableOutput } from '../../../hooks/useExpandableOutput.js';

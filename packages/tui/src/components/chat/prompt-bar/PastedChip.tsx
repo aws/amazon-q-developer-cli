@@ -1,5 +1,5 @@
 import React from 'react';
-import { Text } from 'ink';
+import { Text } from './../../../renderer.js';
 import { useTheme } from '../../../hooks/useThemeContext.js';
 
 export const PASTE_COLLAPSE_THRESHOLD_LINES = 10;

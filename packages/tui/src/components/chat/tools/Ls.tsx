@@ -1,5 +1,5 @@
 import React, { useMemo } from 'react';
-import { Box } from 'ink';
+import { Box } from './../../../renderer.js';
 import { Text } from '../../ui/text/Text.js';
 import { StatusBar } from '../status-bar/StatusBar.js';
 import { StatusInfo } from '../../ui/status/StatusInfo.js';

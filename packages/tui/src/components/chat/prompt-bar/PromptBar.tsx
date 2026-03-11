@@ -1,5 +1,5 @@
 import React from 'react';
-import { Box, Text } from 'ink';
+import { Box, Text } from './../../../renderer.js';
 import { ContextBar } from './ContextBar.js';
 import { PromptInput } from './PromptInput.js';
 import { Divider } from '../../ui/divider/Divider.js';

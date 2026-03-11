@@ -1,5 +1,5 @@
 import React from 'react';
-import { Box, Static, Text as InkText } from 'ink';
+import { Box, Static, Text as InkText } from './../../renderer.js';
 import {
   MessageRole,
   type MessageType as StoreMessageType,

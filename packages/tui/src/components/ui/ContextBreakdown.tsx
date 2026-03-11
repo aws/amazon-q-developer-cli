@@ -1,5 +1,5 @@
 import React from 'react';
-import { Box, useInput, Text as InkText } from 'ink';
+import { Box, useInput, Text as InkText } from './../../renderer.js';
 import { Text } from './text/Text.js';
 import { Panel } from './panel/Panel.js';
 import { Divider } from './divider/Divider.js';

@@ -1,4 +1,4 @@
-import { Box, Text } from 'ink';
+import { Box, Text } from './../../renderer.js';
 import { StatusBar } from '../chat/status-bar/StatusBar.js';
 
 export const ThinkingIndicator: React.FC = () => {

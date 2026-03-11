@@ -2,7 +2,8 @@
   "name": "kiro-cli-chat",
   "private": true,
   "workspaces": [
-    "packages/*"
+    "packages/*",
+    "packages/twinki/packages/*"
   ],
   "devDependencies": {
     "eslint": "^9.17.0",

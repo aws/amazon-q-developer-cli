@@ -1,5 +1,5 @@
 import React, { useState, useCallback } from 'react';
-import { Box } from 'ink';
+import { Box } from './../../renderer.js';
 import { Text } from './text/Text';
 import { Panel } from './panel/index.js';
 import { useTheme } from '../../hooks/useThemeContext';

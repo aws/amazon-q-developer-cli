@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Text } from 'ink';
+import { Text } from './../../../renderer.js';
 import { useAnimationPaused } from '../../../contexts/AnimationPausedContext.js';
 
 export interface ShimmerTextProps {

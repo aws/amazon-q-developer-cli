@@ -1,5 +1,6 @@
 import { type ReactNode } from 'react';
-import { Text as InkText, type TextProps } from 'ink';
+import { Text as InkText } from './../../../renderer.js';
+import type { TextProps } from 'ink';
 
 /**
  * Text component - A wrapper around Ink's Text component that enforces consistent styling practices.

@@ -1,5 +1,5 @@
 import React from 'react';
-import { Box } from 'ink';
+import { Box } from './../../../renderer.js';
 import { Read } from './Read.js';
 import { Card } from '../../ui/card/Card.js';
 import { Text } from '../../ui/text/Text.js';
@@ -21,7 +21,7 @@ export const ReadFile = {
         <Read name="Read" target="src/components/Button.tsx" status="success" />
         <Box flexDirection="column" marginTop={1}>
           <Text>import React from 'react';</Text>
-          <Text>import {'{ Box }'} from 'ink';</Text>
+          <Text>import {'{ Box }'} from './../../../renderer.js';</Text>
           <Text> </Text>
           <Text>export const Button = () =&gt; {'{'}</Text>
           <Text> return &lt;Box&gt;Click me&lt;/Box&gt;;</Text>

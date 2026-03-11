@@ -1,4 +1,4 @@
-import { Box } from 'ink';
+import { Box } from './../../../renderer.js';
 import React, { useCallback, useMemo } from 'react';
 import { useTheme } from '../../../hooks/useThemeContext.js';
 import { normalizeLineEndings, expandTabs } from '../../../utils/index.js';

@@ -1,0 +1,10 @@
+node_modules
+dist
+*.tsbuildinfo
+.DS_Store
+package-lock.json
+test/.artifacts/
+*/test/.artifacts/*
+packages/twinki/test/.artifacts/
+packages/twinky/test/.artifacts/
+.kiro/projects/

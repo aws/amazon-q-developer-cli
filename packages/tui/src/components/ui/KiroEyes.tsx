@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Text } from 'ink';
+import { Text } from './../../renderer.js';
 import { useTheme } from '../../hooks/useThemeContext.js';
 
 // Idle: just normal blinking

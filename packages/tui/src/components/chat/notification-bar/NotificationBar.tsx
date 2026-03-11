@@ -1,5 +1,5 @@
 import React from 'react';
-import { Box } from 'ink';
+import { Box } from './../../../renderer.js';
 import { Alert } from '../../ui/alert/Alert.js';
 import type { StatusType } from '../../../types/componentTypes.js';
 

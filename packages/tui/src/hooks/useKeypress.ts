@@ -1,5 +1,5 @@
 import { useEffect, useRef } from 'react';
-import { useInput, useStdin } from 'ink';
+import { useInput, useStdin, usePaste } from './../renderer.js';
 import { logger } from '../utils/logger.js';
 import { inputMetrics } from '../utils/inputMetrics.js';
 
@@ -103,6 +103,24 @@ export const useKeypress = (
         end: key.end ?? false,
         paste: false,
       });
+    },
+    { isActive }
+  );
+
+  // Twinki paste path: usePaste hook handles bracketed paste (no-op under ink)
+  usePaste(
+    (content: string) => {
+      isPastingRef.current = false;
+      if (content) {
+        handlerRef.current(content, {
+          upArrow: false, downArrow: false, leftArrow: false, rightArrow: false,
+          pageUp: false, pageDown: false, home: false, end: false,
+          return: false, escape: false, ctrl: false, shift: false, meta: false,
+          tab: false, backspace: false, delete: false, paste: true,
+        });
+      } else if (onEmptyPasteRef.current) {
+        onEmptyPasteRef.current();
+      }
     },
     { isActive }
   );

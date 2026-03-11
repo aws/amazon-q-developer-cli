@@ -1,5 +1,5 @@
 import React from 'react';
-import { Box } from 'ink';
+import { Box } from './../../../renderer.js';
 import { Icon, IconType } from '../../ui/icon/Icon.js';
 import { useTheme } from '../../../hooks/useThemeContext.js';
 

@@ -1,5 +1,5 @@
 import React, { useEffect, createContext, useContext } from 'react';
-import { Box } from 'ink';
+import { Box } from './../../../renderer.js';
 import {
   enableAutoSync,
   detectSynchronizedOutput,

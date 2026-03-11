@@ -1,5 +1,5 @@
 import React, { useMemo, useState } from 'react';
-import { Box, useInput } from 'ink';
+import { Box, useInput } from './../../../renderer.js';
 import { Text } from '../../ui/text/Text.js';
 import { StatusBar, useStatusBar } from '../status-bar/StatusBar.js';
 import { useTheme } from '../../../hooks/useThemeContext.js';

@@ -318,6 +318,7 @@ export interface AppState {
 
   // Kiro/Agent state
   kiro: Kiro;
+  onExit?: () => void;
   sessionId: string | null;
   isProcessing: boolean;
   isCompacting: boolean;
@@ -1555,8 +1556,9 @@ export const createAppStore = (props: AppStoreProps) =>
         const newSequence = state.exitSequence + 1;
 
         if (newSequence >= 2) {
-          // Clean up kiro before exiting
+          // Clean up kiro and renderer before exiting
           state.kiro.close();
+          state.onExit?.();
           process.exit(0);
         }
 
@@ -1767,8 +1769,15 @@ export const createAppStore = (props: AppStoreProps) =>
         const command = trimmed.slice(1).trim();
         if (!command) return;
 
-        const { needsTTY, executeShellEscapeTTY, executeShellEscapeStreaming } =
+        const { needsTTY, isClearCommand, executeClearCommand, executeShellEscapeTTY, executeShellEscapeStreaming } =
           await import('../utils/shell-escape.js');
+
+        // Clear/reset: clear messages and terminal, no user message needed
+        if (isClearCommand(command)) {
+          set({ messages: [] });
+          executeClearCommand();
+          return;
+        }
 
         // Add user message showing the command
         const userMsgId = generateMessageId();

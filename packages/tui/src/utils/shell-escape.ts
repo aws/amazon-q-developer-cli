@@ -18,6 +18,9 @@ const TTY_COMMANDS = new Set([
   'ssh',
 ]);
 
+/** Commands that clear/reset the terminal. Handled by writing escape sequences directly. */
+const CLEAR_COMMANDS = new Set(['clear', 'reset']);
+
 export interface ShellEscapeResult {
   exitCode: number;
   error?: string;
@@ -29,6 +32,24 @@ export interface ShellEscapeResult {
 function needsTTY(command: string): boolean {
   const firstWord = command.trim().split(/\s/)[0] || '';
   return TTY_COMMANDS.has(firstWord);
+}
+
+/**
+ * Check if a command is a terminal clear/reset.
+ * Only enabled under twinki renderer for now.
+ */
+function isClearCommand(command: string): boolean {
+  if (process.env.KIRO_RENDERER !== 'twinki') return false;
+  const firstWord = command.trim().split(/\s/)[0] || '';
+  return CLEAR_COMMANDS.has(firstWord);
+}
+
+/**
+ * Execute a clear/reset by writing escape sequences directly to stdout.
+ * The rendering engine detects these and does a full redraw.
+ */
+function executeClearCommand(): void {
+  process.stdout.write('\x1b[3J\x1b[2J\x1b[H');
 }
 
 /**
@@ -103,4 +124,4 @@ export function executeShellEscapeStreaming(
   return { promise, kill };
 }
 
-export { needsTTY };
+export { needsTTY, isClearCommand, executeClearCommand };

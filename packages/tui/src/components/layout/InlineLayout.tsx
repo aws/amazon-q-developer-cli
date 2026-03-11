@@ -1,5 +1,6 @@
 import React, { useCallback, useMemo, useState, useEffect } from 'react';
-import { Box, Text } from 'ink';
+import { Box, Text } from './../../renderer.js';
+import { useRenderMetrics, isDevMode } from '../../hooks/useRenderMetrics.js';
 import { AnimationPausedContext } from '../../contexts/AnimationPausedContext.js';
 import { ConversationView } from '../ui/ConversationView';
 import { ExitHint } from '../ui/ExitHint';
@@ -95,6 +96,13 @@ function triggerEasterEgg() {
     process.stdout.write(out);
   }, DURATION);
 }
+
+/** Only mounted when KIRO_DEV=1 — keeps the hook out of production renders. */
+const RenderMetricsChip: React.FC = () => {
+  const metrics = useRenderMetrics();
+  if (!metrics) return null;
+  return <Chip value={`${metrics.lastRenderMs.toFixed(1)}ms · ${metrics.yogaNodeCount}n · ${metrics.heapUsedMB}MB · #${metrics.renderCount}`} color={ChipColor.PRIMARY} />;
+};
 
 export const InlineLayout: React.FC = () => {
   const { getColor } = useTheme();
@@ -369,6 +377,7 @@ export const InlineLayout: React.FC = () => {
     ];
 
     const secondaryItems = [
+      isDevMode() && <RenderMetricsChip />,
       <Chip value={shortenPath(process.cwd())} color={ChipColor.BRAND} />,
       gitBranch && (
         <Chip value={gitBranch} color={ChipColor.PRIMARY} wrap={true} />

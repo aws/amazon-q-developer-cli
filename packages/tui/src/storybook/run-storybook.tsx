@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 import React from 'react';
-import { render } from 'ink';
+import { render } from './../renderer.js';
 import { Storybook } from './Storybook.js';
 import { ThemeProvider } from '../theme/index.js';
 

@@ -1,5 +1,5 @@
 import React from 'react';
-import { Box, Text } from 'ink';
+import { Box, Text } from './../../renderer.js';
 import { useQueueState, useConversationState } from '../../stores/selectors.js';
 import { useUIState } from '../../stores/selectors.js';
 import { useTheme } from '../../hooks/useThemeContext.js';

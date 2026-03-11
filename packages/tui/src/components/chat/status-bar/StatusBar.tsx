@@ -1,4 +1,4 @@
-import { Box, measureElement } from 'ink';
+import { Box, measureElement } from './../../../renderer.js';
 import React, {
   createContext,
   useCallback,

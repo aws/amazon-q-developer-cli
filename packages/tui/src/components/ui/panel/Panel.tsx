@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Box, useInput } from 'ink';
+import { Box, useInput } from './../../../renderer.js';
 import { useTheme } from '../../../hooks/useThemeContext.js';
 import { useTerminalSize } from '../../../hooks/useTerminalSize.js';
 import { Divider } from '../divider/Divider.js';

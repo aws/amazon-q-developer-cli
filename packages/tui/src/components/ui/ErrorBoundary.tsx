@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Box, Text } from 'ink';
+import { Box, Text } from './../../renderer.js';
 
 interface ErrorBoundaryProps {
   children: React.ReactNode;

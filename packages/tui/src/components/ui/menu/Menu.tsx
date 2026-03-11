@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
-import { Box, useMouse } from 'ink';
+import { Box, useMouse } from './../../../renderer.js';
 import { useTheme } from '../../../hooks/useThemeContext.js';
 import { useTextStyle } from '../../../hooks/useTextStyle.js';
 import { useTerminalSize } from '../../../hooks/useTerminalSize.js';

@@ -1,5 +1,5 @@
 import React from 'react';
-import { Box } from 'ink';
+import { Box } from './../../../renderer.js';
 import { Shell } from './Shell.js';
 import { Card } from '../../ui/card/Card.js';
 import { Text } from '../../ui/text/Text.js';
