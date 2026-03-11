@@ -1,0 +1,4 @@
+{
+  "type": "fixed",
+  "description": "Fixed subagent getting stuck when multiple tool calls require approval"
+}

@@ -321,6 +321,17 @@ fn try_parse_initialized_agent_id(payload: &serde_json::Value) -> Option<u16> {
         .ok()
 }
 
+/// After popping the front approval, show the next queued approval or a fallback message.
+fn advance_approval_queue(agent_info: &mut AgentInfo<'_>, fallback_msg: &str) {
+    match agent_info.pending_tool_approval.front() {
+        Some(next) => {
+            agent_info.msg = next.display_msg.clone();
+            agent_info.convo.push(next.display_msg.clone());
+        },
+        None => agent_info.msg = fallback_msg.to_string(),
+    }
+}
+
 /// Updates agent lifecycle state from a MetaEvent.
 /// This handles state that both interactive and non-interactive modes need:
 /// - `is_done` when EndTurn is received
@@ -336,6 +347,7 @@ fn update_agent_lifecycle_state(
         META_TYPE_END_TURN => {
             if let Some(info) = agents.get_mut(&agent_id) {
                 info.is_done = true;
+                info.pending_tool_approval.clear();
                 return true;
             }
         },
@@ -629,6 +641,7 @@ impl<'a> SubagentIndicator<'a> {
                                             }
                                             agent_info.msg = "completed".to_string();
                                             agent_info.is_done = true;
+                                            agent_info.pending_tool_approval.clear();
                                         } else if meta_evt.meta_type.as_str() == "Initialized"
                                             && let Ok(id) = serde_json::from_value::<serde_json::Number>(meta_evt.payload)
                                             && let Some(id) = id.as_u64().and_then(|n| u16::try_from(n).ok())
@@ -825,8 +838,10 @@ impl<'a> SubagentIndicator<'a> {
                         } else if !is_interactive || !all_initialized || interrupted {
                             ct.cancelled().await;
                         } else {
-                            // Otherwise, we are just waiting on progress to be made
-                            std::future::pending::<()>().await;
+                            // Otherwise, we are just waiting on progress to be made.
+                            // Still respect cancellation so we don't block forever if
+                            // the subagent exits unexpectedly.
+                            ct.cancelled().await;
                         }
                     } => {
                         break;
@@ -889,13 +904,7 @@ impl<'a> SubagentIndicator<'a> {
                                         }) {
                                             error!(?e, "error sending input event");
                                         };
-                                        match agent_info.pending_tool_approval.front() {
-                                            Some(next) => {
-                                                agent_info.msg = next.display_msg.clone();
-                                                agent_info.convo.push(next.display_msg.clone());
-                                            },
-                                            None => agent_info.msg = "tool approval sent".to_string(),
-                                        }
+                                        advance_approval_queue(agent_info, "tool approval sent");
                                     },
                                     KeyCode::Char('n') => {
                                         let Some(focused_agent) = focused_agent else {
@@ -911,15 +920,9 @@ impl<'a> SubagentIndicator<'a> {
                                             agent_id: Some(focused_agent),
                                             kind: InputEventKind::ToolRejection(approval.tool_call_id)
                                         }) {
-                                            error!("error sending input event: {e:?}");
+                                            error!(?e, "error sending input event");
                                         };
-                                        match agent_info.pending_tool_approval.front() {
-                                            Some(next) => {
-                                                agent_info.msg = next.display_msg.clone();
-                                                agent_info.convo.push(next.display_msg.clone());
-                                            },
-                                            None => agent_info.msg = "tool rejection sent".to_string(),
-                                        }
+                                        advance_approval_queue(agent_info, "tool rejection sent");
                                     },
                                     KeyCode::Enter if agents.values().all(|info| info.is_done) => {
                                         acknowledged = true;
@@ -1126,6 +1129,52 @@ mod tests {
         // After: agent is done
         let result = update_agent_lifecycle_state(&meta_evt, 0, &mut agents);
         assert!(result);
+        assert!(agents.get(&0).unwrap().is_done);
+    }
+
+    #[test]
+    fn test_advance_approval_queue_shows_next() {
+        let mut agent_info = AgentInfo::default();
+        agent_info.pending_tool_approval.push_back(PendingApproval {
+            tool_call_id: "tool_1".to_string(),
+            display_msg: "approve tool_1".to_string(),
+        });
+        agent_info.pending_tool_approval.push_back(PendingApproval {
+            tool_call_id: "tool_2".to_string(),
+            display_msg: "approve tool_2".to_string(),
+        });
+
+        // Pop first, advance should show second
+        agent_info.pending_tool_approval.pop_front();
+        advance_approval_queue(&mut agent_info, "done");
+        assert_eq!(agent_info.msg, "approve tool_2");
+        assert_eq!(agent_info.convo.last().unwrap(), "approve tool_2");
+
+        // Pop second, advance should show fallback
+        agent_info.pending_tool_approval.pop_front();
+        advance_approval_queue(&mut agent_info, "all approved");
+        assert_eq!(agent_info.msg, "all approved");
+    }
+
+    #[test]
+    fn test_end_turn_clears_pending_approvals() {
+        let mut agents = BTreeMap::new();
+        let mut agent_info = AgentInfo::default();
+        agent_info.pending_tool_approval.push_back(PendingApproval {
+            tool_call_id: "tool_1".to_string(),
+            display_msg: "approve tool_1".to_string(),
+        });
+        agents.insert(0, agent_info);
+
+        assert!(!agents.get(&0).unwrap().pending_tool_approval.is_empty());
+
+        let meta_evt = MetaEvent {
+            meta_type: META_TYPE_END_TURN.to_string(),
+            payload: json!({}),
+        };
+        update_agent_lifecycle_state(&meta_evt, 0, &mut agents);
+
+        assert!(agents.get(&0).unwrap().pending_tool_approval.is_empty());
         assert!(agents.get(&0).unwrap().is_done);
     }
 }

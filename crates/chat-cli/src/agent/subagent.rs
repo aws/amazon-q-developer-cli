@@ -447,8 +447,15 @@ impl<'a> Subagent<'a> {
                 },
 
                 evt = agent.recv() => {
-                    let Ok(evt) = evt else {
-                        break;
+                    let evt = match evt {
+                        Ok(evt) => evt,
+                        Err(tokio::sync::broadcast::error::RecvError::Lagged(n)) => {
+                            warn!(n, "subagent broadcast receiver lagged, skipping {n} events");
+                            continue;
+                        },
+                        Err(tokio::sync::broadcast::error::RecvError::Closed) => {
+                            break;
+                        },
                     };
                     debug!(?evt, "received new agent event");
 
