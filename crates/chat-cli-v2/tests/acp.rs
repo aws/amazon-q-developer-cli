@@ -1751,3 +1751,55 @@ async fn session_list_returns_sessions_with_title() {
         );
     }
 }
+
+#[tokio::test]
+#[timeout(15000)]
+#[serial]
+async fn task_create_injects_context_into_next_request() {
+    let (mut harness, client, session_id, _) = AcpTestHarnessBuilder::new("task_context_injection")
+        .build_with_session()
+        .await;
+
+    // Turn 1: task_create tool call
+    harness
+        .push_mock_responses_from_file(&session_id.0, "tests/mock_responses/tool_task_create_then_text.jsonl")
+        .await;
+
+    client
+        .prompt_text(session_id.clone(), "create a task for the auth bug")
+        .await
+        .expect("prompt 1 failed");
+
+    // Turn 2: simple text response — this request should contain task context in history
+    harness
+        .push_mock_responses_from_file(&session_id.0, "tests/mock_responses/simple_text.jsonl")
+        .await;
+
+    client
+        .prompt_text(session_id.clone(), "what tasks do we have")
+        .await
+        .expect("prompt 2 failed");
+
+    // Verify context injection by reading the agent log.
+    // The IPC get_captured_requests can't serialize ToolResultContentBlock::Json,
+    // so we verify via the log which shows the full request messages.
+    let log_content = std::fs::read_to_string(&harness.paths.log_file).expect("failed to read agent log");
+
+    // The second request should contain the task context injection
+    assert!(
+        log_content.contains("Active Task List") && log_content.contains("Fix auth bug"),
+        "Agent log should contain task context injection with 'Active Task List' and 'Fix auth bug'"
+    );
+
+    // Verify the context is wrapped in context entry markers
+    assert!(
+        log_content.contains("CONTEXT ENTRY BEGIN") && log_content.contains("CONTEXT ENTRY END"),
+        "Task context should be wrapped in CONTEXT ENTRY markers"
+    );
+
+    // Verify the assistant acknowledgment message is present
+    assert!(
+        log_content.contains("I will fully incorporate this information"),
+        "Task context injection should be part of the context message with assistant acknowledgment"
+    );
+}

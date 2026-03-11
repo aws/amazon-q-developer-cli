@@ -250,6 +250,7 @@ mod tests {
             true,
             None,
             None,
+            session_id,
         )
         .await
         .expect("Failed to create agent")

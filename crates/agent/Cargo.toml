@@ -38,6 +38,7 @@ dialoguer = { version = "0.11.0", features = ["fuzzy-select"] }
 dirs.workspace = true
 eyre.workspace = true
 flate2 = { workspace = true }
+fs4.workspace = true
 fd-lock = "4.0.4"
 futures.workspace = true
 glob.workspace = true

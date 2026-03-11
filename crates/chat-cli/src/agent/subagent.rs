@@ -278,6 +278,7 @@ impl<'a> Subagent<'a> {
             true,
             self.code_intelligence.clone(),
             None,
+            &uuid::Uuid::new_v4().to_string(),
         )
         .await?;
 
