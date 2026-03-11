@@ -1,0 +1,4 @@
+{
+  "type": "added",
+  "description": "Include assistant response in stop hook event payload (kirodotdev/Kiro#6258)"
+}

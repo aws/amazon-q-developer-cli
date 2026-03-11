@@ -84,7 +84,10 @@ use clap::{
     ValueEnum,
 };
 use cli::compact::CompactStrategy;
-use cli::hooks::ToolContext;
+use cli::hooks::{
+    HookPayload,
+    ToolContext,
+};
 use cli::model::{
     find_model,
     get_available_models,
@@ -3704,8 +3707,10 @@ impl ChatSession {
                             crate::cli::agent::hook::HookTrigger::PostToolUse,
                             &mut std::io::stderr(),
                             os,
-                            None,
-                            Some(tool_context),
+                            HookPayload {
+                                tool_context: Some(tool_context),
+                                ..Default::default()
+                            },
                         )
                         .await;
                 }
@@ -4297,8 +4302,10 @@ impl ChatSession {
                         crate::cli::agent::hook::HookTrigger::Stop,
                         &mut std::io::stderr(),
                         os,
-                        None,
-                        None,
+                        HookPayload {
+                            assistant_response: Some(&buf),
+                            ..Default::default()
+                        },
                     )
                     .await;
             }
@@ -4462,8 +4469,10 @@ impl ChatSession {
                         crate::cli::agent::hook::HookTrigger::PreToolUse,
                         &mut std::io::stderr(),
                         os,
-                        None, // prompt
-                        Some(tool_context),
+                        HookPayload {
+                            tool_context: Some(tool_context),
+                            ..Default::default()
+                        },
                     )
                     .await?;
 

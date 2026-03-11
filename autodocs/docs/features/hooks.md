@@ -1,13 +1,13 @@
 ---
 doc_meta:
-  validated: 2026-02-02
-  commit: 9c8974b4
+  validated: 2026-03-10
+  commit: 33f60059
   status: validated
   testable_headless: true
   category: feature
   title: Hooks System
   description: Execute commands at trigger points with JSON input/output and exit code control
-  keywords: [hooks, commands, triggers, context, dynamic, exit, stdin, stop]
+  keywords: [hooks, commands, triggers, context, dynamic, exit, stdin, stop, assistant_response]
   related: [agent-configuration, slash-hooks]
 ---
 
@@ -243,9 +243,15 @@ or cleanup after the assistant's response.
 ```json
 {
   "hook_event_name": "stop",
-  "cwd": "/current/working/directory"
+  "cwd": "/current/working/directory",
+  "assistant_response": "The assistant's complete response text for this turn"
 }
 ```
+
+**Fields:**
+- `hook_event_name`: Always `"stop"`
+- `cwd`: Current working directory
+- `assistant_response`: The full text of the assistant's response for this turn
 
 **Exit Code Behavior:**
 - **0**: Hook succeeded.

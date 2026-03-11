@@ -210,6 +210,7 @@ impl TaskExecutor {
                         &cwd,
                         req.prompt,
                         req.id.tool_context,
+                        req.assistant_response,
                     );
                     tokio::select! {
                         _ = cancel_token_clone.cancelled() => {
@@ -328,6 +329,8 @@ pub struct StartHookExecution {
     pub id: HookExecutionId,
     /// The user prompt. Passed to the hook as context if available.
     pub prompt: Option<String>,
+    /// The assistant's response text. Passed to stop hooks.
+    pub assistant_response: Option<String>,
 }
 
 #[derive(Debug)]
@@ -575,6 +578,7 @@ async fn run_command_hook(
     cwd: &str,
     prompt: Option<String>,
     tool_context: Option<ToolContext>,
+    assistant_response: Option<String>,
 ) -> (Result<CommandResult, String>, Duration) {
     let start_time = Instant::now();
 
@@ -625,6 +629,10 @@ async fn run_command_hook(
         if let Some(response) = tool_ctx.tool_response {
             hook_input["tool_response"] = response;
         }
+    }
+
+    if let Some(response) = assistant_response {
+        hook_input["assistant_response"] = serde_json::Value::String(response);
     }
     let json_input = serde_json::to_string(&hook_input).unwrap_or_default();
 
@@ -698,6 +706,57 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn test_hook_execution_with_assistant_response() {
+        let cwd = std::env::current_dir().expect("current dir exists");
+        let mut executor = TaskExecutor::new(Arc::new(TestProvider::new_with_base(cwd)));
+
+        let temp_dir = tempfile::TempDir::new().unwrap();
+        let test_file = temp_dir.path().join("hook_output.json");
+        let test_file_str = test_file.to_string_lossy().to_string();
+
+        let command = format!("cat > {test_file_str}");
+        let config: HookConfig = serde_json::from_value(serde_json::json!({
+            "command": command
+        }))
+        .unwrap();
+
+        executor
+            .start_hook_execution(StartHookExecution {
+                id: HookExecutionId {
+                    hook: Hook {
+                        trigger: HookTrigger::Stop,
+                        config,
+                    },
+                    tool_context: None,
+                },
+                prompt: None,
+                assistant_response: Some("Here is the assistant response.".to_string()),
+            })
+            .await;
+
+        run_with_timeout(Duration::from_millis(5000), async move {
+            let mut event_buf = Vec::new();
+            loop {
+                executor.recv_next(&mut event_buf).await;
+                if event_buf
+                    .iter()
+                    .any(|ev| matches!(ev, TaskExecutorEvent::HookExecutionEnd(_)))
+                {
+                    break;
+                }
+                event_buf.drain(..);
+            }
+        })
+        .await;
+
+        let content = std::fs::read_to_string(&test_file).unwrap();
+        let json: serde_json::Value = serde_json::from_str(&content).unwrap();
+        assert_eq!(json["hook_event_name"], "stop");
+        assert_eq!(json["assistant_response"], "Here is the assistant response.");
+        assert!(json["cwd"].as_str().is_some());
+    }
+
+    #[tokio::test]
     async fn test_hook_execution() {
         let cwd = std::env::current_dir().expect("current dir exists");
         let mut executor = TaskExecutor::new(Arc::new(TestProvider::new_with_base(cwd)));
@@ -712,6 +771,7 @@ mod tests {
                     tool_context: None,
                 },
                 prompt: None,
+                assistant_response: None,
             })
             .await;
 

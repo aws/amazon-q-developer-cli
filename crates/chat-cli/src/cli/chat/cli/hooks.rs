@@ -100,6 +100,13 @@ pub struct ToolContext {
     pub tool_response: Option<serde_json::Value>,
 }
 
+#[derive(Debug, Clone, Default)]
+pub struct HookPayload<'a> {
+    pub prompt: Option<&'a str>,
+    pub tool_context: Option<ToolContext>,
+    pub assistant_response: Option<&'a str>,
+}
+
 #[derive(Debug, Clone)]
 pub struct CachedHook {
     output: String,
@@ -130,8 +137,7 @@ impl HookExecutor {
         hooks: HashMap<HookTrigger, Vec<Hook>>,
         output: &mut impl Write,
         cwd: &str,
-        prompt: Option<&str>,
-        tool_context: Option<ToolContext>,
+        payload: HookPayload<'_>,
     ) -> Result<Vec<((HookTrigger, Hook), HookOutput)>, ChatError> {
         let mut cached = vec![];
         let mut futures = FuturesUnordered::new();
@@ -140,7 +146,7 @@ impl HookExecutor {
             .flat_map(|(trigger, hooks)| hooks.into_iter().map(move |hook| (trigger, hook)))
         {
             // Filter hooks by tool matcher
-            if let Some(tool_ctx) = &tool_context
+            if let Some(tool_ctx) = &payload.tool_context
                 && !hook_matches_tool(&hook.1, &tool_ctx.tool_name)
             {
                 continue; // Skip this hook - doesn't match tool
@@ -151,7 +157,7 @@ impl HookExecutor {
                 cached.push((hook.clone(), (0, cache)));
                 continue;
             }
-            futures.push(self.run_hook(hook, cwd, prompt, tool_context.clone()));
+            futures.push(self.run_hook(hook, cwd, &payload));
         }
 
         let mut complete = 0; // number of hooks that are run successfully with exit code 0
@@ -277,8 +283,7 @@ impl HookExecutor {
         &self,
         hook: (HookTrigger, Hook),
         cwd: &str,
-        prompt: Option<&str>,
-        tool_context: Option<ToolContext>,
+        payload: &HookPayload<'_>,
     ) -> ((HookTrigger, Hook), Result<HookOutput>, Duration) {
         let start_time = Instant::now();
 
@@ -313,7 +318,7 @@ impl HookExecutor {
         });
 
         // Set USER_PROMPT environment variable and add to JSON input if provided
-        if let Some(prompt) = prompt {
+        if let Some(prompt) = payload.prompt {
             // Sanitize the prompt to avoid issues with special characters
             let sanitized_prompt = sanitize_user_prompt(prompt);
             cmd.env("USER_PROMPT", sanitized_prompt);
@@ -321,13 +326,18 @@ impl HookExecutor {
         }
 
         // ToolUse specific input
-        if let Some(tool_ctx) = tool_context {
+        if let Some(tool_ctx) = payload.tool_context.clone() {
             hook_input["tool_name"] = serde_json::Value::String(tool_ctx.tool_name);
             hook_input["tool_input"] = tool_ctx.tool_input;
-            if let Some(response) = tool_ctx.tool_response {
-                hook_input["tool_response"] = response;
+            if let Some(tool_response) = tool_ctx.tool_response {
+                hook_input["tool_response"] = tool_response;
             }
         }
+
+        if let Some(assistant_response) = payload.assistant_response {
+            hook_input["assistant_response"] = serde_json::Value::String(assistant_response.to_string());
+        }
+
         let json_input = serde_json::to_string(&hook_input).unwrap_or_default();
 
         // Build a future for hook command w/ the JSON input passed in through STDIN
@@ -640,7 +650,10 @@ mod tests {
 
         // Run the hook
         let result = executor
-            .run_hooks(hooks, &mut output, ".", None, Some(tool_context))
+            .run_hooks(hooks, &mut output, ".", HookPayload {
+                tool_context: Some(tool_context),
+                ..Default::default()
+            })
             .await;
 
         assert!(result.is_ok());
@@ -682,13 +695,10 @@ mod tests {
 
         // Run the hooks
         let result = executor
-            .run_hooks(
-                hooks,
-                &mut output,
-                ".",  // cwd - using current directory for now
-                None, // prompt - no user prompt for this test
-                Some(tool_context),
-            )
+            .run_hooks(hooks, &mut output, ".", HookPayload {
+                tool_context: Some(tool_context),
+                ..Default::default()
+            })
             .await;
 
         assert!(result.is_ok());
@@ -733,13 +743,10 @@ mod tests {
         };
 
         let results = executor
-            .run_hooks(
-                hooks,
-                &mut output,
-                ".",  // cwd
-                None, // prompt
-                Some(tool_context),
-            )
+            .run_hooks(hooks, &mut output, ".", HookPayload {
+                tool_context: Some(tool_context),
+                ..Default::default()
+            })
             .await
             .unwrap();
 
@@ -775,13 +782,7 @@ mod tests {
         let hooks = HashMap::from([(HookTrigger::Stop, vec![hook])]);
 
         let results = executor
-            .run_hooks(
-                hooks,
-                &mut output,
-                ".",  // cwd
-                None, // prompt
-                None, // tool_context - Stop doesn't have tool context
-            )
+            .run_hooks(hooks, &mut output, ".", HookPayload::default())
             .await
             .unwrap();
 
@@ -792,6 +793,54 @@ mod tests {
         assert_eq!(*trigger, HookTrigger::Stop);
         assert_eq!(*exit_code, 0);
         assert!(hook_output.contains("Turn completed successfully"));
+    }
+
+    #[tokio::test]
+    async fn test_stop_hook_with_response() {
+        let mut executor = HookExecutor::new();
+        let mut output = Vec::new();
+
+        let temp_dir = TempDir::new().unwrap();
+        let test_file = temp_dir.path().join("stop_hook_output.json");
+        let test_file_str = test_file.to_string_lossy();
+
+        #[cfg(unix)]
+        let command = format!("cat > {test_file_str}");
+        #[cfg(windows)]
+        let command = format!(
+            "powershell -Command \"$input | Out-File -FilePath '{}'\"",
+            test_file_str
+        );
+
+        let hook = Hook {
+            command,
+            timeout_ms: 5000,
+            cache_ttl_seconds: 0,
+            max_output_size: 1000,
+            matcher: None,
+            source: crate::cli::agent::hook::Source::Session,
+        };
+
+        let hooks = HashMap::from([(HookTrigger::Stop, vec![hook])]);
+
+        let results = executor
+            .run_hooks(hooks, &mut output, ".", HookPayload {
+                assistant_response: Some("Here is the assistant response text."),
+                ..Default::default()
+            })
+            .await
+            .unwrap();
+
+        assert_eq!(results.len(), 1);
+        let ((trigger, _), (exit_code, _)) = &results[0];
+        assert_eq!(*trigger, HookTrigger::Stop);
+        assert_eq!(*exit_code, 0);
+
+        let content = std::fs::read_to_string(&test_file).unwrap();
+        let json: serde_json::Value = serde_json::from_str(&content).unwrap();
+        assert_eq!(json["hook_event_name"], "stop");
+        assert_eq!(json["assistant_response"], "Here is the assistant response text.");
+        assert_eq!(json["cwd"], ".");
     }
 
     #[test]

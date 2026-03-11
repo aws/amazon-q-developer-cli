@@ -586,7 +586,8 @@ impl Agent {
                     )
                 })
                 .collect();
-            self.start_hooks_execution(hooks, HookStage::AgentSpawn, None).await;
+            self.start_hooks_execution(hooks, HookStage::AgentSpawn, None, None)
+                .await;
         } else {
             self.agent_event_buf.push(AgentEvent::Initialized);
         }
@@ -1304,6 +1305,7 @@ impl Agent {
                 // Execute Stop hooks if required
                 let hooks = self.get_hooks(HookTrigger::Stop);
                 if !hooks.is_empty() {
+                    let assistant_response = md.result.as_ref().and_then(|r| r.as_ref().ok()).map(|msg| msg.text());
                     let hooks = hooks
                         .into_iter()
                         .map(|hook| {
@@ -1322,6 +1324,7 @@ impl Agent {
                             user_turn_metadata: Box::new(md),
                         },
                         None,
+                        assistant_response,
                     )
                     .await;
                     return Ok(());
@@ -1551,7 +1554,7 @@ impl Agent {
                 })
                 .collect();
             let prompt = args.text();
-            self.start_hooks_execution(hooks, HookStage::PrePrompt { args }, prompt)
+            self.start_hooks_execution(hooks, HookStage::PrePrompt { args }, prompt, None)
                 .await;
             Ok(AgentResponse::Success)
         } else {
@@ -1879,7 +1882,7 @@ impl Agent {
                 tools: tools.clone(),
                 needs_approval: needs_approval.clone(),
             };
-            self.start_hooks_execution(hooks_to_execute, stage, None).await;
+            self.start_hooks_execution(hooks_to_execute, stage, None, None).await;
             return Ok(());
         }
 
@@ -1918,12 +1921,14 @@ impl Agent {
         hooks: Vec<(HookExecutionId, Option<(ToolUseBlock, Tool)>)>,
         stage: HookStage,
         prompt: Option<String>,
+        assistant_response: Option<String>,
     ) {
         let mut hooks_state = Vec::new();
         for (id, tool_ctx) in hooks {
             let req = StartHookExecution {
                 id: id.clone(),
                 prompt: prompt.clone(),
+                assistant_response: assistant_response.clone(),
             };
             hooks_state.push(ExecutingHook {
                 id: id.clone(),
@@ -2026,7 +2031,7 @@ impl Agent {
             let stage = HookStage::PostToolUse {
                 executing_tools: executing_tools.clone(),
             };
-            self.start_hooks_execution(hooks_to_execute, stage, None).await;
+            self.start_hooks_execution(hooks_to_execute, stage, None, None).await;
             return Ok(());
         }
 

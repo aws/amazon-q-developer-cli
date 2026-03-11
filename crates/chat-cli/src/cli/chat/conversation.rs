@@ -1078,13 +1078,10 @@ impl ConversationState {
         if let Some(cm) = self.context_manager.as_mut() {
             let user_prompt = self.next_message.as_ref().and_then(|m| m.prompt());
             let agent_spawn = cm
-                .run_hooks(
-                    HookTrigger::AgentSpawn,
-                    output,
-                    os,
-                    user_prompt,
-                    None, // tool_context
-                )
+                .run_hooks(HookTrigger::AgentSpawn, output, os, super::cli::hooks::HookPayload {
+                    prompt: user_prompt,
+                    ..Default::default()
+                })
                 .await?;
             agent_spawn_context = format_hook_context(&agent_spawn, HookTrigger::AgentSpawn);
 
@@ -1094,8 +1091,10 @@ impl ConversationState {
                         HookTrigger::UserPromptSubmit,
                         output,
                         os,
-                        next_message.prompt(),
-                        None, // tool_context
+                        super::cli::hooks::HookPayload {
+                            prompt: next_message.prompt(),
+                            ..Default::default()
+                        },
                     )
                     .await?;
                 if let Some(ctx) = format_hook_context(&per_prompt, HookTrigger::UserPromptSubmit) {
