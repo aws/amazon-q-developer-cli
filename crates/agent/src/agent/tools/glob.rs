@@ -54,7 +54,7 @@ const GLOB_SCHEMA: &str = r#"
     "properties": {
         "pattern": {
             "type": "string",
-            "description": "Glob pattern, e.g. \"**/*.rs\", \"src/**/*.{ts,tsx}\""
+            "description": "Glob pattern, e.g. '**/*.rs', 'src/**/*.{ts,tsx}'"
         },
         "path": {
             "type": "string",

@@ -74,7 +74,7 @@ const GREP_SCHEMA: &str = r#"
         },
         "include": {
             "type": "string",
-            "description": "File filter glob, e.g. \"*.rs\", \"*.{ts,tsx}\""
+            "description": "File filter glob, e.g. '*.rs', '*.{ts,tsx}'"
         },
         "case_sensitive": {
             "type": "boolean",
@@ -185,10 +185,13 @@ impl Grep {
         }
     }
 
-    pub async fn validate<P: SystemProvider>(&self, provider: &P) -> Result<(), String> {
+    pub async fn validate<P: SystemProvider>(&mut self, provider: &P) -> Result<(), String> {
         if self.pattern.is_empty() {
             return Err("Search pattern cannot be empty".to_string());
         }
+
+        // Sanitize common LLM artifacts from the pattern before regex compilation
+        sanitize_pattern(&mut self.pattern);
 
         let case_sensitive = self.case_sensitive.unwrap_or(false);
         RegexMatcherBuilder::new()
@@ -469,6 +472,23 @@ impl Grep {
     }
 }
 
+/// Strip a trailing unmatched double quote that LLMs commonly append to search patterns.
+///
+/// Only applies when the pattern is ASCII-only (to avoid ambiguity with non-ASCII content)
+/// and contains exactly one `"` at the very end of the string.
+/// For example: `searchstring"` → `searchstring`.
+/// Patterns with paired quotes like `"foo"` or quotes elsewhere are left untouched.
+fn sanitize_pattern(pattern: &mut String) {
+    if !pattern.is_ascii() {
+        return;
+    }
+
+    if pattern.ends_with('"') && pattern.matches('"').count() == 1 {
+        pattern.pop();
+        tracing::debug!("Stripped trailing unmatched quote from grep pattern");
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use std::fs::File;
@@ -685,5 +705,26 @@ mod tests {
         assert!(Grep::match_include("*.{ts,tsx}", "component.ts"));
         assert!(Grep::match_include("*.{ts,tsx}", "component.tsx"));
         assert!(!Grep::match_include("*.{ts,tsx}", "component.js"));
+    }
+
+    #[test]
+    fn test_sanitize_pattern_strips_trailing_unmatched_quote() {
+        let mut p = "searchstring\"".to_string();
+        sanitize_pattern(&mut p);
+        assert_eq!(p, "searchstring");
+    }
+
+    #[test]
+    fn test_sanitize_pattern_preserves_no_quotes() {
+        let mut p = "normal_pattern".to_string();
+        sanitize_pattern(&mut p);
+        assert_eq!(p, "normal_pattern");
+    }
+
+    #[test]
+    fn test_sanitize_pattern_preserves_multiple_quotes() {
+        let mut p = "\"foo\"bar\"".to_string();
+        sanitize_pattern(&mut p);
+        assert_eq!(p, "\"foo\"bar\"");
     }
 }

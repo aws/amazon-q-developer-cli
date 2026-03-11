@@ -34,7 +34,7 @@
       "properties": {
         "pattern": {
           "type": "string",
-          "description": "Glob pattern, e.g. \"**/*.rs\", \"src/**/*.{ts,tsx}\" or \"**/test*\"."
+          "description": "Glob pattern, e.g. '**/*.rs', 'src/**/*.{ts,tsx}' or '**/test*'."
         },
         "path": {
           "type": "string",
@@ -62,7 +62,7 @@
       "properties": {
         "pattern": {
           "type": "string",
-          "description": "Regex pattern to search for. Examples: \"fn main\", \"class.*Component\", \"TODO|FIXME\". Start with simple patterns first (e.g. just the word you're looking for), then refine if needed."
+          "description": "Regex pattern to search for. Examples: 'fn main', 'class.*Component', 'TODO|FIXME'. Start with simple patterns first (e.g. just the word you're looking for), then refine if needed."
         },
         "path": {
           "type": "string",
@@ -70,7 +70,7 @@
         },
         "include": {
           "type": "string",
-          "description": "File filter glob. Examples: \"*.rs\", \"*.{ts,tsx}\", \"*.py\""
+          "description": "File filter glob. Examples: '*.rs', '*.{ts,tsx}', '*.py'"
         },
         "case_sensitive": {
           "type": "boolean",

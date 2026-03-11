@@ -543,6 +543,9 @@ impl Grep {
             return Err(eyre::eyre!("Search pattern cannot be empty"));
         }
 
+        // Sanitize common LLM artifacts from the pattern before regex compilation
+        sanitize_pattern(&mut self.pattern);
+
         // Validate regex using RegexMatcherBuilder
         let case_sensitive = self.case_sensitive.unwrap_or(false);
         RegexMatcherBuilder::new()
@@ -660,6 +663,23 @@ impl Grep {
             Ok(allow_set) if allow_set.is_match(&canonical_search_path) => PermissionEvalResult::Allow,
             _ => PermissionEvalResult::ask(),
         }
+    }
+}
+
+/// Strip a trailing unmatched double quote that LLMs commonly append to search patterns.
+///
+/// Only applies when the pattern is ASCII-only (to avoid ambiguity with non-ASCII content)
+/// and contains exactly one `"` at the very end of the string.
+/// For example: `searchstring"` → `searchstring`.
+/// Patterns with paired quotes like `"foo"` or quotes elsewhere are left untouched.
+fn sanitize_pattern(pattern: &mut String) {
+    if !pattern.is_ascii() {
+        return;
+    }
+
+    if pattern.ends_with('"') && pattern.matches('"').count() == 1 {
+        pattern.pop();
+        tracing::debug!("Stripped trailing unmatched quote from grep pattern");
     }
 }
 
@@ -1102,5 +1122,26 @@ mod tests {
         } else {
             panic!("Expected JSON output");
         }
+    }
+
+    #[test]
+    fn test_sanitize_pattern_strips_trailing_unmatched_quote() {
+        let mut p = "searchstring\"".to_string();
+        sanitize_pattern(&mut p);
+        assert_eq!(p, "searchstring");
+    }
+
+    #[test]
+    fn test_sanitize_pattern_preserves_no_quotes() {
+        let mut p = "normal_pattern".to_string();
+        sanitize_pattern(&mut p);
+        assert_eq!(p, "normal_pattern");
+    }
+
+    #[test]
+    fn test_sanitize_pattern_preserves_multiple_quotes() {
+        let mut p = "\"foo\"bar\"".to_string();
+        sanitize_pattern(&mut p);
+        assert_eq!(p, "\"foo\"bar\"");
     }
 }
