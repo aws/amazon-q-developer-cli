@@ -336,13 +336,85 @@ mod tests {
         assert!(!is_readonly_command(&make_cmd("git branch -M old new")));
         assert!(!is_readonly_command(&make_cmd("git branch --delete test")));
         assert!(!is_readonly_command(&make_cmd("git branch -c old new")));
+        assert!(
+            !is_readonly_command(&make_cmd("git branch -f main abc1234")),
+            "force-moves branch pointer, can lose commit history"
+        );
+        assert!(
+            !is_readonly_command(&make_cmd("git branch --force main abc1234")),
+            "force-moves branch pointer, can lose commit history"
+        );
         assert!(is_readonly_command(&make_cmd("git tag")));
         assert!(is_readonly_command(&make_cmd("git tag -l")));
         assert!(!is_readonly_command(&make_cmd("git tag -d v1.0")));
         assert!(!is_readonly_command(&make_cmd("git tag --delete v1.0")));
+        assert!(
+            !is_readonly_command(&make_cmd("git tag -f v1.0 abc1234")),
+            "overwrites existing tag ref silently"
+        );
+        assert!(
+            !is_readonly_command(&make_cmd("git tag --force v1.0 abc1234")),
+            "overwrites existing tag ref silently"
+        );
+        assert!(
+            !is_readonly_command(&make_cmd("git tag -a v1.0 -m release")),
+            "creates annotated tag"
+        );
+        assert!(!is_readonly_command(&make_cmd("git tag -s v1.0")), "creates signed tag");
+        assert!(
+            !is_readonly_command(&make_cmd("git tag -m message v1.0")),
+            "creates tag with message"
+        );
+        // KNOWN LIMITATION: bare lightweight tag creation has no flag to detect —
+        // config can only match flags, not positional args. Low risk: errors if tag exists.
+        assert!(
+            is_readonly_command(&make_cmd("git tag v1.0")),
+            "known limitation: lightweight tag creation is undetectable without flag-based matching"
+        );
         assert!(is_readonly_command(&make_cmd("git remote")));
         assert!(!is_readonly_command(&make_cmd("git remote add origin url")));
         assert!(!is_readonly_command(&make_cmd("git remote remove origin")));
+        assert!(
+            !is_readonly_command(&make_cmd("git remote set-head origin main")),
+            "modifies default branch ref"
+        );
+        assert!(
+            !is_readonly_command(&make_cmd("git remote prune origin")),
+            "removes stale tracking refs"
+        );
+        assert!(is_readonly_command(&make_cmd("git fetch")));
+        assert!(
+            !is_readonly_command(&make_cmd("git fetch -f origin main")),
+            "overwrites local tracking refs on non-fast-forward updates"
+        );
+        assert!(
+            !is_readonly_command(&make_cmd("git fetch --force origin main")),
+            "overwrites local tracking refs on non-fast-forward updates"
+        );
+        assert!(
+            !is_readonly_command(&make_cmd("git fetch --prune-tags origin")),
+            "deletes local tags not on remote"
+        );
+        assert!(
+            !is_readonly_command(&make_cmd("git fetch --update-head-ok origin")),
+            "allows updating HEAD ref"
+        );
+        assert!(is_readonly_command(&make_cmd("git reflog")));
+        assert!(is_readonly_command(&make_cmd("git reflog show")));
+        assert!(
+            !is_readonly_command(&make_cmd("git reflog delete HEAD@{2}")),
+            "deletes reflog entries, can lose commit references"
+        );
+        assert!(
+            !is_readonly_command(&make_cmd("git reflog expire --all")),
+            "prunes reflog entries, can make commits unreachable"
+        );
+        // npm audit is readonly, but npm audit fix modifies package.json
+        assert!(is_readonly_command(&make_cmd("npm audit")));
+        assert!(
+            !is_readonly_command(&make_cmd("npm audit fix")),
+            "modifies package.json and package-lock.json"
+        );
     }
 
     #[test]

@@ -35,9 +35,11 @@
     "grep": ["-P", "--perl-regexp"]
   },
   "safe_subcommand_except": {
-    "git branch": ["-d", "-D", "-m", "-M", "-c", "-C", "--delete", "--move", "--copy"],
-    "git tag": ["-d", "--delete"],
-    "git remote": ["add", "remove", "rename", "set-url"],
-    "git fetch": ["--prune"]
+    "git branch": ["-d", "-D", "-m", "-M", "-c", "-C", "-f", "--force", "--delete", "--move", "--copy"],
+    "git tag": ["-a", "-s", "-u", "-d", "-f", "--delete", "--force", "-m", "-F", "--create-reflog"],
+    "git remote": ["add", "remove", "rename", "set-url", "set-head", "prune"],
+    "git fetch": ["-f", "--force", "--prune", "--prune-tags", "--update-head-ok"],
+    "git reflog": ["delete", "expire"],
+    "npm audit": ["fix"]
   }
 }

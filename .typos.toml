@@ -1,6 +1,7 @@
 [files]
 extend-exclude = [
   "packages/ink/",
+  "packages/twinki/",
   "**/__tests__/",
   "**/e2e_tests/",
   "**/tests/",
