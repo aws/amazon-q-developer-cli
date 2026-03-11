@@ -127,6 +127,8 @@ use super::extensions::{
     ClearStatusNotification,
     CompactionStatus,
     CompactionStatusNotification,
+    ExtSessionUpdate,
+    ExtSessionUpdateNotification,
     McpOauthRequestNotification,
     McpServerInitFailureNotification,
     McpServerInitializedNotification,
@@ -1630,14 +1632,15 @@ impl AcpSession {
                 }
             },
             AgentEvent::Internal(InternalEvent::AgentLoop(loop_event)) => {
-                // TODO: This should NOT emit an ACP ToolCall event. ACP expects full tool uses,
-                // and this results in InProgress tools being sent before Pending. Instead, use
-                // a custom extension notification for early tool use feedback.
                 if let AgentLoopEventKind::ToolUseStart { id, name } = loop_event.kind {
-                    let tool_call = ToolCall::new(ToolCallId::new(id), name.clone())
-                        .kind(get_tool_kind(&name))
-                        .status(ToolCallStatus::InProgress);
-                    let _ = self.send_session_notification(SessionUpdate::ToolCall(tool_call));
+                    let _ = self.send_ext_notification(methods::SESSION_UPDATE, ExtSessionUpdateNotification {
+                        session_id: self.session_id.clone(),
+                        update: ExtSessionUpdate::ToolCallChunk {
+                            tool_call_id: id,
+                            title: name.clone(),
+                            kind: get_tool_kind(&name),
+                        },
+                    });
                 }
             },
             AgentEvent::Stop(AgentStopReason::EndTurn) => {

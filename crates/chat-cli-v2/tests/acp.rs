@@ -1228,7 +1228,6 @@ async fn auto_compaction_on_context_overflow() {
 }
 
 #[tokio::test]
-#[ignore = "TODO: don't emit ToolCall on ToolUseStart parsing"]
 #[timeout(10000)]
 #[serial]
 async fn str_replace_tool_call_includes_location_with_line_number() {
@@ -1396,7 +1395,6 @@ async fn get_tool_call_locations(
 }
 
 #[tokio::test]
-#[ignore = "TODO: don't emit ToolCall on ToolUseStart parsing"]
 #[timeout(10000)]
 async fn tool_call_has_descriptive_title_fs_read() {
     let (mut harness, client, session_id, _) = AcpTestHarnessBuilder::new("tool_fs_read").build_with_session().await;
@@ -1434,7 +1432,6 @@ async fn tool_call_has_descriptive_title_fs_read() {
 }
 
 #[tokio::test]
-#[ignore = "TODO: don't emit ToolCall on ToolUseStart parsing"]
 #[timeout(10000)]
 async fn tool_call_has_descriptive_title_fs_write_create() {
     let (mut harness, client, session_id, _) = AcpTestHarnessBuilder::new("tool_fs_write_create")
@@ -1455,7 +1452,6 @@ async fn tool_call_has_descriptive_title_fs_write_create() {
 }
 
 #[tokio::test]
-#[ignore = "TODO: don't emit ToolCall on ToolUseStart parsing"]
 #[timeout(10000)]
 async fn tool_call_has_descriptive_title_grep() {
     let (mut harness, client, session_id, _) = AcpTestHarnessBuilder::new("tool_grep")
@@ -1476,7 +1472,6 @@ async fn tool_call_has_descriptive_title_grep() {
 }
 
 #[tokio::test]
-#[ignore = "TODO: don't emit ToolCall on ToolUseStart parsing"]
 #[timeout(10000)]
 async fn tool_call_has_descriptive_title_execute_bash() {
     let (mut harness, client, session_id, _) = AcpTestHarnessBuilder::new("tool_execute_bash")
@@ -1497,7 +1492,6 @@ async fn tool_call_has_descriptive_title_execute_bash() {
 }
 
 #[tokio::test]
-#[ignore = "TODO: don't emit ToolCall on ToolUseStart parsing"]
 #[timeout(10000)]
 async fn tool_call_has_locations_fs_read_multiple() {
     let (mut harness, client, session_id, _) = AcpTestHarnessBuilder::new("tool_fs_read_multi")
@@ -1526,7 +1520,6 @@ async fn tool_call_has_locations_fs_read_multiple() {
 }
 
 #[tokio::test]
-#[ignore = "TODO: don't emit ToolCall on ToolUseStart parsing"]
 #[timeout(10000)]
 async fn tool_call_has_locations_fs_read_with_line() {
     let (mut harness, client, session_id, _) = AcpTestHarnessBuilder::new("tool_fs_read_offset")

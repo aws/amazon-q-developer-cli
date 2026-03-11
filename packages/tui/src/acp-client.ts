@@ -33,6 +33,7 @@ const EXT_METHODS = {
   MCP_SERVER_INIT_FAILURE: 'kiro.dev/mcp/server_init_failure',
   RATE_LIMIT_ERROR: 'kiro.dev/error/rate_limit',
   AGENT_SWITCHED: 'kiro.dev/agent/switched',
+  SESSION_UPDATE: 'kiro.dev/session/update',
 } as const;
 
 /**
@@ -498,6 +499,8 @@ export class AcpClient implements acp.Client, SessionClient {
     [EXT_METHODS.RATE_LIMIT_ERROR]: (params) =>
       this.handleRateLimitError(params),
     [EXT_METHODS.AGENT_SWITCHED]: (params) => this.handleAgentSwitched(params),
+    [EXT_METHODS.SESSION_UPDATE]: (params) =>
+      this.handleExtSessionUpdate(params),
   };
 
   private handleCommandsAdvertising(params: Record<string, unknown>) {
@@ -636,6 +639,26 @@ export class AcpClient implements acp.Client, SessionClient {
       previousAgentName: payload.previousAgentName,
       welcomeMessage: payload.welcomeMessage,
     });
+  }
+
+  private handleExtSessionUpdate(params: Record<string, unknown>) {
+    const update = params.update as Record<string, unknown> | undefined;
+    if (!update) return;
+
+    if (update.sessionUpdate === 'tool_call_chunk') {
+      const chunk = update as {
+        toolCallId: string;
+        title: string;
+        kind: string;
+      };
+      this.broadcastStreamEvent({
+        type: AgentEventType.ToolCall,
+        id: chunk.toolCallId,
+        name: chunk.title,
+        kind: chunk.kind,
+        args: {},
+      });
+    }
   }
 
   // ===========

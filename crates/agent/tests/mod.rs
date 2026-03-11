@@ -193,6 +193,49 @@ async fn test_agent_defaults() {
 }
 
 #[tokio::test]
+async fn test_build_default_agent_with_steering() {
+    let _ = tracing_subscriber::fmt::try_init();
+
+    const GLOBAL_STEERING: &str = "---\ninclusion: always\n---\n# Global Rule\nAlways use snake_case.";
+    const WORKSPACE_STEERING: &str = "---\ninclusion: always\n---\n# Workspace Rule\nPrefer async functions.";
+
+    let mut test = TestCase::builder()
+        .test_name("steering files included in context")
+        .with_default_agent_config()
+        .with_file(("~/.kiro/steering/global.md", GLOBAL_STEERING))
+        .with_file((".kiro/steering/workspace.md", WORKSPACE_STEERING))
+        .with_responses(
+            parse_response_streams(include_str!("./mock_responses/single_turn.jsonl"))
+                .await
+                .unwrap(),
+        )
+        .build()
+        .await
+        .unwrap();
+
+    test.send_prompt("test prompt".to_string()).await;
+    test.wait_until_agent_stop(Duration::from_secs(2)).await.unwrap();
+
+    let requests = test.requests();
+    assert!(!requests.is_empty(), "expected at least one request");
+
+    let first_msg = requests[0]
+        .messages()
+        .first()
+        .expect("first message should exist")
+        .text();
+
+    assert!(
+        first_msg.contains("Always use snake_case"),
+        "expected global steering content in context"
+    );
+    assert!(
+        first_msg.contains("Prefer async functions"),
+        "expected workspace steering content in context"
+    );
+}
+
+#[tokio::test]
 async fn test_log_entry_appended_events() {
     let _ = tracing_subscriber::fmt::try_init();
 

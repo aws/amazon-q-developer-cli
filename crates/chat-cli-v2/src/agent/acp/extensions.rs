@@ -1,4 +1,7 @@
-use sacp::schema::SessionId;
+use sacp::schema::{
+    SessionId,
+    ToolKind,
+};
 use serde::{
     Deserialize,
     Serialize,
@@ -24,6 +27,8 @@ pub mod methods {
     pub const AGENT_SWITCHED: &str = "_kiro.dev/agent/switched";
     /// List sessions (temporary extension until sacp adds native session/list)
     pub const SESSION_LIST: &str = "_kiro.dev/session/list";
+    /// Session update extension notification (e.g. tool_call_chunk)
+    pub const SESSION_UPDATE: &str = "_kiro.dev/session/update";
 }
 
 /// Notification to terminate a subagent session.
@@ -122,4 +127,28 @@ pub struct AgentSwitchedNotification {
     pub agent_name: String,
     pub previous_agent_name: Option<String>,
     pub welcome_message: Option<String>,
+}
+
+/// Extension session update notification payload.
+///
+/// Mirrors the ACP `session/update` envelope but delivered via extension channel
+/// for Kiro-specific update types not yet in the ACP spec.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ExtSessionUpdateNotification {
+    pub session_id: SessionId,
+    pub update: ExtSessionUpdate,
+}
+
+/// Extension session update types.
+#[derive(Debug, Clone, Serialize)]
+#[serde(tag = "sessionUpdate", rename_all = "snake_case")]
+pub enum ExtSessionUpdate {
+    /// Early notification that a tool call is being streamed.
+    #[serde(rename_all = "camelCase")]
+    ToolCallChunk {
+        tool_call_id: String,
+        title: String,
+        kind: ToolKind,
+    },
 }

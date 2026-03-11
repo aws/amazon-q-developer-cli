@@ -67,6 +67,8 @@ export function parseCliArgs(): CliArgs {
       result.resume = true;
     } else if (arg === '--resume-picker') {
       result.resumePicker = true;
+    } else if (arg === '--tui') {
+      // Boolean flag consumed by the Rust launcher — ignore without consuming next arg
     } else if (arg.startsWith('-')) {
       // Unknown flag — skip its value if the next arg looks like a value (not another flag)
       const next = args[i + 1];

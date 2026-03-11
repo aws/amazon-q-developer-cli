@@ -29,6 +29,12 @@ export const AppContainer: React.FC = () => {
       } else {
         incrementExitSequence();
       }
+    } else if (key.ctrl && userInput === 'd') {
+      // Ctrl+D only starts exit sequence when idle with empty input;
+      // when there's text, PromptInput handles it as forward-delete.
+      if (!isProcessing && !commandInputValue) {
+        incrementExitSequence();
+      }
     } else if (key.escape) {
       if (isProcessing && !pendingApproval) {
         const hadQueuedMessages = queuedMessages.length > 0;

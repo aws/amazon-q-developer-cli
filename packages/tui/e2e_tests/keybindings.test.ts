@@ -208,4 +208,49 @@ describe('Keybindings', () => {
 
     await exitCleanly(testCase);
   }, 30000);
+
+  it('Ctrl+D does not interrupt agent processing, and can exit the app', async () => {
+    testCase = await E2ETestCase.builder()
+      .withTestName('keybind-ctrl-d-no-cancel')
+      .launch();
+
+    await testCase.waitForText('ask a question', 10000);
+    await testCase.getSessionId();
+
+    // Queue a response but don't close the stream — agent stays in processing state
+    await testCase.pushSendMessageResponse([
+      { kind: 'event', data: { kind: 'AssistantResponseEvent', data: { content: 'done' } } },
+    ], { silent: true });
+
+    // Send a prompt to start agent processing
+    await testCase.sendKeys('hello');
+    await testCase.sleepMs(100);
+    await testCase.pressEnter();
+
+    // Wait for the agent to enter processing state
+    await testCase.waitForText('Thinking', 10000);
+
+    // Send Ctrl+D while agent is processing — should NOT cancel or show exit hint
+    await sendCtrl(testCase, CTRL_D);
+    await testCase.sleepMs(300);
+
+    let snap = testCase.getSnapshot().join('\n');
+    expect(snap).not.toContain('again to exit');
+    // Agent should still be processing
+    expect(snap).toContain('Thinking');
+
+    // Close the stream so agent finishes
+    await testCase.pushSendMessageResponse(null);
+    await testCase.waitForIdle();
+
+    // After idle, double Ctrl+D on empty input should exit
+    await testCase.sleepMs(300);
+    await sendCtrl(testCase, CTRL_D);
+    await testCase.sleepMs(200);
+    snap = testCase.getSnapshot().join('\n');
+    expect(snap).toContain('Press Ctrl+C or Ctrl+D again to exit');
+
+    // Exit cleanly via Ctrl+C (proven pattern)
+    await exitCleanly(testCase);
+  }, 30000);
 });

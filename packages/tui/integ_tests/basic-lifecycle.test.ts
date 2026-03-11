@@ -44,7 +44,7 @@ describe('Basic App Lifecycle', () => {
 
     // Second Ctrl+C - should start exit sequence
     await testCase.sendKeys([0x03]); // Ctrl+C
-    await testCase.waitForVisibleText('Press Ctrl+C again to exit');
+    await testCase.waitForVisibleText('Press Ctrl+C or Ctrl+D again to exit');
 
     console.log('Exit sequence started, sending third Ctrl+C (exit)...');
 

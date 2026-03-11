@@ -128,6 +128,11 @@ describe('parseCliArgs', () => {
     expect(parseCliArgs().resumePicker).toBe(true);
   });
 
+  it('does not swallow positional input after --tui', () => {
+    setArgs('chat', '--tui', 'Tell me something');
+    expect(parseCliArgs().input).toBe('Tell me something');
+  });
+
   it('resume flags default to false', () => {
     setArgs('chat');
     const result = parseCliArgs();

@@ -24,6 +24,7 @@ The introspect tool provides access to pre-indexed autodocs covering tools, slas
 - Read existing code before making changes
 - Update autodocs when adding/changing features
 - Don't try to get minimal working code — ensure you have a thorough understanding and implement a comprehensive solution that covers all bases
+- Run tests to verify your changes
 
 ## Command Execution
 

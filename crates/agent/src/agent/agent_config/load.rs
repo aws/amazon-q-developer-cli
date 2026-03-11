@@ -420,6 +420,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_build_default_agent_with_steering() {
+        // Both global and workspace steering present
         let base = TestBase::new()
             .await
             .with_file(("~/.kiro/steering/global.md", "# Global steering"))
@@ -429,8 +430,37 @@ mod tests {
 
         let config = build_default_agent(base.provider());
         let resources: Vec<&str> = config.resources().iter().map(|r| r.as_ref()).collect();
+        let steering: Vec<&&str> = resources.iter().filter(|r| r.contains("steering")).collect();
 
-        assert!(resources.iter().any(|r| r.contains("steering")));
+        assert_eq!(
+            steering.len(),
+            2,
+            "expected global + workspace steering, got: {steering:?}"
+        );
+        assert!(
+            steering
+                .iter()
+                .all(|r| r.starts_with("file://") && r.ends_with("/**/*.md"))
+        );
+
+        // Only global steering present
+        let base = TestBase::new()
+            .await
+            .with_file(("~/.kiro/steering/global.md", "# Global"))
+            .await;
+        let config = build_default_agent(base.provider());
+        let resources: Vec<&str> = config.resources().iter().map(|r| r.as_ref()).collect();
+        let steering: Vec<&&str> = resources.iter().filter(|r| r.contains("steering")).collect();
+        assert_eq!(steering.len(), 1, "expected only global steering");
+
+        // No steering directories
+        let base = TestBase::new().await;
+        let config = build_default_agent(base.provider());
+        let resources: Vec<&str> = config.resources().iter().map(|r| r.as_ref()).collect();
+        assert!(
+            !resources.iter().any(|r| r.contains("steering")),
+            "no steering dirs means no steering resources"
+        );
     }
 
     #[tokio::test]
