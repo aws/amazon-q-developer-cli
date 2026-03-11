@@ -716,4 +716,87 @@ mod tests {
         cmd.working_dir = Some("/nonexistent_dir_12345".to_string());
         assert!(cmd.validate(&os).await.is_err(), "non-existent directory should fail");
     }
+
+    /// Regression test: trusting a shell command pattern must merge into the existing
+    /// tools_settings entry (keyed by any alias) rather than creating a duplicate entry
+    /// that shadows the original config.
+    ///
+    /// Before the fix, `apply_trust_selection` would insert under `"execute_bash"` (the
+    /// spec_name) even when the config used `"shell"`, causing `eval_perm`'s `find_map`
+    /// to pick up the new entry first — losing `autoAllowReadonly` and original
+    /// `allowedCommands`.
+    #[tokio::test]
+    async fn test_trust_pattern_merges_with_existing_alias_key() {
+        use crate::cli::chat::trust_scope::resolve_tools_settings_key;
+
+        let os = Os::new().await.unwrap();
+
+        // Agent config uses "shell" key with autoAllowReadonly + an existing allowedCommands
+        let mut agent = Agent {
+            name: "test_agent".to_string(),
+            tools_settings: {
+                let mut map = HashMap::<ToolSettingTarget, serde_json::Value>::new();
+                map.insert(
+                    ToolSettingTarget("shell".to_string()),
+                    serde_json::json!({
+                        "allowedCommands": ["cargo( .*)?"],
+                        "autoAllowReadonly": true
+                    }),
+                );
+                map
+            },
+            ..Default::default()
+        };
+
+        // resolve_tools_settings_key is the same helper used by apply_trust_selection
+        let key = resolve_tools_settings_key("execute_bash", &agent.tools_settings);
+
+        // Should resolve to "shell" (the existing key), not "execute_bash"
+        assert_eq!(key, "shell");
+
+        // Merge the new pattern into the existing entry (mirrors apply_trust_selection)
+        let settings = agent
+            .tools_settings
+            .entry(ToolSettingTarget(key))
+            .or_insert_with(|| serde_json::json!({ "allowedCommands": [] }));
+        if let Some(obj) = settings.as_object_mut() {
+            let arr = obj.entry("allowedCommands").or_insert_with(|| serde_json::json!([]));
+            if let Some(arr) = arr.as_array_mut() {
+                arr.push(serde_json::Value::String("rake( .*)?".to_string()));
+            }
+        }
+
+        // Only one entry should exist in tools_settings
+        assert_eq!(agent.tools_settings.len(), 1, "should not create a duplicate entry");
+
+        // autoAllowReadonly should still work (readonly commands auto-allowed)
+        let cat_cmd = serde_json::from_value::<ExecuteCommand>(serde_json::json!({
+            "command": "cat file.txt",
+        }))
+        .unwrap();
+        assert!(
+            matches!(cat_cmd.eval_perm(&os, &agent), PermissionEvalResult::Allow),
+            "autoAllowReadonly should still be active after trust merge"
+        );
+
+        // Original allowedCommands should still work
+        let cargo_cmd = serde_json::from_value::<ExecuteCommand>(serde_json::json!({
+            "command": "cargo build",
+        }))
+        .unwrap();
+        assert!(
+            matches!(cargo_cmd.eval_perm(&os, &agent), PermissionEvalResult::Allow),
+            "original allowedCommands should still work"
+        );
+
+        // Newly trusted pattern should also work
+        let rake_cmd = serde_json::from_value::<ExecuteCommand>(serde_json::json!({
+            "command": "rake test",
+        }))
+        .unwrap();
+        assert!(
+            matches!(rake_cmd.eval_perm(&os, &agent), PermissionEvalResult::Allow),
+            "newly trusted pattern should be allowed"
+        );
+    }
 }

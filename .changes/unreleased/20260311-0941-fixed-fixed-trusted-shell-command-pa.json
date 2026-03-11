@@ -1,0 +1,4 @@
+{
+  "type": "fixed",
+  "description": "Fixed trusted shell command patterns overwriting agent config's allowedCommands and autoAllowReadonly settings"
+}

@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::io::Write;
 
 use agent::permissions::PathAccessType;
@@ -10,6 +11,7 @@ use dialoguer::Select;
 
 use super::ChatError;
 use super::conversation::ConversationState;
+use super::tools::tool::ToolMetadata;
 use super::tools::{
     QueuedTool,
     Tool,
@@ -153,10 +155,11 @@ pub fn apply_trust_selection(
                     }
                 } else {
                     // For other tools (e.g., execute_bash with command patterns),
-                    // store in tools_settings (persisted to agent config)
+                    // store in tools_settings (persisted to agent config).
+                    let key = resolve_tools_settings_key(&tool_use.name, &agent.tools_settings);
                     let settings = agent
                         .tools_settings
-                        .entry(ToolSettingTarget(tool_use.name.clone()))
+                        .entry(ToolSettingTarget(key))
                         .or_insert_with(|| serde_json::json!({ &selected.setting_key: [] }));
                     if let Some(obj) = settings.as_object_mut() {
                         let arr: &mut serde_json::Value = obj
@@ -207,4 +210,23 @@ pub fn apply_trust_selection(
         TrustScopeSelection::AllowOnce => Ok(true),
         TrustScopeSelection::Cancelled => Ok(false),
     }
+}
+
+/// Resolve the `tools_settings` key for a tool by checking its aliases against existing entries.
+///
+/// When the agent config uses one alias (e.g. `"shell"`) but the LLM sends the spec name
+/// (e.g. `"execute_bash"`), we need to find the existing key so we merge into it rather than
+/// creating a duplicate entry that shadows the original config.
+pub(crate) fn resolve_tools_settings_key(
+    tool_name: &str,
+    tools_settings: &HashMap<ToolSettingTarget, serde_json::Value>,
+) -> String {
+    ToolMetadata::get_by_spec_name(tool_name)
+        .and_then(|info| {
+            info.aliases
+                .iter()
+                .find(|alias| tools_settings.contains_key(**alias))
+                .map(|alias| (*alias).to_string())
+        })
+        .unwrap_or_else(|| tool_name.to_string())
 }
