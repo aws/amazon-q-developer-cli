@@ -46,6 +46,8 @@ struct DetectorConfig {
     safe_commands: Vec<String>,
     safe_options: HashMap<String, Vec<String>>,
     safe_except_options: HashMap<String, Vec<String>>,
+    #[serde(default)]
+    safe_subcommand_except: HashMap<String, Vec<String>>,
 }
 
 use std::sync::OnceLock;
@@ -172,7 +174,18 @@ fn is_readonly_with_config(cmd: &ParsedCommand, config: &DetectorConfig) -> bool
 
     // 2. Readonly only with specific subcommands (git status, cargo metadata, etc.)
     if let Some(safe_opts) = config.safe_options.get(cmd_name) {
-        return cmd.args.first().is_some_and(|sub| safe_opts.iter().any(|s| s == sub));
+        let is_safe_sub = cmd.args.first().is_some_and(|sub| safe_opts.iter().any(|s| s == sub));
+        if !is_safe_sub {
+            return false;
+        }
+        // Check if the subcommand has destructive flags (e.g. "git branch -d")
+        if let Some(sub) = cmd.args.first() {
+            let key = format!("{cmd_name} {sub}");
+            if let Some(except_flags) = config.safe_subcommand_except.get(&key) {
+                return !cmd.args[1..].iter().any(|a| except_flags.iter().any(|f| f == a));
+            }
+        }
+        return true;
     }
 
     // 3. Always readonly (ls, cat, pwd, etc.)
@@ -313,6 +326,23 @@ mod tests {
         cmd.command = "LANG=C ls".to_string();
         cmd.variable_assignments = vec!["LANG".to_string()];
         assert!(is_readonly_command(&cmd));
+
+        // Safe subcommand with destructive flags (safe_subcommand_except)
+        assert!(is_readonly_command(&make_cmd("git branch")));
+        assert!(is_readonly_command(&make_cmd("git branch --list")));
+        assert!(!is_readonly_command(&make_cmd("git branch -d test")));
+        assert!(!is_readonly_command(&make_cmd("git branch -D test")));
+        assert!(!is_readonly_command(&make_cmd("git branch -m old new")));
+        assert!(!is_readonly_command(&make_cmd("git branch -M old new")));
+        assert!(!is_readonly_command(&make_cmd("git branch --delete test")));
+        assert!(!is_readonly_command(&make_cmd("git branch -c old new")));
+        assert!(is_readonly_command(&make_cmd("git tag")));
+        assert!(is_readonly_command(&make_cmd("git tag -l")));
+        assert!(!is_readonly_command(&make_cmd("git tag -d v1.0")));
+        assert!(!is_readonly_command(&make_cmd("git tag --delete v1.0")));
+        assert!(is_readonly_command(&make_cmd("git remote")));
+        assert!(!is_readonly_command(&make_cmd("git remote add origin url")));
+        assert!(!is_readonly_command(&make_cmd("git remote remove origin")));
     }
 
     #[test]

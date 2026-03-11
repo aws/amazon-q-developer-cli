@@ -33,5 +33,11 @@
   "safe_except_options": {
     "find": ["-delete", "-fprint", "-fprintf", "-fls"],
     "grep": ["-P", "--perl-regexp"]
+  },
+  "safe_subcommand_except": {
+    "git branch": ["-d", "-D", "-m", "-M", "-c", "-C", "--delete", "--move", "--copy"],
+    "git tag": ["-d", "--delete"],
+    "git remote": ["add", "remove", "rename", "set-url"],
+    "git fetch": ["--prune"]
   }
 }

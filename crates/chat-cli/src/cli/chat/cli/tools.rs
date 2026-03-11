@@ -506,8 +506,6 @@ impl ToolsSubcommand {
                     let result = async {
                         let content = tokio::fs::read(&path).await?;
                         let orig_agent = serde_json::from_slice::<Agent>(&content)?;
-                        // since all we're doing here is swapping the tool list, it's okay if we
-                        // don't thaw it here
                         Ok::<Agent, Box<dyn std::error::Error>>(orig_agent)
                     }
                     .await;
@@ -515,18 +513,19 @@ impl ToolsSubcommand {
                     if let (Ok(orig_agent), Some(active_agent)) = (result, session.conversation.agents.get_active_mut())
                     {
                         active_agent.allowed_tools = orig_agent.allowed_tools;
+                        active_agent.tools_settings = orig_agent.tools_settings;
+                        active_agent.runtime_permissions = Default::default();
                     }
                 } else if session
                     .conversation
                     .agents
                     .get_active()
                     .is_some_and(|a| a.name.as_str() == DEFAULT_AGENT_NAME)
+                    && let Some(active_agent) = session.conversation.agents.get_active_mut()
                 {
-                    // We only want to reset the tool permission and nothing else
-                    if let Some(active_agent) = session.conversation.agents.get_active_mut() {
-                        active_agent.allowed_tools = Default::default();
-                        active_agent.tools_settings = Default::default();
-                    }
+                    active_agent.allowed_tools = Default::default();
+                    active_agent.tools_settings = Default::default();
+                    active_agent.runtime_permissions = Default::default();
                 }
                 queue!(
                     session.stderr,
