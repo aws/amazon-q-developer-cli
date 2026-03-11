@@ -2,6 +2,7 @@ use std::borrow::Cow;
 use std::collections::{
     BTreeMap,
     HashMap,
+    VecDeque,
 };
 use std::io::{
     IsTerminal,
@@ -210,6 +211,12 @@ pub struct SubagentExecutionSummary {
 }
 
 #[derive(Default)]
+struct PendingApproval {
+    tool_call_id: String,
+    display_msg: String,
+}
+
+#[derive(Default)]
 struct AgentInfo<'a> {
     agent_name: Cow<'a, str>,
     initial_query: Cow<'a, str>,
@@ -218,7 +225,7 @@ struct AgentInfo<'a> {
     lines: Vec<Line<'a>>,
     widget_height: u16,
     blocking_servers: BTreeMap<String, String>,
-    pending_tool_approval: Option<String>,
+    pending_tool_approval: VecDeque<PendingApproval>,
     execution_summary: Option<SubagentExecutionSummary>,
     color: u8,
     is_previewing_convo: bool,
@@ -597,12 +604,20 @@ impl<'a> SubagentIndicator<'a> {
                                 },
                                 AgentEventKind::ToolCallPermissionRequest(request) => {
                                     if let Some(agent_info) = agents.get_mut(&agent_id) {
-                                        agent_info.msg = format!("tool use {} requires approval, press 'y' to approve and 'n' to deny", request.name);
-                                        agent_info.pending_tool_approval.replace(request.tool_call_id);
-                                        if let Some(purpose) = request.input.get("__tool_use_purpose").and_then(|v| v.as_str()) {
-                                            agent_info.convo.push(format!("{}\npurpose: {}", agent_info.msg, purpose));
-                                        } else {
-                                            agent_info.convo.push(agent_info.msg.clone());
+                                        let purpose = request.input.get("__tool_use_purpose").and_then(|v| v.as_str());
+                                        let display_msg = match purpose {
+                                            Some(p) => format!("tool use {} requires approval, press 'y' to approve and 'n' to deny\n  purpose: {}", request.name, p),
+                                            None => format!("tool use {} requires approval, press 'y' to approve and 'n' to deny", request.name),
+                                        };
+                                        let is_first = agent_info.pending_tool_approval.is_empty();
+                                        agent_info.pending_tool_approval.push_back(PendingApproval {
+                                            tool_call_id: request.tool_call_id,
+                                            display_msg: display_msg.clone(),
+                                        });
+                                        // Only show and log the first approval; rest shown after user acts
+                                        if is_first {
+                                            agent_info.msg = display_msg.clone();
+                                            agent_info.convo.push(display_msg);
                                         }
                                     }
                                 },
@@ -744,7 +759,7 @@ impl<'a> SubagentIndicator<'a> {
                                     Self::BRAND_PURPLE
                                 };
 
-                                let requires_attention = agent_info.pending_tool_approval.is_some()
+                                let requires_attention = !agent_info.pending_tool_approval.is_empty()
                                     || !agent_info.blocking_servers.is_empty();
 
                                 let status = if agent_info.is_done {
@@ -865,16 +880,22 @@ impl<'a> SubagentIndicator<'a> {
                                         let Some(agent_info) = agents.get_mut(&focused_agent) else {
                                             continue;
                                         };
-                                        let Some(pending_tool_approval_id) = agent_info.pending_tool_approval.take() else {
+                                        let Some(approval) = agent_info.pending_tool_approval.pop_front() else {
                                             continue;
                                         };
                                         if let Err(e) = self.view_end.sender.send(InputEvent {
                                             agent_id: Some(focused_agent),
-                                            kind: InputEventKind::ToolApproval(pending_tool_approval_id)
+                                            kind: InputEventKind::ToolApproval(approval.tool_call_id)
                                         }) {
                                             error!(?e, "error sending input event");
                                         };
-                                        agent_info.msg = "tool approval sent".to_string();
+                                        match agent_info.pending_tool_approval.front() {
+                                            Some(next) => {
+                                                agent_info.msg = next.display_msg.clone();
+                                                agent_info.convo.push(next.display_msg.clone());
+                                            },
+                                            None => agent_info.msg = "tool approval sent".to_string(),
+                                        }
                                     },
                                     KeyCode::Char('n') => {
                                         let Some(focused_agent) = focused_agent else {
@@ -883,16 +904,22 @@ impl<'a> SubagentIndicator<'a> {
                                         let Some(agent_info) = agents.get_mut(&focused_agent) else {
                                             continue;
                                         };
-                                        let Some(pending_tool_approval_id) = agent_info.pending_tool_approval.take() else {
+                                        let Some(approval) = agent_info.pending_tool_approval.pop_front() else {
                                             continue;
                                         };
                                         if let Err(e) = self.view_end.sender.send(InputEvent {
                                             agent_id: Some(focused_agent),
-                                            kind: InputEventKind::ToolRejection(pending_tool_approval_id)
+                                            kind: InputEventKind::ToolRejection(approval.tool_call_id)
                                         }) {
                                             error!("error sending input event: {e:?}");
                                         };
-                                        agent_info.msg = "tool rejection sent".to_string();
+                                        match agent_info.pending_tool_approval.front() {
+                                            Some(next) => {
+                                                agent_info.msg = next.display_msg.clone();
+                                                agent_info.convo.push(next.display_msg.clone());
+                                            },
+                                            None => agent_info.msg = "tool rejection sent".to_string(),
+                                        }
                                     },
                                     KeyCode::Enter if agents.values().all(|info| info.is_done) => {
                                         acknowledged = true;
