@@ -185,7 +185,10 @@ export type AppActions = BaseAppActions & InputBufferActions;
 
 interface BaseAppActions {
   // Kiro actions
-  sendMessage: (content: string) => Promise<void>;
+  sendMessage: (
+    content: string,
+    images?: Array<{ base64: string; mimeType: string }>
+  ) => Promise<void>;
   createStreamEventHandler: () => (event: AgentStreamEvent) => void;
   processMessageStream: (
     stream: AsyncGenerator<AgentStreamEvent>
@@ -524,10 +527,11 @@ export const createAppStore = (props: AppStoreProps) =>
       set({ currentAbortController: abortController });
 
       const userMessageId = generateMessageId();
+      const displayContent = content || (allImages.length > 0 ? '[image]' : '');
       const userMessage: MessageType = {
         id: userMessageId,
         role: MessageRole.User,
-        content, // Show original content in UI
+        content: displayContent,
         agentName: get().currentAgent?.name,
       };
 
@@ -1695,7 +1699,8 @@ export const createAppStore = (props: AppStoreProps) =>
     // Main orchestrator
     handleUserInput: async (input: string) => {
       const trimmed = input.trim();
-      if (!trimmed) return;
+      const hasPendingImages = get().pendingImages.length > 0;
+      if (!trimmed && !hasPendingImages) return;
 
       const state = get();
       state.resetExitSequence();
@@ -1769,8 +1774,13 @@ export const createAppStore = (props: AppStoreProps) =>
         const command = trimmed.slice(1).trim();
         if (!command) return;
 
-        const { needsTTY, isClearCommand, executeClearCommand, executeShellEscapeTTY, executeShellEscapeStreaming } =
-          await import('../utils/shell-escape.js');
+        const {
+          needsTTY,
+          isClearCommand,
+          executeClearCommand,
+          executeShellEscapeTTY,
+          executeShellEscapeStreaming,
+        } = await import('../utils/shell-escape.js');
 
         // Clear/reset: clear messages and terminal, no user message needed
         if (isClearCommand(command)) {

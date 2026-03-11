@@ -265,7 +265,7 @@ export interface ModelInfo {
 	rateMultiplier?: number;
 }
 
-/** Arguments for paste-image command (no user-facing slash command) */
+/** Arguments for /paste command */
 export interface PasteImageArgs {
 }
 
@@ -430,7 +430,7 @@ export type TuiCommand =
 	/** Show billing and usage information */
 	| { command: "usage", args: UsageArgs }
 	/** Paste image from system clipboard (returns base64 PNG data) */
-	| { command: "pasteImage", args: PasteImageArgs }
+	| { command: "paste", args: PasteImageArgs }
 	/** Show configured MCP servers */
 	| { command: "mcp", args: McpArgs }
 	/** Show available tools */

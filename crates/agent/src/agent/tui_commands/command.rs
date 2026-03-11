@@ -37,6 +37,7 @@ pub enum TuiCommand {
     /// Show billing and usage information
     Usage(UsageArgs),
     /// Paste image from system clipboard (returns base64 PNG data)
+    #[serde(rename = "paste")]
     PasteImage(PasteImageArgs),
     /// Show configured MCP servers
     Mcp(McpArgs),
@@ -116,7 +117,7 @@ pub struct QuitArgs {}
 #[serde(rename_all = "camelCase")]
 pub struct UsageArgs {}
 
-/// Arguments for paste-image command (no user-facing slash command)
+/// Arguments for /paste command
 #[typeshare]
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -171,7 +172,7 @@ impl TuiCommand {
             TuiCommand::Clear(_) => "/clear",
             TuiCommand::Quit(_) => "/quit",
             TuiCommand::Usage(_) => "/usage",
-            TuiCommand::PasteImage(_) => "paste-image",
+            TuiCommand::PasteImage(_) => "/paste",
             TuiCommand::Mcp(_) => "/mcp",
             TuiCommand::Tools(_) => "/tools",
             TuiCommand::Plan(_) => "/plan",
@@ -211,7 +212,7 @@ impl TuiCommand {
             TuiCommand::Clear(_) => "/clear",
             TuiCommand::Quit(_) => "/quit",
             TuiCommand::Usage(_) => "/usage",
-            TuiCommand::PasteImage(_) => "paste-image",
+            TuiCommand::PasteImage(_) => "/paste",
             TuiCommand::Mcp(_) => "/mcp",
             TuiCommand::Tools(_) => "/tools",
             TuiCommand::Plan(_) => "/plan [prompt]",
@@ -296,6 +297,7 @@ impl TuiCommand {
             TuiCommand::Mcp(McpArgs::default()),
             TuiCommand::Tools(ToolsArgs::default()),
             TuiCommand::Plan(PlanArgs::default()),
+            TuiCommand::PasteImage(PasteImageArgs::default()),
             TuiCommand::Issue(IssueArgs::default()),
             TuiCommand::Knowledge(KnowledgeArgs::default()),
         ];
@@ -326,6 +328,7 @@ impl TuiCommand {
                 prompt: (!args.is_empty()).then(|| args.to_string()),
             })),
             "issue" => Some(Self::Issue(IssueArgs::default())),
+            "paste" => Some(Self::PasteImage(PasteImageArgs::default())),
             "knowledge" => Some(Self::Knowledge(KnowledgeArgs {
                 subcommand: (!args.is_empty()).then(|| args.to_string()),
             })),

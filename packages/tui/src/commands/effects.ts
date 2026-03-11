@@ -40,7 +40,8 @@ type EffectName =
   | 'showPromptsPanel'
   | 'clearMessages'
   | 'quit'
-  | 'showIssueUrl';
+  | 'showIssueUrl'
+  | 'pasteImage';
 
 /**
  * Command → Effect mapping.
@@ -59,6 +60,7 @@ const commandEffects: Partial<Record<string, EffectName>> = {
   tools: 'showToolsPanel',
   issue: 'showIssueUrl',
   knowledge: 'showKnowledgePanel',
+  paste: 'pasteImage',
 };
 
 /**
@@ -94,12 +96,12 @@ const effectHandlers: Record<EffectName, EffectHandler> = {
   showHelpPanel: (result, ctx) => {
     const data = result?.data as
       | {
-          commands?: Array<{
-            name: string;
-            description: string;
-            usage: string;
-          }>;
-        }
+        commands?: Array<{
+          name: string;
+          description: string;
+          usage: string;
+        }>;
+      }
       | undefined;
     if (data?.commands) {
       ctx.setShowHelpPanel(true, data.commands);
@@ -155,7 +157,42 @@ const effectHandlers: Record<EffectName, EffectHandler> = {
       ctx.setShowIssuePanel(true, data.url);
     }
   },
+
+  pasteImage: (result, ctx) => {
+    const data = result?.data as
+      | {
+        data?: string;
+        mimeType?: string;
+        width?: number;
+        height?: number;
+        sizeBytes?: number;
+      }
+      | undefined;
+    if (data?.data && data.mimeType) {
+      ctx.sendMessage(formatImageLabel(data), [
+        { base64: data.data, mimeType: data.mimeType },
+      ]);
+    } else if (result?.message && !result.success) {
+      ctx.showAlert(result.message, 'error');
+    }
+  },
 };
+
+/** Format a human-readable label for a pasted image, e.g. "[pasted image (868×874 703.8 KB)]" */
+function formatImageLabel(img: {
+  width?: number;
+  height?: number;
+  sizeBytes?: number;
+}): string {
+  const dims = img.width && img.height ? `${img.width}×${img.height}` : '';
+  const size = img.sizeBytes
+    ? img.sizeBytes >= 1024 * 1024
+      ? `${(img.sizeBytes / (1024 * 1024)).toFixed(1)} MB`
+      : `${(img.sizeBytes / 1024).toFixed(1)} KB`
+    : '';
+  const label = [dims, size].filter(Boolean).join(' ');
+  return label ? `[pasted image (${label})]` : '[pasted image]';
+}
 
 /**
  * Run effect for a command.

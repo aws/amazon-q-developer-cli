@@ -72,5 +72,8 @@ export interface CommandContext {
   /** Clear all command UI state (menus, panels) */
   clearUIState: () => void;
   /** Send message to chat */
-  sendMessage: (content: string) => Promise<void>;
+  sendMessage: (
+    content: string,
+    images?: Array<{ base64: string; mimeType: string }>
+  ) => Promise<void>;
 }

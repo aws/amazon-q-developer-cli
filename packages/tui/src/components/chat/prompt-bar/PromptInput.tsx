@@ -376,7 +376,7 @@ export const PromptInput = React.memo(function PromptInput({
   const handlePasteImage = async () => {
     try {
       const result = await kiro.executeCommand({
-        command: 'pasteImage',
+        command: 'paste',
         args: {},
       });
       if (!result.success) {
@@ -531,7 +531,8 @@ export const PromptInput = React.memo(function PromptInput({
           // Block Enter if slash command menu is visible
           if (slashMenuVisible) return;
           const content = buildContent(segments);
-          if (content) {
+          const hasImages = segments.some((s) => s.type === 'image');
+          if (content || hasImages) {
             clearAll();
             onSubmit(content);
           }

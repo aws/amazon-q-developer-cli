@@ -198,7 +198,7 @@ const StaticTurnCard = React.memo(function StaticTurnCard({
     ? getAgentColor(agentName, getColor).hex
     : undefined;
 
-  if (!turn.userMessage.content) return null;
+  if (!turn.userMessage.content && !turn.aiMessages.length) return null;
 
   // Orphan model message (e.g. welcome message) — render as standalone AI response
   const isOrphanModel = turn.userMessage.role === MessageRole.Model;
