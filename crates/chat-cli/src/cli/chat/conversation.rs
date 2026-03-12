@@ -1183,7 +1183,10 @@ impl ConversationState {
             user_input_message: summary_message
                 .unwrap_or(UserMessage::new_prompt(summary_content, None)) // should not happen
                 .into_user_input_message(self.model_info.as_ref().map(|m| m.model_id.clone()), &tools),
-            history: Some(flatten_history(history.iter())),
+            history: Some(flatten_history(
+                history.iter(),
+                self.model_info.as_ref().map(|m| m.model_id.as_str()),
+            )),
             agent_continuation_id: Some(self.user_turn_metadata.continuation_id().to_string()),
         })
     }
@@ -1302,7 +1305,10 @@ Return only the JSON configuration, no additional text."
         Ok(FigConversationState {
             conversation_id: Some(self.conversation_id.clone()),
             user_input_message: generation_message.into_user_input_message(self.model.clone(), &tools),
-            history: Some(flatten_history(history.iter())),
+            history: Some(flatten_history(
+                history.iter(),
+                self.model.as_deref(),
+            )),
             agent_continuation_id: Some(self.user_turn_metadata.continuation_id().to_string()),
         })
     }
@@ -1620,7 +1626,10 @@ pub struct BackendConversationStateImpl<'a, T, U> {
 
 impl BackendConversationStateImpl<'_, std::collections::vec_deque::Iter<'_, HistoryEntry>, Option<Vec<HistoryEntry>>> {
     fn into_fig_conversation_state(self) -> eyre::Result<FigConversationState> {
-        let history = flatten_history(self.context_messages.unwrap_or_default().iter().chain(self.history));
+        let history = flatten_history(
+            self.context_messages.unwrap_or_default().iter().chain(self.history),
+            self.model_id,
+        );
         let user_input_message: UserInputMessage = self
             .next_user_message
             .cloned()
@@ -1676,12 +1685,14 @@ pub struct ConversationSize {
 }
 
 /// Converts a list of user/assistant message pairs into a flattened list of ChatMessage.
-fn flatten_history<'a, T>(history: T) -> Vec<ChatMessage>
+fn flatten_history<'a, T>(history: T, model_id: Option<&str>) -> Vec<ChatMessage>
 where
     T: Iterator<Item = &'a HistoryEntry>,
 {
     history.fold(Vec::new(), |mut acc, HistoryEntry { user, assistant, .. }| {
-        acc.push(ChatMessage::UserInputMessage(user.clone().into_history_entry()));
+        acc.push(ChatMessage::UserInputMessage(
+            user.clone().into_history_entry(model_id.map(str::to_string)),
+        ));
         acc.push(ChatMessage::AssistantResponseMessage(assistant.clone().into()));
         acc
     })

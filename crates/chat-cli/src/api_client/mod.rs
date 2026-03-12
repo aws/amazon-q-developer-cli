@@ -539,6 +539,7 @@ impl ApiClient {
 
         let model_id_opt: Option<String> = user_input_message.model_id.clone();
 
+
         if let Some(client) = &self.streaming_client {
             let conversation_state = amzn_codewhisperer_streaming_client::types::ConversationState::builder()
                 .set_conversation_id(conversation_id)
@@ -550,7 +551,9 @@ impl ApiClient {
                 .chat_trigger_type(amzn_codewhisperer_streaming_client::types::ChatTriggerType::Manual)
                 .set_history(
                     history
-                        .map(|v| v.into_iter().map(|i| i.try_into()).collect::<Result<Vec<_>, _>>())
+                        .map(|v: Vec<model::ChatMessage>| {
+                            v.into_iter().map(|i| i.try_into()).collect::<Result<Vec<_>, _>>()
+                        })
                         .transpose()?,
                 )
                 .set_agent_continuation_id(agent_continuation_id)

@@ -174,7 +174,7 @@ impl UserMessage {
 
     /// Converts this message into a [UserInputMessage] to be stored in the history of
     /// [api_client::model::ConversationState].
-    pub fn into_history_entry(self) -> UserInputMessage {
+    pub fn into_history_entry(self, model_id: Option<String>) -> UserInputMessage {
         let content = self.content_with_context();
         UserInputMessage {
             images: self.images.clone(),
@@ -192,7 +192,7 @@ impl UserMessage {
                 ..Default::default()
             }),
             user_intent: None,
-            model_id: None,
+            model_id,
         }
     }
 
@@ -608,7 +608,7 @@ mod tests {
             let msg = UserMessage::new_prompt(USER_PROMPT.to_string(), Some(timestamp));
             [
                 msg.clone().into_user_input_message(None, &HashMap::new()),
-                msg.clone().into_history_entry(),
+                msg.clone().into_history_entry(None),
             ]
         };
         let expected = [
@@ -641,7 +641,7 @@ mod tests {
 
         let msgs = [
             msg.clone().into_user_input_message(None, &HashMap::new()),
-            msg.clone().into_history_entry(),
+            msg.clone().into_history_entry(None),
         ];
 
         for m in msgs {

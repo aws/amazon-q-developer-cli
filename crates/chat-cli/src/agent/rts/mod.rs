@@ -259,12 +259,13 @@ impl RtsModel {
                         } else {
                             None
                         };
+                        let model_id = self.model_id.clone();
                         let msg = UserInputMessage {
                             content,
                             user_input_message_context: ctx,
                             user_intent: None,
                             images: None,
-                            model_id: None,
+                            model_id,
                         };
                         rts::ChatMessage::UserInputMessage(msg)
                     },
