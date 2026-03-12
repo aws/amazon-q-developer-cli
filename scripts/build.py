@@ -146,12 +146,16 @@ def build_tui() -> pathlib.Path:
     """Build the TypeScript TUI, returning an absolute path to the output JS file."""
     tui_dir = pathlib.Path("packages/tui")
     ink_dir = pathlib.Path("packages/ink")
+    twinki_dir = pathlib.Path("packages/twinki")
 
     info("Installing dependencies")
     run_cmd(["bun", "install", "--frozen-lockfile"])
 
     info("Building local ink package")
     run_cmd(["bun", "run", "build"], cwd=ink_dir)
+
+    info("Building twinki package")
+    run_cmd(["bun", "run", "build"], cwd=twinki_dir)
 
     info("Building TUI")
     run_cmd(["bun", "run", "build"], cwd=tui_dir)
