@@ -5,6 +5,7 @@ import { resolve } from "node:path";
 const REPO_ROOT = resolve(import.meta.dir, "../../..");
 const CARGO_BIN = resolve(REPO_ROOT, "target/debug/chat_cli");
 const INK_DIR = resolve(REPO_ROOT, "packages/ink");
+const TWINKI_DIR = resolve(REPO_ROOT, "packages/twinki/packages/twinki");
 
 // Separate dev-script flags from flags to forward to the TUI
 const devFlags = new Set(["--skip-rust-build"]);
@@ -17,6 +18,15 @@ function buildInk(): boolean {
   console.log("Building ink...");
   const result = spawnSync("bunx", ["tsc", "--project", "tsconfig.json"], {
     cwd: INK_DIR,
+    stdio: "inherit"
+  });
+  return result.status === 0;
+}
+
+function buildTwinki(): boolean {
+  console.log("Building twinki...");
+  const result = spawnSync("bunx", ["tsc", "--project", "tsconfig.build.json"], {
+    cwd: TWINKI_DIR,
     stdio: "inherit"
   });
   return result.status === 0;
@@ -45,6 +55,10 @@ if (skipRustBuild) {
   console.log("Skipping Rust build...");
   if (!buildInk()) {
     console.error("Ink build failed");
+    process.exit(1);
+  }
+  if (!buildTwinki()) {
+    console.error("Twinki build failed");
     process.exit(1);
   }
   startTUI();
@@ -79,6 +93,11 @@ if (skipRustBuild) {
 
       if (!buildInk()) {
         console.error("Ink build failed");
+        process.exit(1);
+      }
+
+      if (!buildTwinki()) {
+        console.error("Twinki build failed");
         process.exit(1);
       }
 

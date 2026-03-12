@@ -7,7 +7,7 @@
     "packages/*"
   ],
   "scripts": {
-    "build": "bun run build --filter='./packages/*'",
+    "build": "bun --filter='./packages/*' run build",
     "test": "vitest",
     "lint": "tsc --noEmit"
   },
