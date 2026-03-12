@@ -496,6 +496,21 @@ impl StreamParseState {
                 self.ended_time.is_none(),
                 "unexpected call to next after stream has already ended"
             );
+
+            // If we were mid-parse on a tool use, the stream ended without a ContentBlockStop.
+            // Treat it as an invalid tool use so the retry logic can ask the model to split up.
+            if let Some((tool_use_id, name, content)) = self.parsing_tool_use.take() {
+                warn!(
+                    tool_use_id,
+                    name, "stream ended with incomplete tool use (no ContentBlockStop received)"
+                );
+                self.invalid_tool_uses.push(InvalidToolUse {
+                    tool_use_id,
+                    name,
+                    content,
+                });
+            }
+
             self.ended_time = Some(self.ended_time.unwrap_or(Instant::now()));
             self.errored = self.errored || !self.invalid_tool_uses.is_empty();
             let result = self.make_result();
