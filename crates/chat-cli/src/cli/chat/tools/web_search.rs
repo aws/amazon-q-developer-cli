@@ -23,6 +23,7 @@ use crate::cli::agent::{
     Agent,
     PermissionEvalResult,
 };
+use crate::cli::chat::util::truncate_safe;
 use crate::database::Database;
 use crate::database::settings::Setting;
 use crate::os::Os;
@@ -31,6 +32,8 @@ use crate::os::Os;
 pub struct WebSearch {
     query: String,
 }
+
+const MAX_QUERY_LENGTH: usize = 200;
 
 impl WebSearch {
     pub const INFO: ToolInfo = ToolInfo {
@@ -182,7 +185,9 @@ impl WebSearch {
                     aws_smithy_types::Document::Object(
                         [(
                             "query".to_string(),
-                            aws_smithy_types::Document::String(self.query.clone()),
+                            aws_smithy_types::Document::String(
+                                truncate_safe(&self.query, MAX_QUERY_LENGTH).to_string(),
+                            ),
                         )]
                         .into_iter()
                         .collect(),

@@ -609,7 +609,8 @@
       "properties": {
         "query": {
           "type": "string",
-          "description": "Search query - can be keywords, questions, or specific topics"
+          "maxLength": 200,
+          "description": "Search query (max 200 chars) - use concise keywords, not full sentences"
         }
       },
       "required": ["query"]

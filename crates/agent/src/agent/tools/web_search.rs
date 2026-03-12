@@ -14,10 +14,13 @@ use super::{
     ToolExecutionResult,
 };
 use crate::agent::agent_loop::model::Model;
+use crate::agent::util::truncate_safe;
 
 const WEB_SEARCH_DESCRIPTION: &str = r#"
 WebSearch looks up information that is outside the model's training data or cannot be reliably inferred from the current codebase/context.
 "#;
+
+const MAX_QUERY_LENGTH: usize = 200;
 
 const WEB_SEARCH_SCHEMA: &str = r#"
 {
@@ -25,7 +28,8 @@ const WEB_SEARCH_SCHEMA: &str = r#"
     "properties": {
         "query": {
             "type": "string",
-            "description": "Search query - can be keywords, questions, or specific topics"
+            "maxLength": 200,
+            "description": "Search query (max 200 chars) - use concise keywords, not full sentences"
         }
     },
     "required": ["query"]
@@ -57,7 +61,8 @@ impl BuiltInToolTrait for WebSearch {
 
 impl WebSearch {
     pub async fn execute(&self, model: &dyn Model) -> ToolExecutionResult {
-        let arguments = serde_json::json!({ "query": self.query });
+        let query = truncate_safe(&self.query, MAX_QUERY_LENGTH);
+        let arguments = serde_json::json!({ "query": query });
 
         let result = model
             .invoke_mcp("web_search", arguments)
