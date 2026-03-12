@@ -58,6 +58,7 @@ use crate::logging::{
 };
 use crate::os::Os;
 use crate::util::CLI_BINARY_NAME;
+use crate::util::consts::env_var::KIRO_API_KEY;
 use crate::util::paths::logs_dir;
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, ValueEnum)]
@@ -155,7 +156,12 @@ impl RootSubcommand {
     pub async fn execute(self, os: &mut Os) -> Result<ExitCode> {
         // Check for auth on subcommands that require it.
         if !is_logged_in(&mut os.database).await && std::env::var("KIRO_TEST_MODE").is_err() {
-            if matches!(self, Self::Chat(_)) {
+            if matches!(self, Self::Chat(ref args) if args.no_interactive) {
+                eprintln!(
+                    "Not logged in. Set the {KIRO_API_KEY} environment variable or run `{CLI_BINARY_NAME} login` first."
+                );
+                return Ok(ExitCode::FAILURE);
+            } else if matches!(self, Self::Chat(_)) {
                 let options = ["Yes", "No"];
                 match crate::util::choose(" You are not logged in. Login now?", &options)? {
                     Some(0) => {},

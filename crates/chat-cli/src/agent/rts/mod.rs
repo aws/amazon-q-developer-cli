@@ -184,9 +184,11 @@ impl RtsModel {
                     },
                     ConverseStreamErrorKind::ContextWindowOverflow => StreamErrorKind::ContextWindowOverflow,
                     ConverseStreamErrorKind::ModelOverloadedError => StreamErrorKind::Throttling,
-                    ConverseStreamErrorKind::Unknown { .. } => StreamErrorKind::Other {
-                        reason_code: Some(err.reason_code()),
-                        message: err.to_string(),
+                    ConverseStreamErrorKind::AccessDenied | ConverseStreamErrorKind::Unknown { .. } => {
+                        StreamErrorKind::Other {
+                            reason_code: Some(err.reason_code()),
+                            message: err.to_string(),
+                        }
                     },
                 };
                 let request_id = err.request_id.clone();

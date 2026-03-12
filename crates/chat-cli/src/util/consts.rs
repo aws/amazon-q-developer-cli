@@ -154,7 +154,10 @@ pub mod env_var {
         KIRO_CHAT_UI = "KIRO_CHAT_UI",
 
         /// Used for E2E tests
-        KIRO_TEST_TUI_JS_PATH = "KIRO_TEST_TUI_JS_PATH"
+        KIRO_TEST_TUI_JS_PATH = "KIRO_TEST_TUI_JS_PATH",
+
+        /// API key for headless/non-interactive authentication
+        KIRO_API_KEY = "KIRO_API_KEY"
     }
 }
 

@@ -309,7 +309,10 @@ pub async fn is_logged_in(db: &mut Database) -> bool {
     if crate::auth::social::is_social_logged_in(&*db).await {
         return true;
     }
-    is_external_idp_logged_in(&*db).await
+    if is_external_idp_logged_in(&*db).await {
+        return true;
+    }
+    crate::util::env_var::get_api_key().is_some()
 }
 
 #[derive(Args, Debug, PartialEq, Eq, Clone, Default)]

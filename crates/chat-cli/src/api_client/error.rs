@@ -166,6 +166,7 @@ impl ReasonCode for ConverseStreamError {
             ConverseStreamErrorKind::MonthlyLimitReached => "MonthlyLimitReached".to_string(),
             ConverseStreamErrorKind::ContextWindowOverflow => "ContextWindowOverflow".to_string(),
             ConverseStreamErrorKind::ModelOverloadedError => "ModelOverloadedError".to_string(),
+            ConverseStreamErrorKind::AccessDenied => "AccessDenied".to_string(),
             ConverseStreamErrorKind::Unknown { reason_code } => reason_code.clone(),
         }
     }
@@ -202,6 +203,8 @@ pub enum ConverseStreamErrorKind {
         "The model you've selected is temporarily unavailable. Please use '/model' to select a different model and try again."
     )]
     ModelOverloadedError,
+    #[error("Authentication failed. Your credentials may be invalid or expired.")]
+    AccessDenied,
     #[error("An unknown error occurred: {}", .reason_code)]
     Unknown { reason_code: String },
 }

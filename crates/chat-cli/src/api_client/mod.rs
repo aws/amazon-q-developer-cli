@@ -61,7 +61,10 @@ use crate::api_client::model::{
 };
 use crate::api_client::opt_out::OptOutInterceptor;
 use crate::api_client::send_message_output::SendMessageOutput;
-use crate::api_client::token_type_interceptor::TokenTypeInterceptor;
+use crate::api_client::token_type_interceptor::{
+    AuthMode,
+    TokenTypeInterceptor,
+};
 use crate::auth::UnifiedBearerResolver;
 use crate::auth::external_idp::ExternalIdpToken;
 use crate::aws_common::{
@@ -167,6 +170,20 @@ impl ApiClient {
         // Check if using External IdP authentication
         let is_external_idp = ExternalIdpToken::load(database).await.is_ok_and(|t| t.is_some());
 
+        // Determine auth mode: must match UnifiedBearerResolver priority.
+        // Stored credentials take precedence; API key is only used as fallback.
+        let auth_mode = if is_external_idp {
+            AuthMode::ExternalIdp
+        } else if crate::auth::is_builder_id_logged_in(database).await
+            || crate::auth::social::is_social_logged_in(database).await
+        {
+            AuthMode::Normal
+        } else if crate::util::env_var::get_api_key().is_some() {
+            AuthMode::ApiKey
+        } else {
+            AuthMode::Normal
+        };
+
         // Detect Amazon-internal users by checking for the mwinit Midway auth tool.
         // Internal users are routed to KRS via RTS ALB using the redirect-for-internal header.
         let is_internal = crate::util::system_info::is_mwinit_available();
@@ -186,7 +203,7 @@ impl ApiClient {
                 .http_client(crate::aws_common::http_client::client())
                 .interceptor(OptOutInterceptor::new(database))
                 .interceptor(UserAgentOverrideInterceptor::new())
-                .interceptor(TokenTypeInterceptor::new(is_external_idp))
+                .interceptor(TokenTypeInterceptor::new(auth_mode.clone()))
                 .interceptor(InternalRedirectInterceptor::new(is_internal))
                 .bearer_token_resolver(UnifiedBearerResolver)
                 .app_name(app_name())
@@ -200,7 +217,7 @@ impl ApiClient {
                 .http_client(crate::aws_common::http_client::client())
                 .interceptor(OptOutInterceptor::new(database))
                 .interceptor(UserAgentOverrideInterceptor::new())
-                .interceptor(TokenTypeInterceptor::new(is_external_idp))
+                .interceptor(TokenTypeInterceptor::new(auth_mode.clone()))
                 .bearer_token_resolver(UnifiedBearerResolver)
                 .app_name(app_name())
                 .endpoint_resolver(StaticCodewhispererEndpointResolver::new(endpoint.url().to_string()))
@@ -231,7 +248,7 @@ impl ApiClient {
                 .interceptor(OptOutInterceptor::new(database))
                 .interceptor(UserAgentOverrideInterceptor::new())
                 .interceptor(DelayTrackingInterceptor::new())
-                .interceptor(TokenTypeInterceptor::new(is_external_idp))
+                .interceptor(TokenTypeInterceptor::new(auth_mode.clone()))
                 .interceptor(InternalRedirectInterceptor::new(is_internal))
                 .bearer_token_resolver(UnifiedBearerResolver)
                 .app_name(app_name())
@@ -773,6 +790,7 @@ fn classify_error_kind<R>(
                 b"Encountered unexpectedly high load when processing the request, please try again.",
             ));
     let is_monthly_limit_err = contains(body, b"MONTHLY_REQUEST_COUNT");
+    let is_access_denied = status_code.is_some_and(|status| status == 403) || contains(body, b"AccessDeniedException");
 
     if is_context_window_overflow {
         return ConverseStreamErrorKind::ContextWindowOverflow;
@@ -790,6 +808,10 @@ fn classify_error_kind<R>(
 
     if is_monthly_limit_err {
         return ConverseStreamErrorKind::MonthlyLimitReached;
+    }
+
+    if is_access_denied {
+        return ConverseStreamErrorKind::AccessDenied;
     }
 
     ConverseStreamErrorKind::Unknown {

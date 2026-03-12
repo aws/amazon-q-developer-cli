@@ -102,3 +102,8 @@ pub fn get_telemetry_client_id(env: &Env) -> Result<String, std::env::VarError> 
     env.get(KIRO_TELEMETRY_CLIENT_ID)
         .or_else(|_| env.get(Q_TELEMETRY_CLIENT_ID))
 }
+
+/// Get API key from KIRO_API_KEY environment variable
+pub fn get_api_key() -> Option<String> {
+    std::env::var(KIRO_API_KEY).ok().filter(|s| !s.is_empty())
+}

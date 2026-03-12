@@ -7,6 +7,8 @@ use spinners::{
 
 use crate::api_client::error::ConverseStreamErrorKind;
 use crate::theme::StyledText;
+use crate::util::CLI_BINARY_NAME;
+use crate::util::consts::env_var::KIRO_API_KEY;
 use crate::util::ui::should_send_structured_message;
 
 mod agent_keybinds;
@@ -1521,6 +1523,24 @@ impl ChatSession {
                     });
 
                     return Ok(());
+                },
+                ConverseStreamErrorKind::AccessDenied => {
+                    let msg = if crate::util::env_var::get_api_key().is_some() {
+                        format!(
+                            "Authentication failed. Your API key may be invalid or expired. Check your {KIRO_API_KEY} value."
+                        )
+                    } else {
+                        format!(
+                            "Authentication failed. Your session may have expired. Run `{CLI_BINARY_NAME} login` to re-authenticate."
+                        )
+                    };
+                    execute!(
+                        self.stderr,
+                        StyledText::error_fg(),
+                        style::Print(format!("{msg}\n\n")),
+                        StyledText::reset(),
+                    )?;
+                    (error_messages::TROUBLE_RESPONDING, eyre!(err), false)
                 },
                 _ => (error_messages::TROUBLE_RESPONDING, Report::from(err), true),
             },
