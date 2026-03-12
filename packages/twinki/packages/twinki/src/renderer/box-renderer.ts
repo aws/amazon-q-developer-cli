@@ -39,7 +39,7 @@ export function renderBoxChildren(
 	for (const child of node.children) {
 		if (!child.yogaNode) continue;
 		const layout = getComputedLayout(child.yogaNode);
-		if (Math.floor(layout.left) - contentOffsetLeft > 0 || Math.floor(layout.top) - contentOffsetTop > 0) {
+		if (Math.floor(layout.left) - contentOffsetLeft !== 0 || Math.floor(layout.top) - contentOffsetTop !== 0) {
 			needsComposite = true;
 			break;
 		}

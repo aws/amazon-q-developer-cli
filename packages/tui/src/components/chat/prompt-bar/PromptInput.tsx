@@ -171,6 +171,10 @@ export const PromptInput = React.memo(function PromptInput({
   const placeholderColor = useMemo(() => getColor('muted'), [getColor]);
 
   useEffect(() => {
+    if (localSyncRef.current) {
+      localSyncRef.current = false;
+      return;
+    }
     const visibleText = getVisibleText(segments);
     const firstSeg = segments[0];
     if (
@@ -284,9 +288,12 @@ export const PromptInput = React.memo(function PromptInput({
     inputMetrics.markRenderComplete();
   });
 
+  const localSyncRef = useRef(false);
+
   const syncToStore = useCallback(
     (segs: Segment[]) => {
       const text = getVisibleText(segs);
+      localSyncRef.current = true;
       setCommandInput(text);
 
       // Clear promptHint when user starts typing args (space after command)
