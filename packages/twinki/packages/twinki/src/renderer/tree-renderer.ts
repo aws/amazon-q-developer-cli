@@ -29,6 +29,18 @@ export function renderNode(node: TwinkiNode, maxWidth: number): string[] {
 
 	if (width <= CONSTANTS.ZERO_INDEX && node.type !== NODE_TYPES.TWINKI_TEXT) return [];
 
+	// Region caching: return cached lines if region is clean
+	if (node.type === NODE_TYPES.TWINKI_REGION && node.region) {
+		if (!node.region.dirty && node.region.cachedLines && node.region.lastWidth === width) {
+			return node.region.cachedLines;
+		}
+		const lines = renderChildren(node, width);
+		node.region.cachedLines = lines;
+		node.region.lastWidth = width;
+		node.region.dirty = false;
+		return lines;
+	}
+
 	if (node.type === NODE_TYPES.TWINKI_TEXT) {
 		return renderText(node, width > CONSTANTS.ZERO_INDEX ? width : maxWidth);
 	}

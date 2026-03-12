@@ -127,9 +127,13 @@ export function parseInputData(data: string): { input: string; key: Key } {
 	if (data.length === 1 && data.charCodeAt(0) >= 0x20) {
 		input = data;
 	} else if (key.ctrl && data.length === 1) {
-		// Ctrl+letter: expose the letter as input, matching ink's behavior
+		// Ctrl+letter (legacy): expose the letter as input, matching ink's behavior
 		const code = data.charCodeAt(0);
 		if (code >= 1 && code <= 26) input = String.fromCharCode(code + 96);
+	} else if (parsed) {
+		// Kitty protocol: CSI u sequences are multi-byte, extract letter from keyId
+		const m = parsed.match(/(?:ctrl|alt|shift)\+([a-z])$/);
+		if (m) input = m[1]!;
 	}
 	return { input, key };
 }

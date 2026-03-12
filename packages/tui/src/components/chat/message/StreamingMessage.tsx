@@ -1,5 +1,6 @@
 import React from 'react';
-import { Box } from '../.././../renderer.js';
+import { StreamingPanel } from '../.././../renderer.js';
+import { useTerminalSize } from '../../../hooks/useTerminalSize.js';
 import { Message, MessageType, type StatusType } from './Message.js';
 
 export interface StreamingMessageProps {
@@ -10,6 +11,8 @@ export interface StreamingMessageProps {
   barColor?: string;
 }
 
+const CHROME_LINES = 13;
+
 export const StreamingMessage = React.memo(function StreamingMessage({
   content,
   type,
@@ -17,14 +20,23 @@ export const StreamingMessage = React.memo(function StreamingMessage({
   isStreaming,
   barColor,
 }: StreamingMessageProps) {
+  const { height: terminalHeight } = useTerminalSize();
+  const viewportHeight = Math.max(5, terminalHeight - CHROME_LINES);
+
   return (
-    <Box flexDirection="column">
-      <Message
-        content={content}
-        type={type}
-        status={isStreaming ? 'active' : status}
-        barColor={barColor}
-      />
-    </Box>
+    <StreamingPanel
+      content={content}
+      streaming={isStreaming}
+      height={viewportHeight}
+    >
+      {(visibleContent) => (
+        <Message
+          content={visibleContent}
+          type={type}
+          status={isStreaming ? 'active' : status}
+          barColor={barColor}
+        />
+      )}
+    </StreamingPanel>
   );
 });

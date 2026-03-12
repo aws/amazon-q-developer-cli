@@ -66,6 +66,21 @@ export function renderTree(root: RootContainer, width: number, skipStaticItems =
 	return renderTreeImpl(root, width, skipStaticItems);
 }
 
+/**
+ * Finds the nearest Region ancestor of a node and marks it dirty.
+ * If no region is found, marks the root container for full re-render.
+ */
+function markRegionDirty(node: TwinkiNode): void {
+	let p: TwinkiNode | null = node;
+	while (p) {
+		if (p.region) {
+			p.region.dirty = true;
+			return;
+		}
+		p = p.parent;
+	}
+}
+
 // --- Reconciler ---
 
 /**
@@ -146,6 +161,7 @@ export const reconciler = ReactReconciler(({
 			if (p.yogaNode && p.yogaNode.getChildCount() === CONSTANTS.ZERO_INDEX) p.yogaNode.markDirty();
 			p = p.parent;
 		}
+		markRegionDirty(instance);
 		if (instance.rootContainer) instance.rootContainer.onRender();
 	},
 
@@ -160,6 +176,7 @@ export const reconciler = ReactReconciler(({
 			if (p.type !== NODE_TYPES.TWINKI_TEXT) break;
 			p = p.parent;
 		}
+		markRegionDirty(instance);
 		if (instance.rootContainer) instance.rootContainer.onRender();
 	},
 

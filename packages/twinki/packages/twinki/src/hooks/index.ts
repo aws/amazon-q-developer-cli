@@ -22,3 +22,4 @@ export type { UseKeyReleaseOptions } from './useKeyRelease.js';
 export { useKeyRepeat } from './useKeyRepeat.js';
 export type { UseKeyRepeatOptions } from './useKeyRepeat.js';
 export { useOverlay } from './useOverlay.js';
+export { useScroll } from './useScroll.js';

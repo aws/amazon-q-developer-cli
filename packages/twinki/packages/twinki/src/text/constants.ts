@@ -34,7 +34,8 @@ export const NODE_TYPES = {
 	TWINKI_STATIC: 'twinki-static',
 	TWINKI_NEWLINE: 'twinki-newline',
 	TWINKI_SPACER: 'twinki-spacer',
-	TWINKI_TRANSFORM: 'twinki-transform'
+	TWINKI_TRANSFORM: 'twinki-transform',
+	TWINKI_REGION: 'twinki-region'
 } as const;
 
 /**

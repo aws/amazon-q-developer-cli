@@ -197,6 +197,58 @@ Add `#[typeshare]` attribute to Rust types (requires `use typeshare::typeshare;`
 - **TypeScript**: `KIRO_TUI_LOG_LEVEL` (`debug`/`info`/`warn`/`error`), writes to `KIRO_TUI_LOG_FILE`
 - **Rust**: `KIRO_LOG_LEVEL` (e.g. `chat_cli::api_client=trace,agent=debug`), writes to `KIRO_CHAT_LOG_FILE`
 
+### Renderer Selection
+
+The TUI supports two rendering backends, selectable via `KIRO_RENDERER`:
+
+| Value | Backend | Description |
+|-------|---------|-------------|
+| *(unset)* | **ink** (default) | Stable React/Ink renderer |
+| `twinki` | **twinki** | Experimental high-performance renderer with native input handling |
+
+```bash
+# Run with twinki renderer
+KIRO_RENDERER=twinki bun run dev --skip-rust-build
+
+# Run with ink (default)
+bun run dev --skip-rust-build
+```
+
+All TUI components import from `src/renderer.ts` (not `'ink'` directly), which proxies to the active backend at runtime. When adding new components, always import `Box`, `Text`, `useInput`, etc. from `renderer.js`.
+
+**Kitty keyboard protocol**: twinki force-enables the Kitty protocol for known terminals (iTerm2, Kitty, WezTerm, Ghostty) to support Shift+Enter, Home/End, and other enhanced key detection. The known terminal list is in `packages/twinki/packages/twinki/src/terminal/process-terminal.ts`.
+
+### Performance Metrics
+
+Render metrics and input latency tracking are available via environment variables:
+
+| Variable | Effect |
+|----------|--------|
+| `KIRO_DEV=1` | Enable dev mode (render metrics chip in prompt bar) |
+| `KIRO_PERF_METRICS=true` | Enable performance metric logging |
+| `KIRO_INPUT_METRICS=true` | Enable input latency tracking |
+
+```bash
+# Dev mode with metrics chip (shows render time, yoga nodes, heap, render count)
+KIRO_DEV=1 bun run dev --skip-rust-build
+
+# Dev mode with twinki + metrics
+KIRO_DEV=1 KIRO_RENDERER=twinki bun run dev --skip-rust-build
+
+# Full profiling (CPU profile + all metrics + log file)
+bun run dev:profile          # ink renderer
+bun run dev:profiletui       # twinki renderer
+
+# Enable metrics in production builds
+KIRO_DEV=1 kiro-cli chat
+```
+
+The render metrics chip displays in the prompt bar when `KIRO_DEV=1` or `NODE_ENV !== 'production'`. Under twinki, it wraps in a `<Region>` for scoped re-rendering. Metrics include:
+- **Render time** (ms per frame)
+- **Yoga node count** (layout complexity)
+- **Heap usage** (MB)
+- **Render count** (total frames)
+
 ### TypeScript Best Practices
 
 - **Avoid `any` type**: Use specific types, unions, or generics.

@@ -19,8 +19,8 @@ export { render } from './reconciler/index.js';
 export type { TwinkiRenderOptions, Instance, RenderMetrics } from './reconciler/index.js';
 
 // Components
-export { Text, Box, Newline, Spacer, Static, Transform, Markdown, Typewriter, DiffView, TextInput, Input, Select, SelectList, Editor, EditorInput } from './components/index.js';
-export type { TextProps, BoxProps, NewlineProps, StaticProps, TransformProps, MarkdownProps, TypewriterProps, DiffViewProps, DiffSide, TextInputProps, SelectProps, SelectItem, AutocompleteProvider, EditorTheme, EditorInputProps } from './components/index.js';
+export { Text, Box, Newline, Spacer, Static, Transform, Markdown, Typewriter, DiffView, TextInput, Input, Select, SelectList, Editor, EditorInput, Region, Scrollbar, StreamingPanel } from './components/index.js';
+export type { TextProps, BoxProps, NewlineProps, StaticProps, TransformProps, MarkdownProps, TypewriterProps, DiffViewProps, DiffSide, TextInputProps, SelectProps, SelectItem, AutocompleteProvider, EditorTheme, EditorInputProps, RegionProps, ScrollbarProps, StreamingPanelProps } from './components/index.js';
 
 // Hooks
 export { useInput, useApp, useStdin, useStdout, useStderr, useFocus, useFocusManager, useTwinkiContext } from './hooks/index.js';
@@ -38,6 +38,7 @@ export type { UseKeyReleaseOptions } from './hooks/index.js';
 export { useKeyRepeat } from './hooks/index.js';
 export type { UseKeyRepeatOptions } from './hooks/index.js';
 export { useOverlay } from './hooks/index.js';
+export { useScroll } from './hooks/index.js';
 
 // Animation utilities
 export { halfBlock, stamp, renderGrid, createGrid, solidBg, radialGlow, COLOR_RGB } from './animation/index.js';

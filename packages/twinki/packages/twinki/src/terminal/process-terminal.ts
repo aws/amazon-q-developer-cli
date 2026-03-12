@@ -7,6 +7,50 @@ import type { Terminal } from "./terminal.js";
 const cjsRequire = createRequire(import.meta.url);
 
 /**
+ * Kitty keyboard protocol flags.
+ *
+ * The Kitty keyboard protocol (https://sw.kovidgoyal.net/kitty/keyboard-protocol/)
+ * enhances terminal key reporting so the application can distinguish keypresses
+ * that legacy VT sequences cannot (e.g. Shift+Enter vs Enter, Ctrl+I vs Tab).
+ *
+ * Flags are a bitmask:
+ *   1 = disambiguateEscapeCodes  — report modified keys as CSI u sequences
+ *   2 = reportEventTypes         — include press/repeat/release event type
+ *   4 = reportAlternateKeys      — include shifted and base-layout codepoints
+ *
+ * We use flag 1 only. Flag 2 (reportEventTypes) causes terminals to send
+ * both press and release events which can confuse components that don't
+ * expect them. Flag 4 is useful for international layouts but not required.
+ */
+const KITTY_FLAGS = 1;
+
+/**
+ * Terminals known to support the Kitty keyboard protocol.
+ *
+ * Some terminals (notably iTerm2) support the protocol but do NOT respond to
+ * the standard query sequence `CSI ? u`. For these we must force-enable the
+ * protocol without waiting for a response.
+ *
+ * Detection uses environment variables set by each terminal:
+ *   - KITTY_WINDOW_ID          → Kitty
+ *   - TERM = xterm-kitty       → Kitty
+ *   - TERM_PROGRAM = WezTerm   → WezTerm
+ *   - TERM_PROGRAM = ghostty   → Ghostty
+ *   - TERM_PROGRAM = iTerm.app → iTerm2 (≥ 3.5, does NOT respond to query)
+ */
+const KNOWN_KITTY_TERMINALS: ReadonlyArray<(env: NodeJS.ProcessEnv) => boolean> = [
+	(env) => 'KITTY_WINDOW_ID' in env,
+	(env) => env['TERM'] === 'xterm-kitty',
+	(env) => env['TERM_PROGRAM'] === 'WezTerm',
+	(env) => env['TERM_PROGRAM'] === 'ghostty',
+	(env) => env['TERM_PROGRAM'] === 'iTerm.app',
+];
+
+function isKnownKittyTerminal(): boolean {
+	return KNOWN_KITTY_TERMINALS.some((check) => check(process.env));
+}
+
+/**
  * Terminal implementation using Node.js process.stdin/stdout.
  * 
  * Provides a full-featured terminal interface with support for:
@@ -103,15 +147,11 @@ export class ProcessTerminal implements Terminal {
 
 		// Forward individual sequences to the input handler
 		this.stdinBuffer.on("data", (sequence) => {
-			// Check for Kitty protocol response
+			// Check for Kitty protocol query response (unknown terminal path)
 			if (!this._kittyProtocolActive) {
 				const match = sequence.match(kittyResponsePattern);
 				if (match) {
-					this._kittyProtocolActive = true;
-					setKittyProtocolActive(true);
-
-					// Enable Kitty keyboard protocol with flags 1+2+4
-					process.stdout.write("\x1b[>7u");
+					this.enableKittyProtocol();
 					return; // Don't forward protocol response to TUI
 				}
 			}
@@ -135,16 +175,35 @@ export class ProcessTerminal implements Terminal {
 	}
 
 	/**
-	 * Queries terminal for Kitty keyboard protocol support.
-	 * 
-	 * Sends a query sequence and waits for a response to determine
-	 * if the terminal supports enhanced keyboard protocol.
-	 * If supported, enables the protocol with flags 1+2+4.
+	 * Detects and enables Kitty keyboard protocol.
+	 *
+	 * For terminals in {@link KNOWN_KITTY_TERMINALS}, the protocol is
+	 * force-enabled immediately — these terminals support the protocol but
+	 * may not respond to the standard `CSI ? u` query (e.g. iTerm2).
+	 *
+	 * For unknown terminals, sends the query and waits for a response via
+	 * the StdinBuffer's data handler (see {@link setupStdinBuffer}).
 	 */
 	private queryAndEnableKittyProtocol(): void {
 		this.setupStdinBuffer();
 		process.stdin.on("data", this.stdinDataHandler!);
+
+		if (isKnownKittyTerminal()) {
+			this.enableKittyProtocol();
+			return;
+		}
+
+		// Unknown terminal — query and wait for response
 		process.stdout.write("\x1b[?u");
+	}
+
+	/**
+	 * Enables Kitty keyboard protocol with {@link KITTY_FLAGS}.
+	 */
+	private enableKittyProtocol(): void {
+		this._kittyProtocolActive = true;
+		setKittyProtocolActive(true);
+		process.stdout.write(`\x1b[>${KITTY_FLAGS}u`);
 	}
 
 	/**

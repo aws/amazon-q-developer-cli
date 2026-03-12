@@ -1,6 +1,13 @@
 import React, { useCallback, useMemo, useState, useEffect } from 'react';
 import { Box, Text } from './../../renderer.js';
 import { useRenderMetrics, isDevMode } from '../../hooks/useRenderMetrics.js';
+
+// Region is twinki-only — lazy import to avoid errors when using ink
+// Use variable to prevent TS from resolving the module at typecheck time
+const _twinki = 'twinki';
+const Region = isDevMode()
+  ? (await import(/* @vite-ignore */ _twinki).catch(() => ({ Region: null }))).Region
+  : null;
 import { AnimationPausedContext } from '../../contexts/AnimationPausedContext.js';
 import { ConversationView } from '../ui/ConversationView';
 import { ExitHint } from '../ui/ExitHint';
@@ -377,7 +384,9 @@ export const InlineLayout: React.FC = () => {
     ];
 
     const secondaryItems = [
-      isDevMode() && <RenderMetricsChip />,
+      isDevMode() && Region
+        ? <Region id="metrics"><RenderMetricsChip /></Region>
+        : isDevMode() && <RenderMetricsChip />,
       <Chip value={shortenPath(process.cwd())} color={ChipColor.BRAND} />,
       gitBranch && (
         <Chip value={gitBranch} color={ChipColor.PRIMARY} wrap={true} />

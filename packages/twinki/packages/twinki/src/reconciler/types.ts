@@ -29,6 +29,24 @@ export interface TwinkiNode {
 	textContent?: string;
 	/** Reference to root container */
 	rootContainer?: RootContainer;
+	/** Region this node belongs to (for scoped rendering) */
+	region?: RegionState;
+}
+
+/**
+ * Tracks dirty/clean state for a render region.
+ * Nodes inside a Region share a RegionState so that
+ * commitUpdate can mark only the owning region dirty.
+ */
+export interface RegionState {
+	/** Unique region identifier */
+	id: string;
+	/** Whether this region needs re-render */
+	dirty: boolean;
+	/** Cached rendered lines from last render */
+	cachedLines: string[] | null;
+	/** Last width used for rendering (invalidate on change) */
+	lastWidth: number;
 }
 
 /**
@@ -44,4 +62,6 @@ export interface RootContainer {
 	children: TwinkiNode[];
 	/** Callback to trigger re-render */
 	onRender: () => void;
+	/** All registered regions */
+	regions?: Map<string, RegionState>;
 }

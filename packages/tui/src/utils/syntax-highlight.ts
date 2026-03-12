@@ -1,9 +1,7 @@
-import { highlight, listLanguages } from 'cli-highlight';
+import { highlight } from 'cli-highlight';
 import { useMemo } from 'react';
 import { useTheme } from '../hooks/useThemeContext.js';
 import { resolveHighlightLanguage } from './highlight-languages.js';
-
-const supportedLanguages = new Set(listLanguages());
 
 // Hook for syntax highlighting using TUI theme colors
 export function useSyntaxHighlight() {
@@ -34,10 +32,6 @@ export function useSyntaxHighlight() {
     () =>
       (code: string, language?: string): string => {
         const lang = resolveHighlightLanguage(language);
-        // Skip unsupported languages to avoid cli-highlight errors
-        if (lang && !supportedLanguages.has(lang)) {
-          return code;
-        }
         try {
           const noop = () => {};
           const origError = console.error;

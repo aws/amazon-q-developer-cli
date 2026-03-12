@@ -3,6 +3,8 @@ import { useInput, useStdin, usePaste } from './../renderer.js';
 import { logger } from '../utils/logger.js';
 import { inputMetrics } from '../utils/inputMetrics.js';
 
+const useTwinki = process.env.KIRO_RENDERER === 'twinki';
+
 export interface Key {
   upArrow: boolean;
   downArrow: boolean;
@@ -88,9 +90,12 @@ export const useKeypress = (
       }
 
       // Filter out Shift+Enter sequences (Ink strips leading \x1b)
-      for (const seq of SHIFT_ENTER_STRIPPED) {
-        if (input === seq || input.includes(seq)) {
-          return;
+      // Twinki parses these natively so skip the filter
+      if (!useTwinki) {
+        for (const seq of SHIFT_ENTER_STRIPPED) {
+          if (input === seq || input.includes(seq)) {
+            return;
+          }
         }
       }
 
@@ -99,6 +104,8 @@ export const useKeypress = (
 
       handlerRef.current(input, {
         ...key,
+        // Twinki uses 'alt' where ink uses 'meta' — normalize
+        meta: (key as any).meta ?? (key as any).alt ?? false,
         home: key.home ?? false,
         end: key.end ?? false,
         paste: false,
@@ -126,7 +133,9 @@ export const useKeypress = (
   );
 
   // Listen for special sequences on the internal event emitter
+  // Twinki handles shift+enter, shift+tab, paste, and ctrl combos natively — skip
   useEffect(() => {
+    if (useTwinki) return;
     if (!isActive || !internal_eventEmitter) return;
 
     let pasteBuffer = '';

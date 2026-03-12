@@ -17,7 +17,7 @@
  *   Ctrl+C to quit
  */
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { render, Text, Box, Markdown, Typewriter, useInput, useApp } from 'twinki';
+import { render, Text, Box, Static, Markdown, Typewriter, useInput, useApp } from 'twinki';
 
 interface Message {
 	role: 'user' | 'assistant';
@@ -549,30 +549,45 @@ const App = () => {
 
 	return (
 		<Box flexDirection="column">
-			<Box borderStyle="round" borderColor="magenta">
-				<Text bold color="magenta"> Agent Chat — Long Duration Stress Test </Text>
-				{process.env['TWINKI_NO_SYNC'] && <Text bold color="red"> [NO SYNC — FLICKER MODE] </Text>}
-			</Box>
-			<Text> </Text>
-
-			{messages.map((msg, i) => (
-				<Box key={i} flexDirection="column">
-					{msg.role === 'user' ? (
-						<Box flexDirection="column">
-							<Text color="cyan" bold>  You:</Text>
-							<Text>  {msg.content}</Text>
-						</Box>
-					) : (
-						<Box flexDirection="column">
-							<Text color="green" bold>  Agent:</Text>
-							<Box paddingLeft={2}>
-								<Markdown>{msg.content}</Markdown>
+			<Static items={messages.map((msg, i) => ({ id: i, msg }))}>
+				{({ id, msg }) => (
+					<Box key={id} flexDirection="column">
+						{id === 0 && (
+							<>
+								<Box borderStyle="round" borderColor="magenta">
+									<Text bold color="magenta"> Agent Chat — Long Duration Stress Test </Text>
+									{process.env['TWINKI_NO_SYNC'] && <Text bold color="red"> [NO SYNC — FLICKER MODE] </Text>}
+								</Box>
+								<Text> </Text>
+							</>
+						)}
+						{msg.role === 'user' ? (
+							<Box flexDirection="column">
+								<Text color="cyan" bold>  You:</Text>
+								<Text>  {msg.content}</Text>
 							</Box>
-						</Box>
-					)}
+						) : (
+							<Box flexDirection="column">
+								<Text color="green" bold>  Agent:</Text>
+								<Box paddingLeft={2}>
+									<Markdown>{msg.content}</Markdown>
+								</Box>
+							</Box>
+						)}
+						<Text> </Text>
+					</Box>
+				)}
+			</Static>
+
+			{messages.length === 0 && (
+				<>
+					<Box borderStyle="round" borderColor="magenta">
+						<Text bold color="magenta"> Agent Chat — Long Duration Stress Test </Text>
+						{process.env['TWINKI_NO_SYNC'] && <Text bold color="red"> [NO SYNC — FLICKER MODE] </Text>}
+					</Box>
 					<Text> </Text>
-				</Box>
-			))}
+				</>
+			)}
 
 			{activeResponse !== null && (
 				<Box flexDirection="column">

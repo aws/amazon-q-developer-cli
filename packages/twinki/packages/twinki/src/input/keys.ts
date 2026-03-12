@@ -845,11 +845,71 @@ export function parseKey(data: string): KeyId | undefined {
 	if (data === "\x7f" || data === "\x08") return "backspace";
 	if (data === "\x1b[Z") return "shift+tab";
 
+	// xterm modifyOtherKeys format: CSI 27 ; modifier ; keycode ~
+	const mokMatch = data.match(/^\x1b\[27;(\d+);(\d+)~$/);
+	if (mokMatch) {
+		const modifier = parseInt(mokMatch[1]!, 10) - 1;
+		const keycode = parseInt(mokMatch[2]!, 10);
+		const mods: string[] = [];
+		if (modifier & MODIFIERS.shift) mods.push("shift");
+		if (modifier & MODIFIERS.ctrl) mods.push("ctrl");
+		if (modifier & MODIFIERS.alt) mods.push("alt");
+		let keyName: string | undefined;
+		if (keycode === CODEPOINTS.enter) keyName = "enter";
+		else if (keycode === CODEPOINTS.tab) keyName = "tab";
+		else if (keycode === CODEPOINTS.space) keyName = "space";
+		else if (keycode === CODEPOINTS.backspace) keyName = "backspace";
+		else if (keycode === CODEPOINTS.escape) keyName = "escape";
+		else if (keycode >= 97 && keycode <= 122) keyName = String.fromCharCode(keycode);
+		if (keyName) {
+			return (mods.length > 0 ? `${mods.join("+")}+${keyName}` : keyName) as KeyId;
+		}
+	}
+
+	// Arrow/nav keys with modifier: CSI 1 ; modifier A/B/C/D/H/F
+	const navModMatch = data.match(/^\x1b\[1;(\d+)([ABCDHF])$/);
+	if (navModMatch) {
+		const modifier = parseInt(navModMatch[1]!, 10) - 1;
+		const mods: string[] = [];
+		if (modifier & MODIFIERS.shift) mods.push("shift");
+		if (modifier & MODIFIERS.ctrl) mods.push("ctrl");
+		if (modifier & MODIFIERS.alt) mods.push("alt");
+		const navKeys: Record<string, string> = { A: "up", B: "down", C: "right", D: "left", H: "home", F: "end" };
+		const keyName = navKeys[navModMatch[2]!];
+		if (keyName) {
+			return (mods.length > 0 ? `${mods.join("+")}+${keyName}` : keyName) as KeyId;
+		}
+	}
+
+	// Functional keys with modifier: CSI number ; modifier ~
+	const funcModMatch = data.match(/^\x1b\[(\d+);(\d+)~$/);
+	if (funcModMatch) {
+		const keyNum = parseInt(funcModMatch[1]!, 10);
+		const modifier = parseInt(funcModMatch[2]!, 10) - 1;
+		const funcNames: Record<number, string> = { 2: "insert", 3: "delete", 5: "pageUp", 6: "pageDown", 7: "home", 8: "end" };
+		const keyName = funcNames[keyNum];
+		if (keyName) {
+			const mods: string[] = [];
+			if (modifier & MODIFIERS.shift) mods.push("shift");
+			if (modifier & MODIFIERS.ctrl) mods.push("ctrl");
+			if (modifier & MODIFIERS.alt) mods.push("alt");
+			return (mods.length > 0 ? `${mods.join("+")}+${keyName}` : keyName) as KeyId;
+		}
+	}
+
 	// Arrow keys
 	if (data === "\x1b[A" || data === "\x1bOA") return "up";
 	if (data === "\x1b[B" || data === "\x1bOB") return "down";
 	if (data === "\x1b[C" || data === "\x1bOC") return "right";
 	if (data === "\x1b[D" || data === "\x1bOD") return "left";
+
+	// Navigation keys
+	if (data === "\x1b[H" || data === "\x1bOH" || data === "\x1b[1~" || data === "\x1b[7~") return "home";
+	if (data === "\x1b[F" || data === "\x1bOF" || data === "\x1b[4~" || data === "\x1b[8~") return "end";
+	if (data === "\x1b[2~") return "insert";
+	if (data === "\x1b[3~") return "delete";
+	if (data === "\x1b[5~" || data === "\x1b[[5~") return "pageUp";
+	if (data === "\x1b[6~" || data === "\x1b[[6~") return "pageDown";
 
 	// Function keys
 	if (data === "\x1bOP") return "f1";

@@ -4,7 +4,7 @@ import { wrapTextWithAnsi } from '../utils/wrap-ansi.js';
 import { collectText } from '../text/text-processor.js';
 import { stylize } from '../text/ansi-handler.js';
 import { NODE_TYPES, WrapMode, CONSTANTS } from '../text/constants.js';
-import type { TwinkiNode, NodeType } from './types.js';
+import type { TwinkiNode, NodeType, RegionState } from './types.js';
 import type { ComponentProps } from '../types/props.js';
 
 /**
@@ -23,6 +23,14 @@ export function createNode(type: NodeType, props: ComponentProps): TwinkiNode {
 	if (type === NODE_TYPES.TWINKI_STATIC) yogaNode.setDisplay(Yoga.DISPLAY_NONE);
 	const node: TwinkiNode = { type, props, yogaNode, children: [], parent: null };
 	if (type === NODE_TYPES.TWINKI_TEXT) setTextMeasureFunc(node);
+	if (type === NODE_TYPES.TWINKI_REGION) {
+		node.region = {
+			id: (props as any).regionId ?? '',
+			dirty: true,
+			cachedLines: null,
+			lastWidth: 0,
+		};
+	}
 	return node;
 }
 
