@@ -1305,10 +1305,7 @@ Return only the JSON configuration, no additional text."
         Ok(FigConversationState {
             conversation_id: Some(self.conversation_id.clone()),
             user_input_message: generation_message.into_user_input_message(self.model.clone(), &tools),
-            history: Some(flatten_history(
-                history.iter(),
-                self.model.as_deref(),
-            )),
+            history: Some(flatten_history(history.iter(), self.model.as_deref())),
             agent_continuation_id: Some(self.user_turn_metadata.continuation_id().to_string()),
         })
     }

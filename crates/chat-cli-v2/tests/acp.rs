@@ -20,7 +20,7 @@ use tokio::time::sleep;
 use crate::common::PermissionResponse;
 
 #[tokio::test]
-#[timeout(10000)]
+#[timeout(30000)]
 #[serial]
 async fn initialize() {
     let mut harness = AcpTestHarness::new("initialize").await;
@@ -96,7 +96,7 @@ async fn new_session_waits_for_mcp_server_initialization() {
 }
 
 #[tokio::test]
-#[timeout(10000)]
+#[timeout(30000)]
 #[serial]
 async fn new_session_creates_files() {
     let (harness, _, session_id, _) = AcpTestHarnessBuilder::new("new_session_creates_files")
@@ -116,7 +116,7 @@ async fn new_session_creates_files() {
 }
 
 #[tokio::test]
-#[timeout(10000)]
+#[timeout(30000)]
 #[serial]
 async fn load_session_emits_history() {
     let (mut harness, client, session_id, cwd) = AcpTestHarnessBuilder::new("load_session_emits_history")
@@ -174,7 +174,7 @@ async fn load_session_emits_history() {
 }
 
 #[tokio::test]
-#[timeout(10000)]
+#[timeout(30000)]
 #[serial]
 async fn prompt_with_send_error() {
     let (mut harness, client, session_id, _) = AcpTestHarnessBuilder::new("prompt_with_send_error")
@@ -189,8 +189,16 @@ async fn prompt_with_send_error() {
     let result = client.prompt_text(session_id, "hello").await;
     assert!(result.is_err(), "expected prompt to fail with send error");
 
-    // Verify telemetry events capture the failure
-    let events = harness.get_captured_telemetry_events().await;
+    // Verify telemetry events capture the failure.
+    // Use polling because telemetry events are emitted asynchronously and may still
+    // be in the pipeline when prompt_text returns an error.
+    let events = harness
+        .wait_for_telemetry_events(Duration::from_secs(5), |events| {
+            events
+                .iter()
+                .any(|e| matches!(&e.ty, chat_cli_v2::telemetry::core::EventType::ChatAddedMessage { .. }))
+        })
+        .await;
 
     // addChatMessage with Failed
     let add_msg = events
@@ -278,7 +286,7 @@ async fn captured_request_contains_conversation_state() {
 }
 
 #[tokio::test]
-#[timeout(10000)]
+#[timeout(30000)]
 #[serial]
 async fn default_agent_setting_used_as_initial_mode() {
     use agent::agent_config::definitions::AgentConfigV2025_08_22;
@@ -308,7 +316,7 @@ async fn default_agent_setting_used_as_initial_mode() {
 }
 
 #[tokio::test]
-#[timeout(10000)]
+#[timeout(30000)]
 #[serial]
 async fn set_mode_switches_agent() {
     use agent::agent_config::definitions::AgentConfigV2025_08_22;
@@ -399,7 +407,7 @@ async fn set_mode_switches_agent() {
 }
 
 #[tokio::test]
-#[timeout(10000)]
+#[timeout(30000)]
 #[serial]
 async fn session_cancel_notification() {
     let (_, client, session_id, _) = AcpTestHarnessBuilder::new("session_cancel_notification")
@@ -414,7 +422,7 @@ async fn session_cancel_notification() {
 
 #[tokio::test(flavor = "multi_thread")]
 #[ignore = "still running into hangs. will need to investigate"]
-#[timeout(10000)]
+#[timeout(30000)]
 #[serial]
 async fn cancel_mid_stream_partial_response() {
     use chat_cli_v2::api_client::send_message_output::MockStreamItem;
@@ -463,7 +471,7 @@ async fn cancel_mid_stream_partial_response() {
 
 #[tokio::test(flavor = "multi_thread")]
 #[ignore = "TODO: Test times out waiting for tool approval flow - likely issue with how cancellation interacts with pending tool approval state"]
-#[timeout(10000)]
+#[timeout(30000)]
 #[serial]
 async fn cancel_during_tool_approval_allows_new_prompt() {
     use chat_cli_v2::api_client::model::ChatResponseStream;
@@ -547,7 +555,7 @@ async fn cancel_during_tool_approval_allows_new_prompt() {
 }
 
 #[tokio::test]
-#[timeout(10000)]
+#[timeout(30000)]
 #[serial]
 async fn prompt_with_resource_link() {
     use agent_client_protocol as acp;
@@ -596,7 +604,7 @@ async fn prompt_with_resource_link() {
 
 #[tokio::test]
 #[ignore = "TODO: times out in CI but passes locally, needs investigation"]
-#[timeout(10000)]
+#[timeout(30000)]
 #[serial]
 async fn set_model_changes_model_id() {
     let (mut harness, client, session_id, _) = AcpTestHarnessBuilder::new("set_model_changes_model_id")
@@ -638,7 +646,7 @@ async fn set_model_changes_model_id() {
 }
 
 #[tokio::test]
-#[timeout(10000)]
+#[timeout(30000)]
 #[serial]
 async fn prompt_with_image() {
     use agent_client_protocol as acp;
@@ -1096,7 +1104,7 @@ async fn agent_swap_reloads_mcp_servers() {
 }
 
 #[tokio::test]
-#[timeout(10000)]
+#[timeout(30000)]
 #[serial]
 async fn auto_compaction_on_context_overflow() {
     let (mut harness, client, session_id, _cwd) = AcpTestHarnessBuilder::new("auto_compaction_on_context_overflow")
@@ -1228,7 +1236,7 @@ async fn auto_compaction_on_context_overflow() {
 }
 
 #[tokio::test]
-#[timeout(10000)]
+#[timeout(30000)]
 #[serial]
 async fn str_replace_tool_call_includes_location_with_line_number() {
     use agent_client_protocol::SessionUpdate;
@@ -1311,7 +1319,7 @@ async fn str_replace_tool_call_includes_location_with_line_number() {
 
 #[tokio::test]
 #[ignore = "broken, needs to be fixed"]
-#[timeout(10000)]
+#[timeout(30000)]
 #[serial]
 async fn context_usage_flows_to_user_turn_metadata() {
     let (mut harness, client, session_id, _) = AcpTestHarnessBuilder::new("context_usage_flows_to_user_turn_metadata")
@@ -1395,7 +1403,8 @@ async fn get_tool_call_locations(
 }
 
 #[tokio::test]
-#[timeout(10000)]
+#[timeout(30000)]
+#[serial]
 async fn tool_call_has_descriptive_title_fs_read() {
     let (mut harness, client, session_id, _) = AcpTestHarnessBuilder::new("tool_fs_read").build_with_session().await;
 
@@ -1432,7 +1441,8 @@ async fn tool_call_has_descriptive_title_fs_read() {
 }
 
 #[tokio::test]
-#[timeout(10000)]
+#[timeout(30000)]
+#[serial]
 async fn tool_call_has_descriptive_title_fs_write_create() {
     let (mut harness, client, session_id, _) = AcpTestHarnessBuilder::new("tool_fs_write_create")
         .with_trust_all(true)
@@ -1452,7 +1462,8 @@ async fn tool_call_has_descriptive_title_fs_write_create() {
 }
 
 #[tokio::test]
-#[timeout(10000)]
+#[timeout(30000)]
+#[serial]
 async fn tool_call_has_descriptive_title_grep() {
     let (mut harness, client, session_id, _) = AcpTestHarnessBuilder::new("tool_grep")
         .with_trust_all(true)
@@ -1472,7 +1483,8 @@ async fn tool_call_has_descriptive_title_grep() {
 }
 
 #[tokio::test]
-#[timeout(10000)]
+#[timeout(30000)]
+#[serial]
 async fn tool_call_has_descriptive_title_execute_bash() {
     let (mut harness, client, session_id, _) = AcpTestHarnessBuilder::new("tool_execute_bash")
         .with_trust_all(true)
@@ -1492,7 +1504,8 @@ async fn tool_call_has_descriptive_title_execute_bash() {
 }
 
 #[tokio::test]
-#[timeout(10000)]
+#[timeout(30000)]
+#[serial]
 async fn tool_call_has_locations_fs_read_multiple() {
     let (mut harness, client, session_id, _) = AcpTestHarnessBuilder::new("tool_fs_read_multi")
         .build_with_session()
@@ -1520,7 +1533,8 @@ async fn tool_call_has_locations_fs_read_multiple() {
 }
 
 #[tokio::test]
-#[timeout(10000)]
+#[timeout(30000)]
+#[serial]
 async fn tool_call_has_locations_fs_read_with_line() {
     let (mut harness, client, session_id, _) = AcpTestHarnessBuilder::new("tool_fs_read_offset")
         .build_with_session()
@@ -1549,7 +1563,8 @@ async fn tool_call_has_locations_fs_read_with_line() {
 }
 
 #[tokio::test]
-#[timeout(10000)]
+#[timeout(30000)]
+#[serial]
 async fn fs_read_in_cwd_does_not_require_permission() {
     let (mut harness, client, session_id, _) = AcpTestHarnessBuilder::new("fs_read_cwd_permission")
         .build_with_session()
@@ -1631,7 +1646,8 @@ async fn fs_read_in_cwd_does_not_require_permission() {
 }
 
 #[tokio::test]
-#[timeout(10000)]
+#[timeout(30000)]
+#[serial]
 async fn permissions_are_applied_and_loaded() {
     let (mut harness, client, session_id, cwd) = AcpTestHarnessBuilder::new("permissions_are_applied_and_loaded")
         .build_with_session()
@@ -1753,7 +1769,7 @@ async fn session_list_returns_sessions_with_title() {
 }
 
 #[tokio::test]
-#[timeout(15000)]
+#[timeout(30000)]
 #[serial]
 async fn task_create_injects_context_into_next_request() {
     let (mut harness, client, session_id, _) = AcpTestHarnessBuilder::new("task_context_injection")

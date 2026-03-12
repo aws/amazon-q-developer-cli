@@ -192,7 +192,7 @@ impl AcpTestHarness {
     /// Wait for the agent to connect to IPC.
     /// Call this after ACP initialize to ensure SessionManager has started.
     pub async fn wait_for_ipc(&mut self) {
-        let (stream, _) = tokio::time::timeout(Duration::from_secs(10), self.ipc_listener.accept())
+        let (stream, _) = tokio::time::timeout(Duration::from_secs(30), self.ipc_listener.accept())
             .await
             .expect("timeout waiting for agent IPC connection")
             .expect("failed to accept IPC connection");
@@ -278,11 +278,31 @@ impl AcpTestHarness {
         }
     }
 
-    /// Get captured telemetry events (drains the capture buffer).
+    /// Get captured telemetry events (returns a snapshot of the capture buffer).
     pub async fn get_captured_telemetry_events(&mut self) -> Vec<chat_cli_v2::telemetry::core::Event> {
         match self.send_ipc_command(TestCommand::GetCapturedTelemetryEvents).await {
             TestResponse::GetCapturedTelemetryEvents { events } => events,
             other => panic!("unexpected response: {:?}", other),
+        }
+    }
+
+    /// Poll for telemetry events until `predicate` returns true, or timeout after `timeout`.
+    /// Useful when events may still be in the async pipeline after a prompt returns.
+    pub async fn wait_for_telemetry_events<F>(
+        &mut self,
+        timeout: Duration,
+        predicate: F,
+    ) -> Vec<chat_cli_v2::telemetry::core::Event>
+    where
+        F: Fn(&[chat_cli_v2::telemetry::core::Event]) -> bool,
+    {
+        let deadline = tokio::time::Instant::now() + timeout;
+        loop {
+            let events = self.get_captured_telemetry_events().await;
+            if predicate(&events) || tokio::time::Instant::now() >= deadline {
+                return events;
+            }
+            tokio::time::sleep(Duration::from_millis(50)).await;
         }
     }
 

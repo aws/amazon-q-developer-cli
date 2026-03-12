@@ -549,7 +549,6 @@ impl ApiClient {
 
         let model_id_opt: Option<String> = user_input_message.model_id.clone();
 
-
         if let Some(client) = &self.streaming_client {
             let conversation_state = amzn_codewhisperer_streaming_client::types::ConversationState::builder()
                 .set_conversation_id(conversation_id)
