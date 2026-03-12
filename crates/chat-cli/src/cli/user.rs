@@ -398,10 +398,37 @@ impl WhoamiArgs {
         // Check for External IdP token
         if let Ok(Some(_external_idp_token)) = ExternalIdpToken::load(&os.database).await {
             self.format.print(
-                || "Logged in with External IdP".to_string(),
+                || {
+                    let login_type = "Logged in with External IdP".to_string();
+                    match &email {
+                        Some(e) => format!("{login_type}\nEmail: {e}"),
+                        None => login_type,
+                    }
+                },
                 || {
                     json!({
                         "accountType": "ExternalIdP",
+                        "email": email,
+                    })
+                },
+            );
+            return Ok(ExitCode::SUCCESS);
+        }
+
+        // Check for KIRO_API_KEY
+        if crate::util::env_var::get_api_key().is_some() {
+            self.format.print(
+                || {
+                    let login_type = "Authenticated with API key".to_string();
+                    match &email {
+                        Some(e) => format!("{login_type}\nEmail: {e}"),
+                        None => login_type,
+                    }
+                },
+                || {
+                    json!({
+                        "accountType": "ApiKey",
+                        "email": email,
                     })
                 },
             );
