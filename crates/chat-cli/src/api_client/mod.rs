@@ -241,19 +241,12 @@ impl ApiClient {
                 .build(),
         ));
 
-        // Check if using custom endpoint
-        let use_profile = !Self::is_custom_endpoint(database);
-        let profile = if use_profile {
-            match database.get_auth_profile() {
-                Ok(profile) => profile,
-                Err(err) => {
-                    error!("Failed to get auth profile: {err}");
-                    None
-                },
-            }
-        } else {
-            debug!("Custom endpoint detected, skipping profile ARN");
-            None
+        let profile = match database.get_auth_profile() {
+            Ok(profile) => profile,
+            Err(err) => {
+                error!("Failed to get auth profile: {err}");
+                None
+            },
         };
 
         Ok(Self {
@@ -634,31 +627,18 @@ impl ApiClient {
     /// client to succeed.
     pub async fn refresh_auth_profile(
         &mut self,
-        env: &Env,
-        fs: &Fs,
+        _env: &Env,
+        _fs: &Fs,
         database: &mut Database,
     ) -> Result<(), ApiClientError> {
-        let use_profile = !Self::is_custom_endpoint(database);
-        if use_profile {
-            match database.get_auth_profile() {
-                Ok(profile) => {
-                    tracing::debug!("Refreshed auth profile: {:?}", profile);
-
-                    if profile.is_some() {
-                        let endpoint = Endpoint::configured_value(database);
-                        tracing::debug!("Recreating client with endpoint: {:?}", endpoint);
-
-                        let mut new_client = Self::new(env, fs, database, Some(endpoint)).await?;
-                        new_client.profile = profile.clone();
-                        *self = new_client;
-                    }
-                },
-                Err(err) => {
-                    error!("Failed to refresh auth profile: {err}");
-                },
-            }
-        } else {
-            debug!("Custom endpoint detected, skipping profile refresh");
+        match database.get_auth_profile() {
+            Ok(profile) => {
+                tracing::debug!("Refreshed auth profile: {:?}", profile);
+                self.profile = profile;
+            },
+            Err(err) => {
+                error!("Failed to refresh auth profile: {err}");
+            },
         }
         Ok(())
     }
