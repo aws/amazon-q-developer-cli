@@ -1187,6 +1187,11 @@ impl ChatSession {
                     (false, false) => {
                         return Err(ChatError::NonInteractiveToolApproval);
                     },
+                    // Piped stdin must not be consumed as tool approval responses.
+                    // Users who want unattended approval should use --trust-all-tools.
+                    (true, false) if !self.input_source.is_interactive() => {
+                        return Err(ChatError::NonInteractiveToolApproval);
+                    },
                     _ => (),
                 };
 

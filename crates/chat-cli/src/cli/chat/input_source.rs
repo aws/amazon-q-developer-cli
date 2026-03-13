@@ -1,3 +1,5 @@
+use std::io::IsTerminal;
+
 use eyre::Result;
 use rustyline::error::ReadlineError;
 
@@ -102,6 +104,15 @@ impl InputSource {
                     tool_names,
                 ))),
             );
+        }
+    }
+
+    /// Returns `true` when the input source can genuinely prompt a human.
+    /// Mock inputs always return `true`; real inputs check `stdin().is_terminal()`.
+    pub fn is_interactive(&self) -> bool {
+        match &self.inner {
+            inner::Inner::Readline(_) => std::io::stdin().is_terminal(),
+            inner::Inner::Mock { .. } => true,
         }
     }
 
