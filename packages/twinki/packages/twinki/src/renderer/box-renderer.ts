@@ -49,10 +49,18 @@ export function renderBoxChildren(
 		// Column layout: simple vertical concatenation
 		const lines: string[] = [];
 		for (const child of node.children) {
-			lines.push(...renderNodeFn(child, innerWidth));
+			const childLines = renderNodeFn(child, innerWidth);
+			if (child.yogaNode) {
+				const top = Math.floor(getComputedLayout(child.yogaNode).top) - contentOffsetTop;
+				if (top < 0) {
+					// Negative margin: skip the first |top| lines from this child's output
+					lines.push(...childLines.slice(-top));
+					continue;
+				}
+			}
+			lines.push(...childLines);
 		}
 		if (clipOverflow && lines.length > innerHeight) return lines.slice(0, innerHeight);
-		while (lines.length < innerHeight) lines.push('');
 		return lines;
 	}
 
@@ -193,20 +201,25 @@ export function renderBox(node: TwinkiNode, width: number, height: number, rende
 	);
 
 	// Apply colors
-	const bgCode = props.backgroundColor ? `\x1b[${colorToAnsi(props.backgroundColor, true)}m` : '';
-	const bgReset = bgCode ? '\x1b[0m' : '';
-	const borderColor = props.borderColor ? `\x1b[${colorToAnsi(props.borderColor, false)}m` : '';
-	const borderReset = borderColor ? '\x1b[0m' : '';
+	const ESC = String.fromCharCode(0x1b);
+	const bgCode = props.backgroundColor ? `${ESC}[${colorToAnsi(props.backgroundColor, true)}m` : '';
+	const bgReset = bgCode ? `${ESC}[0m` : '';
+	const borderColor = props.borderColor ? `${ESC}[${colorToAnsi(props.borderColor, false)}m` : '';
+	const borderReset = borderColor ? `${ESC}[0m` : '';
 
 	// Format content lines with padding
 	const leftPad = ' '.repeat(pLeft);
 	const rightPad = ' '.repeat(pRight);
 	const content = childContent.map(line => {
+		// Re-apply bgCode after any \x1b[0m (full reset) in child content
+		// so the background color survives chalk/ANSI resets in text children.
+		const RESET = String.fromCharCode(0x1b) + '[0m';
+		const safeLine = bgCode ? line.replaceAll(RESET, RESET + bgCode) : line;
 		const lineW = visibleWidth(line);
 		const fill = Math.max(0, innerWidth - lineW);
 		return bgCode +
 			(border ? borderColor + border.vertical + borderReset : '') +
-			leftPad + line + ' '.repeat(fill) + rightPad +
+			leftPad + safeLine + ' '.repeat(fill) + rightPad +
 			(border ? borderColor + border.vertical + borderReset : '') + bgReset;
 	});
 

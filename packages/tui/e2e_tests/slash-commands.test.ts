@@ -53,14 +53,15 @@ describe('Slash Commands', () => {
       .launch();
 
     await testCase.waitForText('ask a question', 10000);
+    await testCase.waitForSlashCommands();
     await testCase.sleepMs(500);
 
     // Type just "/" without pressing enter
     await testCase.sendKeys('/');
     await testCase.sleepMs(500);
 
-    // Verify autocomplete dropdown shows /model
-    await testCase.waitForText('/model', 5000);
+    // Verify autocomplete dropdown is showing (check a command that's always visible)
+    await testCase.waitForText('/clear', 5000);
 
     console.log('Snapshot:\n' + testCase.getSnapshotFormatted());
   }, 30000);

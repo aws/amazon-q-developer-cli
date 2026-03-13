@@ -25,6 +25,7 @@ describe('Context Breakdown', () => {
 
     // Wait for TUI to render
     await testCase.waitForText('ask a question', 10000);
+    await testCase.waitForSlashCommands();
     await testCase.sleepMs(500);
 
     // Type /context command
@@ -66,6 +67,7 @@ describe('Context Breakdown', () => {
       .launch();
 
     await testCase.waitForText('ask a question', 10000);
+    await testCase.waitForSlashCommands();
     await testCase.sleepMs(500);
 
     // Open context panel

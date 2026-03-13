@@ -10,7 +10,9 @@ const useTwinki = process.env.KIRO_RENDERER === 'twinki';
 
 // Use variable to prevent TS from resolving twinki at typecheck time
 const _twinki = 'twinki';
-const mod = useTwinki ? await import(/* @vite-ignore */ _twinki) : await import('ink');
+const mod = useTwinki
+  ? await import(/* @vite-ignore */ _twinki)
+  : await import('ink');
 
 export const Box = mod.Box as typeof import('ink').Box;
 export const Text = mod.Text as typeof import('ink').Text;
@@ -23,15 +25,19 @@ export const useApp = mod.useApp as typeof import('ink').useApp;
 export const useStdin = mod.useStdin as typeof import('ink').useStdin;
 export const useStdout = mod.useStdout as typeof import('ink').useStdout;
 export const useFocus = mod.useFocus as typeof import('ink').useFocus;
-export const useFocusManager = mod.useFocusManager as typeof import('ink').useFocusManager;
+export const useFocusManager =
+  mod.useFocusManager as typeof import('ink').useFocusManager;
 export const render = mod.render as typeof import('ink').render;
 // useMouse and measureElement are ink-specific; twinki has useMouse with a different signature
 export const useMouse = (mod as any).useMouse;
 export const measureElement = (mod as any).measureElement;
 // usePaste: twinki-native hook, no-op shim under ink
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
-export const usePaste: (handler: (content: string) => void, opts?: { isActive?: boolean }) => void = useTwinki
+export const usePaste: (
+  handler: (content: string) => void,
+  opts?: { isActive?: boolean }
+) => void = useTwinki
   ? (mod as any).usePaste
   : (_handler: any, _opts?: any) => {};
 // StreamingPanel: available in both ink and twinki
-export const StreamingPanel = mod.StreamingPanel as typeof import('ink').StreamingPanel;
+export const StreamingPanel =
+  mod.StreamingPanel as typeof import('ink').StreamingPanel;

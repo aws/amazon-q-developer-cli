@@ -175,7 +175,7 @@ export class E2ETestCase {
     const start = Date.now();
     while (Date.now() - start < timeout) {
       const store = await this.getStore();
-      if (store.slashCommands.length > 0) return;
+      if (store.slashCommands.some((cmd) => cmd.source === 'backend')) return;
       await this.sleepMs(100);
     }
     throw new Error('Timeout waiting for slash commands to be registered');

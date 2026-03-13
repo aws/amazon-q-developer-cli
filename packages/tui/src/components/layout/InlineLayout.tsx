@@ -6,7 +6,8 @@ import { useRenderMetrics, isDevMode } from '../../hooks/useRenderMetrics.js';
 // Use variable to prevent TS from resolving the module at typecheck time
 const _twinki = 'twinki';
 const Region = isDevMode()
-  ? (await import(/* @vite-ignore */ _twinki).catch(() => ({ Region: null }))).Region
+  ? (await import(/* @vite-ignore */ _twinki).catch(() => ({ Region: null })))
+      .Region
   : null;
 import { AnimationPausedContext } from '../../contexts/AnimationPausedContext.js';
 import { ConversationView } from '../ui/ConversationView';
@@ -108,7 +109,12 @@ function triggerEasterEgg() {
 const RenderMetricsChip: React.FC = () => {
   const metrics = useRenderMetrics();
   if (!metrics) return null;
-  return <Chip value={`${metrics.lastRenderMs.toFixed(1)}ms · ${metrics.yogaNodeCount}n · ${metrics.heapUsedMB}MB · #${metrics.renderCount}`} color={ChipColor.PRIMARY} />;
+  return (
+    <Chip
+      value={`${metrics.lastRenderMs.toFixed(1)}ms · ${metrics.yogaNodeCount}n · ${metrics.heapUsedMB}MB · #${metrics.renderCount}`}
+      color={ChipColor.PRIMARY}
+    />
+  );
 };
 
 export const InlineLayout: React.FC = () => {
@@ -384,9 +390,13 @@ export const InlineLayout: React.FC = () => {
     ];
 
     const secondaryItems = [
-      isDevMode() && Region
-        ? <Region id="metrics"><RenderMetricsChip /></Region>
-        : isDevMode() && <RenderMetricsChip />,
+      isDevMode() && Region ? (
+        <Region id="metrics">
+          <RenderMetricsChip />
+        </Region>
+      ) : (
+        isDevMode() && <RenderMetricsChip />
+      ),
       <Chip value={shortenPath(process.cwd())} color={ChipColor.BRAND} />,
       gitBranch && (
         <Chip value={gitBranch} color={ChipColor.PRIMARY} wrap={true} />

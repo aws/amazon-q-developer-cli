@@ -18,6 +18,7 @@ import { Text } from '../ui/text/Text';
 import { WelcomeScreen } from '../welcome-screen/index.js';
 import { getAgentColor } from '../../utils/agentColors.js';
 import { computeFlushCount } from '../../utils/turn-flush-machine.js';
+import { useTerminalSize } from '../../hooks/useTerminalSize.js';
 import { useTheme } from '../../hooks/useThemeContext.js';
 
 interface ConversationTurn {
@@ -99,11 +100,14 @@ const StaticMessage = React.memo(function StaticMessage({
 const ActiveTurnTail = React.memo(function ActiveTurnTail({
   tailMessages,
   agentBarColor,
+  onReadyToFlush,
 }: {
   tailMessages: StoreMessageType[];
   agentBarColor: string | undefined;
+  onReadyToFlush?: () => void;
 }) {
   const { isProcessing } = useConversationState();
+  const { height: termHeight } = useTerminalSize();
 
   const lastAiMsg = tailMessages[tailMessages.length - 1];
   const hasActiveContent = lastAiMsg
@@ -158,6 +162,23 @@ const ActiveTurnTail = React.memo(function ActiveTurnTail({
               type={MessageType.AGENT}
               isStreaming={true}
               barColor={agentBarColor}
+              onReadyToFlush={onReadyToFlush}
+            />
+          );
+        }
+        if (
+          isLastModel &&
+          message.content &&
+          message.content.split('\n').length > termHeight - 13
+        ) {
+          return (
+            <StreamingMessage
+              key={message.id}
+              content={message.content}
+              type={MessageType.AGENT}
+              isStreaming={false}
+              barColor={agentBarColor}
+              onReadyToFlush={onReadyToFlush}
             />
           );
         }
@@ -339,6 +360,14 @@ export const ConversationView = React.memo(function ConversationView() {
 
   const hadMessagesRef = React.useRef(false);
   const welcomeInStaticRef = React.useRef(false);
+  const [tailOverride, setTailOverride] = React.useState<number | null>(null);
+  const lastFlushTurnRef = React.useRef<string | undefined>(undefined);
+  const activeTurnIdRef = React.useRef<string | undefined>(undefined);
+
+  const handleReadyToFlush = React.useCallback(() => {
+    setTailOverride(0);
+    lastFlushTurnRef.current = activeTurnIdRef.current;
+  }, []);
   // Per-turn set of message IDs already flushed to <Static>
   const flushedRef = React.useRef<Map<string, Set<string>>>(new Map());
   // Persistent, append-only array of static items — never shrinks.
@@ -393,6 +422,12 @@ export const ConversationView = React.memo(function ConversationView() {
   const completedTurns = turns.filter((t) => !t.isActive);
   const activeTurn = turns.find((t) => t.isActive);
 
+  // Reset tailOverride when active turn changes (new user message)
+  const activeTurnId = activeTurn?.userMessage.id;
+  activeTurnIdRef.current = activeTurnId;
+  const effectiveTailOverride =
+    activeTurnId === lastFlushTurnRef.current ? tailOverride : null;
+
   const activeAgentName =
     activeTurn && 'agentName' in activeTurn.userMessage
       ? activeTurn.userMessage.agentName
@@ -408,7 +443,7 @@ export const ConversationView = React.memo(function ConversationView() {
   const flushCount = computeFlushCount(
     activeAllMessages,
     isProcessing,
-    TAIL_SIZE
+    effectiveTailOverride ?? TAIL_SIZE
   );
   const toFlush = activeAllMessages.slice(0, flushCount);
   const tailMessages = activeAllMessages.slice(flushCount);
@@ -557,6 +592,7 @@ export const ConversationView = React.memo(function ConversationView() {
           No Card/Divider — those are already in <Static> once flushing starts.
           Before any flushing (short turns), use full Card for correct divider. */}
       {activeTurn &&
+        tailMessages.length > 0 &&
         (flushedRef.current.has(activeTurn.userMessage.id) ? (
           // Flushing has started — render tail without Card (divider already in static)
           <CardContext.Provider value={{ active: true }}>
@@ -564,6 +600,7 @@ export const ConversationView = React.memo(function ConversationView() {
               <ActiveTurnTail
                 tailMessages={tailMessages}
                 agentBarColor={activeAgentBarColor}
+                onReadyToFlush={handleReadyToFlush}
               />
             </Box>
           </CardContext.Provider>
@@ -574,6 +611,7 @@ export const ConversationView = React.memo(function ConversationView() {
               <ActiveTurnTail
                 tailMessages={tailMessages}
                 agentBarColor={activeAgentBarColor}
+                onReadyToFlush={handleReadyToFlush}
               />
             </Card>
           </Box>

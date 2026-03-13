@@ -31,7 +31,7 @@ class CollectingClient implements acp.Client {
   endTurn() { this.resolve?.(); }
 
   async requestPermission(params: acp.RequestPermissionRequest): Promise<acp.RequestPermissionResponse> {
-    const desc = params.description ?? params.toolCall?.title ?? 'unknown';
+    const desc = params.toolCall?.title ?? 'unknown';
     this.output.push(`\n🔐 Permission: ${desc}`);
     const opt = params.options?.find((o) => o.kind === 'allow_once') ?? params.options?.[0];
     if (opt) {
@@ -67,11 +67,11 @@ class CollectingClient implements acp.Client {
   async writeTextFile(): Promise<acp.WriteTextFileResponse> { return {}; }
   async readTextFile(): Promise<acp.ReadTextFileResponse> { return { content: '' }; }
   async createTerminal(): Promise<acp.CreateTerminalResponse> { return { terminalId: '' }; }
-  async terminalOutput(): Promise<acp.TerminalOutputResponse> { return { output: '' }; }
+  async terminalOutput(): Promise<acp.TerminalOutputResponse> { return { output: '', truncated: false }; }
   async releaseTerminal(): Promise<acp.ReleaseTerminalResponse> { return {}; }
   async waitForTerminalExit(): Promise<acp.WaitForTerminalExitResponse> { return { exitCode: 0 }; }
-  async killTerminal(): Promise<acp.KillTerminalCommandResponse> { return {}; }
-  async extMethod(): Promise<acp.ExtResponse> { return {}; }
+  async killTerminal(): Promise<acp.KillTerminalResponse> { return {}; }
+  async extMethod(): Promise<Record<string, unknown>> { return {}; }
   async extNotification(): Promise<void> {}
 }
 
@@ -111,11 +111,11 @@ function createAcpConnection(binary: string) {
     buf = lines.pop() || '';
     for (const line of lines) {
       const t = line.trim();
-      if (t) { try { ctrl.enqueue(JSON.parse(t)); } catch { /* skip */ } }
+      if (t) { try { ctrl.enqueue(JSON.parse(t)); } catch (_e) { /* skip non-JSON */ } }
     }
   });
   stdout.on('end', () => {
-    if (buf.trim()) try { ctrl.enqueue(JSON.parse(buf.trim())); } catch { /* */ }
+    if (buf.trim()) try { ctrl.enqueue(JSON.parse(buf.trim())); } catch (_e) { /* skip */ }
     ctrl.close();
   });
 
@@ -133,8 +133,8 @@ function createAcpConnection(binary: string) {
 // Main daemon
 // ---------------------------------------------------------------------------
 function cleanup() {
-  try { fs.unlinkSync(SOCKET_PATH); } catch {}
-  try { fs.unlinkSync(PID_FILE); } catch {}
+  try { fs.unlinkSync(SOCKET_PATH); } catch (_e) { /* ignore */ }
+  try { fs.unlinkSync(PID_FILE); } catch (_e) { /* ignore */ }
 }
 
 const { proc, conn, client } = createAcpConnection(BINARY);

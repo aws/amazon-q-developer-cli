@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 
-const IS_DEV = process.env.KIRO_DEV === '1' || process.env.NODE_ENV !== 'production';
+const IS_DEV =
+  process.env.KIRO_DEV === '1' || process.env.NODE_ENV !== 'production';
 
 interface RenderMetrics {
   lastRenderMs: number;

@@ -250,7 +250,7 @@ export const Write = React.memo<WriteProps>(function Write({
 
   // Standalone diff view (no header)
   return (
-    <Box flexDirection="column" width="90%" ref={contentRef}>
+    <Box flexDirection="column" flexGrow={1} ref={contentRef}>
       {changes.map((change: Change, index: number) => {
         const lines = change.value.split('\n');
         if (lines[lines.length - 1] === '') {
@@ -264,27 +264,31 @@ export const Write = React.memo<WriteProps>(function Write({
           if (change.removed) {
             const currentOldLine = oldLineNum++;
             const lineNumber = String(currentOldLine).padStart(4);
-            const lineContent = `-  ${highlightedLine}`;
             return (
               <Box
                 key={`${index}-${lineIdx}`}
                 backgroundColor={getColor('diff.removed.background').hex}
               >
                 <Text>{getColor('primary')(lineNumber)}</Text>
-                <Text>{lineContent}</Text>
+                <Text>
+                  {getColor('diff.removed.bar')('-')}
+                  {`  ${highlightedLine}`}
+                </Text>
               </Box>
             );
           } else if (change.added) {
             const currentNewLine = newLineNum++;
             const lineNumber = String(currentNewLine).padStart(4);
-            const lineContent = `+  ${highlightedLine}`;
             return (
               <Box
                 key={`${index}-${lineIdx}`}
                 backgroundColor={getColor('diff.added.background').hex}
               >
                 <Text>{getColor('primary')(lineNumber)}</Text>
-                <Text>{lineContent}</Text>
+                <Text>
+                  {getColor('diff.added.bar')('+')}
+                  {`  ${highlightedLine}`}
+                </Text>
               </Box>
             );
           } else {
@@ -378,7 +382,7 @@ const WriteContent: React.FC<WriteContentProps> = ({
   const visibleLines = maxLines ? allLines.slice(0, maxLines) : allLines;
 
   return (
-    <Box flexDirection="column" width="90%">
+    <Box flexDirection="column" flexGrow={1}>
       {visibleLines.map((dl) => {
         const truncated = truncateLine(expandTabs(dl.line), contentWidth);
         const highlighted = highlightCode(truncated, language);
@@ -391,7 +395,10 @@ const WriteContent: React.FC<WriteContentProps> = ({
               backgroundColor={getColor('diff.removed.background').hex}
             >
               <Text>{getColor('primary')(lineNumber)}</Text>
-              <Text>{`-  ${highlighted}`}</Text>
+              <Text>
+                {getColor('diff.removed.bar')('-')}
+                {`  ${highlighted}`}
+              </Text>
             </Box>
           );
         } else if (dl.type === 'added') {
@@ -401,7 +408,10 @@ const WriteContent: React.FC<WriteContentProps> = ({
               backgroundColor={getColor('diff.added.background').hex}
             >
               <Text>{getColor('primary')(lineNumber)}</Text>
-              <Text>{`+  ${highlighted}`}</Text>
+              <Text>
+                {getColor('diff.added.bar')('+')}
+                {`  ${highlighted}`}
+              </Text>
             </Box>
           );
         } else {

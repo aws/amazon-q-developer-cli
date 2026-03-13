@@ -9,6 +9,7 @@ export interface StreamingMessageProps {
   status?: StatusType;
   isStreaming: boolean;
   barColor?: string;
+  onReadyToFlush?: () => void;
 }
 
 const CHROME_LINES = 13;
@@ -19,6 +20,7 @@ export const StreamingMessage = React.memo(function StreamingMessage({
   status,
   isStreaming,
   barColor,
+  onReadyToFlush,
 }: StreamingMessageProps) {
   const { height: terminalHeight } = useTerminalSize();
   const viewportHeight = Math.max(5, terminalHeight - CHROME_LINES);
@@ -28,10 +30,11 @@ export const StreamingMessage = React.memo(function StreamingMessage({
       content={content}
       streaming={isStreaming}
       height={viewportHeight}
+      onReadyToFlush={onReadyToFlush}
     >
-      {(visibleContent) => (
+      {(fullContent) => (
         <Message
-          content={visibleContent}
+          content={fullContent}
           type={type}
           status={isStreaming ? 'active' : status}
           barColor={barColor}

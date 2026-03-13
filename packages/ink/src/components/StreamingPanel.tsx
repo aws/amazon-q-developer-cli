@@ -11,10 +11,11 @@ export type Props = {
 	readonly height: number;
 	readonly scrollbar?: boolean;
 	readonly scrollbarColor?: string;
+	readonly onReadyToFlush?: () => void;
 	readonly children: (content: string, scrollInfo: {scrollTop: number; totalLines: number; isScrolledUp: boolean}) => ReactNode;
 };
 
-export default function StreamingPanel({content, streaming, height, scrollbar = true, scrollbarColor, children}: Props) {
+export default function StreamingPanel({content, streaming, height, scrollbar = true, scrollbarColor, onReadyToFlush, children}: Props) {
 	const lines = useMemo(() => content ? content.split('\n') : [], [content]);
 	const totalLines = lines.length;
 	// Always reserve 1 row for the hint line so layout never shifts
@@ -24,6 +25,15 @@ export default function StreamingPanel({content, streaming, height, scrollbar = 
 	const {scrollTop, scrollTo} = useScroll({isActive: true});
 	const userScrolledRef = useRef(false);
 	const prevScrollTopRef = useRef(0);
+	const wasScrollableRef = useRef(false);
+
+	if (showScrollbar) wasScrollableRef.current = true;
+
+	useEffect(() => {
+		if (!streaming && wasScrollableRef.current && onReadyToFlush) {
+			onReadyToFlush();
+		}
+	}, [streaming]);
 
 	useEffect(() => {
 		if (streaming) {

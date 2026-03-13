@@ -119,6 +119,8 @@ export class TUI extends Container {
 	private contentStartRow = -1;
 	private dsrPending = false;
 	private altScreen = false;
+	/** Whether running inside tmux — detected via TMUX env var */
+	private readonly isTmux = 'TMUX' in process.env;
 	private targetFps = 0;
 	private frameBudgetMs = 0;
 	private lastRenderTime = 0;
@@ -1028,24 +1030,6 @@ export class TUI extends Container {
 		if (lines.length > 0) {
 			this.accumulatedStaticOutput.push(...lines);
 			this.trimStaticOutput();
-			// When content overflowed the viewport, old active content is stuck
-			// in scrollback where cursor-up can't reach. Clear everything and
-			// let the next render do a clean full redraw.
-			if (this.previousLines.length > this.terminal.rows && !this.altScreen) {
-				const screenRow = this.hardwareCursorRow - this.previousViewportTop;
-				const linesToErase = Math.min(screenRow + 1, this.terminal.rows);
-				let buf = '\x1b[3J';
-				for (let i = 0; i < linesToErase; i++) {
-					buf += '\x1b[2K' + (i < linesToErase - 1 ? '\x1b[1A' : '');
-				}
-				buf += '\r\x1b[J';
-				this.terminal.write(buf);
-				this.previousLines = [];
-				this.hardwareCursorRow = 0;
-				this.cursorRow = 0;
-				this.maxLinesRendered = 0;
-				this.previousViewportTop = 0;
-			}
 		}
 	}
 

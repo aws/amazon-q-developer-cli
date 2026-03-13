@@ -120,10 +120,23 @@ export const useKeypress = (
       isPastingRef.current = false;
       if (content) {
         handlerRef.current(content, {
-          upArrow: false, downArrow: false, leftArrow: false, rightArrow: false,
-          pageUp: false, pageDown: false, home: false, end: false,
-          return: false, escape: false, ctrl: false, shift: false, meta: false,
-          tab: false, backspace: false, delete: false, paste: true,
+          upArrow: false,
+          downArrow: false,
+          leftArrow: false,
+          rightArrow: false,
+          pageUp: false,
+          pageDown: false,
+          home: false,
+          end: false,
+          return: false,
+          escape: false,
+          ctrl: false,
+          shift: false,
+          meta: false,
+          tab: false,
+          backspace: false,
+          delete: false,
+          paste: true,
         });
       } else if (onEmptyPasteRef.current) {
         onEmptyPasteRef.current();

@@ -102,9 +102,9 @@ switch (command) {
     // Spawn daemon as fully detached process
     const { spawn } = await import('node:child_process');
     const logFd = fs.openSync(LOG_FILE, 'w');
-    const child = spawn('bun', [DAEMON_SCRIPT, binary], {
+    const child = spawn('bun', [DAEMON_SCRIPT, binary ?? DEFAULT_BINARY], {
       detached: true,
-      stdio: ['ignore', logFd, logFd],
+      stdio: ['ignore', logFd, logFd] as any,
       env: { ...process.env },
       cwd: path.resolve(import.meta.dir, '..'),
     });

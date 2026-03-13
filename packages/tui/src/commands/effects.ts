@@ -96,12 +96,12 @@ const effectHandlers: Record<EffectName, EffectHandler> = {
   showHelpPanel: (result, ctx) => {
     const data = result?.data as
       | {
-        commands?: Array<{
-          name: string;
-          description: string;
-          usage: string;
-        }>;
-      }
+          commands?: Array<{
+            name: string;
+            description: string;
+            usage: string;
+          }>;
+        }
       | undefined;
     if (data?.commands) {
       ctx.setShowHelpPanel(true, data.commands);
@@ -161,12 +161,12 @@ const effectHandlers: Record<EffectName, EffectHandler> = {
   pasteImage: (result, ctx) => {
     const data = result?.data as
       | {
-        data?: string;
-        mimeType?: string;
-        width?: number;
-        height?: number;
-        sizeBytes?: number;
-      }
+          data?: string;
+          mimeType?: string;
+          width?: number;
+          height?: number;
+          sizeBytes?: number;
+        }
       | undefined;
     if (data?.data && data.mimeType) {
       ctx.sendMessage(formatImageLabel(data), [

@@ -1,7 +1,6 @@
 #!/usr/bin/env bun
 import { useEffect, useRef } from 'react';
-import { Text } from './renderer.js';
-const { render } = await import(process.env.KIRO_RENDERER === 'twinki' ? 'twinki' : 'ink');
+import { Text, render } from './renderer.js';
 import { ErrorBoundary } from './components/ui/ErrorBoundary';
 import { AppContainer } from './components/layout/AppContainer';
 import { ThemeProvider } from './theme';
