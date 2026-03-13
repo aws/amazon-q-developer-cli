@@ -54,7 +54,6 @@ export async function dispatch(
       ctx.setActiveCommand({ command: cmd, options: [] });
     }
   }
-
   // 2. Execute backend (skip for local commands)
   let result = null;
   if (cmd.source === 'backend' && !isLocal) {
@@ -82,8 +81,8 @@ export async function dispatch(
   // 3. Run effect
   runEffect(cmd, result, ctx);
 
-  // 4. Show result message (skip for panel commands - they show their own UI)
-  if (result?.message && inputType !== 'panel') {
+  // 4. Show result message (skip for panel commands without args - they show their own UI)
+  if (result?.message && !(inputType === 'panel' && !args)) {
     ctx.showAlert(result.message, result.success ? 'success' : 'error', 3000);
   }
 }

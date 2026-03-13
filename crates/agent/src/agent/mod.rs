@@ -384,6 +384,54 @@ impl AgentHandle {
             other => Err(AgentError::Custom(format!("received unexpected response: {other:?}"))),
         }
     }
+
+    pub async fn add_resource(&self, path: String) -> Result<(), AgentError> {
+        match self
+            .sender
+            .send_recv(AgentRequest::AddResource(path))
+            .await
+            .unwrap_or(Err(AgentError::Channel))?
+        {
+            AgentResponse::Success => Ok(()),
+            other => Err(AgentError::Custom(format!("received unexpected response: {other:?}"))),
+        }
+    }
+
+    pub async fn remove_resource(&self, path: String) -> Result<(), AgentError> {
+        match self
+            .sender
+            .send_recv(AgentRequest::RemoveResource(path))
+            .await
+            .unwrap_or(Err(AgentError::Channel))?
+        {
+            AgentResponse::Success => Ok(()),
+            other => Err(AgentError::Custom(format!("received unexpected response: {other:?}"))),
+        }
+    }
+
+    pub async fn get_resources(&self) -> Result<Vec<String>, AgentError> {
+        match self
+            .sender
+            .send_recv(AgentRequest::GetResources)
+            .await
+            .unwrap_or(Err(AgentError::Channel))?
+        {
+            AgentResponse::Resources(resources) => Ok(resources),
+            other => Err(AgentError::Custom(format!("received unexpected response: {other:?}"))),
+        }
+    }
+
+    pub async fn clear_session_resources(&self) -> Result<(), AgentError> {
+        match self
+            .sender
+            .send_recv(AgentRequest::ClearSessionResources)
+            .await
+            .unwrap_or(Err(AgentError::Channel))?
+        {
+            AgentResponse::Success => Ok(()),
+            other => Err(AgentError::Custom(format!("received unexpected response: {other:?}"))),
+        }
+    }
 }
 
 /// Core LLM agent that implements an [`AgentConfig`].
@@ -454,6 +502,8 @@ pub struct Agent {
     knowledge_provider: Option<Arc<dyn tools::KnowledgeProvider>>,
     /// Task store for task management tools
     task_store: Arc<TaskStore>,
+    /// Paths added via /context add during this session (not from agent config)
+    session_resource_paths: HashSet<String>,
 }
 
 impl Agent {
@@ -521,6 +571,7 @@ impl Agent {
             code_intelligence,
             knowledge_provider,
             task_store,
+            session_resource_paths: HashSet::new(),
         })
     }
 
@@ -799,6 +850,7 @@ impl Agent {
             settings: self.settings.clone(),
             permissions: self.permissions.clone(),
             tool_specs,
+            session_resource_paths: self.session_resource_paths.clone(),
         }
     }
 
@@ -1099,6 +1151,45 @@ impl Agent {
                 tools.sort_by(|a, b| a.source.cmp(&b.source).then(a.name.cmp(&b.name)));
                 Ok(AgentResponse::ToolInfo(tools))
             },
+            AgentRequest::AddResource(path) => {
+                let resource_path = format!("file://{path}");
+                let resource = match resource_path.parse::<agent_config::types::ResourcePath>() {
+                    Ok(r) => r,
+                    Err(e) => return Err(AgentError::Custom(format!("Invalid resource path: {e}"))),
+                };
+                if self.agent_config.add_resource(resource) {
+                    self.session_resource_paths.insert(format!("file://{path}"));
+                    Ok(AgentResponse::Success)
+                } else {
+                    Err(AgentError::Custom(format!("Rule '{path}' already exists.")))
+                }
+            },
+            AgentRequest::RemoveResource(path) => {
+                // Try both with and without file:// prefix
+                let removed = self.agent_config.remove_resource(&path)
+                    || self.agent_config.remove_resource(&format!("file://{path}"));
+                if removed {
+                    self.session_resource_paths.remove(&path);
+                    self.session_resource_paths.remove(&format!("file://{path}"));
+                    Ok(AgentResponse::Success)
+                } else {
+                    Err(AgentError::Custom(format!("Resource not found: {path}")))
+                }
+            },
+            AgentRequest::GetResources => {
+                let resources = self
+                    .agent_config
+                    .resources()
+                    .iter()
+                    .map(|r| r.as_ref().to_string())
+                    .collect();
+                Ok(AgentResponse::Resources(resources))
+            },
+            AgentRequest::ClearSessionResources => {
+                self.agent_config.clear_all_resources();
+                self.session_resource_paths.clear();
+                Ok(AgentResponse::Success)
+            },
         }
     }
 
@@ -1125,6 +1216,7 @@ impl Agent {
         // 3. Update agent config and clear cached tool specs
         self.agent_config = args.agent_config;
         self.cached_tool_specs = None;
+        self.session_resource_paths.clear();
 
         // 4. Reload MCP configs from new agent config
         self.cached_mcp_configs = LoadedMcpServerConfigs::from_agent_config(

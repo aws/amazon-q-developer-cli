@@ -175,6 +175,52 @@ impl AgentConfig {
         }
     }
 
+    /// Adds a resource path to the agent config.
+    /// Returns false if the resource already exists (duplicate).
+    pub fn add_resource(&mut self, resource: ResourcePath) -> bool {
+        match self {
+            AgentConfig::V2025_08_22(c) => {
+                if c.resources.iter().any(|r| r.source() == resource.source()) {
+                    false
+                } else {
+                    c.resources.push(resource);
+                    true
+                }
+            },
+        }
+    }
+
+    /// Removes a resource path from the agent config by matching the source string
+    pub fn remove_resource(&mut self, path: &str) -> bool {
+        match self {
+            AgentConfig::V2025_08_22(c) => {
+                let before = c.resources.len();
+                c.resources.retain(|r| r.source() != path);
+                c.resources.len() < before
+            },
+        }
+    }
+
+    /// Removes all session-added resources (non-agent-config resources)
+    /// Since we can't distinguish at this level, this clears all resources
+    pub fn clear_session_resources(&mut self, original_resources: &[ResourcePath]) {
+        match self {
+            AgentConfig::V2025_08_22(c) => {
+                c.resources
+                    .retain(|r| original_resources.iter().any(|orig| orig.source() == r.source()));
+            },
+        }
+    }
+
+    /// Clears all resources from the agent config
+    pub fn clear_all_resources(&mut self) {
+        match self {
+            AgentConfig::V2025_08_22(c) => {
+                c.resources.clear();
+            },
+        }
+    }
+
     /// Sets the tools available to the agent
     pub fn set_tools(&mut self, tools: Vec<String>) {
         match self {
@@ -913,5 +959,71 @@ mod tests {
         assert_eq!(settings.grep.allowed_paths, vec!["/home/user"]);
         assert_eq!(settings.grep.denied_paths, vec!["/secret"]);
         assert_eq!(settings.glob.allowed_paths, vec!["/projects"]);
+    }
+
+    #[test]
+    fn test_add_resource() {
+        let mut config = AgentConfig::default();
+        let resource: ResourcePath = "file://test.md".parse().unwrap();
+        assert!(config.add_resource(resource));
+        assert_eq!(config.resources().len(), 1);
+        assert_eq!(config.resources()[0].as_ref(), "file://test.md");
+    }
+
+    #[test]
+    fn test_add_resource_dedup() {
+        let mut config = AgentConfig::default();
+        let r1: ResourcePath = "file://test.md".parse().unwrap();
+        let r2: ResourcePath = "file://test.md".parse().unwrap();
+        assert!(config.add_resource(r1));
+        assert!(!config.add_resource(r2));
+        assert_eq!(config.resources().len(), 1);
+    }
+
+    #[test]
+    fn test_remove_resource() {
+        let mut config = AgentConfig::default();
+        let r1: ResourcePath = "file://a.md".parse().unwrap();
+        let r2: ResourcePath = "file://b.md".parse().unwrap();
+        config.add_resource(r1);
+        config.add_resource(r2);
+        assert_eq!(config.resources().len(), 2);
+
+        let removed = config.remove_resource("file://a.md");
+        assert!(removed);
+        assert_eq!(config.resources().len(), 1);
+        assert_eq!(config.resources()[0].as_ref(), "file://b.md");
+    }
+
+    #[test]
+    fn test_remove_resource_not_found() {
+        let mut config = AgentConfig::default();
+        let removed = config.remove_resource("file://nonexistent.md");
+        assert!(!removed);
+    }
+
+    #[test]
+    fn test_clear_session_resources() {
+        let mut config = AgentConfig::default();
+        let original: ResourcePath = "file://AGENTS.md".parse().unwrap();
+        let session: ResourcePath = "file://session.md".parse().unwrap();
+        config.add_resource(original.clone());
+        config.add_resource(session);
+        assert_eq!(config.resources().len(), 2);
+
+        config.clear_session_resources(&[original]);
+        assert_eq!(config.resources().len(), 1);
+        assert_eq!(config.resources()[0].as_ref(), "file://AGENTS.md");
+    }
+
+    #[test]
+    fn test_clear_all_resources() {
+        let mut config = AgentConfig::default();
+        config.add_resource("file://AGENTS.md".parse().unwrap());
+        config.add_resource("file://session.md".parse().unwrap());
+        assert_eq!(config.resources().len(), 2);
+
+        config.clear_all_resources();
+        assert_eq!(config.resources().len(), 0);
     }
 }

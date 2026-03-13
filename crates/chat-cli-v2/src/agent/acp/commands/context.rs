@@ -21,6 +21,143 @@ use super::CommandContext;
 pub const DEFAULT_CONTEXT_WINDOW_TOKENS: usize = 200_000;
 
 pub async fn execute(args: &ContextArgs, ctx: &CommandContext<'_>) -> CommandResult {
+    // Check for subcommand
+    let sub = args.subcommand.as_deref().unwrap_or("");
+    let (cmd, rest) = sub.split_once(' ').unwrap_or((sub, ""));
+
+    match cmd {
+        "add" => execute_add(rest.trim(), ctx).await,
+        "remove" | "rm" => execute_remove(rest.trim(), ctx).await,
+        "clear" => execute_clear(ctx).await,
+        "" => execute_show(args, ctx).await,
+        other => CommandResult::error(format!(
+            "Unknown subcommand '{other}'. Available: add <path>, remove <path>, clear"
+        )),
+    }
+}
+
+async fn execute_add(rest: &str, ctx: &CommandContext<'_>) -> CommandResult {
+    // Parse --force / -f flag
+    let (force, paths_str) = parse_force_flag(rest);
+
+    if paths_str.is_empty() {
+        return CommandResult::error("Usage: /context add [--force] <path or glob pattern> [...]");
+    }
+
+    // Split into individual paths
+    let paths: Vec<&str> = paths_str.split_whitespace().collect();
+
+    // Validate all paths before adding any (unless forced)
+    if !force {
+        for path in &paths {
+            let is_glob = path.contains('*') || path.contains('?') || path.contains('[');
+            if is_glob {
+                // Validate glob matches at least one file
+                let expanded = expand_path(path);
+                match glob::glob(&expanded) {
+                    Ok(entries) => {
+                        let found_any = entries.into_iter().any(|e| e.ok().is_some_and(|p| p.is_file()));
+                        if !found_any {
+                            return CommandResult::error(format!(
+                                "No files found matching glob pattern '{path}'. Use --force to add anyway."
+                            ));
+                        }
+                    },
+                    Err(e) => {
+                        return CommandResult::error(format!("Invalid glob pattern '{path}': {e}"));
+                    },
+                }
+            } else {
+                let expanded = expand_path(path);
+                let abs_path = if std::path::Path::new(&expanded).is_absolute() {
+                    std::path::PathBuf::from(&expanded)
+                } else if let Ok(cwd) = std::env::current_dir() {
+                    cwd.join(&expanded)
+                } else {
+                    std::path::PathBuf::from(&expanded)
+                };
+
+                if !abs_path.exists() {
+                    return CommandResult::error(format!("Path not found: {path}. Use --force to add anyway."));
+                }
+            }
+        }
+    }
+
+    // Add all paths
+    let mut added = 0;
+    for path in &paths {
+        match ctx.agent.add_resource((*path).to_string()).await {
+            Ok(()) => added += 1,
+            Err(e) => {
+                return CommandResult::error(format!("{e}"));
+            },
+        }
+    }
+
+    if paths.len() == 1 {
+        CommandResult::success(format!("Added '{}' to context", paths[0]))
+    } else {
+        CommandResult::success(format!("Added {} path(s) to context", added))
+    }
+}
+
+/// Expand ~ to home directory in a path string.
+fn expand_path(path: &str) -> String {
+    if path.starts_with('~') {
+        if let Ok(home) = std::env::var("HOME") {
+            path.replacen('~', &home, 1)
+        } else {
+            path.to_string()
+        }
+    } else {
+        path.to_string()
+    }
+}
+
+/// Parse --force / -f flag from the beginning of an argument string.
+/// Returns (is_force, remaining_path).
+fn parse_force_flag(input: &str) -> (bool, String) {
+    let parts: Vec<&str> = input.splitn(2, ' ').collect();
+    match parts.first() {
+        Some(&"--force" | &"-f") => (true, parts.get(1).unwrap_or(&"").trim().to_string()),
+        _ => (false, input.trim().to_string()),
+    }
+}
+
+async fn execute_remove(rest: &str, ctx: &CommandContext<'_>) -> CommandResult {
+    if rest.is_empty() {
+        return CommandResult::error("Usage: /context remove <path or glob pattern> [...]");
+    }
+
+    let paths: Vec<&str> = rest.split_whitespace().collect();
+    let mut removed = 0;
+    let mut errors = Vec::new();
+
+    for path in &paths {
+        match ctx.agent.remove_resource((*path).to_string()).await {
+            Ok(()) => removed += 1,
+            Err(e) => errors.push(format!("{e}")),
+        }
+    }
+
+    if removed == 0 {
+        CommandResult::error("None of the specified paths were found in the context")
+    } else if paths.len() == 1 {
+        CommandResult::success(format!("Removed '{}' from context", paths[0]))
+    } else {
+        CommandResult::success(format!("Removed {} path(s) from context", removed))
+    }
+}
+
+async fn execute_clear(ctx: &CommandContext<'_>) -> CommandResult {
+    match ctx.agent.clear_session_resources().await {
+        Ok(()) => CommandResult::success("Cleared all context rules"),
+        Err(e) => CommandResult::error(format!("Failed to clear: {e}")),
+    }
+}
+
+async fn execute_show(args: &ContextArgs, ctx: &CommandContext<'_>) -> CommandResult {
     // Default behavior - show context usage
     let model = ctx.rts_state.model_id().unwrap_or_else(|| "default".to_string());
     let backend_usage = ctx.rts_state.context_usage_percentage();
@@ -88,13 +225,14 @@ fn calculate_context_breakdown(
 ) -> (ContextBreakdown, f32) {
     let mut sizes = calculate_component_sizes(snapshot);
 
-    let total_tokens = sizes.context_files + sizes.tools + sizes.kiro + sizes.user + sizes.system;
+    let total_tokens = sizes.context_files + sizes.session_files + sizes.tools + sizes.kiro + sizes.user + sizes.system;
 
     // Calculate our estimate
     let estimated_usage = (total_tokens as f32 / context_window_tokens as f32) * 100.0;
     let cw = context_window_tokens as f32;
 
-    let context_files_pct = (sizes.context_files as f32 / cw) * 100.0;
+    let all_context_files = sizes.context_files + sizes.session_files;
+    let context_files_pct = (all_context_files as f32 / cw) * 100.0;
     let tools_pct = (sizes.tools as f32 / cw) * 100.0;
     let kiro_pct = (sizes.kiro as f32 / cw) * 100.0;
     let user_pct = (sizes.user as f32 / cw) * 100.0;
@@ -110,6 +248,9 @@ fn calculate_context_breakdown(
     };
 
     for item in &mut sizes.context_file_items {
+        item.percent = (item.tokens as f32 / cw) * 100.0;
+    }
+    for item in &mut sizes.session_file_items {
         item.percent = (item.tokens as f32 / cw) * 100.0;
     }
 
@@ -139,9 +280,9 @@ fn calculate_context_breakdown(
             items: vec![],
         },
         session_files: CategoryBreakdown {
-            tokens: 0,
-            percentage: 0.0,
-            items: vec![],
+            tokens: sizes.session_files,
+            percentage: (sizes.session_files as f32 / cw) * 100.0,
+            items: sizes.session_file_items,
         },
     };
 
@@ -212,6 +353,8 @@ fn adjust_component_percentages(
 pub struct ComponentSizes {
     pub context_files: usize,
     pub context_file_items: Vec<BreakdownItem>,
+    pub session_files: usize,
+    pub session_file_items: Vec<BreakdownItem>,
     pub tools: usize,
     pub kiro: usize,
     pub user: usize,
@@ -219,10 +362,13 @@ pub struct ComponentSizes {
 }
 
 pub fn calculate_component_sizes(snapshot: &AgentSnapshot) -> ComponentSizes {
-    let (context_files, context_file_items) = calculate_context_files_tokens(snapshot);
+    let (context_files, context_file_items, session_files, session_file_items) =
+        calculate_context_files_tokens(snapshot);
     ComponentSizes {
         context_files,
         context_file_items,
+        session_files,
+        session_file_items,
         tools: calculate_tools_tokens(snapshot),
         kiro: calculate_message_tokens(snapshot, Role::Assistant),
         user: calculate_message_tokens(snapshot, Role::User),
@@ -230,17 +376,21 @@ pub fn calculate_component_sizes(snapshot: &AgentSnapshot) -> ComponentSizes {
     }
 }
 
-fn calculate_context_files_tokens(snapshot: &AgentSnapshot) -> (usize, Vec<BreakdownItem>) {
+/// Returns (agent_tokens, agent_items, session_tokens, session_items)
+fn calculate_context_files_tokens(snapshot: &AgentSnapshot) -> (usize, Vec<BreakdownItem>, usize, Vec<BreakdownItem>) {
     let resources = snapshot.agent_config.resources();
     if resources.is_empty() {
-        return (0, vec![]);
+        return (0, vec![], 0, vec![]);
     }
 
-    let mut items = Vec::new();
-    let mut total = 0;
+    let mut agent_items = Vec::new();
+    let mut agent_total = 0;
+    let mut session_items = Vec::new();
+    let mut session_total = 0;
 
     for r in resources {
         let path_str = r.as_ref();
+        let is_session = snapshot.session_resource_paths.contains(path_str);
         let path = path_str.strip_prefix("file://").unwrap_or(path_str);
 
         // Expand ~ in paths
@@ -260,43 +410,60 @@ fn calculate_context_files_tokens(snapshot: &AgentSnapshot) -> (usize, Vec<Break
                 Ok(entries) => {
                     for file_path in entries.flatten() {
                         if file_path.is_file() {
-                            let path_str = file_path.to_string_lossy().to_string();
-                            let (tokens, matched) = calculate_file_tokens(&path_str);
+                            let file_path_str = file_path.to_string_lossy().to_string();
+                            let (tokens, matched) = calculate_file_tokens(&file_path_str);
                             if matched {
-                                total += tokens;
-                                items.push(BreakdownItem {
-                                    name: path_str,
+                                let item = BreakdownItem {
+                                    name: file_path_str,
                                     tokens,
                                     matched,
                                     percent: 0.0,
-                                });
+                                };
+                                if is_session {
+                                    session_total += tokens;
+                                    session_items.push(item);
+                                } else {
+                                    agent_total += tokens;
+                                    agent_items.push(item);
+                                }
                             }
                         }
                     }
                 },
                 Err(_) => {
                     // Invalid glob pattern - add as unmatched
-                    items.push(BreakdownItem {
+                    let item = BreakdownItem {
                         name: expanded_path,
                         tokens: 0,
                         matched: false,
                         percent: 0.0,
-                    });
+                    };
+                    if is_session {
+                        session_items.push(item);
+                    } else {
+                        agent_items.push(item);
+                    }
                 },
             }
         } else {
             // Regular file path
             let (tokens, matched) = calculate_file_tokens(&expanded_path);
-            total += tokens;
-            items.push(BreakdownItem {
+            let item = BreakdownItem {
                 name: expanded_path,
                 tokens,
                 matched,
                 percent: 0.0,
-            });
+            };
+            if is_session {
+                session_total += tokens;
+                session_items.push(item);
+            } else {
+                agent_total += tokens;
+                agent_items.push(item);
+            }
         }
     }
-    (total, items)
+    (agent_total, agent_items, session_total, session_items)
 }
 
 fn calculate_file_tokens(path: &str) -> (usize, bool) {

@@ -71,6 +71,10 @@ pub struct AgentSnapshot {
     #[typeshare(skip)]
     #[serde(default)]
     pub tool_specs: Vec<super::agent_loop::types::ToolSpec>,
+    /// Paths added via /context add during this session
+    #[typeshare(skip)]
+    #[serde(default)]
+    pub session_resource_paths: std::collections::HashSet<String>,
 }
 
 impl AgentSnapshot {
@@ -86,6 +90,7 @@ impl AgentSnapshot {
             settings: Default::default(),
             permissions: Default::default(),
             tool_specs: Default::default(),
+            session_resource_paths: Default::default(),
         }
     }
 }

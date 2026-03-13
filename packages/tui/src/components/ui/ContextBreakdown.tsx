@@ -27,7 +27,7 @@ interface CategoryBreakdown {
   tools: { percent: number; tokens: number };
   kiroResponses: { percent: number; tokens: number };
   yourPrompts: { percent: number; tokens: number };
-  sessionFiles?: { percent: number; tokens: number };
+  sessionFiles?: { percent: number; tokens: number; items?: ContextFileItem[] };
 }
 
 // Colors matching the design
@@ -210,8 +210,17 @@ export function ContextBreakdown({
           <Box marginTop={1} marginBottom={0}>
             <Text>{primary('Session (temporary)')}</Text>
           </Box>
-          {breakdown?.sessionFiles?.tokens ? (
-            <Text> {dim('files in session')}</Text>
+          {breakdown?.sessionFiles?.items &&
+          breakdown.sessionFiles.items.length > 0 ? (
+            breakdown.sessionFiles.items.map((item, i) => (
+              <Text key={`session-${i}`}>
+                {'  '}
+                {dim('– ')}
+                {primary(item.name)}
+                {dim(` ${item.percent.toFixed(1)}%`)}
+                {!item.matched && dim(' (no matches)')}
+              </Text>
+            ))
           ) : (
             <Text> {dim(' <none>')}</Text>
           )}

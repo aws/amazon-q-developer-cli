@@ -87,6 +87,9 @@ pub struct ContextArgs {
     /// Show a detailed breakdown
     #[serde(default)]
     pub verbose: bool,
+    /// Subcommand: add, remove, show, clear
+    #[serde(alias = "value", skip_serializing_if = "Option::is_none")]
+    pub subcommand: Option<String>,
 }
 
 /// Arguments for /compact command
@@ -187,7 +190,7 @@ impl TuiCommand {
             TuiCommand::Help(_) => "Show this help message",
             TuiCommand::Model(_) => "Select or list available models",
             TuiCommand::Agent(_) => "Select or list available agents",
-            TuiCommand::Context(_) => "Show context/token usage",
+            TuiCommand::Context(_) => "Manage context files or show token usage",
             TuiCommand::Compact(_) => "Compact conversation history",
             TuiCommand::Clear(_) => "Clear conversation history",
             TuiCommand::Quit(_) => "Quit the application",
@@ -207,7 +210,7 @@ impl TuiCommand {
             TuiCommand::Help(_) => "/help",
             TuiCommand::Model(_) => "/model [model-name]",
             TuiCommand::Agent(_) => "/agent [agent-name]",
-            TuiCommand::Context(_) => "/context",
+            TuiCommand::Context(_) => "/context [add [--force] <path>...|remove <path>...|clear]",
             TuiCommand::Compact(_) => "/compact",
             TuiCommand::Clear(_) => "/clear",
             TuiCommand::Quit(_) => "/quit",
@@ -248,6 +251,7 @@ impl TuiCommand {
             TuiCommand::Context(_) => {
                 let mut meta = serde_json::Map::new();
                 meta.insert("inputType".into(), "panel".into());
+                meta.insert("hint".into(), "add <path>, remove <path>, clear".into());
                 Some(meta)
             },
             TuiCommand::Clear(_) => None,
@@ -315,7 +319,10 @@ impl TuiCommand {
             "agent" => Some(Self::Agent(AgentArgs {
                 agent_name: (!args.is_empty()).then(|| args.to_string()),
             })),
-            "context" => Some(Self::Context(ContextArgs::default())),
+            "context" => Some(Self::Context(ContextArgs {
+                subcommand: (!args.is_empty()).then(|| args.to_string()),
+                ..Default::default()
+            })),
             "compact" => Some(Self::Compact(CompactArgs {
                 target_tokens: args.parse().ok(),
             })),
@@ -379,5 +386,63 @@ mod tests {
         let json = r#"{"command":"context","args":{}}"#;
         let cmd: TuiCommand = serde_json::from_str(json).unwrap();
         assert!(matches!(cmd, TuiCommand::Context(_)));
+    }
+
+    #[test]
+    fn test_parse_context_add() {
+        let cmd = TuiCommand::parse("context", "add foo.txt").unwrap();
+        match cmd {
+            TuiCommand::Context(args) => {
+                assert_eq!(args.subcommand, Some("add foo.txt".to_string()));
+            },
+            _ => panic!("expected Context"),
+        }
+    }
+
+    #[test]
+    fn test_parse_context_remove() {
+        let cmd = TuiCommand::parse("context", "remove *.md").unwrap();
+        match cmd {
+            TuiCommand::Context(args) => {
+                assert_eq!(args.subcommand, Some("remove *.md".to_string()));
+            },
+            _ => panic!("expected Context"),
+        }
+    }
+
+    #[test]
+    fn test_parse_context_no_args() {
+        let cmd = TuiCommand::parse("context", "").unwrap();
+        match cmd {
+            TuiCommand::Context(args) => {
+                assert!(args.subcommand.is_none());
+            },
+            _ => panic!("expected Context"),
+        }
+    }
+
+    #[test]
+    fn test_deserialize_context_with_value_alias() {
+        // TUI sends { value: "add foo.txt" } for subcommand
+        let json = r#"{"command":"context","args":{"value":"add foo.txt"}}"#;
+        let cmd: TuiCommand = serde_json::from_str(json).unwrap();
+        match cmd {
+            TuiCommand::Context(args) => {
+                assert_eq!(args.subcommand, Some("add foo.txt".to_string()));
+            },
+            _ => panic!("expected Context"),
+        }
+    }
+
+    #[test]
+    fn test_deserialize_context_with_subcommand() {
+        let json = r#"{"command":"context","args":{"subcommand":"remove bar.rs"}}"#;
+        let cmd: TuiCommand = serde_json::from_str(json).unwrap();
+        match cmd {
+            TuiCommand::Context(args) => {
+                assert_eq!(args.subcommand, Some("remove bar.rs".to_string()));
+            },
+            _ => panic!("expected Context"),
+        }
     }
 }

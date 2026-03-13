@@ -916,8 +916,8 @@ mod tests {
     #[test]
     fn incomplete_tool_use_stream_ends_mid_parse() {
         // Stream ends while a tool use is still being parsed (no ContentBlockStop).
-        // The incomplete tool stays in parsing_tool_use and is never finalized as
-        // either valid or invalid. Only the completed tool use appears in the result.
+        // The incomplete tool (tu_2) has truncated JSON, so the parser returns
+        // InvalidJson with the valid tool (tu_1) and the invalid one (tu_2).
         let result = run_stream(vec![
             message_start(),
             tool_start("tu_1", "fs_read"),
@@ -928,10 +928,22 @@ mod tests {
             // No block_stop for tu_2, but message_stop still arrives
             message_stop(),
         ]);
-        let msg = result.expect("expected Ok");
-        let tools = msg.tool_uses().unwrap();
-        assert_eq!(tools.len(), 1);
-        assert_eq!(tools[0].tool_use_id, "tu_1");
+        match result.expect_err("expected InvalidJson error") {
+            LoopError::InvalidJson {
+                invalid_tools,
+                valid_tools,
+                assistant_text,
+            } => {
+                assert_eq!(valid_tools.len(), 1);
+                assert_eq!(valid_tools[0].tool_use_id, "tu_1");
+                assert_eq!(valid_tools[0].name, "fs_read");
+                assert_eq!(invalid_tools.len(), 1);
+                assert_eq!(invalid_tools[0].tool_use_id, "tu_2");
+                assert_eq!(invalid_tools[0].name, "fs_write");
+                assert!(assistant_text.is_empty());
+            },
+            other => panic!("expected InvalidJson, got: {other:?}"),
+        }
     }
 
     #[test]

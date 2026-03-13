@@ -152,6 +152,8 @@ export interface ContentBlockStopEvent {
 export interface ContextArgs {
 	/** Show a detailed breakdown */
 	verbose?: boolean;
+	/** Subcommand: add, remove, show, clear */
+	subcommand?: string;
 }
 
 /** Arguments for /help command */

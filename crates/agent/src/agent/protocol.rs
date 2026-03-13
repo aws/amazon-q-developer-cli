@@ -216,6 +216,14 @@ pub enum AgentRequest {
     GetMcpServerInfo,
     /// Get information about available tools
     GetToolInfo,
+    /// Add a resource path to the agent's context
+    AddResource(String),
+    /// Remove a resource path from the agent's context
+    RemoveResource(String),
+    /// Get the list of current resource paths
+    GetResources,
+    /// Clear all session-added resources (keep original agent config resources)
+    ClearSessionResources,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -479,6 +487,7 @@ pub enum AgentResponse {
     SwapComplete,
     McpServerInfo(Vec<super::tui_commands::McpServerInfo>),
     ToolInfo(Vec<super::tui_commands::ToolInfo>),
+    Resources(Vec<String>),
     Unknown,
 }
 

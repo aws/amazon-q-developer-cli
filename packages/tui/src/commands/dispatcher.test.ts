@@ -94,4 +94,90 @@ describe('dispatch', () => {
       ]);
     });
   });
+
+  describe('/context command', () => {
+    it('opens panel when no args provided', async () => {
+      const ctx = createMockCtx();
+      (ctx.kiro.executeCommand as any).mockResolvedValue({
+        success: true,
+        message: 'Context breakdown - 42% used',
+        data: {
+          contextUsagePercentage: 42,
+          breakdown: { contextFiles: { tokens: 100, percent: 10 } },
+        },
+      });
+
+      const cmd = makeCmd({
+        name: '/context',
+        meta: { inputType: 'panel' },
+      });
+      await dispatch(cmd, '', ctx);
+
+      // Panel should be opened
+      expect(ctx._spies.setShowContextBreakdown!).toHaveBeenCalled();
+      expect(ctx._spies.setShowContextBreakdown!.mock.calls[0]?.[0]).toBe(true);
+    });
+
+    it('shows alert for /context add with args', async () => {
+      const ctx = createMockCtx();
+      (ctx.kiro.executeCommand as any).mockResolvedValue({
+        success: true,
+        message: "Added 'foo.txt' to context",
+        data: undefined,
+      });
+
+      const cmd = makeCmd({
+        name: '/context',
+        meta: { inputType: 'panel' },
+      });
+      await dispatch(cmd, 'add foo.txt', ctx);
+
+      // Should show alert, not open panel
+      expect(ctx._spies.showAlert!).toHaveBeenCalled();
+      expect(ctx._spies.showAlert!.mock.calls[0]?.[0]).toBe(
+        "Added 'foo.txt' to context"
+      );
+      expect(ctx._spies.showAlert!.mock.calls[0]?.[1]).toBe('success');
+    });
+
+    it('shows error alert for /context remove with missing path', async () => {
+      const ctx = createMockCtx();
+      (ctx.kiro.executeCommand as any).mockResolvedValue({
+        success: false,
+        message: 'Resource not found: nonexistent.txt',
+        data: undefined,
+      });
+
+      const cmd = makeCmd({
+        name: '/context',
+        meta: { inputType: 'panel' },
+      });
+      await dispatch(cmd, 'remove nonexistent.txt', ctx);
+
+      expect(ctx._spies.showAlert!).toHaveBeenCalled();
+      expect(ctx._spies.showAlert!.mock.calls[0]?.[1]).toBe('error');
+    });
+
+    it('does not open panel for /context add result without breakdown', async () => {
+      const ctx = createMockCtx();
+      (ctx.kiro.executeCommand as any).mockResolvedValue({
+        success: true,
+        message: "Added 'src/*.rs' to context",
+        data: undefined,
+      });
+
+      const cmd = makeCmd({
+        name: '/context',
+        meta: { inputType: 'panel' },
+      });
+      await dispatch(cmd, 'add src/*.rs', ctx);
+
+      // setShowContextBreakdown should not be called with true (no breakdown data)
+      const calls = ctx._spies.setShowContextBreakdown!.mock.calls;
+      const openedPanel = calls.some(
+        (c: unknown[]) => c[0] === true && c[1] != null
+      );
+      expect(openedPanel).toBe(false);
+    });
+  });
 });

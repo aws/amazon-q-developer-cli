@@ -127,6 +127,22 @@ impl LoadedAgentConfig {
     pub fn add_hook(&mut self, trigger: definitions::HookTrigger, config: definitions::HookConfig) {
         self.config.add_hook(trigger, config);
     }
+
+    pub fn add_resource(&mut self, resource: types::ResourcePath) -> bool {
+        self.config.add_resource(resource)
+    }
+
+    pub fn remove_resource(&mut self, path: &str) -> bool {
+        self.config.remove_resource(path)
+    }
+
+    pub fn clear_session_resources(&mut self, original_resources: &[types::ResourcePath]) {
+        self.config.clear_session_resources(original_resources);
+    }
+
+    pub fn clear_all_resources(&mut self) {
+        self.config.clear_all_resources();
+    }
 }
 
 /// Where an agent config originated from
