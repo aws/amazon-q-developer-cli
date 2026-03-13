@@ -40,6 +40,9 @@ jobs:
       - name: Build ink package
         run: bun run build
         working-directory: packages/ink
+      - name: Build twinki package
+        run: bun run build
+        working-directory: packages/twinki/packages/twinki
       - name: Typecheck
         run: bun run typecheck
         working-directory: packages/tui
@@ -58,6 +61,9 @@ jobs:
       - name: Build ink package
         run: bun run build
         working-directory: packages/ink
+      - name: Build twinki package
+        run: bun run build
+        working-directory: packages/twinki/packages/twinki
       - name: Lint
         run: bun run lint
         working-directory: packages/tui
@@ -76,6 +82,9 @@ jobs:
       - name: Build ink package
         run: bun run build
         working-directory: packages/ink
+      - name: Build twinki package
+        run: bun run build
+        working-directory: packages/twinki/packages/twinki
       - name: Run tests
         run: bun test
         working-directory: packages/tui
@@ -122,6 +131,9 @@ jobs:
       - name: Build ink package
         run: bun run build
         working-directory: packages/ink
+      - name: Build twinki package
+        run: bun run build
+        working-directory: packages/twinki/packages/twinki
 
       - name: Build TUI
         run: bun run build

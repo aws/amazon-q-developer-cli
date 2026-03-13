@@ -8,11 +8,12 @@ export type { TextProps, BoxProps, Key } from 'ink';
 
 const useTwinki = process.env.KIRO_RENDERER === 'twinki';
 
-// Use variable to prevent TS from resolving twinki at typecheck time
-const _twinki = 'twinki';
-const mod = useTwinki
-  ? await import(/* @vite-ignore */ _twinki)
-  : await import('ink');
+// Static imports so the bundler can resolve both packages.
+// Only one is used at runtime based on KIRO_RENDERER.
+// @ts-expect-error — twinki types may not be available during typecheck
+import * as twinkiMod from 'twinki';
+import * as inkMod from 'ink';
+const mod = useTwinki ? twinkiMod : inkMod;
 
 export const Box = mod.Box as typeof import('ink').Box;
 export const Text = mod.Text as typeof import('ink').Text;

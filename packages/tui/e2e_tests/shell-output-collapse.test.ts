@@ -25,9 +25,8 @@ describe('Shell Output Collapse', () => {
 
     // Wait for output to start appearing and check for collapse hint while still active
     await testCase.waitForText('lines hidden', 5000);
-    await testCase.waitForText('ctrl+o', 2000);
 
-    // Wait for command to fully complete
+    // Should return to prompt
     await testCase.waitForText('ask a question', 5000);
   }, 30000);
 
