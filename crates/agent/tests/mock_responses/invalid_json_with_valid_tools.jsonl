@@ -1,0 +1,17 @@
+// Response 1: Assistant returns a valid tool use (fs_read) followed by an invalid one (write with truncated JSON)
+{"result":"ok","data":{"kind":"messageStart","data":{"role":"assistant"}}}
+{"result":"ok","data":{"kind":"contentBlockDelta","data":{"delta":{"kind":"text","data":"Let me read the file first, then write the summary."},"contentBlockIndex":null}}}
+{"result":"ok","data":{"kind":"contentBlockStart","data":{"contentBlockStart":{"kind":"toolUse","data":{"toolUseId":"tu_valid_1","name":"fs_read"}},"contentBlockIndex":0}}}
+{"result":"ok","data":{"kind":"contentBlockDelta","data":{"delta":{"kind":"toolUse","data":{"input":"{\"path\": \"/tmp/input.txt\"}"}},"contentBlockIndex":0}}}
+{"result":"ok","data":{"kind":"contentBlockStop","data":{"contentBlockIndex":0}}}
+{"result":"ok","data":{"kind":"contentBlockStart","data":{"contentBlockStart":{"kind":"toolUse","data":{"toolUseId":"tu_invalid_1","name":"write"}},"contentBlockIndex":1}}}
+{"result":"ok","data":{"kind":"contentBlockDelta","data":{"delta":{"kind":"toolUse","data":{"input":"{\"command\": \"create\", \"path\": \"summary.md\""}},"contentBlockIndex":1}}}
+{"result":"ok","data":{"kind":"contentBlockStop","data":{"contentBlockIndex":1}}}
+{"result":"ok","data":{"kind":"messageStop","data":{"stopReason":"toolUse"}}}
+{"result":"ok","data":{"kind":"metadata","data":{"metrics":{"requestStartTime":"2025-10-23T21:04:30.000000Z","requestEndTime":"2025-10-23T21:04:31.000000Z","timeToFirstChunk":{"secs":0,"nanos":100000000},"timeBetweenChunks":[],"responseStreamLen":30},"usage":null,"service":{"requestId":"mixed-valid-invalid-response","statusCode":null}}}}
+
+// Response 2: Retry succeeds
+{"result":"ok","data":{"kind":"messageStart","data":{"role":"assistant"}}}
+{"result":"ok","data":{"kind":"contentBlockDelta","data":{"delta":{"kind":"text","data":"I'll split this into smaller steps."},"contentBlockIndex":null}}}
+{"result":"ok","data":{"kind":"messageStop","data":{"stopReason":"endTurn"}}}
+{"result":"ok","data":{"kind":"metadata","data":{"metrics":{"requestStartTime":"2025-10-23T21:04:32.000000Z","requestEndTime":"2025-10-23T21:04:33.000000Z","timeToFirstChunk":{"secs":0,"nanos":100000000},"timeBetweenChunks":[],"responseStreamLen":30},"usage":null,"service":{"requestId":"retry-success-response","statusCode":null}}}}

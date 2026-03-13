@@ -1,0 +1,4 @@
+{
+  "type": "fixed",
+  "description": "Preserve valid tool uses in conversation history when retrying after invalid JSON in model response"
+}

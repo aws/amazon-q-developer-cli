@@ -675,6 +675,7 @@ impl StreamParseState {
         } else if !self.invalid_tool_uses.is_empty() {
             Err(LoopError::InvalidJson {
                 invalid_tools: self.invalid_tool_uses.clone(),
+                valid_tools: self.tool_uses.clone(),
                 assistant_text: self.assistant_text.clone(),
             })
         } else {
@@ -769,28 +770,187 @@ impl Drop for AgentLoopHandle {
     }
 }
 
-// #[cfg(test)]
-// mod tests {
-//     use super::*;
-//     use crate::agent_loop::model::MockModel;
-//
-//     #[tokio::test]
-//     async fn test_agent_loop() {
-//         let mut handle = AgentLoop::new(AgentLoopId::new("test".into()),
-//         CancellationToken::new()).spawn(); let model = MockModel::new();
-//
-//         handle
-//             .send_request(Arc::new(model.clone()), SendRequestArgs {
-//                 messages: vec![Message {
-//                     id: None,
-//                     role: Role::User,
-//                     content: vec!["test input".to_string().into()],
-//                     timestamp: None,
-//                 }],
-//                 tool_specs: None,
-//                 system_prompt: None,
-//             })
-//             .await
-//             .unwrap();
-//     }
-// }
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::agent::agent_loop::types::*;
+
+    fn user_message() -> Message {
+        Message::new(Role::User, vec![ContentBlock::Text("test".into())], None)
+    }
+
+    fn message_start() -> StreamResult {
+        StreamResult::Ok(StreamEvent::MessageStart(MessageStartEvent { role: Role::Assistant }))
+    }
+
+    fn message_stop() -> StreamResult {
+        StreamResult::Ok(StreamEvent::MessageStop(MessageStopEvent {
+            stop_reason: StopReason::EndTurn,
+        }))
+    }
+
+    fn text_delta(text: &str) -> StreamResult {
+        StreamResult::Ok(StreamEvent::ContentBlockDelta(ContentBlockDeltaEvent {
+            delta: ContentBlockDelta::Text(text.into()),
+            content_block_index: None,
+        }))
+    }
+
+    fn tool_start(id: &str, name: &str) -> StreamResult {
+        StreamResult::Ok(StreamEvent::ContentBlockStart(ContentBlockStartEvent {
+            content_block_start: Some(ContentBlockStart::ToolUse(ToolUseBlockStart {
+                tool_use_id: id.into(),
+                name: name.into(),
+            })),
+            content_block_index: None,
+        }))
+    }
+
+    fn tool_delta(input: &str) -> StreamResult {
+        StreamResult::Ok(StreamEvent::ContentBlockDelta(ContentBlockDeltaEvent {
+            delta: ContentBlockDelta::ToolUse(ToolUseBlockDelta { input: input.into() }),
+            content_block_index: None,
+        }))
+    }
+
+    fn block_stop() -> StreamResult {
+        StreamResult::Ok(StreamEvent::ContentBlockStop(ContentBlockStopEvent {
+            content_block_index: None,
+        }))
+    }
+
+    /// Feed events into state and return the result from ResponseStreamEnd.
+    fn run_stream(events: Vec<StreamResult>) -> Result<Message, LoopError> {
+        let mut state = StreamParseState::new(user_message());
+        let mut buf = Vec::new();
+        for ev in events {
+            state.next(Some(ev), &mut buf);
+        }
+        state.next(None, &mut buf);
+        buf.into_iter()
+            .find_map(|ev| match ev {
+                AgentLoopEventKind::ResponseStreamEnd { result, .. } => Some(result),
+                _ => None,
+            })
+            .expect("expected ResponseStreamEnd event")
+    }
+
+    #[test]
+    fn normal_stream_with_valid_tool_uses() {
+        let result = run_stream(vec![
+            message_start(),
+            text_delta("hello"),
+            tool_start("tu_1", "fs_read"),
+            tool_delta(r#"{"path": "/tmp"}"#),
+            block_stop(),
+            message_stop(),
+        ]);
+        let msg = result.expect("expected Ok");
+        assert_eq!(msg.content.len(), 2);
+        match &msg.content[1] {
+            ContentBlock::ToolUse(tool) => {
+                assert_eq!(tool.tool_use_id, "tu_1");
+                assert_eq!(tool.name, "fs_read");
+            },
+            other => panic!("expected ToolUse, got: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn invalid_json_only_no_valid_tools() {
+        let result = run_stream(vec![
+            message_start(),
+            text_delta("thinking"),
+            tool_start("tu_1", "fs_write"),
+            tool_delta("{invalid json"),
+            block_stop(),
+            message_stop(),
+        ]);
+        let err = result.expect_err("expected InvalidJson error");
+        match err {
+            LoopError::InvalidJson {
+                invalid_tools,
+                valid_tools,
+                assistant_text,
+            } => {
+                assert_eq!(invalid_tools.len(), 1);
+                assert_eq!(invalid_tools[0].tool_use_id, "tu_1");
+                assert!(valid_tools.is_empty());
+                assert_eq!(assistant_text, "thinking");
+            },
+            other => panic!("expected InvalidJson, got: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn mixed_valid_and_invalid_tool_uses() {
+        let result = run_stream(vec![
+            message_start(),
+            text_delta("text"),
+            tool_start("tu_1", "fs_read"),
+            tool_delta(r#"{"path": "/tmp"}"#),
+            block_stop(),
+            tool_start("tu_2", "fs_write"),
+            tool_delta("{bad json"),
+            block_stop(),
+            message_stop(),
+        ]);
+        let err = result.expect_err("expected InvalidJson error");
+        match err {
+            LoopError::InvalidJson {
+                invalid_tools,
+                valid_tools,
+                assistant_text,
+            } => {
+                assert_eq!(valid_tools.len(), 1);
+                assert_eq!(valid_tools[0].tool_use_id, "tu_1");
+                assert_eq!(valid_tools[0].name, "fs_read");
+                assert_eq!(invalid_tools.len(), 1);
+                assert_eq!(invalid_tools[0].tool_use_id, "tu_2");
+                assert_eq!(assistant_text, "text");
+            },
+            other => panic!("expected InvalidJson, got: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn incomplete_tool_use_stream_ends_mid_parse() {
+        // Stream ends while a tool use is still being parsed (no ContentBlockStop).
+        // The incomplete tool stays in parsing_tool_use and is never finalized as
+        // either valid or invalid. Only the completed tool use appears in the result.
+        let result = run_stream(vec![
+            message_start(),
+            tool_start("tu_1", "fs_read"),
+            tool_delta(r#"{"path": "/tmp"}"#),
+            block_stop(),
+            tool_start("tu_2", "fs_write"),
+            tool_delta(r#"{"path": "/tmp/f"#),
+            // No block_stop for tu_2, but message_stop still arrives
+            message_stop(),
+        ]);
+        let msg = result.expect("expected Ok");
+        let tools = msg.tool_uses().unwrap();
+        assert_eq!(tools.len(), 1);
+        assert_eq!(tools[0].tool_use_id, "tu_1");
+    }
+
+    #[test]
+    fn stream_error_takes_priority_over_invalid_json() {
+        let mut state = StreamParseState::new(user_message());
+        let mut buf = Vec::new();
+        state.next(Some(message_start()), &mut buf);
+        state.next(
+            Some(StreamResult::Err(StreamError::new(StreamErrorKind::ServiceFailure))),
+            &mut buf,
+        );
+        state.next(None, &mut buf);
+        let result = buf
+            .into_iter()
+            .find_map(|ev| match ev {
+                AgentLoopEventKind::ResponseStreamEnd { result, .. } => Some(result),
+                _ => None,
+            })
+            .expect("expected ResponseStreamEnd");
+        assert!(matches!(result, Err(LoopError::Stream(_))));
+    }
+}

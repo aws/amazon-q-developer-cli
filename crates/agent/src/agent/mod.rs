@@ -1363,6 +1363,7 @@ impl Agent {
             LoopError::InvalidJson {
                 assistant_text,
                 invalid_tools,
+                valid_tools,
             } => {
                 // Historically, we've found the model to produce invalid JSON when
                 // handling a complicated tool use - often times, the stream just ends
@@ -1372,7 +1373,7 @@ impl Agent {
                 // In this case, retry the request, except tell the model to split up
                 // the work into simpler tool uses.
 
-                // Create a fake assistant message
+                // Create a fake assistant message with ALL tool uses (valid + invalid)
                 let mut assistant_content = vec![ContentBlock::Text(assistant_text.clone())];
                 let val = serde_json::Value::Object(
                     [(
@@ -1385,6 +1386,13 @@ impl Agent {
                     .into_iter()
                     .collect(),
                 );
+
+                // Add completed tool uses as-is
+                for tool in valid_tools {
+                    assistant_content.push(ContentBlock::ToolUse(tool.clone()));
+                }
+
+                // Add invalid tool uses with placeholder args
                 assistant_content.append(
                     &mut invalid_tools
                         .iter()
@@ -1413,18 +1421,53 @@ impl Agent {
 
                 self.append_assistant_message(Message::new(Role::Assistant, assistant_content, Some(Utc::now())));
 
-                // Set new pending for the retry prompt
-                let retry_pending = PendingUserMessage::Prompt(vec![ContentBlock::Text(
-                    "The generated tool was too large, try again but this time split up the work between multiple tool uses"
-                        .to_string(),
-                )]);
+                let error_msg = "The generated tool was too large, try again but this time split up the work between multiple tool uses";
 
-                let args = self.format_request(&retry_pending).await;
-                self.execution_state.active_state = ActiveState::ExecutingRequest {
-                    compaction_retry: None,
-                    pending_user_message: Some(retry_pending),
-                };
-                self.send_request(args).await?;
+                if valid_tools.is_empty() {
+                    // No valid tool uses — send a simple text retry prompt (original behavior)
+                    let retry_pending = PendingUserMessage::Prompt(vec![ContentBlock::Text(error_msg.to_string())]);
+
+                    let args = self.format_request(&retry_pending).await;
+                    self.execution_state.active_state = ActiveState::ExecutingRequest {
+                        compaction_retry: None,
+                        pending_user_message: Some(retry_pending),
+                    };
+                    self.send_request(args).await?;
+                } else {
+                    // Valid tool uses exist — send tool results for all tool uses to maintain
+                    // the conversation invariant (every ToolUse must have a ToolResult)
+                    let mut content = Vec::new();
+
+                    for tool in valid_tools {
+                        content.push(ContentBlock::ToolResult(ToolResultBlock {
+                            tool_use_id: tool.tool_use_id.clone(),
+                            content: vec![ToolResultContentBlock::Text(
+                                "Tool use was not executed because another tool use in the same response had invalid JSON".to_string(),
+                            )],
+                            status: ToolResultStatus::Error,
+                        }));
+                    }
+                    for tool in invalid_tools {
+                        content.push(ContentBlock::ToolResult(ToolResultBlock {
+                            tool_use_id: tool.tool_use_id.clone(),
+                            content: vec![ToolResultContentBlock::Text(error_msg.to_string())],
+                            status: ToolResultStatus::Error,
+                        }));
+                    }
+                    content.push(ContentBlock::Text(error_msg.to_string()));
+
+                    let retry_pending = PendingUserMessage::ToolResults {
+                        content: content.clone(),
+                        results: HashMap::new(),
+                    };
+
+                    let args = self.format_request(&retry_pending).await;
+                    self.execution_state.active_state = ActiveState::ExecutingRequest {
+                        compaction_retry: None,
+                        pending_user_message: Some(retry_pending),
+                    };
+                    self.send_request(args).await?;
+                }
             },
             LoopError::Stream(stream_err) => match &stream_err.kind {
                 StreamErrorKind::StreamTimeout { .. } => {

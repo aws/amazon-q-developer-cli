@@ -966,3 +966,69 @@ async fn test_invalid_json_recovery() {
         }
     }
 }
+
+/// Tests that when the model returns both valid and invalid tool uses, the valid
+/// tool uses are preserved in the conversation history and the retry includes
+/// tool results for all tool uses (maintaining the ToolUse↔ToolResult invariant).
+#[tokio::test]
+async fn test_invalid_json_preserves_valid_tool_uses() {
+    let _ = tracing_subscriber::fmt::try_init();
+
+    let mut test = TestCase::builder()
+        .test_name("invalid json preserves valid tools")
+        .with_default_agent_config()
+        .with_trust_all_tools(true)
+        .with_responses(
+            parse_response_streams(include_str!("./mock_responses/invalid_json_with_valid_tools.jsonl"))
+                .await
+                .unwrap(),
+        )
+        .build()
+        .await
+        .unwrap();
+
+    test.send_prompt("read input.txt and write a summary to summary.md".to_string())
+        .await;
+    test.wait_until_agent_stop(Duration::from_secs(2)).await.unwrap();
+
+    let requests = test.requests();
+    assert!(
+        requests.len() >= 2,
+        "expected at least 2 requests (original + retry), got {}",
+        requests.len()
+    );
+
+    // The retry's assistant message (second-to-last in history) should contain both tool uses
+    let retry_messages = requests[1].messages();
+    let assistant_msg = retry_messages
+        .iter()
+        .rev()
+        .find(|m| m.role == Role::Assistant)
+        .expect("retry should have an assistant message in history");
+    let tool_uses = assistant_msg
+        .tool_uses()
+        .expect("assistant message should have tool uses");
+    assert_eq!(
+        tool_uses.len(),
+        2,
+        "assistant message should contain both valid and invalid tool uses"
+    );
+    assert_eq!(tool_uses[0].tool_use_id, "tu_valid_1");
+    assert_eq!(tool_uses[1].tool_use_id, "tu_invalid_1");
+
+    // The retry prompt (last user message) should have tool results for both tool uses
+    assert!(
+        requests[1].has_tool_result(|tr| tr.tool_use_id == "tu_valid_1"),
+        "retry should include a tool result for the valid tool use"
+    );
+    assert!(
+        requests[1].has_tool_result(|tr| tr.tool_use_id == "tu_invalid_1"),
+        "retry should include a tool result for the invalid tool use"
+    );
+
+    // Also verify the retry text is present
+    assert!(
+        requests[1].prompt_contains_text("split up the work"),
+        "retry prompt should ask model to split up the work"
+    );
+}

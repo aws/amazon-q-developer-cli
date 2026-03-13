@@ -181,6 +181,8 @@ pub enum LoopError {
         assistant_text: String,
         /// Tool uses that consist of invalid JSON
         invalid_tools: Vec<InvalidToolUse>,
+        /// Tool uses that were successfully parsed before the invalid ones
+        valid_tools: Vec<ToolUseBlock>,
     },
     /// Errors associated with the underlying response stream.
     ///
