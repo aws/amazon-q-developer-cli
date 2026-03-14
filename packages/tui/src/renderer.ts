@@ -10,10 +10,17 @@ const useTwinki = process.env.KIRO_RENDERER === 'twinki';
 
 // Static imports so the bundler can resolve both packages.
 // Only one is used at runtime based on KIRO_RENDERER.
-// @ts-expect-error — twinki types may not be available during typecheck
 import * as twinkiMod from 'twinki';
 import * as inkMod from 'ink';
-const mod = useTwinki ? twinkiMod : inkMod;
+
+if (useTwinki && !twinkiMod?.render) {
+  process.stderr.write(
+    '[kiro-tui] FATAL: KIRO_RENDERER=twinki but twinki failed to load.\n'
+  );
+  process.exit(1);
+}
+
+const mod = useTwinki ? (twinkiMod as unknown as typeof inkMod) : inkMod;
 
 export const Box = mod.Box as typeof import('ink').Box;
 export const Text = mod.Text as typeof import('ink').Text;

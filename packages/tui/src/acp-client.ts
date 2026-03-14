@@ -81,6 +81,7 @@ export class AcpClient implements acp.Client, SessionClient {
     // WritableStream wrapping node stdin
     const writable = new WritableStream<Uint8Array>({
       async write(chunk) {
+        if (stdin.destroyed || stdin.writableEnded) return;
         return new Promise<void>((resolve, reject) => {
           stdin.write(chunk, (err) => {
             if (err) reject(err);

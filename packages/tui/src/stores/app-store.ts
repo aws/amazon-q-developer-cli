@@ -107,6 +107,16 @@ export enum MessageRole {
 // Helper to generate unique message IDs
 const generateMessageId = () => crypto.randomUUID();
 
+/**
+ * Tools that are known to be broken or unavailable in the current environment.
+ * Tool calls matching these names are immediately marked as finished with an
+ * error result so they don't block the flush state machine with a stuck spinner.
+ */
+export const NOT_READY_TOOLS: Set<string> = new Set([
+  'use_subagent',
+  'subagent',
+]);
+
 export enum ToolUseStatus {
   Pending = 'pending',
   Approved = 'approved',
@@ -870,6 +880,7 @@ export const createAppStore = (props: AppStoreProps) =>
                 return state;
               }
 
+              const isNotReady = NOT_READY_TOOLS.has(event.name);
               return {
                 messages: [
                   ...state.messages,
@@ -881,6 +892,13 @@ export const createAppStore = (props: AppStoreProps) =>
                     content,
                     locations: event.locations,
                     agentName: state.currentAgent?.name,
+                    ...(isNotReady && {
+                      isFinished: true,
+                      result: {
+                        status: 'error' as const,
+                        error: `Tool "${event.name}" is not available`,
+                      },
+                    }),
                   },
                 ],
               };

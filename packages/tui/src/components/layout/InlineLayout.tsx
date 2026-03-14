@@ -452,7 +452,7 @@ export const InlineLayout: React.FC = () => {
   }, [setAgentError]);
 
   return (
-    <AnimationPausedContext.Provider value={!!pendingApproval}>
+    <AnimationPausedContext.Provider value={!!pendingApproval || !!agentError}>
       <Box flexDirection="column">
         {agentError && (
           <BlockingErrorAlert

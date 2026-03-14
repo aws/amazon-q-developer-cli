@@ -44,6 +44,11 @@ export interface TUIOptions {
 	fullscreen?: boolean;
 	/** Allow mouse tracking to be enabled (default: false). */
 	mouse?: boolean;
+	/**
+	 * Max lines to keep in the static scrollback buffer (default: 100_000).
+	 * When exceeded by 10%, the buffer is pruned back to 75% of the cap.
+	 */
+	staticScrollbackCap?: number;
 }
 
 /**
@@ -104,6 +109,7 @@ export class TUI extends Container {
 	private stopped = false;
 	private overlayStack: OverlayEntry[] = [];
 	private accumulatedStaticOutput: string[] = [];
+	private staticScrollbackCap = 100_000;
 	private onResizeCallbacks: (() => void)[] = [];
 	/** Original stdout.write before interception; null when not intercepted. */
 	private originalStdoutWrite: typeof process.stdout.write | null = null;
@@ -155,6 +161,9 @@ export class TUI extends Container {
 		}
 		if (opts.mouse) {
 			this.mouseAllowed = true;
+		}
+		if (opts.staticScrollbackCap != null && opts.staticScrollbackCap > 0) {
+			this.staticScrollbackCap = opts.staticScrollbackCap;
 		}
 		if (process.env.TWINKI_DEBUG_REDRAW === '1') {
 			try {
@@ -1061,9 +1070,10 @@ export class TUI extends Container {
 	 * re-written to scrollback.
 	 */
 	private trimStaticOutput(): void {
-		const cap = 10_000;
-		if (this.accumulatedStaticOutput.length > cap) {
-			this.accumulatedStaticOutput = this.accumulatedStaticOutput.slice(-cap);
+		const cap = this.staticScrollbackCap;
+		// Only trim when 10% over cap — prune back to 75% to amortize the cost
+		if (this.accumulatedStaticOutput.length > cap * 1.1) {
+			this.accumulatedStaticOutput = this.accumulatedStaticOutput.slice(-Math.floor(cap * 0.75));
 		}
 	}
 
@@ -1372,9 +1382,31 @@ export class TUI extends Container {
 			return;
 		}
 
-		// Change above previous viewport
+		// Change above previous viewport — not visible, skip it and only render
+		// changes within the viewport. Animations outside the viewport must not
+		// trigger a full redraw. Only applies when content is growing or stable;
+		// shrinking content needs the full redraw path to clear old lines.
 		const previousContentViewportTop = Math.max(0, this.previousLines.length - height);
-		if (firstChanged < previousContentViewportTop) {
+		if (firstChanged < previousContentViewportTop && newLines.length >= this.previousLines.length) {
+			// Re-scan for first change within the visible viewport
+			firstChanged = -1;
+			lastChanged = -1;
+			for (let i = previousContentViewportTop; i < Math.max(newLines.length, this.previousLines.length); i++) {
+				const oldLine = this.previousLines[i] ?? '';
+				const newLine = newLines[i] ?? '';
+				if (oldLine !== newLine) {
+					if (firstChanged === -1) firstChanged = i;
+					lastChanged = i;
+				}
+			}
+			if (firstChanged === -1) {
+				// Only off-screen changes — nothing to render
+				this.previousLines = newLines;
+				this.previousWidth = width;
+				this.previousViewportTop = Math.max(0, this.maxLinesRendered - height);
+				return;
+			}
+		} else if (firstChanged < previousContentViewportTop) {
 			fullRender(this.altScreen ? CLEAR_SCREEN : CLEAR_ALL);
 			return;
 		}

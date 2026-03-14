@@ -17,7 +17,7 @@ import { StatusBar } from '../chat/status-bar/StatusBar';
 import { Text } from '../ui/text/Text';
 import { WelcomeScreen } from '../welcome-screen/index.js';
 import { getAgentColor } from '../../utils/agentColors.js';
-import { computeFlushCount } from '../../utils/turn-flush-machine.js';
+import { computeFlushSet } from '../../utils/turn-flush-machine.js';
 import { useTerminalSize } from '../../hooks/useTerminalSize.js';
 import { useTheme } from '../../hooks/useThemeContext.js';
 
@@ -305,7 +305,7 @@ const StaticTurnCard = React.memo(function StaticTurnCard({
  * ## Turn lifecycle
  *
  *   ACTIVE TURN
- *     │  computeFlushCount() decides how many leading messages are "done"
+ *     │  computeFlushSet() decides which messages are "done"
  *     │  keeping the last TAIL_SIZE in the dynamic area.
  *     │  newlyFlushed = toFlush − already in flushedRef  →  appendStatic()
  *     │  tail = last TAIL_SIZE messages  →  rendered in dynamic Card/CardContext
@@ -440,13 +440,13 @@ export const ConversationView = React.memo(function ConversationView() {
   const activeAllMessages: StoreMessageType[] = activeTurn
     ? [activeTurn.userMessage, ...activeTurn.aiMessages]
     : [];
-  const flushCount = computeFlushCount(
+  const flushSet = computeFlushSet(
     activeAllMessages,
     isProcessing,
     effectiveTailOverride ?? TAIL_SIZE
   );
-  const toFlush = activeAllMessages.slice(0, flushCount);
-  const tailMessages = activeAllMessages.slice(flushCount);
+  const toFlush = activeAllMessages.filter((msg) => flushSet.has(msg.id));
+  const tailMessages = activeAllMessages.filter((msg) => !flushSet.has(msg.id));
 
   // Track which turns had incremental flushing (so StaticTurnCard skips them on completion).
   // Compute newly-flushed messages BEFORE updating flushedRef so we know what's new this render.

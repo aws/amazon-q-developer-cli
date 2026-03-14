@@ -13,15 +13,15 @@ export const WelcomeScreen = React.memo(function WelcomeScreen({
   // mcpServers,
   animate = false,
 }: WelcomeScreenProps) {
-  const isDevelopment = process.env.NODE_ENV !== 'production';
   // const { getColor } = useTheme();
 
   return (
     <Box flexDirection="column" width="100%" alignItems="center">
       <Wordmark animate={animate} />
-      {isDevelopment && (
+      {(process.env.NODE_ENV !== 'production' ||
+        process.env.KIRO_RENDERER === 'twinki') && (
         <InkText dimColor>
-          Development Mode ·{' '}
+          {process.env.NODE_ENV !== 'production' ? 'Development Mode · ' : ''}
           {process.env.KIRO_RENDERER === 'twinki' ? 'Twinki' : 'Ink'}
         </InkText>
       )}
