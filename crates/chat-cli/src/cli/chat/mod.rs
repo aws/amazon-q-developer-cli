@@ -3066,6 +3066,19 @@ impl ChatSession {
             // No expansion happened - fall through to normal input handling below
             self.process_normal_input(os, user_input, &input_trimmed).await
         } else if let Some(command) = input_trimmed.strip_prefix("!") {
+            // Block shell escape when stdin is piped to prevent crafted input from
+            // executing arbitrary commands without genuine user interaction.
+            if !self.input_source.is_interactive() {
+                queue!(
+                    self.stderr,
+                    StyledText::warning_fg(),
+                    style::Print("Shell commands via '!' are disabled when stdin is piped.\n"),
+                    StyledText::reset(),
+                )?;
+                return Ok(ChatState::PromptUser {
+                    skip_printing_tools: false,
+                });
+            }
             // Use platform-appropriate shell
             let result = if cfg!(target_os = "windows") {
                 std::process::Command::new("cmd").args(["/C", command]).status()
