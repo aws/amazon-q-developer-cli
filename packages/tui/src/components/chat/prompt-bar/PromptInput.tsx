@@ -112,7 +112,11 @@ const detectTrigger = (
 ): TriggerInfo | null => {
   for (const rule of rules) {
     if (rule.type === 'start' && text.startsWith(rule.key)) {
-      return { key: rule.key, position: 0, type: rule.type };
+      // Only trigger when cursor is within the command name (before first space)
+      const spaceIndex = text.indexOf(' ');
+      if (spaceIndex === -1 || cursor <= spaceIndex) {
+        return { key: rule.key, position: 0, type: rule.type };
+      }
     }
     if (rule.type === 'inline') {
       const lastIndex = text.slice(0, cursor).lastIndexOf(rule.key);

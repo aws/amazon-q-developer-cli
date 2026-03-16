@@ -79,6 +79,8 @@ export interface KnowledgeEntry {
   description: string;
   item_count: number;
   path: string | null;
+  items_display?: string;
+  indexing?: boolean;
 }
 
 import {

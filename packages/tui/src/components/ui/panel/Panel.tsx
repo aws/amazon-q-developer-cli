@@ -94,7 +94,7 @@ export const Panel: React.FC<PanelProps> = ({
       {!hideTitleDivider && <Divider />}
 
       {searchable && (
-        <Box paddingX={1}>
+        <Box paddingX={1} marginBottom={1}>
           <Text>{dim('search: ')}</Text>
           {search ? <Text>{primary(search)}</Text> : null}
           <Text inverse> </Text>

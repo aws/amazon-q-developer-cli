@@ -83,6 +83,6 @@ export async function dispatch(
 
   // 4. Show result message (skip for panel commands without args - they show their own UI)
   if (result?.message && !(inputType === 'panel' && !args)) {
-    ctx.showAlert(result.message, result.success ? 'success' : 'error', 3000);
+    ctx.showAlert(result.message, result.success ? 'success' : 'error', 5000);
   }
 }

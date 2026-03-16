@@ -54,13 +54,23 @@ export const KnowledgePanel: React.FC<KnowledgePanelProps> = ({
       8
     ) + GAP;
   const idCol = 10 + GAP;
-  const itemsCol = 8 + GAP;
+  const hasIndexing = entries.some((e) => e.indexing);
+  const itemsCol = (hasIndexing ? 16 : 8) + GAP;
   const pathCol = Math.max(termWidth - nameCol - idCol - itemsCol - 4, 10);
 
+  const completedCount = entries.filter((e) => !e.indexing).length;
+  const indexingCount = entries.filter((e) => e.indexing).length;
+  const titleParts: string[] = [];
+  if (completedCount > 0) {
+    titleParts.push(
+      `${completedCount} entr${completedCount === 1 ? 'y' : 'ies'}`
+    );
+  }
+  if (indexingCount > 0) {
+    titleParts.push('indexing in progress');
+  }
   const titleSuffix =
-    status && entries.length === 0
-      ? 'indexing in progress'
-      : `${entries.length} entr${entries.length === 1 ? 'y' : 'ies'}`;
+    titleParts.length > 0 ? titleParts.join(' · ') : 'no entries';
 
   const handleSearchChange = useCallback((s: string) => {
     setSearch(s);
@@ -98,27 +108,31 @@ export const KnowledgePanel: React.FC<KnowledgePanelProps> = ({
                   <Text>{dim('ID')}</Text>
                 </Box>
                 <Box width={itemsCol}>
-                  <Text>{dim('Items')}</Text>
+                  <Text>{dim('Status')}</Text>
                 </Box>
                 <Text>{dim('Path')}</Text>
               </Box>
               {visible.map((entry) => {
                 const displayPath = entry.path ?? entry.description;
+                const itemsText =
+                  entry.items_display ?? `${entry.item_count} items`;
+                const nameColor = entry.indexing ? dim : primary;
+                const idColor = entry.indexing ? dim : brand;
                 return (
                   <Box key={entry.id}>
                     <Box width={nameCol}>
-                      <Text>{primary(entry.name)}</Text>
+                      <Text>{nameColor(entry.name)}</Text>
                     </Box>
                     <Box width={idCol}>
-                      <Text>{brand(entry.id)}</Text>
+                      <Text>{idColor(entry.id)}</Text>
                     </Box>
                     <Box width={itemsCol}>
-                      <Text>{dim(String(entry.item_count))}</Text>
+                      <Text>{dim(itemsText)}</Text>
                     </Box>
                     <Text>
                       {dim(
                         displayPath.length > pathCol
-                          ? displayPath.slice(0, pathCol - 3) + '...'
+                          ? '…' + displayPath.slice(-(pathCol - 1))
                           : displayPath
                       )}
                     </Text>
@@ -127,7 +141,6 @@ export const KnowledgePanel: React.FC<KnowledgePanelProps> = ({
               })}
             </>
           )}
-          {status && <Text>{dim(status)}</Text>}
         </Box>
       )}
     </Panel>

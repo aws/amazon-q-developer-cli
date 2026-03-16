@@ -69,7 +69,7 @@ describe('dispatch', () => {
       expect(ctx._spies.showAlert!.mock.calls[0]).toEqual([
         'Opening in browser...',
         'success',
-        3000,
+        5000,
       ]);
       // No activeCommand set
       expect(ctx._spies.setActiveCommand!).not.toHaveBeenCalled();

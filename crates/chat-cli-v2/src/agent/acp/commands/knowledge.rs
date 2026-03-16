@@ -111,61 +111,51 @@ async fn format_show(store: &KnowledgeStore) -> CommandResult {
         })
         .collect();
 
-    let has_operations = status.as_ref().is_ok_and(|s| !s.operations.is_empty());
-
-    let message = if entries.is_empty() && !has_operations {
-        "No knowledge base entries".to_string()
-    } else {
-        let mut parts = vec![];
-        if !entries.is_empty() {
-            parts.push(format!(
-                "{} entr{}",
-                entries.len(),
-                if entries.len() == 1 { "y" } else { "ies" }
-            ));
-        }
-        if has_operations {
-            parts.push("indexing in progress".to_string());
-        }
-        parts.join(" · ")
-    };
-
-    let mut data = json!({ "entries": entries, "message": message });
+    let mut data = json!({ "entries": entries });
 
     if let Ok(s) = status
         && !s.operations.is_empty()
     {
-        data["status"] = json!(format_status_display(&s));
-    }
-
-    CommandResult::success_with_data(&message, data)
-}
-
-fn format_status_display(status: &semantic_search_client::SystemStatus) -> String {
-    let mut out = String::new();
-    for op in &status.operations {
-        let desc = match &op.operation_type {
-            semantic_search_client::OperationType::Indexing { path, .. } => path.clone(),
-            semantic_search_client::OperationType::Clearing => op.message.clone(),
-        };
-        out.push_str(&format!(
-            "{} ({}) — {desc}",
-            op.operation_type.display_name(),
-            &op.short_id
-        ));
-        if op.is_cancelled {
-            out.push_str(" [Cancelled]");
-        } else if op.is_failed {
-            out.push_str(" [Failed]");
-        } else if op.total > 0 {
-            let pct = (op.current as f64 / op.total as f64 * 100.0) as u8;
-            if let Some(eta) = op.eta {
-                out.push_str(&format!(" [{pct}% · ETA: {}s]", eta.as_secs()));
-            } else {
-                out.push_str(&format!(" [{pct}%]"));
-            }
+        let ops: Vec<serde_json::Value> = s
+            .operations
+            .iter()
+            .map(|op| {
+                let name = match &op.operation_type {
+                    semantic_search_client::OperationType::Indexing { name, .. } => name.clone(),
+                    semantic_search_client::OperationType::Clearing => "clearing".to_string(),
+                };
+                let path = match &op.operation_type {
+                    semantic_search_client::OperationType::Indexing { path, .. } => Some(path.clone()),
+                    semantic_search_client::OperationType::Clearing => None,
+                };
+                let items_display = if op.is_cancelled {
+                    "Cancelled".to_string()
+                } else if op.is_failed {
+                    "Failed".to_string()
+                } else if op.total > 0 {
+                    let pct = (op.current as f64 / op.total as f64 * 100.0) as u8;
+                    match op.eta {
+                        Some(eta) => format!("{pct}% · ETA {}s", eta.as_secs()),
+                        None => format!("{pct}%"),
+                    }
+                } else {
+                    "0%".to_string()
+                };
+                json!({
+                    "name": name,
+                    "id": &op.short_id,
+                    "description": "",
+                    "item_count": 0,
+                    "items_display": items_display,
+                    "path": path,
+                    "indexing": true,
+                })
+            })
+            .collect();
+        if let Some(arr) = data["entries"].as_array_mut() {
+            arr.extend(ops);
         }
-        out.push('\n');
     }
-    out.trim_end().to_string()
+
+    CommandResult::success_with_data("", data)
 }
