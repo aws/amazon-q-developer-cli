@@ -37,7 +37,6 @@ integ_tests/test-outputs/
 
 # samples folder
 samples
-.acp-harness/
 .kiro
 profiles/
 reports/

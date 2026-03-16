@@ -1,6 +1,0 @@
-// task_create tool call
-{"kind":"event","data":{"kind":"ToolUseEvent","data":{"tool_use_id":"tooluse_task_001","name":"task_create","input":null,"stop":null}}}
-{"kind":"event","data":{"kind":"ToolUseEvent","data":{"tool_use_id":"tooluse_task_001","name":"task_create","input":"{\"subject\": \"Fix auth bug\", \"description\": \"Fix the login flow authentication issue\"}","stop":null}}}
-{"kind":"event","data":{"kind":"ToolUseEvent","data":{"tool_use_id":"tooluse_task_001","name":"task_create","input":null,"stop":true}}}
-
-{"kind":"event","data":{"kind":"AssistantResponseEvent","data":{"content":"Task created."}}}

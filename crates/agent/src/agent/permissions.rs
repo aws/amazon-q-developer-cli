@@ -382,10 +382,6 @@ pub fn evaluate_tool_permission<P: SystemProvider>(
             } else {
                 PermissionEvalResult::ask()
             }),
-            BuiltInTool::TaskCreate(_)
-            | BuiltInTool::TaskUpdate(_)
-            | BuiltInTool::TaskGet(_)
-            | BuiltInTool::TaskList(_) => Ok(PermissionEvalResult::Allow),
         },
         ToolKind::Mcp(_) => Ok(if is_allowed {
             PermissionEvalResult::Allow

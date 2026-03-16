@@ -14,7 +14,6 @@ pub mod mkdir;
 pub mod rm;
 pub mod summary;
 pub mod switch_to_execution;
-pub mod task;
 pub mod use_aws;
 pub mod use_subagent;
 pub mod web_fetch;
@@ -54,12 +53,6 @@ use serde::{
 use strum::IntoEnumIterator;
 use summary::Summary;
 use switch_to_execution::SwitchToExecution;
-use task::{
-    TaskCreate,
-    TaskGet,
-    TaskList,
-    TaskUpdateTool,
-};
 use typeshare::typeshare;
 use use_aws::UseAws;
 pub use use_subagent::{
@@ -194,14 +187,6 @@ pub enum BuiltInToolName {
     Introspect,
     #[strum(serialize = "knowledge")]
     Knowledge,
-    #[strum(serialize = "task_create")]
-    TaskCreate,
-    #[strum(serialize = "task_update")]
-    TaskUpdate,
-    #[strum(serialize = "task_get")]
-    TaskGet,
-    #[strum(serialize = "task_list")]
-    TaskList,
 }
 
 impl BuiltInToolName {
@@ -223,10 +208,6 @@ impl BuiltInToolName {
             BuiltInToolName::SwitchToExecution => SwitchToExecution::aliases(),
             BuiltInToolName::Introspect => Introspect::aliases(),
             BuiltInToolName::Knowledge => Knowledge::aliases(),
-            BuiltInToolName::TaskCreate => TaskCreate::aliases(),
-            BuiltInToolName::TaskUpdate => TaskUpdateTool::aliases(),
-            BuiltInToolName::TaskGet => TaskGet::aliases(),
-            BuiltInToolName::TaskList => TaskList::aliases(),
         }
     }
 }
@@ -403,10 +384,6 @@ pub enum BuiltInTool {
     WebSearch(WebSearch),
     Code(Code),
     SwitchToExecution(SwitchToExecution),
-    TaskCreate(TaskCreate),
-    TaskUpdate(TaskUpdateTool),
-    TaskGet(TaskGet),
-    TaskList(TaskList),
 }
 
 impl BuiltInTool {
@@ -460,18 +437,6 @@ impl BuiltInTool {
             BuiltInToolName::Knowledge => serde_json::from_value::<Knowledge>(args)
                 .map(Self::Knowledge)
                 .map_err(ToolParseErrorKind::schema_failure),
-            BuiltInToolName::TaskCreate => serde_json::from_value::<TaskCreate>(args)
-                .map(Self::TaskCreate)
-                .map_err(ToolParseErrorKind::schema_failure),
-            BuiltInToolName::TaskUpdate => serde_json::from_value::<TaskUpdateTool>(args)
-                .map(Self::TaskUpdate)
-                .map_err(ToolParseErrorKind::schema_failure),
-            BuiltInToolName::TaskGet => serde_json::from_value::<TaskGet>(args)
-                .map(Self::TaskGet)
-                .map_err(ToolParseErrorKind::schema_failure),
-            BuiltInToolName::TaskList => serde_json::from_value::<TaskList>(args)
-                .map(Self::TaskList)
-                .map_err(ToolParseErrorKind::schema_failure),
         }
     }
 
@@ -497,10 +462,6 @@ impl BuiltInTool {
             BuiltInToolName::SwitchToExecution => generate_tool_spec_from_trait::<SwitchToExecution>(),
             BuiltInToolName::Introspect => generate_tool_spec_from_trait::<Introspect>(),
             BuiltInToolName::Knowledge => generate_tool_spec_from_trait::<Knowledge>(),
-            BuiltInToolName::TaskCreate => generate_tool_spec_from_trait::<TaskCreate>(),
-            BuiltInToolName::TaskUpdate => generate_tool_spec_from_trait::<TaskUpdateTool>(),
-            BuiltInToolName::TaskGet => generate_tool_spec_from_trait::<TaskGet>(),
-            BuiltInToolName::TaskList => generate_tool_spec_from_trait::<TaskList>(),
         }
     }
 
@@ -523,10 +484,6 @@ impl BuiltInTool {
             BuiltInTool::WebSearch(_) => BuiltInToolName::WebSearch,
             BuiltInTool::Code(_) => BuiltInToolName::Code,
             BuiltInTool::SwitchToExecution(_) => BuiltInToolName::SwitchToExecution,
-            BuiltInTool::TaskCreate(_) => BuiltInToolName::TaskCreate,
-            BuiltInTool::TaskUpdate(_) => BuiltInToolName::TaskUpdate,
-            BuiltInTool::TaskGet(_) => BuiltInToolName::TaskGet,
-            BuiltInTool::TaskList(_) => BuiltInToolName::TaskList,
         }
     }
 
@@ -549,10 +506,6 @@ impl BuiltInTool {
             BuiltInTool::WebSearch(_) => BuiltInToolName::WebSearch.into(),
             BuiltInTool::Code(_) => BuiltInToolName::Code.into(),
             BuiltInTool::SwitchToExecution(_) => BuiltInToolName::SwitchToExecution.into(),
-            BuiltInTool::TaskCreate(_) => BuiltInToolName::TaskCreate.into(),
-            BuiltInTool::TaskUpdate(_) => BuiltInToolName::TaskUpdate.into(),
-            BuiltInTool::TaskGet(_) => BuiltInToolName::TaskGet.into(),
-            BuiltInTool::TaskList(_) => BuiltInToolName::TaskList.into(),
         }
     }
 
@@ -575,10 +528,6 @@ impl BuiltInTool {
             BuiltInTool::WebSearch(_) => WebSearch::aliases(),
             BuiltInTool::Code(_) => Code::aliases(),
             BuiltInTool::SwitchToExecution(_) => SwitchToExecution::aliases(),
-            BuiltInTool::TaskCreate(_) => TaskCreate::aliases(),
-            BuiltInTool::TaskUpdate(_) => TaskUpdateTool::aliases(),
-            BuiltInTool::TaskGet(_) => TaskGet::aliases(),
-            BuiltInTool::TaskList(_) => TaskList::aliases(),
         }
     }
 }

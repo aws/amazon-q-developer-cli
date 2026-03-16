@@ -893,7 +893,6 @@ impl AcpSession {
             builder.is_subagent,
             builder.code_intelligence,
             knowledge_provider,
-            &session_id_str,
         )
         .await?;
 
@@ -2111,10 +2110,6 @@ fn get_tool_kind(tool_name: &str) -> ToolKind {
             BuiltInToolName::SwitchToExecution => ToolKind::Other,
             BuiltInToolName::Introspect => ToolKind::Read,
             BuiltInToolName::Knowledge => ToolKind::Other,
-            BuiltInToolName::TaskCreate
-            | BuiltInToolName::TaskUpdate
-            | BuiltInToolName::TaskGet
-            | BuiltInToolName::TaskList => ToolKind::Other,
         }
     } else {
         ToolKind::Other
@@ -2199,18 +2194,6 @@ pub(crate) fn get_tool_title(tool: &Tool) -> String {
             },
             BuiltInTool::SwitchToExecution(_) => "Switching to execution agent".to_string(),
             BuiltInTool::Knowledge(_) => "Querying knowledge base".to_string(),
-            BuiltInTool::TaskCreate(t) => format!("Creating task: {}", truncate_str(&t.subject, 60)),
-            BuiltInTool::TaskUpdate(t) => {
-                if let Some(ref status) = t.status {
-                    format!("Updating task #{} → {}", t.task_id, status)
-                } else if let Some(ref owner) = t.owner {
-                    format!("Assigning task #{} to {}", t.task_id, owner)
-                } else {
-                    format!("Updating task #{}", t.task_id)
-                }
-            },
-            BuiltInTool::TaskGet(t) => format!("Getting task #{}", t.task_id),
-            BuiltInTool::TaskList(_) => "Listing tasks".to_string(),
         },
         AgentToolKind::Mcp(mcp) => format!("Running: @{}/{}", mcp.server_name, mcp.tool_name),
     }
