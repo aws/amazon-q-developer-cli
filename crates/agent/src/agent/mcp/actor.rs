@@ -303,8 +303,8 @@ impl McpServerActor {
                     let res = self.handle_actor_request(req.payload).await;
 
                     if let Ok(McpServerActorResponse::TerminateAcknowledged) = res {
-                        respond!(req, res);
                         self.service_handle.cancel().await;
+                        respond!(req, res);
                         break;
                     } else {
                         respond!(req, res);

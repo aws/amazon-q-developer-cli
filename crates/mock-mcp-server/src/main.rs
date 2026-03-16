@@ -56,6 +56,10 @@ struct Args {
     /// Delay in milliseconds before starting the server (simulates slow startup)
     #[arg(long)]
     startup_delay_ms: Option<u64>,
+
+    /// Keep the process alive after the MCP transport closes (simulates a misbehaving server)
+    #[arg(long)]
+    linger: bool,
 }
 
 #[derive(Clone)]
@@ -128,11 +132,17 @@ impl ServerHandler for MockMcpServer {
     }
 }
 
-async fn run_stdio(server: MockMcpServer) -> Result<()> {
+async fn run_stdio(server: MockMcpServer, linger: bool) -> Result<()> {
     let service = server.serve(stdio()).await.inspect_err(|e| {
         eprintln!("Serving error: {:?}", e);
     })?;
     service.waiting().await?;
+    if linger {
+        // Simulate a misbehaving server that doesn't exit when stdin closes
+        loop {
+            tokio::time::sleep(Duration::from_secs(3600)).await;
+        }
+    }
     Ok(())
 }
 
@@ -261,7 +271,7 @@ async fn main() -> Result<()> {
     let server = MockMcpServer::from_config(&args.config)?;
 
     match args.transport {
-        Transport::Stdio => run_stdio(server).await,
+        Transport::Stdio => run_stdio(server, args.linger).await,
         Transport::Http => run_http(server, args.port, args.probe_status).await,
     }
 }

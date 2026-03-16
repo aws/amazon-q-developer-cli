@@ -2350,7 +2350,7 @@ pub async fn execute(os: &mut Os, args: agent::types::AcpSpawnArgs) -> eyre::Res
     // [crate::agent::acp::session_manager::SessionManager] for the general flow of request
     // response processing. The TLDR; is the request path and response path are _not_ done on the
     // same task.
-    AgentToClient::builder()
+    let serve_future = AgentToClient::builder()
         .name("kiro-cli-agent")
         .on_receive_request(
             {
@@ -2589,9 +2589,47 @@ pub async fn execute(os: &mut Os, args: agent::types::AcpSpawnArgs) -> eyre::Res
         .serve(sacp::ByteStreams::new(
             tokio::io::stdout().compat_write(),
             tokio::io::stdin().compat(),
-        ))
-        .await
-        .map_err(|e| eyre::eyre!("Connection error: {}", e))?;
+        ));
+
+    // Race the SACP connection against SIGTERM/SIGINT so we always get a chance
+    // to run graceful shutdown (which kills MCP child processes).
+    let signal_interrupted;
+    #[cfg(unix)]
+    {
+        let mut sigterm = tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate())
+            .expect("failed to install SIGTERM handler");
+        tokio::select! {
+            result = serve_future => {
+                signal_interrupted = false;
+                if let Err(e) = result {
+                    error!("Connection error: {}", e);
+                }
+            }
+            _ = sigterm.recv() => {
+                info!("Received SIGTERM, shutting down");
+                signal_interrupted = true;
+            }
+            _ = tokio::signal::ctrl_c() => {
+                info!("Received SIGINT, shutting down");
+                signal_interrupted = true;
+            }
+        }
+    }
+    #[cfg(not(unix))]
+    {
+        tokio::select! {
+            result = serve_future => {
+                signal_interrupted = false;
+                if let Err(e) = result {
+                    error!("Connection error: {}", e);
+                }
+            }
+            _ = tokio::signal::ctrl_c() => {
+                info!("Received SIGINT, shutting down");
+                signal_interrupted = true;
+            }
+        }
+    }
 
     // Gracefully shut down all sessions so MCP child processes are cleaned up
     // before the tokio runtime exits. Timeout ensures we don't hang indefinitely
@@ -2601,6 +2639,18 @@ pub async fn execute(os: &mut Os, args: agent::types::AcpSpawnArgs) -> eyre::Res
         .is_err()
     {
         warn!("Graceful shutdown timed out, some MCP processes may not have been cleaned up");
+    }
+
+    if signal_interrupted {
+        // When a signal interrupts serve_future, tokio::io::stdin()'s blocking
+        // read thread is still alive and prevents the runtime from shutting down.
+        // Spawn a background thread to force exit if the runtime hangs.
+        // See https://github.com/tokio-rs/tokio/issues/2466
+        std::thread::spawn(|| {
+            std::thread::sleep(std::time::Duration::from_secs(1));
+            #[allow(clippy::exit)]
+            std::process::exit(0);
+        });
     }
 
     Ok(ExitCode::SUCCESS)

@@ -1819,3 +1819,101 @@ async fn task_create_injects_context_into_next_request() {
         "Task context injection should be part of the context message with assistant acknowledgment"
     );
 }
+
+/// Verifies that MCP child processes are cleaned up when the agent receives SIGTERM.
+///
+/// This reproduces the orphan process bug: when the parent agent process is killed
+/// with SIGTERM, MCP server child processes (spawned with process_group(0)) are not
+/// cleaned up because the graceful shutdown path never runs.
+#[cfg(unix)]
+#[tokio::test]
+#[timeout(45000)]
+#[serial]
+async fn sigterm_cleans_up_mcp_child_processes() {
+    use std::path::PathBuf;
+
+    use mock_mcp_server::prebuild_bin;
+    use nix::sys::signal::{
+        Signal,
+        kill,
+    };
+    use nix::unistd::Pid;
+    use sacp::schema::McpServerStdio;
+
+    prebuild_bin().expect("failed to build mock-mcp-server");
+
+    let binary_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .parent()
+        .unwrap()
+        .parent()
+        .unwrap()
+        .join("target/debug/mock-mcp-server");
+
+    let config_path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/mcp_configs/stdio_server.jsonl");
+
+    let (mut harness, client) = AcpTestHarnessBuilder::new("sigterm_mcp_cleanup")
+        .with_trust_all(true)
+        .build()
+        .await;
+
+    let cwd = harness.paths.cwd.clone();
+    let agent_pid = harness.child.id().expect("agent process should have a PID");
+
+    let mcp_server = sacp::schema::McpServer::Stdio(McpServerStdio::new("test-sigterm-mcp", &binary_path).args(vec![
+        "--config".to_string(),
+        config_path.to_str().unwrap().to_string(),
+        "--linger".to_string(),
+    ]));
+
+    let _resp = client
+        .new_session_with_mcp(cwd, vec![mcp_server])
+        .await
+        .expect("new_session failed");
+
+    // new_session_with_mcp waits for agent initialization (including MCP servers)
+    // Give a brief moment for the process tree to stabilize
+    sleep(Duration::from_millis(200)).await;
+
+    // Find MCP server child processes of the agent.
+    // The MCP server is a direct child of the agent, spawned with process_group(0).
+    let pgrep_output = std::process::Command::new("pgrep")
+        .args(["-P", &agent_pid.to_string()])
+        .output()
+        .expect("failed to run pgrep");
+
+    let child_pids: Vec<i32> = String::from_utf8_lossy(&pgrep_output.stdout)
+        .lines()
+        .filter_map(|line| line.trim().parse().ok())
+        .collect();
+
+    assert!(
+        !child_pids.is_empty(),
+        "Agent should have child processes (MCP server) before SIGTERM"
+    );
+
+    // Send SIGTERM to the agent process
+    kill(Pid::from_raw(agent_pid as i32), Signal::SIGTERM).expect("failed to send SIGTERM");
+
+    // Wait for the agent process to exit (8s shutdown timeout + buffer)
+    let _exit_status = tokio::time::timeout(Duration::from_secs(15), harness.child.wait())
+        .await
+        .expect("agent process did not exit within timeout")
+        .expect("failed to wait for agent process");
+
+    // Give a moment for child process cleanup to propagate
+    sleep(Duration::from_millis(500)).await;
+
+    // Verify MCP server processes are no longer running
+    for pid in &child_pids {
+        let is_alive = kill(Pid::from_raw(*pid), None).is_ok();
+        if is_alive {
+            // Clean up the orphan so the test doesn't leave lingering processes
+            let _ = kill(Pid::from_raw(*pid), Signal::SIGKILL);
+        }
+        assert!(
+            !is_alive,
+            "MCP server process (PID {}) should have been cleaned up after SIGTERM, but is still running",
+            pid
+        );
+    }
+}
