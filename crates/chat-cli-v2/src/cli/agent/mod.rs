@@ -1304,8 +1304,9 @@ fn validate_agent_name(name: &str) -> eyre::Result<()> {
     }
 
     // Check if name contains only allowed characters and starts with an alphanumeric character
-    let re = regex::Regex::new(r"^[a-zA-Z0-9][a-zA-Z0-9_-]*$")?;
-    if !re.is_match(name) {
+    static AGENT_NAME_REGEX: std::sync::LazyLock<regex::Regex> =
+        std::sync::LazyLock::new(|| regex::Regex::new(r"^[a-zA-Z0-9][a-zA-Z0-9_-]*$").unwrap());
+    if !AGENT_NAME_REGEX.is_match(name) {
         eyre::bail!(
             "Agent name must start with an alphanumeric character and can only contain alphanumeric characters, hyphens, and underscores"
         );

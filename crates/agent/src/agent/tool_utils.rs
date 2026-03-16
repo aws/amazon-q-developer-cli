@@ -3,6 +3,7 @@ use std::collections::{
     HashMap,
     HashSet,
 };
+use std::sync::LazyLock;
 
 use regex::Regex;
 
@@ -196,7 +197,7 @@ pub fn sanitize_tool_specs(
     // Then, add each server's tools, filtering only the tools that are requested.
     let mut filtered_specs = Vec::new();
     let mut warnings = Vec::new();
-    let tool_name_regex = Regex::new(RTS_VALID_TOOL_NAME_REGEX).expect("should compile");
+    static TOOL_NAME_REGEX: LazyLock<Regex> = LazyLock::new(|| Regex::new(RTS_VALID_TOOL_NAME_REGEX).unwrap());
     for (server_name, tool_names) in mcp_tool_names {
         let Some(all_tool_specs) = mcp_tool_specs.get(&server_name) else {
             continue;
@@ -220,7 +221,7 @@ pub fn sanitize_tool_specs(
             let name = aliases.get(full_name.as_ref()).cloned().unwrap_or(spec.name.clone());
 
             // Then, sanitize if required.
-            let sanitized_name = if !tool_name_regex.is_match(&name) {
+            let sanitized_name = if !TOOL_NAME_REGEX.is_match(&name) {
                 is_regex_mismatch = true;
                 name.chars()
                     .filter(|c| c.is_ascii_alphabetic() || c.is_ascii_digit() || *c == '_' || *c == '-')

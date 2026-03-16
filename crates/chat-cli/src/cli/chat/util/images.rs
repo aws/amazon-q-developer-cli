@@ -2,6 +2,7 @@ use std::fs;
 use std::io::Write;
 use std::path::Path;
 use std::str::FromStr;
+use std::sync::LazyLock;
 
 use crossterm::execute;
 use crossterm::style::{
@@ -41,9 +42,10 @@ pub type RichImageBlock = (ImageBlock, ImageMetadata);
 /// `fs_read` tool. This will lead to file-not-found errors.
 pub fn pre_process(path: &str) -> String {
     if cfg!(target_os = "macos") && path.contains("Screenshot") {
-        let mac_screenshot_regex =
-            regex::Regex::new(r"Screenshot \d{4}-\d{2}-\d{2} at \d{1,2}\.\d{2}\.\d{2} [AP]M").unwrap();
-        if mac_screenshot_regex.is_match(path)
+        static MAC_SCREENSHOT_REGEX: LazyLock<regex::Regex> = LazyLock::new(|| {
+            regex::Regex::new(r"Screenshot \d{4}-\d{2}-\d{2} at \d{1,2}\.\d{2}\.\d{2} [AP]M").unwrap()
+        });
+        if MAC_SCREENSHOT_REGEX.is_match(path)
             && let Some(pos) = path.find(" at ")
         {
             let mut new_path = String::new();

@@ -17,6 +17,7 @@ use std::os::unix::fs::MetadataExt as _;
 #[cfg(windows)]
 use std::os::windows::fs::MetadataExt as _;
 use std::path::Path;
+use std::sync::LazyLock;
 
 /// Cross-platform helper to get file size from metadata
 #[cfg(unix)]
@@ -52,10 +53,9 @@ fn expand_env_vars_impl<E>(env_vars: &mut HashMap<String, String>, env_provider:
 where
     E: Fn(&str) -> Result<Option<String>, VarError>,
 {
-    // Create a regex to match ${env:VAR_NAME} pattern
-    let re = Regex::new(r"\$\{env:([^}]+)\}").unwrap();
+    static ENV_VAR_REGEX: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"\$\{env:([^}]+)\}").unwrap());
     for (_, value) in env_vars.iter_mut() {
-        *value = re
+        *value = ENV_VAR_REGEX
             .replace_all(value, |caps: &regex::Captures<'_>| {
                 let var_name = &caps[1];
                 env_provider(var_name)

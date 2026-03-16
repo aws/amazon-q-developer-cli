@@ -1,6 +1,7 @@
 use std::borrow::Cow;
 use std::collections::HashMap;
 use std::process::Stdio;
+use std::sync::LazyLock;
 
 use regex::Regex;
 use rmcp::model::{
@@ -111,14 +112,14 @@ macro_rules! paginated_fetch {
 
 /// Substitutes environment variables in the format ${env:VAR_NAME} with their actual values
 fn substitute_env_vars(input: &str, env: &crate::os::Env) -> String {
-    // Create a regex to match ${env:VAR_NAME} pattern
-    let re = Regex::new(r"\$\{env:([^}]+)\}").unwrap();
+    static ENV_VAR_REGEX: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"\$\{env:([^}]+)\}").unwrap());
 
-    re.replace_all(input, |caps: &regex::Captures<'_>| {
-        let var_name = &caps[1];
-        env.get(var_name).unwrap_or_else(|_| format!("${{{var_name}}}"))
-    })
-    .to_string()
+    ENV_VAR_REGEX
+        .replace_all(input, |caps: &regex::Captures<'_>| {
+            let var_name = &caps[1];
+            env.get(var_name).unwrap_or_else(|_| format!("${{{var_name}}}"))
+        })
+        .to_string()
 }
 
 /// Process a HashMap of environment variables, substituting any ${env:VAR_NAME} patterns

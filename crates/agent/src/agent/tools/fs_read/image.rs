@@ -3,6 +3,7 @@ use std::path::{
     PathBuf,
 };
 use std::str::FromStr as _;
+use std::sync::LazyLock;
 
 use serde::{
     Deserialize,
@@ -157,9 +158,10 @@ pub async fn read_image(path: impl AsRef<Path>) -> Result<ImageBlock, String> {
 pub fn pre_process_image_path(path: impl AsRef<Path>) -> String {
     let path = path.as_ref().to_string_lossy().to_string();
     if cfg!(target_os = "macos") && path.contains("Screenshot") {
-        let mac_screenshot_regex =
-            regex::Regex::new(r"Screenshot \d{4}-\d{2}-\d{2} at \d{1,2}\.\d{2}\.\d{2} [AP]M").unwrap();
-        if mac_screenshot_regex.is_match(&path)
+        static MAC_SCREENSHOT_REGEX: LazyLock<regex::Regex> = LazyLock::new(|| {
+            regex::Regex::new(r"Screenshot \d{4}-\d{2}-\d{2} at \d{1,2}\.\d{2}\.\d{2} [AP]M").unwrap()
+        });
+        if MAC_SCREENSHOT_REGEX.is_match(&path)
             && let Some(pos) = path.find(" at ")
         {
             // SAFETY: `pos` from find(" at ") is ASCII, pos+4 is end of " at " (all ASCII)

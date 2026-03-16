@@ -57,7 +57,10 @@ use std::io::{
     Write,
 };
 use std::process::ExitCode;
-use std::sync::Arc;
+use std::sync::{
+    Arc,
+    LazyLock,
+};
 use std::time::{
     Duration,
     Instant,
@@ -1857,8 +1860,8 @@ impl ChatSession {
         };
 
         if display_err_message {
-            // Remove non-ASCII and ANSI characters.
-            let re = Regex::new(r"((\x9B|\x1B\[)[0-?]*[ -\/]*[@-~])|([^\x00-\x7F]+)").unwrap();
+            static ANSI_STRIP_REGEX: LazyLock<Regex> =
+                LazyLock::new(|| Regex::new(r"((\x9B|\x1B\[)[0-?]*[ -\/]*[@-~])|([^\x00-\x7F]+)").unwrap());
 
             queue!(
                 self.stderr,
@@ -1866,7 +1869,9 @@ impl ChatSession {
                 StyledText::error_fg(),
             )?;
 
-            let text = re.replace_all(&format!("{context}: {report:?}\n"), "").into_owned();
+            let text = ANSI_STRIP_REGEX
+                .replace_all(&format!("{context}: {report:?}\n"), "")
+                .into_owned();
 
             queue!(self.stderr, style::Print(&text),)?;
             self.conversation.append_transcript(text);
