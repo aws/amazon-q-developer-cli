@@ -1768,7 +1768,6 @@ async fn session_list_returns_sessions_with_title() {
     }
 }
 
-
 /// Verifies that MCP child processes are cleaned up when the agent receives SIGTERM.
 ///
 /// This reproduces the orphan process bug: when the parent agent process is killed

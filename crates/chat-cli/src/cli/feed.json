@@ -12,6 +12,54 @@
     },
     {
       "type": "release",
+      "date": "2026-03-16",
+      "version": "1.27.3",
+      "title": "Version 1.27.3",
+      "changes": [
+        {
+          "type": "fixed",
+          "description": "Fixed todo lists being shared across concurrent sessions in the same directory"
+        },
+        {
+          "type": "added",
+          "description": "Added cleanup.periodDays setting to automatically delete old conversations, sessions, and knowledge bases"
+        },
+        {
+          "type": "fixed",
+          "description": "Skip unreadable files in glob expansion and isolate resource errors so one bad path does not drop all context"
+        },
+        {
+          "type": "fixed",
+          "description": "Persist CLI history after each input to prevent loss on crash or reboot"
+        },
+        {
+          "type": "added",
+          "description": "Include assistant response in stop hook event payload"
+        },
+        {
+          "type": "fixed",
+          "description": "Fixed trusted shell command patterns overwriting agent config's allowedCommands and autoAllowReadonly settings"
+        },
+        {
+          "type": "fixed",
+          "description": "Fixed certain git and npm commands being marked as readonly"
+        },
+        {
+          "type": "fixed",
+          "description": "Fixed subagent getting stuck when multiple tool calls require approval"
+        },
+        {
+          "type": "fixed",
+          "description": "Preserve valid tool uses in conversation history when retrying after invalid JSON in model response"
+        },
+        {
+          "type": "fixed",
+          "description": "Clean up MCP child processes on SIGTERM"
+        }
+      ]
+    },
+    {
+      "type": "release",
       "date": "2026-03-09",
       "version": "1.27.2",
       "title": "Version 1.27.2",

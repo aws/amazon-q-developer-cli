@@ -1,4 +1,0 @@
-{
-  "type": "fixed",
-  "description": "Persist CLI history after each input to prevent loss on crash or reboot (kirodotdev/Kiro#6146)"
-}
