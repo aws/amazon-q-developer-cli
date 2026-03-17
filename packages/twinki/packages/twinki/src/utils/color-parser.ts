@@ -11,20 +11,34 @@
  * - RGB: 'rgb(255, 0, 0)'
  * - ANSI 256: 'ansi256(196)'
  *
- * Uses a forced truecolor chalk instance so twinki always generates
- * full-fidelity ANSI codes. Terminal downgrading is handled at the
- * output layer, not the color generation layer.
+ * Uses twinki's capability detection to set the appropriate chalk color
+ * level (truecolor vs 256-color) so ANSI codes match what the terminal
+ * actually supports.
  */
 import { Chalk, type ForegroundColorName, type BackgroundColorName } from 'chalk';
+import { detectCapabilities } from '../terminal/capabilities.js';
 
-// Force truecolor — twinki controls ANSI output directly.
-const chalk = new Chalk({ level: 3 });
+// Lazy-init: chalk level is determined at first use, after the terminal
+// environment is fully available. Falls back to 256-color for terminals
+// that don't support truecolor (e.g. macOS Terminal.app).
+let _chalk: InstanceType<typeof Chalk> | null = null;
+function getChalk(): InstanceType<typeof Chalk> {
+	if (!_chalk) {
+		_chalk = new Chalk({ level: detectCapabilities().trueColor ? 3 : 2 });
+	}
+	return _chalk;
+}
+
+/** @internal Reset cached chalk instance (for testing). */
+export function _resetChalk(): void {
+	_chalk = null;
+}
 
 const rgbRegex = /^rgb\(\s?(\d+),\s?(\d+),\s?(\d+)\s?\)$/;
 const ansiRegex = /^ansi256\(\s?(\d+)\s?\)$/;
 
 const isNamedColor = (color: string): color is ForegroundColorName => {
-	return color in chalk;
+	return color in getChalk();
 };
 
 /**
@@ -56,33 +70,37 @@ export function colorize(
 	if (!color) return str;
 
 	if (isNamedColor(color)) {
-		if (type === 'foreground') return chalk[color](str);
+		const c = getChalk();
+		if (type === 'foreground') return c[color](str);
 		const methodName = `bg${color[0]!.toUpperCase() + color.slice(1)}` as BackgroundColorName;
-		return chalk[methodName](str);
+		return c[methodName](str);
 	}
 
 	if (color.startsWith('#')) {
 		const normalized = normalizeHex(color);
+		const c = getChalk();
 		return type === 'foreground'
-			? chalk.hex(normalized)(str)
-			: chalk.bgHex(normalized)(str);
+			? c.hex(normalized)(str)
+			: c.bgHex(normalized)(str);
 	}
 
 	if (color.startsWith('ansi256')) {
 		const matches = ansiRegex.exec(color);
 		if (!matches) return str;
 		const value = Number(matches[1]);
+		const c = getChalk();
 		return type === 'foreground'
-			? chalk.ansi256(value)(str)
-			: chalk.bgAnsi256(value)(str);
+			? c.ansi256(value)(str)
+			: c.bgAnsi256(value)(str);
 	}
 
 	if (color.startsWith('rgb')) {
 		const matches = rgbRegex.exec(color);
 		if (!matches) return str;
+		const c = getChalk();
 		return type === 'foreground'
-			? chalk.rgb(Number(matches[1]), Number(matches[2]), Number(matches[3]))(str)
-			: chalk.bgRgb(Number(matches[1]), Number(matches[2]), Number(matches[3]))(str);
+			? c.rgb(Number(matches[1]), Number(matches[2]), Number(matches[3]))(str)
+			: c.bgRgb(Number(matches[1]), Number(matches[2]), Number(matches[3]))(str);
 	}
 
 	return str;

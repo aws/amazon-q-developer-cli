@@ -1,5 +1,13 @@
-import { describe, it, expect } from 'vitest';
-import { colorToAnsi, colorize } from '../src/utils/color-parser.js';
+import { describe, it, expect, beforeAll } from 'vitest';
+import { resetCapabilitiesCache } from '../src/terminal/capabilities.js';
+import { colorToAnsi, colorize, _resetChalk } from '../src/utils/color-parser.js';
+
+// Force truecolor detection so tests get deterministic ANSI codes
+beforeAll(() => {
+	process.env.COLORTERM = 'truecolor';
+	resetCapabilitiesCache();
+	_resetChalk();
+});
 
 describe('colorToAnsi', () => {
 	describe('named colors', () => {
