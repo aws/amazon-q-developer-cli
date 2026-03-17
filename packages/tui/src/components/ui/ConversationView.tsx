@@ -5,7 +5,6 @@ import {
   type MessageType as StoreMessageType,
 } from '../../stores/app-store';
 import { useConversationState } from '../../stores/selectors';
-import { QueueStack } from './QueueStack';
 import { Card, CardContext } from '../ui/card/Card';
 import { Divider } from '../ui/divider/Divider';
 import { Message, MessageType } from '../chat/message/Message';
@@ -585,8 +584,6 @@ export const ConversationView = React.memo(function ConversationView() {
           }}
         </Static>
       )}
-
-      <QueueStack />
 
       {/* Active turn tail: last TAIL_SIZE messages, wrapped in CardContext for the left bar.
           No Card/Divider — those are already in <Static> once flushing starts.

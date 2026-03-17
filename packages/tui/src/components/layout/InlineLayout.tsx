@@ -11,6 +11,7 @@ const Region = isDevMode()
   : null;
 import { AnimationPausedContext } from '../../contexts/AnimationPausedContext.js';
 import { ConversationView } from '../ui/ConversationView';
+import { QueueStack } from '../ui/QueueStack';
 import { ExitHint } from '../ui/ExitHint';
 import { CommandMenu } from '../ui/CommandMenu';
 import { ActionHint } from '../ui/hint/ActionHint.js';
@@ -463,6 +464,8 @@ export const InlineLayout: React.FC = () => {
         )}
 
         <ConversationView />
+
+        <QueueStack />
 
         <NotificationBar
           message={

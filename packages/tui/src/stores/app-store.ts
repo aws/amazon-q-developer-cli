@@ -444,6 +444,12 @@ export const createAppStore = (props: AppStoreProps) =>
         source: 'local' as const,
         meta: { local: true, inputType: 'panel' as const },
       },
+      {
+        name: '/editor',
+        description: 'Open $EDITOR to compose a prompt',
+        source: 'local' as const,
+        meta: { local: true },
+      },
     ], // Backend sends all commands via CommandsUpdate
     prompts: [],
     kiro: props.kiro,

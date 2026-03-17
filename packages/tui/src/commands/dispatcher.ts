@@ -79,10 +79,15 @@ export async function dispatch(
   }
 
   // 3. Run effect
-  runEffect(cmd, result, ctx);
+  const effectHandledMessage = runEffect(cmd, result, ctx, args);
 
-  // 4. Show result message (skip for panel commands without args - they show their own UI)
-  if (result?.message && !(inputType === 'panel' && !args)) {
+  // 4. Show result message (skip for panel commands without args - they show their own UI,
+  //    and skip when the effect already handled messaging)
+  if (
+    result?.message &&
+    !effectHandledMessage &&
+    !(inputType === 'panel' && !args)
+  ) {
     ctx.showAlert(result.message, result.success ? 'success' : 'error', 5000);
   }
 }

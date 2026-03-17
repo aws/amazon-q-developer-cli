@@ -60,7 +60,11 @@ export function executeShellEscapeTTY(command: string): ShellEscapeResult {
   try {
     const wasRaw = process.stdin.isRaw;
     if (wasRaw) process.stdin.setRawMode(false);
-    process.stdout.write('\n');
+    // Show cursor for the editor (Ink hides it)
+    process.stdout.write('\x1b[?25h');
+
+    // Enter alternate screen buffer so the editor doesn't pollute Ink's output
+    process.stdout.write('\x1b[?1049h');
 
     const shell = process.platform === 'win32' ? 'cmd' : 'bash';
     const args =
@@ -71,12 +75,17 @@ export function executeShellEscapeTTY(command: string): ShellEscapeResult {
       env: process.env,
     });
 
-    process.stdout.write('\n');
+    // Leave alternate screen buffer to restore Ink's output
+    process.stdout.write('\x1b[?1049l');
+    // Hide cursor again before returning to Ink
+    process.stdout.write('\x1b[?25l');
     if (wasRaw) process.stdin.setRawMode(true);
 
     return { exitCode: result.status ?? 1, error: result.error?.message };
   } catch (err) {
     try {
+      process.stdout.write('\x1b[?1049l');
+      process.stdout.write('\x1b[?25l');
       process.stdin.setRawMode(true);
     } catch {
       // stdin may not be a TTY, ignore

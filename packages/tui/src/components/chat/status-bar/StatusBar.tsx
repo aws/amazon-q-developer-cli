@@ -103,7 +103,6 @@ export const StatusBar = React.memo(function StatusBar({
   const requestRemeasure = useCallback(() => {
     setLineCount(0); // Reset to force re-render with new measurement
     setRemeasureKey((k) => k + 1);
-    setLineColors(new Map());
   }, []);
 
   // Reset line index on each render cycle
