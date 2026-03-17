@@ -6,7 +6,7 @@
 // Re-export types from ink (types are erased at runtime, no dual-instance issue)
 export type { TextProps, BoxProps, Key } from 'ink';
 
-const useTwinki = process.env.KIRO_RENDERER === 'twinki';
+const useTwinki = process.env.KIRO_RENDERER !== 'ink';
 
 // Static imports so the bundler can resolve both packages.
 // Only one is used at runtime based on KIRO_RENDERER.

@@ -3,7 +3,7 @@ import { useInput, useStdin, usePaste } from './../renderer.js';
 import { logger } from '../utils/logger.js';
 import { inputMetrics } from '../utils/inputMetrics.js';
 
-const useTwinki = process.env.KIRO_RENDERER === 'twinki';
+const useTwinki = process.env.KIRO_RENDERER !== 'ink';
 
 export interface Key {
   upArrow: boolean;

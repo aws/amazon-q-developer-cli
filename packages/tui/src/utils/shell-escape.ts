@@ -39,7 +39,7 @@ function needsTTY(command: string): boolean {
  * Only enabled under twinki renderer for now.
  */
 function isClearCommand(command: string): boolean {
-  if (process.env.KIRO_RENDERER !== 'twinki') return false;
+  if (process.env.KIRO_RENDERER === 'ink') return false;
   const firstWord = command.trim().split(/\s/)[0] || '';
   return CLEAR_COMMANDS.has(firstWord);
 }
