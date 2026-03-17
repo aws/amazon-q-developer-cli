@@ -144,6 +144,10 @@ const DEFAULT_TIMEOUT_DURATION: Duration = Duration::from_secs(60 * 5);
 
 pub const MAX_RETRY_DELAY_DURATION: Duration = Duration::from_secs(10);
 
+/// Profile ARN for BuilderId (free tier) users who have no IAM IdC profile stored in the DB.
+const BUILDER_ID_PROFILE_ARN: &str =
+    "arn:aws:codewhisperer:us-east-1:638616132270:profile/AAAACCCCXXXX";
+
 #[derive(Clone, Debug)]
 pub struct ModelListResult {
     pub models: Vec<Model>,
@@ -521,6 +525,13 @@ impl RealApiClient {
             .map(|t| t.is_some())
             .unwrap_or(false);
 
+        // Check if using Builder ID (free tier) — these users have no IAM IdC profile,
+        // so we inject a hardcoded prod profile ARN for routing purposes.
+        let is_builder_id = matches!(
+            crate::auth::builder_id::BuilderIdToken::load(database, None).await,
+            Ok(Some(ref t)) if matches!(t.token_type(), crate::auth::builder_id::TokenType::BuilderId)
+        );
+
         // Detect Amazon-internal users by checking for the mwinit Midway auth tool.
         let is_internal = crate::util::system_info::is_mwinit_available();
 
@@ -597,7 +608,12 @@ impl RealApiClient {
 
         // Check if using custom endpoint
         let use_profile = !is_custom_endpoint(database);
-        let profile = if use_profile {
+        let profile = if is_builder_id {
+            Some(crate::database::AuthProfile {
+                arn: BUILDER_ID_PROFILE_ARN.to_string(),
+                profile_name: "BuilderId".to_string(),
+            })
+        } else if use_profile {
             match database.get_auth_profile() {
                 Ok(profile) => profile,
                 Err(err) => {
