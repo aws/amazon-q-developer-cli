@@ -8,6 +8,8 @@ use std::sync::{
 };
 
 use eyre::Result;
+#[cfg(windows)]
+use rustyline::RepeatCount;
 use rustyline::completion::{
     Completer,
     FilenameCompleter,

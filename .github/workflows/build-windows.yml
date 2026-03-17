@@ -49,13 +49,9 @@ jobs:
       matrix:
         include:
           - target: x86_64-pc-windows-msvc
-            runner: windows-2019
+            runner: windows-2022
             arch: x64
             build_installers: true
-          - target: aarch64-pc-windows-msvc
-            runner: windows-2019
-            arch: arm64
-            build_installers: false
     steps:
       - uses: actions/checkout@v4
         with:
@@ -67,6 +63,7 @@ jobs:
           {
             echo "AWS_GITHUB_ACTIONS_ROLE_ARN=${{ secrets.AWS_GITHUB_ACTIONS_ROLE_ARN }}"
             echo "BUILD_OUTPUT_BUCKET=${{ secrets.BUILD_OUTPUT_BUCKET }}"
+            echo "AWS_ACCOUNT_ID=${{ secrets.AWS_ACCOUNT_ID }}"
           } >> "$GITHUB_ENV"
 
       - name: Setup Rust
@@ -88,46 +85,98 @@ jobs:
           aws-region: ${{ env.AWS_REGION }}
           role-duration-seconds: 7200
 
-      - name: Build Windows Binary
-        shell: bash
-        env:
-          CARGO_INCREMENTAL: "0"
-          CARGO_PROFILE_RELEASE_LTO: thin
-          CARGO_NET_GIT_FETCH_WITH_CLI: "true"
-          RUSTFLAGS: "-C force-frame-pointers=yes"
-        run: |
-          cargo build --locked --package chat_cli --release --target ${{ matrix.target }}
-
       - name: Setup Python (for V2 build)
-        if: inputs.include_v2
         uses: actions/setup-python@v5
         with:
           python-version: '3.11'
 
       - name: Install Python dependencies (for V2 build)
-        if: inputs.include_v2
         run: pip install -r scripts/requirements.txt
 
       - name: Setup Bun (for V2 build)
-        if: inputs.include_v2
         uses: oven-sh/setup-bun@v2
 
       - name: Build V2 Windows Binary with TUI/Bun embedding
-        if: inputs.include_v2
         shell: bash
         env:
           AMAZON_Q_BUILD_TARGET_TRIPLE: ${{ matrix.target }}
         run: |
-          python3 ./scripts/main_v2.py build \
-            --skip-lints --skip-tests \
+          python3 ./scripts/main.py build \
+            --skip-lints --skip-tests --include-v2 \
             --stage-name "${{ env.STAGE_NAME }}"
+
+      - name: Create signing helper script
+        if: matrix.arch == 'x64'
+        shell: bash
+        run: |
+          cat > /tmp/sign-artifact.sh << 'SIGNEOF'
+          #!/bin/bash
+          set -e
+          FILE_PATH="$1"
+          UNSIGNED_BUCKET="kiro-cli-win-unsigned-${AWS_ACCOUNT_ID}"
+          SIGNED_BUCKET="kiro-cli-win-signed-${AWS_ACCOUNT_ID}"
+          PROFILE_ID="KiroCliAuthenticode"
+          PLATFORM="AuthenticodeSigner-SHA256-RSA"
+          FILENAME=$(basename "$FILE_PATH")
+          S3_KEY="${PROFILE_ID}/${PLATFORM}/${FILENAME}"
+
+          # Assume the signing role fresh each time
+          CREDS=$(aws sts assume-role \
+            --role-arn "arn:aws:iam::${AWS_ACCOUNT_ID}:role/KiroCli-ArtifactAccessRole" \
+            --role-session-name "WindowsSigning" \
+            --external-id "KiroCli" \
+            --region us-east-1 \
+            --output json)
+          export AWS_ACCESS_KEY_ID=$(echo $CREDS | jq -r .Credentials.AccessKeyId)
+          export AWS_SECRET_ACCESS_KEY=$(echo $CREDS | jq -r .Credentials.SecretAccessKey)
+          export AWS_SESSION_TOKEN=$(echo $CREDS | jq -r .Credentials.SessionToken)
+
+          echo "🔏 Signing ${FILENAME}..."
+          aws s3 cp "${FILE_PATH}" "s3://${UNSIGNED_BUCKET}/${S3_KEY}" --region us-east-1
+
+          echo "  Waiting for signing job..."
+          JOB_ID=""
+          for i in $(seq 1 60); do
+            JOB_ID=$(aws s3api get-object-tagging \
+              --bucket "${UNSIGNED_BUCKET}" --key "${S3_KEY}" --region us-east-1 \
+              --query "TagSet[?Key=='signer-job-id'].Value" --output text 2>/dev/null || true)
+            if [ -n "$JOB_ID" ] && [ "$JOB_ID" != "None" ]; then
+              echo "  ✓ Job started: ${JOB_ID}"
+              break
+            fi
+            sleep 5
+          done
+          if [ -z "$JOB_ID" ] || [ "$JOB_ID" == "None" ]; then
+            echo "  ❌ Signing job did not start within timeout"
+            exit 1
+          fi
+
+          SIGNED_KEY="${PROFILE_ID}/${PLATFORM}/${FILENAME}-${JOB_ID}"
+          echo "  Waiting for signed artifact..."
+          for i in $(seq 1 60); do
+            if aws s3 ls "s3://${SIGNED_BUCKET}/${SIGNED_KEY}" --region us-east-1 2>/dev/null; then
+              echo "  ✓ Signed artifact ready"
+              break
+            fi
+            sleep 5
+          done
+
+          aws s3 cp "s3://${SIGNED_BUCKET}/${SIGNED_KEY}" "${FILE_PATH}" --region us-east-1
+          echo "  ✓ ${FILENAME} signed successfully"
+          SIGNEOF
+          chmod +x /tmp/sign-artifact.sh
+
+      - name: Sign Binary (Authenticode)
+        if: matrix.arch == 'x64'
+        shell: bash
+        run: /tmp/sign-artifact.sh "build/kiro-cli-chat.exe"
 
       - name: Package artifacts
         shell: bash
         run: |
           mkdir -p build
           TARGET="${{ matrix.target }}"
-          SRC="target/${TARGET}/release/chat_cli.exe"
+          SRC="build/kiro-cli-chat.exe"
 
           if [ ! -f "$SRC" ]; then
             echo "❌ Binary not found at ${SRC}"
@@ -150,16 +199,6 @@ jobs:
           sha256sum "kiro-cli-chat-${TARGET}.zip" > "kiro-cli-chat-${TARGET}.zip.sha256"
           echo "✓ Packaged kiro-cli-chat-${TARGET}.zip"
 
-      - name: Build setup.exe installer
-        if: matrix.build_installers
-        shell: pwsh
-        run: |
-          $version = "${{ inputs.version }}"
-          Write-Host "Building setup.exe for version $version"
-          & "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" /DVersion=$version "windows-installer\setup.iss"
-          if ($LASTEXITCODE -ne 0) { throw "Inno Setup build failed" }
-          Write-Host "✓ Created windows-installer\output\kiro-cli-setup-${version}.exe"
-
       - name: Build MSI installer
         if: matrix.build_installers
         shell: pwsh
@@ -167,23 +206,13 @@ jobs:
           $version = "${{ inputs.version }}"
           $wixVersion = "$version.0"
           $arch = "${{ matrix.arch }}"
-          $includeV2 = "${{ inputs.include_v2 }}"
-          
-          # Determine which binary to use and CLI version based on include_v2 flag
-          if ($includeV2 -eq "true") {
-            $binaryPath = (Resolve-Path "build\kiro-cli-chat.exe").Path
-            $cliVersion = "v2"
-            Write-Host "Using V2 binary: $binaryPath"
-          } else {
-            $binaryPath = (Resolve-Path "target\${{ matrix.target }}\release\chat_cli.exe").Path
-            $cliVersion = "v1"
-            Write-Host "Using V1 binary: $binaryPath"
-          }
-          
+          $binaryPath = (Resolve-Path "build\kiro-cli-chat.exe").Path
+          $cliVersion = "v2"
+
           Write-Host "Building MSI for $arch version $wixVersion (CLI version: $cliVersion)"
 
           dotnet tool install --global wix 2>$null
-          wix extension add WixToolset.UI.wixext/6.0.0 --global 2>$null
+          wix extension add WixToolset.UI.wixext/6.0.2 --global 2>$null
 
           New-Item -ItemType Directory -Force -Path "windows-installer\output" | Out-Null
 
@@ -199,31 +228,20 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw "WiX build failed" }
           Write-Host "✓ Created windows-installer\output\kiro-cli-${version}-${arch}.msi"
 
-      - name: Build WiX Burn bootstrapper
-        if: matrix.build_installers
-        shell: pwsh
+      - name: Sign MSI installer (Authenticode)
+        if: matrix.build_installers && matrix.arch == 'x64'
+        shell: bash
         run: |
-          $version = "${{ inputs.version }}"
-          $wixVersion = "$version.0"
-          $arch = "${{ matrix.arch }}"
-          
-          $msiPath = (Resolve-Path "windows-installer\output\kiro-cli-${version}-${arch}.msi").Path
-          Write-Host "Building Burn bootstrapper for $arch version $wixVersion"
-          Write-Host "MSI Path: $msiPath"
+          VERSION="${{ inputs.version }}"
+          ARCH="${{ matrix.arch }}"
+          /tmp/sign-artifact.sh "windows-installer/output/kiro-cli-${VERSION}-${ARCH}.msi"
 
-          # Install WiX Bal extension for bootstrapper
-          wix extension add WixToolset.Bal.wixext/6.0.0 --global 2>$null
-
-          wix build windows-installer\Bundle.wxs `
-            -arch $arch `
-            -ext WixToolset.Bal.wixext `
-            -d ProductVersion=$wixVersion `
-            -d MsiPath=$msiPath `
-            -b windows-installer `
-            -o "windows-installer\output\kiro-cli-setup-${version}-${arch}.exe"
-
-          if ($LASTEXITCODE -ne 0) { throw "WiX Burn build failed" }
-          Write-Host "✓ Created windows-installer\output\kiro-cli-setup-${version}-${arch}.exe"
+      - name: Re-authenticate AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ env.AWS_GITHUB_ACTIONS_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+          role-duration-seconds: 3600
 
       - name: Upload artifacts to S3
         shell: bash
@@ -241,13 +259,14 @@ jobs:
           aws s3 cp "build/kiro-cli-chat-${TARGET}.zip" "s3://${{ env.BUILD_OUTPUT_BUCKET }}/${S3_PATH_LATEST}/"
           aws s3 cp "build/kiro-cli-chat-${TARGET}.zip.sha256" "s3://${{ env.BUILD_OUTPUT_BUCKET }}/${S3_PATH_LATEST}/"
 
-          # Upload installers if built (MSI and setup.exe bootstrapper)
+          # Upload MSI installer
           if [ -d "windows-installer/output" ] && [ "$(ls -A windows-installer/output 2>/dev/null)" ]; then
+            rm -f windows-installer/output/*.wixpdb
             echo "Uploading installers:"
             ls -la windows-installer/output/
             aws s3 cp windows-installer/output/ "s3://${{ env.BUILD_OUTPUT_BUCKET }}/${S3_PATH_COMMIT}/installers/" --recursive
             aws s3 cp windows-installer/output/ "s3://${{ env.BUILD_OUTPUT_BUCKET }}/${S3_PATH_LATEST}/installers/" --recursive
-            echo "✓ Uploaded MSI and setup.exe installers"
+            echo "✓ Uploaded MSI installer"
           fi
 
           echo "✓ Uploaded to s3://${{ env.BUILD_OUTPUT_BUCKET }}/${S3_PATH_COMMIT}/"

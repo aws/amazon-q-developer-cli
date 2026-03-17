@@ -741,6 +741,10 @@ def build_tui() -> pathlib.Path:
     info("Building local ink package")
     run_cmd(["bun", "run", "build"], cwd=ink_dir)
 
+    info("Building twinki package")
+    twinki_dir = pathlib.Path("packages/twinki/packages/twinki")
+    run_cmd(["bun", "run", "build"], cwd=twinki_dir)
+
     info("Building TUI")
     run_cmd(["bun", "run", "build"], cwd=tui_dir)
 

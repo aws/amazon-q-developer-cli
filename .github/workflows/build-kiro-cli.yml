@@ -32,10 +32,10 @@ on:
         required: false
         default: true
       include_windows:
-        description: 'Include Windows builds (on-demand only, not triggered by push/schedule)'
+        description: 'Include Windows builds'
         type: boolean
         required: false
-        default: false
+        default: true
   schedule:
     - cron: "21 6 * * *"
   push:
@@ -290,7 +290,7 @@ jobs:
 
   TriggerWindowsBuild:
     needs: [check_nightly_skip, determine_branch, UpdateVersionNumber]
-    if: needs.check_nightly_skip.outputs.should_skip == 'false' && github.event.inputs.include_windows == 'true'
+    if: needs.check_nightly_skip.outputs.should_skip == 'false' && (github.event.inputs.include_windows != 'false')
     name: Trigger Windows Build (${{ matrix.environment }})
     strategy:
       matrix:

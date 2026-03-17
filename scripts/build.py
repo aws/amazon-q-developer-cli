@@ -13,7 +13,7 @@ import zipfile
 from typing import Any, Mapping, Sequence, List, Optional
 from const import APPLE_TEAM_ID, CHAT_BINARY_NAME, CHAT_PACKAGE_NAME
 from const_v2 import BUN_VERSION
-from util import debug, info, isDarwin, isLinux, run_cmd, run_cmd_output, warn
+from util import debug, info, isDarwin, isLinux, isWindows, run_cmd, run_cmd_output, warn
 from rust import cargo_cmd_name, rust_env, rust_targets, build_hash, build_datetime
 from importlib import import_module
 
@@ -103,6 +103,12 @@ def download_bun() -> BunPaths:
                 raise ValueError(f"Unsupported architecture: {machine}")
             fname = f"bun-{system}-{arch}.zip"
             downloads.append((f"https://github.com/oven-sh/bun/releases/download/bun-v{BUN_VERSION}/{fname}", fname))
+        case "windows":
+            arch = "x64" if machine in ["x86_64", "amd64"] else "aarch64" if machine in ["aarch64", "arm64"] else None
+            if not arch:
+                raise ValueError(f"Unsupported architecture: {machine}")
+            fname = f"bun-{system}-{arch}.zip"
+            downloads.append((f"https://github.com/oven-sh/bun/releases/download/bun-v{BUN_VERSION}/{fname}", fname))
         case _:
             raise ValueError(f"Unsupported system: {system}")
 
@@ -125,10 +131,12 @@ def download_bun() -> BunPaths:
             zip_ref.extractall(bun_dir)
 
         extract_dir = fname.replace(".zip", "")
+        bun_exe_name = "bun.exe" if isWindows() else "bun"
         for root, _, files in os.walk(bun_dir / extract_dir):
-            if "bun" in files:
-                bun_exe = pathlib.Path(root) / "bun"
-                os.chmod(bun_exe, 0o755)
+            if bun_exe_name in files:
+                bun_exe = pathlib.Path(root) / bun_exe_name
+                if not isWindows():
+                    os.chmod(bun_exe, 0o755)
                 if "x64" in extract_dir:
                     result.x86_64 = bun_exe.absolute()
                 elif "aarch64" in extract_dir:
@@ -239,10 +247,11 @@ def build_chat_bin(
         run_cmd(args)
         return out_path
     else:
-        # linux does not cross compile arch
+        # linux/windows does not cross compile arch
         target = targets[0]
-        target_path = pathlib.Path("target") / target / target_subdir / package
-        out_path = BUILD_DIR / "bin" / f"{(output_name or package)}-{target}"
+        exe_suffix = ".exe" if isWindows() else ""
+        target_path = pathlib.Path("target") / target / target_subdir / f"{package}{exe_suffix}"
+        out_path = BUILD_DIR / "bin" / f"{(output_name or package)}-{target}{exe_suffix}"
         out_path.parent.mkdir(parents=True, exist_ok=True)
         shutil.copy2(target_path, out_path)
         return out_path
@@ -637,6 +646,13 @@ def generate_sha(path: pathlib.Path) -> pathlib.Path:
         shasum_output = run_cmd_output(["shasum", "-a", "256", path])
     elif isLinux():
         shasum_output = run_cmd_output(["sha256sum", path])
+    elif isWindows():
+        import hashlib
+        sha = hashlib.sha256(path.read_bytes()).hexdigest()
+        sha_path = path.with_name(f"{path.name}.sha256")
+        sha_path.write_text(sha)
+        info(f"Wrote sha256sum to {sha_path}:", sha)
+        return sha_path
     else:
         raise Exception("Unsupported platform")
 
@@ -645,6 +661,26 @@ def generate_sha(path: pathlib.Path) -> pathlib.Path:
     path.write_text(sha)
     info(f"Wrote sha256sum to {path}:", sha)
     return path
+
+
+def build_windows(chat_path: pathlib.Path):
+    """Package Windows binary into a zip archive under BUILD_DIR."""
+    chat_dst = BUILD_DIR / f"{CHAT_BINARY_NAME}.exe"
+    chat_dst.unlink(missing_ok=True)
+    shutil.copy2(chat_path, chat_dst)
+
+    build_info = {"commit": build_hash(), "build_time": build_datetime()}
+    build_info_path = BUILD_DIR / "BUILD_INFO.json"
+    build_info_path.write_text(json.dumps(build_info, indent=2))
+
+    zip_path = BUILD_DIR / f"{CHAT_BINARY_NAME}.zip"
+    zip_path.unlink(missing_ok=True)
+    info(f"Creating zip output to {zip_path}")
+    with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as zf:
+        zf.write(chat_dst, chat_dst.name)
+        zf.write(build_info_path, build_info_path.name)
+
+    generate_sha(zip_path)
 
 
 def build_linux(chat_path: pathlib.Path, signer: GpgSigner | None):
@@ -746,9 +782,22 @@ def build(
         info("Running cargo clippy")
         run_clippy()
 
-    if run_autodocs_embeddings:
+    if run_autodocs_embeddings and not isWindows():
         info("Generating documentation embeddings")
         run_cmd(["./scripts/generate-embeddings.sh"])
+
+    if run_autodocs_embeddings and isWindows():
+        info("Generating documentation embeddings (Windows)")
+        run_cmd(["python3", "autodocs/meta/scripts/build-doc-index.py"])
+        doc_search_dir = pathlib.Path.home() / ".kiro" / "doc-search"
+        if doc_search_dir.exists():
+            shutil.rmtree(doc_search_dir)
+        run_cmd(["cargo", "run", "--quiet", "--example", "index_autodocs"])
+        import tarfile
+        tar_path = pathlib.Path("autodocs/meta/doc-search-index.tar.gz")
+        with tarfile.open(tar_path, "w:gz") as tar:
+            tar.add(str(doc_search_dir), arcname=".")
+        info(f"Search index: {tar_path}")
 
     info("Building", CHAT_PACKAGE_NAME)
     chat_path = build_chat_bin(
@@ -761,5 +810,7 @@ def build(
 
     if isDarwin():
         build_macos(chat_path, signing_data)
+    elif isWindows():
+        build_windows(chat_path)
     else:
         build_linux(chat_path, gpg_signer)
