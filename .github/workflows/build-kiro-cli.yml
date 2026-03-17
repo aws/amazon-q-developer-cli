@@ -31,6 +31,11 @@ on:
         type: boolean
         required: false
         default: true
+      include_windows:
+        description: 'Include Windows builds (on-demand only, not triggered by push/schedule)'
+        type: boolean
+        required: false
+        default: false
   schedule:
     - cron: "21 6 * * *"
   push:
@@ -285,7 +290,7 @@ jobs:
 
   TriggerWindowsBuild:
     needs: [check_nightly_skip, determine_branch, UpdateVersionNumber]
-    if: needs.check_nightly_skip.outputs.should_skip == 'false'
+    if: needs.check_nightly_skip.outputs.should_skip == 'false' && github.event.inputs.include_windows == 'true'
     name: Trigger Windows Build (${{ matrix.environment }})
     strategy:
       matrix:
@@ -304,7 +309,7 @@ jobs:
 
   TriggerAutocompleteBuild:
     name: Trigger Autocomplete Build
-    needs: [generate_timestamp, UpdateVersionNumber, TriggerDarwinBuild, TriggerLinuxBuild, TriggerWindowsBuild]
+    needs: [generate_timestamp, UpdateVersionNumber, TriggerDarwinBuild, TriggerLinuxBuild]
     runs-on: ubuntu-latest
     environment: gamma
     if: |
@@ -370,6 +375,6 @@ jobs:
             echo "|----------|--------|" >> $GITHUB_STEP_SUMMARY
             echo "| Darwin | ${{ needs.TriggerDarwinBuild.result == 'success' && '✅' || '❌' }} |" >> $GITHUB_STEP_SUMMARY
             echo "| Linux | ${{ needs.TriggerLinuxBuild.result == 'success' && '✅' || '❌' }} |" >> $GITHUB_STEP_SUMMARY
-            echo "| Windows | ${{ needs.TriggerWindowsBuild.result == 'success' && '✅' || '❌' }} |" >> $GITHUB_STEP_SUMMARY
+            echo "| Windows | ${{ needs.TriggerWindowsBuild.result == 'success' && '✅' || needs.TriggerWindowsBuild.result == 'skipped' && '⏭️' || '❌' }} |" >> $GITHUB_STEP_SUMMARY
             echo "| Autocomplete Trigger | ${{ needs.TriggerAutocompleteBuild.result == 'success' && '✅' || needs.TriggerAutocompleteBuild.result == 'skipped' && '⏭️' || '❌' }} |" >> $GITHUB_STEP_SUMMARY
           fi
