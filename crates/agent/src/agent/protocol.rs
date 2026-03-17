@@ -165,6 +165,29 @@ pub enum UpdateEvent {
         /// The tool execution result
         result: ToolCallResult,
     },
+    /// Sent when a tool call fails before execution (parse error, denied, hook rejection).
+    /// Unlike ToolCallFinished, this doesn't require a fully parsed Tool.
+    ToolCallFailed {
+        /// The tool_use_id from the model's response
+        tool_use_id: String,
+        /// The tool name as requested by the model
+        tool_name: String,
+        /// Why the tool call failed
+        reason: ToolCallFailureReason,
+        /// Error message
+        error: String,
+    },
+}
+
+/// Why a tool call failed before execution.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub enum ToolCallFailureReason {
+    /// The tool use block could not be parsed into a valid tool.
+    ParseError,
+    /// The tool's arguments were forbidden by guardrails.
+    PermissionDenied,
+    /// A pre-execution hook rejected the tool call.
+    HookRejected,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

@@ -93,6 +93,7 @@ use protocol::{
     SendPromptArgs,
     SwapAgentArgs,
     ToolCall,
+    ToolCallFailureReason,
     ToolCallResult,
     UpdateEvent,
 };
@@ -1924,16 +1925,25 @@ impl Agent {
             let mut results = HashMap::new();
             for e in errors {
                 let tool_use_id = e.tool_use.tool_use_id.clone();
+                let tool_name = e.tool_use.name.clone();
                 let err_msg = e.to_string();
                 content.push(ContentBlock::ToolResult(ToolResultBlock {
                     tool_use_id: tool_use_id.clone(),
                     content: vec![ToolResultContentBlock::Text(err_msg.clone())],
                     status: ToolResultStatus::Error,
                 }));
-                results.insert(tool_use_id, LogToolResult {
+                results.insert(tool_use_id.clone(), LogToolResult {
                     tool: None,
-                    result: ToolCallResult::Error(ToolExecutionError::Custom(err_msg)),
+                    result: ToolCallResult::Error(ToolExecutionError::Custom(err_msg.clone())),
                 });
+                // Notify that this tool call failed before execution
+                self.agent_event_buf
+                    .push(AgentEvent::Update(UpdateEvent::ToolCallFailed {
+                        tool_use_id,
+                        tool_name,
+                        reason: ToolCallFailureReason::ParseError,
+                        error: err_msg,
+                    }));
             }
             let pending = PendingUserMessage::ToolResults {
                 content: content.clone(),
@@ -1980,8 +1990,16 @@ impl Agent {
                 }));
                 results.insert(block.tool_use_id.clone(), LogToolResult {
                     tool: Some(Box::new(tool.clone())),
-                    result: ToolCallResult::Error(ToolExecutionError::Custom(err_msg)),
+                    result: ToolCallResult::Error(ToolExecutionError::Custom(err_msg.clone())),
                 });
+                // Notify that this tool call was denied
+                self.agent_event_buf
+                    .push(AgentEvent::Update(UpdateEvent::ToolCallFailed {
+                        tool_use_id: block.tool_use_id.clone(),
+                        tool_name: block.name.clone(),
+                        reason: ToolCallFailureReason::PermissionDenied,
+                        error: err_msg,
+                    }));
             }
             let pending = PendingUserMessage::ToolResults {
                 content: content.clone(),
@@ -2225,6 +2243,7 @@ impl Agent {
                     if let Some(hook) = executing_hooks.has_failure_exit_code_for_tool(&block.tool_use_id) {
                         denied_tools.push((
                             block.tool_use_id.clone(),
+                            block.name.clone(),
                             tool.clone(),
                             hook.result.as_ref().cloned().expect("is some"),
                         ));
@@ -2234,7 +2253,7 @@ impl Agent {
                     // Send denied tool results back to the model.
                     let mut content = Vec::new();
                     let mut results = HashMap::new();
-                    for (tool_use_id, tool, hook_res) in denied_tools {
+                    for (tool_use_id, tool_name, tool, hook_res) in denied_tools {
                         let err_msg = format!(
                             "PreToolHook blocked the tool execution: {}",
                             hook_res.output().unwrap_or("no output provided")
@@ -2244,10 +2263,18 @@ impl Agent {
                             content: vec![ToolResultContentBlock::Text(err_msg.clone())],
                             status: ToolResultStatus::Error,
                         }));
-                        results.insert(tool_use_id, LogToolResult {
+                        results.insert(tool_use_id.clone(), LogToolResult {
                             tool: Some(Box::new(tool)),
-                            result: ToolCallResult::Error(ToolExecutionError::Custom(err_msg)),
+                            result: ToolCallResult::Error(ToolExecutionError::Custom(err_msg.clone())),
                         });
+                        // Notify that this tool call was rejected by hook
+                        self.agent_event_buf
+                            .push(AgentEvent::Update(UpdateEvent::ToolCallFailed {
+                                tool_use_id,
+                                tool_name,
+                                reason: ToolCallFailureReason::HookRejected,
+                                error: err_msg,
+                            }));
                     }
                     let pending = PendingUserMessage::ToolResults {
                         content: content.clone(),

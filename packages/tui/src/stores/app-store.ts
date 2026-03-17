@@ -114,10 +114,7 @@ const generateMessageId = () => crypto.randomUUID();
  * Tool calls matching these names are immediately marked as finished with an
  * error result so they don't block the flush state machine with a stuck spinner.
  */
-export const NOT_READY_TOOLS: Set<string> = new Set([
-  'use_subagent',
-  'subagent',
-]);
+export const NOT_READY_TOOLS: Set<string> = new Set([]);
 
 export enum ToolUseStatus {
   Pending = 'pending',

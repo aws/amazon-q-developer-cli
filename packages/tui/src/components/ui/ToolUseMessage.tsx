@@ -59,6 +59,7 @@ export const ToolUseMessage = React.memo<ToolUseMessageProps>(
     const statusIcon: StatusType | undefined = useMemo(() => {
       if (status === ToolUseStatus.Rejected) return 'error';
       if (result?.status === 'cancelled') return 'error';
+      if (result?.status === 'error') return 'error';
       if (status === ToolUseStatus.Approved && isFinished) return 'success';
       if (status === ToolUseStatus.Pending) return undefined;
       if (isFinished) return 'success';
@@ -251,6 +252,17 @@ function ToolUseContent({
   }
 
   // Fallback: use generic Tool component
+  // For unrecognized tools that failed, show a one-liner matching Rejected/Cancelled pattern
+  if (result?.status === 'error' && effectiveFinished) {
+    try {
+      const parsed = JSON.parse(content);
+      const target = parsed.path || parsed.command || parsed.pattern || name;
+      return <StatusInfo title="Failed" target={target} />;
+    } catch {
+      return <StatusInfo title="Failed" target={name} />;
+    }
+  }
+
   const toolId = resolveToolId(name);
   const fallbackName = toolId ? getToolLabel(toolId, effectiveFinished) : name;
   return (

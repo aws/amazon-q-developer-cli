@@ -2029,6 +2029,18 @@ fn convert_update_event_to_session_update(update_event: UpdateEvent) -> Option<S
                     .locations(locations),
             )))
         },
+        UpdateEvent::ToolCallFailed {
+            tool_use_id, tool_name, ..
+        } => {
+            let kind = get_tool_kind(&tool_name);
+            Some(SessionUpdate::ToolCallUpdate(ToolCallUpdate::new(
+                ToolCallId::new(tool_use_id),
+                ToolCallUpdateFields::new()
+                    .status(Some(ToolCallStatus::Failed))
+                    .title(Some(tool_name))
+                    .kind(Some(kind)),
+            )))
+        },
         _ => None,
     }
 }

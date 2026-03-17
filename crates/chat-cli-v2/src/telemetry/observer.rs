@@ -399,7 +399,12 @@ impl TelemetryObserver {
             },
             AgentEvent::Update(UpdateEvent::ToolCallFinished { tool_call, result }) => {
                 if let Some(tracker) = session.tool_trackers.remove(&tool_call.id) {
-                    self.emit_tool_use_suggested(session_id, &tool_call.id, tracker, Some(result));
+                    self.emit_tool_use_suggested(session_id, &tool_call.id, tracker, Some(result), true);
+                }
+            },
+            AgentEvent::Update(UpdateEvent::ToolCallFailed { tool_use_id, .. }) => {
+                if let Some(tracker) = session.tool_trackers.remove(tool_use_id) {
+                    self.emit_tool_use_suggested(session_id, tool_use_id, tracker, None, false);
                 }
             },
             AgentEvent::EndTurn(metadata) => {
@@ -529,7 +534,7 @@ impl TelemetryObserver {
         // Flush any orphaned tool trackers (denied tools that never got ToolCallFinished)
         let orphaned: Vec<(String, ToolUseTracker)> = session.tool_trackers.drain().collect();
         for (id, tracker) in orphaned {
-            self.emit_tool_use_suggested(session_id, &id, tracker, None);
+            self.emit_tool_use_suggested(session_id, &id, tracker, None, false);
         }
 
         let session = self.sessions.entry(session_id.to_string()).or_default();
@@ -584,6 +589,7 @@ impl TelemetryObserver {
         tool_use_id: &str,
         tracker: ToolUseTracker,
         result: Option<&ToolCallResult>,
+        is_valid: bool,
     ) {
         let now = Instant::now();
         let is_accepted = tracker.is_accepted.unwrap_or(false);
@@ -613,7 +619,7 @@ impl TelemetryObserver {
             is_trusted,
             is_success,
             reason_desc: None,
-            is_valid: Some(true),
+            is_valid: Some(is_valid),
             is_custom_tool: tracker.is_custom_tool,
             input_token_size: None,
             output_token_size: None,

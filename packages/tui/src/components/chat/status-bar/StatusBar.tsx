@@ -179,9 +179,11 @@ export const StatusBar = React.memo(function StatusBar({
           </Box>
         );
       } else if (i === 0 && showDot) {
-        const dotColor = barColorProp
-          ? getTerminalChalkColor(barColorProp)
-          : getStatusColor(status!, getColor);
+        const isErrorStatus = status === 'error' || status === 'warning';
+        const dotColor =
+          barColorProp && !isErrorStatus
+            ? getTerminalChalkColor(barColorProp)
+            : getStatusColor(status!, getColor);
         elements.push(
           <Box key={i}>
             <Icon type={IconType.DOT} color={dotColor} />
