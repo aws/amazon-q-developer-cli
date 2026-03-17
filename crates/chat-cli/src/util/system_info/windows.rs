@@ -8,11 +8,13 @@ use winreg::enums::HKEY_LOCAL_MACHINE;
 use super::OSVersion;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[allow(dead_code)]
 pub enum DisplayServer {
     Win32,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[allow(dead_code)]
 pub enum DesktopEnvironment {
     Windows,
     WindowsTerminal,

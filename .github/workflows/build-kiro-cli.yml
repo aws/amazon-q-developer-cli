@@ -283,9 +283,28 @@ jobs:
       commit_sha: ${{ needs.UpdateVersionNumber.outputs.commit_sha }}
       include_v2: true
 
+  TriggerWindowsBuild:
+    needs: [check_nightly_skip, determine_branch, UpdateVersionNumber]
+    if: needs.check_nightly_skip.outputs.should_skip == 'false'
+    name: Trigger Windows Build (${{ matrix.environment }})
+    strategy:
+      matrix:
+        environment: ${{ fromJSON(needs.UpdateVersionNumber.outputs.environment) }}
+    uses: ./.github/workflows/build-windows.yml
+    secrets: inherit
+    with:
+      channel: ${{ needs.UpdateVersionNumber.outputs.release_quality }}
+      build_timestamp: ${{ needs.UpdateVersionNumber.outputs.build_timestamp }}
+      version: ${{ needs.UpdateVersionNumber.outputs.version }}
+      release_type: ${{ needs.UpdateVersionNumber.outputs.release_type }}
+      environment: ${{ matrix.environment }}
+      branch_name: ${{ needs.UpdateVersionNumber.outputs.branch_name }}
+      commit_sha: ${{ needs.UpdateVersionNumber.outputs.commit_sha }}
+      include_v2: true
+
   TriggerAutocompleteBuild:
     name: Trigger Autocomplete Build
-    needs: [generate_timestamp, UpdateVersionNumber, TriggerDarwinBuild, TriggerLinuxBuild]
+    needs: [generate_timestamp, UpdateVersionNumber, TriggerDarwinBuild, TriggerLinuxBuild, TriggerWindowsBuild]
     runs-on: ubuntu-latest
     environment: gamma
     if: |
@@ -323,7 +342,7 @@ jobs:
 
   BuildSummary:
     name: Chat Build Summary
-    needs: [check_nightly_skip, generate_timestamp, UpdateVersionNumber, TriggerDarwinBuild, TriggerLinuxBuild, TriggerAutocompleteBuild]
+    needs: [check_nightly_skip, generate_timestamp, UpdateVersionNumber, TriggerDarwinBuild, TriggerLinuxBuild, TriggerWindowsBuild, TriggerAutocompleteBuild]
     if: always()
     runs-on: ubuntu-latest
     steps:
@@ -351,5 +370,6 @@ jobs:
             echo "|----------|--------|" >> $GITHUB_STEP_SUMMARY
             echo "| Darwin | ${{ needs.TriggerDarwinBuild.result == 'success' && '✅' || '❌' }} |" >> $GITHUB_STEP_SUMMARY
             echo "| Linux | ${{ needs.TriggerLinuxBuild.result == 'success' && '✅' || '❌' }} |" >> $GITHUB_STEP_SUMMARY
+            echo "| Windows | ${{ needs.TriggerWindowsBuild.result == 'success' && '✅' || '❌' }} |" >> $GITHUB_STEP_SUMMARY
             echo "| Autocomplete Trigger | ${{ needs.TriggerAutocompleteBuild.result == 'success' && '✅' || needs.TriggerAutocompleteBuild.result == 'skipped' && '⏭️' || '❌' }} |" >> $GITHUB_STEP_SUMMARY
           fi

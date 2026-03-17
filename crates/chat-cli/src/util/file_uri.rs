@@ -43,14 +43,24 @@ pub fn resolve_file_uri(uri: &str, base_path: &Path) -> Result<String, FileUriEr
     // Expand tilde to home directory
     let path_str = shellexpand::tilde(path_str).to_string();
 
+    // Normalize forward slashes to platform separator for cross-platform compatibility.
+    // File URIs always use forward slashes, but on Windows we need backslashes for
+    // proper path resolution (especially when the path contains .. components).
+    let path_str = path_str.replace('/', std::path::MAIN_SEPARATOR_STR);
+
     // Resolve the path
-    let resolved_path = if path_str.starts_with('/') {
+    let resolved_path = if Path::new(&path_str).is_absolute() {
         // Absolute path
         PathBuf::from(path_str)
     } else {
         // Relative path - resolve relative to base_path
         base_path.join(path_str)
     };
+
+    // Normalize the path to resolve .. and . components without requiring the file to exist.
+    // This is important on Windows where mixed separators and unresolved .. can cause
+    // path resolution failures (e.g. C:\Users\foo\.kiro\agents\..\..\file.md).
+    let resolved_path = normalize_path(&resolved_path);
 
     // Check if file exists
     if !resolved_path.exists() {
@@ -67,6 +77,35 @@ pub fn resolve_file_uri(uri: &str, base_path: &Path) -> Result<String, FileUriEr
         path: resolved_path,
         source,
     })
+}
+
+/// Normalize a path by resolving `.` and `..` components without touching the filesystem.
+/// Unlike `canonicalize()`, this works even if the path doesn't exist yet and doesn't
+/// produce UNC paths on Windows.
+fn normalize_path(path: &Path) -> PathBuf {
+    let mut components = Vec::new();
+    for component in path.components() {
+        match component {
+            std::path::Component::ParentDir => {
+                // Pop the last component if it's a normal dir, otherwise keep the ..
+                if components
+                    .last()
+                    .is_some_and(|c| matches!(c, std::path::Component::Normal(_)))
+                {
+                    components.pop();
+                } else {
+                    components.push(component);
+                }
+            },
+            std::path::Component::CurDir => {
+                // Skip . components
+            },
+            _ => {
+                components.push(component);
+            },
+        }
+    }
+    components.iter().collect()
 }
 
 #[cfg(test)]
@@ -174,5 +213,37 @@ mod tests {
         }
 
         Ok(())
+    }
+
+    #[test]
+    fn test_relative_path_with_parent_dir() -> Result<(), Box<dyn std::error::Error>> {
+        let temp_dir = TempDir::new()?;
+        // Create file at temp_dir/test.txt
+        let file_path = temp_dir.path().join("test.txt");
+        let content = "Parent dir content";
+        fs::write(&file_path, content)?;
+
+        // Create a subdirectory to use as base_path
+        let sub_dir = temp_dir.path().join("sub").join("dir");
+        fs::create_dir_all(&sub_dir)?;
+
+        // URI with .. should resolve from sub/dir back to temp_dir
+        let uri = "file://../../test.txt";
+        let result = resolve_file_uri(uri, &sub_dir)?;
+        assert_eq!(result, content);
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_normalize_path_resolves_parent_components() {
+        let path = PathBuf::from("/a/b/c/../../d");
+        assert_eq!(normalize_path(&path), PathBuf::from("/a/d"));
+    }
+
+    #[test]
+    fn test_normalize_path_resolves_current_dir() {
+        let path = PathBuf::from("/a/./b/./c");
+        assert_eq!(normalize_path(&path), PathBuf::from("/a/b/c"));
     }
 }

@@ -52,17 +52,32 @@ export function createTestDir(
   fs.mkdirSync(baseDir, { recursive: true });
 
   // Sockets must be in temp dir due to path length limits
-  const socketDir = path.join(os.tmpdir(), 'kiro-cli-tests', testName);
-  if (!fs.existsSync(socketDir)) {
-    fs.mkdirSync(socketDir, { recursive: true });
+  // On Windows, use named pipes instead of Unix sockets
+  const isWindows = os.platform() === 'win32';
+
+  let tuiIpcSocket: string;
+  let agentIpcSocket: string;
+
+  if (isWindows) {
+    // Windows named pipes: Node.js net.createServer supports \\?\pipe\ paths
+    const pipePrefix = `\\\\.\\pipe\\kiro-test-${testName.replace(/[^a-zA-Z0-9-]/g, '-')}`;
+    tuiIpcSocket = `${pipePrefix}-tui`;
+    agentIpcSocket = `${pipePrefix}-agent`;
+  } else {
+    const socketDir = path.join(os.tmpdir(), 'kiro-cli-tests', testName);
+    if (!fs.existsSync(socketDir)) {
+      fs.mkdirSync(socketDir, { recursive: true });
+    }
+    tuiIpcSocket = path.join(socketDir, 'tui.sock');
+    agentIpcSocket = path.join(socketDir, 'agent.sock');
   }
 
   return {
     baseDir,
     tuiLogFile: path.join(baseDir, 'tui.log'),
     rustLogFile: path.join(baseDir, 'rust.log'),
-    tuiIpcSocket: path.join(socketDir, 'tui.sock'),
-    agentIpcSocket: path.join(socketDir, 'agent.sock'),
+    tuiIpcSocket,
+    agentIpcSocket,
     snapshotHtmlFile: path.join(baseDir, 'snapshot.html'),
     testLogFile: path.join(baseDir, 'test.log'),
   };

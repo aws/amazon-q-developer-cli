@@ -27,10 +27,18 @@ fn open_macos(url_str: impl AsRef<str>) -> Result<(), Error> {
 fn open_command(url: impl AsRef<str>) -> std::process::Command {
     use std::os::windows::process::CommandExt;
 
-    let detached = 0x8;
-    let mut command = std::process::Command::new("cmd");
-    command.creation_flags(detached);
-    command.args(["/c", "start", url.as_ref()]);
+    // Use rundll32 to invoke the Windows shell's URL handler directly.
+    // This calls ShellExecuteW("open", url) under the hood, which:
+    // - Opens the URL in the user's default browser
+    // - Handles special characters in URLs without escaping issues
+    // - Doesn't spawn a visible console window (with CREATE_NO_WINDOW)
+    // - Doesn't interfere with the parent PowerShell/console session
+    // - Works reliably even on fresh Windows installs without browser associations (falls back to Edge
+    //   which is always present on Windows 10+)
+    let create_no_window: u32 = 0x08000000;
+    let mut command = std::process::Command::new("rundll32");
+    command.creation_flags(create_no_window);
+    command.args(["url.dll,FileProtocolHandler", url.as_ref()]);
     command
 }
 

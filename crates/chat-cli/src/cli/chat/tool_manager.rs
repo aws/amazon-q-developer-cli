@@ -1077,7 +1077,12 @@ impl ToolManager {
             name if name == ToolMetadata::FS_WRITE.spec_name => {
                 Tool::FsWrite(serde_json::from_value::<FsWrite>(value.args).map_err(&map_err)?)
             },
-            name if name == ToolMetadata::EXECUTE_COMMAND.spec_name => {
+            #[cfg(windows)]
+            "execute_cmd" => {
+                Tool::ExecuteCommand(serde_json::from_value::<ExecuteCommand>(value.args).map_err(&map_err)?)
+            },
+            #[cfg(not(windows))]
+            name if ToolMetadata::EXECUTE_COMMAND.aliases.contains(&name) => {
                 Tool::ExecuteCommand(serde_json::from_value::<ExecuteCommand>(value.args).map_err(&map_err)?)
             },
             name if name == ToolMetadata::USE_AWS.spec_name => {
@@ -1527,7 +1532,7 @@ fn spawn_display_task(
                                         terminal::Clear(terminal::ClearType::CurrentLine),
                                     )?;
                                     let msg = still_loading.iter().fold(String::new(), |mut acc, server_name| {
-                                        acc.push_str(format!("\n - {server_name}").as_str());
+                                        acc.push_str(format!("\r\n - {server_name}").as_str());
                                         acc
                                     });
                                     let msg = eyre::eyre!(msg);
@@ -1541,7 +1546,9 @@ fn spawn_display_task(
                                         terminal::Clear(terminal::ClearType::CurrentLine),
                                     )?;
                                 }
-                                execute!(output, style::Print("\n"),)?;
+                                // Reset cursor to column 0 before final newline to prevent
+                                // offset issues on Windows where \n doesn't imply \r
+                                execute!(output, cursor::MoveToColumn(0), style::Print("\n"),)?;
                                 break;
                             },
                             LoadingMsg::SignInNotice { name } => {

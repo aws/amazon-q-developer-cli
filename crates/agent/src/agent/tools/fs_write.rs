@@ -84,6 +84,9 @@ const FS_WRITE_SCHEMA: &str = r#"
 #[cfg(unix)]
 const NEWLINE: &str = "\n";
 
+#[cfg(windows)]
+const NEWLINE: &str = "\r\n";
+
 impl BuiltInToolTrait for FsWrite {
     fn name() -> BuiltInToolName {
         BuiltInToolName::FsWrite

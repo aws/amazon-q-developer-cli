@@ -1,5 +1,4 @@
 //! A Unix implementation of ExecuteCmd that uses bash as the shell.
-#![cfg(target_family = "unix")]
 
 use std::collections::HashMap;
 use std::path::Path;
@@ -16,7 +15,7 @@ use serde::{
 };
 use tokio::process::Command;
 
-use super::{
+use crate::agent::tools::{
     BuiltInToolName,
     BuiltInToolTrait,
     ToolExecutionError,

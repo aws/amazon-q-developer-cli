@@ -32,6 +32,23 @@ static GLOBAL: mimalloc::MiMalloc = mimalloc::MiMalloc;
 fn main() -> Result<ExitCode> {
     color_eyre::install()?;
 
+    // Spawn the main logic on a thread with a larger stack to prevent stack
+    // overflows on Windows. Debug builds have much larger stack frames due to
+    // unoptimized async state machines, and the default 1MB Windows stack is
+    // insufficient for deep async call chains (e.g. hyper HTTP server handling
+    // OAuth callbacks during login). 8MB matches the default on macOS/Linux.
+    const STACK_SIZE: usize = 8 * 1024 * 1024; // 8 MB
+    let builder = std::thread::Builder::new()
+        .name("main-with-stack".into())
+        .stack_size(STACK_SIZE);
+
+    let handler = builder.spawn(main_inner)?;
+    handler.join().unwrap_or_else(|panic_payload| {
+        std::panic::resume_unwind(panic_payload);
+    })
+}
+
+fn main_inner() -> Result<ExitCode> {
     let parsed = match cli::Cli::try_parse() {
         Ok(cli) => cli,
         Err(err) => {

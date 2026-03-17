@@ -3,7 +3,7 @@ from os import environ
 import platform
 import shutil
 from typing import Dict, List, Optional
-from util import info, isDarwin, isLinux, isMusl, isCrossCompiling, run_cmd_output, warn, Variant
+from util import info, isDarwin, isLinux, isWindows, isMusl, isCrossCompiling, run_cmd_output, warn, Variant
 from datetime import datetime, timezone
 
 
@@ -38,6 +38,9 @@ def skip_fish_tests() -> bool:
 
 @cache
 def cargo_cmd_name() -> str:
+    # On Windows, always use cargo directly (cross is not needed/available)
+    if isWindows():
+        return "cargo"
     if isMusl() or isCrossCompiling():
         return "cross"
     else:
@@ -90,6 +93,8 @@ def rust_targets() -> List[str]:
             return ["x86_64-apple-darwin", "aarch64-apple-darwin"]
         case "Linux":
             return [get_target_triple()]
+        case "Windows":
+            return [get_target_triple()]
         case other:
             raise ValueError(f"Unsupported platform {other}")
 
@@ -104,6 +109,14 @@ def get_target_triple() -> str:
         return env
     elif isDarwin():
         return "universal-apple-darwin"
+    elif isWindows():
+        machine = platform.machine().lower()
+        if machine in ["x86_64", "amd64"]:
+            return "x86_64-pc-windows-msvc"
+        elif machine in ["aarch64", "arm64"]:
+            return "aarch64-pc-windows-msvc"
+        else:
+            raise ValueError(f"Unsupported Windows architecture: {machine}")
     else:
         match (platform.machine(), isMusl()):
             case ("x86_64", True):

@@ -207,25 +207,45 @@ pub async fn select_model(os: &Os, session: &mut ChatSession) -> Result<Option<C
     ModelListDisplayInfo::sort_list(&mut model_infos);
     let formatted_items = ModelListDisplayInfo::format_for_selector(&model_infos);
 
-    // Launch fuzzy selector (inline mode)
-    let selected = super::super::skim_integration::launch_skim_selector_inline(
-        &formatted_items,
-        "Select model (type to search): ",
-        false,
-    )
-    .map_err(|e| ChatError::Custom(format!("Failed to launch model selector: {e}").into()))?;
+    // Platform-specific selector
+    #[cfg(unix)]
+    let selected_idx = {
+        // Launch fuzzy selector (inline mode)
+        let selected = super::super::skim_integration::launch_skim_selector_inline(
+            &formatted_items,
+            "Select model (type to search): ",
+            false,
+        )
+        .map_err(|e| ChatError::Custom(format!("Failed to launch model selector: {e}").into()))?;
 
-    if let Some(selections) = selected
-        && let Some(selected_line) = selections.first()
-    {
-        // Find the index of the selected line in formatted_items
-        let selected_idx = formatted_items
-            .iter()
-            .position(|item| item == selected_line)
-            .ok_or_else(|| ChatError::Custom("Selected item not found".into()))?;
+        if let Some(selections) = selected
+            && let Some(selected_line) = selections.first()
+        {
+            formatted_items.iter().position(|item| item == selected_line)
+        } else {
+            None
+        }
+    };
 
+    #[cfg(windows)]
+    let selected_idx = {
+        use dialoguer::Select;
+
+        match Select::with_theme(&crate::util::dialoguer_theme())
+            .with_prompt("Select model")
+            .items(&formatted_items)
+            .default(0)
+            .interact_on_opt(&dialoguer::console::Term::stdout())
+        {
+            Ok(sel) => sel,
+            Err(dialoguer::Error::IO(ref e)) if e.kind() == std::io::ErrorKind::Interrupted => None,
+            Err(e) => return Err(ChatError::Custom(format!("Failed to get model selection: {e}").into())),
+        }
+    };
+
+    if let Some(idx) = selected_idx {
         // Use that index to get the actual model
-        let selected = model_infos[selected_idx].model_info.clone();
+        let selected = model_infos[idx].model_info.clone();
 
         // Reset stale context usage if the new model has a different context window
         let old_context_window = context_window_tokens(session.conversation.model_info.as_ref());

@@ -63,6 +63,9 @@ export class E2ETestCase {
         KIRO_INPUT_METRICS: 'true',
         KIRO_TEST_TUI_IPC_SOCKET_PATH: this.paths.tuiIpcSocket,
         KIRO_TEST_CHAT_IPC_SOCKET_PATH: this.paths.agentIpcSocket,
+        ...(process.platform === 'win32' ? {
+          KIRO_TEST_CHAT_IPC_PIPE_NAME: this.paths.agentIpcSocket,
+        } : {}),
         KIRO_TEST_TUI_JS_PATH: tuiJsPath,
         KIRO_AGENT_PATH: chatPath,
         KIRO_TUI_LOG_FILE: this.paths.tuiLogFile,
@@ -88,9 +91,11 @@ export class E2ETestCase {
   }
 
   async launch(): Promise<E2ETestCase> {
-    // Clean up existing sockets
-    try { fs.unlinkSync(this.paths.tuiIpcSocket); } catch { /* ignore */ }
-    try { fs.unlinkSync(this.paths.agentIpcSocket); } catch { /* ignore */ }
+    // Clean up existing sockets (not needed for Windows named pipes)
+    if (process.platform !== 'win32') {
+      try { fs.unlinkSync(this.paths.tuiIpcSocket); } catch { /* ignore */ }
+      try { fs.unlinkSync(this.paths.agentIpcSocket); } catch { /* ignore */ }
+    }
 
     // Start both IPC servers
     await Promise.all([

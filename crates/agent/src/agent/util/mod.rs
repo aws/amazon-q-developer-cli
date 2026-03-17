@@ -10,8 +10,22 @@ pub mod test;
 
 use std::collections::HashMap;
 use std::env::VarError;
+#[cfg(unix)]
 use std::os::unix::fs::MetadataExt as _;
+#[cfg(windows)]
+use std::os::windows::fs::MetadataExt as _;
 use std::path::Path;
+
+/// Cross-platform helper to get file size from metadata
+#[cfg(unix)]
+fn get_file_size(md: &std::fs::Metadata) -> u64 {
+    md.size()
+}
+
+#[cfg(windows)]
+fn get_file_size(md: &std::fs::Metadata) -> u64 {
+    md.file_size()
+}
 
 use bstr::ByteSlice as _;
 use consts::env_var::CLI_IS_INTEG_TEST;
@@ -120,12 +134,12 @@ pub async fn read_file_with_max_limit(
         .with_context(|| format!("Failed to read from file at '{}'", path.to_string_lossy()))?;
     let mut content = content.to_str_lossy().to_string();
 
-    let truncated_amount = if md.size() > max_file_length {
+    let truncated_amount = if get_file_size(&md) > max_file_length {
         // Edge case check to ensure the suffix is less than max file length.
         if suffix.len() as u64 > max_file_length {
-            return Ok((String::new(), md.size()));
+            return Ok((String::new(), get_file_size(&md)));
         }
-        md.size() - max_file_length + suffix.len() as u64
+        get_file_size(&md) - max_file_length + suffix.len() as u64
     } else {
         0
     };

@@ -51,6 +51,7 @@ book/
 
 run-build.sh
 .amazonq/
+q-bedrock/
 
 chat.log
 .kiro/tasks/

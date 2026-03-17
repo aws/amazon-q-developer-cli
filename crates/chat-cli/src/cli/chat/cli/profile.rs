@@ -218,21 +218,40 @@ fn prompt_agent_selection(agents: &Agents, options: AgentSelectorOptions<'_>) ->
     AgentListDisplayInfo::sort_list(&mut agent_infos);
     let formatted_items = AgentListDisplayInfo::format_for_selector(&agent_infos);
 
-    // Launch fuzzy selector (inline mode)
-    let selected = super::super::skim_integration::launch_skim_selector_inline(&formatted_items, options.prompt, false)
-        .map_err(|e| ChatError::Custom(format!("Failed to launch agent selector: {e}").into()))?;
+    // Platform-specific selector
+    #[cfg(unix)]
+    let selected_idx = {
+        let selected =
+            super::super::skim_integration::launch_skim_selector_inline(&formatted_items, options.prompt, false)
+                .map_err(|e| ChatError::Custom(format!("Failed to launch agent selector: {e}").into()))?;
 
-    if let Some(selections) = selected
-        && let Some(selected_line) = selections.first()
-    {
-        // Find the index of the selected line in formatted_items
-        let selected_idx = formatted_items
-            .iter()
-            .position(|item| item == selected_line)
-            .ok_or_else(|| ChatError::Custom("Selected item not found".into()))?;
+        if let Some(selections) = selected
+            && let Some(selected_line) = selections.first()
+        {
+            formatted_items.iter().position(|item| item == selected_line)
+        } else {
+            None
+        }
+    };
 
-        // Use that index to get the actual agent name
-        Ok(Some(agent_infos[selected_idx].name.clone()))
+    #[cfg(windows)]
+    let selected_idx = {
+        use dialoguer::Select;
+
+        match Select::with_theme(&crate::util::dialoguer_theme())
+            .with_prompt(options.prompt)
+            .items(&formatted_items)
+            .default(0)
+            .interact_on_opt(&dialoguer::console::Term::stdout())
+        {
+            Ok(sel) => sel,
+            Err(dialoguer::Error::IO(ref e)) if e.kind() == std::io::ErrorKind::Interrupted => None,
+            Err(e) => return Err(ChatError::Custom(format!("Failed to get agent selection: {e}").into())),
+        }
+    };
+
+    if let Some(idx) = selected_idx {
+        Ok(Some(agent_infos[idx].name.clone()))
     } else {
         // User cancelled selection
         Ok(None)
@@ -613,18 +632,69 @@ impl AgentSubcommand {
                 let agent_name = if let Some(name) = name {
                     name
                 } else {
-                    // Show fuzzy selector to choose an agent to swap to
-                    let selected_name =
-                        prompt_agent_selection(&session.conversation.agents, AgentSelectorOptions::default())?;
+                    let active_agent_name = &agents.active_idx;
+                    let mut agent_infos: Vec<AgentListDisplayInfo> = agents
+                        .agents
+                        .iter()
+                        .map(|(name, agent)| {
+                            let is_active = name == active_agent_name;
+                            AgentListDisplayInfo::new(
+                                name.clone(),
+                                agent.source_location,
+                                agent.description.clone(),
+                                is_active,
+                            )
+                        })
+                        .collect();
 
-                    match selected_name {
-                        Some(name) => name,
-                        None => {
-                            // User cancelled selection
-                            return Ok(ChatState::PromptUser {
-                                skip_printing_tools: true,
-                            });
-                        },
+                    AgentListDisplayInfo::sort_list(&mut agent_infos);
+                    let formatted_items = AgentListDisplayInfo::format_for_selector(&agent_infos);
+
+                    // Platform-specific selector
+                    #[cfg(unix)]
+                    let selected_idx = {
+                        // Launch fuzzy selector (inline mode)
+                        let selected = super::super::skim_integration::launch_skim_selector_inline(
+                            &formatted_items,
+                            "Select agent (type to search): ",
+                            false,
+                        )
+                        .map_err(|e| ChatError::Custom(format!("Failed to launch agent selector: {e}").into()))?;
+
+                        if let Some(selections) = selected
+                            && let Some(selected_line) = selections.first()
+                        {
+                            formatted_items.iter().position(|item| item == selected_line)
+                        } else {
+                            None
+                        }
+                    };
+
+                    #[cfg(windows)]
+                    let selected_idx = {
+                        use dialoguer::Select;
+
+                        match Select::with_theme(&crate::util::dialoguer_theme())
+                            .with_prompt("Select agent")
+                            .items(&formatted_items)
+                            .default(0)
+                            .interact_on_opt(&dialoguer::console::Term::stdout())
+                        {
+                            Ok(sel) => sel,
+                            Err(dialoguer::Error::IO(ref e)) if e.kind() == std::io::ErrorKind::Interrupted => None,
+                            Err(e) => {
+                                return Err(ChatError::Custom(format!("Failed to get agent selection: {e}").into()));
+                            },
+                        }
+                    };
+
+                    if let Some(idx) = selected_idx {
+                        agent_infos[idx].name.clone()
+                    } else {
+                        // User cancelled selection
+                        return Ok(ChatState::PromptUser {
+                            skip_printing_tools: true,
+                        });
                     }
                 };
 

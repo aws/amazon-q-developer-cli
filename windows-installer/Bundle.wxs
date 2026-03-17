@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs"
+     xmlns:bal="http://wixtoolset.org/schemas/v4/wxs/bal">
+
+  <Bundle Name="Kiro CLI"
+          Version="$(var.ProductVersion)"
+          Manufacturer="Kiro"
+          UpgradeCode="B2C3D4E5-F6A7-8901-BCDE-F23456789ABC">
+
+    <!-- Standard bootstrapper application with license URL and theme -->
+    <BootstrapperApplication>
+      <bal:WixStandardBootstrapperApplication
+        LicenseUrl="https://kiro.dev/license"
+        Theme="hyperlinkLicense" />
+    </BootstrapperApplication>
+
+    <!-- Chain of packages to install -->
+    <Chain>
+      <MsiPackage Id="KiroCliMsi"
+                  SourceFile="$(var.MsiPath)"
+                  Vital="yes" />
+    </Chain>
+
+  </Bundle>
+</Wix>

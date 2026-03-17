@@ -1,4 +1,8 @@
 //! ACP test harness for spawning and communicating with the agent subprocess.
+//!
+//! Note: This module uses Unix domain sockets and is only available on Unix platforms.
+
+#![cfg(unix)]
 
 use std::path::Path;
 use std::sync::atomic::{

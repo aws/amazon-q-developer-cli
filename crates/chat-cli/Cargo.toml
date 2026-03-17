@@ -153,6 +153,7 @@ security-framework.workspace = true
 
 [target.'cfg(windows)'.dependencies]
 windows.workspace = true
+windows-sys = { version = "0.59.0", features = ["Win32_System_Console", "Win32_Foundation"] }
 winreg.workspace = true
 
 [dev-dependencies]

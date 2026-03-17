@@ -441,14 +441,27 @@ impl McpClientService {
                 let home_dir = || os.env.home().map(|p| p.to_string_lossy().to_string());
                 let expanded_cmd = shellexpand::full_with_context(command_as_str, home_dir, context)?;
 
+                // On Windows, commands like npx/uvx are actually .cmd batch files.
+                // Command::new() doesn't resolve .cmd/.bat extensions, so we need
+                // to run them through cmd.exe /C which handles this automatically.
+                #[cfg(windows)]
+                let command = Command::new("cmd.exe").configure(|cmd| {
+                    let mut cmd_args = vec!["/C".to_string(), expanded_cmd.to_string()];
+                    cmd_args.extend(args.iter().cloned());
+                    if let Some(envs) = config_envs {
+                        process_env_vars(envs, &os.env);
+                        cmd.envs(envs);
+                    }
+                    cmd.envs(get_all_env_vars()).args(&cmd_args);
+                });
+
+                #[cfg(not(windows))]
                 let command = Command::new(expanded_cmd.as_ref() as &str).configure(|cmd| {
                     if let Some(envs) = config_envs {
                         process_env_vars(envs, &os.env);
                         cmd.envs(envs);
                     }
                     cmd.envs(get_all_env_vars()).args(args);
-
-                    #[cfg(not(windows))]
                     cmd.process_group(0);
                 });
 

@@ -91,7 +91,11 @@ fn data_dir() -> Result<PathBuf> {
 
 /// Path to extracted Bun executable
 pub fn bun_path() -> Result<PathBuf> {
-    Ok(data_dir()?.join("bun"))
+    if cfg!(windows) {
+        Ok(data_dir()?.join("bun.exe"))
+    } else {
+        Ok(data_dir()?.join("bun"))
+    }
 }
 
 /// Path to sha256 of the extracted Bun executable

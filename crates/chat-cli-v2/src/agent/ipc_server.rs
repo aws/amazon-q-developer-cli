@@ -2,8 +2,10 @@
 //!
 //! Spawned by `SessionManager` in test mode. Routes mock API responses to the
 //! `MockResponseRegistry` which distributes them to the appropriate session.
+//!
+//! Uses Unix domain sockets on Unix and named pipes on Windows.
+//! `TelemetryEventStore` is available on all platforms.
 
-use eyre::Result;
 use serde::{
     Deserialize,
     Serialize,
@@ -13,7 +15,6 @@ use tokio::io::{
     AsyncWriteExt,
     BufReader,
 };
-use tokio::net::UnixStream;
 use tracing::{
     error,
     info,
@@ -105,16 +106,21 @@ pub struct TestMessageResponse {
 }
 
 /// IPC Server that routes test commands to the MockResponseRegistry.
+///
+/// Uses Unix domain sockets on Unix and named pipes on Windows.
 pub struct IpcServer;
 
 impl IpcServer {
     /// Spawn the IPC server, routing mock responses to the registry.
-    pub fn spawn(registry: MockResponseRegistryHandle, telemetry_event_store: TelemetryEventStore) -> Result<()> {
-        let socket_path = std::env::var("KIRO_TEST_CHAT_IPC_SOCKET_PATH")
-            .map_err(|_e| eyre::eyre!("KIRO_TEST_CHAT_IPC_SOCKET_PATH not set"))?;
+    ///
+    /// On Unix, reads `KIRO_TEST_CHAT_IPC_SOCKET_PATH` for the socket path.
+    /// On Windows, reads `KIRO_TEST_CHAT_IPC_PIPE_NAME` for the named pipe
+    /// (e.g., `\\.\pipe\kiro-test-ipc`), falling back to `KIRO_TEST_CHAT_IPC_SOCKET_PATH`.
+    pub fn spawn(registry: MockResponseRegistryHandle, telemetry_event_store: TelemetryEventStore) -> eyre::Result<()> {
+        let ipc_path = Self::get_ipc_path()?;
 
         tokio::spawn(async move {
-            if let Err(e) = Self::run(socket_path, registry, telemetry_event_store).await {
+            if let Err(e) = Self::run(ipc_path, registry, telemetry_event_store).await {
                 error!("IPC server error: {}", e);
             }
         });
@@ -122,16 +128,67 @@ impl IpcServer {
         Ok(())
     }
 
+    /// Get the IPC path from environment variables.
+    fn get_ipc_path() -> eyre::Result<String> {
+        #[cfg(windows)]
+        {
+            std::env::var("KIRO_TEST_CHAT_IPC_PIPE_NAME")
+                .or_else(|_env_err| std::env::var("KIRO_TEST_CHAT_IPC_SOCKET_PATH"))
+                .map_err(|_env_err| {
+                    eyre::eyre!("KIRO_TEST_CHAT_IPC_PIPE_NAME or KIRO_TEST_CHAT_IPC_SOCKET_PATH not set")
+                })
+        }
+
+        #[cfg(not(windows))]
+        {
+            std::env::var("KIRO_TEST_CHAT_IPC_SOCKET_PATH")
+                .map_err(|_env_err| eyre::eyre!("KIRO_TEST_CHAT_IPC_SOCKET_PATH not set"))
+        }
+    }
+
+    /// Run the IPC server — platform-specific transport, shared protocol.
+    #[cfg(unix)]
     async fn run(
         socket_path: String,
         registry: MockResponseRegistryHandle,
         telemetry_event_store: TelemetryEventStore,
-    ) -> Result<()> {
-        let stream = UnixStream::connect(&socket_path).await?;
+    ) -> eyre::Result<()> {
+        let stream = tokio::net::UnixStream::connect(&socket_path).await?;
         info!("IPC server connected to {}", socket_path);
 
-        let (reader, mut writer) = stream.into_split();
-        let mut reader = BufReader::new(reader);
+        let (reader, writer) = stream.into_split();
+        let reader = BufReader::new(reader);
+        Self::handle_messages(reader, writer, registry, telemetry_event_store).await
+    }
+
+    /// Run the IPC server on Windows using named pipes.
+    #[cfg(windows)]
+    async fn run(
+        pipe_name: String,
+        registry: MockResponseRegistryHandle,
+        telemetry_event_store: TelemetryEventStore,
+    ) -> eyre::Result<()> {
+        use tokio::net::windows::named_pipe::ClientOptions;
+
+        let pipe = ClientOptions::new().open(&pipe_name)?;
+        info!("IPC server connected to {}", pipe_name);
+
+        let (reader, writer) = tokio::io::split(pipe);
+        let reader = BufReader::new(reader);
+        Self::handle_messages(reader, writer, registry, telemetry_event_store).await
+    }
+
+    /// Shared message handling loop — works with any AsyncBufRead + AsyncWrite transport.
+    async fn handle_messages<R, W>(
+        mut reader: BufReader<R>,
+        mut writer: W,
+        registry: MockResponseRegistryHandle,
+        telemetry_event_store: TelemetryEventStore,
+    ) -> eyre::Result<()>
+    where
+        R: tokio::io::AsyncRead + Unpin,
+        W: tokio::io::AsyncWrite + Unpin,
+    {
         let mut line = String::new();
 
         while reader.read_line(&mut line).await? > 0 {

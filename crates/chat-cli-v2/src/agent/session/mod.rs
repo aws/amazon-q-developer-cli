@@ -280,13 +280,13 @@ fn is_pid_alive(pid: u32) -> bool {
 
     unsafe {
         let handle = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, 0, pid);
-        if handle == 0 {
+        if handle.is_null() {
             return false;
         }
         let mut exit_code: u32 = 0;
         let result = GetExitCodeProcess(handle, &mut exit_code);
         CloseHandle(handle);
-        result != 0 && exit_code == STILL_ACTIVE
+        result != 0 && exit_code == STILL_ACTIVE as u32
     }
 }
 

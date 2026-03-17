@@ -11,7 +11,7 @@ TAURI_PRODUCT_NAME = "kiro_cli_desktop"
 LINUX_PACKAGE_NAME = "kiro-cli"
 
 # version of bun to bundle
-BUN_VERSION = "1.3.9"
+BUN_VERSION = "1.3.10"
 
 # macos specific
 MACOS_BUNDLE_ID = "com.amazon.codewhisperer"

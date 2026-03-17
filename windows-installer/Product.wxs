@@ -1,0 +1,52 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs"
+     xmlns:ui="http://wixtoolset.org/schemas/v4/wxs/ui">
+
+  <Package Name="Kiro CLI"
+           Manufacturer="Kiro"
+           Version="$(var.ProductVersion)"
+           UpgradeCode="A1B2C3D4-E5F6-7890-ABCD-EF1234567890"
+           Scope="perMachine">
+
+    <MajorUpgrade DowngradeErrorMessage="A newer version of Kiro CLI is already installed." />
+    <MediaTemplate EmbedCab="yes" />
+
+    <!-- License file -->
+    <WixVariable Id="WixUILicenseRtf" Value="License.rtf" />
+
+    <!-- UI with Welcome, License, Directory Selection, and Finish screens -->
+    <ui:WixUI Id="WixUI_InstallDir" InstallDirectory="INSTALLFOLDER" />
+
+    <StandardDirectory Id="ProgramFiles64Folder">
+      <Directory Id="INSTALLFOLDER" Name="Kiro-Cli">
+        <!-- Main CLI executable -->
+        <Component Id="MainExecutable" Guid="D4E5F6A7-B8C9-0123-DEF0-456789012345">
+          <File Id="KiroCliExe" Source="$(var.BinarySource)" Name="kiro-cli.exe" KeyPath="yes" />
+        </Component>
+
+        <!-- PATH entry -->
+        <Component Id="PathEntry" Guid="C3D4E5F6-A7B8-9012-CDEF-345678901234">
+          <Environment Id="PATH" Name="PATH" Value="[INSTALLFOLDER]" Permanent="no" Part="last" Action="set" System="yes" />
+        </Component>
+
+        <!-- Registry entry for installed version -->
+        <Component Id="RegistryEntry" Guid="B8C9D0E1-F2A3-4567-1234-890123456789">
+          <RegistryKey Root="HKLM" Key="SOFTWARE\Kiro\CLI">
+            <RegistryValue Name="CliVersion" Type="string" Value="$(var.DefaultCliVersion)" KeyPath="yes" />
+            <RegistryValue Name="InstallPath" Type="string" Value="[INSTALLFOLDER]" />
+            <RegistryValue Name="ProductVersion" Type="string" Value="$(var.ProductVersion)" />
+          </RegistryKey>
+        </Component>
+      </Directory>
+    </StandardDirectory>
+
+    <Icon Id="KiroIcon" SourceFile="kiro.ico" />
+
+    <Feature Id="ProductFeature" Title="Kiro CLI" Level="1">
+      <ComponentRef Id="MainExecutable" />
+      <ComponentRef Id="PathEntry" />
+      <ComponentRef Id="RegistryEntry" />
+    </Feature>
+
+  </Package>
+</Wix>

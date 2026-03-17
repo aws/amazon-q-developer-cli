@@ -1,9 +1,13 @@
-use std::os::unix::fs::MetadataExt as _;
 use std::path::{
     Path,
     PathBuf,
 };
 use std::str::FromStr as _;
+
+/// Cross-platform helper to get file size from metadata.
+fn get_file_size(md: &std::fs::Metadata) -> u64 {
+    md.len()
+}
 
 use serde::{
     Deserialize,
@@ -115,11 +119,11 @@ impl ImageRead {
                 errors.push(format!("'{}' is not a file", path.to_string_lossy()));
                 continue;
             }
-            if md.size() > MAX_IMAGE_SIZE_BYTES {
+            if get_file_size(&md) > MAX_IMAGE_SIZE_BYTES {
                 errors.push(format!(
                     "'{}' has size {} which is greater than the max supported size of {}",
                     path.to_string_lossy(),
-                    md.size(),
+                    get_file_size(&md),
                     MAX_IMAGE_SIZE_BYTES
                 ));
             }
@@ -178,8 +182,8 @@ pub async fn read_image(path: impl AsRef<Path>) -> Result<ImageBlock, String> {
 
     let image_size = tokio::fs::symlink_metadata(path)
         .await
-        .map_err(|e| format!("failed to read file metadata for {}: {}", path.to_string_lossy(), e))?
-        .size();
+        .map_err(|e| format!("failed to read file metadata for {}: {}", path.to_string_lossy(), e))?;
+    let image_size = get_file_size(&image_size);
     if image_size > MAX_IMAGE_SIZE_BYTES {
         return Err(format!(
             "image at {} has size {} bytes, but the max supported size is {}",

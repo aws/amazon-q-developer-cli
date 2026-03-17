@@ -101,16 +101,31 @@ impl McpService {
                 let cmd = expand_path(&config.command, &RealProvider)?;
 
                 let mut env_vars = config.env.clone();
+
+                // On Windows, commands like npx/uvx are actually .cmd batch files.
+                // Command::new() doesn't resolve .cmd/.bat extensions, so we need
+                // to run them through cmd.exe /C which handles this automatically.
+                #[cfg(windows)]
+                let cmd = {
+                    let cmd_str = cmd.to_string();
+                    Command::new("cmd.exe").configure(|cmd| {
+                        let mut cmd_args = vec!["/C".to_string(), cmd_str.clone()];
+                        cmd_args.extend(config.args.iter().cloned());
+                        if let Some(envs) = &mut env_vars {
+                            expand_env_vars(envs);
+                            cmd.envs(envs);
+                        }
+                        cmd.envs(std::env::vars()).args(&cmd_args);
+                    })
+                };
+
+                #[cfg(not(windows))]
                 let cmd = Command::new(cmd.as_ref() as &str).configure(|cmd| {
                     if let Some(envs) = &mut env_vars {
                         expand_env_vars(envs);
                         cmd.envs(envs);
                     }
                     cmd.envs(std::env::vars()).args(&config.args);
-
-                    // Launch the MCP process in its own process group so that sigints won't kill
-                    // the server process.
-                    #[cfg(not(windows))]
                     cmd.process_group(0);
                 });
                 let (process, stderr) = TokioChildProcess::builder(cmd).stderr(Stdio::piped()).spawn()?;

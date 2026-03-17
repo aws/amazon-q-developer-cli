@@ -12,7 +12,7 @@ import zipfile
 import hashlib
 from typing import Any, Mapping, Sequence, List, Optional
 from const_v2 import APPLE_TEAM_ID, CHAT_BINARY_NAME, CHAT_PACKAGE_NAME, BUN_VERSION
-from util import debug, info, isDarwin, isLinux, run_cmd, run_cmd_output, warn
+from util import debug, info, isDarwin, isLinux, isWindows, run_cmd, run_cmd_output, warn
 from rust import cargo_cmd_name, rust_env, rust_targets, build_hash, build_datetime
 from importlib import import_module
 
@@ -147,10 +147,11 @@ def build_chat_bin(
         run_cmd(args)
         return out_path
     else:
-        # linux does not cross compile arch
+        # linux/windows does not cross compile arch
         target = targets[0]
-        target_path = pathlib.Path("target") / target / target_subdir / package
-        out_path = BUILD_DIR / "bin" / f"{(output_name or package)}-{target}"
+        exe_suffix = ".exe" if isWindows() else ""
+        target_path = pathlib.Path("target") / target / target_subdir / f"{package}{exe_suffix}"
+        out_path = BUILD_DIR / "bin" / f"{(output_name or package)}-{target}{exe_suffix}"
         out_path.parent.mkdir(parents=True, exist_ok=True)
         shutil.copy2(target_path, out_path)
         return out_path
@@ -547,16 +548,20 @@ def parse_region_from_arn(arn: str) -> str:
 def generate_sha(path: pathlib.Path) -> pathlib.Path:
     if isDarwin():
         shasum_output = run_cmd_output(["shasum", "-a", "256", path])
+        sha = shasum_output.split(" ")[0]
     elif isLinux():
         shasum_output = run_cmd_output(["sha256sum", path])
+        sha = shasum_output.split(" ")[0]
+    elif isWindows():
+        # Use Python's hashlib directly on Windows
+        sha = calculate_sha256(path)
     else:
         raise Exception("Unsupported platform")
 
-    sha = shasum_output.split(" ")[0]
-    path = path.with_name(f"{path.name}.sha256")
-    path.write_text(sha)
-    info(f"Wrote sha256sum to {path}:", sha)
-    return path
+    sha_path = path.with_name(f"{path.name}.sha256")
+    sha_path.write_text(sha)
+    info(f"Wrote sha256sum to {sha_path}:", sha)
+    return sha_path
 
 
 def build_linux(chat_path: pathlib.Path, signer: GpgSigner | None):
@@ -596,6 +601,34 @@ def build_linux(chat_path: pathlib.Path, signer: GpgSigner | None):
         signer.clean()
 
 
+def build_windows(chat_path: pathlib.Path):
+    """
+    Creates kiro-cli-chat.zip archive under `BUILD_DIR` for Windows.
+    """
+    chat_dst = BUILD_DIR / f"{CHAT_BINARY_NAME}.exe"
+    chat_dst.unlink(missing_ok=True)
+    shutil.copy2(chat_path, chat_dst)
+
+    # Create BUILD_INFO.json with commit metadata
+    build_info = {
+        "commit": build_hash(),
+        "build_time": build_datetime(),
+    }
+    build_info_path = BUILD_DIR / "BUILD_INFO.json"
+    build_info_path.write_text(json.dumps(build_info, indent=2))
+
+    zip_path = BUILD_DIR / f"{CHAT_BINARY_NAME}.zip"
+    zip_path.unlink(missing_ok=True)
+    info(f"Creating zip output to {zip_path}")
+    
+    # Use Python's zipfile for cross-platform compatibility
+    with zipfile.ZipFile(zip_path, 'w', zipfile.ZIP_DEFLATED) as zf:
+        zf.write(chat_dst, chat_dst.name)
+        zf.write(build_info_path, build_info_path.name)
+    
+    generate_sha(zip_path)
+
+
 @dataclass
 class BunDownloadInfo:
     url: str
@@ -603,7 +636,11 @@ class BunDownloadInfo:
 
 
 def get_bun_download_info() -> List[BunDownloadInfo]:
-    """Get the correct Bun download URL and filename for the current platform."""
+    """Get the correct Bun download URL and filename for the current platform.
+    
+    Respects AMAZON_Q_BUILD_TARGET_TRIPLE for cross-compilation scenarios.
+    """
+    from rust import get_target_triple
 
     def bun_download_info(system: str, arch: str, version: str = BUN_VERSION) -> BunDownloadInfo:
         return BunDownloadInfo(
@@ -612,21 +649,30 @@ def get_bun_download_info() -> List[BunDownloadInfo]:
         )
 
     system = platform.system().lower()
-    machine = platform.machine().lower()
+    
+    # Use target triple to determine architecture (supports cross-compilation)
+    target_triple = get_target_triple()
+    info(f"Determining Bun architecture from target triple: {target_triple}")
+    
+    # Parse architecture from target triple (e.g., "x86_64-pc-windows-msvc" or "aarch64-pc-windows-msvc")
+    if target_triple.startswith("x86_64") or target_triple.startswith("amd64"):
+        target_arch = "x64"
+    elif target_triple.startswith("aarch64") or target_triple.startswith("arm64"):
+        target_arch = "aarch64"
+    elif target_triple == "universal-apple-darwin":
+        # macOS universal binary - download both architectures
+        target_arch = "universal"
+    else:
+        raise ValueError(f"Cannot determine architecture from target triple: {target_triple}")
 
     match system:
         case "darwin":
             # On macOS, we'll download both architectures to create a universal binary
             return [bun_download_info(system=system, arch="x64"), bun_download_info(system=system, arch="aarch64")]
         case "linux":
-            # Map platform.machine() to Bun's naming convention
-            if machine in ["x86_64", "amd64"]:
-                arch = "x64"
-            elif machine in ["aarch64", "arm64"]:
-                arch = "aarch64"
-            else:
-                raise ValueError(f"Unsupported architecture: {machine}")
-            return [bun_download_info(system=system, arch=arch)]
+            return [bun_download_info(system=system, arch=target_arch)]
+        case "windows":
+            return [bun_download_info(system=system, arch=target_arch)]
         case other:
             raise ValueError(f"Unsupported system: {other}")
 
@@ -656,11 +702,13 @@ def download_bun() -> pathlib.Path:
             zip_ref.extractall(bun_dir)
 
         # Find the bun executable in the extracted files
+        bun_exe_name = "bun.exe" if platform.system().lower() == "windows" else "bun"
         for root, _, files in os.walk(bun_dir / download.fname.replace(".zip", "")):
             for file in files:
-                if file == "bun":
+                if file == bun_exe_name:
                     bun_executable = pathlib.Path(root) / file
-                    os.chmod(bun_executable, 0o755)
+                    if platform.system().lower() != "windows":
+                        os.chmod(bun_executable, 0o755)
                     extracted_binaries.append(bun_executable)
                     break
 
@@ -744,6 +792,8 @@ def build(
             info("Building for prod")
         case "gamma":
             info("Building for gamma")
+        case "dev":
+            info("Building for dev")
         case _:
             raise ValueError(f"Unknown stage name: {stage_name}")
 
@@ -772,6 +822,8 @@ def build(
 
     if isDarwin():
         build_macos(chat_path, signing_data)
+    elif isWindows():
+        build_windows(chat_path)
     else:
         build_linux(chat_path, gpg_signer)
 

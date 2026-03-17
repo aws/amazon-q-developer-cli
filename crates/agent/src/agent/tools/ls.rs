@@ -307,8 +307,38 @@ impl Entry {
             self.path.to_string_lossy()
         )
     }
+
+    #[cfg(windows)]
+    fn to_long_format(&self) -> String {
+        use std::os::windows::fs::MetadataExt;
+
+        let datetime = time::OffsetDateTime::from_unix_timestamp(self.last_modified as i64).unwrap();
+        let formatted_date = datetime
+            .format(time::macros::format_description!(
+                "[month repr:short] [day] [hour]:[minute]"
+            ))
+            .unwrap();
+
+        // Windows doesn't have Unix-style permissions, so we show a simplified format
+        let attrs = if self.metadata.is_dir() { "d" } else { "-" };
+        let readonly = if self.metadata.permissions().readonly() {
+            "r-"
+        } else {
+            "rw"
+        };
+
+        format!(
+            "{}{} {} {} {}",
+            attrs,
+            readonly,
+            self.metadata.file_size(),
+            formatted_date,
+            self.path.to_string_lossy()
+        )
+    }
 }
 
+#[cfg(unix)]
 fn format_ftype(md: &Metadata) -> char {
     if md.is_symlink() {
         'l'

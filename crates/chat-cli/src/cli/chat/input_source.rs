@@ -131,6 +131,9 @@ impl InputSource {
                 let prompt = prompt.unwrap_or_default();
                 match rl.readline(prompt) {
                     Ok(line) => {
+                        // Strip \r characters that may be present on Windows from
+                        // pasted multi-line text with \r\n line endings
+                        let line = line.replace('\r', "");
                         if Self::should_append_history(&line) {
                             let _ = rl.add_history_entry(line.as_str());
                         }

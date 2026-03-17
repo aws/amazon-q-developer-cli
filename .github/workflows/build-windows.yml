@@ -1,0 +1,253 @@
+name: 1.3 Build Windows
+
+on:
+  workflow_call:
+    inputs:
+      channel:
+        type: string
+        required: true
+      build_timestamp:
+        type: string
+        required: true
+      version:
+        type: string
+        required: true
+      release_type:
+        type: string
+        required: true
+      environment:
+        type: string
+        required: true
+      branch_name:
+        type: string
+        required: true
+      commit_sha:
+        type: string
+        required: true
+      include_v2:
+        type: boolean
+        required: false
+        default: false
+        description: "Include V2 TUI build and set as default CLI version"
+
+env:
+  AWS_REGION: "us-east-1"
+  STAGE_NAME: ${{ inputs.environment }}
+  CI: 1
+
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+  build-windows:
+    name: Build Windows (${{ matrix.target }}, ${{ inputs.environment }})
+    runs-on: ${{ matrix.runner }}
+    environment: ${{ inputs.environment }}
+    strategy:
+      fail-fast: true
+      matrix:
+        include:
+          - target: x86_64-pc-windows-msvc
+            runner: windows-2019
+            arch: x64
+            build_installers: true
+          - target: aarch64-pc-windows-msvc
+            runner: windows-2019
+            arch: arm64
+            build_installers: false
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.commit_sha }}
+
+      - name: Configure environment from secrets
+        shell: bash
+        run: |
+          {
+            echo "AWS_GITHUB_ACTIONS_ROLE_ARN=${{ secrets.AWS_GITHUB_ACTIONS_ROLE_ARN }}"
+            echo "BUILD_OUTPUT_BUCKET=${{ secrets.BUILD_OUTPUT_BUCKET }}"
+          } >> "$GITHUB_ENV"
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - name: Ensure target is installed
+        shell: bash
+        run: rustup target add ${{ matrix.target }}
+
+      - name: Cache Rust dependencies
+        uses: Swatinem/rust-cache@v2
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ env.AWS_GITHUB_ACTIONS_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+          role-duration-seconds: 7200
+
+      - name: Build Windows Binary
+        shell: bash
+        env:
+          CARGO_INCREMENTAL: "0"
+          CARGO_PROFILE_RELEASE_LTO: thin
+          CARGO_NET_GIT_FETCH_WITH_CLI: "true"
+          RUSTFLAGS: "-C force-frame-pointers=yes"
+        run: |
+          cargo build --locked --package chat_cli --release --target ${{ matrix.target }}
+
+      - name: Setup Python (for V2 build)
+        if: inputs.include_v2
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install Python dependencies (for V2 build)
+        if: inputs.include_v2
+        run: pip install -r scripts/requirements.txt
+
+      - name: Setup Bun (for V2 build)
+        if: inputs.include_v2
+        uses: oven-sh/setup-bun@v2
+
+      - name: Build V2 Windows Binary with TUI/Bun embedding
+        if: inputs.include_v2
+        shell: bash
+        env:
+          AMAZON_Q_BUILD_TARGET_TRIPLE: ${{ matrix.target }}
+        run: |
+          python3 ./scripts/main_v2.py build \
+            --skip-lints --skip-tests \
+            --stage-name "${{ env.STAGE_NAME }}"
+
+      - name: Package artifacts
+        shell: bash
+        run: |
+          mkdir -p build
+          TARGET="${{ matrix.target }}"
+          SRC="target/${TARGET}/release/chat_cli.exe"
+
+          if [ ! -f "$SRC" ]; then
+            echo "❌ Binary not found at ${SRC}"
+            exit 1
+          fi
+
+          cp "$SRC" "build/kiro-cli-chat-${TARGET}.exe"
+
+          cat > build/BUILD_INFO.json <<EOF
+          {
+            "commit": "${{ inputs.commit_sha }}",
+            "build_time": "$(date -u +%Y-%m-%dT%H:%M:%S%z)",
+            "target": "${TARGET}",
+            "version": "${{ inputs.version }}"
+          }
+          EOF
+
+          cd build
+          7z a "kiro-cli-chat-${TARGET}.zip" "kiro-cli-chat-${TARGET}.exe" BUILD_INFO.json
+          sha256sum "kiro-cli-chat-${TARGET}.zip" > "kiro-cli-chat-${TARGET}.zip.sha256"
+          echo "✓ Packaged kiro-cli-chat-${TARGET}.zip"
+
+      - name: Build setup.exe installer
+        if: matrix.build_installers
+        shell: pwsh
+        run: |
+          $version = "${{ inputs.version }}"
+          Write-Host "Building setup.exe for version $version"
+          & "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" /DVersion=$version "windows-installer\setup.iss"
+          if ($LASTEXITCODE -ne 0) { throw "Inno Setup build failed" }
+          Write-Host "✓ Created windows-installer\output\kiro-cli-setup-${version}.exe"
+
+      - name: Build MSI installer
+        if: matrix.build_installers
+        shell: pwsh
+        run: |
+          $version = "${{ inputs.version }}"
+          $wixVersion = "$version.0"
+          $arch = "${{ matrix.arch }}"
+          $includeV2 = "${{ inputs.include_v2 }}"
+          
+          # Determine which binary to use and CLI version based on include_v2 flag
+          if ($includeV2 -eq "true") {
+            $binaryPath = (Resolve-Path "build\kiro-cli-chat.exe").Path
+            $cliVersion = "v2"
+            Write-Host "Using V2 binary: $binaryPath"
+          } else {
+            $binaryPath = (Resolve-Path "target\${{ matrix.target }}\release\chat_cli.exe").Path
+            $cliVersion = "v1"
+            Write-Host "Using V1 binary: $binaryPath"
+          }
+          
+          Write-Host "Building MSI for $arch version $wixVersion (CLI version: $cliVersion)"
+
+          dotnet tool install --global wix 2>$null
+          wix extension add WixToolset.UI.wixext/6.0.0 --global 2>$null
+
+          New-Item -ItemType Directory -Force -Path "windows-installer\output" | Out-Null
+
+          wix build windows-installer\Product.wxs `
+            -arch $arch `
+            -ext WixToolset.UI.wixext `
+            -d ProductVersion=$wixVersion `
+            -d BinarySource=$binaryPath `
+            -d DefaultCliVersion=$cliVersion `
+            -b windows-installer `
+            -o "windows-installer\output\kiro-cli-${version}-${arch}.msi"
+
+          if ($LASTEXITCODE -ne 0) { throw "WiX build failed" }
+          Write-Host "✓ Created windows-installer\output\kiro-cli-${version}-${arch}.msi"
+
+      - name: Build WiX Burn bootstrapper
+        if: matrix.build_installers
+        shell: pwsh
+        run: |
+          $version = "${{ inputs.version }}"
+          $wixVersion = "$version.0"
+          $arch = "${{ matrix.arch }}"
+          
+          $msiPath = (Resolve-Path "windows-installer\output\kiro-cli-${version}-${arch}.msi").Path
+          Write-Host "Building Burn bootstrapper for $arch version $wixVersion"
+          Write-Host "MSI Path: $msiPath"
+
+          # Install WiX Bal extension for bootstrapper
+          wix extension add WixToolset.Bal.wixext/6.0.0 --global 2>$null
+
+          wix build windows-installer\Bundle.wxs `
+            -arch $arch `
+            -ext WixToolset.Bal.wixext `
+            -d ProductVersion=$wixVersion `
+            -d MsiPath=$msiPath `
+            -b windows-installer `
+            -o "windows-installer\output\kiro-cli-setup-${version}-${arch}.exe"
+
+          if ($LASTEXITCODE -ne 0) { throw "WiX Burn build failed" }
+          Write-Host "✓ Created windows-installer\output\kiro-cli-setup-${version}-${arch}.exe"
+
+      - name: Upload artifacts to S3
+        shell: bash
+        run: |
+          BRANCH_NAME="${{ inputs.branch_name }}"
+          COMMIT_ID="${{ inputs.commit_sha }}"
+          TARGET="${{ matrix.target }}"
+          ARCH="${{ matrix.arch }}"
+          S3_PATH_COMMIT="chat/${BRANCH_NAME}/${COMMIT_ID}/${TARGET}"
+          S3_PATH_LATEST="chat/${BRANCH_NAME}/latest/${TARGET}"
+
+          aws s3 cp "build/kiro-cli-chat-${TARGET}.zip" "s3://${{ env.BUILD_OUTPUT_BUCKET }}/${S3_PATH_COMMIT}/"
+          aws s3 cp "build/kiro-cli-chat-${TARGET}.zip.sha256" "s3://${{ env.BUILD_OUTPUT_BUCKET }}/${S3_PATH_COMMIT}/"
+
+          aws s3 cp "build/kiro-cli-chat-${TARGET}.zip" "s3://${{ env.BUILD_OUTPUT_BUCKET }}/${S3_PATH_LATEST}/"
+          aws s3 cp "build/kiro-cli-chat-${TARGET}.zip.sha256" "s3://${{ env.BUILD_OUTPUT_BUCKET }}/${S3_PATH_LATEST}/"
+
+          # Upload installers if built (MSI and setup.exe bootstrapper)
+          if [ -d "windows-installer/output" ] && [ "$(ls -A windows-installer/output 2>/dev/null)" ]; then
+            echo "Uploading installers:"
+            ls -la windows-installer/output/
+            aws s3 cp windows-installer/output/ "s3://${{ env.BUILD_OUTPUT_BUCKET }}/${S3_PATH_COMMIT}/installers/" --recursive
+            aws s3 cp windows-installer/output/ "s3://${{ env.BUILD_OUTPUT_BUCKET }}/${S3_PATH_LATEST}/installers/" --recursive
+            echo "✓ Uploaded MSI and setup.exe installers"
+          fi
+
+          echo "✓ Uploaded to s3://${{ env.BUILD_OUTPUT_BUCKET }}/${S3_PATH_COMMIT}/"

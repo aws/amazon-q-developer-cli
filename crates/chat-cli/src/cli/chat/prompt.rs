@@ -874,6 +874,53 @@ impl rustyline::ConditionalEventHandler for PasteImageHandler {
     }
 }
 
+/// Windows-only handler that detects multi-line paste by peeking at the console
+/// input buffer when Enter is pressed. If there are pending input events (indicating
+/// a paste rather than a human keypress), inserts a newline instead of accepting
+/// the line. This prevents pasted \r\n sequences from being split into separate
+/// readline submissions.
+///
+/// On Unix, bracketed paste mode handles this natively, so this handler is not needed.
+#[cfg(windows)]
+struct WindowsPasteEnterHandler;
+
+#[cfg(windows)]
+impl rustyline::ConditionalEventHandler for WindowsPasteEnterHandler {
+    fn handle(
+        &self,
+        _evt: &rustyline::Event,
+        _n: RepeatCount,
+        _positive: bool,
+        _ctx: &rustyline::EventContext<'_>,
+    ) -> Option<Cmd> {
+        use windows_sys::Win32::System::Console;
+
+        // Get the console input handle
+        let handle = unsafe { Console::GetStdHandle(Console::STD_INPUT_HANDLE) };
+        if handle.is_null() || handle == windows_sys::Win32::Foundation::INVALID_HANDLE_VALUE {
+            return None; // Can't peek, fall through to default AcceptOrInsertLine
+        }
+
+        let mut pending: u32 = 0;
+        let ok = unsafe { Console::GetNumberOfConsoleInputEvents(handle, &mut pending) };
+        if ok == 0 {
+            return None; // API call failed, fall through to default
+        }
+
+        // When a human presses Enter, there are typically 0-1 events left in the
+        // buffer (just the key-up event). During a paste, the buffer will have many
+        // more events queued. A threshold of >2 reliably distinguishes paste from
+        // a real keypress.
+        if pending > 2 {
+            // This is a paste — insert a newline instead of accepting the line
+            Some(Cmd::Insert(1, "\n".to_string()))
+        } else {
+            // Real Enter keypress — return None to fall through to default AcceptOrInsertLine
+            None
+        }
+    }
+}
+
 pub fn rl(
     os: &Os,
     sender: PromptQuerySender,
@@ -988,6 +1035,16 @@ pub fn rl(
     rl.bind_sequence(
         KeyEvent(KeyCode::Char('v'), Modifiers::CTRL),
         EventHandler::Conditional(Box::new(PasteImageHandler::new(paste_state))),
+    );
+
+    // On Windows, bind Enter to a conditional handler that detects multi-line paste
+    // by peeking at the console input buffer. If more events are pending (paste),
+    // insert a newline instead of accepting the line. On Unix, bracketed paste
+    // handles this natively so this binding is not registered.
+    #[cfg(windows)]
+    rl.bind_sequence(
+        KeyEvent(KeyCode::Enter, Modifiers::NONE),
+        EventHandler::Conditional(Box::new(WindowsPasteEnterHandler)),
     );
 
     // Setup agent keybinds
