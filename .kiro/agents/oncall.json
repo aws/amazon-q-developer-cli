@@ -7,13 +7,10 @@
   "tools": [
     "@builder-mcp/TicketingReadActions",
     "@builder-mcp/TicketingWriteActions",
-    "@builder-mcp/MechanicDiscoverTools",
-    "@builder-mcp/MechanicRunTool",
     "@builder-mcp/ReadInternalWebsites",
     "@builder-mcp/InternalCodeSearch",
+    "@builder-mcp/InternalSearch",
     "@builder-mcp/QuipEditor",
-    "@builder-mcp/GetPipelineHealth",
-    "@builder-mcp/OncallReadActions",
     "read",
     "write",
     "shell",
@@ -31,7 +28,8 @@
     "knowledge",
     "@builder-mcp/TicketingReadActions",
     "@builder-mcp/ReadInternalWebsites",
-    "@builder-mcp/InternalCodeSearch"
+    "@builder-mcp/InternalCodeSearch",
+    "@builder-mcp/InternalSearch"
   ],
   "toolsSettings": {
     "shell": {
@@ -59,11 +57,7 @@
   ],
   "mcpServers": {
     "builder-mcp": {
-      "command": "builder-mcp",
-      "env": {
-        "TOOL_PERSONALIZATION_ENABLED": "true",
-        "TOOL_PERSONALIZATION_ROLLOUT_PERCENTAGE": "100"
-      }
+      "command": "builder-mcp"
     }
   }
 }
