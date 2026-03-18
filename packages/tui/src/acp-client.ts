@@ -63,12 +63,34 @@ export class AcpClient implements acp.Client, SessionClient {
 
   constructor(agentPath: string, extraAcpArgs: string[] = []) {
     this.agentProcess = spawn(agentPath, ['acp', ...extraAcpArgs], {
-      stdio: ['pipe', 'pipe', 'inherit'],
+      stdio: ['pipe', 'pipe', 'pipe'],
       env: process.env,
     });
 
     if (!this.agentProcess.stdout || !this.agentProcess.stdin) {
       throw new Error('Failed to create agent process stdio streams');
+    }
+
+    // Route agent stderr to the TUI logger instead of inheriting it
+    // to the terminal (prevents debug output like "[DEBUG] Invoked with model"
+    // from bleeding into the TUI).
+    if (this.agentProcess.stderr) {
+      let stderrBuf = '';
+      this.agentProcess.stderr.on('data', (chunk: Buffer) => {
+        stderrBuf += chunk.toString();
+        const lines = stderrBuf.split('\n');
+        stderrBuf = lines.pop() || '';
+        for (const line of lines) {
+          if (line.trim()) {
+            logger.debug('[agent-stderr]', line);
+          }
+        }
+      });
+      this.agentProcess.stderr.on('end', () => {
+        if (stderrBuf.trim()) {
+          logger.debug('[agent-stderr]', stderrBuf);
+        }
+      });
     }
 
     const stdin = this.agentProcess.stdin;
