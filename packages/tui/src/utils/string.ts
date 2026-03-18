@@ -2,7 +2,7 @@
  * Normalize line endings to \n (handles \r\n and \r)
  */
 export const normalizeLineEndings = (str: string): string =>
-  str.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+  expandTabs(str.replace(/\r\n/g, '\n').replace(/\r/g, '\n'));
 
 /**
  * Expand tab characters to spaces, respecting tab stop positions.

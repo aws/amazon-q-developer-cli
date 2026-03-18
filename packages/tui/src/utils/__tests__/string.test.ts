@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'bun:test';
-import { expandTabs } from '../string';
+import { expandTabs, normalizeLineEndings } from '../string';
 
 describe('expandTabs', () => {
   it('returns string unchanged when no tabs', () => {
@@ -40,5 +40,13 @@ describe('expandTabs', () => {
 
   it('handles lines without tabs in multiline string', () => {
     expect(expandTabs('no tabs\n\thas tab')).toBe('no tabs\n  has tab');
+  });
+});
+
+describe('normalizeLineEndings', () => {
+  it('replaces tab with spaces so cursor math matches visual width', () => {
+    // Tab is 1 char but string-width reports it as 0, causing cursor/wrap mismatch.
+    // normalizeLineEndings should expand tabs so the segment value has no raw \t.
+    expect(normalizeLineEndings('ISSUE-1234\t')).not.toContain('\t');
   });
 });
