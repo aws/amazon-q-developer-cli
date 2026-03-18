@@ -183,19 +183,10 @@ jobs:
             exit 1
           fi
 
-          cp "$SRC" "build/kiro-cli-chat-${TARGET}.exe"
-
-          cat > build/BUILD_INFO.json <<EOF
-          {
-            "commit": "${{ inputs.commit_sha }}",
-            "build_time": "$(date -u +%Y-%m-%dT%H:%M:%S%z)",
-            "target": "${TARGET}",
-            "version": "${{ inputs.version }}"
-          }
-          EOF
+          cp "$SRC" "build/kiro-cli.exe"
 
           cd build
-          7z a "kiro-cli-chat-${TARGET}.zip" "kiro-cli-chat-${TARGET}.exe" BUILD_INFO.json
+          7z a "kiro-cli-chat-${TARGET}.zip" "kiro-cli.exe"
           sha256sum "kiro-cli-chat-${TARGET}.zip" > "kiro-cli-chat-${TARGET}.zip.sha256"
           echo "✓ Packaged kiro-cli-chat-${TARGET}.zip"
 
