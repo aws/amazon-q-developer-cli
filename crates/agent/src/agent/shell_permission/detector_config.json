@@ -15,7 +15,8 @@
     "PYTHONWARNINGS", "PYTHONSTARTUP", "PYTHONPATH", "PYTHONHOME",
     "PERL5OPT", "PERL5LIB", "RUBYOPT", "RUBYLIB", "NODE_OPTIONS", "NODE_PATH",
     "IFS", "PATH", "HOME", "SHELL", "PROMPT_COMMAND", "BASH_ENV", "ENV",
-    "GIT_SSH", "GIT_SSH_COMMAND", "GIT_EXEC_PATH", "GIT_TEMPLATE_DIR"
+    "GIT_EDITOR", "GIT_SEQUENCE_EDITOR", "GIT_ASKPASS", "GIT_EXTERNAL_DIFF",
+    "GIT_SSH", "GIT_SSH_COMMAND", "GIT_PROXY_COMMAND", "GIT_EXEC_PATH", "GIT_TEMPLATE_DIR"
   ],
   "shells": ["sh", "bash", "zsh", "dash", "ksh", "csh", "tcsh", "fish", "nu", "pwsh", "powershell"],
   "safe_commands": [
