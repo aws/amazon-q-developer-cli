@@ -1,152 +1,34 @@
-# kiro-cli
+# Kiro CLI V2 — ACP-Based Chat Backend
 
-Rust backend for the Kiro CLI chat application. This crate provides the ACP (Agent Client Protocol) agent implementation that handles LLM interactions, tool execution, and session management.
-
-## Role in Architecture
-
-The chat-cli crate serves as the backend layer in the Kiro CLI chat application:
-
-- **ACP Agent**: Implements the Agent Client Protocol server for communication with the TUI frontend
-- **LLM Integration**: Handles API calls to the language model service
-- **Tool Execution**: Manages built-in tools (file operations, bash execution, AWS CLI, etc.)
-- **Session Management**: Persists conversation state and session metadata
-- **MCP Support**: Integrates Model Context Protocol servers for extensibility
-
-## ACP Actor Architecture
-
-This crate implements a tokio actor-based architecture for handling ACP protocol messages. Each actor
-follows the **handle/request/response pattern**: a `Handle` type provides an async API that sends
-typed `Request` messages to the actor and awaits `Response` messages via oneshot channels.
-
-### Actor Hierarchy
+This crate implements the ACP (Agent Client Protocol) server that bridges the TypeScript TUI frontend to the core agent engine. It owns everything between the TUI and the agent engine: receiving ACP requests, managing sessions, calling the LLM API, persisting state, and sending events back. The actual agent loop (tool execution, permissions, hooks, MCP servers) lives in the `agent` crate.
 
 ```
-┌─────────────────────────────────────────────────────────────────────────────────┐
-│                              SACP Protocol Layer                                │
-│                                                                                 │
-│  Receives ACP requests from the TUI client over stdio and converts them into   │
-│  SessionManager messages. Sends ACP notifications back to the client.          │
-└─────────────────────────────────────────────────────────────────────────────────┘
-                                       │
-                                       ▼
-┌─────────────────────────────────────────────────────────────────────────────────┐
-│                              SessionManager                                     │
-│                                                                                 │
-│  Central coordinator that owns all active sessions. Routes requests to the      │
-│  appropriate AcpSession and forwards notifications back to the ACP client.      │
-│                                                                                 │
-│  Key responsibilities:                                                          │
-│  - Session lifecycle (create, load, terminate)                                  │
-│  - Client connection management                                                 │
-│  - Tool approval request routing                                                │
-│  - Agent mode switching                                                         │
-└─────────────────────────────────────────────────────────────────────────────────┘
-                                       │
-                          ┌────────────┴────────────┐
-                          ▼                         ▼
-┌─────────────────────────────────┐   ┌─────────────────────────────────┐
-│         AcpSession              │   │         AcpSession              │
-│                                 │   │                                 │
-│  Represents a single ACP        │   │  (Multiple sessions can exist   │
-│  session. Bridges the ACP       │   │   concurrently, e.g. subagents) │
-│  protocol to the Agent.         │   │                                 │
-│                                 │   └─────────────────────────────────┘
-│  - Session persistence          │
-│  - Custom extension handlers    │
-│    (e.g. slash commands)        │
-│  - Protocol translation         │
-└─────────────────────────────────┘
-                │
-                ▼
-┌─────────────────────────────────┐
-│            Agent                │
-│      (from `agent` crate)       │
-│                                 │
-│  Core LLM agent implementation. │
-│  See agent crate README for     │
-│  its internal architecture.     │
-└─────────────────────────────────┘
+┌─────────────────┐     ACP (JSON-RPC)      ┌──────────────────────┐
+│   TUI Client    │ ◄──────────────────────► │   Rust Agent         │
+│  (TypeScript)   │     stdio transport      │   (this crate)       │
+└─────────────────┘                          └──────────────────────┘
+        │                                              │
+   AcpClient                                    SessionManager
+        │                                              │
+   Kiro class                                   AcpSession(s)
+        │                                              │
+   React TUI                                    Agent (agent crate)
 ```
 
-### Message Flow
+## Crate Structure
 
-**Prompt Request Flow (Ingress):**
-```
-TUI ──[PromptRequest]──► SessionManager ──► AcpSession ──► Agent
-```
-
-**Event Flow (Egress):**
-```
-Agent ──[AgentEvent]──► AcpSession ──► SessionManager ──[SessionNotification]──► TUI
-```
-
-## ACP Actor Architecture
-
-This crate implements a tokio actor-based architecture for handling ACP protocol messages. Each actor
-follows the **handle/request/response pattern**: a `Handle` type provides an async API that sends
-typed `Request` messages to the actor and awaits `Response` messages via oneshot channels.
-
-### Actor Hierarchy
-
-```
-┌─────────────────────────────────────────────────────────────────────────────────┐
-│                              SACP Protocol Layer                                │
-│                                                                                 │
-│  Receives ACP requests from the TUI client over stdio and converts them into   │
-│  SessionManager messages. Sends ACP notifications back to the client.          │
-└─────────────────────────────────────────────────────────────────────────────────┘
-                                       │
-                                       ▼
-┌─────────────────────────────────────────────────────────────────────────────────┐
-│                              SessionManager                                     │
-│                                                                                 │
-│  Central coordinator that owns all active sessions. Routes requests to the      │
-│  appropriate AcpSession and forwards notifications back to the ACP client.      │
-│                                                                                 │
-│  Key responsibilities:                                                          │
-│  - Session lifecycle (create, load, terminate)                                  │
-│  - Client connection management                                                 │
-│  - Tool approval request routing                                                │
-│  - Agent mode switching                                                         │
-└─────────────────────────────────────────────────────────────────────────────────┘
-                                       │
-                          ┌────────────┴────────────┐
-                          ▼                         ▼
-┌─────────────────────────────────┐   ┌─────────────────────────────────┐
-│         AcpSession              │   │         AcpSession              │
-│                                 │   │                                 │
-│  Represents a single ACP        │   │  (Multiple sessions can exist   │
-│  session. Bridges the ACP       │   │   concurrently, e.g. subagents) │
-│  protocol to the Agent.         │   │                                 │
-│                                 │   └─────────────────────────────────┘
-│  - Session persistence          │
-│  - Custom extension handlers    │
-│    (e.g. slash commands)        │
-│  - Protocol translation         │
-└─────────────────────────────────┘
-                │
-                ▼
-┌─────────────────────────────────┐
-│            Agent                │
-│      (from `agent` crate)       │
-│                                 │
-│  Core LLM agent implementation. │
-│  See agent crate README for     │
-│  its internal architecture.     │
-└─────────────────────────────────┘
-```
-
-### Message Flow
-
-**Prompt Request Flow (Ingress):**
-```
-TUI ──[PromptRequest]──► SessionManager ──► AcpSession ──► Agent
-```
-
-**Event Flow (Egress):**
-```
-Agent ──[AgentEvent]──► AcpSession ──► SessionManager ──[SessionNotification]──► TUI
-```
+| Directory | Purpose |
+|-----------|---------|
+| `agent/` | ACP protocol layer, LLM streaming, and session persistence. Implements the ACP server using the `sacp` SDK, bridges to the `agent` crate's engine, and persists session state to disk. See `agent/README.md` for details. |
+| `api_client/` | AWS API client. Calls the Q Developer streaming API (`send_message`), model listing, usage limits, and telemetry. Includes `IpcMockApiClient` for test injection. |
+| `auth/` | Authentication. Builder ID (OIDC device flow), PKCE, SSO portal, social/external IdP login, token refresh. |
+| `cli/` | CLI entry point and subcommands. Argument parsing, `chat` (launches TUI or legacy mode), `user` (login/logout/whoami), `mcp`, agent config loading. |
+| `database/` | SQLite storage. Settings, credentials, auth profiles, conversation metadata, client ID. Includes migration system. |
+| `mcp_registry.rs` | MCP server registry. Fetches remote registries, caches responses, validates server definitions, filters tools. |
+| `telemetry/` | Event tracking. Usage metrics, tool use events, auth events, heartbeats. Background thread with batching. |
+| `util/` | Shared utilities. Path resolution, knowledge store, file URI handling, environment variables, system info. |
+| `os/` | Platform abstraction. Filesystem operations (`Fs` with chroot for testing), environment detection, diagnostics. |
+| `theme/` | Terminal styling. Color definitions and crossterm extensions for the legacy V1 terminal UI. |
 
 ## Development
 
