@@ -224,9 +224,7 @@ export const CommandMenu: React.FC = () => {
             ? `Select ${activeCommand.command.name.slice(1)}`
             : undefined
         }
-        searchPlaceholder={
-          isSelection ? 'type to search, ↑↓ to navigate' : undefined
-        }
+        searchPlaceholder={isSelection ? 'type to search' : undefined}
       />
     );
   }

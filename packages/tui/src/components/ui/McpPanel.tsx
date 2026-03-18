@@ -1,7 +1,7 @@
-import React, { useState, useCallback } from 'react';
-import { Box } from './../../renderer.js';
+import React, { useState, useCallback, useMemo } from 'react';
 import { Text } from './text/Text';
 import { Panel } from './panel/index.js';
+import { Table, type Row } from './table/index.js';
 import { useTheme } from '../../hooks/useThemeContext';
 import { useTerminalSize } from '../../hooks/useTerminalSize';
 import { fuzzyScore } from '../../utils/fuzzyScore.js';
@@ -72,6 +72,28 @@ export const McpPanel: React.FC<McpPanelProps> = ({ servers, onClose }) => {
     }
   };
 
+  const columns = [
+    { label: 'Name', width: nameCol },
+    { label: 'Status', width: statusCol },
+    { label: 'Tools' },
+  ];
+
+  const rows: Row[] = useMemo(
+    () =>
+      visible.map((server) => [
+        { text: server.name, color: primary },
+        {
+          text: statusLabels[server.status],
+          color: statusColor(server.status),
+        },
+        {
+          text: `${server.toolCount} tool${server.toolCount === 1 ? '' : 's'}`,
+          color: dim,
+        },
+      ]),
+    [visible, primary, dim, success, warning, error]
+  );
+
   const handleSearchChange = useCallback((s: string) => {
     setSearch(s);
     setScrollOffset(0);
@@ -95,34 +117,7 @@ export const McpPanel: React.FC<McpPanelProps> = ({ servers, onClose }) => {
       {servers.length === 0 ? (
         <Text>{dim('No MCP servers configured')}</Text>
       ) : (
-        <Box flexDirection="column">
-          <Box>
-            <Box width={nameCol}>
-              <Text>{dim('Name')}</Text>
-            </Box>
-            <Box width={statusCol}>
-              <Text>{dim('Status')}</Text>
-            </Box>
-            <Text>{dim('Tools')}</Text>
-          </Box>
-          {visible.map((server) => (
-            <Box key={server.name}>
-              <Box width={nameCol}>
-                <Text>{primary(server.name)}</Text>
-              </Box>
-              <Box width={statusCol}>
-                <Text>
-                  {statusColor(server.status)(statusLabels[server.status])}
-                </Text>
-              </Box>
-              <Text>
-                {dim(
-                  `${server.toolCount} tool${server.toolCount === 1 ? '' : 's'}`
-                )}
-              </Text>
-            </Box>
-          ))}
-        </Box>
+        <Table columns={columns} rows={rows} />
       )}
     </Panel>
   );

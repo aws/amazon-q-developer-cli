@@ -1,7 +1,7 @@
-import React, { useState, useCallback } from 'react';
-import { Box } from './../../renderer.js';
+import React, { useState, useCallback, useMemo } from 'react';
 import { Text } from './text/Text';
 import { Panel } from './panel/index.js';
+import { Table, type Row } from './table/index.js';
 import { useTheme } from '../../hooks/useThemeContext';
 import { useTerminalSize } from '../../hooks/useTerminalSize';
 import { fuzzyScore } from '../../utils/fuzzyScore.js';
@@ -91,6 +91,27 @@ export const ToolsPanel: React.FC<ToolsPanelProps> = ({ tools, onClose }) => {
   const sourceColor = (source: string) =>
     source === 'built-in' ? brand : info;
 
+  const columns = [
+    { label: 'Name', width: nameCol },
+    { label: 'Source', width: sourceCol },
+    { label: 'Status', width: statusCol },
+    { label: 'Description' },
+  ];
+
+  const rows: Row[] = useMemo(
+    () =>
+      visible.map((tool) => {
+        const st = tool.status ?? 'requires-approval';
+        return [
+          { text: tool.name, color: primary },
+          { text: tool.source, color: sourceColor(tool.source) },
+          { text: statusLabels[st], color: statusColor(st) },
+          { text: shortDescription(tool.description, descCol), color: dim },
+        ];
+      }),
+    [visible, descCol, primary, dim, brand, info, success, warning, error]
+  );
+
   const handleSearchChange = useCallback((s: string) => {
     setSearch(s);
     setScrollOffset(0);
@@ -114,37 +135,7 @@ export const ToolsPanel: React.FC<ToolsPanelProps> = ({ tools, onClose }) => {
       {tools.length === 0 ? (
         <Text>{dim('No tools available')}</Text>
       ) : (
-        <Box flexDirection="column">
-          <Box>
-            <Box width={nameCol}>
-              <Text>{dim('Name')}</Text>
-            </Box>
-            <Box width={sourceCol}>
-              <Text>{dim('Source')}</Text>
-            </Box>
-            <Box width={statusCol}>
-              <Text>{dim('Status')}</Text>
-            </Box>
-            <Text>{dim('Description')}</Text>
-          </Box>
-          {visible.map((tool) => {
-            const st = tool.status ?? 'requires-approval';
-            return (
-              <Box key={`${tool.source}:${tool.name}`}>
-                <Box width={nameCol}>
-                  <Text>{primary(tool.name)}</Text>
-                </Box>
-                <Box width={sourceCol}>
-                  <Text>{sourceColor(tool.source)(tool.source)}</Text>
-                </Box>
-                <Box width={statusCol}>
-                  <Text>{statusColor(st)(statusLabels[st])}</Text>
-                </Box>
-                <Text>{dim(shortDescription(tool.description, descCol))}</Text>
-              </Box>
-            );
-          })}
-        </Box>
+        <Table columns={columns} rows={rows} />
       )}
     </Panel>
   );

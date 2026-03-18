@@ -10,6 +10,7 @@ const meta = {
       'MinimalItems',
       'Mentions',
       'WithSelectedIndicator',
+      'Searchable',
     ],
   },
   tags: ['autodocs'],
@@ -161,6 +162,25 @@ export const WithSelectedIndicator = {
     prefix: '',
     visibleItems: 8,
     showSelectedIndicator: true,
+    onSelect: (item: any) => console.log('Selected model:', item),
+  },
+};
+
+export const Searchable = {
+  parameters: {
+    docs: {
+      storyDescription:
+        'Searchable menu with type-to-filter, footer hints, and selected indicator',
+    },
+  },
+  args: {
+    items: aiModels,
+    prefix: '',
+    visibleItems: 8,
+    showSelectedIndicator: true,
+    searchable: true,
+    searchLabel: 'Select model',
+    searchPlaceholder: 'type to search',
     onSelect: (item: any) => console.log('Selected model:', item),
   },
 };

@@ -29,6 +29,7 @@ import * as WebFetchStories from '../components/chat/tools/WebFetch.stories.js';
 import * as IntrospectStories from '../components/chat/tools/Introspect.stories.js';
 import * as NotificationBarStories from '../components/chat/notification-bar/NotificationBar.stories.js';
 import * as ActionHintStories from '../components/ui/hint/ActionHint.stories.js';
+import * as TableStories from '../components/ui/table/Table.stories.js';
 
 /**
  * Derives a title from the import path if meta.title is not provided.
@@ -229,4 +230,5 @@ export const stories = [
     ActionHintStories,
     '../components/ui/hint/ActionHint.stories.js'
   ),
+  convertStoryModule(TableStories, '../components/ui/table/Table.stories.js'),
 ];

@@ -163,6 +163,7 @@ export function ContextBreakdown({
       onClose={onClose}
       onTabSwitch={onTabSwitch}
       showTabHint={true}
+      tabHintLabel="to switch to /usage"
       footerExtra={
         <Text>
           {primary('ctrl+o')} {dim(expanded ? 'to collapse' : 'to expand')}

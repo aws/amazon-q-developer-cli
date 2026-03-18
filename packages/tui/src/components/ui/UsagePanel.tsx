@@ -84,6 +84,7 @@ export function UsagePanel({ data, onClose, onTabSwitch }: UsagePanelProps) {
         onClose={onClose}
         onTabSwitch={onTabSwitch}
         showTabHint={true}
+        tabHintLabel="to switch to /context"
       >
         <Text>{secondary('Loading usage data...')}</Text>
       </Panel>
@@ -96,11 +97,12 @@ export function UsagePanel({ data, onClose, onTabSwitch }: UsagePanelProps) {
       onClose={onClose}
       onTabSwitch={onTabSwitch}
       showTabHint={true}
+      tabHintLabel="to switch to /context"
     >
       {data.usageBreakdowns.map((item, i) => {
         const pct = item.limit > 0 ? (item.used / item.limit) * 100 : 0;
         return (
-          <Box key={i} flexDirection="column" marginBottom={1}>
+          <Box key={i} flexDirection="column">
             <Box justifyContent="space-between">
               <Text>
                 {primary(item.displayName)}{' '}
@@ -108,14 +110,16 @@ export function UsagePanel({ data, onClose, onTabSwitch }: UsagePanelProps) {
                   `(${item.used.toFixed(2)} of ${item.limit} covered in plan)`
                 )}
               </Text>
-              <Text>{secondary(`${pct.toFixed(1)}%`)}</Text>
             </Box>
-            <UsageProgressBar percentage={pct} width={barWidth} />
+            <Box>
+              <UsageProgressBar percentage={pct} width={barWidth} />
+              <Text> {secondary(`${pct.toFixed(1)}%`)}</Text>
+            </Box>
           </Box>
         );
       })}
 
-      <Box marginTop={1} marginBottom={1}>
+      <Box marginTop={1}>
         <Text>
           {primary('Overages: ')}
           {data.overagesEnabled ? (
@@ -132,7 +136,7 @@ export function UsagePanel({ data, onClose, onTabSwitch }: UsagePanelProps) {
       </Box>
 
       {data.overagesEnabled && data.usageBreakdowns[0] && (
-        <Box flexDirection="column" marginBottom={1}>
+        <Box flexDirection="column">
           <Text>
             {secondary(
               `Credits used: ${data.usageBreakdowns[0].currentOverages}`
@@ -147,7 +151,7 @@ export function UsagePanel({ data, onClose, onTabSwitch }: UsagePanelProps) {
       )}
 
       {data.bonusCredits.length > 0 && (
-        <Box flexDirection="column" marginTop={1} marginBottom={1}>
+        <Box flexDirection="column" marginTop={1}>
           <Text>{primary('Bonus Credits:')}</Text>
           {data.bonusCredits.map((credit, i) => (
             <Text key={i}>
@@ -159,7 +163,7 @@ export function UsagePanel({ data, onClose, onTabSwitch }: UsagePanelProps) {
         </Box>
       )}
 
-      <Box marginTop={2}>
+      <Box marginTop={1}>
         <Text>
           {secondary('To manage your plan or configure overages navigate to ')}
           {brand('app.kiro.dev/account/usage')}

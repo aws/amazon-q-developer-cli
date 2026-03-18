@@ -1,9 +1,12 @@
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useMemo } from 'react';
 import { Box } from './../../renderer.js';
 import { Text } from './text/Text';
 import { Panel } from './panel/index.js';
+import { Divider } from './divider/Divider.js';
+import { Table, type Row } from './table/index.js';
 import { useTheme } from '../../hooks/useThemeContext';
 import { useTerminalSize } from '../../hooks/useTerminalSize';
+import { useInput } from '../../renderer.js';
 import { fuzzyScore } from '../../utils/fuzzyScore.js';
 import type { KnowledgeEntry } from '../../stores/app-store.js';
 
@@ -29,6 +32,13 @@ export const KnowledgePanel: React.FC<KnowledgePanelProps> = ({
   const maxVisible = Math.max(termHeight - 9, 5);
   const [scrollOffset, setScrollOffset] = useState(0);
   const [search, setSearch] = useState('');
+  const [expanded, setExpanded] = useState(false);
+
+  useInput((_input, key) => {
+    if (key.ctrl && _input === 'o') {
+      setExpanded((e) => !e);
+    }
+  });
 
   const q = search.toLowerCase();
   const filtered = search
@@ -72,6 +82,34 @@ export const KnowledgePanel: React.FC<KnowledgePanelProps> = ({
   const titleSuffix =
     titleParts.length > 0 ? titleParts.join(' · ') : 'no entries';
 
+  const columns = [
+    { label: 'Name', width: nameCol },
+    { label: 'ID', width: idCol },
+    { label: 'Status', width: itemsCol },
+    { label: 'Path' },
+  ];
+
+  const rows: Row[] = useMemo(
+    () =>
+      visible.map((entry) => {
+        const displayPath = entry.path ?? entry.description;
+        const truncatedPath =
+          displayPath.length > pathCol
+            ? '…' + displayPath.slice(-(pathCol - 1))
+            : displayPath;
+        return [
+          { text: entry.name, color: entry.indexing ? dim : primary },
+          { text: entry.id, color: entry.indexing ? dim : brand },
+          {
+            text: entry.items_display ?? `${entry.item_count} items`,
+            color: dim,
+          },
+          { text: truncatedPath, color: dim },
+        ];
+      }),
+    [visible, pathCol, dim, primary, brand]
+  );
+
   const handleSearchChange = useCallback((s: string) => {
     setSearch(s);
     setScrollOffset(0);
@@ -81,7 +119,7 @@ export const KnowledgePanel: React.FC<KnowledgePanelProps> = ({
     <Panel
       title={`/knowledge · ${titleSuffix}`}
       onClose={onClose}
-      searchable={true}
+      searchable={entries.length > 0}
       onSearchChange={handleSearchChange}
       canScrollUp={scrollOffset > 0}
       canScrollDown={canScrollDown}
@@ -91,56 +129,54 @@ export const KnowledgePanel: React.FC<KnowledgePanelProps> = ({
           Math.min(Math.max(0, filtered.length - maxVisible), p + 1)
         )
       }
+      footerExtra={
+        <Text>
+          {primary('ctrl+o')} {dim(expanded ? 'to collapse' : 'to expand')}
+        </Text>
+      }
     >
       {entries.length === 0 && !status ? (
-        <Text>{dim('No knowledge base entries')}</Text>
+        <Box flexDirection="column">
+          <Text>{dim('No knowledge base entries.')}</Text>
+          <Text>
+            {dim('Get started: ')}
+            {brand('/knowledge add <name> <path>')}
+          </Text>
+        </Box>
       ) : filtered.length === 0 && search ? (
         <Text>{dim('No matches')}</Text>
       ) : (
-        <Box flexDirection="column">
-          {filtered.length > 0 && (
-            <>
-              <Box>
-                <Box width={nameCol}>
-                  <Text>{dim('Name')}</Text>
-                </Box>
-                <Box width={idCol}>
-                  <Text>{dim('ID')}</Text>
-                </Box>
-                <Box width={itemsCol}>
-                  <Text>{dim('Status')}</Text>
-                </Box>
-                <Text>{dim('Path')}</Text>
-              </Box>
-              {visible.map((entry) => {
-                const displayPath = entry.path ?? entry.description;
-                const itemsText =
-                  entry.items_display ?? `${entry.item_count} items`;
-                const nameColor = entry.indexing ? dim : primary;
-                const idColor = entry.indexing ? dim : brand;
-                return (
-                  <Box key={entry.id}>
-                    <Box width={nameCol}>
-                      <Text>{nameColor(entry.name)}</Text>
-                    </Box>
-                    <Box width={idCol}>
-                      <Text>{idColor(entry.id)}</Text>
-                    </Box>
-                    <Box width={itemsCol}>
-                      <Text>{dim(itemsText)}</Text>
-                    </Box>
-                    <Text>
-                      {dim(
-                        displayPath.length > pathCol
-                          ? '…' + displayPath.slice(-(pathCol - 1))
-                          : displayPath
-                      )}
-                    </Text>
-                  </Box>
-                );
-              })}
-            </>
-          )}
+        <Table columns={columns} rows={rows} />
+      )}
+      {expanded && (
+        <Box flexDirection="column" marginTop={entries.length > 0 ? 1 : 0}>
+          <Divider />
+          <Text>{dim('Subcommands:')}</Text>
+          <Text>
+            {'  '}
+            {brand('/knowledge add <name> <path>')}{' '}
+            {dim('Add a file or directory')}
+          </Text>
+          <Text>
+            {'  '}
+            {brand('/knowledge remove <name|path>')}{' '}
+            {dim('Remove specified knowledge base entry')}
+          </Text>
+          <Text>
+            {'  '}
+            {brand('/knowledge update <path>')}{' '}
+            {dim('Re-index a file or directory')}
+          </Text>
+          <Text>
+            {'  '}
+            {brand('/knowledge clear')}{' '}
+            {dim('Remove all knowledge base entries')}
+          </Text>
+          <Text>
+            {'  '}
+            {brand('/knowledge cancel [operation_id]')}{' '}
+            {dim('Cancel a background operation')}
+          </Text>
         </Box>
       )}
     </Panel>

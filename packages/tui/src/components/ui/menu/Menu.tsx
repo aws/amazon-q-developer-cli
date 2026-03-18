@@ -5,6 +5,7 @@ import { useTextStyle } from '../../../hooks/useTextStyle.js';
 import { useTerminalSize } from '../../../hooks/useTerminalSize.js';
 import { Text } from '../text/Text.js';
 import { Icon, IconType } from '../icon/Icon.js';
+import { Divider } from '../divider/Divider.js';
 import { useKeypress } from '../../../hooks/useKeypress.js';
 
 export interface MenuItem {
@@ -170,6 +171,7 @@ export const Menu = React.memo(function Menu({
           {!searchText && <Text>{dimText(` ${searchPlaceholder}`)}</Text>}
         </Box>
       )}
+      {searchable && <Box height={1} />}
       {visibleItemsSlice.map((item, visibleIndex) => {
         const actualIndex = startIndex + visibleIndex;
         const itemText = `${prefix}${item.label}`;
@@ -210,6 +212,18 @@ export const Menu = React.memo(function Menu({
           </Box>
         );
       })}
+      {searchable && (
+        <>
+          <Divider />
+          <Box paddingX={1}>
+            <Text>
+              {brandText('ESC')} {dimText('to cancel')}
+              {dimText(' · ')}
+              {brandText('↑↓')} {dimText('to navigate')}
+            </Text>
+          </Box>
+        </>
+      )}
     </Box>
   );
 });

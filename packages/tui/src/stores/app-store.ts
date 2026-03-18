@@ -88,6 +88,7 @@ import {
   executeCommandWithArg,
   type CommandContext,
 } from '../commands/index.js';
+import { formatImageLabel } from '../utils/image-label.js';
 import { expandFileReferences, readFileContent } from '../utils/file-search.js';
 import { logger } from '../utils/logger.js';
 import {
@@ -542,7 +543,15 @@ export const createAppStore = (props: AppStoreProps) =>
       set({ currentAbortController: abortController });
 
       const userMessageId = generateMessageId();
-      const displayContent = content || (allImages.length > 0 ? '[image]' : '');
+
+      // Build display content: use image labels with dimensions when no text
+      const displayContent =
+        content ||
+        (pendingImages.length > 0
+          ? pendingImages.map(formatImageLabel).join(' ')
+          : allImages.length > 0
+            ? '[pasted image]'
+            : '');
       const userMessage: MessageType = {
         id: userMessageId,
         role: MessageRole.User,

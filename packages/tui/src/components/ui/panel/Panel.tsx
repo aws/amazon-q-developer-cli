@@ -11,6 +11,7 @@ export interface PanelProps {
   onClose: () => void;
   onTabSwitch?: () => void;
   showTabHint?: boolean;
+  tabHintLabel?: string;
   footerExtra?: React.ReactNode;
   footerLeft?: React.ReactNode;
   hideTitleDivider?: boolean;
@@ -28,6 +29,7 @@ export const Panel: React.FC<PanelProps> = ({
   onClose,
   onTabSwitch,
   showTabHint = false,
+  tabHintLabel = 'to switch view',
   footerExtra,
   footerLeft,
   hideTitleDivider = false,
@@ -124,7 +126,7 @@ export const Panel: React.FC<PanelProps> = ({
           {footerExtra && showTabHint && <Text>{dim(' | ')}</Text>}
           {showTabHint && (
             <Text>
-              {primary('Tab')} {dim('to switch view')}
+              {primary('Tab')} {dim(tabHintLabel)}
             </Text>
           )}
         </Box>
