@@ -9,3 +9,4 @@ export * from './logger.js';
 export * from './message-parser.js';
 export * from './synchronized-output.js';
 export * from './syntax-highlight.js';
+export * from './terminal-capabilities.js';

@@ -92,6 +92,12 @@ import { formatImageLabel } from '../utils/image-label.js';
 import { expandFileReferences, readFileContent } from '../utils/file-search.js';
 import { logger } from '../utils/logger.js';
 import {
+  setTerminalProgressWarning,
+  setTerminalProgressIndeterminate,
+  setTerminalProgressError,
+  clearTerminalProgress,
+} from '../utils/terminal-capabilities.js';
+import {
   getAuthErrorGuidance,
   getSessionErrorGuidance,
   getErrorGuidance,
@@ -433,8 +439,53 @@ export const useAppStore = <T>(
   return useStore(store, selector);
 };
 
-export const createAppStore = (props: AppStoreProps) =>
-  createStore<AppState & AppActions>((set, get) => ({
+const CONTEXT_WARNING_THRESHOLD = 60;
+
+/**
+ * Sync the OSC 9;4 terminal progress indicator to the current app state.
+ *
+ * When active (processing/compacting):
+ *   - Spinning green                       — normal processing
+ *   - Static yellow at 100%                — waiting for approval
+ *   - Pulsing red                          — error during processing
+ *
+ * When idle:
+ *   - Static yellow bar with context %     — context ≥ warning threshold
+ *   - Pulsing red                          — error
+ *   - Hidden                               — everything normal
+ */
+function syncTerminalProgress(
+  state: Pick<
+    AppState,
+    'agentError' | 'pendingApproval' | 'isProcessing' | 'isCompacting' | 'contextUsagePercent'
+  >,
+): void {
+  if (state.isProcessing || state.isCompacting) {
+    // Active — always spinning unless paused for approval
+    if (state.agentError) {
+      setTerminalProgressError();                       // pulsing red
+    } else if (state.pendingApproval) {
+      setTerminalProgressWarning(100);                  // static yellow at 100%
+    } else {
+      setTerminalProgressIndeterminate();               // spinning green
+    }
+  } else {
+    // Idle — static bar or hidden
+    if (state.agentError) {
+      setTerminalProgressError();                       // pulsing red
+    } else if (
+      state.contextUsagePercent != null &&
+      state.contextUsagePercent >= CONTEXT_WARNING_THRESHOLD
+    ) {
+      setTerminalProgressWarning(state.contextUsagePercent);  // static yellow with %
+    } else {
+      clearTerminalProgress();                          // hidden
+    }
+  }
+}
+
+export const createAppStore = (props: AppStoreProps) => {
+  const store = createStore<AppState & AppActions>((set, get) => ({
     // Initial state
     messages: [],
     queuedMessages: [],
@@ -1916,3 +1967,19 @@ export const createAppStore = (props: AppStoreProps) =>
       await state.sendMessage(trimmed);
     },
   }));
+
+  // Track the last progress state we wrote to the terminal so we only
+  // emit an OSC 9;4 escape when the derived indicator actually changes.
+  let lastProgressKey: string | null = null;
+
+  store.subscribe((state) => {
+    // Derive a cache key from the fields that affect the progress indicator
+    const key = `${state.agentError ?? ''}|${state.pendingApproval != null}|${state.isProcessing}|${state.isCompacting}|${state.contextUsagePercent}`;
+    if (key !== lastProgressKey) {
+      lastProgressKey = key;
+      syncTerminalProgress(state);
+    }
+  });
+
+  return store;
+};

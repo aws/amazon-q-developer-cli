@@ -4,35 +4,13 @@
  * Spec: https://gist.github.com/christianparpart/d8a62cc1ab659194337d73e399004036
  */
 
+import { hasCapability } from './terminal-capabilities.js';
+
 const BSU = '\x1b[?2026h'; // Begin Synchronized Update
 const ESU = '\x1b[?2026l'; // End Synchronized Update
 
-let isSupported: boolean | null = null;
-
 export function detectSynchronizedOutput(): boolean {
-  if (isSupported !== null) {
-    return isSupported;
-  }
-
-  if (!process.stdout.isTTY) {
-    isSupported = false;
-    return false;
-  }
-
-  // Detect terminals with synchronized output support
-  const termProgram = process.env.TERM_PROGRAM;
-  const term = process.env.TERM;
-
-  isSupported = !!(
-    termProgram === 'iTerm.app' ||
-    termProgram === 'Alacritty' ||
-    termProgram === 'WezTerm' ||
-    termProgram === 'contour' ||
-    termProgram === 'foot' ||
-    term?.includes('kitty')
-  );
-
-  return isSupported;
+  return hasCapability('synchronizedOutput');
 }
 
 export function beginSynchronizedUpdate(): void {

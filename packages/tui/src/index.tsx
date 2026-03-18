@@ -10,6 +10,7 @@ import {
   type AppStoreApi,
 } from './stores/app-store';
 import { logger } from './utils/logger';
+import { clearTerminalProgress } from './utils/terminal-capabilities.js';
 import { Kiro } from './kiro';
 import { TestModeProvider } from './test-utils/TestModeProvider';
 import { parseCliArgs, buildAcpArgs } from './utils/cli-args';
@@ -25,6 +26,7 @@ const cleanup = () => {
   // Disable bracketed paste mode before exiting
   process.stdout.write(DISABLE_BRACKETED_PASTE);
   process.stdin.setRawMode?.(false);
+  clearTerminalProgress();
   process.exit(0);
 };
 

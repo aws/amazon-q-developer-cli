@@ -6,6 +6,7 @@ import { StatusInfo } from '../../ui/status/StatusInfo.js';
 import { parseToolArg, getResultSummary } from '../../../utils/tool-result.js';
 import type { ToolResult } from '../../../stores/app-store.js';
 import { getToolLabel } from '../../../types/tool-status.js';
+import { hyperlink } from '../../../utils/terminal-capabilities.js';
 export interface WebFetchProps {
   /** Whether the fetch has finished */
   isFinished?: boolean;
@@ -51,7 +52,7 @@ export const WebFetch = React.memo(function WebFetch({
     }
   }, [url]);
 
-  const target = displayUrl || 'web content';
+  const target = displayUrl ? (url ? hyperlink(url, displayUrl) : displayUrl) : 'web content';
 
   const summary = useMemo(() => getResultSummary(result), [result]);
 

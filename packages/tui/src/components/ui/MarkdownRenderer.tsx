@@ -11,6 +11,7 @@ import { expandTabs } from '../../utils/string.js';
 import { Text } from './text/Text.js';
 import { Divider } from './divider/Divider.js';
 import { useTheme } from '../../hooks/useThemeContext.js';
+import { hyperlink } from '../../utils/terminal-capabilities.js';
 import chalk from 'chalk';
 
 interface MarkdownRendererProps {
@@ -92,7 +93,7 @@ export const MarkdownRenderer = React.memo(function MarkdownRenderer({
       return styled;
     }
     if (seg.link) {
-      styled = linkColor(seg.text) + secondaryColor(` (${seg.link.url})`);
+      styled = hyperlink(seg.link.url, linkColor(seg.text)) + secondaryColor(` (${seg.link.url})`);
       styledSegmentCacheRef.current.set(seg, styled);
       return styled;
     }

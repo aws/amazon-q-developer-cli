@@ -580,6 +580,13 @@ export function parseInlineMarkdown(text: string): MarkdownSegment[] {
       }),
     },
     {
+      regex: /(https?:\/\/[^\s)>\]]+[^\s)>\].,:;!?'"'])/g,
+      handler: (match: RegExpExecArray) => ({
+        text: match[1] || '',
+        link: { url: match[1] || '' },
+      }),
+    },
+    {
       regex: /__(.*?)__/g,
       handler: (match: RegExpExecArray) => ({
         text: match[1] || '',
