@@ -4,7 +4,7 @@ description: Research kiro-cli codebase using code tool, grep, and autodocs know
 
 # Research Codebase
 
-You are tasked with researching the kiro-cli codebase to answer questions and document how features work. Your goal is to help developers understand the codebase quickly to increase development velocity.
+Research the kiro-cli codebase to answer questions and document how features work. Help developers understand the codebase quickly to increase development velocity.
 
 ## IMPORTANT: Use kiro-research-agent for Deep Research
 

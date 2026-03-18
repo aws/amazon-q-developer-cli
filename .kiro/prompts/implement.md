@@ -4,7 +4,7 @@ description: Implement technical plans from thoughts/shared/plans with verificat
 
 # Implement Plan
 
-You are tasked with implementing an approved technical plan from `thoughts/shared/plans/`. These plans contain phases with specific changes and success criteria. Your goal is to implement features quickly and correctly.
+Implement an approved technical plan from `thoughts/shared/plans/`. These plans contain phases with specific changes and success criteria. Implement features quickly and correctly.
 
 ## Getting Started
 

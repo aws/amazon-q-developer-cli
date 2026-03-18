@@ -8,8 +8,7 @@ description: Create a bug bash document for testing new versions of the CLI
 1. Version number (e.g., 1.25.0)
 2. Commit SHA to test
 
-Then create a "Bug Bash" quip document that follows the format, noting that `{{...}}` content
-is dynamically substituted with the relevant content:
+Then create a "Bug Bash" quip document following this format (`{{...}}` content is dynamically substituted):
 
 ```markdown
 # Bug Bash {{VERSION}}
@@ -43,6 +42,6 @@ For example:
 Table with the columns:
 Alias, Owner, Description, Reproduce Steps, Proposed Fix, Screenshots, Severity, Status, Fixes
 
-Leave an empty initial 3 rows for the first users to input items into
+Leave 3 empty rows for users to fill in
 }}
 ```

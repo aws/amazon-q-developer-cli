@@ -4,7 +4,7 @@ description: Update autodocs documentation for code changes
 
 # Generate Autodocs
 
-You are tasked with updating documentation by invoking the docs agent.
+Update documentation by invoking the docs agent.
 
 ## Process
 

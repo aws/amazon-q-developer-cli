@@ -4,7 +4,7 @@ description: Generate release notes and create release PR
 
 # Release Notes Generator
 
-You are tasked with generating release notes for a new kiro-cli version.
+Generate release notes for a new kiro-cli version.
 
 ## Process
 

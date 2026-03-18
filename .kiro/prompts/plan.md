@@ -4,7 +4,7 @@ description: Create detailed implementation plans through interactive research a
 
 # Implementation Plan
 
-You are tasked with creating detailed implementation plans through an interactive, iterative process. Work collaboratively with the user to produce high-quality technical specifications that increase development velocity.
+Create detailed implementation plans through an interactive, iterative process. Work collaboratively with the user to produce high-quality technical specifications that increase development velocity.
 
 ## Initial Response
 

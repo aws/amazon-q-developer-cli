@@ -4,7 +4,7 @@ description: Create git commits with user approval and no Kiro attribution
 
 # Commit Changes
 
-You are tasked with creating git commits for the changes made during this session.
+Create git commits for changes made during this session.
 
 ## CRITICAL: Follow Steps in Order
 
@@ -72,7 +72,8 @@ If option 2:
 - `perf`: Performance improvements
 
 **Example:**
-```
+
+<example>
 feat: Add MCP server configuration support
 
 Problem: Users needed a way to configure MCP servers through
@@ -89,7 +90,7 @@ Key changes:
 
 Testing: Added unit tests for configuration management and
 integration tests for CLI commands. All tests passing.
-```
+</example>
 
 ### 4. Present your plan to the user
 
@@ -163,7 +164,8 @@ If yes:
 
 ### Good Examples
 
-```
+<examples>
+<example>
 feat: Implement agent configuration system
 
 Problem: Users needed a way to define custom agents with
@@ -181,9 +183,9 @@ Key changes:
 
 Testing: Added unit tests for config parsing and validation.
 Integration tests verify agent loading and CLI commands.
-```
+</example>
 
-```
+<example>
 fix: Handle missing config file gracefully
 
 Problem: Application crashed when config file was missing
@@ -199,9 +201,9 @@ Key changes:
 
 Testing: Added test for missing config scenario. Verified
 default config creation works correctly.
-```
+</example>
 
-```
+<example>
 chore: Update dependencies to latest versions
 
 Problem: Several dependencies had security updates and bug
@@ -217,11 +219,11 @@ Key changes:
 
 Testing: Ran full test suite to verify no regressions.
 All tests passing.
-```
 
 (Note: No Changelog section needed for internal dependency updates)
+</example>
 
-```
+<example>
 chore: Add commit message validation to CI
 
 Problem: Inconsistent commit message formats made it
@@ -238,9 +240,10 @@ Key changes:
 
 Testing: Tested hook with valid and invalid commit messages.
 CI workflow validates all commits in pull requests.
-```
 
 (Note: No Changelog section needed for CI/CD and development tooling)
+</example>
+</examples>
 
 ## Tips for Good Commits
 
@@ -278,7 +281,7 @@ Commit 2: fix: Resolve edge case in feature Y
 
 ## Example Workflow
 
-```
+<example>
 User: @commit
 
 You: I'll review the changes and create appropriate commits.
@@ -312,4 +315,4 @@ abc1234 feat: Add configuration management system
 [Show git log output]
 
 Would you like me to push these changes to the remote repository?
-```
+</example>

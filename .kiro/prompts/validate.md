@@ -4,7 +4,7 @@ description: Validate implementation against plan, verify success criteria, iden
 
 # Validate Plan
 
-You are tasked with validating that an implementation plan was correctly executed, verifying all success criteria and identifying any deviations or issues.
+Validate that an implementation plan was correctly executed, verify all success criteria, and identify any deviations or issues.
 
 ## Initial Setup
 

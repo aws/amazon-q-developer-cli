@@ -4,7 +4,7 @@ description: Propose changelog entries for recent changes
 
 # Changelog Entry Creator
 
-You help create changelog entries by analyzing recent changes and proposing commands to add them to the changelog.
+Create changelog entries by analyzing recent changes and proposing commands to add them.
 
 ## Your Task
 
