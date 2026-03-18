@@ -5,6 +5,8 @@ import { StatusInfo } from '../../ui/status/StatusInfo.js';
 import { useTheme } from '../../../hooks/useThemeContext.js';
 import { useExpandableOutput } from '../../../hooks/useExpandableOutput.js';
 import { unwrapResultOutput } from '../../../utils/tool-result.js';
+import { formatToolParams } from '../../../utils/tool-params.js';
+import { ToolMeta } from './ToolMeta.js';
 import { expandTabs } from '../../../utils/string.js';
 import type { ToolResult } from '../../../stores/app-store.js';
 import type { StatusType } from '../../../types/componentTypes.js';
@@ -12,7 +14,7 @@ import type { StatusType } from '../../../types/componentTypes.js';
 const PREVIEW_LINES = 5;
 
 export interface ShellProps {
-  /** The tool name/action (e.g., "Running", "Ran") */
+  /** The tool name/action */
   name: string;
 
   /** The bash command to display */
@@ -32,6 +34,9 @@ export interface ShellProps {
 
   /** Tool execution result containing output/error */
   result?: ToolResult;
+
+  /** Raw JSON content from tool call args */
+  content?: string;
 }
 
 /**
@@ -51,8 +56,14 @@ export const Shell = React.memo(function Shell({
   isFinished = false,
   isStatic = false,
   result,
+  content,
 }: ShellProps) {
   const { getColor } = useTheme();
+
+  const params = useMemo(
+    () => formatToolParams(content, ['command']),
+    [content]
+  );
 
   let statusBarContext: ReturnType<typeof useStatusBar> | null = null;
   try {
@@ -149,17 +160,31 @@ export const Shell = React.memo(function Shell({
 
   // Simple mode: just show command info (no result handling)
   if (!result) {
-    const content = (
-      <StatusInfo title={name} target={displayCommand} shimmer={!isFinished} />
+    const simpleContent = (
+      <Box flexDirection="column">
+        <StatusInfo
+          title={name}
+          target={displayCommand}
+          shimmer={!isFinished}
+        />
+        <ToolMeta params={params} />
+      </Box>
     );
-    if (noStatusBar) return content;
-    return <StatusBar status={status}>{content}</StatusBar>;
+    if (noStatusBar) return simpleContent;
+    return <StatusBar status={status}>{simpleContent}</StatusBar>;
   }
 
   // Static: show only command, no output
   if (isStatic || (!hasOutput && !errorMessage)) {
     return (
-      <StatusInfo title={name} target={displayCommand} shimmer={!isFinished} />
+      <Box flexDirection="column">
+        <StatusInfo
+          title={name}
+          target={displayCommand}
+          shimmer={!isFinished}
+        />
+        <ToolMeta params={params} />
+      </Box>
     );
   }
 
@@ -172,6 +197,7 @@ export const Shell = React.memo(function Shell({
           target={displayCommand}
           shimmer={!isFinished}
         />
+        <ToolMeta params={params} />
         <Box marginLeft={2}>
           <Text>{getColor('error')(errorMessage)}</Text>
         </Box>
@@ -188,6 +214,7 @@ export const Shell = React.memo(function Shell({
           target={displayCommand}
           shimmer={!isFinished}
         />
+        <ToolMeta params={params} />
         <Box marginLeft={2} flexDirection="column">
           {outputLines.map((line, i) => (
             <Text key={i}>{getColor('primary')(line)}</Text>
@@ -201,6 +228,7 @@ export const Shell = React.memo(function Shell({
   return (
     <Box flexDirection="column">
       <StatusInfo title={name} target={displayCommand} shimmer={!isFinished} />
+      <ToolMeta params={params} />
       <Box marginLeft={2} flexDirection="column">
         {outputLines.slice(0, PREVIEW_LINES).map((line, i) => (
           <Text key={i}>{getColor('primary')(line)}</Text>

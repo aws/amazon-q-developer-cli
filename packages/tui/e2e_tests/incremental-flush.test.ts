@@ -94,8 +94,8 @@ describe('Incremental Static Flushing', () => {
     const snapshot = testCase.getSnapshot();
     console.log('Snapshot:\n' + testCase.getSnapshotFormatted());
 
-    expect(snapshot.some(line => line.includes('Found'))).toBe(true);
-    expect(snapshot.some(line => line.includes('Read') || line.includes('Found'))).toBe(true);
+    expect(snapshot.some(line => line.includes('Found some files'))).toBe(true);
+    expect(snapshot.some(line => line.includes('Read') || line.includes('Glob'))).toBe(true);
     expect(snapshot.some(line => line.includes('All done'))).toBe(true);
 
     // Verify order: "Found some files" must appear before "All done"
@@ -157,7 +157,7 @@ describe('Incremental Static Flushing', () => {
   }, 45000);
 
   /**
-   * Write tool followed by shell tool — regression for "Wrote disappears".
+   * Write tool followed by shell tool — regression for "Write disappears".
    */
   it('write tool result is not lost when followed by another tool', async () => {
     testCase = await E2ETestCase.builder()
@@ -187,9 +187,9 @@ describe('Incremental Static Flushing', () => {
     const snapshot = testCase.getSnapshot();
     console.log('Snapshot:\n' + testCase.getSnapshotFormatted());
 
-    // Wrote must be visible — this was the core regression
-    expect(snapshot.some(line => line.includes('Wrote'))).toBe(true);
-    expect(snapshot.some(line => line.includes('Ran'))).toBe(true);
+    // Write must be visible — this was the core regression
+    expect(snapshot.some(line => line.includes('Write'))).toBe(true);
+    expect(snapshot.some(line => line.includes('Shell'))).toBe(true);
     expect(snapshot.some(line => line.includes('File written and verified'))).toBe(true);
   }, 30000);
 

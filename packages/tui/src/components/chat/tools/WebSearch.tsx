@@ -4,6 +4,8 @@ import { Text } from '../../ui/text/Text.js';
 import { useTheme } from '../../../hooks/useThemeContext.js';
 import { StatusInfo } from '../../ui/status/StatusInfo.js';
 import { parseToolArg, getResultSummary } from '../../../utils/tool-result.js';
+import { formatToolParams } from '../../../utils/tool-params.js';
+import { ToolMeta } from './ToolMeta.js';
 import type { ToolResult } from '../../../stores/app-store.js';
 import { getToolLabel } from '../../../types/tool-status.js';
 export interface WebSearchProps {
@@ -34,9 +36,9 @@ export const WebSearch = React.memo(function WebSearch({
 
   const query = useMemo(() => parseToolArg(content, 'query'), [content]);
 
-  const title = isFinished
-    ? getToolLabel('web_search', true)
-    : getToolLabel('web_search', false);
+  const params = useMemo(() => formatToolParams(content, ['query']), [content]);
+
+  const title = getToolLabel('web_search');
   const target = query ? `"${query}"` : 'the web';
 
   const summary = useMemo(() => getResultSummary(result), [result]);
@@ -45,6 +47,7 @@ export const WebSearch = React.memo(function WebSearch({
     return (
       <Box flexDirection="column">
         <StatusInfo title={title} target={target} shimmer={false} />
+        <ToolMeta params={params} />
         <Box marginLeft={2}>
           <Text>{getColor('error')(result.error)}</Text>
         </Box>
@@ -55,6 +58,7 @@ export const WebSearch = React.memo(function WebSearch({
   return (
     <Box flexDirection="column">
       <StatusInfo title={title} target={target} shimmer={!isFinished} />
+      <ToolMeta params={params} />
       {isFinished && summary && <Text>{getColor('secondary')(summary)}</Text>}
     </Box>
   );

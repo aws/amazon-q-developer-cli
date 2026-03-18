@@ -9,6 +9,8 @@ import { StatusInfo } from '../../ui/status/StatusInfo.js';
 import { useExpandableOutput } from '../../../hooks/useExpandableOutput.js';
 import { diffLines, type Change } from 'diff';
 import { getToolLabel } from '../../../types/tool-status.js';
+import { formatToolParams } from '../../../utils/tool-params.js';
+import { ToolMeta } from './ToolMeta.js';
 
 export interface WriteProps {
   /** Old text content for diff (empty string for new files) */
@@ -90,8 +92,13 @@ export const Write = React.memo<WriteProps>(function Write({
     (displayNewText && displayNewText.length > 0) ||
     (displayOldText && displayOldText.length > 0);
 
-  // Determine title based on tool status
-  const title = getToolLabel('write', isFinished);
+  // Determine title based on tool name (state-independent)
+  const title = getToolLabel('write');
+
+  const params = useMemo(
+    () => formatToolParams(content, ['path', 'command', 'insertLine']),
+    [content]
+  );
 
   // Line numbers should reflect the actual position in the source file.
   // startLine is the 1-based line number from the backend's ToolCallLocation.
@@ -198,6 +205,7 @@ export const Write = React.memo<WriteProps>(function Write({
     return (
       <Box flexDirection="column">
         <StatusInfo title={title} target={displayPath} shimmer={!isFinished} />
+        <ToolMeta params={params} />
         {hasDiffSummary && (
           <Text>
             {linesAdded > 0 &&

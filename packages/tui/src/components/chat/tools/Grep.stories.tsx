@@ -145,7 +145,6 @@ export const MultipleFileMatches = {
 export const WithMatchContent = {
   render: () => (
     <Grep
-      name="Grepped"
       content={JSON.stringify({ pattern: 'TODO' })}
       status="success"
       isFinished={true}

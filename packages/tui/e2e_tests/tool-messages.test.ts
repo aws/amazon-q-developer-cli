@@ -77,13 +77,13 @@ describe('Tool Messages', () => {
     await testCase.pressEnter();
 
     // Wait for tool to finish and assistant response to render
-    await testCase.waitForText('Ran', 10000);
+    await testCase.waitForText('Shell', 10000);
     await testCase.waitForText('Command executed', 10000);
 
     const snapshot = testCase.getSnapshot();
     console.log('Snapshot:\n' + testCase.getSnapshotFormatted());
 
-    expect(snapshot.some((line) => line.includes('Ran'))).toBe(true);
+    expect(snapshot.some((line) => line.includes('Shell'))).toBe(true);
     expect(snapshot.some((line) => line.includes('Command executed'))).toBe(
       true
     );
@@ -189,13 +189,13 @@ describe('Tool Messages', () => {
     await testCase.pressEnter();
 
     // Wait for tool to finish and assistant response to render
-    await testCase.waitForText('Wrote', 10000);
+    await testCase.waitForText('Write', 10000);
     await testCase.waitForText('File created', 10000);
 
     const snapshot = testCase.getSnapshot();
     console.log('Snapshot:\n' + testCase.getSnapshotFormatted());
 
-    expect(snapshot.some((line) => line.includes('Wrote'))).toBe(true);
+    expect(snapshot.some((line) => line.includes('Write'))).toBe(true);
     expect(snapshot.some((line) => line.includes('File created'))).toBe(true);
   }, 30000);
 
@@ -307,13 +307,13 @@ describe('Tool Messages', () => {
     await testCase.pressEnter();
 
     // Wait for tool to finish and assistant response to render
-    await testCase.waitForText('Searched', 10000);
+    await testCase.waitForText('Grep', 10000);
     await testCase.waitForText('Found useState', 10000);
 
     const snapshot = testCase.getSnapshot();
     console.log('Snapshot:\n' + testCase.getSnapshotFormatted());
 
-    expect(snapshot.some((line) => line.includes('Searched'))).toBe(true);
+    expect(snapshot.some((line) => line.includes('Grep'))).toBe(true);
     expect(snapshot.some((line) => line.includes('Found useState'))).toBe(true);
   }, 30000);
 
@@ -360,13 +360,13 @@ describe('Tool Messages', () => {
     await testCase.pressEnter();
 
     // Wait for tool to finish and assistant response to render
-    await testCase.waitForText('Found', 10000);
+    await testCase.waitForText('Glob', 10000);
     await testCase.waitForText('Found 15', 10000);
 
     const snapshot = testCase.getSnapshot();
     console.log('Snapshot:\n' + testCase.getSnapshotFormatted());
 
-    expect(snapshot.some((line) => line.includes('Found'))).toBe(true);
+    expect(snapshot.some((line) => line.includes('Glob'))).toBe(true);
     expect(snapshot.some((line) => line.includes('TypeScript files'))).toBe(
       true
     );

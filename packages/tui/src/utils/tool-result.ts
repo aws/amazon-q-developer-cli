@@ -13,6 +13,11 @@ export function parseToolArg(
   }
 }
 
+/** Extract the __tool_use_purpose (intent) from tool call content */
+export function parseToolIntent(content: string | undefined): string | null {
+  return parseToolArg(content, '__tool_use_purpose');
+}
+
 /**
  * Unwrap the common ACP result envelope structure.
  * Handles: `{items: [{Json: {...}}]}`, `{items: [{Text: "..."}]}`, or plain objects.

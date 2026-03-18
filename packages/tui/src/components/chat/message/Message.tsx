@@ -32,7 +32,7 @@ export const Message = React.memo(function Message({
   const messageColor = useMemo(() => {
     switch (type) {
       case MessageType.DEVELOPER:
-        return getColor('secondary');
+        return getColor('primary');
       case MessageType.AGENT:
         return getColor('primary');
       default:

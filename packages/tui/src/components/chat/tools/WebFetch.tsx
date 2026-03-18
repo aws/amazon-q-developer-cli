@@ -4,6 +4,8 @@ import { Text } from '../../ui/text/Text.js';
 import { useTheme } from '../../../hooks/useThemeContext.js';
 import { StatusInfo } from '../../ui/status/StatusInfo.js';
 import { parseToolArg, getResultSummary } from '../../../utils/tool-result.js';
+import { formatToolParams } from '../../../utils/tool-params.js';
+import { ToolMeta } from './ToolMeta.js';
 import type { ToolResult } from '../../../stores/app-store.js';
 import { getToolLabel } from '../../../types/tool-status.js';
 import { hyperlink } from '../../../utils/terminal-capabilities.js';
@@ -35,9 +37,9 @@ export const WebFetch = React.memo(function WebFetch({
 
   const url = useMemo(() => parseToolArg(content, 'url'), [content]);
 
-  const title = isFinished
-    ? getToolLabel('web_fetch', true)
-    : getToolLabel('web_fetch', false);
+  const params = useMemo(() => formatToolParams(content, ['url']), [content]);
+
+  const title = getToolLabel('web_fetch');
 
   // Truncate URL for display — show hostname + path
   const displayUrl = useMemo(() => {
@@ -60,6 +62,7 @@ export const WebFetch = React.memo(function WebFetch({
     return (
       <Box flexDirection="column">
         <StatusInfo title={title} target={target} shimmer={false} />
+        <ToolMeta params={params} />
         <Box marginLeft={2}>
           <Text>{getColor('error')(result.error)}</Text>
         </Box>
@@ -70,6 +73,7 @@ export const WebFetch = React.memo(function WebFetch({
   return (
     <Box flexDirection="column">
       <StatusInfo title={title} target={target} shimmer={!isFinished} />
+      <ToolMeta params={params} />
       {isFinished && summary && <Text>{getColor('secondary')(summary)}</Text>}
     </Box>
   );

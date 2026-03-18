@@ -6,6 +6,9 @@ import { StatusInfo } from '../../ui/status/StatusInfo.js';
 import { useTheme } from '../../../hooks/useThemeContext.js';
 import { useExpandableOutput } from '../../../hooks/useExpandableOutput.js';
 import { parseToolArg, extractResultText } from '../../../utils/tool-result.js';
+import { formatToolParams } from '../../../utils/tool-params.js';
+import { ToolMeta } from './ToolMeta.js';
+import { FileList } from './FileList.js';
 import {
   parseLsEntries,
   getEntryName,
@@ -69,11 +72,13 @@ export const Ls = React.memo(function Ls({
     [rawDirPath, entries]
   );
 
-  const title = isFinished
-    ? getToolLabel('ls', true)
-    : getToolLabel('ls', false);
+  const title = getToolLabel('ls');
 
-  const { expanded, expandHint } = useExpandableOutput({
+  const params = useMemo(() => formatToolParams(content, ['path']), [content]);
+
+  const entryNames = useMemo(() => entries.map(getEntryName), [entries]);
+
+  const { expanded, expandHint, hiddenCount } = useExpandableOutput({
     totalItems: entries.length,
     previewCount: PREVIEW_ENTRIES,
     isStatic,
@@ -97,6 +102,7 @@ export const Ls = React.memo(function Ls({
             target={dirPath || undefined}
             shimmer={!isFinished}
           />
+          <ToolMeta params={params} />
           <Box marginLeft={2}>
             <Text>{getColor('error')(result.error)}</Text>
           </Box>
@@ -107,54 +113,29 @@ export const Ls = React.memo(function Ls({
     // No result yet
     if (!isFinished || entries.length === 0) {
       return (
-        <StatusInfo
-          title={title}
-          target={dirPath || undefined}
-          shimmer={!isFinished}
-        />
-      );
-    }
-
-    // Static view: just summary
-    if (isStatic) {
-      return (
         <Box flexDirection="column">
-          <StatusInfo title={title} target={target} />
-          {secondaryInfo && <Text>{getColor('secondary')(secondaryInfo)}</Text>}
+          <StatusInfo
+            title={title}
+            target={dirPath || undefined}
+            shimmer={!isFinished}
+          />
+          <ToolMeta params={params} />
         </Box>
       );
     }
 
-    // Expanded view
-    if (expanded) {
-      return (
-        <Box flexDirection="column">
-          <StatusInfo title={title} target={target} />
-          {secondaryInfo && <Text>{getColor('secondary')(secondaryInfo)}</Text>}
-          {entries.map((entry, i) => (
-            <Box key={i} marginLeft={2}>
-              <Text>{getColor('primary')(`→ ${getEntryName(entry)}`)}</Text>
-            </Box>
-          ))}
-        </Box>
-      );
-    }
-
-    // Collapsed view
     return (
       <Box flexDirection="column">
         <StatusInfo title={title} target={target} />
+        <ToolMeta params={params} />
         {secondaryInfo && <Text>{getColor('secondary')(secondaryInfo)}</Text>}
-        {entries.slice(0, PREVIEW_ENTRIES).map((entry, i) => (
-          <Box key={i} marginLeft={2}>
-            <Text>{getColor('primary')(`→ ${getEntryName(entry)}`)}</Text>
-          </Box>
-        ))}
-        {expandHint && (
-          <Box marginLeft={2}>
-            <Text>{getColor('secondary')(expandHint)}</Text>
-          </Box>
-        )}
+        <FileList
+          items={entryNames}
+          previewCount={PREVIEW_ENTRIES}
+          expanded={expanded}
+          expandHint={expandHint}
+          hiddenCount={hiddenCount}
+        />
       </Box>
     );
   };

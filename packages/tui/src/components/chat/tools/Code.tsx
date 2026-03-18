@@ -7,12 +7,19 @@ import {
   parseToolArg,
   unwrapResultOutput,
 } from '../../../utils/tool-result.js';
+import { formatToolParams } from '../../../utils/tool-params.js';
+import { ToolMeta } from './ToolMeta.js';
 import type { ToolResult } from '../../../stores/app-store.js';
 import type { StatusType } from '../../../types/componentTypes.js';
 import { getToolLabel } from '../../../types/tool-status.js';
 const PREVIEW_LINES = 3;
 
-/** Operation labels for display */
+const VERBOSE_OPS = new Set([
+  'generate_codebase_overview',
+  'search_codebase_map',
+]);
+
+/** Operation labels: [active, finished] */
 const OP_LABELS: Record<string, [string, string]> = {
   search_symbols: ['Searching symbols', 'Searched symbols'],
   lookup_symbols: ['Looking up symbols', 'Looked up symbols'],
@@ -30,13 +37,7 @@ const OP_LABELS: Record<string, [string, string]> = {
   format: ['Formatting', 'Formatted'],
 };
 
-const VERBOSE_OPS = new Set([
-  'generate_codebase_overview',
-  'search_codebase_map',
-]);
-
 export interface CodeProps {
-  name?: string;
   status?: StatusType;
   noStatusBar?: boolean;
   isFinished?: boolean;
@@ -46,7 +47,6 @@ export interface CodeProps {
 }
 
 export const Code = React.memo(function Code({
-  name,
   status,
   noStatusBar = false,
   isFinished = false,
@@ -67,10 +67,26 @@ export const Code = React.memo(function Code({
   const filePath = useMemo(() => parseToolArg(content, 'file_path'), [content]);
   const pattern = useMemo(() => parseToolArg(content, 'pattern'), [content]);
 
-  const labels = operation ? OP_LABELS[operation] : null;
-  const title = isFinished
-    ? (labels?.[1] ?? getToolLabel('code', true))
-    : (labels?.[0] ?? name ?? getToolLabel('code', false));
+  const title = getToolLabel('code');
+
+  const params = useMemo(
+    () =>
+      formatToolParams(content, [
+        'operation',
+        'symbol_name',
+        'file_path',
+        'pattern',
+      ]),
+    [content]
+  );
+
+  // Operation label shown below the title
+  const opLabel = useMemo(() => {
+    if (!operation) return null;
+    const labels = OP_LABELS[operation];
+    if (!labels) return null;
+    return isFinished ? labels[1] : labels[0];
+  }, [operation, isFinished]);
 
   // Build a concise target string
   const target = useMemo(() => {
@@ -131,6 +147,12 @@ export const Code = React.memo(function Code({
       return (
         <Box flexDirection="column">
           <StatusInfo title={title} target={target} shimmer={!isFinished} />
+          {opLabel && (
+            <Box marginLeft={2}>
+              <Text>{getColor('secondary')(opLabel)}</Text>
+            </Box>
+          )}
+          <ToolMeta params={params} />
           <Box marginLeft={2}>
             <Text>{getColor('error')(result.error)}</Text>
           </Box>
@@ -144,12 +166,28 @@ export const Code = React.memo(function Code({
       isStatic ||
       (operation && VERBOSE_OPS.has(operation))
     ) {
-      return <StatusInfo title={title} target={target} shimmer={!isFinished} />;
+      return (
+        <Box flexDirection="column">
+          <StatusInfo title={title} target={target} shimmer={!isFinished} />
+          {opLabel && (
+            <Box marginLeft={2}>
+              <Text>{getColor('secondary')(opLabel)}</Text>
+            </Box>
+          )}
+          <ToolMeta params={params} />
+        </Box>
+      );
     }
 
     return (
       <Box flexDirection="column">
         <StatusInfo title={title} target={target} shimmer={!isFinished} />
+        {opLabel && (
+          <Box marginLeft={2}>
+            <Text>{getColor('secondary')(opLabel)}</Text>
+          </Box>
+        )}
+        <ToolMeta params={params} />
         {summaryLines.map((line, i) => (
           <Box key={i} marginLeft={2}>
             <Text>{getColor('secondary')(line)}</Text>

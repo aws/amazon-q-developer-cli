@@ -101,20 +101,21 @@ export const StatusBar = React.memo(function StatusBar({
   // Allow children to request a remeasure
   const [remeasureKey, setRemeasureKey] = useState(0);
   const requestRemeasure = useCallback(() => {
-    setLineCount(0); // Reset to force re-render with new measurement
     setRemeasureKey((k) => k + 1);
   }, []);
 
   // Reset line index on each render cycle
   currentLineIndexRef.current = 0;
 
-  // Measure component height
+  // Measure component height after layout.
+  // remeasureKey is bumped by children (via requestRemeasure) to force a second
+  // measurement pass — needed because Ink's Yoga layout may not be ready on the
+  // first commit after content changes.
   useLayoutEffect(() => {
     if (contentRef.current) {
-      const measurement = measureElement(contentRef.current);
-      const newHeight = measurement.height;
-      if (newHeight > 0) {
-        setLineCount(newHeight);
+      const { height } = measureElement(contentRef.current);
+      if (height > 0) {
+        setLineCount(height);
       }
     }
   }, [remeasureKey, children]);
@@ -178,11 +179,7 @@ export const StatusBar = React.memo(function StatusBar({
           </Box>
         );
       } else if (i === 0 && showDot) {
-        const isErrorStatus = status === 'error' || status === 'warning';
-        const dotColor =
-          barColorProp && !isErrorStatus
-            ? getTerminalChalkColor(barColorProp)
-            : getStatusColor(status!, getColor);
+        const dotColor = getStatusColor(status!, getColor);
         elements.push(
           <Box key={i}>
             <Icon type={IconType.DOT} color={dotColor} />
@@ -219,16 +216,30 @@ export const StatusBar = React.memo(function StatusBar({
     getColor,
   ]);
 
+  // Background color for the bar column — fills any gap between bar elements and content height
+  const barBgColor = useMemo(() => {
+    if (!active || status === 'paused') return undefined;
+    if (status && status !== 'active')
+      return getStatusColor(status, getColor).hex;
+    return defaultBarColor;
+  }, [active, status, defaultBarColor, getColor]);
+
   return (
     <StatusBarContext.Provider value={contextValue}>
       <Box flexDirection="row" width="100%">
-        {/* Always render a 1-char wide column for the bar to prevent layout shift */}
-        <Box flexDirection="column" width={1}>
+        {/* Bar stretches to match content; content sizes to its own height */}
+        <Box
+          flexDirection="column"
+          width={1}
+          justifyContent="flex-start"
+          backgroundColor={barBgColor}
+        >
           {barElements}
         </Box>
         <Box
           flexDirection="column"
           flexGrow={1}
+          alignSelf="flex-start"
           marginLeft={1}
           ref={contentRef}
         >

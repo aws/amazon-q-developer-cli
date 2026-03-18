@@ -140,7 +140,6 @@ function ToolUseContent({
   if (READ_TOOL_NAMES.has(name)) {
     return (
       <Read
-        name={getToolLabel('read', effectiveFinished)}
         noStatusBar
         isFinished={effectiveFinished}
         isStatic={isStatic}
@@ -150,7 +149,7 @@ function ToolUseContent({
   }
 
   if (SHELL_TOOL_NAMES.has(name)) {
-    const title = getToolLabel('shell', effectiveFinished);
+    const title = getToolLabel('shell');
     let command: string | undefined;
     try {
       const parsed = JSON.parse(content);
@@ -166,6 +165,7 @@ function ToolUseContent({
         isFinished={effectiveFinished}
         isStatic={isStatic}
         result={result}
+        content={content}
       />
     );
   }
@@ -264,7 +264,7 @@ function ToolUseContent({
   }
 
   const toolId = resolveToolId(name);
-  const fallbackName = toolId ? getToolLabel(toolId, effectiveFinished) : name;
+  const fallbackName = toolId ? getToolLabel(toolId) : name;
   return (
     <Tool
       name={fallbackName}
@@ -273,6 +273,7 @@ function ToolUseContent({
       isStatic={isStatic}
       result={result}
       locations={locations}
+      content={content}
     />
   );
 }

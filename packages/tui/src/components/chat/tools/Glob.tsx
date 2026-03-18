@@ -8,6 +8,9 @@ import {
   parseToolArg,
   unwrapResultOutput,
 } from '../../../utils/tool-result.js';
+import { formatToolParams } from '../../../utils/tool-params.js';
+import { ToolMeta } from './ToolMeta.js';
+import { FileList } from './FileList.js';
 import type { ToolResult } from '../../../stores/app-store.js';
 import type { StatusType } from '../../../types/componentTypes.js';
 import { getToolLabel } from '../../../types/tool-status.js';
@@ -22,9 +25,6 @@ interface GlobOutput {
 }
 
 export interface GlobProps {
-  /** The tool name/action (e.g., "Finding", "Found") */
-  name?: string;
-
   /** Tool status type */
   status?: StatusType;
 
@@ -53,7 +53,6 @@ export interface GlobProps {
  * - Collapsible output with Ctrl+O expansion
  */
 export const Glob = React.memo(function Glob({
-  name,
   status,
   noStatusBar = false,
   isFinished = false,
@@ -84,10 +83,18 @@ export const Glob = React.memo(function Glob({
     };
   }, [result]);
 
-  const title = isFinished
-    ? getToolLabel('glob', true)
-    : name || getToolLabel('glob', false);
+  const title = getToolLabel('glob');
+
+  const params = useMemo(
+    () => formatToolParams(content, ['pattern']),
+    [content]
+  );
   const filePaths = globOutput?.filePaths || [];
+
+  const fileNames = useMemo(
+    () => filePaths.map((p) => p.split('/').pop() || p),
+    [filePaths]
+  );
 
   // Use expandable output hook
   const { expanded, expandHint, hiddenCount } = useExpandableOutput({
@@ -96,11 +103,6 @@ export const Glob = React.memo(function Glob({
     isStatic,
     unit: 'files',
   });
-
-  // Extract filename from path
-  const getFileName = (path: string): string => {
-    return path.split('/').pop() || path;
-  };
 
   // Build secondary summary text (shown on second line)
   const getSecondarySummary = (): string | null => {
@@ -120,6 +122,7 @@ export const Glob = React.memo(function Glob({
       return (
         <Box flexDirection="column">
           <StatusInfo title={title} target={target} shimmer={!isFinished} />
+          <ToolMeta params={params} />
           <Box marginLeft={2}>
             <Text>{getColor('error')(result.error)}</Text>
           </Box>
@@ -129,7 +132,12 @@ export const Glob = React.memo(function Glob({
 
     // No result yet or still searching
     if (!globOutput) {
-      return <StatusInfo title={title} target={target} shimmer={!isFinished} />;
+      return (
+        <Box flexDirection="column">
+          <StatusInfo title={title} target={target} shimmer={!isFinished} />
+          <ToolMeta params={params} />
+        </Box>
+      );
     }
 
     // No files found or message
@@ -137,6 +145,7 @@ export const Glob = React.memo(function Glob({
       return (
         <Box flexDirection="column">
           <StatusInfo title={title} target={target} shimmer={!isFinished} />
+          <ToolMeta params={params} />
           {secondarySummary && (
             <Text>{getColor('secondary')(secondarySummary)}</Text>
           )}
@@ -144,60 +153,26 @@ export const Glob = React.memo(function Glob({
       );
     }
 
-    // Static view: just show summary
-    if (isStatic) {
-      return (
-        <Box flexDirection="column">
-          <StatusInfo title={title} target={target} shimmer={!isFinished} />
-          {secondarySummary && (
-            <Text>{getColor('secondary')(secondarySummary)}</Text>
-          )}
-        </Box>
-      );
-    }
-
-    // Expanded view: show all files
-    if (expanded) {
-      return (
-        <Box flexDirection="column">
-          <StatusInfo title={title} target={target} shimmer={!isFinished} />
-          {secondarySummary && (
-            <Text>{getColor('secondary')(secondarySummary)}</Text>
-          )}
-          {filePaths.map((filePath, i) => (
-            <Box key={i} marginLeft={2}>
-              <Text>{getColor('primary')(`→ ${getFileName(filePath)}`)}</Text>
-            </Box>
-          ))}
-          {globOutput.truncated && (
-            <Box marginLeft={2}>
-              <Text>
-                {getColor('warning')(
-                  `(showing ${filePaths.length} of ${globOutput.totalFiles} files)`
-                )}
-              </Text>
-            </Box>
-          )}
-        </Box>
-      );
-    }
-
-    // Collapsed view: show preview
     return (
       <Box flexDirection="column">
         <StatusInfo title={title} target={target} shimmer={!isFinished} />
+        <ToolMeta params={params} />
         {secondarySummary && (
           <Text>{getColor('secondary')(secondarySummary)}</Text>
         )}
-        {filePaths.slice(0, PREVIEW_FILES).map((filePath, i) => (
-          <Box key={i} marginLeft={2}>
-            <Text>{getColor('primary')(`→ ${getFileName(filePath)}`)}</Text>
-          </Box>
-        ))}
-        {(hiddenCount > 0 || globOutput.truncated) && (
+        <FileList
+          items={fileNames}
+          previewCount={PREVIEW_FILES}
+          expanded={expanded}
+          expandHint={expandHint}
+          hiddenCount={hiddenCount}
+        />
+        {globOutput.truncated && expanded && (
           <Box marginLeft={2}>
             <Text>
-              {getColor('secondary')(expandHint || '(ctrl+o to toggle)')}
+              {getColor('warning')(
+                `(showing ${filePaths.length} of ${globOutput.totalFiles} files)`
+              )}
             </Text>
           </Box>
         )}

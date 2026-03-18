@@ -18,7 +18,7 @@ export const ReadFile = {
   render: () => (
     <Box flexDirection="column" gap={1}>
       <Card active={true}>
-        <Read name="Read" target="src/components/Button.tsx" status="success" />
+        <Read target="src/components/Button.tsx" status="success" />
         <Box flexDirection="column" marginTop={1}>
           <Text>import React from 'react';</Text>
           <Text>import {'{ Box }'} from './../../../renderer.js';</Text>
@@ -29,7 +29,7 @@ export const ReadFile = {
         </Box>
       </Card>
       <Card active={true}>
-        <Read name="Read" target="missing-file.txt" status="error" />
+        <Read target="missing-file.txt" status="error" />
         <Box flexDirection="column" marginTop={1}>
           <Text>Error: File not found</Text>
         </Box>

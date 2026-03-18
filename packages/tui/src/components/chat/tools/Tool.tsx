@@ -4,6 +4,8 @@ import { useTheme } from '../../../hooks/useThemeContext.js';
 import { StatusBar } from '../status-bar/StatusBar.js';
 import { useExpandableOutput } from '../../../hooks/useExpandableOutput.js';
 import { unwrapResultOutput } from '../../../utils/tool-result.js';
+import { formatToolParams } from '../../../utils/tool-params.js';
+import { ToolMeta } from './ToolMeta.js';
 import type { ToolResult } from '../../../stores/app-store.js';
 import { StatusInfo } from '../../ui/status/StatusInfo.js';
 import type { StatusType } from '../../../types/componentTypes.js';
@@ -35,13 +37,18 @@ export interface ToolProps {
 
   /** Error message to display */
   errorMessage?: string | null;
+
+  /** Raw JSON content from tool call args */
+  content?: string;
 }
 
 /**
  * Generic tool component for displaying tool calls with locations and collapsible output.
  *
  * Features:
- * - Shows tool name with status indicator
+ * - Shows tool name as title (state-independent)
+ * - Displays intent (__tool_use_purpose) when available
+ * - Shows formatted tool params
  * - Displays file locations when provided
  * - Collapsible output with Ctrl+O expansion
  * - Error display for failed tools
@@ -56,10 +63,11 @@ export const Tool = React.memo(function Tool({
   result,
   locations,
   errorMessage,
+  content,
 }: ToolProps) {
   const { getColor } = useTheme();
 
-  const title = isFinished ? 'Used' : 'Using';
+  const params = useMemo(() => formatToolParams(content), [content]);
 
   // Format locations for display - each on its own row
   const formattedLocations = useMemo(() => {
@@ -107,6 +115,8 @@ export const Tool = React.memo(function Tool({
     unit: 'lines',
   });
 
+  const renderMeta = () => <ToolMeta params={params} />;
+
   const renderLocations = () => {
     if (!formattedLocations) return null;
     return (
@@ -123,7 +133,8 @@ export const Tool = React.memo(function Tool({
     if (errorMessage) {
       return (
         <Box flexDirection="column">
-          <StatusInfo title={title} target={name} shimmer={!isFinished} />
+          <StatusInfo title={name} shimmer={!isFinished} />
+          {renderMeta()}
           {renderLocations()}
           <Box marginLeft={2}>
             <Text>{getColor('error')(errorMessage)}</Text>
@@ -132,11 +143,12 @@ export const Tool = React.memo(function Tool({
       );
     }
 
-    // Static view or no output: show title + locations only
+    // Static view or no output: show title + meta + locations only
     if (isStatic || !hasOutput) {
       return (
         <Box flexDirection="column">
-          <StatusInfo title={title} target={name} shimmer={!isFinished} />
+          <StatusInfo title={name} shimmer={!isFinished} />
+          {renderMeta()}
           {renderLocations()}
         </Box>
       );
@@ -146,7 +158,8 @@ export const Tool = React.memo(function Tool({
     if (expanded) {
       return (
         <Box flexDirection="column">
-          <StatusInfo title={title} target={name} shimmer={!isFinished} />
+          <StatusInfo title={name} shimmer={!isFinished} />
+          {renderMeta()}
           {renderLocations()}
           <Box marginLeft={2} flexDirection="column">
             {outputLines.map((line, i) => (
@@ -160,7 +173,8 @@ export const Tool = React.memo(function Tool({
     // Collapsed view: show preview + hint
     return (
       <Box flexDirection="column">
-        <StatusInfo title={title} target={name} shimmer={!isFinished} />
+        <StatusInfo title={name} shimmer={!isFinished} />
+        {renderMeta()}
         {renderLocations()}
         <Box marginLeft={2} flexDirection="column">
           {outputLines.slice(0, PREVIEW_LINES).map((line, i) => (

@@ -8,6 +8,8 @@ import {
   parseToolArg,
   unwrapResultOutput,
 } from '../../../utils/tool-result.js';
+import { formatToolParams } from '../../../utils/tool-params.js';
+import { ToolMeta } from './ToolMeta.js';
 import { expandTabs } from '../../../utils/string.js';
 import type { ToolResult } from '../../../stores/app-store.js';
 import type { StatusType } from '../../../types/componentTypes.js';
@@ -32,9 +34,6 @@ interface GrepOutput {
 }
 
 export interface GrepProps {
-  /** The tool name/action (e.g., "Searching", "Searched") */
-  name?: string;
-
   /** Tool status type */
   status?: StatusType;
 
@@ -64,7 +63,6 @@ export interface GrepProps {
  * - Shows matched lines with line numbers
  */
 export const Grep = React.memo(function Grep({
-  name,
   status,
   noStatusBar = false,
   isFinished = false,
@@ -99,9 +97,12 @@ export const Grep = React.memo(function Grep({
     };
   }, [result]);
 
-  const title = isFinished
-    ? getToolLabel('grep', true)
-    : name || getToolLabel('grep', false);
+  const title = getToolLabel('grep');
+
+  const params = useMemo(
+    () => formatToolParams(content, ['pattern']),
+    [content]
+  );
   const results = grepOutput?.results || [];
 
   // Use expandable output hook
@@ -135,6 +136,7 @@ export const Grep = React.memo(function Grep({
       return (
         <Box flexDirection="column">
           <StatusInfo title={title} target={target} shimmer={!isFinished} />
+          <ToolMeta params={params} />
           <Box marginLeft={2}>
             <Text>{getColor('error')(result.error)}</Text>
           </Box>
@@ -144,7 +146,12 @@ export const Grep = React.memo(function Grep({
 
     // No result yet or still searching
     if (!grepOutput) {
-      return <StatusInfo title={title} target={target} shimmer={!isFinished} />;
+      return (
+        <Box flexDirection="column">
+          <StatusInfo title={title} target={target} shimmer={!isFinished} />
+          <ToolMeta params={params} />
+        </Box>
+      );
     }
 
     // No matches found or message
@@ -152,6 +159,7 @@ export const Grep = React.memo(function Grep({
       return (
         <Box flexDirection="column">
           <StatusInfo title={title} target={target} shimmer={!isFinished} />
+          <ToolMeta params={params} />
           {secondarySummary && (
             <Text>{getColor('secondary')(secondarySummary)}</Text>
           )}
@@ -160,10 +168,11 @@ export const Grep = React.memo(function Grep({
     }
 
     // Static view: just show summary
-    if (isStatic) {
+    if (isStatic && !expanded) {
       return (
         <Box flexDirection="column">
           <StatusInfo title={title} target={target} shimmer={!isFinished} />
+          <ToolMeta params={params} />
           {secondarySummary && (
             <Text>{getColor('secondary')(secondarySummary)}</Text>
           )}
@@ -176,6 +185,7 @@ export const Grep = React.memo(function Grep({
       return (
         <Box flexDirection="column">
           <StatusInfo title={title} target={target} shimmer={!isFinished} />
+          <ToolMeta params={params} />
           {secondarySummary && (
             <Text>{getColor('secondary')(secondarySummary)}</Text>
           )}
@@ -205,6 +215,7 @@ export const Grep = React.memo(function Grep({
     return (
       <Box flexDirection="column">
         <StatusInfo title={title} target={target} shimmer={!isFinished} />
+        <ToolMeta params={params} />
         {secondarySummary && (
           <Text>{getColor('secondary')(secondarySummary)}</Text>
         )}

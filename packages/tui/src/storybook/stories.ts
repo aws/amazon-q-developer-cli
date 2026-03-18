@@ -27,6 +27,8 @@ import * as ReadStories from '../components/chat/tools/Read.stories.js';
 import * as WebSearchStories from '../components/chat/tools/WebSearch.stories.js';
 import * as WebFetchStories from '../components/chat/tools/WebFetch.stories.js';
 import * as IntrospectStories from '../components/chat/tools/Introspect.stories.js';
+import * as FileListStories from '../components/chat/tools/FileList.stories.js';
+import * as ToolMetaStories from '../components/chat/tools/ToolMeta.stories.js';
 import * as NotificationBarStories from '../components/chat/notification-bar/NotificationBar.stories.js';
 import * as ActionHintStories from '../components/ui/hint/ActionHint.stories.js';
 import * as TableStories from '../components/ui/table/Table.stories.js';
@@ -221,6 +223,14 @@ export const stories = [
   convertStoryModule(
     IntrospectStories,
     '../components/chat/tools/Introspect.stories.js'
+  ),
+  convertStoryModule(
+    FileListStories,
+    '../components/chat/tools/FileList.stories.js'
+  ),
+  convertStoryModule(
+    ToolMetaStories,
+    '../components/chat/tools/ToolMeta.stories.js'
   ),
   convertStoryModule(
     NotificationBarStories,

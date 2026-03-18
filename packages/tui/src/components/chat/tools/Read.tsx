@@ -2,9 +2,10 @@ import React, { useMemo } from 'react';
 import { Box } from './../../../renderer.js';
 import { StatusBar } from '../status-bar/StatusBar.js';
 import { StatusInfo } from '../../ui/status/StatusInfo.js';
-import { Text } from '../../ui/text/Text.js';
-import { useTheme } from '../../../hooks/useThemeContext.js';
 import { useExpandableOutput } from '../../../hooks/useExpandableOutput.js';
+import { formatToolParams } from '../../../utils/tool-params.js';
+import { ToolMeta } from './ToolMeta.js';
+import { FileList } from './FileList.js';
 import type { StatusType } from '../../../types/componentTypes.js';
 import { getToolLabel } from '../../../types/tool-status.js';
 
@@ -17,9 +18,6 @@ interface ReadOp {
 }
 
 export interface ReadProps {
-  /** The tool name/action (e.g., "Reading", "Read") */
-  name: string;
-
   /** File path or target description */
   target?: string;
 
@@ -48,11 +46,11 @@ export interface ReadProps {
  * Features:
  * - Single file display with path
  * - Multiple file display with nested list
+ * - Shows intent and params
  * - Collapsible output with Ctrl+O expansion for large file lists
  * - Parses ops array from content JSON
  */
 export const Read = React.memo(function Read({
-  name,
   target,
   status,
   noStatusBar = false,
@@ -60,7 +58,10 @@ export const Read = React.memo(function Read({
   isStatic = false,
   content,
 }: ReadProps) {
-  const { getColor } = useTheme();
+  const params = useMemo(
+    () => formatToolParams(content, ['ops', 'path']),
+    [content]
+  );
 
   // Parse operations from content if provided
   const ops = useMemo((): ReadOp[] => {
@@ -82,87 +83,57 @@ export const Read = React.memo(function Read({
     }
   }, [content]);
 
+  const fileNames = useMemo(
+    () => ops.map((op) => op.path.split('/').pop() || op.path),
+    [ops]
+  );
+
   // Use expandable output hook
-  const { expanded, expandHint } = useExpandableOutput({
+  const { expanded, expandHint, hiddenCount } = useExpandableOutput({
     totalItems: ops.length,
     previewCount: PREVIEW_FILES,
     isStatic,
     unit: 'files',
   });
 
-  const title = isFinished ? getToolLabel('read', true) : name;
+  const title = getToolLabel('read');
 
-  // Extract filename from path
-  const getFileName = (path: string): string => {
-    return path.split('/').pop() || path;
-  };
+  const renderMeta = () => <ToolMeta params={params} />;
 
   // If content was provided and parsed, use ops for display
   if (content && ops.length > 0) {
     if (ops.length === 1) {
       const op = ops[0];
       const displayContent = (
-        <StatusInfo
-          title={title}
-          target={op?.path || 'file'}
-          shimmer={!isFinished}
-        />
-      );
-      if (noStatusBar) return displayContent;
-      return <StatusBar status={status}>{displayContent}</StatusBar>;
-    }
-
-    // Multiple files - static view: just show count
-    if (isStatic) {
-      const displayContent = (
-        <StatusInfo
-          title={title}
-          target={`${ops.length} files`}
-          shimmer={!isFinished}
-        />
-      );
-      if (noStatusBar) return displayContent;
-      return <StatusBar status={status}>{displayContent}</StatusBar>;
-    }
-
-    // Multiple files - expanded view
-    if (expanded) {
-      const displayContent = (
         <Box flexDirection="column">
           <StatusInfo
             title={title}
-            target={`${ops.length} files`}
+            target={op?.path || 'file'}
             shimmer={!isFinished}
           />
-          {ops.map((op, i) => (
-            <Box key={i} marginLeft={2}>
-              <Text>{getColor('secondary')(`→ ${getFileName(op.path)}`)}</Text>
-            </Box>
-          ))}
+          {renderMeta()}
         </Box>
       );
       if (noStatusBar) return displayContent;
       return <StatusBar status={status}>{displayContent}</StatusBar>;
     }
 
-    // Multiple files - collapsed view
+    // Multiple files
     const displayContent = (
       <Box flexDirection="column">
         <StatusInfo
           title={title}
-          target={`${ops.length} files`}
+          target={`(${ops.length} files)`}
           shimmer={!isFinished}
         />
-        {ops.slice(0, PREVIEW_FILES).map((op, i) => (
-          <Box key={i} marginLeft={2}>
-            <Text>{getColor('secondary')(`→ ${getFileName(op.path)}`)}</Text>
-          </Box>
-        ))}
-        {expandHint && (
-          <Box marginLeft={2}>
-            <Text>{getColor('secondary')(expandHint)}</Text>
-          </Box>
-        )}
+        {renderMeta()}
+        <FileList
+          items={fileNames}
+          previewCount={PREVIEW_FILES}
+          expanded={expanded}
+          expandHint={expandHint}
+          hiddenCount={hiddenCount}
+        />
       </Box>
     );
     if (noStatusBar) return displayContent;
@@ -171,7 +142,10 @@ export const Read = React.memo(function Read({
 
   // Simple mode: use target prop directly
   const displayContent = (
-    <StatusInfo title={title} target={target} shimmer={!isFinished} />
+    <Box flexDirection="column">
+      <StatusInfo title={title} target={target} shimmer={!isFinished} />
+      {renderMeta()}
+    </Box>
   );
   if (noStatusBar) return displayContent;
   return <StatusBar status={status}>{displayContent}</StatusBar>;

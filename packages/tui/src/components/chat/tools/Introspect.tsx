@@ -4,6 +4,8 @@ import { Text } from '../../ui/text/Text.js';
 import { useTheme } from '../../../hooks/useThemeContext.js';
 import { StatusInfo } from '../../ui/status/StatusInfo.js';
 import { parseToolArg } from '../../../utils/tool-result.js';
+import { formatToolParams } from '../../../utils/tool-params.js';
+import { ToolMeta } from './ToolMeta.js';
 import { getToolLabel } from '../../../types/tool-status.js';
 import type { ToolResult } from '../../../stores/app-store.js';
 
@@ -42,12 +44,18 @@ export const Introspect = React.memo(function Introspect({
     return '';
   }, [content]);
 
-  const title = getToolLabel('introspect', isFinished);
+  const params = useMemo(
+    () => formatToolParams(content, ['query', 'doc_path']),
+    [content]
+  );
+
+  const title = getToolLabel('introspect');
 
   if (result?.status === 'error') {
     return (
       <Box flexDirection="column">
         <StatusInfo title={title} target={target} shimmer={false} />
+        <ToolMeta params={params} />
         <Box marginLeft={2}>
           <Text>{getColor('error')(result.error)}</Text>
         </Box>
@@ -55,5 +63,10 @@ export const Introspect = React.memo(function Introspect({
     );
   }
 
-  return <StatusInfo title={title} target={target} shimmer={!isFinished} />;
+  return (
+    <Box flexDirection="column">
+      <StatusInfo title={title} target={target} shimmer={!isFinished} />
+      <ToolMeta params={params} />
+    </Box>
+  );
 });

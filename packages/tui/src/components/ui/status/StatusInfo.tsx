@@ -57,7 +57,7 @@ export const StatusInfo = React.memo(function StatusInfo({
       ) : (
         titleColor(title)
       )}
-      {target && targetColor(` (${target})`)}
+      {target && targetColor(` ${target}`)}
     </Text>
   );
 });

@@ -26,6 +26,23 @@ interface ConversationTurn {
   isActive: boolean;
 }
 
+/** Whether a Model message needs top spacing (every Model except the first after User) */
+function needsModelSpacing(prevRole: MessageRole | undefined): boolean {
+  return prevRole !== undefined && prevRole !== MessageRole.User;
+}
+
+/**
+ * Resolve prevRole for a message at `index` in a list.
+ * Falls back to `fallback` when index is 0 (no previous message in the list).
+ */
+function resolvePrevRole(
+  messages: StoreMessageType[],
+  index: number,
+  fallback?: MessageRole
+): MessageRole | undefined {
+  return index > 0 ? messages[index - 1]?.role : fallback;
+}
+
 const SystemMessage = React.memo(function SystemMessage({
   message,
 }: {
@@ -44,9 +61,11 @@ const SystemMessage = React.memo(function SystemMessage({
 const StaticMessage = React.memo(function StaticMessage({
   message,
   agentBarColor,
+  prevRole,
 }: {
   message: StoreMessageType;
   agentBarColor: string | undefined;
+  prevRole?: MessageRole;
 }) {
   if (message.role === MessageRole.User) {
     return (
@@ -75,21 +94,26 @@ const StaticMessage = React.memo(function StaticMessage({
   }
   if (message.role === MessageRole.Model) {
     if (!message.content) return null;
-    if ('shellOutput' in message && message.shellOutput) {
-      return (
-        <ShellOutputMessage
-          content={message.content}
-          isStatic={true}
-          barColor={agentBarColor}
-        />
-      );
-    }
+    const isShell = 'shellOutput' in message && message.shellOutput;
     return (
-      <Message
-        content={message.content}
-        type={MessageType.AGENT}
-        barColor={agentBarColor}
-      />
+      <Box
+        flexDirection="column"
+        marginTop={needsModelSpacing(prevRole) ? 1 : 0}
+      >
+        {isShell ? (
+          <ShellOutputMessage
+            content={message.content}
+            isStatic={true}
+            barColor={agentBarColor}
+          />
+        ) : (
+          <Message
+            content={message.content}
+            type={MessageType.AGENT}
+            barColor={agentBarColor}
+          />
+        )}
+      </Box>
     );
   }
   return null;
@@ -100,10 +124,12 @@ const ActiveTurnTail = React.memo(function ActiveTurnTail({
   tailMessages,
   agentBarColor,
   onReadyToFlush,
+  prevFlushedRole,
 }: {
   tailMessages: StoreMessageType[];
   agentBarColor: string | undefined;
   onReadyToFlush?: () => void;
+  prevFlushedRole?: MessageRole;
 }) {
   const { isProcessing } = useConversationState();
   const { height: termHeight } = useTerminalSize();
@@ -124,6 +150,8 @@ const ActiveTurnTail = React.memo(function ActiveTurnTail({
   return (
     <>
       {tailMessages.map((message, index) => {
+        const prevRole = resolvePrevRole(tailMessages, index, prevFlushedRole);
+
         if (message.role === MessageRole.User) {
           return (
             <Message
@@ -151,53 +179,52 @@ const ActiveTurnTail = React.memo(function ActiveTurnTail({
           );
         }
         if (!message.content || message.content === '') return null;
+
         const isLastModel = index === lastModelIndex;
-        const shouldStream = isProcessing && isLastModel;
-        if (shouldStream) {
-          return (
-            <StreamingMessage
-              key={message.id}
-              content={message.content}
-              type={MessageType.AGENT}
-              isStreaming={true}
-              barColor={agentBarColor}
-              onReadyToFlush={onReadyToFlush}
-            />
-          );
-        }
-        if (
+        const isShell = 'shellOutput' in message && message.shellOutput;
+        const useStreaming =
           isLastModel &&
-          message.content &&
-          message.content.split('\n').length > termHeight - 13
-        ) {
-          return (
-            <StreamingMessage
-              key={message.id}
-              content={message.content}
-              type={MessageType.AGENT}
-              isStreaming={false}
-              barColor={agentBarColor}
-              onReadyToFlush={onReadyToFlush}
-            />
-          );
-        }
-        if ('shellOutput' in message && message.shellOutput) {
-          return (
+          (isProcessing ||
+            message.content.split('\n').length > termHeight - 13);
+
+        // Determine inner content for Model messages
+        let inner: React.ReactNode;
+        if (isShell) {
+          inner = (
             <ShellOutputMessage
-              key={message.id}
               content={message.content}
               isStatic={false}
               barColor={agentBarColor}
             />
           );
+        } else if (useStreaming) {
+          inner = (
+            <StreamingMessage
+              content={message.content}
+              type={MessageType.AGENT}
+              isStreaming={isProcessing}
+              barColor={agentBarColor}
+              onReadyToFlush={onReadyToFlush}
+            />
+          );
+        } else {
+          inner = (
+            <Message
+              content={message.content}
+              type={MessageType.AGENT}
+              barColor={agentBarColor}
+            />
+          );
         }
+
         return (
-          <Message
+          <Box
             key={message.id}
-            content={message.content}
-            type={MessageType.AGENT}
-            barColor={agentBarColor}
-          />
+            flexDirection="column"
+            marginTop={needsModelSpacing(prevRole) ? 1 : 0}
+          >
+            {inner}
+          </Box>
         );
       })}
       {showThinking && <ThinkingMessage barColor={agentBarColor} />}
@@ -247,11 +274,12 @@ const StaticTurnCard = React.memo(function StaticTurnCard({
             barColor={agentBarColor}
           />
         )}
-        {turn.aiMessages.map((message) => (
+        {turn.aiMessages.map((message, index) => (
           <StaticMessage
             key={message.id}
             message={message}
             agentBarColor={agentBarColor}
+            prevRole={resolvePrevRole(turn.aiMessages, index, MessageRole.User)}
           />
         ))}
         {!hasAiContent && (
@@ -351,7 +379,28 @@ type StaticItem =
       msg: StoreMessageType;
       agentBarColor: string | undefined;
       isLast: boolean;
+      prevRole?: MessageRole;
     };
+
+/** Helper to append messages to static items with correct prevRole tracking */
+function appendMessagesToStatic(
+  messages: StoreMessageType[],
+  agentBarColor: string | undefined,
+  appendStatic: (item: StaticItem) => void,
+  opts: { isLast?: (i: number) => boolean; fallbackPrevRole?: MessageRole }
+) {
+  messages.forEach((msg, i) => {
+    const prevRole = resolvePrevRole(messages, i, opts.fallbackPrevRole);
+    appendStatic({
+      type: 'msg',
+      id: msg.id,
+      msg,
+      agentBarColor,
+      isLast: opts.isLast ? opts.isLast(i) : false,
+      prevRole,
+    });
+  });
+}
 
 export const ConversationView = React.memo(function ConversationView() {
   const { messages, isProcessing } = useConversationState();
@@ -447,6 +496,10 @@ export const ConversationView = React.memo(function ConversationView() {
   const toFlush = activeAllMessages.filter((msg) => flushSet.has(msg.id));
   const tailMessages = activeAllMessages.filter((msg) => !flushSet.has(msg.id));
 
+  // Role of the message just before the tail — needed for spacing logic
+  const prevFlushedRole =
+    toFlush.length > 0 ? toFlush[toFlush.length - 1]?.role : undefined;
+
   // Track which turns had incremental flushing (so StaticTurnCard skips them on completion).
   // Compute newly-flushed messages BEFORE updating flushedRef so we know what's new this render.
   let newlyFlushed: StoreMessageType[] = [];
@@ -461,8 +514,6 @@ export const ConversationView = React.memo(function ConversationView() {
   }
 
   // --- Append new items to the persistent staticItems ref ---
-  // <Static> uses array length as its cursor — items must never be removed or reordered.
-  // We track emitted IDs/keys in emittedStaticIds to avoid double-appending.
   const emittedIds = new Set(staticItemsRef.current.map((i) => i.id));
 
   const appendStatic = (item: StaticItem) => {
@@ -488,29 +539,27 @@ export const ConversationView = React.memo(function ConversationView() {
   completedTurns.forEach((turn) => {
     const flushedIds = flushedRef.current.get(turn.userMessage.id);
     if (!flushedIds || flushedIds.size === 0) {
-      // Never flushed — render as a single card
       appendStatic({ type: 'turn', id: turn.userMessage.id, turn });
     } else {
-      // Partially flushed — append the tail (messages not yet in static)
       const agentName =
         'agentName' in turn.userMessage
           ? turn.userMessage.agentName
           : undefined;
-      const agentBarColor = agentName
+      const barColor = agentName
         ? getAgentColor(agentName, getColor).hex
         : undefined;
       const allMsgs = [turn.userMessage, ...turn.aiMessages];
       const tailMsgs = allMsgs.filter((msg) => !flushedIds.has(msg.id));
-      tailMsgs.forEach((msg, i) => {
-        appendStatic({
-          type: 'msg',
-          id: msg.id,
-          msg,
-          agentBarColor,
-          isLast: i === tailMsgs.length - 1,
-        });
-        flushedIds.add(msg.id);
+      const flushedMsgs = allMsgs.filter((msg) => flushedIds.has(msg.id));
+      const lastFlushedRole =
+        flushedMsgs.length > 0
+          ? flushedMsgs[flushedMsgs.length - 1]?.role
+          : undefined;
+      appendMessagesToStatic(tailMsgs, barColor, appendStatic, {
+        isLast: (i) => i === tailMsgs.length - 1,
+        fallbackPrevRole: lastFlushedRole,
       });
+      tailMsgs.forEach((msg) => flushedIds.add(msg.id));
     }
   });
 
@@ -518,23 +567,22 @@ export const ConversationView = React.memo(function ConversationView() {
   if (activeTurn && newlyFlushed.length > 0) {
     const turnId = activeTurn.userMessage.id;
     const flushedIds = flushedRef.current.get(turnId)!;
-    // Divider only on first flush
     if (flushedIds.size === newlyFlushed.length) {
       appendStatic({ type: 'divider', id: `${turnId}__divider` });
     }
-    newlyFlushed.forEach((msg) => {
-      appendStatic({
-        type: 'msg',
-        id: msg.id,
-        msg,
-        agentBarColor: activeAgentBarColor,
-        isLast: false,
-      });
+    // Find the role of the message just before the first newly-flushed message
+    const firstNewIdx = activeAllMessages.findIndex(
+      (m) => m.id === newlyFlushed[0]?.id
+    );
+    const prevOfFirstNew =
+      firstNewIdx > 0 ? activeAllMessages[firstNewIdx - 1]?.role : undefined;
+
+    appendMessagesToStatic(newlyFlushed, activeAgentBarColor, appendStatic, {
+      fallbackPrevRole: prevOfFirstNew,
     });
   }
 
   // Spread into a new array each render so <Static>'s useMemo([items, index]) fires.
-  // staticItemsRef holds the persistent contents; the new reference triggers the memo.
   const staticItems = [...staticItemsRef.current];
 
   return (
@@ -576,6 +624,7 @@ export const ConversationView = React.memo(function ConversationView() {
                   <StaticMessage
                     message={item.msg}
                     agentBarColor={item.agentBarColor}
+                    prevRole={item.prevRole}
                   />
                 </Box>
               );
@@ -591,24 +640,24 @@ export const ConversationView = React.memo(function ConversationView() {
       {activeTurn &&
         tailMessages.length > 0 &&
         (flushedRef.current.has(activeTurn.userMessage.id) ? (
-          // Flushing has started — render tail without Card (divider already in static)
           <CardContext.Provider value={{ active: true }}>
             <Box flexDirection="column" width="100%">
               <ActiveTurnTail
                 tailMessages={tailMessages}
                 agentBarColor={activeAgentBarColor}
                 onReadyToFlush={handleReadyToFlush}
+                prevFlushedRole={prevFlushedRole}
               />
             </Box>
           </CardContext.Provider>
         ) : (
-          // Nothing flushed yet — render full Card with divider as normal
           <Box marginBottom={0}>
             <Card active={true}>
               <ActiveTurnTail
                 tailMessages={tailMessages}
                 agentBarColor={activeAgentBarColor}
                 onReadyToFlush={handleReadyToFlush}
+                prevFlushedRole={prevFlushedRole}
               />
             </Card>
           </Box>

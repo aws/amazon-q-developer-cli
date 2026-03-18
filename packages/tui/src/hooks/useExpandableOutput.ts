@@ -1,4 +1,4 @@
-import { useEffect, useContext } from 'react';
+import { useEffect, useContext, useRef } from 'react';
 import { useStore } from 'zustand';
 import { AppStoreContext } from '../stores/app-store.js';
 import { useStatusBar } from '../components/chat/status-bar/StatusBar.js';
@@ -33,6 +33,7 @@ export interface UseExpandableOutputResult {
  * - Registering expandable content with the store
  * - Requesting remeasure when expanded state changes
  * - Calculating hidden item counts
+ * - Preserving expand/collapse state when transitioning to static (history)
  */
 export function useExpandableOutput({
   totalItems,
@@ -54,12 +55,22 @@ export function useExpandableOutput({
 
   // Safe store access - returns defaults when no store context
   const store = useContext(AppStoreContext);
-  const expanded = store
+  const storeExpanded = store
     ? useStore(store, (state) => state.toolOutputsExpanded)
     : false;
   const setHasExpandableToolOutputs = store
     ? useStore(store, (state) => state.setHasExpandableToolOutputs)
     : () => {};
+
+  // Snapshot the expanded state so it's preserved when transitioning to static.
+  // While active, the ref tracks the live store value.
+  // Once isStatic flips to true, the ref retains the last active value.
+  const frozenExpanded = useRef(storeExpanded);
+  if (!isStatic) {
+    frozenExpanded.current = storeExpanded;
+  }
+
+  const expanded = isStatic ? frozenExpanded.current : storeExpanded;
 
   const hasExpandableContent = totalItems > previewCount;
   const hiddenCount = Math.max(0, totalItems - previewCount);
@@ -79,7 +90,9 @@ export function useExpandableOutput({
   }, [expanded, isStatic, requestRemeasure]);
 
   const expandHint =
-    hiddenCount > 0 ? `...+${hiddenCount} ${unit} (ctrl+o to toggle)` : '';
+    hiddenCount > 0 && !isStatic
+      ? `...+${hiddenCount} ${unit} (ctrl+o to toggle)`
+      : '';
 
   return {
     expanded,
