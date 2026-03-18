@@ -199,7 +199,12 @@ async fn extract_asset_if_needed(
     if let Some(parent) = asset_path.parent() {
         os.fs.create_dir_all(parent).await?;
     }
-    os.fs.write(asset_path, embedded_asset_content).await?;
+    // Write to a temp file then rename to avoid ETXTBSY (Text file busy) on Linux.
+    // rename() works even if the destination is being executed — the old inode stays
+    // alive for the running process while new executions pick up the new file.
+    let tmp_path = asset_path.with_extension(format!("tmp.{}", std::process::id()));
+    os.fs.write(&tmp_path, embedded_asset_content).await?;
+    os.fs.rename(&tmp_path, asset_path).await?;
     os.fs.write(asset_sha_path, embedded_asset_sha).await?;
     info!(
         elapsed_ms = start_time.elapsed().as_millis(),
