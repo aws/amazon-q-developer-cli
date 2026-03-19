@@ -1,5 +1,10 @@
 use std::borrow::Cow;
 use std::path::PathBuf;
+use std::sync::Arc;
+use std::sync::atomic::{
+    AtomicBool,
+    Ordering,
+};
 
 use globset::GlobBuilder;
 use grep_regex::RegexMatcherBuilder;
@@ -22,6 +27,7 @@ use super::{
     ToolExecutionOutputItem,
     ToolExecutionResult,
 };
+use crate::util::cancel_guard::CancelGuard;
 use crate::util::path::canonicalize_path_sys;
 use crate::util::providers::SystemProvider;
 
@@ -217,41 +223,56 @@ impl Grep {
             .build(&self.pattern)
             .map_err(|e| ToolExecutionError::Custom(format!("Invalid regex: {e}")))?;
 
-        let files = self.collect_files(&base_path).await?;
-        if files.is_empty() {
-            return Ok(ToolExecutionOutput::new(vec![ToolExecutionOutputItem::Json(
-                serde_json::json!({"message": "No files to search", "numMatches": 0, "numFiles": 0}),
-            )]));
+        let cancelled = Arc::new(AtomicBool::new(false));
+        let _cancel_guard = CancelGuard(Arc::clone(&cancelled));
+        let cancelled_clone = Arc::clone(&cancelled);
+        let grep = self.clone();
+
+        let result = tokio::task::spawn_blocking(move || {
+            let files = grep.collect_files(&base_path, &cancelled_clone);
+            if files.is_empty() {
+                return serde_json::json!({"message": "No files to search", "numMatches": 0, "numFiles": 0});
+            }
+
+            match grep.output_mode.unwrap_or_default() {
+                OutputMode::Content => grep.search_content(&matcher, &files, &cancelled_clone),
+                OutputMode::FilesWithMatches => grep.search_files_with_matches(&matcher, &files, &cancelled_clone),
+                OutputMode::Count => grep.search_count(&matcher, &files, &cancelled_clone),
+            }
+        })
+        .await;
+
+        match result {
+            Ok(json) => Ok(ToolExecutionOutput::new(vec![ToolExecutionOutputItem::Json(json)])),
+            Err(e) if e.is_panic() => std::panic::resume_unwind(e.into_panic()),
+            Err(_) => Ok(ToolExecutionOutput::new(vec![ToolExecutionOutputItem::Json(
+                serde_json::json!({"error": "Grep search was cancelled"}),
+            )])),
         }
-
-        let result = match self.output_mode.unwrap_or_default() {
-            OutputMode::Content => self.search_content(&matcher, &files).await,
-            OutputMode::FilesWithMatches => self.search_files_with_matches(&matcher, &files).await,
-            OutputMode::Count => self.search_count(&matcher, &files).await,
-        };
-
-        Ok(ToolExecutionOutput::new(vec![ToolExecutionOutputItem::Json(result)]))
     }
 
-    async fn collect_files(&self, base_path: &PathBuf) -> Result<Vec<PathBuf>, ToolExecutionError> {
+    fn collect_files(&self, base_path: &PathBuf, cancelled: &AtomicBool) -> Vec<PathBuf> {
         if base_path.is_file() {
-            return Ok(vec![base_path.clone()]);
+            return vec![base_path.clone()];
         }
 
-        let mut walker = WalkBuilder::new(base_path);
-        walker
+        let walker = WalkBuilder::new(base_path)
             .hidden(false)
             .ignore(true)
             .git_ignore(true)
             .git_global(true)
             .git_exclude(true)
             .follow_links(false)
-            .max_depth(Some(self.max_depth()));
+            .max_depth(Some(self.max_depth()))
+            .build();
 
         let mut files = Vec::new();
         let include_glob = self.include.as_deref();
 
-        for entry in walker.build().flatten() {
+        for entry in walker.flatten() {
+            if cancelled.load(Ordering::Relaxed) {
+                break;
+            }
             if entry.file_type().is_some_and(|ft| ft.is_file()) {
                 let path = entry.path();
                 if let Some(pattern) = include_glob {
@@ -264,7 +285,7 @@ impl Grep {
             }
         }
 
-        Ok(files)
+        files
     }
 
     fn match_include(pattern: &str, file_name: &str) -> bool {
@@ -286,7 +307,12 @@ impl Grep {
         }
     }
 
-    async fn search_content(&self, matcher: &grep_regex::RegexMatcher, files: &[PathBuf]) -> serde_json::Value {
+    fn search_content(
+        &self,
+        matcher: &grep_regex::RegexMatcher,
+        files: &[PathBuf],
+        cancelled: &AtomicBool,
+    ) -> serde_json::Value {
         let mut searcher = SearcherBuilder::new()
             .binary_detection(BinaryDetection::quit(0x00))
             .line_number(true)
@@ -301,6 +327,10 @@ impl Grep {
         let mut total_files_with_matches: usize = 0;
 
         for file_path in files {
+            if cancelled.load(Ordering::Relaxed) {
+                break;
+            }
+
             let file_str = file_path.display().to_string();
             let mut file_matches: Vec<String> = Vec::new();
 
@@ -361,10 +391,11 @@ impl Grep {
         })
     }
 
-    async fn search_files_with_matches(
+    fn search_files_with_matches(
         &self,
         matcher: &grep_regex::RegexMatcher,
         files: &[PathBuf],
+        cancelled: &AtomicBool,
     ) -> serde_json::Value {
         let mut searcher = SearcherBuilder::new()
             .binary_detection(BinaryDetection::quit(0x00))
@@ -376,6 +407,9 @@ impl Grep {
         let mut total_matches: usize = 0;
 
         for file_path in files {
+            if cancelled.load(Ordering::Relaxed) {
+                break;
+            }
             let mut match_count = 0usize;
             let _ = searcher.search_path(
                 matcher,
@@ -418,7 +452,12 @@ impl Grep {
         })
     }
 
-    async fn search_count(&self, matcher: &grep_regex::RegexMatcher, files: &[PathBuf]) -> serde_json::Value {
+    fn search_count(
+        &self,
+        matcher: &grep_regex::RegexMatcher,
+        files: &[PathBuf],
+        cancelled: &AtomicBool,
+    ) -> serde_json::Value {
         let mut searcher = SearcherBuilder::new()
             .binary_detection(BinaryDetection::quit(0x00))
             .line_number(true)
@@ -429,6 +468,9 @@ impl Grep {
         let mut total_count = 0usize;
 
         for file_path in files {
+            if cancelled.load(Ordering::Relaxed) {
+                break;
+            }
             let mut count = 0usize;
             let _ = searcher.search_path(
                 matcher,

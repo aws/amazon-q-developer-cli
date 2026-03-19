@@ -1,3 +1,4 @@
+pub mod cancel_guard;
 pub mod consts;
 pub mod directories;
 pub mod error;

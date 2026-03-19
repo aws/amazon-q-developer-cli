@@ -3,7 +3,13 @@ use std::path::{
     Path,
     PathBuf,
 };
+use std::sync::Arc;
+use std::sync::atomic::{
+    AtomicBool,
+    Ordering,
+};
 
+use agent::util::cancel_guard::CancelGuard;
 use crossterm::{
     queue,
     style,
@@ -38,14 +44,13 @@ use crate::os::Os;
 use crate::theme::StyledText;
 use crate::util::paths;
 use crate::util::tool_permission_checker::is_tool_in_allowlist;
+
 /// Default maximum number of results to return
 const DEFAULT_MAX_RESULTS: usize = 200;
 /// Maximum allowed depth to prevent excessive traversal
 const MAX_ALLOWED_DEPTH: usize = 50;
 /// Default maximum depth for directory traversal
 const DEFAULT_MAX_DEPTH: usize = 30;
-/// How often to yield to allow cancellation (every N entries)
-const YIELD_INTERVAL: u32 = 500;
 
 #[derive(Debug, Clone, Deserialize)]
 pub struct Glob {
@@ -113,42 +118,48 @@ impl Glob {
         // Build walker with gitignore support
         let max_depth = self.max_depth.map_or(DEFAULT_MAX_DEPTH, |d| d.min(MAX_ALLOWED_DEPTH));
 
-        let walker = WalkBuilder::new(&search_base)
-            .hidden(false)
-            .ignore(true)
-            .git_ignore(true)
-            .git_global(true)
-            .git_exclude(true)
-            .follow_links(false)
-            .max_depth(Some(max_depth))
-            .build();
-
         let max_results = self.limit.unwrap_or(DEFAULT_MAX_RESULTS);
-        let mut file_paths: Vec<String> = Vec::new();
-        let mut total_files: usize = 0;
-        let mut entry_count: u32 = 0;
+        let cancelled = Arc::new(AtomicBool::new(false));
+        let _cancel_guard = CancelGuard(Arc::clone(&cancelled));
+        let cancelled_clone = Arc::clone(&cancelled);
 
-        for entry in walker.flatten() {
-            // Yield periodically to allow cancellation (Ctrl+C handling)
-            entry_count += 1;
-            if entry_count.is_multiple_of(YIELD_INTERVAL) {
-                tokio::task::yield_now().await;
-            }
+        let walk_result = tokio::task::spawn_blocking(move || {
+            let walker = WalkBuilder::new(&search_base)
+                .hidden(false)
+                .ignore(true)
+                .git_ignore(true)
+                .git_global(true)
+                .git_exclude(true)
+                .follow_links(false)
+                .max_depth(Some(max_depth))
+                .build();
 
-            if entry.file_type().is_some_and(|ft| ft.is_file()) {
-                let path = entry.path();
+            let mut file_paths: Vec<String> = Vec::new();
+            let mut total_files: usize = 0;
 
-                // Match against the relative path from search_base
-                let relative_path = path.strip_prefix(&search_base).unwrap_or(path);
+            for entry in walker.flatten() {
+                if cancelled_clone.load(Ordering::Relaxed) {
+                    break;
+                }
 
-                if Self::matches_glob(&glob_matcher, relative_path, &search_pattern) {
-                    total_files += 1;
-                    if file_paths.len() < max_results {
-                        file_paths.push(path.display().to_string());
+                if entry.file_type().is_some_and(|ft| ft.is_file()) {
+                    let path = entry.path();
+                    let relative_path = path.strip_prefix(&search_base).unwrap_or(path);
+
+                    if Self::matches_glob(&glob_matcher, relative_path, &search_pattern) {
+                        total_files += 1;
+                        if file_paths.len() < max_results {
+                            file_paths.push(path.display().to_string());
+                        }
                     }
                 }
             }
-        }
+
+            (file_paths, total_files)
+        })
+        .await;
+
+        let (file_paths, total_files) = walk_result.context("Glob search task failed")?;
 
         let truncated = total_files > file_paths.len();
 

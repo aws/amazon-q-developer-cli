@@ -1,7 +1,13 @@
 use std::cmp::Reverse;
 use std::io::Write;
 use std::path::PathBuf;
+use std::sync::Arc;
+use std::sync::atomic::{
+    AtomicBool,
+    Ordering,
+};
 
+use agent::util::cancel_guard::CancelGuard;
 use crossterm::{
     queue,
     style,
@@ -60,8 +66,6 @@ const DEFAULT_MAX_FILES: usize = 100;
 const DEFAULT_MAX_TOTAL_LINES: usize = 100;
 /// Default max directory depth
 const DEFAULT_MAX_DEPTH: usize = 30;
-/// How often to yield to allow cancellation (every N files)
-const YIELD_INTERVAL: u32 = 100;
 
 /// Output mode for grep results
 #[derive(Debug, Clone, Copy, Deserialize, PartialEq, Default)]
@@ -158,24 +162,26 @@ impl Grep {
             },
         };
 
-        // Collect files to search
-        let files = self.collect_files(&base_path).await?;
-
-        if files.is_empty() {
-            return Ok(InvokeOutput {
-                output: OutputKind::Json(serde_json::json!({
-                    "message": "No files to search"
-                })),
-            });
-        }
-
-        // Execute search based on output mode
+        let cancelled = Arc::new(AtomicBool::new(false));
+        let _cancel_guard = CancelGuard(Arc::clone(&cancelled));
+        let cancelled_clone = Arc::clone(&cancelled);
+        let grep = self.clone();
         let output_mode = self.output_mode.unwrap_or_default();
-        let result = match output_mode {
-            OutputMode::Content => self.search_content(&matcher, &files).await,
-            OutputMode::FilesWithMatches => self.search_files_with_matches(&matcher, &files).await,
-            OutputMode::Count => self.search_count(&matcher, &files).await,
-        };
+
+        let result = tokio::task::spawn_blocking(move || {
+            let files = grep.collect_files(&base_path, &cancelled_clone);
+            if files.is_empty() {
+                return serde_json::json!({"message": "No files to search"});
+            }
+
+            match output_mode {
+                OutputMode::Content => grep.search_content(&matcher, &files, &cancelled_clone),
+                OutputMode::FilesWithMatches => grep.search_files_with_matches(&matcher, &files, &cancelled_clone),
+                OutputMode::Count => grep.search_count(&matcher, &files, &cancelled_clone),
+            }
+        })
+        .await
+        .context("Grep search task failed")?;
 
         // Display result summary
         let num_matches = result["numMatches"].as_u64().unwrap_or(0);
@@ -213,31 +219,28 @@ impl Grep {
         }
     }
 
-    async fn collect_files(&self, base_path: &PathBuf) -> Result<Vec<PathBuf>> {
+    fn collect_files(&self, base_path: &PathBuf, cancelled: &AtomicBool) -> Vec<PathBuf> {
         // If path is a file, search only that file
         if base_path.is_file() {
-            return Ok(vec![base_path.clone()]);
+            return vec![base_path.clone()];
         }
 
-        let mut walker = WalkBuilder::new(base_path);
-        walker
+        let walker = WalkBuilder::new(base_path)
             .hidden(false)
             .ignore(true)
             .git_ignore(true)
             .git_global(true)
             .git_exclude(true)
             .follow_links(false)
-            .max_depth(Some(self.max_depth()));
+            .max_depth(Some(self.max_depth()))
+            .build();
 
         let mut files = Vec::new();
         let include_glob = self.include.as_deref();
-        let mut entry_count: u32 = 0;
 
-        for entry in walker.build().flatten() {
-            // Yield periodically to allow cancellation (Ctrl+C handling)
-            entry_count += 1;
-            if entry_count.is_multiple_of(YIELD_INTERVAL) {
-                tokio::task::yield_now().await;
+        for entry in walker.flatten() {
+            if cancelled.load(Ordering::Relaxed) {
+                break;
             }
 
             if entry.file_type().is_some_and(|ft| ft.is_file()) {
@@ -255,7 +258,7 @@ impl Grep {
             }
         }
 
-        Ok(files)
+        files
     }
 
     fn match_include(pattern: &str, file_name: &str) -> bool {
@@ -267,7 +270,12 @@ impl Grep {
     }
 
     /// Search and return matching line content in compact ripgrep-like format
-    async fn search_content(&self, matcher: &grep_regex::RegexMatcher, files: &[PathBuf]) -> serde_json::Value {
+    fn search_content(
+        &self,
+        matcher: &grep_regex::RegexMatcher,
+        files: &[PathBuf],
+        cancelled: &AtomicBool,
+    ) -> serde_json::Value {
         let mut searcher = SearcherBuilder::new()
             .binary_detection(BinaryDetection::quit(0x00))
             .line_number(true)
@@ -282,13 +290,10 @@ impl Grep {
         let mut file_results: Vec<(String, Vec<String>)> = Vec::new();
         let mut total_matches: usize = 0;
         let mut total_files_with_matches: usize = 0;
-        let mut file_count: u32 = 0;
 
         for file_path in files {
-            // Yield periodically to allow cancellation
-            file_count += 1;
-            if file_count.is_multiple_of(YIELD_INTERVAL) {
-                tokio::task::yield_now().await;
+            if cancelled.load(Ordering::Relaxed) {
+                break;
             }
 
             let file_str = file_path.display().to_string();
@@ -364,10 +369,11 @@ impl Grep {
     }
 
     /// Search and return only file paths with matches, sorted by match count
-    async fn search_files_with_matches(
+    fn search_files_with_matches(
         &self,
         matcher: &grep_regex::RegexMatcher,
         files: &[PathBuf],
+        cancelled: &AtomicBool,
     ) -> serde_json::Value {
         let mut searcher = SearcherBuilder::new()
             .binary_detection(BinaryDetection::quit(0x00))
@@ -379,13 +385,10 @@ impl Grep {
         // Collect file paths with their match counts
         let mut file_counts: Vec<(String, usize)> = Vec::new();
         let mut total_matches: usize = 0;
-        let mut file_count: u32 = 0;
 
         for file_path in files {
-            // Yield periodically to allow cancellation
-            file_count += 1;
-            if file_count.is_multiple_of(YIELD_INTERVAL) {
-                tokio::task::yield_now().await;
+            if cancelled.load(Ordering::Relaxed) {
+                break;
             }
 
             let mut match_count = 0usize;
@@ -439,7 +442,12 @@ impl Grep {
     }
 
     /// Search and return match counts per file, sorted by count descending
-    async fn search_count(&self, matcher: &grep_regex::RegexMatcher, files: &[PathBuf]) -> serde_json::Value {
+    fn search_count(
+        &self,
+        matcher: &grep_regex::RegexMatcher,
+        files: &[PathBuf],
+        cancelled: &AtomicBool,
+    ) -> serde_json::Value {
         let mut searcher = SearcherBuilder::new()
             .binary_detection(BinaryDetection::quit(0x00))
             .line_number(true)
@@ -449,13 +457,10 @@ impl Grep {
 
         let mut file_counts: Vec<(String, usize)> = Vec::new();
         let mut total_count = 0usize;
-        let mut file_count: u32 = 0;
 
         for file_path in files {
-            // Yield periodically to allow cancellation
-            file_count += 1;
-            if file_count.is_multiple_of(YIELD_INTERVAL) {
-                tokio::task::yield_now().await;
+            if cancelled.load(Ordering::Relaxed) {
+                break;
             }
 
             let mut count = 0usize;

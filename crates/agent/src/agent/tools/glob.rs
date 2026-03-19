@@ -3,6 +3,11 @@ use std::path::{
     Path,
     PathBuf,
 };
+use std::sync::Arc;
+use std::sync::atomic::{
+    AtomicBool,
+    Ordering,
+};
 
 use globset::Glob as GlobPattern;
 use ignore::WalkBuilder;
@@ -19,6 +24,7 @@ use super::{
     ToolExecutionOutputItem,
     ToolExecutionResult,
 };
+use crate::util::cancel_guard::CancelGuard;
 use crate::util::path::canonicalize_path_sys;
 use crate::util::providers::SystemProvider;
 
@@ -153,33 +159,55 @@ impl Glob {
 
         let max_depth = self.max_depth.map_or(DEFAULT_MAX_DEPTH, |d| d.min(MAX_ALLOWED_DEPTH));
         let max_results = self.limit.unwrap_or(DEFAULT_MAX_RESULTS);
+        let cancelled = Arc::new(AtomicBool::new(false));
+        let _cancel_guard = CancelGuard(Arc::clone(&cancelled));
+        let cancelled_clone = Arc::clone(&cancelled);
 
-        let walker = WalkBuilder::new(&search_base)
-            .hidden(false)
-            .ignore(true)
-            .git_ignore(true)
-            .git_global(true)
-            .git_exclude(true)
-            .follow_links(false)
-            .max_depth(Some(max_depth))
-            .build();
+        let walk_result = tokio::task::spawn_blocking(move || {
+            let walker = WalkBuilder::new(&search_base)
+                .hidden(false)
+                .ignore(true)
+                .git_ignore(true)
+                .git_global(true)
+                .git_exclude(true)
+                .follow_links(false)
+                .max_depth(Some(max_depth))
+                .build();
 
-        let mut file_paths: Vec<String> = Vec::new();
-        let mut total_files: usize = 0;
+            let mut file_paths: Vec<String> = Vec::new();
+            let mut total_files: usize = 0;
 
-        for entry in walker.flatten() {
-            if entry.file_type().is_some_and(|ft| ft.is_file()) {
-                let path = entry.path();
-                let relative_path = path.strip_prefix(&search_base).unwrap_or(path);
+            for entry in walker.flatten() {
+                if cancelled_clone.load(Ordering::Relaxed) {
+                    break;
+                }
 
-                if Self::matches_glob(&glob_matcher, relative_path, &search_pattern) {
-                    total_files += 1;
-                    if file_paths.len() < max_results {
-                        file_paths.push(path.display().to_string());
+                if entry.file_type().is_some_and(|ft| ft.is_file()) {
+                    let path = entry.path();
+                    let relative_path = path.strip_prefix(&search_base).unwrap_or(path);
+
+                    if Self::matches_glob(&glob_matcher, relative_path, &search_pattern) {
+                        total_files += 1;
+                        if file_paths.len() < max_results {
+                            file_paths.push(path.display().to_string());
+                        }
                     }
                 }
             }
-        }
+
+            (file_paths, total_files)
+        })
+        .await;
+
+        let (file_paths, total_files) = match walk_result {
+            Ok(result) => result,
+            Err(e) if e.is_panic() => std::panic::resume_unwind(e.into_panic()),
+            Err(_) => {
+                return Ok(ToolExecutionOutput::new(vec![ToolExecutionOutputItem::Json(
+                    serde_json::json!({"error": "Glob search was cancelled"}),
+                )]));
+            },
+        };
 
         let truncated = total_files > file_paths.len();
 
