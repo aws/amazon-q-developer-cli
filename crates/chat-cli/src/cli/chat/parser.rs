@@ -276,6 +276,17 @@ impl SendMessageStream {
     }
 }
 
+/// State of a tool use being parsed from the response stream.
+#[derive(Debug)]
+struct PendingToolUse {
+    id: String,
+    name: String,
+    /// Input payload from the first [ChatResponseStream::ToolUseEvent], if present.
+    initial_input: Option<String>,
+    /// Stop flag from the first [ChatResponseStream::ToolUseEvent], if present.
+    initial_stop: Option<bool>,
+}
+
 /// State associated with parsing a [ChatResponseStream] into a [Message].
 ///
 /// # Usage
@@ -298,9 +309,8 @@ struct ResponseParser {
     assistant_text: String,
     /// Tool uses requested by the model.
     tool_uses: Vec<AssistantToolUse>,
-    /// Whether or not we are currently receiving tool use delta events. Tuple of
-    /// `Some((tool_use_id, name))` if true, [None] otherwise.
-    parsing_tool_use: Option<(String, String)>,
+    /// Whether or not we are currently receiving tool use delta events.
+    parsing_tool_use: Option<PendingToolUse>,
 
     request_metadata: Arc<Mutex<Option<RequestMetadata>>>,
     cancel_token: CancellationToken,
@@ -385,8 +395,10 @@ impl ResponseParser {
 
     /// Consumes the associated [ConverseStreamResponse] until a valid [ResponseEvent] is parsed.
     async fn recv(&mut self) -> Result<ResponseEvent, RecvError> {
-        if let Some((id, name)) = self.parsing_tool_use.take() {
-            let tool_use = self.parse_tool_use(id, name).await?;
+        if let Some(pending) = self.parsing_tool_use.take() {
+            let tool_use = self
+                .parse_tool_use(pending.id, pending.name, pending.initial_input, pending.initial_stop)
+                .await?;
             self.tool_uses.push(tool_use.clone());
             return Ok(ResponseEvent::ToolUse(tool_use));
         }
@@ -423,12 +435,12 @@ impl ResponseParser {
                         input,
                         stop,
                     } => {
-                        debug_assert!(input.is_none(), "Unexpected initial content in first tool use event");
-                        debug_assert!(
-                            stop.is_none_or(|v| !v),
-                            "Unexpected immediate stop in first tool use event"
-                        );
-                        self.parsing_tool_use = Some((tool_use_id.clone(), name.clone()));
+                        self.parsing_tool_use = Some(PendingToolUse {
+                            id: tool_use_id.clone(),
+                            name: name.clone(),
+                            initial_input: input,
+                            initial_stop: stop,
+                        });
                         return Ok(ResponseEvent::ToolUseStart { name });
                     },
                     ref event if event.is_skippable_metadata() => {},
@@ -470,28 +482,36 @@ impl ResponseParser {
     /// Consumes the response stream until a valid [ToolUse] is parsed.
     ///
     /// The arguments are the fields from the first [ChatResponseStream::ToolUseEvent] consumed.
-    async fn parse_tool_use(&mut self, id: String, name: String) -> Result<AssistantToolUse, RecvError> {
-        let mut tool_string = String::new();
+    async fn parse_tool_use(
+        &mut self,
+        id: String,
+        name: String,
+        initial_input: Option<String>,
+        initial_stop: Option<bool>,
+    ) -> Result<AssistantToolUse, RecvError> {
+        let mut tool_string = initial_input.unwrap_or_default();
         let start = Instant::now();
-        loop {
-            match self.peek().await? {
-                Some(ChatResponseStream::ToolUseEvent { .. }) => {
-                    if let Some(ChatResponseStream::ToolUseEvent { input, stop, .. }) = self.next().await? {
-                        if let Some(i) = input {
-                            tool_string.push_str(&i);
+        if initial_stop != Some(true) {
+            loop {
+                match self.peek().await? {
+                    Some(ChatResponseStream::ToolUseEvent { .. }) => {
+                        if let Some(ChatResponseStream::ToolUseEvent { input, stop, .. }) = self.next().await? {
+                            if let Some(i) = input {
+                                tool_string.push_str(&i);
+                            }
+                            if let Some(true) = stop {
+                                break;
+                            }
                         }
-                        if let Some(true) = stop {
-                            break;
-                        }
-                    }
-                },
-                Some(event) if event.is_skippable_metadata() => {
-                    // Skip metadata events during tool use parsing
-                    self.next().await?;
-                },
-                _other => {
-                    break;
-                },
+                    },
+                    Some(event) if event.is_skippable_metadata() => {
+                        // Skip metadata events during tool use parsing
+                        self.next().await?;
+                    },
+                    _other => {
+                        break;
+                    },
+                }
             }
         }
 
@@ -914,5 +934,51 @@ mod tests {
             found_validation_error,
             "Expected to find tool validation error for non-object JSON"
         );
+    }
+
+    #[tokio::test]
+    async fn test_response_parser_single_event_tool_use() {
+        let tool_use_id = "TEST_ID".to_string();
+        let tool_name = "thinking".to_string();
+        let tool_args = serde_json::json!({
+            "thought": "Let me think about this."
+        })
+        .to_string();
+        let events = vec![ChatResponseStream::ToolUseEvent {
+            tool_use_id: tool_use_id.clone(),
+            name: tool_name.clone(),
+            input: Some(tool_args.clone()),
+            stop: Some(true),
+        }];
+        let mock = SendMessageOutput::Mock(events);
+        let mut parser = ResponseParser::new(
+            mock,
+            "".to_string(),
+            None,
+            1,
+            vec![],
+            mpsc::channel(32).0,
+            Instant::now(),
+            SystemTime::now(),
+            CancellationToken::new(),
+            Arc::new(Mutex::new(None)),
+        );
+
+        // First event should be ToolUseStart
+        let event = parser.recv().await.unwrap();
+        assert!(
+            matches!(event, ResponseEvent::ToolUseStart { ref name } if name == "thinking"),
+            "expected ToolUseStart, got {event:?}"
+        );
+
+        // Second event should be ToolUse with the correct args
+        let event = parser.recv().await.unwrap();
+        match event {
+            ResponseEvent::ToolUse(tool_use) => {
+                assert_eq!(tool_use.name, "thinking");
+                assert_eq!(tool_use.args["thought"], "Let me think about this.");
+            },
+            other => panic!("expected ToolUse, got {other:?}"),
+        }
     }
 }
