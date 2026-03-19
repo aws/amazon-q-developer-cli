@@ -12,7 +12,7 @@ import time
 import zipfile
 from typing import Any, Mapping, Sequence, List, Optional
 from const import APPLE_TEAM_ID, CHAT_BINARY_NAME, CHAT_PACKAGE_NAME
-from const_v2 import BUN_VERSION
+from const_v2 import BUN_VERSION, BUN_ZIP_HASHES
 from util import debug, info, isDarwin, isLinux, isWindows, run_cmd, run_cmd_output, warn
 from rust import cargo_cmd_name, rust_env, rust_targets, build_hash, build_datetime
 from importlib import import_module
@@ -126,6 +126,14 @@ def download_bun() -> BunPaths:
         with open(zip_path, "wb") as f:
             for chunk in response.iter_content(chunk_size=8192):
                 f.write(chunk)
+
+        actual_hash = calculate_sha256(zip_path)
+        expected_hash = BUN_ZIP_HASHES.get(fname)
+        if expected_hash is None:
+            raise ValueError(f"No pinned SHA256 hash for {fname} in BUN_ZIP_HASHES")
+        if actual_hash != expected_hash:
+            raise ValueError(f"SHA256 mismatch for {fname}: expected {expected_hash}, got {actual_hash}")
+        info(f"Verified {fname} integrity (SHA256: {actual_hash})")
 
         with zipfile.ZipFile(zip_path, "r") as zip_ref:
             zip_ref.extractall(bun_dir)

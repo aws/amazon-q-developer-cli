@@ -23,26 +23,27 @@ jobs:
 
       - name: Generate custom lockfile for bundled Bun
         run: |
-          BUN_VERSION=$(grep 'BUN_VERSION' scripts/const_v2.py | sed 's/.*"\(.*\)"/\1/')
-          cat > osv-scanner-custom.json <<EOF
-          {
-            "results": [
-              {
-                "packages": [
-                  {
-                    "package": {
-                      "name": "bun",
-                      "version": "$BUN_VERSION",
-                      "ecosystem": "npm"
-                    }
-                  }
-                ]
-              }
-            ]
-          }
-          EOF
+          BUN_VERSION=$(grep '^BUN_VERSION' scripts/const_v2.py | sed 's/.*"\(.*\)"/\1/')
+          echo "{\"results\":[{\"packages\":[{\"package\":{\"name\":\"bun\",\"version\":\"$BUN_VERSION\",\"ecosystem\":\"npm\"}}]}]}" > osv-scanner-custom.json
 
+      # OSV scanner only supports one output format per invocation, so we run it twice:
+      # 1) Table format — human-readable output in CI logs, fails the workflow on findings
+      # 2) SARIF format — uploads to GitHub Security tab for tracking
       - name: Run OSV Scanner
+        uses: google/osv-scanner-action/osv-scanner-action@v2.3.3
+        with:
+          scan-args: |-
+            --lockfile=bun.lock
+            --lockfile=osv-scanner:osv-scanner-custom.json
+            --format=table
+            --output=osv-results.txt
+
+      - name: Print results
+        if: always()
+        run: cat osv-results.txt 2>/dev/null || true
+
+      - name: Run OSV Scanner (SARIF)
+        if: always()
         uses: google/osv-scanner-action/osv-scanner-action@v2.3.3
         continue-on-error: true
         with:

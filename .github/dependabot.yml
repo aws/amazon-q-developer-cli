@@ -12,6 +12,15 @@ updates:
     open-pull-requests-limit: 100
     commit-message:
       prefix: ci
+  - package-ecosystem: "npm"
+    directory: "/packages/tui"
+    schedule:
+      interval: "daily"
+    open-pull-requests-limit: 10
+    commit-message:
+      prefix: fix
+      prefix-development: chore
+      include: scope
   - package-ecosystem: "cargo"
     directory: "/"
     schedule:

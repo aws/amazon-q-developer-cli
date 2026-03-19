@@ -720,25 +720,26 @@ gh workflow run check-bun-version.yml --repo kiro-team/kiro-cli
 #### OSV Vulnerability Scan (`osv-scan.yml`)
 
 Runs on PRs, pushes to main, and daily (9 UTC). Scans for known vulnerabilities using [OSV Scanner](https://github.com/google/osv-scanner) across two sources:
-- `bun.lock` — JavaScript dependencies (not covered by Dependabot)
+- `bun.lock` — JavaScript dependencies
 - Custom `osv-scanner-custom.json` — Generated at scan time from `BUN_VERSION` in `scripts/const_v2.py`, registers the bundled Bun binary as `npm/bun` so CVEs against the Bun runtime itself are detected
 
-Results are uploaded as SARIF to the GitHub Security tab.
+The scanner runs twice per invocation (it only supports one output format at a time):
+1. **Table format** — Human-readable output printed to CI logs. This step fails the workflow if vulnerabilities are found.
+2. **SARIF format** — Uploaded to the GitHub Security tab for tracking. Runs with `continue-on-error` since the first step already handles the pass/fail decision.
 
 **Manual trigger:**
 ```bash
 gh workflow run osv-scan.yml --repo kiro-team/kiro-cli
 ```
 
-**Viewing results:** Go to the repository's Security tab → Code scanning alerts.
+**Viewing results:** Check the CI logs for the table output, or go to the repository's Security tab → Code scanning alerts.
 
 ### Dependabot
 
 Dependabot is configured in `.github/dependabot.yml` for:
 - **github-actions**: Daily updates for workflow action versions
 - **cargo**: Daily updates for Rust dependencies (grouped by `aws-*` and `clap*`)
-
-Note: Dependabot does not cover the bundled Bun binary (see above) or JavaScript dependencies in `bun.lock` (not a supported ecosystem). The OSV scanner fills this gap.
+- **npm**: Daily updates for JavaScript dependencies in `packages/tui`
 
 ---
 

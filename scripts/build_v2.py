@@ -11,7 +11,7 @@ import time
 import zipfile
 import hashlib
 from typing import Any, Mapping, Sequence, List, Optional
-from const_v2 import APPLE_TEAM_ID, CHAT_BINARY_NAME, CHAT_PACKAGE_NAME, BUN_VERSION
+from const_v2 import APPLE_TEAM_ID, CHAT_BINARY_NAME, CHAT_PACKAGE_NAME, BUN_VERSION, BUN_ZIP_HASHES
 from util import debug, info, isDarwin, isLinux, isWindows, run_cmd, run_cmd_output, warn
 from rust import cargo_cmd_name, rust_env, rust_targets, build_hash, build_datetime
 from importlib import import_module
@@ -696,6 +696,14 @@ def download_bun() -> pathlib.Path:
         with open(zip_path, "wb") as f:
             for chunk in response.iter_content(chunk_size=8192):
                 f.write(chunk)
+
+        actual_hash = calculate_sha256(zip_path)
+        expected_hash = BUN_ZIP_HASHES.get(download.fname)
+        if expected_hash is None:
+            raise ValueError(f"No pinned SHA256 hash for {download.fname} in BUN_ZIP_HASHES")
+        if actual_hash != expected_hash:
+            raise ValueError(f"SHA256 mismatch for {download.fname}: expected {expected_hash}, got {actual_hash}")
+        info(f"Verified {download.fname} integrity (SHA256: {actual_hash})")
 
         info(f"Extracting Bun to {bun_dir}")
         with zipfile.ZipFile(zip_path, "r") as zip_ref:

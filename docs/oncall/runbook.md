@@ -126,6 +126,30 @@ To run the script:
 * Create an MCM from the template: [TM-141905](https://mcm.amazon.com/templates/TM-141905). Fill-out the description and run the MCM.
 
 
+### Bumping the Bundled Bun Version
+
+The Kiro CLI v2 TUI embeds a Bun runtime binary. The version is pinned in `scripts/const_v2.py`.
+
+We manually commit expected SHA hashes of the downloaded bun artifacts to guard against the GitHub repo being maliciously taken over.
+
+**Files to update:**
+
+1. `scripts/const_v2.py` — Update `BUN_VERSION` and all entries in `BUN_ZIP_HASHES`
+
+**Steps:**
+
+1. Check the latest Bun release at https://github.com/oven-sh/bun/releases
+2. Compute SHA256 hashes for all platform zip archives:
+   ```bash
+   ./scripts/update-bun-hashes.sh <NEW_VERSION>
+   ```
+3. Update `BUN_VERSION` and `BUN_ZIP_HASHES` in `scripts/const_v2.py` with the new version and hashes
+4. Run a local build to verify: `python3 scripts/main.py build --skip-lints --skip-tests --not-release --include-v2 --skip-autodocs-embeddings` — the build will fail if hashes don't match.
+5. Run the TUI to verify it launches and works: `./build/kiro-cli-chat chat --tui`
+6. Raise a PR
+
+**Security scanning:** The OSV scan workflow (`.github/workflows/osv-scan.yml`) automatically picks up the new version from `const_v2.py` and scans it for known CVEs daily.
+
 ### Regenerating amzn smithy clients
 
 We auto-generate internal amzn clients and commit them directly to the codebase. Whenever there is a change in the service API, we need to regenerate the clients.
