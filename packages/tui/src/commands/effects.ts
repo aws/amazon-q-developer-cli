@@ -113,6 +113,7 @@ const effectHandlers: Record<EffectName, EffectHandler> = {
             name: string;
             description: string;
             usage: string;
+            subcommands?: string[];
           }>;
         }
       | undefined;

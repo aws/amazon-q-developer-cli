@@ -12,11 +12,16 @@ pub async fn execute(_ctx: &CommandContext<'_>) -> CommandResult {
     let commands_json: Vec<serde_json::Value> = commands
         .iter()
         .map(|cmd| {
-            serde_json::json!({
+            let mut obj = serde_json::json!({
                 "name": cmd.name(),
                 "description": cmd.description(),
                 "usage": cmd.usage(),
-            })
+            });
+            let subs = cmd.subcommands();
+            if !subs.is_empty() {
+                obj["subcommands"] = serde_json::json!(subs);
+            }
+            obj
         })
         .collect();
 

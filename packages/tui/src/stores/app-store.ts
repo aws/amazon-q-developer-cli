@@ -274,7 +274,12 @@ interface BaseAppActions {
   ) => void;
   setShowHelpPanel: (
     show: boolean,
-    commands?: Array<{ name: string; description: string; usage: string }>
+    commands?: Array<{
+      name: string;
+      description: string;
+      usage: string;
+      subcommands?: string[];
+    }>
   ) => void;
   setShowUsagePanel: (show: boolean, data?: any) => void;
   setShowMcpPanel: (show: boolean, servers?: McpServerInfo[]) => void;
@@ -392,7 +397,12 @@ export interface AppState {
   showContextBreakdown: boolean;
   contextBreakdown: ContextBreakdownData | null;
   showHelpPanel: boolean;
-  helpCommands: Array<{ name: string; description: string; usage: string }>;
+  helpCommands: Array<{
+    name: string;
+    description: string;
+    usage: string;
+    subcommands?: string[];
+  }>;
   showMcpPanel: boolean;
   mcpServers: McpServerInfo[];
   showToolsPanel: boolean;

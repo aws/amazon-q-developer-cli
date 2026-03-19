@@ -39,7 +39,12 @@ export interface CommandContext {
   /** Show/hide help panel */
   setShowHelpPanel: (
     show: boolean,
-    commands?: Array<{ name: string; description: string; usage: string }>
+    commands?: Array<{
+      name: string;
+      description: string;
+      usage: string;
+      subcommands?: string[];
+    }>
   ) => void;
   /** Show/hide usage panel */
   setShowUsagePanel: (show: boolean, data?: any) => void;

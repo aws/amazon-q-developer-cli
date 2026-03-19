@@ -215,7 +215,7 @@ impl TuiCommand {
     /// Human-readable description
     pub fn description(&self) -> &'static str {
         match self {
-            TuiCommand::Help(_) => "Show this help message",
+            TuiCommand::Help(_) => "Show available commands",
             TuiCommand::Model(_) => "Select or list available models",
             TuiCommand::Agent(_) => "Select or list available agents",
             TuiCommand::Context(_) => "Manage context files or show token usage",
@@ -228,7 +228,7 @@ impl TuiCommand {
             TuiCommand::Tools(_) => "Show available tools",
             TuiCommand::Plan(_) => "Switch to Plan agent for breaking down ideas into implementation plans",
             TuiCommand::Feedback(_) => "Submit feedback, request features, or report issues",
-            TuiCommand::Knowledge(_) => "Manage knowledge base (show, add, remove, update, clear, cancel)",
+            TuiCommand::Knowledge(_) => "Manage knowledge base",
             TuiCommand::Prompts(_) => "Select or list available prompts",
             TuiCommand::Chat(_) => "Load a previous session",
         }
@@ -255,6 +255,15 @@ impl TuiCommand {
             },
             TuiCommand::Prompts(_) => "/prompts [prompt-name]",
             TuiCommand::Chat(_) => "/chat",
+        }
+    }
+
+    /// Subcommand names, if any
+    pub fn subcommands(&self) -> Vec<&'static str> {
+        match self {
+            TuiCommand::Context(_) => vec!["add", "remove", "clear"],
+            TuiCommand::Knowledge(_) => vec!["show", "add", "remove", "update", "clear", "cancel"],
+            _ => vec![],
         }
     }
 
