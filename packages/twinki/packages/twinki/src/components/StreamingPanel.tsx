@@ -1,8 +1,9 @@
-import React, { useEffect, useRef, useMemo, type ReactNode } from 'react';
+import React, { useEffect, useRef, useLayoutEffect, useMemo, type ReactNode } from 'react';
 import { Box } from './Box.js';
 import { Text } from './Text.js';
 import { Scrollbar } from './Scrollbar.js';
 import { useScroll } from '../hooks/useScroll.js';
+import { measureElement } from '../index.js';
 
 const isMac = process.platform === 'darwin';
 
@@ -52,16 +53,39 @@ export function StreamingPanel({ content, streaming, height, scrollbar = true, s
 	const clampedScroll = Math.min(scrollTop, maxScroll);
 	const isScrolledUp = clampedScroll < maxScroll;
 
+	const contentRef = useRef<any>(null);
+	const renderedHeightRef = useRef(0);
+
+	// Measure synchronously after layout — useLayoutEffect fires before
+	// paint so the capped scroll is always consistent within the same frame.
+	useLayoutEffect(() => {
+		if (contentRef.current) {
+			const { height: h } = measureElement(contentRef.current);
+			if (h > 0) renderedHeightRef.current = h;
+		}
+	});
+
+	const renderedHeight = renderedHeightRef.current;
+
 	if (!showScrollbar) {
 		return (
 			<Box flexDirection="column">
-				{children(content, { scrollTop: 0, totalLines: totalLines, isScrolledUp: false })}
+				<Box ref={contentRef}>
+					{children(content, { scrollTop: 0, totalLines: totalLines, isScrolledUp: false })}
+				</Box>
 			</Box>
 		);
 	}
 
+	// Cap scroll so marginTop never exceeds rendered content height
+	const maxRenderedScroll = renderedHeight > contentHeight
+		? renderedHeight - contentHeight
+		: maxScroll;
+	const effectiveScroll = Math.min(clampedScroll, maxRenderedScroll);
+	const effectiveIsScrolledUp = effectiveScroll < maxRenderedScroll;
+
 	// Remaining visual lines from scroll position
-	const remaining = Math.max(1, totalLines - clampedScroll);
+	const remaining = Math.max(1, renderedHeight > 0 ? renderedHeight - effectiveScroll : totalLines - effectiveScroll);
 	const visibleHeight = Math.min(contentHeight, remaining);
 
 	const hintText = !streaming
@@ -74,13 +98,15 @@ export function StreamingPanel({ content, streaming, height, scrollbar = true, s
 		<Box flexDirection="column">
 			<Box height={visibleHeight} overflow="hidden" flexDirection="column">
 				<Box flexDirection="row">
-					<Box width="98%" flexDirection="column" marginTop={-clampedScroll}>
-						{children(content, { scrollTop: clampedScroll, totalLines: totalLines, isScrolledUp })}
+					<Box width="98%" flexDirection="column" marginTop={-effectiveScroll}>
+						<Box ref={contentRef} flexDirection="column">
+							{children(content, { scrollTop: effectiveScroll, totalLines: totalLines, isScrolledUp: effectiveIsScrolledUp })}
+						</Box>
 					</Box>
 					<Box width="2%">
 						<Scrollbar
-							scrollTop={clampedScroll}
-							totalLines={totalLines}
+							scrollTop={effectiveScroll}
+							totalLines={renderedHeight > 0 ? renderedHeight : totalLines}
 							viewportHeight={visibleHeight}
 							color={scrollbarColor}
 						/>

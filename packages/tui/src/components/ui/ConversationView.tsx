@@ -408,13 +408,13 @@ export const ConversationView = React.memo(function ConversationView() {
 
   const hadMessagesRef = React.useRef(false);
   const welcomeInStaticRef = React.useRef(false);
-  const [tailOverride, setTailOverride] = React.useState<number | null>(null);
-  const lastFlushTurnRef = React.useRef<string | undefined>(undefined);
+  const [flushTurnId, setFlushTurnId] = React.useState<string | undefined>(
+    undefined
+  );
   const activeTurnIdRef = React.useRef<string | undefined>(undefined);
 
   const handleReadyToFlush = React.useCallback(() => {
-    setTailOverride(0);
-    lastFlushTurnRef.current = activeTurnIdRef.current;
+    setFlushTurnId(activeTurnIdRef.current);
   }, []);
   // Per-turn set of message IDs already flushed to <Static>
   const flushedRef = React.useRef<Map<string, Set<string>>>(new Map());
@@ -473,8 +473,7 @@ export const ConversationView = React.memo(function ConversationView() {
   // Reset tailOverride when active turn changes (new user message)
   const activeTurnId = activeTurn?.userMessage.id;
   activeTurnIdRef.current = activeTurnId;
-  const effectiveTailOverride =
-    activeTurnId === lastFlushTurnRef.current ? tailOverride : null;
+  const effectiveTailOverride = activeTurnId === flushTurnId ? 0 : null;
 
   const activeAgentName =
     activeTurn && 'agentName' in activeTurn.userMessage

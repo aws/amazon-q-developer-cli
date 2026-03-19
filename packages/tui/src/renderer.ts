@@ -45,7 +45,10 @@ export const usePaste: (
   opts?: { isActive?: boolean }
 ) => void = useTwinki
   ? (mod as any).usePaste
-  : (_handler: any, _opts?: any) => {};
+  : (_handler: any, _opts?: any) => {
+      void _handler;
+      void _opts;
+    };
 // StreamingPanel: available in both ink and twinki
 export const StreamingPanel =
   mod.StreamingPanel as typeof import('ink').StreamingPanel;

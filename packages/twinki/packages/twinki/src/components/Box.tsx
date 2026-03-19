@@ -131,8 +131,8 @@ export interface BoxProps {
  * </Box>
  * ```
  */
-export const Box: React.FC<BoxProps> = (props) => {
-	return React.createElement('twinki-box', { flexDirection: 'row', ...props }, props.children);
-};
+export const Box = React.forwardRef<any, BoxProps>((props, ref) => {
+	return React.createElement('twinki-box', { flexDirection: 'row', ...props, ref }, props.children);
+});
 
 Box.displayName = 'Box';
