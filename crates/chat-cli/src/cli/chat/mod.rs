@@ -4157,9 +4157,11 @@ impl ChatSession {
 
             info!("## control end: buf: {:?}", buf);
 
-            let mut temp_buf = Vec::<u8>::new();
-
-            // Print the response for normal cases
+            // Buffer rendered output for up to 8ms, then flush once.
+            // This avoids a syscall/channel-send per markdown element while
+            // still giving the async runtime a chance to receive new chunks.
+            let mut render_buf = Vec::<u8>::new();
+            let parse_deadline = Instant::now() + Duration::from_millis(8);
             loop {
                 // Here we try to maintain the buffer intact, but just for correct
                 // markdown rendering we add a new line to the buffer.
@@ -4171,47 +4173,44 @@ impl ChatSession {
                     Cow::Borrowed(&buf[offset..])
                 };
                 let input = Partial::new(parse_str.as_ref());
-                if self.stdout.should_send_structured_event {
-                    match interpret_markdown(input, &mut temp_buf, &mut state) {
-                        Ok(parsed) => {
-                            offset += parsed.offset_from(&input);
-                            temp_buf.flush()?;
-
-                            let text_msg_content = TextMessageContent {
-                                message_id: request_id.clone().unwrap_or_default(),
-                                delta: std::mem::take(&mut temp_buf),
-                            };
-                            self.stdout
-                                .send(SessionEvent::AgentEvent(chat_cli_ui::protocol::AgentEvent {
-                                    agent_id: Default::default(),
-                                    kind: chat_cli_ui::protocol::AgentEventKind::TextMessageContent(text_msg_content),
-                                }))?;
-
-                            state.newline = state.set_newline;
-                            state.set_newline = false;
-                        },
-                        Err(err) => match err.into_inner() {
-                            Some(err) => return Err(ChatError::Custom(err.to_string().into())),
-                            None => break, // Data was incomplete
-                        },
-                    }
-                } else {
-                    match interpret_markdown(input, &mut self.stdout, &mut state) {
-                        Ok(parsed) => {
-                            offset += parsed.offset_from(&input);
-                            self.stdout.flush()?;
-                            state.newline = state.set_newline;
-                            state.set_newline = false;
-                        },
-                        Err(err) => match err.into_inner() {
-                            Some(err) => return Err(ChatError::Custom(err.to_string().into())),
-                            None => break, // Data was incomplete
-                        },
-                    }
+                match interpret_markdown(input, &mut render_buf, &mut state) {
+                    Ok(parsed) => {
+                        offset += parsed.offset_from(&input);
+                        state.newline = state.set_newline;
+                        state.set_newline = false;
+                    },
+                    Err(err) => match err.into_inner() {
+                        Some(err) => return Err(ChatError::Custom(err.to_string().into())),
+                        None => break, // Data was incomplete
+                    },
                 }
 
-                // TODO: We should buffer output based on how much we have to parse, not as a constant
-                // Do not remove unless you are nabochay :)
+                if Instant::now() >= parse_deadline {
+                    break;
+                }
+            }
+
+            // Flush the accumulated render buffer in a single write.
+            if !render_buf.is_empty() {
+                if self.stdout.should_send_structured_event {
+                    let text_msg_content = TextMessageContent {
+                        message_id: request_id.clone().unwrap_or_default(),
+                        delta: render_buf,
+                    };
+                    self.stdout
+                        .send(SessionEvent::AgentEvent(chat_cli_ui::protocol::AgentEvent {
+                            agent_id: Default::default(),
+                            kind: chat_cli_ui::protocol::AgentEventKind::TextMessageContent(text_msg_content),
+                        }))?;
+                } else {
+                    self.stdout.write_all(&render_buf)?;
+                    self.stdout.flush()?;
+                }
+            }
+
+            // Sleep to let the runtime receive the next stream chunk
+            // instead of busy-waiting on an empty buffer.
+            if !ended {
                 tokio::time::sleep(Duration::from_millis(8)).await;
             }
 
