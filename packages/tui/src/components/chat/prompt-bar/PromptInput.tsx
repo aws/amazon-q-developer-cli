@@ -592,6 +592,7 @@ export const PromptInput = React.memo(function PromptInput({
         if (command) {
           // Suppress trigger so slash commands from history don't open the menu
           suppressNextTriggerRef.current = true;
+          setPromptHint(null);
           setSegments([{ type: 'text', value: command }]);
           setCursor(command.length);
         }
@@ -613,6 +614,7 @@ export const PromptInput = React.memo(function PromptInput({
         const command = CommandHistory.getInstance().navigate('down');
         if (command !== null) {
           suppressNextTriggerRef.current = true;
+          setPromptHint(null);
           setSegments([{ type: 'text', value: command }]);
           setCursor(command.length);
         }
@@ -672,6 +674,7 @@ export const PromptInput = React.memo(function PromptInput({
               }
               const command = CommandHistory.getInstance().navigate('up');
               if (command) {
+                setPromptHint(null);
                 setSegments([{ type: 'text', value: command }]);
                 setCursor(command.length);
               }
@@ -696,9 +699,11 @@ export const PromptInput = React.memo(function PromptInput({
               if (!CommandHistory.getInstance().isNavigating()) break;
               const command = CommandHistory.getInstance().navigate('down');
               if (command) {
+                setPromptHint(null);
                 setSegments([{ type: 'text', value: command }]);
                 setCursor(command.length);
               } else {
+                setPromptHint(null);
                 setSegments([{ type: 'text', value: '' }]);
                 setCursor(0);
               }

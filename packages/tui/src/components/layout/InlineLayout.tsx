@@ -20,7 +20,6 @@ import { IssuePanel } from '../ui/IssuePanel';
 import { McpPanel } from '../ui/McpPanel';
 import { ToolsPanel } from '../ui/ToolsPanel';
 import { KnowledgePanel } from '../ui/KnowledgePanel';
-import { PromptsPanel } from '../ui/PromptsPanel';
 import {
   PromptBar,
   type PromptBarHeader,
@@ -135,8 +134,6 @@ export const InlineLayout: React.FC = () => {
     contextBreakdown,
     showHelpPanel,
     helpCommands,
-    showPromptsPanel,
-    prompts,
     showIssuePanel,
     issueUrl,
     showUsagePanel,
@@ -153,7 +150,6 @@ export const InlineLayout: React.FC = () => {
     toggleToolOutputsExpanded,
     setShowContextBreakdown,
     setShowHelpPanel,
-    setShowPromptsPanel,
     setShowIssuePanel,
     setShowUsagePanel,
     setShowMcpPanel,
@@ -259,12 +255,6 @@ export const InlineLayout: React.FC = () => {
     setActiveCommand(null);
     clearCommandInput();
   }, [setShowHelpPanel, setActiveCommand, clearCommandInput]);
-
-  const handleClosePromptsPanel = useCallback(() => {
-    setShowPromptsPanel(false);
-    setActiveCommand(null);
-    clearCommandInput();
-  }, [setShowPromptsPanel, setActiveCommand, clearCommandInput]);
 
   const handleCloseIssuePanel = useCallback(() => {
     setShowIssuePanel(false);
@@ -495,7 +485,6 @@ export const InlineLayout: React.FC = () => {
               showMcpPanel ||
               showToolsPanel ||
               showKnowledgePanel ||
-              showPromptsPanel ||
               !!pendingApproval ||
               showIssuePanel
                 ? undefined
@@ -529,7 +518,6 @@ export const InlineLayout: React.FC = () => {
               showMcpPanel ||
               showToolsPanel ||
               showKnowledgePanel ||
-              showPromptsPanel ||
               showIssuePanel
             }
           >
@@ -571,12 +559,6 @@ export const InlineLayout: React.FC = () => {
                 entries={knowledgeEntries}
                 status={knowledgeStatus}
                 onClose={handleCloseKnowledgePanel}
-              />
-            )}
-            {showPromptsPanel && (
-              <PromptsPanel
-                prompts={prompts}
-                onClose={handleClosePromptsPanel}
               />
             )}
             {showIssuePanel && issueUrl && (

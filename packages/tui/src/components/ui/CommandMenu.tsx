@@ -91,9 +91,13 @@ export const CommandMenu: React.FC = () => {
     if (activeTrigger?.key !== '/' || commandInputValue.includes(' '))
       return [];
     const partial = commandInputValue.slice(1).toLowerCase();
-    return slashCommands.filter((cmd) =>
+    const matches = slashCommands.filter((cmd) =>
       cmd.name.slice(1).toLowerCase().startsWith(partial)
     );
+    const cmds = matches.filter((c) => c.meta?.type !== 'prompt');
+    const promptCmds = matches.filter((c) => c.meta?.type === 'prompt');
+    cmds.sort((a, b) => a.name.localeCompare(b.name));
+    return [...cmds, ...promptCmds];
   }, [commandInputValue, slashCommands, activeTrigger]);
 
   const menuItems = useMemo(
@@ -208,8 +212,15 @@ export const CommandMenu: React.FC = () => {
         onSelect={(item) => {
           const opt = activeCommand.options.find((o) => o.label === item.label);
           if (opt) {
-            clearCommandInput();
-            executeCommandWithArg(opt.value);
+            if (opt.hint) {
+              // Has required args — prefill command and show hint
+              setCommandInput(`${opt.label} `);
+              setPromptHint(opt.hint);
+              setActiveCommand(null);
+            } else {
+              clearCommandInput();
+              executeCommandWithArg(opt.value);
+            }
           }
         }}
         onEscape={() => {

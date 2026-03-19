@@ -40,6 +40,7 @@ fn to_agent_option(a: &AgentInfo) -> CommandOption {
         } else {
             Some(a.source.clone())
         },
+        hint: None,
     }
 }
 

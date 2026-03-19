@@ -49,6 +49,8 @@ pub enum TuiCommand {
     Issue(IssueArgs),
     /// Manage knowledge base
     Knowledge(KnowledgeArgs),
+    /// List and execute available prompts
+    Prompts(PromptsArgs),
 }
 
 /// Arguments for /help command
@@ -163,6 +165,17 @@ pub struct KnowledgeArgs {
     pub subcommand: Option<String>,
 }
 
+/// Arguments for /prompts command
+#[typeshare]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PromptsArgs {
+    /// Prompt name to execute. If None, lists available prompts.
+    /// Accepts either `promptName` or `value` (for generic selection UI)
+    #[serde(alias = "value", skip_serializing_if = "Option::is_none")]
+    pub prompt_name: Option<String>,
+}
+
 impl TuiCommand {
     /// Command name with leading slash
     pub fn name(&self) -> &'static str {
@@ -181,6 +194,7 @@ impl TuiCommand {
             TuiCommand::Plan(_) => "/plan",
             TuiCommand::Issue(_) => "/issue",
             TuiCommand::Knowledge(_) => "/knowledge",
+            TuiCommand::Prompts(_) => "/prompts",
         }
     }
 
@@ -201,6 +215,7 @@ impl TuiCommand {
             TuiCommand::Plan(_) => "Switch to Plan agent for breaking down ideas into implementation plans",
             TuiCommand::Issue(_) => "Report an issue",
             TuiCommand::Knowledge(_) => "Manage knowledge base (show, add, remove, update, clear, cancel)",
+            TuiCommand::Prompts(_) => "Select or list available prompts",
         }
     }
 
@@ -223,6 +238,7 @@ impl TuiCommand {
             TuiCommand::Knowledge(_) => {
                 "/knowledge [show|add <name> <path>|remove <name|path>|update <path>|clear|cancel]"
             },
+            TuiCommand::Prompts(_) => "/prompts [prompt-name]",
         }
     }
 
@@ -284,6 +300,13 @@ impl TuiCommand {
                 meta.insert("inputType".into(), "panel".into());
                 Some(meta)
             },
+            TuiCommand::Prompts(_) => {
+                let mut meta = serde_json::Map::new();
+                meta.insert("optionsMethod".into(), "_kiro.dev/commands/prompts/options".into());
+                meta.insert("inputType".into(), "selection".into());
+                meta.insert("hint".into(), "".into());
+                Some(meta)
+            },
         }
     }
 
@@ -304,6 +327,7 @@ impl TuiCommand {
             TuiCommand::PasteImage(PasteImageArgs::default()),
             TuiCommand::Issue(IssueArgs::default()),
             TuiCommand::Knowledge(KnowledgeArgs::default()),
+            TuiCommand::Prompts(PromptsArgs::default()),
         ];
         commands.sort_by_key(|cmd| cmd.name());
         commands
@@ -338,6 +362,9 @@ impl TuiCommand {
             "paste" => Some(Self::PasteImage(PasteImageArgs::default())),
             "knowledge" => Some(Self::Knowledge(KnowledgeArgs {
                 subcommand: (!args.is_empty()).then(|| args.to_string()),
+            })),
+            "prompts" => Some(Self::Prompts(PromptsArgs {
+                prompt_name: (!args.is_empty()).then(|| args.to_string()),
             })),
             _ => None,
         }

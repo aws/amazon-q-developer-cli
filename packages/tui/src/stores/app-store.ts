@@ -276,7 +276,6 @@ interface BaseAppActions {
     show: boolean,
     commands?: Array<{ name: string; description: string; usage: string }>
   ) => void;
-  setShowPromptsPanel: (show: boolean) => void;
   setShowIssuePanel: (show: boolean, url?: string) => void;
   setShowUsagePanel: (show: boolean, data?: any) => void;
   setShowMcpPanel: (show: boolean, servers?: McpServerInfo[]) => void;
@@ -402,7 +401,6 @@ export interface AppState {
   showKnowledgePanel: boolean;
   knowledgeEntries: KnowledgeEntry[];
   knowledgeStatus: string | null;
-  showPromptsPanel: boolean;
   showIssuePanel: boolean;
   issueUrl: string | null;
   // Abort controller for current stream
@@ -457,29 +455,33 @@ const CONTEXT_WARNING_THRESHOLD = 60;
 function syncTerminalProgress(
   state: Pick<
     AppState,
-    'agentError' | 'pendingApproval' | 'isProcessing' | 'isCompacting' | 'contextUsagePercent'
-  >,
+    | 'agentError'
+    | 'pendingApproval'
+    | 'isProcessing'
+    | 'isCompacting'
+    | 'contextUsagePercent'
+  >
 ): void {
   if (state.isProcessing || state.isCompacting) {
     // Active — always spinning unless paused for approval
     if (state.agentError) {
-      setTerminalProgressError();                       // pulsing red
+      setTerminalProgressError(); // pulsing red
     } else if (state.pendingApproval) {
-      setTerminalProgressWarning(100);                  // static yellow at 100%
+      setTerminalProgressWarning(100); // static yellow at 100%
     } else {
-      setTerminalProgressIndeterminate();               // spinning green
+      setTerminalProgressIndeterminate(); // spinning green
     }
   } else {
     // Idle — static bar or hidden
     if (state.agentError) {
-      setTerminalProgressError();                       // pulsing red
+      setTerminalProgressError(); // pulsing red
     } else if (
       state.contextUsagePercent != null &&
       state.contextUsagePercent >= CONTEXT_WARNING_THRESHOLD
     ) {
-      setTerminalProgressWarning(state.contextUsagePercent);  // static yellow with %
+      setTerminalProgressWarning(state.contextUsagePercent); // static yellow with %
     } else {
-      clearTerminalProgress();                          // hidden
+      clearTerminalProgress(); // hidden
     }
   }
 }
@@ -490,12 +492,6 @@ export const createAppStore = (props: AppStoreProps) => {
     messages: [],
     queuedMessages: [],
     slashCommands: [
-      {
-        name: '/prompts',
-        description: 'List available MCP prompts',
-        source: 'local' as const,
-        meta: { local: true, inputType: 'panel' as const },
-      },
       {
         name: '/editor',
         description: 'Open $EDITOR to compose a prompt',
@@ -540,7 +536,6 @@ export const createAppStore = (props: AppStoreProps) => {
     contextBreakdown: null,
     showHelpPanel: false,
     helpCommands: [],
-    showPromptsPanel: false,
     showIssuePanel: false,
     issueUrl: null,
     showUsagePanel: false,
@@ -1436,7 +1431,6 @@ export const createAppStore = (props: AppStoreProps) => {
       const ctx: CommandContext = {
         kiro: state.kiro,
         slashCommands: state.slashCommands,
-        prompts: state.prompts,
         showAlert: (message, status, autoHideMs = 3000) =>
           state.showTransientAlert({ message, status, autoHideMs }),
         setLoadingMessage: state.setLoadingMessage,
@@ -1446,7 +1440,6 @@ export const createAppStore = (props: AppStoreProps) => {
         setContextUsage: state.setContextUsage,
         setShowContextBreakdown: state.setShowContextBreakdown,
         setShowHelpPanel: state.setShowHelpPanel,
-        setShowPromptsPanel: state.setShowPromptsPanel,
         setShowIssuePanel: state.setShowIssuePanel,
         setShowUsagePanel: state.setShowUsagePanel,
         setShowMcpPanel: state.setShowMcpPanel,
@@ -1459,7 +1452,6 @@ export const createAppStore = (props: AppStoreProps) => {
             activeCommand: null,
             showContextBreakdown: false,
             showHelpPanel: false,
-            showPromptsPanel: false,
             showIssuePanel: false,
             showUsagePanel: false,
             showMcpPanel: false,
@@ -1700,10 +1692,6 @@ export const createAppStore = (props: AppStoreProps) => {
       set({ showHelpPanel: show, helpCommands: commands });
     },
 
-    setShowPromptsPanel: (show) => {
-      set({ showPromptsPanel: show });
-    },
-
     setShowIssuePanel: (show, url) => {
       set({ showIssuePanel: show, issueUrl: url ?? null });
     },
@@ -1800,7 +1788,6 @@ export const createAppStore = (props: AppStoreProps) => {
         activeCommand: null,
         showContextBreakdown: false,
         showHelpPanel: false,
-        showPromptsPanel: false,
         showIssuePanel: false,
         showUsagePanel: false,
         commandInputValue: '',
@@ -1815,7 +1802,6 @@ export const createAppStore = (props: AppStoreProps) => {
         const ctx: CommandContext = {
           kiro: state.kiro,
           slashCommands: state.slashCommands,
-          prompts: state.prompts,
           showAlert: (message, status, autoHideMs = 3000) =>
             state.showTransientAlert({ message, status, autoHideMs }),
           setLoadingMessage: state.setLoadingMessage,
@@ -1825,7 +1811,6 @@ export const createAppStore = (props: AppStoreProps) => {
           setContextUsage: state.setContextUsage,
           setShowContextBreakdown: state.setShowContextBreakdown,
           setShowHelpPanel: state.setShowHelpPanel,
-          setShowPromptsPanel: state.setShowPromptsPanel,
           setShowIssuePanel: state.setShowIssuePanel,
           setShowUsagePanel: state.setShowUsagePanel,
           setShowMcpPanel: state.setShowMcpPanel,
@@ -1838,7 +1823,6 @@ export const createAppStore = (props: AppStoreProps) => {
               activeCommand: null,
               showContextBreakdown: false,
               showHelpPanel: false,
-              showPromptsPanel: false,
               showIssuePanel: false,
               showUsagePanel: false,
               showMcpPanel: false,

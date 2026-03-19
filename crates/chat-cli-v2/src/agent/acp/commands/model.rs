@@ -43,6 +43,7 @@ fn to_command_option(m: ModelInfo) -> CommandOption {
         label: m.display_name,
         description: m.description,
         group: Some(credits),
+        hint: None,
     }
 }
 

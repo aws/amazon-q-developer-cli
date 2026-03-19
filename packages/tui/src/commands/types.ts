@@ -17,17 +17,6 @@ export interface CommandContext {
   kiro: Kiro;
   /** Available slash commands from backend */
   slashCommands: SlashCommand[];
-  /** Available MCP prompts */
-  prompts: Array<{
-    name: string;
-    description?: string;
-    arguments: Array<{
-      name: string;
-      description?: string;
-      required?: boolean;
-    }>;
-    serverName: string;
-  }>;
   /** Show transient alert */
   showAlert: (
     message: string,
@@ -51,8 +40,6 @@ export interface CommandContext {
     show: boolean,
     commands?: Array<{ name: string; description: string; usage: string }>
   ) => void;
-  /** Show/hide prompts panel */
-  setShowPromptsPanel: (show: boolean) => void;
   /** Show/hide issue panel */
   setShowIssuePanel: (show: boolean, url?: string) => void;
   /** Show/hide usage panel */

@@ -48,6 +48,7 @@ pub enum TuiCommandKind {
     Usage,
     Mcp,
     Tools,
+    Prompts,
 }
 
 /// Request to get command options (autocomplete)

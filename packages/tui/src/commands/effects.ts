@@ -42,7 +42,7 @@ type EffectName =
   | 'showMcpPanel'
   | 'showToolsPanel'
   | 'showKnowledgePanel'
-  | 'showPromptsPanel'
+  | 'executePrompt'
   | 'clearMessages'
   | 'quit'
   | 'showIssueUrl'
@@ -59,7 +59,7 @@ const commandEffects: Partial<Record<string, EffectName>> = {
   plan: 'updateAgent',
   context: 'showContextPanel',
   usage: 'showUsagePanel',
-  prompts: 'showPromptsPanel',
+  prompts: 'executePrompt',
   clear: 'clearMessages',
   quit: 'quit',
   mcp: 'showMcpPanel',
@@ -148,8 +148,11 @@ const effectHandlers: Record<EffectName, EffectHandler> = {
     }
   },
 
-  showPromptsPanel: (result, ctx) => {
-    ctx.setShowPromptsPanel(true);
+  executePrompt: (result, ctx) => {
+    const data = result?.data as { executePrompt?: string } | undefined;
+    if (data?.executePrompt) {
+      ctx.sendMessage(data.executePrompt);
+    }
   },
 
   clearMessages: (result, ctx) => {

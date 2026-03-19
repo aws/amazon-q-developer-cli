@@ -92,6 +92,11 @@ export interface CommandOption {
 	label: string;
 	description?: string;
 	group?: string;
+	/**
+	 * Hint text shown when this option requires additional input (e.g. "<repositoryName>").
+	 * When set, selecting this option prefills the command input instead of executing immediately.
+	 */
+	hint?: string;
 }
 
 /** Response from options request */
@@ -276,6 +281,15 @@ export interface PlanArgs {
 	prompt?: string;
 }
 
+/** Arguments for /prompts command */
+export interface PromptsArgs {
+	/**
+	 * Prompt name to execute. If None, lists available prompts.
+	 * Accepts either `promptName` or `value` (for generic selection UI)
+	 */
+	promptName?: string;
+}
+
 /** Arguments for /quit command */
 export interface QuitArgs {
 }
@@ -442,5 +456,7 @@ export type TuiCommand =
 	/** Report an issue (currently internal Amazon users only) */
 	| { command: "issue", args: IssueArgs }
 	/** Manage knowledge base */
-	| { command: "knowledge", args: KnowledgeArgs };
+	| { command: "knowledge", args: KnowledgeArgs }
+	/** List and execute available prompts */
+	| { command: "prompts", args: PromptsArgs };
 

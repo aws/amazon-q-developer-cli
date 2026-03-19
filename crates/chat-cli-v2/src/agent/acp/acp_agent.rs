@@ -1289,6 +1289,7 @@ impl AcpSession {
                 let result = match command {
                     super::schema::TuiCommandKind::Model => super::commands::model::get_options(&partial, &ctx).await,
                     super::schema::TuiCommandKind::Agent => super::commands::agent::get_options(&partial, &ctx),
+                    super::schema::TuiCommandKind::Prompts => super::commands::prompts::get_options(&self.agent).await,
                     super::schema::TuiCommandKind::Context
                     | super::schema::TuiCommandKind::Compact
                     | super::schema::TuiCommandKind::Clear

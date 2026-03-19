@@ -8,7 +8,7 @@ use typeshare::typeshare;
 
 /// Option displayed in autocomplete/dropdown UI
 #[typeshare]
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct CommandOption {
     pub value: String,
@@ -17,6 +17,10 @@ pub struct CommandOption {
     pub description: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub group: Option<String>,
+    /// Hint text shown when this option requires additional input (e.g. "<repositoryName>").
+    /// When set, selecting this option prefills the command input instead of executing immediately.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub hint: Option<String>,
 }
 
 /// Response from options request
