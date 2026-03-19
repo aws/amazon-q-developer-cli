@@ -218,7 +218,8 @@ export const StatusBar = React.memo(function StatusBar({
 
   // Background color for the bar column — fills any gap between bar elements and content height
   const barBgColor = useMemo(() => {
-    if (!active || status === 'paused') return undefined;
+    if (!active || status === 'paused' || status === 'thinking')
+      return undefined;
     if (status && status !== 'active')
       return getStatusColor(status, getColor).hex;
     return defaultBarColor;

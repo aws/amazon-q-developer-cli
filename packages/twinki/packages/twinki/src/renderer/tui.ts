@@ -45,7 +45,7 @@ export interface TUIOptions {
 	/** Allow mouse tracking to be enabled (default: false). */
 	mouse?: boolean;
 	/**
-	 * Max lines to keep in the static scrollback buffer (default: 100_000).
+	 * Max lines to keep in the static scrollback buffer (default: 10_000).
 	 * When exceeded by 10%, the buffer is pruned back to 75% of the cap.
 	 */
 	staticScrollbackCap?: number;
@@ -91,6 +91,8 @@ export class TUI extends Container {
 	public perfRenderCount = 0;
 	/** Number of lines currently held in the static scrollback buffer. */
 	get staticBufferLines(): number { return this.accumulatedStaticOutput.length; }
+	/** Number of rendered lines currently above the visible viewport (unreachable by cursor-up). */
+	get linesAboveViewport(): number { return this.previousViewportTop; }
 
 	private previousLines: string[] = [];
 	private previousWidth = 0;
@@ -109,7 +111,7 @@ export class TUI extends Container {
 	private stopped = false;
 	private overlayStack: OverlayEntry[] = [];
 	private accumulatedStaticOutput: string[] = [];
-	private staticScrollbackCap = 100_000;
+	private staticScrollbackCap = 10_000;
 	private onResizeCallbacks: (() => void)[] = [];
 	/** Original stdout.write before interception; null when not intercepted. */
 	private originalStdoutWrite: typeof process.stdout.write | null = null;
@@ -1039,6 +1041,28 @@ export class TUI extends Container {
 		if (lines.length > 0) {
 			this.accumulatedStaticOutput.push(...lines);
 			this.trimStaticOutput();
+			// When content overflowed the viewport, old active content is stuck
+			// in scrollback where cursor-up can't reach. Clear everything and
+			// let the next render do a clean full redraw.
+			// When live content (excluding static) overflowed the viewport, the old
+			// active lines are stuck in scrollback. Erase them now before the static
+			// flush pushes more content in, then reset for a clean full redraw.
+			const liveLineCount = this.previousLines.length - (this.accumulatedStaticOutput.length - lines.length);
+			if (liveLineCount > this.terminal.rows && !this.altScreen) {
+				const screenRow = this.hardwareCursorRow - this.previousViewportTop;
+				const linesToErase = Math.min(screenRow + 1, this.terminal.rows);
+				let buf = '\x1b[3J';
+				for (let i = 0; i < linesToErase; i++) {
+					buf += '\x1b[2K' + (i < linesToErase - 1 ? '\x1b[1A' : '');
+				}
+				buf += '\r\x1b[J';
+				this.terminal.write(buf);
+				this.previousLines = [];
+				this.hardwareCursorRow = 0;
+				this.cursorRow = 0;
+				this.maxLinesRendered = 0;
+				this.previousViewportTop = 0;
+			}
 		}
 	}
 
@@ -1283,7 +1307,7 @@ export class TUI extends Container {
 		 *   - '\x1b[3J\x1b[2J\x1b[H': full clear including scrollback (width change, shrink)
 		 *   - '\x1b[2J\x1b[H': clear visible screen only, preserve scrollback (alt screen)
 		 */
-		const fullRender = (clearSeq: string): void => {
+		const fullRender = (clearSeq: string, reason?: string): void => {
 			this.fullRedrawCount++;
 			const sync = !process.env['TWINKI_NO_SYNC'];
 			let buffer = (sync ? '\x1b[?2026h' : '') + clearSeq;
@@ -1308,20 +1332,24 @@ export class TUI extends Container {
 		// Strategy 1: First render (also after external clear)
 		// \x1b[J clears from cursor to end of screen, preventing stale content
 		// below the new output (e.g. after Ctrl+L cleared the screen).
+		// If live content alone exceeds the viewport, use CLEAR_ALL to also wipe
+		// stale active lines that may be stuck in scrollback.
 		if (this.previousLines.length === 0 && !widthChanged) {
-			fullRender(this.altScreen ? CLEAR_SCREEN : '\x1b[J');
+			const liveLines = newLines.length - this.accumulatedStaticOutput.length;
+			const needsScrollbackClear = liveLines > height;
+			fullRender(this.altScreen ? CLEAR_SCREEN : (needsScrollbackClear ? CLEAR_ALL : '\x1b[J'), 'first');
 			return;
 		}
 
 		// Strategy 2: Width changed
 		if (widthChanged) {
-			fullRender(this.altScreen ? CLEAR_SCREEN : CLEAR_ALL);
+			fullRender(this.altScreen ? CLEAR_SCREEN : CLEAR_ALL, 'width-changed');
 			return;
 		}
 
 		// Strategy 3: Shrink clear
 		if (this.clearOnShrink && newLines.length < this.maxLinesRendered && this.overlayStack.length === 0) {
-			fullRender(this.altScreen ? CLEAR_SCREEN : CLEAR_ALL);
+			fullRender(this.altScreen ? CLEAR_SCREEN : CLEAR_ALL, 'shrink');
 			return;
 		}
 
@@ -1363,7 +1391,7 @@ export class TUI extends Container {
 				else if (lineDiff < 0) buffer += `\x1b[${-lineDiff}A`;
 				buffer += '\r';
 				const extra = this.previousLines.length - newLines.length;
-				if (extra > height) { fullRender(this.altScreen ? CLEAR_SCREEN : CLEAR_ALL); return; }
+				if (extra > height) { fullRender(this.altScreen ? CLEAR_SCREEN : CLEAR_ALL, 'extra>height'); return; }
 				if (extra > 0) buffer += '\x1b[1B';
 				for (let i = 0; i < extra; i++) {
 					buffer += '\r\x1b[2K';
@@ -1382,32 +1410,10 @@ export class TUI extends Container {
 			return;
 		}
 
-		// Change above previous viewport — not visible, skip it and only render
-		// changes within the viewport. Animations outside the viewport must not
-		// trigger a full redraw. Only applies when content is growing or stable;
-		// shrinking content needs the full redraw path to clear old lines.
+		// Change above previous viewport — full redraw to clear old lines.
 		const previousContentViewportTop = Math.max(0, this.previousLines.length - height);
-		if (firstChanged < previousContentViewportTop && newLines.length >= this.previousLines.length) {
-			// Re-scan for first change within the visible viewport
-			firstChanged = -1;
-			lastChanged = -1;
-			for (let i = previousContentViewportTop; i < Math.max(newLines.length, this.previousLines.length); i++) {
-				const oldLine = this.previousLines[i] ?? '';
-				const newLine = newLines[i] ?? '';
-				if (oldLine !== newLine) {
-					if (firstChanged === -1) firstChanged = i;
-					lastChanged = i;
-				}
-			}
-			if (firstChanged === -1) {
-				// Only off-screen changes — nothing to render
-				this.previousLines = newLines;
-				this.previousWidth = width;
-				this.previousViewportTop = Math.max(0, this.maxLinesRendered - height);
-				return;
-			}
-		} else if (firstChanged < previousContentViewportTop) {
-			fullRender(this.altScreen ? CLEAR_SCREEN : CLEAR_ALL);
+		if (firstChanged < previousContentViewportTop) {
+			fullRender(this.altScreen ? CLEAR_SCREEN : CLEAR_ALL, 'off-screen-change');
 			return;
 		}
 

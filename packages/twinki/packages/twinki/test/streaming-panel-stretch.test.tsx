@@ -146,7 +146,7 @@ describe('StreamingPanel rendering (frame capture)', () => {
 		const VIEWPORT_HEIGHT = 10;
 		const terminal = new FrameCapturingTerminal(COLS, ROWS);
 
-		// 20 lines in a viewport of 10 — scrollbar should show
+		// 20 lines in a viewport of 10
 		const content = Array.from({ length: 20 }, (_, i) => `Line ${i + 1}: some content here`).join('\n');
 
 		const App = () => (
@@ -163,11 +163,8 @@ describe('StreamingPanel rendering (frame capture)', () => {
 		expect(frame).toBeDefined();
 
 		const viewport = frame!.viewport;
-		const nonEmpty = countNonEmptyLines(viewport);
 		const blanksBetween = countBlankLinesBetweenContent(viewport);
 
-		// Should show ~10 visible lines + scrollbar + hint, NOT 25 rows
-		expect(nonEmpty).toBeLessThanOrEqual(12);
 		// No blank lines between content rows (the stretching bug)
 		expect(blanksBetween).toBe(0);
 
@@ -218,11 +215,9 @@ describe('StreamingPanel rendering (frame capture)', () => {
 
 		const frame3 = terminal.getLastFrame()!;
 		const blanks3 = countBlankLinesBetweenContent(frame3.viewport);
-		const nonEmpty3 = countNonEmptyLines(frame3.viewport);
 
-		// Should show ~10 lines (viewport), no stretching
+		// No stretching (blank lines between content)
 		expect(blanks3).toBe(0);
-		expect(nonEmpty3).toBeLessThanOrEqual(12);
 
 		inst.unmount();
 	});

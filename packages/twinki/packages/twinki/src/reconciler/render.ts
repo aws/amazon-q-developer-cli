@@ -35,6 +35,8 @@ export interface TwinkiRenderOptions {
 	fullscreen?: boolean;
 	/** Enable mouse event tracking (default: false) */
 	mouse?: boolean;
+	/** Max lines to keep in static scrollback buffer (default: 10_000). */
+	staticScrollbackCap?: number;
 }
 
 /**
@@ -235,7 +237,7 @@ export function render(element: React.ReactElement, options: TwinkiRenderOptions
 		terminal = new ProcessTerminal();
 	}
 
-	const tui = new TUI(terminal, { targetFps: options.targetFps, fullscreen: options.fullscreen, mouse: options.mouse });
+	const tui = new TUI(terminal, { targetFps: options.targetFps, fullscreen: options.fullscreen, mouse: options.mouse, staticScrollbackCap: options.staticScrollbackCap });
 
 	const bridge = new ReactBridge(() => tui.requestRender());
 	bridge.setTUI(tui);

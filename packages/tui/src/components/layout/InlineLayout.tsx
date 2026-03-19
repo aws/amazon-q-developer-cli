@@ -110,7 +110,7 @@ const RenderMetricsChip: React.FC = () => {
   if (!metrics) return null;
   return (
     <Chip
-      value={`${metrics.lastRenderMs.toFixed(1)}ms · ${metrics.yogaNodeCount}n · ${metrics.heapUsedMB}MB · #${metrics.renderCount}`}
+      value={`${metrics.lastRenderMs.toFixed(1)}ms · ${metrics.yogaNodeCount}n · ${metrics.heapUsedMB}MB · #${metrics.renderCount} · r${metrics.fullRedrawCount}`}
       color={ChipColor.PRIMARY}
     />
   );
