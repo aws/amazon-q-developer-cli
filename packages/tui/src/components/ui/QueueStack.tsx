@@ -17,12 +17,12 @@ function QueueRow({
 }) {
   const { getColor } = useTheme();
   const primaryHex = getColor('primary').hex;
-  const mutedHex = getColor('muted').hex;
+  const bgHex = getColor('surface').hex;
 
   return (
-    <Box width="100%" backgroundColor={mutedHex} paddingX={1}>
+    <Box width="100%" backgroundColor={bgHex} paddingX={1}>
       <Box flexGrow={1} overflow="hidden">
-        <Text color={primaryHex} wrap="truncate-end">
+        <Text backgroundColor={bgHex} color={primaryHex} wrap="truncate-end">
           <Text bold>
             [{index + 1}/{total}] Queued:
           </Text>{' '}
@@ -30,7 +30,7 @@ function QueueRow({
         </Text>
       </Box>
       {showHint && (
-        <Text color={primaryHex} dimColor italic>
+        <Text backgroundColor={bgHex} color={primaryHex} dimColor italic>
           {' '}
           ctrl+o to expand
         </Text>

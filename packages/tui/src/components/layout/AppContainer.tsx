@@ -14,9 +14,6 @@ export const AppContainer: React.FC = () => {
   const commandInputValue = useAppStore((state) => state.commandInputValue);
   const isProcessing = useAppStore((state) => state.isProcessing);
   const cancelMessage = useAppStore((state) => state.cancelMessage);
-  const queuedMessages = useAppStore((state) => state.queuedMessages);
-  const clearQueue = useAppStore((state) => state.clearQueue);
-  const showTransientAlert = useAppStore((state) => state.showTransientAlert);
   const pendingApproval = useAppStore((state) => state.pendingApproval);
 
   useKeypress((userInput, key) => {
@@ -37,16 +34,7 @@ export const AppContainer: React.FC = () => {
       }
     } else if (key.escape) {
       if (isProcessing && !pendingApproval) {
-        const hadQueuedMessages = queuedMessages.length > 0;
-        clearQueue();
         cancelMessage();
-        if (hadQueuedMessages) {
-          showTransientAlert({
-            message: 'Queued messages discarded',
-            status: 'info',
-            autoHideMs: 3000,
-          });
-        }
       }
     } else if (!key.ctrl && !key.meta) {
       resetExitSequence();

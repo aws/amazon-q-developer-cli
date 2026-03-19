@@ -15,9 +15,6 @@ const BASE_EXCLUDED = new Set([
   'newStr',
 ]);
 
-/** Max length for a single param value before truncation */
-const MAX_VALUE_LEN = 60;
-
 /** Max number of params to show */
 const MAX_PARAMS = 4;
 
@@ -50,10 +47,7 @@ export function formatToolParams(
 
       let display: string;
       if (typeof value === 'string') {
-        display =
-          value.length > MAX_VALUE_LEN
-            ? value.slice(0, MAX_VALUE_LEN - 1) + '…'
-            : value;
+        display = value;
       } else if (typeof value === 'number' || typeof value === 'boolean') {
         display = String(value);
       } else if (Array.isArray(value)) {
@@ -65,11 +59,7 @@ export function formatToolParams(
             typeof v === 'boolean'
         );
         if (primitives.length === 0) continue;
-        const joined = primitives.join(', ');
-        display =
-          joined.length > MAX_VALUE_LEN
-            ? joined.slice(0, MAX_VALUE_LEN - 1) + '…'
-            : joined;
+        display = primitives.join(', ');
       } else {
         continue; // skip nested objects
       }

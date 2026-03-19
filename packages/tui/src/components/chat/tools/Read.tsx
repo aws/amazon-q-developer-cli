@@ -17,6 +17,17 @@ interface ReadOp {
   offset?: number;
 }
 
+/** Format a human-readable line range suffix, e.g. " (L10-20)" */
+function formatLineRange(op: ReadOp): string {
+  if (op.offset == null && op.limit == null) return '';
+  const start = (op.offset ?? 0) + 1; // offset is 0-based, display as 1-based
+  if (op.limit != null) {
+    const end = start + op.limit - 1;
+    return ` (L${start}-${end})`;
+  }
+  return ` (L${start}+)`;
+}
+
 export interface ReadProps {
   /** File path or target description */
   target?: string;
@@ -104,11 +115,12 @@ export const Read = React.memo(function Read({
   if (content && ops.length > 0) {
     if (ops.length === 1) {
       const op = ops[0];
+      const lineRange = formatLineRange(op!);
       const displayContent = (
         <Box flexDirection="column">
           <StatusInfo
             title={title}
-            target={op?.path || 'file'}
+            target={(op?.path || 'file') + lineRange}
             shimmer={!isFinished}
           />
           {renderMeta()}
