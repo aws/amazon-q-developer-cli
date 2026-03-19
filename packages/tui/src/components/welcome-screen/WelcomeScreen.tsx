@@ -1,6 +1,8 @@
 import React from 'react';
 import { Box, Text as InkText } from './../../renderer.js';
 import { Wordmark /*useTheme*/ } from '../brand/index.js';
+import { useTheme } from '../../hooks/useThemeContext.js';
+import { Text } from '../ui/text/Text.js';
 
 export interface WelcomeScreenProps {
   agent: string;
@@ -13,7 +15,9 @@ export const WelcomeScreen = React.memo(function WelcomeScreen({
   // mcpServers,
   animate = false,
 }: WelcomeScreenProps) {
-  // const { getColor } = useTheme();
+  const { getColor } = useTheme();
+  const primary = getColor('primary');
+  const brand = getColor('brand');
 
   return (
     <Box flexDirection="column" width="100%" alignItems="center">
@@ -26,20 +30,23 @@ export const WelcomeScreen = React.memo(function WelcomeScreen({
         </InkText>
       )}
 
-      {/* <Box width="100%">
-        <Text>{getColor('text')('━'.repeat(120))}</Text>
-      </Box> */}
-
-      {/* <Box flexDirection="row" flexWrap="wrap">
-        <Text>{getColor('primary')('🤖 Agent: ')}</Text>
-        <Text>{getColor('text')(agent)}</Text>
-        {mcpServers.length > 0 && (
-          <>
-            <Text>{getColor('text')(' • MCP: ')}</Text>
-            <Text>{getColor('text')(`${mcpServers.length} servers`)}</Text>
-          </>
-        )}
-      </Box> */}
+      <Box
+        flexDirection="column"
+        alignItems="center"
+        marginTop={1}
+        paddingX={2}
+      >
+        <Text>
+          {primary(
+            'Welcome to the new Kiro CLI terminal user interface (TUI).'
+          )}
+        </Text>
+        <Text>
+          {primary('Try it out and let us know what you think using the ')}
+          {brand('/feedback')}
+          {primary(' command.')}
+        </Text>
+      </Box>
     </Box>
   );
 });

@@ -45,8 +45,8 @@ pub enum TuiCommand {
     Tools(ToolsArgs),
     /// Switch to Plan agent for breaking down ideas into implementation plans.
     Plan(PlanArgs),
-    /// Report an issue (currently internal Amazon users only)
-    Issue(IssueArgs),
+    /// Submit feedback, request features, or report issues
+    Feedback(FeedbackArgs),
     /// Manage knowledge base
     Knowledge(KnowledgeArgs),
     /// List and execute available prompts
@@ -149,11 +149,15 @@ pub struct PlanArgs {
     pub prompt: Option<String>,
 }
 
-/// Arguments for /issue command
+/// Arguments for /feedback command
 #[typeshare]
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct IssueArgs {}
+pub struct FeedbackArgs {
+    /// Feedback type: general, feature, issue. If None, shows the selection panel.
+    #[serde(alias = "value", skip_serializing_if = "Option::is_none")]
+    pub feedback_type: Option<String>,
+}
 
 /// Arguments for /knowledge command
 #[typeshare]
@@ -192,7 +196,7 @@ impl TuiCommand {
             TuiCommand::Mcp(_) => "/mcp",
             TuiCommand::Tools(_) => "/tools",
             TuiCommand::Plan(_) => "/plan",
-            TuiCommand::Issue(_) => "/issue",
+            TuiCommand::Feedback(_) => "/feedback",
             TuiCommand::Knowledge(_) => "/knowledge",
             TuiCommand::Prompts(_) => "/prompts",
         }
@@ -213,7 +217,7 @@ impl TuiCommand {
             TuiCommand::Mcp(_) => "Show configured MCP servers",
             TuiCommand::Tools(_) => "Show available tools",
             TuiCommand::Plan(_) => "Switch to Plan agent for breaking down ideas into implementation plans",
-            TuiCommand::Issue(_) => "Report an issue",
+            TuiCommand::Feedback(_) => "Submit feedback, request features, or report issues",
             TuiCommand::Knowledge(_) => "Manage knowledge base (show, add, remove, update, clear, cancel)",
             TuiCommand::Prompts(_) => "Select or list available prompts",
         }
@@ -234,7 +238,7 @@ impl TuiCommand {
             TuiCommand::Mcp(_) => "/mcp",
             TuiCommand::Tools(_) => "/tools",
             TuiCommand::Plan(_) => "/plan [prompt]",
-            TuiCommand::Issue(_) => "/issue",
+            TuiCommand::Feedback(_) => "/feedback",
             TuiCommand::Knowledge(_) => {
                 "/knowledge [show|add <name> <path>|remove <name|path>|update <path>|clear|cancel]"
             },
@@ -294,7 +298,13 @@ impl TuiCommand {
                 Some(meta)
             },
             TuiCommand::Plan(_) => None,
-            TuiCommand::Issue(_) => None,
+            TuiCommand::Feedback(_) => {
+                let mut meta = serde_json::Map::new();
+                meta.insert("inputType".into(), "selection".into());
+                meta.insert("searchable".into(), false.into());
+                meta.insert("hint".into(), "".into());
+                Some(meta)
+            },
             TuiCommand::Knowledge(_) => {
                 let mut meta = serde_json::Map::new();
                 meta.insert("inputType".into(), "panel".into());
@@ -325,7 +335,7 @@ impl TuiCommand {
             TuiCommand::Tools(ToolsArgs::default()),
             TuiCommand::Plan(PlanArgs::default()),
             TuiCommand::PasteImage(PasteImageArgs::default()),
-            TuiCommand::Issue(IssueArgs::default()),
+            TuiCommand::Feedback(FeedbackArgs::default()),
             TuiCommand::Knowledge(KnowledgeArgs::default()),
             TuiCommand::Prompts(PromptsArgs::default()),
         ];
@@ -358,7 +368,9 @@ impl TuiCommand {
             "plan" => Some(Self::Plan(PlanArgs {
                 prompt: (!args.is_empty()).then(|| args.to_string()),
             })),
-            "issue" => Some(Self::Issue(IssueArgs::default())),
+            "feedback" => Some(Self::Feedback(FeedbackArgs {
+                feedback_type: (!args.is_empty()).then(|| args.to_string()),
+            })),
             "paste" => Some(Self::PasteImage(PasteImageArgs::default())),
             "knowledge" => Some(Self::Knowledge(KnowledgeArgs {
                 subcommand: (!args.is_empty()).then(|| args.to_string()),

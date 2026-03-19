@@ -16,7 +16,6 @@ import { ExitHint } from '../ui/ExitHint';
 import { CommandMenu } from '../ui/CommandMenu';
 import { ActionHint } from '../ui/hint/ActionHint.js';
 import { HelpPanel } from '../ui/HelpPanel';
-import { IssuePanel } from '../ui/IssuePanel';
 import { McpPanel } from '../ui/McpPanel';
 import { ToolsPanel } from '../ui/ToolsPanel';
 import { KnowledgePanel } from '../ui/KnowledgePanel';
@@ -134,8 +133,6 @@ export const InlineLayout: React.FC = () => {
     contextBreakdown,
     showHelpPanel,
     helpCommands,
-    showIssuePanel,
-    issueUrl,
     showUsagePanel,
     usageData,
     showMcpPanel,
@@ -150,7 +147,6 @@ export const InlineLayout: React.FC = () => {
     toggleToolOutputsExpanded,
     setShowContextBreakdown,
     setShowHelpPanel,
-    setShowIssuePanel,
     setShowUsagePanel,
     setShowMcpPanel,
     setShowToolsPanel,
@@ -255,12 +251,6 @@ export const InlineLayout: React.FC = () => {
     setActiveCommand(null);
     clearCommandInput();
   }, [setShowHelpPanel, setActiveCommand, clearCommandInput]);
-
-  const handleCloseIssuePanel = useCallback(() => {
-    setShowIssuePanel(false);
-    setActiveCommand(null);
-    clearCommandInput();
-  }, [setShowIssuePanel, setActiveCommand, clearCommandInput]);
 
   const handleCloseUsagePanel = useCallback(() => {
     setShowUsagePanel(false);
@@ -485,8 +475,7 @@ export const InlineLayout: React.FC = () => {
               showMcpPanel ||
               showToolsPanel ||
               showKnowledgePanel ||
-              !!pendingApproval ||
-              showIssuePanel
+              !!pendingApproval
                 ? undefined
                 : promptBarHeader
             }
@@ -517,8 +506,7 @@ export const InlineLayout: React.FC = () => {
               showUsagePanel ||
               showMcpPanel ||
               showToolsPanel ||
-              showKnowledgePanel ||
-              showIssuePanel
+              showKnowledgePanel
             }
           >
             <CommandMenu />
@@ -559,13 +547,6 @@ export const InlineLayout: React.FC = () => {
                 entries={knowledgeEntries}
                 status={knowledgeStatus}
                 onClose={handleCloseKnowledgePanel}
-              />
-            )}
-            {showIssuePanel && issueUrl && (
-              <IssuePanel
-                url={issueUrl}
-                message="Open this URL to report an issue:"
-                onClose={handleCloseIssuePanel}
               />
             )}
             <ActionHint

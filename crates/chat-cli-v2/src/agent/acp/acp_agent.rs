@@ -1290,6 +1290,7 @@ impl AcpSession {
                     super::schema::TuiCommandKind::Model => super::commands::model::get_options(&partial, &ctx).await,
                     super::schema::TuiCommandKind::Agent => super::commands::agent::get_options(&partial, &ctx),
                     super::schema::TuiCommandKind::Prompts => super::commands::prompts::get_options(&self.agent).await,
+                    super::schema::TuiCommandKind::Feedback => super::commands::issue::get_options(),
                     super::schema::TuiCommandKind::Context
                     | super::schema::TuiCommandKind::Compact
                     | super::schema::TuiCommandKind::Clear
@@ -1694,13 +1695,7 @@ impl AcpSession {
     }
 
     async fn advertise_commands_and_prompts(&self) -> Result<(), sacp::Error> {
-        advertise_commands_and_prompts_to_client(
-            &self.session_id_str,
-            &self.agent,
-            &self.connection_cx,
-            &self.os.database,
-        )
-        .await
+        advertise_commands_and_prompts_to_client(&self.session_id_str, &self.agent, &self.connection_cx).await
     }
 
     async fn handle_switch_to_execution(&mut self, plan: String) {
@@ -1730,16 +1725,9 @@ async fn advertise_commands_and_prompts_to_client(
     session_id: &str,
     agent_handle: &AgentHandle,
     client_cx: &JrConnectionCx<AgentToClient>,
-    database: &crate::database::Database,
 ) -> Result<(), sacp::Error> {
-    let is_amzn = matches!(
-        crate::auth::builder_id::BuilderIdToken::load(database, None).await,
-        Ok(Some(token)) if token.is_amzn_user()
-    );
-
     let commands: Vec<super::schema::AvailableCommand> = TuiCommand::all_commands()
         .into_iter()
-        .filter(|cmd| is_amzn || !matches!(cmd, TuiCommand::Issue(_)))
         .map(|cmd| super::schema::AvailableCommand {
             name: cmd.name().to_string(),
             description: cmd.description().to_string(),

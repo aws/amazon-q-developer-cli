@@ -25,6 +25,7 @@ import type { CommandOption } from './generated/agent';
 export interface CommandMeta {
   optionsMethod?: string;
   inputType?: 'text' | 'selection' | 'multiselect' | 'panel';
+  searchable?: boolean;
   subcommands?: string[];
   hint?: string;
   local?: boolean;

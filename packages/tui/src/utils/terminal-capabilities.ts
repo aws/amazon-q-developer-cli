@@ -24,7 +24,12 @@ let capabilityCache: Map<TerminalCapability, boolean> | null = null;
 /** Returns true when the env var is set to any truthy value (present and not "0"/"false"). */
 function envOptOut(name: string): boolean {
   const val = process.env[name];
-  return val !== undefined && val !== '' && val !== '0' && val.toLowerCase() !== 'false';
+  return (
+    val !== undefined &&
+    val !== '' &&
+    val !== '0' &&
+    val.toLowerCase() !== 'false'
+  );
 }
 
 function buildCapabilityCache(): Map<TerminalCapability, boolean> {
@@ -40,39 +45,36 @@ function buildCapabilityCache(): Map<TerminalCapability, boolean> {
   const termProgram = process.env.TERM_PROGRAM ?? '';
   const term = process.env.TERM ?? '';
   const terminalEmulator = process.env.TERMINAL_EMULATOR ?? '';
-  const isTmux = !!(process.env.TMUX);
+  const isTmux = !!process.env.TMUX;
 
   // Synchronized output (DEC private mode 2026)
   const supportsSynchronizedOutput =
-    !envOptOut('KIRO_NO_SYNCHRONIZED') && (
-      termProgram === 'iTerm.app' ||
+    !envOptOut('KIRO_NO_SYNCHRONIZED') &&
+    (termProgram === 'iTerm.app' ||
       termProgram === 'Alacritty' ||
       termProgram === 'WezTerm' ||
       termProgram === 'contour' ||
       termProgram === 'foot' ||
       term.includes('kitty') ||
-      isTmux
-    );
+      isTmux);
   cache.set('synchronizedOutput', supportsSynchronizedOutput);
 
   // OSC 8 hyperlinks
   const supportsHyperlinks =
-    !envOptOut('KIRO_NO_HYPERLINKS') && (
-      termProgram === 'iTerm.app' ||
+    !envOptOut('KIRO_NO_HYPERLINKS') &&
+    (termProgram === 'iTerm.app' ||
       termProgram === 'WezTerm' ||
       termProgram === 'Hyper' ||
       term.includes('kitty') ||
-      terminalEmulator === 'JetBrains-JediTerm'
-    );
+      terminalEmulator === 'JetBrains-JediTerm');
   cache.set('hyperlinks', supportsHyperlinks);
 
   // OSC 9;4 progress indicator (supported by iTerm2, WezTerm, Windows Terminal)
   const supportsProgress =
-    !envOptOut('KIRO_NO_PROGRESS') && (
-      termProgram === 'iTerm.app' ||
+    !envOptOut('KIRO_NO_PROGRESS') &&
+    (termProgram === 'iTerm.app' ||
       termProgram === 'WezTerm' ||
-      process.env.WT_SESSION !== undefined // Windows Terminal
-    );
+      process.env.WT_SESSION !== undefined); // Windows Terminal
   cache.set('progressIndicator', supportsProgress);
 
   return cache;

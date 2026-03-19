@@ -93,7 +93,9 @@ export const MarkdownRenderer = React.memo(function MarkdownRenderer({
       return styled;
     }
     if (seg.link) {
-      styled = hyperlink(seg.link.url, linkColor(seg.text)) + secondaryColor(` (${seg.link.url})`);
+      styled =
+        hyperlink(seg.link.url, linkColor(seg.text)) +
+        secondaryColor(` (${seg.link.url})`);
       styledSegmentCacheRef.current.set(seg, styled);
       return styled;
     }

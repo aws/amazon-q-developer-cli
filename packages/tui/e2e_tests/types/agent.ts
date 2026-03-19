@@ -161,6 +161,12 @@ export interface ContextArgs {
 	subcommand?: string;
 }
 
+/** Arguments for /feedback command */
+export interface FeedbackArgs {
+	/** Feedback type: general, feature, issue. If None, shows the selection panel. */
+	feedbackType?: string;
+}
+
 /** Arguments for /help command */
 export interface HelpArgs {
 }
@@ -178,10 +184,6 @@ export type ImageSource =
 export interface ImageBlock {
 	format: ImageFormat;
 	source: ImageSource;
-}
-
-/** Arguments for /issue command */
-export interface IssueArgs {
 }
 
 /** Arguments for /knowledge command */
@@ -453,8 +455,8 @@ export type TuiCommand =
 	| { command: "tools", args: ToolsArgs }
 	/** Switch to Plan agent for breaking down ideas into implementation plans. */
 	| { command: "plan", args: PlanArgs }
-	/** Report an issue (currently internal Amazon users only) */
-	| { command: "issue", args: IssueArgs }
+	/** Submit feedback, request features, or report issues */
+	| { command: "feedback", args: FeedbackArgs }
 	/** Manage knowledge base */
 	| { command: "knowledge", args: KnowledgeArgs }
 	/** List and execute available prompts */

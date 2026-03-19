@@ -201,6 +201,9 @@ export const CommandMenu: React.FC = () => {
 
   if (activeCommand) {
     const isSelection = activeCommand.command.meta?.inputType === 'selection';
+    // /feedback: selection menu without search (few options). /model, /agent: selection with search
+    const isSearchable =
+      isSelection && activeCommand.command.meta?.searchable !== false;
     return (
       <Menu
         items={activeCommand.options.map((opt) => ({
@@ -229,13 +232,14 @@ export const CommandMenu: React.FC = () => {
           setPromptHint(null);
         }}
         showSelectedIndicator={true}
-        searchable={isSelection}
+        searchable={isSearchable}
         searchLabel={
-          isSelection
+          isSearchable
             ? `Select ${activeCommand.command.name.slice(1)}`
             : undefined
         }
-        searchPlaceholder={isSelection ? 'type to search' : undefined}
+        searchPlaceholder={isSearchable ? 'type to search' : undefined}
+        showFooterHints={isSelection}
       />
     );
   }

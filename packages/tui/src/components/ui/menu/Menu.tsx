@@ -29,6 +29,8 @@ export interface MenuProps {
   searchLabel?: string;
   /** Placeholder shown when search input is empty. */
   searchPlaceholder?: string;
+  /** When true, shows ESC/↑↓ footer hints. Defaults to same as searchable. */
+  showFooterHints?: boolean;
 }
 
 import { fuzzyScore } from '../../../utils/fuzzyScore.js';
@@ -45,6 +47,7 @@ export const Menu = React.memo(function Menu({
   searchable = false,
   searchLabel = 'search',
   searchPlaceholder = 'type to search',
+  showFooterHints,
 }: MenuProps) {
   const [selectedIndex, setSelectedIndex] = useState(0);
   const [searchText, setSearchText] = useState('');
@@ -212,7 +215,7 @@ export const Menu = React.memo(function Menu({
           </Box>
         );
       })}
-      {searchable && (
+      {(showFooterHints ?? searchable) && (
         <>
           <Divider />
           <Box paddingX={1}>

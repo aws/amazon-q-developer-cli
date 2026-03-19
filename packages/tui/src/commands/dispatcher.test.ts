@@ -30,7 +30,6 @@ function createMockCtx(): CommandContext & {
     setContextUsage: spy('setContextUsage') as any,
     setShowContextBreakdown: spy('setShowContextBreakdown') as any,
     setShowHelpPanel: spy('setShowHelpPanel') as any,
-    setShowIssuePanel: spy('setShowIssuePanel') as any,
     setShowUsagePanel: spy('setShowUsagePanel') as any,
     setShowMcpPanel: spy('setShowMcpPanel') as any,
     setShowToolsPanel: spy('setShowToolsPanel') as any,
@@ -52,8 +51,43 @@ function makeCmd(overrides: Partial<SlashCommand> = {}): SlashCommand {
 }
 
 describe('dispatch', () => {
-  describe('/issue command', () => {
-    it('shows alert when browser opens successfully (no data)', async () => {
+  describe('/feedback command', () => {
+    it('shows selection menu when options are returned', async () => {
+      const ctx = createMockCtx();
+      (ctx.kiro.getCommandOptions as any).mockResolvedValue({
+        options: [
+          {
+            value: 'general',
+            label: 'General feedback',
+            description: 'Share general thoughts',
+          },
+          {
+            value: 'feature',
+            label: 'Feature request',
+            description: 'Request a feature',
+          },
+          {
+            value: 'issue',
+            label: 'Report an issue',
+            description: 'Report a bug',
+          },
+        ],
+      });
+
+      const cmd = makeCmd({
+        name: '/feedback',
+        meta: { inputType: 'selection' },
+      });
+      await dispatch(cmd, '', ctx);
+
+      // Should set activeCommand with the 3 options
+      expect(ctx._spies.setActiveCommand!).toHaveBeenCalled();
+      const call = ctx._spies.setActiveCommand!.mock.calls[0]!;
+      expect(call[0].options).toHaveLength(3);
+      expect(call[0].options[0].value).toBe('general');
+    });
+
+    it('shows alert when executed with args (after selection)', async () => {
       const ctx = createMockCtx();
       (ctx.kiro.executeCommand as any).mockResolvedValue({
         success: true,
@@ -61,34 +95,16 @@ describe('dispatch', () => {
         data: undefined,
       });
 
-      const cmd = makeCmd({ name: '/issue' });
-      await dispatch(cmd, '', ctx);
+      const cmd = makeCmd({
+        name: '/feedback',
+        meta: { inputType: 'selection' },
+      });
+      await dispatch(cmd, 'issue', ctx);
 
       expect(ctx._spies.showAlert!.mock.calls[0]).toEqual([
         'Opening in browser...',
         'success',
         5000,
-      ]);
-      // No activeCommand set
-      expect(ctx._spies.setActiveCommand!).not.toHaveBeenCalled();
-    });
-
-    it('sets activeCommand and opens panel when browser fails (has data)', async () => {
-      const ctx = createMockCtx();
-      (ctx.kiro.executeCommand as any).mockResolvedValue({
-        success: true,
-        message: 'Could not open browser.',
-        data: { url: 'https://example.com' },
-      });
-
-      const cmd = makeCmd({ name: '/issue' });
-      await dispatch(cmd, '', ctx);
-
-      // Effect sets activeCommand to block input while panel is open
-      expect(ctx._spies.setActiveCommand!).toHaveBeenCalled();
-      expect(ctx._spies.setShowIssuePanel!.mock.calls[0]).toEqual([
-        true,
-        'https://example.com',
       ]);
     });
   });
@@ -111,7 +127,6 @@ describe('dispatch', () => {
       });
       await dispatch(cmd, '', ctx);
 
-      // Panel should be opened
       expect(ctx._spies.setShowContextBreakdown!).toHaveBeenCalled();
       expect(ctx._spies.setShowContextBreakdown!.mock.calls[0]?.[0]).toBe(true);
     });
@@ -130,7 +145,6 @@ describe('dispatch', () => {
       });
       await dispatch(cmd, 'add foo.txt', ctx);
 
-      // Should show alert, not open panel
       expect(ctx._spies.showAlert!).toHaveBeenCalled();
       expect(ctx._spies.showAlert!.mock.calls[0]?.[0]).toBe(
         "Added 'foo.txt' to context"
@@ -170,7 +184,6 @@ describe('dispatch', () => {
       });
       await dispatch(cmd, 'add src/*.rs', ctx);
 
-      // setShowContextBreakdown should not be called with true (no breakdown data)
       const calls = ctx._spies.setShowContextBreakdown!.mock.calls;
       const openedPanel = calls.some(
         (c: unknown[]) => c[0] === true && c[1] != null

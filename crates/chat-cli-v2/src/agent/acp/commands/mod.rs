@@ -63,7 +63,13 @@ pub async fn execute(command: TuiCommand, ctx: &CommandContext<'_>) -> CommandRe
         TuiCommand::Mcp(_) => mcp::execute(ctx).await,
         TuiCommand::Tools(_) => tools::execute(ctx).await,
         TuiCommand::Plan(ref args) => plan::execute(args.prompt.as_deref(), ctx).await,
-        TuiCommand::Issue(_) => issue::execute().await,
+        TuiCommand::Feedback(ref args) => {
+            let is_amzn = matches!(
+                crate::auth::builder_id::BuilderIdToken::load(&ctx.os.database, None).await,
+                Ok(Some(token)) if token.is_amzn_user()
+            );
+            issue::execute(args.feedback_type.as_deref(), is_amzn).await
+        },
         TuiCommand::Knowledge(ref args) => knowledge::execute(args, ctx).await,
         TuiCommand::Prompts(ref args) => prompts::execute(args).await,
     }

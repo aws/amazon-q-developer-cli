@@ -61,9 +61,6 @@ export async function dispatch(
     if (cmdName === 'agent' && args) {
       ctx.setLoadingMessage(`Agent changing to ${args}`);
     }
-    if (cmdName === 'issue') {
-      ctx.setLoadingMessage('Opening issue form...');
-    }
     try {
       result = await ctx.kiro.executeCommand({
         command: cmdName,

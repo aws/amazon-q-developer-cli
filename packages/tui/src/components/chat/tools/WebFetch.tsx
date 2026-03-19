@@ -54,7 +54,11 @@ export const WebFetch = React.memo(function WebFetch({
     }
   }, [url]);
 
-  const target = displayUrl ? (url ? hyperlink(url, displayUrl) : displayUrl) : 'web content';
+  const target = displayUrl
+    ? url
+      ? hyperlink(url, displayUrl)
+      : displayUrl
+    : 'web content';
 
   const summary = useMemo(() => getResultSummary(result), [result]);
 

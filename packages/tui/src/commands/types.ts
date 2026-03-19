@@ -40,8 +40,6 @@ export interface CommandContext {
     show: boolean,
     commands?: Array<{ name: string; description: string; usage: string }>
   ) => void;
-  /** Show/hide issue panel */
-  setShowIssuePanel: (show: boolean, url?: string) => void;
   /** Show/hide usage panel */
   setShowUsagePanel: (show: boolean, data?: any) => void;
   /** Show/hide MCP servers panel */

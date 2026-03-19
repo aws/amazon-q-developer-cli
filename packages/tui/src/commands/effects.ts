@@ -45,7 +45,6 @@ type EffectName =
   | 'executePrompt'
   | 'clearMessages'
   | 'quit'
-  | 'showIssueUrl'
   | 'pasteImage'
   | 'promptEditor';
 
@@ -64,7 +63,6 @@ const commandEffects: Partial<Record<string, EffectName>> = {
   quit: 'quit',
   mcp: 'showMcpPanel',
   tools: 'showToolsPanel',
-  issue: 'showIssueUrl',
   knowledge: 'showKnowledgePanel',
   paste: 'pasteImage',
   editor: 'promptEditor',
@@ -162,14 +160,6 @@ const effectHandlers: Record<EffectName, EffectHandler> = {
   quit: (_result, ctx) => {
     ctx.kiro.close();
     process.exit(0);
-  },
-
-  showIssueUrl: (result, ctx, cmd) => {
-    const data = result?.data as { url?: string } | undefined;
-    if (data?.url) {
-      ctx.setActiveCommand({ command: cmd, options: [] });
-      ctx.setShowIssuePanel(true, data.url);
-    }
   },
 
   /** Open $EDITOR to compose a prompt, then send the content as a chat message */
