@@ -507,8 +507,12 @@ impl Database {
         let mut result = Vec::new();
         for row in rows {
             let (id, value, created, updated) = row?;
-            let state: ConversationState = serde_json::from_str(&value)?;
-            result.push((id, state, created, updated));
+            match serde_json::from_str(&value) {
+                Ok(state) => result.push((id, state, created, updated)),
+                Err(e) => {
+                    tracing::warn!(conversation_id = %id, error = %e, "Skipping conversation with invalid state");
+                },
+            }
         }
 
         Ok(result)
@@ -927,5 +931,34 @@ mod tests {
         let all = db.list_conversations_by_path(&test_path).unwrap();
         assert_eq!(all.len(), 1);
         assert_eq!(all[0].0, "conv-2");
+    }
+
+    #[tokio::test]
+    async fn test_list_conversations_by_path_skips_invalid_entries() {
+        use std::path::PathBuf;
+
+        let db = Database::new_default().await.unwrap();
+        let test_path = PathBuf::from("/test/invalid");
+
+        let conn = db.pool.get().unwrap();
+
+        // Insert a valid conversation
+        let valid_json = r#"{"conversation_id":"valid-1","next_message":null,"history":[],"valid_history_range":[0,0],"transcript":[],"tools":{},"context_manager":null,"context_message_length":null,"latest_summary":null,"model_info":null,"file_line_tracker":{},"checkpoint_manager":null,"mcp_enabled":true,"user_turn_metadata":{"continuation_id":"test","requests":[],"usage_info":[]}}"#;
+        conn.execute(
+            "INSERT INTO conversations_v2 (key, conversation_id, value, created_at, updated_at) VALUES (?1, ?2, ?3, 1000, 1000)",
+            params![test_path.to_str().unwrap(), "valid-1", valid_json],
+        )
+        .unwrap();
+
+        // Insert an invalid conversation (bad JSON that won't deserialize to ConversationState)
+        conn.execute(
+            "INSERT INTO conversations_v2 (key, conversation_id, value, created_at, updated_at) VALUES (?1, ?2, ?3, 2000, 2000)",
+            params![test_path.to_str().unwrap(), "invalid-1", r#"{"not_a_valid":"conversation"}"#],
+        )
+        .unwrap();
+
+        let result = db.list_conversations_by_path(&test_path).unwrap();
+        assert_eq!(result.len(), 1);
+        assert_eq!(result[0].0, "valid-1");
     }
 }

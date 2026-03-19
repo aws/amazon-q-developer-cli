@@ -495,8 +495,12 @@ impl Database {
         let mut result = Vec::new();
         for row in rows {
             let (id, value, created, updated) = row?;
-            let state: serde_json::Value = serde_json::from_str(&value)?;
-            result.push((id, state, created, updated));
+            match serde_json::from_str(&value) {
+                Ok(state) => result.push((id, state, created, updated)),
+                Err(e) => {
+                    tracing::warn!(conversation_id = %id, error = %e, "Skipping conversation with invalid state");
+                },
+            }
         }
 
         Ok(result)

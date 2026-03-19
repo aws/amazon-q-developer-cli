@@ -1,0 +1,4 @@
+{
+  "type": "fixed",
+  "description": "Fixed --resume-picker silently falling through to new chat in directories with many sessions"
+}
