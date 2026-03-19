@@ -145,8 +145,7 @@ const DEFAULT_TIMEOUT_DURATION: Duration = Duration::from_secs(60 * 5);
 pub const MAX_RETRY_DELAY_DURATION: Duration = Duration::from_secs(10);
 
 /// Profile ARN for BuilderId (free tier) users who have no IAM IdC profile stored in the DB.
-const BUILDER_ID_PROFILE_ARN: &str =
-    "arn:aws:codewhisperer:us-east-1:638616132270:profile/AAAACCCCXXXX";
+const BUILDER_ID_PROFILE_ARN: &str = "arn:aws:codewhisperer:us-east-1:638616132270:profile/AAAACCCCXXXX";
 
 #[derive(Clone, Debug)]
 pub struct ModelListResult {

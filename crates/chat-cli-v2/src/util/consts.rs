@@ -132,6 +132,9 @@ pub mod env_var {
         /// Test mode for ACP integration tests
         KIRO_TEST_MODE = "KIRO_TEST_MODE",
 
+        /// Override database path for testing
+        KIRO_TEST_DB_PATH = "KIRO_TEST_DB_PATH",
+
         /// Amazon Q chat shell
         AMAZON_Q_CHAT_SHELL = "AMAZON_Q_CHAT_SHELL",
 

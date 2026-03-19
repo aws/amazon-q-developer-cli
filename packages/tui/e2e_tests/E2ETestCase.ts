@@ -7,17 +7,21 @@
 
 import * as fs from 'fs';
 import * as net from 'net';
+import * as os from 'os';
 import * as path from 'path';
 import type { AppState } from '../src/stores/app-store';
 import { PtyManager, TerminalSnapshot } from '../src/test-utils/shared/pty-manager';
 import { createTestDir, type TestPaths } from '../src/test-utils/shared/test-paths';
 import { TuiIpcConnection } from '../src/test-utils/shared/tui-ipc-connection';
 import type { MockStreamItem } from './types/chat-cli';
+import { AcpTestHelper } from './AcpTestHelper';
 
 interface E2ETestCaseOptions {
   terminalSize?: { width: number; height: number };
   timeout?: number;
   testName?: string;
+  extraEnv?: Record<string, string>;
+  globalAgentConfigs?: Array<{ name: string; config: Record<string, unknown> }>;
 }
 
 /**
@@ -38,6 +42,11 @@ export class E2ETestCase {
   private options: E2ETestCaseOptions;
   private tuiConnection?: TuiIpcConnection;
   private agentConnection?: TuiIpcConnection;
+  private acpHelpers: AcpTestHelper[] = [];
+  /** The sandbox env vars passed to the spawned CLI process. */
+  private sandboxEnv: Record<string, string>;
+  /** Temp directory for test isolation. Cleaned up on cleanup(). */
+  readonly sandboxDir: string;
 
   constructor(options: E2ETestCaseOptions = {}) {
     this.options = {
@@ -49,30 +58,48 @@ export class E2ETestCase {
     const testName = this.options.testName || `e2e-${Date.now()}`;
     this.paths = createTestDir(testName);
 
+    // Create isolated sandbox directory for sessions, DB, agents
+    this.sandboxDir = fs.mkdtempSync(path.join(os.tmpdir(), `kiro-e2e-${testName}-`));
+
+    // Write custom agent configs into sandbox agents dir
+    const agentsDir = path.join(this.sandboxDir, 'agents');
+    fs.mkdirSync(agentsDir, { recursive: true });
+    for (const agent of this.options.globalAgentConfigs ?? []) {
+      fs.writeFileSync(path.join(agentsDir, `${agent.name}.json`), JSON.stringify(agent.config));
+    }
+
     const chatPath = path.join(__dirname, '../../../target/debug/chat_cli');
     const tuiJsPath = path.join(__dirname, '../dist/tui.js');
+
+    this.sandboxEnv = {
+      CI: 'false',
+      KIRO_CHAT_UI: 'tui',
+      KIRO_TEST_MODE: '1',
+      KIRO_DISABLE_TELEMETRY: '1',
+      KIRO_INPUT_METRICS: 'true',
+      KIRO_TEST_TUI_IPC_SOCKET_PATH: this.paths.tuiIpcSocket,
+      KIRO_TEST_CHAT_IPC_SOCKET_PATH: this.paths.agentIpcSocket,
+      ...(process.platform === 'win32' ? {
+        KIRO_TEST_CHAT_IPC_PIPE_NAME: this.paths.agentIpcSocket,
+      } : {}),
+      KIRO_TEST_TUI_JS_PATH: tuiJsPath,
+      KIRO_AGENT_PATH: chatPath,
+      KIRO_TUI_LOG_FILE: this.paths.tuiLogFile,
+      KIRO_TUI_LOG_LEVEL: 'trace',
+      KIRO_CHAT_LOG_FILE: this.paths.rustLogFile,
+      KIRO_LOG_LEVEL: 'chat_cli=debug,agent=debug,semantic_search_client=trace',
+      HOME: this.sandboxDir,
+      KIRO_TEST_SESSIONS_DIR: this.sandboxDir,
+      KIRO_TEST_DB_PATH: path.join(this.sandboxDir, 'test.sqlite3'),
+      KIRO_TEST_AGENTS_DIR: path.join(this.sandboxDir, 'agents'),
+      ...this.options.extraEnv,
+    };
 
     this.ptyManager = new PtyManager({
       width: this.options.terminalSize!.width,
       height: this.options.terminalSize!.height,
       cwd: process.cwd(),
-      env: {
-        CI: 'false', // Disable CI detection so Ink uses normal terminal rendering inside the PTY
-        KIRO_CHAT_UI: 'tui',
-        KIRO_TEST_MODE: '1',
-        KIRO_INPUT_METRICS: 'true',
-        KIRO_TEST_TUI_IPC_SOCKET_PATH: this.paths.tuiIpcSocket,
-        KIRO_TEST_CHAT_IPC_SOCKET_PATH: this.paths.agentIpcSocket,
-        ...(process.platform === 'win32' ? {
-          KIRO_TEST_CHAT_IPC_PIPE_NAME: this.paths.agentIpcSocket,
-        } : {}),
-        KIRO_TEST_TUI_JS_PATH: tuiJsPath,
-        KIRO_AGENT_PATH: chatPath,
-        KIRO_TUI_LOG_FILE: this.paths.tuiLogFile,
-        KIRO_TUI_LOG_LEVEL: 'trace',
-        KIRO_CHAT_LOG_FILE: this.paths.rustLogFile,
-        KIRO_LOG_LEVEL: 'chat_cli=debug,agent=debug',
-      },
+      env: this.sandboxEnv,
     });
 
     // TUI connects to this server
@@ -131,6 +158,12 @@ export class E2ETestCase {
   }
 
   async cleanup(): Promise<void> {
+    // Clean up ACP helpers first
+    for (const helper of this.acpHelpers) {
+      await helper.close();
+    }
+    this.acpHelpers = [];
+
     // Save HTML snapshot before cleanup
     try {
       fs.writeFileSync(this.paths.snapshotHtmlFile, this.getSnapshotHtml());
@@ -141,6 +174,23 @@ export class E2ETestCase {
     this.agentConnection?.close();
     this.tuiIpcServer?.close();
     this.agentIpcServer?.close();
+
+    // Clean up sandbox directory
+    fs.rmSync(this.sandboxDir, { recursive: true, force: true });
+  }
+
+  /**
+   * Launch a separate ACP connection sharing the same sandbox directories.
+   * Useful for creating sessions with history before the TUI loads them.
+   * The helper is automatically cleaned up when the test case is cleaned up.
+   */
+  async launchAcpHelper(): Promise<AcpTestHelper> {
+    const helper = await AcpTestHelper.spawn({
+      env: this.sandboxEnv,
+      testName: `${this.options.testName || 'e2e'}-helper-${this.acpHelpers.length}`,
+    });
+    this.acpHelpers.push(helper);
+    return helper;
   }
 
   async sendKeys(input: string | number[]): Promise<void> {
@@ -394,6 +444,17 @@ export class E2ETestCaseBuilder {
 
   withTestName(name: string): E2ETestCaseBuilder {
     this.options.testName = name;
+    return this;
+  }
+
+  withEnv(env: Record<string, string>): E2ETestCaseBuilder {
+    this.options.extraEnv = { ...this.options.extraEnv, ...env };
+    return this;
+  }
+
+  withGlobalAgentConfig(name: string, config: Record<string, unknown>): E2ETestCaseBuilder {
+    this.options.globalAgentConfigs = this.options.globalAgentConfigs ?? [];
+    this.options.globalAgentConfigs.push({ name, config });
     return this;
   }
 

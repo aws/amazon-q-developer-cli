@@ -7,8 +7,7 @@ use serde::{
     Serialize,
 };
 
-use crate::api_client::Endpoint;
-use crate::os::Os;
+use crate::api_client::ApiClient;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ModelInfo {
@@ -74,11 +73,8 @@ impl std::fmt::Display for ModelError {
 
 impl std::error::Error for ModelError {}
 
-pub async fn get_available_models(os: &Os) -> Result<(Vec<ModelInfo>, ModelInfo), ModelError> {
-    let endpoint = Endpoint::configured_value(&os.database);
-    let region = endpoint.region().as_ref();
-
-    match os.client.get_available_models(region).await {
+pub async fn get_available_models(client: &ApiClient) -> Result<(Vec<ModelInfo>, ModelInfo), ModelError> {
+    match client.list_available_models_cached().await {
         Ok(api_res) => {
             let models: Vec<ModelInfo> = api_res.models.iter().map(ModelInfo::from_api_model).collect();
             let default_model = ModelInfo::from_api_model(&api_res.default_model);
@@ -101,7 +97,7 @@ fn default_context_window() -> usize {
     200_000
 }
 
-fn get_fallback_models() -> Vec<ModelInfo> {
+pub fn get_fallback_models() -> Vec<ModelInfo> {
     vec![
         ModelInfo {
             model_name: Some("claude-sonnet-4".to_string()),

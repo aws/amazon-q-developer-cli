@@ -126,3 +126,86 @@ impl Write for NullWriter {
         Ok(())
     }
 }
+
+/// Format a datetime as a human-readable relative time string (e.g. "3 mins ago").
+pub fn format_relative_time(dt: &chrono::DateTime<chrono::Utc>) -> String {
+    let now = chrono::Utc::now();
+    let duration = now.signed_duration_since(dt);
+
+    let secs = duration.num_seconds();
+    if secs < 0 {
+        return "just now".to_string();
+    }
+    if secs < 60 {
+        return if secs == 1 {
+            "1 sec ago".to_string()
+        } else {
+            format!("{secs} secs ago")
+        };
+    }
+    let mins = duration.num_minutes();
+    if mins < 60 {
+        return if mins == 1 {
+            "1 min ago".to_string()
+        } else {
+            format!("{mins} mins ago")
+        };
+    }
+    let hours = duration.num_hours();
+    if hours < 24 {
+        return if hours == 1 {
+            "1 hour ago".to_string()
+        } else {
+            format!("{hours} hours ago")
+        };
+    }
+    let days = duration.num_days();
+    if days < 7 {
+        return if days == 1 {
+            "1 day ago".to_string()
+        } else {
+            format!("{days} days ago")
+        };
+    }
+    let weeks = days / 7;
+    if weeks < 5 {
+        return if weeks == 1 {
+            "1 week ago".to_string()
+        } else {
+            format!("{weeks} weeks ago")
+        };
+    }
+    let months = days / 30;
+    if months == 1 {
+        "1 month ago".to_string()
+    } else {
+        format!("{months} months ago")
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use chrono::{
+        Duration,
+        Utc,
+    };
+
+    use super::*;
+
+    #[test]
+    fn test_format_relative_time() {
+        let now = Utc::now();
+        assert_eq!(format_relative_time(&now), "0 secs ago");
+        assert_eq!(format_relative_time(&(now - Duration::seconds(1))), "1 sec ago");
+        assert_eq!(format_relative_time(&(now - Duration::seconds(45))), "45 secs ago");
+        assert_eq!(format_relative_time(&(now - Duration::minutes(1))), "1 min ago");
+        assert_eq!(format_relative_time(&(now - Duration::minutes(3))), "3 mins ago");
+        assert_eq!(format_relative_time(&(now - Duration::hours(1))), "1 hour ago");
+        assert_eq!(format_relative_time(&(now - Duration::hours(2))), "2 hours ago");
+        assert_eq!(format_relative_time(&(now - Duration::days(1))), "1 day ago");
+        assert_eq!(format_relative_time(&(now - Duration::days(5))), "5 days ago");
+        assert_eq!(format_relative_time(&(now - Duration::weeks(1))), "1 week ago");
+        assert_eq!(format_relative_time(&(now - Duration::weeks(3))), "3 weeks ago");
+        assert_eq!(format_relative_time(&(now - Duration::days(90))), "3 months ago");
+    }
+}

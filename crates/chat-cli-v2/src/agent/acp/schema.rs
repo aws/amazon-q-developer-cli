@@ -50,6 +50,7 @@ pub enum TuiCommandKind {
     Tools,
     Prompts,
     Feedback,
+    Chat,
 }
 
 /// Request to get command options (autocomplete)
@@ -195,3 +196,15 @@ pub struct SessionInfoEntry {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub updated_at: Option<String>,
 }
+
+/// Request to terminate a session
+#[derive(Debug, Clone, Serialize, Deserialize, JrRequest)]
+#[request(method = "_kiro.dev/session/terminate", response = TerminateSessionResponse)]
+#[serde(rename_all = "camelCase")]
+pub struct TerminateSessionRequest {
+    pub session_id: String,
+}
+
+/// Response for session terminate
+#[derive(Debug, Clone, Serialize, Deserialize, JrResponsePayload)]
+pub struct TerminateSessionResponse {}

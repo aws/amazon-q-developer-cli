@@ -1,5 +1,8 @@
 import type { ContentBlock } from '@agentclientprotocol/sdk';
-import type { SessionClient } from '../types/session-client';
+import type {
+  SessionClient,
+  ListSessionsResponse,
+} from '../types/session-client';
 import type {
   AgentStreamEvent,
   ApprovalRequestInfo,
@@ -104,8 +107,18 @@ export class MockSessionClient implements SessionClient {
   }
 
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  async terminateSession(_sessionId: string): Promise<void> {
+    // No-op for mock
+  }
+
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   async setMode(_modeId: string): Promise<void> {
     // No-op for mock
+  }
+
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  async listSessions(_cwd: string): Promise<ListSessionsResponse> {
+    return { sessions: [] };
   }
 
   // Test methods

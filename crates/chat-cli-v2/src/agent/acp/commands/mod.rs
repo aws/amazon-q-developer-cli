@@ -1,6 +1,7 @@
 //! Slash command execution - each command has its own module with execute fn
 
 pub mod agent;
+pub mod chat;
 pub mod clear;
 pub mod compact;
 pub mod context;
@@ -46,6 +47,7 @@ pub struct CommandContext<'a> {
     pub session_id: &'a str,
     pub current_agent_name: &'a str,
     pub os: &'a crate::os::Os,
+    pub cwd: &'a std::path::Path,
 }
 
 /// Execute a slash command by dispatching to the appropriate module
@@ -72,5 +74,6 @@ pub async fn execute(command: TuiCommand, ctx: &CommandContext<'_>) -> CommandRe
         },
         TuiCommand::Knowledge(ref args) => knowledge::execute(args, ctx).await,
         TuiCommand::Prompts(ref args) => prompts::execute(args).await,
+        TuiCommand::Chat(ref args) => chat::execute(args, ctx).await,
     }
 }

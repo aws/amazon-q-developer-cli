@@ -37,6 +37,9 @@ function createMockCtx(): CommandContext & {
     clearMessages: spy('clearMessages') as any,
     sendMessage: spy('sendMessage') as any,
     clearUIState: spy('clearUIState') as any,
+    createStreamEventHandler: spy('createStreamEventHandler') as any,
+    setSessionId: spy('setSessionId') as any,
+    addSystemMessage: spy('addSystemMessage') as any,
     _spies: spies,
   };
 }
@@ -189,6 +192,27 @@ describe('dispatch', () => {
         (c: unknown[]) => c[0] === true && c[1] != null
       );
       expect(openedPanel).toBe(false);
+    });
+  });
+
+  describe('/chat command', () => {
+    it('shows "No previous sessions found" when options list is empty', async () => {
+      const ctx = createMockCtx();
+      (ctx.kiro.listSessions as any) = mock(() =>
+        Promise.resolve({ sessions: [] })
+      );
+
+      const cmd = makeCmd({
+        name: '/chat',
+        meta: { inputType: 'selection', local: true },
+      });
+      await dispatch(cmd, '', ctx);
+
+      expect(ctx._spies.showAlert!.mock.calls[0]).toEqual([
+        'No previous sessions found',
+        'error',
+        3000,
+      ]);
     });
   });
 });

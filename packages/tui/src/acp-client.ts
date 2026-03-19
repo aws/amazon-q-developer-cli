@@ -14,6 +14,7 @@ import type {
   CommandResult,
   TuiCommand,
 } from './types/commands';
+import type { ListSessionsResponse } from './types/session-client';
 import { v4 as uuidv4 } from 'uuid';
 
 import packageJson from '../package.json';
@@ -386,6 +387,22 @@ export class AcpClient implements acp.Client, SessionClient {
 
   close(): void {
     this.agentProcess.kill('SIGTERM');
+  }
+
+  async terminateSession(sessionId: string): Promise<void> {
+    try {
+      await this.connection.extMethod('kiro.dev/session/terminate', {
+        sessionId,
+      });
+    } catch (err) {
+      logger.debug('terminateSession failed (best-effort)', { sessionId, err });
+    }
+  }
+
+  async listSessions(cwd: string): Promise<ListSessionsResponse> {
+    return (await this.connection.extMethod('kiro.dev/session/list', {
+      cwd,
+    })) as unknown as ListSessionsResponse;
   }
 
   // ===========

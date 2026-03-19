@@ -170,6 +170,7 @@ use crate::telemetry::observer::{
     TelemetryObserver,
     TelemetryObserverHandle,
 };
+use crate::util::consts::env_var::KIRO_TEST_MODE;
 use crate::util::paths::PathResolver;
 
 /// Messages that can be sent to an [`AcpSession`] actor via [`AcpSessionHandle`].
@@ -773,6 +774,27 @@ impl AcpSession {
             session_id: &self.session_id_str,
             current_agent_name: &self.current_agent_name,
             os: &self.os,
+            cwd: &self.cwd,
+        }
+    }
+
+    /// Persist the current session state (conversation, model, permissions, agent name) to disk.
+    async fn persist_session_state(&self) {
+        match self.agent.create_snapshot().await {
+            Ok(snapshot) => {
+                let mut state = SessionState::new(
+                    snapshot.conversation_metadata,
+                    self.rts_state.snapshot(),
+                    snapshot.permissions,
+                );
+                state.set_agent_name(self.current_agent_name.clone());
+                if let Err(e) = self.session_db.update_state(state) {
+                    warn!("Failed to persist session state: {}", e);
+                }
+            },
+            Err(e) => {
+                error!("Failed to get agent snapshot for session persistence: {}", e);
+            },
         }
     }
 
@@ -835,18 +857,7 @@ impl AcpSession {
 
         let rts_state = Arc::new(RtsState::new(session_id_str.clone()));
 
-        // Set model ID from agent config with validation
-        if let Err(e) = update_model_info(&os, &rts_state, snapshot.agent_config.model()).await {
-            warn!("Failed to set initial model: {}", e);
-        }
-
-        // Override with CLI --model if provided
-        if let Some(model_id) = builder.model_id
-            && let Err(e) = update_model_info(&os, &rts_state, Some(model_id)).await
-        {
-            warn!("Failed to set CLI model override: {}", e);
-        }
-
+        // Build API client, using mock registry in test mode
         let (api_client, model): (ApiClient, Arc<dyn Model>) = if let Some(registry) = builder.mock_registry {
             let client = ApiClient::new_ipc_mock(registry);
             (client.clone(), Arc::new(RtsModel::new(client, Arc::clone(&rts_state))))
@@ -855,34 +866,50 @@ impl AcpSession {
             (client.clone(), Arc::new(RtsModel::new(client, Arc::clone(&rts_state))))
         };
 
+        // Set model ID from agent config with validation
+        if let Err(e) = update_model_info(&api_client, &os.database, &rts_state, snapshot.agent_config.model()).await {
+            warn!("Failed to set initial model: {}", e);
+        }
+
+        // Override with CLI --model if provided
+        if let Some(model_id) = builder.model_id
+            && let Err(e) = update_model_info(&api_client, &os.database, &rts_state, Some(model_id)).await
+        {
+            warn!("Failed to set CLI model override: {}", e);
+        }
+
         let snapshot = {
             let mut s = snapshot;
             s.settings.trust_all_tools = builder.trust_all_tools;
             s
         };
 
-        // Build knowledge provider if available
-        let knowledge_provider: Option<std::sync::Arc<dyn agent::tools::KnowledgeProvider>> = {
-            let name = builder.current_agent_name.as_deref().unwrap_or_default();
-            let agent_config = builder.agent_configs.iter().find(|c| c.name() == name);
-            let agent_path = agent_config.and_then(|c| match c.source() {
-                agent::agent_config::ConfigSource::Workspace { path }
-                | agent::agent_config::ConfigSource::Global { path } => Some(path.clone()),
-                _ => None,
-            });
-            match crate::util::knowledge_store::KnowledgeStore::get_async_instance(
-                &os,
-                Some(name),
-                agent_path.as_deref(),
-            )
-            .await
-            {
-                Ok(store) => Some(std::sync::Arc::new(
-                    crate::util::knowledge_store::KnowledgeStoreProvider::new(store),
-                )),
-                Err(_) => None,
-            }
-        };
+        // Skip knowledge provider in test mode — ensure_models_downloaded fetches embedding
+        // models to HOME, which downloads a large amount of data (10+ seconds).
+        let knowledge_provider: Option<std::sync::Arc<dyn agent::tools::KnowledgeProvider>> =
+            if std::env::var(KIRO_TEST_MODE).is_ok() {
+                None
+            } else {
+                let name = builder.current_agent_name.as_deref().unwrap_or_default();
+                let agent_config = builder.agent_configs.iter().find(|c| c.name() == name);
+                let agent_path = agent_config.and_then(|c| match c.source() {
+                    agent::agent_config::ConfigSource::Workspace { path }
+                    | agent::agent_config::ConfigSource::Global { path } => Some(path.clone()),
+                    _ => None,
+                });
+                match crate::util::knowledge_store::KnowledgeStore::get_async_instance(
+                    &os,
+                    Some(name),
+                    agent_path.as_deref(),
+                )
+                .await
+                {
+                    Ok(store) => Some(std::sync::Arc::new(
+                        crate::util::knowledge_store::KnowledgeStoreProvider::new(store),
+                    )),
+                    Err(_) => None,
+                }
+            };
 
         let mut agent = Agent::new(
             snapshot,
@@ -1208,7 +1235,14 @@ impl AcpSession {
                 agent_config,
                 respond_to,
             } => {
-                if let Err(e) = update_model_info(&self.os, &self.rts_state, agent_config.model()).await {
+                if let Err(e) = update_model_info(
+                    &self.api_client,
+                    &self.os.database,
+                    &self.rts_state,
+                    agent_config.model(),
+                )
+                .await
+                {
                     warn!("Failed to update model during swap: {}", e);
                 }
                 // Reset stale context usage data since it's meaningless after swapping agents
@@ -1230,12 +1264,14 @@ impl AcpSession {
 
                 if result.is_ok() {
                     self.previous_agent_name = Some(std::mem::replace(&mut self.current_agent_name, new_name));
+                    self.persist_session_state().await;
                 }
 
                 let _ = respond_to.send(result);
             },
             AcpSessionRequest::SetModel { model_id, respond_to } => {
-                let result = update_model_info(&self.os, &self.rts_state, Some(&model_id)).await;
+                let result =
+                    update_model_info(&self.api_client, &self.os.database, &self.rts_state, Some(&model_id)).await;
                 let _ = respond_to.send(result);
             },
             AcpSessionRequest::GetModelId { respond_to } => {
@@ -1291,6 +1327,18 @@ impl AcpSession {
                     super::schema::TuiCommandKind::Agent => super::commands::agent::get_options(&partial, &ctx),
                     super::schema::TuiCommandKind::Prompts => super::commands::prompts::get_options(&self.agent).await,
                     super::schema::TuiCommandKind::Feedback => super::commands::issue::get_options(),
+                    super::schema::TuiCommandKind::Chat => {
+                        match super::commands::chat::list_sessions(ctx.session_tx, Some(ctx.cwd.to_path_buf())).await {
+                            Ok(entries) => {
+                                let options = entries.into_iter().map(Into::into).collect();
+                                agent::tui_commands::CommandOptionsResponse {
+                                    options,
+                                    has_more: false,
+                                }
+                            },
+                            Err(_) => agent::tui_commands::CommandOptionsResponse::default(),
+                        }
+                    },
                     super::schema::TuiCommandKind::Context
                     | super::schema::TuiCommandKind::Compact
                     | super::schema::TuiCommandKind::Clear
@@ -1443,21 +1491,7 @@ impl AcpSession {
                 }
                 // Send prompt response directly to the client - this ends the turn so we take() it
                 if let Some(respond_to) = self.pending_prompt_response.take() {
-                    match self.agent.create_snapshot().await {
-                        Ok(snapshot) => {
-                            let state = SessionState::new(
-                                snapshot.conversation_metadata,
-                                rts_state.snapshot(),
-                                snapshot.permissions,
-                            );
-                            if let Err(e) = session_db.update_state(state) {
-                                warn!("Failed to persist session state: {}", e);
-                            }
-                        },
-                        Err(e) => {
-                            error!("Failed to get agent snapshot for session persistence: {}", e);
-                        },
-                    }
+                    self.persist_session_state().await;
                     let respond_to = respond_to.into_inner();
                     let stop_reason = match md.end_reason {
                         agent::agent_loop::protocol::LoopEndReason::UserTurnEnd => StopReason::EndTurn,
@@ -2279,23 +2313,25 @@ fn get_tool_locations(tool: &Tool) -> Option<Vec<ToolCallLocation>> {
 /// Update model ID in RTS state.
 /// Validates the model ID against available models if specified.
 /// Priority: 1) explicit model arg, 2) user's saved default, 3) API default
-async fn update_model_info(os: &Os, rts_state: &RtsState, model: Option<&str>) -> Result<(), String> {
+async fn update_model_info(
+    client: &ApiClient,
+    database: &crate::database::Database,
+    rts_state: &RtsState,
+    model: Option<&str>,
+) -> Result<(), String> {
     use crate::database::settings::Setting;
 
-    let (models, api_default) = get_available_models(os)
+    let (models, api_default) = get_available_models(client)
         .await
         .map_err(|e| format!("Failed to fetch available models: {}", e))?;
 
     let model_info = if let Some(requested_model) = model {
-        // Explicit model from agent config
         find_model(&models, requested_model)
             .ok_or_else(|| format!("Model '{}' not found", requested_model))?
             .clone()
-    } else if let Some(saved) = os.database.settings.get_string(Setting::ChatDefaultModel) {
-        // User's saved default model
+    } else if let Some(saved) = database.settings.get_string(Setting::ChatDefaultModel) {
         find_model(&models, &saved).cloned().unwrap_or(api_default)
     } else {
-        // API default
         api_default
     };
 
@@ -2305,8 +2341,6 @@ async fn update_model_info(os: &Os, rts_state: &RtsState, model: Option<&str>) -
 
 /// Entry point for SACP agent
 pub async fn execute(os: &mut Os, args: agent::types::AcpSpawnArgs) -> eyre::Result<ExitCode> {
-    use super::extensions::TerminateSessionNotification;
-
     let resolver = PathResolver::new(os);
     let local_mcp_path = resolver.workspace().mcp_config().ok();
     let global_mcp_path = resolver.global().mcp_config().ok();
@@ -2497,20 +2531,24 @@ pub async fn execute(os: &mut Os, args: agent::types::AcpSpawnArgs) -> eyre::Res
             {
                 let session_tx = session_manager_handle.clone();
                 async move |request: super::schema::ListSessionsRequest, request_cx, _cx| {
-                    let sessions = session_tx.list_sessions(request.cwd).await?;
-                    let entries: Vec<super::schema::SessionInfoEntry> = sessions
-                        .into_iter()
-                        .map(|s| super::schema::SessionInfoEntry {
-                            session_id: s.session_id,
-                            cwd: s.cwd,
-                            title: s.title,
-                            updated_at: Some(s.updated_at.to_rfc3339()),
-                        })
-                        .collect();
+                    let entries = super::commands::chat::list_sessions(&session_tx, request.cwd).await?;
                     request_cx.respond(super::schema::ListSessionsResponse {
                         sessions: entries,
                         next_cursor: None,
                     })
+                }
+            },
+            sacp::on_receive_request!(),
+        )
+        // Handle session terminate
+        .on_receive_request(
+            {
+                let session_tx = session_manager_handle.clone();
+                async move |request: super::schema::TerminateSessionRequest, request_cx, _cx| {
+                    let session_id = sacp::schema::SessionId::new(request.session_id);
+                    session_tx.terminate_session(&session_id).await;
+                    request_cx.respond(super::schema::TerminateSessionResponse {})?;
+                    Ok(())
                 }
             },
             sacp::on_receive_request!(),
@@ -2538,19 +2576,8 @@ pub async fn execute(os: &mut Os, args: agent::types::AcpSpawnArgs) -> eyre::Res
                     }
 
                     // Handle extension notifications
-                    use super::extensions::methods;
                     if let MessageCx::Notification(notif) = &message {
-                        let method = notif.method();
-
-                        match method {
-                            methods::SESSION_TERMINATE => {
-                                if let Ok(params) =
-                                    serde_json::from_value::<TerminateSessionNotification>(notif.params().clone())
-                                {
-                                    session_tx.terminate_session(&params.session_id).await;
-                                    return Ok(sacp::Handled::Yes);
-                                }
-                            },
+                        match notif.method() {
                             name if name == AGENT_METHOD_NAMES.session_cancel => {
                                 if let Ok(cancel_notif) =
                                     serde_json::from_value::<CancelNotification>(notif.params().clone())

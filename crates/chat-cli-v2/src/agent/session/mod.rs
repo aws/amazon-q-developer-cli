@@ -92,6 +92,8 @@ pub struct SessionStateV1 {
     pub rts_model_state: RtsStateSnapshot,
     #[serde(default)]
     pub permissions: RuntimePermissions,
+    #[serde(default)]
+    pub agent_name: Option<String>,
 }
 
 impl SessionState {
@@ -104,6 +106,7 @@ impl SessionState {
             conversation_metadata,
             rts_model_state,
             permissions,
+            agent_name: None,
         })
     }
 
@@ -122,6 +125,18 @@ impl SessionState {
     pub fn permissions(&self) -> &RuntimePermissions {
         match self {
             Self::V1(v1) => &v1.permissions,
+        }
+    }
+
+    pub fn agent_name(&self) -> Option<&str> {
+        match self {
+            Self::V1(v1) => v1.agent_name.as_deref(),
+        }
+    }
+
+    pub fn set_agent_name(&mut self, name: String) {
+        match self {
+            Self::V1(v1) => v1.agent_name = Some(name),
         }
     }
 }
@@ -315,6 +330,21 @@ pub struct SessionDb {
 
 static_assertions::assert_impl_all!(SessionDb: Send, Sync);
 
+impl Drop for SessionDb {
+    fn drop(&mut self) {
+        let Some(session) = self.session.lock().ok() else {
+            return;
+        };
+        let log = log_path(&self.sessions_dir, &session.session_id);
+        let is_empty = fs::metadata(&log).map_or(true, |m| m.len() == 0);
+        if is_empty {
+            tracing::debug!(session_id = %session.session_id, "cleaning up empty session");
+            let _ = fs::remove_file(metadata_path(&self.sessions_dir, &session.session_id));
+            let _ = fs::remove_file(&log);
+        }
+    }
+}
+
 impl std::fmt::Debug for SessionDb {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("SessionDb")
@@ -399,8 +429,26 @@ impl SessionDb {
             .map_err(|e| SessionError::json(e, format!("failed to parse session metadata {:?}", meta_path)))?;
 
         // Update cwd if provided
-        if let Some(new_cwd) = cwd {
+        let mut dirty = false;
+        if let Some(new_cwd) = cwd
+            && session.cwd != new_cwd
+        {
             session.cwd = new_cwd.to_path_buf();
+            dirty = true;
+        }
+
+        // Backfill title from first log entry if missing
+        if session.title.is_none()
+            && let Some(title) = title_from_first_log_entry(sessions_dir, session_id)
+        {
+            session.title = Some(title);
+            dirty = true;
+        }
+
+        if dirty {
+            let content = serde_json::to_string_pretty(&session)
+                .map_err(|e| SessionError::json(e, format!("failed to serialize session {:?}", session_id)))?;
+            atomic_write(&meta_path, &content)?;
         }
 
         Ok(Self {
@@ -411,16 +459,16 @@ impl SessionDb {
     }
 
     pub fn session_id(&self) -> String {
-        self.session.lock().unwrap().session_id.clone()
+        self.session.lock().expect("session mutex poisoned").session_id.clone()
     }
 
     pub fn session(&self) -> SessionData {
-        self.session.lock().unwrap().clone()
+        self.session.lock().expect("session mutex poisoned").clone()
     }
 
     /// Append a log entry to the session's JSONL file.
     pub fn append_log_entry(&self, entry: &LogEntry) -> Result<(), SessionError> {
-        let session_id = self.session.lock().unwrap().session_id.clone();
+        let session_id = self.session.lock().expect("session mutex poisoned").session_id.clone();
         let path = log_path(&self.sessions_dir, &session_id);
         let mut file = OpenOptions::new()
             .create(true)
@@ -440,7 +488,7 @@ impl SessionDb {
 
     /// Update session state (e.g., on EndTurn).
     pub fn update_state(&self, state: SessionState) -> Result<(), SessionError> {
-        let mut session = self.session.lock().unwrap();
+        let mut session = self.session.lock().expect("session mutex poisoned");
         session.session_state = state;
         session.updated_at = Utc::now();
 
@@ -453,7 +501,7 @@ impl SessionDb {
 
     /// Set a human-readable title for the session (typically from the first user prompt).
     pub fn set_title(&self, title: String) -> Result<(), SessionError> {
-        let mut session = self.session.lock().unwrap();
+        let mut session = self.session.lock().expect("session mutex poisoned");
         session.title = Some(title);
         session.updated_at = Utc::now();
 
@@ -466,7 +514,7 @@ impl SessionDb {
 
     /// Load all log entries from the session's JSONL file.
     pub fn load_log_entries(&self) -> Result<Vec<LogEntry>, SessionError> {
-        let session_id = self.session.lock().unwrap().session_id.clone();
+        let session_id = self.session.lock().expect("session mutex poisoned").session_id.clone();
         let path = log_path(&self.sessions_dir, &session_id);
         if !path.exists() {
             return Ok(Vec::new());
@@ -513,15 +561,80 @@ pub fn create_session_title(content: &[agent::agent_loop::types::ContentBlock]) 
     Some(format!("{}{}", truncated, SUFFIX))
 }
 
+/// Check whether a session has any log entries (i.e. at least one prompt was sent).
+pub fn has_log_entries(sessions_dir: &Path, session_id: &str) -> bool {
+    fs::metadata(log_path(sessions_dir, session_id)).is_ok_and(|m| m.len() > 0)
+}
+
+/// Derive a title from the first log entry of a session.
+pub fn title_from_first_log_entry(sessions_dir: &Path, session_id: &str) -> Option<String> {
+    let file = File::open(log_path(sessions_dir, session_id)).ok()?;
+    let first_line = BufReader::new(file).lines().next()?.ok()?;
+    let LogEntry::V1(agent::event_log::LogEntryV1::Prompt { content, .. }) = serde_json::from_str(&first_line).ok()?
+    else {
+        return None;
+    };
+    create_session_title(&content)
+}
+
+/// Read the persisted agent name from session metadata without loading the full session.
+pub fn peek_agent_name(sessions_dir: &Path, session_id: &str) -> Option<String> {
+    let path = metadata_path(sessions_dir, session_id);
+    let content = fs::read_to_string(path).ok()?;
+    let data: SessionData = serde_json::from_str(&content).ok()?;
+    data.session_state.agent_name().map(|s| s.to_string())
+}
+
+/// Lightweight view of session metadata for listing.
+///
+/// Skips [`SessionData::session_state`]. Somewhat of a micro-optimization, but saves time scanning
+/// large session directories with large [`SessionState`] included.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[typeshare::typeshare]
+pub struct SessionDataView {
+    pub session_id: String,
+    #[typeshare(serialized_as = "String")]
+    pub cwd: PathBuf,
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
+    #[serde(default)]
+    pub title: Option<String>,
+}
+
+trait ListableSession: serde::de::DeserializeOwned {
+    fn cwd(&self) -> &Path;
+    fn updated_at(&self) -> &DateTime<Utc>;
+}
+
+impl ListableSession for SessionData {
+    fn cwd(&self) -> &Path {
+        &self.cwd
+    }
+
+    fn updated_at(&self) -> &DateTime<Utc> {
+        &self.updated_at
+    }
+}
+
+impl ListableSession for SessionDataView {
+    fn cwd(&self) -> &Path {
+        &self.cwd
+    }
+
+    fn updated_at(&self) -> &DateTime<Utc> {
+        &self.updated_at
+    }
+}
+
 /// Lists available sessions, filtered by cwd if provided.
 ///
 /// When `cwd` is `Some`, only sessions matching that working directory are returned.
 /// When `cwd` is `None`, all sessions are returned.
-pub fn list_sessions(cwd: Option<&Path>) -> Result<Vec<SessionData>, SessionError> {
+pub fn list_sessions(cwd: Option<&Path>) -> Result<Vec<SessionDataView>, SessionError> {
     list_sessions_impl(&sessions_dir()?, cwd)
 }
 
-fn list_sessions_impl(sessions_dir: &Path, cwd: Option<&Path>) -> Result<Vec<SessionData>, SessionError> {
+fn list_sessions_impl<T: ListableSession>(sessions_dir: &Path, cwd: Option<&Path>) -> Result<Vec<T>, SessionError> {
     if !sessions_dir.exists() {
         return Ok(Vec::new());
     }
@@ -538,26 +651,33 @@ fn list_sessions_impl(sessions_dir: &Path, cwd: Option<&Path>) -> Result<Vec<Ses
             Err(_) => continue,
         };
         let path = entry.path();
-        if path.extension().is_some_and(|ext| ext == "json") {
-            let content = match fs::read_to_string(&path) {
-                Ok(c) => c,
-                Err(_) => continue,
-            };
-            let session: SessionData = match serde_json::from_str(&content) {
-                Ok(m) => m,
-                Err(_) => continue,
-            };
-            if let Some(ref filter_cwd) = canonical_cwd {
-                let session_cwd = session.cwd.canonicalize().unwrap_or_else(|_| session.cwd.clone());
-                if session_cwd != *filter_cwd {
-                    continue;
-                }
-            }
-            sessions.push(session);
+        if path.extension().is_none_or(|ext| ext != "json") {
+            continue;
         }
+        let content = match fs::read_to_string(&path) {
+            Ok(c) => c,
+            Err(_) => continue,
+        };
+        let session: T = match serde_json::from_str(&content) {
+            Ok(m) => m,
+            Err(e) => {
+                warn!(path = %path.display(), error = %e, "failed to deserialize session");
+                continue;
+            },
+        };
+        if let Some(ref filter_cwd) = canonical_cwd {
+            let session_cwd = session
+                .cwd()
+                .canonicalize()
+                .unwrap_or_else(|_| session.cwd().to_path_buf());
+            if session_cwd != *filter_cwd {
+                continue;
+            }
+        }
+        sessions.push(session);
     }
 
-    sessions.sort_by(|a, b| b.updated_at.cmp(&a.updated_at));
+    sessions.sort_by(|a, b| b.updated_at().cmp(a.updated_at()));
     Ok(sessions)
 }
 
@@ -587,6 +707,12 @@ mod tests {
 
     fn pid_always_alive(_pid: u32) -> bool {
         true
+    }
+
+    /// Write a dummy log entry so the session isn't cleaned up on drop.
+    fn write_dummy_log(db: &SessionDb) {
+        db.append_log_entry(&LogEntry::prompt("msg".to_string(), vec![]))
+            .unwrap();
     }
 
     #[test]
@@ -621,6 +747,7 @@ mod tests {
         assert!(log_path(sessions_dir, &session_id).exists());
         assert!(lock_path(sessions_dir, &session_id).exists());
 
+        write_dummy_log(&handle);
         drop(handle);
 
         // Lock should be released
@@ -657,6 +784,7 @@ mod tests {
             1000,
         )
         .unwrap();
+        write_dummy_log(&handle);
         drop(handle);
 
         let loaded = SessionDb::load_impl(sessions_dir, &session_id, Some(new_cwd), pid_always_dead, 1000).unwrap();
@@ -775,6 +903,7 @@ mod tests {
             1000,
         )
         .unwrap();
+        write_dummy_log(&s1);
         drop(s1);
         let s2 = SessionDb::new_impl(
             sessions_dir,
@@ -785,6 +914,7 @@ mod tests {
             1000,
         )
         .unwrap();
+        write_dummy_log(&s2);
         drop(s2);
         let s3 = SessionDb::new_impl(
             sessions_dir,
@@ -795,16 +925,17 @@ mod tests {
             1000,
         )
         .unwrap();
+        write_dummy_log(&s3);
         drop(s3);
 
-        let cwd1_sessions = list_sessions_impl(sessions_dir, Some(&cwd1)).unwrap();
+        let cwd1_sessions: Vec<SessionDataView> = list_sessions_impl(sessions_dir, Some(&cwd1)).unwrap();
         assert_eq!(cwd1_sessions.len(), 2);
 
-        let cwd2_sessions = list_sessions_impl(sessions_dir, Some(&cwd2)).unwrap();
+        let cwd2_sessions: Vec<SessionDataView> = list_sessions_impl(sessions_dir, Some(&cwd2)).unwrap();
         assert_eq!(cwd2_sessions.len(), 1);
 
         // None returns all sessions
-        let all_sessions = list_sessions_impl(sessions_dir, None).unwrap();
+        let all_sessions: Vec<SessionDataView> = list_sessions_impl(sessions_dir, None).unwrap();
         assert_eq!(all_sessions.len(), 3);
     }
 
@@ -858,6 +989,7 @@ mod tests {
         )
         .unwrap();
         db.set_title("Session with title".to_string()).unwrap();
+        write_dummy_log(&db);
         drop(db);
 
         let db2 = SessionDb::new_impl(
@@ -869,9 +1001,10 @@ mod tests {
             1000,
         )
         .unwrap();
+        write_dummy_log(&db2);
         drop(db2);
 
-        let sessions = list_sessions_impl(sessions_dir, Some(&cwd)).unwrap();
+        let sessions: Vec<SessionDataView> = list_sessions_impl(sessions_dir, Some(&cwd)).unwrap();
         assert_eq!(sessions.len(), 2);
 
         let titled = sessions.iter().find(|s| s.session_id == "lt1").unwrap();
@@ -879,5 +1012,139 @@ mod tests {
 
         let untitled = sessions.iter().find(|s| s.session_id == "lt2").unwrap();
         assert!(untitled.title.is_none());
+    }
+
+    #[test]
+    #[ignore]
+    fn test_session_data_view_skips_session_state_benchmark() {
+        // Verify SessionDataView deserializes correctly and is faster by skipping session_state
+        let temp_dir = TempDir::new().unwrap();
+        let sessions_dir = temp_dir.path();
+        let cwd = Path::new("/test/project");
+
+        let db = SessionDb::new_impl(
+            sessions_dir,
+            "perf1".to_string(),
+            &cwd,
+            test_state(),
+            pid_always_dead,
+            1000,
+        )
+        .unwrap();
+        write_dummy_log(&db);
+        drop(db);
+
+        // Inflate the JSON with a large session_state to simulate real sessions (~40KB avg)
+        let json = fs::read_to_string(metadata_path(sessions_dir, "perf1")).unwrap();
+        let mut val: serde_json::Value = serde_json::from_str(&json).unwrap();
+        let padding = "x".repeat(50_000);
+        val["session_state"]["_padding"] = serde_json::Value::String(padding);
+        let large_json = serde_json::to_string(&val).unwrap();
+        assert!(
+            large_json.len() > 50_000,
+            "JSON should be >50KB to simulate real sessions"
+        );
+
+        let iterations = 500;
+
+        let start = std::time::Instant::now();
+        for _ in 0..iterations {
+            let _: SessionData = serde_json::from_str(&large_json).unwrap();
+        }
+        let full_duration = start.elapsed();
+
+        let start = std::time::Instant::now();
+        for _ in 0..iterations {
+            let _: SessionDataView = serde_json::from_str(&large_json).unwrap();
+        }
+        let view_duration = start.elapsed();
+
+        // SessionDataView should be faster since it skips session_state
+        assert!(
+            view_duration < full_duration,
+            "SessionDataView ({view_duration:?}) should be faster than SessionData ({full_duration:?})"
+        );
+
+        // Verify correctness
+        let full: SessionData = serde_json::from_str(&large_json).unwrap();
+        let view: SessionDataView = serde_json::from_str(&large_json).unwrap();
+        assert_eq!(full.session_id, view.session_id);
+        assert_eq!(full.cwd, view.cwd);
+        assert_eq!(full.created_at, view.created_at);
+        assert_eq!(full.updated_at, view.updated_at);
+        assert_eq!(full.title, view.title);
+    }
+
+    #[test]
+    fn test_peek_agent_name() {
+        let temp_dir = TempDir::new().unwrap();
+        let sessions_dir = temp_dir.path();
+        let cwd = Path::new("/test/project");
+
+        // No session file → None
+        assert!(peek_agent_name(sessions_dir, "nonexistent").is_none());
+
+        // Session without agent_name → None
+        let db = SessionDb::new_impl(
+            sessions_dir,
+            "pa1".to_string(),
+            cwd,
+            test_state(),
+            pid_always_dead,
+            1000,
+        )
+        .unwrap();
+        write_dummy_log(&db);
+        drop(db);
+        assert!(peek_agent_name(sessions_dir, "pa1").is_none());
+
+        // Session with agent_name → Some
+        let mut state = test_state();
+        state.set_agent_name("my-agent".to_string());
+        let db2 = SessionDb::new_impl(sessions_dir, "pa2".to_string(), cwd, state, pid_always_dead, 1000).unwrap();
+        write_dummy_log(&db2);
+        drop(db2);
+        assert_eq!(peek_agent_name(sessions_dir, "pa2").as_deref(), Some("my-agent"));
+    }
+
+    #[test]
+    fn test_title_from_first_log_entry() {
+        let temp_dir = TempDir::new().unwrap();
+        let sessions_dir = temp_dir.path();
+        let cwd = Path::new("/test/project");
+
+        let db = SessionDb::new_impl(
+            sessions_dir,
+            "t1".to_string(),
+            &cwd,
+            test_state(),
+            pid_always_dead,
+            1000,
+        )
+        .unwrap();
+        db.append_log_entry(&LogEntry::prompt("m1".to_string(), vec![
+            agent::agent_loop::types::ContentBlock::Text("Explain how websockets work in Rust".to_string()),
+        ]))
+        .unwrap();
+        drop(db);
+
+        let title = title_from_first_log_entry(sessions_dir, "t1");
+        assert_eq!(title.as_deref(), Some("Explain how websockets work..."));
+
+        // No log file → None
+        assert!(title_from_first_log_entry(sessions_dir, "nonexistent").is_none());
+
+        // Empty log → None
+        let db2 = SessionDb::new_impl(
+            sessions_dir,
+            "t2".to_string(),
+            &cwd,
+            test_state(),
+            pid_always_dead,
+            1000,
+        )
+        .unwrap();
+        drop(db2);
+        assert!(title_from_first_log_entry(sessions_dir, "t2").is_none());
     }
 }

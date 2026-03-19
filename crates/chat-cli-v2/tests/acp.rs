@@ -1766,6 +1766,31 @@ async fn session_list_returns_sessions_with_title() {
             "cwd should match"
         );
     }
+
+    // Verify /chat command options returns the same sessions
+    let current_session = session_ids.last().unwrap();
+    let chat_opts = client
+        .get_command_options(current_session.clone(), "chat")
+        .await
+        .expect("get_command_options failed");
+
+    // Same number of sessions
+    assert_eq!(chat_opts.options.len(), result.sessions.len());
+
+    // Every chat option should match a list entry by session ID and title
+    for opt in &chat_opts.options {
+        let list_entry = result
+            .sessions
+            .iter()
+            .find(|s| s.session_id == opt.value)
+            .unwrap_or_else(|| panic!("chat option {} not found in list_sessions", opt.value));
+        assert!(
+            opt.label.contains(list_entry.title.as_deref().unwrap()),
+            "chat option label '{}' should contain title '{:?}'",
+            opt.label,
+            list_entry.title
+        );
+    }
 }
 
 /// Verifies that MCP child processes are cleaned up when the agent receives SIGTERM.

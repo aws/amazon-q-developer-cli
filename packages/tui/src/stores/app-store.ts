@@ -1112,6 +1112,8 @@ export const createAppStore = (props: AppStoreProps) => {
         }
       };
 
+      // TODO: Refactor createStreamEventHandler to return { handle, flush } instead of
+      // monkey-patching flush onto the handler function and casting to any.
       // Attach flush for callers to commit remaining buffered content
       (handler as any).flush = () => {
         // Cancel any pending batched flush and commit immediately
@@ -1441,6 +1443,20 @@ export const createAppStore = (props: AppStoreProps) => {
         setShowKnowledgePanel: state.setShowKnowledgePanel,
         clearMessages: state.clearMessages,
         sendMessage: state.sendMessage,
+        createStreamEventHandler: state.createStreamEventHandler,
+        setSessionId: (id: string | null) => set({ sessionId: id }),
+        addSystemMessage: (content: string, success: boolean) =>
+          set((s) => ({
+            messages: [
+              ...s.messages,
+              {
+                id: generateMessageId(),
+                role: MessageRole.System,
+                content,
+                success,
+              },
+            ],
+          })),
         clearUIState: () =>
           set({
             activeCommand: null,
@@ -1805,6 +1821,20 @@ export const createAppStore = (props: AppStoreProps) => {
           setShowKnowledgePanel: state.setShowKnowledgePanel,
           clearMessages: state.clearMessages,
           sendMessage: state.sendMessage,
+          createStreamEventHandler: state.createStreamEventHandler,
+          setSessionId: (id: string | null) => set({ sessionId: id }),
+          addSystemMessage: (content: string, success: boolean) =>
+            set((s) => ({
+              messages: [
+                ...s.messages,
+                {
+                  id: generateMessageId(),
+                  role: MessageRole.System,
+                  content,
+                  success,
+                },
+              ],
+            })),
           clearUIState: () =>
             set({
               activeCommand: null,

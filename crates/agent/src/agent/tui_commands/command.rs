@@ -47,6 +47,8 @@ pub enum TuiCommand {
     Plan(PlanArgs),
     /// Submit feedback, request features, or report issues
     Feedback(FeedbackArgs),
+    /// Load a previous chat session
+    Chat(ChatArgs),
     /// Manage knowledge base
     Knowledge(KnowledgeArgs),
     /// List and execute available prompts
@@ -179,6 +181,13 @@ pub struct PromptsArgs {
     #[serde(alias = "value", skip_serializing_if = "Option::is_none")]
     pub prompt_name: Option<String>,
 }
+/// Arguments for /chat command
+///
+/// TODO: add support for `/chat save` and `/chat load` arguments
+#[typeshare]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ChatArgs {}
 
 impl TuiCommand {
     /// Command name with leading slash
@@ -199,6 +208,7 @@ impl TuiCommand {
             TuiCommand::Feedback(_) => "/feedback",
             TuiCommand::Knowledge(_) => "/knowledge",
             TuiCommand::Prompts(_) => "/prompts",
+            TuiCommand::Chat(_) => "/chat",
         }
     }
 
@@ -220,6 +230,7 @@ impl TuiCommand {
             TuiCommand::Feedback(_) => "Submit feedback, request features, or report issues",
             TuiCommand::Knowledge(_) => "Manage knowledge base (show, add, remove, update, clear, cancel)",
             TuiCommand::Prompts(_) => "Select or list available prompts",
+            TuiCommand::Chat(_) => "Load a previous session",
         }
     }
 
@@ -243,6 +254,7 @@ impl TuiCommand {
                 "/knowledge [show|add <name> <path>|remove <name|path>|update <path>|clear|cancel]"
             },
             TuiCommand::Prompts(_) => "/prompts [prompt-name]",
+            TuiCommand::Chat(_) => "/chat",
         }
     }
 
@@ -317,6 +329,12 @@ impl TuiCommand {
                 meta.insert("hint".into(), "".into());
                 Some(meta)
             },
+            TuiCommand::Chat(_) => {
+                let mut meta = serde_json::Map::new();
+                meta.insert("inputType".into(), "selection".into());
+                meta.insert("local".into(), true.into());
+                Some(meta)
+            },
         }
     }
 
@@ -338,6 +356,7 @@ impl TuiCommand {
             TuiCommand::Feedback(FeedbackArgs::default()),
             TuiCommand::Knowledge(KnowledgeArgs::default()),
             TuiCommand::Prompts(PromptsArgs::default()),
+            TuiCommand::Chat(ChatArgs::default()),
         ];
         commands.sort_by_key(|cmd| cmd.name());
         commands
@@ -378,6 +397,7 @@ impl TuiCommand {
             "prompts" => Some(Self::Prompts(PromptsArgs {
                 prompt_name: (!args.is_empty()).then(|| args.to_string()),
             })),
+            "chat" => Some(Self::Chat(ChatArgs::default())),
             _ => None,
         }
     }

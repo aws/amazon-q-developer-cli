@@ -113,9 +113,10 @@ export const Menu = React.memo(function Menu({
   }, [selectedIndex, onHighlight, displayItems]);
 
   useKeypress((input, key) => {
-    if (key.upArrow) {
+    // ctrl+p = up, ctrl+n = down (standard readline/emacs navigation)
+    if (key.upArrow || (key.ctrl && input === 'p')) {
       setSelectedIndex((prev) => Math.max(0, prev - 1));
-    } else if (key.downArrow) {
+    } else if (key.downArrow || (key.ctrl && input === 'n')) {
       setSelectedIndex((prev) => Math.min(displayItems.length - 1, prev + 1));
     } else if (key.return && selectedIndex >= 0) {
       const selectedItem = displayItems[selectedIndex];
@@ -133,6 +134,16 @@ export const Menu = React.memo(function Menu({
         if (selectedItem) {
           onSelect(selectedItem);
         }
+      }
+    } else if (searchable && key.ctrl && input) {
+      // TODO: Extract a shared useLineEditor hook backed by Segment[] + input-editing.ts
+      // to reuse emacs bindings from PromptInput instead of duplicating here.
+      if (input === 'u') {
+        // Ctrl+U - clear line
+        setSearchText('');
+      } else if (input === 'w') {
+        // Ctrl+W - delete word backward
+        setSearchText((prev) => prev.replace(/\S+\s*$/, ''));
       }
     } else if (!key.ctrl && !key.meta) {
       // Searchable: capture text input
@@ -215,6 +226,11 @@ export const Menu = React.memo(function Menu({
           </Box>
         );
       })}
+      {endIndex < displayItems.length && (
+        <Box>
+          <Text>{dimText(`(+${displayItems.length - endIndex} more)`)}</Text>
+        </Box>
+      )}
       {(showFooterHints ?? searchable) && (
         <>
           <Divider />

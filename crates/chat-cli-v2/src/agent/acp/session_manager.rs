@@ -199,8 +199,8 @@ pub struct SessionManager {
     next_agent_name: Option<String>,
     /// Model ID to use for the next session, set via `--model` CLI flag.
     next_model_id: Option<String>,
-    /// Shared code intelligence client - lazily initialized, shared across all sessions
-    code_intelligence: Option<Arc<RwLock<CodeIntelligence>>>,
+    /// Shared code intelligence clients - lazily initialized per CWD, shared across sessions
+    code_intelligence: HashMap<PathBuf, Arc<RwLock<CodeIntelligence>>>,
     /// When true, all tool permission checks are bypassed for new sessions
     trust_all_tools: bool,
     /// ACP client identity from InitializeRequest, propagated to all sessions
@@ -236,34 +236,38 @@ impl SessionManager {
             mock_registry,
             next_agent_name: None,
             next_model_id: None,
-            code_intelligence: None,
+            code_intelligence: HashMap::new(),
             trust_all_tools,
             acp_client_info: None,
             telemetry_event_store,
         }
     }
 
-    /// Get or initialize the shared CodeIntelligence client
+    /// Get or initialize a CodeIntelligence client for the given CWD
     fn get_or_init_code_intelligence(&mut self, cwd: &Path) -> Option<Arc<RwLock<CodeIntelligence>>> {
-        if self.code_intelligence.is_none() {
-            match CodeIntelligence::builder()
-                .workspace_root(cwd.to_path_buf())
-                .auto_detect_languages()
-                .build()
-            {
-                Ok(client) => {
-                    info!("Initialized shared CodeIntelligence client");
-                    self.code_intelligence = Some(Arc::new(RwLock::new(client)));
-                },
-                Err(e) => {
-                    error!(
-                        "Failed to initialize CodeIntelligence: {}. Code tool will be unavailable.",
-                        e
-                    );
-                },
-            }
+        if let Some(ci) = self.code_intelligence.get(cwd) {
+            return Some(ci.clone());
         }
-        self.code_intelligence.clone()
+        match CodeIntelligence::builder()
+            .workspace_root(cwd.to_path_buf())
+            .auto_detect_languages()
+            .build()
+        {
+            Ok(client) => {
+                info!("Initialized CodeIntelligence client for {}", cwd.display());
+                let ci = Arc::new(RwLock::new(client));
+                self.code_intelligence.insert(cwd.to_path_buf(), ci.clone());
+                Some(ci)
+            },
+            Err(e) => {
+                error!(
+                    "Failed to initialize CodeIntelligence for {}: {}. Code tool will be unavailable.",
+                    cwd.display(),
+                    e
+                );
+                None
+            },
+        }
     }
 
     async fn handle_set_mode(&self, session_id: &SessionId, mode_id: &str) -> Result<(), sacp::Error> {
@@ -296,11 +300,19 @@ impl SessionManager {
                 connection_cx,
                 resp_sender,
             } => {
-                // Resolve agent name: explicit config > CLI --agent flag > setting > default
+                // Resolve agent name: explicit config > CLI --agent flag > persisted session agent > setting >
+                // default
+                let persisted_agent = if config.load {
+                    let sessions_dir = crate::util::paths::sessions_dir().ok();
+                    sessions_dir.and_then(|d| crate::agent::session::peek_agent_name(&d, &config.session_id))
+                } else {
+                    None
+                };
                 let agent_name = config
                     .initial_agent_name
                     .clone()
                     .or_else(|| self.next_agent_name.take())
+                    .or(persisted_agent)
                     .or_else(|| self.os.database.settings.get_string(Setting::ChatDefaultAgent))
                     .unwrap_or_else(|| agent::consts::DEFAULT_AGENT_NAME.to_string());
 
@@ -417,7 +429,7 @@ impl SessionManager {
                         .map(|r| r.models.iter().map(ModelInfo::from_api_model).collect())
                         .unwrap_or_default()
                 } else {
-                    match get_available_models(&self.os).await {
+                    match get_available_models(&self.os.client).await {
                         Ok((models, _)) => models,
                         Err(e) => {
                             warn!("Failed to fetch available models: {}", e);
@@ -565,7 +577,7 @@ pub(crate) enum SessionManagerRequestData {
     ListSessions {
         cwd: Option<PathBuf>,
         resp_sender:
-            oneshot::Sender<Result<Vec<crate::agent::session::SessionData>, crate::agent::session::SessionError>>,
+            oneshot::Sender<Result<Vec<crate::agent::session::SessionDataView>, crate::agent::session::SessionError>>,
     },
 }
 
@@ -702,7 +714,7 @@ impl SessionManagerHandle {
     pub async fn list_sessions(
         &self,
         cwd: Option<PathBuf>,
-    ) -> Result<Vec<crate::agent::session::SessionData>, sacp::Error> {
+    ) -> Result<Vec<crate::agent::session::SessionDataView>, sacp::Error> {
         let (resp_sender, rx) = oneshot::channel();
         self.tx
             .send(SessionManagerRequest {

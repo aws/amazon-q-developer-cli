@@ -1,7 +1,10 @@
 import { AcpClient } from './acp-client';
 import { logger } from './utils/logger';
 import { AgentEventType, type AgentStreamEvent } from './types/agent-events';
-import type { SessionClient } from './types/session-client';
+import type {
+  SessionClient,
+  ListSessionsResponse,
+} from './types/session-client';
 import type {
   CommandOptionsResponse,
   CommandResult,
@@ -368,6 +371,50 @@ export class Kiro {
       return { options: [] };
     }
     return this.sessionClient.getCommandOptions(commandName, partial);
+  }
+
+  async listSessions(cwd: string): Promise<ListSessionsResponse> {
+    if (!this.sessionClient) {
+      return { sessions: [] };
+    }
+    return this.sessionClient.listSessions(cwd);
+  }
+
+  async loadSession(
+    sessionId: string,
+    onHistoryEvent?: (event: AgentStreamEvent) => void
+  ): Promise<{
+    sessionId: string;
+    currentModel?: { id: string; name: string };
+    currentAgent?: { name: string; welcomeMessage?: string };
+  }> {
+    if (!this.sessionClient) {
+      throw new Error('Kiro not initialized');
+    }
+    const previousSessionId = this.sessionId;
+    // Register a direct onUpdate subscriber to capture history events
+    // that arrive before the loadSession RPC response.
+    const unsubscribe = onHistoryEvent
+      ? this.sessionClient.onUpdate(onHistoryEvent)
+      : undefined;
+    try {
+      logger.debug('[kiro] calling loadSession', { sessionId });
+      const result = await this.sessionClient.loadSession(sessionId);
+      logger.debug('[kiro] loadSession returned', { sessionId });
+      // Only terminate the previous session after successful load
+      if (previousSessionId) {
+        logger.debug('[kiro] terminating previous session', {
+          previousSessionId,
+        });
+        await this.sessionClient.terminateSession(previousSessionId);
+      }
+      return result;
+    } finally {
+      // Defer unsubscribe so in-flight notifications can still be delivered
+      if (unsubscribe) {
+        setTimeout(unsubscribe, 0);
+      }
+    }
   }
 
   async cancel(): Promise<void> {

@@ -9,8 +9,9 @@
 
 import type { CommandContext } from './types.js';
 import type { SlashCommand } from '../stores/app-store.js';
-import type { TuiCommand } from '../types/commands.js';
+import type { TuiCommand, CommandOption } from '../types/commands.js';
 import { runEffect } from './effects.js';
+import { formatRelativeTime } from '../utils/sessions.js';
 
 /**
  * Dispatch a command through the standard flow.
@@ -39,12 +40,28 @@ export async function dispatch(
   if (!args) {
     if (inputType === 'selection') {
       try {
-        const response = await ctx.kiro.getCommandOptions(cmd.name, '');
-        if (response.options.length > 0) {
-          ctx.setActiveCommand({ command: cmd, options: response.options });
+        ctx.setLoadingMessage(`Loading ${cmdName} options...`);
+        // TODO - dispatch flow needs to be thought through more, coupling slash commands
+        // all within the same dispatch flow doesn't seem right.
+        //
+        // /chat -> use listSessions API, fallback to extension method
+        const options =
+          cmdName === 'chat'
+            ? await fetchChatOptions(ctx)
+            : (await ctx.kiro.getCommandOptions(cmd.name, '')).options;
+        ctx.setLoadingMessage(null);
+        if (options.length > 0) {
+          ctx.setActiveCommand({ command: cmd, options });
           return;
         }
+        const noOptionsMsg =
+          cmdName === 'chat'
+            ? 'No previous sessions found'
+            : `No options available for /${cmdName}`;
+        ctx.showAlert(noOptionsMsg, 'error', 3000);
+        return;
       } catch {
+        ctx.setLoadingMessage(null);
         // Fall through to execute if options fetch fails
       }
     }
@@ -87,4 +104,17 @@ export async function dispatch(
   ) {
     ctx.showAlert(result.message, result.success ? 'success' : 'error', 5000);
   }
+}
+
+async function fetchChatOptions(ctx: CommandContext): Promise<CommandOption[]> {
+  const { sessions } = await ctx.kiro.listSessions(process.cwd());
+  const currentSessionId = ctx.kiro.sessionId;
+  return sessions
+    .filter((s) => s.sessionId !== currentSessionId)
+    .filter((s) => s.title != null)
+    .map((s) => ({
+      value: s.sessionId,
+      label: `${s.title!} (${s.sessionId.slice(0, 8)})`,
+      description: s.updatedAt ? formatRelativeTime(s.updatedAt) : undefined,
+    }));
 }

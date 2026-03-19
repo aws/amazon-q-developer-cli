@@ -9,8 +9,6 @@ use serde::{
 
 /// Extension method names (prefixed with underscore per ACP spec)
 pub mod methods {
-    /// Terminates a session
-    pub const SESSION_TERMINATE: &str = "_session/terminate";
     /// OAuth request notification from MCP server
     pub const MCP_OAUTH_REQUEST: &str = "_kiro.dev/mcp/oauth_request";
     /// MCP server initialized notification
@@ -29,15 +27,6 @@ pub mod methods {
     pub const SESSION_LIST: &str = "_kiro.dev/session/list";
     /// Session update extension notification (e.g. tool_call_chunk)
     pub const SESSION_UPDATE: &str = "_kiro.dev/session/update";
-}
-
-/// Notification to terminate a subagent session.
-///
-/// Sent from TUI to agent when user explicitly kills a subagent.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct TerminateSessionNotification {
-    pub session_id: SessionId,
 }
 
 /// Status of a backgrounded subagent.

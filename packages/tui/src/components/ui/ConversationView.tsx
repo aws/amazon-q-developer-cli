@@ -49,7 +49,7 @@ const SystemMessage = React.memo(function SystemMessage({
   message: StoreMessageType & { role: MessageRole.System };
 }) {
   return (
-    <Box paddingX={1} marginY={1}>
+    <Box marginY={1}>
       <StatusBar status={message.success ? 'success' : 'error'}>
         <Text>{message.content}</Text>
       </StatusBar>

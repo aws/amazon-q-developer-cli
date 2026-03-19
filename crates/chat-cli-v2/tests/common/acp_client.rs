@@ -97,6 +97,11 @@ enum Command {
         cwd: PathBuf,
         reply: oneshot::Sender<acp::Result<ListSessionsResponse>>,
     },
+    GetCommandOptions {
+        session_id: acp::SessionId,
+        command: String,
+        reply: oneshot::Sender<acp::Result<agent::tui_commands::CommandOptionsResponse>>,
+    },
     GetCaptured {
         reply: oneshot::Sender<CapturedNotifications>,
     },
@@ -388,6 +393,27 @@ impl AcpTestClient {
         })?
     }
 
+    pub async fn get_command_options(
+        &self,
+        session_id: acp::SessionId,
+        command: &str,
+    ) -> acp::Result<agent::tui_commands::CommandOptionsResponse> {
+        let (reply, rx) = oneshot::channel();
+        self.tx
+            .send(Command::GetCommandOptions {
+                session_id,
+                command: command.to_string(),
+                reply,
+            })
+            .await
+            .ok();
+        rx.await.map_err(|_| acp::Error {
+            code: -1,
+            message: "get_command_options actor channel closed".to_string(),
+            data: None,
+        })?
+    }
+
     pub async fn captured(&self) -> CapturedNotifications {
         let (reply, rx) = oneshot::channel();
         self.tx.send(Command::GetCaptured { reply }).await.ok();
@@ -530,6 +556,39 @@ async fn run_actor(stdin: ChildStdin, stdout: ChildStdout, mut rx: mpsc::Receive
                                     message: e.to_string(),
                                     data: None,
                                 })
+                            });
+                        let _ = reply.send(result);
+                    }
+                });
+            },
+            Command::GetCommandOptions {
+                session_id,
+                command,
+                reply,
+            } => {
+                tokio::task::spawn_local({
+                    let conn = conn.clone();
+                    async move {
+                        let params = serde_json::json!({
+                            "sessionId": session_id.0.as_ref(),
+                            "command": command,
+                            "partial": "",
+                        });
+                        let raw_params = acp::RawValue::from_string(serde_json::to_string(&params).unwrap()).unwrap();
+                        let result = conn
+                            .ext_method(acp::ExtRequest {
+                                method: "kiro.dev/commands/options".into(),
+                                params: raw_params.into(),
+                            })
+                            .await
+                            .and_then(|resp| {
+                                serde_json::from_str::<agent::tui_commands::CommandOptionsResponse>(resp.get()).map_err(
+                                    |e| acp::Error {
+                                        code: -1,
+                                        message: e.to_string(),
+                                        data: None,
+                                    },
+                                )
                             });
                         let _ = reply.send(result);
                     }

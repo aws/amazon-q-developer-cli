@@ -2,6 +2,7 @@
  * Types for the slash command handler system.
  */
 
+import type { AgentStreamEvent } from '../types/agent-events.js';
 import type { Kiro } from '../kiro.js';
 import type {
   SlashCommand,
@@ -61,4 +62,10 @@ export interface CommandContext {
     content: string,
     images?: Array<{ base64: string; mimeType: string }>
   ) => Promise<void>;
+  /** Create a stream event handler for processing agent events into messages */
+  createStreamEventHandler: () => (event: AgentStreamEvent) => void;
+  /** Update the session ID in the store */
+  setSessionId: (id: string | null) => void;
+  /** Add a system message to the conversation */
+  addSystemMessage: (content: string, success: boolean) => void;
 }

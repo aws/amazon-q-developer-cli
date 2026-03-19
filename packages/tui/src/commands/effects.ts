@@ -10,6 +10,8 @@
 
 import type { CommandContext } from './types.js';
 import type { CommandResult, TuiCommand } from '../types/commands.js';
+import { logger } from '../utils/logger.js';
+import type { AgentStreamEvent } from '../types/agent-events.js';
 import type {
   KnowledgeEntry,
   McpServerInfo,
@@ -46,7 +48,8 @@ type EffectName =
   | 'clearMessages'
   | 'quit'
   | 'pasteImage'
-  | 'promptEditor';
+  | 'promptEditor'
+  | 'loadSession';
 
 /**
  * Command → Effect mapping.
@@ -66,6 +69,7 @@ const commandEffects: Partial<Record<string, EffectName>> = {
   knowledge: 'showKnowledgePanel',
   paste: 'pasteImage',
   editor: 'promptEditor',
+  chat: 'loadSession',
 };
 
 /**
@@ -229,6 +233,54 @@ const effectHandlers: Record<EffectName, EffectHandler> = {
     } else if (result?.message && !result.success) {
       ctx.showAlert(result.message, 'error');
     }
+  },
+
+  loadSession: (_result, ctx, _cmd, args) => {
+    if (!args) return;
+    const sessionId = args;
+    ctx.clearUIState();
+    ctx.setLoadingMessage(`Loading session ${sessionId}...`);
+
+    // Buffer history events during load via direct onUpdate subscriber
+    const buffered: AgentStreamEvent[] = [];
+
+    ctx.kiro
+      .loadSession(sessionId, (e) => buffered.push(e))
+      .then((session) => {
+        logger.debug('[chat] loadSession resolved', {
+          sessionId,
+          bufferedCount: buffered.length,
+        });
+        // Add a visual delimiter before replaying history
+        ctx.addSystemMessage(`Loaded session ${sessionId}`, true);
+        // Replay buffered history into the message store
+        if (buffered.length > 0) {
+          const handler = ctx.createStreamEventHandler();
+          for (const e of buffered) handler(e);
+          (handler as any).flush?.();
+        }
+        ctx.setLoadingMessage(null);
+        ctx.setSessionId(sessionId);
+        if (session.currentModel) ctx.setCurrentModel(session.currentModel);
+        if (session.currentAgent) ctx.setCurrentAgent(session.currentAgent);
+        ctx.showAlert('Session loaded', 'success', 3000);
+      })
+      .catch((err: unknown) => {
+        logger.error('[chat] loadSession failed', {
+          sessionId,
+          err: JSON.stringify(err),
+          stack: err instanceof Error ? err.stack : undefined,
+        });
+        ctx.setLoadingMessage(null);
+        const data =
+          typeof err === 'object' && err !== null && 'data' in err
+            ? String((err as any).data)
+            : undefined;
+        const message =
+          data ??
+          (err instanceof Error ? err.message : 'Failed to load session');
+        ctx.showAlert(message, 'error', 5000);
+      });
   },
 };
 

@@ -44,6 +44,13 @@ export interface SessionClient {
   }>;
 
   /**
+   * Lists sessions, optionally filtered by working directory.
+   *
+   * @param cwd - Working directory to filter by
+   */
+  listSessions(cwd: string): Promise<ListSessionsResponse>;
+
+  /**
    * Registers a callback to receive events about the agent's execution during a prompt turn lifecycle.
    *
    * This includes:
@@ -100,9 +107,34 @@ export interface SessionClient {
   close(): void;
 
   /**
+   * Terminates a session, unloading it from memory in the ACP process.
+   *
+   * @param sessionId - The session ID to terminate
+   */
+  terminateSession(sessionId: string): Promise<void>;
+
+  /**
    * Sets the agent mode/persona.
    *
    * @param modeId - The mode ID to switch to
    */
   setMode(modeId: string): Promise<void>;
+}
+
+/**
+ * TODO - duplicated type until we modify this flow to use a session/list compatible sacp implementation.
+ */
+export interface ListSessionsResponse {
+  sessions: SessionInfoEntry[];
+  nextCursor?: string;
+}
+
+/**
+ * TODO - duplicated type until we modify this flow to use a session/list compatible sacp implementation.
+ */
+export interface SessionInfoEntry {
+  sessionId: string;
+  cwd: string;
+  title?: string;
+  updatedAt?: string;
 }

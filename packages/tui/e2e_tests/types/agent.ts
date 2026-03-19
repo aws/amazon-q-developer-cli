@@ -82,6 +82,14 @@ export interface AgentSnapshot {
 	settings: AgentSettings;
 }
 
+/**
+ * Arguments for /chat command
+ * 
+ * TODO: add support for `/chat save` and `/chat load` arguments
+ */
+export interface ChatArgs {
+}
+
 /** Arguments for /clear command */
 export interface ClearArgs {
 }
@@ -457,6 +465,8 @@ export type TuiCommand =
 	| { command: "plan", args: PlanArgs }
 	/** Submit feedback, request features, or report issues */
 	| { command: "feedback", args: FeedbackArgs }
+	/** Load a previous chat session */
+	| { command: "chat", args: ChatArgs }
 	/** Manage knowledge base */
 	| { command: "knowledge", args: KnowledgeArgs }
 	/** List and execute available prompts */
