@@ -322,11 +322,13 @@ impl SessionManager {
                     .find(|c| c.name() == DEFAULT_AGENT_NAME)
                     .expect("missing default agent");
 
-                let base_agent_config = self
-                    .agent_configs
-                    .iter()
-                    .find(|c| c.name() == agent_name)
-                    .unwrap_or(default_agent);
+                let (base_agent_config, agent_name) = match self.agent_configs.iter().find(|c| c.name() == agent_name) {
+                    Some(config) => (config, agent_name),
+                    None => {
+                        warn!("Agent '{}' not found, falling back to default", agent_name);
+                        (default_agent, DEFAULT_AGENT_NAME.to_string())
+                    },
+                };
 
                 // If ACP client provided MCP servers, create an ephemeral config with them merged in
                 let agent_config_to_use: LoadedAgentConfig = if !config.mcp_servers.is_empty() {

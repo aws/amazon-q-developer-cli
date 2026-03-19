@@ -21,6 +21,7 @@ interface E2ETestCaseOptions {
   timeout?: number;
   testName?: string;
   extraEnv?: Record<string, string>;
+  extraCliArgs?: string[];
   globalAgentConfigs?: Array<{ name: string; config: Record<string, unknown> }>;
 }
 
@@ -142,7 +143,7 @@ export class E2ETestCase {
 
     // Spawn the real CLI
     const chatPath = path.join(__dirname, '../../../target/debug/chat_cli');
-    this.ptyManager.spawn(chatPath, ['chat']);
+    this.ptyManager.spawn(chatPath, ['chat', ...(this.options.extraCliArgs ?? [])]);
 
     console.log(`TUI logs: ${this.paths.tuiLogFile}`);
     console.log(`Rust logs: ${this.paths.rustLogFile}`);
@@ -455,6 +456,11 @@ export class E2ETestCaseBuilder {
   withGlobalAgentConfig(name: string, config: Record<string, unknown>): E2ETestCaseBuilder {
     this.options.globalAgentConfigs = this.options.globalAgentConfigs ?? [];
     this.options.globalAgentConfigs.push({ name, config });
+    return this;
+  }
+
+  withCliArgs(...args: string[]): E2ETestCaseBuilder {
+    this.options.extraCliArgs = [...(this.options.extraCliArgs ?? []), ...args];
     return this;
   }
 
