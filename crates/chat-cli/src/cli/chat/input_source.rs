@@ -109,9 +109,14 @@ impl InputSource {
 
     /// Returns `true` when the input source can genuinely prompt a human.
     /// Mock inputs always return `true`; real inputs check `stdin().is_terminal()`.
+    /// Set `KIRO_FORCE_INTERACTIVE=true` to override the TTY check for environments
+    /// (e.g. AgentSpaces) that pipe a real human's input through a custom UI.
     pub fn is_interactive(&self) -> bool {
         match &self.inner {
-            inner::Inner::Readline(_) => std::io::stdin().is_terminal(),
+            inner::Inner::Readline(_) => {
+                std::io::stdin().is_terminal()
+                    || std::env::var("KIRO_FORCE_INTERACTIVE").is_ok()
+            },
             inner::Inner::Mock { .. } => true,
         }
     }
