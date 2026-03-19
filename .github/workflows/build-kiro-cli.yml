@@ -31,8 +31,8 @@ on:
         type: boolean
         required: false
         default: true
-  # schedule:
-  #   - cron: "21 6 * * *"
+  schedule:
+    - cron: "21 6 * * *"
   push:
     branches:
       - prod
