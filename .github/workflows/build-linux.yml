@@ -24,10 +24,6 @@ on:
       commit_sha:
         type: string
         required: true
-      include_v2:
-        type: boolean
-        required: false
-        default: false
 
 env:
   AWS_REGION: "us-east-1"
@@ -83,7 +79,6 @@ jobs:
         uses: dtolnay/rust-toolchain@stable
 
       - name: Setup Bun
-        if: inputs.include_v2
         uses: oven-sh/setup-bun@v2
 
       - name: Free Disk Space
@@ -117,7 +112,7 @@ jobs:
           AMAZON_Q_BUILD_TARGET_TRIPLE: ${{ matrix.cross_target }}
         run: |
           python3 ./scripts/main.py build \
-            --skip-lints --skip-tests ${{ inputs.include_v2 && '--include-v2' || '' }} \
+            --skip-lints --skip-tests \
             --stage-name "${{ env.STAGE_NAME }}"
 
       - name: Upload artifacts to S3

@@ -725,18 +725,29 @@ def build(
     stage_name: str | None = None,
     run_lints: bool = True,
     run_test: bool = True,
-    include_v2: bool = False,
     run_autodocs_embeddings: bool = True,
 ):
     BUILD_DIR.mkdir(exist_ok=True)
 
-    bun_paths = None
-    tui_js_path = None
+    info("Building TUI")
+    tui_js_path = build_tui()
 
-    if include_v2:
-        info("Building TUI (--include-v2)")
-        tui_js_path = build_tui()
-        info("Downloading Bun runtime (--include-v2)")
+    # Use pre-notarized bun binaries from environment (set by CI notarize-bun job)
+    pre_notarized_x86 = os.environ.get("BUN_EXECUTABLE_PATH_X86_64")
+    pre_notarized_aarch64 = os.environ.get("BUN_EXECUTABLE_PATH_AARCH64")
+    if pre_notarized_x86 or pre_notarized_aarch64:
+        info("Using pre-notarized Bun binaries from environment")
+        bun_paths = BunPaths(
+            x86_64=pathlib.Path(pre_notarized_x86).absolute() if pre_notarized_x86 else None,
+            aarch64=pathlib.Path(pre_notarized_aarch64).absolute() if pre_notarized_aarch64 else None,
+        )
+    elif os.environ.get("CI") and isDarwin():
+        raise RuntimeError(
+            "BUN_EXECUTABLE_PATH_X86_64 or BUN_EXECUTABLE_PATH_AARCH64 must be set in CI on macOS. "
+            "The notarize-bun job should set these before the build step."
+        )
+    else:
+        info("Downloading Bun runtime")
         bun_paths = download_bun()
 
     disable_signing = os.environ.get("DISABLE_SIGNING")

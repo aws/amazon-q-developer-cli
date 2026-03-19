@@ -280,7 +280,6 @@ Simplified workflow for production releases.
 | `version_increment` | choice | none | patch/minor/major/none |
 | `release_quality` | choice | insider | stable/nightly/insider |
 | `trigger_autocomplete_build` | boolean | true | Trigger autocomplete after success |
-| `include_v2` | boolean | true | Include V2 TUI in the build (always included) |
 
 **Jobs Flow:**
 ```

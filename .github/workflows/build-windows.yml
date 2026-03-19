@@ -24,11 +24,6 @@ on:
       commit_sha:
         type: string
         required: true
-      include_v2:
-        type: boolean
-        required: false
-        default: false
-        description: "Include V2 TUI build and set as default CLI version"
 
 env:
   AWS_REGION: "us-east-1"
@@ -102,7 +97,7 @@ jobs:
           AMAZON_Q_BUILD_TARGET_TRIPLE: ${{ matrix.target }}
         run: |
           python3 ./scripts/main.py build \
-            --skip-lints --skip-tests --include-v2 \
+            --skip-lints --skip-tests \
             --stage-name "${{ env.STAGE_NAME }}"
 
       - name: Create signing helper script

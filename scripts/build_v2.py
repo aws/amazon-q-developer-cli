@@ -911,3 +911,66 @@ def sign_bun(branch_name: str, commit_sha: str):
     info(f"Uploading notarized bun to s3://{signing_bucket_name}/{s3_path}")
     run_cmd(["aws", "s3", "cp", str(notarized_bun), f"s3://{signing_bucket_name}/{s3_path}"])
     info(f"✓ Notarized bun uploaded to s3://{signing_bucket_name}/{s3_path}")
+
+
+def sign_bun_per_arch(branch_name: str, commit_sha: str):
+    """Downloads, notarizes, and uploads per-arch bun binaries to S3.
+
+    Unlike sign_bun() which creates a universal binary, this notarizes each
+    architecture separately for builds that embed per-arch bun binaries
+    (e.g. the v1 macOS universal build)."""
+    signing_role_arn = os.environ.get("SIGNING_ROLE_ARN")
+    signing_bucket_name = os.environ.get("SIGNING_BUCKET_NAME")
+    signing_apple_notarizing_secret_arn = os.environ.get("SIGNING_APPLE_NOTARIZING_SECRET_ARN")
+
+    if not all([signing_role_arn, signing_bucket_name, signing_apple_notarizing_secret_arn]):
+        raise ValueError(
+            "Missing signing environment variables: SIGNING_ROLE_ARN, SIGNING_BUCKET_NAME, SIGNING_APPLE_NOTARIZING_SECRET_ARN"
+        )
+
+    signing_data = CdSigningData(
+        bucket_name=signing_bucket_name,
+        apple_notarizing_secret_arn=signing_apple_notarizing_secret_arn,
+        signing_role_arn=signing_role_arn,
+    )
+
+    BUILD_DIR.mkdir(exist_ok=True)
+
+    bun_dir = BUILD_DIR / "bun"
+    shutil.rmtree(bun_dir, ignore_errors=True)
+    bun_dir.mkdir(exist_ok=True)
+
+    for arch in ["x64", "aarch64"]:
+        fname = f"bun-darwin-{arch}.zip"
+        url = f"https://github.com/oven-sh/bun/releases/download/bun-v{BUN_VERSION}/{fname}"
+        zip_path = bun_dir / fname
+
+        info(f"Downloading bun-darwin-{arch} v{BUN_VERSION}")
+        response = requests.get(url, stream=True)
+        response.raise_for_status()
+        with open(zip_path, "wb") as f:
+            for chunk in response.iter_content(chunk_size=8192):
+                f.write(chunk)
+
+        with zipfile.ZipFile(zip_path, "r") as zip_ref:
+            zip_ref.extractall(bun_dir)
+
+        # Find the bun executable
+        extract_dir = fname.replace(".zip", "")
+        bun_exe = None
+        for root, _, files in os.walk(bun_dir / extract_dir):
+            if "bun" in files:
+                bun_exe = pathlib.Path(root) / "bun"
+                os.chmod(bun_exe, 0o755)
+                break
+
+        if not bun_exe:
+            raise FileNotFoundError(f"Bun executable not found in {extract_dir}")
+
+        info(f"Signing and notarizing bun-darwin-{arch}")
+        notarized_bun = sign_and_notarize(signing_data, bun_exe)
+
+        s3_path = f"{branch_name}/notarized-bun/{commit_sha}/bun-{arch}"
+        info(f"Uploading notarized bun-{arch} to s3://{signing_bucket_name}/{s3_path}")
+        run_cmd(["aws", "s3", "cp", str(notarized_bun), f"s3://{signing_bucket_name}/{s3_path}"])
+        info(f"✓ Notarized bun-{arch} uploaded to s3://{signing_bucket_name}/{s3_path}")

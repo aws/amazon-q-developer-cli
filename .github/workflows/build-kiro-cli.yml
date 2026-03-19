@@ -26,11 +26,6 @@ on:
         type: boolean
         required: false
         default: true
-      include_v2:
-        description: 'Include V2 TUI in the build'
-        type: boolean
-        required: false
-        default: true
       include_windows:
         description: 'Include Windows builds'
         type: boolean
@@ -267,7 +262,6 @@ jobs:
       environment: ${{ matrix.environment }}
       branch_name: ${{ needs.UpdateVersionNumber.outputs.branch_name }}
       commit_sha: ${{ needs.UpdateVersionNumber.outputs.commit_sha }}
-      include_v2: true
 
   TriggerLinuxBuild:
     needs: [check_nightly_skip, determine_branch, UpdateVersionNumber]
@@ -286,7 +280,6 @@ jobs:
       environment: ${{ matrix.environment }}
       branch_name: ${{ needs.UpdateVersionNumber.outputs.branch_name }}
       commit_sha: ${{ needs.UpdateVersionNumber.outputs.commit_sha }}
-      include_v2: true
 
   TriggerWindowsBuild:
     needs: [check_nightly_skip, determine_branch, UpdateVersionNumber]
@@ -305,7 +298,6 @@ jobs:
       environment: ${{ matrix.environment }}
       branch_name: ${{ needs.UpdateVersionNumber.outputs.branch_name }}
       commit_sha: ${{ needs.UpdateVersionNumber.outputs.commit_sha }}
-      include_v2: true
 
   TriggerAutocompleteBuild:
     name: Trigger Autocomplete Build
