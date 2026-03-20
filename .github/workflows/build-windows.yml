@@ -100,6 +100,13 @@ jobs:
             --skip-lints --skip-tests \
             --stage-name "${{ env.STAGE_NAME }}"
 
+      - name: Re-authenticate AWS credentials for signing
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ env.AWS_GITHUB_ACTIONS_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+          role-duration-seconds: 3600
+
       - name: Create signing helper script
         if: matrix.arch == 'x64'
         shell: bash
@@ -116,15 +123,19 @@ jobs:
           S3_KEY="${PROFILE_ID}/${PLATFORM}/${FILENAME}"
 
           # Assume the signing role fresh each time
+          # Write credentials to file instead of env vars to avoid
+          # Windows shell mangling special characters (SignatureDoesNotMatch)
           CREDS=$(aws sts assume-role \
             --role-arn "arn:aws:iam::${AWS_ACCOUNT_ID}:role/KiroCli-ArtifactAccessRole" \
             --role-session-name "WindowsSigning" \
             --external-id "KiroCli" \
             --region us-east-1 \
             --output json)
-          export AWS_ACCESS_KEY_ID=$(echo $CREDS | jq -r .Credentials.AccessKeyId)
-          export AWS_SECRET_ACCESS_KEY=$(echo $CREDS | jq -r .Credentials.SecretAccessKey)
-          export AWS_SESSION_TOKEN=$(echo $CREDS | jq -r .Credentials.SessionToken)
+          aws configure set aws_access_key_id "$(echo $CREDS | jq -r .Credentials.AccessKeyId)" --profile signing
+          aws configure set aws_secret_access_key "$(echo $CREDS | jq -r .Credentials.SecretAccessKey)" --profile signing
+          aws configure set aws_session_token "$(echo $CREDS | jq -r .Credentials.SessionToken)" --profile signing
+          aws configure set region us-east-1 --profile signing
+          export AWS_PROFILE=signing
 
           echo "🔏 Signing ${FILENAME}..."
           aws s3 cp "${FILE_PATH}" "s3://${UNSIGNED_BUCKET}/${S3_KEY}" --region us-east-1
