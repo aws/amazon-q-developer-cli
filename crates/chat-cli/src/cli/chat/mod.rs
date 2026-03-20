@@ -1178,6 +1178,67 @@ impl ChatSession {
         Ok(session)
     }
 
+    /// Start a completely new conversation by constructing a fresh [ConversationState] via
+    /// [ConversationState::new], and resetting all session-level state.
+    ///
+    /// This moves the [ToolManager] out of the old conversation (avoiding expensive clones of
+    /// channels/tasks) and clones cheap state (agents, tool schema, code intelligence Arc).
+    /// MCP registry state and resolved model info are carried over to avoid redundant API calls.
+    pub async fn new_conversation(&mut self, os: &Os) {
+        let old = &mut self.conversation;
+        let agents = old.agents.clone();
+        let tool_config = old.tool_manager.schema.clone();
+        let tool_manager = std::mem::take(&mut old.tool_manager);
+        let mcp_enabled = old.mcp_enabled;
+        let code_intelligence_client = old.code_intelligence_client.clone();
+
+        // Preserve session-scoped state that was populated during ChatSession::new
+        let model_info = old.model_info.take();
+        let mcp_registry_url = old.mcp_registry_url.take();
+        let mcp_registry_cache = old.mcp_registry_cache.take();
+        let mcp_registry_error_type = old.mcp_registry_error_type.take();
+        let mcp_disabled_due_to_api_failure = old.mcp_disabled_due_to_api_failure;
+
+        self.conversation = ConversationState::new(
+            &uuid::Uuid::new_v4().to_string(),
+            agents,
+            tool_config,
+            tool_manager,
+            None, // Skip model re-fetch; we carry over the resolved ModelInfo below
+            os,
+            mcp_enabled,
+            code_intelligence_client,
+        )
+        .await;
+
+        // Carry over resolved model (avoids redundant get_available_models API call)
+        self.conversation.model_info = model_info;
+        // Rebuild context manager with correct sizing for the carried-over model
+        if let Some(agent) = self.conversation.agents.get_active() {
+            self.conversation.context_manager = context::ContextManager::from_agent(
+                agent,
+                context::calc_max_context_files_size(self.conversation.model_info.as_ref()),
+            )
+            .ok();
+        }
+        // Carry over MCP registry state (populated during session init, refreshed on TTL)
+        self.conversation.mcp_registry_url = mcp_registry_url;
+        self.conversation.mcp_registry_cache = mcp_registry_cache;
+        self.conversation.mcp_registry_error_type = mcp_registry_error_type;
+        self.conversation.mcp_disabled_due_to_api_failure = mcp_disabled_due_to_api_failure;
+
+        // Reset session-level state
+        self.tool_uses.clear();
+        self.pending_tool_index = None;
+        self.tool_turn_start_time = None;
+        self.tool_use_telemetry_events.clear();
+        self.tool_use_status = ToolUseStatus::Idle;
+        self.failed_request_ids.clear();
+        self.pending_prompts.clear();
+        self.pending_additional_context = None;
+        self.existing_conversation = false;
+    }
+
     pub async fn next(&mut self, os: &mut Os) -> Result<(), ChatError> {
         // Update conversation state with new tool information
         self.conversation.update_state(false).await;

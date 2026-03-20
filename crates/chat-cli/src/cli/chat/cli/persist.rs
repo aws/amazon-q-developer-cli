@@ -69,6 +69,12 @@ impl std::fmt::Display for ChatSessionDisplayEntry {
 #[deny(missing_docs)]
 #[derive(Debug, PartialEq, Subcommand)]
 pub enum ChatSubcommand {
+    /// Start a new conversation, optionally with an initial prompt
+    New {
+        /// Optional initial prompt for the new conversation
+        #[arg(trailing_var_arg = true)]
+        prompt: Vec<String>,
+    },
     /// Resume a saved chat session
     Resume,
     /// Save the current chat session to a file
@@ -122,6 +128,61 @@ impl ChatSubcommand {
         }
 
         match self {
+            Self::New { prompt } => {
+                // Exit tangent mode first so we save the original conversation, not the tangent
+                if session.conversation.is_in_tangent_mode() {
+                    session.conversation.exit_tangent_mode();
+                }
+
+                // Save current conversation before forking
+                let save_failed = match std::env::current_dir() {
+                    Ok(cwd) => {
+                        if let Err(e) = os.database.set_conversation_by_path(&cwd, &session.conversation) {
+                            tracing::warn!(?e, "Failed to save current conversation before starting new one");
+                            true
+                        } else {
+                            false
+                        }
+                    },
+                    Err(e) => {
+                        tracing::warn!(
+                            ?e,
+                            "Failed to get current directory; current conversation may not be saved"
+                        );
+                        true
+                    },
+                };
+
+                if save_failed {
+                    execute!(
+                        session.stderr,
+                        StyledText::warning_fg(),
+                        style::Print(
+                            "\n⚠ Warning: Could not save current conversation. It may not be available for /chat resume.\n"
+                        ),
+                        StyledText::reset_attributes()
+                    )?;
+                }
+
+                // Construct a fresh ConversationState via ::new, moving expensive resources
+                // (ToolManager) and cloning cheap ones (Agents, Arc<CodeIntelligence>).
+                session.new_conversation(os).await;
+
+                execute!(
+                    session.stderr,
+                    StyledText::success_fg(),
+                    style::Print("\n✔ Started new conversation. Use /chat resume to return to previous sessions.\n\n"),
+                    StyledText::reset_attributes()
+                )?;
+
+                if prompt.is_empty() {
+                    return Ok(ChatState::default());
+                }
+
+                let input = prompt.join(" ");
+                session.conversation.append_user_transcript(&input);
+                return Ok(ChatState::HandleInput { input });
+            },
             Self::Resume => {
                 return resume_chat_session(os, session);
             },
@@ -233,6 +294,7 @@ impl ChatSubcommand {
 
     pub fn name(&self) -> &'static str {
         match self {
+            Self::New { .. } => "new",
             Self::Resume => "resume",
             Self::Save { .. } => "save",
             Self::Load { .. } => "load",
@@ -657,5 +719,104 @@ mod tests {
         let cwd = os.env.current_dir().unwrap();
         let abs_path = cwd.join("test_absolute.json");
         test_with_path(&abs_path.to_string_lossy()).await;
+    }
+
+    #[tokio::test]
+    async fn test_chat_new_resets_state_and_preserves_old_session() {
+        use super::ChatSubcommand;
+
+        let mut os = Os::new().await.unwrap();
+        let user_input = "hello world";
+
+        let (_, mut session) = create_test_session(&mut os, vec![user_input, "exit"], vec!["Hi there!"], None).await;
+
+        let old_conversation_id = session.conversation.conversation_id().to_string();
+        assert!(
+            !session.conversation.history().is_empty(),
+            "Should have history before /chat new"
+        );
+
+        ChatSubcommand::New { prompt: vec![] }
+            .execute(&mut os, &mut session)
+            .await
+            .unwrap();
+
+        // Verify state is reset
+        assert!(
+            session.conversation.history().is_empty(),
+            "History should be empty after /chat new"
+        );
+        assert_ne!(
+            session.conversation.conversation_id(),
+            old_conversation_id,
+            "Should have a new conversation ID"
+        );
+
+        // Verify old conversation is preserved in database
+        let cwd = std::env::current_dir().unwrap();
+        let conversations = os.database.list_conversations_by_path(&cwd).unwrap();
+        assert!(
+            conversations.iter().any(|(id, _, _, _)| id == &old_conversation_id),
+            "Old conversation should be retrievable from database"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_chat_new_with_prompt_returns_handle_input() {
+        use super::ChatSubcommand;
+        use crate::cli::chat::ChatState;
+
+        let mut os = Os::new().await.unwrap();
+        let (_, mut session) = create_test_session(&mut os, vec!["hi", "exit"], vec!["Hey!"], None).await;
+
+        let result = ChatSubcommand::New {
+            prompt: vec!["hello".into(), "world".into()],
+        }
+        .execute(&mut os, &mut session)
+        .await
+        .unwrap();
+
+        assert!(matches!(result, ChatState::HandleInput { input } if input == "hello world"));
+    }
+
+    #[tokio::test]
+    async fn test_chat_new_clears_conversation_state_fields() {
+        use super::ChatSubcommand;
+
+        let mut os = Os::new().await.unwrap();
+        let (_, mut session) = create_test_session(&mut os, vec!["hello", "exit"], vec!["Hi!"], None).await;
+
+        // Pollute fields that should be cleared
+        session.conversation.transcript.push_back("old transcript".into());
+        session
+            .conversation
+            .mcp_server_versions
+            .insert("test-server".into(), "1.0".into());
+        session.conversation.file_line_tracker.insert(
+            "foo.rs".into(),
+            crate::cli::chat::line_tracker::FileLineTracker::default(),
+        );
+
+        ChatSubcommand::New { prompt: vec![] }
+            .execute(&mut os, &mut session)
+            .await
+            .unwrap();
+
+        assert!(
+            session.conversation.transcript.is_empty(),
+            "transcript should be cleared"
+        );
+        assert!(
+            session.conversation.mcp_server_versions.is_empty(),
+            "mcp_server_versions should be cleared"
+        );
+        assert!(
+            session.conversation.file_line_tracker.is_empty(),
+            "file_line_tracker should be cleared"
+        );
+        assert!(
+            session.conversation.user_turn_metadata.usage_info.is_empty(),
+            "user_turn_metadata should be fresh"
+        );
     }
 }
