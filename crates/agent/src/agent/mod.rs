@@ -180,12 +180,8 @@ use crate::agent::tools::{
     BuiltInTool,
     ToolKind,
     ToolState,
-    built_in_tool_names,
 };
-use crate::agent::util::glob::{
-    find_matches,
-    matches_any_pattern,
-};
+use crate::agent::util::glob::matches_any_pattern;
 use crate::agent::util::request_channel::{
     RequestReceiver,
     RequestSender,
@@ -2311,18 +2307,23 @@ impl Agent {
     }
 
     async fn make_tool_spec(&mut self) -> Vec<ToolSpec> {
-        let tool_names = self.get_tool_names().await;
+        // Pre-fetch tool specs for all configured MCP servers
         let mut mcp_server_tool_specs = HashMap::new();
-        for name in &tool_names {
-            if let CanonicalToolName::Mcp { server_name, .. } = name
-                && !mcp_server_tool_specs.contains_key(server_name)
+        for config in &self.cached_mcp_configs.configs {
+            if !mcp_server_tool_specs.contains_key(&config.server_name)
+                && let Ok(specs) = self.mcp_manager_handle.get_tool_specs(config.server_name.clone()).await
             {
-                let Ok(tools) = self.mcp_manager_handle.get_tool_specs(server_name.clone()).await else {
-                    continue;
-                };
-                mcp_server_tool_specs.insert(server_name.clone(), tools);
+                mcp_server_tool_specs.insert(config.server_name.clone(), specs);
             }
         }
+
+        let tool_names = tools::get_available_tool_names(
+            &self.agent_config.tools(),
+            &mcp_server_tool_specs,
+            &self.cached_mcp_configs.configs,
+            self.is_subagent,
+            self.knowledge_provider.is_some(),
+        );
 
         let lsp_initialized = self
             .code_intelligence
@@ -2331,7 +2332,7 @@ impl Agent {
             .is_some_and(|c| c.is_code_intelligence_initialized());
 
         let sanitized_specs = sanitize_tool_specs(
-            tool_names,
+            tool_names.into_iter().collect(),
             mcp_server_tool_specs,
             self.agent_config.tool_aliases(),
             lsp_initialized,
@@ -2346,126 +2347,6 @@ impl Agent {
         add_tool_use_purpose_arg(&mut tool_specs);
         self.cached_tool_specs = Some(sanitized_specs);
         tool_specs
-    }
-
-    /// Returns the name of all tools available to the given agent.
-    ///
-    /// The tools available to the agent may change overtime, for example:
-    /// * MCP servers loading or exiting
-    /// * MCP tool spec changes
-    /// * Actor messages that update the agent's config
-    ///
-    /// This function ensures that we create a list of known tool names to be available
-    /// for the agent's current state.
-    async fn get_tool_names(&self) -> Vec<CanonicalToolName> {
-        let mut tool_names = {
-            let mut tool_names = HashSet::new();
-
-            if self.is_subagent {
-                tool_names.insert(CanonicalToolName::BuiltIn(tools::BuiltInToolName::Summary));
-            }
-
-            tool_names
-        };
-
-        let built_in_tool_names = {
-            let mut names = built_in_tool_names();
-
-            // For the time being, subagent is not yet fully implemented in the agent crate so
-            // we'll remove it from the tool list.
-            // We'll also remove summary tool from the tool list since that is added above in the
-            // initialization of tool_names
-            names.retain(|name| {
-                name != &CanonicalToolName::BuiltIn(tools::BuiltInToolName::SpawnSubagent)
-                    && name != &CanonicalToolName::BuiltIn(tools::BuiltInToolName::Summary)
-                    && name != &CanonicalToolName::BuiltIn(tools::BuiltInToolName::SwitchToExecution)
-            });
-
-            // Only include knowledge tool when a provider is available
-            if self.knowledge_provider.is_none() {
-                names.retain(|name| name != &CanonicalToolName::BuiltIn(tools::BuiltInToolName::Knowledge));
-            }
-
-            names
-        };
-
-        let config = &self.agent_config;
-
-        for tool_name in config.tools() {
-            if let Ok(kind) = ToolNameKind::parse(&tool_name) {
-                match kind {
-                    ToolNameKind::All => {
-                        // Include all built-in's and MCP servers.
-                        // 1. all built-ins
-                        // 2. all configured MCP servers
-                        for built_in in &built_in_tool_names {
-                            tool_names.insert(built_in.clone());
-                        }
-
-                        for config in &self.cached_mcp_configs.configs {
-                            let Ok(specs) = self.mcp_manager_handle.get_tool_specs(config.server_name.clone()).await
-                            else {
-                                continue;
-                            };
-                            for spec in specs {
-                                tool_names
-                                    .insert(CanonicalToolName::from_mcp_parts(config.server_name.clone(), spec.name));
-                            }
-                        }
-                    },
-                    ToolNameKind::McpFullName { .. } => {
-                        if let Ok(tn) = tool_name.parse() {
-                            tool_names.insert(tn);
-                        }
-                    },
-                    ToolNameKind::McpServer { server_name } => {
-                        // get all tools from the mcp server
-                        let Ok(specs) = self.mcp_manager_handle.get_tool_specs(server_name.to_string()).await else {
-                            continue;
-                        };
-                        for spec in specs {
-                            tool_names.insert(CanonicalToolName::from_mcp_parts(server_name.to_string(), spec.name));
-                        }
-                    },
-                    ToolNameKind::McpGlob { server_name, glob_part } => {
-                        // match only tools for the server name
-                        let Ok(specs) = self.mcp_manager_handle.get_tool_specs(server_name.to_string()).await else {
-                            continue;
-                        };
-                        for spec in specs {
-                            if matches_any_pattern([glob_part], &spec.name) {
-                                tool_names
-                                    .insert(CanonicalToolName::from_mcp_parts(server_name.to_string(), spec.name));
-                            }
-                        }
-                    },
-                    ToolNameKind::BuiltInGlob(glob) => {
-                        let built_ins = built_in_tool_names.iter().map(|tn| tn.tool_name());
-                        for tn in find_matches(glob, built_ins) {
-                            if let Ok(tn) = tn.parse() {
-                                tool_names.insert(tn);
-                            }
-                        }
-                    },
-                    ToolNameKind::BuiltIn(name) => {
-                        if let Ok(tn) = name.parse() {
-                            tool_names.insert(tn);
-                        }
-                    },
-                    ToolNameKind::AllBuiltIn => {
-                        for built_in in &built_in_tool_names {
-                            tool_names.insert(built_in.clone());
-                        }
-                    },
-                    ToolNameKind::AgentGlob(_) => {
-                        // check all agent names
-                    },
-                    ToolNameKind::Agent(_) => {},
-                }
-            }
-        }
-
-        tool_names.into_iter().collect()
     }
 
     /// Parses tool use blocks into concrete tools, returning those that failed to be parsed.

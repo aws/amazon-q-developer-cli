@@ -21,6 +21,10 @@ pub mod web_search;
 
 // Re-export constants for use by other crates
 use std::borrow::Cow;
+use std::collections::{
+    HashMap,
+    HashSet,
+};
 use std::sync::Arc;
 
 use code::Code;
@@ -64,7 +68,11 @@ pub use use_subagent::{
 use web_fetch::WebFetch;
 use web_search::WebSearch;
 
-use super::agent_config::parse::CanonicalToolName;
+use super::agent_config::LoadedMcpServerConfig;
+use super::agent_config::parse::{
+    CanonicalToolName,
+    ToolNameKind,
+};
 use super::agent_loop::types::ToolUseBlock;
 use super::consts::TOOL_USE_PURPOSE_FIELD_NAME;
 use super::protocol::{
@@ -76,6 +84,10 @@ use super::protocol::{
 use crate::agent::agent_loop::types::{
     ImageBlock,
     ToolSpec,
+};
+use crate::util::glob::{
+    find_matches,
+    matches_any_pattern,
 };
 
 fn generate_tool_spec_from_json_schema<T>() -> ToolSpec
@@ -536,6 +548,141 @@ pub fn built_in_tool_names() -> Vec<CanonicalToolName> {
     BuiltInToolName::iter().map(CanonicalToolName::BuiltIn).collect()
 }
 
+/// Returns the name of all tools available to the given agent.
+///
+/// The tools available to the agent may change overtime, for example:
+/// * MCP servers loading or exiting
+/// * MCP tool spec changes
+/// * Actor messages that update the agent's config
+///
+/// This function ensures that we create a list of known tool names to be available
+/// for the agent's current state.
+///
+/// # Arguments
+///
+/// * `agent_tools` - Tool name patterns from the agent config's `tools` field (e.g. `"*"`,
+///   `"fs_read"`, `"@server"`, `"@server/tool"`)
+/// * `mcp_tool_specs` - Pre-fetched tool specs keyed by MCP server name
+/// * `mcp_server_configs` - Loaded MCP server configs
+/// * `is_subagent` - Whether this agent is a subagent
+/// * `has_knowledge_provider` - Whether a knowledge provider is available
+pub(crate) fn get_available_tool_names(
+    agent_tools: &[String],
+    mcp_tool_specs: &HashMap<String, Vec<ToolSpec>>,
+    mcp_server_configs: &[LoadedMcpServerConfig],
+    is_subagent: bool,
+    has_knowledge_provider: bool,
+) -> HashSet<CanonicalToolName> {
+    let mut tool_names = HashSet::new();
+    let built_in_tool_names = built_in_tool_names();
+
+    for tool_name in agent_tools {
+        if let Ok(kind) = ToolNameKind::parse(tool_name) {
+            match kind {
+                ToolNameKind::All => {
+                    for built_in in &built_in_tool_names {
+                        tool_names.insert(built_in.clone());
+                    }
+                    for config in mcp_server_configs {
+                        if let Some(specs) = mcp_tool_specs.get(&config.server_name) {
+                            for spec in specs {
+                                tool_names.insert(CanonicalToolName::from_mcp_parts(
+                                    config.server_name.clone(),
+                                    spec.name.clone(),
+                                ));
+                            }
+                        }
+                    }
+                },
+                ToolNameKind::McpFullName { .. } => {
+                    if let Ok(tn) = tool_name.parse() {
+                        tool_names.insert(tn);
+                    }
+                },
+                ToolNameKind::McpServer { server_name } => {
+                    if let Some(specs) = mcp_tool_specs.get(server_name) {
+                        for spec in specs {
+                            tool_names.insert(CanonicalToolName::from_mcp_parts(
+                                server_name.to_string(),
+                                spec.name.clone(),
+                            ));
+                        }
+                    }
+                },
+                ToolNameKind::McpGlob { server_name, glob_part } => {
+                    if let Some(specs) = mcp_tool_specs.get(server_name) {
+                        for spec in specs {
+                            if matches_any_pattern([glob_part], &spec.name) {
+                                tool_names.insert(CanonicalToolName::from_mcp_parts(
+                                    server_name.to_string(),
+                                    spec.name.clone(),
+                                ));
+                            }
+                        }
+                    }
+                },
+                ToolNameKind::BuiltInGlob(glob) => {
+                    let built_ins = built_in_tool_names.iter().map(|tn| tn.tool_name());
+                    for tn in find_matches(glob, built_ins) {
+                        if let Ok(tn) = tn.parse() {
+                            tool_names.insert(tn);
+                        }
+                    }
+                },
+                ToolNameKind::BuiltIn(name) => {
+                    if let Ok(tn) = name.parse() {
+                        tool_names.insert(tn);
+                    }
+                },
+                ToolNameKind::AllBuiltIn => {
+                    for built_in in &built_in_tool_names {
+                        tool_names.insert(built_in.clone());
+                    }
+                },
+                ToolNameKind::AgentGlob(_) => {
+                    // check all agent names
+                },
+                ToolNameKind::Agent(_) => {},
+            }
+        }
+    }
+
+    // TODO: use is_subagent param once subagent support is implemented
+    let _ = is_subagent;
+
+    // Subagents are currently not supported.
+    tool_names.retain(|name| {
+        name != &CanonicalToolName::BuiltIn(BuiltInToolName::SpawnSubagent)
+            && name != &CanonicalToolName::BuiltIn(BuiltInToolName::Summary)
+            && name != &CanonicalToolName::BuiltIn(BuiltInToolName::SwitchToExecution)
+    });
+
+    // Only include knowledge tool when a provider is available
+    if !has_knowledge_provider {
+        tool_names.retain(|name| name != &CanonicalToolName::BuiltIn(BuiltInToolName::Knowledge));
+    }
+
+    // If FsRead is included, also include ImageRead and Ls
+    if tool_names.contains(&CanonicalToolName::BuiltIn(BuiltInToolName::FsRead)) {
+        tool_names.insert(CanonicalToolName::BuiltIn(BuiltInToolName::ImageRead));
+        tool_names.insert(CanonicalToolName::BuiltIn(BuiltInToolName::Ls));
+    }
+
+    // Filter out tools that are in a server's disabledTools list
+    tool_names.retain(|name| {
+        if let CanonicalToolName::Mcp { server_name, tool_name } = name {
+            !mcp_server_configs
+                .iter()
+                .find(|c| &c.server_name == server_name)
+                .is_some_and(|c| matches_any_pattern(c.config.disabled_tools(), tool_name))
+        } else {
+            true
+        }
+    });
+
+    tool_names
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum ToolContext {
     FileRead,
@@ -693,6 +840,14 @@ impl ToolParseErrorKind {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::agent::agent_config::definitions::{
+        LocalMcpServerConfig,
+        McpServerConfig,
+    };
+    use crate::agent::agent_config::{
+        LoadedMcpServerConfig,
+        McpServerConfigSource,
+    };
 
     #[test]
     fn test_tool_schemas() {
@@ -711,5 +866,119 @@ mod tests {
     fn test_parse() {
         assert_eq!("fsWrite".parse::<BuiltInToolName>().unwrap(), BuiltInToolName::FsWrite);
         assert_eq!("fs_write".parse::<BuiltInToolName>().unwrap(), BuiltInToolName::FsWrite);
+    }
+
+    fn mcp_specs(servers: &[(&str, &[&str])]) -> HashMap<String, Vec<ToolSpec>> {
+        servers
+            .iter()
+            .map(|(name, tools)| {
+                (
+                    name.to_string(),
+                    tools
+                        .iter()
+                        .map(|t| ToolSpec {
+                            name: t.to_string(),
+                            description: String::new(),
+                            input_schema: Default::default(),
+                        })
+                        .collect(),
+                )
+            })
+            .collect()
+    }
+
+    fn mcp_configs(servers: &[(&str, &[&str])]) -> Vec<LoadedMcpServerConfig> {
+        servers
+            .iter()
+            .map(|(name, disabled)| LoadedMcpServerConfig {
+                server_name: name.to_string(),
+                config: McpServerConfig::Local(LocalMcpServerConfig {
+                    command: "cmd".to_string(),
+                    args: Vec::new(),
+                    env: None,
+                    timeout_ms: 120_000,
+                    disabled: false,
+                    disabled_tools: disabled.iter().map(|s| s.to_string()).collect(),
+                }),
+                source: McpServerConfigSource::AgentConfig,
+            })
+            .collect()
+    }
+
+    fn run(
+        agent_tools: &[&str],
+        specs: &HashMap<String, Vec<ToolSpec>>,
+        configs: &[LoadedMcpServerConfig],
+        is_subagent: bool,
+        has_knowledge: bool,
+    ) -> Vec<String> {
+        let tools: Vec<String> = agent_tools.iter().map(|s| s.to_string()).collect();
+        get_available_tool_names(&tools, specs, configs, is_subagent, has_knowledge)
+            .iter()
+            .map(|n| n.tool_name().to_string())
+            .collect()
+    }
+
+    #[test]
+    fn test_read_includes_companion_tools() {
+        let names = run(&["read"], &HashMap::new(), &[], false, false);
+        assert!(names.contains(&"read".into()));
+        assert!(names.contains(&"imageRead".into()));
+        assert!(names.contains(&"ls".into()));
+    }
+
+    #[test]
+    fn test_read_glob_includes_companion_tools() {
+        let names = run(&["rea*"], &HashMap::new(), &[], false, false);
+        assert!(names.contains(&"read".into()));
+        assert!(names.contains(&"imageRead".into()));
+        assert!(names.contains(&"ls".into()));
+    }
+
+    #[test]
+    fn test_mcp_server_excludes_disabled_tools() {
+        let specs = mcp_specs(&[("mcp", &["tool_a", "tool_b", "tool_c"])]);
+        let configs = mcp_configs(&[("mcp", &["tool_b"])]);
+        let names = run(&["@mcp"], &specs, &configs, false, false);
+
+        assert!(names.contains(&"tool_a".into()));
+        assert!(!names.contains(&"tool_b".into()));
+        assert!(names.contains(&"tool_c".into()));
+    }
+
+    #[test]
+    fn test_mcp_glob_disabled_tools_scoped_to_server() {
+        let specs = mcp_specs(&[
+            ("s1", &["read_file", "write_file", "list_files"]),
+            ("s2", &["read_file"]),
+        ]);
+        let configs = mcp_configs(&[("s1", &["*_file"]), ("s2", &[])]);
+        let tools: Vec<String> = ["@s1", "@s2"].iter().map(|s| s.to_string()).collect();
+        let names = get_available_tool_names(&tools, &specs, &configs, false, false);
+
+        // *_file matches read_file and write_file but not list_files (ends in _files)
+        assert!(!names.contains(&CanonicalToolName::from_mcp_parts("s1".into(), "read_file".into())));
+        assert!(!names.contains(&CanonicalToolName::from_mcp_parts("s1".into(), "write_file".into())));
+        assert!(names.contains(&CanonicalToolName::from_mcp_parts("s1".into(), "list_files".into())));
+        // s2's read_file unaffected by s1's disabled_tools
+        assert!(names.contains(&CanonicalToolName::from_mcp_parts("s2".into(), "read_file".into())));
+    }
+
+    #[test]
+    fn test_subagent_tools_not_supported() {
+        let names = run(&[], &HashMap::new(), &[], true, false);
+        assert!(!names.contains(&"summary".into()));
+
+        let names = run(&["*"], &HashMap::new(), &[], true, false);
+        assert!(!names.contains(&"summary".into()));
+    }
+
+    #[test]
+    fn test_knowledge_excluded_without_provider() {
+        let names = run(&["*"], &HashMap::new(), &[], false, false);
+        assert!(!names.contains(&"knowledge".into()));
+
+        let names = run(&["*"], &HashMap::new(), &[], false, true);
+        assert!(names.contains(&"knowledge".into()));
     }
 }
