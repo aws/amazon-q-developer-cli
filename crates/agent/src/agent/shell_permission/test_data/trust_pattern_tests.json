@@ -109,5 +109,24 @@
       { "label": "Partial command", "display": "cat file * , grep * , sort * , wc *", "patterns": ["cat file( .*)?", "grep( .*)?", "sort( .*)?", "wc( .*)?"] },
       { "label": "Base command", "display": "cat * , grep * , sort * , wc *", "patterns": ["cat( .*)?", "grep( .*)?", "sort( .*)?", "wc( .*)?"] }
     ]
+  },
+  {
+    "name": "relative_path_command_preserves_dot_slash",
+    "input": "./gradlew --console=plain",
+    "expected_option_count": 2,
+    "expected_options": [
+      { "label": "Full command", "display": "./gradlew --console=plain", "patterns": ["\\./gradlew \\-\\-console=plain"] },
+      { "label": "Base command", "display": "./gradlew *", "patterns": ["\\./gradlew( .*)?"] }
+    ]
+  },
+  {
+    "name": "relative_path_command_with_subcommand",
+    "input": "./manage.py runserver 8080",
+    "expected_option_count": 3,
+    "expected_options": [
+      { "label": "Full command", "display": "./manage.py runserver 8080", "patterns": ["\\./manage\\.py runserver 8080"] },
+      { "label": "Partial command", "display": "./manage.py runserver *", "patterns": ["\\./manage\\.py runserver( .*)?"] },
+      { "label": "Base command", "display": "./manage.py *", "patterns": ["\\./manage\\.py( .*)?"] }
+    ]
   }
 ]

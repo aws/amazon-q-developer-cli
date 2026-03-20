@@ -19,7 +19,7 @@ pub fn generate_trust_patterns(trustable_commands: &[ParsedCommand]) -> Vec<Trus
 
     // Collect raw strings for each tier
     let exact_raw: Vec<String> = trustable_commands.iter().map(|c| c.command.clone()).collect();
-    let base_raw: Vec<String> = trustable_commands.iter().map(|c| c.command_name.clone()).collect();
+    let base_raw: Vec<String> = trustable_commands.iter().map(|c| c.command_path.clone()).collect();
     let prefix_raw: Vec<String> = trustable_commands
         .iter()
         .map(|parsed| {
@@ -29,8 +29,8 @@ pub fn generate_trust_patterns(trustable_commands: &[ParsedCommand]) -> Vec<Trus
                 .map(|a| a.trim())
                 .filter(|a| !a.starts_with('/') && !a.starts_with('-'))
                 .map_or_else(
-                    || parsed.command_name.clone(),
-                    |arg| format!("{} {}", parsed.command_name, arg),
+                    || parsed.command_path.clone(),
+                    |arg| format!("{} {}", parsed.command_path, arg),
                 )
         })
         .collect();
