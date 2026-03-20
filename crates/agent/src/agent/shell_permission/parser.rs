@@ -23,6 +23,9 @@ mod node {
     pub const NEWLINE: &str = "\n";
     pub const COMMENT: &str = "comment";
 
+    // Declaration commands (export, declare, local, readonly, typeset)
+    pub const DECLARATION_COMMAND: &str = "declaration_command";
+
     // Redirections
     pub const FILE_REDIRECT: &str = "file_redirect";
     pub const HEREDOC_REDIRECT: &str = "heredoc_redirect";
@@ -202,9 +205,13 @@ fn extract_commands(node: &tree_sitter::Node<'_>, source: &str, commands: &mut V
                 }
             }
         },
-        node::COMMAND | node::SIMPLE_COMMAND => {
+        node::COMMAND | node::SIMPLE_COMMAND | node::DECLARATION_COMMAND => {
             let cmd_text = node.utf8_text(source.as_bytes()).unwrap_or("").to_string();
-            let (command_path, command_name, args) = extract_command_parts(node, source);
+            let (command_path, command_name, args) = if node.kind() == node::DECLARATION_COMMAND {
+                extract_declaration_parts(node, source)
+            } else {
+                extract_command_parts(node, source)
+            };
 
             commands.push(ParsedCommand {
                 command: cmd_text,
@@ -347,6 +354,27 @@ fn extract_command_parts(node: &tree_sitter::Node<'_>, source: &str) -> (String,
         .to_string();
 
     (command_path, command_name, args)
+}
+
+/// Extract parts from a declaration_command node (export, declare, local, readonly, typeset).
+/// Unlike regular commands, the keyword is a bare token — not wrapped in a command_name node.
+fn extract_declaration_parts(node: &tree_sitter::Node<'_>, source: &str) -> (String, String, Vec<String>) {
+    let mut keyword = String::new();
+    let mut args = Vec::new();
+    let mut first = true;
+
+    let mut cursor = node.walk();
+    for child in node.children(&mut cursor) {
+        let text = child.utf8_text(source.as_bytes()).unwrap_or("").to_string();
+        if first {
+            keyword = text;
+            first = false;
+        } else if !node::NON_ARG_NODES.contains(&child.kind()) {
+            args.push(text);
+        }
+    }
+
+    (keyword.clone(), keyword, args)
 }
 
 /// Strip surrounding quotes from a command

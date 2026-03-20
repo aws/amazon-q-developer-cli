@@ -252,5 +252,14 @@
     "input": "tar -czf backup-$(date +%Y%m%d).tar.gz .",
     "parse_failed": false,
     "commands": [{"command": "tar -czf backup-$(date +%Y%m%d).tar.gz .", "command_path": "tar", "command_name": "tar", "args": ["-czf", "backup-$(date +%Y%m%d).tar.gz", "."], "has_command_substitution": true}]
+  },
+  {
+    "name": "declaration_export_chain",
+    "input": "export LD_PRELOAD=/tmp/evil.so && cat /etc/passwd",
+    "parse_failed": false,
+    "commands": [
+      {"command": "export LD_PRELOAD=/tmp/evil.so", "command_path": "export", "command_name": "export", "args": [], "operator": "And", "variable_assignments": ["LD_PRELOAD"]},
+      {"command": "cat /etc/passwd", "command_path": "cat", "command_name": "cat", "args": ["/etc/passwd"]}
+    ]
   }
 ]
