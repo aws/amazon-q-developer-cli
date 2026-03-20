@@ -61,9 +61,9 @@ export const ToolUseMessage = React.memo<ToolUseMessageProps>(
       if (result?.status === 'cancelled') return 'error';
       if (result?.status === 'error') return 'error';
       if (status === ToolUseStatus.Approved && isFinished) return 'success';
-      if (status === ToolUseStatus.Pending) return undefined;
+      if (status === ToolUseStatus.Pending) return 'paused';
       if (isFinished) return 'success';
-      return undefined; // In progress, no icon
+      return 'executing';
     }, [status, isFinished, result]);
 
     return (
@@ -82,7 +82,7 @@ export const ToolUseMessage = React.memo<ToolUseMessageProps>(
   }
 );
 
-/** Inner component that lives inside StatusBar so it can call requestRemeasure */
+/** Inner component — lives inside StatusBar to access requestRemeasure */
 function ToolUseContent({
   name,
   content,

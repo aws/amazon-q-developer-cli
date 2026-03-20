@@ -12,6 +12,7 @@ import { useTheme } from '../../../hooks/useThemeContext.js';
 import { Text } from '../../ui/text/Text.js';
 import { Icon, IconType } from '../../ui/icon/Icon.js';
 import { Spinner } from '../../ui/spinner/Spinner.js';
+import { PieSpinner } from '../../ui/spinner/PieSpinner.js';
 import { useCardContext } from '../../ui/card/Card.js';
 import {
   getStatusColor,
@@ -144,23 +145,35 @@ export const StatusBar = React.memo(function StatusBar({
     status &&
     status !== 'active' &&
     status !== 'thinking' &&
+    status !== 'executing' &&
     status !== 'paused';
   const showSpinner = status === 'thinking';
+  const showPieSpinner = status === 'executing';
   const showArrowDown = status === 'paused';
 
   // Render the status bar column elements
   const barElements = useMemo(() => {
     // When lineCount is 0 but we have a status to show (e.g. inside Ink's <Static>
     // where measureElement doesn't trigger), render at least the status icon
-    const hasStatusIcon = showDot || showSpinner || showArrowDown;
+    const hasStatusIcon =
+      showDot || showSpinner || showPieSpinner || showArrowDown;
     const effectiveLineCount = lineCount === 0 && hasStatusIcon ? 1 : lineCount;
 
     if (effectiveLineCount === 0) return null;
 
     const elements = [];
     for (let i = 0; i < effectiveLineCount; i++) {
-      // First line gets spinner for thinking, arrow for paused, icon for other statuses
-      if (i === 0 && showSpinner) {
+      // First line: pie spinner for executing, braille spinner for thinking, arrow for paused, dot for others
+      if (i === 0 && showPieSpinner) {
+        const pieColor = barColorProp
+          ? getTerminalChalkColor(barColorProp)
+          : getColor('brand');
+        elements.push(
+          <Box key={i}>
+            <PieSpinner color={pieColor} />
+          </Box>
+        );
+      } else if (i === 0 && showSpinner) {
         const spinnerColor = barColorProp
           ? getTerminalChalkColor(barColorProp)
           : getStatusColor('thinking', getColor);
@@ -190,9 +203,7 @@ export const StatusBar = React.memo(function StatusBar({
         // Don't show bar for paused status (only show the arrow icon)
         const color =
           lineColors.get(i) ||
-          (status && status !== 'active'
-            ? getStatusColor(status, getColor).hex
-            : defaultBarColor);
+          (status ? getStatusColor(status, getColor).hex : defaultBarColor);
         elements.push(
           <Text key={i} backgroundColor={color}>
             {' '}
@@ -210,31 +221,19 @@ export const StatusBar = React.memo(function StatusBar({
     showDot,
     showSpinner,
     showArrowDown,
+    showPieSpinner,
     active,
     lineColors,
     defaultBarColor,
     getColor,
+    barColorProp,
   ]);
-
-  // Background color for the bar column — fills any gap between bar elements and content height
-  const barBgColor = useMemo(() => {
-    if (!active || status === 'paused' || status === 'thinking')
-      return undefined;
-    if (status && status !== 'active')
-      return getStatusColor(status, getColor).hex;
-    return defaultBarColor;
-  }, [active, status, defaultBarColor, getColor]);
 
   return (
     <StatusBarContext.Provider value={contextValue}>
       <Box flexDirection="row" width="100%">
         {/* Bar stretches to match content; content sizes to its own height */}
-        <Box
-          flexDirection="column"
-          width={1}
-          justifyContent="flex-start"
-          backgroundColor={barBgColor}
-        >
+        <Box flexDirection="column" width={1} justifyContent="flex-start">
           {barElements}
         </Box>
         <Box

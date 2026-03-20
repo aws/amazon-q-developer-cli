@@ -9,4 +9,5 @@ export type StatusType =
   | 'error'
   | 'loading'
   | 'thinking'
+  | 'executing'
   | 'paused';

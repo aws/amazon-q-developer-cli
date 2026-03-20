@@ -32,6 +32,9 @@ import * as ToolMetaStories from '../components/chat/tools/ToolMeta.stories.js';
 import * as NotificationBarStories from '../components/chat/notification-bar/NotificationBar.stories.js';
 import * as ActionHintStories from '../components/ui/hint/ActionHint.stories.js';
 import * as TableStories from '../components/ui/table/Table.stories.js';
+import * as PieSpinnerStories from '../components/ui/spinner/PieSpinner.stories.js';
+import * as SpinnerStories from '../components/ui/spinner/Spinner.stories.js';
+import * as ToolStories from '../components/chat/tools/Tool.stories.js';
 
 /**
  * Derives a title from the import path if meta.title is not provided.
@@ -241,4 +244,13 @@ export const stories = [
     '../components/ui/hint/ActionHint.stories.js'
   ),
   convertStoryModule(TableStories, '../components/ui/table/Table.stories.js'),
+  convertStoryModule(
+    PieSpinnerStories,
+    '../components/ui/spinner/PieSpinner.stories.js'
+  ),
+  convertStoryModule(
+    SpinnerStories,
+    '../components/ui/spinner/Spinner.stories.js'
+  ),
+  convertStoryModule(ToolStories, '../components/chat/tools/Tool.stories.js'),
 ];

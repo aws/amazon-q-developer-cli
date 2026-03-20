@@ -237,6 +237,8 @@ export const getStatusColor = (
       return getColor('secondary');
     case 'thinking':
       return getColor('brand');
+    case 'executing':
+      return getColor('brand');
     case 'paused':
       return getColor('secondary');
     default:
