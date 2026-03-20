@@ -111,7 +111,7 @@ export function UsagePanel({ data, onClose, onTabSwitch }: UsagePanelProps) {
                 )}
               </Text>
             </Box>
-            <Box>
+            <Box marginTop={1}>
               <UsageProgressBar percentage={pct} width={barWidth} />
               <Text> {secondary(`${pct.toFixed(1)}%`)}</Text>
             </Box>
