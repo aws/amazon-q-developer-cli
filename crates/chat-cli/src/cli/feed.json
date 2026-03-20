@@ -12,6 +12,38 @@
     },
     {
       "type": "release",
+      "date": "2026-03-20",
+      "version": "1.28.0",
+      "title": "Version 1.28.0",
+      "changes": [
+        {
+          "type": "added",
+          "description": "A refreshed UX (experimental) with live unified status, omnipresent input, and contextual overlays—try it with kiro-cli --tui. Learn more and share your feedback: https://kiro.dev/blog/new-look-for-cli"
+        },
+        {
+          "type": "added",
+          "description": "Add --list-models flag to non-interactively display available models"
+        },
+        {
+          "type": "added",
+          "description": "Added `/chat new` command to start a fresh conversation without restarting the CLI"
+        },
+        {
+          "type": "fixed",
+          "description": "Fixed --resume-picker silently falling through to new chat in directories with many sessions"
+        },
+        {
+          "type": "fixed",
+          "description": "Fixed Ctrl+C not interrupting glob and grep tools during large directory traversals"
+        },
+        {
+          "type": "fixed",
+          "description": "Fixed thinking tool infinite loop caused by single-event tool calls being silently dropped"
+        }
+      ]
+    },
+    {
+      "type": "release",
       "date": "2026-03-18",
       "version": "1.27.3",
       "title": "Version 1.27.3",
