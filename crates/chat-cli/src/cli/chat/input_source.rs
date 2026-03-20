@@ -114,8 +114,7 @@ impl InputSource {
     pub fn is_interactive(&self) -> bool {
         match &self.inner {
             inner::Inner::Readline(_) => {
-                std::io::stdin().is_terminal()
-                    || std::env::var("KIRO_FORCE_INTERACTIVE").is_ok()
+                std::io::stdin().is_terminal() || std::env::var("KIRO_FORCE_INTERACTIVE").is_ok()
             },
             inner::Inner::Mock { .. } => true,
         }
