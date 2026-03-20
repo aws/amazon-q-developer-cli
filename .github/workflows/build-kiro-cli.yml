@@ -301,10 +301,11 @@ jobs:
 
   TriggerAutocompleteBuild:
     name: Trigger Autocomplete Build
-    needs: [generate_timestamp, UpdateVersionNumber, TriggerDarwinBuild, TriggerLinuxBuild]
+    needs: [generate_timestamp, UpdateVersionNumber, TriggerDarwinBuild, TriggerLinuxBuild, TriggerWindowsBuild]
     runs-on: ubuntu-latest
     environment: gamma
     if: |
+      always() &&
       (github.event_name == 'schedule' || github.event.inputs.trigger_autocomplete_build != 'false') &&
       needs.TriggerDarwinBuild.result == 'success' &&
       needs.TriggerLinuxBuild.result == 'success'
