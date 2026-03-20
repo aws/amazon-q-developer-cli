@@ -135,6 +135,7 @@ jobs:
           aws configure set aws_secret_access_key "$(echo $CREDS | jq -r .Credentials.SecretAccessKey)" --profile signing
           aws configure set aws_session_token "$(echo $CREDS | jq -r .Credentials.SessionToken)" --profile signing
           aws configure set region us-east-1 --profile signing
+          unset AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY AWS_SESSION_TOKEN
           export AWS_PROFILE=signing
 
           echo "🔏 Signing ${FILENAME}..."
