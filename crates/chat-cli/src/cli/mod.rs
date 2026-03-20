@@ -448,6 +448,8 @@ mod test {
                 resume: false,
                 resume_picker: false,
                 list_sessions: false,
+                list_models: false,
+                format: OutputFormat::Plain,
                 delete_session: None,
                 input: None,
                 agent: None,
@@ -494,6 +496,8 @@ mod test {
                 resume: false,
                 resume_picker: false,
                 list_sessions: false,
+                list_models: false,
+                format: OutputFormat::Plain,
                 delete_session: None,
                 input: None,
                 agent: Some("my-profile".to_string()),
@@ -517,6 +521,8 @@ mod test {
                 resume: false,
                 resume_picker: false,
                 list_sessions: false,
+                list_models: false,
+                format: OutputFormat::Plain,
                 delete_session: None,
                 input: Some("Hello".to_string()),
                 agent: Some("my-profile".to_string()),
@@ -540,6 +546,8 @@ mod test {
                 resume: false,
                 resume_picker: false,
                 list_sessions: false,
+                list_models: false,
+                format: OutputFormat::Plain,
                 delete_session: None,
                 input: None,
                 agent: Some("my-profile".to_string()),
@@ -563,6 +571,8 @@ mod test {
                 resume: true,
                 resume_picker: false,
                 list_sessions: false,
+                list_models: false,
+                format: OutputFormat::Plain,
                 delete_session: None,
                 input: None,
                 agent: None,
@@ -582,6 +592,8 @@ mod test {
                 resume: true,
                 resume_picker: false,
                 list_sessions: false,
+                list_models: false,
+                format: OutputFormat::Plain,
                 delete_session: None,
                 input: None,
                 agent: None,
@@ -605,6 +617,8 @@ mod test {
                 resume: false,
                 resume_picker: false,
                 list_sessions: false,
+                list_models: false,
+                format: OutputFormat::Plain,
                 delete_session: None,
                 input: None,
                 agent: None,
@@ -628,6 +642,8 @@ mod test {
                 resume: false,
                 resume_picker: false,
                 list_sessions: false,
+                list_models: false,
+                format: OutputFormat::Plain,
                 delete_session: None,
                 input: None,
                 agent: None,
@@ -651,6 +667,8 @@ mod test {
                 resume: false,
                 resume_picker: false,
                 list_sessions: false,
+                list_models: false,
+                format: OutputFormat::Plain,
                 delete_session: None,
                 input: None,
                 agent: None,
@@ -674,6 +692,8 @@ mod test {
                 resume: false,
                 resume_picker: false,
                 list_sessions: false,
+                list_models: false,
+                format: OutputFormat::Plain,
                 delete_session: None,
                 input: None,
                 agent: None,
@@ -697,6 +717,8 @@ mod test {
                 resume: false,
                 resume_picker: false,
                 list_sessions: false,
+                list_models: false,
+                format: OutputFormat::Plain,
                 delete_session: None,
                 input: None,
                 agent: None,
@@ -716,6 +738,8 @@ mod test {
                 resume: false,
                 resume_picker: false,
                 list_sessions: false,
+                list_models: false,
+                format: OutputFormat::Plain,
                 delete_session: None,
                 input: None,
                 agent: None,
@@ -735,6 +759,8 @@ mod test {
                 resume: false,
                 resume_picker: false,
                 list_sessions: false,
+                list_models: false,
+                format: OutputFormat::Plain,
                 delete_session: None,
                 input: None,
                 agent: None,
@@ -746,6 +772,29 @@ mod test {
                 require_mcp_startup: false,
                 tui: false,
                 legacy_ui: false,
+            })
+        );
+    }
+
+    #[test]
+    fn test_chat_with_list_models() {
+        assert_parse!(
+            ["chat", "--list-models"],
+            RootSubcommand::Chat(ChatArgs {
+                list_models: true,
+                ..Default::default()
+            })
+        );
+    }
+
+    #[test]
+    fn test_chat_with_list_models_json() {
+        assert_parse!(
+            ["chat", "--list-models", "--format", "json"],
+            RootSubcommand::Chat(ChatArgs {
+                list_models: true,
+                format: OutputFormat::Json,
+                ..Default::default()
             })
         );
     }

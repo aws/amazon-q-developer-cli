@@ -278,6 +278,12 @@ pub struct ChatArgs {
     /// List all saved chat sessions for the current directory.
     #[arg(short = 'l', long)]
     pub list_sessions: bool,
+    /// List available models and exit.
+    #[arg(long)]
+    pub list_models: bool,
+    /// Output format for list commands (used with --list-models).
+    #[arg(long, short, value_enum, default_value_t)]
+    pub format: crate::cli::OutputFormat,
     /// Delete a saved chat session by ID.
     #[arg(short = 'd', long, value_name = "SESSION_ID")]
     pub delete_session: Option<String>,
@@ -342,6 +348,11 @@ impl ChatArgs {
                     return Ok(ExitCode::FAILURE);
                 },
             }
+        }
+
+        // Handle --list-models flag
+        if self.list_models {
+            return Ok(cli::model::print_model_list(os, self.format).await?);
         }
 
         let mut input = self.input;

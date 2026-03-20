@@ -370,6 +370,41 @@ pub async fn get_model_info(model_id: &str, os: &Os) -> Result<ModelInfo, ChatEr
         .ok_or_else(|| ChatError::Custom(format!("Model '{model_id}' not found").into()))
 }
 
+/// Fetch and print available models, then exit.
+pub async fn print_model_list(os: &Os, format: crate::cli::OutputFormat) -> Result<std::process::ExitCode, ChatError> {
+    let (models, default_model) = get_available_models(os).await?;
+    format.print(
+        || {
+            let max_name = models.iter().map(|m| m.display_name().len()).max().unwrap_or(0);
+            let mut out = String::from("Available models (* = default):\n\n");
+            for m in &models {
+                let prefix = if m.model_id == default_model.model_id {
+                    "* "
+                } else {
+                    "  "
+                };
+                let rate = m
+                    .rate_multiplier
+                    .map_or("----- credits".to_string(), |r| format!("{r:.2}x credits"));
+                let desc = m.description().unwrap_or("");
+                out.push_str(&format!(
+                    "{prefix}{:<max_name$}    {:<15}    {desc}\n",
+                    m.display_name(),
+                    rate
+                ));
+            }
+            out.trim_end().to_string()
+        },
+        || {
+            serde_json::json!({
+                "models": models,
+                "default_model": default_model.model_id,
+            })
+        },
+    );
+    Ok(std::process::ExitCode::SUCCESS)
+}
+
 /// Get available models with caching support
 pub async fn get_available_models(os: &Os) -> Result<(Vec<ModelInfo>, ModelInfo), ChatError> {
     let endpoint = Endpoint::configured_value(&os.database);
