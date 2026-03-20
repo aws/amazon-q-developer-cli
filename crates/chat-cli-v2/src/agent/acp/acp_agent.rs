@@ -73,6 +73,7 @@ use sacp::schema::{
     InitializeResponse,
     LoadSessionRequest,
     LoadSessionResponse,
+    McpCapabilities,
     ModelInfo as AcpModelInfo,
     NewSessionRequest,
     NewSessionResponse,
@@ -2385,7 +2386,8 @@ pub async fn execute(os: &mut Os, args: agent::types::AcpSpawnArgs) -> eyre::Res
                             .agent_capabilities(
                                 AgentCapabilities::default()
                                     .load_session(true)
-                                    .prompt_capabilities(PromptCapabilities::default().image(true)),
+                                    .prompt_capabilities(PromptCapabilities::default().image(true))
+                                    .mcp_capabilities(McpCapabilities::default().http(true)),
                             )
                             .agent_info(
                                 Implementation::new(crate::constants::AGENT_NAME, env!("CARGO_PKG_VERSION").to_string())
