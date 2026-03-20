@@ -460,6 +460,14 @@ struct StreamParseState {
     /// Whether or not we are currently receiving tool use delta events. Tuple of
     /// `Some((tool_use_id, name, buf))` if true, [None] otherwise.
     parsing_tool_use: Option<(String, String, String)>,
+    /// Whether we are currently receiving thinking delta events.
+    parsing_thinking: Option<String>,
+    /// Accumulated thinking blocks for this turn.
+    thinking_blocks: Vec<types::ThinkingBlock>,
+    /// Pending signature from a ReasoningEvent (set before ContentBlockStop).
+    pending_signature: Option<String>,
+    /// Pending redacted content from a ReasoningEvent.
+    pending_redacted_content: Option<Vec<u8>>,
     /// Buffered metadata event returned from the response stream
     metadata: Option<MetadataEvent>,
     /// Buffered message start event returned from the response stream
@@ -481,6 +489,10 @@ impl StreamParseState {
         Self {
             assistant_text: String::new(),
             parsing_tool_use: None,
+            parsing_thinking: None,
+            thinking_blocks: Vec::new(),
+            pending_signature: None,
+            pending_redacted_content: None,
             tool_uses: Vec::new(),
             invalid_tool_uses: Vec::new(),
             user_message,
@@ -569,6 +581,9 @@ impl StreamParseState {
                                     name: v.name,
                                 });
                             },
+                            types::ContentBlockStart::Thinking => {
+                                self.parsing_thinking = Some(String::new());
+                            },
                         }
                     }
                 },
@@ -589,12 +604,33 @@ impl StreamParseState {
                             },
                         }
                     },
-                    types::ContentBlockDelta::Reasoning => (),
+                    types::ContentBlockDelta::Reasoning(text) => {
+                        if let Some(thinking_buf) = self.parsing_thinking.as_mut() {
+                            thinking_buf.push_str(&text);
+                            buf.push(AgentLoopEventKind::ThinkingText(text));
+                        }
+                    },
+                    types::ContentBlockDelta::ReasoningSignature {
+                        signature,
+                        redacted_content,
+                    } => {
+                        self.pending_signature = signature;
+                        self.pending_redacted_content = redacted_content;
+                    },
                     types::ContentBlockDelta::Document => (),
                 },
 
                 StreamEvent::ContentBlockStop(_) => {
-                    if let Some((tool_use_id, name, tool_content)) = self.parsing_tool_use.take() {
+                    if let Some(thinking_text) = self.parsing_thinking.take() {
+                        self.thinking_blocks.push(types::ThinkingBlock {
+                            text: thinking_text,
+                            signature: self.pending_signature.take(),
+                            redacted_content: self.pending_redacted_content.take().unwrap_or_default(),
+                        });
+                    } else if let Some((tool_use_id, name, tool_content)) = self.parsing_tool_use.take() {
+                        // Defensively clear any stale signature state from protocol violations.
+                        self.pending_signature.take();
+                        self.pending_redacted_content.take();
                         match serde_json::from_str::<serde_json::Value>(&tool_content) {
                             Ok(val) => {
                                 let tool_use = ToolUseBlock {
@@ -690,7 +726,14 @@ impl StreamParseState {
                 self.message_stop.is_some(),
                 "Expected a message stop event before the stream has ended"
             );
+            // Build the response message. Note: interleaved thinking order is flattened —
+            // all thinking blocks come first, then text, then tool uses. The original
+            // stream order (think → text → think → text) is not preserved, but this is
+            // acceptable since the API only supports a single reasoning_content per turn.
             let mut content = Vec::new();
+            for thinking_block in &self.thinking_blocks {
+                content.push(ContentBlock::Thinking(thinking_block.clone()));
+            }
             content.push(ContentBlock::Text(self.assistant_text.clone()));
             for tool_use in &self.tool_uses {
                 content.push(ContentBlock::ToolUse(tool_use.clone()));
@@ -971,5 +1014,140 @@ mod tests {
             })
             .expect("expected ResponseStreamEnd");
         assert!(matches!(result, Err(LoopError::Stream(_))));
+    }
+
+    fn thinking_start() -> StreamResult {
+        StreamResult::Ok(StreamEvent::ContentBlockStart(ContentBlockStartEvent {
+            content_block_start: Some(ContentBlockStart::Thinking),
+            content_block_index: None,
+        }))
+    }
+
+    fn thinking_delta(text: &str) -> StreamResult {
+        StreamResult::Ok(StreamEvent::ContentBlockDelta(ContentBlockDeltaEvent {
+            delta: ContentBlockDelta::Reasoning(text.into()),
+            content_block_index: None,
+        }))
+    }
+
+    fn reasoning_signature(sig: &str) -> StreamResult {
+        StreamResult::Ok(StreamEvent::ContentBlockDelta(ContentBlockDeltaEvent {
+            delta: ContentBlockDelta::ReasoningSignature {
+                signature: Some(sig.into()),
+                redacted_content: None,
+            },
+            content_block_index: None,
+        }))
+    }
+
+    #[test]
+    fn thinking_block_parsed_with_signature() {
+        let msg = run_stream(vec![
+            message_start(),
+            thinking_start(),
+            thinking_delta("Let me think..."),
+            thinking_delta(" about this."),
+            reasoning_signature("sig123"),
+            block_stop(),
+            text_delta("Here's my answer."),
+            message_stop(),
+        ])
+        .expect("expected Ok");
+
+        assert_eq!(msg.content.len(), 2);
+        match &msg.content[0] {
+            ContentBlock::Thinking(tb) => {
+                assert_eq!(tb.text, "Let me think... about this.");
+                assert_eq!(tb.signature.as_deref(), Some("sig123"));
+                assert!(tb.redacted_content.is_empty());
+            },
+            other => panic!("expected Thinking, got: {other:?}"),
+        }
+        match &msg.content[1] {
+            ContentBlock::Text(t) => assert_eq!(t, "Here's my answer."),
+            other => panic!("expected Text, got: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn interleaved_thinking_produces_multiple_blocks() {
+        let msg = run_stream(vec![
+            message_start(),
+            thinking_start(),
+            thinking_delta("first thought"),
+            reasoning_signature("sig1"),
+            block_stop(),
+            text_delta("response part 1"),
+            thinking_start(),
+            thinking_delta("second thought"),
+            reasoning_signature("sig2"),
+            block_stop(),
+            text_delta(" and part 2"),
+            message_stop(),
+        ])
+        .expect("expected Ok");
+
+        let thinking_blocks: Vec<_> = msg
+            .content
+            .iter()
+            .filter_map(|c| match c {
+                ContentBlock::Thinking(tb) => Some(tb),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(thinking_blocks.len(), 2);
+        assert_eq!(thinking_blocks[0].text, "first thought");
+        assert_eq!(thinking_blocks[0].signature.as_deref(), Some("sig1"));
+        assert_eq!(thinking_blocks[1].text, "second thought");
+        assert_eq!(thinking_blocks[1].signature.as_deref(), Some("sig2"));
+
+        assert_eq!(msg.text(), "response part 1 and part 2");
+    }
+
+    #[test]
+    fn thinking_with_redacted_content() {
+        let msg = run_stream(vec![
+            message_start(),
+            thinking_start(),
+            thinking_delta(""),
+            StreamResult::Ok(StreamEvent::ContentBlockDelta(ContentBlockDeltaEvent {
+                delta: ContentBlockDelta::ReasoningSignature {
+                    signature: None,
+                    redacted_content: Some(vec![0xde, 0xad]),
+                },
+                content_block_index: None,
+            })),
+            block_stop(),
+            text_delta("answer"),
+            message_stop(),
+        ])
+        .expect("expected Ok");
+
+        match &msg.content[0] {
+            ContentBlock::Thinking(tb) => {
+                assert!(tb.signature.is_none());
+                assert_eq!(tb.redacted_content, vec![0xde, 0xad]);
+            },
+            other => panic!("expected Thinking, got: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn thinking_emits_thinking_text_events() {
+        let mut state = StreamParseState::new(user_message());
+        let mut buf = Vec::new();
+        state.next(Some(message_start()), &mut buf);
+        state.next(Some(thinking_start()), &mut buf);
+        state.next(Some(thinking_delta("hello")), &mut buf);
+        state.next(Some(thinking_delta(" world")), &mut buf);
+
+        let thinking_texts: Vec<_> = buf
+            .iter()
+            .filter_map(|ev| match ev {
+                AgentLoopEventKind::ThinkingText(t) => Some(t.as_str()),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(thinking_texts, vec!["hello", " world"]);
     }
 }

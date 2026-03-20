@@ -1,0 +1,4 @@
+{
+  "type": "added",
+  "description": "Add support for adaptive thinking when using an Anthropic model that offers it"
+}

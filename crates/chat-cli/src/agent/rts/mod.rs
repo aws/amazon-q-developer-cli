@@ -282,10 +282,26 @@ impl RtsModel {
                         rts::ChatMessage::UserInputMessage(msg)
                     },
                     Role::Assistant => {
+                        // Extract the first thinking block for reasoning content preservation.
+                        // NOTE: The SDK's AssistantResponseMessage only supports a single
+                        // reasoning_content field. With interleaved thinking, multiple thinking
+                        // blocks may exist per turn, but we can only pass back the first one.
+                        let reasoning_content = m.content.iter().find_map(|c| {
+                            if let ContentBlock::Thinking(tb) = c {
+                                Some(rts::ReasoningContentForHistory {
+                                    text: tb.text.clone(),
+                                    signature: tb.signature.clone(),
+                                    redacted_content: tb.redacted_content.clone(),
+                                })
+                            } else {
+                                None
+                            }
+                        });
                         let msg = rts::AssistantResponseMessage {
                             message_id: m.id.clone(),
                             content: m.text(),
                             tool_uses: m.tool_uses().map(|v| v.into_iter().map(Into::into).collect()),
+                            reasoning_content,
                         };
                         rts::ChatMessage::AssistantResponseMessage(msg)
                     },
@@ -495,6 +511,8 @@ struct ResponseParser {
     parsing_tool_use: Option<(String, String)>,
     /// Whether or not the response stream contained at least one tool use.
     tool_use_seen: bool,
+    /// Whether we are currently inside a thinking content block.
+    in_thinking: bool,
 
     // metadata fields
     request_id: Option<String>,
@@ -526,6 +544,7 @@ impl ResponseParser {
             message_start_pushed: false,
             parsing_tool_use: None,
             tool_use_seen: false,
+            in_thinking: false,
             buf: vec![],
             time_to_first_chunk: None,
             time_between_chunks: vec![],
@@ -613,6 +632,13 @@ impl ResponseParser {
             match self.next().await? {
                 Some(ev) => match ev {
                     ChatResponseStream::AssistantResponseEvent { content } => {
+                        if self.in_thinking {
+                            self.in_thinking = false;
+                            self.buf
+                                .push(StreamResult::Ok(StreamEvent::ContentBlockStop(ContentBlockStopEvent {
+                                    content_block_index: None,
+                                })));
+                        }
                         self.buf.push(StreamResult::Ok(StreamEvent::ContentBlockDelta(
                             ContentBlockDeltaEvent {
                                 delta: ContentBlockDelta::Text(content),
@@ -627,6 +653,13 @@ impl ResponseParser {
                         input,
                         stop,
                     } => {
+                        if self.in_thinking {
+                            self.in_thinking = false;
+                            self.buf
+                                .push(StreamResult::Ok(StreamEvent::ContentBlockStop(ContentBlockStopEvent {
+                                    content_block_index: None,
+                                })));
+                        }
                         self.tool_use_seen = true;
                         if self.parsing_tool_use.is_none() {
                             self.parsing_tool_use = Some((tool_use_id.clone(), name.clone()));
@@ -657,12 +690,54 @@ impl ResponseParser {
                         }
                         return Ok(());
                     },
+                    ChatResponseStream::ReasoningEvent {
+                        text,
+                        signature,
+                        redacted_content,
+                    } => {
+                        if let Some(text) = text {
+                            if !self.in_thinking {
+                                self.in_thinking = true;
+                                self.buf.push(StreamResult::Ok(StreamEvent::ContentBlockStart(
+                                    ContentBlockStartEvent {
+                                        content_block_start: Some(ContentBlockStart::Thinking),
+                                        content_block_index: None,
+                                    },
+                                )));
+                            }
+                            self.buf.push(StreamResult::Ok(StreamEvent::ContentBlockDelta(
+                                ContentBlockDeltaEvent {
+                                    delta: ContentBlockDelta::Reasoning(text),
+                                    content_block_index: None,
+                                },
+                            )));
+                            return Ok(());
+                        }
+                        if signature.is_some() || redacted_content.is_some() {
+                            self.buf.push(StreamResult::Ok(StreamEvent::ContentBlockDelta(
+                                ContentBlockDeltaEvent {
+                                    delta: ContentBlockDelta::ReasoningSignature {
+                                        signature,
+                                        redacted_content,
+                                    },
+                                    content_block_index: None,
+                                },
+                            )));
+                        }
+                    },
                     other => {
                         warn!(?other, "received unexpected rts event");
                     },
                 },
                 None => {
                     self.ended = true;
+                    if self.in_thinking {
+                        self.in_thinking = false;
+                        self.buf
+                            .push(StreamResult::Ok(StreamEvent::ContentBlockStop(ContentBlockStopEvent {
+                                content_block_index: None,
+                            })));
+                    }
                     self.buf
                         .push(StreamResult::Ok(StreamEvent::MessageStop(MessageStopEvent {
                             stop_reason: if self.tool_use_seen {

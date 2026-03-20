@@ -1659,6 +1659,9 @@ impl Agent {
             AgentLoopEventKind::ReasoningContent(text) => self
                 .agent_event_buf
                 .push(AgentEvent::Update(UpdateEvent::AgentThought(text.into()))),
+            AgentLoopEventKind::ThinkingText(text) => self
+                .agent_event_buf
+                .push(AgentEvent::Update(UpdateEvent::AgentThought(text.into()))),
             _ => (),
         }
 

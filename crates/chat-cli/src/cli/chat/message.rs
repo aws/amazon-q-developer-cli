@@ -527,6 +527,9 @@ impl From<AssistantMessage> for AssistantResponseMessage {
             message_id,
             content,
             tool_uses,
+            // V1 main agent: thinking is display-only. Multi-turn thinking continuity
+            // is handled by V2 (agent crate) and V1 subagents (via RTS model).
+            reasoning_content: None,
         }
     }
 }

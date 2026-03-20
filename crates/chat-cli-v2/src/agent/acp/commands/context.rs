@@ -569,6 +569,7 @@ fn estimate_content_size(content: &ContentBlock) -> usize {
                 ToolResultContentBlock::Image(_) => 1000,
             })
             .sum(),
+        ContentBlock::Thinking(t) => t.text.len() + t.redacted_content.len(),
     }
 }
 

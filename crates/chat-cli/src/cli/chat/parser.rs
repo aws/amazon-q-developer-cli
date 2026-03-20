@@ -443,6 +443,11 @@ impl ResponseParser {
                         });
                         return Ok(ResponseEvent::ToolUseStart { name });
                     },
+                    ChatResponseStream::ReasoningEvent { text, .. } => {
+                        if let Some(text) = text {
+                            return Ok(ResponseEvent::ThinkingText(text));
+                        }
+                    },
                     ref event if event.is_skippable_metadata() => {},
                     _ => {
                         warn!(?output, "received unexpected event type in main parsing loop");
@@ -746,6 +751,8 @@ pub enum ResponseEvent {
         unit: String,
         unit_plural: String,
     },
+    /// Thinking/reasoning text from extended thinking models.
+    ThinkingText(String),
 }
 
 /// Metadata about the sent request and associated response stream.

@@ -106,6 +106,8 @@ pub enum AgentLoopEventKind {
     /// to a Chain of Thought (CoT) that the model generates to enhance the accuracy of its final
     /// response.
     ReasoningContent(String),
+    /// Streaming thinking text from extended thinking models (interleaved thinking).
+    ThinkingText(String),
     /// Notification that a tool use is being received
     ToolUseStart {
         /// Tool use id

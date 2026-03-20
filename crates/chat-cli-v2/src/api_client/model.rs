@@ -535,16 +535,43 @@ pub struct AssistantResponseMessage {
     pub content: String,
     /// ToolUse Request
     pub tool_uses: Option<Vec<ToolUse>>,
+    /// Reasoning content from extended thinking models (pass back unmodified for multi-turn).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub reasoning_content: Option<ReasoningContentForHistory>,
+}
+
+/// Reasoning content to include in conversation history for multi-turn continuity.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ReasoningContentForHistory {
+    pub text: String,
+    pub signature: Option<String>,
+    pub redacted_content: Vec<u8>,
 }
 
 impl TryFrom<AssistantResponseMessage> for amzn_codewhisperer_streaming_client::types::AssistantResponseMessage {
     type Error = aws_smithy_types::error::operation::BuildError;
 
     fn try_from(value: AssistantResponseMessage) -> Result<Self, Self::Error> {
+        let reasoning = value.reasoning_content.map(|r| {
+            if !r.redacted_content.is_empty() {
+                amzn_codewhisperer_streaming_client::types::ReasoningContent::RedactedContent(
+                    aws_smithy_types::Blob::new(r.redacted_content),
+                )
+            } else {
+                amzn_codewhisperer_streaming_client::types::ReasoningContent::ReasoningText(
+                    amzn_codewhisperer_streaming_client::types::ReasoningText::builder()
+                        .text(r.text)
+                        .set_signature(r.signature)
+                        .build()
+                        .expect("text is set"),
+                )
+            }
+        });
         Self::builder()
             .content(value.content)
             .set_message_id(value.message_id)
             .set_tool_uses(value.tool_uses.map(|uses| uses.into_iter().map(Into::into).collect()))
+            .set_reasoning_content(reasoning)
             .build()
     }
 }
@@ -553,10 +580,26 @@ impl TryFrom<AssistantResponseMessage> for amzn_qdeveloper_streaming_client::typ
     type Error = aws_smithy_types::error::operation::BuildError;
 
     fn try_from(value: AssistantResponseMessage) -> Result<Self, Self::Error> {
+        let reasoning = value.reasoning_content.map(|r| {
+            if !r.redacted_content.is_empty() {
+                amzn_qdeveloper_streaming_client::types::ReasoningContent::RedactedContent(aws_smithy_types::Blob::new(
+                    r.redacted_content,
+                ))
+            } else {
+                amzn_qdeveloper_streaming_client::types::ReasoningContent::ReasoningText(
+                    amzn_qdeveloper_streaming_client::types::ReasoningText::builder()
+                        .text(r.text)
+                        .set_signature(r.signature)
+                        .build()
+                        .expect("text is set"),
+                )
+            }
+        });
         Self::builder()
             .content(value.content)
             .set_message_id(value.message_id)
             .set_tool_uses(value.tool_uses.map(|uses| uses.into_iter().map(Into::into).collect()))
+            .set_reasoning_content(reasoning)
             .build()
     }
 }
@@ -607,6 +650,12 @@ pub enum ChatResponseStream {
         input: Option<String>,
         stop: Option<bool>,
     },
+    /// Reasoning/thinking content from extended thinking models.
+    ReasoningEvent {
+        text: Option<String>,
+        signature: Option<String>,
+        redacted_content: Option<Vec<u8>>,
+    },
     #[non_exhaustive]
     Unknown {},
 }
@@ -631,6 +680,7 @@ impl ChatResponseStream {
             ChatResponseStream::ToolUseEvent { input, .. } => input.as_ref().map(|s| s.len()).unwrap_or_default(),
             ChatResponseStream::MetadataEvent { .. } => 0,
             ChatResponseStream::MeteringEvent { .. } => 0,
+            ChatResponseStream::ReasoningEvent { text, .. } => text.as_ref().map(|s| s.len()).unwrap_or_default(),
             ChatResponseStream::Unknown {} => 0,
         }
     }
@@ -751,6 +801,18 @@ impl From<amzn_codewhisperer_streaming_client::types::ChatResponseStream> for Ch
             amzn_codewhisperer_streaming_client::types::ChatResponseStream::SupplementaryWebLinksEvent(_) => {
                 ChatResponseStream::SupplementaryWebLinksEvent {}
             },
+            amzn_codewhisperer_streaming_client::types::ChatResponseStream::ReasoningContentEvent(
+                amzn_codewhisperer_streaming_client::types::ReasoningContentEvent {
+                    text,
+                    redacted_content,
+                    signature,
+                    ..
+                },
+            ) => ChatResponseStream::ReasoningEvent {
+                text,
+                signature,
+                redacted_content: redacted_content.map(|b| b.into_inner()),
+            },
             _other => ChatResponseStream::Unknown {},
         }
     }
@@ -835,6 +897,18 @@ impl From<amzn_qdeveloper_streaming_client::types::ChatResponseStream> for ChatR
             },
             amzn_qdeveloper_streaming_client::types::ChatResponseStream::SupplementaryWebLinksEvent(_) => {
                 ChatResponseStream::SupplementaryWebLinksEvent {}
+            },
+            amzn_qdeveloper_streaming_client::types::ChatResponseStream::ReasoningContentEvent(
+                amzn_qdeveloper_streaming_client::types::ReasoningContentEvent {
+                    text,
+                    redacted_content,
+                    signature,
+                    ..
+                },
+            ) => ChatResponseStream::ReasoningEvent {
+                text,
+                signature,
+                redacted_content: redacted_content.map(|b| b.into_inner()),
             },
             _other => ChatResponseStream::Unknown {},
         }
@@ -1168,6 +1242,7 @@ mod tests {
                     [("key1".to_string(), AwsDocument::Null)].into_iter().collect(),
                 )),
             }]),
+            reasoning_content: None,
         };
         let codewhisper_input =
             amzn_codewhisperer_streaming_client::types::AssistantResponseMessage::try_from(message.clone()).unwrap();

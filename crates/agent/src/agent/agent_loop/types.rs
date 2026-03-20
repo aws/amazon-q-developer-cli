@@ -372,6 +372,8 @@ pub enum ContentBlock {
     ToolUse(ToolUseBlock),
     ToolResult(ToolResultBlock),
     Image(ImageBlock),
+    /// Reasoning/thinking content from extended thinking models.
+    Thinking(ThinkingBlock),
 }
 
 impl ContentBlock {
@@ -410,6 +412,7 @@ impl ContentBlock {
                 })
                 .sum(),
             ContentBlock::Image(img) => img.byte_len(),
+            ContentBlock::Thinking(tb) => tb.text.len() + tb.redacted_content.len(),
         }
     }
 
@@ -423,6 +426,7 @@ impl ContentBlock {
                 .filter(|c| !matches!(c, ToolResultContentBlock::Image(_)))
                 .count(),
             ContentBlock::Image(_) => 0,
+            ContentBlock::Thinking(_) => 0,
         }
     }
 
@@ -444,6 +448,7 @@ impl ContentBlock {
                 }
             },
             ContentBlock::Image(_) => (),
+            ContentBlock::Thinking(_) => (),
         }
     }
 }
@@ -498,6 +503,21 @@ pub struct ToolSpec {
     pub name: String,
     pub description: String,
     pub input_schema: Map<String, serde_json::Value>,
+}
+
+/// Reasoning/thinking content from extended thinking models.
+#[typeshare]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ThinkingBlock {
+    /// The reasoning text (may be summarized or empty if display is omitted).
+    pub text: String,
+    /// Encrypted signature for verifying and passing back thinking blocks.
+    pub signature: Option<String>,
+    /// Encrypted full thinking content (opaque, pass back unmodified).
+    #[serde(with = "serde_bytes")]
+    #[serde(default)]
+    pub redacted_content: Vec<u8>,
 }
 
 #[typeshare]
@@ -602,6 +622,7 @@ pub struct ContentBlockStartEvent {
 #[serde(tag = "kind", content = "data", rename_all = "camelCase")]
 pub enum ContentBlockStart {
     ToolUse(ToolUseBlockStart),
+    Thinking,
 }
 
 #[typeshare]
@@ -630,8 +651,11 @@ pub struct ContentBlockDeltaEvent {
 pub enum ContentBlockDelta {
     Text(String),
     ToolUse(ToolUseBlockDelta),
-    // todo?
-    Reasoning,
+    Reasoning(String),
+    ReasoningSignature {
+        signature: Option<String>,
+        redacted_content: Option<Vec<u8>>,
+    },
     Document,
 }
 
