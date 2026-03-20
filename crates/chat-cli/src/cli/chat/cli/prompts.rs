@@ -204,6 +204,38 @@ impl FilePrompts {
     }
 }
 
+/// Parse a `@prompt-name [args...]` string into (prompt_name, arguments).
+/// Returns `None` if the input doesn't start with `@` or has no prompt name.
+pub fn parse_prompt_reference(input: &str) -> Option<(String, Option<Vec<String>>)> {
+    let after_at = input
+        .trim()
+        .strip_prefix(crate::cli::chat::file_reference::REFERENCE_PREFIX)?;
+    let parts = shlex::split(after_at)?;
+    let mut iter = parts.into_iter();
+    let name = iter.next().filter(|s| !s.is_empty())?;
+    let args: Vec<String> = iter.collect();
+    Some((name, if args.is_empty() { None } else { Some(args) }))
+}
+
+/// Resolve a prompt reference by name: try file-based (local then global) first, then MCP.
+/// Returns the resolved prompt messages, or an error if not found.
+pub async fn resolve_prompt_reference(
+    name: &str,
+    arguments: Option<Vec<String>>,
+    os: &Os,
+    tool_manager: &mut crate::cli::chat::tool_manager::ToolManager,
+) -> Result<Vec<PromptMessage>, GetPromptError> {
+    let file_prompts = FilePrompts::new(name, os)?;
+    if let Some((content, _)) = file_prompts.load_existing()? {
+        return Ok(vec![PromptMessage {
+            role: PromptMessageRole::User,
+            content: PromptMessageContent::Text { text: content },
+        }]);
+    }
+    let result = tool_manager.get_prompt(name.to_string(), arguments).await?;
+    Ok(result.messages)
+}
+
 /// Validate prompt name to ensure it's safe and follows naming conventions
 fn validate_prompt_name(name: &str) -> Result<(), String> {
     // Check for empty name
@@ -1982,38 +2014,53 @@ impl PromptsSubcommand {
     }
 }
 
+/// Convert a PromptMessageContent to its text representation for model input.
+/// Matches the serialization used by `conversation.rs::append_prompts`.
+pub fn stringify_prompt_content(content: &PromptMessageContent) -> String {
+    match content {
+        PromptMessageContent::Text { text } => text.clone(),
+        PromptMessageContent::Image { image } => image.raw.data.clone(),
+        PromptMessageContent::Resource { resource } => match &resource.raw.resource {
+            rmcp::model::ResourceContents::TextResourceContents {
+                uri, mime_type, text, ..
+            } => {
+                let mime_type = mime_type.as_deref().unwrap_or("unknown");
+                format!("Text resource of uri: {uri}, mime_type: {mime_type}, text: {text}")
+            },
+            rmcp::model::ResourceContents::BlobResourceContents {
+                uri, mime_type, blob, ..
+            } => {
+                let mime_type = mime_type.as_deref().unwrap_or("unknown");
+                format!("Blob resource of uri: {uri}, mime_type: {mime_type}, blob: {blob}")
+            },
+        },
+        PromptMessageContent::ResourceLink { link } => serde_json::to_string(&link.raw).unwrap_or(format!(
+            "Resource link with uri: {}, name: {}",
+            link.raw.uri, link.raw.name
+        )),
+    }
+}
+
+/// Join all prompt messages into a single text string.
+pub fn prompt_messages_to_text(messages: &[PromptMessage]) -> String {
+    messages
+        .iter()
+        .map(|m| stringify_prompt_content(&m.content))
+        .filter(|s| !s.trim().is_empty())
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
 /// Display fetched prompt content to the user before AI processing
 fn display_prompt_content(
     _prompt_name: &str,
     messages: &[PromptMessage],
     session: &mut ChatSession,
 ) -> Result<(), ChatError> {
-    fn stringify_prompt_message_content(content: &PromptMessageContent) -> String {
-        match content {
-            PromptMessageContent::Text { text } => text.clone(),
-            PromptMessageContent::Image { image } => image.raw.data.clone(),
-            PromptMessageContent::Resource { resource } => match &resource.raw.resource {
-                rmcp::model::ResourceContents::TextResourceContents {
-                    uri, mime_type, text, ..
-                } => {
-                    let mime_type = mime_type.as_deref().unwrap_or("unknown");
-                    format!("Text resource of uri: {uri}, mime_type: {mime_type}, text: {text}")
-                },
-                rmcp::model::ResourceContents::BlobResourceContents { uri, mime_type, .. } => {
-                    let mime_type = mime_type.as_deref().unwrap_or("unknown");
-                    format!("Blob resource of uri: {uri}, mime_type: {mime_type}")
-                },
-            },
-            PromptMessageContent::ResourceLink { link } => {
-                format!("Resource link with uri: {}, name: {}", link.raw.uri, link.raw.name)
-            },
-        }
-    }
-
     queue!(session.stderr, style::Print("\n"),)?;
 
     for message in messages {
-        let content = stringify_prompt_message_content(&message.content);
+        let content = stringify_prompt_content(&message.content);
         if !content.trim().is_empty() {
             queue!(
                 session.stderr,
@@ -2533,5 +2580,37 @@ mod tests {
             unqualified_name
         };
         assert_eq!(actual_prompt_name, "my_prompt");
+    }
+
+    #[test]
+    fn test_parse_prompt_reference_no_at() {
+        assert!(parse_prompt_reference("just a normal query").is_none());
+    }
+
+    #[test]
+    fn test_parse_prompt_reference_bare_at() {
+        assert!(parse_prompt_reference("@").is_none());
+        assert!(parse_prompt_reference("@ ").is_none());
+    }
+
+    #[test]
+    fn test_parse_prompt_reference_simple() {
+        let (name, args) = parse_prompt_reference("@my-prompt").unwrap();
+        assert_eq!(name, "my-prompt");
+        assert!(args.is_none());
+    }
+
+    #[test]
+    fn test_parse_prompt_reference_with_args() {
+        let (name, args) = parse_prompt_reference("@agent-sop:code-assist task=\"fix bug\"").unwrap();
+        assert_eq!(name, "agent-sop:code-assist");
+        assert_eq!(args.unwrap(), vec!["task=fix bug"]);
+    }
+
+    #[test]
+    fn test_parse_prompt_reference_with_leading_whitespace() {
+        let (name, args) = parse_prompt_reference("  @my-prompt extra").unwrap();
+        assert_eq!(name, "my-prompt");
+        assert_eq!(args.unwrap(), vec!["extra"]);
     }
 }

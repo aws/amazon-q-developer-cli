@@ -15,9 +15,7 @@ use crossterm::{
 use eyre::Result;
 use rmcp::model::{
     PromptMessage,
-    PromptMessageContent,
     PromptMessageRole,
-    ResourceContents,
 };
 use serde::{
     Deserialize,
@@ -769,34 +767,6 @@ impl ConversationState {
     /// Appends a collection prompts into history and returns the last message in the collection.
     /// It asserts that the collection ends with a prompt that assumes the role of user.
     pub fn append_prompts(&mut self, mut prompts: VecDeque<PromptMessage>) -> Option<String> {
-        fn stringify_prompt_message_content(prompt_msg_content: PromptMessageContent) -> String {
-            match prompt_msg_content {
-                PromptMessageContent::Text { text } => text,
-                PromptMessageContent::Image { image } => image.raw.data,
-                PromptMessageContent::Resource { resource } => {
-                    // TODO: add support for resources for prompt
-                    match resource.raw.resource {
-                        ResourceContents::TextResourceContents {
-                            uri, mime_type, text, ..
-                        } => {
-                            let mime_type = mime_type.as_deref().unwrap_or("unknown");
-                            format!("Text resource of uri: {uri}, mime_type: {mime_type}, text: {text}")
-                        },
-                        ResourceContents::BlobResourceContents {
-                            uri, mime_type, blob, ..
-                        } => {
-                            let mime_type = mime_type.as_deref().unwrap_or("unknown");
-                            format!("Blob resource of uri: {uri}, mime_type: {mime_type}, blob: {blob}")
-                        },
-                    }
-                },
-                PromptMessageContent::ResourceLink { link } => serde_json::to_string(&link.raw).unwrap_or(format!(
-                    "Resource link with uri: {}, name: {}",
-                    link.raw.uri, link.raw.name
-                )),
-            }
-        }
-
         debug_assert!(self.next_message.is_none(), "next_message should not exist");
         debug_assert!(prompts.back().is_some_and(|p| p.role == PromptMessageRole::User));
         let last_msg = prompts.pop_back()?;
@@ -806,7 +776,7 @@ impl ConversationState {
                 role,
                 content: prompt_msg_content,
             } = prompt_msg;
-            let content_str = stringify_prompt_message_content(prompt_msg_content);
+            let content_str = crate::cli::chat::cli::prompts::stringify_prompt_content(&prompt_msg_content);
 
             match role {
                 PromptMessageRole::User => {
@@ -831,7 +801,9 @@ impl ConversationState {
             }
         }
 
-        Some(stringify_prompt_message_content(last_msg.content))
+        Some(crate::cli::chat::cli::prompts::stringify_prompt_content(
+            &last_msg.content,
+        ))
     }
 
     pub fn next_user_message(&self) -> Option<&UserMessage> {

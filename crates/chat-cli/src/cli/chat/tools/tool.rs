@@ -171,6 +171,7 @@ impl Tool {
     }
 
     /// Invokes the tool asynchronously
+    #[allow(clippy::too_many_arguments)]
     pub async fn invoke(
         &self,
         os: &Os,
@@ -178,6 +179,7 @@ impl Tool {
         line_tracker: &mut HashMap<String, FileLineTracker>,
         agents: &crate::cli::agent::Agents,
         code_intelligence_client: &Option<std::sync::Arc<tokio::sync::RwLock<code_agent_sdk::CodeIntelligence>>>,
+        tool_manager: &mut crate::cli::chat::tool_manager::ToolManager,
         session_id: Option<&str>,
     ) -> Result<super::InvokeOutput> {
         let active_agent = agents.get_active();
@@ -196,7 +198,11 @@ impl Tool {
             Tool::Delegate(delegate) => delegate.invoke(os, stdout, agents).await,
             Tool::WebSearch(web_search) => web_search.invoke(os, stdout).await,
             Tool::WebFetch(web_fetch) => web_fetch.invoke(os, stdout).await,
-            Tool::UseSubagent(use_subagent) => use_subagent.invoke(os, agents, code_intelligence_client).await,
+            Tool::UseSubagent(use_subagent) => {
+                use_subagent
+                    .invoke(os, agents, code_intelligence_client, tool_manager)
+                    .await
+            },
             Tool::Glob(glob) => glob.invoke(os, stdout).await,
             Tool::Grep(grep) => grep.invoke(os, stdout).await,
             Tool::SwitchToExecution(switch) => switch.invoke(stdout).await,

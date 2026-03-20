@@ -55,6 +55,7 @@ impl InvokeSubagent {
         global_mcp_path: &'a PathBuf,
         parent_tool_use_id: &'a str,
         code_intelligence: Option<std::sync::Arc<tokio::sync::RwLock<code_agent_sdk::CodeIntelligence>>>,
+        query_override: Option<&'a str>,
     ) -> Subagent<'a> {
         let InvokeSubagent {
             query,
@@ -66,7 +67,7 @@ impl InvokeSubagent {
 
         Subagent {
             id,
-            query: query.as_str(),
+            query: query_override.unwrap_or(query.as_str()),
             agent_name: agent_name.as_deref(),
             task_context: relevant_context.as_deref(),
             dangerously_trust_all_tools: *dangerously_trust_all_tools,
@@ -265,6 +266,7 @@ impl UseSubagent {
         os: &Os,
         agents: &Agents,
         code_intelligence: &Option<std::sync::Arc<tokio::sync::RwLock<code_agent_sdk::CodeIntelligence>>>,
+        tool_manager: &mut crate::cli::chat::tool_manager::ToolManager,
     ) -> Result<InvokeOutput> {
         match self {
             Self::ListAgents => {
@@ -307,6 +309,17 @@ impl UseSubagent {
                 let global_mcp_path = resolver.global().mcp_config()?;
                 let is_interactive = subagents.iter().any(|agent| agent.is_interactive);
                 let parent_tool_use_id = tool_use_id.as_deref().unwrap_or_default();
+
+                // Resolve @prompt-name references in each subagent query using the parent's
+                // tool_manager (which has MCP servers already running). This allows the main
+                // agent's LLM to pass `@agent-sop:code-assist task_description="..."` and have
+                // the prompt content resolved before the subagent starts.
+                let mut resolved_queries: Vec<String> = Vec::with_capacity(subagents.len());
+                for invoke_subagent in subagents.iter() {
+                    let resolved = resolve_prompt_in_query(&invoke_subagent.query, os, tool_manager).await;
+                    resolved_queries.push(resolved);
+                }
+
                 let subagents = subagents
                     .iter()
                     .enumerate()
@@ -317,6 +330,7 @@ impl UseSubagent {
                             &global_mcp_path,
                             parent_tool_use_id,
                             code_intelligence.clone(),
+                            Some(resolved_queries[id].as_str()),
                         )
                     })
                     .collect::<Vec<_>>();
@@ -418,6 +432,33 @@ impl UseSubagent {
         }
 
         Ok(())
+    }
+}
+
+/// Resolve `@prompt-name [args...]` in a subagent query using the shared prompt resolution.
+/// Returns the resolved text content, or the original query unchanged on failure.
+/// Note: subagents only support text today, so non-text prompt messages are skipped.
+// TODO: validate prompt name against known prompts (file + MCP) like the main agent does,
+//       to avoid attempting resolution on @file-references or unknown names.
+// TODO: detect and warn on file vs MCP prompt name conflicts (main agent shows a warning).
+async fn resolve_prompt_in_query(
+    query: &str,
+    os: &Os,
+    tool_manager: &mut crate::cli::chat::tool_manager::ToolManager,
+) -> String {
+    let Some((prompt_name, arguments)) = crate::cli::chat::cli::prompts::parse_prompt_reference(query) else {
+        return query.to_string();
+    };
+
+    match crate::cli::chat::cli::prompts::resolve_prompt_reference(&prompt_name, arguments, os, tool_manager).await {
+        Ok(messages) => {
+            let text = crate::cli::chat::cli::prompts::prompt_messages_to_text(&messages);
+            if text.is_empty() { query.to_string() } else { text }
+        },
+        Err(e) => {
+            tracing::warn!(prompt_name, ?e, "failed to resolve @prompt in subagent query");
+            query.to_string()
+        },
     }
 }
 

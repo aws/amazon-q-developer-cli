@@ -3036,26 +3036,13 @@ impl ChatSession {
                 known_prompts.extend(mcp_prompts.keys().cloned());
             }
 
-            // Extract first word after @ to check if it's a prompt
-            let after_at = input_trimmed.strip_prefix(REFERENCE_PREFIX).unwrap_or("");
-            let first_word = after_at.split_whitespace().next().unwrap_or("");
-
-            // If first word is a known prompt, use existing prompt handling (full backwards compat)
-            if known_prompts.contains(first_word) {
-                let command = after_at;
-                let input_parts =
-                    shlex::split(command).ok_or(ChatError::Custom("Error splitting prompt command".into()))?;
-
-                let mut iter = input_parts.into_iter();
-                let prompt_name = iter
-                    .next()
-                    .ok_or(ChatError::Custom("Prompt name needs to be specified".into()))?;
-
-                let args: Vec<String> = iter.collect();
-                let arguments = if args.is_empty() { None } else { Some(args) };
-
+            // If input starts with a known prompt name, resolve it
+            if let Some((prompt_name, arguments)) =
+                crate::cli::chat::cli::prompts::parse_prompt_reference(&input_trimmed)
+                && known_prompts.contains(&prompt_name)
+            {
                 let subcommand = PromptsSubcommand::Get {
-                    orig_input: Some(command.to_string()),
+                    orig_input: Some(input_trimmed.strip_prefix(REFERENCE_PREFIX).unwrap_or("").to_string()),
                     name: prompt_name,
                     arguments,
                 };
@@ -3471,6 +3458,7 @@ impl ChatSession {
                     &mut self.conversation.file_line_tracker,
                     &self.conversation.agents,
                     &self.conversation.code_intelligence_client,
+                    &mut self.conversation.tool_manager,
                     Some(&conversation_id),
                 )
                 .await;
