@@ -88,8 +88,9 @@ class BunPaths:
 def download_bun() -> BunPaths:
     """Download bun executables for embedding. On macOS, returns per-arch paths.
     On Linux, returns a single path for the native arch."""
+    from rust import get_target_triple
     system = platform.system().lower()
-    machine = platform.machine().lower()
+    machine = get_target_triple().split("-")[0]
 
     downloads: list[tuple[str, str]] = []  # (url, filename)
     match system:
