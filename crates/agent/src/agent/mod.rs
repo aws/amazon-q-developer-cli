@@ -428,6 +428,18 @@ impl AgentHandle {
             other => Err(AgentError::Custom(format!("received unexpected response: {other:?}"))),
         }
     }
+
+    pub async fn get_last_assistant_message(&self) -> Result<Option<String>, AgentError> {
+        match self
+            .sender
+            .send_recv(AgentRequest::GetLastAssistantMessage)
+            .await
+            .unwrap_or(Err(AgentError::Channel))?
+        {
+            AgentResponse::LastAssistantMessage(msg) => Ok(msg),
+            other => Err(AgentError::Custom(format!("received unexpected response: {other:?}"))),
+        }
+    }
 }
 
 /// Core LLM agent that implements an [`AgentConfig`].
@@ -1179,6 +1191,26 @@ impl Agent {
                 self.agent_config.clear_all_resources();
                 self.session_resource_paths.clear();
                 Ok(AgentResponse::Success)
+            },
+            AgentRequest::GetLastAssistantMessage => {
+                let msg = self
+                    .conversation_state
+                    .messages()
+                    .iter()
+                    .rev()
+                    .find(|m| m.role == Role::Assistant)
+                    .map(|m| {
+                        m.content
+                            .iter()
+                            .filter_map(|c| match c {
+                                ContentBlock::Text(t) => Some(t.as_str()),
+                                _ => None,
+                            })
+                            .collect::<Vec<_>>()
+                            .join("")
+                    })
+                    .filter(|s| !s.is_empty());
+                Ok(AgentResponse::LastAssistantMessage(msg))
             },
         }
     }

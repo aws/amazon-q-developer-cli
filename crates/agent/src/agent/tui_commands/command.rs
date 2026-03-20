@@ -53,6 +53,8 @@ pub enum TuiCommand {
     Knowledge(KnowledgeArgs),
     /// List and execute available prompts
     Prompts(PromptsArgs),
+    /// Open editor pre-filled with the last assistant message to compose a reply
+    Reply(ReplyArgs),
 }
 
 /// Arguments for /help command
@@ -189,6 +191,12 @@ pub struct PromptsArgs {
 #[serde(rename_all = "camelCase")]
 pub struct ChatArgs {}
 
+/// Arguments for /reply command
+#[typeshare]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ReplyArgs {}
+
 impl TuiCommand {
     /// Command name with leading slash
     pub fn name(&self) -> &'static str {
@@ -209,6 +217,7 @@ impl TuiCommand {
             TuiCommand::Knowledge(_) => "/knowledge",
             TuiCommand::Prompts(_) => "/prompts",
             TuiCommand::Chat(_) => "/chat",
+            TuiCommand::Reply(_) => "/reply",
         }
     }
 
@@ -231,6 +240,7 @@ impl TuiCommand {
             TuiCommand::Knowledge(_) => "Manage knowledge base",
             TuiCommand::Prompts(_) => "Select or list available prompts",
             TuiCommand::Chat(_) => "Load a previous session",
+            TuiCommand::Reply(_) => "Open editor pre-filled with the last assistant message to compose a reply",
         }
     }
 
@@ -255,6 +265,7 @@ impl TuiCommand {
             },
             TuiCommand::Prompts(_) => "/prompts [prompt-name]",
             TuiCommand::Chat(_) => "/chat",
+            TuiCommand::Reply(_) => "/reply",
         }
     }
 
@@ -344,6 +355,7 @@ impl TuiCommand {
                 meta.insert("local".into(), true.into());
                 Some(meta)
             },
+            TuiCommand::Reply(_) => None,
         }
     }
 
@@ -366,6 +378,7 @@ impl TuiCommand {
             TuiCommand::Knowledge(KnowledgeArgs::default()),
             TuiCommand::Prompts(PromptsArgs::default()),
             TuiCommand::Chat(ChatArgs::default()),
+            TuiCommand::Reply(ReplyArgs::default()),
         ];
         commands.sort_by_key(|cmd| cmd.name());
         commands
@@ -407,6 +420,7 @@ impl TuiCommand {
                 prompt_name: (!args.is_empty()).then(|| args.to_string()),
             })),
             "chat" => Some(Self::Chat(ChatArgs::default())),
+            "reply" => Some(Self::Reply(ReplyArgs::default())),
             _ => None,
         }
     }

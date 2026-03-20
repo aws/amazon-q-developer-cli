@@ -247,6 +247,8 @@ pub enum AgentRequest {
     GetResources,
     /// Clear all session-added resources (keep original agent config resources)
     ClearSessionResources,
+    /// Get the text of the last assistant message, if any
+    GetLastAssistantMessage,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -511,6 +513,7 @@ pub enum AgentResponse {
     McpServerInfo(Vec<super::tui_commands::McpServerInfo>),
     ToolInfo(Vec<super::tui_commands::ToolInfo>),
     Resources(Vec<String>),
+    LastAssistantMessage(Option<String>),
     Unknown,
 }
 

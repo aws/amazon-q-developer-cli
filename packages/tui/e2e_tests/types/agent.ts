@@ -304,6 +304,10 @@ export interface PromptsArgs {
 export interface QuitArgs {
 }
 
+/** Arguments for /reply command */
+export interface ReplyArgs {
+}
+
 export type StreamErrorKind = 
 	/**
 	 * The request failed due to the context window overflowing.
@@ -470,5 +474,7 @@ export type TuiCommand =
 	/** Manage knowledge base */
 	| { command: "knowledge", args: KnowledgeArgs }
 	/** List and execute available prompts */
-	| { command: "prompts", args: PromptsArgs };
+	| { command: "prompts", args: PromptsArgs }
+	/** Open editor pre-filled with the last assistant message to compose a reply */
+	| { command: "reply", args: ReplyArgs };
 

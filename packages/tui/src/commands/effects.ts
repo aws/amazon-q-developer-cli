@@ -18,10 +18,7 @@ import type {
   SlashCommand,
   ToolInfo,
 } from '../stores/app-store.js';
-import { executeShellEscapeTTY } from '../utils/shell-escape.js';
-import { writeFileSync, readFileSync, unlinkSync, mkdtempSync } from 'fs';
-import { join } from 'path';
-import { tmpdir } from 'os';
+import { openEditorSync } from '../utils/editor.js';
 
 /** Effect handler function. Returns true if it handled its own messaging. */
 type EffectHandler = (
@@ -49,7 +46,8 @@ type EffectName =
   | 'quit'
   | 'pasteImage'
   | 'promptEditor'
-  | 'loadSession';
+  | 'loadSession'
+  | 'replyEditor';
 
 /**
  * Command → Effect mapping.
@@ -70,6 +68,7 @@ const commandEffects: Partial<Record<string, EffectName>> = {
   paste: 'pasteImage',
   editor: 'promptEditor',
   chat: 'loadSession',
+  reply: 'replyEditor',
 };
 
 /**
@@ -169,52 +168,48 @@ const effectHandlers: Record<EffectName, EffectHandler> = {
 
   /** Open $EDITOR to compose a prompt, then send the content as a chat message */
   promptEditor: (_result, ctx, _cmd, args) => {
-    const tempDir = mkdtempSync(join(tmpdir(), 'kiro-editor-'));
-    const tempFile = join(tempDir, 'prompt.md');
-
-    try {
-      writeFileSync(tempFile, args || '');
-      const editor = process.env.VISUAL || process.env.EDITOR || 'vi';
-      const quotedPath = `'${tempFile.replace(/'/g, "'\\''")}'`;
-      const { exitCode, error } = executeShellEscapeTTY(
-        `${editor} ${quotedPath}`
-      );
-
-      if (exitCode !== 0) {
-        ctx.showAlert(
-          error ?? `Editor exited with code ${exitCode}`,
-          'error',
-          3000
-        );
-        return true;
-      }
-
-      const content = readFileSync(tempFile, 'utf-8').trim();
-      if (!content) {
-        ctx.showAlert(
-          'Empty content from editor, not submitting.',
-          'error',
-          3000
-        );
-        return true;
-      }
-
-      ctx.sendMessage(content);
+    const result = openEditorSync({
+      prefix: 'kiro-editor-',
+      filename: 'prompt.md',
+      initialContent: args || '',
+      validate: (c) =>
+        !c ? 'Empty content from editor, not submitting.' : undefined,
+    });
+    if (!result.ok) {
+      ctx.showAlert(result.error, 'error', 3000);
       return true;
-    } catch (err) {
+    }
+    ctx.sendMessage(result.content);
+    return true;
+  },
+
+  /** Open $EDITOR pre-filled with the last assistant message (quoted) to compose a reply */
+  replyEditor: (result, ctx) => {
+    if (!result?.success) {
       ctx.showAlert(
-        err instanceof Error ? err.message : 'Failed to open editor',
+        result?.message ?? 'No assistant message found',
         'error',
         3000
       );
       return true;
-    } finally {
-      try {
-        unlinkSync(tempFile);
-      } catch {
-        // ignore cleanup errors
-      }
     }
+    const data = result?.data as { initialContent?: string } | undefined;
+    const initialContent = data?.initialContent ?? '';
+    const editorResult = openEditorSync({
+      prefix: 'kiro-reply-',
+      filename: 'reply.md',
+      initialContent,
+      validate: (c) =>
+        !c || c === initialContent.trim()
+          ? 'No changes made in editor, not submitting.'
+          : undefined,
+    });
+    if (!editorResult.ok) {
+      ctx.showAlert(editorResult.error, 'error', 3000);
+      return true;
+    }
+    ctx.sendMessage(editorResult.content);
+    return true;
   },
 
   pasteImage: (result, ctx) => {
