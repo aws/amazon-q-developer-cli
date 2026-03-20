@@ -87,31 +87,26 @@ class BunPaths:
 
 def download_bun() -> BunPaths:
     """Download bun executables for embedding. On macOS, returns per-arch paths.
-    On Linux, returns a single path for the native arch."""
+    On Linux/Windows, returns a single path for the target arch."""
     from rust import get_target_triple
-    system = platform.system().lower()
-    machine = get_target_triple().split("-")[0]
+
+    def _get_bun_archs() -> list[str]:
+        triple = get_target_triple()
+        if triple == "universal-apple-darwin":
+            return ["x64", "aarch64"]
+        if triple.startswith(("x86_64", "amd64")):
+            return ["x64"]
+        if triple.startswith(("aarch64", "arm64")):
+            return ["aarch64"]
+        raise ValueError(f"Unsupported target triple: {triple}")
+
+    bun_system = platform.system().lower()
+    bun_archs = _get_bun_archs()
 
     downloads: list[tuple[str, str]] = []  # (url, filename)
-    match system:
-        case "darwin":
-            for arch in ["x64", "aarch64"]:
-                fname = f"bun-{system}-{arch}.zip"
-                downloads.append((f"https://github.com/oven-sh/bun/releases/download/bun-v{BUN_VERSION}/{fname}", fname))
-        case "linux":
-            arch = "x64" if machine in ["x86_64", "amd64"] else "aarch64" if machine in ["aarch64", "arm64"] else None
-            if not arch:
-                raise ValueError(f"Unsupported architecture: {machine}")
-            fname = f"bun-{system}-{arch}.zip"
-            downloads.append((f"https://github.com/oven-sh/bun/releases/download/bun-v{BUN_VERSION}/{fname}", fname))
-        case "windows":
-            arch = "x64" if machine in ["x86_64", "amd64"] else "aarch64" if machine in ["aarch64", "arm64"] else None
-            if not arch:
-                raise ValueError(f"Unsupported architecture: {machine}")
-            fname = f"bun-{system}-{arch}.zip"
-            downloads.append((f"https://github.com/oven-sh/bun/releases/download/bun-v{BUN_VERSION}/{fname}", fname))
-        case _:
-            raise ValueError(f"Unsupported system: {system}")
+    for arch in bun_archs:
+        fname = f"bun-{bun_system}-{arch}.zip"
+        downloads.append((f"https://github.com/oven-sh/bun/releases/download/bun-v{BUN_VERSION}/{fname}", fname))
 
     bun_dir = BUILD_DIR / "bun"
     shutil.rmtree(bun_dir, ignore_errors=True)
