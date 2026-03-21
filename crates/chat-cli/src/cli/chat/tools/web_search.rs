@@ -17,7 +17,12 @@ use super::{
 };
 use crate::api_client::delay_interceptor::DelayTrackingInterceptor;
 use crate::api_client::opt_out::OptOutInterceptor;
+use crate::api_client::token_type_interceptor::{
+    AuthMode,
+    TokenTypeInterceptor,
+};
 use crate::auth::UnifiedBearerResolver;
+use crate::auth::external_idp::ExternalIdpToken;
 use crate::aws_common::UserAgentOverrideInterceptor;
 use crate::cli::agent::{
     Agent,
@@ -111,10 +116,24 @@ impl WebSearch {
         };
         use aws_smithy_runtime_api::client::endpoint::EndpointFuture;
 
-        let database = Database::new_default().await?;
+        let mut database = Database::new_default().await?;
 
         // Get endpoint with region (same pattern as generateAssistantResponse)
         let endpoint = crate::api_client::Endpoint::configured_value(&database);
+
+        // Determine auth mode (same logic as ApiClient::new in api_client/mod.rs)
+        let is_external_idp = ExternalIdpToken::load(&database).await.is_ok_and(|t| t.is_some());
+        let auth_mode = if is_external_idp {
+            AuthMode::ExternalIdp
+        } else if crate::auth::is_builder_id_logged_in(&mut database).await
+            || crate::auth::social::is_social_logged_in(&database).await
+        {
+            AuthMode::Normal
+        } else if crate::util::env_var::get_api_key().is_some() {
+            AuthMode::ApiKey
+        } else {
+            AuthMode::Normal
+        };
 
         // Create a static endpoint resolver
         #[derive(Debug)]
@@ -153,6 +172,7 @@ impl WebSearch {
                 .interceptor(OptOutInterceptor::new(&database))
                 .interceptor(UserAgentOverrideInterceptor::new())
                 .interceptor(DelayTrackingInterceptor::new())
+                .interceptor(TokenTypeInterceptor::new(auth_mode))
                 .bearer_token_resolver(UnifiedBearerResolver)
                 .app_name(crate::aws_common::app_name())
                 .endpoint_resolver(StaticEndpointResolver::new(endpoint.url().to_string()))
