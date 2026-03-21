@@ -13,12 +13,28 @@
     {
       "type": "release",
       "date": "2026-03-20",
+      "version": "1.28.1",
+      "title": "Version 1.28.1",
+      "changes": [
+        {
+          "type": "fixed",
+          "description": "Fixed shell command trust patterns to preserve the original command path"
+        },
+        {
+          "type": "fixed",
+          "description": "Fixed prompt references not being resolved when passed to subagents"
+        }
+      ]
+    },
+    {
+      "type": "release",
+      "date": "2026-03-20",
       "version": "1.28.0",
       "title": "Version 1.28.0",
       "changes": [
         {
           "type": "added",
-          "description": "A refreshed UX (experimental) with live unified status, omnipresent input, and contextual overlays—try it with kiro-cli --tui. Learn more and share your feedback: https://kiro.dev/blog/new-look-for-cli"
+          "description": "A refreshed UX (experimental) with live unified status, omnipresent input, and contextual overlays—try it with kiro-cli --tui. Learn more and share your feedback: https://kiro.dev/docs/cli/experimental/tui/"
         },
         {
           "type": "added",

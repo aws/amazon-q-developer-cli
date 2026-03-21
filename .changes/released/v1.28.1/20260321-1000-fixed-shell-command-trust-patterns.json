@@ -1,0 +1,4 @@
+{
+  "type": "fixed",
+  "description": "Fixed shell command trust patterns to preserve the original command path"
+}
