@@ -457,9 +457,6 @@ pub struct LocalMcpServerConfig {
     /// A boolean flag to denote whether or not to load this mcp server
     #[serde(default)]
     pub disabled: bool,
-    /// List of tool names from this server to disable
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub disabled_tools: Vec<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
@@ -483,23 +480,10 @@ pub struct RemoteMcpServerConfig {
     /// A boolean flag to denote whether or not to load this mcp server
     #[serde(default)]
     pub disabled: bool,
-    /// List of tool names from this server to disable
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub disabled_tools: Vec<String>,
 }
 
 pub fn default_timeout() -> u64 {
     120 * 1000
-}
-
-impl McpServerConfig {
-    /// Returns the list of disabled tool names for this server.
-    pub fn disabled_tools(&self) -> &[String] {
-        match self {
-            McpServerConfig::Local(c) => &c.disabled_tools,
-            McpServerConfig::Remote(c) => &c.disabled_tools,
-        }
-    }
 }
 
 /// The schema specification describing a tool's fields.
@@ -835,7 +819,6 @@ mod tests {
             timeout_ms: 120_000,
             oauth: None,
             disabled: false,
-            disabled_tools: Vec::new(),
         });
 
         let overridden = config.add_mcp_servers(vec![("test-server".to_string(), server)]);
@@ -854,7 +837,6 @@ mod tests {
             timeout_ms: 120_000,
             oauth: None,
             disabled: false,
-            disabled_tools: Vec::new(),
         });
         config.add_mcp_servers(vec![("test-server".to_string(), server1)]);
 
@@ -865,7 +847,6 @@ mod tests {
             timeout_ms: 120_000,
             oauth: None,
             disabled: false,
-            disabled_tools: Vec::new(),
         });
         let overridden = config.add_mcp_servers(vec![("test-server".to_string(), server2)]);
 
@@ -1044,76 +1025,5 @@ mod tests {
 
         config.clear_all_resources();
         assert_eq!(config.resources().len(), 0);
-    }
-
-    #[test]
-    fn test_disabled_tools_deser() {
-        let config: LocalMcpServerConfig = serde_json::from_value(serde_json::json!({
-            "command": "mcp-server",
-            "disabledTools": ["tool_a", "tool_b"]
-        }))
-        .unwrap();
-        assert_eq!(config.disabled_tools, vec!["tool_a", "tool_b"]);
-    }
-
-    #[test]
-    fn test_disabled_tools_default_empty() {
-        let config: LocalMcpServerConfig = serde_json::from_value(serde_json::json!({
-            "command": "mcp-server"
-        }))
-        .unwrap();
-        assert!(config.disabled_tools.is_empty());
-    }
-
-    #[test]
-    fn test_disabled_tools_helper() {
-        let local = McpServerConfig::Local(LocalMcpServerConfig {
-            command: "cmd".to_string(),
-            args: Vec::new(),
-            env: None,
-            timeout_ms: 120_000,
-            disabled: false,
-            disabled_tools: vec!["tool_a".to_string()],
-        });
-        assert_eq!(local.disabled_tools(), &["tool_a"]);
-
-        let remote = McpServerConfig::Remote(RemoteMcpServerConfig {
-            url: "https://example.com".to_string(),
-            headers: HashMap::new(),
-            timeout_ms: 120_000,
-            oauth_scopes: Vec::new(),
-            oauth: None,
-            disabled: false,
-            disabled_tools: vec!["tool_b".to_string()],
-        });
-        assert_eq!(remote.disabled_tools(), &["tool_b"]);
-    }
-
-    #[test]
-    fn test_disabled_tools_skipped_in_serialization_when_empty() {
-        let config = LocalMcpServerConfig {
-            command: "cmd".to_string(),
-            args: Vec::new(),
-            env: None,
-            timeout_ms: 120_000,
-            disabled: false,
-            disabled_tools: Vec::new(),
-        };
-        let json = serde_json::to_value(&config).unwrap();
-        assert!(json.get("disabledTools").is_none());
-    }
-
-    #[test]
-    fn test_disabled_tools_present_in_serialization_when_nonempty() {
-        let config = LocalMcpServerConfig {
-            command: "cmd".to_string(),
-            args: Vec::new(),
-            env: None,
-            timeout_ms: 120_000,
-            disabled: false,
-            disabled_tools: vec!["tool_a".to_string()],
-        };
-        let json = serde_json::to_value(&config).unwrap();
-        assert_eq!(json["disabledTools"], serde_json::json!(["tool_a"]));
     }
 }

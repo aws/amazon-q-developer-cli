@@ -50,7 +50,6 @@ pub fn convert_stdio(stdio: McpServerStdio) -> LocalMcpServerConfig {
         env,
         timeout_ms: default_timeout(),
         disabled: false,
-        disabled_tools: Vec::new(),
     }
 }
 
@@ -62,7 +61,6 @@ pub fn convert_http(http: McpServerHttp) -> RemoteMcpServerConfig {
         oauth_scopes: Vec::new(),
         oauth: None,
         disabled: false,
-        disabled_tools: Vec::new(),
     }
 }
 
@@ -74,7 +72,6 @@ pub fn convert_sse(sse: McpServerSse) -> RemoteMcpServerConfig {
         oauth_scopes: Vec::new(),
         oauth: None,
         disabled: false,
-        disabled_tools: Vec::new(),
     }
 }
 
