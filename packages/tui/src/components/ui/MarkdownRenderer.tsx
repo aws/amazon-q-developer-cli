@@ -233,24 +233,61 @@ export const MarkdownRenderer = React.memo(function MarkdownRenderer({
             }
             return stripped + ' '.repeat(pad);
           };
+          const border = (
+            left: string,
+            mid: string,
+            right: string,
+            h: string
+          ) =>
+            left +
+            colWidths.map((w) => h.repeat(w + 2)).join(mid) +
+            right;
           const formatRow = (cells: string[]) =>
-            '| ' +
+            '│ ' +
             cells
               .map((c, ci) =>
                 padCell(c, colWidths[ci] || 3, alignments[ci] || 'left')
               )
-              .join(' | ') +
-            ' |';
-          const separator =
-            '|' + colWidths.map((w) => '-'.repeat(w + 2)).join('|') + '|';
+              .join(' │ ') +
+            ' │';
 
           return (
-            <Box key={i} flexDirection="column">
-              <Text>{color(formatRow(headers))}</Text>
-              <Text>{chalk.dim(separator)}</Text>
+            <Box key={i} flexDirection="column" marginTop={i > 0 ? 1 : 0}>
+              <Text>{chalk.dim(border('┌', '┬', '┐', '─'))}</Text>
+              <Text>
+                {chalk.dim('│')}{' '}
+                {color(
+                  chalk.bold(
+                    headers
+                      .map((h, ci) =>
+                        padCell(
+                          h,
+                          colWidths[ci] || 3,
+                          alignments[ci] || 'left'
+                        )
+                      )
+                      .join(` ${chalk.dim('│')} `)
+                  )
+                )}{' '}
+                {chalk.dim('│')}
+              </Text>
+              <Text>{chalk.dim(border('├', '┼', '┤', '─'))}</Text>
               {rows.map((row, ri) => (
-                <Text key={ri}>{color(formatRow(row))}</Text>
+                <Text key={ri}>
+                  {chalk.dim('│')} {color(
+                    row
+                      .map((c, ci) =>
+                        padCell(
+                          c,
+                          colWidths[ci] || 3,
+                          alignments[ci] || 'left'
+                        )
+                      )
+                      .join(` ${chalk.dim('│')} `)
+                  )} {chalk.dim('│')}
+                </Text>
               ))}
+              <Text>{chalk.dim(border('└', '┴', '┘', '─'))}</Text>
             </Box>
           );
         }

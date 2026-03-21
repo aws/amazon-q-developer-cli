@@ -10,6 +10,7 @@ const meta = {
       'DeveloperMessage',
       'AgentMessage',
       'AgentWithMarkdown',
+      'AgentWithTable',
       'SuccessMessage',
       'InfoMessage',
       'WarningMessage',
@@ -68,6 +69,31 @@ export const AgentWithMarkdown = {
   ),
   args: {
     content: 'Here is a **bold** statement with `code` and *italic* text.',
+    type: MessageType.AGENT,
+  },
+};
+
+export const AgentWithTable = {
+  parameters: {
+    docs: {
+      storyDescription: 'Agent message with a markdown table',
+    },
+  },
+  render: (args: MessageProps) => (
+    <Card active={true}>
+      <Message {...args} />
+    </Card>
+  ),
+  args: {
+    content: `Here are the top countries by population:
+
+| Country | Population | Average GDP (USD) |
+|---------|-----------|-------------------|
+| Aurelia | 48,200,000 | $1.2T |
+| Belvoria | 112,500,000 | $3.8T |
+| Caldonia | 9,800,000 | $420B |
+| Dravenia | 67,300,000 | $2.1T |
+| Estara | 23,100,000 | $890B |`,
     type: MessageType.AGENT,
   },
 };
