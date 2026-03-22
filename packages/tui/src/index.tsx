@@ -23,10 +23,13 @@ const ENABLE_BRACKETED_PASTE = '\x1b[?2004h';
 const DISABLE_BRACKETED_PASTE = '\x1b[?2004l';
 
 const cleanup = () => {
-  // Disable bracketed paste mode before exiting
-  process.stdout.write(DISABLE_BRACKETED_PASTE);
-  process.stdin.setRawMode?.(false);
-  clearTerminalProgress();
+  try {
+    process.stdout.write(DISABLE_BRACKETED_PASTE);
+    process.stdin.setRawMode?.(false);
+    clearTerminalProgress();
+  } catch {
+    // stdout/stdin may already be dead (e.g. PTY closed), ignore errors
+  }
   process.exit(0);
 };
 
