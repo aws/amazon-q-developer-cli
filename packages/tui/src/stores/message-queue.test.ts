@@ -1,6 +1,7 @@
 import { describe, it, expect, mock } from 'bun:test';
 import { createAppStore } from './app-store';
 import { Kiro } from '../kiro';
+import { AgentEventType } from '../types/agent-events';
 
 mock.module('../kiro', () => ({
   Kiro: mock(() => ({
@@ -204,6 +205,55 @@ describe('Message queue', () => {
 
       expect(store.getState().queuedMessages).toEqual([]);
       expect(store.getState().toolOutputsExpanded).toBe(true);
+    });
+  });
+
+  describe('compaction drains queue', () => {
+    it('processQueue is called after compaction completes', async () => {
+      const store = createTestStore();
+      store.setState({
+        isCompacting: true,
+        isProcessing: true,
+        queuedMessages: ['queued during compaction'],
+      });
+
+      await store.getState().handleCompactionEvent({
+        type: AgentEventType.CompactionStatus,
+        status: 'completed',
+      });
+
+      expect(store.getState().isCompacting).toBe(false);
+      expect(store.getState().queuedMessages).toEqual([]);
+    });
+
+    it('processQueue is called after compaction fails', async () => {
+      const store = createTestStore();
+      store.setState({
+        isCompacting: true,
+        isProcessing: true,
+        queuedMessages: ['queued during compaction'],
+      });
+
+      await store.getState().handleCompactionEvent({
+        type: AgentEventType.CompactionStatus,
+        status: 'failed',
+        error: 'test error',
+      });
+
+      expect(store.getState().isCompacting).toBe(false);
+      expect(store.getState().queuedMessages).toEqual([]);
+    });
+
+    it('queue is untouched when compaction starts', async () => {
+      const store = createTestStore();
+      store.setState({ queuedMessages: ['pre-existing'] });
+
+      await store.getState().handleCompactionEvent({
+        type: AgentEventType.CompactionStatus,
+        status: 'started',
+      });
+
+      expect(store.getState().queuedMessages).toEqual(['pre-existing']);
     });
   });
 });

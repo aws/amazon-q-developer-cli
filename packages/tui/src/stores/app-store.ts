@@ -220,7 +220,7 @@ interface BaseAppActions {
     agent: { name: string; welcomeMessage?: string } | null
   ) => void;
   setPreviousAgentName: (name: string | null) => void;
-  handleCompactionEvent: (event: AgentStreamEvent) => void;
+  handleCompactionEvent: (event: AgentStreamEvent) => Promise<void>;
 
   // Chat actions
   clearMessages: () => void;
@@ -1245,7 +1245,7 @@ export const createAppStore = (props: AppStoreProps) => {
     },
     setPreviousAgentName: (previousAgentName) => set({ previousAgentName }),
 
-    handleCompactionEvent: (event) => {
+    handleCompactionEvent: async (event) => {
       if (event.type === AgentEventType.ContextUsage) {
         logger.info(
           '[context-usage] ContextUsage event in compactionHandler, percent=',
@@ -1277,6 +1277,7 @@ export const createAppStore = (props: AppStoreProps) => {
           }
           return { isCompacting: false, isProcessing: false, messages };
         });
+        await get().processQueue();
       } else if (event.status === 'failed') {
         set({ isCompacting: false, isProcessing: false });
         get().showTransientAlert({
@@ -1284,6 +1285,7 @@ export const createAppStore = (props: AppStoreProps) => {
           status: 'error',
           autoHideMs: 5000,
         });
+        await get().processQueue();
       }
     },
 
