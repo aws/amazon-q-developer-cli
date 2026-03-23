@@ -14,7 +14,7 @@ describe('visibleWidth', () => {
 	it('handles CJK characters as width 2', () => {
 		expect(visibleWidth('你好')).toBe(4);
 		expect(visibleWidth('日本語')).toBe(6);
-		expect(visibleWidth('a你b')).toBe(4); // 1 + 2 + 1
+		expect(visibleWidth('a你b')).toBe(4);
 	});
 
 	it('handles emoji as width 2', () => {
@@ -23,8 +23,8 @@ describe('visibleWidth', () => {
 	});
 
 	it('handles multi-codepoint emoji', () => {
-		expect(visibleWidth('👨‍👩‍👧‍👦')).toBe(2); // family emoji
-		expect(visibleWidth('🏳️‍🌈')).toBe(2); // rainbow flag
+		expect(visibleWidth('👨‍👩‍👧‍👦')).toBe(2);
+		expect(visibleWidth('🏳️‍🌈')).toBe(2);
 	});
 
 	it('strips ANSI SGR codes', () => {
@@ -43,10 +43,56 @@ describe('visibleWidth', () => {
 
 	it('converts tabs to 3 spaces', () => {
 		expect(visibleWidth('\t')).toBe(3);
-		expect(visibleWidth('a\tb')).toBe(5); // 1 + 3 + 1
+		expect(visibleWidth('a\tb')).toBe(5);
 	});
 
 	it('handles mixed content', () => {
-		expect(visibleWidth('\x1b[31m你好\x1b[0m world')).toBe(10); // 4 + 1 + 5
+		expect(visibleWidth('\x1b[31m你好\x1b[0m world')).toBe(10);
+	});
+
+	describe('two-tier cache', () => {
+		it('returns consistent results for short strings (grapheme cache)', () => {
+			const short = '\x1b[38;2;255;0;0mx\x1b[0m';
+			expect(short.length).toBeLessThanOrEqual(20);
+			expect(visibleWidth(short)).toBe(1);
+			expect(visibleWidth(short)).toBe(1);
+		});
+
+		it('returns consistent results for long strings (line cache)', () => {
+			const long = '\x1b[38;2;255;0;0m' + 'x'.repeat(20) + '\x1b[0m';
+			expect(long.length).toBeGreaterThan(20);
+			expect(visibleWidth(long)).toBe(20);
+			expect(visibleWidth(long)).toBe(20);
+		});
+	});
+
+	describe('parity with string-width', () => {
+		const cases: [string, number][] = [
+			['hello world', 11],
+			['', 0],
+			[' ', 1],
+			['~', 1],
+			['\x1b[31mred\x1b[0m', 3],
+			['\x1b[0m', 0],
+			['\x1b[1;31;42mbold red on green\x1b[0m', 17],
+			['\x1b[38;5;196m256color\x1b[0m', 8],
+			['\x1b[38;2;255;128;0mtruecolor\x1b[0m', 9],
+			['\x1b[2Kline', 4],
+			['\x1b[Hhome', 4],
+			['🚀', 2],
+			['hello 🌍', 8],
+			['你好', 4],
+			['\x1b[31m你好\x1b[0m', 4],
+			['\t', 3],
+			['a\tb', 5],
+			['\x1b[31mhello\x1b[0m \x1b[32mworld\x1b[0m', 11],
+		];
+
+		for (const [input, expected] of cases) {
+			const label = JSON.stringify(input).slice(0, 60);
+			it(`${label} → ${expected}`, () => {
+				expect(visibleWidth(input)).toBe(expected);
+			});
+		}
 	});
 });

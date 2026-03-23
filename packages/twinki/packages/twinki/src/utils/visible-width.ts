@@ -16,17 +16,31 @@ export function getSegmenter(): Intl.Segmenter {
 	return segmenter;
 }
 
-// Cache for width calculations.
-// string-width compiles /^\p{RGI_Emoji}$/v on every call — caching avoids
-// redundant regex work. 10K entries matches ink's cached-string-width.ts.
-const WIDTH_CACHE_SIZE = 10_000;
-const widthCache = new Map<string, number>();
+// --- Two-tier cache ---
+//
+// Grapheme cache: small strings (≤20 chars) from wrap-ansi per-grapheme calls.
+// Population is bounded (char × ANSI-color combos), so it stabilizes and
+// never thrashes — even when the line cache overflows and clears.
+//
+// Line cache: longer strings from text-renderer, box-renderer, tui.ts.
+// Full-clear on overflow (matches ink's approach).
+//
+// The old single 10K cache mixed both populations. When unique long lines
+// filled it past 10K, the clear() nuked cached graphemes too, forcing
+// string-width re-evaluation (including the expensive RGI_Emoji regex)
+// on the next wrap-ansi pass.
+
+const GRAPHEME_CACHE_SIZE = 2_000;
+const graphemeCache = new Map<string, number>();
+
+const LINE_CACHE_SIZE = 10_000;
+const lineCache = new Map<string, number>();
 
 /**
  * Calculates the visible width of a string in terminal columns.
  * 
  * Uses the battle-tested `string-width` package for accurate width calculation,
- * with a fast ASCII path and LRU cache for performance.
+ * with a fast ASCII path and two-tier LRU cache for performance.
  * 
  * @param str - String to measure
  * @returns Width in terminal columns
@@ -53,16 +67,24 @@ export function visibleWidth(str: string): number {
 	}
 	if (isPureAscii) return str.length;
 
-	// Check cache
-	const cached = widthCache.get(str);
+	// Short strings (graphemes) use dedicated cache
+	if (str.length <= 20) {
+		const cached = graphemeCache.get(str);
+		if (cached !== undefined) return cached;
+
+		const width = stringWidth(str.includes('\t') ? str.replace(/\t/g, '   ') : str);
+		if (graphemeCache.size >= GRAPHEME_CACHE_SIZE) graphemeCache.clear();
+		graphemeCache.set(str, width);
+		return width;
+	}
+
+	// Longer strings use line cache
+	const cached = lineCache.get(str);
 	if (cached !== undefined) return cached;
 
 	const width = stringWidth(str.includes('\t') ? str.replace(/\t/g, '   ') : str);
-
-	// Cache with full clear on overflow (matches ink's approach)
-	if (widthCache.size >= WIDTH_CACHE_SIZE) widthCache.clear();
-	widthCache.set(str, width);
-
+	if (lineCache.size >= LINE_CACHE_SIZE) lineCache.clear();
+	lineCache.set(str, width);
 	return width;
 }
 
