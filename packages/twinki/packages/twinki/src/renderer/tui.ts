@@ -1038,7 +1038,7 @@ export class TUI extends Container {
 	 * These lines are rendered above live content and scroll into terminal scrollback.
 	 */
 	writeStaticLines(lines: string[]): void {
-		if (lines.length > 0) {
+		if (lines.length > 0 && !this.altScreen) {
 			this.accumulatedStaticOutput.push(...lines);
 			this.trimStaticOutput();
 			// When content overflowed the viewport, old active content is stuck
@@ -1266,7 +1266,8 @@ export class TUI extends Container {
 
 		// OPTIMIZED: Combine accumulated static output with live content
 		// Use concat instead of spread operator for better performance with large arrays
-		if (this.accumulatedStaticOutput.length > 0) {
+		// Skip in alt screen — no scrollback buffer to display static content in.
+		if (this.accumulatedStaticOutput.length > 0 && !this.altScreen) {
 			newLines = this.accumulatedStaticOutput.concat(newLines);
 		}
 
@@ -1410,9 +1411,29 @@ export class TUI extends Container {
 			return;
 		}
 
-		// Change above previous viewport — full redraw to clear old lines.
+		// Change above previous viewport.
+		// When content didn't shrink, re-scan only the visible viewport instead
+		// of a full redraw. This avoids flashing from off-screen animation ticks
+		// (spinners, thinking indicators) that would otherwise trigger CLEAR_ALL.
 		const previousContentViewportTop = Math.max(0, this.previousLines.length - height);
-		if (firstChanged < previousContentViewportTop) {
+		if (firstChanged < previousContentViewportTop && newLines.length >= this.previousLines.length) {
+			firstChanged = -1;
+			lastChanged = -1;
+			for (let i = previousContentViewportTop; i < Math.max(newLines.length, this.previousLines.length); i++) {
+				const oldLine = this.previousLines[i] ?? '';
+				const newLine = newLines[i] ?? '';
+				if (oldLine !== newLine) {
+					if (firstChanged === -1) firstChanged = i;
+					lastChanged = i;
+				}
+			}
+			if (firstChanged === -1) {
+				this.previousLines = newLines;
+				this.previousWidth = width;
+				this.previousViewportTop = Math.max(0, this.maxLinesRendered - height);
+				return;
+			}
+		} else if (firstChanged < previousContentViewportTop) {
 			fullRender(this.altScreen ? CLEAR_SCREEN : CLEAR_ALL, 'off-screen-change');
 			return;
 		}

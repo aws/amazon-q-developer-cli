@@ -75,16 +75,19 @@ export const CommandMenu: React.FC = () => {
     return match?.[1] ?? '';
   }, [commandInputValue, activeTrigger]);
 
-  // Search files when query changes
+  // Debounce file search so rapid keystrokes (e.g. typing @kennvene) don't
+  // trigger a synchronous readdirSync walk on every character.
   useEffect(() => {
     if (activeTrigger?.key === '@' && fileQuery) {
-      const results = searchFiles(fileQuery);
-      setFileResults(results);
-      setFilePickerHasResults(results.length > 0);
-    } else {
-      setFileResults([]);
-      setFilePickerHasResults(false);
+      const timer = setTimeout(() => {
+        const results = searchFiles(fileQuery);
+        setFileResults(results);
+        setFilePickerHasResults(results.length > 0);
+      }, 150);
+      return () => clearTimeout(timer);
     }
+    setFileResults([]);
+    setFilePickerHasResults(false);
   }, [fileQuery, activeTrigger, setFilePickerHasResults]);
 
   const filteredCommands = useMemo(() => {
