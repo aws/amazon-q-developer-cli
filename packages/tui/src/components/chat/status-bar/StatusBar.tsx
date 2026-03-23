@@ -203,7 +203,9 @@ export const StatusBar = React.memo(function StatusBar({
         // Don't show bar for paused status (only show the arrow icon)
         const color =
           lineColors.get(i) ||
-          (status ? getStatusColor(status, getColor).hex : defaultBarColor);
+          (status && status !== 'active'
+            ? getStatusColor(status, getColor).hex
+            : defaultBarColor);
         elements.push(
           <Text key={i} backgroundColor={color}>
             {' '}
@@ -229,11 +231,30 @@ export const StatusBar = React.memo(function StatusBar({
     barColorProp,
   ]);
 
+  // Background color for the bar column — fills any gap between bar elements and content height
+  const barBgColor = useMemo(() => {
+    if (
+      !active ||
+      status === 'paused' ||
+      status === 'thinking' ||
+      status === 'executing'
+    )
+      return undefined;
+    if (status && status !== 'active')
+      return getStatusColor(status, getColor).hex;
+    return defaultBarColor;
+  }, [active, status, defaultBarColor, getColor]);
+
   return (
     <StatusBarContext.Provider value={contextValue}>
       <Box flexDirection="row" width="100%">
         {/* Bar stretches to match content; content sizes to its own height */}
-        <Box flexDirection="column" width={1} justifyContent="flex-start">
+        <Box
+          flexDirection="column"
+          width={1}
+          justifyContent="flex-start"
+          backgroundColor={barBgColor}
+        >
           {barElements}
         </Box>
         <Box
