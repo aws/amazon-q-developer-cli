@@ -2849,19 +2849,22 @@ impl ChatSession {
         let show_tool_use_confirmation_dialog = !skip_printing_tools && self.pending_tool_index.is_some();
         if show_tool_use_confirmation_dialog {
             // Check if the pending tool is trustable
-            let tool_is_trustable = if let Some(index) = self.pending_tool_index {
+            let (tool_is_trustable, tool_display_name) = if let Some(index) = self.pending_tool_index {
                 if let Some(queued_tool) = self.tool_uses.get(index) {
-                    // Get ToolInfo to check if trustable
-                    ToolMetadata::get_by_spec_name(&queued_tool.name).is_none_or(|info| info.is_trustable()) // Default to trustable for unknown tools
+                    let tool_info = ToolMetadata::get_by_spec_name(&queued_tool.name);
+                    let trustable = tool_info.is_none_or(|info| info.is_trustable()); // Default to trustable for unknown tools
+                    let name =
+                        tool_info.map_or_else(|| queued_tool.name.clone(), |info| info.preferred_alias.to_string());
+                    (trustable, name)
                 } else {
-                    true
+                    (true, String::new())
                 }
             } else {
-                true
+                (true, String::new())
             };
 
             if tool_is_trustable {
-                // Show full prompt with trust option
+                // Show full prompt with trust option and tool name
                 execute!(
                     self.stderr,
                     StyledText::secondary_fg(),
@@ -2869,7 +2872,11 @@ impl ChatSession {
                     StyledText::current_item_fg(),
                     style::Print("t"),
                     StyledText::secondary_fg(),
-                    style::Print("' to trust (always allow) this tool for the session. ["),
+                    style::Print("' to trust (always allow) the '"),
+                    StyledText::current_item_fg(),
+                    style::Print(&tool_display_name),
+                    StyledText::secondary_fg(),
+                    style::Print("' tool for the session. ["),
                     StyledText::current_item_fg(),
                     style::Print("y"),
                     StyledText::secondary_fg(),

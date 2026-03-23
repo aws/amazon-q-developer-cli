@@ -1,0 +1,4 @@
+{
+  "type": "added",
+  "description": "Show tool name in the approval prompt so users know which tool they are approving"
+}
