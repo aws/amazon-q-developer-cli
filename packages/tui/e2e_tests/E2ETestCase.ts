@@ -198,6 +198,14 @@ export class E2ETestCase {
     return this.ptyManager.sendKeys(input);
   }
 
+  /**
+   * Registers a listener for raw PTY output. Used by knight-rider
+   * to broadcast terminal data to WebSocket viewers.
+   */
+  onPtyData(listener: (data: string) => void): void {
+    this.ptyManager.onData(listener);
+  }
+
   /** Send Enter key */
   async pressEnter(): Promise<void> {
     return this.sendKeys('\r');

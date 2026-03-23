@@ -22,7 +22,8 @@
     "bench:markdown": "bun run scripts/benchmark-markdown.ts",
     "dev:profile": "KIRO_AGENT_PATH=../../target/debug/chat_cli KIRO_INPUT_METRICS=true KIRO_PERF_METRICS=true KIRO_TUI_LOG_FILE=/tmp/kiro-tui-perf.log bun --cpu-prof --cpu-prof-dir=./profiles --watch ./src/index.tsx",
     "dev:profiletui": "KIRO_RENDERER=twinki KIRO_AGENT_PATH=../../target/debug/chat_cli KIRO_INPUT_METRICS=true KIRO_PERF_METRICS=true KIRO_TUI_LOG_FILE=/tmp/kiro-tui-perf.log bun --cpu-prof --cpu-prof-dir=./profiles --watch ./src/index.tsx",
-    "analyze:profile": "bun run scripts/analyze-profile.ts --html"
+    "analyze:profile": "bun run scripts/analyze-profile.ts --html",
+    "knight-rider": "bun run e2e_tests/knight-rider.ts"
   },
   "dependencies": {
     "@agentclientprotocol/sdk": "^0.5.1",

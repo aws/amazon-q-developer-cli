@@ -61,6 +61,15 @@ export class PtyManager {
   }
 
   /**
+   * Registers an additional listener for raw PTY output data.
+   * Used by knight-rider to broadcast to WebSocket viewers.
+   */
+  onData(listener: (data: string) => void): void {
+    if (!this.pty) throw new Error('PTY not spawned');
+    this.pty.onData(listener);
+  }
+
+  /**
    * Sends keystrokes or raw bytes to the PTY.
    *
    * @param input - String to type or array of byte values (e.g., [0x03] for Ctrl+C)
@@ -239,7 +248,9 @@ export class PtyManager {
       return null;
     };
 
-    for (let y = 0; y < this.terminal.rows; y++) {
+    const totalLines = buffer.baseY + this.terminal.rows;
+
+    for (let y = 0; y < totalLines; y++) {
       const line = buffer.getLine(y);
       if (!line) {
         lines.push('');

@@ -58,7 +58,9 @@ chat.log
 .kiro/projects/
 .kiro/settings/
 .kiro/knowledge/
-.kiro/skills/
+.kiro/skills/*
+!.kiro/skills/knight-rider/
+!.kiro/skills/acp-session-storage/
 .kiro/code/
 
 # Generated doc embeddings and indexes

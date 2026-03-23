@@ -40,3 +40,4 @@ samples
 .kiro
 profiles/
 reports/
+e2e_tests/test-outputs/

@@ -339,3 +339,24 @@ export const Error = {
 4. **Update stories.** If you change props or behavior, update the corresponding `.stories.tsx` file.
 5. **Run the storybook** to visually verify changes in the terminal.
 6. **Run tests** to ensure nothing breaks.
+
+---
+
+## Knight Rider (Exploratory TUI Testing)
+
+`e2e_tests/knight-rider.ts` is an HTTP server for LLM-driven exploratory testing. It launches the real TUI in a PTY and exposes endpoints for typing, navigating, and capturing screenshots.
+
+```bash
+bun run knight-rider                    # local dev (default) — runs TUI from source, picks up TS changes
+bun run knight-rider --system           # use system kiro-cli binary
+bun run knight-rider --v1               # V1 legacy
+bun run knight-rider --cmd "bash"       # any command
+```
+
+- Default mode requires `cargo build -p chat_cli` once (Rust binary at `target/debug/chat_cli`)
+
+- Live dashboard at `http://localhost:3001` with xterm viewer and frame replay
+- `POST /api/keys`, `/api/enter`, `/api/escape`, `/api/up`, `/api/down` — drive the TUI
+- `POST /api/frame` — capture named screenshot (HTML with colors + plain text)
+- Evidence saved to `e2e_tests/test-outputs/knight-rider-<timestamp>/index.html`
+- See `.kiro/skills/knight-rider/SKILL.md` for full API reference and interaction patterns

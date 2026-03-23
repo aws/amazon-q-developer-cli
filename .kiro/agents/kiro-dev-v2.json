@@ -59,7 +59,8 @@
     "file://AGENTS.md",
     "file://README.md",
     "file://crates/chat-cli-v2/README.md",
-    "file://packages/tui/TESTING.md"
+    "file://packages/tui/TESTING.md",
+    "skill://.kiro/skills/*/SKILL.md"
   ],
   "hooks": {
     "agentSpawn": [
