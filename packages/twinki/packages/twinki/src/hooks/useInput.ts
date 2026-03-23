@@ -126,6 +126,9 @@ export function parseInputData(data: string): { input: string; key: Key } {
 	let input = '';
 	if (data.length === 1 && data.charCodeAt(0) >= 0x20) {
 		input = data;
+	} else if (data.length > 1 && data.charCodeAt(0) >= 0x20 && !parsed) {
+		// Multi-character printable text (batched by StdinBuffer)
+		input = data;
 	} else if (key.ctrl && data.length === 1) {
 		// Ctrl+letter (legacy): expose the letter as input, matching ink's behavior
 		const code = data.charCodeAt(0);

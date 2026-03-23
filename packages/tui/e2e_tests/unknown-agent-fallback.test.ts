@@ -22,6 +22,7 @@ describe('unknown agent fallback', () => {
       .launch();
 
     await testCase.waitForText('ask a question', 15000);
+    await testCase.waitForSlashCommands();
 
     const store = await testCase.getStore();
     expect(store.currentAgent?.name).toBe('kiro_default');

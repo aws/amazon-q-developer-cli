@@ -207,8 +207,21 @@ function extractCompleteSequences(buffer: string): { sequences: string[]; remain
 				return { sequences, remainder: remaining };
 			}
 		} else {
-			sequences.push(remaining[0]!);
-			pos++;
+			const ch = remaining.charCodeAt(0);
+			if (ch >= 0x20) {
+				// Batch consecutive printable characters into a single sequence,
+				// matching Ink's behavior of passing whole chunks through.
+				let end = 1;
+				while (end < remaining.length && remaining.charCodeAt(end) >= 0x20 && remaining[end] !== ESC) {
+					end++;
+				}
+				sequences.push(remaining.slice(0, end));
+				pos += end;
+			} else {
+				// Control characters (0x00-0x1F except ESC) emitted individually
+				sequences.push(remaining[0]!);
+				pos++;
+			}
 		}
 	}
 

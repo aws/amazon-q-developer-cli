@@ -1989,7 +1989,8 @@ export const createAppStore = (props: AppStoreProps) => {
     const key = `${state.agentError ?? ''}|${state.pendingApproval != null}|${state.isProcessing}|${state.isCompacting}|${state.contextUsagePercent}`;
     if (key !== lastProgressKey) {
       lastProgressKey = key;
-      syncTerminalProgress(state);
+      // Defer so the OSC 9;4 escape lands after twinki's nextTick render frame.
+      setImmediate(() => syncTerminalProgress(state));
     }
   });
 

@@ -49,14 +49,12 @@ describe('StdinBuffer', () => {
 		expect(handler).toHaveBeenCalledWith('\x1b[A');
 	});
 
-	it('splits multiple sequences in one chunk', () => {
+	it('emits plain text as a single chunk', () => {
 		const handler = vi.fn();
 		buffer.on('data', handler);
 		buffer.process('abc');
-		expect(handler).toHaveBeenCalledTimes(3);
-		expect(handler).toHaveBeenNthCalledWith(1, 'a');
-		expect(handler).toHaveBeenNthCalledWith(2, 'b');
-		expect(handler).toHaveBeenNthCalledWith(3, 'c');
+		expect(handler).toHaveBeenCalledTimes(1);
+		expect(handler).toHaveBeenCalledWith('abc');
 	});
 
 	it('handles bracketed paste', () => {
