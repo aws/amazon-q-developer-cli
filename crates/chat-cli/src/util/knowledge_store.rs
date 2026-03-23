@@ -714,37 +714,61 @@ impl KnowledgeStore {
 
         // Add or update indexed resources from agent schema
         for (name, description, resolved_path, include, exclude, index_type, auto_update) in current_indexed_resources {
-            let already_exists = existing_contexts
+            let existing_ctx = existing_contexts
                 .iter()
-                .any(|ctx| ctx.name == name || ctx.source_path.as_deref() == Some(&resolved_path));
+                .find(|ctx| ctx.name == name || ctx.source_path.as_deref() == Some(&resolved_path));
 
-            if already_exists && auto_update {
-                // Update existing resource
-                let _ = knowledge_store.update_by_path(&resolved_path).await;
-            } else if !already_exists {
-                // Add new resource
-                let mut options = AddOptions::new();
-                options.auto_sync = true;
+            let options = Self::build_sync_options(os, description, include, exclude, index_type);
 
-                if let Some(include) = include {
-                    options.include_patterns = include;
+            if let Some(ctx) = existing_ctx {
+                if Self::should_reindex(ctx, &options, auto_update) {
+                    let _ = knowledge_store.remove_by_name(&ctx.name).await;
+                    let _ = knowledge_store.add(name, &resolved_path, options).await;
                 }
-
-                if let Some(exclude) = exclude {
-                    options.exclude_patterns = exclude;
-                }
-
-                if let Some(index_type) = index_type {
-                    options.embedding_type = Some(index_type.clone());
-                }
-
-                options.description = Some(description.to_string());
-
+            } else {
                 let _ = knowledge_store.add(name, &resolved_path, options).await;
             }
         }
 
         Ok(())
+    }
+
+    /// Build AddOptions for an agent resource, starting from global defaults
+    /// and overriding with agent config values.
+    fn build_sync_options(
+        os: &Os,
+        description: &str,
+        include: Option<Vec<String>>,
+        exclude: Option<Vec<String>>,
+        index_type: Option<String>,
+    ) -> AddOptions {
+        let mut options = AddOptions::with_db_defaults(os);
+        options.auto_sync = true;
+        options.description = Some(description.to_string());
+
+        if let Some(include) = include {
+            options.include_patterns = include;
+        }
+
+        if let Some(exclude) = exclude {
+            options.exclude_patterns = exclude;
+        }
+
+        if let Some(index_type) = index_type {
+            options.embedding_type = Some(index_type);
+        }
+
+        options
+    }
+
+    /// Determine whether an existing context needs re-indexing.
+    fn should_reindex(ctx: &KnowledgeContext, options: &AddOptions, auto_update: bool) -> bool {
+        // Element-order-sensitive: ["a","b"] != ["b","a"] will cause a
+        // harmless extra re-index cycle rather than a missed update.
+        let patterns_changed =
+            ctx.include_patterns != options.include_patterns || ctx.exclude_patterns != options.exclude_patterns;
+
+        auto_update || patterns_changed
     }
 
     fn index_type_to_string(index_type: Option<&crate::cli::agent::wrapper_types::IndexType>) -> Option<String> {
@@ -797,5 +821,153 @@ mod tests {
 
         // Verify directory structure
         assert!(base_dir.to_string_lossy().contains("knowledge_bases"));
+    }
+
+    #[tokio::test]
+    async fn test_add_options_with_db_defaults_picks_up_global_patterns() {
+        let temp_dir = TempDir::new().unwrap();
+        let mut os = create_test_os(&temp_dir).await;
+
+        os.database
+            .settings
+            .set(
+                crate::database::settings::Setting::KnowledgeDefaultExcludePatterns,
+                serde_json::json!([".obsidian/**", "Attachments/**"]),
+                None,
+            )
+            .await
+            .unwrap();
+        os.database
+            .settings
+            .set(
+                crate::database::settings::Setting::KnowledgeDefaultIncludePatterns,
+                serde_json::json!(["**/*.md"]),
+                None,
+            )
+            .await
+            .unwrap();
+
+        let options = AddOptions::with_db_defaults(&os);
+
+        assert_eq!(options.include_patterns, vec!["**/*.md"]);
+        assert_eq!(options.exclude_patterns, vec![".obsidian/**", "Attachments/**"]);
+    }
+
+    #[tokio::test]
+    async fn test_build_sync_options_agent_config_overrides_global_defaults() {
+        let temp_dir = TempDir::new().unwrap();
+        let mut os = create_test_os(&temp_dir).await;
+
+        // Set global defaults
+        os.database
+            .settings
+            .set(
+                crate::database::settings::Setting::KnowledgeDefaultExcludePatterns,
+                serde_json::json!(["node_modules/**"]),
+                None,
+            )
+            .await
+            .unwrap();
+
+        // Agent config specifies its own exclude — should override global
+        let options = KnowledgeStore::build_sync_options(
+            &os,
+            "test",
+            Some(vec!["**/*.md".to_string()]),
+            Some(vec![".obsidian/**".to_string()]),
+            None,
+        );
+
+        assert_eq!(options.include_patterns, vec!["**/*.md"]);
+        assert_eq!(options.exclude_patterns, vec![".obsidian/**"]);
+        assert!(options.auto_sync);
+    }
+
+    #[tokio::test]
+    async fn test_build_sync_options_uses_global_defaults_when_agent_has_none() {
+        let temp_dir = TempDir::new().unwrap();
+        let mut os = create_test_os(&temp_dir).await;
+
+        os.database
+            .settings
+            .set(
+                crate::database::settings::Setting::KnowledgeDefaultExcludePatterns,
+                serde_json::json!(["node_modules/**", ".git/**"]),
+                None,
+            )
+            .await
+            .unwrap();
+
+        // Agent config has no patterns — global defaults should apply
+        let options = KnowledgeStore::build_sync_options(&os, "test", None, None, None);
+
+        assert!(options.include_patterns.is_empty());
+        assert_eq!(options.exclude_patterns, vec!["node_modules/**", ".git/**"]);
+    }
+
+    #[tokio::test]
+    async fn test_build_sync_options_also_applies_global_embedding_type() {
+        let temp_dir = TempDir::new().unwrap();
+        let mut os = create_test_os(&temp_dir).await;
+
+        os.database
+            .settings
+            .set(
+                crate::database::settings::Setting::KnowledgeIndexType,
+                serde_json::json!("best"),
+                None,
+            )
+            .await
+            .unwrap();
+
+        // Agent config has no index_type — global default should apply
+        let options = KnowledgeStore::build_sync_options(&os, "test", None, None, None);
+        assert_eq!(options.embedding_type.as_deref(), Some("best"));
+
+        // Agent config specifies index_type — should override global
+        let options = KnowledgeStore::build_sync_options(&os, "test", None, None, Some("fast".to_string()));
+        assert_eq!(options.embedding_type.as_deref(), Some("fast"));
+    }
+
+    #[test]
+    fn test_should_reindex_detects_pattern_change() {
+        let ctx = KnowledgeContext::new(
+            "id".to_string(),
+            "test",
+            "desc",
+            true,
+            None,
+            (vec![], vec![]),
+            0,
+            semantic_search_client::embedding::EmbeddingType::Fast,
+            true,
+        );
+
+        // Same patterns, auto_update false → no re-index
+        let options = AddOptions {
+            include_patterns: vec![],
+            exclude_patterns: vec![],
+            ..Default::default()
+        };
+        assert!(!KnowledgeStore::should_reindex(&ctx, &options, false));
+
+        // Same patterns, auto_update true → re-index
+        assert!(KnowledgeStore::should_reindex(&ctx, &options, true));
+
+        // Different include patterns → re-index even without auto_update
+        let options = AddOptions {
+            include_patterns: vec!["**/*.md".to_string()],
+            exclude_patterns: vec![],
+            ..Default::default()
+        };
+        assert!(KnowledgeStore::should_reindex(&ctx, &options, false));
+
+        // Different exclude patterns → re-index
+        let options = AddOptions {
+            include_patterns: vec![],
+            exclude_patterns: vec![".obsidian/**".to_string()],
+            ..Default::default()
+        };
+        assert!(KnowledgeStore::should_reindex(&ctx, &options, false));
     }
 }
