@@ -48,7 +48,7 @@ export const StatusInfo = React.memo(function StatusInfo({
     useStatusColor && status
       ? getStatusColor(status, getColor)
       : getColor('primary');
-  const targetColor = getColor('info');
+  const targetColor = getColor('highlight');
 
   return (
     <Text>

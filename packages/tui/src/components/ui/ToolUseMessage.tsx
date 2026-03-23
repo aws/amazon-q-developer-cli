@@ -10,6 +10,7 @@ import { Glob } from '../chat/tools/Glob.js';
 import { Ls } from '../chat/tools/Ls.js';
 import { Code } from '../chat/tools/Code.js';
 import { Introspect } from '../chat/tools/Introspect.js';
+import { ImageRead } from '../chat/tools/ImageRead.js';
 import { WebSearch } from '../chat/tools/WebSearch.js';
 import { WebFetch } from '../chat/tools/WebFetch.js';
 import { Tool } from '../chat/tools/Tool.js';
@@ -26,6 +27,7 @@ import {
   CODE_TOOL_NAMES,
   resolveToolId,
   INTROSPECT_TOOL_NAMES,
+  IMAGE_READ_TOOL_NAMES,
   type ToolKind,
   type ToolCallLocation,
 } from '../../types/agent-events.js';
@@ -247,6 +249,17 @@ function ToolUseContent({
         isStatic={isStatic}
         content={content}
         result={result}
+      />
+    );
+  }
+
+  if (IMAGE_READ_TOOL_NAMES.has(name)) {
+    return (
+      <ImageRead
+        noStatusBar
+        isFinished={effectiveFinished}
+        isStatic={isStatic}
+        content={content}
       />
     );
   }

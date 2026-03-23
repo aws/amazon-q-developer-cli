@@ -26,6 +26,7 @@ export type BuiltinToolId =
   | 'todo'
   | 'aws'
   | 'subagent'
+  | 'image_read'
   | 'web_fetch'
   | 'web_search';
 
@@ -37,6 +38,7 @@ export const TOOL_LABELS: Record<BuiltinToolId, string> = {
   glob: 'Glob',
   grep: 'Grep',
   ls: 'Ls',
+  image_read: 'ImageRead',
   introspect: 'Introspect',
   knowledge: 'Knowledge',
   report: 'Report',

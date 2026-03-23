@@ -35,6 +35,7 @@ import * as TableStories from '../components/ui/table/Table.stories.js';
 import * as PieSpinnerStories from '../components/ui/spinner/PieSpinner.stories.js';
 import * as SpinnerStories from '../components/ui/spinner/Spinner.stories.js';
 import * as ToolStories from '../components/chat/tools/Tool.stories.js';
+import * as ImageReadStories from '../components/chat/tools/ImageRead.stories.js';
 
 /**
  * Derives a title from the import path if meta.title is not provided.
@@ -253,4 +254,8 @@ export const stories = [
     '../components/ui/spinner/Spinner.stories.js'
   ),
   convertStoryModule(ToolStories, '../components/chat/tools/Tool.stories.js'),
+  convertStoryModule(
+    ImageReadStories,
+    '../components/chat/tools/ImageRead.stories.js'
+  ),
 ];
