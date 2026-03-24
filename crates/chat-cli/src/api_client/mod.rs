@@ -3,7 +3,7 @@ pub mod delay_interceptor;
 mod endpoints;
 pub mod error;
 pub mod error_utils;
-mod internal_redirect_interceptor;
+pub(crate) mod internal_redirect_interceptor;
 pub mod model;
 pub mod opt_out;
 pub mod profile;
@@ -134,7 +134,8 @@ const DEFAULT_TIMEOUT_DURATION: Duration = Duration::from_secs(60 * 5);
 pub const MAX_RETRY_DELAY_DURATION: Duration = Duration::from_secs(10);
 
 /// Profile ARN for BuilderId (free tier) users who have no IAM IdC profile stored in the DB.
-const BUILDER_ID_PROFILE_ARN: &str = "arn:aws:codewhisperer:us-east-1:638616132270:profile/AAAACCCCXXXX";
+pub(crate) const BUILDER_ID_PROFILE_ARN: &str =
+    "arn:aws:codewhisperer:us-east-1:638616132270:profile/AAAACCCCXXXX";
 
 #[derive(Clone, Debug)]
 pub struct ModelListResult {
@@ -397,7 +398,9 @@ impl ApiClient {
 
         tracing::debug!("Cache miss, fetching models from list_available_models API");
         let result = self.list_available_models().await?;
-        {
+        // Only cache when profile is set — if profile is None the request went out without
+        // profileArn, and we want the next call to retry with the correct ARN once available.
+        if self.profile.is_some() {
             let mut cache = self.model_cache.write().await;
             *cache = Some(result.clone());
         }
@@ -521,6 +524,7 @@ impl ApiClient {
 
         self.client
             .create_subscription_token()
+            .set_profile_arn(self.profile.as_ref().map(|p| p.arn.clone()))
             .send()
             .await
             .map_err(ApiClientError::CreateSubscriptionToken)
@@ -709,6 +713,7 @@ impl ApiClient {
             .id("1".into())
             .method(amzn_codewhisperer_streaming_client::types::McpMethod::ToolsCall)
             .params(params)
+            .set_profile_arn(self.profile.as_ref().map(|p| p.arn.clone()))
             .send()
             .await
             .map_err(|e| ApiClientError::Other(format!("Failed to invoke MCP: {e}")))?;

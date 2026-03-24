@@ -5,13 +5,20 @@ use crate::auth::consts::{
 use crate::database::Database;
 use crate::database::settings::Setting;
 
-/// Get the configured scope prefix, or use default
+/// Get the configured scope prefix, or use default.
+/// Normalizes the value to always end with `:` (e.g. `codewhisperer_internal` →
+/// `codewhisperer_internal:`).
 pub(crate) fn get_scope_prefix(database: &Database) -> String {
-    database
+    let prefix = database
         .settings
         .get_string(Setting::ApiOidcScopePrefix)
         .filter(|s| !s.is_empty())
-        .unwrap_or_else(|| DEFAULT_SCOPE_PREFIX.to_string())
+        .unwrap_or_else(|| DEFAULT_SCOPE_PREFIX.to_string());
+    if prefix.ends_with(':') {
+        prefix
+    } else {
+        format!("{}:", prefix)
+    }
 }
 
 /// Build scopes with the configured prefix

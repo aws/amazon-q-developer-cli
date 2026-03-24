@@ -2327,9 +2327,13 @@ async fn update_model_info(
         .map_err(|e| format!("Failed to fetch available models: {}", e))?;
 
     let model_info = if let Some(requested_model) = model {
-        find_model(&models, requested_model)
-            .ok_or_else(|| format!("Model '{}' not found", requested_model))?
-            .clone()
+        find_model(&models, requested_model).cloned().unwrap_or_else(|| {
+            warn!(
+                "Model '{}' not found in available models, falling back to default",
+                requested_model
+            );
+            api_default.clone()
+        })
     } else if let Some(saved) = database.settings.get_string(Setting::ChatDefaultModel) {
         find_model(&models, &saved).cloned().unwrap_or(api_default)
     } else {

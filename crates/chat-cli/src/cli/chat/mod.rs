@@ -91,6 +91,7 @@ use cli::hooks::{
     ToolContext,
 };
 use cli::model::{
+    ModelInfo,
     find_model,
     get_available_models,
     select_model,
@@ -1045,6 +1046,14 @@ impl ChatSession {
                         }
                         cs.agents = agents;
                         cs.code_intelligence_client = code_intelligence_client.clone();
+                        // Conversations saved before model_info tracking was added deserialize
+                        // with model_info = None. Restore from current model_id so that the
+                        // current UserInputMessage carries a non-null modelId.
+                        if cs.model_info.is_none()
+                            && let Some(ref id) = model_id
+                        {
+                            cs.model_info = Some(ModelInfo::from_id(id.clone()));
+                        }
                         cs.auto_initialize_code_intelligence().await;
                         cs.update_state(true).await;
                         cs.enforce_tool_use_history_invariants();

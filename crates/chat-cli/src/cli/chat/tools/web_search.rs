@@ -16,6 +16,7 @@ use super::{
     ToolInfo,
 };
 use crate::api_client::delay_interceptor::DelayTrackingInterceptor;
+use crate::api_client::internal_redirect_interceptor::InternalRedirectInterceptor;
 use crate::api_client::opt_out::OptOutInterceptor;
 use crate::api_client::token_type_interceptor::{
     AuthMode,
@@ -30,7 +31,6 @@ use crate::cli::agent::{
 };
 use crate::cli::chat::util::truncate_safe;
 use crate::database::Database;
-use crate::database::settings::Setting;
 use crate::os::Os;
 
 #[derive(Debug, Clone, Deserialize)]
@@ -166,6 +166,8 @@ impl WebSearch {
             .load()
             .await;
 
+        let is_internal = crate::util::system_info::is_mwinit_available();
+
         let client = CodewhispererStreamingClient::from_conf(
             amzn_codewhisperer_streaming_client::config::Builder::from(&bearer_sdk_config)
                 .http_client(crate::aws_common::http_client::client())
@@ -173,14 +175,26 @@ impl WebSearch {
                 .interceptor(UserAgentOverrideInterceptor::new())
                 .interceptor(DelayTrackingInterceptor::new())
                 .interceptor(TokenTypeInterceptor::new(auth_mode))
+                .interceptor(InternalRedirectInterceptor::new(is_internal))
                 .bearer_token_resolver(UnifiedBearerResolver)
                 .app_name(crate::aws_common::app_name())
                 .endpoint_resolver(StaticEndpointResolver::new(endpoint.url().to_string()))
                 .build(),
         );
 
-        // Resolve profile ARN (skip for custom endpoints, same pattern as generateAssistantResponse)
-        let profile_arn = if database.settings.get(Setting::ApiCodeWhispererService).is_none() {
+        let is_builder_id = matches!(
+            crate::auth::builder_id::BuilderIdToken::load(&database, None).await,
+            Ok(Some(ref t))
+                if matches!(
+                    t.token_type(),
+                    crate::auth::builder_id::TokenType::BuilderId
+                )
+        );
+
+        let profile_arn = if is_builder_id {
+            // Free-tier (BuilderId) users have no IAM IdC profile in the DB — use the well-known ARN.
+            Some(crate::api_client::BUILDER_ID_PROFILE_ARN.to_string())
+        } else {
             match database.get_auth_profile() {
                 Ok(profile) => profile.map(|p| p.arn),
                 Err(err) => {
@@ -188,9 +202,6 @@ impl WebSearch {
                     None
                 },
             }
-        } else {
-            tracing::debug!("Custom endpoint detected, skipping profile ARN");
-            None
         };
 
         // Build invoke_mcp request
