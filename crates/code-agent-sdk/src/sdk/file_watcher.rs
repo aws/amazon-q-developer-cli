@@ -199,10 +199,26 @@ impl FileWatcher {
 
         #[cfg(not(target_os = "macos"))]
         let watch_count = {
+            // Detect home directory and limit depth to avoid excessive inotify watches
+            // (same guard as scan_workspace_unified)
+            let is_home_dir = dirs::home_dir()
+                .and_then(|home| home.canonicalize().ok())
+                .map(|home| workspace_root.canonicalize().ok() == Some(home))
+                .unwrap_or(false);
+
+            let max_depth = if is_home_dir {
+                tracing::warn!(
+                    "Workspace is home directory - limiting file watcher depth to 3 to avoid excessive inotify watches"
+                );
+                Some(3)
+            } else {
+                None
+            };
+
             let mut count = 0;
             for entry in crate::utils::traversal::create_code_walker_with_gitignore(
                 &workspace_root,
-                None,
+                max_depth,
                 config.respect_gitignore,
             )
             .build()
