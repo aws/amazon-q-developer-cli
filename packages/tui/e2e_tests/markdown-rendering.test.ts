@@ -357,6 +357,10 @@ describe('Markdown Rendering', () => {
     const snapshot = testCase.getSnapshot();
     expect(snapshot.some(l => l.includes('Alice') && l.includes('30'))).toBe(true);
     expect(snapshot.some(l => l.includes('Bob') && l.includes('25'))).toBe(true);
+    // Verify box-drawing borders are used instead of ASCII pipes
+    expect(snapshot.some(l => l.includes('│'))).toBe(true);
+    expect(snapshot.some(l => l.includes('┌') || l.includes('└'))).toBe(true);
+    expect(snapshot.some(l => l.includes('─'))).toBe(true);
   }, 30000);
 
   it('renders horizontal rules', async () => {

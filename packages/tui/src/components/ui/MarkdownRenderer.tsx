@@ -242,17 +242,9 @@ export const MarkdownRenderer = React.memo(function MarkdownRenderer({
             left +
             colWidths.map((w) => h.repeat(w + 2)).join(mid) +
             right;
-          const formatRow = (cells: string[]) =>
-            '│ ' +
-            cells
-              .map((c, ci) =>
-                padCell(c, colWidths[ci] || 3, alignments[ci] || 'left')
-              )
-              .join(' │ ') +
-            ' │';
-
+    
           return (
-            <Box key={i} flexDirection="column" marginTop={i > 0 ? 1 : 0}>
+            <Box key={i} flexDirection="column">
               <Text>{chalk.dim(border('┌', '┬', '┐', '─'))}</Text>
               <Text>
                 {chalk.dim('│')}{' '}
