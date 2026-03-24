@@ -1,6 +1,6 @@
 /**
- * Language names that cli-highlight doesn't support.
- * Used to skip explicit language detection and fall back to auto-detect.
+ * Language names that cli-highlight doesn't support natively.
+ * When encountered, we pass 'plaintext' to disable highlighting entirely.
  */
 export const UNSUPPORTED_HIGHLIGHT_LANGUAGES = new Set([
   'markdown',
@@ -24,12 +24,12 @@ export const UNSUPPORTED_HIGHLIGHT_LANGUAGES = new Set([
 export function resolveHighlightLanguage(
   language?: string
 ): string | undefined {
-  if (!language) return undefined;
+  if (!language) return 'plaintext';
   // Strip backticks and whitespace that can leak in from mid-fence parsing
   const clean = language.replace(/`/g, '').trim();
-  if (!clean) return undefined;
+  if (!clean) return 'plaintext';
   // Only accept clean language identifiers (letters, digits, +, -, #, .)
-  if (!/^[a-zA-Z0-9+\-#.]+$/.test(clean)) return undefined;
+  if (!/^[a-zA-Z0-9+\-#.]+$/.test(clean)) return 'plaintext';
   return UNSUPPORTED_HIGHLIGHT_LANGUAGES.has(clean.toLowerCase())
     ? 'plaintext'
     : clean;

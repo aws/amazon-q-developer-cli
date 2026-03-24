@@ -249,7 +249,7 @@ impl TuiCommand {
         match self {
             TuiCommand::Help(_) => "/help",
             TuiCommand::Model(_) => "/model [model-name]",
-            TuiCommand::Agent(_) => "/agent [agent-name]",
+            TuiCommand::Agent(_) => "/agent [agent-name|create <name>|edit [name]|swap <name>]",
             TuiCommand::Context(_) => "/context [add [--force] <path>...|remove <path>...|clear]",
             TuiCommand::Compact(_) => "/compact",
             TuiCommand::Clear(_) => "/clear",
@@ -272,6 +272,7 @@ impl TuiCommand {
     /// Subcommand names, if any
     pub fn subcommands(&self) -> Vec<&'static str> {
         match self {
+            TuiCommand::Agent(_) => vec!["create", "edit", "swap"],
             TuiCommand::Context(_) => vec!["add", "remove", "clear"],
             TuiCommand::Knowledge(_) => vec!["show", "add", "remove", "update", "clear", "cancel"],
             _ => vec![],
@@ -526,5 +527,65 @@ mod tests {
             },
             _ => panic!("expected Context"),
         }
+    }
+
+    #[test]
+    fn test_parse_agent_no_args() {
+        let cmd = TuiCommand::parse("agent", "").unwrap();
+        assert!(matches!(cmd, TuiCommand::Agent(AgentArgs { agent_name: None })));
+    }
+
+    #[test]
+    fn test_parse_agent_switch() {
+        let cmd = TuiCommand::parse("agent", "my-agent").unwrap();
+        match cmd {
+            TuiCommand::Agent(args) => {
+                assert_eq!(args.agent_name, Some("my-agent".to_string()));
+            },
+            _ => panic!("expected Agent"),
+        }
+    }
+
+    #[test]
+    fn test_parse_agent_create_subcommand() {
+        // "create myagent" is passed as args to the "agent" command
+        let cmd = TuiCommand::parse("agent", "create myagent").unwrap();
+        match cmd {
+            TuiCommand::Agent(args) => {
+                assert_eq!(args.agent_name, Some("create myagent".to_string()));
+            },
+            _ => panic!("expected Agent"),
+        }
+    }
+
+    #[test]
+    fn test_parse_agent_edit_subcommand() {
+        let cmd = TuiCommand::parse("agent", "edit myagent").unwrap();
+        match cmd {
+            TuiCommand::Agent(args) => {
+                assert_eq!(args.agent_name, Some("edit myagent".to_string()));
+            },
+            _ => panic!("expected Agent"),
+        }
+    }
+
+    #[test]
+    fn test_parse_agent_edit_no_name() {
+        // "edit" with no agent name — defaults to current agent in the handler
+        let cmd = TuiCommand::parse("agent", "edit").unwrap();
+        match cmd {
+            TuiCommand::Agent(args) => {
+                assert_eq!(args.agent_name, Some("edit".to_string()));
+            },
+            _ => panic!("expected Agent"),
+        }
+    }
+
+    #[test]
+    fn test_agent_subcommands_listed() {
+        let cmd = TuiCommand::Agent(AgentArgs::default());
+        let subs = cmd.subcommands();
+        assert!(subs.contains(&"create"));
+        assert!(subs.contains(&"edit"));
     }
 }

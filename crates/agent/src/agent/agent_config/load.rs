@@ -320,6 +320,14 @@ async fn load_agents_from_dir<P: SystemProvider>(
 
         match serde_json::from_str::<AgentConfig>(&entry_contents) {
             Ok(config) => {
+                // Skip agents with empty names
+                if config.name().is_empty() {
+                    invalid_agents.push(AgentConfigError::InvalidAgentConfig {
+                        path: entry_path.to_string_lossy().to_string(),
+                        message: "agent name is empty".to_string(),
+                    });
+                    continue;
+                }
                 if let Some(existing) = agents.iter().find(|a| a.name() == config.name()) {
                     let existing_path = match existing.source() {
                         ConfigSource::Workspace { path } | ConfigSource::Global { path } => {

@@ -75,8 +75,14 @@ export async function dispatch(
   let result = null;
   if (cmd.source === 'backend' && !isLocal) {
     // Show loading for agent swap
-    if (cmdName === 'agent' && args) {
-      ctx.setLoadingMessage(`Agent changing to ${args}`);
+    const isSubcommand =
+      args === 'create' ||
+      args === 'edit' ||
+      args.startsWith('create ') ||
+      args.startsWith('edit ');
+    if (cmdName === 'agent' && args && !isSubcommand) {
+      const displayName = args.startsWith('swap ') ? args.slice(5) : args;
+      ctx.setLoadingMessage(`Agent changing to ${displayName}`);
     }
     try {
       result = await ctx.kiro.executeCommand({

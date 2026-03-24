@@ -22,6 +22,8 @@ import type {
   ToolInfo,
 } from '../stores/app-store.js';
 import { openEditorSync } from '../utils/editor.js';
+import { executeShellEscapeTTY } from '../utils/shell-escape.js';
+import { readFileSync } from 'fs';
 
 /** Effect handler function. Returns true if it handled its own messaging. */
 type EffectHandler = (
@@ -114,8 +116,59 @@ const effectHandlers: Record<EffectName, EffectHandler> = {
     }
   },
 
-  updateAgent: (result, ctx) => {
-    const data = result?.data as { agent?: { name: string } } | undefined;
+  updateAgent: (result, ctx, _cmd) => {
+    const data = result?.data as
+      | { agent?: { name: string }; path?: string; name?: string }
+      | undefined;
+
+    // If the result contains a path, it's an agent create/edit — open editor then validate
+    if (data?.path) {
+      const filePath = data.path;
+      const editor = process.env.VISUAL || process.env.EDITOR || 'vi';
+      const quotedPath = `'${filePath.replace(/'/g, "'\\''")}'`;
+      const { exitCode, error } = executeShellEscapeTTY(
+        `${editor} ${quotedPath}`
+      );
+
+      if (exitCode !== 0) {
+        ctx.showAlert(
+          error ?? `Editor exited with code ${exitCode}`,
+          'error',
+          3000
+        );
+        return true;
+      }
+
+      // Post-editor validation: check valid JSON with required "name" field
+      try {
+        const content = readFileSync(filePath, 'utf-8');
+        const parsed = JSON.parse(content);
+        if (
+          typeof parsed !== 'object' ||
+          parsed === null ||
+          typeof parsed.name !== 'string' ||
+          !parsed.name.trim()
+        ) {
+          ctx.showAlert(
+            `Malformed agent config at ${filePath}: missing or invalid "name" field`,
+            'error',
+            5000
+          );
+          return true;
+        }
+      } catch (e) {
+        const msg =
+          e instanceof SyntaxError
+            ? `Malformed agent config at ${filePath}: ${e.message}`
+            : `Failed to read agent config at ${filePath}: ${e}`;
+        ctx.showAlert(msg, 'error', 5000);
+        return true;
+      }
+
+      ctx.showAlert(result?.message ?? 'Done', 'success', 5000);
+      return true;
+    }
+
     if (data?.agent) {
       ctx.setCurrentAgent(data.agent);
     }
@@ -147,7 +200,18 @@ const effectHandlers: Record<EffectName, EffectHandler> = {
         }
       | undefined;
     if (data?.commands) {
-      ctx.setShowHelpPanel(true, data.commands);
+      // Merge backend commands with TUI-local commands for complete help listing
+      const localHelpEntries = ctx.slashCommands
+        .filter((c) => c.source === 'local')
+        .map((c) => ({
+          name: c.name,
+          description: c.description,
+          usage: c.name,
+        }));
+      const allCommands = [...data.commands, ...localHelpEntries].sort((a, b) =>
+        a.name.localeCompare(b.name)
+      );
+      ctx.setShowHelpPanel(true, allCommands);
     }
   },
 

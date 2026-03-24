@@ -761,6 +761,45 @@ impl AcpSession {
             .and_then(|a| a.welcome_message.clone())
     }
 
+    /// Reload available agents from disk (e.g. after agent create)
+    async fn reload_available_agents(&mut self) {
+        use agent::agent_config::load_agents;
+
+        // Use a provider that matches the session's cwd
+        let provider = super::acp_provider::AcpProvider::new(self.cwd.clone());
+
+        match load_agents(&provider).await {
+            Ok((configs, _errors)) => {
+                let mut new_agents: Vec<super::session_manager::AgentInfo> = configs
+                    .iter()
+                    .map(|c| super::session_manager::AgentInfo {
+                        name: c.name().to_string(),
+                        description: c.config().description().map(|s| s.to_string()),
+                        source: match c.source() {
+                            agent::agent_config::ConfigSource::Workspace { .. } => "Workspace".to_string(),
+                            agent::agent_config::ConfigSource::Global { .. } => "Global".to_string(),
+                            agent::agent_config::ConfigSource::BuiltIn => "Built-in".to_string(),
+                            agent::agent_config::ConfigSource::Ephemeral => "".to_string(),
+                        },
+                        welcome_message: c.config().welcome_message().map(|s| s.to_string()),
+                    })
+                    .collect();
+                let mut seen = std::collections::HashSet::new();
+                new_agents.retain(|a| seen.insert(a.name.clone()));
+                info!(
+                    count = new_agents.len(),
+                    names = ?new_agents.iter().map(|a| &a.name).collect::<Vec<_>>(),
+                    "Reloaded available agents after create"
+                );
+                self.available_agents = new_agents;
+                self.agent_configs = configs;
+            },
+            Err(e) => {
+                warn!("Failed to reload agents after create: {}", e);
+            },
+        }
+    }
+
     /// Create a CommandContext from the current session state
     fn command_context(&self) -> super::commands::CommandContext<'_> {
         super::commands::CommandContext {
@@ -1117,6 +1156,7 @@ impl AcpSession {
                         slash_router::SlashRoute::Action(command) => {
                             let is_agent_swap =
                                 matches!(&command, TuiCommand::Agent(args) if args.agent_name.is_some());
+                            let is_agent_create = matches!(&command, TuiCommand::Agent(args) if args.agent_name.as_deref().is_some_and(|n| n == "create" || n.starts_with("create ")));
                             let ctx = self.command_context();
                             let result = super::commands::execute(command, &ctx).await;
 
@@ -1143,6 +1183,14 @@ impl AcpSession {
 
                                 if let Err(e) = self.advertise_commands_and_prompts().await {
                                     warn!("Failed to advertise commands after slash agent swap: {}", e);
+                                }
+                            }
+
+                            // Reload available agents after a successful agent create
+                            if is_agent_create && result.success {
+                                self.reload_available_agents().await;
+                                if let Err(e) = self.advertise_commands_and_prompts().await {
+                                    warn!("Failed to advertise commands after agent create: {}", e);
                                 }
                             }
 
@@ -1291,8 +1339,21 @@ impl AcpSession {
             AcpSessionRequest::ExecuteCommand { command, respond_to } => {
                 let is_agent_swap = matches!(&command, TuiCommand::Agent(args) if args.agent_name.is_some())
                     || matches!(&command, TuiCommand::Plan(_));
+                let is_agent_create = matches!(&command, TuiCommand::Agent(args) if args.agent_name.as_deref().is_some_and(|n| n == "create" || n.starts_with("create ")));
+                debug!(
+                    is_agent_swap,
+                    is_agent_create,
+                    command = ?std::mem::discriminant(&command),
+                    "ExecuteCommand: flags computed"
+                );
                 let ctx = self.command_context();
                 let result = super::commands::execute(command, &ctx).await;
+                debug!(
+                    success = result.success,
+                    message = %result.message,
+                    has_data = result.data.is_some(),
+                    "ExecuteCommand: result received"
+                );
 
                 if is_agent_swap
                     && result.success
@@ -1312,9 +1373,24 @@ impl AcpSession {
                     );
                 }
 
+                // Reload available agents after a successful agent create
+                if is_agent_create && result.success {
+                    debug!("ExecuteCommand: reloading available agents after create");
+                    self.reload_available_agents().await;
+                } else if is_agent_create {
+                    debug!(
+                        success = result.success,
+                        "ExecuteCommand: skipping reload (create failed or not create)"
+                    );
+                }
+
+                let create_succeeded = is_agent_create && result.success;
                 let _ = respond_to.send(result);
                 if is_agent_swap && let Err(e) = self.advertise_commands_and_prompts().await {
                     warn!("Failed to advertise commands after agent swap: {}", e);
+                }
+                if create_succeeded && let Err(e) = self.advertise_commands_and_prompts().await {
+                    warn!("Failed to advertise commands after agent create: {}", e);
                 }
             },
             AcpSessionRequest::GetCommandOptions {
@@ -1322,6 +1398,11 @@ impl AcpSession {
                 partial,
                 respond_to,
             } => {
+                debug!(
+                    available_agents_count = self.available_agents.len(),
+                    agent_names = ?self.available_agents.iter().map(|a| &a.name).collect::<Vec<_>>(),
+                    "GetCommandOptions: current available agents"
+                );
                 let ctx = self.command_context();
                 let result = match command {
                     super::schema::TuiCommandKind::Model => super::commands::model::get_options(&partial, &ctx).await,

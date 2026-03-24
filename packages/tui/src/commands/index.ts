@@ -62,5 +62,10 @@ export async function executeCommandWithArg(
     return;
   }
 
-  await dispatch(cmd, argValue, ctx);
+  // For /agent selection, prefix with "swap" to avoid collisions with subcommands
+  // (e.g. an agent named "create" would otherwise trigger the create subcommand)
+  const effectiveArg =
+    commandName === 'agent' && argValue ? `swap ${argValue}` : argValue;
+
+  await dispatch(cmd, effectiveArg, ctx);
 }
