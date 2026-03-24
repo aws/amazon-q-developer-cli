@@ -477,7 +477,14 @@ impl SessionManager {
                 }
             },
             SessionManagerRequestData::TerminateSession => {
-                if self.sessions.remove(&session_id).is_none() {
+                if let Some(handle) = self.sessions.remove(&session_id) {
+                    if tokio::time::timeout(std::time::Duration::from_secs(4), handle.shutdown())
+                        .await
+                        .is_err()
+                    {
+                        warn!(?session_id, "Session did not shut down within timeout during terminate");
+                    }
+                } else {
                     warn!(?session_id, "Attempted to terminate non-existent session");
                 }
             },
