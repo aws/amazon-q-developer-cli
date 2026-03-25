@@ -21,6 +21,7 @@ const CursorBlock = ({ char = ' ' }: { char?: string }) => (
 import { PastedChip, shouldCollapsePaste } from './PastedChip.js';
 import { FileChip } from './FileChip.js';
 import { normalizeLineEndings, isPrintable } from '../../../utils/index.js';
+import { completePathAtCursor } from '../../../utils/path-completion.js';
 import { logger } from '../../../utils/logger.js';
 import { inputMetrics } from '../../../utils/inputMetrics.js';
 import {
@@ -555,6 +556,23 @@ export const PromptInput = React.memo(function PromptInput({
             clearAll();
             onSubmit(content);
           }
+        }
+      } else if (key.tab && !key.shift) {
+        // Tab completion for filesystem paths
+        // Skip if a menu is handling tab
+        if (slashMenuVisible || filePickerVisible) return;
+        const text = getVisibleText(segments);
+        const result = completePathAtCursor(text, cursor);
+        if (result && result.replacement !== text.slice(result.start, cursor)) {
+          // Replace the token in segments with the completed path
+          const before = text.slice(0, result.start);
+          const after = text.slice(cursor);
+          const newText = before + result.replacement + after;
+          const newCursor = result.start + result.replacement.length;
+          const newSegs: Segment[] = [{ type: 'text', value: newText }];
+          setSegments(newSegs);
+          setCursor(newCursor);
+          syncToStore(newSegs);
         }
       } else if (key.backspace || key.delete) {
         if (key.meta) {

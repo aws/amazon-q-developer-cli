@@ -313,7 +313,7 @@ export class PtyManager {
       lines.push(html);
     }
 
-    return `<pre style="font-family:monospace;background:#fff;color:#000;padding:10px;margin:0">${lines.join('\n')}</pre>`;
+    return `<pre style="font-family:monospace;background:#0d1117;color:#c9d1d9;padding:10px;margin:0">${lines.join('\n')}</pre>`;
   }
 
   /**
