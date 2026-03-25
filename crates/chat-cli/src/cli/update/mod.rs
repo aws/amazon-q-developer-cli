@@ -35,7 +35,7 @@ use crate::os::Os;
 
 /// Default manifest URL for production releases.
 /// Can be overridden at runtime via Q_DESKTOP_RELEASE_URL env var or install.releaseUrl setting.
-// TODO: Update DEFAULT_UPDATE_MANIFEST_URL in crate::util::consts when the production URL is ready.
+// Default manifest URL points to the production CDN release endpoint.
 const DEFAULT_MANIFEST_URL: &str = crate::util::consts::env_var::DEFAULT_UPDATE_MANIFEST_URL;
 
 /// CLI arguments for the update command
@@ -75,11 +75,11 @@ impl UpdateArgs {
         println!("Checking for updates...");
         let fetcher = ManifestFetcher::new().map_err(|e| eyre::eyre!("{}", e))?;
         let manifest = fetcher.fetch(&manifest_url).await.map_err(|e| eyre::eyre!("{}", e))?;
-        info!("Latest version: {}", manifest.latest_version);
+        info!("Latest version: {}", manifest.version);
 
         // Compare versions
         let comparison =
-            VersionComparator::compare(current_version, &manifest.latest_version).map_err(|e| eyre::eyre!("{}", e))?;
+            VersionComparator::compare(current_version, &manifest.version).map_err(|e| eyre::eyre!("{}", e))?;
 
         match comparison {
             Ordering::Equal => {
@@ -92,7 +92,7 @@ impl UpdateArgs {
             Ordering::Greater => {
                 println!(
                     "You are on a newer version ({}) than the latest release ({})",
-                    current_version, manifest.latest_version
+                    current_version, manifest.version
                 );
                 if !self.force {
                     return Ok(ExitCode::SUCCESS);
@@ -100,7 +100,7 @@ impl UpdateArgs {
                 println!("--force specified, proceeding with installation anyway");
             },
             Ordering::Less => {
-                println!("Update available: {} → {}", current_version, manifest.latest_version);
+                println!("Update available: {} → {}", current_version, manifest.version);
             },
         }
 
@@ -161,7 +161,7 @@ impl UpdateArgs {
                             let _ = std::fs::remove_file(&msi_path);
                             println!(
                                 "Successfully updated to version {}. Please restart kiro-cli.",
-                                manifest.latest_version
+                                manifest.version
                             );
                         },
                         Err(e) => {
@@ -183,7 +183,7 @@ impl UpdateArgs {
             .map_err(|e| eyre::eyre!("{}", e))?;
 
         // Success message
-        println!("Successfully updated to version {}", manifest.latest_version);
+        println!("Successfully updated to version {}", manifest.version);
 
         Ok(ExitCode::SUCCESS)
     }
@@ -334,7 +334,7 @@ async fn background_update_check_inner() -> Option<StagedUpdate> {
     };
 
     // Compare versions
-    let comparison = match VersionComparator::compare(current_version, &manifest.latest_version) {
+    let comparison = match VersionComparator::compare(current_version, &manifest.version) {
         Ok(c) => c,
         Err(e) => {
             debug!("Failed to compare versions: {}", e);
@@ -347,7 +347,7 @@ async fn background_update_check_inner() -> Option<StagedUpdate> {
         return None;
     }
 
-    debug!("Update found: {} → {}", current_version, manifest.latest_version);
+    debug!("Update found: {} → {}", current_version, manifest.version);
 
     // Detect platform
     let platform = match Platform::detect() {
@@ -398,7 +398,7 @@ async fn background_update_check_inner() -> Option<StagedUpdate> {
     Some(StagedUpdate {
         installer_path,
         kind: artifact.kind.clone(),
-        version: manifest.latest_version.clone(),
+        version: manifest.version.clone(),
     })
 }
 
@@ -471,11 +471,8 @@ mod tests {
 
     #[test]
     fn test_default_manifest_url() {
-        // Default URL is empty until production URL is configured.
-        // When env var is not set, returns the hardcoded default.
         let url = get_manifest_url();
-        // TODO: Update this assertion when DEFAULT_UPDATE_MANIFEST_URL is set to a real URL.
-        assert!(url.is_empty() || url.starts_with("https://") || url.starts_with("s3://"));
+        assert!(url.starts_with("https://"));
     }
 
     #[test]
@@ -675,8 +672,8 @@ mod tests {
     /// Helper function to create a test manifest
     fn create_test_manifest() -> VersionManifest {
         VersionManifest {
-            latest_version: "2.0.0".to_string(),
-            artifacts: vec![
+            version: "2.0.0".to_string(),
+            packages: vec![
                 ArtifactEntry {
                     kind: "tarXz".to_string(),
                     target_triple: "x86_64-unknown-linux-gnu".to_string(),

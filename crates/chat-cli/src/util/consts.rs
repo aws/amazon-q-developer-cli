@@ -168,7 +168,8 @@ pub mod env_var {
 
     /// Default update manifest URL. Set this to the production URL when ready.
     // TODO: Update this to the production manifest URL once the update infrastructure is deployed.
-    pub const DEFAULT_UPDATE_MANIFEST_URL: &str = "";
+    pub const DEFAULT_UPDATE_MANIFEST_URL: &str =
+        "https://desktop-release.q.us-east-1.amazonaws.com/latest/manifest.json";
 }
 
 #[cfg(test)]

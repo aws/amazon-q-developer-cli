@@ -54,10 +54,10 @@ pub struct ArtifactEntry {
 #[derive(Debug, Clone, Deserialize, Serialize, PartialEq)]
 pub struct VersionManifest {
     /// Latest available version (semantic version string)
-    pub latest_version: String,
+    pub version: String,
 
     /// List of available artifacts for this version
-    pub artifacts: Vec<ArtifactEntry>,
+    pub packages: Vec<ArtifactEntry>,
 }
 
 impl VersionManifest {
@@ -65,7 +65,7 @@ impl VersionManifest {
     ///
     /// Returns the first matching artifact, or `None` if no match is found.
     pub fn find_artifact(&self, os: &str, architecture: &str) -> Option<&ArtifactEntry> {
-        self.artifacts
+        self.packages
             .iter()
             .find(|a| a.os == os && a.architecture == architecture)
     }
@@ -118,8 +118,8 @@ mod tests {
 
     fn sample_manifest_json() -> &'static str {
         r#"{
-            "latest_version": "1.27.1",
-            "artifacts": [
+            "version": "1.27.1",
+            "packages": [
                 {
                     "kind": "deb",
                     "targetTriple": "x86_64-unknown-linux-gnu",
@@ -151,12 +151,12 @@ mod tests {
     #[test]
     fn test_parse_valid_manifest() {
         let manifest: VersionManifest = serde_json::from_str(sample_manifest_json()).unwrap();
-        assert_eq!(manifest.latest_version, "1.27.1");
-        assert_eq!(manifest.artifacts.len(), 2);
-        assert_eq!(manifest.artifacts[0].os, "linux");
-        assert_eq!(manifest.artifacts[0].architecture, "x86_64");
-        assert_eq!(manifest.artifacts[1].os, "windows");
-        assert_eq!(manifest.artifacts[1].kind, "msi");
+        assert_eq!(manifest.version, "1.27.1");
+        assert_eq!(manifest.packages.len(), 2);
+        assert_eq!(manifest.packages[0].os, "linux");
+        assert_eq!(manifest.packages[0].architecture, "x86_64");
+        assert_eq!(manifest.packages[1].os, "windows");
+        assert_eq!(manifest.packages[1].kind, "msi");
     }
 
     #[test]
@@ -190,9 +190,9 @@ mod tests {
 
     #[test]
     fn test_parse_empty_artifacts() {
-        let json = r#"{ "latest_version": "1.0.0", "artifacts": [] }"#;
+        let json = r#"{ "version": "1.0.0", "packages": [] }"#;
         let manifest: VersionManifest = serde_json::from_str(json).unwrap();
-        assert_eq!(manifest.artifacts.len(), 0);
+        assert_eq!(manifest.packages.len(), 0);
     }
 
     #[tokio::test]
@@ -241,7 +241,7 @@ mod tests {
             .await;
         let fetcher = ManifestFetcher::new().unwrap();
         let manifest = fetcher.fetch(&format!("{}/manifest.json", server.url())).await.unwrap();
-        assert_eq!(manifest.latest_version, "1.27.1");
+        assert_eq!(manifest.version, "1.27.1");
         mock.assert_async().await;
     }
 
