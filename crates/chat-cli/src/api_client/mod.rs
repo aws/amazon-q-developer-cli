@@ -397,9 +397,7 @@ impl ApiClient {
 
         tracing::debug!("Cache miss, fetching models from list_available_models API");
         let result = self.list_available_models().await?;
-        // Only cache when profile is set — if profile is None the request went out without
-        // profileArn, and we want the next call to retry with the correct ARN once available.
-        if self.profile.is_some() {
+        {
             let mut cache = self.model_cache.write().await;
             *cache = Some(result.clone());
         }
@@ -523,7 +521,6 @@ impl ApiClient {
 
         self.client
             .create_subscription_token()
-            .set_profile_arn(self.profile.as_ref().map(|p| p.arn.clone()))
             .send()
             .await
             .map_err(ApiClientError::CreateSubscriptionToken)
@@ -712,7 +709,6 @@ impl ApiClient {
             .id("1".into())
             .method(amzn_codewhisperer_streaming_client::types::McpMethod::ToolsCall)
             .params(params)
-            .set_profile_arn(self.profile.as_ref().map(|p| p.arn.clone()))
             .send()
             .await
             .map_err(|e| ApiClientError::Other(format!("Failed to invoke MCP: {e}")))?;

@@ -13,6 +13,7 @@ pub mod feed;
 mod issue;
 mod mcp;
 mod settings;
+pub mod update;
 mod user;
 
 use std::fmt::Display;
@@ -123,6 +124,8 @@ pub enum RootSubcommand {
     /// Model Context Protocol (MCP)
     #[command(subcommand)]
     Mcp(McpSubcommand),
+    /// Check for and install updates
+    Update(update::UpdateArgs),
     /// Start Agent Client Protocol (ACP) agent
     #[command(hide = true)]
     Acp {
@@ -190,6 +193,111 @@ impl RootSubcommand {
                 .ok();
         }
 
+        // Auto-update: start background check (non-blocking, doesn't delay startup).
+        // The actual install happens on exit via install_staged_update.
+        //
+        // Currently Windows-only. Mac/Linux auto-update is handled by the
+        // autocomplete desktop app — we don't want two update systems active.
+        // FUTURE: Re-enable for all platforms once the manifest follow-up lands.
+        //
+        // Skip auto-update when installed via Toolbox — Toolbox manages its own updates.
+        #[cfg(target_os = "windows")]
+        let (auto_install, update_handle) = {
+            use crate::database::settings::Setting;
+            use crate::telemetry::{
+                InstallMethod,
+                get_install_method,
+            };
+
+            let is_toolbox = matches!(get_install_method(), InstallMethod::Toolbox(_));
+            if is_toolbox {
+                tracing::debug!("Auto-update skipped: installed via Toolbox");
+            }
+
+            // app.disableAutoupdates: when true, auto-update is disabled.
+            // Default is false (updates enabled), matching the autocomplete desktop app.
+            let updates_disabled = os
+                .database
+                .settings
+                .get_bool(Setting::DisableAutoupdates)
+                .unwrap_or(false);
+
+            let auto_install = !is_toolbox
+                && !updates_disabled
+                && std::env::var(crate::util::consts::env_var::KIRO_NO_AUTO_UPDATE).is_err();
+            let handle = if !is_toolbox && matches!(self, Self::Chat(_) | Self::Acp { .. }) {
+                Some(update::start_background_update_check(auto_install))
+            } else {
+                None
+            };
+            (auto_install, handle)
+        };
+        #[cfg(not(target_os = "windows"))]
+        let (_auto_install, _update_handle): (bool, Option<()>) = (false, None);
+
+        // On Windows, install staged update on exit (if one was downloaded in the background).
+        // This spawns a detached installer that waits for this process to fully exit.
+        #[cfg(target_os = "windows")]
+        {
+            let result = match self {
+                Self::Agent(args) => args.execute(os).await,
+                Self::Diagnostic(args) => args.execute(os).await,
+                Self::Login(args) => args.execute(os).await,
+                Self::Logout => user::logout(os).await,
+                Self::Whoami(args) => args.execute(os).await,
+                Self::Profile => user::profile(os).await,
+                Self::Settings(settings_args) => settings_args.execute(os).await,
+                Self::Issue(args) => args.execute(os).await,
+                Self::Version { changelog } => Cli::print_version(changelog),
+                Self::Chat(args) => {
+                    // Run cleanup before chat starts; show a message if it takes >3 seconds
+                    let msg_handle = tokio::spawn(async {
+                        tokio::time::sleep(std::time::Duration::from_secs(3)).await;
+                        eprintln!("Cleaning up old conversations...");
+                    });
+                    if let Err(e) = crate::cleanup::cleanup_old_data(&os.env, &os.fs, &os.database).await {
+                        tracing::error!("Cleanup failed: {}", e);
+                    }
+                    msg_handle.abort();
+
+                    let tui_available =
+                        crate::embedded_tui::are_assets_embedded(os) || std::env::var(KIRO_TEST_TUI_JS_PATH).is_ok();
+                    if args.should_launch_tui(os) && tui_available {
+                        crate::embedded_tui::launch_v2(os).await
+                    } else {
+                        if args.should_launch_tui(os) {
+                            tracing::error!("TUI requested but assets not available, falling back to legacy UI");
+                        }
+                        args.execute(os).await
+                    }
+                },
+                Self::Mcp(args) => args.execute(os, &mut std::io::stderr()).await,
+                Self::Update(args) => args.execute(os).await,
+                Self::Acp {
+                    agent,
+                    model,
+                    trust_all_tools,
+                } => {
+                    use chat_cli_v2::os::Os as NewOs;
+                    let mut os = NewOs::new().await?;
+                    let spawn_args = ::agent::types::AcpSpawnArgs {
+                        agent,
+                        model,
+                        trust_all_tools,
+                    };
+                    chat_cli_v2::agent::acp::acp_agent::execute(&mut os, spawn_args).await
+                },
+                Self::AcpClient { agent } => chat_cli_v2::agent::acp::acp_client::execute(agent).await,
+            };
+
+            if let Some(handle) = update_handle {
+                update::install_staged_update(handle, auto_install).await;
+            }
+
+            return result;
+        }
+
+        #[cfg(not(target_os = "windows"))]
         match self {
             Self::Agent(args) => args.execute(os).await,
             Self::Diagnostic(args) => args.execute(os).await,
@@ -201,7 +309,6 @@ impl RootSubcommand {
             Self::Issue(args) => args.execute(os).await,
             Self::Version { changelog } => Cli::print_version(changelog),
             Self::Chat(args) => {
-                // Run cleanup before chat starts; show a message if it takes >3 seconds
                 let msg_handle = tokio::spawn(async {
                     tokio::time::sleep(std::time::Duration::from_secs(3)).await;
                     eprintln!("Cleaning up old conversations...");
@@ -223,13 +330,12 @@ impl RootSubcommand {
                 }
             },
             Self::Mcp(args) => args.execute(os, &mut std::io::stderr()).await,
+            Self::Update(args) => args.execute(os).await,
             Self::Acp {
                 agent,
                 model,
                 trust_all_tools,
             } => {
-                // Os is defined in both crates. This is just a bandaid until we can deprecate v1
-                // for real
                 use chat_cli_v2::os::Os as NewOs;
                 let mut os = NewOs::new().await?;
                 let spawn_args = ::agent::types::AcpSpawnArgs {
@@ -264,6 +370,7 @@ impl Display for RootSubcommand {
             Self::Issue(_) => "issue",
             Self::Version { .. } => "version",
             Self::Mcp(_) => "mcp",
+            Self::Update(_) => "update",
             Self::Acp { .. } => "acp",
             Self::AcpClient { .. } => "acp-client",
         };

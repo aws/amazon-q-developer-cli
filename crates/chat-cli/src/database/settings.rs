@@ -140,6 +140,11 @@ pub enum Setting {
     CleanupPeriodDays,
     #[strum(message = "Disable granular trust options for tool permissions (boolean)")]
     ChatDisableGranularTrust,
+    #[strum(
+        message = "Disable automatic updates on startup (boolean)",
+        props(scope = "global_only")
+    )]
+    DisableAutoupdates,
 }
 
 impl Setting {
@@ -245,6 +250,7 @@ impl AsRef<str> for Setting {
             Self::ChatUi => "chat.ui",
             Self::CleanupPeriodDays => "cleanup.periodDays",
             Self::ChatDisableGranularTrust => "chat.disableGranularTrust",
+            Self::DisableAutoupdates => "app.disableAutoupdates",
         }
     }
 }
@@ -307,6 +313,7 @@ impl TryFrom<&str> for Setting {
             "chat.ui" => Ok(Self::ChatUi),
             "cleanup.periodDays" => Ok(Self::CleanupPeriodDays),
             "chat.disableGranularTrust" => Ok(Self::ChatDisableGranularTrust),
+            "app.disableAutoupdates" => Ok(Self::DisableAutoupdates),
             _ => Err(DatabaseError::InvalidSetting(value.to_string())),
         }
     }

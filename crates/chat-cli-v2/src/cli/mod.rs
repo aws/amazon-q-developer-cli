@@ -281,6 +281,7 @@ impl Cli {
 
         // If Chat command and TUI is embedded, extract and run TUI instead
         let mut os = Os::new().await?;
+
         let result = if matches!(&subcommand, RootSubcommand::Chat(args) if !args.legacy_mode) {
             let asset_paths = crate::embedded_tui::extract_tui_assets_if_needed(&os).await?;
 

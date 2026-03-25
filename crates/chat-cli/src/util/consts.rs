@@ -157,8 +157,18 @@ pub mod env_var {
         KIRO_TEST_TUI_JS_PATH = "KIRO_TEST_TUI_JS_PATH",
 
         /// API key for headless/non-interactive authentication
-        KIRO_API_KEY = "KIRO_API_KEY"
+        KIRO_API_KEY = "KIRO_API_KEY",
+
+        /// Disable automatic update check on startup
+        KIRO_NO_AUTO_UPDATE = "KIRO_NO_AUTO_UPDATE",
+
+        /// Override the update release URL at runtime
+        KIRO_DESKTOP_RELEASE_URL = "KIRO_DESKTOP_RELEASE_URL"
     }
+
+    /// Default update manifest URL. Set this to the production URL when ready.
+    // TODO: Update this to the production manifest URL once the update infrastructure is deployed.
+    pub const DEFAULT_UPDATE_MANIFEST_URL: &str = "";
 }
 
 #[cfg(test)]
