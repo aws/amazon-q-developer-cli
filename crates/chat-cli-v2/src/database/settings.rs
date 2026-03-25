@@ -65,6 +65,8 @@ pub enum Setting {
     ChatEditMode,
     #[strum(message = "Enable desktop notifications (boolean)")]
     ChatEnableNotifications,
+    #[strum(message = "Notification method: 'auto', 'bel', 'osc9' (string)")]
+    ChatNotificationMethod,
     #[strum(message = "CodeWhisperer service endpoint URL (string)")]
     ApiCodeWhispererService,
     #[strum(message = "Q service endpoint URL (string)")]
@@ -129,6 +131,7 @@ impl AsRef<str> for Setting {
             Self::ApiTimeout => "api.timeout",
             Self::ChatEditMode => "chat.editMode",
             Self::ChatEnableNotifications => "chat.enableNotifications",
+            Self::ChatNotificationMethod => "chat.notificationMethod",
             Self::ApiCodeWhispererService => "api.codewhisperer.service",
             Self::ApiQService => "api.q.service",
             Self::McpInitTimeout => "mcp.initTimeout",
@@ -185,6 +188,7 @@ impl TryFrom<&str> for Setting {
             "api.timeout" => Ok(Self::ApiTimeout),
             "chat.editMode" => Ok(Self::ChatEditMode),
             "chat.enableNotifications" => Ok(Self::ChatEnableNotifications),
+            "chat.notificationMethod" => Ok(Self::ChatNotificationMethod),
             "api.codewhisperer.service" => Ok(Self::ApiCodeWhispererService),
             "api.q.service" => Ok(Self::ApiQService),
             "mcp.initTimeout" => Ok(Self::McpInitTimeout),

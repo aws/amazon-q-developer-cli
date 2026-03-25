@@ -176,7 +176,8 @@ use util::images::RichImageBlock;
 use util::ui::draw_box;
 use util::{
     animate_output,
-    play_notification_bell,
+    play_notification,
+    resolve_notification_method,
 };
 use winnow::Partial;
 use winnow::stream::Offset;
@@ -3453,13 +3454,17 @@ impl ChatSession {
                 });
             }
 
-            if os
-                .database
-                .settings
-                .get_bool(Setting::ChatEnableNotifications)
-                .unwrap_or(false)
+            if !allowed
+                && os
+                    .database
+                    .settings
+                    .get_bool(Setting::ChatEnableNotifications)
+                    .unwrap_or(false)
             {
-                play_notification_bell(!allowed);
+                let method_str = os.database.settings.get_string(Setting::ChatNotificationMethod);
+                if let Some(method) = resolve_notification_method(method_str.as_deref()) {
+                    play_notification(method, Some("Permission required"));
+                }
             }
 
             // TODO: Control flow is hacky here because of borrow rules
@@ -4298,14 +4303,17 @@ impl ChatSession {
             }
 
             if ended {
-                if os
-                    .database
-                    .settings
-                    .get_bool(Setting::ChatEnableNotifications)
-                    .unwrap_or(false)
+                if tool_uses.is_empty()
+                    && os
+                        .database
+                        .settings
+                        .get_bool(Setting::ChatEnableNotifications)
+                        .unwrap_or(false)
                 {
-                    // For final responses (no tools suggested), always play the bell
-                    play_notification_bell(tool_uses.is_empty());
+                    let method_str = os.database.settings.get_string(Setting::ChatNotificationMethod);
+                    if let Some(method) = resolve_notification_method(method_str.as_deref()) {
+                        play_notification(method, Some("Response complete"));
+                    }
                 }
 
                 if self.stderr.should_send_structured_event {

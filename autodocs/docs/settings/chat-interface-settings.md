@@ -1,13 +1,13 @@
 ---
 doc_meta:
-  validated: 2026-01-05
-  commit: a1d370b5
+  validated: 2026-03-25
+  commit: e0e72e43
   status: validated
   testable_headless: true
   category: settings-group
   title: Chat Interface Settings
   description: Settings for chat interface behavior and appearance
-  keywords: [settings, chat, interface, ui, notifications]
+  keywords: [settings, chat, interface, ui, notifications, bell, osc9]
 ---
 
 # Chat Interface Settings
@@ -35,11 +35,13 @@ kiro-cli settings chat.editMode true
 
 ## chat.enableNotifications
 
-Enable desktop notifications for chat events.
+Enable terminal notifications for chat events.
 
 ### Overview
 
-Controls whether Kiro CLI shows desktop notifications for important chat events like completion of long-running tasks or errors.
+Controls whether Kiro CLI sends terminal notifications when:
+- A response completes (no pending tool calls)
+- Permission is required for a tool action
 
 ### Usage
 
@@ -50,11 +52,58 @@ kiro-cli settings chat.enableNotifications true
 **Type**: Boolean  
 **Default**: `false`
 
-### Use Cases
+---
 
-- Long-running operations completion
-- Error alerts
-- Background task updates
+## chat.notificationMethod
+
+Set the notification method for terminal alerts.
+
+### Overview
+
+Controls how Kiro CLI sends terminal notifications. By default, the method is auto-detected based on your terminal.
+
+### Usage
+
+```bash
+kiro-cli settings chat.notificationMethod "osc9"
+```
+
+**Type**: String  
+**Default**: `"auto"`  
+**Values**: `"auto"`, `"bel"`, `"osc9"`
+
+### Methods
+
+- **auto**: Auto-detect based on terminal (recommended)
+- **bel**: ASCII BEL character (`\x07`) - works in most terminals
+- **osc9**: OSC 9 escape sequence - shows system notification with message
+
+### Terminal Support
+
+**OSC 9** (auto-detected via `TERM_PROGRAM`):
+- Ghostty
+- iTerm2
+- WezTerm
+- Windows Terminal
+
+**BEL** (auto-detected via `TERM`):
+- xterm, xterm-256color
+- tmux, screen
+- Alacritty
+- Konsole, GNOME Terminal
+- Emacs eat
+
+### Examples
+
+Force BEL for a terminal not auto-detected:
+```bash
+kiro-cli settings chat.notificationMethod "bel"
+```
+
+Use OSC 9 for rich notifications in supported terminals:
+```bash
+kiro-cli settings chat.notificationMethod "osc9"
+```
 
 ---
 

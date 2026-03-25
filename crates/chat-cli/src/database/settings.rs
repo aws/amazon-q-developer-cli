@@ -83,6 +83,8 @@ pub enum Setting {
     ChatEditMode,
     #[strum(message = "Enable desktop notifications (boolean)")]
     ChatEnableNotifications,
+    #[strum(message = "Notification method: 'auto', 'bel', 'osc9' (string)")]
+    ChatNotificationMethod,
     #[strum(
         message = "CodeWhisperer service endpoint URL (string)",
         props(scope = "global_only")
@@ -161,6 +163,7 @@ impl Setting {
             // Display/UX settings
             Self::ChatDisableMarkdownRendering
                 | Self::ChatEnableNotifications
+                | Self::ChatNotificationMethod
                 | Self::ChatGreetingEnabled
                 | Self::ChatEnableHistoryHints
                 | Self::EnabledContextUsageIndicator
@@ -225,6 +228,7 @@ impl AsRef<str> for Setting {
             Self::ApiTimeout => "api.timeout",
             Self::ChatEditMode => "chat.editMode",
             Self::ChatEnableNotifications => "chat.enableNotifications",
+            Self::ChatNotificationMethod => "chat.notificationMethod",
             Self::ApiCodeWhispererService => "api.codewhisperer.service",
             Self::ApiOidcScopePrefix => "api.oidc.scopePrefix",
             Self::ApiQService => "api.q.service",
@@ -289,6 +293,7 @@ impl TryFrom<&str> for Setting {
             "api.timeout" => Ok(Self::ApiTimeout),
             "chat.editMode" => Ok(Self::ChatEditMode),
             "chat.enableNotifications" => Ok(Self::ChatEnableNotifications),
+            "chat.notificationMethod" => Ok(Self::ChatNotificationMethod),
             "api.codewhisperer.service" => Ok(Self::ApiCodeWhispererService),
             "api.oidc.scopePrefix" => Ok(Self::ApiOidcScopePrefix),
             "api.q.service" => Ok(Self::ApiQService),

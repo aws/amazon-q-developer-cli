@@ -103,58 +103,91 @@ pub fn sanitize_unicode_tags(text: &str) -> String {
     out
 }
 
-/// Play the terminal bell notification sound
-pub fn play_notification_bell(requires_confirmation: bool) {
-    // Don't play bell for tools that don't require confirmation
-    if !requires_confirmation {
-        return;
-    }
+/// Notification method for terminal alerts.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum NotificationMethod {
+    /// ASCII BEL character (\x07)
+    Bel,
+    /// OSC 9 escape sequence (supported by iTerm2, Ghostty, Windows Terminal, etc.)
+    Osc9,
+}
 
-    // Check if we should play the bell based on terminal type
-    if should_play_bell() {
-        print!("\x07"); // ASCII bell character
-        std::io::stdout().flush().unwrap();
+/// Resolve the notification method from the user setting string.
+/// "bel" -> Bel, "osc9" -> Osc9, "auto"/None -> auto-detect based on terminal.
+pub fn resolve_notification_method(setting: Option<&str>) -> Option<NotificationMethod> {
+    match setting.map(|s| s.to_lowercase()).as_deref() {
+        Some("bel") => Some(NotificationMethod::Bel),
+        Some("osc9") => Some(NotificationMethod::Osc9),
+        _ => {
+            let term = get_term();
+            let term_program = std::env::var("TERM_PROGRAM").ok();
+            detect_notification_method(term.as_deref(), term_program.as_deref())
+        },
     }
 }
 
-/// Determine if we should play the bell based on terminal type
-fn should_play_bell() -> bool {
-    // Get the TERM environment variable
-    if let Some(term) = get_term() {
-        // List of terminals known to handle bell character well
-        let bell_compatible_terms = [
-            "xterm",
-            "xterm-256color",
-            "screen",
-            "screen-256color",
-            "tmux",
-            "tmux-256color",
-            "rxvt",
-            "rxvt-unicode",
-            "linux",
-            "konsole",
-            "gnome",
-            "gnome-256color",
-            "alacritty",
-            "iterm2",
-            "eat-truecolor",
-            "eat-256color",
-            "eat-color",
-        ];
-
-        // Check if the current terminal is in the compatible list
-        for compatible_term in bell_compatible_terms.iter() {
-            if term.starts_with(compatible_term) {
-                return true;
-            }
+/// Auto-detect the best notification method for the current terminal.
+/// Uses TERM and TERM_PROGRAM, consistent with terminal detection in
+/// packages/twinki (TypeScript) and crates/chat-cli-v2/src/os/diagnostics.rs.
+fn detect_notification_method(term: Option<&str>, term_program: Option<&str>) -> Option<NotificationMethod> {
+    // Check TERM_PROGRAM first (most reliable for modern terminals).
+    // This matches the TypeScript detection in packages/twinki/src/terminal/capabilities.ts.
+    if let Some(program) = term_program {
+        let p = program.to_lowercase();
+        if p == "ghostty" || p == "iterm.app" || p == "wezterm" || p == "windows_terminal" {
+            return Some(NotificationMethod::Osc9);
         }
-
-        // For other terminals, don't play the bell
-        return false;
     }
 
-    // If TERM is not set, default to not playing the bell
-    false
+    let term = term?;
+
+    // TERM-based OSC 9 detection
+    if term.starts_with("xterm-ghostty") {
+        return Some(NotificationMethod::Osc9);
+    }
+
+    // BEL-compatible terminals
+    let bel_terms = [
+        "xterm",
+        "xterm-256color",
+        "screen",
+        "screen-256color",
+        "tmux",
+        "tmux-256color",
+        "rxvt",
+        "rxvt-unicode",
+        "linux",
+        "konsole",
+        "gnome",
+        "gnome-256color",
+        "alacritty",
+        "iterm2",
+        "eat-truecolor",
+        "eat-256color",
+        "eat-color",
+    ];
+    for t in &bel_terms {
+        if term.starts_with(t) {
+            return Some(NotificationMethod::Bel);
+        }
+    }
+
+    None
+}
+
+/// Send a terminal notification using the specified method.
+pub fn play_notification(method: NotificationMethod, message: Option<&str>) {
+    match method {
+        NotificationMethod::Bel => {
+            print!("\x07");
+        },
+        NotificationMethod::Osc9 => {
+            // OSC 9 ; <message> BEL — per https://ghostty.org/docs/vt/osc/9
+            let msg = message.unwrap_or("Kiro CLI needs attention");
+            print!("\x1b]9;{msg}\x07");
+        },
+    }
+    std::io::stdout().flush().unwrap();
 }
 
 /// This is a simple greedy algorithm that drops the largest files first
@@ -343,5 +376,112 @@ mod tests {
         assert_eq!(result.len(), 50_000 * visible_block.len());
 
         assert!(result.chars().all(|c| !is_hidden(c)));
+    }
+}
+
+#[cfg(test)]
+mod notification_tests {
+    use super::*;
+
+    #[test]
+    fn resolve_explicit_bel() {
+        assert_eq!(resolve_notification_method(Some("bel")), Some(NotificationMethod::Bel));
+        assert_eq!(resolve_notification_method(Some("BEL")), Some(NotificationMethod::Bel));
+    }
+
+    #[test]
+    fn resolve_explicit_osc9() {
+        assert_eq!(
+            resolve_notification_method(Some("osc9")),
+            Some(NotificationMethod::Osc9)
+        );
+        assert_eq!(
+            resolve_notification_method(Some("OSC9")),
+            Some(NotificationMethod::Osc9)
+        );
+    }
+
+    #[test]
+    fn detect_ghostty_via_term_program() {
+        assert_eq!(
+            detect_notification_method(Some("xterm-256color"), Some("ghostty")),
+            Some(NotificationMethod::Osc9)
+        );
+    }
+
+    #[test]
+    fn detect_ghostty_via_term() {
+        assert_eq!(
+            detect_notification_method(Some("xterm-ghostty"), None),
+            Some(NotificationMethod::Osc9)
+        );
+    }
+
+    #[test]
+    fn detect_iterm() {
+        assert_eq!(
+            detect_notification_method(Some("xterm-256color"), Some("iTerm.app")),
+            Some(NotificationMethod::Osc9)
+        );
+    }
+
+    #[test]
+    fn detect_wezterm() {
+        assert_eq!(
+            detect_notification_method(Some("xterm-256color"), Some("WezTerm")),
+            Some(NotificationMethod::Osc9)
+        );
+    }
+
+    #[test]
+    fn detect_windows_terminal() {
+        assert_eq!(
+            detect_notification_method(Some("xterm-256color"), Some("Windows_Terminal")),
+            Some(NotificationMethod::Osc9)
+        );
+    }
+
+    #[test]
+    fn detect_bel_xterm() {
+        assert_eq!(
+            detect_notification_method(Some("xterm-256color"), None),
+            Some(NotificationMethod::Bel)
+        );
+    }
+
+    #[test]
+    fn detect_bel_tmux() {
+        assert_eq!(
+            detect_notification_method(Some("tmux-256color"), None),
+            Some(NotificationMethod::Bel)
+        );
+    }
+
+    #[test]
+    fn detect_bel_alacritty() {
+        assert_eq!(
+            detect_notification_method(Some("alacritty"), None),
+            Some(NotificationMethod::Bel)
+        );
+    }
+
+    #[test]
+    fn detect_none_for_unknown() {
+        assert_eq!(detect_notification_method(Some("dumb"), None), None);
+    }
+
+    #[test]
+    fn detect_none_when_no_term() {
+        assert_eq!(detect_notification_method(None, None), None);
+    }
+
+    #[test]
+    fn term_program_takes_priority_over_term() {
+        // iTerm sets TERM=xterm-256color but TERM_PROGRAM=iTerm.app
+        // Should detect OSC 9 via TERM_PROGRAM, not BEL via TERM
+        assert_eq!(
+            detect_notification_method(Some("xterm-256color"), Some("iTerm.app")),
+            Some(NotificationMethod::Osc9)
+        );
     }
 }
