@@ -3,6 +3,7 @@
 pub mod agent;
 pub mod chat;
 pub mod clear;
+pub mod code;
 pub mod compact;
 pub mod context;
 pub mod exit;
@@ -50,7 +51,6 @@ pub struct CommandContext<'a> {
     pub os: &'a crate::os::Os,
     pub cwd: &'a std::path::Path,
 }
-
 /// Execute a slash command by dispatching to the appropriate module
 pub async fn execute(command: TuiCommand, ctx: &CommandContext<'_>) -> CommandResult {
     match command {
@@ -77,5 +77,6 @@ pub async fn execute(command: TuiCommand, ctx: &CommandContext<'_>) -> CommandRe
         TuiCommand::Prompts(ref args) => prompts::execute(args).await,
         TuiCommand::Chat(ref args) => chat::execute(args, ctx).await,
         TuiCommand::Reply(_) => reply::execute(ctx).await,
+        TuiCommand::Code(ref args) => code::execute(args, ctx).await,
     }
 }

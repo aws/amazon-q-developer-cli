@@ -55,6 +55,8 @@ pub enum TuiCommand {
     Prompts(PromptsArgs),
     /// Open editor pre-filled with the last assistant message to compose a reply
     Reply(ReplyArgs),
+    /// Code intelligence workspace management
+    Code(CodeArgs),
 }
 
 /// Arguments for /help command
@@ -197,6 +199,16 @@ pub struct ChatArgs {}
 #[serde(rename_all = "camelCase")]
 pub struct ReplyArgs {}
 
+/// Arguments for /code command
+#[typeshare]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CodeArgs {
+    /// Subcommand: status, init, logs, overview, summary
+    #[serde(alias = "value", skip_serializing_if = "Option::is_none")]
+    pub subcommand: Option<String>,
+}
+
 impl TuiCommand {
     /// Command name with leading slash
     pub fn name(&self) -> &'static str {
@@ -218,6 +230,7 @@ impl TuiCommand {
             TuiCommand::Prompts(_) => "/prompts",
             TuiCommand::Chat(_) => "/chat",
             TuiCommand::Reply(_) => "/reply",
+            TuiCommand::Code(_) => "/code",
         }
     }
 
@@ -241,6 +254,7 @@ impl TuiCommand {
             TuiCommand::Prompts(_) => "Select or list available prompts",
             TuiCommand::Chat(_) => "Load a previous session",
             TuiCommand::Reply(_) => "Open editor pre-filled with the last assistant message to compose a reply",
+            TuiCommand::Code(_) => "Code intelligence workspace management",
         }
     }
 
@@ -266,6 +280,7 @@ impl TuiCommand {
             TuiCommand::Prompts(_) => "/prompts [prompt-name]",
             TuiCommand::Chat(_) => "/chat",
             TuiCommand::Reply(_) => "/reply",
+            TuiCommand::Code(_) => "/code [status|init|logs|overview|summary]",
         }
     }
 
@@ -275,6 +290,7 @@ impl TuiCommand {
             TuiCommand::Agent(_) => vec!["create", "edit", "swap"],
             TuiCommand::Context(_) => vec!["add", "remove", "clear"],
             TuiCommand::Knowledge(_) => vec!["show", "add", "remove", "update", "clear", "cancel"],
+            TuiCommand::Code(_) => vec!["status", "init", "logs", "overview", "summary"],
             _ => vec![],
         }
     }
@@ -357,6 +373,11 @@ impl TuiCommand {
                 Some(meta)
             },
             TuiCommand::Reply(_) => None,
+            TuiCommand::Code(_) => {
+                let mut meta = serde_json::Map::new();
+                meta.insert("inputType".into(), "panel".into());
+                Some(meta)
+            },
         }
     }
 
@@ -380,6 +401,7 @@ impl TuiCommand {
             TuiCommand::Prompts(PromptsArgs::default()),
             TuiCommand::Chat(ChatArgs::default()),
             TuiCommand::Reply(ReplyArgs::default()),
+            TuiCommand::Code(CodeArgs::default()),
         ];
         commands.sort_by_key(|cmd| cmd.name());
         commands
@@ -422,6 +444,9 @@ impl TuiCommand {
             })),
             "chat" => Some(Self::Chat(ChatArgs::default())),
             "reply" => Some(Self::Reply(ReplyArgs::default())),
+            "code" => Some(Self::Code(CodeArgs {
+                subcommand: (!args.is_empty()).then(|| args.to_string()),
+            })),
             _ => None,
         }
     }

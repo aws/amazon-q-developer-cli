@@ -32,6 +32,7 @@ import { Chip, ChipColor, ProgressChip } from '../ui/chip/index.js';
 import { ContextBreakdown } from '../ui/ContextBreakdown';
 import { ApprovalRequest } from '../ui/ApprovalRequest.js';
 import { UsagePanel } from '../ui/UsagePanel';
+import { CodePanel } from '../ui/CodePanel';
 import {
   useNotificationState,
   useNotificationActions,
@@ -47,7 +48,7 @@ import {
   useQueueState,
   useKiroClient,
 } from '../../stores/selectors.js';
-import { useAppStore } from '../../stores/app-store.js';
+import { useAppStore, type CodePanelData } from '../../stores/app-store.js';
 import { useShallow } from 'zustand/react/shallow';
 import { useKeypress } from '../../hooks/useKeypress';
 import { getGitBranch } from '../../utils/git';
@@ -143,6 +144,8 @@ export const InlineLayout: React.FC = () => {
     showKnowledgePanel,
     knowledgeEntries,
     knowledgeStatus,
+    showCodePanel,
+    codeData,
   } = useUIState();
   const {
     toggleToolOutputsExpanded,
@@ -152,6 +155,7 @@ export const InlineLayout: React.FC = () => {
     setShowMcpPanel,
     setShowToolsPanel,
     setShowKnowledgePanel,
+    setShowCodePanel,
   } = useUIActions();
   const {
     sessionId,
@@ -159,6 +163,7 @@ export const InlineLayout: React.FC = () => {
     currentModel,
     currentAgent,
     previousAgentName,
+    codeIntelligenceActive,
   } = useContextState();
   const { activeCommand, promptHint } = useCommandState();
   const { setActiveCommand, setActiveTrigger, clearCommandInput } =
@@ -311,6 +316,26 @@ export const InlineLayout: React.FC = () => {
     clearCommandInput();
   }, [setShowKnowledgePanel, setActiveCommand, clearCommandInput]);
 
+  const handleCloseCodePanel = useCallback(() => {
+    setShowCodePanel(false);
+    setActiveCommand(null);
+    clearCommandInput();
+  }, [setShowCodePanel, setActiveCommand, clearCommandInput]);
+
+  const handleRefreshCodePanel = useCallback(async () => {
+    try {
+      const result = await kiro.executeCommand({
+        command: 'code',
+        args: {},
+      } as any);
+      if (result?.data) {
+        setShowCodePanel(true, result.data as CodePanelData);
+      }
+    } catch {
+      /* ignore */
+    }
+  }, [kiro, setShowCodePanel]);
+
   // Build the header - ContextBar
   const promptBarHeader = useMemo(() => {
     if (pendingApproval) {
@@ -369,6 +394,7 @@ export const InlineLayout: React.FC = () => {
       contextUsagePercent != null && (
         <ProgressChip value={contextUsagePercent} warningThreshold={60} />
       ),
+      codeIntelligenceActive && <Text>{getColor('primary')('λ')}</Text>,
     ];
 
     const secondaryItems = [
@@ -393,6 +419,7 @@ export const InlineLayout: React.FC = () => {
     messages,
     currentAgent,
     contextUsagePercent,
+    codeIntelligenceActive,
     gitBranch,
     currentModel,
     getColor,
@@ -476,6 +503,7 @@ export const InlineLayout: React.FC = () => {
               showMcpPanel ||
               showToolsPanel ||
               showKnowledgePanel ||
+              showCodePanel ||
               !!pendingApproval
                 ? undefined
                 : promptBarHeader
@@ -507,7 +535,8 @@ export const InlineLayout: React.FC = () => {
               showUsagePanel ||
               showMcpPanel ||
               showToolsPanel ||
-              showKnowledgePanel
+              showKnowledgePanel ||
+              showCodePanel
             }
           >
             <CommandMenu />
@@ -548,6 +577,13 @@ export const InlineLayout: React.FC = () => {
                 entries={knowledgeEntries}
                 status={knowledgeStatus}
                 onClose={handleCloseKnowledgePanel}
+              />
+            )}
+            {showCodePanel && (
+              <CodePanel
+                data={codeData}
+                onClose={handleCloseCodePanel}
+                onRefresh={handleRefreshCodePanel}
               />
             )}
             <ActionHint

@@ -2420,6 +2420,11 @@ impl Agent {
                 names.retain(|name| name != &CanonicalToolName::BuiltIn(tools::BuiltInToolName::Knowledge));
             }
 
+            // Only include code tool when code intelligence is available
+            if self.code_intelligence.is_none() {
+                names.retain(|name| name != &CanonicalToolName::BuiltIn(tools::BuiltInToolName::Code));
+            }
+
             names
         };
 

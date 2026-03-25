@@ -10,6 +10,7 @@ import type {
   KnowledgeEntry,
   McpServerInfo,
   ToolInfo,
+  CodePanelData,
 } from '../stores/app-store.js';
 
 /** Context passed to command handlers */
@@ -58,14 +59,17 @@ export interface CommandContext {
     entries?: KnowledgeEntry[],
     status?: string
   ) => void;
+  /** Show/hide code panel */
+  setShowCodePanel: (show: boolean, data?: CodePanelData) => void;
   /** Clear conversation messages */
   clearMessages: () => void;
   /** Clear all command UI state (menus, panels) */
   clearUIState: () => void;
-  /** Send message to chat */
+  /** Send message to chat. If displayContent is provided, it's shown in UI instead of content. */
   sendMessage: (
     content: string,
-    images?: Array<{ base64: string; mimeType: string }>
+    images?: Array<{ base64: string; mimeType: string }>,
+    displayContent?: string
   ) => Promise<void>;
   /** Create a stream event handler for processing agent events into messages */
   createStreamEventHandler: () => (event: AgentStreamEvent) => void;

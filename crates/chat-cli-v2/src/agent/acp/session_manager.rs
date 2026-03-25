@@ -30,7 +30,6 @@ use tokio::sync::{
 use tracing::{
     debug,
     error,
-    info,
     warn,
 };
 
@@ -243,7 +242,8 @@ impl SessionManager {
         }
     }
 
-    /// Get or initialize a CodeIntelligence client for the given CWD
+    /// Get or initialize a CodeIntelligence client for the given CWD.
+    /// If `lsp.json` exists, automatically initializes LSP servers in the background.
     fn get_or_init_code_intelligence(&mut self, cwd: &Path) -> Option<Arc<RwLock<CodeIntelligence>>> {
         if let Some(ci) = self.code_intelligence.get(cwd) {
             return Some(ci.clone());
@@ -254,8 +254,18 @@ impl SessionManager {
             .build()
         {
             Ok(client) => {
-                info!("Initialized CodeIntelligence client for {}", cwd.display());
+                let should_init = client.should_auto_initialize();
+                debug!("Initialized CodeIntelligence client for {}", cwd.display());
                 let ci = Arc::new(RwLock::new(client));
+                if should_init {
+                    let ci_clone = ci.clone();
+                    tokio::spawn(async move {
+                        let mut guard = ci_clone.write().await;
+                        if let Err(e) = guard.initialize().await {
+                            warn!("Failed to auto-initialize code intelligence: {}", e);
+                        }
+                    });
+                }
                 self.code_intelligence.insert(cwd.to_path_buf(), ci.clone());
                 Some(ci)
             },
@@ -540,6 +550,10 @@ impl SessionManager {
                 let result = crate::agent::session::list_sessions(cwd.as_deref());
                 _ = resp_sender.send(result);
             },
+            SessionManagerRequestData::GetCodeIntelligence { cwd, resp_sender } => {
+                let ci = self.get_or_init_code_intelligence(&cwd);
+                _ = resp_sender.send(ci);
+            },
         }
     }
 }
@@ -587,6 +601,10 @@ pub(crate) enum SessionManagerRequestData {
         cwd: Option<PathBuf>,
         resp_sender:
             oneshot::Sender<Result<Vec<crate::agent::session::SessionDataView>, crate::agent::session::SessionError>>,
+    },
+    GetCodeIntelligence {
+        cwd: PathBuf,
+        resp_sender: oneshot::Sender<Option<Arc<RwLock<CodeIntelligence>>>>,
     },
 }
 
@@ -735,5 +753,17 @@ impl SessionManagerHandle {
         rx.await
             .map_err(|_e| sacp::util::internal_error("Failed to receive list_sessions response"))?
             .map_err(|e| sacp::util::internal_error(format!("Failed to list sessions: {}", e)))
+    }
+
+    pub async fn get_code_intelligence(&self, cwd: PathBuf) -> Option<Arc<RwLock<CodeIntelligence>>> {
+        let (resp_sender, rx) = oneshot::channel();
+        self.tx
+            .send(SessionManagerRequest {
+                session_id: SessionId::new(String::new()),
+                data: SessionManagerRequestData::GetCodeIntelligence { cwd, resp_sender },
+            })
+            .await
+            .ok()?;
+        rx.await.ok()?
     }
 }

@@ -1,4 +1,6 @@
 import { createStore, useStore } from 'zustand';
+import { existsSync } from 'node:fs';
+import { join } from 'node:path';
 import { Kiro } from '../kiro';
 import chalk from 'chalk';
 import { createContext, useContext } from 'react';
@@ -81,6 +83,31 @@ export interface KnowledgeEntry {
   path: string | null;
   items_display?: string;
   indexing?: boolean;
+}
+
+export interface CodeLspInfo {
+  name: string;
+  languages: string[];
+  status: string;
+  isAvailable: boolean;
+  initDurationMs: number | null;
+  workspaceFolders: string[];
+}
+
+export interface CodePanelData {
+  status: string;
+  rootPath: string;
+  detectedLanguages: string[];
+  projectMarkers: string[];
+  lsps: CodeLspInfo[];
+  configPath: string;
+  docUrl?: string;
+  warning?: string;
+  // logs subcommand
+  entries?: Array<{ timestamp: string; level: string; message: string }>;
+  level?: string;
+  // message from backend
+  message?: string;
 }
 
 import {
@@ -203,7 +230,8 @@ interface BaseAppActions {
   // Kiro actions
   sendMessage: (
     content: string,
-    images?: Array<{ base64: string; mimeType: string }>
+    images?: Array<{ base64: string; mimeType: string }>,
+    displayContent?: string
   ) => Promise<void>;
   createStreamEventHandler: () => (event: AgentStreamEvent) => void;
   processMessageStream: (
@@ -289,6 +317,7 @@ interface BaseAppActions {
     entries?: KnowledgeEntry[],
     status?: string
   ) => void;
+  setShowCodePanel: (show: boolean, data?: CodePanelData) => void;
 
   // File attachment actions
   attachFile: (path: string) => void;
@@ -410,6 +439,9 @@ export interface AppState {
   showKnowledgePanel: boolean;
   knowledgeEntries: KnowledgeEntry[];
   knowledgeStatus: string | null;
+  showCodePanel: boolean;
+  codeData: CodePanelData | null;
+  codeIntelligenceActive: boolean;
   // Abort controller for current stream
   currentAbortController: AbortController | null;
   cancelInProgress: Promise<void> | null;
@@ -552,6 +584,11 @@ export const createAppStore = (props: AppStoreProps) => {
     showKnowledgePanel: false,
     knowledgeEntries: [],
     knowledgeStatus: null,
+    showCodePanel: false,
+    codeData: null,
+    codeIntelligenceActive: existsSync(
+      join(process.cwd(), '.kiro', 'settings', 'lsp.json')
+    ),
     attachedFiles: [],
     pendingFileAttachment: null,
     pendingImages: [],
@@ -563,7 +600,8 @@ export const createAppStore = (props: AppStoreProps) => {
 
     sendMessage: async (
       content: string,
-      images?: Array<{ base64: string; mimeType: string }>
+      images?: Array<{ base64: string; mimeType: string }>,
+      displayContent?: string
     ) => {
       const { kiro, isProcessing, attachedFiles, pendingImages } = get();
       if (isProcessing) {
@@ -579,7 +617,7 @@ export const createAppStore = (props: AppStoreProps) => {
       logger.debug('[store] sendMessage', { contentLength: content.length });
 
       // Add to history
-      CommandHistory.getInstance().add(content);
+      CommandHistory.getInstance().add(displayContent ?? content);
 
       // Expand @file: references and attached files
       let expandedContent = expandFileReferences(content);
@@ -596,7 +634,8 @@ export const createAppStore = (props: AppStoreProps) => {
       const userMessageId = generateMessageId();
 
       // Build display content: use image labels with dimensions when no text
-      const displayContent =
+      const shownContent =
+        displayContent ||
         content ||
         (pendingImages.length > 0
           ? pendingImages.map(formatImageLabel).join(' ')
@@ -606,7 +645,7 @@ export const createAppStore = (props: AppStoreProps) => {
       const userMessage: MessageType = {
         id: userMessageId,
         role: MessageRole.User,
-        content: displayContent,
+        content: shownContent,
         agentName: get().currentAgent?.name,
       };
 
@@ -1453,6 +1492,7 @@ export const createAppStore = (props: AppStoreProps) => {
         setShowMcpPanel: state.setShowMcpPanel,
         setShowToolsPanel: state.setShowToolsPanel,
         setShowKnowledgePanel: state.setShowKnowledgePanel,
+        setShowCodePanel: state.setShowCodePanel,
         clearMessages: state.clearMessages,
         sendMessage: state.sendMessage,
         createStreamEventHandler: state.createStreamEventHandler,
@@ -1478,8 +1518,10 @@ export const createAppStore = (props: AppStoreProps) => {
             showMcpPanel: false,
             showToolsPanel: false,
             showKnowledgePanel: false,
+            showCodePanel: false,
             contextBreakdown: null,
             usageData: null,
+            codeData: null,
           }),
       };
 
@@ -1753,6 +1795,16 @@ export const createAppStore = (props: AppStoreProps) => {
       });
     },
 
+    setShowCodePanel: (show, data) => {
+      set({
+        showCodePanel: show,
+        codeData: data ?? null,
+        ...(data?.status === 'initialized'
+          ? { codeIntelligenceActive: true }
+          : {}),
+      });
+    },
+
     // File attachment actions
     attachFile: (path) => {
       set((state) => ({
@@ -1851,6 +1903,7 @@ export const createAppStore = (props: AppStoreProps) => {
           setShowMcpPanel: state.setShowMcpPanel,
           setShowToolsPanel: state.setShowToolsPanel,
           setShowKnowledgePanel: state.setShowKnowledgePanel,
+          setShowCodePanel: state.setShowCodePanel,
           clearMessages: state.clearMessages,
           sendMessage: state.sendMessage,
           createStreamEventHandler: state.createStreamEventHandler,

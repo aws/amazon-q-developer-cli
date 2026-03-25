@@ -120,6 +120,8 @@ export const useUIState = () =>
       showKnowledgePanel: state.showKnowledgePanel,
       knowledgeEntries: state.knowledgeEntries,
       knowledgeStatus: state.knowledgeStatus,
+      showCodePanel: state.showCodePanel,
+      codeData: state.codeData,
     }))
   );
 
@@ -137,6 +139,7 @@ export const useUIActions = () =>
       setShowMcpPanel: state.setShowMcpPanel,
       setShowToolsPanel: state.setShowToolsPanel,
       setShowKnowledgePanel: state.setShowKnowledgePanel,
+      setShowCodePanel: state.setShowCodePanel,
     }))
   );
 
@@ -152,6 +155,7 @@ export const useContextState = () =>
       currentModel: state.currentModel,
       currentAgent: state.currentAgent,
       previousAgentName: state.previousAgentName,
+      codeIntelligenceActive: state.codeIntelligenceActive,
     }))
   );
 

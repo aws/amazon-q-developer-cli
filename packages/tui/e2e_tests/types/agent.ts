@@ -94,6 +94,12 @@ export interface ChatArgs {
 export interface ClearArgs {
 }
 
+/** Arguments for /code command */
+export interface CodeArgs {
+	/** Subcommand: status, init, logs, overview, summary */
+	subcommand?: string;
+}
+
 /** Option displayed in autocomplete/dropdown UI */
 export interface CommandOption {
 	value: string;
@@ -476,5 +482,7 @@ export type TuiCommand =
 	/** List and execute available prompts */
 	| { command: "prompts", args: PromptsArgs }
 	/** Open editor pre-filled with the last assistant message to compose a reply */
-	| { command: "reply", args: ReplyArgs };
+	| { command: "reply", args: ReplyArgs }
+	/** Code intelligence workspace management */
+	| { command: "code", args: CodeArgs };
 

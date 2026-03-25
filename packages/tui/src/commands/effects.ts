@@ -79,7 +79,8 @@ type EffectName =
   | 'pasteImage'
   | 'promptEditor'
   | 'loadSession'
-  | 'replyEditor';
+  | 'replyEditor'
+  | 'showCodePanel';
 
 /**
  * Command → Effect mapping.
@@ -101,6 +102,7 @@ const commandEffects: Partial<Record<string, EffectName>> = {
   editor: 'promptEditor',
   chat: 'loadSession',
   reply: 'replyEditor',
+  code: 'showCodePanel',
 };
 
 /**
@@ -304,6 +306,24 @@ const effectHandlers: Record<EffectName, EffectHandler> = {
     }
     ctx.sendMessage(editorResult.content);
     return true;
+  },
+
+  showCodePanel: (result, ctx) => {
+    const data = result?.data as Record<string, unknown> | undefined;
+    if (data?.executePrompt) {
+      const prompt = data.executePrompt as string;
+      const label = data.label as string | undefined;
+      ctx.sendMessage(prompt, undefined, label);
+      return true;
+    }
+    if (data) {
+      ctx.setShowCodePanel(true, data as any);
+    } else {
+      ctx.setShowCodePanel(false);
+      if (result?.message) {
+        ctx.showAlert(result.message, result.success ? 'success' : 'error');
+      }
+    }
   },
 
   pasteImage: (result, ctx) => {
