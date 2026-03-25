@@ -1595,7 +1595,27 @@ export const createAppStore = (props: AppStoreProps) => {
         }
       });
     },
-    delete: () => {},
+    delete: () => {
+      set((state) => {
+        const { lines, cursorRow, cursorCol } = state.input;
+        const newLines = [...lines];
+        const line = newLines[cursorRow] ?? '';
+
+        if (cursorCol < line.length) {
+          // Delete character at cursor position
+          newLines[cursorRow] = line.slice(0, cursorCol) + line.slice(cursorCol + 1);
+          return { input: { ...state.input, lines: newLines } };
+        } else if (cursorRow < lines.length - 1) {
+          // At end of line, merge with next line
+          const nextLine = newLines[cursorRow + 1] ?? '';
+          newLines[cursorRow] = line + nextLine;
+          newLines.splice(cursorRow + 1, 1);
+          return { input: { ...state.input, lines: newLines } };
+        }
+
+        return state;
+      });
+    },
     clearWord: () => {
       set((state) => {
         // todo
