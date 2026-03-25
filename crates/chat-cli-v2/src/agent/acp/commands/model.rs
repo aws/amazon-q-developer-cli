@@ -102,7 +102,10 @@ fn to_legacy_model_info(m: &ModelInfo) -> crate::cli::chat::legacy::model::Model
         model_id: m.id.clone(),
         model_name: Some(m.display_name.clone()),
         description: None,
-        context_window_tokens: m.context_window.unwrap_or(200_000) as usize,
+        context_window_tokens: m.context_window.map_or_else(
+            || crate::cli::chat::legacy::model::default_context_window_for_model(&m.id),
+            |cw| cw as usize,
+        ),
         rate_multiplier: None,
         rate_unit: None,
     }

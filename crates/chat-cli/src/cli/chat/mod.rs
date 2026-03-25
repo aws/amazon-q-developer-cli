@@ -1055,6 +1055,21 @@ impl ChatSession {
                         {
                             cs.model_info = Some(ModelInfo::from_id(id.clone()));
                         }
+                        // Refresh model info from the API to pick up any service-side changes
+                        // (e.g. updated context window sizes). Fall back to the existing
+                        // deserialized value if the API call fails.
+                        if let Some(ref current) = cs.model_info {
+                            match get_available_models(os).await {
+                                Ok((models, _)) => {
+                                    if let Some(fresh) = find_model(&models, &current.model_id) {
+                                        cs.model_info = Some(fresh.clone());
+                                    }
+                                },
+                                Err(e) => {
+                                    tracing::warn!("Failed to refresh model info on resume: {}, using cached value", e);
+                                },
+                            }
+                        }
                         cs.auto_initialize_code_intelligence().await;
                         cs.update_state(true).await;
                         cs.enforce_tool_use_history_invariants();

@@ -1684,7 +1684,12 @@ impl AcpSession {
                 // After compaction completes, recompute and emit updated context usage
                 if matches!(compaction_event, CompactionEvent::Completed) {
                     if let Ok(snapshot) = self.agent.create_snapshot().await {
-                        let context_window = self.rts_state.model_info().map_or(200_000, |m| m.context_window_tokens);
+                        let context_window = self
+                            .rts_state
+                            .model_info()
+                            .map_or(super::commands::context::DEFAULT_CONTEXT_WINDOW_TOKENS, |m| {
+                                m.context_window_tokens
+                            });
                         let sizes = super::commands::context::calculate_component_sizes(&snapshot);
                         let baseline_tokens =
                             sizes.tools + sizes.context_files + sizes.kiro + sizes.user + sizes.system;
@@ -1716,7 +1721,12 @@ impl AcpSession {
                 tracing::info!("Received clear event");
                 // Compute baseline context usage (tools + system prompt) instead of None
                 if let Ok(snapshot) = self.agent.create_snapshot().await {
-                    let context_window = self.rts_state.model_info().map_or(200_000, |m| m.context_window_tokens);
+                    let context_window = self
+                        .rts_state
+                        .model_info()
+                        .map_or(super::commands::context::DEFAULT_CONTEXT_WINDOW_TOKENS, |m| {
+                            m.context_window_tokens
+                        });
                     let sizes = super::commands::context::calculate_component_sizes(&snapshot);
                     let baseline_tokens = sizes.tools + sizes.context_files + sizes.system;
                     let baseline_percentage = (baseline_tokens as f32 / context_window as f32) * 100.0;

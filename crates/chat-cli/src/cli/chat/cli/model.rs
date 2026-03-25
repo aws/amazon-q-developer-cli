@@ -105,12 +105,13 @@ pub struct ModelInfo {
 
 impl ModelInfo {
     pub fn from_api_model(model: &Model) -> Self {
+        let model_id = model.model_id().to_string();
         let context_window_tokens = model
             .token_limits()
             .and_then(|limits| limits.max_input_tokens())
-            .map_or(default_context_window(), |tokens| tokens as usize);
+            .map_or(default_context_window_for_model(&model_id), |tokens| tokens as usize);
         Self {
-            model_id: model.model_id().to_string(),
+            model_id,
             description: model.description.clone(),
             model_name: model.model_name().map(|s| s.to_string()),
             context_window_tokens,
@@ -121,11 +122,12 @@ impl ModelInfo {
 
     /// create a default model with only valid model_id（be compatoble with old stored model data）
     pub fn from_id(model_id: String) -> Self {
+        let context_window_tokens = default_context_window_for_model(&model_id);
         Self {
             model_id,
             description: None,
             model_name: None,
-            context_window_tokens: 200_000,
+            context_window_tokens,
             rate_multiplier: None,
             rate_unit: None,
         }
@@ -440,6 +442,16 @@ fn default_context_window() -> usize {
     200_000
 }
 
+/// Returns the appropriate context window size for a given model ID.
+/// Models with known larger context windows (e.g. claude-sonnet-4.6) get their
+/// actual size; all others fall back to the generic default.
+pub fn default_context_window_for_model(model_id: &str) -> usize {
+    match model_id {
+        "claude-sonnet-4.6" | "claude-opus-4.6" => 1_000_000,
+        _ => default_context_window(),
+    }
+}
+
 fn get_fallback_models() -> Vec<ModelInfo> {
     vec![ModelInfo {
         model_name: Some("auto".to_string()),
@@ -520,8 +532,8 @@ mod tests {
                 rate_unit: None,
             },
             ModelInfo {
-                model_name: Some("claude-3.7-sonnet".to_string()),
-                model_id: "claude-3.7-sonnet".to_string(),
+                model_name: Some("claude-sonnet-4.5".to_string()),
+                model_id: "claude-sonnet-4.5".to_string(),
                 description: None,
                 context_window_tokens: 200_000,
                 rate_multiplier: None,
@@ -574,5 +586,35 @@ mod tests {
         // Should match regardless of case
         let suggestion = find_similar_model(&models, "CLAUD-SONNET");
         assert!(suggestion.is_some());
+    }
+
+    #[test]
+    fn test_default_context_window_for_model_sonnet_4_6() {
+        assert_eq!(default_context_window_for_model("claude-sonnet-4.6"), 1_000_000);
+    }
+
+    #[test]
+    fn test_default_context_window_for_model_opus_4_6() {
+        assert_eq!(default_context_window_for_model("claude-opus-4.6"), 1_000_000);
+    }
+
+    #[test]
+    fn test_default_context_window_for_model_other_models() {
+        assert_eq!(default_context_window_for_model("claude-sonnet-4"), 200_000);
+        assert_eq!(default_context_window_for_model("claude-sonnet-4.5"), 200_000);
+        assert_eq!(default_context_window_for_model("auto"), 200_000);
+        assert_eq!(default_context_window_for_model("unknown-model"), 200_000);
+    }
+
+    #[test]
+    fn test_from_id_uses_model_specific_context_window() {
+        let sonnet_46 = ModelInfo::from_id("claude-sonnet-4.6".to_string());
+        assert_eq!(sonnet_46.context_window_tokens, 1_000_000);
+
+        let opus_46 = ModelInfo::from_id("claude-opus-4.6".to_string());
+        assert_eq!(opus_46.context_window_tokens, 1_000_000);
+
+        let sonnet_4 = ModelInfo::from_id("claude-sonnet-4".to_string());
+        assert_eq!(sonnet_4.context_window_tokens, 200_000);
     }
 }

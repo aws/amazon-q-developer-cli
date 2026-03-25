@@ -819,4 +819,44 @@ mod tests {
             "user_turn_metadata should be fresh"
         );
     }
+
+    #[tokio::test]
+    async fn test_resume_refreshes_model_info_context_window() {
+        let mut os = Os::new().await.unwrap();
+        let cwd = std::env::current_dir().unwrap();
+
+        // Create and save a session
+        let (conversation_id, _session) =
+            create_test_session(&mut os, vec!["hello", "exit"], vec!["Hi there!"], None).await;
+
+        // Load the saved conversation, tamper with context_window_tokens to simulate
+        // a stale value from an older client version, then re-save it.
+        let mut saved = os
+            .database
+            .get_conversation_by_id(&conversation_id)
+            .unwrap()
+            .expect("conversation should exist");
+        let stale_window = 42_000;
+        if let Some(ref mut info) = saved.model_info {
+            info.context_window_tokens = stale_window;
+        }
+        os.database.set_conversation_by_path(&cwd, &saved).unwrap();
+
+        // Resume the session — the refresh logic should fetch fresh model info
+        let (_, resumed) = create_test_session(&mut os, vec!["exit"], vec![], Some(conversation_id)).await;
+
+        // The mock API returns "model-1" with no token_limits, so from_api_model
+        // falls back to default_context_window_for_model("model-1") = 200_000.
+        // The resumed session should have the fresh value, not the stale 42_000.
+        let context_window = resumed
+            .conversation
+            .model_info
+            .as_ref()
+            .map(|m| m.context_window_tokens);
+        assert_ne!(
+            context_window,
+            Some(stale_window),
+            "context_window_tokens should have been refreshed from the API"
+        );
+    }
 }
