@@ -29,6 +29,12 @@ export function renderNode(node: TwinkiNode, maxWidth: number): string[] {
 
 	if (width <= CONSTANTS.ZERO_INDEX && node.type !== NODE_TYPES.TWINKI_TEXT) return [];
 
+	// Clamp width to maxWidth to prevent overflow when Yoga's measure-func
+	// over-reports width (e.g. when parent margin isn't fully reflected in
+	// the flex algorithm). Without this, text wraps one column too late and
+	// the last character is lost during compositing.
+	const effectiveWidth = Math.min(width, maxWidth);
+
 	// Region caching: return cached lines if region is clean
 	if (node.type === NODE_TYPES.TWINKI_REGION && node.region) {
 		if (!node.region.dirty && node.region.cachedLines && node.region.lastWidth === width) {
@@ -42,11 +48,17 @@ export function renderNode(node: TwinkiNode, maxWidth: number): string[] {
 	}
 
 	if (node.type === NODE_TYPES.TWINKI_TEXT) {
-		return renderText(node, width > CONSTANTS.ZERO_INDEX ? width : maxWidth);
+		// Use the node's own Yoga width when available, but never exceed maxWidth.
+		// Yoga's measure-func can over-report width when the parent has margin
+		// that isn't fully reflected in the flex algorithm, so clamping prevents
+		// text from wrapping one column too late and losing the last character
+		// during compositing.
+		const textWidth = width > CONSTANTS.ZERO_INDEX ? Math.min(width, maxWidth) : maxWidth;
+		return renderText(node, textWidth);
 	}
 
 	if (node.type === NODE_TYPES.TWINKI_BOX) {
-		return renderBox(node, width, height, (childNode, childMaxWidth) => 
+		return renderBox(node, effectiveWidth, height, (childNode, childMaxWidth) => 
 			renderNode(childNode, childMaxWidth)
 		);
 	}

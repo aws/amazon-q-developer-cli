@@ -65,6 +65,9 @@ export function renderBoxChildren(
 	}
 
 	// Position-based compositing (row layout, etc.)
+	// Yoga may undercount height when children contain wrapped text (text wrapping
+	// happens after layout). Start with the Yoga height but grow dynamically so
+	// wrapped lines are never clipped. clipOverflow still honours the Yoga height.
 	const grid: string[] = new Array(innerHeight).fill('');
 
 	for (const child of node.children) {
@@ -72,11 +75,25 @@ export function renderBoxChildren(
 		const layout = getComputedLayout(child.yogaNode);
 		const childLeft = Math.floor(layout.left) - contentOffsetLeft;
 		const childTop = Math.floor(layout.top) - contentOffsetTop;
-		const childLines = renderNodeFn(child, innerWidth);
+		// Clamp the available width for this child so it doesn't render wider
+		// than the space between its left edge and the container's right edge.
+		// Yoga's measure-func can over-report width when margin isn't fully
+		// accounted for in the flex algorithm, causing text to wrap one column
+		// too late and the last visible character to be truncated during
+		// compositing.
+		const childAvailableWidth = Math.max(0, innerWidth - Math.max(0, childLeft));
+		const childLines = renderNodeFn(child, childAvailableWidth);
 
 		for (let i = 0; i < childLines.length; i++) {
 			const row = childTop + i;
-			if (row < 0 || row >= innerHeight) continue;
+			if (row < 0) continue;
+			// When overflow is clipped, respect the Yoga-computed height
+			if (clipOverflow && row >= innerHeight) continue;
+			// Grow grid to fit rendered content that exceeds Yoga height
+			// (e.g. text wrapping produces more lines than Yoga predicted)
+			while (row >= grid.length) {
+				grid.push('');
+			}
 			const line = childLines[i]!;
 			const base = grid[row]!;
 			// Composite child line at childLeft offset

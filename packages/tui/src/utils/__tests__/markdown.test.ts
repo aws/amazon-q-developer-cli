@@ -876,6 +876,26 @@ describe('tryAppendMarkdownDelta', () => {
     const base = parseMarkdown(content);
     expect(tryAppendMarkdownDelta(base, ' tail', content)).toBeNull();
   });
+
+  it('returns null when delta starts with ( after text ending with ] (markdown link boundary)', () => {
+    // Simulates streaming: first "]" triggers re-parse (no link yet),
+    // then "(" arrives — must force another re-parse so the link is
+    // detected once the closing ")" streams in.
+    const content = 'Check [AWS Calculator]';
+    const base = parseMarkdown(content);
+    expect(
+      tryAppendMarkdownDelta(base, '(https://calc.aws/)', content)
+    ).toBeNull();
+  });
+
+  it('full re-parse after ]( produces correct link segment', () => {
+    const full = 'Check [AWS Calculator](https://calc.aws/) for details';
+    const segments = parseMarkdown(full);
+    const linkSeg = segments.find((s) => s.link);
+    expect(linkSeg).toBeDefined();
+    expect(linkSeg!.text).toBe('AWS Calculator');
+    expect(linkSeg!.link!.url).toBe('https://calc.aws/');
+  });
 });
 
 describe('isIncrementalMarkdownDeltaSafe', () => {

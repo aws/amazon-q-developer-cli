@@ -255,6 +255,21 @@ export function tryAppendMarkdownDelta(
     return null;
   }
 
+  // Force re-parse when the accumulated text may form a markdown link.
+  // The `]` in the text triggers a re-parse, but at that point the `(url)`
+  // hasn't arrived yet so no link is detected. When `(` arrives later it
+  // passes the safe-delta check (parentheses aren't control markers).
+  // Detect the `](` boundary and force a full re-parse so the link is
+  // recognised once the closing `)` streams in.
+  if (
+    lastSegment &&
+    isPlainTextSegment(lastSegment) &&
+    lastSegment.text.endsWith(']') &&
+    delta.startsWith('(')
+  ) {
+    return null;
+  }
+
   let normalizedDelta = delta;
   if (!lastSegment || isBlockSeparatorSegment(lastSegment)) {
     normalizedDelta = normalizedDelta.replace(/^\n+/, '');
