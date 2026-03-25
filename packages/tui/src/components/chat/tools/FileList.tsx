@@ -2,6 +2,7 @@ import React, { useMemo } from 'react';
 import { Box } from './../../../renderer.js';
 import { Text } from '../../ui/text/Text.js';
 import { useTheme } from '../../../hooks/useThemeContext.js';
+import { visibleWidth } from '../../../utils/text-width.js';
 
 /** Margin used by the StatusBar dot + padding before file list content */
 const LEFT_MARGIN = 2;
@@ -53,7 +54,7 @@ export const FileList = React.memo(function FileList({
     let currentWidth = 0;
 
     for (const item of visibleItems) {
-      const itemWidth = item.length;
+      const itemWidth = visibleWidth(item);
 
       if (currentLine.length === 0) {
         // First item always goes on current line

@@ -9,6 +9,7 @@ import { useTerminalSize } from '../../hooks/useTerminalSize';
 import { useInput } from '../../renderer.js';
 import { fuzzyScore } from '../../utils/fuzzyScore.js';
 import type { KnowledgeEntry } from '../../stores/app-store.js';
+import { visibleWidth } from '../../utils/text-width.js';
 
 interface KnowledgePanelProps {
   entries: KnowledgeEntry[];
@@ -60,7 +61,7 @@ export const KnowledgePanel: React.FC<KnowledgePanelProps> = ({
 
   const nameCol =
     Math.max(
-      entries.reduce((m, e) => Math.max(m, e.name.length), 0),
+      entries.reduce((m, e) => Math.max(m, visibleWidth(e.name)), 0),
       8
     ) + GAP;
   const idCol = 10 + GAP;
@@ -94,7 +95,7 @@ export const KnowledgePanel: React.FC<KnowledgePanelProps> = ({
       visible.map((entry) => {
         const displayPath = entry.path ?? entry.description;
         const truncatedPath =
-          displayPath.length > pathCol
+          visibleWidth(displayPath) > pathCol
             ? '…' + displayPath.slice(-(pathCol - 1))
             : displayPath;
         return [

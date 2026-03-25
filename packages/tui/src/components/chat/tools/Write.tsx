@@ -11,6 +11,7 @@ import { diffLines, type Change } from 'diff';
 import { getToolLabel } from '../../../types/tool-status.js';
 import { formatToolParams } from '../../../utils/tool-params.js';
 import { ToolMeta } from './ToolMeta.js';
+import { visibleWidth, truncateToWidth } from '../../../utils/text-width.js';
 
 export interface WriteProps {
   /** Old text content for diff (empty string for new files) */
@@ -160,8 +161,8 @@ export const Write = React.memo<WriteProps>(function Write({
   const expanded = isStatic || expandedFromHook;
 
   const truncateLine = (line: string, maxWidth: number): string => {
-    if (line.length <= maxWidth) return line;
-    return line.slice(0, maxWidth - 1) + '…';
+    if (visibleWidth(line) <= maxWidth) return line;
+    return truncateToWidth(line, maxWidth);
   };
 
   // When rendered with a StatusInfo header (content prop), the diff starts after:

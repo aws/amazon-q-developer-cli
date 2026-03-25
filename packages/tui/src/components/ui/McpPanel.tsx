@@ -6,6 +6,7 @@ import { useTheme } from '../../hooks/useThemeContext';
 import { useTerminalSize } from '../../hooks/useTerminalSize';
 import { fuzzyScore } from '../../utils/fuzzyScore.js';
 import type { McpServerInfo } from '../../stores/app-store.js';
+import { visibleWidth } from '../../utils/text-width.js';
 
 interface McpPanelProps {
   servers: McpServerInfo[];
@@ -53,7 +54,7 @@ export const McpPanel: React.FC<McpPanelProps> = ({ servers, onClose }) => {
   const visible = filtered.slice(scrollOffset, scrollOffset + maxVisible);
 
   const maxNameLen = servers.reduce(
-    (max, s) => Math.max(max, s.name.length),
+    (max, s) => Math.max(max, visibleWidth(s.name)),
     0
   );
   const nameCol = Math.max(maxNameLen, 12) + GAP;

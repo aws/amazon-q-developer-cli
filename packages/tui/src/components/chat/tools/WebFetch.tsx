@@ -9,6 +9,7 @@ import { ToolMeta } from './ToolMeta.js';
 import type { ToolResult } from '../../../stores/app-store.js';
 import { getToolLabel } from '../../../types/tool-status.js';
 import { hyperlink } from '../../../utils/terminal-capabilities.js';
+import { truncateToWidth } from '../../../utils/text-width.js';
 export interface WebFetchProps {
   /** Whether the fetch has finished */
   isFinished?: boolean;
@@ -48,9 +49,9 @@ export const WebFetch = React.memo(function WebFetch({
       const parsed = new URL(url);
       const path = parsed.pathname === '/' ? '' : parsed.pathname;
       const display = `${parsed.hostname}${path}`;
-      return display.length > 60 ? display.slice(0, 57) + '...' : display;
+      return truncateToWidth(display, 60, '...');
     } catch {
-      return url.length > 60 ? url.slice(0, 57) + '...' : url;
+      return truncateToWidth(url, 60, '...');
     }
   }, [url]);
 

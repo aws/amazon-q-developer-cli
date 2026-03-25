@@ -13,6 +13,7 @@ import { Divider } from './divider/Divider.js';
 import { useTheme } from '../../hooks/useThemeContext.js';
 import { hyperlink } from '../../utils/terminal-capabilities.js';
 import chalk from 'chalk';
+import { visibleWidth } from '../../utils/text-width.js';
 
 interface MarkdownRendererProps {
   content: string;
@@ -218,12 +219,12 @@ export const MarkdownRenderer = React.memo(function MarkdownRenderer({
         if (block.type === 'table') {
           const { headers, rows, alignments } = block.segment.table!;
           const colWidths = headers.map((h, ci) => {
-            const dataWidths = rows.map((r) => (r[ci] || '').length);
-            return Math.max(h.length, ...dataWidths, 3);
+            const dataWidths = rows.map((r) => visibleWidth(r[ci] || ''));
+            return Math.max(visibleWidth(h), ...dataWidths, 3);
           });
           const padCell = (text: string, width: number, align: string) => {
             const stripped = text.trim();
-            const pad = width - stripped.length;
+            const pad = width - visibleWidth(stripped);
             if (pad <= 0) return stripped;
             if (align === 'right') return ' '.repeat(pad) + stripped;
             if (align === 'center') {

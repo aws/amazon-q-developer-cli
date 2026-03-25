@@ -1,6 +1,7 @@
 import React, { useCallback, useMemo, useState, useEffect } from 'react';
 import { Box, Text } from './../../renderer.js';
 import { useRenderMetrics, isDevMode } from '../../hooks/useRenderMetrics.js';
+import { truncateToWidth } from '../../utils/text-width.js';
 
 // Region is twinki-only — lazy import to avoid errors when using ink
 // Use variable to prevent TS from resolving the module at typecheck time
@@ -331,7 +332,7 @@ export const InlineLayout: React.FC = () => {
           if (value) {
             // Collapse to first line and truncate long values (e.g. commands)
             value = value.split('\n')[0]!;
-            if (value.length > 60) value = value.slice(0, 57) + '...';
+            value = truncateToWidth(value, 60, '...');
             detail = ` · ${value}`;
           }
         } catch {

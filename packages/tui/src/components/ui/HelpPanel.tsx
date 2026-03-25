@@ -6,6 +6,7 @@ import { Table, type Row } from './table/index.js';
 import { useTheme } from '../../hooks/useThemeContext.js';
 import { useTerminalSize } from '../../hooks/useTerminalSize.js';
 import { fuzzyScore } from '../../utils/fuzzyScore.js';
+import { visibleWidth } from '../../utils/text-width.js';
 
 interface Command {
   name: string;
@@ -76,7 +77,7 @@ export const HelpPanel: React.FC<HelpPanelProps> = ({ commands, onClose }) => {
   const canScrollDown = scrollOffset + maxVisible < allRows.length;
 
   const maxNameLen = commands.reduce(
-    (max, c) => Math.max(max, c.name.replace(/^\//, '').length),
+    (max, c) => Math.max(max, visibleWidth(c.name.replace(/^\//, ''))),
     0
   );
   const nameCol = Math.max(maxNameLen, 10) + GAP;

@@ -6,6 +6,7 @@ import { useTheme } from '../../hooks/useThemeContext';
 import { useTerminalSize } from '../../hooks/useTerminalSize';
 import { fuzzyScore } from '../../utils/fuzzyScore.js';
 import type { ToolInfo } from '../../stores/app-store.js';
+import { visibleWidth, truncateToWidth } from '../../utils/text-width.js';
 
 interface ToolsPanelProps {
   tools: ToolInfo[];
@@ -22,8 +23,8 @@ function shortDescription(desc: string, maxLen: number): string {
   const firstLine = desc.trim().split('\n')[0] ?? '';
   const firstSentence = firstLine.split('. ')[0] ?? firstLine;
   const clean = firstSentence.replace(/\s+/g, ' ').trim();
-  if (clean.length <= maxLen) return clean;
-  return clean.slice(0, maxLen - 3) + '...';
+  if (visibleWidth(clean) <= maxLen) return clean;
+  return truncateToWidth(clean, maxLen, '...');
 }
 
 const GAP = 2;
@@ -68,10 +69,13 @@ export const ToolsPanel: React.FC<ToolsPanelProps> = ({ tools, onClose }) => {
   const canScrollDown = scrollOffset + maxVisible < filtered.length;
   const visible = filtered.slice(scrollOffset, scrollOffset + maxVisible);
 
-  const maxNameLen = tools.reduce((max, t) => Math.max(max, t.name.length), 0);
+  const maxNameLen = tools.reduce(
+    (max, t) => Math.max(max, visibleWidth(t.name)),
+    0
+  );
   const nameCol = Math.max(maxNameLen, 12) + GAP;
   const maxSourceLen = tools.reduce(
-    (max, t) => Math.max(max, t.source.length),
+    (max, t) => Math.max(max, visibleWidth(t.source)),
     0
   );
   const sourceCol = Math.max(maxSourceLen, 10) + GAP;

@@ -7,6 +7,11 @@ import { Text } from '../text/Text.js';
 import { Icon, IconType } from '../icon/Icon.js';
 import { Divider } from '../divider/Divider.js';
 import { useKeypress } from '../../../hooks/useKeypress.js';
+import {
+  visibleWidth,
+  truncateToWidth,
+  padToWidth,
+} from '../../../utils/text-width.js';
 
 export interface MenuItem {
   label: string;
@@ -83,13 +88,13 @@ export const Menu = React.memo(function Menu({
 
   // Calculate the maximum item label length for consistent column alignment
   const maxLabelLength =
-    Math.max(...displayItems.map((item) => item.label.length), 0) +
-    prefix.length;
+    Math.max(...displayItems.map((item) => visibleWidth(item.label)), 0) +
+    visibleWidth(prefix);
 
   // Calculate max group column width (0 if no items have groups)
   const hasGroups = displayItems.some((item) => item.group);
   const maxGroupLength = hasGroups
-    ? Math.max(...displayItems.map((item) => item.group?.length ?? 0), 0)
+    ? Math.max(...displayItems.map((item) => visibleWidth(item.group ?? '')), 0)
     : 0;
 
   // Calculate available width for description
@@ -189,13 +194,13 @@ export const Menu = React.memo(function Menu({
       {visibleItemsSlice.map((item, visibleIndex) => {
         const actualIndex = startIndex + visibleIndex;
         const itemText = `${prefix}${item.label}`;
-        const paddedItem = itemText.padEnd(maxLabelLength);
+        const paddedItem = padToWidth(itemText, maxLabelLength);
         const isSelected = actualIndex === selectedIndex;
 
         // Truncate description if too long
         const truncatedDesc =
-          item.description.length > availableDescWidth
-            ? item.description.slice(0, availableDescWidth - 3) + '...'
+          visibleWidth(item.description) > availableDescWidth
+            ? truncateToWidth(item.description, availableDescWidth, '...')
             : item.description;
 
         return (
@@ -217,7 +222,7 @@ export const Menu = React.memo(function Menu({
             {hasGroups && (
               <>
                 <Text>
-                  {dimText((item.group ?? '').padEnd(maxGroupLength))}
+                  {dimText(padToWidth(item.group ?? '', maxGroupLength))}
                 </Text>
                 <Box width={4} />
               </>
