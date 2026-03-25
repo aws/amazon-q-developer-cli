@@ -408,6 +408,8 @@ export interface ToolUseBlockStart {
 
 /** Arguments for /tools command */
 export interface ToolsArgs {
+	/** Subcommand: trust-all, reset */
+	subcommand?: string;
 }
 
 /** Arguments for /usage command */

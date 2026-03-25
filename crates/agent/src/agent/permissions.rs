@@ -51,6 +51,21 @@ impl RuntimePermissions {
         self.denied_tools.contains(name)
     }
 
+    /// Trust a tool (auto-approve future uses).
+    pub fn trust_tool(&mut self, name: CanonicalToolName) {
+        self.trusted_tools.insert(name);
+    }
+
+    /// Untrust a tool (revert to per-request confirmation).
+    pub fn untrust_tool(&mut self, name: &CanonicalToolName) {
+        self.trusted_tools.remove(name);
+    }
+
+    /// Clear all per-tool trust (reset to config defaults).
+    pub fn clear_trusted_tools(&mut self) {
+        self.trusted_tools.clear();
+    }
+
     /// Set CWD as allowed for read operations.
     pub fn with_cwd(mut self, cwd: &str) -> Self {
         self.filesystem.allowed_read_paths.insert(cwd.to_string());

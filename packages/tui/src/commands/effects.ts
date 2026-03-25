@@ -228,7 +228,10 @@ const effectHandlers: Record<EffectName, EffectHandler> = {
 
   showToolsPanel: (result, ctx) => {
     const data = result?.data as { tools?: ToolInfo[] } | undefined;
-    ctx.setShowToolsPanel(true, data?.tools ?? []);
+    if (data?.tools) {
+      ctx.setShowToolsPanel(true, data.tools);
+    }
+    // Subcommands (trust-all, reset) return no tools data — let dispatcher show the alert
   },
 
   showKnowledgePanel: (result, ctx) => {

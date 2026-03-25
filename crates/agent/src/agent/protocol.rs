@@ -249,6 +249,14 @@ pub enum AgentRequest {
     ClearSessionResources,
     /// Get the text of the last assistant message, if any
     GetLastAssistantMessage,
+    /// Trust all tools for this session (auto-approve everything)
+    TrustAllTools,
+    /// Trust specific tools by name (auto-approve future uses)
+    TrustTools(Vec<String>),
+    /// Untrust specific tools by name (revert to per-request confirmation)
+    UntrustTools(Vec<String>),
+    /// Reset all tool permissions to config defaults
+    ResetToolPermissions,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -514,6 +522,7 @@ pub enum AgentResponse {
     ToolInfo(Vec<super::tui_commands::ToolInfo>),
     Resources(Vec<String>),
     LastAssistantMessage(Option<String>),
+    ToolTrustResult { changed: Vec<String>, invalid: Vec<String> },
     Unknown,
 }
 

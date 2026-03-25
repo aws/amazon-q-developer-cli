@@ -144,7 +144,11 @@ pub struct McpArgs {}
 #[typeshare]
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct ToolsArgs {}
+pub struct ToolsArgs {
+    /// Subcommand: trust-all, trust, untrust, reset
+    #[serde(alias = "value", skip_serializing_if = "Option::is_none")]
+    pub subcommand: Option<String>,
+}
 
 /// Arguments for /plan command
 #[typeshare]
@@ -271,7 +275,7 @@ impl TuiCommand {
             TuiCommand::Usage(_) => "/usage",
             TuiCommand::PasteImage(_) => "/paste",
             TuiCommand::Mcp(_) => "/mcp",
-            TuiCommand::Tools(_) => "/tools",
+            TuiCommand::Tools(_) => "/tools [trust-all|trust <name>|untrust <name>|reset]",
             TuiCommand::Plan(_) => "/plan [prompt]",
             TuiCommand::Feedback(_) => "/feedback",
             TuiCommand::Knowledge(_) => {
@@ -290,6 +294,7 @@ impl TuiCommand {
             TuiCommand::Agent(_) => vec!["create", "edit", "swap"],
             TuiCommand::Context(_) => vec!["add", "remove", "clear"],
             TuiCommand::Knowledge(_) => vec!["show", "add", "remove", "update", "clear", "cancel"],
+            TuiCommand::Tools(_) => vec!["trust-all", "trust", "untrust", "reset"],
             TuiCommand::Code(_) => vec!["status", "init", "logs", "overview", "summary"],
             _ => vec![],
         }
@@ -344,6 +349,7 @@ impl TuiCommand {
             TuiCommand::Tools(_) => {
                 let mut meta = serde_json::Map::new();
                 meta.insert("inputType".into(), "panel".into());
+                meta.insert("hint".into(), "trust-all, trust <name>, untrust <name>, reset".into());
                 Some(meta)
             },
             TuiCommand::Plan(_) => None,
@@ -428,7 +434,9 @@ impl TuiCommand {
             "quit" => Some(Self::Quit(QuitArgs::default())),
             "usage" => Some(Self::Usage(UsageArgs::default())),
             "mcp" => Some(Self::Mcp(McpArgs::default())),
-            "tools" => Some(Self::Tools(ToolsArgs::default())),
+            "tools" => Some(Self::Tools(ToolsArgs {
+                subcommand: (!args.is_empty()).then(|| args.to_string()),
+            })),
             "plan" => Some(Self::Plan(PlanArgs {
                 prompt: (!args.is_empty()).then(|| args.to_string()),
             })),

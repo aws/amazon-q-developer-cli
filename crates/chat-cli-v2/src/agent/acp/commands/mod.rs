@@ -64,7 +64,7 @@ pub async fn execute(command: TuiCommand, ctx: &CommandContext<'_>) -> CommandRe
         TuiCommand::Usage(_args) => usage::execute(ctx).await,
         TuiCommand::PasteImage(_) => paste_image::execute().await,
         TuiCommand::Mcp(_) => mcp::execute(ctx).await,
-        TuiCommand::Tools(_) => tools::execute(ctx).await,
+        TuiCommand::Tools(ref args) => tools::execute(args, ctx).await,
         TuiCommand::Plan(ref args) => plan::execute(args.prompt.as_deref(), ctx).await,
         TuiCommand::Feedback(ref args) => {
             let is_amzn = matches!(

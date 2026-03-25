@@ -440,6 +440,54 @@ impl AgentHandle {
             other => Err(AgentError::Custom(format!("received unexpected response: {other:?}"))),
         }
     }
+
+    pub async fn trust_all_tools(&self) -> Result<(), AgentError> {
+        match self
+            .sender
+            .send_recv(AgentRequest::TrustAllTools)
+            .await
+            .unwrap_or(Err(AgentError::Channel))?
+        {
+            AgentResponse::Success => Ok(()),
+            other => Err(AgentError::Custom(format!("received unexpected response: {other:?}"))),
+        }
+    }
+
+    pub async fn trust_tools(&self, names: Vec<String>) -> Result<(Vec<String>, Vec<String>), AgentError> {
+        match self
+            .sender
+            .send_recv(AgentRequest::TrustTools(names))
+            .await
+            .unwrap_or(Err(AgentError::Channel))?
+        {
+            AgentResponse::ToolTrustResult { changed, invalid } => Ok((changed, invalid)),
+            other => Err(AgentError::Custom(format!("received unexpected response: {other:?}"))),
+        }
+    }
+
+    pub async fn untrust_tools(&self, names: Vec<String>) -> Result<(Vec<String>, Vec<String>), AgentError> {
+        match self
+            .sender
+            .send_recv(AgentRequest::UntrustTools(names))
+            .await
+            .unwrap_or(Err(AgentError::Channel))?
+        {
+            AgentResponse::ToolTrustResult { changed, invalid } => Ok((changed, invalid)),
+            other => Err(AgentError::Custom(format!("received unexpected response: {other:?}"))),
+        }
+    }
+
+    pub async fn reset_tool_permissions(&self) -> Result<(), AgentError> {
+        match self
+            .sender
+            .send_recv(AgentRequest::ResetToolPermissions)
+            .await
+            .unwrap_or(Err(AgentError::Channel))?
+        {
+            AgentResponse::Success => Ok(()),
+            other => Err(AgentError::Custom(format!("received unexpected response: {other:?}"))),
+        }
+    }
 }
 
 /// Core LLM agent that implements an [`AgentConfig`].
@@ -1214,7 +1262,66 @@ impl Agent {
                     .filter(|s| !s.is_empty());
                 Ok(AgentResponse::LastAssistantMessage(msg))
             },
+            AgentRequest::TrustAllTools => {
+                let tool_specs = self.resolve_tool_specs().await;
+                for spec in tool_specs.values() {
+                    self.permissions.trust_tool(spec.canonical_name().clone());
+                }
+                self.settings.trust_all_tools = true;
+                Ok(AgentResponse::Success)
+            },
+            AgentRequest::TrustTools(names) => {
+                let tool_specs = self.resolve_tool_specs().await;
+                let (changed, invalid) = self.resolve_and_apply_trust(&tool_specs, &names, true);
+                Ok(AgentResponse::ToolTrustResult { changed, invalid })
+            },
+            AgentRequest::UntrustTools(names) => {
+                let tool_specs = self.resolve_tool_specs().await;
+                let (changed, invalid) = self.resolve_and_apply_trust(&tool_specs, &names, false);
+                Ok(AgentResponse::ToolTrustResult { changed, invalid })
+            },
+            AgentRequest::ResetToolPermissions => {
+                self.settings.trust_all_tools = false;
+                self.permissions.clear_trusted_tools();
+                Ok(AgentResponse::Success)
+            },
         }
+    }
+
+    async fn resolve_tool_specs(&mut self) -> HashMap<String, tool_utils::SanitizedToolSpec> {
+        if let Some(ref cached) = self.cached_tool_specs {
+            cached.tool_map().clone()
+        } else {
+            self.make_tool_spec().await;
+            self.cached_tool_specs
+                .as_ref()
+                .map(|c| c.tool_map().clone())
+                .unwrap_or_default()
+        }
+    }
+
+    fn resolve_and_apply_trust(
+        &mut self,
+        tool_specs: &HashMap<String, tool_utils::SanitizedToolSpec>,
+        names: &[String],
+        trust: bool,
+    ) -> (Vec<String>, Vec<String>) {
+        let mut changed = Vec::new();
+        let mut invalid = Vec::new();
+        for name in names {
+            if let Some(spec) = tool_specs.get(name) {
+                let canonical = spec.canonical_name().clone();
+                if trust {
+                    self.permissions.trust_tool(canonical);
+                } else {
+                    self.permissions.untrust_tool(&canonical);
+                }
+                changed.push(name.clone());
+            } else {
+                invalid.push(name.clone());
+            }
+        }
+        (changed, invalid)
     }
 
     async fn handle_swap_agent(&mut self, args: SwapAgentArgs) -> Result<AgentResponse, AgentError> {
