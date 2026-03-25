@@ -52,3 +52,8 @@ export const usePaste: (
 // StreamingPanel: available in both ink and twinki
 export const StreamingPanel =
   mod.StreamingPanel as typeof import('ink').StreamingPanel;
+// CURSOR_MARKER: twinki uses this APC sequence to position the hardware cursor.
+// Under ink it's empty (ink manages cursor separately).
+export const CURSOR_MARKER: string = useTwinki
+  ? (twinkiMod as any).CURSOR_MARKER
+  : '';

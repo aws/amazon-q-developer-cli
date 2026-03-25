@@ -1645,7 +1645,8 @@ export const createAppStore = (props: AppStoreProps) => {
 
         if (cursorCol < line.length) {
           // Delete character at cursor position
-          newLines[cursorRow] = line.slice(0, cursorCol) + line.slice(cursorCol + 1);
+          newLines[cursorRow] =
+            line.slice(0, cursorCol) + line.slice(cursorCol + 1);
           return { input: { ...state.input, lines: newLines } };
         } else if (cursorRow < lines.length - 1) {
           // At end of line, merge with next line

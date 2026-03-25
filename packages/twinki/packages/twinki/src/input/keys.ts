@@ -829,6 +829,13 @@ export function parseKey(data: string): KeyId | undefined {
 			if (keyName) {
 				return (mods.length > 0 ? `${mods.join("+")}+${keyName}` : keyName) as KeyId;
 			}
+
+			// Printable codepoint not in the known key list (e.g. CJK, Cyrillic, emoji).
+			// Return the character itself as a KeyId so it isn't silently dropped.
+			if (effectiveCodepoint >= 0x20 && effectiveCodepoint !== 0x7f) {
+				const char = String.fromCodePoint(effectiveCodepoint);
+				return (mods.length > 0 ? `${mods.join("+")}+${char}` : char) as KeyId;
+			}
 		}
 	}
 

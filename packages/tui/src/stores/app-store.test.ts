@@ -40,7 +40,9 @@ describe('AppStore input buffer', () => {
     store.getState().insert('i');
     // Position cursor at start
     const input = store.getState().input;
-    store.setState({ input: { ...input, cursorCol: 0, preferredCursorCol: 0 } });
+    store.setState({
+      input: { ...input, cursorCol: 0, preferredCursorCol: 0 },
+    });
 
     store.getState().delete();
 
@@ -57,7 +59,9 @@ describe('AppStore input buffer', () => {
     store.getState().insert('b');
     // Position cursor at end of first line
     const input = store.getState().input;
-    store.setState({ input: { ...input, cursorRow: 0, cursorCol: 1, preferredCursorCol: 1 } });
+    store.setState({
+      input: { ...input, cursorRow: 0, cursorCol: 1, preferredCursorCol: 1 },
+    });
 
     store.getState().delete();
 

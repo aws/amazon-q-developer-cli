@@ -1,4 +1,4 @@
-import { Box } from './../../../renderer.js';
+import { Box, CURSOR_MARKER } from './../../../renderer.js';
 import React, {
   useEffect,
   useRef,
@@ -10,6 +10,14 @@ import React, {
 import { useTheme } from '../../../hooks/useThemeContext.js';
 import { useKeypress, type Key } from '../../../hooks/useKeypress.js';
 import { Text } from '../../ui/text/Text.js';
+
+/** Visual cursor (inverse block) + hardware cursor marker (APC sequence for twinki IME positioning). */
+const CursorBlock = ({ char = ' ' }: { char?: string }) => (
+  <>
+    <Text>{CURSOR_MARKER}</Text>
+    <Text inverse>{char}</Text>
+  </>
+);
 import { PastedChip, shouldCollapsePaste } from './PastedChip.js';
 import { FileChip } from './FileChip.js';
 import { normalizeLineEndings, isPrintable } from '../../../utils/index.js';
@@ -765,7 +773,7 @@ export const PromptInput = React.memo(function PromptInput({
     if (total === 0) {
       return (
         <>
-          <Text inverse> </Text>
+          <CursorBlock />
           <Text>{placeholderColor(placeholder)}</Text>
         </>
       );
@@ -800,7 +808,7 @@ export const PromptInput = React.memo(function PromptInput({
               <Text>
                 {styleInputText(seg.value.slice(0, localCursor), i === 0)}
               </Text>
-              <Text inverse>{charAtCursor}</Text>
+              <CursorBlock char={charAtCursor} />
               {after && <Text>{primaryColor(after)}</Text>}
             </React.Fragment>
           );
@@ -812,7 +820,7 @@ export const PromptInput = React.memo(function PromptInput({
           parts.push(
             // Text color handled by FileChip component (uses theme colors internally)
             <React.Fragment key={i}>
-              <Text inverse> </Text>
+              <CursorBlock />
               <FileChip filePath={seg.filePath} lineCount={seg.lineCount} />
             </React.Fragment>
           );
@@ -830,7 +838,7 @@ export const PromptInput = React.memo(function PromptInput({
           parts.push(
             // Text color handled by PastedChip component (uses theme colors internally)
             <React.Fragment key={i}>
-              <Text inverse> </Text>
+              <CursorBlock />
               <PastedChip lineCount={seg.lineCount} charCount={seg.charCount} />
             </React.Fragment>
           );
@@ -847,7 +855,7 @@ export const PromptInput = React.memo(function PromptInput({
         if (cursorInSeg && cursor === pos) {
           parts.push(
             <React.Fragment key={i}>
-              <Text inverse> </Text>
+              <CursorBlock />
               <PastedChip
                 type="image"
                 imageWidth={seg.width}
@@ -877,9 +885,9 @@ export const PromptInput = React.memo(function PromptInput({
       const lastSeg = segments[segments.length - 1];
       if (lastSeg && lastSeg.type !== 'text') {
         parts.push(
-          <Text key="cursor-end" inverse>
-            {' '}
-          </Text>
+          <React.Fragment key="cursor-end">
+            <CursorBlock />
+          </React.Fragment>
         );
       }
     }

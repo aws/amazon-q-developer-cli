@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { matchesKey, parseKey, setKittyProtocolActive } from '../src/input/keys.js';
+import { parseInputData } from '../src/hooks/useInput.js';
 
 describe('matchesKey', () => {
 	afterEach(() => {
@@ -195,5 +196,47 @@ describe('parseKey', () => {
 		it('parses enter in Kitty', () => {
 			expect(parseKey('\x1b[13u')).toBe('enter');
 		});
+	});
+});
+
+describe('parseKey - non-Latin characters (Kitty)', () => {
+	beforeEach(() => setKittyProtocolActive(true));
+	afterEach(() => setKittyProtocolActive(false));
+
+	it('parses CJK character (你 = U+4F60)', () => {
+		// CSI 20320 u  (0x4F60 = 20320)
+		expect(parseKey('\x1b[20320u')).toBe('你');
+	});
+
+	it('parses Cyrillic character (Д = U+0414)', () => {
+		expect(parseKey('\x1b[1044u')).toBe('Д');
+	});
+
+	it('does not return printable for control codepoints', () => {
+		// BEL (0x07) should not be treated as printable
+		expect(parseKey('\x1b[7u')).toBeUndefined();
+	});
+});
+
+describe('parseInputData - non-Latin characters (Kitty)', () => {
+	beforeEach(() => setKittyProtocolActive(true));
+	afterEach(() => setKittyProtocolActive(false));
+
+	it('extracts CJK character as input', () => {
+		const { input, key } = parseInputData('\x1b[20320u');
+		expect(input).toBe('你');
+		expect(key.return).toBe(false);
+	});
+
+	it('does not extract input for special keys', () => {
+		const { input, key } = parseInputData('\x1b[13u');
+		expect(input).toBe('');
+		expect(key.return).toBe(true);
+	});
+
+	it('extracts Latin letter with modifier', () => {
+		const { input, key } = parseInputData('\x1b[97;5u');
+		expect(input).toBe('a');
+		expect(key.ctrl).toBe(true);
 	});
 });

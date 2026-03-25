@@ -134,9 +134,16 @@ export function parseInputData(data: string): { input: string; key: Key } {
 		const code = data.charCodeAt(0);
 		if (code >= 1 && code <= 26) input = String.fromCharCode(code + 96);
 	} else if (parsed) {
-		// Kitty protocol: CSI u sequences are multi-byte, extract letter from keyId
+		// Kitty protocol: CSI u sequences are multi-byte, extract printable text from keyId
 		const m = parsed.match(/(?:ctrl|alt|shift)\+([a-z])$/);
-		if (m) input = m[1]!;
+		const isSpecialKey = Object.values(key).some(v => v === true);
+		if (m) {
+			input = m[1]!;
+		} else if (!isSpecialKey) {
+			// Non-Latin printable character from Kitty CSI u (e.g. CJK, Cyrillic)
+			const last = parsed.split('+').pop()!;
+			if (last.length >= 1 && last.codePointAt(0)! >= 0x20) input = last;
+		}
 	}
 	return { input, key };
 }

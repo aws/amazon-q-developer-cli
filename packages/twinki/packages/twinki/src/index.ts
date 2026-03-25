@@ -11,7 +11,7 @@ export { getHighlighter } from './utils/shiki.js';
 import { visibleWidth as _visibleWidth } from './utils/index.js';
 
 // Renderer
-export { TUI } from './renderer/index.js';
+export { TUI, CURSOR_MARKER } from './renderer/index.js';
 export type { Component, InputListener, OverlayHandle, OverlayOptions, OverlayAnchor } from './renderer/index.js';
 
 // React integration
