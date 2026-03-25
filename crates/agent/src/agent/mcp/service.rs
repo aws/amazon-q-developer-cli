@@ -147,6 +147,7 @@ impl McpService {
                     oauth_scopes: scopes,
                     oauth: oauth_config,
                     disabled: _,
+                    disabled_tools: _,
                 } = config;
 
                 let start_time = Instant::now();

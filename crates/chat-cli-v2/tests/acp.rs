@@ -966,6 +966,7 @@ async fn agent_swap_reloads_mcp_servers() {
                 env: None,
                 timeout_ms: 30000,
                 disabled: false,
+                disabled_tools: Vec::new(),
             }),
         )]
         .into_iter()
@@ -984,6 +985,7 @@ async fn agent_swap_reloads_mcp_servers() {
                 env: None,
                 timeout_ms: 30000,
                 disabled: false,
+                disabled_tools: Vec::new(),
             }),
         )]
         .into_iter()

@@ -1,0 +1,4 @@
+{
+  "type": "fixed",
+  "description": "Support disabledTools configuration for MCP servers in ACP/TUI"
+}
