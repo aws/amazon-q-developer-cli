@@ -831,9 +831,11 @@ impl Agent {
     /// Clears all conversation-related state for a fresh start.
     fn clear_conversation(&mut self) {
         // Append Clear to event log (keeps session, clears messages)
-        self.conversation_state.append_log(LogEntry::clear());
+        let entry = LogEntry::clear();
+        let index = self.conversation_state.append_log(entry.clone());
         self.conversation_metadata = ConversationMetadata::default();
         self.tool_state = ToolState::default();
+        self.agent_event_buf.push(AgentEvent::LogEntryAppended { entry, index });
         self.agent_event_buf.push(AgentEvent::Clear(ClearEvent));
     }
 
