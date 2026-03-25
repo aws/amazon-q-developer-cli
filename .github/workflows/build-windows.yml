@@ -193,9 +193,9 @@ jobs:
           cp "$SRC" "build/kiro-cli.exe"
 
           cd build
-          7z a "kiro-cli-chat-${TARGET}.zip" "kiro-cli.exe"
-          sha256sum "kiro-cli-chat-${TARGET}.zip" > "kiro-cli-chat-${TARGET}.zip.sha256"
-          echo "✓ Packaged kiro-cli-chat-${TARGET}.zip"
+          7z a "kiro-cli.zip" "kiro-cli.exe"
+          sha256sum "kiro-cli.zip" > "kiro-cli.zip.sha256"
+          echo "✓ Packaged kiro-cli.zip"
 
       - name: Build MSI installer
         if: matrix.build_installers
@@ -221,18 +221,16 @@ jobs:
             -d BinarySource=$binaryPath `
             -d DefaultCliVersion=$cliVersion `
             -b windows-installer `
-            -o "windows-installer\output\kiro-cli-${version}-${arch}.msi"
+            -o "windows-installer\output\kiro-cli.msi"
 
           if ($LASTEXITCODE -ne 0) { throw "WiX build failed" }
-          Write-Host "✓ Created windows-installer\output\kiro-cli-${version}-${arch}.msi"
+          Write-Host "✓ Created windows-installer\output\kiro-cli.msi"
 
       - name: Sign MSI installer (Authenticode)
         if: matrix.build_installers && matrix.arch == 'x64'
         shell: bash
         run: |
-          VERSION="${{ inputs.version }}"
-          ARCH="${{ matrix.arch }}"
-          /tmp/sign-artifact.sh "windows-installer/output/kiro-cli-${VERSION}-${ARCH}.msi"
+          /tmp/sign-artifact.sh "windows-installer/output/kiro-cli.msi"
 
       - name: Re-authenticate AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
@@ -251,11 +249,11 @@ jobs:
           S3_PATH_COMMIT="chat/${BRANCH_NAME}/${COMMIT_ID}/${TARGET}"
           S3_PATH_LATEST="chat/${BRANCH_NAME}/latest/${TARGET}"
 
-          aws s3 cp "build/kiro-cli-chat-${TARGET}.zip" "s3://${{ env.BUILD_OUTPUT_BUCKET }}/${S3_PATH_COMMIT}/"
-          aws s3 cp "build/kiro-cli-chat-${TARGET}.zip.sha256" "s3://${{ env.BUILD_OUTPUT_BUCKET }}/${S3_PATH_COMMIT}/"
+          aws s3 cp "build/kiro-cli.zip" "s3://${{ env.BUILD_OUTPUT_BUCKET }}/${S3_PATH_COMMIT}/"
+          aws s3 cp "build/kiro-cli.zip.sha256" "s3://${{ env.BUILD_OUTPUT_BUCKET }}/${S3_PATH_COMMIT}/"
 
-          aws s3 cp "build/kiro-cli-chat-${TARGET}.zip" "s3://${{ env.BUILD_OUTPUT_BUCKET }}/${S3_PATH_LATEST}/"
-          aws s3 cp "build/kiro-cli-chat-${TARGET}.zip.sha256" "s3://${{ env.BUILD_OUTPUT_BUCKET }}/${S3_PATH_LATEST}/"
+          aws s3 cp "build/kiro-cli.zip" "s3://${{ env.BUILD_OUTPUT_BUCKET }}/${S3_PATH_LATEST}/"
+          aws s3 cp "build/kiro-cli.zip.sha256" "s3://${{ env.BUILD_OUTPUT_BUCKET }}/${S3_PATH_LATEST}/"
 
           # Upload MSI installer
           if [ -d "windows-installer/output" ] && [ "$(ls -A windows-installer/output 2>/dev/null)" ]; then
