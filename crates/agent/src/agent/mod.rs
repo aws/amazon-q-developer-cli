@@ -2992,11 +2992,6 @@ where
         context_content.push_str(CONTEXT_ENTRY_END_HEADER);
     }
 
-    if let Some(prompt) = system_prompt {
-        context_content.push_str(&format!("Follow this instruction: {prompt}"));
-        context_content.push_str("\n\n");
-    }
-
     for hook in agent_spawn_hooks {
         let content = hook.as_ref();
         context_content.push_str(CONTEXT_ENTRY_START_HEADER);
@@ -3025,6 +3020,13 @@ where
             context_content.push('\n');
         }
         context_content.push_str(CONTEXT_ENTRY_END_HEADER);
+    }
+
+    // Agent prompt placed last for maximum recency bias, matching V1 behavior.
+    // V1 injects the prompt after all context files and hooks, ensuring the model
+    // prioritizes the agent's instructions over resource content.
+    if let Some(prompt) = system_prompt {
+        context_content.push_str(&format!("Follow this instruction: {prompt}"));
     }
 
     context_content

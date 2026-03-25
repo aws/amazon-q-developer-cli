@@ -13,7 +13,7 @@ pub const MAX_CONVERSATION_STATE_HISTORY_LEN: usize = 500;
 
 pub const DUMMY_TOOL_NAME: &str = "dummy";
 
-pub const MAX_RESOURCE_FILE_LENGTH: u64 = 1024 * 10;
+pub const MAX_RESOURCE_FILE_LENGTH: u64 = 1024 * 50;
 
 pub const RTS_VALID_TOOL_NAME_REGEX: &str = "^[a-zA-Z][a-zA-Z0-9_-]{0,64}$";
 
