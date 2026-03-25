@@ -96,7 +96,7 @@ jobs:
             RELEASE_NOTES="Could not auto-populate the changelog. The kiro-cli team will share updates in this :thread: soon."
           fi
           jq -n \
-            --arg message "🌙 New Kiro CLI nightly version released! Install now with \`toolbox install kiro-cli --channel nightly\`" \
+            --arg message "🌙 New Kiro CLI nightly version released!" \
             --arg version "${{ inputs.version }}" \
             --arg timestamp "${{ steps.format-timestamp.outputs.readable }}" \
             --arg branch "${{ inputs.branch_name }}" \
