@@ -6,6 +6,7 @@ pub mod glob;
 pub mod path;
 pub mod providers;
 pub mod request_channel;
+pub mod shell;
 pub mod steering;
 pub mod test;
 

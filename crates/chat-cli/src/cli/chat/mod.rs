@@ -3155,11 +3155,8 @@ impl ChatSession {
                 });
             }
             // Use platform-appropriate shell
-            let result = if cfg!(target_os = "windows") {
-                std::process::Command::new("cmd").args(["/C", command]).status()
-            } else {
-                std::process::Command::new("bash").args(["-c", command]).status()
-            };
+            let (shell, flag) = agent::util::shell::shell_command();
+            let result = std::process::Command::new(shell).args([flag, command]).status();
 
             // Handle the result and provide appropriate feedback
             match result {

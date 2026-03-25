@@ -18,7 +18,7 @@ use super::{
 };
 use crate::os::Os;
 
-/// Run a command on Windows using cmd.exe.
+/// Run a command on Windows using the detected shell (PowerShell or cmd.exe).
 /// # Arguments
 /// * `command` - The command to run
 /// * `working_dir` - Optional working directory for command execution
@@ -35,8 +35,9 @@ pub async fn run_command<W: Write>(
     let env_vars = env_vars_with_user_agent(os);
 
     // We need to maintain a handle on stderr and stdout, but pipe it to the terminal as well
-    let mut cmd = tokio::process::Command::new("cmd");
-    cmd.arg("/C")
+    let (shell, flag) = agent::util::shell::shell_command();
+    let mut cmd = tokio::process::Command::new(shell);
+    cmd.arg(flag)
         .arg(command)
         .envs(env_vars)
         .stdin(Stdio::inherit())

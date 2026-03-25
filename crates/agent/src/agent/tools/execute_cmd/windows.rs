@@ -44,7 +44,7 @@ HOW TO USE:
 FEATURES:
 
 LIMITATIONS:
-- Executes commands using cmd.exe on Windows
+- Executes commands using the detected shell on Windows (PowerShell or cmd.exe)
 
 TIPS:
 - Use the fileRead and fileWrite tools for reading and modifying files
@@ -133,9 +133,10 @@ impl ExecuteCmd {
 
         let env_vars = env_vars_with_user_agent();
 
-        // On Windows, use cmd.exe to execute commands
-        let child = Command::new("cmd.exe")
-            .arg("/C")
+        // On Windows, use the detected shell (PowerShell or cmd.exe)
+        let (shell, flag) = crate::agent::util::shell::shell_command();
+        let child = Command::new(shell)
+            .arg(flag)
             .arg(&self.command)
             .current_dir(&process_dir)
             .envs(env_vars)

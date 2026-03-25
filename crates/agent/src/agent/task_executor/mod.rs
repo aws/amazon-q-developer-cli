@@ -584,22 +584,11 @@ async fn run_command_hook(
 
     let command = &config.command;
 
-    #[cfg(unix)]
-    let mut cmd = tokio::process::Command::new("bash");
-    #[cfg(unix)]
-    let cmd = cmd
-        .arg("-c")
-        .arg(command)
-        .current_dir(cwd)
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped());
+    let (shell, flag) = crate::agent::util::shell::shell_command();
 
-    #[cfg(windows)]
-    let mut cmd = tokio::process::Command::new("cmd");
-    #[cfg(windows)]
+    let mut cmd = tokio::process::Command::new(shell);
     let cmd = cmd
-        .arg("/C")
+        .arg(flag)
         .arg(command)
         .current_dir(cwd)
         .stdin(Stdio::piped())
