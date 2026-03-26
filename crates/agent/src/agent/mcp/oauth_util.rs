@@ -77,7 +77,12 @@ pub enum OauthUtilError {
     #[error(transparent)]
     Parse(#[from] url::ParseError),
     #[error(transparent)]
-    Auth(#[from] rmcp::transport::AuthError),
+    Auth(rmcp::transport::AuthError),
+    #[error(
+        "OAuth discovery failed: the server does not advertise OAuth endpoints. \
+         Verify that the server URL is correct and that the server supports MCP authentication."
+    )]
+    OAuthDiscoveryFailed,
     #[error(transparent)]
     Serde(#[from] serde_json::Error),
     #[error("Missing authorization manager")]
@@ -96,6 +101,15 @@ pub enum OauthUtilError {
     MissingCredentials,
     #[error("Failed to create a running service after running through all fallbacks: {0}")]
     ServiceNotObtained(String),
+}
+
+impl From<rmcp::transport::AuthError> for OauthUtilError {
+    fn from(err: rmcp::transport::AuthError) -> Self {
+        match err {
+            rmcp::transport::AuthError::NoAuthorizationSupport => Self::OAuthDiscoveryFailed,
+            other => Self::Auth(other),
+        }
+    }
 }
 
 /// A guard that automatically cancels the cancellation token when dropped.
