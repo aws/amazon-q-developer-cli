@@ -147,6 +147,8 @@ pub enum Setting {
         props(scope = "global_only")
     )]
     DisableAutoupdates,
+    #[strum(message = "Show hook execution status messages (boolean, default: true)")]
+    HooksShowStatus,
 }
 
 impl Setting {
@@ -197,6 +199,8 @@ impl Setting {
                 | Self::ChatDefaultModel
                 // Trust UI
                 | Self::ChatDisableGranularTrust
+                // Hooks
+                | Self::HooksShowStatus
         )
     }
 }
@@ -255,6 +259,7 @@ impl AsRef<str> for Setting {
             Self::CleanupPeriodDays => "cleanup.periodDays",
             Self::ChatDisableGranularTrust => "chat.disableGranularTrust",
             Self::DisableAutoupdates => "app.disableAutoupdates",
+            Self::HooksShowStatus => "hooks.showStatus",
         }
     }
 }
@@ -319,6 +324,7 @@ impl TryFrom<&str> for Setting {
             "cleanup.periodDays" => Ok(Self::CleanupPeriodDays),
             "chat.disableGranularTrust" => Ok(Self::ChatDisableGranularTrust),
             "app.disableAutoupdates" => Ok(Self::DisableAutoupdates),
+            "hooks.showStatus" => Ok(Self::HooksShowStatus),
             _ => Err(DatabaseError::InvalidSetting(value.to_string())),
         }
     }

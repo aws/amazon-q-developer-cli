@@ -8,7 +8,7 @@ doc_meta:
   title: Hooks System
   description: Execute commands at trigger points with JSON input/output and exit code control
   keywords: [hooks, commands, triggers, context, dynamic, exit, stdin, stop, assistant_response]
-  related: [agent-configuration, slash-hooks]
+  related: [agent-configuration, slash-hooks, hooks-show-status]
 ---
 
 # Hooks System
@@ -285,3 +285,13 @@ Successful hook results are cached based on `cache_ttl_seconds`:
 - `0`: No caching (default)
 - `> 0`: Cache successful results for specified seconds
 - AgentSpawn hooks are never cached
+
+## Suppressing Status Messages
+
+To hide the spinner and summary line during hook execution:
+
+```bash
+kiro-cli settings hooks.showStatus false
+```
+
+When disabled, hooks run silently but error messages for failed hooks are still displayed. See [hooks.showStatus](../settings/hooks-show-status.md) for details.

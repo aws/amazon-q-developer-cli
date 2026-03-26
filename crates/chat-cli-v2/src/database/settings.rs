@@ -103,6 +103,8 @@ pub enum Setting {
     UiMode,
     #[strum(message = "External diff tool command (string)")]
     ChatDiffTool,
+    #[strum(message = "Show hook execution status messages (boolean, default: true)")]
+    HooksShowStatus,
 }
 
 impl AsRef<str> for Setting {
@@ -151,6 +153,7 @@ impl AsRef<str> for Setting {
             Self::EnabledCodeIntelligence => "chat.enableCodeIntelligence",
             Self::UiMode => "chat.uiMode",
             Self::ChatDiffTool => "chat.diffTool",
+            Self::HooksShowStatus => "hooks.showStatus",
         }
     }
 }
@@ -207,6 +210,7 @@ impl TryFrom<&str> for Setting {
             "chat.enableCodeIntelligence" => Ok(Self::EnabledCodeIntelligence),
             "chat.uiMode" => Ok(Self::UiMode),
             "chat.diffTool" => Ok(Self::ChatDiffTool),
+            "hooks.showStatus" => Ok(Self::HooksShowStatus),
             _ => Err(DatabaseError::InvalidSetting(value.to_string())),
         }
     }

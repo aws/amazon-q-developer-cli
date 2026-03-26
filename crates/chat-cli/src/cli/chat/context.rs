@@ -339,7 +339,12 @@ impl ContextManager {
         let mut hooks = self.hooks.clone();
         hooks.retain(|t, _| *t == trigger);
         let cwd = os.env.current_dir()?.to_string_lossy().to_string();
-        self.hook_executor.run_hooks(hooks, output, &cwd, payload).await
+        let quiet = !os
+            .database
+            .settings
+            .get_bool(crate::database::settings::Setting::HooksShowStatus)
+            .unwrap_or(true);
+        self.hook_executor.run_hooks(hooks, output, &cwd, payload, quiet).await
     }
 }
 

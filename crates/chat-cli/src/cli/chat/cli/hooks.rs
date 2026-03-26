@@ -138,6 +138,7 @@ impl HookExecutor {
         output: &mut impl Write,
         cwd: &str,
         payload: HookPayload<'_>,
+        quiet: bool,
     ) -> Result<Vec<((HookTrigger, Hook), HookOutput)>, ChatError> {
         let mut cached = vec![];
         let mut futures = FuturesUnordered::new();
@@ -171,7 +172,7 @@ impl HookExecutor {
             )
         };
 
-        if total != 0 {
+        if !quiet && total != 0 {
             spinner = Some(Spinner::new(Spinners::Dots12, spinner_text(complete, total)));
         }
 
@@ -236,23 +237,25 @@ impl HookExecutor {
 
             // Display ending summary or add a new spinner
             // The futures set size decreases each time we process one
-            if futures.is_empty() {
-                let symbol = if total == complete {
-                    "✓".to_string().green()
-                } else {
-                    "✗".to_string().red()
-                };
+            if !quiet {
+                if futures.is_empty() {
+                    let symbol = if total == complete {
+                        "✓".to_string().green()
+                    } else {
+                        "✗".to_string().red()
+                    };
 
-                queue!(
-                    output,
-                    StyledText::info_fg(),
-                    style::Print(format!("{symbol} {} in ", spinner_text(complete, total))),
-                    StyledText::warning_fg(),
-                    style::Print(format!("{:.2} s\n", start_time.elapsed().as_secs_f32())),
-                    StyledText::reset(),
-                )?;
-            } else {
-                spinner = Some(Spinner::new(Spinners::Dots, spinner_text(complete, total)));
+                    queue!(
+                        output,
+                        StyledText::info_fg(),
+                        style::Print(format!("{symbol} {} in ", spinner_text(complete, total))),
+                        StyledText::warning_fg(),
+                        style::Print(format!("{:.2} s\n", start_time.elapsed().as_secs_f32())),
+                        StyledText::reset(),
+                    )?;
+                } else {
+                    spinner = Some(Spinner::new(Spinners::Dots, spinner_text(complete, total)));
+                }
             }
         }
         drop(futures);
@@ -639,10 +642,16 @@ mod tests {
 
         // Run the hook
         let result = executor
-            .run_hooks(hooks, &mut output, ".", HookPayload {
-                tool_context: Some(tool_context),
-                ..Default::default()
-            })
+            .run_hooks(
+                hooks,
+                &mut output,
+                ".",
+                HookPayload {
+                    tool_context: Some(tool_context),
+                    ..Default::default()
+                },
+                false,
+            )
             .await;
 
         assert!(result.is_ok());
@@ -684,10 +693,16 @@ mod tests {
 
         // Run the hooks
         let result = executor
-            .run_hooks(hooks, &mut output, ".", HookPayload {
-                tool_context: Some(tool_context),
-                ..Default::default()
-            })
+            .run_hooks(
+                hooks,
+                &mut output,
+                ".",
+                HookPayload {
+                    tool_context: Some(tool_context),
+                    ..Default::default()
+                },
+                false,
+            )
             .await;
 
         assert!(result.is_ok());
@@ -732,10 +747,16 @@ mod tests {
         };
 
         let results = executor
-            .run_hooks(hooks, &mut output, ".", HookPayload {
-                tool_context: Some(tool_context),
-                ..Default::default()
-            })
+            .run_hooks(
+                hooks,
+                &mut output,
+                ".",
+                HookPayload {
+                    tool_context: Some(tool_context),
+                    ..Default::default()
+                },
+                false,
+            )
             .await
             .unwrap();
 
@@ -771,7 +792,7 @@ mod tests {
         let hooks = HashMap::from([(HookTrigger::Stop, vec![hook])]);
 
         let results = executor
-            .run_hooks(hooks, &mut output, ".", HookPayload::default())
+            .run_hooks(hooks, &mut output, ".", HookPayload::default(), false)
             .await
             .unwrap();
 
@@ -813,10 +834,16 @@ mod tests {
         let hooks = HashMap::from([(HookTrigger::Stop, vec![hook])]);
 
         let results = executor
-            .run_hooks(hooks, &mut output, ".", HookPayload {
-                assistant_response: Some("Here is the assistant response text."),
-                ..Default::default()
-            })
+            .run_hooks(
+                hooks,
+                &mut output,
+                ".",
+                HookPayload {
+                    assistant_response: Some("Here is the assistant response text."),
+                    ..Default::default()
+                },
+                false,
+            )
             .await
             .unwrap();
 
@@ -830,6 +857,75 @@ mod tests {
         assert_eq!(json["hook_event_name"], "stop");
         assert_eq!(json["assistant_response"], "Here is the assistant response text.");
         assert_eq!(json["cwd"], ".");
+    }
+
+    #[tokio::test]
+    async fn test_quiet_mode_suppresses_status() {
+        let mut executor = HookExecutor::new();
+        let mut output = Vec::new();
+
+        let hook = Hook {
+            command: "echo 'hello'".to_string(),
+            timeout_ms: 5000,
+            cache_ttl_seconds: 0,
+            max_output_size: 1000,
+            matcher: None,
+            source: crate::cli::agent::hook::Source::Session,
+        };
+
+        let hooks = HashMap::from([(HookTrigger::Stop, vec![hook])]);
+
+        let results = executor
+            .run_hooks(hooks, &mut output, ".", HookPayload::default(), true)
+            .await
+            .unwrap();
+
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0].1.0, 0);
+
+        // Output should be completely empty for a successful hook in quiet mode
+        assert!(
+            output.is_empty(),
+            "quiet mode should produce no output, got: {:?}",
+            output
+        );
+    }
+
+    #[tokio::test]
+    async fn test_quiet_mode_still_shows_errors() {
+        let mut executor = HookExecutor::new();
+        let mut output = Vec::new();
+
+        #[cfg(unix)]
+        let command = "echo 'something went wrong' >&2; exit 1";
+        #[cfg(windows)]
+        let command = "echo something went wrong 1>&2 & exit /b 1";
+
+        let hook = Hook {
+            command: command.to_string(),
+            timeout_ms: 5000,
+            cache_ttl_seconds: 0,
+            max_output_size: 1000,
+            matcher: None,
+            source: crate::cli::agent::hook::Source::Session,
+        };
+
+        let hooks = HashMap::from([(HookTrigger::Stop, vec![hook])]);
+
+        let results = executor
+            .run_hooks(hooks, &mut output, ".", HookPayload::default(), true)
+            .await
+            .unwrap();
+
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0].1.0, 1);
+
+        // Error output should still be present even in quiet mode
+        let output_str = String::from_utf8_lossy(&output);
+        assert!(
+            output_str.contains("failed with exit code"),
+            "quiet mode should still show errors, got: {output_str}"
+        );
     }
 
     #[test]
