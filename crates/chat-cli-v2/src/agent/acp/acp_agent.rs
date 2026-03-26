@@ -855,11 +855,17 @@ impl AcpSession {
         let connection_cx = builder.client_cx.expect("Missing client connection");
 
         // Determine if loading existing session or creating new one
+        // Track the model ID from a loaded session so we can restore it below
+        let mut saved_model_id: Option<String> = None;
+
         let (session_db, snapshot) = if builder.load {
             // Load existing session
             let db = SessionDb::load(&session_id_str, Some(&cwd))?;
             let state = db.session().session_state;
             let entries = db.load_log_entries()?;
+
+            // Preserve the model the session was actually using (e.g. after /model switch)
+            saved_model_id = state.rts_model_state().model_info.as_ref().map(|m| m.model_id.clone());
 
             let conversation_id = Uuid::parse_str(&session_id_str)
                 .map_err(|_e| eyre::eyre!("Invalid session ID '{}': must be a valid UUID", session_id_str))?;
@@ -909,6 +915,13 @@ impl AcpSession {
         // Set model ID from agent config with validation
         if let Err(e) = update_model_info(&api_client, &os.database, &rts_state, snapshot.agent_config.model()).await {
             warn!("Failed to set initial model: {}", e);
+        }
+
+        // Restore the model the loaded session was actually using (e.g. after /model switch)
+        if let Some(ref model_id) = saved_model_id
+            && let Err(e) = update_model_info(&api_client, &os.database, &rts_state, Some(model_id)).await
+        {
+            warn!("Failed to restore saved session model: {}", e);
         }
 
         // Override with CLI --model if provided

@@ -1,7 +1,7 @@
 ---
 doc_meta:
-  validated: 2026-02-05
-  commit: b67eac21
+  validated: 2026-03-24
+  commit: 21e95839
   status: validated
   testable_headless: true
   category: command
@@ -75,7 +75,7 @@ kiro-cli chat --trust-tools=fs_read,grep "Find all TODOs"
 kiro-cli chat --resume
 ```
 
-**What this does**: Resumes most recent conversation from current directory.
+**What this does**: Resumes most recent conversation from current directory. Restores the model that was active when the session was saved (e.g., if you switched models with `/model`).
 
 #### Use Case 7: Select Conversation to Resume
 
@@ -89,7 +89,7 @@ kiro-cli chat --resume-picker
 
 | Option | Short | Type | Description |
 |--------|-------|------|-------------|
-| `--resume` | `-r` | flag | Resume most recent conversation |
+| `--resume` | `-r` | flag | Resume most recent conversation (restores saved model) |
 | `--resume-picker` | | flag | Interactively select conversation to resume |
 | `--agent` | | string | Agent to use (default: default agent) |
 | `--model` | | string | Model to use (default: default model) |
@@ -240,7 +240,7 @@ Use `--no-interactive` for automation and scripts:
 
 **Agent Resolution**: Local agents (`.kiro/agents/`) take precedence over global (`~/.kiro/agents/`).
 
-**Model Selection**: Uses specified model or default from settings. Can be changed mid-session with `/model`.
+**Model Selection**: Uses specified model or default from settings. Can be changed mid-session with `/model`. When resuming a session with `--resume`, the model active when the session was saved is restored (unless overridden with `--model`).
 
 **Tool Trust**: 
 - `--trust-all-tools`: Bypasses all tool approval prompts

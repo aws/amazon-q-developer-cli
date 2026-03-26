@@ -1,7 +1,7 @@
 ---
 doc_meta:
-  validated: 2025-12-22
-  commit: 57090ffe
+  validated: 2026-03-24
+  commit: 21e95839
   status: validated
   testable_headless: false
   category: feature
@@ -115,7 +115,7 @@ git notes --ref=kiro/notes show "$COMMIT"
 kiro-cli chat --resume
 ```
 
-Continues most recent conversation.
+Continues most recent conversation, restoring the model that was active when the session was saved.
 
 ### Example 2: Pick Session
 
@@ -184,6 +184,8 @@ Exports current session to file.
 **Scope**: Sessions keyed by directory path
 
 **Auto-Save**: After every conversation turn
+
+**Model Preservation**: When resuming via `--resume`, the model active when the session was saved is restored. This includes models switched mid-session with `/model`. The `--model` CLI flag overrides the saved model.
 
 **Script Interface**: 
 - Save: JSON via stdin, exit 0 on success
