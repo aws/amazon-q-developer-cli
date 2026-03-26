@@ -1,0 +1,4 @@
+{
+  "type": "fixed",
+  "description": "Session & model reliability: saved model ID now restores correctly on resume, context size fallback updated, and session actor properly shuts down on terminate"
+}

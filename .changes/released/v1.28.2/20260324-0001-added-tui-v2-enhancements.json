@@ -1,0 +1,4 @@
+{
+  "type": "added",
+  "description": "TUI v2 enhancements: /code command, /agent create & edit, filesystem path tab completion, terminal notifications, per-prompt credits/time display, OSC 9 support, and greeting settings"
+}

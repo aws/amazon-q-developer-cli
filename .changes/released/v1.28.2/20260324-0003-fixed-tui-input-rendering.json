@@ -1,0 +1,4 @@
+{
+  "type": "fixed",
+  "description": "TUI input & rendering: non-Latin character support, forward-delete key, column sizing with wide characters, and line wrap/link parsing"
+}

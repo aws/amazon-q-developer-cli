@@ -12,6 +12,38 @@
     },
     {
       "type": "release",
+      "date": "2026-03-26",
+      "version": "1.28.2",
+      "title": "Version 1.28.2",
+      "changes": [
+        {
+          "type": "added",
+          "description": "TUI v2 enhancements: /code command, /agent create & edit, filesystem path tab completion, terminal notifications, per-prompt credits/time display, OSC 9 support, and greeting settings"
+        },
+        {
+          "type": "fixed",
+          "description": "Fixed knowledge base include/exclude patterns not being applied during agent resource sync"
+        },
+        {
+          "type": "fixed",
+          "description": "Fix TUI/ACP /clear not persisting to session history, causing cleared messages to reappear on session resume"
+        },
+        {
+          "type": "fixed",
+          "description": "Support disabledTools configuration for MCP servers in ACP/TUI"
+        },
+        {
+          "type": "fixed",
+          "description": "Session & model reliability: saved model ID now restores correctly on resume, context size fallback updated, and session actor properly shuts down on terminate"
+        },
+        {
+          "type": "fixed",
+          "description": "TUI input & rendering: non-Latin character support, forward-delete key, column sizing with wide characters, and line wrap/link parsing"
+        }
+      ]
+    },
+    {
+      "type": "release",
       "date": "2026-03-20",
       "version": "1.28.1",
       "title": "Version 1.28.1",
