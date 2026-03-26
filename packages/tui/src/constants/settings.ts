@@ -6,4 +6,6 @@
  */
 export const Settings = {
   CHAT_GREETING_ENABLED: 'chat.greeting.enabled',
+  CHAT_ENABLE_NOTIFICATIONS: 'chat.enableNotifications',
+  CHAT_NOTIFICATION_METHOD: 'chat.notificationMethod',
 } as const;

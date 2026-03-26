@@ -132,6 +132,11 @@ import {
   detectErrorCategory,
 } from '../utils/error-guidance.js';
 import { CommandHistory } from '../utils/command-history.js';
+import { Settings } from '../constants/settings.js';
+import {
+  resolveNotificationMethod,
+  playNotification,
+} from '../utils/notification.js';
 
 export enum MessageRole {
   User = 'user',
@@ -2067,6 +2072,35 @@ export const createAppStore = (props: AppStoreProps) => {
       lastProgressKey = key;
       // Defer so the OSC 9;4 escape lands after twinki's nextTick render frame.
       setImmediate(() => syncTerminalProgress(state));
+    }
+  });
+
+  // Terminal notifications (bell / OSC 9) on turn-end and tool approval.
+  let prevProcessing = false;
+  let prevApproval: unknown = null;
+
+  store.subscribe((state) => {
+    const enabled = state.settings?.[Settings.CHAT_ENABLE_NOTIFICATIONS];
+    const wasProcessing = prevProcessing;
+    const hadApproval = prevApproval;
+    prevProcessing = state.isProcessing;
+    prevApproval = state.pendingApproval;
+
+    if (!enabled) return;
+
+    const method = resolveNotificationMethod(
+      state.settings?.[Settings.CHAT_NOTIFICATION_METHOD] as string | undefined
+    );
+    if (!method) return;
+
+    // Turn completed cleanly (no error)
+    if (wasProcessing && !state.isProcessing && !state.agentError) {
+      playNotification(method, 'Response complete');
+    }
+
+    // Tool approval requested
+    if (!hadApproval && state.pendingApproval) {
+      playNotification(method, 'Permission required');
     }
   });
 
