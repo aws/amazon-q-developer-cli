@@ -116,11 +116,20 @@ impl UpdateArgs {
             .find_artifact(os_name, arch)
             .ok_or_else(|| eyre::eyre!("No artifact found for {}/{}", os_name, arch))?;
 
-        // Download installer
+        // Download installer — use the manifest base URL (ends at latest/) with just the filename.
+        // The artifact's `download` field contains a versioned path (e.g., "1.28.2/file.msi")
+        // but artifacts are also available at the `latest/` path, matching how the bash install
+        // script downloads Mac/Linux artifacts.
         println!("Downloading installer...");
-        let base_url = get_manifest_url();
-        let base_url = base_url.rsplit_once('/').map_or(base_url.as_str(), |(base, _)| base);
-        let download_url = format!("{}/{}", base_url, artifact.download);
+        let manifest_url = get_manifest_url();
+        let base_url = manifest_url
+            .rsplit_once('/')
+            .map_or(manifest_url.as_str(), |(base, _)| base);
+        let filename = artifact
+            .download
+            .rsplit_once('/')
+            .map_or(artifact.download.as_str(), |(_, name)| name);
+        let download_url = format!("{}/{}", base_url, filename);
 
         let downloader = InstallerDownloader::new().map_err(|e| eyre::eyre!("{}", e))?;
         let temp_installer = downloader
@@ -377,9 +386,15 @@ async fn background_update_check_inner() -> Option<StagedUpdate> {
         },
     };
 
-    let base_url = get_manifest_url();
-    let base_url = base_url.rsplit_once('/').map_or(base_url.as_str(), |(base, _)| base);
-    let download_url = format!("{}/{}", base_url, artifact.download);
+    let manifest_url = get_manifest_url();
+    let base_url = manifest_url
+        .rsplit_once('/')
+        .map_or(manifest_url.as_str(), |(base, _)| base);
+    let filename = artifact
+        .download
+        .rsplit_once('/')
+        .map_or(artifact.download.as_str(), |(_, name)| name);
+    let download_url = format!("{}/{}", base_url, filename);
 
     let temp_installer = match downloader
         .download::<fn(u64, u64)>(&download_url, &artifact.sha256, None)
