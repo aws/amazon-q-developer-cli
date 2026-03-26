@@ -116,6 +116,10 @@ export class MockSessionClient implements SessionClient {
     // No-op for mock
   }
 
+  async listSettings(): Promise<Record<string, unknown>> {
+    return {};
+  }
+
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   async listSessions(_cwd: string): Promise<ListSessionsResponse> {
     return { sessions: [] };

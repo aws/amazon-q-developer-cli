@@ -381,6 +381,7 @@ export interface AppState {
   currentModel: { id: string; name: string } | null;
   currentAgent: { name: string } | null;
   previousAgentName: string | null;
+  settings: Record<string, unknown> | null;
 
   // Command UI state
   activeCommand: ActiveCommand | null;
@@ -551,6 +552,7 @@ export const createAppStore = (props: AppStoreProps) => {
     currentModel: null,
     currentAgent: null,
     previousAgentName: null,
+    settings: null,
 
     activeCommand: null,
     commandInputValue: '',

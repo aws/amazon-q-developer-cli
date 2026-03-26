@@ -158,11 +158,11 @@ const startInitialization = (sessionId?: string) => {
   wireUpHandlers();
 
   initPromise = kiro
-    .initialize(agentPath, acpArgs, sessionId)
-    .then(() => {
-      // Replay buffered history events in one batch now that init is done.
-      // We defer to setTimeout(0) so Ink's first render cycle completes and
-      // stdin listeners are stable before we trigger store updates.
+    .initialize(agentPath, acpArgs)
+    .then(async () => {
+      appStore.setState({ settings: kiro.settings });
+
+      await kiro.createSession(sessionId);
       appStore.setState({ sessionId: kiro.sessionId ?? null });
 
       const events = pendingHistoryEvents;

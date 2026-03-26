@@ -405,6 +405,14 @@ export class AcpClient implements acp.Client, SessionClient {
     })) as unknown as ListSessionsResponse;
   }
 
+  async listSettings(): Promise<Record<string, unknown>> {
+    const result = await this.connection.extMethod(
+      'kiro.dev/settings/list',
+      {}
+    );
+    return result as unknown as Record<string, unknown>;
+  }
+
   // ===========
   // acp.Client interface methods
   // ===========

@@ -23,6 +23,8 @@ interface E2ETestCaseOptions {
   extraEnv?: Record<string, string>;
   extraCliArgs?: string[];
   globalAgentConfigs?: Array<{ name: string; config: Record<string, unknown> }>;
+  /** User settings written to $HOME/.kiro/settings/cli.json before launch. */
+  settings?: Record<string, unknown>;
 }
 
 /**
@@ -61,12 +63,20 @@ export class E2ETestCase {
 
     // Create isolated sandbox directory for sessions, DB, agents
     this.sandboxDir = fs.mkdtempSync(path.join(os.tmpdir(), `kiro-e2e-${testName}-`));
+    const homeDir = this.sandboxDir;
 
     // Write custom agent configs into sandbox agents dir
-    const agentsDir = path.join(this.sandboxDir, 'agents');
+    const agentsDir = path.join(homeDir, 'agents');
     fs.mkdirSync(agentsDir, { recursive: true });
     for (const agent of this.options.globalAgentConfigs ?? []) {
       fs.writeFileSync(path.join(agentsDir, `${agent.name}.json`), JSON.stringify(agent.config));
+    }
+
+    // Write user settings to $HOME/.kiro/settings/cli.json
+    if (this.options.settings) {
+      const settingsPath = path.join(homeDir, '.kiro', 'settings', 'cli.json');
+      fs.mkdirSync(path.dirname(settingsPath), { recursive: true });
+      fs.writeFileSync(settingsPath, JSON.stringify(this.options.settings));
     }
 
     const chatPath = path.join(__dirname, '../../../target/debug/chat_cli');
@@ -89,10 +99,10 @@ export class E2ETestCase {
       KIRO_TUI_LOG_LEVEL: 'trace',
       KIRO_CHAT_LOG_FILE: this.paths.rustLogFile,
       KIRO_LOG_LEVEL: 'chat_cli=debug,agent=debug,semantic_search_client=trace',
-      HOME: this.sandboxDir,
-      KIRO_TEST_SESSIONS_DIR: this.sandboxDir,
-      KIRO_TEST_DB_PATH: path.join(this.sandboxDir, 'test.sqlite3'),
-      KIRO_TEST_AGENTS_DIR: path.join(this.sandboxDir, 'agents'),
+      HOME: homeDir,
+      KIRO_TEST_SESSIONS_DIR: homeDir,
+      KIRO_TEST_DB_PATH: path.join(homeDir, 'test.sqlite3'),
+      KIRO_TEST_AGENTS_DIR: path.join(homeDir, 'agents'),
       ...this.options.extraEnv,
     };
 
@@ -256,6 +266,22 @@ export class E2ETestCase {
       throw new Error(`Unexpected response: ${JSON.stringify(response)}`);
     }
     return response.data.data;
+  }
+
+  /**
+   * Polls the store until the predicate returns true, then returns the matching state.
+   */
+  async waitForStoreCondition(
+    predicate: (state: AppState) => boolean,
+    timeout = 10000
+  ): Promise<AppState> {
+    const start = Date.now();
+    while (Date.now() - start < timeout) {
+      const store = await this.getStore();
+      if (predicate(store)) return store;
+      await this.sleepMs(100);
+    }
+    throw new Error('Timeout waiting for store condition');
   }
 
   /**
@@ -464,6 +490,11 @@ export class E2ETestCaseBuilder {
   withGlobalAgentConfig(name: string, config: Record<string, unknown>): E2ETestCaseBuilder {
     this.options.globalAgentConfigs = this.options.globalAgentConfigs ?? [];
     this.options.globalAgentConfigs.push({ name, config });
+    return this;
+  }
+
+  withGlobalSettings(settings: Record<string, unknown>): E2ETestCaseBuilder {
+    this.options.settings = { ...this.options.settings, ...settings };
     return this;
   }
 

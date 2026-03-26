@@ -2650,6 +2650,16 @@ pub async fn execute(os: &mut Os, args: agent::types::AcpSpawnArgs) -> eyre::Res
             },
             sacp::on_receive_request!(),
         )
+        // Handle settings/list
+        .on_receive_request(
+            {
+                let os = os.clone();
+                async move |_request: super::schema::SettingsListRequest, request_cx, _cx| {
+                    request_cx.respond(super::schema::SettingsListResponse(os.database.settings.map().clone()))
+                }
+            },
+            sacp::on_receive_request!(),
+        )
         .on_receive_message(
             {
                 let session_tx = session_manager_handle.clone();

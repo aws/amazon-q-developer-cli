@@ -17,6 +17,7 @@ import type {
  */
 export class Kiro {
   private sessionClient?: SessionClient;
+  private _settings: Record<string, unknown> = {};
   private commandsHandler?: (
     commands: Array<{
       name: string;
@@ -42,12 +43,17 @@ export class Kiro {
     welcomeMessage?: string;
   }) => void;
   private compactionHandler?: (event: AgentStreamEvent) => void;
+  private settingsHandler?: (settings: Record<string, unknown>) => void;
   private historyHandler?: (event: AgentStreamEvent) => void;
   private globalUpdateUnsubscribe?: () => void;
   private pendingPrompt: Promise<void> | null = null;
 
   get sessionId(): string | undefined {
     return this.sessionClient?.sessionId;
+  }
+
+  get settings(): Record<string, unknown> {
+    return this._settings;
   }
 
   onCommandsUpdate(
@@ -99,13 +105,9 @@ export class Kiro {
 
   async initialize(
     agentPath: string,
-    extraAcpArgs: string[] = [],
-    resumeSessionId?: string
+    extraAcpArgs: string[] = []
   ): Promise<void> {
-    logger.debug(
-      '[kiro] initialize() called, resumeSessionId:',
-      resumeSessionId ?? 'none'
-    );
+    logger.debug('[kiro] initialize() called');
 
     if (process.env.KIRO_MOCK_ACP === 'true') {
       const { MockSessionClient, setMockSessionClient } =
@@ -175,6 +177,17 @@ export class Kiro {
     );
 
     await this.sessionClient.initialize();
+
+    // Fetch user settings before creating a session (needed for greeting display)
+    try {
+      this._settings = await this.sessionClient.listSettings();
+    } catch (err) {
+      logger.error('[kiro] Failed to fetch settings:', err);
+    }
+  }
+
+  async createSession(resumeSessionId?: string): Promise<void> {
+    if (!this.sessionClient) throw new Error('connect() must be called first');
 
     // Use loadSession if resuming, otherwise create new session
     const sessionResult = resumeSessionId

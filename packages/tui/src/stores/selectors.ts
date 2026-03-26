@@ -94,6 +94,7 @@ export const useConversationState = () =>
     useShallow((state) => ({
       messages: state.messages,
       isProcessing: state.isProcessing,
+      settings: state.settings,
     }))
   );
 

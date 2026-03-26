@@ -16,6 +16,7 @@ import { StatusBar } from '../chat/status-bar/StatusBar';
 import { Text } from '../ui/text/Text';
 import { WelcomeScreen } from '../welcome-screen/index.js';
 import { getAgentColor } from '../../utils/agentColors.js';
+import { Settings } from '../../constants/settings.js';
 import { computeFlushSet } from '../../utils/turn-flush-machine.js';
 import { useTerminalSize } from '../../hooks/useTerminalSize.js';
 import { useTheme } from '../../hooks/useThemeContext.js';
@@ -403,8 +404,10 @@ function appendMessagesToStatic(
 }
 
 export const ConversationView = React.memo(function ConversationView() {
-  const { messages, isProcessing } = useConversationState();
+  const { messages, isProcessing, settings } = useConversationState();
   const { getColor } = useTheme();
+  const greetingEnabled =
+    settings !== null && settings[Settings.CHAT_GREETING_ENABLED] !== false;
 
   const hadMessagesRef = React.useRef(false);
   const welcomeInStaticRef = React.useRef(false);
@@ -523,7 +526,7 @@ export const ConversationView = React.memo(function ConversationView() {
   };
 
   // Welcome screen — emitted once when messages first appear
-  if (hasMessages && !welcomeInStaticRef.current) {
+  if (hasMessages && !welcomeInStaticRef.current && greetingEnabled) {
     welcomeInStaticRef.current = true;
     appendStatic({ type: 'welcome', id: '__welcome__' });
   }
@@ -586,7 +589,7 @@ export const ConversationView = React.memo(function ConversationView() {
 
   return (
     <Box flexDirection="column">
-      {isInitialLoad && (
+      {isInitialLoad && greetingEnabled && (
         <Box marginBottom={1}>
           <WelcomeScreen agent="kiro" mcpServers={[]} animate={true} />
         </Box>

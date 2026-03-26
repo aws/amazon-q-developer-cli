@@ -197,6 +197,17 @@ pub struct SessionInfoEntry {
     pub updated_at: Option<String>,
 }
 
+/// Request to list user settings.
+#[derive(Debug, Clone, Serialize, Deserialize, JrRequest)]
+#[request(method = "_kiro.dev/settings/list", response = SettingsListResponse)]
+pub struct SettingsListRequest {}
+
+/// Response containing all user settings as a flat JSON map.
+/// Keys use the same dotted names as the settings file (e.g. "chat.greeting.enabled").
+#[derive(Debug, Clone, Serialize, Deserialize, JrResponsePayload)]
+#[serde(transparent)]
+pub struct SettingsListResponse(pub serde_json::Map<String, serde_json::Value>);
+
 /// Request to terminate a session
 #[derive(Debug, Clone, Serialize, Deserialize, JrRequest)]
 #[request(method = "_kiro.dev/session/terminate", response = TerminateSessionResponse)]

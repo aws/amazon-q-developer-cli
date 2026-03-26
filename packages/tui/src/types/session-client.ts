@@ -119,6 +119,14 @@ export interface SessionClient {
    * @param modeId - The mode ID to switch to
    */
   setMode(modeId: string): Promise<void>;
+
+  /**
+   * Fetches the global user settings from the backend.
+   * Returns a flat map using the same dotted key names as the settings file
+   *
+   * Note - v1 supports local and global settings, currently unsupported with chat-cli-v2
+   */
+  listSettings(): Promise<Record<string, unknown>>;
 }
 
 /**
