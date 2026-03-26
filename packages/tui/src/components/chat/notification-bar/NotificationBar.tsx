@@ -21,7 +21,7 @@ export function NotificationBar({
   }
 
   return (
-    <Box height={1}>
+    <Box minHeight={1}>
       <Alert
         message={message}
         status={status}

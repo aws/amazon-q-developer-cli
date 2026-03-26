@@ -80,12 +80,14 @@ type EffectName =
   | 'promptEditor'
   | 'loadSession'
   | 'replyEditor'
-  | 'showCodePanel';
+  | 'showCodePanel'
+  | 'showFeedbackUrl';
 
 /**
  * Command → Effect mapping.
  */
 const commandEffects: Partial<Record<string, EffectName>> = {
+  feedback: 'showFeedbackUrl',
   help: 'showHelpPanel',
   model: 'updateModel',
   agent: 'updateAgent',
@@ -326,6 +328,15 @@ const effectHandlers: Record<EffectName, EffectHandler> = {
       if (result?.message) {
         ctx.showAlert(result.message, result.success ? 'success' : 'error');
       }
+    }
+  },
+
+  showFeedbackUrl: (result, ctx) => {
+    const data = result?.data as { url?: string } | undefined;
+    if (data?.url) {
+      // URL is in the message from backend; use longer timeout so user can copy it
+      ctx.showAlert(result?.message ?? data.url, 'error', 10000);
+      return true;
     }
   },
 

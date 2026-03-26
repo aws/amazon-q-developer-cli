@@ -60,9 +60,10 @@ pub async fn execute(feedback_type: Option<&str>, is_amzn: bool) -> CommandResul
     };
     match crate::util::open::open_url_async(url).await {
         Ok(()) => CommandResult::success("Opening in browser..."),
-        Err(_) => CommandResult::success_with_data(
-            "Could not open browser. Copy the URL below.",
-            serde_json::json!({ "url": url }),
-        ),
+        Err(_) => CommandResult {
+            success: false,
+            message: format!("Could not open browser. Copy the URL: {url}"),
+            data: Some(serde_json::json!({ "url": url })),
+        },
     }
 }
