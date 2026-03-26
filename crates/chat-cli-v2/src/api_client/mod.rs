@@ -147,6 +147,79 @@ pub const MAX_RETRY_DELAY_DURATION: Duration = Duration::from_secs(10);
 /// Profile ARN for BuilderId (free tier) users who have no IAM IdC profile stored in the DB.
 const BUILDER_ID_PROFILE_ARN: &str = "arn:aws:codewhisperer:us-east-1:638616132270:profile/AAAACCCCXXXX";
 
+/// Single entry point for all profile ARN resolution.
+///
+/// Encapsulates three cases:
+/// - BuilderId users: a hardcoded well-known ARN set at construction
+/// - IdC users: ARN loaded from the local DB at construction
+/// - IdC users with missing DB entry: ARN lazily resolved via `list_available_profiles` on first
+///   API call, cached so the API is called at most once per session
+#[derive(Clone, Debug)]
+struct ProfileResolver {
+    resolved: Arc<std::sync::Mutex<Option<AuthProfile>>>,
+}
+
+impl ProfileResolver {
+    fn new(initial: Option<AuthProfile>) -> Self {
+        Self {
+            resolved: Arc::new(std::sync::Mutex::new(initial)),
+        }
+    }
+
+    fn for_builder_id() -> Self {
+        Self::new(Some(AuthProfile {
+            arn: BUILDER_ID_PROFILE_ARN.to_string(),
+            profile_name: "BuilderId".to_string(),
+        }))
+    }
+
+    fn arn_if_known(&self) -> Option<String> {
+        self.resolved.lock().unwrap().as_ref().map(|p| p.arn.clone())
+    }
+
+    fn profile_if_known(&self) -> Option<AuthProfile> {
+        self.resolved.lock().unwrap().clone()
+    }
+
+    fn is_known(&self) -> bool {
+        self.resolved.lock().unwrap().is_some()
+    }
+
+    fn set(&self, profile: AuthProfile) {
+        *self.resolved.lock().unwrap() = Some(profile);
+    }
+
+    /// Returns the profile ARN, calling `list_profiles` lazily if not yet resolved.
+    /// The result is cached so `list_profiles` is called at most once per session.
+    async fn require_arn<F, Fut>(&self, list_profiles: F) -> Result<String, ApiClientError>
+    where
+        F: FnOnce() -> Fut,
+        Fut: std::future::Future<Output = Result<Vec<AuthProfile>, ApiClientError>>,
+    {
+        // Fast path: check cache (sync, no await)
+        if let Some(arn) = self.arn_if_known() {
+            return Ok(arn);
+        }
+
+        // Slow path (at most once per session): resolve via list_available_profiles
+        tracing::info!("profileArn missing, attempting lazy resolution via list_available_profiles");
+        let profiles = list_profiles().await?;
+
+        if let Some(profile) = profiles.into_iter().next() {
+            tracing::info!(arn = %profile.arn, "Lazily resolved profileArn from list_available_profiles");
+            let mut guard = self.resolved.lock().unwrap();
+            if guard.is_none() {
+                *guard = Some(profile);
+            }
+            Ok(guard.as_ref().unwrap().arn.clone())
+        } else {
+            Err(ApiClientError::Other(
+                "profileArn is required but no profiles are available. Please log in and select a profile.".into(),
+            ))
+        }
+    }
+}
+
 #[derive(Clone, Debug)]
 pub struct ModelListResult {
     pub models: Vec<Model>,
@@ -178,7 +251,7 @@ struct RealApiClient {
     telemetry_client: CodewhispererClient,
     streaming_client: Option<CodewhispererStreamingClient>,
     mock_client: Option<Arc<Mutex<std::vec::IntoIter<Vec<ChatResponseStream>>>>>,
-    profile: Option<AuthProfile>,
+    resolve_profile: ProfileResolver,
     model_cache: ModelCache,
     endpoint: Endpoint,
 }
@@ -576,7 +649,7 @@ impl RealApiClient {
                 telemetry_client,
                 streaming_client: None,
                 mock_client: None,
-                profile: None,
+                resolve_profile: ProfileResolver::new(None),
                 model_cache: Arc::new(RwLock::new(None)),
                 endpoint: endpoint.clone(),
             };
@@ -605,24 +678,20 @@ impl RealApiClient {
                 .build(),
         ));
 
-        // Check if using custom endpoint
-        let use_profile = !is_custom_endpoint(database);
-        let profile = if is_builder_id {
-            Some(crate::database::AuthProfile {
-                arn: BUILDER_ID_PROFILE_ARN.to_string(),
-                profile_name: "BuilderId".to_string(),
-            })
-        } else if use_profile {
-            match database.get_auth_profile() {
+        let resolve_profile = if is_builder_id {
+            ProfileResolver::for_builder_id()
+        } else if !is_custom_endpoint(database) {
+            let profile = match database.get_auth_profile() {
                 Ok(profile) => profile,
                 Err(err) => {
                     error!("Failed to get auth profile: {err}");
                     None
                 },
-            }
+            };
+            ProfileResolver::new(profile)
         } else {
             debug!("Custom endpoint detected, skipping profile ARN");
-            None
+            ProfileResolver::new(None)
         };
 
         Ok(Self {
@@ -630,10 +699,17 @@ impl RealApiClient {
             telemetry_client,
             streaming_client,
             mock_client: None,
-            profile,
+            resolve_profile,
             model_cache: Arc::new(RwLock::new(None)),
             endpoint,
         })
+    }
+
+    /// Returns the profile ARN, delegating all resolution logic to `resolve_profile`.
+    async fn require_profile_arn(&self) -> Result<String, ApiClientError> {
+        self.resolve_profile
+            .require_arn(|| self.list_available_profiles())
+            .await
     }
 
     pub async fn send_telemetry_event(
@@ -655,7 +731,7 @@ impl RealApiClient {
                 true => OptOutPreference::OptIn,
                 false => OptOutPreference::OptOut,
             })
-            .set_profile_arn(self.profile.as_ref().map(|p| p.arn.clone()))
+            .set_profile_arn(self.resolve_profile.arn_if_known())
             .set_model_id(model)
             .send()
             .await?;
@@ -706,7 +782,7 @@ impl RealApiClient {
             .client
             .list_available_models()
             .set_origin(Some(Origin::KiroCli))
-            .set_profile_arn(self.profile.as_ref().map(|p| p.arn.clone()));
+            .set_profile_arn(Some(self.require_profile_arn().await?));
         let mut paginator = request.into_paginator().send();
 
         while let Some(result) = paginator.next().await {
@@ -732,9 +808,9 @@ impl RealApiClient {
 
         tracing::debug!("Cache miss, fetching models from list_available_models API");
         let result = self.list_available_models().await?;
-        // Only cache when profile is set — if profile is None the request went out without
-        // profileArn, and we want the next call to retry with the correct ARN once available.
-        if self.profile.is_some() {
+        // Only cache when profile is already resolved — if still unresolved, the lazy path may
+        // have picked a different ARN on retry, so we don't want to cache a potentially stale result.
+        if self.resolve_profile.is_known() {
             let mut cache = self.model_cache.write().await;
             *cache = Some(result.clone());
         }
@@ -774,7 +850,7 @@ impl RealApiClient {
         let request = self
             .client
             .get_profile()
-            .set_profile_arn(self.profile.as_ref().map(|p| p.arn.clone()));
+            .set_profile_arn(Some(self.require_profile_arn().await?));
 
         let response = request.send().await?;
         let mcp_config = response
@@ -799,7 +875,7 @@ impl RealApiClient {
 
         self.client
             .create_subscription_token()
-            .set_profile_arn(self.profile.as_ref().map(|p| p.arn.clone()))
+            .set_profile_arn(Some(self.require_profile_arn().await?))
             .send()
             .await
             .map_err(ApiClientError::CreateSubscriptionToken)
@@ -811,7 +887,7 @@ impl RealApiClient {
         self.client
             .get_usage_limits()
             .set_origin(Some(amzn_codewhisperer_client::types::Origin::KiroCli))
-            .set_profile_arn(self.profile.as_ref().map(|p| p.arn.clone()))
+            .set_profile_arn(Some(self.require_profile_arn().await?))
             .send()
             .await
             .map_err(ApiClientError::GetUsageLimitsError)
@@ -855,7 +931,16 @@ impl RealApiClient {
             match client
                 .generate_assistant_response()
                 .conversation_state(conversation_state)
-                .set_profile_arn(self.profile.as_ref().map(|p| p.arn.clone()))
+                .set_profile_arn(Some(self.require_profile_arn().await.map_err(|e| {
+                    ConverseStreamError {
+                        request_id: None,
+                        status_code: None,
+                        kind: ConverseStreamErrorKind::Unknown {
+                            reason_code: e.to_string(),
+                        },
+                        source: None,
+                    }
+                })?))
                 .send()
                 .await
             {
@@ -942,7 +1027,7 @@ impl RealApiClient {
             .id("1".into())
             .method(amzn_codewhisperer_streaming_client::types::McpMethod::ToolsCall)
             .params(params)
-            .set_profile_arn(self.profile.as_ref().map(|p| p.arn.clone()))
+            .set_profile_arn(Some(self.require_profile_arn().await?))
             .send()
             .await
             .map_err(|e| ApiClientError::Other(format!("Failed to invoke MCP: {e}")))?;
@@ -1027,12 +1112,13 @@ impl RealApiClient {
                 Ok(profile) => {
                     tracing::debug!("Refreshed auth profile: {:?}", profile);
 
-                    if profile.is_some() {
+                    if let Some(profile) = profile {
                         let endpoint = Endpoint::configured_value(database);
                         tracing::debug!("Recreating client with endpoint: {:?}", endpoint);
 
-                        let mut new_client = Self::new(env, fs, database, Some(endpoint)).await?;
-                        new_client.profile = profile.clone();
+                        let new_client = Self::new(env, fs, database, Some(endpoint)).await?;
+                        // Explicitly set profile in case Self::new() skipped the DB read (e.g., test mode)
+                        new_client.resolve_profile.set(profile);
                         *self = new_client;
                     }
                 },
@@ -1046,8 +1132,23 @@ impl RealApiClient {
         Ok(())
     }
 
+    /// If the profile is not yet resolved, resolves it via `list_available_profiles` and
+    /// persists the result to the database so subsequent sessions skip the API call.
+    pub async fn resolve_profile_if_missing(&self, database: &mut Database) -> Result<(), ApiClientError> {
+        if self.resolve_profile.is_known() {
+            return Ok(());
+        }
+        if let Ok(_arn) = self.require_profile_arn().await
+            && let Some(profile) = self.resolve_profile.profile_if_known()
+            && let Err(e) = database.set_auth_profile(&profile)
+        {
+            tracing::warn!("Failed to persist resolved profile to database: {e}");
+        }
+        Ok(())
+    }
+
     pub fn get_profile(&self) -> Option<AuthProfile> {
-        self.profile.clone()
+        self.resolve_profile.profile_if_known()
     }
 }
 
@@ -1261,6 +1362,13 @@ impl ApiClient {
         match &self.inner {
             ApiClientInner::Real(c) => c.get_profile(),
             ApiClientInner::IpcMock(_) => None,
+        }
+    }
+
+    pub async fn resolve_profile_if_missing(&self, database: &mut Database) -> Result<(), ApiClientError> {
+        match &self.inner {
+            ApiClientInner::Real(c) => c.resolve_profile_if_missing(database).await,
+            ApiClientInner::IpcMock(_) => Ok(()),
         }
     }
 }

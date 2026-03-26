@@ -309,6 +309,11 @@ impl RootSubcommand {
             Self::Issue(args) => args.execute(os).await,
             Self::Version { changelog } => Cli::print_version(changelog),
             Self::Chat(args) => {
+                if let Err(e) = os.client.resolve_profile_if_missing(&mut os.database).await {
+                    tracing::warn!("Failed to resolve profile: {e}");
+                }
+
+                // Run cleanup before chat starts; show a message if it takes >3 seconds
                 let msg_handle = tokio::spawn(async {
                     tokio::time::sleep(std::time::Duration::from_secs(3)).await;
                     eprintln!("Cleaning up old conversations...");
@@ -338,6 +343,9 @@ impl RootSubcommand {
             } => {
                 use chat_cli_v2::os::Os as NewOs;
                 let mut os = NewOs::new().await?;
+                if let Err(e) = os.client.resolve_profile_if_missing(&mut os.database).await {
+                    tracing::warn!("Failed to resolve profile: {e}");
+                }
                 let spawn_args = ::agent::types::AcpSpawnArgs {
                     agent,
                     model,
