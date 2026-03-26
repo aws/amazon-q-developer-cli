@@ -639,6 +639,8 @@ pub struct MetadataEvent {
     pub metrics: Option<MetadataMetrics>,
     pub usage: Option<MetadataUsage>,
     pub service: Option<MetadataService>,
+    #[serde(default)]
+    pub metering_usage: Vec<MeteringUsageInfo>,
 }
 
 #[typeshare]
@@ -661,6 +663,15 @@ pub struct MetadataUsage {
     pub cache_read_input_tokens: Option<u32>,
     pub cache_write_input_tokens: Option<u32>,
     pub context_usage_percentage: Option<f32>,
+}
+
+#[typeshare]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MeteringUsageInfo {
+    pub value: f64,
+    pub unit: String,
+    pub unit_plural: String,
 }
 
 #[typeshare]

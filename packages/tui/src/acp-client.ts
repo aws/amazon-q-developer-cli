@@ -8,6 +8,7 @@ import {
   ApprovalOptionId,
   ToolCallStatus,
   type AgentStreamEvent,
+  type MeteringUsage,
 } from './types/agent-events';
 import type {
   CommandOptionsResponse,
@@ -628,6 +629,16 @@ export class AcpClient implements acp.Client, SessionClient {
       this.broadcastStreamEvent({
         type: AgentEventType.ContextUsage,
         percent,
+      });
+    }
+
+    const metering = params.meteringUsage as MeteringUsage[] | undefined;
+    const durationMs = params.turnDurationMs as number | undefined;
+    if (metering && metering.length > 0) {
+      this.broadcastStreamEvent({
+        type: AgentEventType.TurnSummary,
+        meteringUsage: metering,
+        turnDurationMs: durationMs,
       });
     }
   }

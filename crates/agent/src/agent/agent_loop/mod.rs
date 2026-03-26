@@ -370,6 +370,7 @@ impl AgentLoop {
         let mut input_token_count = 0_u32;
         let mut output_token_count = 0_u32;
         let mut context_usage_percentage = None;
+        let mut metering_usage = Vec::new();
 
         for s in &self.stream_states {
             message_ids.push(s.user_message.id.clone());
@@ -392,6 +393,9 @@ impl AgentLoop {
                 if let Some(percent) = md_usage.context_usage_percentage {
                     context_usage_percentage = Some(percent);
                 }
+            }
+            if let Some(md) = s.metadata.as_ref() {
+                metering_usage.extend(md.metering_usage.iter().cloned());
             }
         }
 
@@ -421,6 +425,7 @@ impl AgentLoop {
             input_token_count,
             output_token_count,
             context_usage_percentage,
+            metering_usage,
         }
     }
 }

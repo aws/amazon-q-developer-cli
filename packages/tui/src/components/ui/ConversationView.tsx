@@ -4,6 +4,7 @@ import {
   MessageRole,
   type MessageType as StoreMessageType,
 } from '../../stores/app-store';
+import { useAppStore } from '../../stores/app-store';
 import { useConversationState } from '../../stores/selectors';
 import { Card, CardContext } from '../ui/card/Card';
 import { Divider } from '../ui/divider/Divider';
@@ -12,6 +13,7 @@ import { StreamingMessage } from '../chat/message/StreamingMessage';
 import { ShellOutputMessage } from '../chat/message/ShellOutputMessage';
 import { ToolUseMessage } from './ToolUseMessage';
 import { ThinkingMessage } from '../chat/message/ThinkingMessage';
+import { TurnUsageSummary } from '../chat/message/TurnUsageSummary';
 import { StatusBar } from '../chat/status-bar/StatusBar';
 import { Text } from '../ui/text/Text';
 import { WelcomeScreen } from '../welcome-screen/index.js';
@@ -126,14 +128,17 @@ const ActiveTurnTail = React.memo(function ActiveTurnTail({
   agentBarColor,
   onReadyToFlush,
   prevFlushedRole,
+  turnId,
 }: {
   tailMessages: StoreMessageType[];
   agentBarColor: string | undefined;
   onReadyToFlush?: () => void;
   prevFlushedRole?: MessageRole;
+  turnId: string;
 }) {
   const { isProcessing } = useConversationState();
   const { height: termHeight } = useTerminalSize();
+  const summaryText = useAppStore((s) => s.turnSummaries.get(turnId));
 
   const lastAiMsg = tailMessages[tailMessages.length - 1];
   const hasActiveContent = lastAiMsg
@@ -229,6 +234,11 @@ const ActiveTurnTail = React.memo(function ActiveTurnTail({
         );
       })}
       {showThinking && <ThinkingMessage barColor={agentBarColor} />}
+      {!isProcessing && summaryText && (
+        <Box marginTop={1}>
+          <TurnUsageSummary text={summaryText} />
+        </Box>
+      )}
     </>
   );
 });
@@ -240,6 +250,9 @@ const StaticTurnCard = React.memo(function StaticTurnCard({
   turn: ConversationTurn;
 }) {
   const { getColor } = useTheme();
+  const summaryText = useAppStore((s) =>
+    s.turnSummaries.get(turn.userMessage.id)
+  );
   const agentName =
     'agentName' in turn.userMessage ? turn.userMessage.agentName : undefined;
   const agentBarColor = agentName
@@ -289,6 +302,11 @@ const StaticTurnCard = React.memo(function StaticTurnCard({
               Cancelled
             </InkText>
           </StatusBar>
+        )}
+        {summaryText && (
+          <Box marginTop={1}>
+            <TurnUsageSummary text={summaryText} />
+          </Box>
         )}
       </Card>
     </Box>
@@ -649,6 +667,7 @@ export const ConversationView = React.memo(function ConversationView() {
                 agentBarColor={activeAgentBarColor}
                 onReadyToFlush={handleReadyToFlush}
                 prevFlushedRole={prevFlushedRole}
+                turnId={activeTurn.userMessage.id}
               />
             </Box>
           </CardContext.Provider>
@@ -660,6 +679,7 @@ export const ConversationView = React.memo(function ConversationView() {
                 agentBarColor={activeAgentBarColor}
                 onReadyToFlush={handleReadyToFlush}
                 prevFlushedRole={prevFlushedRole}
+                turnId={activeTurn.userMessage.id}
               />
             </Card>
           </Box>

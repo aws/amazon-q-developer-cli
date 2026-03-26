@@ -10,4 +10,5 @@ export type StatusType =
   | 'loading'
   | 'thinking'
   | 'executing'
-  | 'paused';
+  | 'paused'
+  | 'usage';

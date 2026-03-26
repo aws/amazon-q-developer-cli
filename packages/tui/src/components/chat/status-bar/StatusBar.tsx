@@ -146,17 +146,23 @@ export const StatusBar = React.memo(function StatusBar({
     status !== 'active' &&
     status !== 'thinking' &&
     status !== 'executing' &&
-    status !== 'paused';
+    status !== 'paused' &&
+    status !== 'usage';
   const showSpinner = status === 'thinking';
   const showPieSpinner = status === 'executing';
   const showArrowDown = status === 'paused';
+  const showArrowRight = status === 'usage';
 
   // Render the status bar column elements
   const barElements = useMemo(() => {
     // When lineCount is 0 but we have a status to show (e.g. inside Ink's <Static>
     // where measureElement doesn't trigger), render at least the status icon
     const hasStatusIcon =
-      showDot || showSpinner || showPieSpinner || showArrowDown;
+      showDot ||
+      showSpinner ||
+      showPieSpinner ||
+      showArrowDown ||
+      showArrowRight;
     const effectiveLineCount = lineCount === 0 && hasStatusIcon ? 1 : lineCount;
 
     if (effectiveLineCount === 0) return null;
@@ -191,6 +197,12 @@ export const StatusBar = React.memo(function StatusBar({
             />
           </Box>
         );
+      } else if (i === 0 && showArrowRight) {
+        elements.push(
+          <Box key={i}>
+            <Icon type={IconType.ARROW_RIGHT} color={getColor('secondary')} />
+          </Box>
+        );
       } else if (i === 0 && showDot) {
         const dotColor = getStatusColor(status!, getColor);
         elements.push(
@@ -198,7 +210,7 @@ export const StatusBar = React.memo(function StatusBar({
             <Icon type={IconType.DOT} color={dotColor} />
           </Box>
         );
-      } else if (active && status !== 'paused') {
+      } else if (active && status !== 'paused' && status !== 'usage') {
         // Use line-specific override color, or barColor prop, or status color, or default
         // Don't show bar for paused status (only show the arrow icon)
         const color =
@@ -223,6 +235,7 @@ export const StatusBar = React.memo(function StatusBar({
     showDot,
     showSpinner,
     showArrowDown,
+    showArrowRight,
     showPieSpinner,
     active,
     lineColors,
@@ -236,6 +249,7 @@ export const StatusBar = React.memo(function StatusBar({
     if (
       !active ||
       status === 'paused' ||
+      status === 'usage' ||
       status === 'thinking' ||
       status === 'executing'
     )

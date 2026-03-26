@@ -18,6 +18,7 @@ export enum AgentEventType {
   AuthError = 'auth_error',
   SessionError = 'session_error',
   AgentSwitched = 'agent_switched',
+  TurnSummary = 'turn_summary',
 }
 
 export enum ContentType {
@@ -251,6 +252,18 @@ export interface AgentSwitchedEvent {
   welcomeMessage?: string;
 }
 
+export interface MeteringUsage {
+  value: number;
+  unit: string;
+  unitPlural: string;
+}
+
+export interface TurnSummaryEvent {
+  type: AgentEventType.TurnSummary;
+  meteringUsage: MeteringUsage[];
+  turnDurationMs?: number;
+}
+
 export type AuthErrorType = string;
 export type SessionErrorType = string;
 
@@ -270,4 +283,5 @@ export type AgentStreamEvent =
   | RateLimitErrorEvent
   | AuthErrorEvent
   | SessionErrorEvent
-  | AgentSwitchedEvent;
+  | AgentSwitchedEvent
+  | TurnSummaryEvent;

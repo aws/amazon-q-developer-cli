@@ -1084,9 +1084,16 @@ impl AcpSession {
     }
 
     fn send_turn_metadata(&self, metadata: &agent::agent_loop::protocol::UserTurnMetadata) -> Result<(), sacp::Error> {
+        let metering = if metadata.metering_usage.is_empty() {
+            None
+        } else {
+            Some(metadata.metering_usage.clone())
+        };
         let notification = super::schema::MetadataNotification {
             session_id: self.session_id_str.clone(),
             context_usage_percentage: metadata.context_usage_percentage,
+            metering_usage: metering,
+            turn_duration_ms: metadata.turn_duration.map(|d| d.as_millis() as u64),
         };
         self.connection_cx.send_notification(notification)
     }
@@ -1122,6 +1129,8 @@ impl AcpSession {
         let notification = super::schema::MetadataNotification {
             session_id: self.session_id_str.clone(),
             context_usage_percentage: Some(estimated_pct),
+            metering_usage: None,
+            turn_duration_ms: None,
         };
         if let Err(e) = self.connection_cx.send_notification(notification) {
             warn!("Failed to send initial context usage: {}", e);
@@ -1711,6 +1720,8 @@ impl AcpSession {
                     let notification = super::schema::MetadataNotification {
                         session_id: self.session_id_str.clone(),
                         context_usage_percentage: self.rts_state.context_usage_percentage(),
+                        metering_usage: None,
+                        turn_duration_ms: None,
                     };
                     if let Err(e) = self.connection_cx.send_notification(notification) {
                         warn!("Failed to send metadata after compaction: {}", e);
@@ -1748,6 +1759,8 @@ impl AcpSession {
                 let notification = super::schema::MetadataNotification {
                     session_id: self.session_id_str.clone(),
                     context_usage_percentage: self.rts_state.context_usage_percentage(),
+                    metering_usage: None,
+                    turn_duration_ms: None,
                 };
                 if let Err(e) = self.connection_cx.send_notification(notification) {
                     warn!("Failed to send metadata after clear: {}", e);

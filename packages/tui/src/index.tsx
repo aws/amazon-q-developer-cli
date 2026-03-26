@@ -150,6 +150,11 @@ const wireUpHandlers = () => {
   kiro.onCompactionStatus((event) => {
     appStore.getState().handleCompactionEvent(event);
   });
+
+  // Wire up turn summary handler (credits + time)
+  kiro.onTurnSummary((event) => {
+    appStore.getState().handleTurnSummaryEvent(event);
+  });
 };
 
 const startInitialization = (sessionId?: string) => {

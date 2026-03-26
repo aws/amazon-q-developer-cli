@@ -1,5 +1,6 @@
 //! ACP custom extension types with derive macros.
 
+use agent::agent_loop::types::MeteringUsageInfo;
 use agent::tui_commands::{
     CommandOptionsResponse,
     CommandResult,
@@ -145,6 +146,10 @@ pub struct MetadataNotification {
     pub session_id: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub context_usage_percentage: Option<f32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub metering_usage: Option<Vec<MeteringUsageInfo>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub turn_duration_ms: Option<u64>,
     // Future fields can be added here
 }
 

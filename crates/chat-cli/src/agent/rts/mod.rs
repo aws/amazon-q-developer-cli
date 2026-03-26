@@ -706,6 +706,7 @@ impl ResponseParser {
                 request_id: self.response.request_id().map(String::from),
                 status_code: None,
             }),
+            metering_usage: Vec::new(),
         })
     }
 }

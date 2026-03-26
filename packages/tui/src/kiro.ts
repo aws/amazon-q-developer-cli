@@ -45,6 +45,7 @@ export class Kiro {
   private compactionHandler?: (event: AgentStreamEvent) => void;
   private settingsHandler?: (settings: Record<string, unknown>) => void;
   private historyHandler?: (event: AgentStreamEvent) => void;
+  private turnSummaryHandler?: (event: AgentStreamEvent) => void;
   private globalUpdateUnsubscribe?: () => void;
   private pendingPrompt: Promise<void> | null = null;
 
@@ -101,6 +102,10 @@ export class Kiro {
 
   onHistoryEvent(handler: (event: AgentStreamEvent) => void): void {
     this.historyHandler = handler;
+  }
+
+  onTurnSummary(handler: (event: AgentStreamEvent) => void): void {
+    this.turnSummaryHandler = handler;
   }
 
   async initialize(
@@ -162,6 +167,11 @@ export class Kiro {
         }
         // Forward historical content events (user messages, assistant text,
         // tool calls) so the store can populate the message list on resume.
+        if (event.type === AgentEventType.TurnSummary) {
+          if (this.turnSummaryHandler) {
+            this.turnSummaryHandler(event);
+          }
+        }
         if (
           event.type === AgentEventType.UserMessage ||
           event.type === AgentEventType.Content ||

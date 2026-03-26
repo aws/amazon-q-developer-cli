@@ -731,6 +731,7 @@ mod tests {
                         request_id: Some("req-1".into()),
                         status_code: Some(200),
                     }),
+                    metering_usage: Vec::new(),
                 }),
             },
         }
@@ -834,6 +835,7 @@ mod tests {
             input_token_count: 0,
             output_token_count: 0,
             context_usage_percentage: None,
+            metering_usage: Vec::new(),
         };
         obs.handle_event("test-session", &AgentEvent::EndTurn(metadata));
 
@@ -873,6 +875,7 @@ mod tests {
             input_token_count: 0,
             output_token_count: 0,
             context_usage_percentage: None,
+            metering_usage: Vec::new(),
         };
         obs.handle_event("test-session", &AgentEvent::EndTurn(metadata));
 

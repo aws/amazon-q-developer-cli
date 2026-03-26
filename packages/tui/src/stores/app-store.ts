@@ -254,6 +254,7 @@ interface BaseAppActions {
   ) => void;
   setPreviousAgentName: (name: string | null) => void;
   handleCompactionEvent: (event: AgentStreamEvent) => Promise<void>;
+  handleTurnSummaryEvent: (event: AgentStreamEvent) => void;
 
   // Chat actions
   clearMessages: () => void;
@@ -414,6 +415,7 @@ export interface AppState {
   // Context usage state
   contextUsagePercent: number | null;
   lastTurnTokens: LastTurnTokens | null;
+  turnSummaries: Map<string, string>; // turnId (user message id) → formatted summary text
 
   // Usage panel state
   showUsagePanel: boolean;
@@ -578,6 +580,7 @@ export const createAppStore = (props: AppStoreProps) => {
 
     contextUsagePercent: null,
     lastTurnTokens: null,
+    turnSummaries: new Map(),
     showContextBreakdown: false,
     contextBreakdown: null,
     showHelpPanel: false,
@@ -1165,6 +1168,9 @@ export const createAppStore = (props: AppStoreProps) => {
               set({ previousAgentName: event.previousAgentName });
             }
             break;
+          case AgentEventType.TurnSummary:
+            // Handled by global handleTurnSummaryEvent, not here
+            break;
         }
       };
 
@@ -1333,6 +1339,51 @@ export const createAppStore = (props: AppStoreProps) => {
         });
         await get().processQueue();
       }
+    },
+
+    handleTurnSummaryEvent: (event) => {
+      if (event.type !== AgentEventType.TurnSummary) return;
+      // Aggregate by unit (e.g. multiple "credits" entries → single total)
+      const totals = new Map<string, { value: number; label: string }>();
+      for (const u of event.meteringUsage) {
+        const key = u.unitPlural;
+        const existing = totals.get(key);
+        if (existing) {
+          existing.value += u.value;
+        } else {
+          totals.set(key, {
+            value: u.value,
+            label: key.charAt(0).toUpperCase() + key.slice(1),
+          });
+        }
+      }
+      const parts: string[] = [];
+      for (const { value, label } of totals.values()) {
+        parts.push(`${label}: ${(Math.floor(value * 100) / 100).toFixed(2)}`);
+      }
+      if (event.turnDurationMs != null) {
+        const s = Math.floor(event.turnDurationMs / 1000);
+        parts.push(
+          `Time: ${s < 60 ? `${s}s` : `${Math.floor(s / 60)}m ${s % 60}s`}`
+        );
+      }
+      if (parts.length === 0) return;
+      const text = `${parts.join(' • ')}`;
+      // Find the last User message ID as the turn key
+      const msgs = get().messages;
+      let turnId: string | undefined;
+      for (let i = msgs.length - 1; i >= 0; i--) {
+        if (msgs[i]!.role === MessageRole.User) {
+          turnId = msgs[i]!.id;
+          break;
+        }
+      }
+      if (!turnId) return;
+      set((state) => {
+        const m = new Map(state.turnSummaries);
+        m.set(turnId, text);
+        return { turnSummaries: m };
+      });
     },
 
     respondToApproval: (optionId: string) => {

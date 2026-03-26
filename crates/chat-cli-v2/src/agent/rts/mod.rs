@@ -25,6 +25,7 @@ use agent::agent_loop::types::{
     MetadataMetrics,
     MetadataService,
     MetadataUsage,
+    MeteringUsageInfo,
     Role,
     StopReason,
     StreamError,
@@ -510,6 +511,8 @@ struct ResponseParser {
     context_usage_percentage: Option<f32>,
     /// Token usage from MetadataEvent
     usage_tokens: UsageTokens,
+    /// Metering usage from MeteringEvent(s)
+    metering_usage: Vec<MeteringUsageInfo>,
 }
 
 impl ResponseParser {
@@ -539,6 +542,7 @@ impl ResponseParser {
             received_response_size: 0,
             context_usage_percentage: None,
             usage_tokens: None,
+            metering_usage: Vec::new(),
         }
     }
 
@@ -682,6 +686,19 @@ impl ResponseParser {
                             cache_write_input_tokens,
                         ));
                     },
+                    ChatResponseStream::MeteringEvent {
+                        usage,
+                        unit,
+                        unit_plural,
+                    } => {
+                        if let (Some(value), Some(unit), Some(unit_plural)) = (usage, unit, unit_plural) {
+                            self.metering_usage.push(MeteringUsageInfo {
+                                value,
+                                unit,
+                                unit_plural,
+                            });
+                        }
+                    },
                     other => {
                         warn!(?other, "received unexpected rts event");
                     },
@@ -801,6 +818,7 @@ impl ResponseParser {
                 request_id: self.response.request_id().map(String::from),
                 status_code: None,
             }),
+            metering_usage: self.metering_usage.clone(),
         })
     }
 }

@@ -245,6 +245,8 @@ pub struct UserTurnMetadata {
     pub output_token_count: u32,
     /// Context usage percentage (0-100)
     pub context_usage_percentage: Option<f32>,
+    /// Metering usage (credits) accumulated across all requests in this turn
+    pub metering_usage: Vec<super::types::MeteringUsageInfo>,
 }
 
 /// The reason why a user turn ended

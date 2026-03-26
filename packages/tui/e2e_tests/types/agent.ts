@@ -263,10 +263,17 @@ export interface MetadataService {
 	statusCode?: number;
 }
 
+export interface MeteringUsageInfo {
+	value: number;
+	unit: string;
+	unitPlural: string;
+}
+
 export interface MetadataEvent {
 	metrics?: MetadataMetrics;
 	usage?: MetadataUsage;
 	service?: MetadataService;
+	meteringUsage?: MeteringUsageInfo[];
 }
 
 /** Arguments for /model command */
