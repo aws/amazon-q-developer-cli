@@ -1,17 +1,22 @@
-import { readdirSync, readFileSync, existsSync } from 'fs';
+/**
+ * File search utilities.
+ *
+ * - searchFilesAsync: auto-cancelling async search for the UI (CommandMenu)
+ * - searchFilesAbortable: lower-level async search with explicit AbortSignal
+ * - readFileContent / expandFileReferences: file content helpers for message submission
+ */
+
+import { readFileSync, existsSync } from 'fs';
+import { opendir } from 'fs/promises';
 import { join, relative } from 'path';
 import ignore from 'ignore';
 
-/** Maximum directory depth for file search */
 const MAX_SEARCH_DEPTH = 5;
+const MAX_COLLECT = 200;
 
-/**
- * Load .gitignore rules
- */
 function loadGitignore(cwd: string) {
   const ig = ignore();
 
-  // Always ignore these (matches code-agent-sdk ALWAYS_SKIP_DIRS and fs_read DEFAULT_EXCLUDE_PATTERNS)
   ig.add([
     // Build outputs
     'build',
@@ -35,27 +40,33 @@ function loadGitignore(cwd: string) {
     '.cargo',
   ]);
 
-  // Load .gitignore if it exists
   const gitignorePath = join(cwd, '.gitignore');
   if (existsSync(gitignorePath)) {
     try {
-      const content = readFileSync(gitignorePath, 'utf-8');
-      ig.add(content);
+      ig.add(readFileSync(gitignorePath, 'utf-8'));
     } catch {
-      // Ignore errors reading .gitignore
+      // ignore
     }
   }
 
   return ig;
 }
 
-/** Max results to collect before sorting and truncating */
-const MAX_COLLECT = 200;
+function rankMatch(filePath: string, query: string): number {
+  const lowerQuery = query.toLowerCase();
+  const fileName = filePath.split('/').pop()?.toLowerCase() ?? '';
+  const depth = filePath.split('/').length;
 
-/**
- * Recursively collect all files matching query (no early limit cutoff)
- */
-function collectMatchingFiles(
+  if (fileName.startsWith(lowerQuery)) return depth;
+  if (fileName.includes(lowerQuery)) return 100 + depth;
+  return 200 + depth;
+}
+
+// ---------------------------------------------------------------------------
+// Async cancellable file search
+// ---------------------------------------------------------------------------
+
+async function collectMatchingFiles(
   dir: string,
   query: string,
   depth: number,
@@ -63,15 +74,22 @@ function collectMatchingFiles(
   maxCollect: number,
   results: string[],
   basePath: string,
-  ig: ReturnType<typeof ignore>
-): void {
-  if (depth > maxDepth || results.length >= maxCollect) return;
+  ig: ReturnType<typeof ignore>,
+  signal: AbortSignal
+): Promise<void> {
+  if (depth > maxDepth || results.length >= maxCollect || signal.aborted)
+    return;
+
+  let dirHandle;
+  try {
+    dirHandle = await opendir(dir);
+  } catch {
+    return;
+  }
 
   try {
-    const entries = readdirSync(dir, { withFileTypes: true });
-
-    for (const entry of entries) {
-      if (results.length >= maxCollect) break;
+    for await (const entry of dirHandle) {
+      if (signal.aborted || results.length >= maxCollect) break;
 
       const fullPath = join(dir, entry.name);
       const relativePath = relative(basePath, fullPath);
@@ -79,7 +97,7 @@ function collectMatchingFiles(
       if (ig.ignores(relativePath)) continue;
 
       if (entry.isDirectory()) {
-        collectMatchingFiles(
+        await collectMatchingFiles(
           fullPath,
           query,
           depth + 1,
@@ -87,7 +105,8 @@ function collectMatchingFiles(
           maxCollect,
           results,
           basePath,
-          ig
+          ig,
+          signal
         );
       } else if (entry.isFile()) {
         const lowerName = entry.name.toLowerCase();
@@ -99,40 +118,26 @@ function collectMatchingFiles(
       }
     }
   } catch {
-    // Skip directories we can't read
+    // dir deleted mid-walk, etc.
   }
 }
 
 /**
- * Rank a file path by relevance to query.
- * Lower score = better match.
+ * Async cancellable file search with explicit AbortSignal.
+ * Uses fs.promises.opendir — yields to the event loop between entries.
  */
-function rankMatch(filePath: string, query: string): number {
-  const lowerQuery = query.toLowerCase();
-  const fileName = filePath.split('/').pop()?.toLowerCase() ?? '';
-  const depth = filePath.split('/').length;
-
-  // Filename starts with query
-  if (fileName.startsWith(lowerQuery)) return depth;
-  // Filename contains query
-  if (fileName.includes(lowerQuery)) return 100 + depth;
-  // Path contains query
-  return 200 + depth;
-}
-
-/**
- * Search for files matching a query (case insensitive).
- * Returns up to `limit` file paths relative to cwd, ranked by relevance.
- * Respects .gitignore patterns.
- */
-export function searchFiles(query: string, limit = 20): string[] {
-  if (!query) return [];
+export async function searchFilesAbortable(
+  query: string,
+  signal: AbortSignal,
+  limit = 20
+): Promise<string[]> {
+  if (!query || signal.aborted) return [];
 
   const cwd = process.cwd();
   const ig = loadGitignore(cwd);
   const results: string[] = [];
 
-  collectMatchingFiles(
+  await collectMatchingFiles(
     cwd,
     query,
     0,
@@ -140,17 +145,21 @@ export function searchFiles(query: string, limit = 20): string[] {
     MAX_COLLECT,
     results,
     cwd,
-    ig
+    ig,
+    signal
   );
 
-  results.sort((a, b) => rankMatch(a, query) - rankMatch(b, query));
+  if (signal.aborted) return [];
 
+  results.sort((a, b) => rankMatch(a, query) - rankMatch(b, query));
   return results.slice(0, limit);
 }
 
-/**
- * Read file content safely. Returns null on error.
- */
+// ---------------------------------------------------------------------------
+// File content helpers (used at message submission time)
+// ---------------------------------------------------------------------------
+
+/** Read file content safely. Returns null on error. */
 export function readFileContent(filePath: string): string | null {
   try {
     if (!existsSync(filePath)) return null;
@@ -160,23 +169,18 @@ export function readFileContent(filePath: string): string | null {
   }
 }
 
-/**
- * Expand @file:path references in content to include file contents.
- * Returns the expanded content with file contents wrapped in XML tags.
- */
+/** Expand @file:path references in content to include file contents. */
 export function expandFileReferences(content: string): string {
   const fileRefPattern = /@file:(\S+)/g;
 
   return content.replace(fileRefPattern, (match, filePath) => {
-    if (!existsSync(filePath)) {
-      return match; // Keep original if file doesn't exist
-    }
+    if (!existsSync(filePath)) return match;
 
     try {
       const fileContent = readFileSync(filePath, 'utf-8');
       return `<attached_file path="${filePath}">\n${fileContent}\n</attached_file>`;
     } catch {
-      return match; // Keep original on read error
+      return match;
     }
   });
 }

@@ -7,7 +7,7 @@ import React, {
 } from 'react';
 import { Menu } from '../ui/menu/Menu';
 import { useAppStore } from '../../stores/app-store';
-import { searchFiles } from '../../utils/file-search.js';
+import { searchFilesAbortable } from '../../utils/file-search.js';
 
 export const CommandMenu: React.FC = () => {
   const commandInputValue = useAppStore((state) => state.commandInputValue);
@@ -75,16 +75,22 @@ export const CommandMenu: React.FC = () => {
     return match?.[1] ?? '';
   }, [commandInputValue, activeTrigger]);
 
-  // Debounce file search so rapid keystrokes (e.g. typing @kennvene) don't
-  // trigger a synchronous readdirSync walk on every character.
+  // Debounce file search. The search uses async opendir with AbortSignal,
+  // so the previous walk is cancelled mid-flight when the query changes.
   useEffect(() => {
     if (activeTrigger?.key === '@' && fileQuery) {
+      const ac = new AbortController();
       const timer = setTimeout(() => {
-        const results = searchFiles(fileQuery);
-        setFileResults(results);
-        setFilePickerHasResults(results.length > 0);
-      }, 150);
-      return () => clearTimeout(timer);
+        searchFilesAbortable(fileQuery, ac.signal).then((results) => {
+          if (ac.signal.aborted) return;
+          setFileResults(results);
+          setFilePickerHasResults(results.length > 0);
+        });
+      }, 100);
+      return () => {
+        clearTimeout(timer);
+        ac.abort();
+      };
     }
     setFileResults([]);
     setFilePickerHasResults(false);
