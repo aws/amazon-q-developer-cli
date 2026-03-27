@@ -3861,15 +3861,24 @@ impl ChatSession {
             self.conversation.add_tool_results(tool_results);
         }
 
+        self.send_chat_telemetry(os, TelemetryResult::Succeeded, None, None, None, false)
+            .await;
+        self.send_tool_use_telemetry(os).await;
+
+        // If a tool's post_process triggered an agent swap (e.g. switch_to_execution),
+        // go to PromptUser so read_user_input() can consume the pending swap
+        // instead of sending tool results back to the LLM for another turn.
+        if self.input_source.agent_swap_state().has_pending_swap() {
+            return Ok(ChatState::PromptUser {
+                skip_printing_tools: true,
+            });
+        }
+
         execute!(self.stderr, cursor::Hide)?;
         execute!(self.stderr, StyledText::reset_attributes())?;
         if self.interactive {
             self.spinner = Some(Spinner::new(Spinners::Dots, "Thinking...".to_string()));
         }
-
-        self.send_chat_telemetry(os, TelemetryResult::Succeeded, None, None, None, false)
-            .await;
-        self.send_tool_use_telemetry(os).await;
 
         return Ok(ChatState::HandleResponseStream {
             state: self
@@ -6384,6 +6393,92 @@ mod tests {
         assert!(
             session.conversation.next_user_message().is_some(),
             "next_message should exist with tool error results"
+        );
+    }
+
+    /// Verifies that tool_use_execute returns PromptUser when pending_swap is set.
+    /// This is the core fix for the plan handoff bug: without the pending_swap check
+    /// in tool_use_execute, this test fails because the state would be
+    /// HandleResponseStream instead of PromptUser.
+    #[tokio::test]
+    async fn test_tool_use_execute_returns_prompt_user_on_pending_swap() {
+        let mut os = Os::new().await.unwrap();
+        os.client.set_mock_output(serde_json::json!([
+            [
+                "Sure, I'll create a file for you",
+                {
+                    "tool_use_id": "1",
+                    "name": "fs_write",
+                    "args": {
+                        "command": "create",
+                        "file_text": "Hello, world!",
+                        "path": "/test_swap.txt",
+                    }
+                }
+            ],
+        ]));
+
+        let agents = get_test_agents(&os).await;
+        let tool_manager = ToolManager::default();
+        let tool_config = serde_json::from_str::<HashMap<String, ToolSpec>>(include_str!("tools/tool_index.json"))
+            .expect("Tools failed to load");
+        let mut session = ChatSession::new(
+            &mut os,
+            "fake_conv_id",
+            agents,
+            None,
+            InputSource::new_mock(vec!["create a file".to_string()]),
+            None,
+            || Some(80),
+            tool_manager,
+            None,
+            tool_config,
+            true,
+            false,
+            None,
+            false,
+            None,
+            None,
+        )
+        .await
+        .unwrap();
+
+        // Trust all tools so fs_write auto-approves
+        session.conversation.agents.trust_all_tools = true;
+
+        // PromptUser -> HandleInput
+        session.next(&mut os).await.unwrap();
+        assert!(matches!(session.inner, Some(ChatState::HandleInput { .. })));
+
+        // HandleInput -> HandleResponseStream
+        session.next(&mut os).await.unwrap();
+        assert!(matches!(session.inner, Some(ChatState::HandleResponseStream { .. })));
+
+        // HandleResponseStream -> ValidateTools
+        session.next(&mut os).await.unwrap();
+        assert!(matches!(session.inner, Some(ChatState::ValidateTools { .. })));
+
+        // ValidateTools -> ExecuteTools
+        session.next(&mut os).await.unwrap();
+        assert!(matches!(session.inner, Some(ChatState::ExecuteTools)));
+
+        // Simulate what switch_to_execution.post_process does: set pending_swap
+        session
+            .input_source
+            .agent_swap_state()
+            .set_current_agent("planner".to_string());
+        session
+            .input_source
+            .agent_swap_state()
+            .toggle_to_previous_agent(Some("Implement this plan".to_string()));
+
+        // ExecuteTools -> should be PromptUser (not HandleResponseStream)
+        session.next(&mut os).await.unwrap();
+        assert!(
+            matches!(session.inner, Some(ChatState::PromptUser { .. })),
+            "Expected PromptUser after tool execution with pending_swap, got {:?}. \
+             This means tool_use_execute is not checking for pending_swap.",
+            session.inner
         );
     }
 }

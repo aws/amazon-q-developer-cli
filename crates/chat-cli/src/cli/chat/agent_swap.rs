@@ -68,6 +68,10 @@ impl AgentSwapState {
         inner.pending_swap = Some(target);
     }
 
+    pub fn has_pending_swap(&self) -> bool {
+        self.inner.lock().unwrap().pending_swap.is_some()
+    }
+
     pub fn take_pending_swap(&self) -> Option<String> {
         self.inner.lock().unwrap().pending_swap.take()
     }
@@ -108,5 +112,18 @@ mod tests {
         state.toggle_to_previous_agent(Some("prompt".to_string()));
         assert_eq!(state.take_pending_swap(), Some("default".to_string()));
         assert_eq!(state.take_pending_prompt(), Some("prompt".to_string()));
+    }
+
+    #[test]
+    fn test_has_pending_swap() {
+        let state = AgentSwapState::new();
+        assert!(!state.has_pending_swap());
+
+        state.set_current_agent("default".to_string());
+        state.trigger_swap("planner", None);
+        assert!(state.has_pending_swap());
+
+        state.take_pending_swap();
+        assert!(!state.has_pending_swap());
     }
 }
