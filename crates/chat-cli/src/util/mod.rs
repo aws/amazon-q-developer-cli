@@ -106,6 +106,11 @@ pub fn dialoguer_theme() -> ColorfulTheme {
     ColorfulTheme {
         prompt_prefix: dialoguer::console::style("".into()).for_stderr(),
         prompt_suffix: dialoguer::console::style("".into()).for_stderr(),
+        #[cfg(windows)]
+        active_item_prefix: dialoguer::console::style(">".into())
+            .for_stderr()
+            .color256(BRAND_COLOR_ANSI),
+        #[cfg(not(windows))]
         active_item_prefix: dialoguer::console::style("❯".into())
             .for_stderr()
             .color256(BRAND_COLOR_ANSI),
