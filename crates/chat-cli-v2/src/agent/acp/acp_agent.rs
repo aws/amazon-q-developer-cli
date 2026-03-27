@@ -2744,25 +2744,21 @@ pub async fn execute(os: &mut Os, args: agent::types::AcpSpawnArgs) -> eyre::Res
 
     // Race the SACP connection against SIGTERM/SIGINT so we always get a chance
     // to run graceful shutdown (which kills MCP child processes).
-    let signal_interrupted;
     #[cfg(unix)]
     {
         let mut sigterm = tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate())
             .expect("failed to install SIGTERM handler");
         tokio::select! {
             result = serve_future => {
-                signal_interrupted = false;
                 if let Err(e) = result {
                     error!("Connection error: {}", e);
                 }
             }
             _ = sigterm.recv() => {
                 info!("Received SIGTERM, shutting down");
-                signal_interrupted = true;
             }
             _ = tokio::signal::ctrl_c() => {
                 info!("Received SIGINT, shutting down");
-                signal_interrupted = true;
             }
         }
     }
@@ -2770,14 +2766,12 @@ pub async fn execute(os: &mut Os, args: agent::types::AcpSpawnArgs) -> eyre::Res
     {
         tokio::select! {
             result = serve_future => {
-                signal_interrupted = false;
                 if let Err(e) = result {
                     error!("Connection error: {}", e);
                 }
             }
             _ = tokio::signal::ctrl_c() => {
                 info!("Received SIGINT, shutting down");
-                signal_interrupted = true;
             }
         }
     }
@@ -2792,17 +2786,18 @@ pub async fn execute(os: &mut Os, args: agent::types::AcpSpawnArgs) -> eyre::Res
         warn!("Graceful shutdown timed out, some MCP processes may not have been cleaned up");
     }
 
-    if signal_interrupted {
-        // When a signal interrupts serve_future, tokio::io::stdin()'s blocking
-        // read thread is still alive and prevents the runtime from shutting down.
-        // Spawn a background thread to force exit if the runtime hangs.
-        // See https://github.com/tokio-rs/tokio/issues/2466
-        std::thread::spawn(|| {
-            std::thread::sleep(std::time::Duration::from_secs(1));
-            #[allow(clippy::exit)]
-            std::process::exit(0);
-        });
-    }
+    // tokio::io::stdin()'s blocking read thread may still be alive after
+    // serve_future completes (whether from a signal, pipe closure, or parent
+    // death) and can prevent the runtime from shutting down.
+    // Spawn a background thread to force exit if the runtime hangs.
+    // The 3-second delay gives the caller time to flush telemetry (1s timeout)
+    // and drop the tokio runtime before we force-kill.
+    // See https://github.com/tokio-rs/tokio/issues/2466
+    std::thread::spawn(|| {
+        std::thread::sleep(std::time::Duration::from_secs(3));
+        #[allow(clippy::exit)]
+        std::process::exit(0);
+    });
 
     Ok(ExitCode::SUCCESS)
 }
