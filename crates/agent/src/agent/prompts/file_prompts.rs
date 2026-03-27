@@ -2,6 +2,7 @@ use std::collections::HashMap;
 use std::path::Path;
 
 use super::super::mcp::types::Prompt;
+use super::template_args::PromptTemplateArgs;
 
 /// Discover file-based prompts from .kiro/prompts/*.md directories.
 /// Returns a HashMap<String, Vec<Prompt>> keyed by source ("local" or "global").
@@ -19,10 +20,13 @@ pub fn discover(cwd: &Path) -> HashMap<String, Vec<Prompt>> {
                 && let Some(name) = path.file_stem().and_then(|s| s.to_str())
             {
                 seen.insert(name.to_string());
+                let arguments = std::fs::read_to_string(&path)
+                    .ok()
+                    .and_then(|content| PromptTemplateArgs::parse(&content).to_prompt_arguments());
                 local_prompts.push(Prompt {
                     name: name.to_string(),
                     description: None,
-                    arguments: None,
+                    arguments,
                 });
             }
         }
@@ -42,10 +46,13 @@ pub fn discover(cwd: &Path) -> HashMap<String, Vec<Prompt>> {
                 && let Some(name) = path.file_stem().and_then(|s| s.to_str())
                 && !seen.contains(name)
             {
+                let arguments = std::fs::read_to_string(&path)
+                    .ok()
+                    .and_then(|content| PromptTemplateArgs::parse(&content).to_prompt_arguments());
                 global_prompts.push(Prompt {
                     name: name.to_string(),
                     description: None,
-                    arguments: None,
+                    arguments,
                 });
             }
         }

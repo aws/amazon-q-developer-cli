@@ -1235,36 +1235,34 @@ impl AcpSession {
                             let agent = self.agent.clone();
                             let cwd = self.cwd.clone();
                             tokio::spawn(async move {
-                                match agent.get_mcp_prompt(name.clone(), args).await {
-                                    Ok(messages) => {
-                                        let resolved_text = slash_router::extract_prompt_text(&messages);
-                                        if !resolved_text.is_empty() {
-                                            let _ = agent
-                                                .send_prompt(SendPromptArgs {
-                                                    content: vec![agent::protocol::ContentChunk::Text(resolved_text)],
-                                                    should_continue_turn: None,
-                                                })
-                                                .await;
-                                        }
-                                    },
-                                    Err(_) => {
-                                        // Try file-based prompt
-                                        let local_path = cwd.join(".kiro").join("prompts").join(format!("{}.md", name));
-                                        let global_path = dirs::home_dir()
-                                            .map(|h| h.join(".kiro").join("prompts").join(format!("{}.md", name)));
-
-                                        let content = std::fs::read_to_string(&local_path)
-                                            .ok()
-                                            .or_else(|| global_path.and_then(|p| std::fs::read_to_string(p).ok()));
-
-                                        if let Some(text) = content {
-                                            let _ = agent
-                                                .send_prompt(SendPromptArgs {
-                                                    content: vec![agent::protocol::ContentChunk::Text(text)],
-                                                    should_continue_turn: None,
-                                                })
-                                                .await;
-                                        } else {
+                                // Priority: local file > global file > MCP (per docs)
+                                if let Some(content) = agent::prompts::resolve_file_prompt(&cwd, &name) {
+                                    let template = agent::prompts::PromptTemplateArgs::parse(&content);
+                                    let expanded = template.expand(&content, &args);
+                                    let _ = agent
+                                        .send_prompt(SendPromptArgs {
+                                            content: vec![agent::protocol::ContentChunk::Text(expanded)],
+                                            should_continue_turn: None,
+                                        })
+                                        .await;
+                                } else {
+                                    // Fall back to MCP prompt
+                                    let mcp_args = slash_router::args_to_mcp_map(&args);
+                                    match agent.get_mcp_prompt(name.clone(), mcp_args).await {
+                                        Ok(messages) => {
+                                            let resolved_text = slash_router::extract_prompt_text(&messages);
+                                            if !resolved_text.is_empty() {
+                                                let _ = agent
+                                                    .send_prompt(SendPromptArgs {
+                                                        content: vec![agent::protocol::ContentChunk::Text(
+                                                            resolved_text,
+                                                        )],
+                                                        should_continue_turn: None,
+                                                    })
+                                                    .await;
+                                            }
+                                        },
+                                        Err(_) => {
                                             // Not a known prompt - send as regular message
                                             let _ = agent
                                                 .send_prompt(SendPromptArgs {
@@ -1275,8 +1273,8 @@ impl AcpSession {
                                                     should_continue_turn: None,
                                                 })
                                                 .await;
-                                        }
-                                    },
+                                        },
+                                    }
                                 }
                             });
                         },
@@ -1921,7 +1919,16 @@ async fn advertise_commands_and_prompts_to_client(
                 prompts.push(super::schema::PromptInfo {
                     name: prompt.name,
                     description: prompt.description,
-                    arguments: Vec::new(),
+                    arguments: prompt
+                        .arguments
+                        .unwrap_or_default()
+                        .into_iter()
+                        .map(|arg| super::schema::PromptArgumentInfo {
+                            name: arg.name,
+                            description: arg.description,
+                            required: arg.required.unwrap_or(false),
+                        })
+                        .collect(),
                     server_name: source.clone(),
                 });
             }

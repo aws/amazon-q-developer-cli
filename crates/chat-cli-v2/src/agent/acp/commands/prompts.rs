@@ -52,12 +52,26 @@ pub async fn get_options(agent: &AgentHandle) -> CommandOptionsResponse {
     if let Ok(file_prompts) = agent.get_file_prompts().await {
         for (source, source_prompts) in file_prompts {
             for prompt in source_prompts {
+                let arg_hint = prompt.arguments.as_ref().and_then(|args| {
+                    let s: String = args
+                        .iter()
+                        .map(|a| {
+                            if a.required.unwrap_or(false) {
+                                format!("<{}>", a.name)
+                            } else {
+                                format!("[{}]", a.name)
+                            }
+                        })
+                        .collect::<Vec<_>>()
+                        .join(" ");
+                    if s.is_empty() { None } else { Some(s) }
+                });
                 options.push(CommandOption {
                     value: prompt.name.clone(),
                     label: format!("/{}", prompt.name),
                     description: prompt.description.or(Some("(file prompt)".to_string())),
                     group: Some(source.clone()),
-                    hint: None,
+                    hint: arg_hint,
                 });
             }
         }

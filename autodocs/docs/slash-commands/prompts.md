@@ -210,6 +210,14 @@ Description: Generate commit message
 Arguments: changes* (required)
 ```
 
+### Example 10: Use File Prompt with Arguments
+
+```
+/review-file src/main.rs "error handling"
+```
+
+Expands `${1}` to `src/main.rs` and `${2}` to `error handling` in the prompt template.
+
 ## Prompt File Format
 
 Prompts are markdown files (`.md`) stored in prompts directory.
@@ -219,8 +227,35 @@ Prompts are markdown files (`.md`) stored in prompts directory.
 Review this code for potential issues and suggest improvements.
 ```
 
-**With arguments** (for MCP prompts):
-Arguments defined by MCP server, passed when using `/prompts get`.
+**With arguments**:
+File-based prompts support placeholder-based argument substitution. MCP prompts use server-defined arguments.
+
+| Placeholder | Behavior |
+| --- | --- |
+| `${1}`–`${10}` | Positional argument |
+| `$ARGUMENTS` | All arguments joined by spaces |
+| `${@}` | Same as `$ARGUMENTS` (shell-style alias) |
+
+**Example file prompt** (`.kiro/prompts/review-file.md`):
+```markdown
+Review the file `${1}` with focus on `${2}`.
+
+Full context: $ARGUMENTS
+```
+
+**Usage**:
+```
+/review-file src/main.rs "error handling"
+```
+
+**Result sent to model**:
+```
+Review the file `src/main.rs` with focus on `error handling`.
+
+Full context: src/main.rs error handling
+```
+
+Arguments are passed positionally. Double-quoted strings are treated as a single argument.
 
 ## Prompt Name Rules
 
@@ -290,4 +325,4 @@ Arguments defined by MCP server, passed when using `/prompts get`.
 
 **MCP Integration**: MCP servers can provide prompts with arguments
 
-**Arguments**: MCP prompts support argument substitution. Required arguments marked with *.
+**Arguments**: File-based prompts support `${1}`–`${10}`, `$ARGUMENTS`, and `${@}` placeholders for argument substitution. MCP prompts support server-defined argument substitution. Required arguments marked with *.
