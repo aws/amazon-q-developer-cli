@@ -275,10 +275,27 @@ fn acquire_lock_impl(
     }
 }
 
-/// Check if a process is still running.
+/// Check if a process is still running AND belongs to a kiro binary.
+///
+/// Guards against PID reuse: if the OS recycled the PID to an unrelated
+/// process we treat the lock as stale.
 #[cfg(unix)]
 fn is_pid_alive(pid: u32) -> bool {
-    unsafe { libc::kill(pid as i32, 0) == 0 }
+    use sysinfo::{
+        Pid,
+        ProcessesToUpdate,
+        System,
+    };
+
+    let pid = Pid::from_u32(pid);
+    let mut system = System::new();
+    system.refresh_processes(ProcessesToUpdate::Some(&[pid]), false);
+    system.process(pid).is_some_and(|proc_| {
+        let name = proc_.name().to_string_lossy();
+        name.starts_with(crate::util::CLI_BINARY_NAME)
+            // "chat_cli" is the binary name for cargo debug builds
+            || name.starts_with("chat_cli")
+    })
 }
 
 #[cfg(windows)]
