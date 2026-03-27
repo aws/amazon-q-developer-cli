@@ -23,46 +23,32 @@ fn detect_shell() -> (&'static str, &'static str) {
     }
 }
 
-/// Detects the parent shell on Windows by walking the process tree.
+/// Detects the parent shell on Windows.
 ///
-/// Looks for `powershell.exe` or `pwsh.exe` among ancestor processes.
-/// If found, returns the matching shell with `-Command` flag.
-/// Otherwise falls back to `cmd /C`.
+/// Checks the `PSModulePath` environment variable — present when running inside
+/// PowerShell (both `powershell.exe` and `pwsh.exe`). Falls back to `cmd /C`.
 #[cfg(windows)]
 fn detect_windows_shell() -> (&'static str, &'static str) {
-    use sysinfo::{
-        Pid,
-        ProcessRefreshKind,
-        RefreshKind,
-        System,
-    };
-
-    let sys = System::new_with_specifics(RefreshKind::nothing().with_processes(ProcessRefreshKind::nothing()));
-
-    let mut pid = Pid::from_u32(std::process::id());
-
-    // Walk up to 10 ancestors to avoid infinite loops from pid recycling
-    for _ in 0..10 {
-        let Some(proc) = sys.process(pid) else {
-            break;
-        };
-        let name = proc.name().to_string_lossy().to_ascii_lowercase();
-        if name == "pwsh.exe" || name == "pwsh" {
+    // PSModulePath is always set inside PowerShell sessions
+    if std::env::var("PSModulePath").is_ok() {
+        // Prefer pwsh (PowerShell 7+) if available, fall back to powershell (5.1)
+        if which_exists("pwsh") {
             return ("pwsh", "-Command");
         }
-        if name == "powershell.exe" || name == "powershell" {
-            return ("powershell", "-Command");
-        }
-        let Some(parent) = proc.parent() else {
-            break;
-        };
-        if parent == pid {
-            break;
-        }
-        pid = parent;
+        return ("powershell", "-Command");
     }
-
     ("cmd", "/C")
+}
+
+#[cfg(windows)]
+fn which_exists(name: &str) -> bool {
+    std::process::Command::new("where.exe")
+        .arg(name)
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .status()
+        .map(|s| s.success())
+        .unwrap_or(false)
 }
 
 #[cfg(test)]

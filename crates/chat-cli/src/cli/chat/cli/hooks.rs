@@ -289,21 +289,10 @@ impl HookExecutor {
 
         let command = &hook.1.command;
 
-        #[cfg(unix)]
-        let mut cmd = tokio::process::Command::new("bash");
-        #[cfg(unix)]
+        let (shell, flag) = agent::util::shell::shell_command();
+        let mut cmd = tokio::process::Command::new(shell);
         let cmd = cmd
-            .arg("-c")
-            .arg(command)
-            .stdin(Stdio::piped())
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped());
-
-        #[cfg(windows)]
-        let mut cmd = tokio::process::Command::new("cmd");
-        #[cfg(windows)]
-        let cmd = cmd
-            .arg("/C")
+            .arg(flag)
             .arg(command)
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())

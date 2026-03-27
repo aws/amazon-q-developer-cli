@@ -115,7 +115,6 @@ dependencies = [
  "shellexpand",
  "strum 0.27.2",
  "syntect",
- "sysinfo",
  "tar",
  "tempfile",
  "thiserror 2.0.18",
