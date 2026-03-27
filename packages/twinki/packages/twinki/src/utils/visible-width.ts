@@ -67,6 +67,27 @@ export function visibleWidth(str: string): number {
 	}
 	if (isPureAscii) return str.length;
 
+	// Strip APC sequences (ESC _ ... BEL) before measuring.
+	// string-width doesn't recognise APC as zero-width, so the CURSOR_MARKER
+	// (\x1b_twinki:c\x07) would otherwise inflate the measured width.
+	if (str.includes('\x1b_')) {
+		let result = '';
+		let i = 0;
+		while (i < str.length) {
+			if (str.charCodeAt(i) === 0x1b && str.charCodeAt(i + 1) === 0x5f) {
+				// Skip until BEL or end of string
+				i += 2;
+				while (i < str.length && str.charCodeAt(i) !== 0x07) i++;
+				if (i < str.length) i++; // skip BEL
+			} else {
+				result += str[i];
+				i++;
+			}
+		}
+		str = result;
+		if (str.length === 0) return 0;
+	}
+
 	// Short strings (graphemes) use dedicated cache
 	if (str.length <= 20) {
 		const cached = graphemeCache.get(str);
