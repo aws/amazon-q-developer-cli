@@ -7,7 +7,7 @@ import { useExpandableOutput } from '../../../hooks/useExpandableOutput.js';
 import { unwrapResultOutput } from '../../../utils/tool-result.js';
 import { formatToolParams } from '../../../utils/tool-params.js';
 import { ToolMeta } from './ToolMeta.js';
-import { expandTabs } from '../../../utils/string.js';
+import { normalizeLineEndings } from '../../../utils/string.js';
 import type { ToolResult } from '../../../stores/app-store.js';
 import type { StatusType } from '../../../types/componentTypes.js';
 
@@ -138,7 +138,7 @@ export const Shell = React.memo(function Shell({
   // Calculate line count
   const outputLines = useMemo(() => {
     if (!output) return [];
-    return expandTabs(output).split('\n');
+    return normalizeLineEndings(output).split('\n');
   }, [output]);
 
   // Use expandable output hook

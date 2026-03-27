@@ -3,7 +3,7 @@ import { Box } from './../../../renderer.js';
 import { Text } from '../../ui/text/Text.js';
 import { useTheme } from '../../../hooks/useThemeContext.js';
 import { useSyntaxHighlight } from '../../../utils/syntax-highlight.js';
-import { expandTabs } from '../../../utils/string.js';
+import { expandTabs, normalizeLineEndings } from '../../../utils/string.js';
 import { useStatusBar } from '../status-bar/StatusBar.js';
 import { StatusInfo } from '../../ui/status/StatusInfo.js';
 import { useExpandableOutput } from '../../../hooks/useExpandableOutput.js';
@@ -110,8 +110,14 @@ export const Write = React.memo<WriteProps>(function Write({
   // Normalize trailing newlines before diffing to prevent phantom
   // "added 1 line" entries caused by mismatched trailing newlines
   // between oldStr and newStr.
-  const normalizedOld = (displayOldText || '').replace(/\r?\n$/, '');
-  const normalizedNew = (displayNewText || '').replace(/\r?\n$/, '');
+  const normalizedOld = normalizeLineEndings(displayOldText || '').replace(
+    /\n$/,
+    ''
+  );
+  const normalizedNew = normalizeLineEndings(displayNewText || '').replace(
+    /\n$/,
+    ''
+  );
   const changes = diffLines(normalizedOld, normalizedNew);
 
   // Count added and removed lines

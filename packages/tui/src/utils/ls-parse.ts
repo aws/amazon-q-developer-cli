@@ -8,6 +8,8 @@
  * The date occupies 3 whitespace-separated tokens (month, day, time).
  */
 
+import { normalizeLineEndings } from './string.js';
+
 const PATH_TOKEN_INDEX = 8;
 
 /**
@@ -15,7 +17,7 @@ const PATH_TOKEN_INDEX = 8;
  * metadata lines (User id, truncation notices).
  */
 export function parseLsEntries(text: string): string[] {
-  return text
+  return normalizeLineEndings(text)
     .split('\n')
     .filter(
       (line) =>

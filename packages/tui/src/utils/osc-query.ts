@@ -14,10 +14,14 @@ import { execSync } from 'child_process';
  * be redirected by Ink/React. This is a synchronous operation with a short
  * timeout to avoid hanging if the terminal doesn't support OSC 11.
  *
+ * On Windows, returns null — theme detection falls back to reading
+ * Windows Terminal's settings.json or the OS registry instead.
+ *
  * @returns The detected theme ('dark' or 'light'), or null if detection failed.
  */
 export function queryTerminalBackground(): 'dark' | 'light' | null {
-  // Only works on Unix-like systems with /dev/tty
+  // OSC 11 via /dev/tty is Unix-only. On Windows, theme detection is handled
+  // by windows-theme.ts (WT settings.json) and os-appearance.ts (registry).
   if (process.platform === 'win32') {
     return null;
   }

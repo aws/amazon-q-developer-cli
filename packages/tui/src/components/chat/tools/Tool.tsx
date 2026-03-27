@@ -6,6 +6,7 @@ import { useExpandableOutput } from '../../../hooks/useExpandableOutput.js';
 import { unwrapResultOutput } from '../../../utils/tool-result.js';
 import { formatToolParams } from '../../../utils/tool-params.js';
 import { ToolMeta } from './ToolMeta.js';
+import { normalizeLineEndings } from '../../../utils/string.js';
 import type { ToolResult } from '../../../stores/app-store.js';
 import { StatusInfo } from '../../ui/status/StatusInfo.js';
 import type { StatusType } from '../../../types/componentTypes.js';
@@ -83,7 +84,11 @@ export const Tool = React.memo(function Tool({
   const { output, outputLines } = useMemo(() => {
     const { obj, text } = unwrapResultOutput(result);
 
-    if (text) return { output: text, outputLines: text.split('\n') };
+    if (text)
+      return {
+        output: text,
+        outputLines: normalizeLineEndings(text).split('\n'),
+      };
     if (!obj) return { output: null, outputLines: [] };
 
     let outputStr: string | null = null;
@@ -101,7 +106,7 @@ export const Tool = React.memo(function Tool({
       }
     }
 
-    const lines = outputStr ? outputStr.split('\n') : [];
+    const lines = outputStr ? normalizeLineEndings(outputStr).split('\n') : [];
     return { output: outputStr, outputLines: lines };
   }, [result]);
 

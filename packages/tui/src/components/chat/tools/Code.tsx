@@ -9,6 +9,7 @@ import {
 } from '../../../utils/tool-result.js';
 import { formatToolParams } from '../../../utils/tool-params.js';
 import { ToolMeta } from './ToolMeta.js';
+import { normalizeLineEndings } from '../../../utils/string.js';
 import type { ToolResult } from '../../../stores/app-store.js';
 import type { StatusType } from '../../../types/componentTypes.js';
 import { getToolLabel } from '../../../types/tool-status.js';
@@ -103,7 +104,7 @@ export const Code = React.memo(function Code({
 
     // Text results: take first few lines
     if (text) {
-      return text
+      return normalizeLineEndings(text)
         .split('\n')
         .filter((l) => l.trim())
         .slice(0, PREVIEW_LINES);
@@ -133,7 +134,7 @@ export const Code = React.memo(function Code({
 
     // Fallback: try text fields
     if (typeof obj.text === 'string') {
-      return (obj.text as string)
+      return normalizeLineEndings(obj.text as string)
         .split('\n')
         .filter((l) => l.trim())
         .slice(0, PREVIEW_LINES);

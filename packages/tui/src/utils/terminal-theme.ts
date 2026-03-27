@@ -1,6 +1,10 @@
 import { execSync } from 'child_process';
 import { getOSAppearance } from './os-appearance';
 import { queryTerminalBackground } from './osc-query';
+import {
+  detectWindowsConsoleBackground,
+  detectWindowsTerminalTheme,
+} from './windows-theme';
 
 export type TerminalTheme = 'dark' | 'light';
 
@@ -71,6 +75,17 @@ export function detectTerminalThemeWithDetails(): DetectionResult {
     return terminalTheme;
   }
 
+  // Method 3.5: On Windows, query the console background color directly.
+  // This is more reliable than the OS-level AppsUseLightTheme registry key,
+  // which reflects the Windows app theme, not the actual terminal background.
+  // PowerShell and cmd.exe often have dark backgrounds even when Windows is in light mode.
+  if (process.platform === 'win32') {
+    const consoleTheme = detectWindowsConsoleBackground();
+    if (consoleTheme) {
+      return consoleTheme;
+    }
+  }
+
   // Method 4: OS appearance using existing detection (macOS/Windows)
   const osTheme = getOSAppearance();
   // Only trust OS detection on macOS/Windows where it's implemented
@@ -133,11 +148,12 @@ function detectFromTerminalEnv(): DetectionResult | null {
     }
   }
 
-  // Windows Terminal: Check WT_SESSION (indicates Windows Terminal is in use)
-  // Combined with OS theme detection for better accuracy
-  if (process.env.WT_SESSION) {
-    // Windows Terminal typically follows system theme
-    // Fall through to OS detection with medium confidence
+  // Windows Terminal: Try to detect theme from WT settings.json color scheme
+  if (process.env.WT_SESSION && process.platform === 'win32') {
+    const wtTheme = detectWindowsTerminalTheme();
+    if (wtTheme) {
+      return wtTheme;
+    }
   }
 
   // VS Code integrated terminal
