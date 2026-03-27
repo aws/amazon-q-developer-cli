@@ -1093,6 +1093,7 @@ mod tests {
             .set(
                 crate::database::settings::Setting::KnowledgeDefaultExcludePatterns,
                 serde_json::json!([".obsidian/**", "Attachments/**"]),
+                None,
             )
             .await
             .unwrap();
@@ -1101,6 +1102,7 @@ mod tests {
             .set(
                 crate::database::settings::Setting::KnowledgeDefaultIncludePatterns,
                 serde_json::json!(["**/*.md"]),
+                None,
             )
             .await
             .unwrap();
@@ -1121,6 +1123,7 @@ mod tests {
             .set(
                 crate::database::settings::Setting::KnowledgeDefaultExcludePatterns,
                 serde_json::json!(["node_modules/**"]),
+                None,
             )
             .await
             .unwrap();
@@ -1148,6 +1151,7 @@ mod tests {
             .set(
                 crate::database::settings::Setting::KnowledgeDefaultExcludePatterns,
                 serde_json::json!(["node_modules/**", ".git/**"]),
+                None,
             )
             .await
             .unwrap();
@@ -1168,6 +1172,7 @@ mod tests {
             .set(
                 crate::database::settings::Setting::KnowledgeIndexType,
                 serde_json::json!("best"),
+                None,
             )
             .await
             .unwrap();

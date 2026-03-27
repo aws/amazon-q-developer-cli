@@ -471,6 +471,14 @@ impl<'a> WorkspacePaths<'a> {
         let hash = hash_path(&cwd);
         Ok(data_dir()?.join("todo-lists").join(hash))
     }
+
+    pub fn settings_path(&self) -> Result<PathBuf> {
+        Self::settings_path_for_env(&self.os.env)
+    }
+
+    pub fn settings_path_for_env(env: &crate::os::Env) -> Result<PathBuf> {
+        Ok(env.current_dir()?.join(".kiro").join("settings").join("cli.json"))
+    }
 }
 
 /// Global-scoped path methods

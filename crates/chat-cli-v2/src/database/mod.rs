@@ -145,6 +145,8 @@ pub enum DatabaseError {
     StrFromUtf8(#[from] std::str::Utf8Error),
     #[error("`{}` is not a valid setting", .0)]
     InvalidSetting(String),
+    #[error("`{}` cannot be overridden at workspace scope", .0)]
+    WorkspaceOverrideNotAllowed(String),
 }
 
 impl<T> From<PoisonError<T>> for DatabaseError {
@@ -192,6 +194,12 @@ pub struct Database {
 
 impl Database {
     pub async fn new() -> Result<Self, DatabaseError> {
+        Self::new_with_workspace(None).await
+    }
+
+    pub async fn new_with_workspace(
+        workspace_settings_path: Option<std::path::PathBuf>,
+    ) -> Result<Self, DatabaseError> {
         let path = match cfg!(test) && !is_integ_test() {
             true => {
                 return Self {
@@ -228,7 +236,10 @@ impl Database {
 
         Ok(Self {
             pool,
-            settings: Settings::new().await?,
+            settings: match workspace_settings_path {
+                Some(ws) => Settings::with_workspace(Some(ws)).await?,
+                None => Settings::new().await?,
+            },
         }
         .migrate()
         .map_err(|e| DbOpenError(e.to_string()))?)

@@ -257,7 +257,7 @@ impl SettingsArgs {
                     },
                     (Some(value_str), false) => {
                         let value = serde_json::from_str(value_str).unwrap_or_else(|_| json!(value_str));
-                        os.database.settings.set(key, value).await?;
+                        os.database.settings.set(key, value, None).await?;
                         Ok(ExitCode::SUCCESS)
                     },
                     (None, true) => {
@@ -275,14 +275,14 @@ impl SettingsArgs {
                                 println!("Removing {:?}", keys_to_remove[0]);
                                 os.database
                                     .settings
-                                    .remove(Setting::try_from(keys_to_remove[0].as_str())?)
+                                    .remove(Setting::try_from(keys_to_remove[0].as_str())?, None)
                                     .await?;
                             },
                             _ => {
                                 for key in &keys_to_remove {
                                     if let Ok(key) = Setting::try_from(key.as_str()) {
                                         println!("Removing `{key}`");
-                                        os.database.settings.remove(key).await?;
+                                        os.database.settings.remove(key, None).await?;
                                     }
                                 }
                             },

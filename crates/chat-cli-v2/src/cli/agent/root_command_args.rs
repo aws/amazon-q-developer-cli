@@ -364,7 +364,7 @@ impl AgentArgs {
                     Ok(agent) => {
                         os.database
                             .settings
-                            .set(Setting::ChatDefaultAgent, agent.name.clone())
+                            .set(Setting::ChatDefaultAgent, agent.name.clone(), None)
                             .await?;
 
                         let _ = queue!(

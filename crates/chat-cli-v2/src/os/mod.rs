@@ -48,7 +48,8 @@ impl Os {
     pub async fn new() -> Result<Self> {
         let env = Env::new();
         let fs = Fs::new();
-        let mut database = Database::new().await?;
+        let mut database =
+            Database::new_with_workspace(crate::util::paths::WorkspacePaths::settings_path_for_env(&env).ok()).await?;
         let client = ApiClient::new(&env, &fs, &mut database, None).await?;
         let token = BuilderIdToken::load(&database, None).await?;
         let region = token.as_ref().and_then(|t| t.region.as_deref());
