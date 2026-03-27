@@ -174,6 +174,7 @@ impl TestCaseBuilder {
             false,
             None, // code_intelligence not needed for tests
             None, // knowledge_provider not needed for tests
+            None,
         )
         .await?;
 

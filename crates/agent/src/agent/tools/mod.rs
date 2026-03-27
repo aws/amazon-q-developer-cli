@@ -14,6 +14,7 @@ pub mod mkdir;
 pub mod rm;
 pub mod summary;
 pub mod switch_to_execution;
+pub mod task;
 pub mod use_aws;
 pub mod use_subagent;
 pub mod web_fetch;
@@ -57,6 +58,7 @@ use serde::{
 use strum::IntoEnumIterator;
 use summary::Summary;
 use switch_to_execution::SwitchToExecution;
+use task::TaskTool;
 use typeshare::typeshare;
 use use_aws::UseAws;
 pub use use_subagent::{
@@ -199,6 +201,8 @@ pub enum BuiltInToolName {
     Introspect,
     #[strum(serialize = "knowledge")]
     Knowledge,
+    #[strum(serialize = "task")]
+    Task,
 }
 
 impl BuiltInToolName {
@@ -220,6 +224,7 @@ impl BuiltInToolName {
             BuiltInToolName::SwitchToExecution => SwitchToExecution::aliases(),
             BuiltInToolName::Introspect => Introspect::aliases(),
             BuiltInToolName::Knowledge => Knowledge::aliases(),
+            BuiltInToolName::Task => TaskTool::aliases(),
         }
     }
 }
@@ -396,6 +401,7 @@ pub enum BuiltInTool {
     WebSearch(WebSearch),
     Code(Code),
     SwitchToExecution(SwitchToExecution),
+    Task(TaskTool),
 }
 
 impl BuiltInTool {
@@ -449,6 +455,9 @@ impl BuiltInTool {
             BuiltInToolName::Knowledge => serde_json::from_value::<Knowledge>(args)
                 .map(Self::Knowledge)
                 .map_err(ToolParseErrorKind::schema_failure),
+            BuiltInToolName::Task => serde_json::from_value::<TaskTool>(args)
+                .map(Self::Task)
+                .map_err(ToolParseErrorKind::schema_failure),
         }
     }
 
@@ -474,6 +483,7 @@ impl BuiltInTool {
             BuiltInToolName::SwitchToExecution => generate_tool_spec_from_trait::<SwitchToExecution>(),
             BuiltInToolName::Introspect => generate_tool_spec_from_trait::<Introspect>(),
             BuiltInToolName::Knowledge => generate_tool_spec_from_trait::<Knowledge>(),
+            BuiltInToolName::Task => generate_tool_spec_from_trait::<TaskTool>(),
         }
     }
 
@@ -496,6 +506,7 @@ impl BuiltInTool {
             BuiltInTool::WebSearch(_) => BuiltInToolName::WebSearch,
             BuiltInTool::Code(_) => BuiltInToolName::Code,
             BuiltInTool::SwitchToExecution(_) => BuiltInToolName::SwitchToExecution,
+            BuiltInTool::Task(_) => BuiltInToolName::Task,
         }
     }
 
@@ -518,6 +529,7 @@ impl BuiltInTool {
             BuiltInTool::WebSearch(_) => BuiltInToolName::WebSearch.into(),
             BuiltInTool::Code(_) => BuiltInToolName::Code.into(),
             BuiltInTool::SwitchToExecution(_) => BuiltInToolName::SwitchToExecution.into(),
+            BuiltInTool::Task(_) => BuiltInToolName::Task.into(),
         }
     }
 
@@ -540,6 +552,7 @@ impl BuiltInTool {
             BuiltInTool::WebSearch(_) => WebSearch::aliases(),
             BuiltInTool::Code(_) => Code::aliases(),
             BuiltInTool::SwitchToExecution(_) => SwitchToExecution::aliases(),
+            BuiltInTool::Task(_) => TaskTool::aliases(),
         }
     }
 }
@@ -663,6 +676,11 @@ pub(crate) fn get_available_tool_names(
     // Only include knowledge tool when a provider is available
     if !has_knowledge_provider {
         tool_names.retain(|name| name != &CanonicalToolName::BuiltIn(BuiltInToolName::Knowledge));
+    }
+
+    // Don't expose task tool to subagents
+    if is_subagent {
+        tool_names.retain(|name| name != &CanonicalToolName::BuiltIn(BuiltInToolName::Task));
     }
 
     // If FsRead is included, also include ImageRead and Ls

@@ -278,6 +278,7 @@ impl<'a> Subagent<'a> {
             true,
             self.code_intelligence.clone(),
             None,
+            None,
         )
         .await?;
 

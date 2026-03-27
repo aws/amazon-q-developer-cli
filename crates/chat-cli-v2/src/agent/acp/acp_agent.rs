@@ -973,6 +973,13 @@ impl AcpSession {
             builder.is_subagent,
             builder.code_intelligence,
             knowledge_provider,
+            if builder.is_subagent {
+                None
+            } else {
+                Some(std::sync::Arc::new(agent::tools::task::store::TaskStore::new(
+                    &session_id_str,
+                )))
+            },
         )
         .await?;
 
@@ -2274,6 +2281,7 @@ fn get_tool_kind(tool_name: &str) -> ToolKind {
             BuiltInToolName::SwitchToExecution => ToolKind::Other,
             BuiltInToolName::Introspect => ToolKind::Read,
             BuiltInToolName::Knowledge => ToolKind::Other,
+            BuiltInToolName::Task => ToolKind::Other,
         }
     } else {
         ToolKind::Other
@@ -2358,6 +2366,27 @@ pub(crate) fn get_tool_title(tool: &Tool) -> String {
             },
             BuiltInTool::SwitchToExecution(_) => "Switching to execution agent".to_string(),
             BuiltInTool::Knowledge(_) => "Querying knowledge base".to_string(),
+            BuiltInTool::Task(t) => {
+                use agent::tools::task::task_tool::TaskTool;
+                match t {
+                    TaskTool::Create {
+                        task_list_description, ..
+                    } => {
+                        format!("Creating task list: {}", truncate_str(task_list_description, 60))
+                    },
+                    TaskTool::Complete { completed_task_ids, .. } => {
+                        let ids = completed_task_ids
+                            .iter()
+                            .map(|id| format!("#{id}"))
+                            .collect::<Vec<_>>()
+                            .join(", ");
+                        format!("Completing {ids}")
+                    },
+                    TaskTool::Add { .. } => "Adding tasks".to_string(),
+                    TaskTool::Remove { .. } => "Removing tasks".to_string(),
+                    TaskTool::List { .. } => "Listing tasks".to_string(),
+                }
+            },
         },
         AgentToolKind::Mcp(mcp) => format!("Running: @{}/{}", mcp.server_name, mcp.tool_name),
     }

@@ -81,3 +81,4 @@ autodocs/meta/doc-search-index.tar.gz
 crates/**/Info.plist
 packages/.kiro/
 packages/tui/.kiro/
+.claude/settings.local.json

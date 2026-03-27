@@ -129,6 +129,7 @@ use tool_utils::{
     add_tool_use_purpose_arg,
     sanitize_tool_specs,
 };
+use tools::task::store::TaskStore;
 use tools::{
     Tool,
     ToolExecutionError,
@@ -556,6 +557,8 @@ pub struct Agent {
     code_intelligence: Option<Arc<RwLock<CodeIntelligence>>>,
     /// Knowledge base provider (optional, injected by the host)
     knowledge_provider: Option<Arc<dyn tools::KnowledgeProvider>>,
+    /// Task store for task management tools (None for subagents and V1 agents)
+    task_store: Option<Arc<TaskStore>>,
     /// Paths added via /context add during this session (not from agent config)
     session_resource_paths: HashSet<String>,
 }
@@ -575,6 +578,7 @@ impl Agent {
     /// * `is_subagent` - whether or not the agent is spawned as a subagent
     /// * `code_intelligence` - Shared code intelligence client (optional)
     /// * `knowledge_provider` - Knowledge base provider (optional)
+    /// * `task_store` - Task store for task management (None for subagents and V1 agents)
     #[allow(clippy::too_many_arguments)]
     pub async fn new(
         snapshot: AgentSnapshot,
@@ -585,6 +589,7 @@ impl Agent {
         is_subagent: bool,
         code_intelligence: Option<Arc<RwLock<CodeIntelligence>>>,
         knowledge_provider: Option<Arc<dyn tools::KnowledgeProvider>>,
+        task_store: Option<Arc<TaskStore>>,
     ) -> eyre::Result<Agent> {
         debug!(?snapshot, "initializing agent from snapshot");
 
@@ -621,6 +626,7 @@ impl Agent {
             is_subagent,
             code_intelligence,
             knowledge_provider,
+            task_store,
             session_resource_paths: HashSet::new(),
         })
     }
@@ -1883,6 +1889,9 @@ impl Agent {
         let latest_summary = self.conversation_state.event_log().latest_summary().map(String::from);
         let mut messages = VecDeque::from(self.conversation_state.messages().to_vec());
         messages.push_back(Message::new(Role::User, pending.content().to_vec(), None));
+
+        let task_context = self.task_store.as_ref().and_then(|s| s.format_context().ok().flatten());
+
         format_request(
             messages,
             self.make_tool_spec().await,
@@ -1890,6 +1899,7 @@ impl Agent {
             self.agent_spawn_hooks.iter().map(|(_, c)| c),
             &self.sys_provider,
             latest_summary,
+            task_context,
         )
         .await
     }
@@ -2569,6 +2579,7 @@ impl Agent {
                     .map_err(ToolParseErrorKind::invalid_args),
                 BuiltInTool::SwitchToExecution(_) => Ok(()),
                 BuiltInTool::Knowledge(_) => Ok(()),
+                BuiltInTool::Task(_) => Ok(()),
             },
             ToolKind::Mcp(_) => Ok(()),
         }
@@ -2716,6 +2727,17 @@ impl Agent {
                             Some(p) => t.execute(&*p).await,
                             None => Err(ToolExecutionError::Custom(
                                 "Knowledge tool is not available in this session.".to_string(),
+                            )),
+                        }
+                    })
+                },
+                BuiltInTool::Task(t) => {
+                    let store = self.task_store.clone();
+                    Box::pin(async move {
+                        match store {
+                            Some(s) => t.execute(&s),
+                            None => Err(ToolExecutionError::Custom(
+                                "Task tool is not available in this context".to_string(),
                             )),
                         }
                     })
@@ -2882,6 +2904,7 @@ async fn format_request<T, U, P>(
     agent_spawn_hooks: T,
     provider: &P,
     latest_summary: Option<String>,
+    task_context: Option<String>,
 ) -> SendRequestArgs
 where
     T: IntoIterator<Item = U>,
@@ -2890,7 +2913,8 @@ where
 {
     enforce_conversation_invariants(&mut messages, &mut tool_spec);
 
-    let ctx_messages = create_context_messages(agent_config, agent_spawn_hooks, latest_summary, provider).await;
+    let ctx_messages =
+        create_context_messages(agent_config, agent_spawn_hooks, latest_summary, task_context, provider).await;
     for msg in ctx_messages.into_iter().rev() {
         messages.push_front(msg);
     }
@@ -2921,6 +2945,7 @@ async fn create_context_messages<T, U, P>(
     agent_config: &LoadedAgentConfig,
     agent_spawn_hooks: T,
     latest_summary: Option<String>,
+    task_context: Option<String>,
     provider: &P,
 ) -> Vec<Message>
 where
@@ -2937,6 +2962,7 @@ where
         skills.iter().map(|r| &r.content),
         agent_spawn_hooks,
         latest_summary,
+        task_context,
     );
     if content.is_empty() {
         return vec![];
@@ -2959,6 +2985,7 @@ fn format_user_context_message<T, U, S, V, W, X>(
     skills: W,
     agent_spawn_hooks: U,
     latest_summary: Option<String>,
+    task_context: Option<String>,
 ) -> String
 where
     T: IntoIterator<Item = S>,
@@ -2975,6 +3002,12 @@ where
         context_content.push_str("This summary contains ALL relevant information from our previous conversation including tool uses, results, code analysis, and file operations. YOU MUST reference this information when answering questions and explicitly acknowledge specific details from the summary when they're relevant to the current question.\n\nSUMMARY CONTENT:\n");
         context_content.push_str(&summary);
         context_content.push('\n');
+        context_content.push_str(CONTEXT_ENTRY_END_HEADER);
+    }
+
+    if let Some(task_ctx) = task_context {
+        context_content.push_str(CONTEXT_ENTRY_START_HEADER);
+        context_content.push_str(&task_ctx);
         context_content.push_str(CONTEXT_ENTRY_END_HEADER);
     }
 

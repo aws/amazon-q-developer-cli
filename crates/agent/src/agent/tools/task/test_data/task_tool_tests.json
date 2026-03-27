@@ -1,0 +1,645 @@
+[
+  {
+    "name": "full_workflow",
+    "description": "Create → complete → add → remove → complete all → cleanup",
+    "steps": [
+      {
+        "command": "create",
+        "input": {
+          "task_list_description": "Workflow",
+          "tasks": [
+            {
+              "task_description": "Step 1"
+            },
+            {
+              "task_description": "Step 2",
+              "details": "Implementation details for step 2"
+            },
+            {
+              "task_description": "Step 3"
+            }
+          ]
+        },
+        "expect": {
+          "ok": true,
+          "task_count": 3,
+          "tasks": [
+            {
+              "id": "1",
+              "task_description": "Step 1",
+              "completed": false
+            },
+            {
+              "id": "2",
+              "task_description": "Step 2",
+              "completed": false
+            },
+            {
+              "id": "3",
+              "task_description": "Step 3",
+              "completed": false
+            }
+          ],
+          "description": "Workflow",
+          "format_context": [
+            "Active Task List for current session:",
+            "Description: Workflow",
+            "Progress: 0/3 tasks completed",
+            "Tasks:",
+            "[ ] #1. Step 1 (NEXT)",
+            "[ ] #2. Step 2",
+            "[ ] #3. Step 3"
+          ]
+        }
+      },
+      {
+        "command": "complete",
+        "input": {
+          "completed_task_ids": [
+            "1"
+          ],
+          "context_update": "Did 1",
+          "modified_files": [
+            "src/main.rs"
+          ]
+        },
+        "expect": {
+          "ok": true,
+          "tasks": [
+            {
+              "id": "1",
+              "completed": true
+            },
+            {
+              "id": "2",
+              "completed": false
+            },
+            {
+              "id": "3",
+              "completed": false
+            }
+          ],
+          "format_context": [
+            "Active Task List for current session:",
+            "Description: Workflow",
+            "Progress: 1/3 tasks completed",
+            "Tasks:",
+            "[✓] #1. Step 1",
+            "[ ] #2. Step 2 (NEXT)",
+            "[ ] #3. Step 3",
+            "Recent Context:",
+            "- Did 1",
+            "Modified Files:",
+            "- src/main.rs"
+          ],
+          "context": [
+            "Did 1"
+          ],
+          "modified_files": [
+            "src/main.rs"
+          ]
+        }
+      },
+      {
+        "command": "add",
+        "input": {
+          "new_tasks": [
+            {
+              "task_description": "Step 4"
+            },
+            {
+              "task_description": "Step 5"
+            }
+          ],
+          "new_description": "Updated workflow"
+        },
+        "expect": {
+          "ok": true,
+          "task_count": 5,
+          "description": "Updated workflow"
+        }
+      },
+      {
+        "command": "remove",
+        "input": {
+          "remove_task_ids": [
+            "3",
+            "5"
+          ],
+          "new_description": "Revised workflow"
+        },
+        "expect": {
+          "ok": true,
+          "task_count": 3,
+          "description": "Revised workflow"
+        }
+      },
+      {
+        "command": "complete",
+        "input": {
+          "completed_task_ids": [
+            "2",
+            "4"
+          ],
+          "context_update": "All done"
+        },
+        "expect": {
+          "ok": true,
+          "task_count": 0,
+          "format_context": []
+        }
+      }
+    ]
+  },
+  {
+    "name": "create_validation",
+    "description": "Create command rejects invalid inputs",
+    "steps": [
+      {
+        "command": "create",
+        "input": {
+          "task_list_description": "Plan",
+          "tasks": []
+        },
+        "expect": {
+          "ok": false,
+          "error_contains": "No tasks were provided"
+        }
+      },
+      {
+        "command": "create",
+        "input": {
+          "task_list_description": "Plan",
+          "tasks": [
+            {
+              "task_description": "  "
+            }
+          ]
+        },
+        "expect": {
+          "ok": false,
+          "error_contains": "Tasks cannot be empty"
+        }
+      },
+      {
+        "command": "create",
+        "input": {
+          "task_list_description": "",
+          "tasks": [
+            {
+              "task_description": "Task"
+            }
+          ]
+        },
+        "expect": {
+          "ok": false,
+          "error_contains": "No task description was provided"
+        }
+      }
+    ]
+  },
+  {
+    "name": "complete_validation",
+    "description": "Complete command rejects invalid inputs",
+    "steps": [
+      {
+        "command": "create",
+        "input": {
+          "task_list_description": "Plan",
+          "tasks": [
+            {
+              "task_description": "A"
+            }
+          ]
+        },
+        "expect": {
+          "ok": true
+        }
+      },
+      {
+        "command": "complete",
+        "input": {
+          "completed_task_ids": [],
+          "context_update": "x"
+        },
+        "expect": {
+          "ok": false,
+          "error_contains": "At least one completed task ID"
+        }
+      },
+      {
+        "command": "complete",
+        "input": {
+          "completed_task_ids": [
+            "1"
+          ],
+          "context_update": "  "
+        },
+        "expect": {
+          "ok": false,
+          "error_contains": "No context update was provided"
+        }
+      },
+      {
+        "command": "complete",
+        "input": {
+          "completed_task_ids": [
+            "999"
+          ],
+          "context_update": "x"
+        },
+        "expect": {
+          "ok": false,
+          "error_contains": "not found"
+        }
+      }
+    ]
+  },
+  {
+    "name": "add_validation",
+    "description": "Add command rejects invalid inputs",
+    "steps": [
+      {
+        "command": "create",
+        "input": {
+          "task_list_description": "Plan",
+          "tasks": [
+            {
+              "task_description": "A"
+            }
+          ]
+        },
+        "expect": {
+          "ok": true
+        }
+      },
+      {
+        "command": "add",
+        "input": {
+          "new_tasks": []
+        },
+        "expect": {
+          "ok": false,
+          "error_contains": "No tasks were provided"
+        }
+      },
+      {
+        "command": "add",
+        "input": {
+          "new_tasks": [
+            {
+              "task_description": "  "
+            }
+          ]
+        },
+        "expect": {
+          "ok": false,
+          "error_contains": "New tasks cannot be empty"
+        }
+      },
+      {
+        "command": "add",
+        "input": {
+          "new_tasks": [
+            {
+              "task_description": "B"
+            }
+          ],
+          "new_description": "  "
+        },
+        "expect": {
+          "ok": false,
+          "error_contains": "New description cannot be empty"
+        }
+      }
+    ]
+  },
+  {
+    "name": "remove_validation",
+    "description": "Remove command rejects invalid inputs",
+    "steps": [
+      {
+        "command": "create",
+        "input": {
+          "task_list_description": "Plan",
+          "tasks": [
+            {
+              "task_description": "A"
+            }
+          ]
+        },
+        "expect": {
+          "ok": true
+        }
+      },
+      {
+        "command": "remove",
+        "input": {
+          "remove_task_ids": []
+        },
+        "expect": {
+          "ok": false,
+          "error_contains": "At least one task ID"
+        }
+      },
+      {
+        "command": "remove",
+        "input": {
+          "remove_task_ids": [
+            "999"
+          ]
+        },
+        "expect": {
+          "ok": false,
+          "error_contains": "not found"
+        }
+      }
+    ]
+  },
+  {
+    "name": "list_empty",
+    "description": "List on empty store returns empty",
+    "steps": [
+      {
+        "command": "list",
+        "input": {},
+        "expect": {
+          "ok": true,
+          "task_count": 0,
+          "format_context": []
+        }
+      }
+    ]
+  },
+  {
+    "name": "create_overwrites_existing",
+    "description": "Second create wipes old tasks and resets IDs",
+    "steps": [
+      {
+        "command": "create",
+        "input": {
+          "task_list_description": "Plan A",
+          "tasks": [
+            {
+              "task_description": "A1"
+            },
+            {
+              "task_description": "A2"
+            },
+            {
+              "task_description": "A3"
+            }
+          ]
+        },
+        "expect": {
+          "ok": true,
+          "task_count": 3
+        }
+      },
+      {
+        "command": "create",
+        "input": {
+          "task_list_description": "Plan B",
+          "tasks": [
+            {
+              "task_description": "B1"
+            }
+          ]
+        },
+        "expect": {
+          "ok": true,
+          "task_count": 1,
+          "tasks": [
+            {
+              "id": "1",
+              "task_description": "B1",
+              "completed": false
+            }
+          ],
+          "description": "Plan B"
+        }
+      }
+    ]
+  },
+  {
+    "name": "context_accumulates",
+    "description": "Context and modified_files accumulate across completions, files deduplicated",
+    "steps": [
+      {
+        "command": "create",
+        "input": {
+          "task_list_description": "Plan",
+          "tasks": [
+            {
+              "task_description": "A"
+            },
+            {
+              "task_description": "B"
+            },
+            {
+              "task_description": "C"
+            }
+          ]
+        },
+        "expect": {
+          "ok": true
+        }
+      },
+      {
+        "command": "complete",
+        "input": {
+          "completed_task_ids": [
+            "1"
+          ],
+          "context_update": "First",
+          "modified_files": [
+            "src/app.ts"
+          ]
+        },
+        "expect": {
+          "ok": true,
+          "context": [
+            "First"
+          ],
+          "modified_files": [
+            "src/app.ts"
+          ]
+        }
+      },
+      {
+        "command": "complete",
+        "input": {
+          "completed_task_ids": [
+            "2"
+          ],
+          "context_update": "Second",
+          "modified_files": [
+            "src/app.ts",
+            "config.yaml"
+          ]
+        },
+        "expect": {
+          "ok": true,
+          "context": [
+            "First",
+            "Second"
+          ],
+          "modified_files": [
+            "config.yaml",
+            "src/app.ts"
+          ]
+        }
+      }
+    ]
+  },
+  {
+    "name": "id_reset_after_cleanup",
+    "description": "IDs reset to 1 after all-completed cleanup then new create",
+    "steps": [
+      {
+        "command": "create",
+        "input": {
+          "task_list_description": "First",
+          "tasks": [
+            {
+              "task_description": "A"
+            }
+          ]
+        },
+        "expect": {
+          "ok": true
+        }
+      },
+      {
+        "command": "complete",
+        "input": {
+          "completed_task_ids": [
+            "1"
+          ],
+          "context_update": "Done"
+        },
+        "expect": {
+          "ok": true,
+          "task_count": 0
+        }
+      },
+      {
+        "command": "create",
+        "input": {
+          "task_list_description": "Second",
+          "tasks": [
+            {
+              "task_description": "Fresh"
+            }
+          ]
+        },
+        "expect": {
+          "ok": true,
+          "task_count": 1,
+          "tasks": [
+            {
+              "id": "1",
+              "task_description": "Fresh",
+              "completed": false
+            }
+          ]
+        }
+      }
+    ]
+  },
+  {
+    "name": "format_context_recent_limited_to_3",
+    "description": "format_context shows only last 3 context entries",
+    "steps": [
+      {
+        "command": "create",
+        "input": {
+          "task_list_description": "Plan",
+          "tasks": [
+            {
+              "task_description": "Task1"
+            },
+            {
+              "task_description": "Task2"
+            },
+            {
+              "task_description": "Task3"
+            },
+            {
+              "task_description": "Task4"
+            },
+            {
+              "task_description": "Task5"
+            }
+          ]
+        },
+        "expect": {
+          "ok": true
+        }
+      },
+      {
+        "command": "complete",
+        "input": {
+          "completed_task_ids": [
+            "1"
+          ],
+          "context_update": "First"
+        },
+        "expect": {
+          "ok": true
+        }
+      },
+      {
+        "command": "complete",
+        "input": {
+          "completed_task_ids": [
+            "2"
+          ],
+          "context_update": "Second"
+        },
+        "expect": {
+          "ok": true
+        }
+      },
+      {
+        "command": "complete",
+        "input": {
+          "completed_task_ids": [
+            "3"
+          ],
+          "context_update": "Third"
+        },
+        "expect": {
+          "ok": true
+        }
+      },
+      {
+        "command": "complete",
+        "input": {
+          "completed_task_ids": [
+            "4"
+          ],
+          "context_update": "Fourth"
+        },
+        "expect": {
+          "ok": true,
+          "format_context": [
+            "Active Task List for current session:",
+            "Description: Plan",
+            "Progress: 4/5 tasks completed",
+            "Tasks:",
+            "[✓] #1. Task1",
+            "[✓] #2. Task2",
+            "[✓] #3. Task3",
+            "[✓] #4. Task4",
+            "[ ] #5. Task5 (NEXT)",
+            "Recent Context:",
+            "- Second",
+            "- Third",
+            "- Fourth"
+          ]
+        }
+      }
+    ]
+  }
+]

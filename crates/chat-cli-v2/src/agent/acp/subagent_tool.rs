@@ -250,6 +250,7 @@ mod tests {
             true,
             None,
             None,
+            None,
         )
         .await
         .expect("Failed to create agent")
