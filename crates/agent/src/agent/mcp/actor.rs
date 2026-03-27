@@ -198,6 +198,8 @@ pub enum McpServerActorEvent {
     InitializeError { server_name: String, error: String },
     /// An OAuth authentication request from the MCP server
     OauthRequest { server_name: String, oauth_url: String },
+    /// The MCP server's tool list has changed
+    ToolListChanged { server_name: String },
 }
 
 #[derive(Debug)]
@@ -410,7 +412,15 @@ impl McpServerActor {
         };
         match msg {
             McpMessage::Tools(res) => match res {
-                Ok(tools) => self.tools = tools.into_iter().map(Into::into).collect(),
+                Ok(tools) => {
+                    self.tools = tools.into_iter().map(Into::into).collect();
+                    let _ = self
+                        .event_tx
+                        .send(McpServerActorEvent::ToolListChanged {
+                            server_name: self.server_name.clone(),
+                        })
+                        .await;
+                },
                 Err(err) => {
                     error!(?err, "failed to list tools");
                 },

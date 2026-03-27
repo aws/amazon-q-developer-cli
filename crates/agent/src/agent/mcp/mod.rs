@@ -477,6 +477,9 @@ impl McpManager {
             McpServerActorEvent::OauthRequest { server_name, oauth_url } => {
                 info!(?server_name, ?oauth_url, "received oauth request");
             },
+            McpServerActorEvent::ToolListChanged { server_name } => {
+                info!(?server_name, "MCP server tool list changed");
+            },
         }
         self.event_buf.push(evt);
     }
@@ -574,6 +577,8 @@ pub enum McpServerEvent {
     InitializeError { server_name: String, error: String },
     /// An OAuth authentication request from the MCP server
     OauthRequest { server_name: String, oauth_url: String },
+    /// The MCP server's tool list has changed
+    ToolListChanged { server_name: String },
 }
 
 impl From<McpServerActorEvent> for McpServerEvent {
@@ -595,6 +600,7 @@ impl From<McpServerActorEvent> for McpServerEvent {
             McpServerActorEvent::OauthRequest { server_name, oauth_url } => {
                 Self::OauthRequest { server_name, oauth_url }
             },
+            McpServerActorEvent::ToolListChanged { server_name } => Self::ToolListChanged { server_name },
         }
     }
 }

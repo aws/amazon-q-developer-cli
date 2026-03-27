@@ -1841,6 +1841,10 @@ impl AcpSession {
             },
             // Other MCP events don't need forwarding to client
             McpServerEvent::Initializing { .. } => Ok(()),
+            McpServerEvent::ToolListChanged { server_name } => {
+                info!(?server_name, "MCP server tool list changed, re-advertising");
+                self.advertise_commands_and_prompts().await
+            },
         }
     }
 

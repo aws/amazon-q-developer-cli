@@ -2829,6 +2829,9 @@ impl Agent {
     }
 
     async fn handle_mcp_events(&mut self, evt: McpServerEvent) {
+        if matches!(evt, McpServerEvent::ToolListChanged { .. }) {
+            self.cached_tool_specs = None;
+        }
         let converted_evt = AgentEvent::Mcp(evt);
         self.agent_event_buf.push(converted_evt);
     }
