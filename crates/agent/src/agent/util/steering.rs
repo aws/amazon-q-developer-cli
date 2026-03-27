@@ -5,7 +5,11 @@ use serde::Deserialize;
 /// Returns `true` if the given path is a steering file that should be
 /// subject to frontmatter inclusion filtering.
 pub fn is_steering_file(path: &str) -> bool {
-    path.contains(".kiro/steering") && path.ends_with(".md")
+    #[cfg(windows)]
+    let matches = (path.contains(".kiro\\steering") || path.contains(".kiro/steering")) && path.ends_with(".md");
+    #[cfg(not(windows))]
+    let matches = path.contains(".kiro/steering") && path.ends_with(".md");
+    matches
 }
 
 /// Parses the frontmatter of a steering file and returns whether it should
@@ -73,5 +77,15 @@ mod tests {
         assert!(is_steering_file("/Users/foo/.kiro/steering/test.md"));
         assert!(!is_steering_file("/Users/foo/.kiro/steering/test.txt"));
         assert!(!is_steering_file("/Users/foo/other/test.md"));
+    }
+
+    #[test]
+    #[cfg(windows)]
+    fn is_steering_file_matches_windows_paths() {
+        assert!(is_steering_file(r"C:\Users\foo\.kiro\steering\test.md"));
+        // Forward slashes should still work on Windows
+        assert!(is_steering_file("C:/Users/foo/.kiro/steering/test.md"));
+        assert!(!is_steering_file(r"C:\Users\foo\.kiro\steering\test.txt"));
+        assert!(!is_steering_file(r"C:\Users\foo\other\test.md"));
     }
 }
