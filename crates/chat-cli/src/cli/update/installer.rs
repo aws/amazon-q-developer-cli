@@ -16,8 +16,6 @@
 
 use std::path::Path;
 #[cfg(target_os = "windows")]
-use std::path::PathBuf;
-#[cfg(target_os = "windows")]
 use std::process::Stdio;
 
 #[cfg(target_os = "windows")]
@@ -55,80 +53,6 @@ impl InstallerRunner {
                 message: format!("Unsupported installer kind: {}", other),
             }),
         }
-    }
-
-    /// Generate the batch trampoline script content.
-    ///
-    /// This is separated from `launch_msi_trampoline` so it can be tested on all platforms.
-    #[cfg(any(target_os = "windows", test))]
-    pub fn generate_trampoline_script(
-        msi_path: &str,
-        parent_pid: u32,
-        exe_path: &str,
-        relaunch_args: &[String],
-    ) -> String {
-        // Build the argument string for the relaunch command.
-        let relaunch_args_str = if relaunch_args.is_empty() {
-            String::new()
-        } else {
-            let escaped: Vec<String> = relaunch_args
-                .iter()
-                .map(|a| {
-                    if a.contains(' ') {
-                        format!("\"{}\"", a)
-                    } else {
-                        a.clone()
-                    }
-                })
-                .collect();
-            format!(" {}", escaped.join(" "))
-        };
-
-        // Use a .cmd batch script instead of PowerShell.
-        // Batch files run natively in cmd.exe, and processes launched from them
-        // inherit the console handle properly — no stdin piping issues.
-        // We use `ping -n N 127.0.0.1` as a portable sleep (no powershell needed).
-        // `tasklist /FI "PID eq N"` to poll for the parent process to exit.
-        format!(
-            r#"@echo off
-REM Kiro CLI update trampoline — runs in the same terminal window.
-REM Wait for the old process (PID {pid}) to exit so the exe is unlocked.
-:WAIT_LOOP
-tasklist /FI "PID eq {pid}" 2>NUL | find /I "{pid}" >NUL
-if %ERRORLEVEL%==0 (
-    ping -n 2 127.0.0.1 >NUL
-    goto WAIT_LOOP
-)
-REM Small extra delay to ensure file handles are released
-ping -n 2 127.0.0.1 >NUL
-
-REM Run the MSI installer silently.
-echo Installing update...
-start /wait msiexec /i "{msi_path}" /quiet /norestart
-set MSI_EXIT=%ERRORLEVEL%
-
-REM Clean up the MSI.
-del /f /q "{msi_path}" 2>NUL
-
-if %MSI_EXIT% NEQ 0 (
-    echo Installation failed with exit code %MSI_EXIT%.
-    pause
-    goto CLEANUP
-)
-
-echo Update installed successfully. Restarting...
-REM Launch kiro-cli directly — it inherits the console from cmd.exe.
-"{exe_path}"{relaunch_args_str}
-
-:CLEANUP
-REM Clean up this trampoline script.
-(goto) 2>NUL & del /f /q "%~f0"
-"#,
-            pid = parent_pid,
-            msi_path = msi_path,
-            exe_path = exe_path,
-            relaunch_args_str = relaunch_args_str,
-        )
     }
 
     /// Generate an install-only batch script (no relaunch).
@@ -198,69 +122,6 @@ REM Clean up this script.
                 })
             },
         }
-    }
-
-    /// Launch a batch trampoline script that will install the MSI and
-    /// relaunch kiro-cli in the same terminal window after the current process exits.
-    ///
-    /// Uses a .cmd batch file instead of PowerShell so that the relaunched process
-    /// inherits the console handle directly — required for Ink/TUI raw mode.
-    ///
-    /// Returns `Ok(true)` if the trampoline was launched (caller should exit),
-    /// or `Err` if something went wrong writing/spawning the script.
-    #[cfg(target_os = "windows")]
-    pub fn launch_msi_trampoline(installer_path: &Path, relaunch_args: &[String]) -> Result<bool, UpdateError> {
-        let msi_path = Self::path_str(installer_path)?;
-        let pid = std::process::id();
-
-        let exe_path = Self::resolve_windows_exe_path();
-        let exe_str = exe_path.to_string_lossy();
-
-        let script = Self::generate_trampoline_script(msi_path, pid, &exe_str, relaunch_args);
-
-        let script_path = std::env::temp_dir().join(format!("kiro-update-trampoline-{}.cmd", uuid::Uuid::new_v4()));
-        std::fs::write(&script_path, &script)?;
-        info!("Wrote trampoline script to {:?}", script_path);
-
-        // Spawn cmd.exe to run the batch file. It inherits the console natively.
-        let child = std::process::Command::new("cmd.exe")
-            .args(["/C", &script_path.to_string_lossy()])
-            .stdin(Stdio::inherit())
-            .spawn();
-
-        match child {
-            Ok(_) => {
-                info!("Trampoline launched, current process should exit now");
-                Ok(true)
-            },
-            Err(e) => {
-                let _ = std::fs::remove_file(&script_path);
-                Err(UpdateError::InstallationFailed {
-                    code: -1,
-                    message: format!("Failed to launch update script: {}", e),
-                })
-            },
-        }
-    }
-
-    /// Resolve the path to kiro-cli.exe after installation.
-    #[cfg(target_os = "windows")]
-    fn resolve_windows_exe_path() -> PathBuf {
-        if let Ok(output) = std::process::Command::new("reg")
-            .args(["query", r"HKLM\SOFTWARE\Kiro\CLI", "/v", "InstallPath"])
-            .output()
-        {
-            let stdout = String::from_utf8_lossy(&output.stdout);
-            if let Some(path) = stdout
-                .lines()
-                .find(|line| line.contains("InstallPath"))
-                .and_then(|line| line.split("REG_SZ").nth(1))
-                .map(|path| PathBuf::from(path.trim()).join("kiro-cli.exe"))
-            {
-                return path;
-            }
-        }
-        std::env::current_exe().unwrap_or_else(|_| PathBuf::from("kiro-cli.exe"))
     }
 
     /// Execute Windows MSI installer silently (direct, non-trampoline).
@@ -423,65 +284,6 @@ mod tests {
     use std::path::PathBuf;
 
     use super::*;
-
-    #[test]
-    fn test_generate_trampoline_script_content() {
-        let msi_path = PathBuf::from(r"C:\temp\kiro-installer.msi");
-        let exe_path = PathBuf::from(r"C:\Program Files\Kiro-Cli\kiro-cli.exe");
-        let args = vec!["chat".to_string(), "--model".to_string(), "opus".to_string()];
-
-        let script = InstallerRunner::generate_trampoline_script(
-            &msi_path.to_string_lossy(),
-            12345,
-            &exe_path.to_string_lossy(),
-            &args,
-        );
-
-        assert!(script.contains("12345"), "Script should contain the parent PID");
-        assert!(script.contains("kiro-installer.msi"), "Script should contain MSI path");
-        assert!(script.contains("kiro-cli.exe"), "Script should contain exe path");
-        assert!(script.contains("chat"), "Script should contain relaunch args");
-        assert!(script.contains("opus"), "Script should contain relaunch args");
-        assert!(
-            script.contains("WAIT_LOOP") || script.contains("WaitForExit"),
-            "Script should wait for parent to exit"
-        );
-        assert!(script.contains("msiexec"), "Script should invoke msiexec");
-        assert!(
-            script.contains("Remove-Item") || script.contains("del /f"),
-            "Script should clean up temp files"
-        );
-        assert!(script.contains("@echo off"), "Script should be a batch file");
-        assert!(script.contains("tasklist"), "Script should poll for parent process");
-    }
-
-    #[test]
-    fn test_generate_trampoline_script_no_args() {
-        let script = InstallerRunner::generate_trampoline_script(
-            r"C:\temp\test.msi",
-            99999,
-            r"C:\Program Files\Kiro-Cli\kiro-cli.exe",
-            &[],
-        );
-
-        assert!(script.contains(r#""C:\Program Files\Kiro-Cli\kiro-cli.exe""#));
-    }
-
-    #[test]
-    fn test_generate_trampoline_script_escapes_args_with_spaces() {
-        let args = vec!["--path".to_string(), "C:\\my folder\\file.txt".to_string()];
-        let script = InstallerRunner::generate_trampoline_script(
-            r"C:\temp\test.msi",
-            1,
-            r"C:\Program Files\Kiro-Cli\kiro-cli.exe",
-            &args,
-        );
-
-        assert!(
-            script.contains(r#""C:\my folder\file.txt""#),
-            "Script should quote args with spaces"
-        );
-    }
 
     #[test]
     fn test_msi_command_construction() {

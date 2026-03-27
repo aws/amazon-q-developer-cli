@@ -151,19 +151,22 @@ impl UpdateArgs {
         // Run installer
         // On Windows with MSI, use the install-on-exit script to avoid the locked-exe problem.
         // The script waits for this process to exit, then runs msiexec silently.
+        // We use the detached install-on-exit approach (not the trampoline) because the
+        // trampoline inherits stdin and its batch output gets misinterpreted by PowerShell.
         #[cfg(target_os = "windows")]
         if artifact.kind == "msi" {
-            let args: Vec<String> = std::env::args().skip(1).collect();
             let msi_path = temp_installer.into_path();
-            match InstallerRunner::launch_msi_trampoline(&msi_path, &args) {
+            match InstallerRunner::launch_install_on_exit(&msi_path) {
                 Ok(true) => {
-                    println!("Update downloaded. Handing off to installer...");
+                    println!(
+                        "Update {} downloaded. Installing in the background — this may take a few seconds.",
+                        manifest.version
+                    );
+                    println!("Run 'kiro-cli --version' to verify the update completed.");
                     return Ok(ExitCode::SUCCESS);
                 },
                 Ok(false) | Err(_) => {
-                    // Trampoline didn't launch — fall back to direct msiexec.
-                    // This works (MSI can replace a running exe) but the user
-                    // needs to restart to use the new version.
+                    // install-on-exit didn't launch — fall back to direct msiexec.
                     println!("Installing update...");
                     match InstallerRunner::run_silent(&msi_path, &artifact.kind).await {
                         Ok(()) => {
