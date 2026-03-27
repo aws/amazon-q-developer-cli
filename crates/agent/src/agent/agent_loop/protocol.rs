@@ -246,6 +246,7 @@ pub struct UserTurnMetadata {
     /// Context usage percentage (0-100)
     pub context_usage_percentage: Option<f32>,
     /// Metering usage (credits) accumulated across all requests in this turn
+    #[serde(default)]
     pub metering_usage: Vec<super::types::MeteringUsageInfo>,
 }
 
