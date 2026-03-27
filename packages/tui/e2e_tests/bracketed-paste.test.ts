@@ -189,4 +189,52 @@ describe('Bracketed Paste', () => {
     await testCase.pressCtrlCTwice();
     await testCase.expectExit();
   }, 30000);
+
+  it('pasted shell-escaped file path from Finder is unescaped', async () => {
+    testCase = await E2ETestCase.builder()
+      .withTestName('paste-file-path-unescape')
+      .launch();
+
+    await testCase.waitForText('ask a question', 10000);
+    await testCase.getSessionId();
+
+    await testCase.pushSendMessageResponse([
+      {
+        kind: 'event',
+        data: {
+          kind: 'AssistantResponseEvent',
+          data: { content: 'Got the path.' },
+        },
+      },
+    ]);
+    await testCase.pushSendMessageResponse(null);
+
+    // Type a prefix so the pasted path isn't interpreted as a slash command
+    await testCase.sendKeys('look at ');
+    await testCase.sleepMs(50);
+
+    // Simulate dragging a file from macOS Finder — the terminal sends
+    // the path as a bracketed paste with shell-escaped spaces and parens.
+    const shellEscapedPath =
+      '/Users/name/my\\ folder/report\\ \\(1\\).pdf';
+    await testCase.sendKeys(
+      `${PASTE_START}${shellEscapedPath}${PASTE_END}`
+    );
+    await testCase.sleepMs(200);
+
+    const snapshot = testCase.getSnapshot();
+    const screenText = snapshot.join('\n');
+
+    // The unescaped path should be displayed
+    expect(screenText).toContain('my folder/report (1).pdf');
+    expect(screenText).not.toContain('my\\ folder');
+    expect(screenText).not.toContain('200~');
+    expect(screenText).not.toContain('201~');
+
+    await testCase.pressEnter();
+    await testCase.waitForText('Got the path.', 10000);
+
+    await testCase.pressCtrlCTwice();
+    await testCase.expectExit();
+  }, 30000);
 });

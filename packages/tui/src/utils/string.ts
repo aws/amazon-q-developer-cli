@@ -53,6 +53,97 @@ export const isPrintable = (str: string): boolean =>
   });
 
 /**
+ * Characters that macOS Finder (and common shells) escape with a backslash
+ * when producing a shell-safe path string for drag-and-drop.
+ *
+ * This is intentionally limited to the characters Finder actually escapes
+ * to avoid false-positives on pasted shell commands or regexes.
+ */
+const SHELL_ESCAPED_CHARS = new Set([
+  ' ',
+  '(',
+  ')',
+  '[',
+  ']',
+  '{',
+  '}',
+  '!',
+  '&',
+  '|',
+  ';',
+  "'",
+  '"',
+  '$',
+  '`',
+  '#',
+  '\\',
+]);
+
+/**
+ * Detect whether a pasted string looks like a shell-escaped file path
+ * (e.g. from dragging a file out of macOS Finder into the terminal)
+ * and unescape it so the user sees the clean path.
+ *
+ * Heuristic — all of these must hold:
+ *  1. Single line (no embedded newlines).
+ *  2. After trimming / stripping optional surrounding single-quotes,
+ *     the string starts with `/` or `~` (absolute or home-relative path).
+ *  3. Every `\` in the string is followed by a character from the known
+ *     set that Finder escapes. This prevents false-positives on pasted
+ *     shell commands, regexes, or other text that happens to start with `/`.
+ *  4. There are no unescaped spaces — a Finder-dragged path escapes every
+ *     space, so an unescaped space indicates this is a command, not a path.
+ *
+ * On Windows the function is a no-op because Windows paths start with a
+ * drive letter (e.g. `C:\`) and Windows terminals don't shell-escape
+ * drag-and-drop paths.
+ */
+export function unescapeShellPath(text: string): string {
+  // Only operate on single-line strings
+  if (text.includes('\n')) return text;
+
+  let s = text.trim();
+
+  // Strip surrounding single quotes: '/path/to/file' → /path/to/file
+  if (s.length >= 2 && s.startsWith("'") && s.endsWith("'")) {
+    s = s.slice(1, -1);
+  }
+
+  // Must look like an absolute or home-relative path
+  if (!s.startsWith('/') && !s.startsWith('~')) return text;
+
+  // No backslash escapes — return the (possibly unquoted) path
+  if (!s.includes('\\')) return s;
+
+  // Verify every backslash is followed by a Finder-escaped character.
+  // If any backslash precedes something unexpected (e.g. `\d`, `\w`)
+  // this is likely a regex or command, not a dragged path.
+  for (let i = 0; i < s.length; i++) {
+    if (s[i] === '\\') {
+      const next = s[i + 1];
+      if (next === undefined || !SHELL_ESCAPED_CHARS.has(next)) {
+        return text;
+      }
+      i++; // skip the escaped char
+    }
+  }
+
+  // A Finder-dragged path has no unescaped spaces (every space is `\ `).
+  // If there's an unescaped space, this is probably a command like
+  // `/usr/bin/grep foo\ bar baz`.
+  for (let i = 0; i < s.length; i++) {
+    if (s[i] === '\\') {
+      i++; // skip escaped char
+    } else if (s[i] === ' ') {
+      return text; // unescaped space → not a Finder path
+    }
+  }
+
+  // All checks passed — unescape
+  return s.replace(/\\(.)/g, '$1');
+}
+
+/**
  * Shorten a file path by replacing the home directory with ~
  * @param path - The full path to shorten
  * @returns The shortened path with ~ for home directory

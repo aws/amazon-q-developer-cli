@@ -20,7 +20,11 @@ const CursorBlock = ({ char = ' ' }: { char?: string }) => (
 );
 import { PastedChip, shouldCollapsePaste } from './PastedChip.js';
 import { FileChip } from './FileChip.js';
-import { normalizeLineEndings, isPrintable } from '../../../utils/index.js';
+import {
+  normalizeLineEndings,
+  isPrintable,
+  unescapeShellPath,
+} from '../../../utils/index.js';
 import { completePathAtCursor } from '../../../utils/path-completion.js';
 import { logger } from '../../../utils/logger.js';
 import { inputMetrics } from '../../../utils/inputMetrics.js';
@@ -350,7 +354,9 @@ export const PromptInput = React.memo(function PromptInput({
   };
 
   const handlePaste = (pastedText: string) => {
-    const normalized = normalizeLineEndings(pastedText);
+    // Unescape shell-escaped file paths from drag-and-drop (e.g. macOS Finder)
+    const unescaped = unescapeShellPath(pastedText);
+    const normalized = normalizeLineEndings(unescaped);
     const result = shouldCollapsePaste(normalized);
 
     if (result.shouldCollapse) {
