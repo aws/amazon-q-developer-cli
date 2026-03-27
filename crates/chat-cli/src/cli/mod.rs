@@ -398,11 +398,23 @@ pub struct Cli {
     /// Print help for all subcommands
     #[arg(long)]
     help_all: bool,
+    /// Launch chat in TUI mode
+    #[arg(long)]
+    tui: bool,
+    /// Launch chat in legacy UI mode
+    #[arg(long)]
+    legacy_ui: bool,
 }
 
 impl Cli {
     pub async fn execute(self) -> Result<ExitCode> {
-        let subcommand = self.subcommand.unwrap_or_default();
+        let subcommand = self.subcommand.unwrap_or_else(|| {
+            RootSubcommand::Chat(ChatArgs {
+                tui: self.tui,
+                legacy_ui: self.legacy_ui,
+                ..Default::default()
+            })
+        });
 
         // Initialize our logger and keep around the guard so logging can perform as expected.
         let _log_guard = initialize_logging(LogArgs {
@@ -544,18 +556,24 @@ mod test {
             subcommand: None,
             verbose: 1,
             help_all: false,
+            tui: false,
+            legacy_ui: false,
         });
 
         assert_eq!(Cli::parse_from([CHAT_BINARY_NAME, "-vvv"]), Cli {
             subcommand: None,
             verbose: 3,
             help_all: false,
+            tui: false,
+            legacy_ui: false,
         });
 
         assert_eq!(Cli::parse_from([CHAT_BINARY_NAME, "--help-all"]), Cli {
             subcommand: None,
             verbose: 0,
             help_all: true,
+            tui: false,
+            legacy_ui: false,
         });
 
         assert_eq!(Cli::parse_from([CHAT_BINARY_NAME, "chat", "-vv"]), Cli {
@@ -579,6 +597,8 @@ mod test {
             })),
             verbose: 2,
             help_all: false,
+            tui: false,
+            legacy_ui: false,
         });
     }
 
