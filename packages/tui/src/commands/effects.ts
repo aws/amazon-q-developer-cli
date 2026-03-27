@@ -361,6 +361,32 @@ const effectHandlers: Record<EffectName, EffectHandler> = {
 
   loadSession: (_result, ctx, _cmd, args) => {
     if (!args) return;
+
+    // /chat save — show result and done
+    if (/^save\b/.test(args)) {
+      if (_result?.message) {
+        ctx.showAlert(
+          _result.message,
+          _result.success ? 'success' : 'error',
+          5000
+        );
+      }
+      return true;
+    }
+
+    // /chat load <path> — backend imported the file, now auto-load the new session
+    if (/^load\b/.test(args)) {
+      const data = _result?.data as { sessionId?: string } | undefined;
+      if (!_result?.success || !data?.sessionId) {
+        if (_result?.message) {
+          ctx.showAlert(_result.message, 'error', 5000);
+        }
+        return true;
+      }
+      // Fall through to the session-load logic below with the imported session ID
+      args = data.sessionId;
+    }
+
     const sessionId = args;
     ctx.clearUIState();
     ctx.setLoadingMessage(`Loading session ${sessionId}...`);

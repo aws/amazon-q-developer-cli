@@ -190,12 +190,14 @@ pub struct PromptsArgs {
     pub prompt_name: Option<String>,
 }
 /// Arguments for /chat command
-///
-/// TODO: add support for `/chat save` and `/chat load` arguments
 #[typeshare]
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct ChatArgs {}
+pub struct ChatArgs {
+    /// Subcommand: save <path>, load <path>, new, list, delete <id>
+    #[serde(alias = "value", skip_serializing_if = "Option::is_none")]
+    pub subcommand: Option<String>,
+}
 
 /// Arguments for /reply command
 #[typeshare]
@@ -282,7 +284,7 @@ impl TuiCommand {
                 "/knowledge [show|add <name> <path>|remove <name|path>|update <path>|clear|cancel]"
             },
             TuiCommand::Prompts(_) => "/prompts [prompt-name]",
-            TuiCommand::Chat(_) => "/chat",
+            TuiCommand::Chat(_) => "/chat [save [--force] <path>|load <path>]",
             TuiCommand::Reply(_) => "/reply",
             TuiCommand::Code(_) => "/code [status|init|logs|overview|summary]",
         }
@@ -295,6 +297,7 @@ impl TuiCommand {
             TuiCommand::Context(_) => vec!["add", "remove", "clear"],
             TuiCommand::Knowledge(_) => vec!["show", "add", "remove", "update", "clear", "cancel"],
             TuiCommand::Tools(_) => vec!["trust-all", "trust", "untrust", "reset"],
+            TuiCommand::Chat(_) => vec!["save", "load"],
             TuiCommand::Code(_) => vec!["status", "init", "logs", "overview", "summary"],
             _ => vec![],
         }
@@ -376,6 +379,7 @@ impl TuiCommand {
                 let mut meta = serde_json::Map::new();
                 meta.insert("inputType".into(), "selection".into());
                 meta.insert("local".into(), true.into());
+                meta.insert("hint".into(), "save <path>, load <path>".into());
                 Some(meta)
             },
             TuiCommand::Reply(_) => None,
@@ -450,7 +454,9 @@ impl TuiCommand {
             "prompts" => Some(Self::Prompts(PromptsArgs {
                 prompt_name: (!args.is_empty()).then(|| args.to_string()),
             })),
-            "chat" => Some(Self::Chat(ChatArgs::default())),
+            "chat" => Some(Self::Chat(ChatArgs {
+                subcommand: (!args.is_empty()).then(|| args.to_string()),
+            })),
             "reply" => Some(Self::Reply(ReplyArgs::default())),
             "code" => Some(Self::Code(CodeArgs {
                 subcommand: (!args.is_empty()).then(|| args.to_string()),

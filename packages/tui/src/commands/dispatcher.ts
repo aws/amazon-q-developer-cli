@@ -71,9 +71,11 @@ export async function dispatch(
       ctx.setActiveCommand({ command: cmd, options: [] });
     }
   }
-  // 2. Execute backend (skip for local commands)
+  // 2. Execute backend (skip for local commands, but /chat subcommands go to backend)
+  const isChatSubcommand =
+    cmdName === 'chat' && args && /^(save|load)\b/.test(args);
   let result = null;
-  if (cmd.source === 'backend' && !isLocal) {
+  if (cmd.source === 'backend' && (!isLocal || isChatSubcommand)) {
     // Show loading for agent swap
     const isSubcommand =
       args === 'create' ||

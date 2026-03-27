@@ -82,12 +82,10 @@ export interface AgentSnapshot {
 	settings: AgentSettings;
 }
 
-/**
- * Arguments for /chat command
- * 
- * TODO: add support for `/chat save` and `/chat load` arguments
- */
+/** Arguments for /chat command */
 export interface ChatArgs {
+	/** Subcommand: save <path>, load <path>, new, list, delete <id> */
+	subcommand?: string;
 }
 
 /** Arguments for /clear command */
@@ -415,7 +413,7 @@ export interface ToolUseBlockStart {
 
 /** Arguments for /tools command */
 export interface ToolsArgs {
-	/** Subcommand: trust-all, reset */
+	/** Subcommand: trust-all, trust, untrust, reset */
 	subcommand?: string;
 }
 
