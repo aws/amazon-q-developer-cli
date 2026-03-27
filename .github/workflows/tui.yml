@@ -24,6 +24,8 @@ jobs:
           filters: |
             tui:
               - 'packages/tui/**'
+              - 'packages/twinki/**'
+              - 'packages/ink/**'
               - '.github/workflows/tui.yml'
 
   tui-typecheck:
