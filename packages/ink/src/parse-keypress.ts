@@ -505,6 +505,10 @@ const parseKeypress = (s: Buffer | string = ''): ParsedKey => {
 		// ctrl+letter
 		key.name = String.fromCharCode(s.charCodeAt(0) + 'a'.charCodeAt(0) - 1);
 		key.ctrl = true;
+	} else if (s === '\x1f') {
+		// Ctrl+_ / Ctrl+/ (unit separator)
+		key.name = '_';
+		key.ctrl = true;
 	} else if (s.length === 1 && s >= '0' && s <= '9') {
 		// number
 		key.name = 'number';

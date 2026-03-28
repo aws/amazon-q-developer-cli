@@ -930,6 +930,10 @@ export function parseKey(data: string): KeyId | undefined {
 		if (code >= 1 && code <= 26) {
 			return `ctrl+${String.fromCharCode(code + 96)}` as KeyId; // Convert to a-z
 		}
+		// Ctrl+_ / Ctrl+/ both send 0x1F
+		if (code === 0x1f) {
+			return 'ctrl+_' as KeyId;
+		}
 		// Single character (letter or symbol)
 		return data as KeyId;
 	}

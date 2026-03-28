@@ -166,6 +166,9 @@ export const PromptInput = React.memo(function PromptInput({
   ]);
   const [cursor, setCursor] = useState(0);
 
+  const undoStack = useRef<Array<{ segments: Segment[]; cursor: number }>>([]);
+  const lastUndoPushTime = useRef(0);
+
   const { getColor } = useTheme();
   const { width: termWidth } = useTerminalSize();
   const prevTriggerRef = useRef<TriggerInfo | null>(null);
@@ -328,6 +331,7 @@ export const PromptInput = React.memo(function PromptInput({
   };
 
   const insertText = (text: string) => {
+    pushUndo();
     inputMetrics.markStateUpdate();
     const { segIdx, offset } = locateCursor(segments, cursor);
     const seg = segments[segIdx];
@@ -360,6 +364,7 @@ export const PromptInput = React.memo(function PromptInput({
     const result = shouldCollapsePaste(normalized);
 
     if (result.shouldCollapse) {
+      pushUndo();
       const pasteSegment: PasteSegment = {
         type: 'paste',
         content: normalized,
@@ -465,6 +470,7 @@ export const PromptInput = React.memo(function PromptInput({
   };
 
   const handleBackspace = () => {
+    pushUndo();
     inputMetrics.markStateUpdate();
     if (cursor === 0) return;
 
@@ -514,8 +520,17 @@ export const PromptInput = React.memo(function PromptInput({
     }
   };
 
+  const pushUndo = (force = false) => {
+    const now = Date.now();
+    if (!force && now - lastUndoPushTime.current < 500) return;
+    lastUndoPushTime.current = now;
+    undoStack.current.push({ segments, cursor });
+    if (undoStack.current.length > 100) undoStack.current.shift();
+  };
+
   // Helper to apply an edit result from utility functions
   const applyEdit = (result: { segments: Segment[]; cursor: number }) => {
+    pushUndo(true);
     inputMetrics.markStateUpdate();
     setSegments(result.segments);
     setCursor(result.cursor);
@@ -689,6 +704,17 @@ export const PromptInput = React.memo(function PromptInput({
             break;
           case 't': // Ctrl+T - transpose characters
             applyEdit(transposeChars(segments, cursor));
+            break;
+          case '_': // Ctrl+_ / Ctrl+/ — undo
+            {
+              const prev = undoStack.current.pop();
+              if (prev) {
+                inputMetrics.markStateUpdate();
+                setSegments(prev.segments);
+                setCursor(prev.cursor);
+                syncToStore(prev.segments);
+              }
+            }
             break;
           case 'j': // Ctrl+J - newline (existing)
             insertText('\n');

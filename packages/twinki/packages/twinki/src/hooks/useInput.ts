@@ -133,6 +133,8 @@ export function parseInputData(data: string): { input: string; key: Key } {
 		// Ctrl+letter (legacy): expose the letter as input, matching ink's behavior
 		const code = data.charCodeAt(0);
 		if (code >= 1 && code <= 26) input = String.fromCharCode(code + 96);
+		// Ctrl+_ / Ctrl+/ (0x1F)
+		else if (code === 0x1f) input = '_';
 	} else if (parsed) {
 		// Kitty protocol: CSI u sequences are multi-byte, extract printable text from keyId
 		const m = parsed.match(/(?:ctrl|alt|shift)\+([a-z])$/);
