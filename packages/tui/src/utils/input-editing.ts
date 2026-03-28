@@ -870,3 +870,64 @@ export const killToVisualLineBeginning = (
     cursor: lineStart,
   };
 };
+
+/**
+ * Move cursor to start of current logical line (Ctrl+A — emacs beginning-of-line).
+ * A logical line is delimited by \n characters.
+ */
+export const moveToLogicalLineStart = (
+  segments: Segment[],
+  cursor: number
+): number => {
+  const text = getVisibleText(segments);
+  const prevNewline = text.lastIndexOf('\n', cursor - 1);
+  return prevNewline === -1 ? 0 : prevNewline + 1;
+};
+
+/**
+ * Move cursor to end of current logical line (Ctrl+E — emacs end-of-line).
+ */
+export const moveToLogicalLineEnd = (
+  segments: Segment[],
+  cursor: number
+): number => {
+  const text = getVisibleText(segments);
+  const nextNewline = text.indexOf('\n', cursor);
+  return nextNewline === -1 ? text.length : nextNewline;
+};
+
+/**
+ * Kill from cursor to end of current logical line (Ctrl+K — emacs kill-line).
+ */
+export const killToLogicalLineEnd = (
+  segments: Segment[],
+  cursor: number
+): EditResult => {
+  const text = getVisibleText(segments);
+  const nextNewline = text.indexOf('\n', cursor);
+  const lineEnd = nextNewline === -1 ? text.length : nextNewline;
+  if (cursor >= lineEnd) return { segments, cursor };
+  const newText = text.slice(0, cursor) + text.slice(lineEnd);
+  return {
+    segments: normalizeSegments([{ type: 'text', value: newText }]),
+    cursor,
+  };
+};
+
+/**
+ * Kill from cursor to beginning of current logical line (Ctrl+U — emacs kill-to-beginning-of-line).
+ */
+export const killToLogicalLineBeginning = (
+  segments: Segment[],
+  cursor: number
+): EditResult => {
+  const text = getVisibleText(segments);
+  const prevNewline = text.lastIndexOf('\n', cursor - 1);
+  const lineStart = prevNewline === -1 ? 0 : prevNewline + 1;
+  if (cursor <= lineStart) return { segments, cursor };
+  const newText = text.slice(0, lineStart) + text.slice(cursor);
+  return {
+    segments: normalizeSegments([{ type: 'text', value: newText }]),
+    cursor: lineStart,
+  };
+};

@@ -56,10 +56,10 @@ import {
   isVisuallyMultiLine,
   moveCursorUpVisual,
   moveCursorDownVisual,
-  moveToVisualLineStart,
-  moveToVisualLineEnd,
-  killToVisualLineEnd,
-  killToVisualLineBeginning,
+  moveToLogicalLineStart,
+  moveToLogicalLineEnd,
+  killToLogicalLineEnd,
+  killToLogicalLineBeginning,
 } from '../../../utils/input-editing.js';
 import { CommandHistory } from '../../../utils/command-history.js';
 import { useTerminalSize } from '../../../hooks/useTerminalSize.js';
@@ -661,11 +661,11 @@ export const PromptInput = React.memo(function PromptInput({
         switch (userInput) {
           case 'a': // Ctrl+A - beginning of line
             inputMetrics.markStateUpdate();
-            setCursor(moveToVisualLineStart(segments, cursor, termWidth));
+            setCursor(moveToLogicalLineStart(segments, cursor));
             break;
           case 'e': // Ctrl+E - end of line
             inputMetrics.markStateUpdate();
-            setCursor(moveToVisualLineEnd(segments, cursor, termWidth));
+            setCursor(moveToLogicalLineEnd(segments, cursor));
             break;
           case 'b': // Ctrl+B - back one char
             inputMetrics.markStateUpdate();
@@ -682,10 +682,10 @@ export const PromptInput = React.memo(function PromptInput({
             applyEdit(deleteWordBackward(segments, cursor));
             break;
           case 'k': // Ctrl+K - kill to end of line
-            applyEdit(killToVisualLineEnd(segments, cursor, termWidth));
+            applyEdit(killToLogicalLineEnd(segments, cursor));
             break;
           case 'u': // Ctrl+U - kill to beginning of line
-            applyEdit(killToVisualLineBeginning(segments, cursor, termWidth));
+            applyEdit(killToLogicalLineBeginning(segments, cursor));
             break;
           case 't': // Ctrl+T - transpose characters
             applyEdit(transposeChars(segments, cursor));

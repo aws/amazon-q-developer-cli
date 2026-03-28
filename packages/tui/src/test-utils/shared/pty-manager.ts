@@ -165,6 +165,14 @@ export class PtyManager {
   }
 
   /**
+   * Returns the current terminal cursor position (0-indexed).
+   */
+  getCursorPosition(): { x: number; y: number } {
+    const buffer = this.terminal.buffer.active;
+    return { x: buffer.cursorX, y: buffer.cursorY };
+  }
+
+  /**
    * Returns the current terminal screen as a 2D array of characters.
    * Each row is a string representing one line of the terminal.
    * Escape codes are parsed by xterm, so this returns the actual rendered content.

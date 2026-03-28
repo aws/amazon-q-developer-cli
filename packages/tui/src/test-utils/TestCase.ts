@@ -303,6 +303,13 @@ export class TestCase {
   }
 
   /**
+   * Returns the current terminal cursor position (0-indexed).
+   */
+  getCursorPosition(): { x: number; y: number } {
+    return this.ptyManager.getCursorPosition();
+  }
+
+  /**
    * Returns the raw PTY output.
    */
   getOutput(): string {
