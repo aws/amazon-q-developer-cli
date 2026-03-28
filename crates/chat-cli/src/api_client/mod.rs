@@ -146,12 +146,17 @@ pub(crate) const BUILDER_ID_PROFILE_ARN: &str = "arn:aws:codewhisperer:us-east-1
 #[derive(Clone, Debug)]
 struct ProfileResolver {
     resolved: Arc<std::sync::Mutex<Option<AuthProfile>>>,
+    /// When true, skip the lazy `list_available_profiles` fallback in `require_arn`.
+    /// Social users always have their profile ARN stored at login time, so hitting
+    /// the slow path means something went wrong — we should error, not call the API.
+    skip_lazy_resolve: bool,
 }
 
 impl ProfileResolver {
     fn new(initial: Option<AuthProfile>) -> Self {
         Self {
             resolved: Arc::new(std::sync::Mutex::new(initial)),
+            skip_lazy_resolve: false,
         }
     }
 
@@ -160,6 +165,13 @@ impl ProfileResolver {
             arn: BUILDER_ID_PROFILE_ARN.to_string(),
             profile_name: "BuilderId".to_string(),
         }))
+    }
+
+    fn for_social(profile: Option<AuthProfile>) -> Self {
+        Self {
+            resolved: Arc::new(std::sync::Mutex::new(profile)),
+            skip_lazy_resolve: true,
+        }
     }
 
     fn arn_if_known(&self) -> Option<String> {
@@ -188,6 +200,17 @@ impl ProfileResolver {
         // Fast path: check cache (sync, no await)
         if let Some(arn) = self.arn_if_known() {
             return Ok(arn);
+        }
+
+        // Social users should always have a profile ARN from login.
+        // If we get here, something went wrong — don't call list_available_profiles.
+        if self.skip_lazy_resolve {
+            tracing::error!(
+                "profileArn missing for social user — this should not happen. The profile ARN should have been stored at login time."
+            );
+            return Err(ApiClientError::Other(
+                "profileArn is required but was not found for social login. Please log out and log in again.".into(),
+            ));
         }
 
         // Slow path (at most once per session): resolve via list_available_profiles
@@ -267,6 +290,8 @@ impl ApiClient {
             Ok(Some(ref t)) if matches!(t.token_type(), crate::auth::builder_id::TokenType::BuilderId)
         );
 
+        let is_social = crate::auth::social::is_social_logged_in(database).await;
+
         // Detect Amazon-internal users by checking for the mwinit Midway auth tool.
         // Internal users are routed to KRS via RTS ALB using the redirect-for-internal header.
         let is_internal = crate::util::system_info::is_mwinit_available();
@@ -343,6 +368,15 @@ impl ApiClient {
 
         let resolve_profile = if is_builder_id {
             ProfileResolver::for_builder_id()
+        } else if is_social {
+            let profile = match database.get_auth_profile() {
+                Ok(profile) => profile,
+                Err(err) => {
+                    error!("Failed to get auth profile for social user: {err}");
+                    None
+                },
+            };
+            ProfileResolver::for_social(profile)
         } else {
             let profile = match database.get_auth_profile() {
                 Ok(profile) => profile,
@@ -1258,5 +1292,74 @@ mod tests {
 
         // Err -> disabled (fail closed)
         assert!(!err.unwrap_or(false), "Err should default to disabled");
+    }
+
+    #[tokio::test]
+    async fn test_profile_resolver_social_with_profile_returns_arn() {
+        let resolver = ProfileResolver::for_social(Some(AuthProfile {
+            arn: "arn:aws:iam::123456789012:profile/SocialProfile".to_string(),
+            profile_name: "Social_Default_Profile".to_string(),
+        }));
+
+        let arn = resolver
+            .require_arn(|| async {
+                panic!("list_available_profiles should not be called for social users with a profile");
+            })
+            .await
+            .unwrap();
+
+        assert_eq!(arn, "arn:aws:iam::123456789012:profile/SocialProfile");
+    }
+
+    #[tokio::test]
+    async fn test_profile_resolver_social_without_profile_errors() {
+        let resolver = ProfileResolver::for_social(None);
+
+        let result = resolver
+            .require_arn(|| async {
+                panic!("list_available_profiles should not be called for social users");
+            })
+            .await;
+
+        assert!(result.is_err(), "social user without profile should error");
+        let err_msg = result.unwrap_err().to_string();
+        assert!(
+            err_msg.contains("social login"),
+            "error should mention social login, got: {err_msg}"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_profile_resolver_new_without_profile_calls_list_profiles() {
+        let resolver = ProfileResolver::new(None);
+
+        let result = resolver
+            .require_arn(|| async {
+                Ok(vec![AuthProfile {
+                    arn: "arn:aws:iam::123456789012:profile/Resolved".to_string(),
+                    profile_name: "Resolved".to_string(),
+                }])
+            })
+            .await
+            .unwrap();
+
+        assert_eq!(result, "arn:aws:iam::123456789012:profile/Resolved");
+    }
+
+    #[tokio::test]
+    async fn test_profile_resolver_new_with_profile_skips_list_profiles() {
+        let resolver = ProfileResolver::new(Some(AuthProfile {
+            arn: "arn:aws:iam::123456789012:profile/Cached".to_string(),
+            profile_name: "Cached".to_string(),
+        }));
+
+        let arn = resolver
+            .require_arn(|| async {
+                panic!("list_available_profiles should not be called when profile is cached");
+            })
+            .await
+            .unwrap();
+
+        assert_eq!(arn, "arn:aws:iam::123456789012:profile/Cached");
     }
 }

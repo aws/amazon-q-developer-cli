@@ -85,6 +85,7 @@ pub struct CredentialsJson {
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq)]
 pub struct AuthProfile {
     pub arn: String,
+    #[serde(alias = "profileName")]
     pub profile_name: String,
 }
 

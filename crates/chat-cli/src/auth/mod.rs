@@ -69,6 +69,8 @@ pub enum AuthError {
     HttpStatus(reqwest::StatusCode),
     #[error("Authentication failed: {0}")]
     SocialAuthProviderFailure(String),
+    #[error("Social login failed: no profile ARN returned by the auth service")]
+    MissingProfileArn,
 }
 
 impl From<aws_sdk_ssooidc::Error> for AuthError {

@@ -74,7 +74,7 @@ impl SocialToken {
                 expires_at: OffsetDateTime::now_utc() + time::Duration::minutes(60),
                 refresh_token: Some(Secret("test_refresh_token".to_string())),
                 provider: SocialProvider::Google,
-                profile_arn: None,
+                profile_arn: Some("arn:aws:iam::123456789012:profile/TestProfile".to_string()),
             }));
         }
 
@@ -84,6 +84,12 @@ impl SocialToken {
                 let token: Option<Self> = serde_json::from_str(&secret.0)?;
                 match token {
                     Some(mut token) => {
+                        // Reject legacy tokens that were saved without a profile ARN
+                        if token.profile_arn.as_ref().is_none_or(|arn| arn.is_empty()) {
+                            debug!("social token has no profile ARN, treating as invalid");
+                            token.delete(database).await.ok();
+                            return Ok(None);
+                        }
                         if token.is_expired() {
                             trace!("token is expired, refreshing");
                             token = token.refresh_token(database).await?;
@@ -159,18 +165,33 @@ impl SocialToken {
             error!("Failed to refresh social token: {}", status);
 
             // Clean up invalid token
-            self.delete(database).await?;
+            self.delete(database).await.ok();
 
             return Err(AuthError::HttpStatus(status));
         }
 
         let token_response: TokenResponse = response.json().await?;
+        let profile_arn = if token_response.profile_arn.is_empty() {
+            self.profile_arn.clone()
+        } else {
+            Some(token_response.profile_arn)
+        };
+
+        if profile_arn.as_ref().is_none_or(|arn| arn.is_empty()) {
+            error!(
+                "Social token refresh for {} returned no profile ARN and no existing ARN available",
+                self.provider
+            );
+            self.delete(database).await.ok();
+            return Err(AuthError::MissingProfileArn);
+        }
+
         let new_token = Self {
             access_token: Secret(token_response.access_token),
             expires_at: OffsetDateTime::now_utc() + time::Duration::seconds(token_response.expires_in as i64),
             refresh_token: Some(Secret(token_response.refresh_token)),
             provider: self.provider,
-            profile_arn: token_response.profile_arn.or_else(|| self.profile_arn.clone()),
+            profile_arn,
         };
 
         new_token.save(database).await?;
@@ -213,12 +234,21 @@ impl SocialToken {
             )));
         }
         let token_response: TokenResponse = response.json().await?;
+
+        if token_response.profile_arn.is_empty() {
+            error!(
+                "Social login for {} failed: auth service returned an empty profile ARN",
+                provider
+            );
+            return Err(AuthError::MissingProfileArn);
+        }
+
         let token = Self {
             access_token: Secret(token_response.access_token),
             expires_at: OffsetDateTime::now_utc() + time::Duration::seconds(token_response.expires_in as i64),
             refresh_token: Some(Secret(token_response.refresh_token)),
             provider,
-            profile_arn: token_response.profile_arn,
+            profile_arn: Some(token_response.profile_arn),
         };
 
         token.save(database).await?;
@@ -238,7 +268,7 @@ pub struct TokenResponse {
     #[serde(rename = "expiresIn")]
     expires_in: u64,
     #[serde(rename = "profileArn")]
-    profile_arn: Option<String>,
+    profile_arn: String,
 }
 
 #[derive(Debug, Clone)]
@@ -324,6 +354,52 @@ mod tests {
         assert_eq!(tr.access_token, "acc");
         assert_eq!(tr.refresh_token, "ref");
         assert_eq!(tr.expires_in, 3600);
-        assert_eq!(tr.profile_arn.as_deref(), Some("arn:aws:iam::123456789012:role/Demo"));
+        assert_eq!(tr.profile_arn.as_str(), "arn:aws:iam::123456789012:role/Demo");
+    }
+
+    #[test]
+    fn test_token_response_missing_profile_arn_fails() {
+        let json = r#"
+        {
+          "accessToken": "acc",
+          "refreshToken": "ref",
+          "expiresIn": 3600
+        }
+        "#;
+
+        let result: Result<TokenResponse, _> = serde_json::from_str(json);
+        assert!(result.is_err(), "missing profileArn should fail deserialization");
+    }
+
+    #[test]
+    fn test_token_response_empty_profile_arn_deserializes() {
+        let json = r#"
+        {
+          "accessToken": "acc",
+          "refreshToken": "ref",
+          "expiresIn": 3600,
+          "profileArn": ""
+        }
+        "#;
+
+        let tr: TokenResponse = serde_json::from_str(json).expect("deser ok");
+        assert_eq!(tr.profile_arn.as_str(), "");
+    }
+
+    #[test]
+    fn test_social_token_load_returns_profile_arn() {
+        // cfg!(test) stub in load() should return a token with a profile ARN
+        let rt = tokio::runtime::Runtime::new().unwrap();
+        rt.block_on(async {
+            let database = crate::database::Database::new_default().await.unwrap();
+            let token = SocialToken::load(&database).await.unwrap();
+            assert!(token.is_some(), "test stub should return Some");
+            let token = token.unwrap();
+            assert!(token.profile_arn.is_some(), "test stub should have a profile ARN");
+            assert!(
+                !token.profile_arn.as_ref().unwrap().is_empty(),
+                "test stub profile ARN should not be empty"
+            );
+        });
     }
 }
