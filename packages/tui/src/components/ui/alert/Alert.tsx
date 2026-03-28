@@ -1,23 +1,20 @@
 import React, { useEffect } from 'react';
+import { Box } from 'ink';
 import { StatusBar } from '../../chat/status-bar/StatusBar.js';
 import { StatusInfo } from '../status/StatusInfo.js';
 import { useTheme } from '../../../hooks/useThemeContext.js';
 import { getStatusColor } from '../../../utils/colorUtils.js';
 import type { StatusType } from '../../../types/componentTypes.js';
 import { ShimmerText } from '../shimmer/ShimmerText.js';
+import { Text } from '../text/Text.js';
 
 export interface AlertProps {
-  /** The alert message/title */
   message: string;
-
-  /** Alert status type */
   status: StatusType;
-
-  /** Auto-dismiss after ms (optional) */
   autoHideMs?: number;
-
-  /** Callback when auto-dismissed */
   onDismiss?: () => void;
+  /** Optional action hint shown inline, e.g. "r: read" */
+  actionHint?: string;
 }
 
 export const Alert = React.memo(function Alert({
@@ -25,6 +22,7 @@ export const Alert = React.memo(function Alert({
   status,
   autoHideMs,
   onDismiss,
+  actionHint,
 }: AlertProps) {
   const { getColor } = useTheme();
 
@@ -46,7 +44,10 @@ export const Alert = React.memo(function Alert({
 
   return (
     <StatusBar status={status}>
-      <StatusInfo title={message} useStatusColor={true} />
+      <Box>
+        <StatusInfo title={message} useStatusColor={true} />
+        {actionHint && <Text> {getColor('muted')(actionHint)}</Text>}
+      </Box>
     </StatusBar>
   );
 });

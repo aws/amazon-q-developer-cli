@@ -31,10 +31,10 @@ type EffectHandler = (
   ctx: CommandContext,
   cmd: SlashCommand,
   args: string
-) => boolean | void;
+) => boolean | void | Promise<boolean | void>;
 
 /** Extract command name from TuiCommand union type */
-type CommandName = TuiCommand['command'];
+type CommandName = TuiCommand['command'] | 'spawn';
 
 /**
  * Keep only the last `maxTurns` user turns from a buffered event stream.
@@ -81,7 +81,9 @@ type EffectName =
   | 'loadSession'
   | 'replyEditor'
   | 'showCodePanel'
-  | 'showFeedbackUrl';
+  | 'showFeedbackUrl'
+  | 'spawnSession'
+  | 'switchSession';
 
 /**
  * Command → Effect mapping.
@@ -105,6 +107,7 @@ const commandEffects: Partial<Record<string, EffectName>> = {
   chat: 'loadSession',
   reply: 'replyEditor',
   code: 'showCodePanel',
+  spawn: 'spawnSession',
 };
 
 /**
@@ -442,6 +445,121 @@ const effectHandlers: Record<EffectName, EffectHandler> = {
           (err instanceof Error ? err.message : 'Failed to load session');
         ctx.showAlert(message, 'error', 5000);
       });
+  },
+
+  switchSession: (_result, ctx, _cmd, args) => {
+    const sessions = Array.from(ctx.sessions.values()).filter(
+      (s) => s.status !== 'pending'
+    );
+
+    if (sessions.length === 0) {
+      ctx.showAlert('No active sessions', 'error', 3000);
+      return;
+    }
+
+    // If arg provided, switch directly by name or id prefix
+    if (args) {
+      if (args === '' || args === 'main') {
+        ctx.setActiveSession('');
+        ctx.showAlert('Switched to main chat', 'success', 2000);
+        return;
+      }
+      const target = sessions.find(
+        (s) => s.name === args || s.id.startsWith(args)
+      );
+      if (target) {
+        ctx.setActiveSession(target.id);
+        process.stdout.write('\x1b[?1049h'); // enter alt screen
+        ctx.setMode('session-view');
+        ctx.showAlert(`Switched to ${target.name}`, 'success', 2000);
+      } else {
+        ctx.showAlert(`Session not found: ${args}`, 'error', 3000);
+      }
+      return;
+    }
+
+    // No arg — show selection menu
+    const switchCmd = ctx.slashCommands.find((c) => c.name === '/switch');
+    if (!switchCmd) return;
+
+    ctx.setActiveCommand({
+      command: switchCmd,
+      options: [
+        {
+          value: 'main',
+          label: 'main chat',
+          description: 'return to main conversation',
+        },
+        ...sessions.map((s) => ({
+          value: s.id,
+          label: s.name,
+          description: `${s.status}${s.role ? ` · ${s.role}` : ''}${s.group ? ` · ${s.group}` : ''}`,
+        })),
+      ],
+    });
+  },
+
+  spawnSession: async (result, ctx, _cmd, args) => {
+    if (!args) {
+      ctx.showAlert('Task description is required', 'error', 3000);
+      return;
+    }
+
+    try {
+      // Parse args for --name flag
+      const parts = args.split(/\s+/);
+      let task = '';
+      let name: string | undefined;
+
+      for (let i = 0; i < parts.length; i++) {
+        if (parts[i] === '--name' && i + 1 < parts.length) {
+          name = parts[i + 1];
+          i++; // Skip the name value
+        } else {
+          task += (task ? ' ' : '') + parts[i];
+        }
+      }
+
+      if (!task) {
+        ctx.showAlert('Task description is required', 'error', 3000);
+        return;
+      }
+
+      // Spawn the session
+      const { sessionId, name: assignedName } = await ctx.kiro.spawnSession(
+        task,
+        name
+      );
+      const displayName =
+        assignedName || name || `session-${sessionId.slice(0, 8)}`;
+
+      // Create session object for store
+      const session = {
+        id: sessionId,
+        name: displayName,
+        role: undefined,
+        group: undefined,
+        status: 'idle' as const,
+        type: 'ephemeral' as const,
+        created: new Date(),
+        lastActivity: new Date(),
+        summary: undefined,
+        parentSession: undefined,
+      };
+
+      // Add to store
+      ctx.addSession(session);
+
+      ctx.showAlert(
+        `Spawned ${displayName}: ${task.slice(0, 40)}${task.length > 40 ? '…' : ''}`,
+        'success',
+        3000
+      );
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : 'Failed to spawn session';
+      ctx.showAlert(message, 'error', 3000);
+    }
   },
 };
 

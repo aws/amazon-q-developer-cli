@@ -109,8 +109,8 @@ export const StatusBar = React.memo(function StatusBar({
   currentLineIndexRef.current = 0;
 
   // Measure component height after layout.
-  // remeasureKey is bumped by children (via requestRemeasure) to force a second
-  // measurement pass — needed because Ink's Yoga layout may not be ready on the
+  // remeasureKey is bumped by children (via requestRemeasure) to force a
+  // measurement pass — needed because Yoga layout may not be ready on the
   // first commit after content changes.
   useLayoutEffect(() => {
     if (contentRef.current) {
@@ -119,7 +119,7 @@ export const StatusBar = React.memo(function StatusBar({
         setLineCount(height);
       }
     }
-  }, [remeasureKey, children]);
+  }, [remeasureKey]);
 
   const contextValue = useMemo(
     () => ({

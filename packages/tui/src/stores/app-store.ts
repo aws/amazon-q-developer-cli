@@ -18,6 +18,8 @@ import type {
 } from '../types/input-buffer';
 import type { AvailableCommand, CommandOption } from '../types/commands';
 import type { StatusType } from '../types/componentTypes';
+import type { SubagentInfo, SubagentStatus } from '../types/subagent.js';
+import type { AgentSession, InboxMessage } from '../types/multi-session.js';
 
 export interface ContextBreakdownData {
   contextFiles: {
@@ -187,6 +189,7 @@ export type MessageType =
       result?: ToolResult;
       locations?: Array<{ path: string; line?: number }>;
       agentName?: string;
+      liveOutput?: string;
     }
   | { id: string; role: MessageRole.System; content: string; success: boolean };
 
@@ -203,6 +206,8 @@ export interface TransientAlert {
   message: string;
   status: StatusType;
   autoHideMs?: number;
+  /** Optional keyboard shortcut action shown in the alert */
+  action?: { label: string; key: string; onAction: () => void };
 }
 
 export interface LastTurnTokens {
@@ -245,9 +250,10 @@ interface BaseAppActions {
   cancelMessage: () => Promise<void>;
   setProcessing: (processing: boolean) => void;
   setAgentError: (error: string | null, guidance?: string | null) => void;
-  respondToApproval: (optionId: string) => void;
+  respondToApproval: (optionId: string, target?: ApprovalRequestInfo) => void;
   cancelApproval: () => void;
   setApprovalMode: (mode: 'dropdown' | 'drill-in') => void;
+  setAutoApproveCrewTools: (value: boolean) => void;
   setCurrentModel: (model: { id: string; name: string } | null) => void;
   setCurrentAgent: (
     agent: { name: string; welcomeMessage?: string } | null
@@ -289,7 +295,20 @@ interface BaseAppActions {
   navigateHistory: (direction: 'up' | 'down') => string | null;
 
   // UI actions
-  setMode: (mode: 'inline' | 'expanded') => void;
+  setMode: (
+    mode: 'inline' | 'expanded' | 'crew-monitor' | 'session-view'
+  ) => void;
+  addSubagentSession: (info: SubagentInfo) => void;
+  updateSubagentSession: (sessionId: string, status: SubagentStatus) => void;
+  pushSessionEvent: (sessionId: string, event: AgentStreamEvent) => void;
+  addSession: (session: AgentSession) => void;
+  updateSession: (id: string, updates: Partial<AgentSession>) => void;
+  removeSession: (id: string) => void;
+  terminateAllCrewSessions: () => Promise<void>;
+  setActiveSession: (id: string) => void;
+  setSelectedSession: (id: string) => void;
+  toggleCrewMonitor: () => void;
+  addMessage: (sessionId: string, message: InboxMessage) => void;
   incrementExitSequence: () => void;
   resetExitSequence: () => void;
   showTransientAlert: (alert: TransientAlert) => void;
@@ -384,6 +403,9 @@ export interface AppState {
   pendingApproval: ApprovalRequestInfo | null;
   approvalQueue: ApprovalRequestInfo[];
   approvalMode: 'dropdown' | 'drill-in';
+  autoApproveCrewTools: boolean;
+  focusedCrewIndex: number;
+  setFocusedCrewIndex: (index: number) => void;
   currentModel: { id: string; name: string } | null;
   currentAgent: { name: string } | null;
   previousAgentName: string | null;
@@ -404,7 +426,13 @@ export interface AppState {
   input: InputBufferState;
 
   // UI state
-  mode: 'inline' | 'expanded';
+  mode: 'inline' | 'expanded' | 'crew-monitor' | 'session-view';
+  sessions: Map<string, AgentSession>;
+  activeSessionId: string;
+  selectedSessionId?: string;
+  crewMonitorVisible: boolean;
+  sessionMessages: Map<string, InboxMessage[]>;
+  sessionEventBuffer: Record<string, AgentStreamEvent[]>;
   exitSequence: number;
   exitTimer: NodeJS.Timeout | null;
   transientAlert: TransientAlert | null;
@@ -545,6 +573,12 @@ export const createAppStore = (props: AppStoreProps) => {
         source: 'local' as const,
         meta: { local: true },
       },
+      {
+        name: '/spawn',
+        description: 'Spawn a new agent session with a task',
+        source: 'local' as const,
+        meta: { local: true },
+      },
     ], // Backend sends all commands via CommandsUpdate
     prompts: [],
     kiro: props.kiro,
@@ -556,6 +590,8 @@ export const createAppStore = (props: AppStoreProps) => {
     pendingApproval: null,
     approvalQueue: [],
     approvalMode: 'dropdown',
+    autoApproveCrewTools: false,
+    focusedCrewIndex: 0,
     currentModel: null,
     currentAgent: null,
     previousAgentName: null,
@@ -570,6 +606,12 @@ export const createAppStore = (props: AppStoreProps) => {
     input: initialInputBufferState(),
 
     mode: 'inline',
+    sessions: new Map(),
+    activeSessionId: '',
+    selectedSessionId: undefined,
+    crewMonitorVisible: false,
+    sessionMessages: new Map(),
+    sessionEventBuffer: {},
 
     exitSequence: 0,
     exitTimer: null,
@@ -664,6 +706,7 @@ export const createAppStore = (props: AppStoreProps) => {
           isProcessing: true,
           agentError: null,
           agentErrorGuidance: null,
+          autoApproveCrewTools: false,
           messages: [...state.messages, userMessage],
           attachedFiles: [], // Clear attachments after sending
           pendingImages: [], // Clear pending images after sending
@@ -995,6 +1038,11 @@ export const createAppStore = (props: AppStoreProps) => {
               }
 
               const isNotReady = NOT_READY_TOOLS.has(event.name);
+              // Resolve agent name: use subagent session name if tool call is from a subagent
+              const agentName = event.sessionId
+                ? (state.sessions.get(event.sessionId)?.name ??
+                  state.currentAgent?.name)
+                : state.currentAgent?.name;
               return {
                 messages: [
                   ...state.messages,
@@ -1005,7 +1053,7 @@ export const createAppStore = (props: AppStoreProps) => {
                     kind: event.kind,
                     content,
                     locations: event.locations,
-                    agentName: state.currentAgent?.name,
+                    agentName,
                     ...(isNotReady && {
                       isFinished: true,
                       result: {
@@ -1072,14 +1120,31 @@ export const createAppStore = (props: AppStoreProps) => {
               return { messages };
             });
             break;
-          case AgentEventType.ApprovalRequest:
+          case AgentEventType.ApprovalRequest: {
+            const { autoApproveCrewTools, sessionId: mainSessionId } = get();
+            const isCrewApproval = !!(
+              event.value.sessionId &&
+              mainSessionId &&
+              event.value.sessionId !== mainSessionId
+            );
+            if (autoApproveCrewTools && isCrewApproval) {
+              const opt = event.value.permissionOptions.find(
+                (o: { optionId: string }) => o.optionId === 'allow_once'
+              );
+              if (opt) {
+                event.value.resolve({
+                  outcome: 'selected',
+                  optionId: opt.optionId,
+                });
+                break;
+              }
+            }
             set((state) => {
               const newQueue = [...state.approvalQueue, event.value];
               const toolCallId = event.value.toolCall.toolCallId;
               return {
                 approvalQueue: newQueue,
                 pendingApproval: state.pendingApproval ?? event.value,
-                // Mark the matching tool message as pending approval
                 messages: state.messages.map((msg) =>
                   msg.role === MessageRole.ToolUse && msg.id === toolCallId
                     ? { ...msg, status: ToolUseStatus.Pending }
@@ -1088,6 +1153,7 @@ export const createAppStore = (props: AppStoreProps) => {
               };
             });
             break;
+          }
           case AgentEventType.ContextUsage:
             get().setContextUsage(event.percent);
             break;
@@ -1222,6 +1288,11 @@ export const createAppStore = (props: AppStoreProps) => {
 
         // Cancel any pending approval
         get().cancelApproval();
+
+        // Terminate any active crew sessions so subagents don't keep running
+        if (get().sessions.size > 0) {
+          await get().terminateAllCrewSessions();
+        }
 
         // Then notify backend — this must complete before a new prompt
         // can be sent, otherwise the backend rejects with
@@ -1386,18 +1457,17 @@ export const createAppStore = (props: AppStoreProps) => {
       });
     },
 
-    respondToApproval: (optionId: string) => {
+    respondToApproval: (optionId: string, target?: ApprovalRequestInfo) => {
       const { pendingApproval, approvalQueue } = get();
-      if (pendingApproval) {
-        const toolCallId = pendingApproval.toolCall.toolCallId;
+      const approval = target ?? pendingApproval;
+      if (approval) {
+        const toolCallId = approval.toolCall.toolCallId;
         const isRejected =
           optionId === ApprovalOptionId.RejectOnce ||
           optionId === ApprovalOptionId.RejectAlways;
 
         // Update the tool call status based on user response
-        const remainingQueue = approvalQueue.filter(
-          (a) => a !== pendingApproval
-        );
+        const remainingQueue = approvalQueue.filter((a) => a !== approval);
         const nextApproval = remainingQueue[0] ?? null;
 
         set((state) => ({
@@ -1414,11 +1484,14 @@ export const createAppStore = (props: AppStoreProps) => {
             return msg;
           }),
           approvalQueue: remainingQueue,
-          pendingApproval: nextApproval,
+          pendingApproval:
+            state.pendingApproval === approval
+              ? nextApproval
+              : state.pendingApproval,
           approvalMode: 'dropdown',
         }));
 
-        pendingApproval.resolve({
+        approval.resolve({
           outcome: 'selected',
           optionId,
         });
@@ -1465,6 +1538,9 @@ export const createAppStore = (props: AppStoreProps) => {
     },
 
     setApprovalMode: (mode) => set({ approvalMode: mode }),
+
+    setAutoApproveCrewTools: (value) => set({ autoApproveCrewTools: value }),
+    setFocusedCrewIndex: (index) => set({ focusedCrewIndex: index }),
 
     // Clear conversation but keep last turn visible in UI
     clearMessages: () => {
@@ -1567,6 +1643,10 @@ export const createAppStore = (props: AppStoreProps) => {
               },
             ],
           })),
+        addSession: state.addSession,
+        setActiveSession: state.setActiveSession,
+        sessions: state.sessions,
+        setMode: state.setMode,
         clearUIState: () =>
           set({
             activeCommand: null,
@@ -1734,7 +1814,7 @@ export const createAppStore = (props: AppStoreProps) => {
         input: initialInputBufferState(),
       }));
     },
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+
     moveCursor: (_dir: MoveCursorDir) => {
       set((state) => {
         // todo
@@ -1767,6 +1847,127 @@ export const createAppStore = (props: AppStoreProps) => {
 
     // UI actions
     setMode: (mode) => set({ mode }),
+
+    addSubagentSession: (info) => {
+      set((state) => {
+        const newSessions = new Map(state.sessions);
+        // Convert SubagentInfo to AgentSession format
+        const session: AgentSession = {
+          id: info.sessionId,
+          name: info.agentName || info.sessionId,
+          role: '',
+          status: info.status === 'working' ? 'busy' : 'idle',
+          type: 'ephemeral',
+          created: new Date(),
+          lastActivity: new Date(),
+        };
+        newSessions.set(info.sessionId, session);
+        return { sessions: newSessions };
+      });
+    },
+
+    updateSubagentSession: (sessionId, status) => {
+      set((state) => {
+        const newSessions = new Map(state.sessions);
+        const existing = newSessions.get(sessionId);
+        if (existing) {
+          const agentStatus = status === 'working' ? 'busy' : 'idle';
+          newSessions.set(sessionId, {
+            ...existing,
+            status: agentStatus,
+            lastActivity: new Date(),
+          });
+        }
+        return { sessions: newSessions };
+      });
+    },
+
+    pushSessionEvent: (sessionId, event) => {
+      set((state) => {
+        const newBuffer = { ...state.sessionEventBuffer };
+        newBuffer[sessionId] = [...(newBuffer[sessionId] ?? []), event];
+        return { sessionEventBuffer: newBuffer };
+      });
+    },
+
+    addSession: (session) =>
+      set((state) => {
+        const newSessions = new Map(state.sessions);
+        // Clear old terminated sessions when a new active session arrives
+        if (session.status === 'busy' && !newSessions.has(session.id)) {
+          for (const [id, s] of newSessions) {
+            if (s.status === 'terminated') newSessions.delete(id);
+          }
+        }
+        newSessions.set(session.id, session);
+        return { sessions: newSessions };
+      }),
+
+    updateSession: (id, updates) =>
+      set((state) => {
+        const newSessions = new Map(state.sessions);
+        const existing = newSessions.get(id);
+        if (existing) {
+          newSessions.set(id, { ...existing, ...updates });
+        }
+        return { sessions: newSessions };
+      }),
+
+    removeSession: (id) =>
+      set((state) => {
+        const newSessions = new Map(state.sessions);
+        const newMessages = new Map(state.sessionMessages);
+        newSessions.delete(id);
+        newMessages.delete(id);
+        // Clean up event buffer for terminated session
+        const newBuffer = { ...state.sessionEventBuffer };
+        delete newBuffer[id];
+        return {
+          sessions: newSessions,
+          sessionMessages: newMessages,
+          sessionEventBuffer: newBuffer,
+          activeSessionId:
+            state.activeSessionId === id ? '' : state.activeSessionId,
+          selectedSessionId:
+            state.selectedSessionId === id
+              ? undefined
+              : state.selectedSessionId,
+        };
+      }),
+
+    terminateAllCrewSessions: async () => {
+      const { sessions, kiro } = get();
+      const sessionIds = Array.from(sessions.keys());
+      // Terminate each session on the backend, but keep data in store
+      await Promise.all(
+        sessionIds.map((id) => kiro?.terminateSession(id).catch(() => {}))
+      );
+      // Mark all sessions as terminated instead of clearing
+      set((state) => {
+        const newSessions = new Map(state.sessions);
+        for (const [id, session] of newSessions) {
+          if (session.status !== 'terminated') {
+            newSessions.set(id, { ...session, status: 'terminated' as const });
+          }
+        }
+        return { sessions: newSessions };
+      });
+    },
+
+    setActiveSession: (id) => set({ activeSessionId: id }),
+
+    setSelectedSession: (id) => set({ selectedSessionId: id }),
+
+    toggleCrewMonitor: () =>
+      set((state) => ({ crewMonitorVisible: !state.crewMonitorVisible })),
+
+    addMessage: (sessionId, message) =>
+      set((state) => {
+        const newMessages = new Map(state.sessionMessages);
+        const existing = newMessages.get(sessionId) || [];
+        newMessages.set(sessionId, [...existing, message]);
+        return { sessionMessages: newMessages };
+      }),
 
     incrementExitSequence: () => {
       set((state) => {
@@ -1979,6 +2180,10 @@ export const createAppStore = (props: AppStoreProps) => {
                 },
               ],
             })),
+          addSession: state.addSession,
+          setActiveSession: state.setActiveSession,
+          sessions: state.sessions,
+          setMode: state.setMode,
           clearUIState: () =>
             set({
               activeCommand: null,
@@ -2117,12 +2322,22 @@ export const createAppStore = (props: AppStoreProps) => {
   let lastProgressKey: string | null = null;
 
   store.subscribe((state) => {
+    // Suppress OSC 9;4 progress on alternate screen — it pollutes the
+    // tab-bar indicator and causes unnecessary escape-sequence writes.
+    const onAltScreen =
+      state.mode === 'crew-monitor' || state.mode === 'session-view';
     // Derive a cache key from the fields that affect the progress indicator
-    const key = `${state.agentError ?? ''}|${state.pendingApproval != null}|${state.isProcessing}|${state.isCompacting}|${state.contextUsagePercent}`;
+    const key = `${onAltScreen}|${state.agentError ?? ''}|${state.pendingApproval != null}|${state.isProcessing}|${state.isCompacting}|${state.contextUsagePercent}`;
     if (key !== lastProgressKey) {
       lastProgressKey = key;
       // Defer so the OSC 9;4 escape lands after twinki's nextTick render frame.
-      setImmediate(() => syncTerminalProgress(state));
+      setImmediate(() => {
+        if (onAltScreen) {
+          clearTerminalProgress();
+        } else {
+          syncTerminalProgress(state);
+        }
+      });
     }
   });
 

@@ -1,11 +1,14 @@
 import React from 'react';
 import { InlineLayout } from './InlineLayout';
 import { ExpandedLayout } from './ExpandedLayout';
+import { CrewMonitorScreen } from './CrewMonitorScreen';
+import { SessionViewScreen } from './SessionViewScreen';
 import { useAppStore } from '../../stores/app-store';
 import { useKeypress } from '../../hooks/useKeypress';
 
 export const AppContainer: React.FC = () => {
   const mode = useAppStore((state) => state.mode);
+  const setMode = useAppStore((state) => state.setMode);
   const incrementExitSequence = useAppStore(
     (state) => state.incrementExitSequence
   );
@@ -16,7 +19,18 @@ export const AppContainer: React.FC = () => {
   const cancelMessage = useAppStore((state) => state.cancelMessage);
   const pendingApproval = useAppStore((state) => state.pendingApproval);
 
+  const transientAlert = useAppStore((state) => state.transientAlert);
+  const dismissTransientAlert = useAppStore(
+    (state) => state.dismissTransientAlert
+  );
+
   useKeypress((userInput, key) => {
+    // Fire transient alert action on Ctrl+r
+    if (key.ctrl && userInput === 'r' && transientAlert?.action) {
+      transientAlert.action.onAction();
+      dismissTransientAlert();
+      return;
+    }
     if (key.ctrl && userInput === 'c') {
       if (isProcessing) {
         cancelMessage();
@@ -36,16 +50,33 @@ export const AppContainer: React.FC = () => {
       if (isProcessing && !pendingApproval) {
         cancelMessage();
       }
+    } else if (
+      !key.ctrl &&
+      !key.meta &&
+      userInput === 'q' &&
+      (mode === 'crew-monitor' || mode === 'session-view')
+    ) {
+      process.stdout.write('\x1b[?1049l');
+      setMode('inline');
+    } else if (key.ctrl && userInput === 'g') {
+      if (mode === 'crew-monitor') {
+        process.stdout.write('\x1b[?1049l');
+        setMode('inline');
+      } else {
+        process.stdout.write('\x1b[?1049h');
+        setMode('crew-monitor');
+      }
     } else if (!key.ctrl && !key.meta) {
       resetExitSequence();
     }
   });
 
-  switch (mode) {
-    case 'expanded':
-      return <ExpandedLayout />;
-    case 'inline':
-    default:
-      return <InlineLayout />;
-  }
+  return (
+    <>
+      {mode === 'inline' && <InlineLayout />}
+      {mode === 'expanded' && <ExpandedLayout />}
+      {mode === 'crew-monitor' && <CrewMonitorScreen />}
+      {mode === 'session-view' && <SessionViewScreen />}
+    </>
+  );
 };

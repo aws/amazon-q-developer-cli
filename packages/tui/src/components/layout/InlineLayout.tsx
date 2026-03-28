@@ -31,8 +31,10 @@ import { BlockingErrorAlert } from '../ui/alert/BlockingErrorAlert.js';
 import { Chip, ChipColor, ProgressChip } from '../ui/chip/index.js';
 import { ContextBreakdown } from '../ui/ContextBreakdown';
 import { ApprovalRequest } from '../ui/ApprovalRequest.js';
+import { CrewApprovalRequest } from '../ui/CrewApprovalRequest.js';
 import { UsagePanel } from '../ui/UsagePanel';
 import { CodePanel } from '../ui/CodePanel';
+
 import {
   useNotificationState,
   useNotificationActions,
@@ -168,10 +170,40 @@ export const InlineLayout: React.FC = () => {
   const { activeCommand, promptHint } = useCommandState();
   const { setActiveCommand, setActiveTrigger, clearCommandInput } =
     useCommandActions();
-  const { handleUserInput } = useInputActions();
+  const { handleUserInput, clearInput } = useInputActions();
   const { messages } = useConversationState();
   const { queuedMessages } = useQueueState();
   const { kiro } = useKiroClient();
+  const mode = useAppStore((state) => state.mode);
+  const setMode = useAppStore((state) => state.setMode);
+
+  // Detect if pending approval is from a crew subagent (not the main session)
+  const isCrewApproval = !!(
+    pendingApproval?.sessionId &&
+    sessionId &&
+    pendingApproval.sessionId !== sessionId
+  );
+
+  const handleCrewConfigure = useCallback(() => {
+    process.stdout.write('\x1b[?1049h');
+    setMode('crew-monitor');
+  }, [setMode]);
+
+  // Detect if pending approval is from a crew subagent (not the main session)
+
+  // Handle escape to cancel approval
+  useKeypress(
+    (_input, key) => {
+      if (!pendingApproval || mode !== 'inline') return;
+      if (key.escape) {
+        cancelApproval();
+        clearInput();
+        clearCommandInput();
+      }
+    },
+    { isActive: !!pendingApproval }
+  );
+
   const { setCurrentAgent, setPreviousAgentName } = useAppStore(
     useShallow((s) => ({
       setCurrentAgent: s.setCurrentAgent,
@@ -471,6 +503,7 @@ export const InlineLayout: React.FC = () => {
           />
         )}
 
+        {/* ConversationView - always rendered */}
         <ConversationView />
 
         <QueueStack />
@@ -491,6 +524,11 @@ export const InlineLayout: React.FC = () => {
           }
           onDismiss={
             !sessionId || loadingMessage ? undefined : dismissTransientAlert
+          }
+          actionHint={
+            transientAlert?.action
+              ? `${transientAlert.action.key}: ${transientAlert.action.label}`
+              : undefined
           }
         />
 
@@ -527,6 +565,8 @@ export const InlineLayout: React.FC = () => {
               (activeCommand?.command.meta?.hint as string | undefined)
             }
             hideInput={
+              mode === 'session-view' ||
+              mode === 'crew-monitor' ||
               toolOutputsExpanded ||
               noInteractive ||
               !!pendingApproval ||
@@ -540,9 +580,13 @@ export const InlineLayout: React.FC = () => {
             }
           >
             <CommandMenu />
-            {pendingApproval && (
-              <ApprovalRequest onDrillInSubmit={handleSubmit} />
-            )}
+            {pendingApproval &&
+              mode === 'inline' &&
+              (isCrewApproval ? (
+                <CrewApprovalRequest onConfigure={handleCrewConfigure} />
+              ) : (
+                <ApprovalRequest onDrillInSubmit={handleSubmit} />
+              ))}
             {showContextBreakdown && (
               <ContextBreakdown
                 percent={contextUsagePercent}

@@ -326,6 +326,9 @@ function isAsciiOnly(text: string): boolean {
  * // Each line will maintain the red color formatting
  * ```
  */
+const WRAP_CACHE_SIZE = 512;
+const wrapCache = new Map<string, string[]>();
+
 export function wrapTextWithAnsi(text: string, width: number): string[] {
 	if (!text) {
 		return [""];
@@ -335,6 +338,10 @@ export function wrapTextWithAnsi(text: string, width: number): string[] {
 	if (isAsciiOnly(text)) {
 		return wrapAsciiText(text, width);
 	}
+
+	const key = `${width}\0${text}`;
+	const cached = wrapCache.get(key);
+	if (cached) return cached;
 
 	const inputLines = text.split("\n");
 	const result: string[] = [];
@@ -346,5 +353,10 @@ export function wrapTextWithAnsi(text: string, width: number): string[] {
 		updateTrackerFromText(inputLine, tracker);
 	}
 
-	return result.length > 0 ? result : [""];
+	const output = result.length > 0 ? result : [""];
+
+	if (wrapCache.size >= WRAP_CACHE_SIZE) wrapCache.clear();
+	wrapCache.set(key, output);
+
+	return output;
 }

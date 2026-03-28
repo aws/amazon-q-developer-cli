@@ -209,7 +209,9 @@ jobs:
           
           sed -i "s/^version = \".*\"/version = \"$NEW_VERSION\"/" Cargo.toml
           cargo update --workspace
-          git add Cargo.toml Cargo.lock
+          # Keep packages/tui/package.json in sync (tested by tui_package_json_version_matches_cargo_version)
+          jq --arg v "$NEW_VERSION" '.version = $v' packages/tui/package.json > packages/tui/package.json.tmp && mv packages/tui/package.json.tmp packages/tui/package.json
+          git add Cargo.toml Cargo.lock packages/tui/package.json
           git commit -m "Release: Bump version to $NEW_VERSION (${{ env.RELEASE_QUALITY }})"
           git push origin HEAD
 

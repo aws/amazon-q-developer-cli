@@ -56,7 +56,7 @@ const lineCache = new Map<string, number>();
 export function visibleWidth(str: string): number {
 	if (str.length === 0) return 0;
 
-	// Fast path: pure ASCII printable
+	// Fast path: pure ASCII printable (no ANSI, no wide chars)
 	let isPureAscii = true;
 	for (let i = 0; i < str.length; i++) {
 		const code = str.charCodeAt(i);
@@ -98,6 +98,36 @@ export function visibleWidth(str: string): number {
 		graphemeCache.set(str, width);
 		return width;
 	}
+
+	// Fast path: ASCII + ANSI only (no wide chars, no emoji)
+	// Runs before cache — ANSI-styled lines are unique per render, caching wastes space.
+	let ansiAsciiWidth = 0;
+	let isAnsiAscii = true;
+	for (let i = 0; i < str.length; i++) {
+		const code = str.charCodeAt(i);
+		if (code === 0x1b) {
+			// Skip CSI sequences: ESC [ <params> <final byte>
+			if (i + 1 < str.length && str.charCodeAt(i + 1) === 0x5b) {
+				i += 2;
+				// Skip parameter bytes (0x30-0x3f) and intermediate bytes (0x20-0x2f)
+				while (i < str.length && str.charCodeAt(i) < 0x40) i++;
+				// i now points at final byte (0x40-0x7e), loop increment skips it
+				continue;
+			}
+			// Other ESC sequences — bail
+			isAnsiAscii = false;
+			break;
+		}
+		if (code >= 0x20 && code <= 0x7e) {
+			ansiAsciiWidth++;
+		} else if (code === 0x09) {
+			ansiAsciiWidth += 3; // tab = 3 spaces
+		} else {
+			isAnsiAscii = false;
+			break;
+		}
+	}
+	if (isAnsiAscii) return ansiAsciiWidth;
 
 	// Longer strings use line cache
 	const cached = lineCache.get(str);

@@ -332,6 +332,14 @@ pub struct ToolsSettings {
     pub glob: GlobSettings,
     #[serde(default, alias = "use_aws", alias = "aws")]
     pub use_aws: UseAwsSettings,
+    #[serde(
+        default,
+        alias = "agent_crew",
+        alias = "agentCrew",
+        alias = "subagent",
+        alias = "use_subagent"
+    )]
+    pub crew: AgentCrewSettings,
 }
 
 impl ToolsSettings {
@@ -348,6 +356,7 @@ impl ToolsSettings {
         &["write", "fsWrite", "fs_write"],
         &["shell", "execute_bash", "executeBash", "executeCmd", "execute_cmd"],
         &["use_aws", "useAws", "aws"],
+        &["crew", "agent_crew", "agentCrew", "subagent", "use_subagent"],
     ];
 }
 
@@ -423,6 +432,91 @@ impl Default for UseAwsSettings {
 
 fn default_true() -> bool {
     true
+}
+
+/// Settings for the agent_crew tool controlling which agents can be used in crew pipelines.
+#[derive(Debug, Clone, Default, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct AgentCrewSettings {
+    /// Which agents can be used as crew stage roles. Supports exact names and glob patterns
+    /// (e.g. `"test-*"`). If empty, all agents are available.
+    #[serde(default)]
+    pub available_agents: Vec<AgentIdentifier>,
+    /// Which agents are auto-approved without user confirmation. Supports exact names and glob
+    /// patterns.
+    #[serde(default, alias = "trustedAgents")]
+    pub trusted_agents: Vec<AgentIdentifier>,
+}
+
+/// Identifies an agent by exact name or glob pattern.
+#[derive(Debug, Clone)]
+pub enum AgentIdentifier {
+    ExactName(String),
+    NameGlob(regex::Regex, String),
+}
+
+impl AgentIdentifier {
+    /// Returns true if this identifier matches the given agent name.
+    pub fn matches(&self, name: &str) -> bool {
+        match self {
+            AgentIdentifier::ExactName(n) => n == name,
+            AgentIdentifier::NameGlob(r, _) => r.is_match(name),
+        }
+    }
+
+    /// Returns true if any identifier in the slice matches the given name.
+    pub fn any_matches(identifiers: &[AgentIdentifier], name: &str) -> bool {
+        identifiers.iter().any(|id| id.matches(name))
+    }
+}
+
+impl PartialEq for AgentIdentifier {
+    fn eq(&self, other: &AgentIdentifier) -> bool {
+        match (self, other) {
+            (AgentIdentifier::NameGlob(_, a), AgentIdentifier::NameGlob(_, b)) => a == b,
+            (AgentIdentifier::ExactName(a), AgentIdentifier::ExactName(b)) => a == b,
+            _ => false,
+        }
+    }
+}
+
+impl<'de> Deserialize<'de> for AgentIdentifier {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        let s = String::deserialize(deserializer)?;
+        if s.contains('*') {
+            // Convert glob pattern to regex: anchor and replace * with .*
+            let regex_str = format!("^{}$", s.replace('*', ".*"));
+            let r = regex::Regex::new(&regex_str).map_err(serde::de::Error::custom)?;
+            Ok(AgentIdentifier::NameGlob(r, s))
+        } else {
+            Ok(AgentIdentifier::ExactName(s))
+        }
+    }
+}
+
+impl Serialize for AgentIdentifier {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        match self {
+            AgentIdentifier::ExactName(name) => serializer.serialize_str(name),
+            AgentIdentifier::NameGlob(_, pattern) => serializer.serialize_str(pattern),
+        }
+    }
+}
+
+impl JsonSchema for AgentIdentifier {
+    fn schema_name() -> std::borrow::Cow<'static, str> {
+        "AgentIdentifier".into()
+    }
+
+    fn json_schema(generator: &mut schemars::SchemaGenerator) -> schemars::Schema {
+        generator.subschema_for::<String>()
+    }
 }
 
 /// This mirrors claude's config set up.

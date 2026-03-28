@@ -6,23 +6,26 @@ use agent::protocol::{
     SendPromptArgs,
 };
 use agent::tools::summary::Summary;
-use agent::tools::{
-    SubagentResponse,
-    ToolExecutionOutput,
-    UseSubagent,
-};
-use eyre::bail;
 use sacp::schema::SessionId;
 use serde::{
     Deserialize,
     Serialize,
 };
-use tracing::warn;
 
-use super::session_manager::SessionManagerHandle;
-use crate::agent::acp::acp_agent::AcpSessionConfig;
+/// Error type for internal prompt execution, distinguishing cancellation from other failures.
+#[derive(Debug, thiserror::Error)]
+pub enum InternalPromptError {
+    #[error("Session cancelled")]
+    Cancelled,
+    #[error("{0}")]
+    Failed(String),
+}
 
-const SUMMARY_FAILSAFE_MSG: &str = "You have not called the summary tool yet. Please call the summary tool now to provide your findings to the main agent before ending your task.";
+impl InternalPromptError {
+    pub fn is_cancelled(&self) -> bool {
+        matches!(self, Self::Cancelled)
+    }
+}
 
 /// Commands supported by the subagent tool
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -80,101 +83,23 @@ impl BackgroundedResult {
     }
 }
 
-/// This function handles the lifecycle of a subagent.
-/// The execution logic of which is also evident in [agent::tools::spawn_subagent], which shall be
-/// reiterated here for ease of understanding.
+const SUMMARY_FAILSAFE_MSG: &str = "You have not called the summary tool yet. Please call the summary tool now to provide your findings to the main agent before ending your task.";
+
+/// Handle an internal prompt for subagent execution.
 ///
-/// The spawn subagent tool has two portions, an internal and an external portion.
-///
-/// The internal portion refers to the interface known to the agent. The invocation of which is
-/// simply an emission of an [AgentEvent::SpawnSubagentRequest].
-/// This event is then intercepted on the acp layer and handled by this function, which is the
-/// external portion of this tool.
-///
-/// The separation of the tool execution into two portions is necessitated by the fact that a
-/// subagent session is also an acp session (because we want to enable this session to be
-/// communicated to with the TUI, which needs to go through the protocol layer). And because acp is
-/// a concept that transcends the abstraction level of agent crate, the instantiation of which
-/// would need to be done outside of agent crate, hence "external".
-pub(crate) async fn handle_subagent_request(
-    request: agent::tools::use_subagent::SubagentRequest,
-    session_tx: SessionManagerHandle,
-) {
-    use agent::tools::ToolExecutionOutputItem;
-
-    let result = match &request.request {
-        UseSubagent::ListAgents => {
-            // TODO: Return actual list of available agents
-            // Depending on how collection of agents are handled, we might need to have this live
-            // somewhere else
-            Ok(SubagentResponse {
-                output: ToolExecutionOutput::new(vec![ToolExecutionOutputItem::Text(
-                    "Available agents:\n- default (Default agent)".to_string(),
-                )]),
-            })
-        },
-        UseSubagent::InvokeSubagents { subagents } => {
-            const SUBAGENT_EMBEDDED_MSG: &str = "You are a subagent executing a task delegated to you by the main agent. After what is asked of you has concluded, call the summary tool to convey your findings to the main agent.";
-
-            // Spawn sessions and send prompts concurrently
-            let mut futures = Vec::with_capacity(subagents.len());
-            for invocation in subagents {
-                let query = invocation.query.clone();
-                let context = invocation.relevant_context.clone();
-                let agent_name = invocation.agent_name.clone();
-                let session_tx = session_tx.clone();
-
-                futures.push(async move {
-                    // Create a new session for this subagent
-                    let session_id = SessionId::new(uuid::Uuid::new_v4().to_string());
-                    let mut config =
-                        AcpSessionConfig::new(session_id.to_string(), std::env::current_dir().unwrap_or_default())
-                            .user_embedded_msg(SUBAGENT_EMBEDDED_MSG.to_string())
-                            .is_subagent(true);
-
-                    if let Some(name) = agent_name {
-                        config = config.initial_agent_name(name);
-                    }
-
-                    let result = session_tx.start_session(&session_id, config, None).await?;
-
-                    let prompt = match context {
-                        Some(ctx) => format!("{query}\n\nContext:\n{ctx}"),
-                        None => query.clone(),
-                    };
-                    let summary = result.handle.internal_prompt(prompt).await?;
-                    Ok::<_, eyre::Report>(summary)
-                });
-            }
-
-            let items = futures::future::join_all(futures)
-                .await
-                .into_iter()
-                .map(|res| match res {
-                    Ok(summary) => ToolExecutionOutputItem::Json(serde_json::json!(summary)),
-                    Err(report) => ToolExecutionOutputItem::Text(report.to_string()),
-                })
-                .collect::<Vec<_>>();
-
-            Ok(SubagentResponse {
-                output: ToolExecutionOutput { items },
-            })
-        },
-    };
-
-    if let Err(e) = request.response_tx.send(result).await {
-        warn!("Failed to send spawn subagent response: {}", e);
-    }
-}
-
-/// Handle an internal prompt for subagent execution
-pub(crate) async fn handle_internal_prompt(query: String, mut agent: AgentHandle) -> eyre::Result<Summary> {
+/// Waits for the agent to call the summary tool. If the agent ends its turn without
+/// calling summary, sends a reminder. If it still refuses, extracts from the final message.
+pub(crate) async fn handle_internal_prompt(
+    query: String,
+    mut agent: AgentHandle,
+) -> Result<Summary, InternalPromptError> {
     agent
         .send_prompt(SendPromptArgs {
             content: vec![ContentChunk::Text(query.clone())],
             should_continue_turn: None,
         })
-        .await?;
+        .await
+        .map_err(|e| InternalPromptError::Failed(format!("Failed to send prompt: {e:?}")))?;
 
     let mut summary: Option<Summary> = None;
     let mut has_sent_failsafe = false;
@@ -185,7 +110,7 @@ pub(crate) async fn handle_internal_prompt(query: String, mut agent: AgentHandle
                 AgentEvent::SubagentSummary(s) => {
                     summary = Some(s);
                 },
-                AgentEvent::EndTurn(_) => {
+                AgentEvent::EndTurn(metadata) => {
                     if let Some(s) = summary {
                         return Ok(s);
                     } else if !has_sent_failsafe {
@@ -197,19 +122,34 @@ pub(crate) async fn handle_internal_prompt(query: String, mut agent: AgentHandle
                             })
                             .await
                         {
-                            bail!("Failed to send failsafe prompt: {e}");
+                            return Err(InternalPromptError::Failed(format!(
+                                "Failed to send failsafe prompt: {e}"
+                            )));
                         }
                     } else {
-                        bail!("Subagent refused to provide summary");
+                        // Last resort: extract from final message
+                        let text = metadata
+                            .result
+                            .and_then(|r| r.ok())
+                            .map(|msg| msg.text())
+                            .unwrap_or_default();
+                        return Ok(Summary {
+                            task_description: query,
+                            context_summary: None,
+                            task_result: text,
+                        });
                     }
                 },
+                AgentEvent::Stop(AgentStopReason::Cancelled) => {
+                    return Err(InternalPromptError::Cancelled);
+                },
                 AgentEvent::Stop(AgentStopReason::Error(e)) => {
-                    bail!("Agent error: {e}");
+                    return Err(InternalPromptError::Failed(format!("Agent error: {e}")));
                 },
                 _ => {},
             },
             Err(_) => {
-                bail!("Agent channel closed");
+                return Err(InternalPromptError::Cancelled);
             },
         }
     }
@@ -251,42 +191,38 @@ mod tests {
             None,
             None,
             None,
+            Vec::new(),
         )
         .await
-        .expect("Failed to create agent")
-        .spawn();
+        .expect("Failed to create agent");
+        let agent = agent.spawn();
 
-        // Mock a complete response that includes tool call and execution
-        let mock_responses = vec![
-            MockStreamItem::Event(ChatResponseStream::AssistantResponseEvent {
-                content: "I'll provide a summary of the task.".to_string(),
-            }),
-            MockStreamItem::Event(ChatResponseStream::ToolUseEvent {
-                tool_use_id: "tool_123".to_string(),
-                name: "summary".to_string(),
-                input: Some(
-                    r#"{"taskDescription": "test query", "taskResult": "Task completed successfully"}"#.to_string(),
-                ),
-                stop: Some(false),
-            }),
-        ];
-
-        // Push mock responses
+        // Mock first response (no summary tool call — triggers failsafe)
+        let mock_responses = vec![MockStreamItem::Event(ChatResponseStream::AssistantResponseEvent {
+            content: "Task completed successfully".to_string(),
+        })];
         registry.push_events(session_id.to_string(), Some(mock_responses)).await;
-        registry.push_events(session_id.to_string(), None).await; // Signal completion
+        registry.push_events(session_id.to_string(), None).await;
+
+        // Mock second response for the failsafe turn (still no summary — triggers last-resort extraction)
+        let failsafe_responses = vec![MockStreamItem::Event(ChatResponseStream::AssistantResponseEvent {
+            content: "Task completed successfully".to_string(),
+        })];
+        registry
+            .push_events(session_id.to_string(), Some(failsafe_responses))
+            .await;
+        registry.push_events(session_id.to_string(), None).await;
 
         let result = timeout(
-            Duration::from_secs(1),
+            Duration::from_secs(5),
             handle_internal_prompt("test query".to_string(), agent),
         )
-        .await;
+        .await
+        .expect("Should not timeout")
+        .expect("Should succeed");
 
-        // The test should timeout because the mock doesn't provide the actual tool execution result
-        // This demonstrates that the agent is waiting for the summary tool to execute and emit
-        // SubagentSummary
-        assert!(
-            result.is_err(),
-            "Expected timeout - agent should wait for SubagentSummary event"
-        );
+        assert_eq!(result.task_description, "test query");
+        assert_eq!(result.task_result, "Task completed successfully");
+        assert!(result.context_summary.is_none());
     }
 }

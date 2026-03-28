@@ -60,7 +60,7 @@ describe('Slash Commands', () => {
     await testCase.sendKeys('/');
     await testCase.sleepMs(500);
 
-    // Verify autocomplete dropdown is showing (check a command that's always visible)
+    // Verify autocomplete dropdown shows /clear (visible in first page of results)
     await testCase.waitForText('/clear', 5000);
 
     console.log('Snapshot:\n' + testCase.getSnapshotFormatted());

@@ -6,6 +6,8 @@ use std::collections::{
 
 use regex::Regex;
 
+use super::agent_config::LoadedAgentConfig;
+use super::agent_config::definitions::ToolsSettings;
 use super::agent_config::parse::CanonicalToolName;
 use super::agent_loop::types::ToolSpec;
 use super::consts::{
@@ -133,6 +135,8 @@ pub fn sanitize_tool_specs(
     mcp_tool_specs: HashMap<String, Vec<ToolSpec>>,
     aliases: &HashMap<String, String>,
     lsp_initialized: bool,
+    available_agents: &[LoadedAgentConfig],
+    tool_settings: &ToolsSettings,
 ) -> SanitizedToolSpecs {
     // Mapping from tool names as presented to the model, to a sanitized tool spec that won't cause
     // validation errors.
@@ -147,7 +151,12 @@ pub fn sanitize_tool_specs(
             canon_name @ CanonicalToolName::BuiltIn(name) => {
                 tool_map.insert(name.as_ref().to_string(), SanitizedToolSpec {
                     canonical_name: canon_name.clone(),
-                    tool_spec: BuiltInTool::generate_tool_spec_with_context(name, lsp_initialized),
+                    tool_spec: BuiltInTool::generate_tool_spec_with_context(
+                        name,
+                        lsp_initialized,
+                        available_agents,
+                        tool_settings,
+                    ),
                 });
             },
             CanonicalToolName::Mcp { server_name, tool_name } => {

@@ -279,6 +279,7 @@ impl<'a> Subagent<'a> {
             self.code_intelligence.clone(),
             None,
             None,
+            Vec::new(),
         )
         .await?;
 

@@ -8,6 +8,7 @@ interface NotificationBarProps {
   status?: StatusType;
   autoHideMs?: number;
   onDismiss?: () => void;
+  actionHint?: string;
 }
 
 export function NotificationBar({
@@ -15,6 +16,7 @@ export function NotificationBar({
   status,
   autoHideMs,
   onDismiss,
+  actionHint,
 }: NotificationBarProps) {
   if (!message || !status) {
     return <Box height={1} />;
@@ -27,6 +29,7 @@ export function NotificationBar({
         status={status}
         autoHideMs={autoHideMs}
         onDismiss={onDismiss}
+        actionHint={actionHint}
       />
     </Box>
   );

@@ -295,14 +295,14 @@ function generateHtml(data: typeof reportData): string {
 <h2>🔥 Top 5 Hot Paths</h2>
 ${top5.map((f, i) => `
 <div class="hot-path">
-  <h3>#${i + 1}: ${escapeHtml(f.name.split(' @ ')[0] ?? '')} (${f.selfTimeMs.toFixed(0)}ms self)</h3>
+  <h3>#${i + 1}: ${escapeHtml(f.name.split(' @ ')[0] ?? f.name)} (${f.selfTimeMs.toFixed(0)}ms self)</h3>
   <div><strong>Called by:</strong></div>
-  ${Object.entries((f as any).callers || {}).slice(0, 3).map(([caller, count]) => 
-    `<div class="path-item">← ${escapeHtml(caller.split(' @ ')[0] ?? '')} (${count}x)</div>`
+  ${Object.entries(f.callers || {}).slice(0, 3).map(([caller, count]) => 
+    `<div class="path-item">← ${escapeHtml(caller.split(' @ ')[0] ?? caller)} (${count}x)</div>`
   ).join('') || '<div class="path-item">← (root)</div>'}
   <div style="margin-top:10px"><strong>Calls:</strong></div>
-  ${Object.entries((f as any).callees || {}).slice(0, 3).map(([callee, count]) => 
-    `<div class="path-item">→ ${escapeHtml(callee.split(' @ ')[0] ?? '')} (${count}x)</div>`
+  ${Object.entries(f.callees || {}).slice(0, 3).map(([callee, count]) => 
+    `<div class="path-item">→ ${escapeHtml(callee.split(' @ ')[0] ?? callee)} (${count}x)</div>`
   ).join('') || '<div class="path-item">→ (leaf)</div>'}
 </div>
 `).join('')}

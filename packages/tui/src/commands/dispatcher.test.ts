@@ -41,6 +41,10 @@ function createMockCtx(): CommandContext & {
     createStreamEventHandler: spy('createStreamEventHandler') as any,
     setSessionId: spy('setSessionId') as any,
     addSystemMessage: spy('addSystemMessage') as any,
+    addSession: spy('addSession') as any,
+    setActiveSession: spy('setActiveSession') as any,
+    sessions: new Map(),
+    setMode: spy('setMode') as any,
     _spies: spies,
   };
 }

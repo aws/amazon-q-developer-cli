@@ -44,6 +44,13 @@ export class Kiro {
   }) => void;
   private compactionHandler?: (event: AgentStreamEvent) => void;
   private settingsHandler?: (settings: Record<string, unknown>) => void;
+  private subagentListHandler?: (
+    subagents: any[],
+    pendingStages: any[]
+  ) => void;
+  private sessionEventHandler?: (event: any) => void;
+  private multiSessionHandler?: (sessionId: string, event: any) => void;
+  private inboxHandler?: (notification: any) => void;
   private historyHandler?: (event: AgentStreamEvent) => void;
   private turnSummaryHandler?: (event: AgentStreamEvent) => void;
   private globalUpdateUnsubscribe?: () => void;
@@ -98,6 +105,58 @@ export class Kiro {
 
   onCompactionStatus(handler: (event: AgentStreamEvent) => void): void {
     this.compactionHandler = handler;
+  }
+
+  onSubagentListUpdate(
+    handler: (subagents: any[], pendingStages: any[]) => void
+  ): void {
+    this.subagentListHandler = handler;
+    if (this.sessionClient && 'onSubagentListUpdate' in this.sessionClient) {
+      (this.sessionClient as any).onSubagentListUpdate(handler);
+    }
+  }
+
+  onSessionEvent(handler: (event: any) => void): void {
+    this.sessionEventHandler = handler;
+  }
+
+  onMultiSessionUpdate(handler: (sessionId: string, event: any) => void): void {
+    this.multiSessionHandler = handler;
+    if (this.sessionClient && 'onMultiSessionUpdate' in this.sessionClient) {
+      (this.sessionClient as any).onMultiSessionUpdate(handler);
+    }
+  }
+
+  onInboxNotification(handler: (notification: any) => void): void {
+    this.inboxHandler = handler;
+    if (this.sessionClient && 'onInboxNotification' in this.sessionClient) {
+      (this.sessionClient as any).onInboxNotification(handler);
+    }
+  }
+
+  async spawnSession(
+    task: string,
+    name?: string
+  ): Promise<{ sessionId: string; name: string }> {
+    if (!this.sessionClient) {
+      throw new Error('Kiro not initialized');
+    }
+    return (this.sessionClient as any).spawnSession(task, name);
+  }
+
+  async sendMessage(sessionId: string, content: string): Promise<void> {
+    if (!this.sessionClient) {
+      throw new Error('Kiro not initialized');
+    }
+    this.onSessionMessageSent?.(sessionId);
+    return (this.sessionClient as any).sendMessage(sessionId, content);
+  }
+
+  onSessionMessageSent?: (sessionId: string) => void;
+
+  async terminateSession(sessionId: string): Promise<void> {
+    if (!this.sessionClient) return;
+    return (this.sessionClient as any).terminateSession(sessionId);
   }
 
   onHistoryEvent(handler: (event: AgentStreamEvent) => void): void {
@@ -203,6 +262,30 @@ export class Kiro {
     const sessionResult = resumeSessionId
       ? await this.sessionClient.loadSession(resumeSessionId)
       : await this.sessionClient.newSession();
+
+    // Wire up handlers after creating sessionClient
+    if (this.sessionEventHandler && 'onSessionEvent' in this.sessionClient) {
+      (this.sessionClient as any).onSessionEvent(this.sessionEventHandler);
+    }
+    if (
+      this.multiSessionHandler &&
+      'onMultiSessionUpdate' in this.sessionClient
+    ) {
+      (this.sessionClient as any).onMultiSessionUpdate(
+        this.multiSessionHandler
+      );
+    }
+    if (
+      this.subagentListHandler &&
+      'onSubagentListUpdate' in this.sessionClient
+    ) {
+      (this.sessionClient as any).onSubagentListUpdate(
+        this.subagentListHandler
+      );
+    }
+    if (this.inboxHandler && 'onInboxNotification' in this.sessionClient) {
+      (this.sessionClient as any).onInboxNotification(this.inboxHandler);
+    }
 
     // Notify about current model if available
     if (sessionResult.currentModel && this.modelHandler) {

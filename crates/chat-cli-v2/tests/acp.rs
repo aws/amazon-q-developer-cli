@@ -194,9 +194,16 @@ async fn prompt_with_send_error() {
     // be in the pipeline when prompt_text returns an error.
     let events = harness
         .wait_for_telemetry_events(Duration::from_secs(5), |events| {
-            events
+            let has_add_msg = events
                 .iter()
-                .any(|e| matches!(&e.ty, chat_cli_v2::telemetry::core::EventType::ChatAddedMessage { .. }))
+                .any(|e| matches!(&e.ty, chat_cli_v2::telemetry::core::EventType::ChatAddedMessage { .. }));
+            let has_turn = events.iter().any(|e| {
+                matches!(
+                    &e.ty,
+                    chat_cli_v2::telemetry::core::EventType::RecordUserTurnCompletion { .. }
+                )
+            });
+            has_add_msg && has_turn
         })
         .await;
 
@@ -1185,8 +1192,25 @@ async fn auto_compaction_on_context_overflow() {
         "expected compaction completed notification"
     );
 
-    // Verify telemetry events
-    let events = harness.get_captured_telemetry_events().await;
+    // Verify telemetry events (poll to allow async pipeline to flush)
+    let events = harness
+        .wait_for_telemetry_events(Duration::from_secs(5), |events| {
+            let add_msgs = events
+                .iter()
+                .filter(|e| matches!(&e.ty, chat_cli_v2::telemetry::core::EventType::ChatAddedMessage { .. }))
+                .count();
+            let turn_completions = events
+                .iter()
+                .filter(|e| {
+                    matches!(
+                        &e.ty,
+                        chat_cli_v2::telemetry::core::EventType::RecordUserTurnCompletion { .. }
+                    )
+                })
+                .count();
+            add_msgs >= 2 && turn_completions >= 1
+        })
+        .await;
 
     // At least 2 addChatMessage events (original tool call response + retry after compaction)
     let add_msgs: Vec<_> = events
@@ -1593,8 +1617,25 @@ async fn fs_read_in_cwd_does_not_require_permission() {
         captured.permission_requests
     );
 
-    // Verify telemetry events were emitted
-    let events = harness.get_captured_telemetry_events().await;
+    // Verify telemetry events were emitted (poll to allow async pipeline to flush)
+    let events = harness
+        .wait_for_telemetry_events(Duration::from_secs(5), |events| {
+            let add_msgs = events
+                .iter()
+                .filter(|e| matches!(&e.ty, chat_cli_v2::telemetry::core::EventType::ChatAddedMessage { .. }))
+                .count();
+            let turn_completions = events
+                .iter()
+                .filter(|e| {
+                    matches!(
+                        &e.ty,
+                        chat_cli_v2::telemetry::core::EventType::RecordUserTurnCompletion { .. }
+                    )
+                })
+                .count();
+            add_msgs >= 2 && turn_completions >= 1
+        })
+        .await;
 
     let add_chat_msgs: Vec<_> = events
         .iter()

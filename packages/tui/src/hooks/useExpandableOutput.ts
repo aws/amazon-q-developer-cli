@@ -1,7 +1,15 @@
 import { useEffect, useContext, useRef } from 'react';
-import { useStore } from 'zustand';
+import { useStore, createStore } from 'zustand';
 import { AppStoreContext } from '../stores/app-store.js';
 import { useStatusBar } from '../components/chat/status-bar/StatusBar.js';
+
+// Fallback store when AppStoreContext is null (e.g. storybook, tests).
+// Called unconditionally so hook count is stable.
+const createNoopStore = () =>
+  createStore(() => ({
+    toolOutputsExpanded: false as boolean,
+    setHasExpandableToolOutputs: (() => {}) as (v: boolean) => void,
+  }));
 
 export interface UseExpandableOutputOptions {
   /** Total number of items */
@@ -41,26 +49,22 @@ export function useExpandableOutput({
   isStatic = false,
   unit = 'more',
 }: UseExpandableOutputOptions): UseExpandableOutputResult {
-  // Try to get StatusBar context for remeasure
-  let statusBarContext: ReturnType<typeof useStatusBar> | null = null;
-  try {
-    statusBarContext = useStatusBar();
-  } catch {
-    // Not within a StatusBar context
-  }
-
+  const statusBarContext = useStatusBar();
   const { requestRemeasure } = statusBarContext ?? {
     requestRemeasure: () => {},
   };
 
-  // Safe store access - returns defaults when no store context
   const store = useContext(AppStoreContext);
-  const storeExpanded = store
-    ? useStore(store, (state) => state.toolOutputsExpanded)
-    : false;
-  const setHasExpandableToolOutputs = store
-    ? useStore(store, (state) => state.setHasExpandableToolOutputs)
-    : () => {};
+  const NOOP_STORE = useRef(createNoopStore()).current;
+  const activeStore = store ?? NOOP_STORE;
+  const storeExpanded = useStore(
+    activeStore,
+    (state) => state.toolOutputsExpanded
+  );
+  const setHasExpandableToolOutputs = useStore(
+    activeStore,
+    (state) => state.setHasExpandableToolOutputs
+  );
 
   // Snapshot the expanded state so it's preserved when transitioning to static.
   // While active, the ref tracks the live store value.

@@ -75,7 +75,7 @@ autodocs/meta/scripts/export-embeddings.py
 autodocs/meta/doc-embeddings.json
 autodocs/meta/doc-index.json
 autodocs/meta/doc-search-index.tar.gz
-
+theconvo.json
 
 # Generated Info.plist from rust build script
 crates/**/Info.plist

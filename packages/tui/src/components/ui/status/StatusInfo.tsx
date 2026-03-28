@@ -21,6 +21,12 @@ export interface StatusInfoProps {
 
   /** Whether to apply shimmer effect to title. Defaults to false. */
   shimmer?: boolean;
+
+  /** Whether to bold the title. Defaults to false. */
+  bold?: boolean;
+
+  /** Whether to underline the title. Defaults to false. */
+  underline?: boolean;
 }
 
 export const StatusInfo = React.memo(function StatusInfo({
@@ -29,6 +35,8 @@ export const StatusInfo = React.memo(function StatusInfo({
   status: statusProp,
   useStatusColor = false,
   shimmer = false,
+  bold = false,
+  underline = false,
 }: StatusInfoProps) {
   const { getColor } = useTheme();
 
@@ -48,6 +56,13 @@ export const StatusInfo = React.memo(function StatusInfo({
     useStatusColor && status
       ? getStatusColor(status, getColor)
       : getColor('primary');
+  const styledTitle = bold && underline
+    ? titleColor.bold.underline
+    : bold
+      ? titleColor.bold
+      : underline
+        ? titleColor.underline
+        : titleColor;
   const targetColor = getColor('highlight');
 
   return (
@@ -55,7 +70,7 @@ export const StatusInfo = React.memo(function StatusInfo({
       {shimmer ? (
         <ShimmerText text={title} color={titleColor.hex} />
       ) : (
-        titleColor(title)
+        styledTitle(title)
       )}
       {target && targetColor(` ${target}`)}
     </Text>

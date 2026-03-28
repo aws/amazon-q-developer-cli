@@ -1,3 +1,4 @@
+pub mod agent_crew;
 pub mod code;
 pub mod code_spec;
 pub mod execute_cmd;
@@ -12,11 +13,11 @@ pub mod ls;
 pub mod mcp;
 pub mod mkdir;
 pub mod rm;
+pub mod session;
 pub mod summary;
 pub mod switch_to_execution;
 pub mod task;
 pub mod use_aws;
-pub mod use_subagent;
 pub mod web_fetch;
 pub mod web_search;
 
@@ -28,6 +29,7 @@ use std::collections::{
 };
 use std::sync::Arc;
 
+use agent_crew::AgentCrew;
 use code::Code;
 pub use code_spec::get_code_tool_spec;
 use execute_cmd::ExecuteCmd;
@@ -55,18 +57,20 @@ use serde::{
     Deserialize,
     Serialize,
 };
+pub use session::{
+    GroupAction,
+    MessagePriority,
+    SessionFilter,
+    SessionTool,
+    SessionToolRequest,
+    SessionToolResponse,
+};
 use strum::IntoEnumIterator;
 use summary::Summary;
 use switch_to_execution::SwitchToExecution;
 use task::TaskTool;
 use typeshare::typeshare;
 use use_aws::UseAws;
-pub use use_subagent::{
-    SubagentInvocation,
-    SubagentRequest,
-    SubagentResponse,
-    UseSubagent,
-};
 use web_fetch::WebFetch;
 use web_search::WebSearch;
 
@@ -149,8 +153,10 @@ pub enum ToolNameAlias {
     ImageRead,
     Ls,
     Summary,
-    UseSubagent,
+    // Crew/subagent aliases
+    AgentCrew,
     Subagent,
+    UseSubagent,
 }
 
 #[derive(
@@ -183,8 +189,6 @@ pub enum BuiltInToolName {
     ImageRead,
     Ls,
     Summary,
-    #[strum(serialize = "use_subagent", serialize = "subagent")]
-    SpawnSubagent,
     Grep,
     Glob,
     #[strum(serialize = "use_aws", serialize = "aws")]
@@ -195,6 +199,10 @@ pub enum BuiltInToolName {
     WebSearch,
     #[strum(serialize = "code")]
     Code,
+    #[strum(to_string = "subagent", serialize = "agent_crew", serialize = "use_subagent")]
+    AgentCrew,
+    #[strum(serialize = "session_management", serialize = "sessions")]
+    SessionManagement,
     #[strum(serialize = "switch_to_execution")]
     SwitchToExecution,
     #[strum(serialize = "introspect")]
@@ -214,13 +222,14 @@ impl BuiltInToolName {
             BuiltInToolName::ImageRead => ImageRead::aliases(),
             BuiltInToolName::Ls => Ls::aliases(),
             BuiltInToolName::Summary => Summary::aliases(),
-            BuiltInToolName::SpawnSubagent => UseSubagent::aliases(),
             BuiltInToolName::Grep => Grep::aliases(),
             BuiltInToolName::Glob => Glob::aliases(),
             BuiltInToolName::UseAws => UseAws::aliases(),
             BuiltInToolName::WebFetch => WebFetch::aliases(),
             BuiltInToolName::WebSearch => WebSearch::aliases(),
             BuiltInToolName::Code => Code::aliases(),
+            BuiltInToolName::AgentCrew => AgentCrew::aliases(),
+            BuiltInToolName::SessionManagement => SessionTool::aliases(),
             BuiltInToolName::SwitchToExecution => SwitchToExecution::aliases(),
             BuiltInToolName::Introspect => Introspect::aliases(),
             BuiltInToolName::Knowledge => Knowledge::aliases(),
@@ -395,11 +404,12 @@ pub enum BuiltInTool {
     Introspect(Introspect),
     Knowledge(Knowledge),
     Summary(Summary),
-    SpawnSubagent(UseSubagent),
     UseAws(UseAws),
     WebFetch(WebFetch),
     WebSearch(WebSearch),
     Code(Code),
+    AgentCrew(AgentCrew),
+    SessionManagement(SessionTool),
     SwitchToExecution(SwitchToExecution),
     Task(TaskTool),
 }
@@ -425,9 +435,6 @@ impl BuiltInTool {
             BuiltInToolName::Summary => serde_json::from_value::<Summary>(args)
                 .map(Self::Summary)
                 .map_err(ToolParseErrorKind::schema_failure),
-            BuiltInToolName::SpawnSubagent => serde_json::from_value::<UseSubagent>(args)
-                .map(Self::SpawnSubagent)
-                .map_err(ToolParseErrorKind::schema_failure),
             BuiltInToolName::Grep => serde_json::from_value::<Grep>(args)
                 .map(Self::Grep)
                 .map_err(ToolParseErrorKind::schema_failure),
@@ -446,6 +453,12 @@ impl BuiltInTool {
             BuiltInToolName::Code => serde_json::from_value::<Code>(args)
                 .map(Self::Code)
                 .map_err(ToolParseErrorKind::schema_failure),
+            BuiltInToolName::AgentCrew => serde_json::from_value::<AgentCrew>(args)
+                .map(Self::AgentCrew)
+                .map_err(ToolParseErrorKind::schema_failure),
+            BuiltInToolName::SessionManagement => serde_json::from_value::<SessionTool>(args)
+                .map(Self::SessionManagement)
+                .map_err(ToolParseErrorKind::schema_failure),
             BuiltInToolName::SwitchToExecution => serde_json::from_value::<SwitchToExecution>(args)
                 .map(Self::SwitchToExecution)
                 .map_err(ToolParseErrorKind::schema_failure),
@@ -462,10 +475,15 @@ impl BuiltInTool {
     }
 
     pub fn generate_tool_spec(name: &BuiltInToolName) -> ToolSpec {
-        Self::generate_tool_spec_with_context(name, false)
+        Self::generate_tool_spec_with_context(name, false, &[], &Default::default())
     }
 
-    pub fn generate_tool_spec_with_context(name: &BuiltInToolName, lsp_initialized: bool) -> ToolSpec {
+    pub fn generate_tool_spec_with_context(
+        name: &BuiltInToolName,
+        lsp_initialized: bool,
+        available_agents: &[super::super::agent_config::LoadedAgentConfig],
+        tool_settings: &super::super::agent_config::definitions::ToolsSettings,
+    ) -> ToolSpec {
         match name {
             BuiltInToolName::FsRead => generate_tool_spec_from_json_schema::<FsRead>(),
             BuiltInToolName::FsWrite => generate_tool_spec_from_trait::<FsWrite>(),
@@ -473,13 +491,14 @@ impl BuiltInTool {
             BuiltInToolName::ImageRead => generate_tool_spec_from_trait::<ImageRead>(),
             BuiltInToolName::Ls => generate_tool_spec_from_trait::<Ls>(),
             BuiltInToolName::Summary => generate_tool_spec_from_trait::<Summary>(),
-            BuiltInToolName::SpawnSubagent => generate_tool_spec_from_trait::<UseSubagent>(),
             BuiltInToolName::Grep => generate_tool_spec_from_trait::<Grep>(),
             BuiltInToolName::Glob => generate_tool_spec_from_trait::<Glob>(),
             BuiltInToolName::UseAws => generate_tool_spec_from_trait::<UseAws>(),
             BuiltInToolName::WebFetch => generate_tool_spec_from_trait::<WebFetch>(),
             BuiltInToolName::WebSearch => generate_tool_spec_from_trait::<WebSearch>(),
             BuiltInToolName::Code => get_code_tool_spec(lsp_initialized),
+            BuiltInToolName::AgentCrew => AgentCrew::generate_dynamic_tool_spec(available_agents, &tool_settings.crew),
+            BuiltInToolName::SessionManagement => generate_tool_spec_from_trait::<SessionTool>(),
             BuiltInToolName::SwitchToExecution => generate_tool_spec_from_trait::<SwitchToExecution>(),
             BuiltInToolName::Introspect => generate_tool_spec_from_trait::<Introspect>(),
             BuiltInToolName::Knowledge => generate_tool_spec_from_trait::<Knowledge>(),
@@ -500,11 +519,12 @@ impl BuiltInTool {
             BuiltInTool::Introspect(_) => BuiltInToolName::Introspect,
             BuiltInTool::Knowledge(_) => BuiltInToolName::Knowledge,
             BuiltInTool::Summary(_) => BuiltInToolName::Summary,
-            BuiltInTool::SpawnSubagent(_) => BuiltInToolName::SpawnSubagent,
             BuiltInTool::UseAws(_) => BuiltInToolName::UseAws,
             BuiltInTool::WebFetch(_) => BuiltInToolName::WebFetch,
             BuiltInTool::WebSearch(_) => BuiltInToolName::WebSearch,
             BuiltInTool::Code(_) => BuiltInToolName::Code,
+            BuiltInTool::AgentCrew(_) => BuiltInToolName::AgentCrew,
+            BuiltInTool::SessionManagement(_) => BuiltInToolName::SessionManagement,
             BuiltInTool::SwitchToExecution(_) => BuiltInToolName::SwitchToExecution,
             BuiltInTool::Task(_) => BuiltInToolName::Task,
         }
@@ -523,11 +543,12 @@ impl BuiltInTool {
             BuiltInTool::Introspect(_) => BuiltInToolName::Introspect.into(),
             BuiltInTool::Knowledge(_) => BuiltInToolName::Knowledge.into(),
             BuiltInTool::Summary(_) => BuiltInToolName::Summary.into(),
-            BuiltInTool::SpawnSubagent(_) => BuiltInToolName::SpawnSubagent.into(),
             BuiltInTool::UseAws(_) => BuiltInToolName::UseAws.into(),
             BuiltInTool::WebFetch(_) => BuiltInToolName::WebFetch.into(),
             BuiltInTool::WebSearch(_) => BuiltInToolName::WebSearch.into(),
             BuiltInTool::Code(_) => BuiltInToolName::Code.into(),
+            BuiltInTool::AgentCrew(_) => BuiltInToolName::AgentCrew.into(),
+            BuiltInTool::SessionManagement(_) => BuiltInToolName::SessionManagement.into(),
             BuiltInTool::SwitchToExecution(_) => BuiltInToolName::SwitchToExecution.into(),
             BuiltInTool::Task(_) => BuiltInToolName::Task.into(),
         }
@@ -546,11 +567,12 @@ impl BuiltInTool {
             BuiltInTool::Introspect(_) => Introspect::aliases(),
             BuiltInTool::Knowledge(_) => Knowledge::aliases(),
             BuiltInTool::Summary(_) => Summary::aliases(),
-            BuiltInTool::SpawnSubagent(_) => UseSubagent::aliases(),
             BuiltInTool::UseAws(_) => UseAws::aliases(),
             BuiltInTool::WebFetch(_) => WebFetch::aliases(),
             BuiltInTool::WebSearch(_) => WebSearch::aliases(),
             BuiltInTool::Code(_) => Code::aliases(),
+            BuiltInTool::AgentCrew(_) => AgentCrew::aliases(),
+            BuiltInTool::SessionManagement(_) => SessionTool::aliases(),
             BuiltInTool::SwitchToExecution(_) => SwitchToExecution::aliases(),
             BuiltInTool::Task(_) => TaskTool::aliases(),
         }
@@ -660,28 +682,20 @@ pub(crate) fn get_available_tool_names(
         }
     }
 
-    // Launching subagents is currently not supported in v2
     tool_names.retain(|name| {
-        name != &CanonicalToolName::BuiltIn(BuiltInToolName::SpawnSubagent)
-            && name != &CanonicalToolName::BuiltIn(BuiltInToolName::SwitchToExecution)
+        match name {
+            // Only include knowledge tool when a provider is available
+            CanonicalToolName::BuiltIn(BuiltInToolName::Knowledge) => has_knowledge_provider,
+            // Tools not yet ready
+            CanonicalToolName::BuiltIn(BuiltInToolName::SessionManagement | BuiltInToolName::SwitchToExecution) => {
+                false
+            },
+            CanonicalToolName::BuiltIn(BuiltInToolName::AgentCrew) => !is_subagent,
+            CanonicalToolName::BuiltIn(BuiltInToolName::Summary) => is_subagent,
+            CanonicalToolName::BuiltIn(BuiltInToolName::Task) => !is_subagent,
+            _ => true,
+        }
     });
-
-    // Summary is only available for subagents; always include it for subagents
-    if is_subagent {
-        tool_names.insert(CanonicalToolName::BuiltIn(BuiltInToolName::Summary));
-    } else {
-        tool_names.retain(|name| name != &CanonicalToolName::BuiltIn(BuiltInToolName::Summary));
-    }
-
-    // Only include knowledge tool when a provider is available
-    if !has_knowledge_provider {
-        tool_names.retain(|name| name != &CanonicalToolName::BuiltIn(BuiltInToolName::Knowledge));
-    }
-
-    // Don't expose task tool to subagents
-    if is_subagent {
-        tool_names.retain(|name| name != &CanonicalToolName::BuiltIn(BuiltInToolName::Task));
-    }
 
     // If FsRead is included, also include ImageRead and Ls
     // TODO - merge ImageRead and Ls into the FsRead tool
@@ -981,28 +995,42 @@ mod tests {
             let tools: Vec<String> = ["@s1", "@s2"].iter().map(|s| s.to_string()).collect();
             let names = get_available_tool_names(&tools, &specs, &configs, false, false);
 
-            // *_file matches read_file and write_file but not list_files (ends in _files)
             assert!(!names.contains(&CanonicalToolName::from_mcp_parts("s1".into(), "read_file".into())));
             assert!(!names.contains(&CanonicalToolName::from_mcp_parts("s1".into(), "write_file".into())));
             assert!(names.contains(&CanonicalToolName::from_mcp_parts("s1".into(), "list_files".into())));
-            // s2's read_file unaffected by s1's disabled_tools
             assert!(names.contains(&CanonicalToolName::from_mcp_parts("s2".into(), "read_file".into())));
         }
 
         #[test]
-        fn test_subagent_always_includes_summary() {
-            // Summary is always included for subagents, even with empty tool list
-            let names = run(&[], &HashMap::new(), &[], true, false);
-            assert!(names.contains(&"summary".into()));
-
+        fn test_subagent_includes_summary_excludes_crew() {
             let names = run(&["*"], &HashMap::new(), &[], true, false);
             assert!(names.contains(&"summary".into()));
+            assert!(!names.contains(&"subagent".into()));
         }
 
         #[test]
-        fn test_non_subagent_excludes_summary() {
+        fn test_main_agent_excludes_summary_and_includes_crew() {
             let names = run(&["*"], &HashMap::new(), &[], false, false);
             assert!(!names.contains(&"summary".into()));
+            assert!(names.contains(&"subagent".into()));
+        }
+
+        #[test]
+        fn test_session_management_excluded() {
+            let names = run(&["*"], &HashMap::new(), &[], false, false);
+            assert!(!names.contains(&"sessionManagement".into()));
+
+            let names = run(&["*"], &HashMap::new(), &[], true, false);
+            assert!(!names.contains(&"sessionManagement".into()));
+        }
+
+        #[test]
+        fn test_switch_to_execution_excluded() {
+            let names = run(&["*"], &HashMap::new(), &[], false, false);
+            assert!(!names.contains(&"switch_to_execution".into()));
+
+            let names = run(&["*"], &HashMap::new(), &[], true, false);
+            assert!(!names.contains(&"switch_to_execution".into()));
         }
 
         #[test]

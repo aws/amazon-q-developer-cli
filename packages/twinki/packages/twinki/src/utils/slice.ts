@@ -21,23 +21,23 @@ function graphemeWidth(segment: string): number {
 }
 
 /**
+ * Check if a string chunk contains only ASCII printable chars (no ANSI, no wide chars).
+ */
+function isAsciiChunk(str: string, start: number, end: number): boolean {
+	for (let i = start; i < end; i++) {
+		const c = str.charCodeAt(i);
+		if (c < 0x20 || c > 0x7e) return false;
+	}
+	return true;
+}
+
+// Aggressive cache for sliceWithWidth — keyed on (line, startCol, length).
+// During streaming, the same completed lines get re-sliced every frame.
+const SLICE_CACHE_SIZE = 2048;
+const sliceCache = new Map<string, { text: string; width: number }>();
+
+/**
  * Extracts a range of visible columns from a line of text.
- * 
- * This function slices text based on visual column positions rather than
- * character positions, properly handling ANSI escape sequences and wide
- * characters. Essential for terminal text layout and cursor positioning.
- * 
- * @param line - Line to slice
- * @param startCol - Starting column (0-based)
- * @param length - Number of columns to extract
- * @param strict - If true, exclude wide chars that would extend past the range
- * @returns Sliced text with ANSI codes preserved
- * 
- * @example
- * ```typescript
- * sliceByColumn('Hello 世界', 0, 5); // 'Hello'
- * sliceByColumn('Hello 世界', 6, 2); // '世' (wide character)
- * ```
  */
 export function sliceByColumn(line: string, startCol: number, length: number, strict = false): string {
 	return sliceWithWidth(line, startCol, length, strict).text;
@@ -45,16 +45,6 @@ export function sliceByColumn(line: string, startCol: number, length: number, st
 
 /**
  * Like sliceByColumn but also returns the actual visible width of the result.
- * 
- * Provides both the sliced text and its measured width, useful when you need
- * to know the exact visual dimensions of the extracted content for layout
- * calculations.
- * 
- * @param line - Line to slice
- * @param startCol - Starting column (0-based)
- * @param length - Number of columns to extract
- * @param strict - If true, exclude wide chars that would extend past the range
- * @returns Object with sliced text and its visible width
  */
 export function sliceWithWidth(
 	line: string,
@@ -63,7 +53,26 @@ export function sliceWithWidth(
 	strict = false,
 ): { text: string; width: number } {
 	if (length <= 0) return { text: "", width: 0 };
-	
+
+	// Cache lookup
+	const cacheKey = `${startCol}\0${length}\0${line}`;
+	const cached = sliceCache.get(cacheKey);
+	if (cached) return cached;
+
+	const result = sliceWithWidthImpl(line, startCol, length, strict);
+
+	if (sliceCache.size >= SLICE_CACHE_SIZE) sliceCache.clear();
+	sliceCache.set(cacheKey, result);
+
+	return result;
+}
+
+function sliceWithWidthImpl(
+	line: string,
+	startCol: number,
+	length: number,
+	strict: boolean,
+): { text: string; width: number } {
 	const endCol = startCol + length;
 	let result = "";
 	let resultWidth = 0;
@@ -91,6 +100,33 @@ export function sliceWithWidth(
 			textEnd++;
 		}
 
+		const chunkLen = textEnd - i;
+
+		// ASCII fast path: skip Intl.Segmenter entirely — 1 char = 1 column
+		if (isAsciiChunk(line, i, textEnd)) {
+			// How much of this chunk falls before startCol?
+			const skipCols = Math.max(0, startCol - currentCol);
+			const skip = Math.min(skipCols, chunkLen);
+			// How much fits in the range?
+			const availCols = Math.max(0, endCol - Math.max(currentCol, startCol));
+			const take = Math.min(availCols, chunkLen - skip);
+
+			if (take > 0) {
+				if (pendingAnsi) {
+					result += pendingAnsi;
+					pendingAnsi = "";
+				}
+				result += line.slice(i + skip, i + skip + take);
+				resultWidth += take;
+			}
+
+			currentCol += chunkLen;
+			i = textEnd;
+			if (currentCol >= endCol) break;
+			continue;
+		}
+
+		// Non-ASCII: use Intl.Segmenter for grapheme-accurate slicing
 		for (const { segment } of segmenter.segment(line.slice(i, textEnd))) {
 			const w = graphemeWidth(segment);
 			const inRange = currentCol >= startCol && currentCol < endCol;

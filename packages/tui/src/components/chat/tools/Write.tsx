@@ -118,7 +118,10 @@ export const Write = React.memo<WriteProps>(function Write({
     /\n$/,
     ''
   );
-  const changes = diffLines(normalizedOld, normalizedNew);
+  const changes = useMemo(
+    () => diffLines(normalizedOld, normalizedNew),
+    [normalizedOld, normalizedNew]
+  );
 
   // Count added and removed lines
   const { linesAdded, linesRemoved } = useMemo(() => {

@@ -604,8 +604,8 @@ export const PromptInput = React.memo(function PromptInput({
           setCursor(Math.min(totalWidth(segments), cursor + 1));
         }
       } else if (key.upArrow) {
-        // Skip if menu is visible - let menu handle it
-        if (slashMenuVisible || filePickerVisible) return;
+        // Skip if any menu is visible - let menu handle it
+        if (slashMenuVisible || filePickerVisible || activeCommand) return;
         // Multi-line or visually wrapped: move cursor up a visual line
         if (isVisuallyMultiLine(segments, termWidth)) {
           const newPos = moveCursorUpVisual(segments, cursor, termWidth);
@@ -629,8 +629,8 @@ export const PromptInput = React.memo(function PromptInput({
           setCursor(command.length);
         }
       } else if (key.downArrow) {
-        // Skip if menu is visible - let menu handle it
-        if (slashMenuVisible || filePickerVisible) return;
+        // Skip if any menu is visible - let menu handle it
+        if (slashMenuVisible || filePickerVisible || activeCommand) return;
         // Multi-line or visually wrapped: move cursor down a visual line
         if (isVisuallyMultiLine(segments, termWidth)) {
           const newPos = moveCursorDownVisual(segments, cursor, termWidth);
@@ -799,6 +799,7 @@ export const PromptInput = React.memo(function PromptInput({
         <>
           <CursorBlock />
           <Text>{placeholderColor(placeholder)}</Text>
+          <Text>{placeholderColor('  ctrl+g: agent monitor')}</Text>
         </>
       );
     }

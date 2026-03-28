@@ -133,13 +133,7 @@ export const Menu = React.memo(function Menu({
     } else if (key.tab && onTabComplete) {
       onTabComplete();
     } else if (!searchable) {
-      // Non-searchable: rightArrow selects
-      if (key.rightArrow && selectedIndex >= 0) {
-        const selectedItem = displayItems[selectedIndex];
-        if (selectedItem) {
-          onSelect(selectedItem);
-        }
-      }
+      // Reserved for future use
     } else if (searchable && key.ctrl && input) {
       // TODO: Extract a shared useLineEditor hook backed by Segment[] + input-editing.ts
       // to reuse emacs bindings from PromptInput instead of duplicating here.

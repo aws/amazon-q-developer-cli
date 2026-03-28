@@ -83,6 +83,8 @@ export const useApprovalState = () =>
       respondToApproval: state.respondToApproval,
       cancelApproval: state.cancelApproval,
       setApprovalMode: state.setApprovalMode,
+      sessionId: state.sessionId,
+      sessions: state.sessions,
     }))
   );
 

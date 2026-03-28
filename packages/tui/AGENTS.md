@@ -11,7 +11,7 @@ This is a terminal-based UI (TUI) built with [Ink](https://github.com/vadimdemed
 ### Key Technologies
 
 - **Ink** — React renderer for terminal UIs (`<Box>`, `<Text>`, `useInput`)
-- **Zustand** — Lightweight state management (single `app-store.ts`)
+- **Zustand** — Lightweight state management (`app-store.ts` + `session-conversations.ts`)
 - **Chalk** — Terminal string styling (colors, bold, dim, etc.)
 - **TypeScript** — Strict typing throughout
 - **Vitest** — Unit and integration testing
@@ -143,22 +143,41 @@ export const MyTool = React.memo(function MyTool({ status, isFinished, isStatic,
 
 ## State Management
 
-### Zustand Store (`src/stores/app-store.ts`)
+### Zustand Stores
 
-The app uses a single Zustand store created with `createStore`. It holds all application state: messages, input buffer, processing flags, UI state, theme, commands, and agent metadata.
+The app uses **two** Zustand stores:
 
-**Key patterns:**
+1. **`src/stores/app-store.ts`** — Main store. Created with `createStore` (vanilla, not `create`), provided via `AppStoreContext` React context. Not a global singleton — injected at tree level. Consumed via custom `useAppStore<T>(selector)` hook: `useContext(AppStoreContext)` + `useStore(store, selector)`. Single source of truth for messages, input buffer, processing flags, UI state, theme, commands, file attachments, streaming, and agent metadata.
 
-1. **Store is provided via React context** (`AppStoreContext`), not a global singleton. Components access it via `useAppStore(selector)`.
-2. **Selectors** are defined in `src/stores/selectors.ts` using `useShallow` to prevent unnecessary re-renders. Group related state into selector hooks (e.g., `useProcessingState`, `useUIState`, `useNotificationState`).
-3. **Message types** use a discriminated union on `MessageRole` (User, Model, ToolUse, System).
-4. **Tool results** use a discriminated union on `status` ('success' | 'error' | 'cancelled').
+2. **`src/stores/session-conversations.ts`** — Module-level singleton (`sessionConversationsStore`). No context needed. Exposes `useSessionConversation(sessionId)` hook returning per-session `MessageType[]`. Uses a stable `EMPTY = []` constant to avoid re-renders from `?? []`.
+
+### State & Actions Organization
+
+- Single flat object: `createStore<AppState & AppActions>`. No slices.
+- `AppState` / `AppActions` split is TypeScript-only for clarity.
+- State grouped by domain in types: chat, agent, command UI, input buffer, UI panels, file/image attachments, context usage.
+- Simple setters: `set({ field })`. Complex updates: `set(state => ...)`. Side-effectful actions use `get()` to read current state.
+
+### Selector Patterns (`selectors.ts`)
+
+- All selectors use `useShallow` from `zustand/react/shallow` to prevent unnecessary re-renders.
+- Selectors split into state/action pairs: e.g. `useNotificationState`/`useNotificationActions`, `useCommandState`/`useCommandActions`, `useUIState`/`useUIActions`, `useFileAttachmentState`/`useFileAttachmentActions`.
+- Action selectors are kept separate because function references are stable — avoids unnecessary shallow comparison overhead.
+
+### Notable Conventions
+
+- **Map for sessions/messages**: `sessions: Map<string, AgentSession>`, `sessionMessages: Map<string, InboxMessage[]>` — always copy-on-write (`new Map(state.x)`) to trigger reactivity.
+- **16ms streaming batch**: `createStreamEventHandler` batches content chunk `set()` calls via `setTimeout(flush, 16)` to avoid starving Ink's render loop.
+- **Shared `createMessageStreamHandler` factory**: used by both stores for consistent stream event processing.
+- **`.flush` attached post-creation**: `(handler as any).flush = ...` — commits buffered content when stream ends.
+- **Discriminated unions**: `MessageType` on `MessageRole` (User, Model, ToolUse, System), `ToolResult` on `status: 'success' | 'error' | 'cancelled'`.
+- **`ToolUseStatus` enum**: `Pending | Approved | Rejected` for approval flow state on tool messages.
 
 **When updating the store:**
 
 - Add new state fields and their setters together.
 - Add a corresponding selector in `selectors.ts` if the state is consumed by components.
-- Keep actions (functions that modify state) inside the store definition using `set()`.
+- Keep actions (functions that modify state) inside the store definition using `set()`/`get()`.
 
 ---
 

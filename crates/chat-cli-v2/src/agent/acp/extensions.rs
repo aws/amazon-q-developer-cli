@@ -9,6 +9,9 @@ use serde::{
 
 /// Extension method names (prefixed with underscore per ACP spec)
 pub mod methods {
+    /// Spawns a new session
+    pub const SESSION_SPAWN: &str = "_session/spawn";
+    pub const MESSAGE_SEND: &str = "_message/send";
     /// OAuth request notification from MCP server
     pub const MCP_OAUTH_REQUEST: &str = "_kiro.dev/mcp/oauth_request";
     /// MCP server initialized notification
@@ -21,6 +24,14 @@ pub mod methods {
     pub const COMPACTION_STATUS: &str = "_kiro.dev/compaction/status";
     /// Clear status notification
     pub const CLEAR_STATUS: &str = "_kiro.dev/clear/status";
+    /// Subagent list update notification
+    pub const SUBAGENT_LIST_UPDATE: &str = "_kiro.dev/subagent/list_update";
+    /// Inbox notification for orchestration
+    pub const INBOX_NOTIFICATION: &str = "_kiro.dev/session/inbox_notification";
+    /// Session list update for orchestration
+    pub const SESSION_LIST_UPDATE: &str = "_kiro.dev/session/list_update";
+    /// Session activity event for orchestration
+    pub const SESSION_ACTIVITY: &str = "_kiro.dev/session/activity";
     /// Agent switched notification
     pub const AGENT_SWITCHED: &str = "_kiro.dev/agent/switched";
     /// List sessions (temporary extension until sacp adds native session/list)
@@ -37,6 +48,8 @@ pub enum SubagentStatus {
     Working { message: String },
     /// Subagent completed current task, awaits further instruction
     AwaitingInstruction,
+    /// Subagent has terminated
+    Terminated,
 }
 
 /// Information about a backgrounded subagent.
@@ -44,9 +57,13 @@ pub enum SubagentStatus {
 #[serde(rename_all = "camelCase")]
 pub struct SubagentInfo {
     pub session_id: SessionId,
+    pub session_name: String,
     pub agent_name: String,
     pub initial_query: String,
     pub status: SubagentStatus,
+    pub group: Option<String>,
+    pub role: Option<String>,
+    pub depends_on: Vec<String>,
 }
 
 /// OAuth request notification payload for MCP servers.
@@ -106,6 +123,37 @@ pub enum CompactionStatus {
 #[serde(rename_all = "camelCase")]
 pub struct ClearStatusNotification {
     pub session_id: SessionId,
+}
+
+/// Notification sent when subagent list changes.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SubagentListUpdateNotification {
+    pub subagents: Vec<SubagentInfo>,
+    /// Pending stages waiting for dependencies (crew DAG)
+    pub pending_stages: Vec<PendingStageInfo>,
+}
+
+/// A pending pipeline stage (not yet spawned, waiting for deps).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PendingStageInfo {
+    pub name: String,
+    pub role: String,
+    pub group: String,
+    pub depends_on: Vec<String>,
+    pub agent_name: String,
+}
+
+/// Inbox notification payload for orchestration.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct InboxNotification {
+    pub session_id: SessionId,
+    pub session_name: String,
+    pub message_count: usize,
+    pub escalation_count: usize,
+    pub senders: Vec<String>,
 }
 
 /// Agent switched notification payload.

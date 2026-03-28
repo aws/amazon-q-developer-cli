@@ -39,13 +39,15 @@ export const render = mod.render as typeof import('ink').render;
 // useMouse and measureElement are ink-specific; twinki has useMouse with a different signature
 export const useMouse = (mod as any).useMouse;
 export const measureElement = (mod as any).measureElement;
+// Scrollbar: available in both ink and twinki
+export const Scrollbar = mod.Scrollbar as typeof import('ink').Scrollbar;
 // usePaste: twinki-native hook, no-op shim under ink
 export const usePaste: (
   handler: (content: string) => void,
   opts?: { isActive?: boolean }
 ) => void = useTwinki
   ? (mod as any).usePaste
-  : (_handler: any, _opts?: any) => {
+  : (_handler: unknown, _opts?: unknown) => {
       void _handler;
       void _opts;
     };
@@ -57,3 +59,7 @@ export const StreamingPanel =
 export const CURSOR_MARKER: string = useTwinki
   ? (twinkiMod as any).CURSOR_MARKER
   : '';
+// useFullscreen: twinki-native hook (enters alt screen on mount, exits on unmount), no-op under ink
+export const useFullscreen: () => void = useTwinki
+  ? (mod as any).useFullscreen
+  : () => {};

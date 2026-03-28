@@ -445,8 +445,9 @@ export enum ToolNameAlias {
 	ImageRead = "image_read",
 	Ls = "ls",
 	Summary = "summary",
-	UseSubagent = "use_subagent",
+	AgentCrew = "agent_crew",
 	Subagent = "subagent",
+	UseSubagent = "use_subagent",
 }
 
 /**

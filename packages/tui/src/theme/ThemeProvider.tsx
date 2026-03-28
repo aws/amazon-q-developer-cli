@@ -1,4 +1,4 @@
-import { createContext, type ReactNode } from 'react';
+import { createContext, useMemo, type ReactNode } from 'react';
 import { kiroDark } from './kiroDark';
 import { kiroLight } from './kiroLight';
 import type { Theme } from './types';
@@ -74,7 +74,10 @@ export const ThemeProvider = ({
   children,
 }: ThemeProviderProps) => {
   const resolvedTheme = theme === 'auto' ? getAutoTheme() : theme;
-  const themeContext = createThemeContext(resolvedTheme);
+  const themeContext = useMemo(
+    () => createThemeContext(resolvedTheme),
+    [resolvedTheme]
+  );
   return (
     <ThemeContext.Provider value={themeContext}>
       {children}

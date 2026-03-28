@@ -1,7 +1,10 @@
 //! Session manager actor for coordinating ACP sessions and client communication.
 
 use std::borrow::Cow;
-use std::collections::HashMap;
+use std::collections::{
+    HashMap,
+    HashSet,
+};
 use std::path::{
     Path,
     PathBuf,
@@ -15,6 +18,10 @@ use agent::agent_config::{
     load_agents,
 };
 use agent::consts::DEFAULT_AGENT_NAME;
+use agent::tools::session::{
+    GroupAction,
+    SessionFilter,
+};
 use agent::util::providers::RealProvider;
 use code_agent_sdk::CodeIntelligence;
 use sacp::schema::SessionId;
@@ -30,6 +37,7 @@ use tokio::sync::{
 use tracing::{
     debug,
     error,
+    info,
     warn,
 };
 
@@ -38,7 +46,18 @@ use crate::agent::acp::acp_agent::{
     AcpSessionConfig,
     AcpSessionHandle,
 };
+use crate::agent::acp::extensions::SubagentInfo;
 use crate::agent::acp::mcp_conversion::convert_mcp_server;
+use crate::agent::acp::orchestration::inbox::InboxStore;
+use crate::agent::acp::orchestration::naming;
+use crate::agent::acp::orchestration::permissions::PermissionStore;
+use crate::agent::acp::orchestration::types::{
+    GroupMembership,
+    InboxMessage,
+    OrchestratedSession,
+    SessionGroup,
+    SessionStatus,
+};
 use crate::agent::ipc_server::{
     IpcServer,
     TelemetryEventStore,
@@ -74,6 +93,13 @@ pub struct StartSessionResult {
     pub available_agents: Vec<AgentInfo>,
     pub available_models: Vec<ModelInfo>,
     pub current_model_id: String,
+}
+
+/// Result returned when spawning an orchestrated session.
+#[derive(Debug, Clone)]
+pub struct SpawnOrchestratedResult {
+    pub session_id: String,
+    pub name: String,
 }
 
 /// Builder for constructing and spawning a [`SessionManager`] actor.
@@ -176,8 +202,11 @@ impl SessionManagerBuilder {
 
 /// Central coordinator that owns all active ACP sessions.
 ///
+/// Sender for group completion notifications: Vec of (session_name, optional summary).
+type GroupCompletionSender = oneshot::Sender<Vec<(String, Option<String>)>>;
+
 /// Manages session lifecycle (creation, retrieval, termination).
-#[derive(Clone, Debug)]
+#[derive(Debug)]
 pub struct SessionManager {
     sessions: HashMap<SessionId, AcpSessionHandle>,
     agent_configs: Vec<LoadedAgentConfig>,
@@ -207,6 +236,18 @@ pub struct SessionManager {
     /// Telemetry event store for recording events in test scenarios.
     /// Shared with the IPC server so tests can drain and assert on events. `None` in production.
     telemetry_event_store: Option<TelemetryEventStore>,
+    /// Orchestration: inbox storage for inter-session messaging
+    inbox_store: InboxStore,
+    /// Orchestration: permission tracking for messaging
+    permission_store: PermissionStore,
+    /// Orchestration: metadata about orchestrated sessions
+    orchestrated_sessions: HashMap<String, OrchestratedSession>,
+    /// Orchestration: session groups
+    groups: HashMap<String, SessionGroup>,
+    /// Shared TUI connection — cloned into every AcpSession (main + subagent)
+    connection_cx: Option<JrConnectionCx<AgentToClient>>,
+    /// Pending group completion waiters: group_name -> sender
+    group_completion_waiters: HashMap<String, GroupCompletionSender>,
 }
 
 impl SessionManager {
@@ -239,7 +280,39 @@ impl SessionManager {
             trust_all_tools,
             acp_client_info: None,
             telemetry_event_store,
+            inbox_store: InboxStore::new(),
+            permission_store: PermissionStore::new(),
+            orchestrated_sessions: HashMap::new(),
+            groups: HashMap::new(),
+            connection_cx: None,
+            group_completion_waiters: HashMap::new(),
         }
+    }
+
+    /// Here we are only collecting the results from the leaf nodes. A special case here is if we
+    /// have a partially completed DAG. This would happen if the ancestors of leaf nodes were to
+    /// fail. In which case the least ancestral executed nodes would then become the new leaf nodes
+    /// (i.e. the "youngest" failed node in the DAG). This is because all subsequent children of a
+    /// failed node would not execute.
+    ///
+    /// If a leaf node has failed, its result, along with its parents results are included in the
+    /// group result to be returned by this function. This is to help the main agent retry.
+    fn collect_group_results(&self, group_name: &str) -> Vec<(String, Option<String>)> {
+        let group: Vec<_> = self
+            .orchestrated_sessions
+            .values()
+            .filter(|s| s.group.as_deref() == Some(group_name))
+            .collect();
+        let depended_on: std::collections::HashSet<&str> = group
+            .iter()
+            .filter(|s| s.result.is_some())
+            .flat_map(|s| s.depends_on.iter().map(|d| d.as_str()))
+            .collect();
+        group
+            .iter()
+            .filter(|s| !depended_on.contains(s.name.as_str()))
+            .map(|s| (s.name.clone(), s.result.clone()))
+            .collect()
     }
 
     /// Get or initialize a CodeIntelligence client for the given CWD.
@@ -306,10 +379,11 @@ impl SessionManager {
 
         match data {
             SessionManagerRequestData::StartSession {
-                config,
+                config: boxed_config,
                 connection_cx,
                 resp_sender,
             } => {
+                let config = *boxed_config;
                 // Resolve agent name: explicit config > CLI --agent flag > persisted session agent > setting >
                 // default
                 let persisted_agent = if config.load {
@@ -390,11 +464,20 @@ impl SessionManager {
                     .acp_client_info(self.acp_client_info.clone())
                     .telemetry_event_store(self.telemetry_event_store.clone());
 
-                // Pass client connection to session (required)
+                // Pass client connection to session
                 if let Some(cx) = connection_cx {
+                    // Main session — store connection for subagents to clone
+                    if self.connection_cx.is_none() {
+                        self.connection_cx = Some(cx.clone());
+                    }
                     builder = builder.connection_cx(cx);
+                } else if config.is_subagent {
+                    // Subagent session — clone the stored connection
+                    if let Some(cx) = &self.connection_cx {
+                        builder = builder.connection_cx(cx.clone());
+                    }
                 } else {
-                    error!("No client connection provided for session");
+                    error!("No client connection provided for non-subagent session");
                     _ = resp_sender.send(Err(sacp::util::internal_error("Missing client connection")));
                     return;
                 }
@@ -425,6 +508,7 @@ impl SessionManager {
                 builder = builder.available_agents(available_agents.clone());
                 builder = builder.agent_configs(self.agent_configs.clone());
                 builder = builder.current_agent_name(agent_name.clone());
+                builder = builder.subagent_info(config.subagent_info.clone());
 
                 // Pass CLI --model override to session builder
                 let next_model_id = self.next_model_id.take();
@@ -467,6 +551,9 @@ impl SessionManager {
                             available_models,
                             current_model_id,
                         }));
+
+                        // Send SUBAGENT_LIST_UPDATE notification after session creation
+                        self.send_subagent_list_update().await;
                     },
                     Err(e) => {
                         _ = resp_sender.send(Err(e));
@@ -497,6 +584,36 @@ impl SessionManager {
                 } else {
                     warn!(?session_id, "Attempted to terminate non-existent session");
                 }
+                if let Some(session) = self.orchestrated_sessions.get_mut(&session_id.to_string()) {
+                    session.status = SessionStatus::Terminated;
+                    // If this session never produced a result (cancelled/killed), remove
+                    // any pending stages that transitively depend on it — they can never
+                    // have their dependencies satisfied.
+                    if session.result.is_none()
+                        && let Some(group_name) = &session.group
+                        && let Some(g) = self.groups.get_mut(group_name)
+                    {
+                        let terminated_name = session.name.clone();
+                        let mut removed: std::collections::HashSet<String> = std::collections::HashSet::new();
+                        removed.insert(terminated_name);
+                        // Iteratively remove stages whose deps overlap with removed set
+                        loop {
+                            let newly_removed: Vec<String> = g
+                                .pending_stages
+                                .iter()
+                                .filter(|ps| ps.depends_on.iter().any(|d| removed.contains(d)))
+                                .map(|ps| ps.name.clone())
+                                .collect();
+                            if newly_removed.is_empty() {
+                                break;
+                            }
+                            g.pending_stages
+                                .retain(|ps| !ps.depends_on.iter().any(|d| removed.contains(d)));
+                            removed.extend(newly_removed);
+                        }
+                    }
+                }
+                self.send_subagent_list_update().await;
             },
             SessionManagerRequestData::Shutdown { resp_sender } => {
                 // Terminate all sessions' agents so MCP child processes are cleaned up
@@ -554,6 +671,1065 @@ impl SessionManager {
                 let ci = self.get_or_init_code_intelligence(&cwd);
                 _ = resp_sender.send(ci);
             },
+            SessionManagerRequestData::GetSubagentSessions { resp_sender } => {
+                let subagents = self.get_subagent_sessions();
+                _ = resp_sender.send(subagents);
+            },
+            SessionManagerRequestData::DeliverSubagentResult {
+                target_session,
+                message,
+                resp_sender,
+            } => {
+                let from_id = SessionId::new("subagent-result".to_string());
+                let _ = self
+                    .inbox_store
+                    .send_message(&target_session, &from_id, "subagent", message, false);
+                self.send_inbox_notification(&target_session).await;
+
+                // Auto-wake if idle
+                if let Some(orch) = self.orchestrated_sessions.get(&target_session.to_string())
+                    && orch.status == SessionStatus::Idle
+                    && !orch.human_attached
+                    && let Some(handle) = self.sessions.get(&target_session)
+                {
+                    let wake_msg = "You have new messages in your inbox. Use read_messages to check them.".to_string();
+                    let handle_clone = handle.clone();
+                    tokio::spawn(async move {
+                        let _ = handle_clone.wake_session(wake_msg).await;
+                    });
+                }
+
+                _ = resp_sender.send(());
+            },
+            SessionManagerRequestData::RegisterPendingStages {
+                group,
+                pending_stages,
+                resp_sender,
+            } => {
+                let g =
+                    self.groups
+                        .entry(group)
+                        .or_insert_with(|| crate::agent::acp::orchestration::types::SessionGroup {
+                            name: String::new(),
+                            series: String::new(),
+                            members: vec![],
+                            pending_stages: vec![],
+                        });
+                for ps in pending_stages {
+                    g.pending_stages
+                        .push(crate::agent::acp::orchestration::types::PendingStage {
+                            name: ps.name,
+                            role: ps.role.clone(),
+                            task: ps.task,
+                            depends_on: ps.depends_on,
+                            agent_name: ps.role,
+                        });
+                }
+                self.send_subagent_list_update().await;
+                _ = resp_sender.send(());
+            },
+            SessionManagerRequestData::TriggerPendingStages {
+                completed_name,
+                parent_session_id,
+                resp_sender,
+            } => {
+                let group_name = self
+                    .orchestrated_sessions
+                    .values()
+                    .find(|s| s.name == completed_name)
+                    .and_then(|s| s.group.clone());
+                if let Some(gname) = group_name {
+                    let completed: std::collections::HashSet<String> = self
+                        .orchestrated_sessions
+                        .values()
+                        .filter(|s| s.group.as_deref() == Some(&gname) && s.status == SessionStatus::Terminated)
+                        .map(|s| s.name.clone())
+                        .collect();
+                    let to_spawn: Vec<crate::agent::acp::orchestration::types::PendingStage> =
+                        if let Some(g) = self.groups.get(&gname) {
+                            g.pending_stages
+                                .iter()
+                                .filter(|ps| ps.depends_on.iter().all(|dep| completed.contains(dep)))
+                                .cloned()
+                                .collect()
+                        } else {
+                            vec![]
+                        };
+                    if let Some(g) = self.groups.get_mut(&gname) {
+                        g.pending_stages
+                            .retain(|ps| !to_spawn.iter().any(|s| s.name == ps.name));
+                    }
+                    for stage in to_spawn {
+                        info!(name = %stage.name, "DAG: deps satisfied, spawning stage");
+                        let deps = stage.depends_on.clone();
+
+                        // Collect results from completed dependencies stored on OrchestratedSession
+                        // This is inbox-independent — works even if parent already read messages
+                        let task_with_context = {
+                            let dep_context: Vec<String> = deps
+                                .iter()
+                                .filter_map(|dep_name| {
+                                    self.orchestrated_sessions
+                                        .values()
+                                        .find(|s| s.name == *dep_name)
+                                        .and_then(|s| s.result.as_ref())
+                                        .map(|r| format!("## Results from {}\n\n{}", dep_name, r))
+                                })
+                                .collect();
+                            if dep_context.is_empty() {
+                                stage.task.clone()
+                            } else {
+                                format!(
+                                    "{}\n\n---\n\n## Context from previous stages\n\n{}",
+                                    stage.task,
+                                    dep_context.join("\n\n---\n\n")
+                                )
+                            }
+                        };
+
+                        let result = self
+                            .handle_spawn_orchestrated(
+                                &parent_session_id,
+                                &stage.agent_name,
+                                &task_with_context,
+                                Some(&stage.name),
+                                Some(&stage.role),
+                                Some(&gname),
+                                false,
+                                deps,
+                            )
+                            .await;
+                        if result.is_ok() {
+                            self.send_subagent_list_update().await;
+                        }
+                    }
+                }
+                _ = resp_sender.send(());
+            },
+            SessionManagerRequestData::UpdateSessionStatus {
+                session_id: sid,
+                status,
+                resp_sender,
+            } => {
+                if let Some(session) = self.orchestrated_sessions.get_mut(&sid.to_string()) {
+                    session.status = status;
+                    session.last_activity = std::time::SystemTime::now();
+
+                    // After updating status to Terminated, check waiters
+                    if session.status == SessionStatus::Terminated
+                        && let Some(group) = session.group.clone()
+                    {
+                        let has_pending = self.groups.get(&group).is_some_and(|g| !g.pending_stages.is_empty());
+                        let all_done = !has_pending
+                            && self
+                                .orchestrated_sessions
+                                .values()
+                                .filter(|s| s.group.as_deref() == Some(&group))
+                                .all(|s| s.status == SessionStatus::Terminated);
+                        if all_done {
+                            // Send list update before cleanup so TUI sees final state
+                            self.send_subagent_list_update().await;
+                            if let Some(waiter) = self.group_completion_waiters.remove(&group) {
+                                let results = self.collect_group_results(&group);
+                                let _ = waiter.send(results);
+                            }
+                            self.orchestrated_sessions
+                                .retain(|_, s| s.group.as_deref() != Some(&group));
+                            self.groups.remove(&group);
+                        }
+                    }
+                }
+                self.send_subagent_list_update().await;
+                _ = resp_sender.send(());
+            },
+            SessionManagerRequestData::StoreSessionResult {
+                session_id: sid,
+                result,
+                resp_sender,
+            } => {
+                if let Some(session) = self.orchestrated_sessions.get_mut(&sid.to_string()) {
+                    session.result = Some(result);
+                }
+                _ = resp_sender.send(());
+            },
+            SessionManagerRequestData::WaitForGroupCompletion {
+                group_name,
+                resp_sender,
+            } => {
+                // Check if all sessions in group are already terminated
+                let all_done = self
+                    .orchestrated_sessions
+                    .values()
+                    .filter(|s| s.group.as_deref() == Some(&group_name))
+                    .all(|s| s.status == SessionStatus::Terminated);
+                if all_done {
+                    let results = self.collect_group_results(&group_name);
+                    let _ = resp_sender.send(results);
+                    // Clean up completed group
+                    self.orchestrated_sessions
+                        .retain(|_, s| s.group.as_deref() != Some(&group_name));
+                    self.groups.remove(&group_name);
+                } else {
+                    // Store waiter — will be fired when last session terminates
+                    self.group_completion_waiters.insert(group_name, resp_sender);
+                }
+            },
+            // --- Orchestration handlers ---
+            SessionManagerRequestData::SpawnOrchestratedSession {
+                parent_session_id,
+                agent_name,
+                task,
+                name,
+                role,
+                group,
+                persistent,
+                resp_sender,
+            } => {
+                let result = self
+                    .handle_spawn_orchestrated(
+                        &parent_session_id,
+                        &agent_name,
+                        &task,
+                        name.as_deref(),
+                        role.as_deref(),
+                        group.as_deref(),
+                        persistent,
+                        vec![],
+                    )
+                    .await;
+                if result.is_ok() {
+                    self.send_subagent_list_update().await;
+                }
+                _ = resp_sender.send(result);
+            },
+            SessionManagerRequestData::SendOrchestrationMessage {
+                from_session,
+                target,
+                message,
+                is_escalation,
+                resp_sender,
+            } => {
+                // Resolve target before consuming it
+                let target_id = if let Some(t) = target.as_deref() {
+                    self.resolve_target(t).ok()
+                } else if is_escalation {
+                    self.resolve_escalation_target(&from_session).ok()
+                } else {
+                    None
+                };
+                let result =
+                    self.handle_send_orchestration_message(&from_session, target.as_deref(), &message, is_escalation);
+                // Notify TUI so it can show the notification bar alert
+                if result.is_ok()
+                    && let Some(tid) = target_id
+                {
+                    self.send_inbox_notification(&tid).await;
+                    // Auto-wake if idle — inject message content directly
+                    if let Some(orch) = self.orchestrated_sessions.get(&tid.to_string())
+                        && orch.status == SessionStatus::Idle
+                        && !orch.human_attached
+                        && let Some(handle) = self.sessions.get(&tid)
+                    {
+                        let wake_msg = format!("You have a new message:\n\n{}", message);
+                        let handle_clone = handle.clone();
+                        tokio::spawn(async move {
+                            let _ = handle_clone.wake_session(wake_msg).await;
+                        });
+                    }
+                }
+                _ = resp_sender.send(result.map(|_| ()));
+            },
+            SessionManagerRequestData::ReadOrchestrationMessages {
+                session_id: sid,
+                limit,
+                resp_sender,
+            } => {
+                let messages = self.inbox_store.read_messages(&sid, limit);
+                _ = resp_sender.send(Ok(messages));
+            },
+            SessionManagerRequestData::ListOrchestratedSessions { filter, resp_sender } => {
+                let sessions = self.handle_list_orchestrated(filter);
+                _ = resp_sender.send(Ok(sessions));
+            },
+            SessionManagerRequestData::GetOrchestratedSessionStatus { target, resp_sender } => {
+                let result = self.handle_get_orchestrated_status(&target);
+                _ = resp_sender.send(result);
+            },
+            SessionManagerRequestData::GetOrchestratedSessionById {
+                session_id,
+                resp_sender,
+            } => {
+                let result = self.orchestrated_sessions.get(&session_id.to_string()).cloned();
+                _ = resp_sender.send(result);
+            },
+            SessionManagerRequestData::InterruptOrchestratedSession {
+                from_session,
+                target,
+                message,
+                resp_sender,
+            } => {
+                let result = self
+                    .handle_interrupt_orchestrated(&from_session, &target, &message)
+                    .await;
+                _ = resp_sender.send(result);
+            },
+            SessionManagerRequestData::InjectOrchestrationContext {
+                from_session,
+                target,
+                context,
+                resp_sender,
+            } => {
+                let result = self.handle_inject_context(&from_session, &target, &context).await;
+                _ = resp_sender.send(result);
+            },
+            SessionManagerRequestData::ManageOrchestrationGroup {
+                from_session,
+                action,
+                group,
+                target,
+                role,
+                message,
+                resp_sender,
+            } => {
+                let result = self.handle_manage_group(
+                    &from_session,
+                    action,
+                    group.as_deref(),
+                    target.as_deref(),
+                    role.as_deref(),
+                    message.as_deref(),
+                );
+                _ = resp_sender.send(result);
+            },
+            SessionManagerRequestData::ReviveOrchestratedSession {
+                parent_session_id,
+                target,
+                task,
+                resp_sender,
+            } => {
+                let result = self.handle_revive_orchestrated(&parent_session_id, &target, &task);
+                _ = resp_sender.send(result);
+            },
+            SessionManagerRequestData::GetSessionLiveActivity { target, resp_sender } => {
+                let activity = self.handle_get_live_activity(&target).await;
+                _ = resp_sender.send(activity);
+            },
+        }
+    }
+
+    fn get_subagent_sessions(&self) -> Vec<SubagentInfo> {
+        self.sessions
+            .values()
+            .filter_map(|handle| handle._subagent_info.clone())
+            .collect()
+    }
+
+    // --- Orchestration implementation methods ---
+
+    #[allow(clippy::too_many_arguments)]
+    /// Spawn an orchestrated (subagent) session and run its task asynchronously.
+    ///
+    /// # What it does
+    /// 1. Generates a bare UUID session ID (NOT "orch-{uuid}" — that fails DB validation).
+    /// 2. Registers the session in `orchestrated_sessions` and permission store.
+    /// 3. Spawns a `tokio::task` that:
+    ///    - Calls `start_session` with `is_subagent=true` (cloned `connection_cx`).
+    ///    - Waits for MCP init (`ready_rx`).
+    ///    - Calls `internal_prompt(task)` — blocks until the agent calls the `summary` tool.
+    ///    - On success: delivers summary to parent inbox, marks session `Terminated`, terminates
+    ///      it, then calls `trigger_pending_stages` to advance the DAG.
+    ///    - On error: delivers error message, same cleanup.
+    /// 4. Returns immediately (the task runs in background).
+    ///
+    /// # Invariants
+    /// - `persistent=false` → session is terminated after task completes (ephemeral worker).
+    /// - `persistent=true` → session goes `Idle` after task (knight, stays alive for
+    ///   attach/revive).
+    /// - The `group` field enables DAG grouping in the TUI crew monitor.
+    /// - Subagent streaming reaches TUI via cloned `connection_cx`.
+    async fn handle_spawn_orchestrated(
+        &mut self,
+        parent_session_id: &SessionId,
+        agent_name: &str,
+        task: &str,
+        name: Option<&str>,
+        role: Option<&str>,
+        group: Option<&str>,
+        persistent: bool,
+        depends_on: Vec<String>,
+    ) -> Result<SpawnOrchestratedResult, sacp::Error> {
+        // Determine group and series
+        let group_name = group.unwrap_or("default").to_string();
+        let group_entry = self.groups.entry(group_name.clone()).or_insert_with(|| {
+            let series = naming::pick_series();
+            SessionGroup {
+                name: group_name.clone(),
+                series: series.to_string(),
+                members: vec![],
+                pending_stages: vec![],
+            }
+        });
+
+        // Determine session name
+        let used_names: HashSet<String> = group_entry.members.iter().map(|m| m.name.clone()).collect();
+        let session_name = name.map_or_else(
+            || {
+                if persistent {
+                    naming::next_name(&group_entry.series, &used_names)
+                } else {
+                    naming::next_squire_name(&used_names)
+                }
+            },
+            String::from,
+        );
+
+        // Create a unique session ID (must be a valid UUID for session DB)
+        let new_session_id = SessionId::new(uuid::Uuid::new_v4().to_string());
+
+        // Register parent-child relationship
+        self.permission_store.register_child(parent_session_id, &new_session_id);
+        self.permission_store.register_group(&new_session_id, &group_name);
+
+        // Add to group
+        group_entry.members.push(GroupMembership {
+            session_id: new_session_id.clone(),
+            name: session_name.clone(),
+            role: role.map(String::from),
+            joined_at: std::time::SystemTime::now(),
+        });
+
+        // Store orchestrated session metadata
+        let orch_session = OrchestratedSession {
+            session_id: new_session_id.clone(),
+            name: session_name.clone(),
+            role: role.map(String::from),
+            agent_name: agent_name.to_string(),
+            task: task.to_string(),
+            parent_session: Some(parent_session_id.clone()),
+            group: Some(group_name),
+            status: SessionStatus::Busy,
+            created_at: std::time::SystemTime::now(),
+            last_activity: std::time::SystemTime::now(),
+            human_attached: false,
+            persistent,
+            depends_on,
+            result: None,
+        };
+        self.orchestrated_sessions
+            .insert(new_session_id.to_string(), orch_session);
+
+        info!(
+            session_id = %new_session_id.to_string(),
+            name = %session_name,
+            agent = agent_name,
+            "Orchestrated session spawning"
+        );
+
+        // Spawn the ACP session as a subagent
+        let session_tx = self.session_manager_handle.clone();
+        let new_sid = new_session_id.clone();
+        let agent_str = agent_name.to_string();
+        let task_str = task.to_string();
+        let session_name_clone = session_name.clone();
+        let parent_sid = parent_session_id.clone();
+        let embedded_msg = format!(
+            "You are '{}' — an orchestrated session.\nYour task: {}\n{}\nWhen your task is complete, call the summary tool with your findings.",
+            session_name,
+            task,
+            role.map(|r| format!("Your role: {}", r)).unwrap_or_default(),
+        );
+        tokio::spawn(async move {
+            let config = AcpSessionConfig::new(new_sid.to_string(), std::env::current_dir().unwrap_or_default())
+                .is_subagent(true)
+                .initial_agent_name(agent_str)
+                .user_embedded_msg(embedded_msg);
+            match session_tx.start_session(&new_sid, config, None).await {
+                Ok(result) => {
+                    let _ = result.ready_rx.await;
+                    match result.handle.internal_prompt(task_str).await {
+                        Ok(summary) => {
+                            info!(name = %session_name_clone, "Orchestrated session completed task");
+                            let msg = format!("[Results from {}]\n\n{}", session_name_clone, summary.task_result);
+                            session_tx.deliver_subagent_result(&parent_sid, &msg).await;
+                            session_tx.store_session_result(&new_sid, summary.task_result).await;
+                            if persistent {
+                                session_tx.update_session_status(&new_sid, SessionStatus::Idle).await;
+                            } else {
+                                session_tx
+                                    .update_session_status(&new_sid, SessionStatus::Terminated)
+                                    .await;
+                                session_tx.terminate_session(&new_sid).await;
+                            }
+                            session_tx
+                                .trigger_pending_stages(&session_name_clone, &parent_sid)
+                                .await;
+                        },
+                        Err(e) => {
+                            let cancelled = e.is_cancelled();
+                            error!(name = %session_name_clone, "Orchestrated session task failed: {}", e);
+                            if !cancelled {
+                                let msg = format!("[{} failed: {}]", session_name_clone, e);
+                                session_tx.deliver_subagent_result(&parent_sid, &msg).await;
+                            }
+                            if persistent {
+                                session_tx.update_session_status(&new_sid, SessionStatus::Idle).await;
+                            } else {
+                                session_tx
+                                    .update_session_status(&new_sid, SessionStatus::Terminated)
+                                    .await;
+                                session_tx.terminate_session(&new_sid).await;
+                            }
+                            // Only trigger next DAG stages on real failures, not cancellation
+                            if !cancelled {
+                                session_tx
+                                    .trigger_pending_stages(&session_name_clone, &parent_sid)
+                                    .await;
+                            }
+                        },
+                    }
+                },
+                Err(e) => {
+                    error!("Failed to start orchestrated session {}: {}", new_sid, e);
+                },
+            }
+        });
+
+        Ok(SpawnOrchestratedResult {
+            session_id: new_session_id.to_string(),
+            name: session_name,
+        })
+    }
+
+    fn handle_revive_orchestrated(
+        &mut self,
+        parent_session_id: &SessionId,
+        target: &str,
+        task: &str,
+    ) -> Result<SpawnOrchestratedResult, sacp::Error> {
+        // Find the terminated session by name
+        let old_session = self
+            .find_session_by_name(target)
+            .cloned()
+            .ok_or_else(|| sacp::util::internal_error(format!("Session not found: {}", target)))?;
+
+        if old_session.status != SessionStatus::Terminated {
+            return Err(sacp::util::internal_error(format!(
+                "Session '{}' is {:?}, not terminated — use send_message instead",
+                target, old_session.status
+            )));
+        }
+
+        // Remove old session entry
+        self.orchestrated_sessions.remove(&old_session.session_id.to_string());
+
+        // Create new session with same name but new ID (must be a valid UUID)
+        let new_session_id = SessionId::new(uuid::Uuid::new_v4().to_string());
+        let group = old_session.group.as_deref();
+        let role = old_session.role.as_deref();
+
+        // Re-register permissions
+        self.permission_store.register_child(parent_session_id, &new_session_id);
+        if let Some(g) = group {
+            self.permission_store.register_group(&new_session_id, g);
+        }
+
+        let orch_session = OrchestratedSession {
+            session_id: new_session_id.clone(),
+            name: target.to_string(),
+            role: role.map(String::from),
+            agent_name: old_session.agent_name.clone(),
+            task: task.to_string(),
+            parent_session: Some(parent_session_id.clone()),
+            group: group.map(String::from),
+            status: SessionStatus::Busy,
+            created_at: std::time::SystemTime::now(),
+            last_activity: std::time::SystemTime::now(),
+            human_attached: false,
+            persistent: old_session.persistent,
+            depends_on: old_session.depends_on.clone(),
+            result: None,
+        };
+        self.orchestrated_sessions
+            .insert(new_session_id.to_string(), orch_session);
+
+        info!(name = target, "Reviving terminated session");
+
+        Ok(SpawnOrchestratedResult {
+            session_id: new_session_id.to_string(),
+            name: target.to_string(),
+        })
+    }
+
+    fn find_session_by_name(&self, name: &str) -> Option<&OrchestratedSession> {
+        self.orchestrated_sessions.values().find(|s| s.name == name)
+    }
+
+    fn resolve_target(&self, target: &str) -> Result<SessionId, sacp::Error> {
+        // Try as session name first
+        if let Some(s) = self.find_session_by_name(target) {
+            return Ok(s.session_id.clone());
+        }
+        // Try as session ID
+        if self.orchestrated_sessions.contains_key(target) {
+            return Ok(SessionId::new(target.to_string()));
+        }
+        // Try as raw session ID in active sessions (covers the orchestrator)
+        if self.sessions.contains_key(&SessionId::new(target.to_string())) {
+            return Ok(SessionId::new(target.to_string()));
+        }
+        Err(sacp::util::internal_error(format!("Session not found: {}", target)))
+    }
+
+    async fn handle_get_live_activity(&self, target: &str) -> Option<String> {
+        let target_id = self.resolve_target(target).ok()?;
+        let handle = self.sessions.get(&target_id)?;
+        let agent = handle.get_agent_handle().await?;
+        let snapshot = agent.create_snapshot().await.ok()?;
+
+        let mut activity_parts = Vec::new();
+        let messages = snapshot.conversation_state.cached_messages()?;
+
+        // Walk backwards through messages to find recent activity
+        for msg in messages.iter().rev().take(6) {
+            let role = &msg.role;
+            for block in &msg.content {
+                match block {
+                    agent::agent_loop::types::ContentBlock::Text(text) => {
+                        let truncated = if text.len() > 300 {
+                            format!("{}...", &text[..300])
+                        } else {
+                            text.clone()
+                        };
+                        activity_parts.push(format!("[{}] {}", role, truncated));
+                    },
+                    agent::agent_loop::types::ContentBlock::ToolUse(tool_use) => {
+                        activity_parts.push(format!("[tool_call] {}", tool_use.name));
+                    },
+                    agent::agent_loop::types::ContentBlock::ToolResult(tool_result) => {
+                        let result_preview = tool_result
+                            .content
+                            .first()
+                            .map(|c| match c {
+                                agent::agent_loop::types::ToolResultContentBlock::Text(t) => {
+                                    if t.len() > 200 {
+                                        format!("{}...", &t[..200])
+                                    } else {
+                                        t.clone()
+                                    }
+                                },
+                                _ => "(non-text)".to_string(),
+                            })
+                            .unwrap_or_default();
+                        activity_parts.push(format!("[tool_result] {}", result_preview));
+                    },
+                    agent::agent_loop::types::ContentBlock::Image(_) => {},
+                }
+            }
+        }
+
+        activity_parts.reverse();
+        if activity_parts.is_empty() {
+            None
+        } else {
+            Some(activity_parts.join("\n"))
+        }
+    }
+
+    fn resolve_sender_name(&self, session_id: &SessionId) -> String {
+        self.orchestrated_sessions
+            .get(&session_id.to_string())
+            .map_or_else(|| session_id.to_string(), |s| s.name.clone())
+    }
+
+    fn handle_send_orchestration_message(
+        &mut self,
+        from_session: &SessionId,
+        target: Option<&str>,
+        message: &str,
+        is_escalation: bool,
+    ) -> Result<bool, sacp::Error> {
+        // Resolve target: explicit target, or escalation auto-route to parent chain
+        let target_id = if let Some(t) = target {
+            self.resolve_target(t)?
+        } else if is_escalation {
+            self.resolve_escalation_target(from_session)?
+        } else {
+            return Err(sacp::util::internal_error(
+                "target is required for non-escalation messages",
+            ));
+        };
+
+        // Check permissions
+        self.permission_store
+            .can_message(from_session, &target_id)
+            .map_err(sacp::util::internal_error)?;
+
+        // Check rate limit
+        self.permission_store
+            .check_rate_limit(from_session)
+            .map_err(sacp::util::internal_error)?;
+
+        let sender_name = self.resolve_sender_name(from_session);
+
+        self.inbox_store
+            .send_message(
+                &target_id,
+                from_session,
+                &sender_name,
+                message.to_string(),
+                is_escalation,
+            )
+            .map_err(sacp::util::internal_error)?;
+
+        Ok(true)
+    }
+
+    fn resolve_escalation_target(&self, from_session: &SessionId) -> Result<SessionId, sacp::Error> {
+        let mut current = from_session.clone();
+        let mut visited = std::collections::HashSet::new();
+        visited.insert(current.to_string());
+
+        loop {
+            let parent = self
+                .orchestrated_sessions
+                .get(&current.to_string())
+                .and_then(|s| s.parent_session.clone());
+
+            match parent {
+                Some(pid) => {
+                    if !visited.insert(pid.to_string()) {
+                        return Err(sacp::util::internal_error("Cycle detected in parent chain"));
+                    }
+                    // If parent is human-attached, deliver there
+                    if self
+                        .orchestrated_sessions
+                        .get(&pid.to_string())
+                        .is_some_and(|s| s.human_attached)
+                    {
+                        return Ok(pid);
+                    }
+                    current = pid;
+                },
+                // No parent — deliver to current (root)
+                None => return Ok(current),
+            }
+        }
+    }
+
+    fn handle_list_orchestrated(&self, filter: Option<SessionFilter>) -> Vec<OrchestratedSession> {
+        self.orchestrated_sessions
+            .values()
+            .filter(|s| match filter {
+                Some(SessionFilter::Idle) => s.status == SessionStatus::Idle,
+                Some(SessionFilter::Busy) => s.status == SessionStatus::Busy,
+                Some(SessionFilter::Active) => s.status != SessionStatus::Terminated,
+                Some(SessionFilter::All) => true,
+                Some(SessionFilter::Terminated) => s.status == SessionStatus::Terminated,
+                // Default: hide terminated
+                None => s.status != SessionStatus::Terminated,
+            })
+            .cloned()
+            .collect()
+    }
+
+    fn handle_get_orchestrated_status(&self, target: &str) -> Result<OrchestratedSession, sacp::Error> {
+        let target_id = self.resolve_target(target)?;
+        self.orchestrated_sessions
+            .get(&target_id.to_string())
+            .cloned()
+            .ok_or_else(|| sacp::util::internal_error(format!("Session not found: {}", target)))
+    }
+
+    async fn handle_interrupt_orchestrated(
+        &mut self,
+        from_session: &SessionId,
+        target: &str,
+        message: &str,
+    ) -> Result<(), sacp::Error> {
+        let target_id = self.resolve_target(target)?;
+
+        self.permission_store
+            .can_message(from_session, &target_id)
+            .map_err(sacp::util::internal_error)?;
+
+        // Cancel the target session and send new prompt
+        if let Some(handle) = self.sessions.get(&target_id) {
+            let _ = handle.cancel().await;
+            let sender_name = self.resolve_sender_name(from_session);
+            let interrupt_msg = format!("[INTERRUPT from {}]: {}", sender_name, message);
+            if let Err(e) = handle.internal_prompt(interrupt_msg).await {
+                warn!("Failed to send interrupt prompt: {}", e);
+            }
+        }
+
+        Ok(())
+    }
+
+    async fn handle_inject_context(
+        &mut self,
+        from_session: &SessionId,
+        target: &str,
+        context: &str,
+    ) -> Result<(), sacp::Error> {
+        const MAX_INJECT_CONTEXT_SIZE: usize = 4000; // ~1K tokens
+        if context.len() > MAX_INJECT_CONTEXT_SIZE {
+            return Err(sacp::util::internal_error(format!(
+                "Context too large: {} chars (max {})",
+                context.len(),
+                MAX_INJECT_CONTEXT_SIZE
+            )));
+        }
+
+        let target_id = self.resolve_target(target)?;
+
+        self.permission_store
+            .can_message(from_session, &target_id)
+            .map_err(sacp::util::internal_error)?;
+
+        // Inject context via the agent's dynamic context
+        if let Some(handle) = self.sessions.get(&target_id) {
+            let agent = handle.get_agent_handle().await;
+            if let Some(_agent) = agent {
+                // Note: set_dynamic_context not available in this version
+                // agent.set_dynamic_context(Some(context.to_string())).await;
+            }
+        }
+
+        Ok(())
+    }
+
+    fn handle_manage_group(
+        &mut self,
+        from_session: &SessionId,
+        action: GroupAction,
+        group: Option<&str>,
+        target: Option<&str>,
+        role: Option<&str>,
+        message: Option<&str>,
+    ) -> Result<String, sacp::Error> {
+        match action {
+            GroupAction::Create => {
+                let name = group.ok_or_else(|| sacp::util::internal_error("Group name required"))?;
+                let series = naming::pick_series();
+                self.groups.insert(name.to_string(), SessionGroup {
+                    name: name.to_string(),
+                    series: series.to_string(),
+                    members: vec![],
+                    pending_stages: vec![],
+                });
+                Ok(serde_json::json!({"status": "created", "group": name, "series": series}).to_string())
+            },
+            GroupAction::Add => {
+                let group_name = group.ok_or_else(|| sacp::util::internal_error("Group name required"))?;
+                let target_name = target.ok_or_else(|| sacp::util::internal_error("Target session required"))?;
+                let target_id = self.resolve_target(target_name)?;
+
+                let session_name = self.resolve_sender_name(&target_id);
+
+                let group_entry = self
+                    .groups
+                    .get_mut(group_name)
+                    .ok_or_else(|| sacp::util::internal_error(format!("Group not found: {}", group_name)))?;
+
+                group_entry.members.push(GroupMembership {
+                    session_id: target_id.clone(),
+                    name: session_name,
+                    role: role.map(String::from),
+                    joined_at: std::time::SystemTime::now(),
+                });
+                self.permission_store.register_group(&target_id, group_name);
+
+                Ok(serde_json::json!({"status": "added", "group": group_name}).to_string())
+            },
+            GroupAction::Remove => Err(sacp::util::internal_error("Group remove not yet implemented")),
+            GroupAction::List => {
+                let groups: Vec<serde_json::Value> = if let Some(name) = group {
+                    self.groups
+                        .get(name)
+                        .map(|g| {
+                            vec![serde_json::json!({
+                                "name": g.name,
+                                "series": g.series,
+                                "members": g.members.iter().map(|m| serde_json::json!({
+                                    "name": m.name,
+                                    "role": m.role,
+                                    "session_id": m.session_id.to_string(),
+                                })).collect::<Vec<_>>(),
+                            })]
+                        })
+                        .unwrap_or_default()
+                } else {
+                    self.groups
+                        .values()
+                        .map(|g| {
+                            serde_json::json!({
+                                "name": g.name,
+                                "series": g.series,
+                                "member_count": g.members.len(),
+                            })
+                        })
+                        .collect()
+                };
+                Ok(serde_json::json!({"groups": groups}).to_string())
+            },
+            GroupAction::Broadcast => {
+                let group_name = group.ok_or_else(|| sacp::util::internal_error("Group name required"))?;
+                let msg = message.ok_or_else(|| sacp::util::internal_error("Message required"))?;
+
+                let group_entry = self
+                    .groups
+                    .get(group_name)
+                    .ok_or_else(|| sacp::util::internal_error(format!("Group not found: {}", group_name)))?;
+
+                let member_ids: Vec<SessionId> = group_entry.members.iter().map(|m| m.session_id.clone()).collect();
+                let sender_name = self.resolve_sender_name(from_session);
+
+                let mut delivered = 0;
+                for member_id in &member_ids {
+                    if member_id.to_string() != from_session.to_string()
+                        && self
+                            .inbox_store
+                            .send_message(member_id, from_session, &sender_name, msg.to_string(), false)
+                            .is_ok()
+                    {
+                        delivered += 1;
+                    }
+                }
+
+                Ok(serde_json::json!({"status": "broadcast", "delivered": delivered}).to_string())
+            },
+        }
+    }
+
+    /// Send a TUI notification about new inbox messages for a session.
+    async fn send_inbox_notification(&self, session_id: &SessionId) {
+        let summary = self.inbox_store.get_unread_summary(session_id);
+        if let Some(handle) = self.sessions.get(session_id) {
+            let senders: Vec<String> = summary.senders.iter().map(|(n, _)| n.clone()).collect();
+            let params = serde_json::json!({
+                "sessionId": session_id.to_string(),
+                "sessionName": self.orchestrated_sessions
+                    .get(&session_id.to_string())
+                    .map_or("main", |s| s.name.as_str()),
+                "messageCount": summary.unread_count,
+                "escalationCount": summary.escalation_count,
+                "senders": senders,
+            });
+            handle
+                .send_ext_notification_raw(super::extensions::methods::INBOX_NOTIFICATION.to_string(), params)
+                .await;
+        }
+    }
+
+    /// Emit an activity event to the TUI.
+    async fn emit_activity(&self, event_type: &str, session_name: &str, description: &str) {
+        let params = serde_json::json!({
+            "type": event_type,
+            "sessionName": session_name,
+            "description": description,
+            "timestamp": chrono::Utc::now().to_rfc3339(),
+        });
+        for handle in self.sessions.values() {
+            handle
+                .send_ext_notification_raw(super::extensions::methods::SESSION_ACTIVITY.to_string(), params.clone())
+                .await;
+        }
+    }
+
+    async fn send_session_list_update(&self) {
+        let sessions: Vec<serde_json::Value> = self
+            .orchestrated_sessions
+            .values()
+            .map(|s| {
+                let inbox_summary = self.inbox_store.get_unread_summary(&s.session_id);
+                serde_json::json!({
+                    "sessionId": s.session_id.to_string(),
+                    "name": s.name,
+                    "role": s.role,
+                    "agentName": s.agent_name,
+                    "task": s.task,
+                    "status": s.status,
+                    "group": s.group,
+                    "parentSessionId": s.parent_session.as_ref().map(|p| p.to_string()),
+                    "inboxCount": inbox_summary.unread_count,
+                    "escalationCount": inbox_summary.escalation_count,
+                    "persistent": s.persistent,
+                })
+            })
+            .collect();
+
+        let params = serde_json::json!({ "sessions": sessions });
+        for handle in self.sessions.values() {
+            handle
+                .send_ext_notification_raw(
+                    super::extensions::methods::SESSION_LIST_UPDATE.to_string(),
+                    params.clone(),
+                )
+                .await;
+        }
+    }
+
+    /// Broadcast the current subagent list (active + pending) to all TUI sessions.
+    ///
+    /// Sends `SUBAGENT_LIST_UPDATE` (`kiro.dev/subagent/list_update`) to every active ACP session.
+    /// The TUI uses this to update the crew monitor DAG and session list.
+    ///
+    /// # Payload
+    /// ```json
+    /// {
+    ///   "subagents": [{ "sessionId", "agentName", "initialQuery", "status", "group", "role" }],
+    ///   "pendingStages": [{ "name", "role", "group", "dependsOn" }]
+    /// }
+    /// ```
+    ///
+    /// Called after: session spawn, status change, DAG stage trigger, session termination.
+    async fn send_subagent_list_update(&self) {
+        let subagents: Vec<super::extensions::SubagentInfo> = self
+            .orchestrated_sessions
+            .values()
+            .map(|s| super::extensions::SubagentInfo {
+                session_id: s.session_id.clone(),
+                session_name: s.name.clone(),
+                agent_name: s.agent_name.clone(),
+                initial_query: s.task.clone(),
+                status: match s.status {
+                    SessionStatus::Busy => super::extensions::SubagentStatus::Working {
+                        message: "Running".to_string(),
+                    },
+                    SessionStatus::Terminated => super::extensions::SubagentStatus::Terminated,
+                    SessionStatus::Idle => super::extensions::SubagentStatus::AwaitingInstruction,
+                },
+                group: s.group.clone(),
+                role: s.role.clone(),
+                depends_on: s.depends_on.clone(),
+            })
+            .collect();
+
+        // Include pending stages so TUI can show full DAG
+        let pending_stages: Vec<super::extensions::PendingStageInfo> = self
+            .groups
+            .values()
+            .flat_map(|g| {
+                g.pending_stages
+                    .iter()
+                    .map(move |ps| super::extensions::PendingStageInfo {
+                        name: ps.name.clone(),
+                        role: ps.role.clone(),
+                        group: g.name.clone(),
+                        depends_on: ps.depends_on.clone(),
+                        agent_name: ps.agent_name.clone(),
+                    })
+            })
+            .collect();
+
+        let params = serde_json::json!({ "subagents": subagents, "pendingStages": pending_stages });
+        for handle in self.sessions.values() {
+            handle
+                .send_ext_notification_raw(
+                    super::extensions::methods::SUBAGENT_LIST_UPDATE.to_string(),
+                    params.clone(),
+                )
+                .await;
         }
     }
 }
@@ -569,7 +1745,7 @@ pub(crate) struct SessionManagerRequest {
 #[derive(Debug)]
 pub(crate) enum SessionManagerRequestData {
     StartSession {
-        config: AcpSessionConfig,
+        config: Box<AcpSessionConfig>,
         connection_cx: Option<JrConnectionCx<AgentToClient>>,
         resp_sender: oneshot::Sender<Result<StartSessionResult, sacp::Error>>,
     },
@@ -606,6 +1782,104 @@ pub(crate) enum SessionManagerRequestData {
         cwd: PathBuf,
         resp_sender: oneshot::Sender<Option<Arc<RwLock<CodeIntelligence>>>>,
     },
+    GetSubagentSessions {
+        resp_sender: oneshot::Sender<Vec<SubagentInfo>>,
+    },
+    DeliverSubagentResult {
+        target_session: SessionId,
+        message: String,
+        resp_sender: oneshot::Sender<()>,
+    },
+    RegisterPendingStages {
+        group: String,
+        pending_stages: Vec<agent::tools::agent_crew::PendingStageSpec>,
+        resp_sender: oneshot::Sender<()>,
+    },
+    TriggerPendingStages {
+        completed_name: String,
+        parent_session_id: SessionId,
+        resp_sender: oneshot::Sender<()>,
+    },
+    UpdateSessionStatus {
+        session_id: SessionId,
+        status: SessionStatus,
+        resp_sender: oneshot::Sender<()>,
+    },
+    StoreSessionResult {
+        session_id: SessionId,
+        result: String,
+        resp_sender: oneshot::Sender<()>,
+    },
+    WaitForGroupCompletion {
+        group_name: String,
+        resp_sender: oneshot::Sender<Vec<(String, Option<String>)>>,
+    },
+    // --- Orchestration requests ---
+    SpawnOrchestratedSession {
+        parent_session_id: SessionId,
+        agent_name: String,
+        task: String,
+        name: Option<String>,
+        role: Option<String>,
+        group: Option<String>,
+        persistent: bool,
+        resp_sender: oneshot::Sender<Result<SpawnOrchestratedResult, sacp::Error>>,
+    },
+    SendOrchestrationMessage {
+        from_session: SessionId,
+        target: Option<String>,
+        message: String,
+        is_escalation: bool,
+        resp_sender: oneshot::Sender<Result<(), sacp::Error>>,
+    },
+    ReadOrchestrationMessages {
+        session_id: SessionId,
+        limit: usize,
+        resp_sender: oneshot::Sender<Result<Vec<InboxMessage>, sacp::Error>>,
+    },
+    ListOrchestratedSessions {
+        filter: Option<SessionFilter>,
+        resp_sender: oneshot::Sender<Result<Vec<OrchestratedSession>, sacp::Error>>,
+    },
+    GetOrchestratedSessionStatus {
+        target: String,
+        resp_sender: oneshot::Sender<Result<OrchestratedSession, sacp::Error>>,
+    },
+    GetOrchestratedSessionById {
+        session_id: SessionId,
+        resp_sender: oneshot::Sender<Option<OrchestratedSession>>,
+    },
+    InterruptOrchestratedSession {
+        from_session: SessionId,
+        target: String,
+        message: String,
+        resp_sender: oneshot::Sender<Result<(), sacp::Error>>,
+    },
+    InjectOrchestrationContext {
+        from_session: SessionId,
+        target: String,
+        context: String,
+        resp_sender: oneshot::Sender<Result<(), sacp::Error>>,
+    },
+    ManageOrchestrationGroup {
+        from_session: SessionId,
+        action: GroupAction,
+        group: Option<String>,
+        target: Option<String>,
+        role: Option<String>,
+        message: Option<String>,
+        resp_sender: oneshot::Sender<Result<String, sacp::Error>>,
+    },
+    ReviveOrchestratedSession {
+        parent_session_id: SessionId,
+        target: String,
+        task: String,
+        resp_sender: oneshot::Sender<Result<SpawnOrchestratedResult, sacp::Error>>,
+    },
+    GetSessionLiveActivity {
+        target: String,
+        resp_sender: oneshot::Sender<Option<String>>,
+    },
 }
 
 /// Handle for communicating with a [`SessionManager`] actor.
@@ -626,7 +1900,7 @@ impl SessionManagerHandle {
             .send(SessionManagerRequest {
                 session_id: session_id.clone(),
                 data: SessionManagerRequestData::StartSession {
-                    config,
+                    config: Box::new(config),
                     connection_cx,
                     resp_sender,
                 },
@@ -765,5 +2039,397 @@ impl SessionManagerHandle {
             .await
             .ok()?;
         rx.await.ok()?
+    }
+
+    pub async fn get_subagent_sessions(&self) -> Vec<SubagentInfo> {
+        let (resp_sender, rx) = oneshot::channel();
+        if self
+            .tx
+            .send(SessionManagerRequest {
+                session_id: SessionId::new(String::new()),
+                data: SessionManagerRequestData::GetSubagentSessions { resp_sender },
+            })
+            .await
+            .is_ok()
+        {
+            rx.await.unwrap_or_default()
+        } else {
+            Vec::new()
+        }
+    }
+
+    /// Deliver a subagent's result to the parent session's inbox.
+    ///
+    /// Puts `message` into the parent's inbox via `InboxStore`, then sends an
+    /// `INBOX_NOTIFICATION` to the TUI so the user sees "Bob finished  r: read".
+    ///
+    /// Called from the `tokio::spawn` in `handle_spawn_orchestrated` after `internal_prompt`
+    /// returns. The message format is: `"[Results from {name}]\n\n{summary}"`.
+    pub async fn deliver_subagent_result(&self, target_session: &SessionId, message: &str) {
+        let (resp_sender, rx) = oneshot::channel();
+        let _ = self
+            .tx
+            .send(SessionManagerRequest {
+                session_id: target_session.clone(),
+                data: SessionManagerRequestData::DeliverSubagentResult {
+                    target_session: target_session.clone(),
+                    message: message.to_string(),
+                    resp_sender,
+                },
+            })
+            .await;
+        let _ = rx.await;
+    }
+
+    /// Update the status of an orchestrated session and notify the TUI.
+    ///
+    /// After updating, fires `send_subagent_list_update` so the TUI crew monitor reflects the
+    /// change.
+    ///
+    /// Called from `handle_spawn_orchestrated` after task completion:
+    /// - Ephemeral sessions: `Terminated` → then `terminate_session` to clean up ACP state.
+    /// - Persistent sessions: `Idle` → stays alive for attach/revive.
+    pub async fn update_session_status(&self, session_id: &SessionId, status: SessionStatus) {
+        let (resp_sender, rx) = oneshot::channel();
+        let _ = self
+            .tx
+            .send(SessionManagerRequest {
+                session_id: session_id.clone(),
+                data: SessionManagerRequestData::UpdateSessionStatus {
+                    session_id: session_id.clone(),
+                    status,
+                    resp_sender,
+                },
+            })
+            .await;
+        let _ = rx.await;
+    }
+
+    pub async fn store_session_result(&self, session_id: &SessionId, result: String) {
+        let (resp_sender, rx) = oneshot::channel();
+        let _ = self
+            .tx
+            .send(SessionManagerRequest {
+                session_id: session_id.clone(),
+                data: SessionManagerRequestData::StoreSessionResult {
+                    session_id: session_id.clone(),
+                    result,
+                    resp_sender,
+                },
+            })
+            .await;
+        let _ = rx.await;
+    }
+
+    /// Wait for all sessions in a group to complete. Blocks until all are Terminated.
+    pub async fn wait_for_group_completion(&self, group_name: String) -> Vec<(String, Option<String>)> {
+        let (resp_sender, rx) = oneshot::channel();
+        let _ = self
+            .tx
+            .send(SessionManagerRequest {
+                session_id: SessionId::new(String::new()),
+                data: SessionManagerRequestData::WaitForGroupCompletion {
+                    group_name,
+                    resp_sender,
+                },
+            })
+            .await;
+        rx.await.unwrap_or_default()
+    }
+
+    /// Store pending DAG stages for a crew group.
+    ///
+    /// Called by `agent_crew.execute()` via `RegisterPendingStages` tool event.
+    /// Stages with `depends_on` that aren't yet satisfied are stored here until
+    /// `trigger_pending_stages` finds their deps complete.
+    ///
+    /// # Group naming
+    /// Group name is `"crew-{task[..20]}"` — consistent between `agent_crew` and `session_manager`.
+    pub async fn register_pending_stages(
+        &self,
+        group: String,
+        pending_stages: Vec<agent::tools::agent_crew::PendingStageSpec>,
+    ) {
+        let (resp_sender, rx) = oneshot::channel();
+        let _ = self
+            .tx
+            .send(SessionManagerRequest {
+                session_id: SessionId::new(String::new()),
+                data: SessionManagerRequestData::RegisterPendingStages {
+                    group,
+                    pending_stages,
+                    resp_sender,
+                },
+            })
+            .await;
+        let _ = rx.await;
+    }
+
+    /// Called when a session completes — spawns any pending stages whose deps are now all done.
+    ///
+    /// # Algorithm
+    /// 1. Find the group of `completed_name` in `orchestrated_sessions`.
+    /// 2. Build `completed` = set of session names in that group with status `Terminated`.
+    /// 3. Find pending stages where ALL `depends_on` names are in `completed`.
+    /// 4. Remove those stages from `groups[group].pending_stages`.
+    /// 5. Spawn each via `handle_spawn_orchestrated` and fire `send_subagent_list_update`.
+    ///
+    /// # Important
+    /// Uses session **names** (not IDs) for dependency matching. Stage names must be unique
+    /// within a group — duplicate names cause premature triggering.
+    pub async fn trigger_pending_stages(&self, completed_name: &str, parent_session_id: &SessionId) {
+        let (resp_sender, rx) = oneshot::channel();
+        let _ = self
+            .tx
+            .send(SessionManagerRequest {
+                session_id: parent_session_id.clone(),
+                data: SessionManagerRequestData::TriggerPendingStages {
+                    completed_name: completed_name.to_string(),
+                    parent_session_id: parent_session_id.clone(),
+                    resp_sender,
+                },
+            })
+            .await;
+        let _ = rx.await;
+    }
+
+    // --- Orchestration handle methods ---
+
+    #[allow(clippy::too_many_arguments)]
+    pub async fn spawn_orchestrated_session(
+        &self,
+        parent_session_id: &SessionId,
+        agent_name: String,
+        task: String,
+        name: Option<String>,
+        role: Option<String>,
+        group: Option<String>,
+        persistent: bool,
+    ) -> Result<SpawnOrchestratedResult, sacp::Error> {
+        let (resp_sender, rx) = oneshot::channel();
+        self.tx
+            .send(SessionManagerRequest {
+                session_id: parent_session_id.clone(),
+                data: SessionManagerRequestData::SpawnOrchestratedSession {
+                    parent_session_id: parent_session_id.clone(),
+                    agent_name,
+                    task,
+                    name,
+                    role,
+                    group,
+                    persistent,
+                    resp_sender,
+                },
+            })
+            .await
+            .map_err(|_e| sacp::util::internal_error("Failed to send spawn request"))?;
+        rx.await
+            .map_err(|_e| sacp::util::internal_error("Failed to receive spawn response"))?
+    }
+
+    pub async fn send_orchestration_message(
+        &self,
+        from_session: &SessionId,
+        target: Option<&str>,
+        message: &str,
+        is_escalation: bool,
+    ) -> Result<(), sacp::Error> {
+        let (resp_sender, rx) = oneshot::channel();
+        self.tx
+            .send(SessionManagerRequest {
+                session_id: from_session.clone(),
+                data: SessionManagerRequestData::SendOrchestrationMessage {
+                    from_session: from_session.clone(),
+                    target: target.map(String::from),
+                    message: message.to_string(),
+                    is_escalation,
+                    resp_sender,
+                },
+            })
+            .await
+            .map_err(|_e| sacp::util::internal_error("Failed to send message request"))?;
+        rx.await
+            .map_err(|_e| sacp::util::internal_error("Failed to receive message response"))?
+    }
+
+    pub async fn read_orchestration_messages(
+        &self,
+        session_id: &SessionId,
+        limit: usize,
+    ) -> Result<Vec<InboxMessage>, sacp::Error> {
+        let (resp_sender, rx) = oneshot::channel();
+        self.tx
+            .send(SessionManagerRequest {
+                session_id: session_id.clone(),
+                data: SessionManagerRequestData::ReadOrchestrationMessages {
+                    session_id: session_id.clone(),
+                    limit,
+                    resp_sender,
+                },
+            })
+            .await
+            .map_err(|_e| sacp::util::internal_error("Failed to send read request"))?;
+        rx.await
+            .map_err(|_e| sacp::util::internal_error("Failed to receive read response"))?
+    }
+
+    pub async fn list_orchestrated_sessions(
+        &self,
+        filter: Option<SessionFilter>,
+    ) -> Result<Vec<OrchestratedSession>, sacp::Error> {
+        let (resp_sender, rx) = oneshot::channel();
+        self.tx
+            .send(SessionManagerRequest {
+                session_id: SessionId::new(String::new()),
+                data: SessionManagerRequestData::ListOrchestratedSessions { filter, resp_sender },
+            })
+            .await
+            .map_err(|_e| sacp::util::internal_error("Failed to send list request"))?;
+        rx.await
+            .map_err(|_e| sacp::util::internal_error("Failed to receive list response"))?
+    }
+
+    pub async fn get_orchestrated_session_status(&self, target: &str) -> Result<OrchestratedSession, sacp::Error> {
+        let (resp_sender, rx) = oneshot::channel();
+        self.tx
+            .send(SessionManagerRequest {
+                session_id: SessionId::new(String::new()),
+                data: SessionManagerRequestData::GetOrchestratedSessionStatus {
+                    target: target.to_string(),
+                    resp_sender,
+                },
+            })
+            .await
+            .map_err(|_e| sacp::util::internal_error("Failed to send status request"))?;
+        rx.await
+            .map_err(|_e| sacp::util::internal_error("Failed to receive status response"))?
+    }
+
+    pub async fn get_orchestrated_session_by_id(&self, session_id: &SessionId) -> Option<OrchestratedSession> {
+        let (resp_sender, rx) = oneshot::channel();
+        let _ = self
+            .tx
+            .send(SessionManagerRequest {
+                session_id: session_id.clone(),
+                data: SessionManagerRequestData::GetOrchestratedSessionById {
+                    session_id: session_id.clone(),
+                    resp_sender,
+                },
+            })
+            .await;
+        rx.await.unwrap_or(None)
+    }
+
+    pub async fn interrupt_orchestrated_session(
+        &self,
+        from_session: &SessionId,
+        target: &str,
+        message: &str,
+    ) -> Result<(), sacp::Error> {
+        let (resp_sender, rx) = oneshot::channel();
+        self.tx
+            .send(SessionManagerRequest {
+                session_id: from_session.clone(),
+                data: SessionManagerRequestData::InterruptOrchestratedSession {
+                    from_session: from_session.clone(),
+                    target: target.to_string(),
+                    message: message.to_string(),
+                    resp_sender,
+                },
+            })
+            .await
+            .map_err(|_e| sacp::util::internal_error("Failed to send interrupt request"))?;
+        rx.await
+            .map_err(|_e| sacp::util::internal_error("Failed to receive interrupt response"))?
+    }
+
+    pub async fn inject_orchestration_context(
+        &self,
+        from_session: &SessionId,
+        target: &str,
+        context: &str,
+    ) -> Result<(), sacp::Error> {
+        let (resp_sender, rx) = oneshot::channel();
+        self.tx
+            .send(SessionManagerRequest {
+                session_id: from_session.clone(),
+                data: SessionManagerRequestData::InjectOrchestrationContext {
+                    from_session: from_session.clone(),
+                    target: target.to_string(),
+                    context: context.to_string(),
+                    resp_sender,
+                },
+            })
+            .await
+            .map_err(|_e| sacp::util::internal_error("Failed to send inject request"))?;
+        rx.await
+            .map_err(|_e| sacp::util::internal_error("Failed to receive inject response"))?
+    }
+
+    pub async fn manage_orchestration_group(
+        &self,
+        from_session: &SessionId,
+        action: GroupAction,
+        group: Option<&str>,
+        target: Option<&str>,
+        role: Option<&str>,
+        message: Option<&str>,
+    ) -> Result<String, sacp::Error> {
+        let (resp_sender, rx) = oneshot::channel();
+        self.tx
+            .send(SessionManagerRequest {
+                session_id: from_session.clone(),
+                data: SessionManagerRequestData::ManageOrchestrationGroup {
+                    from_session: from_session.clone(),
+                    action,
+                    group: group.map(String::from),
+                    target: target.map(String::from),
+                    role: role.map(String::from),
+                    message: message.map(String::from),
+                    resp_sender,
+                },
+            })
+            .await
+            .map_err(|_e| sacp::util::internal_error("Failed to send group request"))?;
+        rx.await
+            .map_err(|_e| sacp::util::internal_error("Failed to receive group response"))?
+    }
+
+    pub async fn revive_orchestrated_session(
+        &self,
+        parent_session_id: &SessionId,
+        target: &str,
+        task: &str,
+    ) -> Result<SpawnOrchestratedResult, sacp::Error> {
+        let (resp_sender, rx) = oneshot::channel();
+        self.tx
+            .send(SessionManagerRequest {
+                session_id: parent_session_id.clone(),
+                data: SessionManagerRequestData::ReviveOrchestratedSession {
+                    parent_session_id: parent_session_id.clone(),
+                    target: target.to_string(),
+                    task: task.to_string(),
+                    resp_sender,
+                },
+            })
+            .await
+            .map_err(|_e| sacp::util::internal_error("Failed to send revive request"))?;
+        rx.await
+            .map_err(|_e| sacp::util::internal_error("Failed to receive revive response"))?
+    }
+
+    pub async fn get_session_live_activity(&self, target: &str) -> Option<String> {
+        let (resp_sender, rx) = oneshot::channel();
+        let _ = self
+            .tx
+            .send(SessionManagerRequest {
+                session_id: SessionId::new(String::new()),
+                data: SessionManagerRequestData::GetSessionLiveActivity {
+                    target: target.to_string(),
+                    resp_sender,
+                },
+            })
+            .await;
+        rx.await.ok().flatten()
     }
 }

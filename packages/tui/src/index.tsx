@@ -14,6 +14,7 @@ import { clearTerminalProgress } from './utils/terminal-capabilities.js';
 import { Kiro } from './kiro';
 import { TestModeProvider } from './test-utils/TestModeProvider';
 import { parseCliArgs, buildAcpArgs } from './utils/cli-args';
+import { sessionConversationsStore } from './stores/session-conversations.js';
 import { getMostRecentSessionId } from './utils/sessions';
 import { pickSession } from './utils/session-picker';
 import type { AgentStreamEvent } from './types/agent-events';
@@ -161,6 +162,158 @@ const startInitialization = (sessionId?: string) => {
   if (initPromise) return initPromise;
 
   wireUpHandlers();
+
+  // Wire subagent list updates to store sessions
+  kiro.onSubagentListUpdate((subagents: any[], pendingStages: any[] = []) => {
+    const state = appStore.getState();
+    subagents.forEach((sub: any) => {
+      const session = {
+        id: sub.sessionId,
+        name: sub.sessionName || sub.agentName,
+        agentName: sub.agentName,
+        status:
+          sub.status?.type === 'working'
+            ? ('busy' as const)
+            : sub.status?.type === 'terminated'
+              ? ('terminated' as const)
+              : ('idle' as const),
+        type: 'ephemeral' as const,
+        created: new Date(),
+        lastActivity: new Date(),
+        group: sub.group,
+        parentSession: sub.parentSessionId,
+        role: sub.role,
+      };
+      const existing = state.sessions.get(sub.sessionId);
+      if (existing) {
+        state.updateSession(sub.sessionId, {
+          name: sub.sessionName || sub.agentName,
+          status: session.status,
+          lastActivity: new Date(),
+          group: sub.group,
+          role: sub.role,
+          dependsOn: sub.dependsOn ?? [],
+        } as any);
+      } else {
+        state.addSession({ ...session, dependsOn: sub.dependsOn ?? [] } as any);
+      }
+    });
+
+    // Add pending stages as placeholder sessions
+    pendingStages.forEach((ps: any) => {
+      const pendingId = `pending:${ps.name}`;
+      if (!state.sessions.get(pendingId)) {
+        state.addSession({
+          id: pendingId,
+          name: ps.name,
+          agentName: ps.agentName || ps.name,
+          status: 'pending' as const,
+          type: 'ephemeral' as const,
+          created: new Date(),
+          lastActivity: new Date(),
+          group: ps.group,
+          role: ps.role,
+          stageInfo: { name: ps.name, role: ps.role },
+          dependsOn: ps.dependsOn ?? [],
+        } as any);
+      } else {
+        state.updateSession(pendingId, {
+          dependsOn: ps.dependsOn ?? [],
+        } as any);
+      }
+    });
+
+    // Remove pending placeholders that are no longer pending (they got spawned as real sessions)
+    const pendingNames = new Set(pendingStages.map((ps: any) => ps.name));
+    state.sessions.forEach((s, id) => {
+      if (s.status === 'pending' && !pendingNames.has(s.name)) {
+        state.removeSession(id);
+      }
+    });
+
+    // Mark busy sessions missing from list as terminated; remove old terminated sessions
+    const activeIds = new Set(subagents.map((s: any) => s.sessionId));
+    // Also clean up terminated sessions' handlers to prevent memory leaks
+    state.sessions.forEach((s, id) => {
+      if (s.status === 'pending') return;
+      if (!activeIds.has(id) && s.status === 'busy') {
+        state.updateSession(id, {
+          status: 'terminated' as const,
+          lastActivity: new Date(),
+        });
+      } else if (!activeIds.has(id) && s.status === 'terminated') {
+        sessionHandlers.delete(id);
+      }
+    });
+  });
+
+  // Wire session events
+  kiro.onSessionEvent((event: any) => {
+    const state = appStore.getState();
+    if (event.type === 'session_terminated') {
+      state.updateSession(event.sessionId, {
+        status: 'terminated',
+        lastActivity: new Date(),
+      });
+    } else if (event.type === 'session_created') {
+      state.addSession(event.session);
+    }
+  });
+
+  // Wire multi-session event buffer + conversation rendering
+  const sessionHandlers = new Map<string, (event: any) => void>();
+  const getOrCreateHandler = (sessionId: string) => {
+    if (!sessionHandlers.has(sessionId)) {
+      sessionHandlers.set(
+        sessionId,
+        sessionConversationsStore.getState().createHandlerForSession(sessionId)
+      );
+    }
+    return sessionHandlers.get(sessionId)!;
+  };
+  kiro.onMultiSessionUpdate((sessionId: string, event: any) => {
+    appStore.getState().pushSessionEvent(sessionId, event);
+    getOrCreateHandler(sessionId)(event);
+  });
+  // Reset handler when user sends a message — ensures next response starts a fresh turn
+  kiro.onSessionMessageSent = (sessionId: string) =>
+    sessionHandlers.delete(sessionId);
+  appStore.setState({
+    resetSessionHandler: (sessionId: string) =>
+      sessionHandlers.delete(sessionId),
+  } as any);
+
+  // Wire inbox notifications → notification bar with "r: read" action
+  kiro.onInboxNotification?.((notification: any) => {
+    logger.info('[tui] inbox notification:', notification);
+    const senders: string[] = notification.senders ?? [];
+    const sessionName: string = notification.sessionName ?? 'Agent';
+    const count: number = notification.messageCount ?? 1;
+    const from = senders.length > 0 ? senders[0] : sessionName;
+    const msg =
+      count === 1 ? `${from} finished` : `${from} sent ${count} results`;
+    appStore.getState().showTransientAlert({
+      message: msg,
+      status: 'success',
+      autoHideMs: 10000,
+      action: {
+        key: 'ctrl+r',
+        label: 'read',
+        onAction: () => {
+          appStore.getState().showTransientAlert({
+            message: `Fetching results from ${from}...`,
+            status: 'loading',
+            autoHideMs: 3000,
+          });
+          appStore
+            .getState()
+            .sendMessage(
+              'You have new messages in your inbox. Use the session_management tool with command read_messages to read them, then summarize the results.'
+            );
+        },
+      },
+    });
+  });
 
   initPromise = kiro
     .initialize(agentPath, acpArgs)

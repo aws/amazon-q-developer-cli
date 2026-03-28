@@ -16,7 +16,6 @@ import type {
   TuiCommand,
 } from './types/commands';
 import type { ListSessionsResponse } from './types/session-client';
-import { v4 as uuidv4 } from 'uuid';
 
 import packageJson from '../package.json';
 
@@ -34,6 +33,15 @@ const EXT_METHODS = {
   CLEAR_STATUS: 'kiro.dev/clear/status',
   MCP_SERVER_INIT_FAILURE: 'kiro.dev/mcp/server_init_failure',
   RATE_LIMIT_ERROR: 'kiro.dev/error/rate_limit',
+  SUBAGENT_LIST_UPDATE: 'kiro.dev/subagent/list_update',
+  SESSION_ACTIVITY: 'kiro.dev/session/activity',
+  SESSION_LIST_UPDATE: 'kiro.dev/session/list_update',
+  INBOX_NOTIFICATION: 'kiro.dev/session/inbox_notification',
+  SESSION_LIST: 'session/list',
+  SESSION_SPAWN: 'session/spawn',
+  SESSION_TERMINATE: 'session/terminate',
+  SESSION_ATTACH: 'session/attach',
+  MESSAGE_SEND: 'message/send',
   AGENT_SWITCHED: 'kiro.dev/agent/switched',
   SESSION_UPDATE: 'kiro.dev/session/update',
 } as const;
@@ -61,6 +69,14 @@ export class AcpClient implements acp.Client, SessionClient {
   private connection: acp.ClientSideConnection;
   public sessionId?: string;
   private updateHandlers: Set<(event: AgentStreamEvent) => void> = new Set();
+  private multiSessionHandlers: Set<
+    (sessionId: string, event: AgentStreamEvent) => void
+  > = new Set();
+  private inboxHandlers: Set<(notification: any) => void> = new Set();
+  private sessionEventHandlers: Set<(event: any) => void> = new Set();
+  private subagentListHandlers: Set<
+    (subagents: any[], pendingStages?: any[]) => void
+  > = new Set();
   private agentProcess: ChildProcess;
 
   constructor(agentPath: string, extraAcpArgs: string[] = []) {
@@ -141,7 +157,7 @@ export class AcpClient implements acp.Client, SessionClient {
     });
 
     stdout.on('data', (chunk: Buffer) => {
-      buffer += decoder.decode(new Uint8Array(chunk), { stream: true });
+      buffer += decoder.decode(chunk, { stream: true });
       const lines = buffer.split('\n');
       buffer = lines.pop() || '';
       for (const line of lines) {
@@ -426,6 +442,7 @@ export class AcpClient implements acp.Client, SessionClient {
         const event: AgentStreamEvent = {
           type: AgentEventType.ApprovalRequest,
           value: {
+            sessionId: (params as any).sessionId as string | undefined,
             toolCall: { toolCallId: params.toolCall?.toolCallId || '' },
             permissionOptions: (params.options || []).map((opt) => ({
               kind: opt.kind as ApprovalOptionId,
@@ -455,68 +472,77 @@ export class AcpClient implements acp.Client, SessionClient {
 
   async sessionUpdate(params: acp.SessionNotification): Promise<void> {
     const { update } = params;
-    if (update) {
-      logger.debug('[acp] sessionUpdate received:', update.sessionUpdate);
-      const event = this.convertAcpUpdateToEvent(update);
-      if (event) {
+    if (!update) return;
+    logger.debug('[acp] sessionUpdate received:', update.sessionUpdate);
+    const notifSessionId = (params as any).sessionId as string | undefined;
+    const isSubagentEvent = notifSessionId && notifSessionId !== this.sessionId;
+    const event = this.convertAcpUpdateToEvent(update);
+    if (!event) return;
+
+    if (isSubagentEvent) {
+      // Always forward to multi-session handlers (crew monitor)
+      this.multiSessionHandlers.forEach((h) => h(notifSessionId, event));
+
+      // Tool call events from subagents also need to reach the main chat
+      // because tool_call_chunk (ext notification) creates entries in the
+      // main messages array — their updates/completions must land there too.
+      const isToolEvent =
+        event.type === AgentEventType.ToolCall ||
+        event.type === AgentEventType.ToolCallUpdate ||
+        event.type === AgentEventType.ToolCallFinished;
+      if (isToolEvent) {
         this.broadcastStreamEvent(event);
       }
+    } else {
+      this.broadcastStreamEvent(event);
     }
   }
 
   async writeTextFile?(
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
     _params: acp.WriteTextFileRequest
   ): Promise<acp.WriteTextFileResponse> {
     throw new Error('writeTextFile not implemented');
   }
 
   async readTextFile?(
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
     _params: acp.ReadTextFileRequest
   ): Promise<acp.ReadTextFileResponse> {
     throw new Error('readTextFile not implemented');
   }
 
   async createTerminal?(
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
     _params: acp.CreateTerminalRequest
   ): Promise<acp.CreateTerminalResponse> {
     throw new Error('createTerminal not implemented');
   }
 
   async terminalOutput?(
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
     _params: acp.TerminalOutputRequest
   ): Promise<acp.TerminalOutputResponse> {
     throw new Error('terminalOutput not implemented');
   }
 
   async releaseTerminal?(
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
     _params: acp.ReleaseTerminalRequest
   ): Promise<acp.ReleaseTerminalResponse | void> {
     throw new Error('releaseTerminal not implemented');
   }
 
   async waitForTerminalExit?(
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
     _params: acp.WaitForTerminalExitRequest
   ): Promise<acp.WaitForTerminalExitResponse> {
     throw new Error('waitForTerminalExit not implemented');
   }
 
   async killTerminal?(
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
     _params: acp.KillTerminalCommandRequest
   ): Promise<acp.KillTerminalResponse | void> {
     throw new Error('killTerminal not implemented');
   }
 
   async extMethod?(
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
     _method: string,
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+
     _params: Record<string, unknown>
   ): Promise<Record<string, unknown>> {
     throw new Error('extMethod not implemented');
@@ -547,6 +573,14 @@ export class AcpClient implements acp.Client, SessionClient {
       this.handleMcpServerInitFailure(params),
     [EXT_METHODS.RATE_LIMIT_ERROR]: (params) =>
       this.handleRateLimitError(params),
+    [EXT_METHODS.SUBAGENT_LIST_UPDATE]: (params) =>
+      this.handleSubagentListUpdate(params),
+    [EXT_METHODS.SESSION_ACTIVITY]: (params) =>
+      this.handleSessionActivity(params),
+    [EXT_METHODS.SESSION_LIST_UPDATE]: (params) =>
+      this.handleSessionListUpdate(params),
+    [EXT_METHODS.INBOX_NOTIFICATION]: (params) =>
+      this.handleInboxNotification(params),
     [EXT_METHODS.AGENT_SWITCHED]: (params) => this.handleAgentSwitched(params),
     [EXT_METHODS.SESSION_UPDATE]: (params) =>
       this.handleExtSessionUpdate(params),
@@ -623,6 +657,8 @@ export class AcpClient implements acp.Client, SessionClient {
   }
 
   private handleMetadataUpdate(params: Record<string, unknown>) {
+    const sessionId = params.sessionId as string | undefined;
+    if (sessionId && sessionId !== this.sessionId) return;
     const percent =
       (params.contextUsagePercentage as number | undefined) ?? null;
     if (percent !== null) {
@@ -686,6 +722,89 @@ export class AcpClient implements acp.Client, SessionClient {
     });
   }
 
+  private handleSubagentListUpdate(params: Record<string, unknown>) {
+    const subagents = (params as any)?.subagents ?? [];
+    const pendingStages = (params as any)?.pendingStages ?? [];
+    this.subagentListHandlers.forEach((h) => h(subagents, pendingStages));
+  }
+
+  private handleSessionActivity(params: Record<string, unknown>) {
+    const sessionId = (params as any)?.sessionId as string;
+    const event = (params as any)?.event as AgentStreamEvent;
+    if (sessionId && event) {
+      this.multiSessionHandlers.forEach((h) => h(sessionId, event));
+    }
+  }
+
+  private handleSessionListUpdate(params: Record<string, unknown>) {
+    const sessions = (params as any)?.sessions ?? [];
+    this.subagentListHandlers.forEach((h) => h(sessions));
+  }
+
+  private handleInboxNotification(params: Record<string, unknown>) {
+    this.inboxHandlers.forEach((h) => h(params));
+  }
+
+  onMultiSessionUpdate(
+    handler: (sessionId: string, event: AgentStreamEvent) => void
+  ): () => void {
+    this.multiSessionHandlers.add(handler);
+    return () => this.multiSessionHandlers.delete(handler);
+  }
+
+  onSubagentListUpdate(
+    handler: (subagents: any[], pendingStages?: any[]) => void
+  ): () => void {
+    this.subagentListHandlers.add(handler);
+    return () => this.subagentListHandlers.delete(handler);
+  }
+
+  onSessionEvent(handler: (event: any) => void): () => void {
+    this.sessionEventHandlers.add(handler);
+    return () => this.sessionEventHandlers.delete(handler);
+  }
+
+  onInboxNotification(handler: (notification: any) => void): () => void {
+    this.inboxHandlers.add(handler);
+    return () => this.inboxHandlers.delete(handler);
+  }
+
+  async spawnSession(
+    task: string,
+    name?: string
+  ): Promise<{ sessionId: string; name: string }> {
+    logger.debug('[spawnSession] calling ext method', {
+      method: EXT_METHODS.SESSION_SPAWN,
+      task,
+      name,
+    });
+    try {
+      const result = await this.connection.extMethod(
+        EXT_METHODS.SESSION_SPAWN,
+        {
+          sessionId: this.sessionId,
+          task,
+          name,
+        }
+      );
+      logger.debug('[spawnSession] result', result);
+      return {
+        sessionId: (result as any).sessionId,
+        name: (result as any).name ?? name ?? '',
+      };
+    } catch (e) {
+      logger.error('[spawnSession] failed', e);
+      throw e;
+    }
+  }
+
+  async sendMessage(sessionId: string, content: string): Promise<void> {
+    await this.connection.extMethod(EXT_METHODS.MESSAGE_SEND, {
+      sessionId,
+      content,
+    });
+  }
+
   private handleAgentSwitched(params: Record<string, unknown>) {
     const payload = params as {
       agentName: string;
@@ -710,13 +829,21 @@ export class AcpClient implements acp.Client, SessionClient {
         title: string;
         kind: string;
       };
-      this.broadcastStreamEvent({
+      const sessionId = params.sessionId as string | undefined;
+      const isSubagentEvent = sessionId && sessionId !== this.sessionId;
+      const event: AgentStreamEvent = {
         type: AgentEventType.ToolCall,
         id: chunk.toolCallId,
         name: chunk.title,
         kind: chunk.kind,
         args: {},
-      });
+        sessionId: isSubagentEvent ? sessionId : undefined,
+      };
+
+      if (isSubagentEvent) {
+        this.multiSessionHandlers.forEach((h) => h(sessionId, event));
+      }
+      this.broadcastStreamEvent(event);
     }
   }
 
@@ -737,7 +864,7 @@ export class AcpClient implements acp.Client, SessionClient {
           case 'text':
             return {
               type: AgentEventType.UserMessage,
-              id: uuidv4(),
+              id: crypto.randomUUID(),
               content: { type: ContentType.Text, text: update.content.text },
             };
           default:
@@ -750,13 +877,13 @@ export class AcpClient implements acp.Client, SessionClient {
           case 'text':
             return {
               type: AgentEventType.Content,
-              id: uuidv4(),
+              id: crypto.randomUUID(),
               content: { type: ContentType.Text, text: update.content.text },
             };
           case 'image':
             return {
               type: AgentEventType.Content,
-              id: uuidv4(),
+              id: crypto.randomUUID(),
               content: { type: ContentType.Image, image: update.content },
             };
           default:

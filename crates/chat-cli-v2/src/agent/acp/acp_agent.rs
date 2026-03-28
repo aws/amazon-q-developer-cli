@@ -139,8 +139,8 @@ use super::extensions::{
 };
 use super::slash_router;
 use super::subagent_tool::{
+    InternalPromptError,
     handle_internal_prompt,
-    handle_subagent_request,
 };
 use crate::agent::acp::session_manager::{
     AgentInfo,
@@ -190,7 +190,13 @@ pub enum AcpSessionRequest {
     /// Used when spawning subagents that run without TUI interaction.
     InternalPrompt {
         query: String,
-        respond_to: oneshot::Sender<eyre::Result<Summary>>,
+        respond_to: oneshot::Sender<Result<Summary, InternalPromptError>>,
+    },
+    /// Lightweight wake — sends a prompt and waits for turn to end.
+    /// Unlike InternalPrompt, does NOT require a Summary tool call.
+    Wake {
+        message: String,
+        respond_to: oneshot::Sender<eyre::Result<()>>,
     },
     /// Swap to a different agent configuration (e.g., switching modes).
     SwapAgent {
@@ -231,6 +237,12 @@ pub enum AcpSessionRequest {
         arguments: HashMap<String, String>,
         respond_to: oneshot::Sender<Result<Vec<serde_json::Value>, String>>,
     },
+    /// Get the agent handle for this session.
+    GetAgentHandle {
+        respond_to: oneshot::Sender<agent::AgentHandle>,
+    },
+    /// Send an extension notification to the TUI client.
+    SendExtNotification { method: String, params: serde_json::Value },
     /// Get tool info for advertising.
     GetToolInfo {
         respond_to: oneshot::Sender<Result<Vec<agent::tui_commands::ToolInfo>, String>>,
@@ -316,11 +328,21 @@ impl AcpSessionHandle {
     }
 
     /// Send an internal prompt (for subagent execution, no ACP connection needed)
-    pub async fn internal_prompt(&self, query: String) -> eyre::Result<Summary> {
-        let (respond_to, rx) = oneshot::channel::<eyre::Result<Summary>>();
+    pub async fn internal_prompt(&self, query: String) -> Result<Summary, InternalPromptError> {
+        let (respond_to, rx) = oneshot::channel::<Result<Summary, InternalPromptError>>();
         self.tx
             .send(AcpSessionRequest::InternalPrompt { query, respond_to })
-            .await?;
+            .await
+            .map_err(|e| InternalPromptError::Failed(format!("Channel send error: {e}")))?;
+        rx.await
+            .map_err(|e| InternalPromptError::Failed(format!("Channel recv error: {e}")))?
+    }
+
+    /// Lightweight wake — sends a prompt without requiring Summary response.
+    /// Use this for interactive chat with persistent sessions.
+    pub async fn wake_session(&self, message: String) -> eyre::Result<()> {
+        let (respond_to, rx) = oneshot::channel::<eyre::Result<()>>();
+        self.tx.send(AcpSessionRequest::Wake { message, respond_to }).await?;
         rx.await?
     }
 
@@ -362,6 +384,28 @@ impl AcpSessionHandle {
 
     pub async fn cancel(&self) -> Result<(), sacp::Error> {
         self.tx.send(AcpSessionRequest::Cancel).await
+    }
+
+    /// Get the agent handle for this session
+    pub async fn get_agent_handle(&self) -> Option<agent::AgentHandle> {
+        let (respond_to, rx) = oneshot::channel();
+        if self
+            .tx
+            .send(AcpSessionRequest::GetAgentHandle { respond_to })
+            .await
+            .is_err()
+        {
+            return None;
+        }
+        rx.await.ok()
+    }
+
+    /// Send an extension notification to the TUI client for this session.
+    pub async fn send_ext_notification_raw(&self, method: String, params: serde_json::Value) {
+        let _ = self
+            .tx
+            .send(AcpSessionRequest::SendExtNotification { method, params })
+            .await;
     }
 
     /// Execute a slash command
@@ -517,6 +561,7 @@ pub struct AcpSessionConfig {
     pub trust_all_tools: bool,
     /// ACP client identity from InitializeRequest
     pub acp_client_info: Option<AcpClientInfo>,
+    pub subagent_info: Option<SubagentInfo>,
 }
 
 impl AcpSessionConfig {
@@ -532,6 +577,7 @@ impl AcpSessionConfig {
             mcp_servers: Vec::new(),
             trust_all_tools: false,
             acp_client_info: None,
+            subagent_info: None,
         }
     }
 
@@ -560,6 +606,11 @@ impl AcpSessionConfig {
         self.is_subagent = is_subagent;
         self
     }
+
+    pub fn subagent_info(mut self, info: Option<SubagentInfo>) -> Self {
+        self.subagent_info = info;
+        self
+    }
 }
 
 /// Builder for constructing and spawning an [`AcpSession`] actor.
@@ -586,6 +637,7 @@ pub struct AcpSessionBuilder<'a> {
     acp_client_info: Option<AcpClientInfo>,
     /// Telemetry event store for recording events in test scenarios. `None` in production.
     telemetry_event_store: Option<crate::agent::ipc_server::TelemetryEventStore>,
+    subagent_info: Option<SubagentInfo>,
 }
 
 impl<'a> AcpSessionBuilder<'a> {
@@ -689,6 +741,11 @@ impl<'a> AcpSessionBuilder<'a> {
         self
     }
 
+    pub fn subagent_info(mut self, info: Option<SubagentInfo>) -> Self {
+        self.subagent_info = info;
+        self
+    }
+
     /// Spawns a new ACP session actor and returns a handle to communicate with it.
     ///
     /// The returned `ready_rx` resolves after historical notifications have been emitted
@@ -701,6 +758,7 @@ impl<'a> AcpSessionBuilder<'a> {
 
         let (tx, rx) = mpsc::channel(32);
         let (ready_tx, ready_rx) = oneshot::channel();
+        let subagent_info = self.subagent_info.clone();
         let session = AcpSession::with_builder(os, rx, self).await?;
         let initial_model_id = session.rts_state.model_id();
         tokio::spawn(async move { session.main_loop(ready_tx).await });
@@ -708,7 +766,7 @@ impl<'a> AcpSessionBuilder<'a> {
         Ok((
             AcpSessionHandle {
                 tx: InnerSender::Strong(tx),
-                _subagent_info: None,
+                _subagent_info: subagent_info,
             },
             ready_rx,
             initial_model_id,
@@ -742,10 +800,12 @@ struct AcpSession {
     local_mcp_path: Option<PathBuf>,
     global_mcp_path: Option<PathBuf>,
     current_agent_name: String,
+    /// Connection to the TUI client
+    connection_cx: JrConnectionCx<AgentToClient>,
+    is_subagent: bool,
     previous_agent_name: Option<String>,
     pending_plan: Option<String>,
     pending_swap: Option<agent::agent_config::LoadedAgentConfig>,
-    connection_cx: JrConnectionCx<AgentToClient>,
     pending_prompt_response: Option<tokio::sync::Mutex<JrRequestCx<PromptResponse>>>,
     compaction_summary: Option<String>,
     os: Os,
@@ -980,6 +1040,7 @@ impl AcpSession {
                     &session_id_str,
                 )))
             },
+            builder.agent_configs.clone(),
         )
         .await?;
 
@@ -1015,6 +1076,7 @@ impl AcpSession {
             pending_plan: None,
             pending_swap: None,
             connection_cx,
+            is_subagent: builder.is_subagent,
             session_db: Arc::new(session_db),
             rts_state,
             api_client,
@@ -1307,6 +1369,19 @@ impl AcpSession {
                     let _ = respond_to.send(result);
                 });
             },
+            AcpSessionRequest::Wake { message, respond_to } => {
+                let agent = self.agent.clone();
+                tokio::spawn(async move {
+                    let result = agent
+                        .send_prompt(agent::protocol::SendPromptArgs {
+                            content: vec![agent::protocol::ContentChunk::Text(message)],
+                            should_continue_turn: None,
+                        })
+                        .await
+                        .map_err(|e| eyre::eyre!("Wake send_prompt error: {e:?}"));
+                    let _ = respond_to.send(result);
+                });
+            },
             AcpSessionRequest::SwapAgent {
                 agent_config,
                 respond_to,
@@ -1486,6 +1561,17 @@ impl AcpSession {
                     .map_err(|e| format!("Failed to get MCP prompt: {}", e));
                 let _ = respond_to.send(result);
             },
+            AcpSessionRequest::GetAgentHandle { respond_to } => {
+                let _ = respond_to.send(self.agent.clone());
+            },
+            AcpSessionRequest::SendExtNotification { method, params } => {
+                if let Ok(raw) = serde_json::value::to_raw_value(&params) {
+                    let ext = sacp::schema::ExtNotification::new(method, std::sync::Arc::from(raw));
+                    let _ = self
+                        .connection_cx
+                        .send_notification(sacp::schema::AgentNotification::ExtNotification(ext));
+                }
+            },
             AcpSessionRequest::GetToolInfo { respond_to } => {
                 let result = self
                     .agent
@@ -1566,11 +1652,13 @@ impl AcpSession {
                     "AgentEvent::ApprovalRequest: id={}, tool_use={:?}, context={:?}",
                     req.id, req.tool_use, req.context
                 );
+                // All sessions (main and subagent) forward approval requests to the TUI
                 let connection_cx = self.connection_cx.clone();
                 let session_id = self.session_id.clone();
                 let agent = self.agent.clone();
+                let is_subagent = self.is_subagent;
                 tokio::spawn(async move {
-                    handle_approval_request(req, connection_cx, session_id, agent).await;
+                    handle_approval_request(req, connection_cx, session_id, agent, is_subagent).await;
                 });
             },
             AgentEvent::LogEntryAppended { entry, .. } => {
@@ -1680,9 +1768,19 @@ impl AcpSession {
                     let _ = respond_to.respond_with_error(sacp::util::internal_error(error_message));
                 }
             },
-            AgentEvent::SpawnSubagentRequest(spawn_request) => {
+            AgentEvent::SessionToolRequest(session_request) => {
                 let session_tx = self.session_tx.clone();
-                handle_subagent_request(spawn_request, session_tx).await;
+                let session_id = self.session_id.clone();
+                let agent = self.agent.clone();
+                tokio::spawn(async move {
+                    super::session_tool_handler::handle_session_tool_request(
+                        session_request,
+                        session_tx,
+                        session_id,
+                        agent,
+                    )
+                    .await;
+                });
             },
             AgentEvent::Mcp(mcp_event) => {
                 if let Err(e) = self.handle_mcp_event(mcp_event).await {
@@ -1812,6 +1910,29 @@ impl AcpSession {
                     let _ = respond_to.respond(PromptResponse::new(StopReason::EndTurn));
                 }
             },
+            AgentEvent::SubagentSummary(summary) => {
+                if self.is_subagent {
+                    let session_tx = self.session_tx.clone();
+                    let session_id = self.session_id.clone();
+                    let task_result = summary.task_result.clone();
+                    let task_desc = summary.task_description.clone();
+                    let ctx_summary = summary.context_summary.clone();
+                    tokio::spawn(async move {
+                        if let Some(orch) = session_tx.get_orchestrated_session_by_id(&session_id).await
+                            && let Some(parent_sid) = orch.parent_session
+                        {
+                            let result_text = format!(
+                                "Task: {}\n\n{}\n\n{}",
+                                task_desc,
+                                ctx_summary.as_deref().unwrap_or(""),
+                                task_result
+                            );
+                            let msg = format!("[Results from {}]\n\n{}", orch.name, result_text);
+                            let _ = session_tx.deliver_subagent_result(&parent_sid, &msg).await;
+                        }
+                    });
+                }
+            },
             _ => {
                 // Other events that don't need processing
             },
@@ -1856,6 +1977,9 @@ impl AcpSession {
     }
 
     async fn advertise_commands_and_prompts(&self) -> Result<(), sacp::Error> {
+        if self.is_subagent {
+            return Ok(());
+        }
         advertise_commands_and_prompts_to_client(&self.session_id_str, &self.agent, &self.connection_cx).await
     }
 
@@ -2001,15 +2125,16 @@ async fn handle_approval_request(
     client_cx: JrConnectionCx<AgentToClient>,
     session_id: SessionId,
     agent: AgentHandle,
+    is_subagent: bool,
 ) {
     // Map agent permission options to ACP permission options
     // Filter out *ToolArgs variants as ACP only supports tool-level always options
-    let options: Vec<PermissionOption> = req
+    // For subagents, emit both allow_always (per-tool) and allow_all_session (blanket)
+    let mut options: Vec<PermissionOption> = req
         .options
         .iter()
         .filter_map(|opt| {
             let (id, kind) = match opt.id {
-                // TODO: use id's from the agent instead of hard-coded ACP id's.
                 agent::protocol::PermissionOptionId::AllowOnce => ("allow_once", PermissionOptionKind::AllowOnce),
                 agent::protocol::PermissionOptionId::AllowAlwaysTool => {
                     ("allow_always", PermissionOptionKind::AllowAlways)
@@ -2023,6 +2148,14 @@ async fn handle_approval_request(
             Some(PermissionOption::new(id, &opt.label, kind))
         })
         .collect();
+
+    if is_subagent {
+        options.push(PermissionOption::new(
+            "allow_all_session",
+            "Allow all for this session",
+            PermissionOptionKind::AllowAlways,
+        ));
+    }
 
     debug!("Sending permission request: {:?}", req);
     let response = client_cx
@@ -2041,6 +2174,24 @@ async fn handle_approval_request(
         Ok(res) => match res.outcome {
             sacp::schema::RequestPermissionOutcome::Selected(selected) => {
                 use std::str::FromStr;
+
+                // "Allow all for this session" — set trust_all_tools and approve current tool
+                if selected.option_id.0.as_ref() == "allow_all_session" {
+                    if let Err(e) = agent.set_trust_all_tools(true).await {
+                        error!("Failed to set trust_all_tools: {}", e);
+                    }
+                    let _ = agent
+                        .send_tool_use_approval_result(agent::protocol::SendApprovalResultArgs {
+                            id: req.id,
+                            result: agent::protocol::ApprovalResult {
+                                option_id: agent::protocol::PermissionOptionId::AllowOnce,
+                                reason: None,
+                            },
+                        })
+                        .await;
+                    return;
+                }
+
                 // Map ACP option_id to agent PermissionOptionId
                 // ACP's "allow_always"/"reject_always" map to our tool-level variants
                 let option_id = match selected.option_id.0.as_ref() {
@@ -2271,13 +2422,14 @@ fn get_tool_kind(tool_name: &str) -> ToolKind {
             BuiltInToolName::ImageRead => ToolKind::Read,
             BuiltInToolName::Ls => ToolKind::Read,
             BuiltInToolName::Summary => ToolKind::Other,
-            BuiltInToolName::SpawnSubagent => ToolKind::Other,
             BuiltInToolName::Grep => ToolKind::Search,
             BuiltInToolName::Glob => ToolKind::Search,
             BuiltInToolName::UseAws => ToolKind::Execute,
             BuiltInToolName::WebFetch => ToolKind::Read,
             BuiltInToolName::WebSearch => ToolKind::Search,
             BuiltInToolName::Code => ToolKind::Read, // Default, actual kind determined by operation
+            BuiltInToolName::AgentCrew => ToolKind::Other,
+            BuiltInToolName::SessionManagement => ToolKind::Other,
             BuiltInToolName::SwitchToExecution => ToolKind::Other,
             BuiltInToolName::Introspect => ToolKind::Read,
             BuiltInToolName::Knowledge => ToolKind::Other,
@@ -2333,7 +2485,6 @@ pub(crate) fn get_tool_title(tool: &Tool) -> String {
                 let paths: Vec<_> = img.paths.iter().map(|p| p.as_str()).collect();
                 format_paths_title("Reading image", &paths)
             },
-            BuiltInTool::SpawnSubagent(_) => "Spawning subagent".to_string(),
             BuiltInTool::Summary(_) => "Summarizing".to_string(),
             BuiltInTool::Mkdir(_) => "Creating directory".to_string(),
             BuiltInTool::Introspect(_) => "Introspecting".to_string(),
@@ -2364,6 +2515,8 @@ pub(crate) fn get_tool_title(tool: &Tool) -> String {
                     Code::InitializeWorkspace => "Initializing workspace".to_string(),
                 }
             },
+            BuiltInTool::AgentCrew(_) => "Spawning agent crew".to_string(),
+            BuiltInTool::SessionManagement(_) => "Managing sessions".to_string(),
             BuiltInTool::SwitchToExecution(_) => "Switching to execution agent".to_string(),
             BuiltInTool::Knowledge(_) => "Querying knowledge base".to_string(),
             BuiltInTool::Task(t) => {
@@ -2745,6 +2898,60 @@ pub async fn execute(os: &mut Os, args: agent::types::AcpSpawnArgs) -> eyre::Res
                             .await
                             .map_err(sacp::util::internal_error)?;
                         req_cx.respond(serde_json::json!({}))?;
+                        return Ok(sacp::Handled::Yes);
+                    }
+
+                    // Handle _session/spawn ext method from TUI
+                    use super::extensions::methods;
+                    if method == methods::SESSION_SPAWN {
+                        let MessageCx::Request(req, req_cx) = message else {
+                            return Ok(sacp::Handled::Yes);
+                        };
+                        #[derive(serde::Deserialize)]
+                        #[serde(rename_all = "camelCase")]
+                        struct SpawnRequest {
+                            session_id: String,
+                            task: String,
+                            name: Option<String>,
+                            agent_name: Option<String>,
+                        }
+                        let params: SpawnRequest = serde_json::from_value(req.params().clone())
+                            .map_err(|e| sacp::util::internal_error(format!("Invalid _session/spawn params: {}", e)))?;
+                        let parent_session_id = SessionId::new(params.session_id);
+                        let result = session_tx
+                            .spawn_orchestrated_session(
+                                &parent_session_id,
+                                params.agent_name.unwrap_or_else(|| "kiro_default".to_string()),
+                                params.task,
+                                params.name,
+                                None,
+                                None,
+                                true, // TUI-spawned sessions are persistent — stay alive for follow-up
+                            )
+                            .await
+                            .map_err(|e| sacp::util::internal_error(format!("Spawn failed: {}", e)))?;
+                        req_cx.respond(serde_json::json!({ "sessionId": result.session_id, "name": result.name }))?;
+                        return Ok(sacp::Handled::Yes);
+                    }
+                    if method == methods::MESSAGE_SEND {
+                        let MessageCx::Request(req, req_cx) = message else {
+                            return Ok(sacp::Handled::Yes);
+                        };
+                        #[derive(serde::Deserialize)]
+                        #[serde(rename_all = "camelCase")]
+                        struct MessageSendRequest {
+                            session_id: String,
+                            content: String,
+                        }
+                        if let Ok(params) = serde_json::from_value::<MessageSendRequest>(req.params().clone()) {
+                            let target = sacp::schema::SessionId::new(params.session_id);
+                            if let Ok(handle) = session_tx.get_session_handle(&target).await {
+                                tokio::spawn(async move {
+                                    let _ = handle.wake_session(params.content).await;
+                                });
+                            }
+                        }
+                        req_cx.respond(serde_json::json!({ "ok": true }))?;
                         return Ok(sacp::Handled::Yes);
                     }
 

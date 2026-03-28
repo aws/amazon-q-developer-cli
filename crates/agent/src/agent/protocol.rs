@@ -29,8 +29,8 @@ use super::mcp::{
     McpServerEvent,
 };
 use super::task_executor::TaskExecutorEvent;
+use super::tools::session::SessionToolRequest;
 use super::tools::summary::Summary;
-use super::tools::use_subagent::SubagentRequest;
 use super::tools::{
     Tool,
     ToolExecutionError,
@@ -95,8 +95,8 @@ pub enum AgentEvent {
         index: usize,
     },
 
-    /// Request to spawn subagent(s) - handled by the consumer of agent handle
-    SpawnSubagentRequest(SubagentRequest),
+    /// Request for session management operations - handled by the ACP layer
+    SessionToolRequest(SessionToolRequest),
 
     /// Compaction-related events
     Compaction(CompactionEvent),
@@ -257,6 +257,8 @@ pub enum AgentRequest {
     UntrustTools(Vec<String>),
     /// Reset all tool permissions to config defaults
     ResetToolPermissions,
+    /// Set trust_all_tools on this agent (used for "allow all for session")
+    SetTrustAllTools(bool),
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

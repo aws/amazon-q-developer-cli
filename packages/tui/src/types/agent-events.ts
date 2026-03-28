@@ -64,6 +64,11 @@ export const IMAGE_READ_TOOL_NAMES: Set<string> = new Set([
   ToolNameAlias.ImageRead,
   'imageRead',
 ]);
+export const SESSION_TOOL_NAMES: Set<string> = new Set([
+  'session_management',
+  'subagent',
+  'agent_crew',
+]);
 export const INTROSPECT_TOOL_NAMES: Set<string> = new Set(['introspect']);
 
 /** Map a wire tool name to its BuiltinToolId, or undefined for MCP/unknown tools. */
@@ -125,6 +130,7 @@ export type PermissionResponse =
   | PermissionResponseSelected;
 
 export interface ApprovalRequestInfo {
+  sessionId?: string;
   toolCall: { toolCallId: string };
   permissionOptions: PermissionOption[];
   resolve: (response: PermissionResponse) => void;
@@ -155,6 +161,8 @@ export interface ToolCallEvent {
     oldText?: string;
   }>;
   locations?: ToolCallLocation[];
+  /** Session ID of the subagent that made this tool call (if from a subagent) */
+  sessionId?: string;
 }
 
 export interface ToolCallUpdateEvent {

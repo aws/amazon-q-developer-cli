@@ -127,6 +127,47 @@ export interface SessionClient {
    * Note - v1 supports local and global settings, currently unsupported with chat-cli-v2
    */
   listSettings(): Promise<Record<string, unknown>>;
+
+  /**
+   * Spawns a new session.
+   *
+   * @param task - The task for the session
+   * @param name - Optional name for the session
+   */
+  spawnSession?(task: string, name?: string): Promise<{ sessionId: string }>;
+
+  /**
+   * Sends a message to a session.
+   *
+   * @param sessionId - The session ID
+   * @param content - The message content
+   */
+  sendMessage?(sessionId: string, content: string): Promise<void>;
+
+  /**
+   * Registers a callback for subagent list updates.
+   *
+   * @param handler - Callback function that receives subagent list
+   */
+  onSubagentListUpdate?(
+    handler: (subagents: any[], pendingStages?: any[]) => void
+  ): () => void;
+
+  /**
+   * Registers a callback for session events.
+   *
+   * @param handler - Callback function that receives session events
+   */
+  onSessionEvent?(handler: (event: any) => void): () => void;
+
+  /**
+   * Registers a callback for multi-session updates.
+   *
+   * @param handler - Callback function that receives session ID and event
+   */
+  onMultiSessionUpdate?(
+    handler: (sessionId: string, event: AgentStreamEvent) => void
+  ): () => void;
 }
 
 /**

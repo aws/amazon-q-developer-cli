@@ -142,7 +142,7 @@ function convertStoryModule(storyModule: any, importPath?: string) {
       name,
       props: story.args || {},
       component: story.render || story.component,
-      parameters: story.parameters || {},
+      parameters: { ...(meta.parameters || {}), ...(story.parameters || {}) },
     })),
     component: meta.component,
   };

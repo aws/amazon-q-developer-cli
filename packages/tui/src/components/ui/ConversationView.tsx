@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useMemo } from 'react';
 import { Box, Static, Text as InkText } from './../../renderer.js';
 import {
   MessageRole,
@@ -12,6 +12,7 @@ import { Message, MessageType } from '../chat/message/Message';
 import { StreamingMessage } from '../chat/message/StreamingMessage';
 import { ShellOutputMessage } from '../chat/message/ShellOutputMessage';
 import { ToolUseMessage } from './ToolUseMessage';
+import { SubagentToolPanel } from './SubagentToolPanel.js';
 import { ThinkingMessage } from '../chat/message/ThinkingMessage';
 import { TurnUsageSummary } from '../chat/message/TurnUsageSummary';
 import { StatusBar } from '../chat/status-bar/StatusBar';
@@ -22,6 +23,7 @@ import { Settings } from '../../constants/settings.js';
 import { computeFlushSet } from '../../utils/turn-flush-machine.js';
 import { useTerminalSize } from '../../hooks/useTerminalSize.js';
 import { useTheme } from '../../hooks/useThemeContext.js';
+import { SESSION_TOOL_NAMES } from '../../types/agent-events.js';
 
 interface ConversationTurn {
   userMessage: StoreMessageType;
@@ -46,6 +48,19 @@ function resolvePrevRole(
   return index > 0 ? messages[index - 1]?.role : fallback;
 }
 
+/** Returns true if a tool-use message belongs to a subagent (not the main turn agent). */
+function isSubagentToolCall(
+  msg: StoreMessageType,
+  mainAgentName: string | undefined
+): boolean {
+  return (
+    msg.role === MessageRole.ToolUse &&
+    !!msg.agentName &&
+    !!mainAgentName &&
+    msg.agentName !== mainAgentName
+  );
+}
+
 const SystemMessage = React.memo(function SystemMessage({
   message,
 }: {
@@ -65,10 +80,12 @@ const StaticMessage = React.memo(function StaticMessage({
   message,
   agentBarColor,
   prevRole,
+  mainAgentName,
 }: {
   message: StoreMessageType;
   agentBarColor: string | undefined;
   prevRole?: MessageRole;
+  mainAgentName?: string;
 }) {
   if (message.role === MessageRole.User) {
     return (
@@ -80,19 +97,26 @@ const StaticMessage = React.memo(function StaticMessage({
     );
   }
   if (message.role === MessageRole.ToolUse) {
+    // Skip subagent tool calls — they are rendered via SubagentToolPanel
+    if (isSubagentToolCall(message, mainAgentName)) return null;
+
+    const isSessionTool = SESSION_TOOL_NAMES.has(message.name);
     return (
-      <ToolUseMessage
-        id={message.id}
-        name={message.name}
-        kind={message.kind}
-        content={message.content}
-        isFinished={true}
-        isStatic={true}
-        status={message.status}
-        result={message.result}
-        locations={message.locations}
-        barColor={agentBarColor}
-      />
+      <>
+        <ToolUseMessage
+          id={message.id}
+          name={message.name}
+          kind={message.kind}
+          content={message.content}
+          isFinished={true}
+          isStatic={true}
+          status={message.status}
+          result={message.result}
+          locations={message.locations}
+          barColor={agentBarColor}
+        />
+        {isSessionTool && <SubagentToolPanel isStatic={true} />}
+      </>
     );
   }
   if (message.role === MessageRole.Model) {
@@ -126,12 +150,14 @@ const StaticMessage = React.memo(function StaticMessage({
 const ActiveTurnTail = React.memo(function ActiveTurnTail({
   tailMessages,
   agentBarColor,
+  mainAgentName,
   onReadyToFlush,
   prevFlushedRole,
   turnId,
 }: {
   tailMessages: StoreMessageType[];
   agentBarColor: string | undefined;
+  mainAgentName: string | undefined;
   onReadyToFlush?: () => void;
   prevFlushedRole?: MessageRole;
   turnId: string;
@@ -140,12 +166,20 @@ const ActiveTurnTail = React.memo(function ActiveTurnTail({
   const { height: termHeight } = useTerminalSize();
   const summaryText = useAppStore((s) => s.turnSummaries.get(turnId));
 
-  const lastAiMsg = tailMessages[tailMessages.length - 1];
-  const hasActiveContent = lastAiMsg
-    ? (lastAiMsg.role === MessageRole.ToolUse && !lastAiMsg.isFinished) ||
-      (lastAiMsg.role === MessageRole.Model &&
+  // Find the last message that isn't a subagent tool call (those are hidden in rendering)
+  const lastVisibleMsg = useMemo(() => {
+    for (let i = tailMessages.length - 1; i >= 0; i--) {
+      if (!isSubagentToolCall(tailMessages[i]!, mainAgentName))
+        return tailMessages[i];
+    }
+    return undefined;
+  }, [tailMessages, mainAgentName]);
+  const hasActiveContent = lastVisibleMsg
+    ? (lastVisibleMsg.role === MessageRole.ToolUse &&
+        !lastVisibleMsg.isFinished) ||
+      (lastVisibleMsg.role === MessageRole.Model &&
         isProcessing &&
-        !!lastAiMsg.content)
+        !!lastVisibleMsg.content)
     : false;
   const showThinking = isProcessing && !hasActiveContent;
 
@@ -169,19 +203,25 @@ const ActiveTurnTail = React.memo(function ActiveTurnTail({
           );
         }
         if (message.role === MessageRole.ToolUse) {
+          // Skip subagent tool calls — rendered via SubagentToolPanel
+          if (isSubagentToolCall(message, mainAgentName)) return null;
+
+          const isSessionTool = SESSION_TOOL_NAMES.has(message.name);
           return (
-            <ToolUseMessage
-              key={message.id}
-              id={message.id}
-              name={message.name}
-              kind={message.kind}
-              content={message.content}
-              isFinished={message.isFinished}
-              status={message.status}
-              result={message.result}
-              locations={message.locations}
-              barColor={agentBarColor}
-            />
+            <React.Fragment key={message.id}>
+              <ToolUseMessage
+                id={message.id}
+                name={message.name}
+                kind={message.kind}
+                content={message.content}
+                isFinished={message.isFinished}
+                status={message.status}
+                result={message.result}
+                locations={message.locations}
+                barColor={agentBarColor}
+              />
+              {isSessionTool && <SubagentToolPanel />}
+            </React.Fragment>
           );
         }
         if (!message.content || message.content === '') return null;
@@ -294,6 +334,7 @@ const StaticTurnCard = React.memo(function StaticTurnCard({
             message={message}
             agentBarColor={agentBarColor}
             prevRole={resolvePrevRole(turn.aiMessages, index, MessageRole.User)}
+            mainAgentName={agentName}
           />
         ))}
         {!hasAiContent && (
@@ -312,6 +353,11 @@ const StaticTurnCard = React.memo(function StaticTurnCard({
     </Box>
   );
 });
+
+// Module-level: survive component unmount/remount (e.g. ctrl+g crew monitor toggle)
+let _hadMessages = false;
+let _welcomeInStatic = false;
+let _hasAnimated = false;
 
 /**
  * # ConversationView — Incremental Static Rendering
@@ -397,6 +443,7 @@ type StaticItem =
       id: string;
       msg: StoreMessageType;
       agentBarColor: string | undefined;
+      mainAgentName: string | undefined;
       isLast: boolean;
       prevRole?: MessageRole;
     };
@@ -406,7 +453,11 @@ function appendMessagesToStatic(
   messages: StoreMessageType[],
   agentBarColor: string | undefined,
   appendStatic: (item: StaticItem) => void,
-  opts: { isLast?: (i: number) => boolean; fallbackPrevRole?: MessageRole }
+  opts: {
+    isLast?: (i: number) => boolean;
+    fallbackPrevRole?: MessageRole;
+    mainAgentName?: string;
+  }
 ) {
   messages.forEach((msg, i) => {
     const prevRole = resolvePrevRole(messages, i, opts.fallbackPrevRole);
@@ -415,6 +466,7 @@ function appendMessagesToStatic(
       id: msg.id,
       msg,
       agentBarColor,
+      mainAgentName: opts.mainAgentName,
       isLast: opts.isLast ? opts.isLast(i) : false,
       prevRole,
     });
@@ -427,8 +479,10 @@ export const ConversationView = React.memo(function ConversationView() {
   const greetingEnabled =
     settings !== null && settings[Settings.CHAT_GREETING_ENABLED] !== false;
 
-  const hadMessagesRef = React.useRef(false);
-  const welcomeInStaticRef = React.useRef(false);
+  // Track if we've ever had messages (to know if this is initial load or post-clear)
+  const hadMessagesRef = React.useRef(_hadMessages);
+  // Track if welcome was already added to Static
+  const welcomeInStaticRef = React.useRef(_welcomeInStatic);
   const [flushTurnId, setFlushTurnId] = React.useState<string | undefined>(
     undefined
   );
@@ -442,54 +496,63 @@ export const ConversationView = React.memo(function ConversationView() {
   // Persistent, append-only array of static items — never shrinks.
   // <Static> uses array length as its index, so items must stay at stable positions.
   const staticItemsRef = React.useRef<StaticItem[]>([]);
+  const emittedIdsRef = React.useRef(new Set<string>());
 
-  if (messages.length > 0) hadMessagesRef.current = true;
+  if (messages.length > 0) {
+    hadMessagesRef.current = true;
+    _hadMessages = true;
+  }
+
+  // Only animate the wordmark on the very first mount ever, not on remounts
+  const shouldAnimate = !_hasAnimated;
+  if (shouldAnimate) _hasAnimated = true;
 
   const hasMessages = messages.length > 0;
   const isInitialLoad = !hasMessages && !hadMessagesRef.current;
 
-  const systemMessages: Array<StoreMessageType & { role: MessageRole.System }> =
-    [];
-  const conversationMessages: StoreMessageType[] = [];
-
-  messages.forEach((msg) => {
-    if (msg.role === MessageRole.System) {
-      systemMessages.push(
-        msg as StoreMessageType & { role: MessageRole.System }
-      );
-    } else {
-      conversationMessages.push(msg);
-    }
-  });
-
-  const turns: ConversationTurn[] = [];
-  let currentTurn: ConversationTurn | null = null;
-  conversationMessages.forEach((msg) => {
-    if (msg.role === MessageRole.User) {
-      if (currentTurn) {
-        currentTurn.isActive = false;
-        turns.push(currentTurn);
+  const { systemMessages, conversationMessages } = useMemo(() => {
+    const sys: Array<StoreMessageType & { role: MessageRole.System }> = [];
+    const conv: StoreMessageType[] = [];
+    messages.forEach((msg) => {
+      if (msg.role === MessageRole.System) {
+        sys.push(msg as StoreMessageType & { role: MessageRole.System });
+      } else {
+        conv.push(msg);
       }
-      currentTurn = { userMessage: msg, aiMessages: [], isActive: true };
-    } else if (msg.role === MessageRole.Model && (msg as any).standalone) {
-      // Standalone model message (e.g. welcome) — close current turn and create its own
-      if (currentTurn) {
-        currentTurn.isActive = false;
-        turns.push(currentTurn);
-        currentTurn = null;
-      }
-      turns.push({ userMessage: msg, aiMessages: [], isActive: false });
-    } else if (currentTurn) {
-      currentTurn.aiMessages.push(msg);
-    } else {
-      // Orphan model message — standalone turn
-      turns.push({ userMessage: msg, aiMessages: [], isActive: false });
-    }
-  });
-  if (currentTurn) turns.push(currentTurn);
+    });
+    return { systemMessages: sys, conversationMessages: conv };
+  }, [messages]);
 
-  const completedTurns = turns.filter((t) => !t.isActive);
-  const activeTurn = turns.find((t) => t.isActive);
+  const { completedTurns, activeTurn } = useMemo(() => {
+    const t: ConversationTurn[] = [];
+    let currentTurn: ConversationTurn | null = null;
+    conversationMessages.forEach((msg) => {
+      if (msg.role === MessageRole.User) {
+        if (currentTurn) {
+          currentTurn.isActive = false;
+          t.push(currentTurn);
+        }
+        currentTurn = { userMessage: msg, aiMessages: [], isActive: true };
+      } else if (msg.role === MessageRole.Model && (msg as any).standalone) {
+        if (currentTurn) {
+          currentTurn.isActive = false;
+          t.push(currentTurn);
+          currentTurn = null;
+        }
+        t.push({ userMessage: msg, aiMessages: [], isActive: false });
+      } else if (currentTurn) {
+        currentTurn.aiMessages.push(msg);
+      } else {
+        t.push({ userMessage: msg, aiMessages: [], isActive: false });
+      }
+    });
+    if (currentTurn) t.push(currentTurn);
+    return {
+      turns: t,
+      completedTurns: t.filter((turn) => !turn.isActive),
+      activeTurn: t.find((turn) => turn.isActive),
+    };
+  }, [conversationMessages]);
 
   // Reset tailOverride when active turn changes (new user message)
   const activeTurnId = activeTurn?.userMessage.id;
@@ -534,7 +597,7 @@ export const ConversationView = React.memo(function ConversationView() {
   }
 
   // --- Append new items to the persistent staticItems ref ---
-  const emittedIds = new Set(staticItemsRef.current.map((i) => i.id));
+  const emittedIds = emittedIdsRef.current;
 
   const appendStatic = (item: StaticItem) => {
     if (!emittedIds.has(item.id)) {
@@ -546,6 +609,7 @@ export const ConversationView = React.memo(function ConversationView() {
   // Welcome screen — emitted once when messages first appear
   if (hasMessages && !welcomeInStaticRef.current && greetingEnabled) {
     welcomeInStaticRef.current = true;
+    _welcomeInStatic = true;
     appendStatic({ type: 'welcome', id: '__welcome__' });
   }
 
@@ -578,6 +642,7 @@ export const ConversationView = React.memo(function ConversationView() {
       appendMessagesToStatic(tailMsgs, barColor, appendStatic, {
         isLast: (i) => i === tailMsgs.length - 1,
         fallbackPrevRole: lastFlushedRole,
+        mainAgentName: agentName,
       });
       tailMsgs.forEach((msg) => flushedIds.add(msg.id));
     }
@@ -599,17 +664,25 @@ export const ConversationView = React.memo(function ConversationView() {
 
     appendMessagesToStatic(newlyFlushed, activeAgentBarColor, appendStatic, {
       fallbackPrevRole: prevOfFirstNew,
+      mainAgentName: activeAgentName,
     });
   }
 
-  // Spread into a new array each render so <Static>'s useMemo([items, index]) fires.
-  const staticItems = [...staticItemsRef.current];
+  // Only create a new array ref when items were actually added, so <Static>'s
+  // useMemo([items]) fires only when needed — not on every render.
+  const prevStaticLenRef = React.useRef(0);
+  const staticItemsSnapshotRef = React.useRef<StaticItem[]>([]);
+  if (staticItemsRef.current.length !== prevStaticLenRef.current) {
+    prevStaticLenRef.current = staticItemsRef.current.length;
+    staticItemsSnapshotRef.current = [...staticItemsRef.current];
+  }
+  const staticItems = staticItemsSnapshotRef.current;
 
   return (
     <Box flexDirection="column">
       {isInitialLoad && greetingEnabled && (
         <Box marginBottom={1}>
-          <WelcomeScreen agent="kiro" mcpServers={[]} animate={true} />
+          <WelcomeScreen agent="kiro" mcpServers={[]} animate={shouldAnimate} />
         </Box>
       )}
 
@@ -645,6 +718,7 @@ export const ConversationView = React.memo(function ConversationView() {
                     message={item.msg}
                     agentBarColor={item.agentBarColor}
                     prevRole={item.prevRole}
+                    mainAgentName={item.mainAgentName}
                   />
                 </Box>
               );
@@ -665,6 +739,7 @@ export const ConversationView = React.memo(function ConversationView() {
               <ActiveTurnTail
                 tailMessages={tailMessages}
                 agentBarColor={activeAgentBarColor}
+                mainAgentName={activeAgentName}
                 onReadyToFlush={handleReadyToFlush}
                 prevFlushedRole={prevFlushedRole}
                 turnId={activeTurn.userMessage.id}
@@ -677,6 +752,7 @@ export const ConversationView = React.memo(function ConversationView() {
               <ActiveTurnTail
                 tailMessages={tailMessages}
                 agentBarColor={activeAgentBarColor}
+                mainAgentName={activeAgentName}
                 onReadyToFlush={handleReadyToFlush}
                 prevFlushedRole={prevFlushedRole}
                 turnId={activeTurn.userMessage.id}

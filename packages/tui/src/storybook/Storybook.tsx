@@ -210,6 +210,12 @@ export function Storybook() {
             return next;
           });
         } else if (selectedItem.type === 'component') {
+          // Enter alternate screen synchronously before React renders the component
+          const story = stories[selectedItem.storyIndex];
+          const variant = story?.variants[0];
+          if (variant?.parameters?.layout === 'fullscreen') {
+            process.stdout.write('\x1b[?1049h');
+          }
           // Navigate to component view
           setState('componentView');
           setSelectedVariant(0);
@@ -258,17 +264,22 @@ export function Storybook() {
       const currentVariant = currentStory.variants[selectedVariant];
       if (!currentVariant) return;
       const capturesKeyboard = currentVariant.parameters?.capturesKeyboard;
+      const isFullscreenVariant =
+        currentVariant.parameters?.layout === 'fullscreen';
+
+      const exitView = () => {
+        if (isFullscreenVariant) process.stdout.write('\x1b[?1049l');
+        setState('componentList');
+      };
 
       if (capturesKeyboard) {
-        if (key.escape) {
-          setState('componentList');
-        }
+        if (key.escape) exitView();
         return;
       }
 
       if (key.leftArrow) {
         if (selectedVariant === 0) {
-          setState('componentList');
+          exitView();
         } else {
           setSelectedVariant((prev) => prev - 1);
         }
@@ -276,7 +287,7 @@ export function Storybook() {
         const maxVariants = currentStory.variants.length - 1;
         setSelectedVariant((prev) => Math.min(maxVariants, prev + 1));
       } else if (key.escape) {
-        setState('componentList');
+        exitView();
       }
     }
   });

@@ -13,7 +13,10 @@ use tracing::error;
 
 use super::util::path::canonicalize_path_sys;
 use super::util::providers::SystemProvider;
-use crate::agent::agent_config::definitions::ToolsSettings;
+use crate::agent::agent_config::definitions::{
+    AgentIdentifier,
+    ToolsSettings,
+};
 use crate::agent::agent_config::parse::CanonicalToolName;
 use crate::agent::protocol::{
     ApprovalResult,
@@ -361,7 +364,6 @@ pub fn evaluate_tool_permission<P: SystemProvider>(
                 settings.shell.deny_by_default,
             ),
             BuiltInTool::Introspect(_) => Ok(PermissionEvalResult::Allow),
-            BuiltInTool::SpawnSubagent(_) => Ok(PermissionEvalResult::Allow),
             BuiltInTool::Summary(_) => Ok(PermissionEvalResult::Allow),
             BuiltInTool::UseAws(use_aws) => {
                 let key = format!("{}:{}", use_aws.service_name, use_aws.operation_name);
@@ -391,6 +393,38 @@ pub fn evaluate_tool_permission<P: SystemProvider>(
             } else {
                 PermissionEvalResult::ask()
             }),
+            BuiltInTool::AgentCrew(crew) => {
+                let crew_settings = &settings.crew;
+                // Check availableAgents: deny if any stage role is not in the list
+                if !crew_settings.available_agents.is_empty() {
+                    let denied: Vec<String> = crew
+                        .stages
+                        .iter()
+                        .filter(|s| !AgentIdentifier::any_matches(&crew_settings.available_agents, &s.role))
+                        .map(|s| format!("Agent '{}' is not available for crew stages", s.role))
+                        .collect();
+                    if !denied.is_empty() {
+                        return Ok(PermissionEvalResult::Deny {
+                            reason: denied.join("; "),
+                        });
+                    }
+                }
+                // Check trustedAgents: auto-approve if all stage roles are trusted
+                Ok(
+                    if is_allowed
+                        || (!crew_settings.trusted_agents.is_empty()
+                            && crew
+                                .stages
+                                .iter()
+                                .all(|s| AgentIdentifier::any_matches(&crew_settings.trusted_agents, &s.role)))
+                    {
+                        PermissionEvalResult::Allow
+                    } else {
+                        PermissionEvalResult::ask()
+                    },
+                )
+            },
+            BuiltInTool::SessionManagement(_) => Ok(PermissionEvalResult::Allow),
             BuiltInTool::SwitchToExecution(_) => Ok(PermissionEvalResult::Allow),
             BuiltInTool::Knowledge(_) => Ok(if is_allowed {
                 PermissionEvalResult::Allow

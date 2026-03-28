@@ -1,4 +1,4 @@
-import React, { useEffect, createContext, useContext } from 'react';
+import React, { useEffect, useMemo, createContext, useContext } from 'react';
 import { Box } from './../../../renderer.js';
 import {
   enableAutoSync,
@@ -23,7 +23,10 @@ export interface CardProps {
 // Detect terminals that fill edge margins (e.g., background color bleeding into terminal margins)
 const fillsEdgeMargin = process.env.TERM_PROGRAM === 'iTerm.app';
 
-export function Card({ children, active = false }: CardProps) {
+export const Card = React.memo(function Card({
+  children,
+  active = false,
+}: CardProps) {
   // Enable automatic synchronized output for supported terminals (once per app)
   useEffect(() => {
     if (detectSynchronizedOutput()) {
@@ -31,8 +34,11 @@ export function Card({ children, active = false }: CardProps) {
     }
   }, []);
 
+  // Stable context value — only changes when `active` changes
+  const ctxValue = useMemo(() => ({ active }), [active]);
+
   return (
-    <CardContext.Provider value={{ active }}>
+    <CardContext.Provider value={ctxValue}>
       <Box flexDirection="column" width="100%">
         <Divider />
         <Box
@@ -45,4 +51,4 @@ export function Card({ children, active = false }: CardProps) {
       </Box>
     </CardContext.Provider>
   );
-}
+});

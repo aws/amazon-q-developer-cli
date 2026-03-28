@@ -489,6 +489,14 @@ impl AgentHandle {
             other => Err(AgentError::Custom(format!("received unexpected response: {other:?}"))),
         }
     }
+
+    pub async fn set_trust_all_tools(&self, trust: bool) -> Result<(), AgentError> {
+        self.sender
+            .send_recv(AgentRequest::SetTrustAllTools(trust))
+            .await
+            .unwrap_or(Err(AgentError::Channel))?;
+        Ok(())
+    }
 }
 
 /// Core LLM agent that implements an [`AgentConfig`].
@@ -561,6 +569,8 @@ pub struct Agent {
     task_store: Option<Arc<TaskStore>>,
     /// Paths added via /context add during this session (not from agent config)
     session_resource_paths: HashSet<String>,
+    /// All available agent configs, used for dynamic tool spec generation (e.g. AgentCrew)
+    available_agent_configs: Vec<LoadedAgentConfig>,
 }
 
 impl Agent {
@@ -579,6 +589,7 @@ impl Agent {
     /// * `code_intelligence` - Shared code intelligence client (optional)
     /// * `knowledge_provider` - Knowledge base provider (optional)
     /// * `task_store` - Task store for task management (None for subagents and V1 agents)
+    /// * `available_agent_configs` - All loaded agent configs for dynamic tool spec generation
     #[allow(clippy::too_many_arguments)]
     pub async fn new(
         snapshot: AgentSnapshot,
@@ -590,6 +601,7 @@ impl Agent {
         code_intelligence: Option<Arc<RwLock<CodeIntelligence>>>,
         knowledge_provider: Option<Arc<dyn tools::KnowledgeProvider>>,
         task_store: Option<Arc<TaskStore>>,
+        available_agent_configs: Vec<LoadedAgentConfig>,
     ) -> eyre::Result<Agent> {
         debug!(?snapshot, "initializing agent from snapshot");
 
@@ -628,6 +640,7 @@ impl Agent {
             knowledge_provider,
             task_store,
             session_resource_paths: HashSet::new(),
+            available_agent_configs,
         })
     }
 
@@ -1289,6 +1302,10 @@ impl Agent {
             AgentRequest::ResetToolPermissions => {
                 self.settings.trust_all_tools = false;
                 self.permissions.clear_trusted_tools();
+                Ok(AgentResponse::Success)
+            },
+            AgentRequest::SetTrustAllTools(trust) => {
+                self.settings.trust_all_tools = trust;
                 Ok(AgentResponse::Success)
             },
         }
@@ -2482,11 +2499,15 @@ impl Agent {
             .and_then(|c| c.try_read().ok())
             .is_some_and(|c| c.is_code_intelligence_initialized());
 
+        let default_tool_settings = Default::default();
+        let tool_settings = self.agent_config.tool_settings().unwrap_or(&default_tool_settings);
         let sanitized_specs = sanitize_tool_specs(
             tool_names.into_iter().collect(),
             mcp_server_tool_specs,
             self.agent_config.tool_aliases(),
             lsp_initialized,
+            &self.available_agent_configs,
+            tool_settings,
         );
         if !sanitized_specs.transformed_tool_specs().is_empty() {
             warn!(transformed_tool_spec = ?sanitized_specs.transformed_tool_specs(), "some tool specs were transformed");
@@ -2568,7 +2589,6 @@ impl Agent {
                 BuiltInTool::ExecuteCmd(_) => Ok(()),
                 BuiltInTool::Introspect(_) => Ok(()),
                 BuiltInTool::Summary(_) => Ok(()),
-                BuiltInTool::SpawnSubagent(_) => Ok(()),
                 BuiltInTool::ImageRead(t) => t.validate().await.map_err(ToolParseErrorKind::invalid_args),
                 BuiltInTool::UseAws(t) => t.validate().await.map_err(ToolParseErrorKind::invalid_args),
                 BuiltInTool::WebFetch(_) => Ok(()),
@@ -2577,6 +2597,8 @@ impl Agent {
                     .validate(&self.sys_provider)
                     .await
                     .map_err(ToolParseErrorKind::invalid_args),
+                BuiltInTool::AgentCrew(_) => Ok(()),
+                BuiltInTool::SessionManagement(_) => Ok(()),
                 BuiltInTool::SwitchToExecution(_) => Ok(()),
                 BuiltInTool::Knowledge(_) => Ok(()),
                 BuiltInTool::Task(_) => Ok(()),
@@ -2694,10 +2716,6 @@ impl Agent {
                 BuiltInTool::Glob(t) => Box::pin(async move { t.execute(&provider).await }),
                 BuiltInTool::Ls(t) => Box::pin(async move { t.execute(&provider).await }),
                 BuiltInTool::Mkdir(_) => panic!("unimplemented"),
-                BuiltInTool::SpawnSubagent(t) => {
-                    let event_tx = self.agent_event_tx.clone();
-                    Box::pin(async move { t.execute(event_tx).await })
-                },
                 BuiltInTool::Summary(t) => {
                     let result_tx = self.agent_event_tx.clone();
                     Box::pin(async move { t.execute(result_tx).await })
@@ -2718,6 +2736,19 @@ impl Agent {
                             )),
                         }
                     })
+                },
+                BuiltInTool::AgentCrew(t) => {
+                    let event_tx = self.agent_event_tx.clone();
+                    let crew_settings = self
+                        .agent_config
+                        .tool_settings()
+                        .map(|s| s.crew.clone())
+                        .unwrap_or_default();
+                    Box::pin(async move { t.execute(event_tx, &crew_settings).await })
+                },
+                BuiltInTool::SessionManagement(t) => {
+                    let event_tx = self.agent_event_tx.clone();
+                    Box::pin(async move { t.execute(event_tx).await })
                 },
                 BuiltInTool::SwitchToExecution(t) => Box::pin(async move { Ok(t.execute()) }),
                 BuiltInTool::Knowledge(t) => {

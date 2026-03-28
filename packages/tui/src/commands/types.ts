@@ -77,4 +77,14 @@ export interface CommandContext {
   setSessionId: (id: string | null) => void;
   /** Add a system message to the conversation */
   addSystemMessage: (content: string, success: boolean) => void;
+  /** Add session to store */
+  addSession: (session: any) => void;
+  /** Set active session */
+  setActiveSession: (id: string) => void;
+  /** Current sessions map */
+  sessions: Map<string, any>;
+  /** Set app mode */
+  setMode: (
+    mode: 'inline' | 'expanded' | 'crew-monitor' | 'session-view'
+  ) => void;
 }

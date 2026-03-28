@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo } from 'react';
+import { Box, Text as InkText } from './../../renderer.js';
 import { StatusBar, useStatusBar } from '../chat/status-bar/StatusBar.js';
 import { StatusInfo } from './status/StatusInfo.js';
 import type { StatusType } from '../../types/componentTypes.js';
@@ -13,6 +14,7 @@ import { Introspect } from '../chat/tools/Introspect.js';
 import { ImageRead } from '../chat/tools/ImageRead.js';
 import { WebSearch } from '../chat/tools/WebSearch.js';
 import { WebFetch } from '../chat/tools/WebFetch.js';
+import { SessionTool } from '../chat/tools/SessionTool.js';
 import { Tool } from '../chat/tools/Tool.js';
 import { ToolUseStatus, type ToolResult } from '../../stores/app-store.js';
 import {
@@ -25,6 +27,7 @@ import {
   GLOB_TOOL_NAMES,
   LS_TOOL_NAMES,
   CODE_TOOL_NAMES,
+  SESSION_TOOL_NAMES,
   resolveToolId,
   INTROSPECT_TOOL_NAMES,
   IMAGE_READ_TOOL_NAMES,
@@ -37,6 +40,7 @@ export interface ToolUseMessageProps {
   id: string;
   name: string;
   content: string;
+  liveOutput?: string;
   isFinished?: boolean;
   status?: ToolUseStatus;
   result?: ToolResult;
@@ -44,6 +48,9 @@ export interface ToolUseMessageProps {
   locations?: ToolCallLocation[];
   barColor?: string;
   isStatic?: boolean;
+  /** If set, shows a colored agent name prefix (for subagent tool calls) */
+  agentLabel?: string;
+  agentLabelColor?: string;
 }
 
 export const ToolUseMessage = React.memo<ToolUseMessageProps>(
@@ -56,6 +63,8 @@ export const ToolUseMessage = React.memo<ToolUseMessageProps>(
     locations,
     barColor,
     isStatic = false,
+    agentLabel,
+    agentLabelColor,
   }) {
     // Map tool status to StatusBar status icon
     const statusIcon: StatusType | undefined = useMemo(() => {
@@ -70,6 +79,13 @@ export const ToolUseMessage = React.memo<ToolUseMessageProps>(
 
     return (
       <StatusBar status={statusIcon} barColor={barColor}>
+        {agentLabel && (
+          <Box>
+            <InkText color={agentLabelColor ?? 'gray'} dimColor>
+              {agentLabel}
+            </InkText>
+          </Box>
+        )}
         <ToolUseContent
           name={name}
           content={content}
@@ -85,7 +101,7 @@ export const ToolUseMessage = React.memo<ToolUseMessageProps>(
 );
 
 /** Inner component — lives inside StatusBar to access requestRemeasure */
-function ToolUseContent({
+const ToolUseContent = React.memo(function ToolUseContent({
   name,
   content,
   isFinished,
@@ -242,6 +258,18 @@ function ToolUseContent({
     );
   }
 
+  if (SESSION_TOOL_NAMES.has(name)) {
+    return (
+      <SessionTool
+        name={name}
+        isFinished={effectiveFinished}
+        isStatic={isStatic}
+        content={content}
+        result={result}
+      />
+    );
+  }
+
   if (INTROSPECT_TOOL_NAMES.has(name)) {
     return (
       <Introspect
@@ -289,4 +317,4 @@ function ToolUseContent({
       content={content}
     />
   );
-}
+});
