@@ -906,7 +906,15 @@ export const killToLogicalLineEnd = (
   const text = getVisibleText(segments);
   const nextNewline = text.indexOf('\n', cursor);
   const lineEnd = nextNewline === -1 ? text.length : nextNewline;
-  if (cursor >= lineEnd) return { segments, cursor };
+  if (cursor >= lineEnd) {
+    // At end of line — delete the newline to join with next line
+    if (nextNewline === -1) return { segments, cursor };
+    const newText = text.slice(0, cursor) + text.slice(cursor + 1);
+    return {
+      segments: normalizeSegments([{ type: 'text', value: newText }]),
+      cursor,
+    };
+  }
   const newText = text.slice(0, cursor) + text.slice(lineEnd);
   return {
     segments: normalizeSegments([{ type: 'text', value: newText }]),

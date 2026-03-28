@@ -384,4 +384,36 @@ describe('Multi-line input editing', () => {
 
     await exitCleanly(testCase);
   }, 20000);
+
+  it('Ctrl+K at end of line joins with next line by deleting newline', async () => {
+    testCase = await TestCase.builder()
+      .withTestName('multiline-ctrl-k-join')
+      .launch();
+
+    await testCase.waitForVisibleText('ask a question', 10000);
+
+    // Create "hello\nworld"
+    await testCase.sendKeys('hello');
+    await testCase.sleepMs(100);
+    await sendCtrl(testCase, CTRL_J);
+    await testCase.sendKeys('world');
+    await testCase.sleepMs(200);
+
+    // Move to end of first line
+    await testCase.sendKeys(UP_ARROW);
+    await testCase.sleepMs(100);
+    await sendCtrl(testCase, CTRL_E);
+    await testCase.sleepMs(100);
+
+    // First Ctrl+K at end of "hello" — nothing to kill on this line,
+    // so it should delete the newline, joining "hello" and "world"
+    await sendCtrl(testCase, CTRL_K);
+    await testCase.sleepMs(200);
+
+    const snapshot = testCase.getSnapshot();
+    const screenText = snapshot.join('\n');
+    expect(screenText).toContain('helloworld');
+
+    await exitCleanly(testCase);
+  }, 20000);
 });
