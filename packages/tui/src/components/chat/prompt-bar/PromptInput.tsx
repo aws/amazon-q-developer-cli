@@ -704,7 +704,10 @@ export const PromptInput = React.memo(function PromptInput({
                   break;
                 }
               }
-              const command = CommandHistory.getInstance().navigate('up');
+              const command = CommandHistory.getInstance().navigate(
+                'up',
+                buildContent(segments)
+              );
               if (command) {
                 setPromptHint(null);
                 setSegments([{ type: 'text', value: command }]);

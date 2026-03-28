@@ -317,6 +317,38 @@ describe('Multi-line input editing', () => {
     await testCase.expectExit();
   }, 20000);
 
+  it('Ctrl+P then Ctrl+N restores original input', async () => {
+    testCase = await TestCase.builder()
+      .withTestName('multiline-ctrl-p-n-restore')
+      .launch();
+
+    await testCase.waitForVisibleText('ask a question', 10000);
+
+    // Submit a command to create history
+    await testCase.sendKeys('previous command');
+    await testCase.sleepMs(200);
+    await testCase.pressEnter();
+    await testCase.sleepMs(500);
+
+    // Type new input
+    await testCase.sendKeys('my current input');
+    await testCase.sleepMs(200);
+
+    // Ctrl+P to go to history — should show "previous command"
+    await sendCtrl(testCase, CTRL_P);
+    let snapshot = testCase.getSnapshot();
+    let screenText = snapshot.join('\n');
+    expect(screenText).toContain('previous command');
+
+    // Ctrl+N to come back — should restore "my current input"
+    await sendCtrl(testCase, CTRL_N);
+    snapshot = testCase.getSnapshot();
+    screenText = snapshot.join('\n');
+    expect(screenText).toContain('my current input');
+
+    await exitCleanly(testCase);
+  }, 20000);
+
   it('Ctrl+P / Ctrl+N work same as Up/Down for multi-line navigation', async () => {
     testCase = await TestCase.builder()
       .withTestName('multiline-ctrl-p-n')
