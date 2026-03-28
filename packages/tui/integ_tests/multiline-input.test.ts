@@ -416,4 +416,40 @@ describe('Multi-line input editing', () => {
 
     await exitCleanly(testCase);
   }, 20000);
+
+  it('moving cursor left/right across wrap boundary does not alter line content', async () => {
+    testCase = await TestCase.builder()
+      .withTestName('multiline-cursor-wrap-stable')
+      .withTerminal({ width: 30, height: 20 })
+      .launch();
+
+    await testCase.waitForVisibleText('ask a question', 10000);
+
+    // Type a line that wraps: "the quick brown fox jumps over" | "the lazy dog"
+    const input = 'the quick brown fox jumps over the lazy dog';
+    await testCase.sendKeys(input);
+    await testCase.sleepMs(300);
+
+    const assertRowsStable = () => {
+      const rows = testCase!.getSnapshot();
+      const first = rows.findIndex((r) => r.includes('the quick brown fox'));
+      expect(first).not.toBe(-1);
+      expect(rows[first + 1]).toContain('the lazy dog');
+    };
+
+    // Move cursor all the way left, then all the way right
+    for (let i = 0; i < input.length; i++) {
+      await testCase.sendKeys('\x1b[D');
+      await testCase.sleepMs(20);
+    }
+    assertRowsStable();
+
+    for (let i = 0; i < input.length; i++) {
+      await testCase.sendKeys('\x1b[C');
+      await testCase.sleepMs(20);
+    }
+    assertRowsStable();
+
+    await exitCleanly(testCase);
+  }, 20000);
 });
