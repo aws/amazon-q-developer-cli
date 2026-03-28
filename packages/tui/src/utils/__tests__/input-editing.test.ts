@@ -433,14 +433,14 @@ describe('input-editing', () => {
       expect(newCursor).toBe(5);
     });
 
-    it('skips word then spaces in text', () => {
+    it('stops at end of word (emacs forward-word)', () => {
       const segments = [text('hello world foo')];
       const cursor = 0;
 
       const newCursor = moveWordForward(segments, cursor);
 
-      // Should skip "hello " -> position 6
-      expect(newCursor).toBe(6);
+      // Should stop right after "hello" -> position 5
+      expect(newCursor).toBe(5);
     });
 
     it('no-op when cursor is at end', () => {
@@ -713,16 +713,16 @@ describe('input-editing', () => {
     it('deletes word forward from cursor', () => {
       const segments = [text('hello world')];
       const result = deleteWordForward(segments, 0);
-      // Deletes "hello " (word + trailing spaces)
-      expect(result.segments[0]).toEqual(text('world'));
+      // Deletes "hello" (word only, preserves trailing space)
+      expect(result.segments[0]).toEqual(text(' world'));
       expect(result.cursor).toBe(0);
     });
 
     it('deletes word from middle of text', () => {
       const segments = [text('hello world foo')];
       const result = deleteWordForward(segments, 6);
-      // Cursor at 'w', deletes "world "
-      expect(result.segments[0]).toEqual(text('hello foo'));
+      // Cursor at 'w', deletes "world" (preserves trailing space)
+      expect(result.segments[0]).toEqual(text('hello  foo'));
       expect(result.cursor).toBe(6);
     });
 

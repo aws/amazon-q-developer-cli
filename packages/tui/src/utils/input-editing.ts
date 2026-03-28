@@ -192,19 +192,19 @@ export const deleteWordForward = (
       ];
       return { segments: normalizeSegments(newSegs), cursor };
     }
-    // Find word boundary - skip word chars, then skip spaces
+    // Find word boundary - skip spaces first, then word chars (emacs kill-word semantics)
     let deleteEnd = 0;
-    // Skip word characters
-    while (
-      deleteEnd < textAfter.length &&
-      /\S/.test(textAfter[deleteEnd] ?? '')
-    ) {
-      deleteEnd++;
-    }
     // Skip spaces
     while (
       deleteEnd < textAfter.length &&
       /\s/.test(textAfter[deleteEnd] ?? '')
+    ) {
+      deleteEnd++;
+    }
+    // Skip word characters
+    while (
+      deleteEnd < textAfter.length &&
+      /\S/.test(textAfter[deleteEnd] ?? '')
     ) {
       deleteEnd++;
     }
@@ -294,14 +294,14 @@ export const moveWordForward = (
 
   if (seg?.type === 'text') {
     const textAfter = seg.value.slice(offset);
-    // Skip current word chars, then skip spaces
+    // Skip spaces first, then skip word chars (emacs forward-word semantics)
     let moveBy = 0;
-    // Skip word characters
-    while (moveBy < textAfter.length && /\S/.test(textAfter[moveBy] ?? '')) {
+    // Skip non-word characters
+    while (moveBy < textAfter.length && /\s/.test(textAfter[moveBy] ?? '')) {
       moveBy++;
     }
-    // Skip spaces
-    while (moveBy < textAfter.length && /\s/.test(textAfter[moveBy] ?? '')) {
+    // Skip word characters
+    while (moveBy < textAfter.length && /\S/.test(textAfter[moveBy] ?? '')) {
       moveBy++;
     }
     if (moveBy === 0) moveBy = 1; // At least move one
