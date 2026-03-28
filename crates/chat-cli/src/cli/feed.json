@@ -12,6 +12,18 @@
     },
     {
       "type": "release",
+      "date": "2026-03-29",
+      "version": "1.28.3",
+      "title": "Version 1.28.3",
+      "changes": [
+        {
+          "type": "fixed",
+          "description": "Ensure profile ARN is set for social users during login to prevent API call failures"
+        }
+      ]
+    },
+    {
+      "type": "release",
       "date": "2026-03-26",
       "version": "1.28.2",
       "title": "Version 1.28.2",

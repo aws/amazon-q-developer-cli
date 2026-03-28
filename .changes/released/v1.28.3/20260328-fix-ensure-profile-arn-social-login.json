@@ -1,0 +1,4 @@
+{
+  "type": "fixed",
+  "description": "Ensure profile ARN is set for social users during login to prevent API call failures"
+}
