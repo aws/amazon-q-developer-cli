@@ -1381,6 +1381,21 @@ Return only the JSON configuration, no additional text."
             }
         }
 
+        if let Some(name) = self
+            .model_info
+            .as_ref()
+            .map(|m| m.display_name())
+            .filter(|s| !s.is_empty())
+        {
+            context_content.push_str(CONTEXT_ENTRY_START_HEADER);
+            if name.eq_ignore_ascii_case("auto") {
+                context_content.push_str("The model setting is Auto (model selected dynamically on the server).\n");
+            } else {
+                context_content.push_str(&format!("The current model is {name}.\n"));
+            }
+            context_content.push_str(CONTEXT_ENTRY_END_HEADER);
+        }
+
         if let Some(context) = additional_context {
             context_content.push_str(&context);
         }

@@ -50,6 +50,11 @@ pub trait Model: std::fmt::Debug + Send + Sync + 'static {
         None
     }
 
+    /// Returns a human-readable display name for the model (e.g. "Claude Sonnet 4").
+    fn display_name(&self) -> Option<String> {
+        None
+    }
+
     /// Invokes an MCP tool call through the backend API.
     fn invoke_mcp(
         &self,

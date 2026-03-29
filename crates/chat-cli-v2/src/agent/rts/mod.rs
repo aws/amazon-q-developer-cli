@@ -508,6 +508,10 @@ impl Model for RtsModel {
         self.state.model_info().map(|m| m.context_window_tokens)
     }
 
+    fn display_name(&self) -> Option<String> {
+        self.state.model_info().map(|m| m.display_name().to_string())
+    }
+
     fn invoke_mcp(
         &self,
         tool_name: &str,

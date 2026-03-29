@@ -2064,6 +2064,7 @@ impl Agent {
             None
         };
 
+        let model_name = self.model.display_name().filter(|s| !s.is_empty());
         format_request(
             messages,
             tool_specs,
@@ -2076,6 +2077,7 @@ impl Agent {
             self.model.context_window_size(),
             self.tool_search_active,
             deferred_tools_list,
+            model_name.as_deref(),
         )
         .await
     }
@@ -3296,6 +3298,7 @@ async fn format_request<T, U, P>(
     context_window_size: Option<usize>,
     tool_search_enabled: bool,
     deferred_tools_list: Option<String>,
+    model_name: Option<&str>,
 ) -> SendRequestArgs
 where
     T: IntoIterator<Item = U>,
@@ -3314,6 +3317,7 @@ where
         context_window_size,
         tool_search_enabled,
         deferred_tools_list,
+        model_name,
     )
     .await;
     for msg in ctx_messages.into_iter().rev() {
@@ -3353,6 +3357,7 @@ async fn create_context_messages<T, U, P>(
     context_window_size: Option<usize>,
     tool_search_enabled: bool,
     deferred_tools_list: Option<String>,
+    model_name: Option<&str>,
 ) -> Vec<Message>
 where
     T: IntoIterator<Item = U>,
@@ -3374,6 +3379,7 @@ where
         knowledge_context,
         tool_search_enabled,
         deferred_tools_list.as_deref(),
+        model_name,
     );
     if content.is_empty() {
         return vec![];
@@ -3407,6 +3413,7 @@ fn format_user_context_message<'a, T, U, V, W, X>(
     knowledge_context: Option<String>,
     tool_search_enabled: bool,
     deferred_tools_list: Option<&str>,
+    model_name: Option<&str>,
 ) -> String
 where
     T: IntoIterator<Item = (&'a str, &'a str)>,
@@ -3445,6 +3452,16 @@ where
         context_content.push_str(DEFERRED_TOOLS_MESSAGE);
         context_content.push_str(tools_list);
         context_content.push('\n');
+        context_content.push_str(CONTEXT_ENTRY_END_HEADER);
+    }
+
+    if let Some(name) = model_name {
+        context_content.push_str(CONTEXT_ENTRY_START_HEADER);
+        if name.eq_ignore_ascii_case("auto") {
+            context_content.push_str("The model setting is Auto (model selected dynamically on the server).\n");
+        } else {
+            context_content.push_str(&format!("The current model is {name}.\n"));
+        }
         context_content.push_str(CONTEXT_ENTRY_END_HEADER);
     }
 
@@ -4091,5 +4108,62 @@ mod tests {
         for file in files {
             assert!(resources.iter().any(|r| r.content == file.1));
         }
+    }
+
+    #[test]
+    fn test_format_user_context_message_with_model_name() {
+        let content = format_user_context_message(
+            None,
+            Vec::<String>::new(),
+            Vec::<String>::new(),
+            Vec::<String>::new(),
+            None,
+            None,
+            Some("Claude Sonnet 4"),
+        );
+        assert!(
+            content.contains("The current model is Claude Sonnet 4."),
+            "expected model name in context: {content}"
+        );
+    }
+
+    #[test]
+    fn test_format_user_context_message_with_auto_model() {
+        for name in ["auto", "Auto", "AUTO"] {
+            let content = format_user_context_message(
+                None,
+                Vec::<String>::new(),
+                Vec::<String>::new(),
+                Vec::<String>::new(),
+                None,
+                None,
+                Some(name),
+            );
+            assert!(
+                content.contains("model selected dynamically"),
+                "expected auto wording for {name:?}: {content}"
+            );
+            assert!(
+                !content.contains(&format!("The current model is {name}")),
+                "should not use generic wording for {name:?}: {content}"
+            );
+        }
+    }
+
+    #[test]
+    fn test_format_user_context_message_without_model_name() {
+        let content = format_user_context_message(
+            None,
+            Vec::<String>::new(),
+            Vec::<String>::new(),
+            Vec::<String>::new(),
+            None,
+            None,
+            None,
+        );
+        assert!(
+            !content.contains("The current model is"),
+            "unexpected model name in context: {content}"
+        );
     }
 }
