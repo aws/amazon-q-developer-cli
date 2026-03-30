@@ -258,14 +258,23 @@ export class AcpClient implements acp.Client, SessionClient {
     currentModel?: { id: string; name: string };
     currentAgent?: { name: string; welcomeMessage?: string };
   }> {
-    const sessionResult = await this.connection.loadSession({
-      sessionId,
-      cwd: process.cwd(),
-      mcpServers: [],
-    });
-    logger.debug('[acp-client] loadSession completed for session:', sessionId);
-
+    // Update sessionId before the RPC so that history notifications
+    // arriving during loadSession are not filtered as subagent events.
+    const previousSessionId = this.sessionId;
     this.sessionId = sessionId;
+
+    const sessionResult = await this.connection
+      .loadSession({
+        sessionId,
+        cwd: process.cwd(),
+        mcpServers: [],
+      })
+      .catch((err) => {
+        // Restore previous session ID on failure
+        this.sessionId = previousSessionId;
+        throw err;
+      });
+    logger.debug('[acp-client] loadSession completed for session:', sessionId);
     logger.debug('ACP session loaded', {
       sessionId: this.sessionId,
     });
