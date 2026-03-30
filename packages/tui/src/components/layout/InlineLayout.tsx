@@ -51,6 +51,7 @@ import {
   useKiroClient,
 } from '../../stores/selectors.js';
 import { useAppStore, type CodePanelData } from '../../stores/app-store.js';
+import { useSessionConversation } from '../../stores/session-conversations.js';
 import { useShallow } from 'zustand/react/shallow';
 import { useKeypress } from '../../hooks/useKeypress';
 import { getGitBranch } from '../../utils/git';
@@ -182,6 +183,10 @@ export const InlineLayout: React.FC = () => {
     pendingApproval?.sessionId &&
     sessionId &&
     pendingApproval.sessionId !== sessionId
+  );
+
+  const approvalSessionMessages = useSessionConversation(
+    pendingApproval?.sessionId ?? ''
   );
 
   const handleCrewConfigure = useCallback(() => {
@@ -371,10 +376,12 @@ export const InlineLayout: React.FC = () => {
   // Build the header - ContextBar
   const promptBarHeader = useMemo(() => {
     if (pendingApproval) {
-      const toolMessage = messages.find(
-        (msg) =>
-          msg.role === 'tool_use' &&
-          msg.id === pendingApproval.toolCall.toolCallId
+      const toolCallId = pendingApproval.toolCall.toolCallId;
+      const searchMessages = isCrewApproval
+        ? approvalSessionMessages
+        : messages;
+      const toolMessage = searchMessages.find(
+        (msg) => msg.role === 'tool_use' && msg.id === toolCallId
       );
       const toolName =
         toolMessage && 'name' in toolMessage ? toolMessage.name : 'Tool';
@@ -449,6 +456,8 @@ export const InlineLayout: React.FC = () => {
   }, [
     pendingApproval,
     messages,
+    isCrewApproval,
+    approvalSessionMessages,
     currentAgent,
     contextUsagePercent,
     codeIntelligenceActive,

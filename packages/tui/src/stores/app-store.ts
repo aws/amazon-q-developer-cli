@@ -7,6 +7,7 @@ import { createContext, useContext } from 'react';
 import {
   AgentEventType,
   ApprovalOptionId,
+  SESSION_TOOL_NAMES,
   type AgentStreamEvent,
   type ApprovalRequestInfo,
   type ToolKind,
@@ -305,6 +306,7 @@ interface BaseAppActions {
   addSession: (session: AgentSession) => void;
   updateSession: (id: string, updates: Partial<AgentSession>) => void;
   removeSession: (id: string) => void;
+  cleanupTerminatedSession: (sessionId: string) => void;
   terminateAllCrewSessions: () => Promise<void>;
   setActiveSession: (id: string) => void;
   setSelectedSession: (id: string) => void;
@@ -1039,14 +1041,50 @@ export const createAppStore = (props: AppStoreProps) => {
               }
 
               const isNotReady = NOT_READY_TOOLS.has(event.name);
+              // Wipe previous subagent state when a new crew invocation starts
+              let clearedMessages = state.messages;
+              let clearedSessions = state.sessions;
+              let clearedSessionMessages = state.sessionMessages;
+              let clearedEventBuffer = state.sessionEventBuffer;
+              if (SESSION_TOOL_NAMES.has(event.name)) {
+                const staleNames = new Set<string>();
+                const newSessions = new Map<string, AgentSession>();
+                for (const [id, s] of state.sessions) {
+                  if (s.type === 'ephemeral' && id !== state.sessionId) {
+                    staleNames.add(s.name);
+                  } else {
+                    newSessions.set(id, s);
+                  }
+                }
+                if (staleNames.size > 0) {
+                  clearedSessions = newSessions;
+                  clearedMessages = state.messages.filter(
+                    (msg) =>
+                      msg.role !== MessageRole.ToolUse ||
+                      !msg.agentName ||
+                      !staleNames.has(msg.agentName)
+                  );
+                  clearedSessionMessages = new Map(state.sessionMessages);
+                  clearedEventBuffer = { ...state.sessionEventBuffer };
+                  for (const [id, s] of state.sessions) {
+                    if (s.type === 'ephemeral' && id !== state.sessionId) {
+                      clearedSessionMessages.delete(id);
+                      delete clearedEventBuffer[id];
+                    }
+                  }
+                }
+              }
               // Resolve agent name: use subagent session name if tool call is from a subagent
               const agentName = event.sessionId
                 ? (state.sessions.get(event.sessionId)?.name ??
                   state.currentAgent?.name)
                 : state.currentAgent?.name;
               return {
+                sessions: clearedSessions,
+                sessionMessages: clearedSessionMessages,
+                sessionEventBuffer: clearedEventBuffer,
                 messages: [
-                  ...state.messages,
+                  ...clearedMessages,
                   {
                     id: event.id,
                     role: MessageRole.ToolUse,
@@ -1899,14 +1937,39 @@ export const createAppStore = (props: AppStoreProps) => {
     addSession: (session) =>
       set((state) => {
         const newSessions = new Map(state.sessions);
+        const staleIds: string[] = [];
         // Clear old terminated sessions when a new active session arrives
         if (session.status === 'busy' && !newSessions.has(session.id)) {
           for (const [id, s] of newSessions) {
-            if (s.status === 'terminated') newSessions.delete(id);
+            if (s.status === 'terminated') {
+              staleIds.push(id);
+              newSessions.delete(id);
+            }
           }
         }
         newSessions.set(session.id, session);
-        return { sessions: newSessions };
+        if (staleIds.length === 0) return { sessions: newSessions };
+        // Also clear stale messages, event buffers, and inbox messages
+        const staleNames = new Set(
+          staleIds.map((id) => state.sessions.get(id)?.name).filter(Boolean)
+        );
+        const newMessages = new Map(state.sessionMessages);
+        const newBuffer = { ...state.sessionEventBuffer };
+        for (const id of staleIds) {
+          newMessages.delete(id);
+          delete newBuffer[id];
+        }
+        return {
+          sessions: newSessions,
+          sessionMessages: newMessages,
+          sessionEventBuffer: newBuffer,
+          messages: state.messages.filter(
+            (msg) =>
+              msg.role !== MessageRole.ToolUse ||
+              !msg.agentName ||
+              !staleNames.has(msg.agentName)
+          ),
+        };
       }),
 
     updateSession: (id, updates) =>
@@ -1940,6 +2003,39 @@ export const createAppStore = (props: AppStoreProps) => {
               : state.selectedSessionId,
         };
       }),
+
+    cleanupTerminatedSession: (sessionId) => {
+      const { approvalQueue, pendingApproval } = get();
+      // Cancel pending approvals for this session
+      const sessionApprovals = approvalQueue.filter(
+        (a) => a.sessionId === sessionId
+      );
+      for (const a of sessionApprovals) {
+        a.resolve({ outcome: 'cancelled' });
+      }
+      // Find the agent name for this session to mark its tool calls finished
+      const session = get().sessions.get(sessionId);
+      const agentName = session?.name;
+      set((state) => ({
+        approvalQueue:
+          sessionApprovals.length > 0
+            ? state.approvalQueue.filter((a) => a.sessionId !== sessionId)
+            : state.approvalQueue,
+        pendingApproval:
+          pendingApproval?.sessionId === sessionId
+            ? null
+            : state.pendingApproval,
+        messages: agentName
+          ? state.messages.map((msg) =>
+              msg.role === MessageRole.ToolUse &&
+              msg.agentName === agentName &&
+              !msg.isFinished
+                ? { ...msg, isFinished: true }
+                : msg
+            )
+          : state.messages,
+      }));
+    },
 
     terminateAllCrewSessions: async () => {
       const { sessions, kiro } = get();

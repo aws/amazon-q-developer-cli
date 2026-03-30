@@ -95,9 +95,18 @@ export const SubagentToolPanel = React.memo<SubagentToolPanelProps>(
         }
       }
 
+      // Maintain stable insertion order across renders, reset when sessions change entirely
+      const currentNames = new Set(subagentSessions.map((s) => s.name));
+      if (
+        orderRef.current.length > 0 &&
+        !orderRef.current.some((n) => currentNames.has(n))
+      ) {
+        orderRef.current = [];
+      }
       for (const s of subagentSessions) {
         if (!orderRef.current.includes(s.name)) orderRef.current.push(s.name);
       }
+      orderRef.current = orderRef.current.filter((n) => currentNames.has(n));
 
       const sessionByName = new Map(subagentSessions.map((s) => [s.name, s]));
       const result: AgentRow[] = [];

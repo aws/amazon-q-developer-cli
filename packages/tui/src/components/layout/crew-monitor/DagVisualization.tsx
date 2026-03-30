@@ -13,6 +13,7 @@ interface DagNode {
   targetName?: string;
   targetState?: StageState;
   isConnectorOnly?: boolean;
+  isStandalone?: boolean;
 }
 
 export const DagVisualization = React.memo(function DagVisualization({
@@ -55,6 +56,7 @@ export const DagVisualization = React.memo(function DagVisualization({
       const deps = stage.dependsOn ?? [];
       if (deps.length === 0 || rendered.has(stage.name)) return;
       rendered.add(stage.name);
+      deps.forEach((d) => rendered.add(d));
 
       const tState = nameToStage.get(stage.name)?.state ?? 'Pending';
 
@@ -88,6 +90,19 @@ export const DagVisualization = React.memo(function DagVisualization({
               targetState: tState,
             });
           }
+        });
+      }
+    });
+
+    // Show stages with no dependencies as standalone nodes
+    allStages.forEach((stage) => {
+      if (!rendered.has(stage.name)) {
+        rendered.add(stage.name);
+        result.push({
+          key: stage.name,
+          targetName: stage.name,
+          targetState: nameToStage.get(stage.name)?.state ?? 'Pending',
+          isStandalone: true,
         });
       }
     });
@@ -163,6 +178,13 @@ export const DagVisualization = React.memo(function DagVisualization({
       <Box justifyContent="flex-start" paddingX={1}>
         <Box flexDirection="column">
           {nodes.map((n) => {
+            if (n.isStandalone) {
+              return (
+                <Box key={n.key}>
+                  {cell(n.targetName!, n.targetState!, true)}
+                </Box>
+              );
+            }
             if (n.isConnectorOnly) {
               return (
                 <Box key={n.key}>

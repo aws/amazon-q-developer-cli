@@ -256,6 +256,15 @@ const startInitialization = (sessionId?: string) => {
         lastActivity: new Date(),
       });
     } else if (event.type === 'session_created') {
+      // Clear stale conversation data for terminated sessions before adding new one
+      if (event.session.status === 'busy') {
+        for (const [id, s] of state.sessions) {
+          if (s.status === 'terminated') {
+            sessionConversationsStore.getState().clearSession(id);
+            sessionHandlers.delete(id);
+          }
+        }
+      }
       state.addSession(event.session);
     }
   });

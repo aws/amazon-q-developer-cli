@@ -2,7 +2,8 @@ import React, { useState, useMemo } from 'react';
 import { Box, Text } from '../../../renderer.js';
 import { useKeypress } from '../../../hooks/useKeypress.js';
 import { ProgressChip } from '../../ui/chip/ProgressChip.js';
-import { useAppStore } from '../../../stores/app-store.js';
+import { MessageRole, useAppStore } from '../../../stores/app-store.js';
+import { sessionConversationsStore } from '../../../stores/session-conversations.js';
 import { useShallow } from 'zustand/react/shallow';
 import type { Stage } from './types.js';
 import { DagVisualization } from './DagVisualization.js';
@@ -52,6 +53,9 @@ export const CrewMonitorLayout = React.memo(function CrewMonitorLayout({
 
   const kiro = useAppStore((state) => state.kiro);
   const updateSession = useAppStore((state) => state.updateSession);
+  const cleanupTerminatedSession = useAppStore(
+    (state) => state.cleanupTerminatedSession
+  );
 
   const sessionsWithApproval = useMemo(
     () =>
@@ -87,6 +91,27 @@ export const CrewMonitorLayout = React.memo(function CrewMonitorLayout({
         setKillTarget(null);
         updateSession(selectedStage.sessionId, { status: 'terminated' });
         kiro.terminateSession(selectedStage.sessionId).catch(() => {});
+        cleanupTerminatedSession(selectedStage.sessionId);
+
+        // Mark in-flight tool calls as finished in session conversation store
+        const convStore = sessionConversationsStore.getState();
+        const msgs = convStore.conversations.get(selectedStage.sessionId);
+        if (
+          msgs?.some((m) => m.role === MessageRole.ToolUse && !m.isFinished)
+        ) {
+          sessionConversationsStore.setState((s) => {
+            const m = new Map(s.conversations);
+            m.set(
+              selectedStage.sessionId,
+              msgs.map((msg) =>
+                msg.role === MessageRole.ToolUse && !msg.isFinished
+                  ? { ...msg, isFinished: true }
+                  : msg
+              )
+            );
+            return { conversations: m };
+          });
+        }
       } else {
         if (killTimerRef.current) clearTimeout(killTimerRef.current);
         setKillTarget(selectedStage.sessionId);
