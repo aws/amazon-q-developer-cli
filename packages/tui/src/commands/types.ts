@@ -89,4 +89,10 @@ export interface CommandContext {
   setMode: (
     mode: 'inline' | 'expanded' | 'crew-monitor' | 'session-view'
   ) => void;
+  /** Get current conversation messages */
+  getMessages: () => Array<{
+    id: string;
+    role: string;
+    content: string;
+  }>;
 }

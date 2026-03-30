@@ -46,6 +46,7 @@ function createMockCtx(): CommandContext & {
     setActiveSession: spy('setActiveSession') as any,
     sessions: new Map(),
     setMode: spy('setMode') as any,
+    getMessages: mock(() => []) as any,
     _spies: spies,
   };
 }

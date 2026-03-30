@@ -582,6 +582,12 @@ export const createAppStore = (props: AppStoreProps) => {
         source: 'local' as const,
         meta: { local: true },
       },
+      {
+        name: '/copy',
+        description: 'Copy last response to clipboard',
+        source: 'local' as const,
+        meta: { local: true },
+      },
     ], // Backend sends all commands via CommandsUpdate
     prompts: [],
     kiro: props.kiro,
@@ -1705,6 +1711,7 @@ export const createAppStore = (props: AppStoreProps) => {
             usageData: null,
             codeData: null,
           }),
+        getMessages: () => get().messages,
       };
 
       await executeCommandWithArg(cmdName, arg, ctx);
@@ -2299,6 +2306,7 @@ export const createAppStore = (props: AppStoreProps) => {
               contextBreakdown: null,
               usageData: null,
             }),
+          getMessages: () => get().messages,
         };
         await executeCommand(trimmed, ctx);
         return;

@@ -84,7 +84,8 @@ type EffectName =
   | 'showCodePanel'
   | 'showFeedbackUrl'
   | 'spawnSession'
-  | 'switchSession';
+  | 'switchSession'
+  | 'copyToClipboard';
 
 /**
  * Command → Effect mapping.
@@ -109,6 +110,7 @@ const commandEffects: Partial<Record<string, EffectName>> = {
   reply: 'replyEditor',
   code: 'showCodePanel',
   spawn: 'spawnSession',
+  copy: 'copyToClipboard',
 };
 
 /**
@@ -600,9 +602,84 @@ const effectHandlers: Record<EffectName, EffectHandler> = {
       ctx.showAlert(message, 'error', 3000);
     }
   },
+
+  /** Copy last assistant response to system clipboard */
+  copyToClipboard: (_result, ctx) => {
+    const messages = ctx.getMessages();
+    // Find the last Model message
+    let lastContent = '';
+    for (let i = messages.length - 1; i >= 0; i--) {
+      const msg = messages[i];
+      if (msg && msg.role === MessageRole.Model && msg.content) {
+        lastContent = msg.content;
+        break;
+      }
+    }
+
+    if (!lastContent) {
+      ctx.showAlert('No response to copy', 'error', 3000);
+      return true;
+    }
+
+    if (!copyToSystemClipboard(lastContent)) {
+      ctx.showAlert('Failed to copy — no clipboard tool found', 'error', 3000);
+      return true;
+    }
+
+    ctx.showAlert('Copied to clipboard', 'success', 3000);
+    return true;
+  },
 };
 
 import { formatImageLabel } from '../utils/image-label.js';
+import { MessageRole } from '../stores/app-store.js';
+import { spawnSync } from 'child_process';
+
+/**
+ * Copy text to the system clipboard using platform-native tools.
+ * Returns true if a clipboard tool was found and executed without error.
+ *
+ * Strategy per platform:
+ *   macOS  → pbcopy (always available)
+ *   Windows → powershell Set-Clipboard (handles UTF-8 correctly, unlike clip.exe)
+ *   Linux  → wl-copy (Wayland) → xclip (X11) → xsel (X11 fallback)
+ */
+function copyToSystemClipboard(text: string): boolean {
+  const candidates: Array<{ bin: string; args: string[] }> = [];
+
+  if (process.platform === 'darwin') {
+    candidates.push({ bin: 'pbcopy', args: [] });
+  } else if (process.platform === 'win32') {
+    // powershell's Set-Clipboard handles UTF-8; clip.exe expects UTF-16
+    candidates.push({
+      bin: 'powershell',
+      args: ['-NoProfile', '-Command', 'Set-Clipboard -Value $input'],
+    });
+  } else {
+    // Linux: try Wayland first, then X11 tools
+    if (process.env.WAYLAND_DISPLAY) {
+      candidates.push({ bin: 'wl-copy', args: [] });
+    }
+    candidates.push(
+      { bin: 'xclip', args: ['-selection', 'clipboard'] },
+      { bin: 'xsel', args: ['--clipboard', '--input'] }
+    );
+  }
+
+  for (const { bin, args } of candidates) {
+    try {
+      const result = spawnSync(bin, args, {
+        input: text,
+        stdio: ['pipe', 'ignore', 'ignore'],
+        timeout: 5000,
+      });
+      if (result.status === 0) return true;
+    } catch {
+      // Tool not found or failed — try next candidate
+    }
+  }
+  return false;
+}
 
 /**
  * Run effect for a command.
