@@ -3,7 +3,8 @@
   "version": "1.28.2",
   "type": "module",
   "overrides": {
-    "react": "19.2.3"
+    "react": "19.2.3",
+    "brace-expansion@^1": "1.1.13"
   },
   "scripts": {
     "dev": "bun run scripts/start-dev.ts",
