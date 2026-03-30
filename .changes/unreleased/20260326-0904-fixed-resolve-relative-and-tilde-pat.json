@@ -1,0 +1,4 @@
+{
+  "type": "fixed",
+  "description": "Resolve relative and tilde paths in ACP file writes to display accurate diffs"
+}

@@ -55,6 +55,11 @@ use agent::types::{
     AgentSnapshot,
     ConversationState,
 };
+use agent::util::path::canonicalize_path_sys;
+use agent::util::providers::{
+    RealProvider,
+    SystemProvider,
+};
 use agent::{
     Agent,
     AgentHandle,
@@ -2563,20 +2568,28 @@ fn format_paths_title(action: &str, paths: &[&str]) -> String {
 }
 
 fn get_tool_content(tool: &Tool) -> Vec<ToolCallContent> {
+    get_tool_content_impl(tool, &RealProvider)
+}
+
+fn get_tool_content_impl(tool: &Tool, provider: &impl SystemProvider) -> Vec<ToolCallContent> {
     match &tool.kind {
         AgentToolKind::BuiltIn(BuiltInTool::FileWrite(fs_write)) => {
-            let path = fs_write.path();
+            let raw_path = fs_write.path();
+            let abs_path =
+                canonicalize_path_sys(raw_path, provider).map_or_else(|_| PathBuf::from(raw_path), PathBuf::from);
             let (old_text, new_text) = match fs_write {
                 FsWrite::Create(create) => {
                     // Read existing file content for proper diffing when overwriting
-                    let old = std::fs::read_to_string(path).ok();
+                    let old = std::fs::read_to_string(&abs_path).ok();
                     (old, create.content.clone())
                 },
+                // StrReplace: old_text/new_text are the replacement snippet, not full file content.
+                // The Diff path is still resolved to absolute so the TUI can locate the file.
                 FsWrite::StrReplace(str_replace) => (Some(str_replace.old_str.clone()), str_replace.new_str.clone()),
                 FsWrite::Insert(_) => return vec![],
             };
 
-            vec![ToolCallContent::Diff(Diff::new(path, new_text).old_text(old_text))]
+            vec![ToolCallContent::Diff(Diff::new(abs_path, new_text).old_text(old_text))]
         },
         _ => vec![],
     }
@@ -3083,5 +3096,228 @@ fn mime_to_image_format(mime: &str) -> Option<ImageFormat> {
         "image/gif" => Some(ImageFormat::Gif),
         "image/webp" => Some(ImageFormat::Webp),
         _ => None,
+    }
+}
+
+#[cfg(test)]
+mod get_tool_content_tests {
+    use std::fs;
+    use std::path::PathBuf;
+
+    use agent::tools::fs_read::FsRead;
+    use agent::tools::fs_write::{
+        FileCreate,
+        FsWrite,
+    };
+    use agent::tools::{
+        BuiltInTool,
+        Tool,
+        ToolKind as AgentToolKind,
+    };
+    use agent::util::providers::HomeProvider;
+    use agent::util::test::{
+        TestBase,
+        TestProvider,
+    };
+    use sacp::schema::ToolCallContent;
+
+    use super::get_tool_content_impl;
+
+    fn make_create_tool(path: &str, content: &str) -> Tool {
+        Tool {
+            tool_use_purpose: None,
+            kind: AgentToolKind::BuiltIn(BuiltInTool::FileWrite(FsWrite::Create(FileCreate {
+                path: path.to_string(),
+                content: content.to_string(),
+                ..Default::default()
+            }))),
+        }
+    }
+
+    /// Existing file at an absolute path: old_text must be populated from disk.
+    #[tokio::test]
+    async fn test_create_existing_file_absolute_path_includes_old_text() {
+        let test_base = TestBase::new().await;
+        let file_path = test_base.join("test.txt");
+        fs::write(&file_path, "original content").unwrap();
+
+        let tool = make_create_tool(file_path.to_str().unwrap(), "new content");
+        let result = get_tool_content_impl(&tool, test_base.provider());
+
+        let expected_path = file_path.canonicalize().unwrap();
+        assert_eq!(result.len(), 1);
+        match &result[0] {
+            ToolCallContent::Diff(diff) => {
+                assert_eq!(diff.old_text.as_deref(), Some("original content"));
+                assert_eq!(diff.new_text, "new content");
+                assert_eq!(diff.path, expected_path);
+            },
+            _ => panic!("expected Diff"),
+        }
+    }
+
+    /// New (non-existent) file: old_text must be None.
+    #[test]
+    fn test_create_new_file_has_no_old_text() {
+        let provider = TestProvider::new();
+        let tool = make_create_tool("/nonexistent/path/to/file.rs", "new content");
+        let result = get_tool_content_impl(&tool, &provider);
+
+        assert_eq!(result.len(), 1);
+        match &result[0] {
+            ToolCallContent::Diff(diff) => {
+                assert!(diff.old_text.is_none(), "new file should have no old text");
+                assert_eq!(diff.new_text, "new content");
+            },
+            _ => panic!("expected Diff"),
+        }
+    }
+
+    /// Relative path must be resolved against the provider's cwd.
+    #[tokio::test]
+    async fn test_create_relative_path_resolves_with_cwd() {
+        let test_base = TestBase::new().await;
+        let file_path = test_base.join("relative_test.txt");
+        fs::write(&file_path, "existing content").unwrap();
+
+        let tool = make_create_tool("relative_test.txt", "updated content");
+        let result = get_tool_content_impl(&tool, test_base.provider());
+
+        let expected_path = file_path.canonicalize().unwrap();
+        assert_eq!(result.len(), 1);
+        match &result[0] {
+            ToolCallContent::Diff(diff) => {
+                assert_eq!(
+                    diff.old_text.as_deref(),
+                    Some("existing content"),
+                    "relative path should be resolved against the provider's cwd"
+                );
+                assert_eq!(diff.new_text, "updated content");
+                assert_eq!(diff.path, expected_path);
+            },
+            _ => panic!("expected Diff"),
+        }
+    }
+
+    /// Tilde path (~/…) must be expanded to the provider's home directory.
+    #[tokio::test]
+    async fn test_create_tilde_path_resolves_home() {
+        let test_base = TestBase::new().await;
+        let home = test_base.provider().home().expect("TestBase should configure HOME");
+        let file_path = home.join("tilde_test.txt");
+        fs::write(&file_path, "home content").unwrap();
+
+        let tool = make_create_tool("~/tilde_test.txt", "new home content");
+        let result = get_tool_content_impl(&tool, test_base.provider());
+
+        let expected_path = file_path.canonicalize().unwrap();
+        assert_eq!(result.len(), 1);
+        match &result[0] {
+            ToolCallContent::Diff(diff) => {
+                assert_eq!(
+                    diff.old_text.as_deref(),
+                    Some("home content"),
+                    "tilde path should resolve to the provider's home directory"
+                );
+                assert_eq!(diff.path, expected_path);
+            },
+            _ => panic!("expected Diff"),
+        }
+    }
+
+    /// StrReplace variant: old_text must come from old_str, new_text from new_str.
+    #[test]
+    fn test_str_replace_uses_old_str() {
+        let provider = TestProvider::new();
+        let fs_write: FsWrite = serde_json::from_value(serde_json::json!({
+            "command": "strReplace",
+            "path": "/some/file.rs",
+            "oldStr": "old code",
+            "newStr": "new code"
+        }))
+        .unwrap();
+
+        let tool = Tool {
+            tool_use_purpose: None,
+            kind: AgentToolKind::BuiltIn(BuiltInTool::FileWrite(fs_write)),
+        };
+        let result = get_tool_content_impl(&tool, &provider);
+
+        assert_eq!(result.len(), 1);
+        match &result[0] {
+            ToolCallContent::Diff(diff) => {
+                assert_eq!(diff.old_text.as_deref(), Some("old code"));
+                assert_eq!(diff.new_text, "new code");
+                assert_eq!(diff.path, PathBuf::from("/some/file.rs"));
+            },
+            _ => panic!("expected Diff"),
+        }
+    }
+
+    /// StrReplace with a relative path: Diff.path must be resolved against cwd.
+    #[test]
+    fn test_str_replace_relative_path_resolves_with_cwd() {
+        let provider = TestProvider::new().with_cwd("/workspace/project");
+        let fs_write: FsWrite = serde_json::from_value(serde_json::json!({
+            "command": "strReplace",
+            "path": "src/lib.rs",
+            "oldStr": "old code",
+            "newStr": "new code"
+        }))
+        .unwrap();
+
+        let tool = Tool {
+            tool_use_purpose: None,
+            kind: AgentToolKind::BuiltIn(BuiltInTool::FileWrite(fs_write)),
+        };
+        let result = get_tool_content_impl(&tool, &provider);
+
+        assert_eq!(result.len(), 1);
+        match &result[0] {
+            ToolCallContent::Diff(diff) => {
+                assert_eq!(
+                    diff.path,
+                    PathBuf::from("/workspace/project/src/lib.rs"),
+                    "relative StrReplace path should be resolved against cwd"
+                );
+                assert_eq!(diff.old_text.as_deref(), Some("old code"));
+                assert_eq!(diff.new_text, "new code");
+            },
+            _ => panic!("expected Diff"),
+        }
+    }
+
+    /// Insert variant must return no content (empty Vec).
+    #[test]
+    fn test_insert_returns_empty_content() {
+        let provider = TestProvider::new();
+        let fs_write: FsWrite = serde_json::from_value(serde_json::json!({
+            "command": "insert",
+            "path": "/some/file.rs",
+            "insertLine": 5,
+            "content": "inserted line"
+        }))
+        .unwrap();
+
+        let tool = Tool {
+            tool_use_purpose: None,
+            kind: AgentToolKind::BuiltIn(BuiltInTool::FileWrite(fs_write)),
+        };
+        let result = get_tool_content_impl(&tool, &provider);
+
+        assert!(result.is_empty(), "Insert should produce no ToolCallContent");
+    }
+
+    /// Non-FileWrite variant (e.g., FileRead) must return an empty Vec.
+    #[test]
+    fn test_non_file_write_tool_returns_empty() {
+        let provider = TestProvider::new();
+        let tool = Tool {
+            tool_use_purpose: None,
+            kind: AgentToolKind::BuiltIn(BuiltInTool::FileRead(FsRead { ops: vec![] })),
+        };
+        let result = get_tool_content_impl(&tool, &provider);
+
+        assert!(result.is_empty(), "Non-FileWrite tool should return empty content");
     }
 }
