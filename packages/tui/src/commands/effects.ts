@@ -101,6 +101,7 @@ const commandEffects: Partial<Record<string, EffectName>> = {
   prompts: 'executePrompt',
   clear: 'clearMessages',
   quit: 'quit',
+  exit: 'quit',
   mcp: 'showMcpPanel',
   tools: 'showToolsPanel',
   knowledge: 'showKnowledgePanel',
