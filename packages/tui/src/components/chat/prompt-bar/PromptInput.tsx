@@ -161,10 +161,43 @@ export const PromptInput = React.memo(function PromptInput({
   const { consumePendingFileAttachment } = useFileAttachmentActions();
   const { kiro } = useKiroClient();
   const { addPendingImage } = useImageAttachmentActions();
-  const [segments, setSegments] = useState<Segment[]>([
+  const [segments, _setSegments] = useState<Segment[]>([
     { type: 'text', value: '' },
   ]);
-  const [cursor, setCursor] = useState(0);
+  const [cursor, _setCursor] = useState(0);
+
+  // Refs shadow the latest state so input handlers never read stale closures.
+  // Without these, keypresses arriving faster than React re-renders would
+  // read the old segments/cursor and overwrite each other's edits.
+  const segmentsRef = useRef(segments);
+  const cursorRef = useRef(cursor);
+  const setSegments = useCallback(
+    (s: Segment[] | ((prev: Segment[]) => Segment[])) => {
+      if (typeof s === 'function') {
+        _setSegments((prev) => {
+          const next = s(prev);
+          segmentsRef.current = next;
+          return next;
+        });
+      } else {
+        segmentsRef.current = s;
+        _setSegments(s);
+      }
+    },
+    []
+  );
+  const setCursor = useCallback((c: number | ((prev: number) => number)) => {
+    if (typeof c === 'function') {
+      _setCursor((prev) => {
+        const next = c(prev);
+        cursorRef.current = next;
+        return next;
+      });
+    } else {
+      cursorRef.current = c;
+      _setCursor(c);
+    }
+  }, []);
 
   const undoStack = useRef<Array<{ segments: Segment[]; cursor: number }>>([]);
   const lastUndoPushTime = useRef(0);
@@ -333,26 +366,28 @@ export const PromptInput = React.memo(function PromptInput({
   const insertText = (text: string) => {
     pushUndo();
     inputMetrics.markStateUpdate();
-    const { segIdx, offset } = locateCursor(segments, cursor);
-    const seg = segments[segIdx];
+    const segs = segmentsRef.current;
+    const cur = cursorRef.current;
+    const { segIdx, offset } = locateCursor(segs, cur);
+    const seg = segs[segIdx];
 
     if (seg?.type === 'text') {
       const newValue =
         seg.value.slice(0, offset) + text + seg.value.slice(offset);
-      const newSegs = [...segments];
+      const newSegs = [...segs];
       newSegs[segIdx] = { type: 'text', value: newValue };
       setSegments(newSegs);
-      setCursor(cursor + text.length);
+      setCursor(cur + text.length);
       syncToStore(newSegs);
     } else if (seg) {
       // On a chip - insert text after it
       const newSegs = [
-        ...segments.slice(0, segIdx + 1),
+        ...segs.slice(0, segIdx + 1),
         { type: 'text' as const, value: text },
-        ...segments.slice(segIdx + 1),
+        ...segs.slice(segIdx + 1),
       ];
       setSegments(normalizeSegments(newSegs));
-      setCursor(cursor + text.length);
+      setCursor(cur + text.length);
       syncToStore(newSegs);
     }
   };
@@ -371,16 +406,18 @@ export const PromptInput = React.memo(function PromptInput({
         lineCount: result.lineCount,
         charCount: normalized.length,
       };
-      const { segIdx, offset } = locateCursor(segments, cursor);
-      const seg = segments[segIdx];
+      const segs = segmentsRef.current;
+      const cur = cursorRef.current;
+      const { segIdx, offset } = locateCursor(segs, cur);
+      const seg = segs[segIdx];
 
       if (seg?.type === 'text') {
         const newSegs = normalizeSegments([
-          ...segments.slice(0, segIdx),
+          ...segs.slice(0, segIdx),
           { type: 'text', value: seg.value.slice(0, offset) },
           pasteSegment,
           { type: 'text', value: seg.value.slice(offset) },
-          ...segments.slice(segIdx + 1),
+          ...segs.slice(segIdx + 1),
         ]);
         setSegments(newSegs);
         // Position cursor after the chip
@@ -430,15 +467,18 @@ export const PromptInput = React.memo(function PromptInput({
         sizeBytes: data.sizeBytes,
       };
       // Insert image segment at cursor
-      const { segIdx, offset } = locateCursor(segments, cursor);
-      const seg = segments[segIdx];
+      const { segIdx, offset } = locateCursor(
+        segmentsRef.current,
+        cursorRef.current
+      );
+      const seg = segmentsRef.current[segIdx];
       if (seg?.type === 'text') {
         const newSegs = normalizeSegments([
-          ...segments.slice(0, segIdx),
+          ...segmentsRef.current.slice(0, segIdx),
           { type: 'text', value: seg.value.slice(0, offset) },
           imageSegment,
           { type: 'text', value: seg.value.slice(offset) },
-          ...segments.slice(segIdx + 1),
+          ...segmentsRef.current.slice(segIdx + 1),
         ]);
         setSegments(newSegs);
         // Position cursor after the chip
@@ -472,50 +512,46 @@ export const PromptInput = React.memo(function PromptInput({
   const handleBackspace = () => {
     pushUndo();
     inputMetrics.markStateUpdate();
-    if (cursor === 0) return;
+    const cur = cursorRef.current;
+    const segs = segmentsRef.current;
+    if (cur === 0) return;
 
-    const { segIdx, offset } = locateCursor(segments, cursor);
-    const seg = segments[segIdx];
+    const { segIdx, offset } = locateCursor(segs, cur);
+    const seg = segs[segIdx];
 
     if (seg?.type === 'text' && offset > 0) {
       // Delete char in text
       const newValue = seg.value.slice(0, offset - 1) + seg.value.slice(offset);
-      const newSegs = [...segments];
+      const newSegs = [...segs];
       newSegs[segIdx] = { type: 'text', value: newValue };
       setSegments(normalizeSegments(newSegs));
-      setCursor(cursor - 1);
+      setCursor(cur - 1);
       syncToStore(newSegs);
     } else if (offset === 0 && segIdx > 0) {
       // At start of segment - delete previous segment/char
-      const prevSeg = segments[segIdx - 1];
+      const prevSeg = segs[segIdx - 1];
       if (prevSeg?.type === 'text') {
         // Delete last char of previous text
-        const newSegs = [...segments];
+        const newSegs = [...segs];
         newSegs[segIdx - 1] = {
           type: 'text',
           value: prevSeg.value.slice(0, -1),
         };
         setSegments(normalizeSegments(newSegs));
-        setCursor(cursor - 1);
+        setCursor(cur - 1);
         syncToStore(newSegs);
       } else if (prevSeg) {
         // Delete the chip
-        const newSegs = [
-          ...segments.slice(0, segIdx - 1),
-          ...segments.slice(segIdx),
-        ];
+        const newSegs = [...segs.slice(0, segIdx - 1), ...segs.slice(segIdx)];
         setSegments(normalizeSegments(newSegs));
-        setCursor(cursor - 1);
+        setCursor(cur - 1);
         syncToStore(newSegs);
       }
     } else if (seg && seg.type !== 'text' && offset === 1) {
       // Cursor right after a chip - delete the chip
-      const newSegs = [
-        ...segments.slice(0, segIdx),
-        ...segments.slice(segIdx + 1),
-      ];
+      const newSegs = [...segs.slice(0, segIdx), ...segs.slice(segIdx + 1)];
       setSegments(normalizeSegments(newSegs));
-      setCursor(cursor - 1);
+      setCursor(cur - 1);
       syncToStore(newSegs);
     }
   };
@@ -524,7 +560,10 @@ export const PromptInput = React.memo(function PromptInput({
     const now = Date.now();
     if (!force && now - lastUndoPushTime.current < 500) return;
     lastUndoPushTime.current = now;
-    undoStack.current.push({ segments, cursor });
+    undoStack.current.push({
+      segments: segmentsRef.current,
+      cursor: cursorRef.current,
+    });
     if (undoStack.current.length > 100) undoStack.current.shift();
   };
 
@@ -539,6 +578,11 @@ export const PromptInput = React.memo(function PromptInput({
 
   useKeypress(
     (userInput: string, key: Key) => {
+      // Read latest state from refs to avoid stale closures when keypresses
+      // arrive faster than React can re-render.
+      const segments = segmentsRef.current;
+      const cursor = cursorRef.current;
+
       // Don't process input when selection menu is open (Menu handles its own input)
       if (activeCommand) return;
 
