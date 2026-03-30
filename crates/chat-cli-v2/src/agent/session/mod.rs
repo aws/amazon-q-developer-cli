@@ -1092,6 +1092,44 @@ mod tests {
         assert_eq!(full.title, view.title);
     }
 
+    /// Regression test: sessions saved before a new field was added must still load.
+    ///
+    /// The fixture files under `fixtures/` were generated from real types *before*
+    /// the `metering_usage` field existed. They are frozen and must never be edited.
+    /// If you add a new field to any type in the session serialization chain, this
+    /// test will fail unless you also add `#[serde(default)]` to that field.
+    #[test]
+    fn test_backward_compat_pre_metering_session_loads() {
+        use agent::event_log::LogEntry;
+
+        // Frozen fixture: SessionData JSON written before metering_usage existed
+        let session_json = include_str!("fixtures/session_v1_pre_metering.json");
+        let session: SessionData = serde_json::from_str(session_json)
+            .expect("old session format must deserialize; did you add a required field without #[serde(default)]?");
+
+        assert_eq!(session.session_id, "compat-metering");
+        let turns = &session.session_state.conversation_metadata().user_turn_metadatas;
+        assert_eq!(turns.len(), 1);
+        assert!(
+            turns[0].metering_usage.is_empty(),
+            "metering_usage should default to empty vec"
+        );
+        assert_eq!(turns[0].input_token_count, 100);
+        assert_eq!(turns[0].output_token_count, 50);
+
+        // Frozen fixture: JSONL log entries written before any format changes
+        let log_jsonl = include_str!("fixtures/session_v1_pre_metering.jsonl");
+        let entries: Vec<LogEntry> = log_jsonl
+            .lines()
+            .filter(|l| !l.is_empty())
+            .map(|l| {
+                serde_json::from_str(l)
+                    .expect("old log entry must deserialize; did you add a required field without #[serde(default)]?")
+            })
+            .collect();
+        assert_eq!(entries.len(), 2);
+    }
+
     #[test]
     fn test_peek_agent_name() {
         let temp_dir = TempDir::new().unwrap();

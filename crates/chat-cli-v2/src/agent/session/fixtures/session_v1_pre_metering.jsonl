@@ -1,0 +1,2 @@
+{"version":"v1","kind":"Prompt","data":{"message_id":"msg-1","content":[{"kind":"text","data":"hello"}]}}
+{"version":"v1","kind":"AssistantMessage","data":{"message_id":"msg-2","content":[{"kind":"text","data":"hi there"}]}}
