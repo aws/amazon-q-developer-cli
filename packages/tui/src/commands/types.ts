@@ -61,8 +61,10 @@ export interface CommandContext {
   ) => void;
   /** Show/hide code panel */
   setShowCodePanel: (show: boolean, data?: CodePanelData) => void;
-  /** Clear conversation messages */
+  /** Clear conversation messages (keeps last turn for /clear) */
   clearMessages: () => void;
+  /** Reset all messages (full wipe for /chat new) */
+  resetMessages: () => void;
   /** Clear all command UI state (menus, panels) */
   clearUIState: () => void;
   /** Send message to chat. If displayContent is provided, it's shown in UI instead of content. */

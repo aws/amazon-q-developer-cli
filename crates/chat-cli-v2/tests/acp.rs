@@ -1937,6 +1937,62 @@ async fn sigterm_cleans_up_mcp_child_processes() {
 #[tokio::test]
 #[timeout(30000)]
 #[serial]
+async fn chat_new_creates_fresh_session() {
+    let (mut harness, client, first_session_id, cwd) = AcpTestHarnessBuilder::new("chat_new_creates_fresh_session")
+        .build_with_session()
+        .await;
+
+    harness
+        .push_mock_responses_from_file(&first_session_id.0, "tests/mock_responses/simple_text.jsonl")
+        .await;
+    client
+        .prompt_text(first_session_id.clone(), "hello from first session")
+        .await
+        .expect("prompt failed");
+
+    let first_log = harness.paths.sessions_dir.join(format!("{}.jsonl", first_session_id));
+    let first_log_size = std::fs::metadata(&first_log).expect("first log should exist").len();
+    assert!(first_log_size > 0, "First session log should have content after prompt");
+
+    let second_resp = client
+        .new_session(cwd.clone())
+        .await
+        .expect("second new_session failed");
+    let second_session_id = second_resp.session_id;
+
+    assert_ne!(
+        first_session_id, second_session_id,
+        "New session should have a different ID"
+    );
+
+    // Old session's log must not be truncated or modified by creating a new session
+    let first_metadata = harness.paths.sessions_dir.join(format!("{}.json", first_session_id));
+    assert!(first_metadata.exists(), "First session metadata should still exist");
+    assert!(first_log.exists(), "First session log should still exist");
+    let post_new_size = std::fs::metadata(&first_log)
+        .expect("first log should still exist")
+        .len();
+    assert_eq!(
+        first_log_size, post_new_size,
+        "First session log should not be modified"
+    );
+
+    let list_resp = client.list_sessions(cwd).await.expect("list_sessions failed");
+    let old_session_listed = list_resp
+        .sessions
+        .iter()
+        .any(|s| s.session_id == first_session_id.0.to_string());
+    assert!(old_session_listed, "Old session should appear in list_sessions");
+
+    let second_metadata = harness.paths.sessions_dir.join(format!("{}.json", second_session_id));
+    let second_log = harness.paths.sessions_dir.join(format!("{}.jsonl", second_session_id));
+    assert!(second_metadata.exists(), "Second session metadata should exist");
+    assert!(second_log.exists(), "Second session log should exist");
+}
+
+#[tokio::test]
+#[timeout(30000)]
+#[serial]
 async fn exits_when_stdin_closes() {
     let (mut harness, client, session_id, _) = AcpTestHarnessBuilder::new("stdin_close_exit")
         .with_trust_all(true)

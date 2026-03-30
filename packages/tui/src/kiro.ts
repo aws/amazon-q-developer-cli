@@ -486,6 +486,29 @@ export class Kiro {
     return this.sessionClient.listSessions(cwd);
   }
 
+  async newSession(): Promise<{
+    sessionId: string;
+    currentModel?: { id: string; name: string };
+    currentAgent?: { name: string; welcomeMessage?: string };
+  }> {
+    if (!this.sessionClient) {
+      throw new Error('Kiro not initialized');
+    }
+    const previousSessionId = this.sessionId;
+    logger.debug('[kiro] creating new session');
+    const result = await this.sessionClient.newSession();
+    logger.debug('[kiro] new session created', {
+      sessionId: result.sessionId,
+    });
+    if (previousSessionId) {
+      logger.debug('[kiro] terminating previous session', {
+        previousSessionId,
+      });
+      await this.sessionClient.terminateSession(previousSessionId);
+    }
+    return result;
+  }
+
   async loadSession(
     sessionId: string,
     onHistoryEvent?: (event: AgentStreamEvent) => void

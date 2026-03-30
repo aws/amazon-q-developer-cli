@@ -264,6 +264,7 @@ interface BaseAppActions {
 
   // Chat actions
   clearMessages: () => void;
+  resetMessages: () => void;
   queueMessage: (content: string) => void;
   processQueue: () => Promise<void>;
   clearQueue: () => void;
@@ -1542,7 +1543,7 @@ export const createAppStore = (props: AppStoreProps) => {
     setAutoApproveCrewTools: (value) => set({ autoApproveCrewTools: value }),
     setFocusedCrewIndex: (index) => set({ focusedCrewIndex: index }),
 
-    // Clear conversation but keep last turn visible in UI
+    // Keeps last turn visible for /clear
     clearMessages: () => {
       const msgs = get().messages;
       if (msgs.length < 2) return;
@@ -1558,6 +1559,10 @@ export const createAppStore = (props: AppStoreProps) => {
 
       if (lastUserIndex === -1) return;
       set({ messages: msgs.slice(lastUserIndex) });
+    },
+
+    resetMessages: () => {
+      set({ messages: [] });
     },
 
     setSlashCommands: (commands: SlashCommand[]) => {
@@ -1628,6 +1633,7 @@ export const createAppStore = (props: AppStoreProps) => {
         setShowKnowledgePanel: state.setShowKnowledgePanel,
         setShowCodePanel: state.setShowCodePanel,
         clearMessages: state.clearMessages,
+        resetMessages: state.resetMessages,
         sendMessage: state.sendMessage,
         createStreamEventHandler: state.createStreamEventHandler,
         setSessionId: (id: string | null) => set({ sessionId: id }),
@@ -2165,6 +2171,7 @@ export const createAppStore = (props: AppStoreProps) => {
           setShowKnowledgePanel: state.setShowKnowledgePanel,
           setShowCodePanel: state.setShowCodePanel,
           clearMessages: state.clearMessages,
+          resetMessages: state.resetMessages,
           sendMessage: state.sendMessage,
           createStreamEventHandler: state.createStreamEventHandler,
           setSessionId: (id: string | null) => set({ sessionId: id }),

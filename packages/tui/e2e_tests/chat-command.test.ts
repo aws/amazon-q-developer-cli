@@ -81,4 +81,47 @@ describe('Chat Command', () => {
     expect(store.currentAgent).not.toBeNull();
     expect(store.currentAgent!.name).toBe('test-agent');
   }, 120000);
+
+  it('/chat new starts a fresh conversation', async () => {
+    testCase = await E2ETestCase.builder()
+      .withTerminal({ width: 120, height: 40 })
+      .withTestName('chat-new')
+      .launch();
+
+    await testCase.waitForText('ask a question', 15000);
+    await testCase.waitForSlashCommands(15000);
+
+    const initialSessionId = await testCase.getSessionId();
+
+    await testCase.pushSendMessageResponse([
+      { kind: 'event', data: { kind: 'AssistantResponseEvent', data: { content: 'Hello there!' } } },
+    ]);
+    await testCase.pushSendMessageResponse(null);
+
+    for (const char of 'hi') {
+      await testCase.sendKeys(char);
+      await testCase.sleepMs(50);
+    }
+    await testCase.pressEnter();
+    await testCase.waitForText('Hello there!', 30000);
+
+    for (const char of '/chat new') {
+      await testCase.sendKeys(char);
+      await testCase.sleepMs(50);
+    }
+    await testCase.pressEnter();
+
+    const deadline = Date.now() + 15000;
+    let store = await testCase.getStore();
+    while (store.sessionId === initialSessionId && Date.now() < deadline) {
+      await testCase.sleepMs(200);
+      store = await testCase.getStore();
+    }
+
+    expect(store.sessionId).not.toBe(initialSessionId);
+    expect(store.sessionId).toBeTruthy();
+
+    const hasOldContent = store.messages.some((m) => m.content.includes('Hello there!'));
+    expect(hasOldContent).toBe(false);
+  }, 120000);
 });

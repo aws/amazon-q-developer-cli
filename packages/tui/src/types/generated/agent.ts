@@ -84,7 +84,7 @@ export interface AgentSnapshot {
 
 /** Arguments for /chat command */
 export interface ChatArgs {
-	/** Subcommand: save <path>, load <path>, new, list, delete <id> */
+	/** Subcommand: save <path>, load <path>, new [prompt], list, delete <id> */
 	subcommand?: string;
 }
 

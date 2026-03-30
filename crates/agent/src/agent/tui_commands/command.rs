@@ -194,7 +194,7 @@ pub struct PromptsArgs {
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ChatArgs {
-    /// Subcommand: save <path>, load <path>, new, list, delete <id>
+    /// Subcommand: save <path>, load <path>, new [prompt], list, delete <id>
     #[serde(alias = "value", skip_serializing_if = "Option::is_none")]
     pub subcommand: Option<String>,
 }
@@ -258,7 +258,7 @@ impl TuiCommand {
             TuiCommand::Feedback(_) => "Submit feedback, request features, or report issues",
             TuiCommand::Knowledge(_) => "Manage knowledge base",
             TuiCommand::Prompts(_) => "Select or list available prompts",
-            TuiCommand::Chat(_) => "Load a previous session",
+            TuiCommand::Chat(_) => "Load a previous session or start a new one",
             TuiCommand::Reply(_) => "Open editor pre-filled with the last assistant message to compose a reply",
             TuiCommand::Code(_) => "Code intelligence workspace management",
         }
@@ -284,7 +284,7 @@ impl TuiCommand {
                 "/knowledge [show|add <name> <path>|remove <name|path>|update <path>|clear|cancel]"
             },
             TuiCommand::Prompts(_) => "/prompts [prompt-name]",
-            TuiCommand::Chat(_) => "/chat [save [--force] <path>|load <path>]",
+            TuiCommand::Chat(_) => "/chat [save [--force] <path>|load <path>|new [prompt]]",
             TuiCommand::Reply(_) => "/reply",
             TuiCommand::Code(_) => "/code [status|init|logs|overview|summary]",
         }
@@ -297,7 +297,7 @@ impl TuiCommand {
             TuiCommand::Context(_) => vec!["add", "remove", "clear"],
             TuiCommand::Knowledge(_) => vec!["show", "add", "remove", "update", "clear", "cancel"],
             TuiCommand::Tools(_) => vec!["trust-all", "trust", "untrust", "reset"],
-            TuiCommand::Chat(_) => vec!["save", "load"],
+            TuiCommand::Chat(_) => vec!["save", "load", "new"],
             TuiCommand::Code(_) => vec!["status", "init", "logs", "overview", "summary"],
             _ => vec![],
         }
@@ -379,7 +379,7 @@ impl TuiCommand {
                 let mut meta = serde_json::Map::new();
                 meta.insert("inputType".into(), "selection".into());
                 meta.insert("local".into(), true.into());
-                meta.insert("hint".into(), "save <path>, load <path>".into());
+                meta.insert("hint".into(), "save <path>, load <path>, new [prompt]".into());
                 Some(meta)
             },
             TuiCommand::Reply(_) => None,
@@ -587,7 +587,6 @@ mod tests {
 
     #[test]
     fn test_parse_agent_create_subcommand() {
-        // "create myagent" is passed as args to the "agent" command
         let cmd = TuiCommand::parse("agent", "create myagent").unwrap();
         match cmd {
             TuiCommand::Agent(args) => {
@@ -610,7 +609,6 @@ mod tests {
 
     #[test]
     fn test_parse_agent_edit_no_name() {
-        // "edit" with no agent name — defaults to current agent in the handler
         let cmd = TuiCommand::parse("agent", "edit").unwrap();
         match cmd {
             TuiCommand::Agent(args) => {
@@ -626,5 +624,52 @@ mod tests {
         let subs = cmd.subcommands();
         assert!(subs.contains(&"create"));
         assert!(subs.contains(&"edit"));
+    }
+
+    #[test]
+    fn test_parse_chat_no_args() {
+        let cmd = TuiCommand::parse("chat", "").unwrap();
+        match cmd {
+            TuiCommand::Chat(args) => assert!(args.subcommand.is_none()),
+            _ => panic!("expected Chat"),
+        }
+    }
+
+    #[test]
+    fn test_parse_chat_new() {
+        let cmd = TuiCommand::parse("chat", "new").unwrap();
+        match cmd {
+            TuiCommand::Chat(args) => assert_eq!(args.subcommand, Some("new".to_string())),
+            _ => panic!("expected Chat"),
+        }
+    }
+
+    #[test]
+    fn test_parse_chat_new_with_prompt() {
+        let cmd = TuiCommand::parse("chat", "new hello world").unwrap();
+        match cmd {
+            TuiCommand::Chat(args) => assert_eq!(args.subcommand, Some("new hello world".to_string())),
+            _ => panic!("expected Chat"),
+        }
+    }
+
+    #[test]
+    fn test_deserialize_chat_with_value_alias() {
+        let json = r#"{"command":"chat","args":{"value":"new"}}"#;
+        let cmd: TuiCommand = serde_json::from_str(json).unwrap();
+        match cmd {
+            TuiCommand::Chat(args) => assert_eq!(args.subcommand, Some("new".to_string())),
+            _ => panic!("expected Chat"),
+        }
+    }
+
+    #[test]
+    fn test_deserialize_chat_empty_args() {
+        let json = r#"{"command":"chat","args":{}}"#;
+        let cmd: TuiCommand = serde_json::from_str(json).unwrap();
+        match cmd {
+            TuiCommand::Chat(args) => assert!(args.subcommand.is_none()),
+            _ => panic!("expected Chat"),
+        }
     }
 }

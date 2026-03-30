@@ -36,6 +36,7 @@ function createMockCtx(): CommandContext & {
     setShowKnowledgePanel: spy('setShowKnowledgePanel') as any,
     setShowCodePanel: spy('setShowCodePanel') as any,
     clearMessages: spy('clearMessages') as any,
+    resetMessages: spy('resetMessages') as any,
     sendMessage: spy('sendMessage') as any,
     clearUIState: spy('clearUIState') as any,
     createStreamEventHandler: spy('createStreamEventHandler') as any,
@@ -218,6 +219,85 @@ describe('dispatch', () => {
         'error',
         3000,
       ]);
+    });
+
+    it('/chat new skips selection menu, resets messages and UI state', async () => {
+      const ctx = createMockCtx();
+      (ctx.kiro as any).newSession = mock(() =>
+        Promise.resolve({
+          sessionId: 'new-session-123',
+          currentModel: { id: 'model-1', name: 'Model One' },
+          currentAgent: { name: 'default' },
+        })
+      );
+
+      const cmd = makeCmd({
+        name: '/chat',
+        meta: { inputType: 'selection', local: true },
+      });
+      await dispatch(cmd, 'new', ctx);
+
+      expect((ctx.kiro.listSessions as any)?.mock?.calls?.length ?? 0).toBe(0);
+      expect(ctx._spies.resetMessages!).toHaveBeenCalled();
+      expect(ctx._spies.clearUIState!).toHaveBeenCalled();
+    });
+
+    it('/chat new with prompt sends message after session creation', async () => {
+      const ctx = createMockCtx();
+      let resolveNewSession: (v: any) => void;
+      const newSessionPromise = new Promise((r) => {
+        resolveNewSession = r;
+      });
+      (ctx.kiro as any).newSession = mock(() => newSessionPromise);
+
+      const cmd = makeCmd({
+        name: '/chat',
+        meta: { inputType: 'selection', local: true },
+      });
+      await dispatch(cmd, 'new hello world', ctx);
+
+      // Resolve the newSession promise
+      resolveNewSession!({
+        sessionId: 'new-session-456',
+        currentModel: { id: 'model-1', name: 'Model One' },
+        currentAgent: { name: 'default' },
+      });
+      // Wait for microtasks
+      await new Promise((r) => setTimeout(r, 10));
+
+      expect(ctx._spies.setSessionId!.mock.calls[0]?.[0]).toBe(
+        'new-session-456'
+      );
+      expect(ctx._spies.sendMessage!.mock.calls[0]?.[0]).toBe('hello world');
+    });
+
+    it('/chat <sessionId> loads existing session without calling newSession', async () => {
+      const ctx = createMockCtx();
+      const newSessionSpy = mock(() => Promise.resolve({}));
+      (ctx.kiro as any).newSession = newSessionSpy;
+      let resolveLoad: (v: any) => void;
+      const loadPromise = new Promise((r) => {
+        resolveLoad = r;
+      });
+      (ctx.kiro as any).loadSession = mock(() => loadPromise);
+
+      const cmd = makeCmd({
+        name: '/chat',
+        meta: { inputType: 'selection', local: true },
+      });
+      await dispatch(cmd, 'abc-123', ctx);
+
+      resolveLoad!({
+        sessionId: 'abc-123',
+        currentModel: { id: 'model-1', name: 'Model One' },
+      });
+      await new Promise((r) => setTimeout(r, 10));
+
+      // newSession should NOT have been called
+      expect(newSessionSpy.mock.calls.length).toBe(0);
+      // loadSession should have been called with the session ID
+      expect((ctx.kiro as any).loadSession.mock.calls[0]?.[0]).toBe('abc-123');
+      expect(ctx._spies.setSessionId!.mock.calls[0]?.[0]).toBe('abc-123');
     });
   });
 });

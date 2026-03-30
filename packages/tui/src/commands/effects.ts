@@ -78,6 +78,7 @@ type EffectName =
   | 'quit'
   | 'pasteImage'
   | 'promptEditor'
+  | 'newSession'
   | 'loadSession'
   | 'replyEditor'
   | 'showCodePanel'
@@ -362,6 +363,43 @@ const effectHandlers: Record<EffectName, EffectHandler> = {
     }
   },
 
+  newSession: (_result, ctx, _cmd, args) => {
+    const prompt = args === 'new' ? null : args.slice(4).trim() || null;
+    ctx.clearUIState();
+    ctx.resetMessages();
+    ctx.setLoadingMessage('Starting new conversation...');
+    ctx.kiro
+      .newSession()
+      .then((session) => {
+        logger.debug('[chat] newSession resolved', {
+          sessionId: session.sessionId,
+        });
+        ctx.setLoadingMessage(null);
+        ctx.setSessionId(session.sessionId);
+        if (session.currentModel) ctx.setCurrentModel(session.currentModel);
+        if (session.currentAgent) ctx.setCurrentAgent(session.currentAgent);
+        ctx.showAlert(
+          'New conversation started. Use /chat to switch back.',
+          'success',
+          3000
+        );
+        if (prompt) ctx.sendMessage(prompt);
+      })
+      .catch((err: unknown) => {
+        logger.error('[chat] newSession failed', {
+          err: JSON.stringify(err),
+          stack: err instanceof Error ? err.stack : undefined,
+        });
+        ctx.setLoadingMessage(null);
+        const message =
+          err instanceof Error
+            ? err.message
+            : 'Failed to start new conversation';
+        ctx.showAlert(message, 'error', 5000);
+      });
+    return true;
+  },
+
   loadSession: (_result, ctx, _cmd, args) => {
     if (!args) return;
 
@@ -390,6 +428,7 @@ const effectHandlers: Record<EffectName, EffectHandler> = {
       args = data.sessionId;
     }
 
+    // /chat <sessionId> — load an existing session
     const sessionId = args;
     ctx.clearUIState();
     ctx.setLoadingMessage(`Loading session ${sessionId}...`);
@@ -576,7 +615,11 @@ export function runEffect(
   args: string
 ): boolean {
   const cmdName = cmd.name.replace(/^\//, '');
-  const effectName = commandEffects[cmdName as CommandName];
+  let effectName = commandEffects[cmdName as CommandName];
+  // Route /chat new [prompt] to the dedicated newSession handler
+  if (cmdName === 'chat' && (args === 'new' || args.startsWith('new '))) {
+    effectName = 'newSession';
+  }
   if (effectName) {
     return effectHandlers[effectName]?.(result, ctx, cmd, args) === true;
   }
