@@ -39,15 +39,25 @@ pub fn canonicalize_path(path: impl AsRef<str>) -> Result<String, UtilError> {
 pub fn canonicalize_path_sys<P: SystemProvider>(path: impl AsRef<str>, provider: &P) -> Result<String, UtilError> {
     let expanded =
         shellexpand::full_with_context(path.as_ref(), shellexpand_home(provider), shellexpand_context(provider))?;
-    let path_buf = if !expanded.starts_with("/") {
+    #[cfg(windows)]
+    let path_buf = if Path::new(expanded.as_ref() as &str).is_absolute() {
+        PathBuf::from(expanded.as_ref() as &str)
+    } else {
+        let current_dir = provider
+            .cwd()
+            .with_context(|| "could not get current directory".to_string())?;
+        current_dir.join(expanded.as_ref() as &str)
+    };
+    #[cfg(not(windows))]
+    let path_buf = if expanded.starts_with("/") {
+        // Already absolute path
+        PathBuf::from(expanded.as_ref() as &str)
+    } else {
         // Convert relative paths to absolute paths
         let current_dir = provider
             .cwd()
             .with_context(|| "could not get current directory".to_string())?;
         current_dir.join(expanded.as_ref() as &str)
-    } else {
-        // Already absolute path
-        PathBuf::from(expanded.as_ref() as &str)
     };
 
     // Try canonicalize first, fallback to manual normalization if it fails

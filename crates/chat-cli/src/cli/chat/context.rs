@@ -389,7 +389,11 @@ async fn process_path(
     };
 
     // Handle absolute, relative paths, and glob patterns
-    let full_path = if expanded_path.starts_with('/') {
+    #[cfg(windows)]
+    let is_absolute = Path::new(&expanded_path).is_absolute();
+    #[cfg(not(windows))]
+    let is_absolute = expanded_path.starts_with('/');
+    let full_path = if is_absolute {
         expanded_path
     } else {
         os.env.current_dir()?.join(&expanded_path).to_string_lossy().to_string()
