@@ -238,11 +238,8 @@ export const MarkdownRenderer = React.memo(function MarkdownRenderer({
             mid: string,
             right: string,
             h: string
-          ) =>
-            left +
-            colWidths.map((w) => h.repeat(w + 2)).join(mid) +
-            right;
-    
+          ) => left + colWidths.map((w) => h.repeat(w + 2)).join(mid) + right;
+
           return (
             <Box key={i} flexDirection="column">
               <Text>{chalk.dim(border('┌', '┬', '┐', '─'))}</Text>
@@ -252,11 +249,7 @@ export const MarkdownRenderer = React.memo(function MarkdownRenderer({
                   chalk.bold(
                     headers
                       .map((h, ci) =>
-                        padCell(
-                          h,
-                          colWidths[ci] || 3,
-                          alignments[ci] || 'left'
-                        )
+                        padCell(h, colWidths[ci] || 3, alignments[ci] || 'left')
                       )
                       .join(` ${chalk.dim('│')} `)
                   )
@@ -266,17 +259,15 @@ export const MarkdownRenderer = React.memo(function MarkdownRenderer({
               <Text>{chalk.dim(border('├', '┼', '┤', '─'))}</Text>
               {rows.map((row, ri) => (
                 <Text key={ri}>
-                  {chalk.dim('│')} {color(
+                  {chalk.dim('│')}{' '}
+                  {color(
                     row
                       .map((c, ci) =>
-                        padCell(
-                          c,
-                          colWidths[ci] || 3,
-                          alignments[ci] || 'left'
-                        )
+                        padCell(c, colWidths[ci] || 3, alignments[ci] || 'left')
                       )
                       .join(` ${chalk.dim('│')} `)
-                  )} {chalk.dim('│')}
+                  )}{' '}
+                  {chalk.dim('│')}
                 </Text>
               ))}
               <Text>{chalk.dim(border('└', '┴', '┘', '─'))}</Text>
