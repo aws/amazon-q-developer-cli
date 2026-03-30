@@ -65,20 +65,32 @@ export const CrewMonitorScreen: React.FC = () => {
       isPending: session.status === 'pending',
       dependsOn: (session as any).dependsOn ?? [],
     }));
+    // Build a lookup from name → created timestamp for stable tiebreaking
+    const createdByName = new Map(
+      sessions.map((s) => [s.name, s.created.getTime()])
+    );
+    const tiebreak = (a: (typeof unsorted)[0], b: (typeof unsorted)[0]) => {
+      const ta = createdByName.get(a.name) ?? 0;
+      const tb = createdByName.get(b.name) ?? 0;
+      return ta !== tb ? ta - tb : a.name.localeCompare(b.name);
+    };
+
     const placed = new Set<string>();
     const sorted: Stage[] = [];
     const remaining = [...unsorted];
     while (remaining.length > 0) {
-      const next = remaining.findIndex((s) =>
+      const ready = remaining.filter((s) =>
         s.dependsOn.every((d: string) => placed.has(d))
       );
-      if (next === -1) {
-        sorted.push(...remaining);
+      if (ready.length === 0) {
+        sorted.push(...remaining.sort(tiebreak));
         break;
       }
-      const [stage] = remaining.splice(next, 1);
-      placed.add(stage!.name);
-      sorted.push(stage!);
+      ready.sort(tiebreak);
+      const stage = ready[0]!;
+      remaining.splice(remaining.indexOf(stage), 1);
+      placed.add(stage.name);
+      sorted.push(stage);
     }
     return sorted;
   }, [sessions]);
