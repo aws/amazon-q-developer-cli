@@ -373,7 +373,8 @@ Workflow:
                         },
                         "dry_run": {
                             "type": "boolean",
-                            "description": "Preview changes without writing (optional for rename_symbol/pattern_rewrite, defaults to true)"
+                            "description": "Preview changes without writing (optional for rename_symbol/pattern_rewrite). After reviewing dry-run results, call again with dry_run=false to apply.",
+                            "default": true
                         }
                     },
                     "required": ["operation"]

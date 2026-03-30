@@ -699,9 +699,20 @@ fn format_pattern_matches(matches: &[code_agent_sdk::PatternMatch]) -> ToolExecu
 }
 
 fn format_rewrite_result(result: &code_agent_sdk::RewriteResult, dry_run: bool) -> ToolExecutionOutput {
-    let prefix = if dry_run { "Would modify" } else { "Modified" };
-    text_output(format!(
-        "{} {} files with {} replacements",
-        prefix, result.files_modified, result.replacements
-    ))
+    let files = if result.modified_files.is_empty() {
+        String::new()
+    } else {
+        format!("\nFiles: {}", result.modified_files.join(", "))
+    };
+    if dry_run {
+        text_output(format!(
+            "[Dry Run] Would modify {} files with {} replacements.{}\nSet dry_run=false to apply.",
+            result.files_modified, result.replacements, files
+        ))
+    } else {
+        text_output(format!(
+            "Modified {} files with {} replacements.{}",
+            result.files_modified, result.replacements, files
+        ))
+    }
 }

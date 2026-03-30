@@ -89,7 +89,8 @@ pub const TREESITTER_ONLY_SCHEMA: &str = r#"
         },
         "dry_run": {
             "type": "boolean",
-            "description": "Preview changes without writing (optional for pattern_rewrite, defaults to true)"
+            "description": "Preview changes without writing (optional for pattern_rewrite). After reviewing dry-run results, call again with dry_run=false to apply.",
+            "default": true
         },
         "top_level_only": {
             "type": "boolean",
@@ -194,7 +195,8 @@ pub const CODE_TOOL_SCHEMA: &str = r#"
         },
         "dry_run": {
             "type": "boolean",
-            "description": "Preview changes without writing (defaults to true)"
+            "description": "Preview changes without writing. After reviewing dry-run results, call again with dry_run=false to apply.",
+            "default": true
         }
     },
     "required": ["operation"]
