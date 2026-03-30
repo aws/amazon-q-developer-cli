@@ -697,6 +697,13 @@ pub(crate) fn get_available_tool_names(
         }
     });
 
+    // Summary must always be available for subagents — they need it to return results to the
+    // parent agent. The retain above only keeps Summary if already present, but agent configs
+    // with specific tool lists (not "*") won't include it, so we must force-insert it.
+    if is_subagent {
+        tool_names.insert(CanonicalToolName::BuiltIn(BuiltInToolName::Summary));
+    }
+
     // If FsRead is included, also include ImageRead and Ls
     // TODO - merge ImageRead and Ls into the FsRead tool
     if tool_names.contains(&CanonicalToolName::BuiltIn(BuiltInToolName::FsRead)) {
@@ -1002,9 +1009,21 @@ mod tests {
         }
 
         #[test]
-        fn test_subagent_includes_summary_excludes_crew() {
+        fn test_subagent_always_includes_summary() {
+            // Summary is always included for subagents, even with specific tool lists
             let names = run(&["*"], &HashMap::new(), &[], true, false);
             assert!(names.contains(&"summary".into()));
+
+            let names = run(&["read", "shell", "code"], &HashMap::new(), &[], true, false);
+            assert!(names.contains(&"summary".into()));
+
+            let names = run(&[], &HashMap::new(), &[], true, false);
+            assert!(names.contains(&"summary".into()));
+        }
+
+        #[test]
+        fn test_subagent_excludes_crew() {
+            let names = run(&["*"], &HashMap::new(), &[], true, false);
             assert!(!names.contains(&"subagent".into()));
         }
 
@@ -1013,6 +1032,9 @@ mod tests {
             let names = run(&["*"], &HashMap::new(), &[], false, false);
             assert!(!names.contains(&"summary".into()));
             assert!(names.contains(&"subagent".into()));
+
+            let names = run(&["read", "shell", "code"], &HashMap::new(), &[], false, false);
+            assert!(!names.contains(&"summary".into()));
         }
 
         #[test]
