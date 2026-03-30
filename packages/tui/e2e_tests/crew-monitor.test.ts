@@ -47,9 +47,9 @@ describe('Crew Monitor', () => {
     expect(src).toContain('stages');
   });
 
-  it('CrewMonitorScreen contains WORKER OUTPUT text', () => {
+  it('CrewMonitorScreen contains SUBAGENT OUTPUT text', () => {
     const src = fs.readFileSync(path.join(ROOT, 'src/components/layout/crew-monitor/WorkerOutputPanel.tsx'), 'utf8');
-    expect(src).toContain('WORKER OUTPUT');
+    expect(src).toContain('SUBAGENT OUTPUT');
   });
 
   it('CrewMonitorScreen contains ProgressChip import', () => {
