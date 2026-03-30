@@ -13,6 +13,7 @@ mod mcp_client;
 mod mcp_registry;
 mod os;
 mod request;
+mod rollout;
 mod telemetry;
 mod theme;
 mod util;

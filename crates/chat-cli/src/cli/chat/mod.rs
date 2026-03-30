@@ -224,6 +224,10 @@ use crate::constants::{
 };
 use crate::database::settings::Setting;
 use crate::os::Os;
+use crate::rollout::{
+    Feature,
+    Rollout,
+};
 use crate::telemetry::core::{
     AgentConfigInitArgs,
     ChatAddedMessageParams,
@@ -307,7 +311,7 @@ pub struct ChatArgs {
 
 impl ChatArgs {
     /// Resolve whether to launch the TUI.
-    /// Precedence: CLI flag > env var KIRO_CHAT_UI > setting chat.ui > default (legacy)
+    /// Precedence: CLI flag > env var KIRO_CHAT_UI > setting chat.ui > rollout % > default (legacy)
     pub fn should_launch_tui(&self, os: &Os) -> bool {
         // CLI flags take highest precedence
         if self.tui {
@@ -325,6 +329,10 @@ impl ChatArgs {
         // Setting next
         if let Some(val) = os.database.settings.get_string(Setting::ChatUi) {
             return val.eq_ignore_ascii_case("tui");
+        }
+
+        if Rollout::is_enabled(Feature::Tui) {
+            return true;
         }
 
         // Default: legacy

@@ -16,6 +16,7 @@ use crate::database::{
     AuthProfile,
     Database,
 };
+use crate::rollout::Rollout;
 use crate::telemetry::TelemetryThread;
 
 const WINDOWS_USER_HOME: &str = "C:\\Users\\testuser";
@@ -53,6 +54,10 @@ impl Os {
         let token = BuilderIdToken::load(&database, None).await?;
         let region = token.as_ref().and_then(|t| t.region.as_deref());
         let telemetry = TelemetryThread::new(&env, &fs, &mut database, region).await?;
+        Rollout::init(
+            database.get_client_id().ok().flatten(),
+            database.get_start_url().ok().flatten(),
+        );
 
         Ok(Self {
             env,

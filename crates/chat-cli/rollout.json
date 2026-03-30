@@ -1,0 +1,16 @@
+{
+  "tui": {
+    "description": "Gradual rollout of the new React/Ink TUI to replace legacy terminal UI",
+    "treatment_percent": 0,
+    "segment": "internal"
+  },
+  "test": {
+    "description": "Test experiment for unit tests",
+    "treatment_percent": 100
+  },
+  "test_internal_only": {
+    "description": "Test experiment for unit tests (internal only)",
+    "treatment_percent": 100,
+    "segment": "internal"
+  }
+}
