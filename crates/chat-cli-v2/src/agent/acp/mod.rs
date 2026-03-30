@@ -10,4 +10,5 @@ pub mod schema;
 pub mod session_manager;
 pub mod session_tool_handler;
 mod slash_router;
+mod stdin_reader;
 pub mod subagent_tool;

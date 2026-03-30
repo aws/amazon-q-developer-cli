@@ -112,10 +112,7 @@ use tokio::sync::{
     mpsc,
     oneshot,
 };
-use tokio_util::compat::{
-    TokioAsyncReadCompatExt,
-    TokioAsyncWriteCompatExt,
-};
+use tokio_util::compat::TokioAsyncWriteCompatExt;
 use tracing::{
     debug,
     error,
@@ -2683,6 +2680,7 @@ pub async fn execute(os: &mut Os, args: agent::types::AcpSpawnArgs) -> eyre::Res
     // [crate::agent::acp::session_manager::SessionManager] for the general flow of request
     // response processing. The TLDR; is the request path and response path are _not_ done on the
     // same task.
+    let (stdin_reader, stdin_closed) = super::stdin_reader::StdinReader::new();
     let serve_future = AgentToClient::builder()
         .name("kiro-cli-agent")
         .on_receive_request(
@@ -2979,11 +2977,12 @@ pub async fn execute(os: &mut Os, args: agent::types::AcpSpawnArgs) -> eyre::Res
         )
         .serve(sacp::ByteStreams::new(
             tokio::io::stdout().compat_write(),
-            tokio::io::stdin().compat(),
+            stdin_reader,
         ));
 
-    // Race the SACP connection against SIGTERM/SIGINT so we always get a chance
-    // to run graceful shutdown (which kills MCP child processes).
+    // Race serve against SIGTERM/SIGINT/pipe-close. sacp's serve() doesn't exit
+    // on transport EOF (merged stream keeps other senders alive), so we detect
+    // it independently via stdin_closed.
     #[cfg(unix)]
     {
         let mut sigterm = tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate())
@@ -3000,6 +2999,9 @@ pub async fn execute(os: &mut Os, args: agent::types::AcpSpawnArgs) -> eyre::Res
             _ = tokio::signal::ctrl_c() => {
                 info!("Received SIGINT, shutting down");
             }
+            _ = stdin_closed => {
+                info!("Stdin closed (parent pipe gone), shutting down");
+            }
         }
     }
     #[cfg(not(unix))]
@@ -3012,6 +3014,9 @@ pub async fn execute(os: &mut Os, args: agent::types::AcpSpawnArgs) -> eyre::Res
             }
             _ = tokio::signal::ctrl_c() => {
                 info!("Received SIGINT, shutting down");
+            }
+            _ = stdin_closed => {
+                info!("Stdin closed (parent pipe gone), shutting down");
             }
         }
     }
@@ -3026,12 +3031,8 @@ pub async fn execute(os: &mut Os, args: agent::types::AcpSpawnArgs) -> eyre::Res
         warn!("Graceful shutdown timed out, some MCP processes may not have been cleaned up");
     }
 
-    // tokio::io::stdin()'s blocking read thread may still be alive after
-    // serve_future completes (whether from a signal, pipe closure, or parent
-    // death) and can prevent the runtime from shutting down.
-    // Spawn a background thread to force exit if the runtime hangs.
-    // The 3-second delay gives the caller time to flush telemetry (1s timeout)
-    // and drop the tokio runtime before we force-kill.
+    // Safety net: if the tokio runtime hangs during shutdown (e.g. a blocking
+    // thread stuck in a syscall), force-exit after giving telemetry time to flush.
     // See https://github.com/tokio-rs/tokio/issues/2466
     std::thread::spawn(|| {
         std::thread::sleep(std::time::Duration::from_secs(3));

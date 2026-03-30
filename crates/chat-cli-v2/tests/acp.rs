@@ -1933,3 +1933,33 @@ async fn sigterm_cleans_up_mcp_child_processes() {
         );
     }
 }
+
+#[tokio::test]
+#[timeout(30000)]
+#[serial]
+async fn exits_when_stdin_closes() {
+    let (mut harness, client, session_id, _) = AcpTestHarnessBuilder::new("stdin_close_exit")
+        .with_trust_all(true)
+        .build_with_session()
+        .await;
+
+    // Do a real message exchange so the connection is fully warmed up.
+    harness
+        .push_mock_responses_from_file(&session_id.0, "tests/mock_responses/simple_text.jsonl")
+        .await;
+    client
+        .prompt_text(session_id.clone(), "hello")
+        .await
+        .expect("prompt failed");
+
+    // Drop the client, which owns stdin/stdout. Closing stdin simulates
+    // the parent process (TUI) dying or doing a half-close.
+    drop(client);
+
+    let status = tokio::time::timeout(Duration::from_secs(10), harness.child.wait())
+        .await
+        .expect("agent did not exit after stdin closed")
+        .expect("failed to wait for agent");
+
+    assert!(status.success(), "agent should exit cleanly, got {:?}", status);
+}
