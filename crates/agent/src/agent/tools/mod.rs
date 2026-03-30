@@ -693,6 +693,11 @@ pub(crate) fn get_available_tool_names(
             CanonicalToolName::BuiltIn(BuiltInToolName::AgentCrew) => !is_subagent,
             CanonicalToolName::BuiltIn(BuiltInToolName::Summary) => is_subagent,
             CanonicalToolName::BuiltIn(BuiltInToolName::Task) => !is_subagent,
+            // Filter out tools that are in a server's disabledTools list
+            CanonicalToolName::Mcp { server_name, tool_name } => !mcp_server_configs
+                .iter()
+                .find(|c| &c.server_name == server_name)
+                .is_some_and(|c| matches_any_pattern(c.config.disabled_tools(), tool_name)),
             _ => true,
         }
     });
@@ -710,18 +715,6 @@ pub(crate) fn get_available_tool_names(
         tool_names.insert(CanonicalToolName::BuiltIn(BuiltInToolName::ImageRead));
         tool_names.insert(CanonicalToolName::BuiltIn(BuiltInToolName::Ls));
     }
-
-    // Filter out tools that are in a server's disabledTools list
-    tool_names.retain(|name| {
-        if let CanonicalToolName::Mcp { server_name, tool_name } = name {
-            !mcp_server_configs
-                .iter()
-                .find(|c| &c.server_name == server_name)
-                .is_some_and(|c| matches_any_pattern(c.config.disabled_tools(), tool_name))
-        } else {
-            true
-        }
-    });
 
     tool_names
 }
