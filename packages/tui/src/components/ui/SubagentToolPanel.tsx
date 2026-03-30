@@ -145,16 +145,18 @@ export const SubagentToolPanel = React.memo<SubagentToolPanelProps>(
     const allDone = rows.every(
       (r) => r.status === 'terminated' || r.status === 'failed'
     );
-    const barColor = isStatic || allDone
-      ? getColor('success').hex
-      : getColor('brand').hex;
+    const barColor =
+      isStatic || allDone ? getColor('success').hex : getColor('brand').hex;
 
     return (
       <Box flexDirection="column">
         {!isStatic && rows.length > 1 && (
           <Box flexDirection="row">
             <Text backgroundColor={barColor}> </Text>
-            <Text> {getColor('secondary')('ctrl+d/u navigate · ctrl+g monitor')}</Text>
+            <Text>
+              {' '}
+              {getColor('secondary')('ctrl+d/u navigate · ctrl+g monitor')}
+            </Text>
           </Box>
         )}
         {rows.map((row, i) => {
@@ -183,22 +185,22 @@ export const SubagentToolPanel = React.memo<SubagentToolPanelProps>(
             <Box key={row.name} flexDirection="row">
               <Text backgroundColor={barColor}> </Text>
               <Box marginLeft={1} flexDirection="row" gap={1}>
-              <AgentBullet
-                isDone={isDone}
-                isError={isError}
-                isStatic={isStatic}
-                getColor={getColor}
-                agentName={row.agentName}
-              />
-              <Text>
-                {isFocused
-                  ? getColor('primary').bold.underline(
-                      row.name.padEnd(maxNameLen)
-                    )
-                  : getColor('primary')(row.name.padEnd(maxNameLen))}
-              </Text>
-              <Text>{agentColor(row.agentName.padEnd(maxAgentLen))}</Text>
-              <Text>{getColor(statusColor)(statusText)}</Text>
+                <AgentBullet
+                  isDone={isDone}
+                  isError={isError}
+                  isStatic={isStatic}
+                  getColor={getColor}
+                  agentName={row.agentName}
+                />
+                <Text>
+                  {isFocused
+                    ? getColor('primary').bold.underline(
+                        row.name.padEnd(maxNameLen)
+                      )
+                    : getColor('primary')(row.name.padEnd(maxNameLen))}
+                </Text>
+                <Text>{agentColor(row.agentName.padEnd(maxAgentLen))}</Text>
+                <Text>{getColor(statusColor)(statusText)}</Text>
               </Box>
             </Box>
           );

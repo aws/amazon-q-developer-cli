@@ -165,7 +165,9 @@ export const CrewMonitorScreen: React.FC = () => {
     return (
       <Box flexDirection="column" width={width} height={height}>
         <Box paddingX={2}>
-          <Text bold color="white">AGENT MONITOR</Text>
+          <Text bold color="white">
+            AGENT MONITOR
+          </Text>
         </Box>
         <Box flexGrow={1} justifyContent="center" alignItems="center">
           <Box flexDirection="column" alignItems="center">

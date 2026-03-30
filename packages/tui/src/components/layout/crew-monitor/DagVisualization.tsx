@@ -155,7 +155,9 @@ export const DagVisualization = React.memo(function DagVisualization({
         )}
         <Text bold={sel}>
           {' '}
-          <Text color="gray" underline={sel} bold={sel}>{paddedName}</Text>{' '}
+          <Text color="gray" underline={sel} bold={sel}>
+            {paddedName}
+          </Text>{' '}
           <Text color={st.color}>{statusText}</Text>{' '}
           <Text color="gray">{fill}</Text>
         </Text>

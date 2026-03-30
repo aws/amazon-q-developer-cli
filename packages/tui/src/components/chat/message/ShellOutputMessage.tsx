@@ -4,7 +4,7 @@ import { Text } from '../../ui/text/Text.js';
 import { StatusBar, useStatusBar } from '../status-bar/StatusBar.js';
 import { useTheme } from '../../../hooks/useThemeContext.js';
 import { useTerminalSize } from '../../../hooks/useTerminalSize.js';
-import { expandTabs, normalizeLineEndings } from '../../../utils/string.js';
+import { normalizeLineEndings } from '../../../utils/string.js';
 import type { StatusType } from '../../../types/componentTypes.js';
 
 const HEAD_LINES = 5;

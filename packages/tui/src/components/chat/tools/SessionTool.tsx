@@ -99,7 +99,13 @@ export const SessionTool = React.memo(function SessionTool({
   if (result?.status === 'error') {
     return (
       <Box flexDirection="column">
-        <StatusInfo title={title} target={target} shimmer={false} bold={isCrewTool} underline={isCrewTool} />
+        <StatusInfo
+          title={title}
+          target={target}
+          shimmer={false}
+          bold={isCrewTool}
+          underline={isCrewTool}
+        />
         <Box marginLeft={2}>
           <Text>{getColor('error')(result.error)}</Text>
         </Box>

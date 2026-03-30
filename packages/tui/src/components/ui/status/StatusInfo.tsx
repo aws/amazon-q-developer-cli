@@ -56,13 +56,14 @@ export const StatusInfo = React.memo(function StatusInfo({
     useStatusColor && status
       ? getStatusColor(status, getColor)
       : getColor('primary');
-  const styledTitle = bold && underline
-    ? titleColor.bold.underline
-    : bold
-      ? titleColor.bold
-      : underline
-        ? titleColor.underline
-        : titleColor;
+  const styledTitle =
+    bold && underline
+      ? titleColor.bold.underline
+      : bold
+        ? titleColor.bold
+        : underline
+          ? titleColor.underline
+          : titleColor;
   const targetColor = getColor('highlight');
 
   return (
