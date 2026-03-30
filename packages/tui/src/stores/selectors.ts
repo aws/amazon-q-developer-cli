@@ -66,6 +66,7 @@ export const useProcessingState = () =>
     useShallow((state) => ({
       isProcessing: state.isProcessing,
       isCompacting: state.isCompacting,
+      isShellEscape: state.isShellEscape,
       pendingApproval: state.pendingApproval,
       cancelMessage: state.cancelMessage,
       noInteractive: state.noInteractive,

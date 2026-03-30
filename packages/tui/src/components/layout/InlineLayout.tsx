@@ -129,8 +129,13 @@ export const InlineLayout: React.FC = () => {
     useNotificationState();
   const { dismissTransientAlert, setAgentError, setLoadingMessage } =
     useNotificationActions();
-  const { isProcessing, isCompacting, pendingApproval, noInteractive } =
-    useProcessingState();
+  const {
+    isProcessing,
+    isCompacting,
+    isShellEscape,
+    pendingApproval,
+    noInteractive,
+  } = useProcessingState();
   const { cancelApproval, approvalMode } = useApprovalState();
   const {
     toolOutputsExpanded,
@@ -568,9 +573,11 @@ export const InlineLayout: React.FC = () => {
             placeholder={
               pendingApproval
                 ? 'queue up your next message'
-                : currentAgent?.name === 'kiro_planner'
-                  ? 'ask a question, or describe a task ↵  ·  exit plan mode: shift+tab'
-                  : undefined
+                : isShellEscape
+                  ? 'running shell command · ctrl+c to cancel'
+                  : currentAgent?.name === 'kiro_planner'
+                    ? 'ask a question, or describe a task ↵  ·  exit plan mode: shift+tab'
+                    : undefined
             }
             hint={
               promptHint ||

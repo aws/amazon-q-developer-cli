@@ -119,7 +119,7 @@ export const StatusBar = React.memo(function StatusBar({
         setLineCount(height);
       }
     }
-  }, [remeasureKey]);
+  }, [remeasureKey, children]);
 
   const contextValue = useMemo(
     () => ({

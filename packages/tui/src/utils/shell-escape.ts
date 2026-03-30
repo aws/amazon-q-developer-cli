@@ -128,6 +128,13 @@ export function executeShellEscapeStreaming(
     } catch {
       // process may have already exited, ignore
     }
+    setTimeout(() => {
+      try {
+        child.kill('SIGKILL');
+      } catch {
+        // already dead, ignore
+      }
+    }, 2000);
   };
 
   return { promise, kill };

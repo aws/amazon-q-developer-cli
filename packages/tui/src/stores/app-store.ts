@@ -495,6 +495,7 @@ export interface AppState {
   // Abort controller for current stream
   currentAbortController: AbortController | null;
   cancelInProgress: Promise<void> | null;
+  isShellEscape: boolean;
 
   // Non-interactive mode
   noInteractive: boolean;
@@ -716,6 +717,7 @@ export const createAppStore = (props: AppStoreProps) => {
     pendingImages: [],
     currentAbortController: null,
     cancelInProgress: null,
+    isShellEscape: false,
     streamingBuffer: { startBuffering: null, stopBuffering: null },
 
     // Task management
@@ -2310,8 +2312,15 @@ export const createAppStore = (props: AppStoreProps) => {
       const state = get();
       state.resetExitSequence();
 
-      // Queue if processing
+      // Queue if processing — but always allow /quit and /exit through
       if (state.isProcessing) {
+        const lower = trimmed.toLowerCase();
+        if (lower === '/quit' || lower === '/exit') {
+          state.clearInput();
+          state.kiro.close();
+          state.onExit?.();
+          process.exit(0);
+        }
         state.queueMessage(trimmed);
         state.clearInput();
         return;
@@ -2447,6 +2456,7 @@ export const createAppStore = (props: AppStoreProps) => {
           // Add initial empty model message and set processing
           set((state) => ({
             isProcessing: true,
+            isShellEscape: true,
             messages: [
               ...state.messages,
               {
@@ -2488,6 +2498,7 @@ export const createAppStore = (props: AppStoreProps) => {
             result.exitCode !== 0 ? `\n\n[exit code: ${result.exitCode}]` : '';
           set((state) => ({
             isProcessing: false,
+            isShellEscape: false,
             currentAbortController: null,
             messages: state.messages.map((msg) =>
               msg.id === outputMsgId
@@ -2495,6 +2506,7 @@ export const createAppStore = (props: AppStoreProps) => {
                 : msg
             ),
           }));
+          await get().processQueue();
         }
         return;
       }

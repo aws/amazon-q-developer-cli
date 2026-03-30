@@ -16,6 +16,7 @@ export const AppContainer: React.FC = () => {
   const clearCommandInput = useAppStore((state) => state.clearCommandInput);
   const commandInputValue = useAppStore((state) => state.commandInputValue);
   const isProcessing = useAppStore((state) => state.isProcessing);
+  const isShellEscape = useAppStore((state) => state.isShellEscape);
   const cancelMessage = useAppStore((state) => state.cancelMessage);
   const pendingApproval = useAppStore((state) => state.pendingApproval);
 
@@ -43,7 +44,11 @@ export const AppContainer: React.FC = () => {
     } else if (key.ctrl && userInput === 'd') {
       // Ctrl+D only starts exit sequence when idle with empty input;
       // when there's text, PromptInput handles it as forward-delete.
-      if (!isProcessing && !commandInputValue) {
+      // During shell escapes, allow Ctrl+D to cancel and exit.
+      if (isShellEscape) {
+        cancelMessage();
+        incrementExitSequence();
+      } else if (!isProcessing && !commandInputValue) {
         incrementExitSequence();
       }
     } else if (key.escape) {

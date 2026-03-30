@@ -179,7 +179,8 @@ const ActiveTurnTail = React.memo(function ActiveTurnTail({
         !lastVisibleMsg.isFinished) ||
       (lastVisibleMsg.role === MessageRole.Model &&
         isProcessing &&
-        !!lastVisibleMsg.content)
+        (!!lastVisibleMsg.content ||
+          ('shellOutput' in lastVisibleMsg && lastVisibleMsg.shellOutput)))
     : false;
   const showThinking = isProcessing && !hasActiveContent;
 
@@ -224,7 +225,11 @@ const ActiveTurnTail = React.memo(function ActiveTurnTail({
             </React.Fragment>
           );
         }
-        if (!message.content || message.content === '') return null;
+        if (
+          (!message.content || message.content === '') &&
+          !('shellOutput' in message && message.shellOutput)
+        )
+          return null;
 
         const isLastModel = index === lastModelIndex;
         const isShell = 'shellOutput' in message && message.shellOutput;

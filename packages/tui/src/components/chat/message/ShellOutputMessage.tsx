@@ -23,12 +23,24 @@ export const ShellOutputMessage = React.memo(function ShellOutputMessage({
   status,
   barColor,
 }: ShellOutputMessageProps) {
+  if (!content) {
+    return (
+      <StatusBar status="thinking" barColor={barColor}>
+        <RunningLabel />
+      </StatusBar>
+    );
+  }
   return (
     <StatusBar status={status || 'active'} barColor={barColor}>
       <ShellOutputContent content={content} isStatic={isStatic} />
     </StatusBar>
   );
 });
+
+function RunningLabel() {
+  const { getColor } = useTheme();
+  return <Text>{getColor('secondary')('Running...')}</Text>;
+}
 
 function ShellOutputContent({
   content,
