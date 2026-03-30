@@ -163,15 +163,31 @@ The output is JSONL with one `ChatResponseStream` event per line. Blank lines se
 
 The recorded events can be used directly with `pushSendMessageResponse()` in E2E tests.
 
+### Prerequisites
+
+E2E tests require **two build artifacts** to exist before they can run:
+
+1. **Rust binary** — `target/debug/chat_cli` (the real CLI binary spawned in the PTY)
+2. **TUI JS bundle** — `packages/tui/dist/tui.js` (the bundled frontend loaded by the CLI)
+
+If either is missing or stale, tests will fail with `Timeout waiting for TUI IPC connection`.
+
+`bun run test:e2e` builds **both** automatically. `--skip-rust-build` skips only the Rust build but still rebuilds the TUI bundle. When running individual test files directly with `bun test`, **neither** is built — you must ensure both exist:
+
+```bash
+cargo build -p chat_cli          # Rust binary → target/debug/chat_cli
+cd packages/tui && bun run build # TUI bundle  → dist/tui.js
+```
+
 ### Running E2E Tests
 
 ```bash
-# Run E2E tests (builds Rust binary first)
+# Run E2E tests (builds Rust binary + TUI bundle)
 bun run test:e2e
 
-# Skip Rust build if binary is already up to date
+# Skip Rust build only (still rebuilds TUI bundle)
 bun run test:e2e --skip-rust-build
-```
 
-> [!important]
-> E2E tests run against the pre-built `dist/tui.js` bundle, not the source files. If you're running individual test files directly (e.g., `bun test ./e2e_tests/my-test.ts`), you must run `bun run build` first.
+# Run a single test file directly (requires both build artifacts to already exist)
+bun test ./e2e_tests/my-test.ts
+```

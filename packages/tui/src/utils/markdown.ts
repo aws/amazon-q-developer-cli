@@ -382,6 +382,9 @@ export const parseMarkdown = (text: string): MarkdownSegment[] => {
             /^\s*\|/.test(line) ||
             (line.split('|').length - 1 >= 2 && !/`[^`]*\|[^`]*`/.test(line));
           if (isTableLine) {
+            if (tableLines.length === 0) {
+              textAccumulator = textAccumulator.replace(/\n+$/, '');
+            }
             tableLines.push(line);
             continue;
           } else if (tableLines.length > 0) {

@@ -155,19 +155,26 @@ export const MarkdownRenderer = React.memo(function MarkdownRenderer({
     return computedBlocks;
   }, [segments]);
 
+  const needsSpacingBefore = (
+    prev: RenderBlock,
+    curr: RenderBlock
+  ): boolean => {
+    if (prev.type === 'listItem' && curr.type === 'listItem') return false;
+    if (prev.type === 'blockquote' && curr.type === 'blockquote') return false;
+    return true;
+  };
+
   return (
     <Box flexDirection="column">
       {blocks.map((block, i) => {
+        const mt = i > 0 && needsSpacingBefore(blocks[i - 1]!, block) ? 1 : 0;
+
         if (block.type === 'code') {
           const code = expandTabs(
             block.segment.codeBlock!.code.replace(/^\n+|\n+$/g, '')
           );
           return (
-            <Box
-              key={i}
-              marginTop={i > 0 ? 1 : 0}
-              marginBottom={i < blocks.length - 1 ? 1 : 0}
-            >
+            <Box key={i} marginTop={mt}>
               <Text>
                 {highlightCode(code, block.segment.codeBlock!.language)}
               </Text>
@@ -177,7 +184,7 @@ export const MarkdownRenderer = React.memo(function MarkdownRenderer({
 
         if (block.type === 'header') {
           return (
-            <Box key={i} marginTop={i > 0 ? 1 : 0}>
+            <Box key={i} marginTop={mt}>
               <Text wrap="wrap">{color(chalk.bold(block.segment.text))}</Text>
             </Box>
           );
@@ -188,7 +195,7 @@ export const MarkdownRenderer = React.memo(function MarkdownRenderer({
           const prefix = ordered ? `${number}. ` : '- ';
           const indentStr = '  '.repeat(indent);
           return (
-            <Box key={i}>
+            <Box key={i} marginTop={mt}>
               <Text wrap="wrap">
                 {color(indentStr + prefix)}
                 {renderInlineText(block.segment.text)}
@@ -199,7 +206,7 @@ export const MarkdownRenderer = React.memo(function MarkdownRenderer({
 
         if (block.type === 'blockquote') {
           return (
-            <Box key={i}>
+            <Box key={i} marginTop={mt}>
               <Text>
                 {chalk.dim('│ ')}
                 {color(chalk.italic(block.segment.text))}
@@ -210,7 +217,7 @@ export const MarkdownRenderer = React.memo(function MarkdownRenderer({
 
         if (block.type === 'horizontalRule') {
           return (
-            <Box key={i}>
+            <Box key={i} marginTop={mt}>
               <Divider />
             </Box>
           );
@@ -241,7 +248,7 @@ export const MarkdownRenderer = React.memo(function MarkdownRenderer({
           ) => left + colWidths.map((w) => h.repeat(w + 2)).join(mid) + right;
 
           return (
-            <Box key={i} flexDirection="column">
+            <Box key={i} flexDirection="column" marginTop={mt}>
               <Text>{chalk.dim(border('┌', '┬', '┐', '─'))}</Text>
               <Text>
                 {chalk.dim('│')}{' '}
@@ -281,7 +288,7 @@ export const MarkdownRenderer = React.memo(function MarkdownRenderer({
           .join('');
 
         return (
-          <Box key={i}>
+          <Box key={i} marginTop={mt}>
             <Text wrap="wrap">{styledText}</Text>
           </Box>
         );

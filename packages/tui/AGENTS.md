@@ -334,6 +334,7 @@ export const Error = {
 - Full end-to-end tests using `E2ETestCase` from `e2e_tests/E2ETestCase.ts`.
 - Test real agent interactions, tool messages, slash commands, input latency, and memory leaks.
 - Types for agent communication are in `e2e_tests/types/agent.ts`.
+- **Prerequisites:** E2E tests require both `target/debug/chat_cli` (Rust binary) and `dist/tui.js` (TUI bundle). `bun run test:e2e` builds both automatically; `--skip-rust-build` skips only the Rust build. Running individual files with `bun test` builds **neither** — you must build both manually first.
 
 ---
 
