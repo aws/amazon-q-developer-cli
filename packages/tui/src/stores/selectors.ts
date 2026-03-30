@@ -250,3 +250,17 @@ export const useQueueState = () =>
       queuedMessages: state.queuedMessages,
     }))
   );
+
+/**
+ * Task state selector - for ActivityTray
+ */
+export const useTaskState = () =>
+  useAppStore(
+    useShallow((state) => ({
+      tasks: state.tasks,
+      activityTrayExpanded: state.activityTrayExpanded,
+    }))
+  );
+
+export const useTaskActions = () =>
+  useAppStore((state) => state.toggleActivityTray);

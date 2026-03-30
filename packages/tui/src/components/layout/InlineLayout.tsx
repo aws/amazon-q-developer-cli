@@ -13,6 +13,7 @@ const Region = isDevMode()
 import { AnimationPausedContext } from '../../contexts/AnimationPausedContext.js';
 import { ConversationView } from '../ui/ConversationView';
 import { QueueStack } from '../ui/QueueStack';
+import { ActivityTray } from '../ui/activity-tray/index.js';
 import { ExitHint } from '../ui/ExitHint';
 import { CommandMenu } from '../ui/CommandMenu';
 import { ActionHint } from '../ui/hint/ActionHint.js';
@@ -540,6 +541,8 @@ export const InlineLayout: React.FC = () => {
               : undefined
           }
         />
+
+        <ActivityTray />
 
         <Box marginBottom={1}>
           <PromptBar

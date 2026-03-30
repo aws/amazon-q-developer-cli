@@ -7,6 +7,7 @@ import { createContext, useContext } from 'react';
 import {
   AgentEventType,
   ApprovalOptionId,
+  TASK_TOOL_NAMES,
   SESSION_TOOL_NAMES,
   type AgentStreamEvent,
   type ApprovalRequestInfo,
@@ -21,6 +22,7 @@ import type { AvailableCommand, CommandOption } from '../types/commands';
 import type { StatusType } from '../types/componentTypes';
 import type { SubagentInfo, SubagentStatus } from '../types/subagent.js';
 import type { AgentSession, InboxMessage } from '../types/multi-session.js';
+import type { TaskItem, RawTask } from '../types/tasks';
 
 export interface ContextBreakdownData {
   contextFiles: {
@@ -371,6 +373,10 @@ interface BaseAppActions {
   removePendingImage: (index: number) => void;
   clearPendingImages: () => void;
 
+  // Task management actions
+  setTasks: (tasks: TaskItem[]) => void;
+  toggleActivityTray: () => void;
+
   // Main orchestrator
   handleUserInput: (input: string) => Promise<void>;
 }
@@ -481,6 +487,11 @@ export interface AppState {
   showCodePanel: boolean;
   codeData: CodePanelData | null;
   codeIntelligenceActive: boolean;
+
+  // Task management state
+  tasks: TaskItem[];
+  activityTrayExpanded: boolean;
+
   // Abort controller for current stream
   currentAbortController: AbortController | null;
   cancelInProgress: Promise<void> | null;
@@ -561,6 +572,50 @@ function syncTerminalProgress(
     } else {
       clearTerminalProgress(); // hidden
     }
+  }
+}
+
+/** Extract task state from a ToolCallFinished event if it came from the task tool. */
+function extractTaskState(
+  event: { id: string; result: { status: string; output?: unknown } },
+  get: () => AppState & AppActions
+) {
+  const finishedMsg = get().messages.find(
+    (m) => m.role === MessageRole.ToolUse && m.id === event.id
+  );
+  if (
+    finishedMsg?.role !== MessageRole.ToolUse ||
+    !TASK_TOOL_NAMES.has(finishedMsg.name) ||
+    event.result.status !== 'success' ||
+    !event.result.output
+  )
+    return;
+
+  try {
+    const args = JSON.parse(finishedMsg.content);
+    if (
+      !args.command ||
+      !['create', 'complete', 'add', 'remove', 'list'].includes(args.command)
+    )
+      return;
+
+    let raw =
+      typeof event.result.output === 'string'
+        ? JSON.parse(event.result.output)
+        : event.result.output;
+    if (raw?.items?.[0]?.Json) {
+      raw = raw.items[0].Json;
+    }
+    if (raw && Array.isArray(raw.tasks)) {
+      const mapped = raw.tasks.map((t: RawTask) => ({
+        id: t.id,
+        subject: t.task_description ?? t.subject ?? '',
+        status: t.completed ? ('completed' as const) : ('pending' as const),
+      }));
+      get().setTasks(mapped);
+    }
+  } catch {
+    // Not a task tool or malformed output — ignore
   }
 }
 
@@ -662,6 +717,10 @@ export const createAppStore = (props: AppStoreProps) => {
     currentAbortController: null,
     cancelInProgress: null,
     streamingBuffer: { startBuffering: null, stopBuffering: null },
+
+    // Task management
+    tasks: [],
+    activityTrayExpanded: false,
 
     noInteractive: props.noInteractive ?? false,
 
@@ -1170,6 +1229,9 @@ export const createAppStore = (props: AppStoreProps) => {
               }
               return { messages };
             });
+
+            // Extract task state from task tool results
+            extractTaskState(event, get);
             break;
           case AgentEventType.ApprovalRequest: {
             const { autoApproveCrewTools, sessionId: mainSessionId } = get();
@@ -2225,6 +2287,14 @@ export const createAppStore = (props: AppStoreProps) => {
 
     toggleToolOutputsExpanded: () => {
       set((state) => ({ toolOutputsExpanded: !state.toolOutputsExpanded }));
+    },
+
+    setTasks: (tasks: TaskItem[]) => {
+      set({ tasks });
+    },
+
+    toggleActivityTray: () => {
+      set((state) => ({ activityTrayExpanded: !state.activityTrayExpanded }));
     },
 
     setHasExpandableToolOutputs: (has: boolean) => {

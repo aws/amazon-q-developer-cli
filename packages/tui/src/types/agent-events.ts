@@ -70,6 +70,7 @@ export const SESSION_TOOL_NAMES: Set<string> = new Set([
   'agent_crew',
 ]);
 export const INTROSPECT_TOOL_NAMES: Set<string> = new Set(['introspect']);
+export const TASK_TOOL_NAMES: Set<string> = new Set(['task']);
 
 /** Map a wire tool name to its BuiltinToolId, or undefined for MCP/unknown tools. */
 export function resolveToolId(name: string): BuiltinToolId | undefined {
@@ -83,6 +84,7 @@ export function resolveToolId(name: string): BuiltinToolId | undefined {
   if (LS_TOOL_NAMES.has(name)) return 'ls';
   if (CODE_TOOL_NAMES.has(name)) return 'code';
   if (IMAGE_READ_TOOL_NAMES.has(name)) return 'image_read';
+  if (TASK_TOOL_NAMES.has(name)) return 'task';
   return undefined;
 }
 

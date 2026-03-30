@@ -31,6 +31,7 @@ import {
   resolveToolId,
   INTROSPECT_TOOL_NAMES,
   IMAGE_READ_TOOL_NAMES,
+  TASK_TOOL_NAMES,
   type ToolKind,
   type ToolCallLocation,
 } from '../../types/agent-events.js';
@@ -290,6 +291,27 @@ const ToolUseContent = React.memo(function ToolUseContent({
         content={content}
       />
     );
+  }
+
+  // Task tool — show a compact one-liner since the Activity Tray surfaces task state
+  if (TASK_TOOL_NAMES.has(name)) {
+    const labels: Record<string, string> = {
+      create: 'Task list created',
+      complete: 'Tasks updated',
+      add: 'Tasks added',
+      remove: 'Tasks removed',
+      list: 'Tasks listed',
+    };
+    let label = 'Task';
+    try {
+      const parsed = JSON.parse(content);
+      if (parsed.command && labels[parsed.command]) {
+        label = labels[parsed.command]!;
+      }
+    } catch {
+      /* ignore */
+    }
+    return <StatusInfo title={label} />;
   }
 
   // Fallback: use generic Tool component

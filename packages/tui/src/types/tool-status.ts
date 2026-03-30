@@ -28,7 +28,8 @@ export type BuiltinToolId =
   | 'subagent'
   | 'image_read'
   | 'web_fetch'
-  | 'web_search';
+  | 'web_search'
+  | 'task';
 
 export const TOOL_LABELS: Record<BuiltinToolId, string> = {
   code: 'Code',
@@ -48,6 +49,7 @@ export const TOOL_LABELS: Record<BuiltinToolId, string> = {
   subagent: 'Subagent',
   web_fetch: 'WebFetch',
   web_search: 'WebSearch',
+  task: 'Task',
 };
 
 /**
