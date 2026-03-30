@@ -104,6 +104,7 @@ describe('Chat Command', () => {
     }
     await testCase.pressEnter();
     await testCase.waitForText('Hello there!', 30000);
+    await testCase.waitForIdle();
 
     for (const char of '/chat new') {
       await testCase.sendKeys(char);
