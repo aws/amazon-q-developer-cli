@@ -485,20 +485,23 @@ impl McpClientService {
                 let command = Command::new("cmd.exe").configure(|cmd| {
                     let mut cmd_args = vec!["/C".to_string(), expanded_cmd.to_string()];
                     cmd_args.extend(args.iter().cloned());
+                    // Apply shell env first, then config env, so config takes precedence
+                    cmd.envs(get_all_env_vars()).args(&cmd_args);
                     if let Some(envs) = config_envs {
                         process_env_vars(envs, &os.env);
                         cmd.envs(envs);
                     }
-                    cmd.envs(get_all_env_vars()).args(&cmd_args);
                 });
 
                 #[cfg(not(windows))]
                 let command = Command::new(expanded_cmd.as_ref() as &str).configure(|cmd| {
+                    // Apply shell env first, then config env, so config takes precedence
+                    cmd.envs(get_all_env_vars()).args(args);
                     if let Some(envs) = config_envs {
                         process_env_vars(envs, &os.env);
                         cmd.envs(envs);
                     }
-                    cmd.envs(get_all_env_vars()).args(args);
+
                     cmd.process_group(0);
                 });
 

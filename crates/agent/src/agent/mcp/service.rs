@@ -116,21 +116,23 @@ impl McpService {
                     Command::new("cmd.exe").configure(|cmd| {
                         let mut cmd_args = vec!["/C".to_string(), cmd_str.clone()];
                         cmd_args.extend(config.args.iter().cloned());
+                        // Apply shell env first, then config env, so config takes precedence
+                        cmd.envs(std::env::vars()).args(&cmd_args);
                         if let Some(envs) = &mut env_vars {
                             expand_env_vars(envs);
                             cmd.envs(envs);
                         }
-                        cmd.envs(std::env::vars()).args(&cmd_args);
                     })
                 };
 
                 #[cfg(not(windows))]
                 let cmd = Command::new(cmd.as_ref() as &str).configure(|cmd| {
+                    // Apply shell env first, then config env, so config takes precedence
+                    cmd.envs(std::env::vars()).args(&config.args);
                     if let Some(envs) = &mut env_vars {
                         expand_env_vars(envs);
                         cmd.envs(envs);
                     }
-                    cmd.envs(std::env::vars()).args(&config.args);
                     cmd.process_group(0);
                 });
                 let (process, stderr) = TokioChildProcess::builder(cmd).stderr(Stdio::piped()).spawn()?;
