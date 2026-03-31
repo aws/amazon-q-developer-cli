@@ -495,8 +495,7 @@ async fn test_allow_always_grants_exact_file_permission() {
     );
 }
 
-/// Tests that canceling during SendingRequest or ConsumingResponse preserves the user message
-/// and appends an assistant response to maintain role alternation
+/// Tests that canceling during SendingRequest or ConsumingResponse removes the user message
 #[tokio::test]
 async fn test_cancel_during_executing_request() {
     let _ = tracing_subscriber::fmt::try_init();
@@ -527,23 +526,17 @@ async fn test_cancel_during_executing_request() {
     // Wait for cancellation to complete
     test.wait_until_agent_stop(Duration::from_secs(2)).await.unwrap();
 
-    // Verify the cancelled turn context is preserved in conversation history
+    // Verify the user message was removed from conversation history
     let mut snapshot = test.create_snapshot().await;
     let messages = snapshot.conversation_state.messages();
 
     assert_eq!(
         messages.len(),
-        2,
-        "expected 2 messages after cancel during execution (user + assistant), got {}: {:?}",
+        0,
+        "expected 0 messages after cancel during execution, got {}: {:?}",
         messages.len(),
         messages
     );
-
-    // First message should be the user prompt
-    assert_eq!(messages[0].role, Role::User);
-    // Second message should be the assistant response (either streamed content or interrupted
-    // placeholder)
-    assert_eq!(messages[1].role, Role::Assistant);
 
     // Verify turn metadata was still saved
     assert_eq!(

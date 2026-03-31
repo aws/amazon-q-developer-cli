@@ -79,7 +79,9 @@ export function executeShellEscapeTTY(command: string): ShellEscapeResult {
 
     const shell = process.platform === 'win32' ? 'cmd' : 'bash';
     const args =
-      process.platform === 'win32' ? ['/C', command] : ['-c', wrapWithFdLimit(command)];
+      process.platform === 'win32'
+        ? ['/C', command]
+        : ['-c', wrapWithFdLimit(command)];
     const result = spawnSync(shell, args, {
       stdio: 'inherit',
       cwd: process.cwd(),
@@ -117,7 +119,10 @@ export function executeShellEscapeStreaming(
   onData: (chunk: string) => void
 ): { promise: Promise<ShellEscapeResult>; kill: () => void } {
   const shell = process.platform === 'win32' ? 'cmd' : 'bash';
-  const args = process.platform === 'win32' ? ['/C', command] : ['-c', wrapWithFdLimit(command)];
+  const args =
+    process.platform === 'win32'
+      ? ['/C', command]
+      : ['-c', wrapWithFdLimit(command)];
 
   const child = spawn(shell, args, {
     stdio: ['ignore', 'pipe', 'pipe'],

@@ -791,9 +791,8 @@ export const createAppStore = (props: AppStoreProps) => {
         };
       });
 
-      let eventHandler: any; // hoisted for AbortError flush
       try {
-        eventHandler = get().createStreamEventHandler();
+        const eventHandler = get().createStreamEventHandler();
         await kiro.streamMessage(
           expandedContent,
           abortController.signal,
@@ -838,7 +837,6 @@ export const createAppStore = (props: AppStoreProps) => {
         set({ currentAbortController: null });
         logger.error('[store] sendMessage: caught error', error);
         if (error instanceof DOMException && error.name === 'AbortError') {
-          (eventHandler as any)?.flush?.();
           set({ isProcessing: false });
           await get().processQueue();
           return;
