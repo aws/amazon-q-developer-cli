@@ -14,7 +14,7 @@ describe('/compact and summary', () => {
       testCase = null;
     }
     // Wait for sockets to fully release
-    await new Promise(resolve => setTimeout(resolve, 2000));
+    await new Promise((resolve) => setTimeout(resolve, 2000));
   });
 
   it('executes /compact and shows compacting loading state', async () => {
@@ -29,7 +29,13 @@ describe('/compact and summary', () => {
 
     // Build up a conversation so there's something to compact
     await testCase.pushSendMessageResponse([
-      { kind: 'event', data: { kind: 'AssistantResponseEvent', data: { content: 'Hello! How can I help you today?' } } },
+      {
+        kind: 'event',
+        data: {
+          kind: 'AssistantResponseEvent',
+          data: { content: 'Hello! How can I help you today?' },
+        },
+      },
     ]);
     await testCase.pushSendMessageResponse(null);
 
@@ -39,6 +45,19 @@ describe('/compact and summary', () => {
 
     // Wait a bit before typing command
     await testCase.sleepMs(500);
+
+    // Push a mock response for the compaction LLM call (compaction uses the same
+    // send_message path as regular messages, so it consumes the next queued response)
+    await testCase.pushSendMessageResponse([
+      {
+        kind: 'event',
+        data: {
+          kind: 'AssistantResponseEvent',
+          data: { content: 'Summary of the conversation.' },
+        },
+      },
+    ]);
+    await testCase.pushSendMessageResponse(null);
 
     // Type /compact command
     for (const char of '/compact') {
@@ -71,7 +90,13 @@ describe('/compact and summary', () => {
 
     // Build a multi-turn conversation to give the compaction something to summarize
     await testCase.pushSendMessageResponse([
-      { kind: 'event', data: { kind: 'AssistantResponseEvent', data: { content: 'I can help you with that task.' } } },
+      {
+        kind: 'event',
+        data: {
+          kind: 'AssistantResponseEvent',
+          data: { content: 'I can help you with that task.' },
+        },
+      },
     ]);
     await testCase.pushSendMessageResponse(null);
 
@@ -80,13 +105,35 @@ describe('/compact and summary', () => {
     await testCase.waitForIdle(15000);
 
     await testCase.pushSendMessageResponse([
-      { kind: 'event', data: { kind: 'AssistantResponseEvent', data: { content: 'Sure, here is the result.' } } },
+      {
+        kind: 'event',
+        data: {
+          kind: 'AssistantResponseEvent',
+          data: { content: 'Sure, here is the result.' },
+        },
+      },
     ]);
     await testCase.pushSendMessageResponse(null);
 
     await testCase.sendKeys('do the task');
     await testCase.pressEnter();
     await testCase.waitForIdle(15000);
+
+    // Push a mock response for the compaction LLM call (compaction uses the same
+    // send_message path as regular messages, so it consumes the next queued response)
+    await testCase.pushSendMessageResponse([
+      {
+        kind: 'event',
+        data: {
+          kind: 'AssistantResponseEvent',
+          data: {
+            content:
+              'Summary: User asked for help with a task and received results.',
+          },
+        },
+      },
+    ]);
+    await testCase.pushSendMessageResponse(null);
 
     // Execute /compact
     for (const char of '/compact') {
@@ -108,20 +155,28 @@ describe('/compact and summary', () => {
         break;
       }
       // Also check if compaction completed without a summary (valid outcome)
-      if (!store.isCompacting && store.loadingMessage === null && Date.now() - start > 5000) {
+      if (
+        !store.isCompacting &&
+        store.loadingMessage === null &&
+        Date.now() - start > 5000
+      ) {
         break;
       }
       await testCase.sleepMs(200);
     }
 
-    console.log('Compact summary snapshot:\n' + testCase.getSnapshotFormatted());
+    console.log(
+      'Compact summary snapshot:\n' + testCase.getSnapshotFormatted()
+    );
 
     const store = await testCase.getStore();
     expect(store.isCompacting).toBe(false);
 
     if (summaryFound) {
       // If a summary was generated, verify it rendered as a system message
-      const systemMessages = store.messages.filter((m: any) => m.role === 'system');
+      const systemMessages = store.messages.filter(
+        (m: any) => m.role === 'system'
+      );
       expect(systemMessages.length).toBeGreaterThan(0);
       const firstSystemMessage = systemMessages[0];
       if (firstSystemMessage && 'success' in firstSystemMessage) {
@@ -142,7 +197,11 @@ describe('/compact and summary', () => {
     await testCase.waitForText('ask a question', 10000);
     await testCase.waitForSlashCommands();
 
-    // Execute /compact on an empty conversation — backend may fail or succeed
+    // Execute /compact on an empty conversation. No mock compaction response is
+    // needed here because the backend short-circuits before making an LLM call
+    // when the conversation has no messages (returns "Conversation too short to
+    // compact"). If the backend ever changes to attempt an LLM call regardless,
+    // a mock response would need to be pushed here to prevent a hang.
     for (const char of '/compact') {
       await testCase.sendKeys(char);
       await testCase.sleepMs(20);
