@@ -51,6 +51,10 @@ process.on('SIGHUP', () => {
   cleanup();
 });
 
+process.on('uncaughtException', () => {
+  cleanup();
+});
+
 // Pre-create kiro and store outside of React to start initialization immediately
 const agentPath = getAgentPath();
 const cliArgs = parseCliArgs();

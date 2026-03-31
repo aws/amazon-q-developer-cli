@@ -78,13 +78,45 @@ pub async fn launch_v2(os: &Os) -> Result<ExitCode> {
     let args: Vec<String> = std::env::args().collect();
     let current_exe = std::env::current_exe()?;
 
-    let exit_code = tokio::process::Command::new(&asset_paths.bun_path)
+    let mut child = tokio::process::Command::new(&asset_paths.bun_path)
         .arg(&asset_paths.tui_js_path)
         .args(&args[1..])
         .env("KIRO_AGENT_PATH", &current_exe)
-        .status()
-        .await?
-        .code()
+        .spawn()?;
+
+    // Kill the child if we receive SIGTERM/SIGINT, otherwise it becomes an orphan
+    // since the default signal handler terminates without running destructors
+    // (so kill_on_drop never fires).
+    let status;
+
+    #[cfg(unix)]
+    {
+        use tokio::signal::unix::{
+            SignalKind,
+            signal,
+        };
+        let mut sigterm = signal(SignalKind::terminate())?;
+        tokio::select! {
+            s = child.wait() => {
+                status = Some(s?);
+            }
+            _ = sigterm.recv() => {
+                let _ = child.kill().await;
+                status = None;
+            }
+            _ = tokio::signal::ctrl_c() => {
+                let _ = child.kill().await;
+                status = None;
+            }
+        }
+    }
+    #[cfg(not(unix))]
+    {
+        status = Some(child.wait().await?);
+    }
+
+    let exit_code = status
+        .and_then(|s| s.code())
         .map_or(ExitCode::FAILURE, |e| ExitCode::from(e as u8));
 
     Ok(exit_code)
