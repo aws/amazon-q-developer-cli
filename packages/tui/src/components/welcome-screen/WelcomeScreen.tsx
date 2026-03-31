@@ -36,14 +36,14 @@ export const WelcomeScreen = React.memo(function WelcomeScreen({
         paddingX={2}
       >
         <Text>
-          {primary(
-            'Welcome to the new Kiro CLI terminal user interface (TUI).'
-          )}
+          {primary('Welcome to the new Kiro CLI UX! Use ')}
+          {brand('/feedback')}
+          {primary(' to share your thoughts.')}
         </Text>
         <Text>
-          {primary('Try it out and let us know what you think using the ')}
-          {brand('/feedback')}
-          {primary(' command.')}
+          {primary('Prefer the classic experience? Relaunch with ')}
+          {brand('kiro-cli --classic')}
+          {primary('.')}
         </Text>
       </Box>
     </Box>
