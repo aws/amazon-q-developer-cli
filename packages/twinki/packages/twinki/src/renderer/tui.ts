@@ -53,7 +53,7 @@ export interface TUIOptions {
 
 /**
  * Terminal User Interface (TUI) - The core rendering engine.
- * 
+ *
  * The TUI class is the heart of Twinki's rendering system, providing:
  * - Differential rendering with 4 distinct strategies
  * - Overlay management and compositing
@@ -61,12 +61,12 @@ export interface TUIOptions {
  * - Performance monitoring and optimization
  * - Static content handling for scrollback
  * - Hardware cursor positioning
- * 
+ *
  * The TUI uses a sophisticated rendering pipeline that minimizes terminal
  * writes by only updating changed content. It supports complex layouts
  * with overlays, proper ANSI code handling, and maintains compatibility
  * with various terminal types.
- * 
+ *
  * @example
  * ```typescript
  * const tui = new TUI(terminal);
@@ -90,9 +90,13 @@ export class TUI extends Container {
   /** Total number of renders performed */
   public perfRenderCount = 0;
   /** Number of lines currently held in the static scrollback buffer. */
-  get staticBufferLines(): number { return this.accumulatedStaticOutput.length; }
+  get staticBufferLines(): number {
+    return this.accumulatedStaticOutput.length;
+  }
   /** Number of rendered lines currently above the visible viewport (unreachable by cursor-up). */
-  get linesAboveViewport(): number { return this.previousViewportTop; }
+  get linesAboveViewport(): number {
+    return this.previousViewportTop;
+  }
 
   private previousLines: string[] = [];
   private previousWidth = 0;
@@ -143,14 +147,17 @@ export class TUI extends Container {
 
   /**
    * Creates a new TUI instance.
-   * 
+   *
    * @param terminal - Terminal interface for I/O
    * @param showHardwareCursor - Whether to show hardware cursor (optional)
    */
   constructor(terminal: Terminal, showHardwareCursor?: boolean | TUIOptions) {
     super();
     this.terminal = terminal;
-    const opts = typeof showHardwareCursor === 'object' ? showHardwareCursor : { showHardwareCursor };
+    const opts =
+      typeof showHardwareCursor === 'object'
+        ? showHardwareCursor
+        : { showHardwareCursor };
     if (opts.showHardwareCursor !== undefined) {
       this.showHardwareCursor = opts.showHardwareCursor;
     }
@@ -175,21 +182,30 @@ export class TUI extends Container {
         const dir = path.join(os.homedir(), '.twinki');
         fs.mkdirSync(dir, { recursive: true });
         this.debugLogFd = fs.openSync(path.join(dir, 'debug.log'), 'a');
-      } catch { /* ignore */ }
+      } catch {
+        /* ignore */
+      }
     }
   }
 
   private debugLog(msg: string): void {
     if (this.debugLogFd == null) return;
-    try { require('fs').writeSync(this.debugLogFd, `[${new Date().toISOString()}] ${msg}\n`); } catch { /* ignore */ }
+    try {
+      require('fs').writeSync(
+        this.debugLogFd,
+        `[${new Date().toISOString()}] ${msg}\n`
+      );
+    } catch {
+      /* ignore */
+    }
   }
 
   /**
    * Gets the number of full redraws performed.
-   * 
+   *
    * Full redraws are expensive operations that clear and redraw the entire
    * screen. This counter helps monitor rendering efficiency.
-   * 
+   *
    * @returns Number of full redraws
    */
   get fullRedraws(): number {
@@ -198,10 +214,10 @@ export class TUI extends Container {
 
   /**
    * Sets whether the hardware cursor should be visible.
-   * 
+   *
    * The hardware cursor is the blinking cursor shown by the terminal.
    * Most TUI applications hide it, but some components may want it visible.
-   * 
+   *
    * @param enabled - Whether to show the hardware cursor
    */
   setShowHardwareCursor(enabled: boolean): void {
@@ -213,11 +229,11 @@ export class TUI extends Container {
 
   /**
    * Sets whether to clear screen when content shrinks.
-   * 
+   *
    * When enabled, the TUI will perform a full clear and redraw when
    * the content becomes smaller. This prevents visual artifacts but
    * is more expensive.
-   * 
+   *
    * @param enabled - Whether to clear on shrink
    */
   setClearOnShrink(enabled: boolean): void {
@@ -228,10 +244,10 @@ export class TUI extends Container {
 
   /**
    * Sets focus to a specific component.
-   * 
+   *
    * Only one component can have focus at a time. The focused component
    * receives keyboard input and typically shows visual focus indicators.
-   * 
+   *
    * @param component - Component to focus, or null to clear focus
    */
   setFocus(component: Component | null): void {
@@ -248,15 +264,15 @@ export class TUI extends Container {
 
   /**
    * Shows an overlay component with specified positioning options.
-   * 
+   *
    * Overlays are floating components that appear above the main content.
    * They automatically receive focus and can be positioned using various
    * anchor points and sizing constraints.
-   * 
+   *
    * @param component - Component to show as overlay
    * @param options - Positioning and sizing options
    * @returns Handle for controlling overlay visibility
-   * 
+   *
    * @example
    * ```typescript
    * const handle = tui.showOverlay(dialog, {
@@ -309,7 +325,7 @@ export class TUI extends Container {
 
   /**
    * Hides the topmost overlay.
-   * 
+   *
    * Removes the most recently shown overlay from the stack and
    * restores focus to the appropriate component.
    */
@@ -324,7 +340,7 @@ export class TUI extends Container {
 
   /**
    * Checks if any overlays are currently visible.
-   * 
+   *
    * @returns Whether any overlays are visible
    */
   hasOverlay(): boolean {
@@ -333,7 +349,7 @@ export class TUI extends Container {
 
   /**
    * Checks if an overlay entry is currently visible.
-   * 
+   *
    * @param entry - Overlay entry to check
    * @returns Whether the overlay is visible
    */
@@ -347,7 +363,7 @@ export class TUI extends Container {
 
   /**
    * Gets the topmost visible overlay from the stack.
-   * 
+   *
    * @returns Topmost visible overlay or undefined if none
    */
   private getTopmostVisibleOverlay(): OverlayEntry | undefined {
@@ -363,22 +379,24 @@ export class TUI extends Container {
 
   /**
    * Adds an input listener to the processing chain.
-   * 
+   *
    * Input listeners can intercept, transform, or consume input before
    * it reaches the focused component. They're processed in order of
    * addition and can modify the input data.
-   * 
+   *
    * @param listener - Function to handle input
    * @returns Function to remove the listener
    */
   addInputListener(listener: InputListener): () => void {
     this.inputListeners.add(listener);
-    return () => { this.inputListeners.delete(listener); };
+    return () => {
+      this.inputListeners.delete(listener);
+    };
   }
 
   /**
    * Removes an input listener from the processing chain.
-   * 
+   *
    * @param listener - Listener function to remove
    */
   removeInputListener(listener: InputListener): void {
@@ -425,7 +443,9 @@ export class TUI extends Container {
    */
   addPasteListener(listener: (content: string) => void): () => void {
     this.pasteListeners.add(listener);
-    return () => { this.pasteListeners.delete(listener); };
+    return () => {
+      this.pasteListeners.delete(listener);
+    };
   }
 
   /**
@@ -434,7 +454,9 @@ export class TUI extends Container {
    */
   addKeyReleaseListener(listener: (data: string) => void): () => void {
     this.keyReleaseListeners.add(listener);
-    return () => { this.keyReleaseListeners.delete(listener); };
+    return () => {
+      this.keyReleaseListeners.delete(listener);
+    };
   }
 
   /**
@@ -443,7 +465,9 @@ export class TUI extends Container {
    */
   addKeyRepeatListener(listener: (data: string) => void): () => void {
     this.keyRepeatListeners.add(listener);
-    return () => { this.keyRepeatListeners.delete(listener); };
+    return () => {
+      this.keyRepeatListeners.delete(listener);
+    };
   }
 
   /**
@@ -461,13 +485,13 @@ export class TUI extends Container {
 
   /**
    * Handles raw input data from the terminal.
-   * 
+   *
    * This method processes input through several stages:
    * 1. Filter key release events (unless component opts in)
    * 2. Run through input listener chain
    * 3. Handle special sequences (cell size responses, debug keys)
    * 4. Forward to focused component
-   * 
+   *
    * @param data - Raw input data from terminal
    */
   private handleInput(data: string): void {
@@ -504,7 +528,10 @@ export class TUI extends Container {
     // Filter key release events — dispatch to release listeners, then to focused component if it opts in
     if (isKeyRelease(data)) {
       for (const listener of this.keyReleaseListeners) listener(data);
-      if (this.focusedComponent?.handleInput && this.focusedComponent.wantsKeyRelease) {
+      if (
+        this.focusedComponent?.handleInput &&
+        this.focusedComponent.wantsKeyRelease
+      ) {
         this.focusedComponent.handleInput(data);
         this.requestRender();
       }
@@ -543,7 +570,9 @@ export class TUI extends Container {
     }
 
     // Verify focused overlay visibility
-    const focusedOverlay = this.overlayStack.find((o) => o.component === this.focusedComponent);
+    const focusedOverlay = this.overlayStack.find(
+      (o) => o.component === this.focusedComponent
+    );
     if (focusedOverlay && !this.isOverlayVisible(focusedOverlay)) {
       const top = this.getTopmostVisibleOverlay();
       this.setFocus(top ? top.component : focusedOverlay.preFocus);
@@ -558,11 +587,11 @@ export class TUI extends Container {
 
   /**
    * Parses cell size response from terminal and filters it from input.
-   * 
+   *
    * Some terminals send cell size information in response to queries.
    * This method extracts that information and prevents it from being
    * processed as regular input.
-   * 
+   *
    * @returns Filtered input data with cell size responses removed
    */
   private parseCellSizeResponse(): string {
@@ -591,7 +620,7 @@ export class TUI extends Container {
 
   /**
    * Invalidates the TUI and all its components.
-   * 
+   *
    * Marks all components (including overlays) as needing re-render.
    * This is called when the terminal size changes or when forced refresh is needed.
    */
@@ -602,7 +631,7 @@ export class TUI extends Container {
 
   /**
    * Starts the TUI and begins processing input/output.
-   * 
+   *
    * Initializes the terminal, sets up event handlers, and performs
    * the initial render. The TUI will continue running until stop() is called.
    */
@@ -624,7 +653,7 @@ export class TUI extends Container {
         }
         for (const cb of this.onResizeCallbacks) cb();
         this.requestRender(true);
-      },
+      }
     );
     if (this.altScreen) {
       this.terminal.write('\x1b[?1049h');
@@ -639,7 +668,7 @@ export class TUI extends Container {
 
   /**
    * Stops the TUI and cleans up resources.
-   * 
+   *
    * Positions the cursor at the end of content, shows the hardware cursor,
    * and stops the terminal. After calling this, the TUI should not be used.
    */
@@ -712,10 +741,10 @@ export class TUI extends Container {
 
   /**
    * Requests a render on the next tick.
-   * 
+   *
    * Renders are debounced using process.nextTick to avoid excessive
    * redraws when multiple changes occur in the same tick.
-   * 
+   *
    * @param force - If true, forces a full redraw by clearing state
    */
   requestRender(force = false): void {
@@ -775,14 +804,14 @@ export class TUI extends Container {
 
   /**
    * Resolves overlay positioning and sizing based on options and constraints.
-   * 
+   *
    * Calculates the final position and dimensions for an overlay considering:
    * - Terminal dimensions and available space
    * - Margin constraints
    * - Anchor positioning
    * - Size constraints (min/max width/height)
    * - Explicit positioning overrides
-   * 
+   *
    * @param options - Overlay positioning options
    * @param overlayHeight - Actual height of rendered overlay content
    * @param termWidth - Terminal width in columns
@@ -793,12 +822,23 @@ export class TUI extends Container {
     options: OverlayOptions | undefined,
     overlayHeight: number,
     termWidth: number,
-    termHeight: number,
-  ): { width: number; row: number; col: number; maxHeight: number | undefined } {
+    termHeight: number
+  ): {
+    width: number;
+    row: number;
+    col: number;
+    maxHeight: number | undefined;
+  } {
     const opt = options ?? {};
-    const margin = typeof opt.margin === 'number'
-      ? { top: opt.margin, right: opt.margin, bottom: opt.margin, left: opt.margin }
-      : (opt.margin ?? {});
+    const margin =
+      typeof opt.margin === 'number'
+        ? {
+            top: opt.margin,
+            right: opt.margin,
+            bottom: opt.margin,
+            left: opt.margin,
+          }
+        : (opt.margin ?? {});
     const mT = Math.max(0, margin.top ?? 0);
     const mR = Math.max(0, margin.right ?? 0);
     const mB = Math.max(0, margin.bottom ?? 0);
@@ -811,9 +851,13 @@ export class TUI extends Container {
     width = Math.max(1, Math.min(width, availW));
 
     let maxHeight = parseSizeValue(opt.maxHeight, termHeight);
-    if (maxHeight !== undefined) maxHeight = Math.max(1, Math.min(maxHeight, availH));
+    if (maxHeight !== undefined)
+      maxHeight = Math.max(1, Math.min(maxHeight, availH));
 
-    const effH = maxHeight !== undefined ? Math.min(overlayHeight, maxHeight) : overlayHeight;
+    const effH =
+      maxHeight !== undefined
+        ? Math.min(overlayHeight, maxHeight)
+        : overlayHeight;
     const anchor = opt.anchor ?? 'center';
 
     let row: number;
@@ -821,7 +865,9 @@ export class TUI extends Container {
       if (typeof opt.row === 'string') {
         const m = opt.row.match(/^(\d+(?:\.\d+)?)%$/);
         if (m) {
-          row = mT + Math.floor(Math.max(0, availH - effH) * parseFloat(m[1]!) / 100);
+          row =
+            mT +
+            Math.floor((Math.max(0, availH - effH) * parseFloat(m[1]!)) / 100);
         } else {
           row = this.resolveAnchorRow(anchor, effH, availH, mT);
         }
@@ -837,7 +883,9 @@ export class TUI extends Container {
       if (typeof opt.col === 'string') {
         const m = opt.col.match(/^(\d+(?:\.\d+)?)%$/);
         if (m) {
-          col = mL + Math.floor(Math.max(0, availW - width) * parseFloat(m[1]!) / 100);
+          col =
+            mL +
+            Math.floor((Math.max(0, availW - width) * parseFloat(m[1]!)) / 100);
         } else {
           col = this.resolveAnchorCol(anchor, width, availW, mL);
         }
@@ -858,35 +906,59 @@ export class TUI extends Container {
 
   /**
    * Resolves the row position based on anchor point.
-   * 
+   *
    * @param anchor - Anchor position
    * @param h - Overlay height
    * @param availH - Available height
    * @param mT - Top margin
    * @returns Resolved row position
    */
-  private resolveAnchorRow(anchor: OverlayAnchor, h: number, availH: number, mT: number): number {
+  private resolveAnchorRow(
+    anchor: OverlayAnchor,
+    h: number,
+    availH: number,
+    mT: number
+  ): number {
     switch (anchor) {
-      case 'top-left': case 'top-center': case 'top-right': return mT;
-      case 'bottom-left': case 'bottom-center': case 'bottom-right': return mT + availH - h;
-      default: return mT + Math.floor((availH - h) / 2);
+      case 'top-left':
+      case 'top-center':
+      case 'top-right':
+        return mT;
+      case 'bottom-left':
+      case 'bottom-center':
+      case 'bottom-right':
+        return mT + availH - h;
+      default:
+        return mT + Math.floor((availH - h) / 2);
     }
   }
 
   /**
    * Resolves the column position based on anchor point.
-   * 
+   *
    * @param anchor - Anchor position
    * @param w - Overlay width
    * @param availW - Available width
    * @param mL - Left margin
    * @returns Resolved column position
    */
-  private resolveAnchorCol(anchor: OverlayAnchor, w: number, availW: number, mL: number): number {
+  private resolveAnchorCol(
+    anchor: OverlayAnchor,
+    w: number,
+    availW: number,
+    mL: number
+  ): number {
     switch (anchor) {
-      case 'top-left': case 'left-center': case 'bottom-left': return mL;
-      case 'top-right': case 'right-center': case 'bottom-right': return mL + availW - w;
-      default: return mL + Math.floor((availW - w) / 2);
+      case 'top-left':
+      case 'left-center':
+      case 'bottom-left':
+        return mL;
+      case 'top-right':
+      case 'right-center':
+      case 'bottom-right':
+        return mL + availW - w;
+      default:
+        return mL + Math.floor((availW - w) / 2);
     }
   }
 
@@ -894,34 +966,53 @@ export class TUI extends Container {
 
   /**
    * Composites overlays onto the base content.
-   * 
+   *
    * This method renders all visible overlays and composites them onto
    * the base content, handling:
    * - Overlay positioning and clipping
    * - Viewport scrolling for tall content
    * - Z-order (overlay stack order)
    * - Size constraints and truncation
-   * 
+   *
    * @param lines - Base content lines
    * @param termWidth - Terminal width
    * @param termHeight - Terminal height
    * @returns Composited lines with overlays applied
    */
-  private compositeOverlays(lines: string[], termWidth: number, termHeight: number): string[] {
+  private compositeOverlays(
+    lines: string[],
+    termWidth: number,
+    termHeight: number
+  ): string[] {
     if (this.overlayStack.length === 0) return lines;
     const result = [...lines];
 
-    const rendered: { overlayLines: string[]; row: number; col: number; w: number }[] = [];
+    const rendered: {
+      overlayLines: string[];
+      row: number;
+      col: number;
+      w: number;
+    }[] = [];
     let minLinesNeeded = result.length;
 
     for (const entry of this.overlayStack) {
       if (!this.isOverlayVisible(entry)) continue;
-      const { width, maxHeight } = this.resolveOverlayLayout(entry.options, 0, termWidth, termHeight);
+      const { width, maxHeight } = this.resolveOverlayLayout(
+        entry.options,
+        0,
+        termWidth,
+        termHeight
+      );
       let overlayLines = entry.component.render(width);
       if (maxHeight !== undefined && overlayLines.length > maxHeight) {
         overlayLines = overlayLines.slice(0, maxHeight);
       }
-      const { row, col } = this.resolveOverlayLayout(entry.options, overlayLines.length, termWidth, termHeight);
+      const { row, col } = this.resolveOverlayLayout(
+        entry.options,
+        overlayLines.length,
+        termWidth,
+        termHeight
+      );
       rendered.push({ overlayLines, row, col, w: width });
       minLinesNeeded = Math.max(minLinesNeeded, row + overlayLines.length);
     }
@@ -935,10 +1026,17 @@ export class TUI extends Container {
       for (let i = 0; i < overlayLines.length; i++) {
         const idx = viewportStart + row + i;
         if (idx >= 0 && idx < result.length) {
-          const truncated = visibleWidth(overlayLines[i]!) > w
-            ? sliceByColumn(overlayLines[i]!, 0, w, true)
-            : overlayLines[i]!;
-          result[idx] = this.compositeLineAt(result[idx]!, truncated, col, w, termWidth);
+          const truncated =
+            visibleWidth(overlayLines[i]!) > w
+              ? sliceByColumn(overlayLines[i]!, 0, w, true)
+              : overlayLines[i]!;
+          result[idx] = this.compositeLineAt(
+            result[idx]!,
+            truncated,
+            col,
+            w,
+            termWidth
+          );
         }
       }
     }
@@ -948,12 +1046,12 @@ export class TUI extends Container {
 
   /**
    * Composites an overlay line onto a base line at a specific position.
-   * 
+   *
    * This method handles the complex task of merging overlay content with
    * base content while preserving ANSI formatting and handling padding.
    * It extracts segments before and after the overlay region and properly
    * composites them with reset sequences to prevent style bleeding.
-   * 
+   *
    * @param baseLine - Base line content
    * @param overlayLine - Overlay line content
    * @param startCol - Starting column for overlay
@@ -966,23 +1064,38 @@ export class TUI extends Container {
     overlayLine: string,
     startCol: number,
     overlayWidth: number,
-    totalWidth: number,
+    totalWidth: number
   ): string {
     const afterStart = startCol + overlayWidth;
-    const base = extractSegments(baseLine, startCol, afterStart, totalWidth - afterStart, true);
+    const base = extractSegments(
+      baseLine,
+      startCol,
+      afterStart,
+      totalWidth - afterStart,
+      true
+    );
     const overlay = sliceWithWidth(overlayLine, 0, overlayWidth, true);
 
     const beforePad = Math.max(0, startCol - base.beforeWidth);
     const overlayPad = Math.max(0, overlayWidth - overlay.width);
     const actualBeforeW = Math.max(startCol, base.beforeWidth);
     const actualOverlayW = Math.max(overlayWidth, overlay.width);
-    const afterTarget = Math.max(0, totalWidth - actualBeforeW - actualOverlayW);
+    const afterTarget = Math.max(
+      0,
+      totalWidth - actualBeforeW - actualOverlayW
+    );
     const afterPad = Math.max(0, afterTarget - base.afterWidth);
 
     const r = TUI.SEGMENT_RESET;
-    const result = base.before + ' '.repeat(beforePad) + r +
-      overlay.text + ' '.repeat(overlayPad) + r +
-      base.after + ' '.repeat(afterPad);
+    const result =
+      base.before +
+      ' '.repeat(beforePad) +
+      r +
+      overlay.text +
+      ' '.repeat(overlayPad) +
+      r +
+      base.after +
+      ' '.repeat(afterPad);
 
     if (visibleWidth(result) <= totalWidth) return result;
     return sliceByColumn(result, 0, totalWidth, true);
@@ -992,23 +1105,27 @@ export class TUI extends Container {
 
   /**
    * Extracts cursor position from rendered lines and removes cursor markers.
-   * 
+   *
    * Scans the rendered output for cursor markers and determines the
    * visual position where the cursor should be placed. The markers
    * are removed from the output to prevent them from being displayed.
-   * 
+   *
    * @param lines - Rendered lines (modified in place)
    * @param height - Terminal height for viewport calculation
    * @returns Cursor position or null if no cursor found
    */
-  private extractCursorPosition(lines: string[], height: number): { row: number; col: number } | null {
+  private extractCursorPosition(
+    lines: string[],
+    height: number
+  ): { row: number; col: number } | null {
     const viewportTop = Math.max(0, lines.length - height);
     for (let row = lines.length - 1; row >= viewportTop; row--) {
       const line = lines[row]!;
       const idx = line.indexOf(CURSOR_MARKER);
       if (idx !== -1) {
         const col = visibleWidth(line.slice(0, idx));
-        lines[row] = line.slice(0, idx) + line.slice(idx + CURSOR_MARKER.length);
+        lines[row] =
+          line.slice(0, idx) + line.slice(idx + CURSOR_MARKER.length);
         return { row, col };
       }
     }
@@ -1017,11 +1134,11 @@ export class TUI extends Container {
 
   /**
    * Applies reset sequences to the end of each line.
-   * 
+   *
    * Ensures that ANSI formatting doesn't bleed between lines by
    * adding reset sequences. This is crucial for proper rendering
    * and prevents visual artifacts.
-   * 
+   *
    * @param lines - Lines to process (modified in place)
    * @returns Processed lines with reset sequences
    */
@@ -1047,7 +1164,9 @@ export class TUI extends Container {
       // When live content (excluding static) overflowed the viewport, the old
       // active lines are stuck in scrollback. Erase them now before the static
       // flush pushes more content in, then reset for a clean full redraw.
-      const liveLineCount = this.previousLines.length - (this.accumulatedStaticOutput.length - lines.length);
+      const liveLineCount =
+        this.previousLines.length -
+        (this.accumulatedStaticOutput.length - lines.length);
       if (liveLineCount > this.terminal.rows && !this.altScreen) {
         const screenRow = this.hardwareCursorRow - this.previousViewportTop;
         const linesToErase = Math.min(screenRow + 1, this.terminal.rows);
@@ -1097,7 +1216,9 @@ export class TUI extends Container {
     const cap = this.staticScrollbackCap;
     // Only trim when 10% over cap — prune back to 75% to amortize the cost
     if (this.accumulatedStaticOutput.length > cap * 1.1) {
-      this.accumulatedStaticOutput = this.accumulatedStaticOutput.slice(-Math.floor(cap * 0.75));
+      this.accumulatedStaticOutput = this.accumulatedStaticOutput.slice(
+        -Math.floor(cap * 0.75)
+      );
     }
   }
 
@@ -1142,10 +1263,13 @@ export class TUI extends Container {
     const originalWrite = this.originalStdoutWrite;
     const self = this;
 
-    process.stdout.write = function(chunk: any, ...args: any[]): boolean {
-      if (!self.stopped && !self.internalWrite
-        && typeof chunk === 'string'
-        && (chunk.includes('\x1b[2J') || chunk.includes('\x1b[3J'))) {
+    process.stdout.write = function (chunk: any, ...args: any[]): boolean {
+      if (
+        !self.stopped &&
+        !self.internalWrite &&
+        typeof chunk === 'string' &&
+        (chunk.includes('\x1b[2J') || chunk.includes('\x1b[3J'))
+      ) {
         self.handleExternalClear();
       }
       return originalWrite(chunk, ...args);
@@ -1157,7 +1281,8 @@ export class TUI extends Container {
    */
   private removeStdoutInterceptor(): void {
     if (this.originalStdoutWrite) {
-      process.stdout.write = this.originalStdoutWrite as typeof process.stdout.write;
+      process.stdout.write = this
+        .originalStdoutWrite as typeof process.stdout.write;
       this.originalStdoutWrite = null;
     }
   }
@@ -1193,7 +1318,7 @@ export class TUI extends Container {
 
   /**
    * Main render method with performance tracking.
-   * 
+   *
    * Wraps the actual render implementation with performance monitoring
    * to track render times and update performance counters.
    */
@@ -1232,15 +1357,15 @@ export class TUI extends Container {
 
   /**
    * Core render implementation with 4-strategy differential rendering.
-   * 
+   *
    * This is the heart of Twinki's rendering system, implementing four
    * distinct rendering strategies:
-   * 
+   *
    * 1. **First render**: Write all content without cursor movement
    * 2. **Width changed**: Clear screen and full redraw
    * 3. **Shrink clear**: Full clear when content shrinks (optional)
    * 4. **Differential**: Only update changed lines (most common)
-   * 
+   *
    * The method handles:
    * - Static line insertion into scrollback
    * - Overlay compositing
@@ -1278,7 +1403,8 @@ export class TUI extends Container {
     const cursorPos = this.extractCursorPosition(newLines, height);
     newLines = this.applyLineResets(newLines);
 
-    const widthChanged = this.previousWidth !== 0 && this.previousWidth !== width;
+    const widthChanged =
+      this.previousWidth !== 0 && this.previousWidth !== width;
 
     // Crash guard: detect lines exceeding terminal width (only when debug enabled)
     if (this.debugLogFd != null) {
@@ -1288,17 +1414,27 @@ export class TUI extends Container {
           const msg = `Line ${i} visible width (${vw}) exceeds terminal width (${width}). Content: ${newLines[i].slice(0, 120)}...`;
           this.debugLog(`CRASH GUARD: ${msg}`);
           try {
-            const fs = require('fs'), os = require('os'), path = require('path');
+            const fs = require('fs'),
+              os = require('os'),
+              path = require('path');
             const dir = path.join(os.homedir(), '.twinki');
             fs.mkdirSync(dir, { recursive: true });
-            fs.writeFileSync(path.join(dir, 'crash.log'), `[${new Date().toISOString()}] ${msg}\n`, { flag: 'a' });
-          } catch { /* ignore */ }
+            fs.writeFileSync(
+              path.join(dir, 'crash.log'),
+              `[${new Date().toISOString()}] ${msg}\n`,
+              { flag: 'a' }
+            );
+          } catch {
+            /* ignore */
+          }
         }
       }
     }
 
     // Debug logging
-    this.debugLog(`render: lines=${newLines.length} prev=${this.previousLines.length} width=${width} widthChanged=${widthChanged}`);
+    this.debugLog(
+      `render: lines=${newLines.length} prev=${this.previousLines.length} width=${width} widthChanged=${widthChanged}`
+    );
 
     /**
      * Writes all lines to the terminal as a single synchronized frame.
@@ -1320,7 +1456,9 @@ export class TUI extends Container {
       this.terminal.write(buffer);
       this.cursorRow = Math.max(0, newLines.length - 1);
       this.hardwareCursorRow = this.cursorRow;
-      this.maxLinesRendered = clearSeq ? newLines.length : Math.max(this.maxLinesRendered, newLines.length);
+      this.maxLinesRendered = clearSeq
+        ? newLines.length
+        : Math.max(this.maxLinesRendered, newLines.length);
       this.previousViewportTop = Math.max(0, this.maxLinesRendered - height);
       this.positionHardwareCursor(cursorPos, newLines.length);
       this.previousLines = newLines;
@@ -1338,7 +1476,14 @@ export class TUI extends Container {
     if (this.previousLines.length === 0 && !widthChanged) {
       const liveLines = newLines.length - this.accumulatedStaticOutput.length;
       const needsScrollbackClear = liveLines > height;
-      fullRender(this.altScreen ? CLEAR_SCREEN : (needsScrollbackClear ? CLEAR_ALL : '\x1b[J'), 'first');
+      fullRender(
+        this.altScreen
+          ? CLEAR_SCREEN
+          : needsScrollbackClear
+            ? CLEAR_ALL
+            : '\x1b[J',
+        'first'
+      );
       return;
     }
 
@@ -1349,7 +1494,11 @@ export class TUI extends Container {
     }
 
     // Strategy 3: Shrink clear
-    if (this.clearOnShrink && newLines.length < this.maxLinesRendered && this.overlayStack.length === 0) {
+    if (
+      this.clearOnShrink &&
+      newLines.length < this.maxLinesRendered &&
+      this.overlayStack.length === 0
+    ) {
       fullRender(this.altScreen ? CLEAR_SCREEN : CLEAR_ALL, 'shrink');
       return;
     }
@@ -1372,7 +1521,10 @@ export class TUI extends Container {
       if (firstChanged === -1) firstChanged = this.previousLines.length;
       lastChanged = newLines.length - 1;
     }
-    const appendStart = appendedLines && firstChanged === this.previousLines.length && firstChanged > 0;
+    const appendStart =
+      appendedLines &&
+      firstChanged === this.previousLines.length &&
+      firstChanged > 0;
 
     // No changes
     if (firstChanged === -1) {
@@ -1392,7 +1544,10 @@ export class TUI extends Container {
         else if (lineDiff < 0) buffer += `\x1b[${-lineDiff}A`;
         buffer += '\r';
         const extra = this.previousLines.length - newLines.length;
-        if (extra > height) { fullRender(this.altScreen ? CLEAR_SCREEN : CLEAR_ALL, 'extra>height'); return; }
+        if (extra > height) {
+          fullRender(this.altScreen ? CLEAR_SCREEN : CLEAR_ALL, 'extra>height');
+          return;
+        }
         if (extra > 0) buffer += '\x1b[1B';
         for (let i = 0; i < extra; i++) {
           buffer += '\r\x1b[2K';
@@ -1412,15 +1567,25 @@ export class TUI extends Container {
     }
 
     // Change above previous viewport.
-    // In alt screen: skip off-screen changes and only render visible diffs.
-    // In normal mode: full redraw so scrollback content is painted correctly
-    // (e.g. long streaming messages that extend above the viewport).
-    const previousContentViewportTop = Math.max(0, this.previousLines.length - height);
-    if (this.altScreen && firstChanged < previousContentViewportTop && newLines.length >= this.previousLines.length) {
+    // When content didn't shrink, re-scan only the visible viewport instead
+    // of a full redraw. This avoids flashing from off-screen animation ticks
+    // (spinners, thinking indicators) that would otherwise trigger CLEAR_ALL.
+    const previousContentViewportTop = Math.max(
+      0,
+      this.previousLines.length - height
+    );
+    if (
+      firstChanged < previousContentViewportTop &&
+      newLines.length >= this.previousLines.length
+    ) {
       // Re-scan for first change within the visible viewport
       firstChanged = -1;
       lastChanged = -1;
-      for (let i = previousContentViewportTop; i < Math.max(newLines.length, this.previousLines.length); i++) {
+      for (
+        let i = previousContentViewportTop;
+        i < Math.max(newLines.length, this.previousLines.length);
+        i++
+      ) {
         const oldLine = this.previousLines[i] ?? '';
         const newLine = newLines[i] ?? '';
         if (oldLine !== newLine) {
@@ -1436,7 +1601,10 @@ export class TUI extends Container {
         return;
       }
     } else if (firstChanged < previousContentViewportTop) {
-      fullRender(this.altScreen ? CLEAR_SCREEN : CLEAR_ALL, 'off-screen-change');
+      fullRender(
+        this.altScreen ? CLEAR_SCREEN : CLEAR_ALL,
+        'off-screen-change'
+      );
       return;
     }
 
@@ -1447,7 +1615,10 @@ export class TUI extends Container {
     const moveTargetRow = appendStart ? firstChanged - 1 : firstChanged;
 
     if (moveTargetRow > prevViewportBottom) {
-      const currentScreenRow = Math.max(0, Math.min(height - 1, hardwareCursorRow - prevViewportTop));
+      const currentScreenRow = Math.max(
+        0,
+        Math.min(height - 1, hardwareCursorRow - prevViewportTop)
+      );
       const moveToBottom = height - 1 - currentScreenRow;
       if (moveToBottom > 0) buffer += `\x1b[${moveToBottom}B`;
       const scroll = moveTargetRow - prevViewportBottom;
@@ -1498,15 +1669,18 @@ export class TUI extends Container {
 
   /**
    * Positions the hardware cursor at the specified location.
-   * 
+   *
    * Moves the terminal's hardware cursor to the given position using
    * ANSI escape sequences. Handles cursor visibility based on the
    * showHardwareCursor setting.
-   * 
+   *
    * @param cursorPos - Target cursor position or null to hide
    * @param totalLines - Total number of lines in content
    */
-  private positionHardwareCursor(cursorPos: { row: number; col: number } | null, totalLines: number): void {
+  private positionHardwareCursor(
+    cursorPos: { row: number; col: number } | null,
+    totalLines: number
+  ): void {
     if (!cursorPos || totalLines <= 0) {
       this.terminal.hideCursor();
       return;
