@@ -293,10 +293,11 @@ impl HookExecutor {
         let command = &hook.1.command;
 
         let (shell, flag) = agent::util::shell::shell_command();
+        let wrapped = agent::util::shell::wrap_cmd_with_fd_limit(command);
         let mut cmd = tokio::process::Command::new(shell);
         let cmd = cmd
             .arg(flag)
-            .arg(command)
+            .arg(&wrapped)
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(Stdio::piped());

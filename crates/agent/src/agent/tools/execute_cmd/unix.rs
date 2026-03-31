@@ -30,6 +30,7 @@ use crate::agent::util::consts::{
     USER_AGENT_VERSION_VALUE,
 };
 use crate::agent::util::path::canonicalize_path_sys;
+use crate::agent::util::shell::wrap_cmd_with_fd_limit;
 use crate::util::providers::SystemProvider;
 
 const EXECUTE_CMD_TOOL_DESCRIPTION: &str = r#"
@@ -135,9 +136,11 @@ impl ExecuteCmd {
 
         let env_vars = env_vars_with_user_agent();
 
+        let wrapped_command = wrap_cmd_with_fd_limit(&self.command);
+
         let child = Command::new(shell)
             .arg("-c")
-            .arg(&self.command)
+            .arg(&wrapped_command)
             .current_dir(&process_dir)
             .envs(env_vars)
             .stdin(Stdio::null())

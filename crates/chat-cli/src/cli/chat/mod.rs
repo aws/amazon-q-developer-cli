@@ -3180,7 +3180,8 @@ impl ChatSession {
             }
             // Use platform-appropriate shell
             let (shell, flag) = agent::util::shell::shell_command();
-            let result = std::process::Command::new(shell).args([flag, command]).status();
+            let wrapped = agent::util::shell::wrap_cmd_with_fd_limit(command);
+            let result = std::process::Command::new(shell).args([flag, &wrapped]).status();
 
             // Handle the result and provide appropriate feedback
             match result {

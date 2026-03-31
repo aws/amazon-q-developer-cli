@@ -36,10 +36,12 @@ pub async fn run_command<W: Write>(
     // Set up environment variables with user agent metadata for CloudTrail tracking
     let env_vars = env_vars_with_user_agent(os);
 
+    let wrapped_command = agent::util::shell::wrap_cmd_with_fd_limit(command);
+
     // We need to maintain a handle on stderr and stdout, but pipe it to the terminal as well
     let mut cmd = tokio::process::Command::new(shell);
     cmd.arg("-c")
-        .arg(command)
+        .arg(&wrapped_command)
         .envs(env_vars)
         .stdin(Stdio::inherit())
         .stdout(Stdio::piped())

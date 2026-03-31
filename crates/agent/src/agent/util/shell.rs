@@ -23,6 +23,17 @@ fn detect_shell() -> (&'static str, &'static str) {
     }
 }
 
+/// Wraps a command string with `ulimit -n 10240` on macOS to prevent
+/// Python's `sh` library from overflowing when Bun sets RLIMIT_NOFILE
+/// to 2^63-1. No-op on non-macOS or if the limit is already sane.
+pub fn wrap_cmd_with_fd_limit(command: &str) -> String {
+    if cfg!(target_os = "macos") {
+        format!("ulimit -n 10240 2>/dev/null; {command}")
+    } else {
+        command.to_string()
+    }
+}
+
 /// Detects the parent shell on Windows.
 ///
 /// Checks the `PSModulePath` environment variable — present when running inside

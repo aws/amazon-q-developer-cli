@@ -53,6 +53,17 @@ function executeClearCommand(): void {
 }
 
 /**
+ * On macOS, Bun raises RLIMIT_NOFILE to 2^63-1 which overflows Python's sh library.
+ * Wrap commands with ulimit to reset to a sane value.
+ */
+function wrapWithFdLimit(command: string): string {
+  if (process.platform === 'darwin') {
+    return `ulimit -n 10240 2>/dev/null; ${command}`;
+  }
+  return command;
+}
+
+/**
  * Execute a TTY command with inherited stdio.
  * Used for interactive programs like vim, top, ssh.
  */
@@ -68,7 +79,7 @@ export function executeShellEscapeTTY(command: string): ShellEscapeResult {
 
     const shell = process.platform === 'win32' ? 'cmd' : 'bash';
     const args =
-      process.platform === 'win32' ? ['/C', command] : ['-c', command];
+      process.platform === 'win32' ? ['/C', command] : ['-c', wrapWithFdLimit(command)];
     const result = spawnSync(shell, args, {
       stdio: 'inherit',
       cwd: process.cwd(),
@@ -106,7 +117,7 @@ export function executeShellEscapeStreaming(
   onData: (chunk: string) => void
 ): { promise: Promise<ShellEscapeResult>; kill: () => void } {
   const shell = process.platform === 'win32' ? 'cmd' : 'bash';
-  const args = process.platform === 'win32' ? ['/C', command] : ['-c', command];
+  const args = process.platform === 'win32' ? ['/C', command] : ['-c', wrapWithFdLimit(command)];
 
   const child = spawn(shell, args, {
     stdio: ['ignore', 'pipe', 'pipe'],
