@@ -137,7 +137,7 @@ export const SubagentToolPanel = React.memo<SubagentToolPanelProps>(
       }
     });
 
-    if (rows.length === 0) return <Box />;
+    if (rows.length === 0) return null;
 
     const maxNameLen = Math.max(...rows.map((r) => r.name.length));
     const maxAgentLen = Math.max(...rows.map((r) => r.agentName.length));

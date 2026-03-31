@@ -100,23 +100,19 @@ const StaticMessage = React.memo(function StaticMessage({
     // Skip subagent tool calls — they are rendered via SubagentToolPanel
     if (isSubagentToolCall(message, mainAgentName)) return null;
 
-    const isSessionTool = SESSION_TOOL_NAMES.has(message.name);
     return (
-      <>
-        <ToolUseMessage
-          id={message.id}
-          name={message.name}
-          kind={message.kind}
-          content={message.content}
-          isFinished={true}
-          isStatic={true}
-          status={message.status}
-          result={message.result}
-          locations={message.locations}
-          barColor={agentBarColor}
-        />
-        {isSessionTool && <SubagentToolPanel isStatic={true} />}
-      </>
+      <ToolUseMessage
+        id={message.id}
+        name={message.name}
+        kind={message.kind}
+        content={message.content}
+        isFinished={true}
+        isStatic={true}
+        status={message.status}
+        result={message.result}
+        locations={message.locations}
+        barColor={agentBarColor}
+      />
     );
   }
   if (message.role === MessageRole.Model) {
@@ -221,7 +217,7 @@ const ActiveTurnTail = React.memo(function ActiveTurnTail({
                 locations={message.locations}
                 barColor={agentBarColor}
               />
-              {isSessionTool && <SubagentToolPanel />}
+              {isSessionTool && !message.isFinished && <SubagentToolPanel />}
             </React.Fragment>
           );
         }
