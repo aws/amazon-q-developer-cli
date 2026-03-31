@@ -19,6 +19,7 @@ use agent::agent_loop::types::{
     ContentBlockStartEvent,
     ContentBlockStopEvent,
     Message,
+    MessageMetadata,
     MessageStartEvent,
     MessageStopEvent,
     MetadataEvent,
@@ -37,8 +38,13 @@ use agent::agent_loop::types::{
     ToolUseBlockDelta,
     ToolUseBlockStart,
 };
+use agent::consts::{
+    CONTEXT_ENTRY_END_HEADER,
+    CONTEXT_ENTRY_START_HEADER,
+};
 use chrono::{
     DateTime,
+    Datelike,
     Utc,
 };
 use eyre::Result;
@@ -58,6 +64,10 @@ use tracing::{
     warn,
 };
 
+use crate::agent::session::v1_compat::{
+    USER_MESSAGE_END_HEADER,
+    USER_MESSAGE_START_HEADER,
+};
 use crate::api_client::error::{
     ApiClientError,
     ConverseStreamError,
@@ -212,7 +222,7 @@ impl RtsModel {
         // Creates the next user message to send.
         let user_input_message = match messages.pop() {
             Some(m) if m.role == Role::User => {
-                let content = m.text();
+                let content = format_user_content(&m);
                 let (tool_results, images) = extract_tool_results_and_images(&m);
                 let user_input_message_context = Some(UserInputMessageContext {
                     env_state: None,
@@ -240,7 +250,7 @@ impl RtsModel {
                 .into_iter()
                 .map(|m| match m.role {
                     Role::User => {
-                        let content = m.text();
+                        let content = format_user_content(&m);
                         let (tool_results, _) = extract_tool_results_and_images(&m);
                         let ctx = if tool_results.is_some() {
                             Some(UserInputMessageContext {
@@ -294,8 +304,63 @@ impl StreamErrorSource for ApiClientError {
     }
 }
 
-/// Annoyingly, the RTS API doesn't allow images as tool use results, so we have to extract tool
-/// results and image content separately.
+/// Format a user message's text content, incorporating metadata (timestamp, additional context)
+/// when present. This is where structured metadata gets formatted into the content string
+/// that the model sees.
+fn format_user_content(m: &Message) -> String {
+    let raw_text = m.text();
+    let meta = match &m.meta {
+        Some(meta) if meta.timestamp.is_some() || !meta.additional_context.is_empty() => meta,
+        _ => return raw_text,
+    };
+    format_content_with_meta(&raw_text, meta)
+}
+
+/// Format user content with metadata context, using context entry delimiters.
+///
+/// Mirrors V1's `content_with_context()` in `chat_cli::cli::chat::message`:
+/// - Timestamp formatted as context entry block with weekday + RFC 3339
+/// - Additional context appended after timestamp
+/// - If any context was added, prompt is wrapped in USER MESSAGE delimiters
+/// - If no context, prompt is returned as-is
+fn format_content_with_meta(prompt: &str, meta: &MessageMetadata) -> String {
+    let mut content = String::new();
+
+    if let Some(ts) = meta.timestamp {
+        let local = ts.with_timezone(&chrono::Local);
+        let weekday = match local.weekday() {
+            chrono::Weekday::Mon => "Monday",
+            chrono::Weekday::Tue => "Tuesday",
+            chrono::Weekday::Wed => "Wednesday",
+            chrono::Weekday::Thu => "Thursday",
+            chrono::Weekday::Fri => "Friday",
+            chrono::Weekday::Sat => "Saturday",
+            chrono::Weekday::Sun => "Sunday",
+        };
+        let timestamp = local.to_rfc3339_opts(chrono::SecondsFormat::Millis, false);
+        content.push_str(&format!(
+            "{CONTEXT_ENTRY_START_HEADER}Current time: {weekday}, {timestamp}\n{CONTEXT_ENTRY_END_HEADER}",
+        ));
+    }
+
+    if !meta.additional_context.is_empty() {
+        content.push_str(&meta.additional_context);
+        content.push('\n');
+    }
+
+    // Only wrap in USER MESSAGE delimiters if there is context to separate from the prompt.
+    match (content.is_empty(), prompt.is_empty()) {
+        (false, false) => {
+            content.push_str(&format!(
+                "{USER_MESSAGE_START_HEADER}{prompt}\n{USER_MESSAGE_END_HEADER}\n\n"
+            ));
+            content.trim().to_string()
+        },
+        (true, _) => prompt.to_string(),
+        (_, true) => content.trim().to_string(),
+    }
+}
+
 fn extract_tool_results_and_images(message: &Message) -> (Option<Vec<rts::ToolResult>>, Option<Vec<rts::ImageBlock>>) {
     let mut images = Vec::new();
     let mut tool_results = Vec::new();
@@ -934,5 +999,59 @@ mod tests {
             err.as_concrete_error::<ConverseStreamError>()
                 .is_some_and(|r| matches!(r.kind, ConverseStreamErrorKind::ModelOverloadedError))
         );
+    }
+
+    #[test]
+    fn test_format_user_content_no_meta() {
+        let m = Message::new(Role::User, vec![ContentBlock::Text("hello".into())], None);
+        assert_eq!(format_user_content(&m), "hello");
+    }
+
+    #[test]
+    fn test_format_user_content_with_timestamp() {
+        let ts = chrono::DateTime::parse_from_rfc3339("2026-03-31T12:30:00.000-07:00")
+            .unwrap()
+            .with_timezone(&Utc);
+        let mut m = Message::new(Role::User, vec![ContentBlock::Text("hello".into())], None);
+        m.meta = Some(MessageMetadata {
+            timestamp: Some(ts),
+            additional_context: String::new(),
+        });
+        let result = format_user_content(&m);
+        assert!(
+            result.contains("--- CONTEXT ENTRY BEGIN ---"),
+            "should have context entry"
+        );
+        assert!(result.contains("Current time:"), "should have timestamp");
+        assert!(result.contains("--- USER MESSAGE BEGIN ---"), "should wrap prompt");
+        assert!(result.contains("hello"), "should contain prompt");
+        assert!(
+            result.contains("--- USER MESSAGE END ---"),
+            "should close prompt wrapper"
+        );
+    }
+
+    #[test]
+    fn test_format_user_content_with_additional_context() {
+        let mut m = Message::new(Role::User, vec![ContentBlock::Text("hello".into())], None);
+        m.meta = Some(MessageMetadata {
+            timestamp: None,
+            additional_context: "hook output here".into(),
+        });
+        let result = format_user_content(&m);
+        assert!(result.contains("hook output here"), "should have additional context");
+        assert!(result.contains("--- USER MESSAGE BEGIN ---"), "should wrap prompt");
+        assert!(result.contains("hello"), "should contain prompt");
+    }
+
+    #[test]
+    fn test_format_user_content_with_empty_meta() {
+        let mut m = Message::new(Role::User, vec![ContentBlock::Text("hello".into())], None);
+        m.meta = Some(MessageMetadata {
+            timestamp: None,
+            additional_context: String::new(),
+        });
+        // Empty meta should behave like no meta
+        assert_eq!(format_user_content(&m), "hello");
     }
 }

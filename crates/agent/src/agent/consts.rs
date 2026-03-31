@@ -29,3 +29,7 @@ pub const MAX_IMAGE_SIZE_BYTES: u64 = 10 * 1024 * 1024;
 
 pub const TOOL_USE_PURPOSE_FIELD_NAME: &str = "__tool_use_purpose";
 pub const TOOL_USE_PURPOSE_FIELD_DESCRIPTION: &str = "A brief explanation why you are making this tool use.";
+
+pub const CONTEXT_ENTRY_START_HEADER: &str = "--- CONTEXT ENTRY BEGIN ---\n";
+pub const CONTEXT_ENTRY_END_HEADER: &str = "--- CONTEXT ENTRY END ---\n\n";
+pub const SKILL_FILES_MESSAGE: &str = "The following file entries contain: name, filepath, and description. You SHOULD decide when to read the full file using the filepath based on its description:\n\n";

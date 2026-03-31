@@ -175,10 +175,10 @@ async fn load_session(path_str: &str, ctx: &CommandContext<'_>) -> CommandResult
 /// List sessions with title backfill. Shared by both the `_kiro.dev/session/list`
 /// extension handler and the `getCommandOptions` path.
 pub async fn list_sessions(
-    session_tx: &SessionManagerHandle,
+    session_manager: &SessionManagerHandle,
     cwd: Option<std::path::PathBuf>,
 ) -> Result<Vec<SessionInfoEntry>, sacp::Error> {
-    let sessions = session_tx.list_sessions(cwd).await?;
+    let sessions = session_manager.list_sessions(cwd).await?;
     let sessions_dir = crate::util::paths::sessions_dir().ok();
     Ok(sessions
         .into_iter()

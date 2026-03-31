@@ -5,6 +5,8 @@
 //! - `{session_id}.jsonl` - append-only log entries
 //! - `{session_id}.lock` - lock file (exists only when session is active)
 
+pub mod v1_compat;
+
 use std::fs::{
     self,
     File,
@@ -23,6 +25,7 @@ use std::path::{
 use std::sync::Mutex;
 
 use agent::event_log::LogEntry;
+use agent::permissions::RuntimePermissions;
 use agent::types::ConversationMetadata;
 use chrono::{
     DateTime,
@@ -76,18 +79,31 @@ impl SessionError {
     }
 }
 
-/// Versioned session state for forward compatibility.
-use agent::permissions::RuntimePermissions;
-
+/// Versioned session metadata. Contains state about the conversation that is subject to change
+/// overtime, e.g. conversation metadata, saved runtime permissions, etc.
+///
+/// Wraps the concrete state struct in a tagged enum so that older persisted
+/// sessions can still be loaded when the schema evolves. The `Unknown`
+/// variant acts as a catch-all: if a session file contains an unrecognized
+/// version tag (or corrupt JSON for the state portion), serde will
+/// deserialize it as `Unknown` instead of failing outright.
+///
+/// On [`SessionDb::load`], `Unknown` is replaced with a default value of `SessionStateV1`.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[allow(clippy::large_enum_variant)]
 #[serde(tag = "version")]
 pub enum SessionState {
     #[serde(rename = "v1")]
     V1(SessionStateV1),
+    /// Catch-all for unrecognized or corrupt session state versions.
+    #[serde(other)]
+    Unknown,
 }
 
+/// Versioned session metadata. See [`SessionState`].
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SessionStateV1 {
+    /// Metadata about the conversation history.
     pub conversation_metadata: ConversationMetadata,
     pub rts_model_state: RtsStateSnapshot,
     #[serde(default)]
@@ -110,33 +126,38 @@ impl SessionState {
         })
     }
 
-    pub fn conversation_metadata(&self) -> &ConversationMetadata {
+    pub fn conversation_metadata(&self) -> Option<&ConversationMetadata> {
         match self {
-            Self::V1(v1) => &v1.conversation_metadata,
+            Self::V1(v1) => Some(&v1.conversation_metadata),
+            Self::Unknown => None,
         }
     }
 
-    pub fn rts_model_state(&self) -> &RtsStateSnapshot {
+    pub fn rts_model_state(&self) -> Option<&RtsStateSnapshot> {
         match self {
-            Self::V1(v1) => &v1.rts_model_state,
+            Self::V1(v1) => Some(&v1.rts_model_state),
+            Self::Unknown => None,
         }
     }
 
-    pub fn permissions(&self) -> &RuntimePermissions {
+    pub fn permissions(&self) -> Option<&RuntimePermissions> {
         match self {
-            Self::V1(v1) => &v1.permissions,
+            Self::V1(v1) => Some(&v1.permissions),
+            Self::Unknown => None,
         }
     }
 
     pub fn agent_name(&self) -> Option<&str> {
         match self {
             Self::V1(v1) => v1.agent_name.as_deref(),
+            Self::Unknown => None,
         }
     }
 
     pub fn set_agent_name(&mut self, name: String) {
         match self {
             Self::V1(v1) => v1.agent_name = Some(name),
+            Self::Unknown => {},
         }
     }
 }
@@ -155,8 +176,24 @@ pub struct SessionData {
     /// Human-readable title derived from the first user prompt.
     #[serde(default)]
     pub title: Option<String>,
+    /// Whether this session was exported from a V1 conversation.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub exported_from_v1: bool,
     /// Serialized conversation and model state.
+    #[serde(deserialize_with = "deserialize_session_state")]
     pub session_state: SessionState,
+}
+
+/// Deserialize `SessionState`, falling back to `Unknown` if the payload is
+/// corrupt or has incompatible fields. `#[serde(other)]` only catches
+/// unrecognized version tags; this also handles a recognized tag (e.g. `"v1"`)
+/// whose inner fields fail to deserialize.
+fn deserialize_session_state<'de, D>(deserializer: D) -> Result<SessionState, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    let value = serde_json::Value::deserialize(deserializer)?;
+    Ok(SessionState::deserialize(value).unwrap_or(SessionState::Unknown))
 }
 
 /// Lock file contents.
@@ -403,6 +440,7 @@ impl SessionDb {
             created_at: now,
             updated_at: now,
             title: None,
+            exported_from_v1: false,
             session_state: state,
         };
 
@@ -426,6 +464,15 @@ impl SessionDb {
         Self::load_impl(&sessions_dir()?, session_id, cwd, is_pid_alive, std::process::id())
     }
 
+    /// Load a session from a specific sessions directory.
+    pub fn load_with_sessions_dir(
+        sessions_dir: &Path,
+        session_id: &str,
+        cwd: Option<&Path>,
+    ) -> Result<Self, SessionError> {
+        Self::load_impl(sessions_dir, session_id, cwd, is_pid_alive, std::process::id())
+    }
+
     fn load_impl(
         sessions_dir: &Path,
         session_id: &str,
@@ -444,6 +491,21 @@ impl SessionDb {
             .map_err(|e| SessionError::io(e, format!("failed to read session metadata {:?}", meta_path)))?;
         let mut session: SessionData = serde_json::from_str(&content)
             .map_err(|e| SessionError::json(e, format!("failed to parse session metadata {:?}", meta_path)))?;
+
+        // Replace unrecognized/corrupt session state with a fresh V1 state.
+        // The event log is the source of truth for conversation history.
+        if matches!(session.session_state, SessionState::Unknown) {
+            session.session_state = SessionState::V1(SessionStateV1 {
+                conversation_metadata: ConversationMetadata::default(),
+                rts_model_state: RtsStateSnapshot {
+                    conversation_id: session.session_id.clone(),
+                    model_info: None,
+                    context_usage_percentage: None,
+                },
+                permissions: RuntimePermissions::default(),
+                agent_name: None,
+            });
+        }
 
         // Update cwd if provided
         let mut dirty = false;
@@ -568,6 +630,7 @@ pub fn create_session_title(content: &[agent::agent_loop::types::ContentBlock]) 
 
     let text = content.iter().find_map(|b| b.text())?;
     let single_line = text.lines().next().unwrap_or(text).trim();
+
     if single_line.is_empty() {
         return None;
     }
@@ -583,15 +646,29 @@ pub fn has_log_entries(sessions_dir: &Path, session_id: &str) -> bool {
     fs::metadata(log_path(sessions_dir, session_id)).is_ok_and(|m| m.len() > 0)
 }
 
+/// Check whether a session exists on disk (both metadata and log files present).
+pub fn session_exists(sessions_dir: &Path, session_id: &str) -> bool {
+    metadata_path(sessions_dir, session_id).exists() && log_path(sessions_dir, session_id).exists()
+}
+
 /// Derive a title from the first log entry of a session.
+///
+/// Handles both `Prompt` (normal sessions) and `Compaction` (imported V1 sessions
+/// that were compacted) by extracting the first user message content.
 pub fn title_from_first_log_entry(sessions_dir: &Path, session_id: &str) -> Option<String> {
     let file = File::open(log_path(sessions_dir, session_id)).ok()?;
     let first_line = BufReader::new(file).lines().next()?.ok()?;
-    let LogEntry::V1(agent::event_log::LogEntryV1::Prompt { content, .. }) = serde_json::from_str(&first_line).ok()?
-    else {
-        return None;
-    };
-    create_session_title(&content)
+    let entry: LogEntry = serde_json::from_str(&first_line).ok()?;
+    match entry {
+        LogEntry::V1(agent::event_log::LogEntryV1::Prompt { content, .. }) => create_session_title(&content),
+        LogEntry::V1(agent::event_log::LogEntryV1::Compaction { messages_snapshot, .. }) => {
+            let first_user = messages_snapshot
+                .iter()
+                .find(|m| m.role == agent::agent_loop::types::Role::User)?;
+            create_session_title(&first_user.content)
+        },
+        LogEntry::V1(_) => None,
+    }
 }
 
 /// Read the persisted agent name from session metadata without loading the full session.
@@ -728,7 +805,7 @@ mod tests {
 
     /// Write a dummy log entry so the session isn't cleaned up on drop.
     fn write_dummy_log(db: &SessionDb) {
-        db.append_log_entry(&LogEntry::prompt("msg".to_string(), vec![]))
+        db.append_log_entry(&LogEntry::prompt("msg".to_string(), vec![], None))
             .unwrap();
     }
 
@@ -740,6 +817,7 @@ mod tests {
         let parsed: SessionState = serde_json::from_str(&json).unwrap();
         match parsed {
             SessionState::V1(_) => {},
+            SessionState::Unknown => panic!("should not deserialize as Unknown"),
         }
     }
 
@@ -859,8 +937,8 @@ mod tests {
 
         let handle = SessionDb::new_impl(sessions_dir, session_id, cwd, test_state(), pid_always_dead, 1000).unwrap();
 
-        let entry1 = LogEntry::prompt("msg-1".to_string(), vec![]);
-        let entry2 = LogEntry::prompt("msg-2".to_string(), vec![]);
+        let entry1 = LogEntry::prompt("msg-1".to_string(), vec![], None);
+        let entry2 = LogEntry::prompt("msg-2".to_string(), vec![], None);
 
         handle.append_log_entry(&entry1).unwrap();
         handle.append_log_entry(&entry2).unwrap();
@@ -888,7 +966,7 @@ mod tests {
         let log_file = log_path(sessions_dir, &session_id);
 
         // Write valid entry, malformed line, valid entry
-        let entry = LogEntry::prompt("msg-1".to_string(), vec![]);
+        let entry = LogEntry::prompt("msg-1".to_string(), vec![], None);
         let mut content = serde_json::to_string(&entry).unwrap();
         content.push('\n');
         content.push_str("not valid json\n");
@@ -1108,7 +1186,11 @@ mod tests {
             .expect("old session format must deserialize; did you add a required field without #[serde(default)]?");
 
         assert_eq!(session.session_id, "compat-metering");
-        let turns = &session.session_state.conversation_metadata().user_turn_metadatas;
+        let turns = &session
+            .session_state
+            .conversation_metadata()
+            .unwrap()
+            .user_turn_metadatas;
         assert_eq!(turns.len(), 1);
         assert!(
             turns[0].metering_usage.is_empty(),
@@ -1177,9 +1259,13 @@ mod tests {
             1000,
         )
         .unwrap();
-        db.append_log_entry(&LogEntry::prompt("m1".to_string(), vec![
-            agent::agent_loop::types::ContentBlock::Text("Explain how websockets work in Rust".to_string()),
-        ]))
+        db.append_log_entry(&LogEntry::prompt(
+            "m1".to_string(),
+            vec![agent::agent_loop::types::ContentBlock::Text(
+                "Explain how websockets work in Rust".to_string(),
+            )],
+            None,
+        ))
         .unwrap();
         drop(db);
 
@@ -1201,5 +1287,95 @@ mod tests {
         .unwrap();
         drop(db2);
         assert!(title_from_first_log_entry(sessions_dir, "t2").is_none());
+    }
+
+    #[test]
+    fn test_session_exists_requires_both_files() {
+        let temp_dir = TempDir::new().unwrap();
+        let dir = temp_dir.path();
+
+        assert!(!session_exists(dir, "s1"), "should be false when neither file exists");
+
+        fs::write(metadata_path(dir, "s1"), "{}").unwrap();
+        assert!(!session_exists(dir, "s1"), "should be false when only metadata exists");
+
+        fs::remove_file(metadata_path(dir, "s1")).unwrap();
+        fs::write(log_path(dir, "s1"), "").unwrap();
+        assert!(!session_exists(dir, "s1"), "should be false when only log exists");
+
+        fs::write(metadata_path(dir, "s1"), "{}").unwrap();
+        assert!(session_exists(dir, "s1"), "should be true when both files exist");
+    }
+
+    #[test]
+    fn test_load_unknown_session_state_falls_back_to_v1() {
+        let temp_dir = TempDir::new().unwrap();
+        let sessions_dir = temp_dir.path();
+        let cwd = Path::new("/test/project");
+        let session_id = "unknown-state";
+
+        // Create a valid session, then overwrite session_state with an unknown version tag.
+        // This simulates loading a session written by a newer client version.
+        let db = SessionDb::new_impl(
+            sessions_dir,
+            session_id.to_string(),
+            cwd,
+            test_state(),
+            pid_always_dead,
+            1000,
+        )
+        .unwrap();
+        write_dummy_log(&db);
+        drop(db);
+
+        let meta_path = metadata_path(sessions_dir, session_id);
+        let mut val: serde_json::Value = serde_json::from_str(&fs::read_to_string(&meta_path).unwrap()).unwrap();
+        val["session_state"] = serde_json::json!({"version": "v2", "some_future_field": 42});
+        fs::write(&meta_path, serde_json::to_string_pretty(&val).unwrap()).unwrap();
+
+        let loaded = SessionDb::load_impl(sessions_dir, session_id, None, pid_always_dead, 1000).unwrap();
+        let session = loaded.session();
+        match &session.session_state {
+            SessionState::V1(v1) => {
+                assert_eq!(v1.rts_model_state.conversation_id, session_id);
+            },
+            SessionState::Unknown => panic!("Unknown state should have been replaced with V1"),
+        }
+    }
+
+    #[test]
+    fn test_load_corrupt_v1_session_state_falls_back_to_v1() {
+        let temp_dir = TempDir::new().unwrap();
+        let sessions_dir = temp_dir.path();
+        let cwd = Path::new("/test/project");
+        let session_id = "corrupt-v1";
+
+        // Create a valid session, then corrupt the v1 state fields.
+        // This simulates a v1 state with incompatible field changes.
+        let db = SessionDb::new_impl(
+            sessions_dir,
+            session_id.to_string(),
+            cwd,
+            test_state(),
+            pid_always_dead,
+            1000,
+        )
+        .unwrap();
+        write_dummy_log(&db);
+        drop(db);
+
+        let meta_path = metadata_path(sessions_dir, session_id);
+        let mut val: serde_json::Value = serde_json::from_str(&fs::read_to_string(&meta_path).unwrap()).unwrap();
+        val["session_state"] = serde_json::json!({"version": "v1", "unexpected_field": true});
+        fs::write(&meta_path, serde_json::to_string_pretty(&val).unwrap()).unwrap();
+
+        let loaded = SessionDb::load_impl(sessions_dir, session_id, None, pid_always_dead, 1000).unwrap();
+        let session = loaded.session();
+        match &session.session_state {
+            SessionState::V1(v1) => {
+                assert_eq!(v1.rts_model_state.conversation_id, session_id);
+            },
+            SessionState::Unknown => panic!("Unknown state should have been replaced with V1"),
+        }
     }
 }

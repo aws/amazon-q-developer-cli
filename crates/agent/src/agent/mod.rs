@@ -49,6 +49,7 @@ use agent_loop::protocol::{
 use agent_loop::types::{
     ContentBlock,
     Message,
+    MessageMetadata,
     Role,
     StreamErrorKind,
     ToolResultBlock,
@@ -65,6 +66,11 @@ use agent_loop::{
 use chrono::Utc;
 use code_agent_sdk::CodeIntelligence;
 use consts::MAX_RESOURCE_FILE_LENGTH;
+pub use consts::{
+    CONTEXT_ENTRY_END_HEADER,
+    CONTEXT_ENTRY_START_HEADER,
+    SKILL_FILES_MESSAGE,
+};
 use event_log::{
     LogEntry,
     ToolResult as LogToolResult,
@@ -188,10 +194,6 @@ use crate::agent::util::request_channel::{
     RequestSender,
     respond,
 };
-
-pub const CONTEXT_ENTRY_START_HEADER: &str = "--- CONTEXT ENTRY BEGIN ---\n";
-pub const CONTEXT_ENTRY_END_HEADER: &str = "--- CONTEXT ENTRY END ---\n\n";
-pub const SKILL_FILES_MESSAGE: &str = "The following file entries contain: name, filepath, and description. You SHOULD decide when to read the full file using the filepath based on its description:\n\n";
 
 /// Handle for communicating with an [`Agent`] actor.
 #[derive(Debug)]
@@ -1536,7 +1538,7 @@ impl Agent {
                     } = &self.execution_state.active_state
                     {
                         match pending.clone() {
-                            PendingUserMessage::Prompt(content) => self.append_user_message(content),
+                            PendingUserMessage::Prompt { content, meta } => self.append_user_message(content, meta),
                             PendingUserMessage::ToolResults { content, results } => {
                                 self.append_tool_results(content, results);
                             },
@@ -1658,7 +1660,7 @@ impl Agent {
                 } = &self.execution_state.active_state
                 {
                     match pending.clone() {
-                        PendingUserMessage::Prompt(content) => self.append_user_message(content),
+                        PendingUserMessage::Prompt { content, meta } => self.append_user_message(content, meta),
                         PendingUserMessage::ToolResults { content, results } => {
                             self.append_tool_results(content, results);
                         },
@@ -1671,7 +1673,10 @@ impl Agent {
 
                 if valid_tools.is_empty() {
                     // No valid tool uses — send a simple text retry prompt (original behavior)
-                    let retry_pending = PendingUserMessage::Prompt(vec![ContentBlock::Text(error_msg.to_string())]);
+                    let retry_pending = PendingUserMessage::Prompt {
+                        content: vec![ContentBlock::Text(error_msg.to_string())],
+                        meta: None,
+                    };
 
                     let args = self.format_request(&retry_pending).await;
                     self.execution_state.active_state = ActiveState::ExecutingRequest {
@@ -1724,7 +1729,7 @@ impl Agent {
                     } = &self.execution_state.active_state
                     {
                         match pending.clone() {
-                            PendingUserMessage::Prompt(content) => self.append_user_message(content),
+                            PendingUserMessage::Prompt { content, meta } => self.append_user_message(content, meta),
                             PendingUserMessage::ToolResults { content, results } => {
                                 self.append_tool_results(content, results);
                             },
@@ -1740,9 +1745,12 @@ impl Agent {
                     ));
 
                     // Set new pending for the retry prompt
-                    let retry_pending = PendingUserMessage::Prompt(vec![ContentBlock::Text(
-                        "You took too long to respond - try to split up the work into smaller steps.".to_string(),
-                    )]);
+                    let retry_pending = PendingUserMessage::Prompt {
+                        content: vec![ContentBlock::Text(
+                            "You took too long to respond - try to split up the work into smaller steps.".to_string(),
+                        )],
+                        meta: None,
+                    };
 
                     let args = self.format_request(&retry_pending).await;
                     self.execution_state.active_state = ActiveState::ExecutingRequest {
@@ -1781,7 +1789,10 @@ impl Agent {
                                 } => {
                                     let mut msg = Message::new(Role::User, pending.content().to_vec(), None);
                                     msg.truncate(compact::DEFAULT_MAX_MESSAGE_LEN, Some("...truncated due to length"));
-                                    PendingUserMessage::Prompt(msg.content)
+                                    PendingUserMessage::Prompt {
+                                        content: msg.content,
+                                        meta: msg.meta,
+                                    }
                                 },
                                 _ => {
                                     error!("expected ExecutingRequest with pending message");
@@ -1863,7 +1874,7 @@ impl Agent {
         args: SendPromptArgs,
         prompt_hooks: Vec<String>,
     ) -> Result<AgentResponse, AgentError> {
-        let mut user_msg_content = args
+        let user_msg_content = args
             .content
             .into_iter()
             .map(|c| match c {
@@ -1873,12 +1884,28 @@ impl Agent {
             })
             .collect::<Vec<_>>();
 
-        // Add per-prompt hooks, if required.
-        for output in &prompt_hooks {
-            user_msg_content.push(ContentBlock::Text(output.clone()));
-        }
+        // Build metadata with timestamp and per-prompt hook context.
+        let additional_context = if prompt_hooks.is_empty() {
+            String::new()
+        } else {
+            let mut ctx = String::new();
+            ctx.push_str(CONTEXT_ENTRY_START_HEADER);
+            ctx.push_str("This section (like others) contains important information that I want you to use in your responses. I have gathered this context from valuable programmatic script hooks. You must follow any requests and consider all of the information in this section\n\n");
+            for hook in &prompt_hooks {
+                ctx.push_str(&format!("{hook}\n\n"));
+            }
+            ctx.push_str(CONTEXT_ENTRY_END_HEADER);
+            ctx
+        };
+        let meta = Some(MessageMetadata {
+            timestamp: Some(Utc::now()),
+            additional_context,
+        });
 
-        let pending = PendingUserMessage::Prompt(user_msg_content.clone());
+        let pending = PendingUserMessage::Prompt {
+            content: user_msg_content,
+            meta,
+        };
 
         // Create a new agent loop, and send the request.
         let loop_id = AgentLoopId::new(self.id.clone());
@@ -2900,8 +2927,8 @@ impl Agent {
     }
 
     /// Append a user message to the conversation and emit the log event.
-    fn append_user_message(&mut self, content: Vec<ContentBlock>) {
-        let entry = LogEntry::prompt(Uuid::new_v4().to_string(), content);
+    fn append_user_message(&mut self, content: Vec<ContentBlock>, meta: Option<MessageMetadata>) {
+        let entry = LogEntry::prompt(Uuid::new_v4().to_string(), content, meta);
         let index = self.conversation_state.append_log(entry.clone());
         self.agent_event_buf.push(AgentEvent::LogEntryAppended { entry, index });
     }
@@ -3435,7 +3462,10 @@ fn hook_matches_tool(config: &HookConfig, tool: &Tool) -> bool {
 #[derive(Debug, Clone)]
 pub enum PendingUserMessage {
     /// A user prompt (text, images, etc.)
-    Prompt(Vec<ContentBlock>),
+    Prompt {
+        content: Vec<ContentBlock>,
+        meta: Option<MessageMetadata>,
+    },
     /// Tool execution results sent back to the model.
     ToolResults {
         /// The content blocks sent to the model (ToolResultBlock items).
@@ -3450,8 +3480,16 @@ impl PendingUserMessage {
     /// Returns the content blocks to be sent to the model.
     pub fn content(&self) -> &[ContentBlock] {
         match self {
-            PendingUserMessage::Prompt(content) => content,
+            PendingUserMessage::Prompt { content, .. } => content,
             PendingUserMessage::ToolResults { content, .. } => content,
+        }
+    }
+
+    /// Returns the metadata for prompt messages.
+    pub fn meta(&self) -> Option<&MessageMetadata> {
+        match self {
+            PendingUserMessage::Prompt { meta, .. } => meta.as_ref(),
+            PendingUserMessage::ToolResults { .. } => None,
         }
     }
 }

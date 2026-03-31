@@ -153,6 +153,7 @@ use crate::agent::rts::{
     RtsModel,
     RtsState,
 };
+use crate::agent::session::v1_compat::V1SessionExporter;
 use crate::agent::session::{
     SessionDb,
     SessionState,
@@ -927,7 +928,9 @@ impl AcpSession {
             let entries = db.load_log_entries()?;
 
             // Preserve the model the session was actually using (e.g. after /model switch)
-            saved_model_id = state.rts_model_state().model_info.as_ref().map(|m| m.model_id.clone());
+            saved_model_id = state
+                .rts_model_state()
+                .and_then(|s| s.model_info.as_ref().map(|m| m.model_id.clone()));
 
             let conversation_id = Uuid::parse_str(&session_id_str)
                 .map_err(|_e| eyre::eyre!("Invalid session ID '{}': must be a valid UUID", session_id_str))?;
@@ -935,8 +938,12 @@ impl AcpSession {
             let snapshot = AgentSnapshot {
                 agent_config: initial_agent_config,
                 conversation_state,
-                conversation_metadata: state.conversation_metadata().clone(),
-                permissions: state.permissions().clone().with_cwd(&cwd.to_string_lossy()),
+                conversation_metadata: state.conversation_metadata().cloned().unwrap_or_default(),
+                permissions: state
+                    .permissions()
+                    .cloned()
+                    .unwrap_or_default()
+                    .with_cwd(&cwd.to_string_lossy()),
                 ..Default::default()
             };
 
@@ -2665,7 +2672,11 @@ async fn update_model_info(
 }
 
 /// Entry point for SACP agent
-pub async fn execute(os: &mut Os, args: agent::types::AcpSpawnArgs) -> eyre::Result<ExitCode> {
+pub async fn execute(
+    os: &mut Os,
+    args: agent::types::AcpSpawnArgs,
+    v1_session_exporter: Arc<dyn V1SessionExporter>,
+) -> eyre::Result<ExitCode> {
     let resolver = PathResolver::new(os);
     let local_mcp_path = resolver.workspace().mcp_config().ok();
     let global_mcp_path = resolver.global().mcp_config().ok();
@@ -2675,6 +2686,7 @@ pub async fn execute(os: &mut Os, args: agent::types::AcpSpawnArgs) -> eyre::Res
         .local_mcp_path(local_mcp_path)
         .global_mcp_path(global_mcp_path)
         .trust_all_tools(args.trust_all_tools)
+        .v1_session_exporter(v1_session_exporter)
         .spawn();
 
     if let Some(n) = args.agent {
@@ -2856,9 +2868,9 @@ pub async fn execute(os: &mut Os, args: agent::types::AcpSpawnArgs) -> eyre::Res
         // format matches the ACP session/list RFD and agent-client-protocol-schema >= 0.11.
         .on_receive_request(
             {
-                let session_tx = session_manager_handle.clone();
+                let session_manager = session_manager_handle.clone();
                 async move |request: super::schema::ListSessionsRequest, request_cx, _cx| {
-                    let entries = super::commands::chat::list_sessions(&session_tx, request.cwd).await?;
+                    let entries = super::commands::chat::list_sessions(&session_manager, request.cwd).await?;
                     request_cx.respond(super::schema::ListSessionsResponse {
                         sessions: entries,
                         next_cursor: None,

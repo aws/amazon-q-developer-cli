@@ -269,9 +269,11 @@ mod tests {
     }
 
     fn append_user(conv: &mut ConversationState, text: &str) {
-        conv.append_log(LogEntry::prompt(Uuid::new_v4().to_string(), vec![ContentBlock::Text(
-            text.into(),
-        )]));
+        conv.append_log(LogEntry::prompt(
+            Uuid::new_v4().to_string(),
+            vec![ContentBlock::Text(text.into())],
+            None,
+        ));
     }
 
     fn append_assistant(conv: &mut ConversationState, text: &str) {
@@ -291,13 +293,15 @@ mod tests {
     }
 
     fn append_user_tool_result(conv: &mut ConversationState, tool_use_id: &str) {
-        conv.append_log(LogEntry::prompt(Uuid::new_v4().to_string(), vec![
-            ContentBlock::ToolResult(ToolResultBlock {
+        conv.append_log(LogEntry::prompt(
+            Uuid::new_v4().to_string(),
+            vec![ContentBlock::ToolResult(ToolResultBlock {
                 tool_use_id: tool_use_id.into(),
                 content: vec![ToolResultContentBlock::Text("result".into())],
                 status: ToolResultStatus::Success,
-            }),
-        ]));
+            })],
+            None,
+        ));
     }
 
     /// Creates a (User, Assistant) message pair with specific content sizes (in chars).

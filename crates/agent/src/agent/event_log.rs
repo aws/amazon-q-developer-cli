@@ -14,6 +14,7 @@ use tracing::warn;
 use super::agent_loop::types::{
     ContentBlock,
     Message,
+    MessageMetadata,
     Role,
 };
 use super::compact::CompactStrategy;
@@ -44,6 +45,8 @@ pub enum LogEntryV1 {
     Prompt {
         message_id: String,
         content: Vec<ContentBlock>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        meta: Option<MessageMetadata>,
     },
     /// Assistant message (may contain text and/or tool uses)
     AssistantMessage {
@@ -73,8 +76,12 @@ pub enum LogEntryV1 {
 }
 
 impl LogEntry {
-    pub fn prompt(message_id: String, content: Vec<ContentBlock>) -> Self {
-        Self::V1(LogEntryV1::Prompt { message_id, content })
+    pub fn prompt(message_id: String, content: Vec<ContentBlock>, meta: Option<MessageMetadata>) -> Self {
+        Self::V1(LogEntryV1::Prompt {
+            message_id,
+            content,
+            meta,
+        })
     }
 
     pub fn assistant_message(message_id: String, content: Vec<ContentBlock>) -> Self {
@@ -112,12 +119,16 @@ impl LogEntry {
     /// Apply this log entry to update the messages vec incrementally.
     pub fn apply(&self, messages: &mut Vec<Message>, log: &EventLog) {
         match self {
-            LogEntry::V1(LogEntryV1::Prompt { message_id, content }) => {
+            LogEntry::V1(LogEntryV1::Prompt {
+                message_id,
+                content,
+                meta,
+            }) => {
                 messages.push(Message {
                     id: Some(message_id.clone()),
                     role: Role::User,
                     content: content.clone(),
-                    timestamp: None,
+                    meta: meta.clone(),
                 });
             },
             LogEntry::V1(LogEntryV1::AssistantMessage { message_id, content }) => {
@@ -125,7 +136,7 @@ impl LogEntry {
                     id: Some(message_id.clone()),
                     role: Role::Assistant,
                     content: content.clone(),
-                    timestamp: None,
+                    meta: None,
                 });
             },
             LogEntry::V1(LogEntryV1::ToolResults {
@@ -135,7 +146,7 @@ impl LogEntry {
                     id: Some(message_id.clone()),
                     role: Role::User,
                     content: content.clone(),
-                    timestamp: None,
+                    meta: None,
                 });
             },
             LogEntry::V1(LogEntryV1::Compaction { messages_snapshot, .. }) => {
@@ -244,7 +255,7 @@ mod tests {
             id: Some("test-id".to_string()),
             role: Role::User,
             content: vec![text_content(s)],
-            timestamp: None,
+            meta: None,
         }
     }
 
@@ -253,13 +264,13 @@ mod tests {
             id: Some("test-id".to_string()),
             role: Role::Assistant,
             content: vec![text_content(s)],
-            timestamp: None,
+            meta: None,
         }
     }
 
     #[test]
     fn test_log_entry_serialization_roundtrip() {
-        let entry = LogEntry::prompt("msg-1".to_string(), vec![text_content("hello")]);
+        let entry = LogEntry::prompt("msg-1".to_string(), vec![text_content("hello")], None);
         let json = serde_json::to_string(&entry).unwrap();
         let parsed: LogEntry = serde_json::from_str(&json).unwrap();
 
@@ -267,7 +278,9 @@ mod tests {
         assert!(json.contains(r#""kind":"Prompt""#));
 
         match parsed {
-            LogEntry::V1(LogEntryV1::Prompt { message_id, content }) => {
+            LogEntry::V1(LogEntryV1::Prompt {
+                message_id, content, ..
+            }) => {
                 assert_eq!(message_id, "msg-1");
                 assert_eq!(content.len(), 1);
             },
@@ -279,12 +292,15 @@ mod tests {
     fn test_derive_messages() {
         let mut log = EventLog::new(Vec::new());
 
-        log.append(LogEntry::prompt("msg-1".to_string(), vec![text_content("hello")]));
+        log.append(LogEntry::prompt("msg-1".to_string(), vec![text_content("hello")], None));
         log.append(LogEntry::assistant_message("msg-2".to_string(), vec![text_content(
             "hi there",
         )]));
-        log.append(LogEntry::prompt("msg-3".to_string(), vec![text_content("how are you")]));
-
+        log.append(LogEntry::prompt(
+            "msg-3".to_string(),
+            vec![text_content("how are you")],
+            None,
+        ));
         assert_eq!(log.len(), 3);
 
         let messages = log.derive_messages();
@@ -316,9 +332,11 @@ mod tests {
     fn test_derive_messages_from_compaction() {
         let mut log = EventLog::new(Vec::new());
 
-        log.append(LogEntry::prompt("old-1".to_string(), vec![text_content(
-            "old message 1",
-        )]));
+        log.append(LogEntry::prompt(
+            "old-1".to_string(),
+            vec![text_content("old message 1")],
+            None,
+        ));
         log.append(LogEntry::assistant_message("old-2".to_string(), vec![text_content(
             "old response",
         )]));
@@ -330,7 +348,11 @@ mod tests {
             snapshot,
         ));
 
-        log.append(LogEntry::prompt("new-1".to_string(), vec![text_content("new message")]));
+        log.append(LogEntry::prompt(
+            "new-1".to_string(),
+            vec![text_content("new message")],
+            None,
+        ));
 
         let messages = log.derive_messages();
         assert_eq!(messages.len(), 3);

@@ -520,11 +520,23 @@ impl Database {
 
     /// Get a specific conversation by its ID.
     pub fn get_conversation_by_id(&self, conversation_id: &str) -> Result<Option<ConversationState>, DatabaseError> {
-        let conn = self.pool.get()?;
-        let mut stmt = conn.prepare("SELECT value FROM conversations_v2 WHERE conversation_id = ?1")?;
+        Ok(self
+            .get_conversation_by_id_with_cwd(conversation_id)?
+            .map(|(_, state)| state))
+    }
 
-        match stmt.query_row([conversation_id], |row| row.get::<_, String>(0)) {
-            Ok(value) => Ok(Some(serde_json::from_str(&value)?)),
+    /// Get a specific conversation and its path (cwd) by conversation ID.
+    pub fn get_conversation_by_id_with_cwd(
+        &self,
+        conversation_id: &str,
+    ) -> Result<Option<(String, ConversationState)>, DatabaseError> {
+        let conn = self.pool.get()?;
+        let mut stmt = conn.prepare("SELECT key, value FROM conversations_v2 WHERE conversation_id = ?1")?;
+
+        match stmt.query_row([conversation_id], |row| {
+            Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+        }) {
+            Ok((key, value)) => Ok(Some((key, serde_json::from_str(&value)?))),
             Err(rusqlite::Error::QueryReturnedNoRows) => Ok(None),
             Err(err) => Err(err.into()),
         }

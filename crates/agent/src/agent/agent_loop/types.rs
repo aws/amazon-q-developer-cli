@@ -179,19 +179,38 @@ pub struct Message {
     pub id: Option<String>,
     pub role: Role,
     pub content: Vec<ContentBlock>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub meta: Option<MessageMetadata>,
+}
+
+/// Structured metadata optionally attached to messages.
+#[typeshare]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MessageMetadata {
+    /// Message timestamp.
     #[serde(with = "chrono::serde::ts_seconds_option")]
     #[serde(default)]
     pub timestamp: Option<DateTime<Utc>>,
+    /// Additional context to be included as part of the message.
+    ///
+    /// May contain per-prompt hook output, task context, etc.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub additional_context: String,
 }
 
 impl Message {
     /// Creates a new message with a new id
     pub fn new(role: Role, content: Vec<ContentBlock>, timestamp: Option<DateTime<Utc>>) -> Self {
+        let meta = timestamp.map(|ts| MessageMetadata {
+            timestamp: Some(ts),
+            additional_context: String::new(),
+        });
         Self {
             id: Some(Uuid::new_v4().to_string()),
             role,
             content,
-            timestamp,
+            meta,
         }
     }
 

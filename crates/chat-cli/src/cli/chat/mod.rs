@@ -44,6 +44,7 @@ mod token_counter;
 pub mod tool_manager;
 pub mod tools;
 pub mod util;
+pub mod v1_export;
 use std::borrow::Cow;
 use std::collections::{
     HashMap,

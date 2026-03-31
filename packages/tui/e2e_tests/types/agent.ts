@@ -219,11 +219,28 @@ export type ContentBlock =
 	| { kind: "toolResult", data: ToolResultBlock }
 	| { kind: "image", data: ImageBlock };
 
+/**
+ * Structured metadata attached to user prompt messages.
+ * 
+ * Keeps hook output, timestamps, and other per-prompt context separate from the
+ * user's actual content so downstream consumers (TUI, title extraction) don't
+ * need to parse it out of the text.
+ * 
+ * The RTS layer formats this into the content string when building the API request.
+ */
+export interface MessageMetadata {
+	/** Timestamp of when the user sent the prompt. */
+	timestamp?: string;
+	/** Additional context from per-prompt hooks, injected before the user's message. */
+	additionalContext?: string;
+}
+
 export interface Message {
 	id?: string;
 	role: Role;
 	content: ContentBlock[];
 	timestamp?: string;
+	meta?: MessageMetadata;
 }
 
 export interface MessageStartEvent {

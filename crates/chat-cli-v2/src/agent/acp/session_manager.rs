@@ -62,6 +62,7 @@ use crate::agent::ipc_server::{
     IpcServer,
     TelemetryEventStore,
 };
+use crate::agent::session::v1_compat::V1SessionExporter;
 use crate::api_client::{
     ApiClient,
     MockResponseRegistryHandle,
@@ -103,12 +104,13 @@ pub struct SpawnOrchestratedResult {
 }
 
 /// Builder for constructing and spawning a [`SessionManager`] actor.
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Default)]
 pub struct SessionManagerBuilder {
     os: Option<Os>,
     local_mcp_path: Option<PathBuf>,
     global_mcp_path: Option<PathBuf>,
     trust_all_tools: bool,
+    v1_session_exporter: Option<Arc<dyn V1SessionExporter>>,
 }
 
 impl SessionManagerBuilder {
@@ -132,6 +134,11 @@ impl SessionManagerBuilder {
         self
     }
 
+    pub fn v1_session_exporter(mut self, exporter: Arc<dyn V1SessionExporter>) -> Self {
+        self.v1_session_exporter = Some(exporter);
+        self
+    }
+
     pub fn spawn(self) -> SessionManagerHandle {
         let (tx, mut session_rx) = mpsc::channel::<SessionManagerRequest>(25);
         let Self {
@@ -139,8 +146,10 @@ impl SessionManagerBuilder {
             local_mcp_path,
             global_mcp_path,
             trust_all_tools,
+            v1_session_exporter,
         } = self;
         let os = os.expect("Os not found");
+        let v1_session_exporter = v1_session_exporter.expect("V1SessionExporter not set");
 
         let session_manager_handle = SessionManagerHandle { tx };
         let session_manager_handle_clone = session_manager_handle.clone();
@@ -181,6 +190,7 @@ impl SessionManagerBuilder {
                 mock_registry,
                 trust_all_tools,
                 telemetry_event_store,
+                v1_session_exporter,
             );
 
             loop {
@@ -248,6 +258,8 @@ pub struct SessionManager {
     connection_cx: Option<JrConnectionCx<AgentToClient>>,
     /// Pending group completion waiters: group_name -> sender
     group_completion_waiters: HashMap<String, GroupCompletionSender>,
+    /// V1 session exporter for lazy migration of V1 conversations.
+    v1_session_exporter: Arc<dyn V1SessionExporter>,
 }
 
 impl SessionManager {
@@ -265,6 +277,7 @@ impl SessionManager {
         mock_registry: Option<MockResponseRegistryHandle>,
         trust_all_tools: bool,
         telemetry_event_store: Option<TelemetryEventStore>,
+        v1_session_exporter: Arc<dyn V1SessionExporter>,
     ) -> Self {
         Self {
             sessions: HashMap::new(),
@@ -286,6 +299,7 @@ impl SessionManager {
             groups: HashMap::new(),
             connection_cx: None,
             group_completion_waiters: HashMap::new(),
+            v1_session_exporter,
         }
     }
 
@@ -384,6 +398,18 @@ impl SessionManager {
                 resp_sender,
             } => {
                 let config = *boxed_config;
+
+                // If loading an existing session that doesn't exist as V2, try exporting from V1
+                if config.load
+                    && let Ok(sessions_dir) = crate::util::paths::sessions_dir()
+                    && !crate::agent::session::session_exists(&sessions_dir, &config.session_id)
+                    && let Err(e) = self
+                        .v1_session_exporter
+                        .export_session(&config.session_id, &sessions_dir)
+                {
+                    warn!(session_id = %config.session_id, error = %e, "Failed to export V1 session");
+                }
+
                 // Resolve agent name: explicit config > CLI --agent flag > persisted session agent > setting >
                 // default
                 let persisted_agent = if config.load {
@@ -664,7 +690,41 @@ impl SessionManager {
                 _ = resp_sender.send(Ok(()));
             },
             SessionManagerRequestData::ListSessions { cwd, resp_sender } => {
-                let result = crate::agent::session::list_sessions(cwd.as_deref());
+                let mut result = crate::agent::session::list_sessions(cwd.as_deref());
+
+                if let Some(cwd) = cwd {
+                    let v1_sessions = match self.v1_session_exporter.list_sessions(&cwd) {
+                        Ok(v) => {
+                            debug!(?cwd, v1_sessions_len = v.len(), "found v1 sessions for cwd");
+                            v
+                        },
+                        Err(e) => {
+                            warn!(?cwd, ?e, "failed to list v1 sessions for cwd");
+                            vec![]
+                        },
+                    };
+
+                    // Merge V1 sessions that haven't been exported yet
+                    if let Ok(v2_sessions) = &mut result
+                        && !v1_sessions.is_empty()
+                    {
+                        let v2_ids: std::collections::HashSet<String> =
+                            v2_sessions.iter().map(|s| s.session_id.clone()).collect();
+                        for v1 in v1_sessions {
+                            if !v2_ids.contains(&v1.conversation_id) {
+                                v2_sessions.push(crate::agent::session::SessionDataView {
+                                    session_id: v1.conversation_id,
+                                    cwd: v1.cwd,
+                                    created_at: v1.updated_at,
+                                    updated_at: v1.updated_at,
+                                    title: v1.title,
+                                });
+                            }
+                        }
+                        v2_sessions.sort_by(|a, b| b.updated_at.cmp(&a.updated_at));
+                    }
+                }
+
                 _ = resp_sender.send(result);
             },
             SessionManagerRequestData::GetCodeIntelligence { cwd, resp_sender } => {

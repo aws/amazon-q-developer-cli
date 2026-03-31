@@ -198,7 +198,10 @@ impl RootSubcommand {
                     model,
                     trust_all_tools,
                 };
-                crate::agent::acp::acp_agent::execute(os, spawn_args).await
+                use std::sync::Arc;
+
+                use crate::agent::session::v1_compat::NoOpV1SessionExporter;
+                crate::agent::acp::acp_agent::execute(os, spawn_args, Arc::new(NoOpV1SessionExporter)).await
             },
             Self::AcpClient { agent } => crate::agent::acp::acp_client::execute(agent).await,
         }
