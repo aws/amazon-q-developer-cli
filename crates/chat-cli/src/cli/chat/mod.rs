@@ -961,6 +961,8 @@ pub struct ChatSession {
     prompt_ack_rx: std::sync::mpsc::Receiver<()>,
     /// Additional context to be added to the next user message (e.g., delegate task summaries)
     pending_additional_context: Option<String>,
+    /// Number of times the TUI promotion nudge has been shown this session.
+    tui_nudge_count: u8,
 }
 
 use trust_scope::{
@@ -1207,6 +1209,7 @@ impl ChatSession {
             wrap,
             prompt_ack_rx,
             pending_additional_context: None,
+            tui_nudge_count: 0,
         };
 
         // For resumed conversations, refresh MCP data if cache is stale
@@ -1288,6 +1291,9 @@ impl ChatSession {
                 // Show turn complete when we're back to prompting and no tools pending
                 if self.tool_uses.is_empty() {
                     turn_summary::display_turn_usage_summary(&mut self.stderr, &self.conversation.user_turn_metadata)?;
+                    if self.conversation.user_turn_metadata.first_request().is_some() {
+                        self.maybe_show_tui_nudge();
+                    }
                 }
 
                 match (self.interactive, self.tool_uses.is_empty()) {
@@ -1745,6 +1751,29 @@ impl ChatSession {
             Ok(true)
         } else {
             Ok(false)
+        }
+    }
+
+    /// Randomly show a TUI promotion nudge (~10% of the time) after agent responses,
+    /// up to 3 times per session.
+    fn maybe_show_tui_nudge(&mut self) {
+        if !self.interactive || self.tui_nudge_count >= 3 {
+            return;
+        }
+        use rand::Rng;
+        if rand::rng().random_ratio(1, 10) {
+            self.tui_nudge_count += 1;
+            let _ = execute!(
+                self.stderr,
+                StyledText::brand_fg(),
+                style::Print("✨ Kiro now has a new TUI experience!\n"),
+                StyledText::secondary_fg(),
+                style::Print("   Relaunch with: "),
+                StyledText::success_fg(),
+                style::Print("kiro-cli --tui"),
+                StyledText::reset(),
+                style::Print("\n\n"),
+            );
         }
     }
 
