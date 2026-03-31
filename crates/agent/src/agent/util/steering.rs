@@ -29,8 +29,9 @@ pub fn should_include_steering_file(content: &str) -> bool {
 }
 
 /// Extracts the YAML frontmatter block from a markdown file, if present.
+/// Handles both `\n` and `\r\n` line endings.
 pub fn extract_yaml_frontmatter(content: &str) -> Option<String> {
-    if !content.starts_with("---\n") {
+    if !content.starts_with("---\n") && !content.starts_with("---\r\n") {
         return None;
     }
     let lines: Vec<&str> = content.lines().collect();
@@ -87,5 +88,14 @@ mod tests {
         assert!(is_steering_file("C:/Users/foo/.kiro/steering/test.md"));
         assert!(!is_steering_file(r"C:\Users\foo\.kiro\steering\test.txt"));
         assert!(!is_steering_file(r"C:\Users\foo\other\test.md"));
+    }
+
+    #[test]
+    fn frontmatter_with_crlf() {
+        let content = "---\r\nname: test\r\ndescription: a skill\r\n---\r\n# Body";
+        let yaml = extract_yaml_frontmatter(content).expect("should parse CRLF frontmatter");
+        assert!(yaml.contains("name: test"));
+        assert!(yaml.contains("description: a skill"));
+        assert!(!yaml.contains('\r'), "parsed YAML should not contain \\r");
     }
 }

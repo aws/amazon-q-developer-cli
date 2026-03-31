@@ -3308,19 +3308,9 @@ struct Resource {
     content: String,
 }
 
-/// Extract YAML frontmatter from file content
-fn extract_yaml_frontmatter(content: &str) -> Option<&str> {
-    if !content.starts_with("---\n") {
-        return None;
-    }
-    let rest = &content[4..];
-    let end = rest.find("\n---")?;
-    Some(&rest[..end])
-}
-
 /// Parse skill frontmatter and format as hint
 fn format_skill_hint(file_path: &str, content: &str) -> Option<String> {
-    let yaml = extract_yaml_frontmatter(content)?;
+    let yaml = crate::util::steering::extract_yaml_frontmatter(content)?;
 
     // Simple parsing - look for name: and description: lines
     let mut name = None;
