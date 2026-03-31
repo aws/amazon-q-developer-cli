@@ -41,7 +41,9 @@ mod inner {
 
 impl Drop for InputSource {
     fn drop(&mut self) {
-        self.save_history().unwrap();
+        if let Err(e) = self.save_history() {
+            eprintln!("Warning: Failed to save history: {e}");
+        }
     }
 }
 impl InputSource {
