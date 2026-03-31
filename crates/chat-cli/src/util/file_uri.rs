@@ -5,6 +5,7 @@ use std::path::{
 };
 
 use eyre::Result;
+use percent_encoding::percent_decode_str;
 use thiserror::Error;
 
 #[derive(Debug, Error)]
@@ -40,8 +41,19 @@ pub fn resolve_file_uri(uri: &str, base_path: &Path) -> Result<String, FileUriEr
         return Err(FileUriError::InvalidUri { uri: uri.to_string() });
     }
 
+    // Percent-decode the path (e.g., %20 → space)
+    let path_str = percent_decode_str(path_str).decode_utf8_lossy().to_string();
+
+    // On Windows, strip leading / before drive letter (e.g., /D:/Users → D:/Users)
+    #[cfg(windows)]
+    let path_str = if path_str.len() >= 3 && path_str.as_bytes()[0] == b'/' && path_str.as_bytes()[2] == b':' {
+        path_str[1..].to_string()
+    } else {
+        path_str
+    };
+
     // Expand tilde to home directory
-    let path_str = shellexpand::tilde(path_str).to_string();
+    let path_str = shellexpand::tilde(&path_str).to_string();
 
     // Normalize forward slashes to platform separator for cross-platform compatibility.
     // File URIs always use forward slashes, but on Windows we need backslashes for
@@ -245,5 +257,21 @@ mod tests {
     fn test_normalize_path_resolves_current_dir() {
         let path = PathBuf::from("/a/./b/./c");
         assert_eq!(normalize_path(&path), PathBuf::from("/a/b/c"));
+    }
+
+    #[test]
+    fn test_percent_decoding() -> Result<(), Box<dyn std::error::Error>> {
+        let temp_dir = TempDir::new()?;
+        let dir_with_space = temp_dir.path().join("my folder");
+        fs::create_dir(&dir_with_space)?;
+        let file_path = dir_with_space.join("test.txt");
+        let content = "percent decoded";
+        fs::write(&file_path, content)?;
+
+        let uri = format!("file://{}", file_path.display()).replace(' ', "%20");
+        let result = resolve_file_uri(&uri, Path::new("/tmp"))?;
+        assert_eq!(result, content);
+
+        Ok(())
     }
 }
