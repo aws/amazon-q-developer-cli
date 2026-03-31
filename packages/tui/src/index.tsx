@@ -48,7 +48,6 @@ const getAgentPath = (): string => {
 };
 
 process.on('SIGHUP', () => {
-  console.log('PTY closed, exiting...');
   cleanup();
 });
 
