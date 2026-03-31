@@ -335,7 +335,12 @@ impl ChatArgs {
             return true;
         }
 
+        // Windows always defaults to TUI (no autocomplete wrapper to handle this)
+        #[cfg(target_os = "windows")]
+        return true;
+
         // Default: legacy
+        #[cfg(not(target_os = "windows"))]
         false
     }
 
