@@ -952,6 +952,32 @@ impl Agent {
         }
     }
 
+    /// Appends the pending user message to conversation state during cancellation.
+    fn append_cancelled_turn_messages(&mut self) {
+        if let ActiveState::ExecutingRequest {
+            pending_user_message: Some(pending),
+            ..
+        } = &self.execution_state.active_state
+        {
+            match pending.clone() {
+                PendingUserMessage::Prompt(content) => self.append_user_message(content),
+                PendingUserMessage::ToolResults { content, results } => {
+                    self.append_tool_results(content, results);
+                },
+            }
+        }
+    }
+
+    /// Appends a placeholder assistant message to maintain role alternation after interruption.
+    fn append_interrupted_placeholder(&mut self) {
+        const INTERRUPTED_MSG: &str = "[Response interrupted by user]";
+        self.append_assistant_message(Message::new(
+            Role::Assistant,
+            vec![ContentBlock::Text(INTERRUPTED_MSG.to_string())],
+            Some(Utc::now()),
+        ));
+    }
+
     /// Ends the current user turn by cancelling [Self::agent_loop] if it exists.
     async fn end_current_turn(&mut self) -> Result<Option<UserTurnMetadata>, AgentError> {
         let Some(mut handle) = self.agent_loop.take() else {
@@ -1002,27 +1028,33 @@ impl Agent {
         }
 
         handle.cancel().await?;
+        let mut cancelled_turn_appended = has_pending_tool_uses;
         while let Some(evt) = handle.recv().await {
             self.agent_event_buf
                 .push(AgentLoopEvent::new(handle.id().clone(), evt.clone()).into());
-            if let AgentLoopEventKind::UserTurnEnd(md) = evt {
-                self.conversation_metadata.user_turn_metadatas.push(md.clone());
+            match evt {
+                AgentLoopEventKind::ResponseStreamEnd { result, .. } => {
+                    if !cancelled_turn_appended {
+                        self.append_cancelled_turn_messages();
+                        cancelled_turn_appended = true;
+                        if let Ok(msg) = &result {
+                            self.append_assistant_message(msg.clone());
+                        } else {
+                            self.append_interrupted_placeholder();
+                        }
+                    }
+                },
+                AgentLoopEventKind::UserTurnEnd(md) => {
+                    if !cancelled_turn_appended {
+                        self.append_cancelled_turn_messages();
+                        self.append_interrupted_placeholder();
+                    }
 
-                // Cancel the user message if needed
-                let should_cancel_prompt = matches!(self.active_state(), ActiveState::ExecutingRequest { .. })
-                    && self
-                        .conversation_state
-                        .messages()
-                        .last()
-                        .is_some_and(|m| m.role == Role::User);
-                if should_cancel_prompt {
-                    let entry = LogEntry::cancelled_prompt();
-                    let index = self.conversation_state.append_log(entry.clone());
-                    self.agent_event_buf.push(AgentEvent::LogEntryAppended { entry, index });
-                }
-
-                self.agent_event_buf.push(AgentEvent::EndTurn(md.clone()));
-                return Ok(Some(md));
+                    self.conversation_metadata.user_turn_metadatas.push(md.clone());
+                    self.agent_event_buf.push(AgentEvent::EndTurn(md.clone()));
+                    return Ok(Some(md));
+                },
+                _ => {},
             }
         }
         Err(AgentError::Custom(
