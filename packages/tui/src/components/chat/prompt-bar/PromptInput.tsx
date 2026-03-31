@@ -165,6 +165,7 @@ export const PromptInput = React.memo(function PromptInput({
     { type: 'text', value: '' },
   ]);
   const [cursor, _setCursor] = useState(0);
+  const [pathCandidates, setPathCandidates] = useState<string[]>([]);
 
   // Refs shadow the latest state so input handlers never read stale closures.
   // Without these, keypresses arriving faster than React re-renders would
@@ -591,6 +592,11 @@ export const PromptInput = React.memo(function PromptInput({
         return;
       }
 
+      // Clear path completion candidates on any key except Tab
+      if (!key.tab) {
+        setPathCandidates([]);
+      }
+
       // Check if slash command menu is visible (has matching commands)
       const hasMatchingSlashCommands =
         activeTrigger?.key === '/' && !commandInputValue.includes(' ')
@@ -628,16 +634,21 @@ export const PromptInput = React.memo(function PromptInput({
         if (slashMenuVisible || filePickerVisible) return;
         const text = getVisibleText(segments);
         const result = completePathAtCursor(text, cursor);
-        if (result && result.replacement !== text.slice(result.start, cursor)) {
-          // Replace the token in segments with the completed path
-          const before = text.slice(0, result.start);
-          const after = text.slice(cursor);
-          const newText = before + result.replacement + after;
-          const newCursor = result.start + result.replacement.length;
-          const newSegs: Segment[] = [{ type: 'text', value: newText }];
-          setSegments(newSegs);
-          setCursor(newCursor);
-          syncToStore(newSegs);
+        if (result) {
+          if (result.replacement !== text.slice(result.start, cursor)) {
+            // Replace the token in segments with the completed path
+            const before = text.slice(0, result.start);
+            const after = text.slice(cursor);
+            const newText = before + result.replacement + after;
+            const newCursor = result.start + result.replacement.length;
+            const newSegs: Segment[] = [{ type: 'text', value: newText }];
+            setSegments(newSegs);
+            setCursor(newCursor);
+            syncToStore(newSegs);
+          } else if (result.candidates.length > 1) {
+            // No progress possible — show candidates list
+            setPathCandidates(result.candidates);
+          }
         }
       } else if (key.backspace || key.delete) {
         if (key.meta) {
@@ -993,5 +1004,31 @@ export const PromptInput = React.memo(function PromptInput({
     return <Text wrap="wrap">{parts}</Text>;
   };
 
-  return <Box>{renderContent()}</Box>;
+  const candidateRows = useMemo(() => {
+    if (pathCandidates.length === 0) return null;
+    const sorted = [...pathCandidates].sort();
+    const maxLen = Math.max(...sorted.map((c) => c.length));
+    const colWidth = maxLen + 2;
+    const cols = Math.max(1, Math.floor(termWidth / colWidth));
+    const rows: string[][] = [];
+    for (let i = 0; i < sorted.length; i += cols) {
+      rows.push(sorted.slice(i, i + cols));
+    }
+    return { rows, colWidth };
+  }, [pathCandidates, termWidth]);
+
+  return (
+    <Box flexDirection="column">
+      <Box>{renderContent()}</Box>
+      {candidateRows && (
+        <Box flexDirection="column">
+          {candidateRows.rows.map((row, ri) => (
+            <Text key={ri} wrap="truncate">
+              {row.map((c) => c.padEnd(candidateRows.colWidth)).join('')}
+            </Text>
+          ))}
+        </Box>
+      )}
+    </Box>
+  );
 });

@@ -25,14 +25,13 @@ export interface CompletionResult {
 function extractPathToken(
   text: string,
   cursor: number
-): { token: string; start: number } | null {
+): { token: string; start: number } {
   // Walk backward from cursor to find the start of the token
   let start = cursor;
   while (start > 0 && text[start - 1] !== ' ' && text[start - 1] !== '\n') {
     start--;
   }
   const token = text.slice(start, cursor);
-  if (!token) return null;
   return { token, start };
 }
 
@@ -89,26 +88,36 @@ export function completePathAtCursor(
   text: string,
   cursor: number
 ): CompletionResult | null {
-  const extracted = extractPathToken(text, cursor);
-  if (!extracted) return null;
+  const { token, start } = extractPathToken(text, cursor);
 
-  const { token, start } = extracted;
+  // Don't complete when there's no token at all (empty input or cursor after space with nothing typed)
+  if (!token && start === 0 && text.trim() === '') return null;
 
-  // Only complete tokens that look like paths
-  if (
-    !token.startsWith('/') &&
-    !token.startsWith('./') &&
-    !token.startsWith('../') &&
-    !token.startsWith('~') &&
-    !token.includes('/')
+  // Resolve directory and prefix for matching
+  let dir: string;
+  let prefix: string;
+
+  if (!token) {
+    // Empty token (cursor after space) — complete in cwd
+    dir = resolve('.');
+    prefix = '';
+  } else if (
+    token.startsWith('/') ||
+    token.startsWith('./') ||
+    token.startsWith('../') ||
+    token.startsWith('~') ||
+    token.includes('/')
   ) {
-    return null;
+    // Explicit path — resolve normally
+    const parsed = resolvePartial(token);
+    if (!parsed) return null;
+    dir = parsed.dir;
+    prefix = parsed.prefix;
+  } else {
+    // Bare prefix (e.g. ".", "..", "Car") — match in cwd
+    dir = resolve('.');
+    prefix = token;
   }
-
-  const parsed = resolvePartial(token);
-  if (!parsed) return null;
-
-  const { dir, prefix } = parsed;
 
   let entries: string[];
   try {
