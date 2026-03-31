@@ -95,7 +95,7 @@ Even in registry mode, you can customize certain aspects of MCP servers:
 Your organization has disabled MCP entirely. Contact your administrator if you need MCP access.
 
 ### "Failed to retrieve MCP settings; MCP functionality disabled"
-There was an error fetching your MCP configuration from the server. This is usually temporary - try again later or contact your administrator.
+There was an error fetching your MCP configuration from the server. Try running `kiro-cli login` to re-authenticate, or `kiro-cli profile` to select a profile. If the issue persists, contact your administrator.
 
 ### Cannot add custom servers
 In registry mode, you can only use servers defined in your organization's registry. Contact your administrator to request additional servers be added to the registry.

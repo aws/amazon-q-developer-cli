@@ -267,7 +267,8 @@ impl ToolsArgs {
 
         if !session.conversation.mcp_enabled {
             let message = if session.conversation.mcp_disabled_due_to_api_failure {
-                "Failed to retrieve MCP settings; MCP functionality disabled\n\n"
+                "Failed to retrieve MCP settings; MCP functionality disabled.\n\
+                 Try running `kiro-cli login` to re-authenticate, or `kiro-cli profile` to select a profile.\n\n"
             } else {
                 "MCP functionality has been disabled by your administrator.\n\n"
             };

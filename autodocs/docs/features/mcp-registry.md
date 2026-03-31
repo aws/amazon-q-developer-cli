@@ -160,8 +160,8 @@ Your token overrides registry defaults.
 ### Issue: "Failed to retrieve MCP settings"
 
 **Symptom**: Error fetching MCP configuration  
-**Cause**: Network issue or server error  
-**Solution**: Temporary issue - retry later or contact administrator
+**Cause**: Authentication or profile issue, or server error  
+**Solution**: Try running `kiro-cli login` to re-authenticate, or `kiro-cli profile` to select a profile. If the issue persists, contact your administrator.
 
 ### Issue: Cannot Add Custom Server
 
