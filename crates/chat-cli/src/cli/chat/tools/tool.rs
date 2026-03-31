@@ -40,7 +40,11 @@ use crate::os::Os;
 pub struct ToolMetadata;
 
 impl ToolMetadata {
-    /// All native tool infos for iteration
+    /// All native tool infos for iteration.
+    ///
+    /// NOTE: When adding a new tool constant below, also add it here.
+    /// The `agent` crate avoids this pitfall by using `strum::EnumIter` on
+    /// `BuiltInToolName`, but V1 relies on this manual list.
     const ALL: &[&ToolInfo] = &[
         Self::FS_READ,
         Self::FS_WRITE,
@@ -58,6 +62,8 @@ impl ToolMetadata {
         Self::USE_SUBAGENT,
         Self::SWITCH_TO_EXECUTION,
         Self::SESSION,
+        Self::GREP,
+        Self::GLOB,
     ];
     pub const CODE: &ToolInfo = &code::Code::INFO;
     pub const DELEGATE: &ToolInfo = &Delegate::INFO;
@@ -337,5 +343,28 @@ impl Tool {
             Tool::FsRead(fs_read) => fs_read.summary.clone(),
             _ => None,
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn is_native_tool_recognizes_all_tools() {
+        // Every tool in ALL should be recognized by is_native_tool via at least one alias
+        for info in ToolMetadata::ALL {
+            assert!(
+                info.aliases.iter().any(|alias| is_native_tool(alias)),
+                "{} should be recognized as a native tool",
+                info.spec_name
+            );
+        }
+    }
+
+    #[test]
+    fn is_native_tool_rejects_unknown() {
+        assert!(!is_native_tool("not_a_tool"));
+        assert!(!is_native_tool("@mcp/something"));
     }
 }
