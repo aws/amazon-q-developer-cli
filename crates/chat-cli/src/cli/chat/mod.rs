@@ -718,6 +718,12 @@ impl ChatArgs {
             None
         };
 
+        // Measure actual terminal rendering width of special prompt characters
+        // (λ, ↯) before rustyline takes over the terminal. This detects terminals
+        // that render ambiguous-width Unicode characters wider than unicode-width
+        // predicts, which would otherwise cause line duplication on wrap.
+        prompt_parser::init_prompt_width_correction();
+
         let input_source = InputSource::new(os, prompt_request_sender, prompt_response_receiver, &agents)?;
 
         ChatSession::new(

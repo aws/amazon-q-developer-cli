@@ -1,0 +1,4 @@
+{
+  "type": "fixed",
+  "description": "Fixed prompt line duplication when input text wraps in terminals that render λ as double-width"
+}

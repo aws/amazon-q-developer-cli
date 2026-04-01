@@ -1,8 +1,153 @@
+use std::sync::OnceLock;
+
+use unicode_width::UnicodeWidthChar;
+
 use crate::constants::{
     DEFAULT_AGENT_NAME,
     HELP_AGENT_NAME,
     PLANNER_AGENT_NAME,
 };
+
+/// Extra columns the terminal uses beyond what `unicode-width` predicts for
+/// each special prompt character. Measured once at startup via DSR (Device
+/// Status Report). A positive value means the terminal renders the character
+/// wider than `unicode-width` thinks.
+#[derive(Debug, Clone, Copy, Default)]
+pub struct PromptWidthCorrection {
+    pub lambda: i8,
+    pub zigzag: i8,
+}
+
+static WIDTH_CORRECTION: OnceLock<PromptWidthCorrection> = OnceLock::new();
+
+/// Measure the actual terminal rendering width of a character using DSR
+/// (`\x1b[6n`). Returns `None` if the terminal doesn't respond or we're not
+/// on a TTY.
+#[cfg(unix)]
+fn measure_char_width_dsr(ch: char) -> Option<usize> {
+    use std::io::Write;
+    use std::os::unix::io::AsRawFd;
+
+    let tty = std::fs::OpenOptions::new()
+        .read(true)
+        .write(true)
+        .open("/dev/tty")
+        .ok()?;
+    let fd = tty.as_raw_fd();
+
+    // Save original terminal settings
+    let mut original: libc::termios = unsafe { std::mem::zeroed() };
+    if unsafe { libc::tcgetattr(fd, &mut original) } != 0 {
+        return None;
+    }
+    let mut raw = original;
+    unsafe { libc::cfmakeraw(&mut raw) };
+    // Set a read timeout so we don't block forever if the terminal doesn't
+    // respond to DSR. VMIN=0, VTIME=5 means read() returns after 0.5s even
+    // if no data arrives.
+    raw.c_cc[libc::VMIN] = 0;
+    raw.c_cc[libc::VTIME] = 5;
+    if unsafe { libc::tcsetattr(fd, libc::TCSANOW, &raw) } != 0 {
+        return None;
+    }
+
+    let result = (|| -> Option<usize> {
+        let mut tty_w = &tty;
+        let mut tty_r = &tty;
+
+        // Move to column 0, query baseline position
+        tty_w.write_all(b"\r\x1b[6n").ok()?;
+        tty_w.flush().ok()?;
+        let base_col = read_cursor_col(&mut tty_r)?;
+
+        // Write the character and query again
+        let mut buf = [0u8; 4];
+        let encoded = ch.encode_utf8(&mut buf);
+        tty_w.write_all(encoded.as_bytes()).ok()?;
+        tty_w.write_all(b"\x1b[6n").ok()?;
+        tty_w.flush().ok()?;
+        let after_col = read_cursor_col(&mut tty_r)?;
+
+        // Clean up: move back and erase the character
+        tty_w.write_all(b"\r\x1b[K").ok()?;
+        tty_w.flush().ok()?;
+
+        Some(after_col.saturating_sub(base_col))
+    })();
+
+    // Restore original terminal settings
+    unsafe { libc::tcsetattr(fd, libc::TCSANOW, &original) };
+
+    result
+}
+
+/// Parse the column from a DSR response `\x1b[row;colR`.
+#[cfg(unix)]
+fn read_cursor_col(reader: &mut impl std::io::Read) -> Option<usize> {
+    let mut buf = [0u8; 1];
+    let mut response = Vec::with_capacity(16);
+
+    loop {
+        match reader.read(&mut buf) {
+            Ok(0) => return None, // timeout (VMIN=0, VTIME expired)
+            Ok(_) => {
+                response.push(buf[0]);
+                if buf[0] == b'R' {
+                    break;
+                }
+            },
+            Err(_) => return None,
+        }
+    }
+
+    // Parse \x1b[row;colR
+    let s = std::str::from_utf8(&response).ok()?;
+    let inner = s.strip_prefix("\x1b[")?;
+    let inner = inner.strip_suffix('R')?;
+    let (_, col_str) = inner.split_once(';')?;
+    col_str.parse::<usize>().ok()
+}
+
+#[cfg(not(unix))]
+fn measure_char_width_dsr(_ch: char) -> Option<usize> {
+    None
+}
+
+/// Measure the width correction for a character: actual terminal width minus
+/// what `unicode-width` reports.
+fn char_width_correction(ch: char) -> i8 {
+    let unicode_width = UnicodeWidthChar::width(ch).unwrap_or(0);
+    match measure_char_width_dsr(ch) {
+        Some(actual) => (actual as i8) - (unicode_width as i8),
+        None => 0,
+    }
+}
+
+/// Probe the terminal once and cache the result. Safe to call multiple times.
+pub fn init_prompt_width_correction() {
+    WIDTH_CORRECTION.get_or_init(|| {
+        if !std::io::IsTerminal::is_terminal(&std::io::stdin()) {
+            return PromptWidthCorrection::default();
+        }
+        let correction = PromptWidthCorrection {
+            lambda: char_width_correction('λ'),
+            zigzag: char_width_correction('↯'),
+        };
+        if correction.lambda != 0 || correction.zigzag != 0 {
+            tracing::info!(
+                lambda = correction.lambda,
+                zigzag = correction.zigzag,
+                "Detected prompt character width mismatch — padding prompt to compensate"
+            );
+        }
+        correction
+    });
+}
+
+/// Return the cached correction (falls back to zero if not yet measured).
+pub fn prompt_width_correction() -> PromptWidthCorrection {
+    WIDTH_CORRECTION.get().copied().unwrap_or_default()
+}
 
 /// Components extracted from a prompt string
 #[derive(Debug, PartialEq)]
@@ -102,7 +247,16 @@ pub fn generate_prompt(
     code_intelligence: bool,
     usage_percentage: Option<f32>,
 ) -> String {
-    // Generate plain text prompt that will be colored by highlight_prompt
+    // Generate plain text prompt that will be colored by highlight_prompt.
+    //
+    // Padding compensates for characters whose actual terminal rendering width
+    // differs from what rustyline's unicode-width calculation predicts (e.g. λ
+    // rendered as 2 columns in CJK terminals). highlight_prompt reconstructs
+    // the prompt from parsed components and ignores extra spaces, so the
+    // padding is invisible on screen but makes rustyline's prompt_size correct.
+    let correction = prompt_width_correction();
+    let mut padding: usize = 0;
+
     let warning_symbol = if warning { "!" } else { "" };
     let profile_part = current_profile
         .filter(|&p| p != DEFAULT_AGENT_NAME)
@@ -119,10 +273,27 @@ pub fn generate_prompt(
 
     let percentage_part = usage_percentage.map(|p| format!("{p:.0}% ")).unwrap_or_default();
 
-    let code_intel_symbol = if code_intelligence { "λ " } else { "" };
-    let tangent_symbol = if tangent_mode { "↯ " } else { "" };
+    let code_intel_symbol = if code_intelligence {
+        if correction.lambda > 0 {
+            padding += correction.lambda as usize;
+        }
+        "λ "
+    } else {
+        ""
+    };
+    let tangent_symbol = if tangent_mode {
+        if correction.zigzag > 0 {
+            padding += correction.zigzag as usize;
+        }
+        "↯ "
+    } else {
+        ""
+    };
 
-    format!("{profile_part}{percentage_part}{code_intel_symbol}{tangent_symbol}{warning_symbol}> ")
+    // Insert padding spaces right before "> " so parse_prompt_components
+    // absorbs them via trim_start() / trim_end() during round-trip.
+    let pad = " ".repeat(padding);
+    format!("{profile_part}{percentage_part}{code_intel_symbol}{tangent_symbol}{warning_symbol}{pad}> ")
 }
 
 #[cfg(test)]

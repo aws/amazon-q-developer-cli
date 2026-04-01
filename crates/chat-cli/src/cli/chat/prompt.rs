@@ -807,14 +807,14 @@ impl Highlighter for ChatHelper {
                 result.push_str(&colored_percentage);
             }
 
-            // Add tangent indicator if present (tangent yellow)
-            if components.tangent_mode {
-                result.push_str(&StyledText::tangent("↯ "));
-            }
-
             // Add code intelligence indicator if present (vibrant blue)
             if components.code_intelligence {
                 result.push_str(&StyledText::code_intelligence("λ "));
+            }
+
+            // Add tangent indicator if present (tangent yellow)
+            if components.tangent_mode {
+                result.push_str(&StyledText::tangent("↯ "));
             }
 
             // Add warning symbol if present (error red)
