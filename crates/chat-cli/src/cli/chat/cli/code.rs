@@ -47,6 +47,8 @@ pub enum CodeSubcommand {
         /// ask questions directly about the codebase without seeing the full structure first.
         #[arg(short, long)]
         silent: bool,
+        /// Directory path to generate overview for (defaults to current workspace)
+        path: Option<String>,
     },
     /// Generate comprehensive codebase documentation using agentic analysis
     Summary,
@@ -100,7 +102,7 @@ impl CodeSubcommand {
             Self::Status => self.show_workspace_status(os, session, false, false).await,
             Self::Init { force } => self.show_workspace_status(os, session, true, *force).await,
             Self::Logs { level, lines, path } => self.show_logs(session, level, *lines, path.clone()).await,
-            Self::Overview { silent } => self.generate_overview(os, session, *silent).await,
+            Self::Overview { silent, path } => self.generate_overview(os, session, *silent, path.clone()).await,
             Self::Summary => self.generate_summary(os, session).await,
         }
     }
@@ -110,6 +112,7 @@ impl CodeSubcommand {
         _os: &mut Os,
         session: &mut ChatSession,
         silent: bool,
+        path: Option<String>,
     ) -> Result<ChatState, ChatError> {
         use std::time::Instant;
 
@@ -146,7 +149,7 @@ impl CodeSubcommand {
 
         // Use default timeout for CLI command
         let request = code_agent_sdk::model::types::GenerateCodebaseOverviewRequest {
-            path: None,
+            path,
             timeout_secs: None,
             token_budget: None,
         };
