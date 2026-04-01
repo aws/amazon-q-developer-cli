@@ -10,7 +10,7 @@
   },
   "introspect": {
     "name": "introspect",
-    "description": "Use ONLY when the user is asking about this chat application's own features, slash commands, settings, or capabilities. Do NOT use for general coding questions, AWS help, or tasks the user wants you to perform. When mentioning commands in your response, always prefix them with '/' (e.g., '/save', '/load', '/context'). CRITICAL: Only provide information explicitly documented. If details about any tool, feature, or command are not documented, clearly state the information is not available rather than generating assumptions.",
+    "description": "Use ONLY when the user is asking about this chat application's own features, slash commands, settings, or capabilities. Do NOT use for general coding questions, AWS help, or tasks the user wants you to perform. When mentioning commands in your response, always prefix them with '/' (e.g., '/chat save', '/chat load', '/context'). CRITICAL: Only provide information explicitly documented. If details about any tool, feature, or command are not documented, clearly state the information is not available rather than generating assumptions.",
     "input_schema": {
       "type": "object",
       "properties": {

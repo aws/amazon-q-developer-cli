@@ -38,7 +38,7 @@ autodocs/
 
 ### slash-commands/
 **What**: In-chat commands starting with `/`  
-**Examples**: /save, /load, /agent, /context, /tools  
+**Examples**: /chat save, /chat load, /agent, /context, /tools  
 **When to use**: Documenting commands users type in chat
 
 **Content includes**:
@@ -115,7 +115,7 @@ doc_meta:
 
 **title**: Feature name as users know it
 - Tools: `fs_read`, `grep`, `code`
-- Slash commands: `/save`, `/agent`, `/context`
+- Slash commands: `/chat save`, `/agent`, `/context`
 - CLI commands: `kiro-cli chat`, `kiro-cli agent`
 - Settings: `chat.enableTangentMode`, `chat.defaultAgent`
 - Features: `Tangent Mode`, `Agent Configuration`

@@ -1,7 +1,7 @@
 ---
 doc_meta:
-  validated: 2026-01-30
-  commit: 080f4235
+  validated: 2026-03-27
+  commit: 4c868fbc
   status: validated
   testable_headless: false
   category: slash_command
@@ -100,7 +100,7 @@ For the classic help text, use /help --legacy
 
 [help] > How do I save a conversation?
 
-To save a conversation, use the `/save` command:
+To save a conversation, use the `/chat save` command:
 ...
 ```
 

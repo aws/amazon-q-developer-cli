@@ -1,0 +1,4 @@
+{
+  "type": "fixed",
+  "description": "Fixed agents suggesting deprecated /save and /load commands instead of /chat save and /chat load"
+}

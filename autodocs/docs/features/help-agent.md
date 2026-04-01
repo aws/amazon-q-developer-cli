@@ -1,7 +1,7 @@
 ---
 doc_meta:
-  validated: 2026-01-30
-  commit: 080f4235
+  validated: 2026-03-27
+  commit: 4c868fbc
   status: validated
   testable_headless: false
   category: feature
@@ -60,7 +60,7 @@ For the classic help text, use /help --legacy
 
 The Help Agent can answer questions about:
 
-- **Slash Commands**: `/save`, `/agent`, `/context`, `/tools`, etc.
+- **Slash Commands**: `/chat save`, `/agent`, `/context`, `/tools`, etc.
 - **Built-in Tools**: `fs_read`, `fs_write`, `code`, `grep`, `glob`, etc.
 - **CLI Commands**: `kiro-cli chat`, `kiro-cli settings`, `kiro-cli agent`, etc.
 - **Configuration Settings**: All settings available via `kiro-cli settings`
@@ -81,16 +81,16 @@ The Help Agent can also create and modify configuration files:
 ```
 [help] > How do I save a conversation?
 
-Use the `/save` command to save your current conversation:
+Use the `/chat save` command to save your current conversation:
 
 **Basic save:**
-/save
+/chat save
 
 **Save with custom name:**
-/save my-session-name
+/chat save my-session-name
 
 Saved conversations are stored in `~/.kiro/sessions/` and can be loaded 
-later with `/load`.
+later with `/chat load`.
 ```
 
 ### Example 2: Ask About a Tool

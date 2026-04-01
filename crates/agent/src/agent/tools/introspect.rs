@@ -32,7 +32,7 @@ WHEN NOT TO USE:
 HOW TO USE:
 - Provide a query to search the documentation
 - Or provide a doc_path to retrieve a specific document
-- When mentioning commands in your response, always prefix them with '/' (e.g., '/save', '/load', '/context')
+- When mentioning commands in your response, always prefix them with '/' (e.g., '/chat save', '/chat load', '/context')
 - CRITICAL: Only provide information explicitly documented. If details are not documented, clearly state the information is not available rather than generating assumptions.
 "#;
 
