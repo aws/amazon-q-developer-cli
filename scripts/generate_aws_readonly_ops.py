@@ -54,13 +54,12 @@ def main():
                 
                 all_readonly = all(action_readonly.get(a['Name'], False) for a in authorized)
                 if all_readonly:
+                    cli_op = to_kebab(op['Name'])
                     for sdk in op.get('SDK', []):
                         if sdk.get('Package') == 'Boto3':
                             sdk_svc = sdk['Name']
                             cli_svc = SDK_TO_CLI.get(sdk_svc, sdk_svc)
-                            cli_op = to_kebab(op['Name'])
                             readonly_ops.add(f"{cli_svc}:{cli_op}")
-                            break
             
             if (i + 1) % 50 == 0:
                 print(f"  Processed {i + 1}/{len(services)}...")
@@ -69,11 +68,16 @@ def main():
             print(f"  Warning: {svc['service']}: {e}")
     
     sorted_ops = sorted(readonly_ops)
-    output_path = "crates/chat-cli/src/data/aws_readonly_operations.json"
-    with open(output_path, 'w') as f:
-        json.dump(sorted_ops, f, indent=2)
+    output_paths = [
+        "crates/chat-cli/src/data/aws_readonly_operations.json",
+        "crates/agent/src/data/aws_readonly_operations.json",
+    ]
+    for output_path in output_paths:
+        with open(output_path, 'w') as f:
+            json.dump(sorted_ops, f, indent=2)
+        print(f"Wrote {output_path}")
     
-    print(f"\nWrote {len(sorted_ops)} service:operation pairs to {output_path}")
+    print(f"\n{len(sorted_ops)} service:operation pairs")
 
 if __name__ == "__main__":
     main()

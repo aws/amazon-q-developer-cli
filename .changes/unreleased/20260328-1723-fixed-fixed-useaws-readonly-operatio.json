@@ -1,0 +1,4 @@
+{
+  "type": "fixed",
+  "description": "Fixed use_aws readonly operations list missing 150 operations across 32 services due to only using the first SDK entry per operation"
+}
