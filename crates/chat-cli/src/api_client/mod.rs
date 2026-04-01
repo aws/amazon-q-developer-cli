@@ -231,6 +231,7 @@ pub struct ApiClient {
     mock_client: Option<Arc<Mutex<std::vec::IntoIter<Vec<ChatResponseStream>>>>>,
     resolve_profile: ProfileResolver,
     model_cache: ModelCache,
+    auth_mode: AuthMode,
 }
 
 impl ApiClient {
@@ -315,6 +316,7 @@ impl ApiClient {
                 mock_client: None,
                 resolve_profile: ProfileResolver::new(None),
                 model_cache: Arc::new(RwLock::new(None)),
+                auth_mode: auth_mode.clone(),
             };
 
             if let Some(json) = crate::util::env_var::get_mock_chat_response(env) {
@@ -361,6 +363,7 @@ impl ApiClient {
             mock_client: None,
             resolve_profile,
             model_cache: Arc::new(RwLock::new(None)),
+            auth_mode,
         })
     }
 
@@ -369,6 +372,15 @@ impl ApiClient {
         self.resolve_profile
             .require_arn(|| self.list_available_profiles())
             .await
+    }
+
+    /// Returns the profile ARN if available, or `None` for API key auth where
+    /// profile ARN is not used.
+    async fn optional_profile_arn(&self) -> Option<String> {
+        if matches!(self.auth_mode, AuthMode::ApiKey) {
+            return None;
+        }
+        self.require_profile_arn().await.ok()
     }
 
     pub async fn send_telemetry_event(
@@ -448,7 +460,7 @@ impl ApiClient {
             .client
             .list_available_models()
             .set_origin(Some(Origin::KiroCli))
-            .set_profile_arn(Some(self.require_profile_arn().await?));
+            .set_profile_arn(self.optional_profile_arn().await);
         let mut paginator = request.into_paginator().send();
 
         while let Some(result) = paginator.next().await {
@@ -521,7 +533,7 @@ impl ApiClient {
         let request = self
             .client
             .get_profile()
-            .set_profile_arn(Some(self.require_profile_arn().await?));
+            .set_profile_arn(self.optional_profile_arn().await);
 
         let response = request.send().await?;
         let mcp_config = response
@@ -585,7 +597,7 @@ impl ApiClient {
 
         self.client
             .create_subscription_token()
-            .set_profile_arn(Some(self.require_profile_arn().await?))
+            .set_profile_arn(self.optional_profile_arn().await)
             .send()
             .await
             .map_err(ApiClientError::CreateSubscriptionToken)
@@ -610,7 +622,7 @@ impl ApiClient {
         self.client
             .get_usage_limits()
             .set_origin(Some(amzn_codewhisperer_client::types::Origin::KiroCli))
-            .set_profile_arn(Some(self.require_profile_arn().await?))
+            .set_profile_arn(self.optional_profile_arn().await)
             .set_is_email_required(Some(is_email_required))
             .send()
             .await
@@ -656,16 +668,7 @@ impl ApiClient {
             match client
                 .generate_assistant_response()
                 .conversation_state(conversation_state)
-                .set_profile_arn(Some(self.require_profile_arn().await.map_err(|e| {
-                    ConverseStreamError {
-                        request_id: None,
-                        status_code: None,
-                        kind: ConverseStreamErrorKind::Unknown {
-                            reason_code: e.to_string(),
-                        },
-                        source: None,
-                    }
-                })?))
+                .set_profile_arn(self.optional_profile_arn().await)
                 .send()
                 .await
             {
@@ -755,7 +758,7 @@ impl ApiClient {
     /// If the profile is not yet resolved, resolves it via `list_available_profiles` and
     /// persists the result to the database so subsequent sessions skip the API call.
     pub async fn resolve_profile_if_missing(&self, database: &mut Database) -> Result<(), ApiClientError> {
-        if self.resolve_profile.is_known() {
+        if matches!(self.auth_mode, AuthMode::ApiKey) || self.resolve_profile.is_known() {
             return Ok(());
         }
         if let Ok(_arn) = self.require_profile_arn().await
@@ -799,7 +802,7 @@ impl ApiClient {
             .id("1".into())
             .method(amzn_codewhisperer_streaming_client::types::McpMethod::ToolsCall)
             .params(params)
-            .set_profile_arn(Some(self.require_profile_arn().await?))
+            .set_profile_arn(self.optional_profile_arn().await)
             .send()
             .await
             .map_err(|e| ApiClientError::Other(format!("Failed to invoke MCP: {e}")))?;
