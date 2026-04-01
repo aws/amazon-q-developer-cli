@@ -314,6 +314,11 @@ impl ChatArgs {
     /// Resolve whether to launch the TUI.
     /// Precedence: CLI flag > env var KIRO_CHAT_UI > setting chat.ui > rollout % > default (legacy)
     pub fn should_launch_tui(&self, os: &Os) -> bool {
+        // Non-interactive mode always uses the legacy (v1) path
+        if self.no_interactive {
+            return false;
+        }
+
         // CLI flags take highest precedence
         if self.tui {
             return true;
