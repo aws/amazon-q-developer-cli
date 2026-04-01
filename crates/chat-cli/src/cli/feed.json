@@ -12,10 +12,14 @@
     },
     {
       "type": "release",
-      "date": "2026-03-31",
-      "version": "1.28.4",
-      "title": "Version 1.28.4",
+      "date": "2026-04-01",
+      "version": "1.29.0",
+      "title": "Version 1.29.0",
       "changes": [
+        {
+          "type": "added",
+          "description": "The new TUI now supports all core features with the addition of sub agents, code intelligence and task management. Learn more: https://kiro.dev/blog/new-look-for-cli/"
+        },
         {
           "type": "added",
           "description": "Added `/chat new` command in V2 TUI to start a fresh conversation without restarting the CLI"
