@@ -1935,6 +1935,10 @@ impl Agent {
         messages.push_back(Message::new(Role::User, pending.content().to_vec(), None));
 
         let task_context = self.task_store.as_ref().and_then(|s| s.format_context().ok().flatten());
+        let knowledge_context = match &self.knowledge_provider {
+            Some(provider) => provider.list_available().await,
+            None => None,
+        };
 
         format_request(
             messages,
@@ -1944,6 +1948,7 @@ impl Agent {
             &self.sys_provider,
             latest_summary,
             task_context,
+            knowledge_context,
         )
         .await
     }
@@ -2955,6 +2960,7 @@ impl Agent {
 /// 1. Create context messages according to what is configured in the agent config and agent spawn
 ///    hook content.
 /// 2. Modify the message history to align with conversation invariants enforced by the backend.
+#[allow(clippy::too_many_arguments)]
 async fn format_request<T, U, P>(
     mut messages: VecDeque<Message>,
     mut tool_spec: Vec<ToolSpec>,
@@ -2963,6 +2969,7 @@ async fn format_request<T, U, P>(
     provider: &P,
     latest_summary: Option<String>,
     task_context: Option<String>,
+    knowledge_context: Option<String>,
 ) -> SendRequestArgs
 where
     T: IntoIterator<Item = U>,
@@ -2971,8 +2978,15 @@ where
 {
     enforce_conversation_invariants(&mut messages, &mut tool_spec);
 
-    let ctx_messages =
-        create_context_messages(agent_config, agent_spawn_hooks, latest_summary, task_context, provider).await;
+    let ctx_messages = create_context_messages(
+        agent_config,
+        agent_spawn_hooks,
+        latest_summary,
+        task_context,
+        knowledge_context,
+        provider,
+    )
+    .await;
     for msg in ctx_messages.into_iter().rev() {
         messages.push_front(msg);
     }
@@ -3004,6 +3018,7 @@ async fn create_context_messages<T, U, P>(
     agent_spawn_hooks: T,
     latest_summary: Option<String>,
     task_context: Option<String>,
+    knowledge_context: Option<String>,
     provider: &P,
 ) -> Vec<Message>
 where
@@ -3021,6 +3036,7 @@ where
         agent_spawn_hooks,
         latest_summary,
         task_context,
+        knowledge_context,
     );
     if content.is_empty() {
         return vec![];
@@ -3044,6 +3060,7 @@ fn format_user_context_message<T, U, S, V, W, X>(
     agent_spawn_hooks: U,
     latest_summary: Option<String>,
     task_context: Option<String>,
+    knowledge_context: Option<String>,
 ) -> String
 where
     T: IntoIterator<Item = S>,
@@ -3060,6 +3077,15 @@ where
         context_content.push_str("This summary contains ALL relevant information from our previous conversation including tool uses, results, code analysis, and file operations. YOU MUST reference this information when answering questions and explicitly acknowledge specific details from the summary when they're relevant to the current question.\n\nSUMMARY CONTENT:\n");
         context_content.push_str(&summary);
         context_content.push('\n');
+        context_content.push_str(CONTEXT_ENTRY_END_HEADER);
+    }
+
+    // Knowledge base listing — matches V1's context injection at position 2 (after summary).
+    // This is a discovery mechanism: the model sees what KBs exist and can then use the
+    // `knowledge search` tool to retrieve actual content.
+    if let Some(kb_ctx) = knowledge_context {
+        context_content.push_str(CONTEXT_ENTRY_START_HEADER);
+        context_content.push_str(&kb_ctx);
         context_content.push_str(CONTEXT_ENTRY_END_HEADER);
     }
 

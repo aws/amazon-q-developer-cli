@@ -15,6 +15,11 @@ use super::{
 #[async_trait]
 pub trait KnowledgeProvider: std::fmt::Debug + Send + Sync {
     async fn execute(&self, command: Knowledge) -> ToolExecutionResult;
+
+    /// Returns a formatted listing of available knowledge bases for context
+    /// injection, matching V1's `format_knowledge_bases_as_context()` behavior.
+    /// Returns `None` if no knowledge bases are available.
+    async fn list_available(&self) -> Option<String>;
 }
 
 #[derive(Debug, Clone, Deserialize, serde::Serialize)]

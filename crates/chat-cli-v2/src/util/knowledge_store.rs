@@ -854,6 +854,15 @@ impl agent::tools::KnowledgeProvider for KnowledgeStoreProvider {
             .map(|text| ToolExecutionOutput::new(vec![ToolExecutionOutputItem::Text(text)]))
             .map_err(ToolExecutionError::Custom)
     }
+
+    async fn list_available(&self) -> Option<String> {
+        let store = self.store.lock().await;
+        let contexts = store.get_all().await.ok()?;
+        if contexts.is_empty() {
+            return None;
+        }
+        Some(format_knowledge_bases_as_context(&contexts))
+    }
 }
 
 async fn execute_remove(
