@@ -187,6 +187,7 @@ Document each deployment step (toolbox beta, prod, CloudFront) as comments on th
    ```powershell
    toolbox install kiro-cli --channel beta --force
    kiro-cli --version
+   kiro-cli diagnostic
    ```
 
 ## Step 9: Run Release Prod Workflow
@@ -238,6 +239,7 @@ Document each deployment step (toolbox beta, prod, CloudFront) as comments on th
    ```powershell
    toolbox install kiro-cli --channel stable --force
    kiro-cli --version
+   kiro-cli diagnostic
    ```
 
 ## Release Tracker
