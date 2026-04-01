@@ -30,7 +30,16 @@ use crate::agent::util::consts::{
     USER_AGENT_VERSION_VALUE,
 };
 use crate::agent::util::path::canonicalize_path_sys;
+use crate::agent::util::truncate_safe;
 use crate::util::providers::SystemProvider;
+
+/// Maximum tool response size in bytes (actual service limit is 800_000).
+const MAX_TOOL_RESPONSE_SIZE: usize = 400_000;
+
+/// Maximum size for command output (stdout/stderr) in bytes.
+/// This is a third of MAX_TOOL_RESPONSE_SIZE to allow room for both stdout and stderr
+/// plus the JSON structure in the response.
+const MAX_COMMAND_OUTPUT_SIZE: usize = MAX_TOOL_RESPONSE_SIZE / 3;
 
 const EXECUTE_CMD_TOOL_DESCRIPTION: &str = r#"
 A tool for executing shell commands.
@@ -157,14 +166,23 @@ impl ExecuteCmd {
 
         let result = serde_json::json!({
             "exit_status": exit_status.to_string(),
-            "stdout": clean_stdout,
-            "stderr": clean_stderr,
+            "stdout": format_output(&clean_stdout, MAX_COMMAND_OUTPUT_SIZE),
+            "stderr": format_output(&clean_stderr, MAX_COMMAND_OUTPUT_SIZE),
         });
 
         Ok(ToolExecutionOutput {
             items: vec![ToolExecutionOutputItem::Json(result)],
         })
     }
+}
+
+/// Format command output with truncation.
+fn format_output(output: &str, max_size: usize) -> String {
+    format!(
+        "{}{}",
+        truncate_safe(output, max_size),
+        if output.len() > max_size { " ... truncated" } else { "" }
+    )
 }
 
 /// Returns `true` if the character is from an invisible or control Unicode range
