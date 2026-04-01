@@ -57,6 +57,20 @@ pub trait V1SessionExporter: Send + Sync + std::fmt::Debug {
     /// Writes `{session_id}.json` and `{session_id}.jsonl` to `sessions_dir`.
     /// No-op if session files already exist (idempotent).
     fn export_session(&self, conversation_id: &str, sessions_dir: &Path) -> Result<(), V1ExportError>;
+
+    /// Try to parse raw JSON as a V1 `ConversationState` and export it.
+    ///
+    /// Returns `Ok(())` if the content was a valid V1 conversation and was
+    /// successfully exported. Returns `Err` if the content is not a V1
+    /// conversation or on I/O failures.
+    fn try_export_from_json(
+        &self,
+        json_content: &str,
+        session_id: &str,
+        cwd: &Path,
+        sessions_dir: &Path,
+        imported_from: Option<&Path>,
+    ) -> Result<(), V1ExportError>;
 }
 
 /// No-op exporter for contexts where V1 database is unavailable, only created for the
@@ -74,5 +88,19 @@ impl V1SessionExporter for NoOpV1SessionExporter {
 
     fn export_session(&self, _conversation_id: &str, _sessions_dir: &Path) -> Result<(), V1ExportError> {
         Ok(())
+    }
+
+    fn try_export_from_json(
+        &self,
+        _json_content: &str,
+        _session_id: &str,
+        _cwd: &Path,
+        _sessions_dir: &Path,
+        _imported_from: Option<&Path>,
+    ) -> Result<(), V1ExportError> {
+        Err(V1ExportError {
+            message: "V1 export not available".into(),
+            source: None,
+        })
     }
 }

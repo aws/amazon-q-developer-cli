@@ -179,6 +179,9 @@ pub struct SessionData {
     /// Whether this session was exported from a V1 conversation.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub exported_from_v1: bool,
+    /// Absolute path to the file this session was imported from, if any.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub imported_from: Option<String>,
     /// Serialized conversation and model state.
     #[serde(deserialize_with = "deserialize_session_state")]
     pub session_state: SessionState,
@@ -219,11 +222,11 @@ fn lock_path(sessions_dir: &Path, session_id: &str) -> PathBuf {
     sessions_dir.join(format!("{}.lock", session_id))
 }
 
-fn metadata_path(sessions_dir: &Path, session_id: &str) -> PathBuf {
+pub fn metadata_path(sessions_dir: &Path, session_id: &str) -> PathBuf {
     sessions_dir.join(format!("{}.json", session_id))
 }
 
-fn log_path(sessions_dir: &Path, session_id: &str) -> PathBuf {
+pub fn log_path(sessions_dir: &Path, session_id: &str) -> PathBuf {
     sessions_dir.join(format!("{}.jsonl", session_id))
 }
 
@@ -441,6 +444,7 @@ impl SessionDb {
             updated_at: now,
             title: None,
             exported_from_v1: false,
+            imported_from: None,
             session_state: state,
         };
 

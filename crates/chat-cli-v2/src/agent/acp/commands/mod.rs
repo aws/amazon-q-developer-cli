@@ -50,6 +50,7 @@ pub struct CommandContext<'a> {
     pub current_agent_name: &'a str,
     pub os: &'a crate::os::Os,
     pub cwd: &'a std::path::Path,
+    pub v1_session_exporter: &'a Arc<dyn crate::agent::session::v1_compat::V1SessionExporter>,
 }
 /// Execute a slash command by dispatching to the appropriate module
 pub async fn execute(command: TuiCommand, ctx: &CommandContext<'_>) -> CommandResult {

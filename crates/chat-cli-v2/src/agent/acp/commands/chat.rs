@@ -1,14 +1,31 @@
 //! /chat command — session listing and loading
 
+use std::io::{
+    Cursor,
+    Read,
+    Write,
+};
+use std::path::Path;
+use std::sync::Arc;
+
 use agent::tui_commands::{
     ChatArgs,
     CommandOption,
     CommandResult,
 };
+use zip::ZipWriter;
+use zip::read::ZipArchive;
+use zip::write::SimpleFileOptions;
 
 use super::CommandContext;
 use crate::agent::acp::schema::SessionInfoEntry;
 use crate::agent::acp::session_manager::SessionManagerHandle;
+use crate::agent::session::v1_compat::V1SessionExporter;
+use crate::agent::session::{
+    SessionData,
+    log_path,
+    metadata_path,
+};
 
 const TITLE_NOT_AVAILABLE: &str = "<title not available>";
 
@@ -45,10 +62,13 @@ pub async fn execute(args: &ChatArgs, ctx: &CommandContext<'_>) -> CommandResult
 }
 
 async fn save_session(path_str: &str, force: bool, ctx: &CommandContext<'_>) -> CommandResult {
-    let expanded = match crate::util::paths::expand_path(ctx.os, path_str) {
+    let mut expanded = match crate::util::paths::expand_path(ctx.os, path_str) {
         Ok(p) => p,
         Err(e) => return CommandResult::error(format!("Failed to expand path: {e}")),
     };
+    if expanded.extension().is_none() {
+        expanded.set_extension("zip");
+    }
 
     if expanded.exists() && !force {
         return CommandResult::error(format!(
@@ -62,36 +82,36 @@ async fn save_session(path_str: &str, force: bool, ctx: &CommandContext<'_>) -> 
         Err(e) => return CommandResult::error(format!("Failed to find sessions directory: {e}")),
     };
 
-    // Read session metadata
-    let meta_path = sessions_dir.join(format!("{}.json", ctx.session_id));
-    let metadata = match std::fs::read_to_string(&meta_path) {
-        Ok(c) => c,
-        Err(e) => return CommandResult::error(format!("Failed to read session metadata: {e}")),
-    };
-
-    // Read session log
-    let log_path = sessions_dir.join(format!("{}.jsonl", ctx.session_id));
-    let log = std::fs::read_to_string(&log_path).unwrap_or_default();
-
-    // Bundle into a single export file
-    let export = serde_json::json!({
-        "format": "kiro-session-export-v1",
-        "metadata": serde_json::from_str::<serde_json::Value>(&metadata).unwrap_or_default(),
-        "log_entries": log.lines().filter(|l| !l.is_empty()).map(|l| {
-            serde_json::from_str::<serde_json::Value>(l).unwrap_or_default()
-        }).collect::<Vec<_>>(),
-    });
-
-    let content = match serde_json::to_string_pretty(&export) {
-        Ok(c) => c,
-        Err(e) => return CommandResult::error(format!("Failed to serialize session: {e}")),
-    };
-
-    if let Err(e) = std::fs::write(&expanded, &content) {
-        return CommandResult::error(format!("Failed to write to {}: {e}", expanded.display()));
+    match save_session_impl(&sessions_dir, ctx.session_id, &expanded) {
+        Ok(()) => CommandResult::success(format!("Saved session to {}", expanded.display())),
+        Err(e) => CommandResult::error(e),
     }
+}
 
-    CommandResult::success(format!("Saved session to {}", expanded.display()))
+/// Save a session as a zip archive containing session_metadata.json and conversation_log.jsonl.
+fn save_session_impl(sessions_dir: &Path, session_id: &str, output_path: &Path) -> Result<(), String> {
+    let metadata = std::fs::read(metadata_path(sessions_dir, session_id))
+        .map_err(|e| format!("Failed to read session metadata: {e}"))?;
+    let log = std::fs::read(log_path(sessions_dir, session_id)).unwrap_or_default();
+
+    let buf = Vec::new();
+    let mut zip = ZipWriter::new(Cursor::new(buf));
+    let options = SimpleFileOptions::default();
+
+    (|| -> Result<(), Box<dyn std::error::Error>> {
+        zip.start_file("session_metadata.json", options)?;
+        zip.write_all(&metadata)?;
+        zip.start_file("conversation_log.jsonl", options)?;
+        zip.write_all(&log)?;
+        Ok(())
+    })()
+    .map_err(|e| format!("Failed to create zip archive: {e}"))?;
+
+    let cursor = zip
+        .finish()
+        .map_err(|e| format!("Failed to finalize zip archive: {e}"))?;
+    std::fs::write(output_path, cursor.into_inner())
+        .map_err(|e| format!("Failed to write to {}: {e}", output_path.display()))
 }
 
 async fn load_session(path_str: &str, ctx: &CommandContext<'_>) -> CommandResult {
@@ -100,76 +120,118 @@ async fn load_session(path_str: &str, ctx: &CommandContext<'_>) -> CommandResult
         Err(e) => return CommandResult::error(format!("Failed to expand path: {e}")),
     };
 
-    // Try original path, then with .json suffix
-    let content = match std::fs::read_to_string(&expanded) {
-        Ok(c) => c,
-        Err(_) if !path_str.ends_with(".json") => {
-            let json_path = expanded.with_extension("json");
-            match std::fs::read_to_string(&json_path) {
-                Ok(c) => c,
-                Err(e) => return CommandResult::error(format!("Failed to read {}: {e}", expanded.display())),
-            }
-        },
-        Err(e) => return CommandResult::error(format!("Failed to read {}: {e}", expanded.display())),
-    };
-
-    let export: serde_json::Value = match serde_json::from_str(&content) {
-        Ok(v) => v,
-        Err(e) => return CommandResult::error(format!("Failed to parse session file: {e}")),
-    };
-
-    // Validate format
-    if export.get("format").and_then(|v| v.as_str()) != Some("kiro-session-export-v1") {
-        return CommandResult::error("Invalid session file format. Expected kiro-session-export-v1.");
-    }
-
     let sessions_dir = match crate::util::paths::sessions_dir() {
         Ok(d) => d,
         Err(e) => return CommandResult::error(format!("Failed to find sessions directory: {e}")),
     };
 
-    // Generate a new session ID for the import
-    let new_session_id = uuid::Uuid::new_v4().to_string();
-
-    // Write metadata with new session ID
-    let mut metadata = export.get("metadata").cloned().unwrap_or_default();
-    if let Some(obj) = metadata.as_object_mut() {
-        obj.insert(
-            "session_id".to_string(),
-            serde_json::Value::String(new_session_id.clone()),
-        );
+    match load_session_impl(&expanded, &sessions_dir, ctx.cwd, ctx.v1_session_exporter) {
+        Ok(session_id) => {
+            let mut result = CommandResult::success(format!("Loaded session from {}", expanded.display()));
+            result.data = Some(serde_json::json!({ "sessionId": session_id }));
+            result
+        },
+        Err(e) => CommandResult::error(e),
     }
-    let meta_path = sessions_dir.join(format!("{new_session_id}.json"));
-    if let Err(e) = std::fs::write(&meta_path, serde_json::to_string_pretty(&metadata).unwrap_or_default()) {
-        return CommandResult::error(format!("Failed to write session metadata: {e}"));
+}
+
+/// Load a session from a file path. Tries the path as-is, then with .zip/.json
+/// extensions. Attempts zip, then V2 SessionData JSON, then V1 ConversationState.
+fn load_session_impl(
+    input_path: &Path,
+    sessions_dir: &Path,
+    cwd: &Path,
+    v1_exporter: &Arc<dyn V1SessionExporter>,
+) -> Result<String, String> {
+    let data = read_with_fallback(input_path)?;
+    let abs_path = std::fs::canonicalize(input_path)
+        .unwrap_or_else(|_| input_path.to_path_buf())
+        .to_string_lossy()
+        .into_owned();
+
+    // Try zip
+    if let Ok(session_id) = load_from_zip(&data, sessions_dir, &abs_path) {
+        return Ok(session_id);
     }
 
-    // Write log entries
-    let log_path = sessions_dir.join(format!("{new_session_id}.jsonl"));
-    let log_entries = export
-        .get("log_entries")
-        .and_then(|v| v.as_array())
-        .cloned()
-        .unwrap_or_default();
-    let log_content: String = log_entries
-        .iter()
-        .map(|e| serde_json::to_string(e).unwrap_or_default())
-        .collect::<Vec<_>>()
-        .join("\n");
-    let log_content = if log_content.is_empty() {
-        log_content
-    } else {
-        format!("{log_content}\n")
-    };
-    if let Err(e) = std::fs::write(&log_path, &log_content) {
-        // Clean up metadata file on failure
+    // Try as text
+    let content =
+        std::str::from_utf8(&data).map_err(|_e| "File is not a valid zip archive or text file.".to_string())?;
+
+    // Try V2 SessionData JSON
+    if let Ok(session_data) = serde_json::from_str::<SessionData>(content) {
+        let new_id = uuid::Uuid::new_v4().to_string();
+        write_imported_session(sessions_dir, &new_id, &session_data, "", &abs_path)?;
+        return Ok(new_id);
+    }
+
+    // Try V1 ConversationState
+    let new_id = uuid::Uuid::new_v4().to_string();
+    v1_exporter
+        .try_export_from_json(content, &new_id, cwd, sessions_dir, Some(input_path))
+        .map_err(|e| format!("Failed to import session: {e}"))?;
+    Ok(new_id)
+}
+
+fn read_with_fallback(path: &Path) -> Result<Vec<u8>, String> {
+    if let Ok(data) = std::fs::read(path) {
+        return Ok(data);
+    }
+    let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("");
+    if ext == "zip" || ext == "json" {
+        return Err(format!("Failed to read {}", path.display()));
+    }
+    for suffix in &["zip", "json"] {
+        if let Ok(data) = std::fs::read(path.with_extension(suffix)) {
+            return Ok(data);
+        }
+    }
+    Err(format!("Failed to read {}", path.display()))
+}
+
+fn load_from_zip(data: &[u8], sessions_dir: &Path, imported_from: &str) -> Result<String, String> {
+    let mut archive = ZipArchive::new(Cursor::new(data)).map_err(|e| e.to_string())?;
+
+    let mut metadata_str = String::new();
+    archive
+        .by_name("session_metadata.json")
+        .map_err(|e| e.to_string())?
+        .read_to_string(&mut metadata_str)
+        .map_err(|e| e.to_string())?;
+
+    let mut log = String::new();
+    if let Ok(mut entry) = archive.by_name("conversation_log.jsonl") {
+        entry.read_to_string(&mut log).map_err(|e| e.to_string())?;
+    }
+
+    let session_data: SessionData = serde_json::from_str(&metadata_str).map_err(|e| e.to_string())?;
+    let new_id = uuid::Uuid::new_v4().to_string();
+    write_imported_session(sessions_dir, &new_id, &session_data, &log, imported_from)
+}
+
+/// Write imported session files with a new session ID.
+fn write_imported_session(
+    sessions_dir: &Path,
+    new_session_id: &str,
+    original: &SessionData,
+    log_content: &str,
+    imported_from: &str,
+) -> Result<String, String> {
+    let mut session_data = original.clone();
+    session_data.session_id = new_session_id.to_string();
+    session_data.imported_from = Some(imported_from.to_string());
+    let new_metadata = serde_json::to_string_pretty(&session_data).map_err(|e| e.to_string())?;
+
+    let meta_path = metadata_path(sessions_dir, new_session_id);
+    let log_path = log_path(sessions_dir, new_session_id);
+
+    std::fs::write(&meta_path, &new_metadata).map_err(|e| e.to_string())?;
+    std::fs::write(&log_path, log_content).map_err(|e| {
         let _ = std::fs::remove_file(&meta_path);
-        return CommandResult::error(format!("Failed to write session log: {e}"));
-    }
+        e.to_string()
+    })?;
 
-    let mut result = CommandResult::success(format!("Loaded session from {}", expanded.display()));
-    result.data = Some(serde_json::json!({ "sessionId": new_session_id }));
-    result
+    Ok(new_session_id.to_string())
 }
 
 /// List sessions with title backfill. Shared by both the `_kiro.dev/session/list`

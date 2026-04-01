@@ -488,7 +488,8 @@ impl SessionManager {
                     .code_intelligence(code_intel)
                     .trust_all_tools(self.trust_all_tools)
                     .acp_client_info(self.acp_client_info.clone())
-                    .telemetry_event_store(self.telemetry_event_store.clone());
+                    .telemetry_event_store(self.telemetry_event_store.clone())
+                    .v1_session_exporter(Arc::clone(&self.v1_session_exporter));
 
                 // Pass client connection to session
                 if let Some(cx) = connection_cx {

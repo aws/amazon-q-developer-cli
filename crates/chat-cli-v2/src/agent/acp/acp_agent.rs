@@ -641,6 +641,7 @@ pub struct AcpSessionBuilder<'a> {
     /// Telemetry event store for recording events in test scenarios. `None` in production.
     telemetry_event_store: Option<crate::agent::ipc_server::TelemetryEventStore>,
     subagent_info: Option<SubagentInfo>,
+    v1_session_exporter: Option<Arc<dyn V1SessionExporter>>,
 }
 
 impl<'a> AcpSessionBuilder<'a> {
@@ -749,6 +750,11 @@ impl<'a> AcpSessionBuilder<'a> {
         self
     }
 
+    pub fn v1_session_exporter(mut self, exporter: Arc<dyn V1SessionExporter>) -> Self {
+        self.v1_session_exporter = Some(exporter);
+        self
+    }
+
     /// Spawns a new ACP session actor and returns a handle to communicate with it.
     ///
     /// The returned `ready_rx` resolves after historical notifications have been emitted
@@ -814,6 +820,7 @@ struct AcpSession {
     os: Os,
     cwd: PathBuf,
     telemetry_observer: TelemetryObserverHandle,
+    v1_session_exporter: Arc<dyn V1SessionExporter>,
 }
 
 impl AcpSession {
@@ -878,6 +885,7 @@ impl AcpSession {
             current_agent_name: &self.current_agent_name,
             os: &self.os,
             cwd: &self.cwd,
+            v1_session_exporter: &self.v1_session_exporter,
         }
     }
 
@@ -1094,6 +1102,9 @@ impl AcpSession {
             os,
             cwd,
             telemetry_observer,
+            v1_session_exporter: builder
+                .v1_session_exporter
+                .unwrap_or_else(|| Arc::new(crate::agent::session::v1_compat::NoOpV1SessionExporter)),
         })
     }
 

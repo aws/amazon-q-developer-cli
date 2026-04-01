@@ -154,90 +154,127 @@ impl V1SessionExporter for V1SessionExporterImpl {
                 source: None,
             })?;
 
-        // Build conversation history logs
-        let (log_entries, title) = convert_conversation(&state);
+        write_v1_session(&state, conversation_id, &cwd, sessions_dir, None)
+    }
 
-        // Build session metadata
-        let model_info = state
-            .model_info
-            .as_ref()
-            .map(|m| chat_cli_v2::cli::chat::legacy::model::ModelInfo {
-                model_name: m.model_name.clone(),
-                description: m.description.clone(),
-                model_id: m.model_id.clone(),
-                context_window_tokens: m.context_window_tokens,
-                rate_multiplier: m.rate_multiplier,
-                rate_unit: m.rate_unit.clone(),
-            });
-        let session_data = SessionData {
-            session_id: conversation_id.to_string(),
-            cwd: PathBuf::from(&cwd),
-            created_at: Utc::now(),
-            updated_at: Utc::now(),
-            title,
-            exported_from_v1: true,
-            session_state: SessionState::V1(SessionStateV1 {
-                conversation_metadata: ConversationMetadata::default(),
-                rts_model_state: RtsStateSnapshot {
-                    conversation_id: conversation_id.to_string(),
-                    model_info,
-                    context_usage_percentage: None,
-                },
-                permissions: RuntimePermissions::default().with_cwd(&cwd),
-                agent_name: None,
-            }),
-        };
-
-        fs::create_dir_all(sessions_dir).map_err(|e| V1ExportError {
-            message: format!("failed to create sessions directory {}", sessions_dir.display()),
+    fn try_export_from_json(
+        &self,
+        json_content: &str,
+        session_id: &str,
+        cwd: &Path,
+        sessions_dir: &Path,
+        imported_from: Option<&Path>,
+    ) -> Result<(), V1ExportError> {
+        let state: ConversationState = serde_json::from_str(json_content).map_err(|e| V1ExportError {
+            message: "failed to deserialize as V1 ConversationState".into(),
             source: Some(Box::new(e)),
         })?;
 
-        let log_path = sessions_dir.join(format!("{conversation_id}.jsonl"));
-        let meta_path = sessions_dir.join(format!("{conversation_id}.json"));
-        let meta_content = serde_json::to_string_pretty(&session_data).map_err(|e| V1ExportError {
-            message: "failed to serialize session metadata".into(),
-            source: Some(Box::new(e)),
-        })?;
-
-        // Track created files so we can clean up on error.
-        let mut created_files: Vec<&Path> = Vec::new();
-        let result = (|| -> Result<(), V1ExportError> {
-            let mut log_file = fs::File::create(&log_path).map_err(|e| V1ExportError {
-                message: format!("failed to create log file {}", log_path.display()),
-                source: Some(Box::new(e)),
-            })?;
-            created_files.push(&log_path);
-
-            for entry in &log_entries {
-                let line = serde_json::to_string(entry).map_err(|e| V1ExportError {
-                    message: "failed to serialize log entry".into(),
-                    source: Some(Box::new(e)),
-                })?;
-                writeln!(log_file, "{line}").map_err(|e| V1ExportError {
-                    message: "failed to write log entry".into(),
-                    source: Some(Box::new(e)),
-                })?;
-            }
-
-            // Write metadata last so partial exports don't look complete
-            fs::write(&meta_path, &meta_content).map_err(|e| V1ExportError {
-                message: format!("failed to write session metadata {}", meta_path.display()),
-                source: Some(Box::new(e)),
-            })?;
-            created_files.push(&meta_path);
-
-            Ok(())
-        })();
-
-        if result.is_err() {
-            for path in &created_files {
-                let _ = fs::remove_file(path);
-            }
+        if chat_cli_v2::agent::session::session_exists(sessions_dir, session_id) {
+            return Ok(());
         }
 
-        result
+        let _lock = chat_cli_v2::agent::session::acquire_lock(sessions_dir, session_id).map_err(|e| V1ExportError {
+            message: format!("failed to acquire lock for session {session_id}"),
+            source: Some(Box::new(e)),
+        })?;
+
+        if chat_cli_v2::agent::session::session_exists(sessions_dir, session_id) {
+            return Ok(());
+        }
+
+        write_v1_session(&state, session_id, &cwd.to_string_lossy(), sessions_dir, imported_from)
     }
+}
+
+/// Shared helper: convert a V1 `ConversationState` and write V2 session files to disk.
+fn write_v1_session(
+    state: &ConversationState,
+    conversation_id: &str,
+    cwd: &str,
+    sessions_dir: &Path,
+    imported_from: Option<&Path>,
+) -> Result<(), V1ExportError> {
+    let (log_entries, title) = convert_conversation(state);
+
+    let model_info = state
+        .model_info
+        .as_ref()
+        .map(|m| chat_cli_v2::cli::chat::legacy::model::ModelInfo {
+            model_name: m.model_name.clone(),
+            description: m.description.clone(),
+            model_id: m.model_id.clone(),
+            context_window_tokens: m.context_window_tokens,
+            rate_multiplier: m.rate_multiplier,
+            rate_unit: m.rate_unit.clone(),
+        });
+    let session_data = SessionData {
+        session_id: conversation_id.to_string(),
+        cwd: PathBuf::from(cwd),
+        created_at: Utc::now(),
+        updated_at: Utc::now(),
+        title,
+        exported_from_v1: true,
+        imported_from: imported_from.map(|p| p.to_string_lossy().into_owned()),
+        session_state: SessionState::V1(SessionStateV1 {
+            conversation_metadata: ConversationMetadata::default(),
+            rts_model_state: RtsStateSnapshot {
+                conversation_id: conversation_id.to_string(),
+                model_info,
+                context_usage_percentage: None,
+            },
+            permissions: RuntimePermissions::default().with_cwd(cwd),
+            agent_name: None,
+        }),
+    };
+
+    fs::create_dir_all(sessions_dir).map_err(|e| V1ExportError {
+        message: format!("failed to create sessions directory {}", sessions_dir.display()),
+        source: Some(Box::new(e)),
+    })?;
+
+    let log_path = sessions_dir.join(format!("{conversation_id}.jsonl"));
+    let meta_path = sessions_dir.join(format!("{conversation_id}.json"));
+    let meta_content = serde_json::to_string_pretty(&session_data).map_err(|e| V1ExportError {
+        message: "failed to serialize session metadata".into(),
+        source: Some(Box::new(e)),
+    })?;
+
+    let mut created_files: Vec<&Path> = Vec::new();
+    let result = (|| -> Result<(), V1ExportError> {
+        let mut log_file = fs::File::create(&log_path).map_err(|e| V1ExportError {
+            message: format!("failed to create log file {}", log_path.display()),
+            source: Some(Box::new(e)),
+        })?;
+        created_files.push(&log_path);
+
+        for entry in &log_entries {
+            let line = serde_json::to_string(entry).map_err(|e| V1ExportError {
+                message: "failed to serialize log entry".into(),
+                source: Some(Box::new(e)),
+            })?;
+            writeln!(log_file, "{line}").map_err(|e| V1ExportError {
+                message: "failed to write log entry".into(),
+                source: Some(Box::new(e)),
+            })?;
+        }
+
+        fs::write(&meta_path, &meta_content).map_err(|e| V1ExportError {
+            message: format!("failed to write session metadata {}", meta_path.display()),
+            source: Some(Box::new(e)),
+        })?;
+        created_files.push(&meta_path);
+
+        Ok(())
+    })();
+
+    if result.is_err() {
+        for path in &created_files {
+            let _ = fs::remove_file(path);
+        }
+    }
+
+    result
 }
 
 /// Convert a V1 ConversationState into V2 log entries and an optional title.
@@ -667,5 +704,39 @@ mod tests {
         let log_path = sessions_dir.path().join(format!("{conversation_id}.jsonl"));
         assert!(!log_path.exists(), "jsonl file should be cleaned up on error");
         assert!(!session_exists(sessions_dir.path(), &conversation_id));
+    }
+
+    #[tokio::test]
+    async fn test_try_export_from_json_valid_v1() {
+        let fixture_path = format!("{FIXTURES_DIR}/basic_tool_use.json");
+        let raw = std::fs::read_to_string(&fixture_path).unwrap();
+
+        let db = crate::database::Database::new_default().await.unwrap();
+        let exporter = V1SessionExporterImpl::new(Arc::new(db));
+        let sessions_dir = TempDir::new().unwrap();
+        let session_id = "test-session-id";
+        let cwd = Path::new("/test/cwd");
+
+        let import_path = Path::new("/tmp/my-export.json");
+        exporter
+            .try_export_from_json(&raw, session_id, cwd, sessions_dir.path(), Some(import_path))
+            .unwrap();
+        assert!(session_exists(sessions_dir.path(), session_id));
+
+        let session_db = SessionDb::load_with_sessions_dir(sessions_dir.path(), session_id, None).unwrap();
+        let session_data = session_db.session();
+        assert!(session_data.exported_from_v1);
+        assert_eq!(session_data.imported_from.as_deref(), Some("/tmp/my-export.json"));
+    }
+
+    #[tokio::test]
+    async fn test_try_export_from_json_not_v1() {
+        let db = crate::database::Database::new_default().await.unwrap();
+        let exporter = V1SessionExporterImpl::new(Arc::new(db));
+        let sessions_dir = TempDir::new().unwrap();
+
+        let result =
+            exporter.try_export_from_json(r#"{"foo": "bar"}"#, "id", Path::new("/tmp"), sessions_dir.path(), None);
+        assert!(result.is_err(), "should return Err for non-V1 JSON");
     }
 }
