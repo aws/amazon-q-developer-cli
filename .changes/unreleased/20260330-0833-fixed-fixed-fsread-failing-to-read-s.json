@@ -1,0 +1,4 @@
+{
+  "type": "fixed",
+  "description": "Fixed fs_read failing to read symlinked files and directories"
+}

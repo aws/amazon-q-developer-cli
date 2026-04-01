@@ -99,7 +99,7 @@ impl FsRead {
                 errors.push(format!("'{}' does not exist", path.to_string_lossy()));
                 continue;
             }
-            let file_md = tokio::fs::symlink_metadata(&path).await;
+            let file_md = tokio::fs::metadata(&path).await;
             let Ok(file_md) = file_md else {
                 errors.push(format!(
                     "Failed to check file metadata for '{}'",
@@ -223,6 +223,8 @@ mod tests {
         assert_eq!(result.items.len(), 1);
         if let ToolExecutionOutputItem::Text(content) = &result.items[0] {
             assert_eq!(content, "line1\nline2\nline3");
+        } else {
+            panic!("expected text output");
         }
     }
 
@@ -244,6 +246,8 @@ mod tests {
         let result = tool.execute(&test_base).await.unwrap();
         if let ToolExecutionOutputItem::Text(content) = &result.items[0] {
             assert_eq!(content, "line2\nline3");
+        } else {
+            panic!("expected text output");
         }
     }
 
@@ -302,5 +306,31 @@ mod tests {
         };
 
         assert!(tool.validate(&test_base).await.is_err());
+    }
+
+    #[tokio::test]
+    #[cfg(unix)]
+    async fn test_fs_read_validate_symlink_to_file() {
+        let test_base = TestBase::new().await.with_file(("target.txt", "symlink content")).await;
+
+        tokio::fs::symlink(test_base.join("target.txt"), test_base.join("link.txt"))
+            .await
+            .unwrap();
+
+        let tool = FsRead {
+            ops: vec![FsReadOp {
+                path: test_base.join("link.txt").to_string_lossy().to_string(),
+                limit: None,
+                offset: None,
+            }],
+        };
+
+        assert!(tool.validate(&test_base).await.is_ok());
+        let result = tool.execute(&test_base).await.unwrap();
+        if let ToolExecutionOutputItem::Text(content) = &result.items[0] {
+            assert_eq!(content, "symlink content");
+        } else {
+            panic!("expected text output");
+        }
     }
 }

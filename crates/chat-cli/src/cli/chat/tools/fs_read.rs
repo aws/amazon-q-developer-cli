@@ -446,7 +446,7 @@ impl FsImage {
                 if !is_supported_image_type(&processed_path) {
                     bail!("'{}' is not a supported image type", &processed_path);
                 }
-                let is_file = os.fs.symlink_metadata(&processed_path).await?.is_file();
+                let is_file = os.fs.metadata(&processed_path).await?.is_file();
                 if !is_file {
                     bail!("'{}' is not a file", &processed_path);
                 }
@@ -499,7 +499,7 @@ impl FsLine {
         if !path.exists() {
             bail!("'{}' does not exist", self.path);
         }
-        let is_file = os.fs.symlink_metadata(&path).await?.is_file();
+        let is_file = os.fs.metadata(&path).await?.is_file();
         if !is_file {
             bail!("'{}' is not a file", self.path);
         }
@@ -639,7 +639,7 @@ impl FsSearch {
         if !path.exists() {
             bail!("File not found: {}", relative_path);
         }
-        if !os.fs.symlink_metadata(path).await?.is_file() {
+        if !os.fs.metadata(path).await?.is_file() {
             bail!("Path is not a file: {}", relative_path);
         }
         if self.pattern.is_empty() {
@@ -748,7 +748,7 @@ impl FsDirectory {
         if !path.exists() {
             bail!("Directory not found: {}", relative_path);
         }
-        if !os.fs.symlink_metadata(path).await?.is_dir() {
+        if !os.fs.metadata(path).await?.is_dir() {
             bail!("Path is not a directory: {}", relative_path);
         }
         Ok(())
@@ -1827,5 +1827,55 @@ mod tests {
         .unwrap();
         let res = all_allowed.eval_perm(&os, &agent);
         assert!(matches!(res, PermissionEvalResult::Allow));
+    }
+
+    #[tokio::test]
+    #[cfg(unix)]
+    async fn test_fs_read_symlink_to_file() {
+        let os = setup_test_directory().await;
+        let mut stdout = std::io::stdout();
+
+        os.fs.symlink(TEST_FILE_PATH, "/link.txt").await.unwrap();
+
+        // FsLine should follow symlinks
+        let v = serde_json::json!({
+            "operations": [{ "path": "/link.txt", "mode": "Line", "start_line": 1, "end_line": 1 }]
+        });
+        let mut fs_read = serde_json::from_value::<FsRead>(v).unwrap();
+        assert!(fs_read.validate(&os).await.is_ok());
+        let output = fs_read.invoke(&os, &mut stdout).await.unwrap();
+        if let OutputKind::Text(text) = output.output {
+            assert!(text.contains("Hello world!"));
+        } else {
+            panic!("expected text output");
+        }
+
+        // FsSearch should follow symlinks
+        let v = serde_json::json!({
+            "operations": [{ "path": "/link.txt", "mode": "Search", "pattern": "hello" }]
+        });
+        let mut fs_read = serde_json::from_value::<FsRead>(v).unwrap();
+        assert!(fs_read.validate(&os).await.is_ok());
+    }
+
+    #[tokio::test]
+    #[cfg(unix)]
+    async fn test_fs_read_symlink_to_directory() {
+        let os = setup_test_directory().await;
+        let mut stdout = std::io::stdout();
+
+        os.fs.symlink("/aaaa1", "/link_dir").await.unwrap();
+
+        let v = serde_json::json!({
+            "operations": [{ "path": "/link_dir", "mode": "Directory" }]
+        });
+        let mut fs_read = serde_json::from_value::<FsRead>(v).unwrap();
+        assert!(fs_read.validate(&os).await.is_ok());
+        let output = fs_read.invoke(&os, &mut stdout).await.unwrap();
+        if let OutputKind::Text(text) = output.output {
+            assert!(text.contains("bbbb1"));
+        } else {
+            panic!("expected text output");
+        }
     }
 }

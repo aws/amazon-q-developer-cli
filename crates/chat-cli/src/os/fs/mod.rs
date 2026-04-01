@@ -383,6 +383,17 @@ impl Fs {
         }
     }
 
+    /// Queries the file system metadata for a path, following symlinks.
+    ///
+    /// This is a proxy to [`tokio::fs::metadata`].
+    pub async fn metadata(&self, path: impl AsRef<Path>) -> io::Result<std::fs::Metadata> {
+        match self {
+            Self::Real => fs::metadata(path).await,
+            Self::Chroot(root) => fs::metadata(append(root.path(), path)).await,
+            Self::Fake(_) => panic!("unimplemented"),
+        }
+    }
+
     /// Reads a symbolic link, returning the file that the link points to.
     ///
     /// This is a proxy to [`tokio::fs::read_link`].
