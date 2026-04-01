@@ -282,8 +282,8 @@ fn truncate_description(text: &str, max_length: usize) -> String {
     if text.len() <= max_length {
         text.to_string()
     } else {
-        let truncated = &text[..max_length.saturating_sub(3)];
-        format!("{}...", truncated.trim_end())
+        let end = text.floor_char_boundary(max_length.saturating_sub(3));
+        format!("{}...", text[..end].trim_end())
     }
 }
 
@@ -2294,6 +2294,12 @@ mod tests {
         assert!(!result.contains(" ..."));
         assert!(result.ends_with("..."));
         assert_eq!(result, "Prompt to explain available tools and...");
+
+        // Test CJK characters don't panic (aws/amazon-q-developer-cli#3117)
+        let cjk = "사용자가 작성한 글의 어색한 표현이나 오타를 수정하고 싶을 때 사용할 수 있는 프롬프트";
+        let result = truncate_description(cjk, 40);
+        assert!(result.ends_with("..."));
+        assert!(result.len() <= 40);
     }
 
     #[test]

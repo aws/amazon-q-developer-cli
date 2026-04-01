@@ -230,7 +230,7 @@ pub fn truncate_description(desc: &str) -> &str {
     if let Some(pos) = desc.find('.') {
         &desc[..pos + 1]
     } else if desc.len() > 60 {
-        &desc[..57]
+        &desc[..desc.floor_char_boundary(57)]
     } else {
         desc
     }
@@ -619,5 +619,13 @@ mod tests {
     fn get_schema() {
         let schema = schemars::schema_for!(Delegate);
         println!("{}", serde_json::to_string_pretty(&schema).unwrap());
+    }
+
+    #[test]
+    fn test_truncate_description_cjk() {
+        // CJK string with no period, longer than 60 bytes (aws/amazon-q-developer-cli#3117)
+        let cjk = "사용자가 작성한 글의 어색한 표현이나 오타를 수정하고 싶을 때 사용할 수 있는 프롬프트";
+        let result = truncate_description(cjk);
+        assert!(result.len() <= 60);
     }
 }
