@@ -431,6 +431,7 @@ impl<'a> Subagent<'a> {
                                     result: ApprovalResult {
                                         option_id: PermissionOptionId::AllowOnce,
                                         reason: None,
+                                        trust_option: None,
                                     },
                                 })
                                 .await?;
@@ -442,6 +443,7 @@ impl<'a> Subagent<'a> {
                                     result: ApprovalResult {
                                         option_id: PermissionOptionId::RejectOnce,
                                         reason: Some("User rejected this tool. Find an alternative or report inability to proceed.".to_string()),
+                                        trust_option: None,
                                     },
                                 })
                                 .await?;
@@ -556,6 +558,7 @@ impl<'a> Subagent<'a> {
                                             result: ApprovalResult {
                                                 option_id: PermissionOptionId::AllowOnce,
                                                 reason: None,
+                                                trust_option: None,
                                             },
                                         })
                                         .await?;

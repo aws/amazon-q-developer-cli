@@ -280,6 +280,7 @@ impl TestCase {
                                 result: ApprovalResult {
                                     option_id: PermissionOptionId::AllowOnce,
                                     reason: None,
+                                    trust_option: None,
                                 },
                             })
                             .await

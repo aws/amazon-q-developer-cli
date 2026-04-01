@@ -149,6 +149,7 @@ async fn test_agent_defaults() {
                 result: ApprovalResult {
                     option_id: PermissionOptionId::AllowOnce,
                     reason: None,
+                    trust_option: None,
                 },
             },
             SendApprovalResultArgs {
@@ -156,6 +157,7 @@ async fn test_agent_defaults() {
                 result: ApprovalResult {
                     option_id: PermissionOptionId::AllowOnce,
                     reason: None,
+                    trust_option: None,
                 },
             },
             SendApprovalResultArgs {
@@ -163,6 +165,7 @@ async fn test_agent_defaults() {
                 result: ApprovalResult {
                     option_id: PermissionOptionId::AllowOnce,
                     reason: None,
+                    trust_option: None,
                 },
             },
         ])
@@ -253,6 +256,7 @@ async fn test_log_entry_appended_events() {
                 result: ApprovalResult {
                     option_id: PermissionOptionId::AllowOnce,
                     reason: None,
+                    trust_option: None,
                 },
             },
             SendApprovalResultArgs {
@@ -260,6 +264,7 @@ async fn test_log_entry_appended_events() {
                 result: ApprovalResult {
                     option_id: PermissionOptionId::AllowOnce,
                     reason: None,
+                    trust_option: None,
                 },
             },
             SendApprovalResultArgs {
@@ -267,6 +272,7 @@ async fn test_log_entry_appended_events() {
                 result: ApprovalResult {
                     option_id: PermissionOptionId::AllowOnce,
                     reason: None,
+                    trust_option: None,
                 },
             },
         ])
@@ -451,27 +457,18 @@ async fn test_allow_always_grants_exact_file_permission() {
             // First read tool - AllowAlwaysToolArgs grants exact file read permission
             SendApprovalResultArgs {
                 id: "tooluse_read".into(),
-                result: ApprovalResult {
-                    option_id: PermissionOptionId::AllowAlwaysToolArgs,
-                    reason: None,
-                },
+                result: ApprovalResult { option_id: PermissionOptionId::AllowAlwaysToolArgs, reason: None, trust_option: None },
             },
             // Write tool - RejectAlwaysToolArgs denies exact file write (but NOT read)
             SendApprovalResultArgs {
                 id: "tooluse_write".into(),
-                result: ApprovalResult {
-                    option_id: PermissionOptionId::RejectAlwaysToolArgs,
-                    reason: None,
-                },
+                result: ApprovalResult { option_id: PermissionOptionId::RejectAlwaysToolArgs, reason: None, trust_option: None },
             },
             // tooluse_read2: second read of subdir/file.txt - auto-approved (AllowAlwaysToolArgs)
             // tooluse_read_denied: read of other/output.txt - needs approval (write deny doesn't deny read)
             SendApprovalResultArgs {
                 id: "tooluse_read_denied".into(),
-                result: ApprovalResult {
-                    option_id: PermissionOptionId::AllowOnce,
-                    reason: None,
-                },
+                result: ApprovalResult { option_id: PermissionOptionId::AllowOnce, reason: None, trust_option: None },
             },
         ])
         .build()

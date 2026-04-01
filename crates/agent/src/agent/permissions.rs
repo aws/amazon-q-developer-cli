@@ -41,6 +41,9 @@ pub struct RuntimePermissions {
     /// Tools denied at the tool level (auto-reject all uses)
     #[serde(default)]
     denied_tools: HashSet<CanonicalToolName>,
+    /// Shell command patterns granted at runtime via granular trust
+    #[serde(default)]
+    allowed_commands: Vec<String>,
 }
 
 impl RuntimePermissions {
@@ -195,9 +198,25 @@ pub fn apply_approval_to_permissions<P: SystemProvider>(
             permissions.trusted_tools.insert(tool.canonical_tool_name());
         },
         PermissionOptionId::AllowAlwaysToolArgs => {
-            let (paths, access) = extract_paths_from_tool(tool, provider);
-            for path in paths {
-                permissions.grant_path(&path, access, provider);
+            if let Some(ref trust_option) = result.trust_option {
+                match trust_option.setting_key.as_str() {
+                    "allowedCommands" => {
+                        permissions.allowed_commands.extend(trust_option.patterns.clone());
+                    },
+                    _ => {
+                        // File-based trust options: extract paths from the trust option patterns
+                        let access =
+                            PathAccessType::from_setting_key(&trust_option.setting_key).unwrap_or(PathAccessType::Read);
+                        for pattern in &trust_option.patterns {
+                            permissions.grant_path(pattern, access, provider);
+                        }
+                    },
+                }
+            } else {
+                let (paths, access) = extract_paths_from_tool(tool, provider);
+                for path in paths {
+                    permissions.grant_path(&path, access, provider);
+                }
             }
         },
         PermissionOptionId::RejectAlwaysTool => {
@@ -324,14 +343,18 @@ pub fn evaluate_tool_permission<P: SystemProvider>(
             // Reuse the same settings for fs write
             BuiltInTool::Mkdir(_) => Ok(PermissionEvalResult::Allow),
 
-            BuiltInTool::ExecuteCmd(execute_cmd) => evaluate_permission_for_shell_command(
-                &settings.shell.allowed_commands,
-                &settings.shell.denied_commands,
-                &execute_cmd.command,
-                is_allowed,
-                settings.shell.auto_allow_readonly,
-                settings.shell.deny_by_default,
-            ),
+            BuiltInTool::ExecuteCmd(execute_cmd) => {
+                let mut allowed = settings.shell.allowed_commands.clone();
+                allowed.extend(permissions.allowed_commands.iter().cloned());
+                evaluate_permission_for_shell_command(
+                    &allowed,
+                    &settings.shell.denied_commands,
+                    &execute_cmd.command,
+                    is_allowed,
+                    settings.shell.auto_allow_readonly,
+                    settings.shell.deny_by_default,
+                )
+            },
             BuiltInTool::Introspect(_) => Ok(PermissionEvalResult::Allow),
             BuiltInTool::Summary(_) => Ok(PermissionEvalResult::Allow),
             BuiltInTool::UseAws(use_aws) => {

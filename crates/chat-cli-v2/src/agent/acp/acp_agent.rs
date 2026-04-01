@@ -2178,17 +2178,26 @@ async fn handle_approval_request(
     }
 
     debug!("Sending permission request: {:?}", req);
-    let response = client_cx
-        .send_request(RequestPermissionRequest::new(
-            session_id,
-            ToolCallUpdate::new(
-                ToolCallId::new(req.id.clone()),
-                ToolCallUpdateFields::new().title(Some(get_tool_title(&req.tool))),
-            ),
-            options,
-        ))
-        .block_task()
-        .await;
+    let mut permission_request = RequestPermissionRequest::new(
+        session_id,
+        ToolCallUpdate::new(
+            ToolCallId::new(req.id.clone()),
+            ToolCallUpdateFields::new().title(Some(get_tool_title(&req.tool))),
+        ),
+        options,
+    );
+
+    // Attach granular trust options via _meta so the TUI can offer path/command-level trust
+    if !req.trust_options.is_empty() {
+        let mut meta = serde_json::Map::new();
+        meta.insert(
+            "trustOptions".into(),
+            serde_json::to_value(&req.trust_options).unwrap_or_default(),
+        );
+        permission_request = permission_request.meta(meta);
+    }
+
+    let response = client_cx.send_request(permission_request).block_task().await;
 
     match response {
         Ok(res) => match res.outcome {
@@ -2206,6 +2215,7 @@ async fn handle_approval_request(
                             result: agent::protocol::ApprovalResult {
                                 option_id: agent::protocol::PermissionOptionId::AllowOnce,
                                 reason: None,
+                                trust_option: None,
                             },
                         })
                         .await;
@@ -2213,8 +2223,16 @@ async fn handle_approval_request(
                 }
 
                 // Map ACP option_id to agent PermissionOptionId
-                // ACP's "allow_always"/"reject_always" map to our tool-level variants
+                // allow_always with a trustOption in _meta means granular trust (args-level)
+                let trust_option: Option<agent::protocol::TrustOption> = selected
+                    .meta
+                    .as_ref()
+                    .and_then(|m| m.get("trustOption"))
+                    .and_then(|v| serde_json::from_value(v.clone()).ok());
                 let option_id = match selected.option_id.0.as_ref() {
+                    "allow_always" if trust_option.is_some() => {
+                        agent::protocol::PermissionOptionId::AllowAlwaysToolArgs
+                    },
                     "allow_always" => agent::protocol::PermissionOptionId::AllowAlwaysTool,
                     "reject_always" => agent::protocol::PermissionOptionId::RejectAlwaysTool,
                     other => agent::protocol::PermissionOptionId::from_str(other)
@@ -2225,7 +2243,11 @@ async fn handle_approval_request(
                 } else {
                     None
                 };
-                let approval_result = agent::protocol::ApprovalResult { option_id, reason };
+                let approval_result = agent::protocol::ApprovalResult {
+                    option_id,
+                    reason,
+                    trust_option,
+                };
                 if let Err(e) = agent
                     .send_tool_use_approval_result(agent::protocol::SendApprovalResultArgs {
                         id: req.id,
@@ -2248,6 +2270,7 @@ async fn handle_approval_request(
                         result: agent::protocol::ApprovalResult {
                             option_id: agent::protocol::PermissionOptionId::RejectOnce,
                             reason: Some("Unknown response".to_string()),
+                            trust_option: None,
                         },
                     })
                     .await
@@ -2264,6 +2287,7 @@ async fn handle_approval_request(
                     result: agent::protocol::ApprovalResult {
                         option_id: agent::protocol::PermissionOptionId::RejectOnce,
                         reason: Some(format!("Permission request failed: {}", e)),
+                        trust_option: None,
                     },
                 })
                 .await

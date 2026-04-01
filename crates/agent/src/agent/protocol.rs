@@ -365,6 +365,9 @@ pub struct ApprovalRequest {
     pub context: Option<super::tools::ToolContext>,
     /// Available permission options with tool-specific labels
     pub options: Vec<PermissionOption>,
+    /// Granular trust scopes the user can choose from (e.g., specific paths, directories)
+    #[serde(default)]
+    pub trust_options: Vec<TrustOption>,
 }
 
 /// A permission option presented to the user.
@@ -438,6 +441,9 @@ pub struct ApprovalResult {
     pub option_id: PermissionOptionId,
     /// Optional reason for rejection
     pub reason: Option<String>,
+    /// The specific trust scope selected (for AllowAlwaysToolArgs)
+    #[serde(default)]
+    pub trust_option: Option<TrustOption>,
 }
 
 /// A trust scope option that a tool can offer when permission is Ask.

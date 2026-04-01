@@ -2158,11 +2158,17 @@ impl Agent {
         // Next, evaluate permissions.
         let mut needs_approval = Vec::new();
         let mut denied = Vec::new();
+        let mut trust_options_map: HashMap<String, Vec<protocol::TrustOption>> = HashMap::new();
         for (block, tool) in &tools {
             let result = self.evaluate_tool_permission(tool).await?;
             match &result {
                 PermissionEvalResult::Allow => (),
-                PermissionEvalResult::Ask { .. } => needs_approval.push(block.tool_use_id.clone()),
+                PermissionEvalResult::Ask { trust_options } => {
+                    needs_approval.push(block.tool_use_id.clone());
+                    if !trust_options.is_empty() {
+                        trust_options_map.insert(block.tool_use_id.clone(), trust_options.clone());
+                    }
+                },
                 PermissionEvalResult::Deny { reason } => denied.push((block, tool, reason.clone())),
             }
             self.agent_event_buf
@@ -2230,12 +2236,13 @@ impl Agent {
             let stage = HookStage::PreToolUse {
                 tools: tools.clone(),
                 needs_approval: needs_approval.clone(),
+                trust_options_map: trust_options_map.clone(),
             };
             self.start_hooks_execution(hooks_to_execute, stage, None, None).await;
             return Ok(());
         }
 
-        self.process_tool_uses(tools, needs_approval).await
+        self.process_tool_uses(tools, needs_approval, trust_options_map).await
     }
 
     /// Processes successfully parsed tool uses, requesting permission if required, and then
@@ -2244,6 +2251,7 @@ impl Agent {
         &mut self,
         tools: Vec<(ToolUseBlock, Tool)>,
         needs_approval: Vec<String>,
+        trust_options_map: HashMap<String, Vec<protocol::TrustOption>>,
     ) -> Result<(), AgentError> {
         for tool in &tools {
             self.agent_event_buf.push(
@@ -2258,7 +2266,8 @@ impl Agent {
 
         // request permission for any asked tools
         if !needs_approval.is_empty() {
-            self.request_tool_approvals(tools, needs_approval).await?;
+            self.request_tool_approvals(tools, needs_approval, trust_options_map)
+                .await?;
             return Ok(());
         }
 
@@ -2431,7 +2440,11 @@ impl Agent {
                 self.send_prompt_impl(args, hooks).await?;
                 Ok(())
             },
-            HookStage::PreToolUse { tools, needs_approval } => {
+            HookStage::PreToolUse {
+                tools,
+                needs_approval,
+                trust_options_map,
+            } => {
                 // If any command hooks exited with status 2, then we'll block.
                 // Otherwise, execute the tools.
                 let mut denied_tools = Vec::new();
@@ -2489,7 +2502,8 @@ impl Agent {
                 // Otherwise, continue to the approval stage.
                 let tools = tools.clone();
                 let needs_approval = needs_approval.clone();
-                Ok(self.process_tool_uses(tools, needs_approval).await?)
+                let trust_options_map = trust_options_map.clone();
+                Ok(self.process_tool_uses(tools, needs_approval, trust_options_map).await?)
             },
             HookStage::PostToolUse { executing_tools } => {
                 let executing_tools = executing_tools.clone();
@@ -2657,6 +2671,7 @@ impl Agent {
         &mut self,
         tools: Vec<(ToolUseBlock, Tool)>,
         needs_approval: Vec<String>,
+        trust_options_map: HashMap<String, Vec<protocol::TrustOption>>,
     ) -> Result<(), AgentError> {
         // First, update the agent state to WaitingForApproval
         let mut needs_approval_map = HashMap::new();
@@ -2665,8 +2680,9 @@ impl Agent {
                 warn!(tool_use_id, "tool requiring approval not found in tools list");
                 continue;
             };
+            let options = tool.permission_options();
             needs_approval_map.insert(tool_use_id.clone(), ApprovalState {
-                options: tool.permission_options(),
+                options: options.clone(),
                 selected: None,
             });
         }
@@ -2681,13 +2697,16 @@ impl Agent {
             let Some((block, tool)) = tools.iter().find(|(b, _)| &b.tool_use_id == tool_use_id) else {
                 continue;
             };
+            let trust_options = trust_options_map.get(tool_use_id).cloned().unwrap_or_default();
+            let options = tool.permission_options();
             self.agent_event_buf
                 .push(AgentEvent::ApprovalRequest(protocol::ApprovalRequest {
                     id: block.tool_use_id.clone(),
                     tool_use: (*block).clone(),
                     tool: tool.clone(),
                     context: tool.get_context().await,
-                    options: tool.permission_options(),
+                    options,
+                    trust_options,
                 }));
         }
 
@@ -3718,6 +3737,8 @@ pub enum HookStage {
         tools: Vec<(ToolUseBlock, Tool)>,
         /// List of the tool use id's that require user approval
         needs_approval: Vec<String>,
+        /// Granular trust options per tool_use_id from permission evaluation
+        trust_options_map: HashMap<String, Vec<protocol::TrustOption>>,
     },
     /// Hooks after executing tool uses
     PostToolUse { executing_tools: ExecutingTools },

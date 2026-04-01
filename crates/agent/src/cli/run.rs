@@ -171,10 +171,7 @@ impl RunArgs {
                         agent
                             .send_tool_use_approval_result(SendApprovalResultArgs {
                                 id: req.id.clone(),
-                                result: ApprovalResult {
-                                    option_id: PermissionOptionId::AllowOnce,
-                                    reason: None,
-                                },
+                                result: ApprovalResult { option_id: PermissionOptionId::AllowOnce, reason: None, trust_option: None },
                             })
                             .await?;
                     }
