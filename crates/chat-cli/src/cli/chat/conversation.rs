@@ -250,6 +250,7 @@ pub struct ConversationState {
     #[serde(default)]
     pub file_line_tracker: HashMap<String, FileLineTracker>,
 
+    #[serde(skip)]
     pub checkpoint_manager: Option<CheckpointManager>,
     #[serde(default = "default_true")]
     pub mcp_enabled: bool,

@@ -1,0 +1,4 @@
+{
+  "type": "fixed",
+  "description": "Fixed checkpoints failing after resuming a session"
+}
