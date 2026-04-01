@@ -295,36 +295,9 @@ const startInitialization = (sessionId?: string) => {
       sessionHandlers.delete(sessionId),
   } as any);
 
-  // Wire inbox notifications → notification bar with "r: read" action
+  // Wire inbox notifications — no alert, agent reads inbox automatically
   kiro.onInboxNotification?.((notification: any) => {
     logger.info('[tui] inbox notification:', notification);
-    const senders: string[] = notification.senders ?? [];
-    const sessionName: string = notification.sessionName ?? 'Agent';
-    const count: number = notification.messageCount ?? 1;
-    const from = senders.length > 0 ? senders[0] : sessionName;
-    const msg =
-      count === 1 ? `${from} finished` : `${from} sent ${count} results`;
-    appStore.getState().showTransientAlert({
-      message: msg,
-      status: 'success',
-      autoHideMs: 10000,
-      action: {
-        key: 'ctrl+r',
-        label: 'read',
-        onAction: () => {
-          appStore.getState().showTransientAlert({
-            message: `Fetching results from ${from}...`,
-            status: 'loading',
-            autoHideMs: 3000,
-          });
-          appStore
-            .getState()
-            .sendMessage(
-              'You have new messages in your inbox. Use the session_management tool with command read_messages to read them, then summarize the results.'
-            );
-        },
-      },
-    });
   });
 
   initPromise = kiro
