@@ -190,9 +190,9 @@ Document each deployment step (toolbox beta, prod, CloudFront) as comments on th
    kiro-cli diagnostic
    ```
 
-## Step 9: Run Release Prod Workflow
+## Step 9: Release to Toolbox (Internal)
 
-1. Trigger the production release:
+1. Trigger the Toolbox production release (includes Windows):
    ```bash
    gh workflow run release-kiro-cli-prod.yml \
      --repo kiro-team/kiro-cli-autocomplete \
@@ -200,7 +200,7 @@ Document each deployment step (toolbox beta, prod, CloudFront) as comments on th
      -f commit=<COMMIT_SHA> \
      -f version=<VERSION> \
      -f channel=stable \
-     -f release_to_cloudfront=true \
+     -f release_to_cloudfront=false \
      -f release_to_toolbox=true \
      -f enable_windows=true
    ```
@@ -209,16 +209,34 @@ Document each deployment step (toolbox beta, prod, CloudFront) as comments on th
 
 2. Approve the release in GitHub UI (`prod-release` environment requires manual approval).
 
-## Step 10: Verify Release Workflow Completes
+## Step 10: Release to CloudFront (External)
 
-1. Monitor the release workflow:
+<!-- TEMPORARY: Add enable_windows=true here once Windows is approved for external distribution. -->
+
+1. Trigger the CloudFront production release (Windows excluded):
    ```bash
-   gh run list --repo kiro-team/kiro-cli-autocomplete --workflow release-kiro-cli-prod.yml --limit 1
+   gh workflow run release-kiro-cli-prod.yml \
+     --repo kiro-team/kiro-cli-autocomplete \
+     --ref prod \
+     -f commit=<COMMIT_SHA> \
+     -f version=<VERSION> \
+     -f channel=stable \
+     -f release_to_cloudfront=true \
+     -f release_to_toolbox=false
    ```
 
-2. Wait for status to show `completed` with `success` conclusion.
+2. Approve the release in GitHub UI (`prod-release` environment requires manual approval).
 
-## Step 11: Verify Stable Release
+## Step 11: Verify Release Workflows Complete
+
+1. Monitor the release workflows:
+   ```bash
+   gh run list --repo kiro-team/kiro-cli-autocomplete --workflow release-kiro-cli-prod.yml --limit 2
+   ```
+
+2. Wait for both (Toolbox and CloudFront) to show `completed` with `success` conclusion.
+
+## Step 12: Verify Stable Release
 
 1. Install from toolbox stable:
    ```bash
