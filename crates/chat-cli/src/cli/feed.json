@@ -12,6 +12,38 @@
     },
     {
       "type": "release",
+      "date": "2026-03-31",
+      "version": "1.28.4",
+      "title": "Version 1.28.4",
+      "changes": [
+        {
+          "type": "added",
+          "description": "Added `/chat new` command in V2 TUI to start a fresh conversation without restarting the CLI"
+        },
+        {
+          "type": "added",
+          "description": "Add hooks.showStatus setting to suppress hook status messages"
+        },
+        {
+          "type": "fixed",
+          "description": "Fixed YAML frontmatter parsing failing on files with Windows-style (CRLF) line endings"
+        },
+        {
+          "type": "fixed",
+          "description": "Fixed panic on corrupted history file"
+        },
+        {
+          "type": "fixed",
+          "description": "Resolve relative and tilde paths in ACP file writes to display accurate diffs"
+        },
+        {
+          "type": "fixed",
+          "description": "Fixed spurious warnings when passing grep or glob to --trust-tools"
+        }
+      ]
+    },
+    {
+      "type": "release",
       "date": "2026-03-28",
       "version": "1.28.3",
       "title": "Version 1.28.3",
