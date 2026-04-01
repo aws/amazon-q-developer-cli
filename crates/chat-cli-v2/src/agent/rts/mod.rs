@@ -251,7 +251,7 @@ impl RtsModel {
                 .map(|m| match m.role {
                     Role::User => {
                         let content = format_user_content(&m);
-                        let (tool_results, _) = extract_tool_results_and_images(&m);
+                        let (tool_results, images) = extract_tool_results_and_images(&m);
                         let ctx = if tool_results.is_some() {
                             Some(UserInputMessageContext {
                                 env_state: None,
@@ -266,7 +266,7 @@ impl RtsModel {
                             content,
                             user_input_message_context: ctx,
                             user_intent: None,
-                            images: None,
+                            images,
                             model_id: None,
                         };
                         rts::ChatMessage::UserInputMessage(msg)
