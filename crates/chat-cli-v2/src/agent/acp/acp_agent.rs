@@ -2439,8 +2439,6 @@ fn get_tool_kind(tool_name: &str) -> ToolKind {
             BuiltInToolName::FsRead => ToolKind::Read,
             BuiltInToolName::FsWrite => ToolKind::Edit,
             BuiltInToolName::ExecuteCmd => ToolKind::Execute,
-            BuiltInToolName::ImageRead => ToolKind::Read,
-            BuiltInToolName::Ls => ToolKind::Read,
             BuiltInToolName::Summary => ToolKind::Other,
             BuiltInToolName::Grep => ToolKind::Search,
             BuiltInToolName::Glob => ToolKind::Search,
@@ -2464,15 +2462,23 @@ pub(crate) fn get_tool_title(tool: &Tool) -> String {
     match &tool.kind {
         AgentToolKind::BuiltIn(builtin) => match builtin {
             BuiltInTool::FileRead(fs_read) => {
+                use agent::tools::fs_read::FsReadOperation;
                 let files: Vec<_> = fs_read
-                    .ops
+                    .operations
                     .iter()
-                    .map(|op| {
-                        let start = op.offset.unwrap_or(0) + 1;
-                        match op.limit {
-                            Some(limit) => format!("{}:{}-{}", truncate_path(&op.path), start, start + limit - 1),
-                            None => format!("{}:{}", truncate_path(&op.path), start),
-                        }
+                    .map(|op| match op {
+                        FsReadOperation::Line(f) => {
+                            let start = f.offset.unwrap_or(0) + 1;
+                            match f.limit {
+                                Some(limit) => format!("{}:{}-{}", truncate_path(&f.path), start, start + limit - 1),
+                                None => format!("{}:{}", truncate_path(&f.path), start),
+                            }
+                        },
+                        FsReadOperation::Directory(d) => format!("listing {}", truncate_path(&d.path)),
+                        FsReadOperation::Image(img) => {
+                            let paths: Vec<_> = img.paths.iter().map(|p| p.as_str()).collect();
+                            format!("image {}", paths.join(", "))
+                        },
                     })
                     .collect();
                 format!("Reading {}", files.join(", "))
@@ -2498,13 +2504,8 @@ pub(crate) fn get_tool_title(tool: &Tool) -> String {
                     None => format!("Finding {}", pattern),
                 }
             },
-            BuiltInTool::Ls(ls) => format!("Listing {}", truncate_path(&ls.path)),
             BuiltInTool::ExecuteCmd(cmd) => format!("Running: {}", truncate_str(&cmd.command, 200)),
             BuiltInTool::UseAws(aws) => format!("AWS: {} {}", aws.service_name, aws.operation_name),
-            BuiltInTool::ImageRead(img) => {
-                let paths: Vec<_> = img.paths.iter().map(|p| p.as_str()).collect();
-                format_paths_title("Reading image", &paths)
-            },
             BuiltInTool::Summary(_) => "Summarizing".to_string(),
             BuiltInTool::Mkdir(_) => "Creating directory".to_string(),
             BuiltInTool::Introspect(_) => "Introspecting".to_string(),
@@ -2616,19 +2617,25 @@ fn get_tool_content_impl(tool: &Tool, provider: &impl SystemProvider) -> Vec<Too
 fn get_tool_locations(tool: &Tool) -> Option<Vec<ToolCallLocation>> {
     match &tool.kind {
         AgentToolKind::BuiltIn(builtin) => match builtin {
-            BuiltInTool::FileRead(fs_read) => Some(
-                fs_read
-                    .ops
+            BuiltInTool::FileRead(fs_read) => {
+                use agent::tools::fs_read::FsReadOperation;
+                let locations: Vec<_> = fs_read
+                    .operations
                     .iter()
-                    .map(|op| {
-                        let mut loc = ToolCallLocation::new(&op.path);
-                        if let Some(offset) = op.offset {
-                            loc = loc.line(offset + 1); // offset is 0-based, line is 1-based
-                        }
-                        loc
+                    .flat_map(|op| match op {
+                        FsReadOperation::Line(f) => {
+                            let mut loc = ToolCallLocation::new(&f.path);
+                            if let Some(offset) = f.offset {
+                                loc = loc.line(offset + 1); // offset is 0-based, line is 1-based
+                            }
+                            vec![loc]
+                        },
+                        FsReadOperation::Directory(d) => vec![ToolCallLocation::new(&d.path)],
+                        FsReadOperation::Image(img) => img.paths.iter().map(ToolCallLocation::new).collect(),
                     })
-                    .collect(),
-            ),
+                    .collect();
+                if locations.is_empty() { None } else { Some(locations) }
+            },
             BuiltInTool::FileWrite(fs_write) => {
                 let lines = fs_write.start_lines();
                 if lines.is_empty() {
@@ -2642,7 +2649,6 @@ fn get_tool_locations(tool: &Tool) -> Option<Vec<ToolCallLocation>> {
                     )
                 }
             },
-            BuiltInTool::ImageRead(image_read) => Some(image_read.paths.iter().map(ToolCallLocation::new).collect()),
             _ => None,
         },
         AgentToolKind::Mcp(_) => None,
@@ -3341,7 +3347,7 @@ mod get_tool_content_tests {
         let provider = TestProvider::new();
         let tool = Tool {
             tool_use_purpose: None,
-            kind: AgentToolKind::BuiltIn(BuiltInTool::FileRead(FsRead { ops: vec![] })),
+            kind: AgentToolKind::BuiltIn(BuiltInTool::FileRead(FsRead { operations: vec![] })),
         };
         let result = get_tool_content_impl(&tool, &provider);
 

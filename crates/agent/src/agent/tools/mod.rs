@@ -6,10 +6,8 @@ pub mod fs_read;
 pub mod fs_write;
 pub mod glob;
 pub mod grep;
-pub mod image_read;
 pub mod introspect;
 pub mod knowledge;
-pub mod ls;
 pub mod mcp;
 pub mod mkdir;
 pub mod rm;
@@ -34,7 +32,10 @@ use code::Code;
 pub use code_spec::get_code_tool_spec;
 use execute_cmd::ExecuteCmd;
 use fs_read::FsRead;
-pub use fs_read::MAX_READ_SIZE;
+pub use fs_read::{
+    IGNORE_PATTERNS,
+    MAX_READ_SIZE,
+};
 use fs_write::{
     FsWrite,
     FsWriteContext,
@@ -42,17 +43,13 @@ use fs_write::{
 };
 use glob::Glob;
 use grep::Grep;
-use image_read::ImageRead;
 use introspect::Introspect;
 pub use knowledge::{
     Knowledge,
     KnowledgeProvider,
 };
-pub use ls::IGNORE_PATTERNS;
-use ls::Ls;
 use mcp::McpTool;
 use mkdir::Mkdir;
-use schemars::JsonSchema;
 use serde::{
     Deserialize,
     Serialize,
@@ -96,32 +93,6 @@ use crate::util::glob::{
     matches_any_pattern,
 };
 
-fn generate_tool_spec_from_json_schema<T>() -> ToolSpec
-where
-    T: JsonSchema + BuiltInToolTrait,
-{
-    use schemars::SchemaGenerator;
-    use schemars::generate::SchemaSettings;
-
-    let generator = SchemaGenerator::new(SchemaSettings::default().with(|s| {
-        s.inline_subschemas = true;
-    }));
-    let mut input_schema = generator
-        .into_root_schema_for::<T>()
-        .to_value()
-        .as_object()
-        .expect("should be an object")
-        .clone();
-    input_schema.remove("$schema");
-    input_schema.remove("description");
-
-    ToolSpec {
-        name: T::name().to_string(),
-        description: T::description().to_string(),
-        input_schema,
-    }
-}
-
 fn generate_tool_spec_from_trait<T>() -> ToolSpec
 where
     T: BuiltInToolTrait,
@@ -142,16 +113,18 @@ pub enum ToolNameAlias {
     // FsWrite aliases
     FsWrite,
     Write,
-    // FsRead aliases
+    // FsRead aliases (includes legacy ls/imageRead for backwards compat)
     FsRead,
     Read,
+    // TODO: Remove ImageRead and Ls once enough time has passed that users are unlikely
+    // to load saved conversations containing old imageRead/ls tool calls.
+    ImageRead,
+    Ls,
     // ExecuteCmd aliases
     ExecuteBash,
     ExecuteCmd,
     Shell,
     // Other tools
-    ImageRead,
-    Ls,
     Summary,
     // Crew/subagent aliases
     AgentCrew,
@@ -186,8 +159,6 @@ pub enum BuiltInToolName {
         to_string = "shell"
     )]
     ExecuteCmd,
-    ImageRead,
-    Ls,
     Summary,
     Grep,
     Glob,
@@ -219,8 +190,6 @@ impl BuiltInToolName {
             BuiltInToolName::FsRead => FsRead::aliases(),
             BuiltInToolName::FsWrite => FsWrite::aliases(),
             BuiltInToolName::ExecuteCmd => ExecuteCmd::aliases(),
-            BuiltInToolName::ImageRead => ImageRead::aliases(),
-            BuiltInToolName::Ls => Ls::aliases(),
             BuiltInToolName::Summary => Summary::aliases(),
             BuiltInToolName::Grep => Grep::aliases(),
             BuiltInToolName::Glob => Glob::aliases(),
@@ -397,9 +366,7 @@ pub enum BuiltInTool {
     FileWrite(FsWrite),
     Grep(Grep),
     Glob(Glob),
-    Ls(Ls),
     Mkdir(Mkdir),
-    ImageRead(ImageRead),
     ExecuteCmd(ExecuteCmd),
     Introspect(Introspect),
     Knowledge(Knowledge),
@@ -425,12 +392,6 @@ impl BuiltInTool {
                 .map_err(ToolParseErrorKind::schema_failure),
             BuiltInToolName::ExecuteCmd => serde_json::from_value::<ExecuteCmd>(args)
                 .map(Self::ExecuteCmd)
-                .map_err(ToolParseErrorKind::schema_failure),
-            BuiltInToolName::ImageRead => serde_json::from_value::<ImageRead>(args)
-                .map(Self::ImageRead)
-                .map_err(ToolParseErrorKind::schema_failure),
-            BuiltInToolName::Ls => serde_json::from_value::<Ls>(args)
-                .map(Self::Ls)
                 .map_err(ToolParseErrorKind::schema_failure),
             BuiltInToolName::Summary => serde_json::from_value::<Summary>(args)
                 .map(Self::Summary)
@@ -485,11 +446,9 @@ impl BuiltInTool {
         tool_settings: &super::super::agent_config::definitions::ToolsSettings,
     ) -> ToolSpec {
         match name {
-            BuiltInToolName::FsRead => generate_tool_spec_from_json_schema::<FsRead>(),
+            BuiltInToolName::FsRead => generate_tool_spec_from_trait::<FsRead>(),
             BuiltInToolName::FsWrite => generate_tool_spec_from_trait::<FsWrite>(),
             BuiltInToolName::ExecuteCmd => generate_tool_spec_from_trait::<ExecuteCmd>(),
-            BuiltInToolName::ImageRead => generate_tool_spec_from_trait::<ImageRead>(),
-            BuiltInToolName::Ls => generate_tool_spec_from_trait::<Ls>(),
             BuiltInToolName::Summary => generate_tool_spec_from_trait::<Summary>(),
             BuiltInToolName::Grep => generate_tool_spec_from_trait::<Grep>(),
             BuiltInToolName::Glob => generate_tool_spec_from_trait::<Glob>(),
@@ -512,9 +471,7 @@ impl BuiltInTool {
             BuiltInTool::FileWrite(_) => BuiltInToolName::FsWrite,
             BuiltInTool::Grep(_) => BuiltInToolName::Grep,
             BuiltInTool::Glob(_) => BuiltInToolName::Glob,
-            BuiltInTool::Ls(_) => BuiltInToolName::Ls,
             BuiltInTool::Mkdir(_) => panic!("unimplemented"),
-            BuiltInTool::ImageRead(_) => BuiltInToolName::ImageRead,
             BuiltInTool::ExecuteCmd(_) => BuiltInToolName::ExecuteCmd,
             BuiltInTool::Introspect(_) => BuiltInToolName::Introspect,
             BuiltInTool::Knowledge(_) => BuiltInToolName::Knowledge,
@@ -536,9 +493,7 @@ impl BuiltInTool {
             BuiltInTool::FileWrite(_) => BuiltInToolName::FsWrite.into(),
             BuiltInTool::Grep(_) => BuiltInToolName::Grep.into(),
             BuiltInTool::Glob(_) => BuiltInToolName::Glob.into(),
-            BuiltInTool::Ls(_) => BuiltInToolName::Ls.into(),
             BuiltInTool::Mkdir(_) => panic!("unimplemented"),
-            BuiltInTool::ImageRead(_) => BuiltInToolName::ImageRead.into(),
             BuiltInTool::ExecuteCmd(_) => BuiltInToolName::ExecuteCmd.into(),
             BuiltInTool::Introspect(_) => BuiltInToolName::Introspect.into(),
             BuiltInTool::Knowledge(_) => BuiltInToolName::Knowledge.into(),
@@ -560,9 +515,7 @@ impl BuiltInTool {
             BuiltInTool::FileWrite(_) => FsWrite::aliases(),
             BuiltInTool::Grep(_) => Grep::aliases(),
             BuiltInTool::Glob(_) => Glob::aliases(),
-            BuiltInTool::Ls(_) => Ls::aliases(),
             BuiltInTool::Mkdir(_) => panic!("unimplemented"),
-            BuiltInTool::ImageRead(_) => ImageRead::aliases(),
             BuiltInTool::ExecuteCmd(_) => ExecuteCmd::aliases(),
             BuiltInTool::Introspect(_) => Introspect::aliases(),
             BuiltInTool::Knowledge(_) => Knowledge::aliases(),
@@ -707,13 +660,6 @@ pub(crate) fn get_available_tool_names(
     // with specific tool lists (not "*") won't include it, so we must force-insert it.
     if is_subagent {
         tool_names.insert(CanonicalToolName::BuiltIn(BuiltInToolName::Summary));
-    }
-
-    // If FsRead is included, also include ImageRead and Ls
-    // TODO - merge ImageRead and Ls into the FsRead tool
-    if tool_names.contains(&CanonicalToolName::BuiltIn(BuiltInToolName::FsRead)) {
-        tool_names.insert(CanonicalToolName::BuiltIn(BuiltInToolName::ImageRead));
-        tool_names.insert(CanonicalToolName::BuiltIn(BuiltInToolName::Ls));
     }
 
     tool_names
@@ -959,19 +905,20 @@ mod tests {
         }
 
         #[test]
-        fn test_read_includes_companion_tools() {
+        fn test_read_includes_only_fs_read() {
             let names = run(&["read"], &HashMap::new(), &[], false, false);
             assert!(names.contains(&"read".into()));
-            assert!(names.contains(&"imageRead".into()));
-            assert!(names.contains(&"ls".into()));
+            // imageRead and ls are now part of fs_read, not separate tools
+            assert!(!names.contains(&"imageRead".into()));
+            assert!(!names.contains(&"ls".into()));
         }
 
         #[test]
-        fn test_read_glob_includes_companion_tools() {
+        fn test_read_glob_includes_only_fs_read() {
             let names = run(&["rea*"], &HashMap::new(), &[], false, false);
             assert!(names.contains(&"read".into()));
-            assert!(names.contains(&"imageRead".into()));
-            assert!(names.contains(&"ls".into()));
+            assert!(!names.contains(&"imageRead".into()));
+            assert!(!names.contains(&"ls".into()));
         }
 
         #[test]

@@ -58,6 +58,9 @@ export const WEB_FETCH_TOOL_NAMES: Set<string> = new Set([
 ]);
 export const GREP_TOOL_NAMES: Set<string> = new Set(['grep', 'grep_search']);
 export const GLOB_TOOL_NAMES: Set<string> = new Set(['glob', 'file_search']);
+// TODO: Remove LS_TOOL_NAMES and IMAGE_READ_TOOL_NAMES once enough time has passed that users
+// are unlikely to load saved conversations containing old ls/imageRead tool calls.
+// These tools are now part of the unified fs_read tool (mode: "Directory" / "Image").
 export const LS_TOOL_NAMES: Set<string> = new Set([ToolNameAlias.Ls]);
 export const CODE_TOOL_NAMES: Set<string> = new Set(['code']);
 export const IMAGE_READ_TOOL_NAMES: Set<string> = new Set([
@@ -81,6 +84,7 @@ export function resolveToolId(name: string): BuiltinToolId | undefined {
   if (WEB_FETCH_TOOL_NAMES.has(name)) return 'web_fetch';
   if (GREP_TOOL_NAMES.has(name)) return 'grep';
   if (GLOB_TOOL_NAMES.has(name)) return 'glob';
+  // TODO: Remove ls/image_read resolution once legacy tool names are cleaned up.
   if (LS_TOOL_NAMES.has(name)) return 'ls';
   if (CODE_TOOL_NAMES.has(name)) return 'code';
   if (IMAGE_READ_TOOL_NAMES.has(name)) return 'image_read';

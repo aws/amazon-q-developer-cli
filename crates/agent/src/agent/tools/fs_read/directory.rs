@@ -16,59 +16,14 @@ use tracing::{
     warn,
 };
 
-use super::{
-    BuiltInToolName,
-    BuiltInToolTrait,
-    ToolExecutionResult,
-};
 use crate::agent::tools::{
     ToolExecutionOutput,
     ToolExecutionOutputItem,
+    ToolExecutionResult,
 };
 use crate::agent::util::glob::matches_any_pattern;
 use crate::util::path::canonicalize_path_sys;
 use crate::util::providers::SystemProvider;
-
-const LS_TOOL_DESCRIPTION: &str = r#"
-A tool for listing directory contents.
-
-HOW TO USE:
-- Provide the path to the directory you want to view
-- Optionally provide a depth to recursively list directory contents
-- Optionally provide a list of glob patterns to exclude files and directories from being searched
-
-LIMITATIONS:
-- Only 1000 entries will be returned
-- Directories containing over 10000 entries will be truncated
-"#;
-
-const LS_SCHEMA: &str = r#"
-{
-    "type": "object",
-    "properties": {
-        "path": {
-            "type": "string",
-            "description": "Path to the directory"
-        },
-        "depth": {
-            "type": "integer",
-            "description": "Depth of a recursive directory listing",
-            "default": 0
-        },
-        "ignore": {
-            "type": "array",
-            "description": "List of glob patterns to ignore",
-            "items": {
-                "type": "string",
-                "description": "Glob pattern to ignore"
-            }
-        }
-    },
-    "required": [
-        "path"
-    ]
-}
-"#;
 
 /// Directory names to not search through when performing recursive directory listings.
 ///
@@ -83,28 +38,14 @@ const MAX_LS_ENTRIES: usize = 1000;
 /// The maximum amount of entries that will be read within a given directory.
 const MAX_ENTRY_COUNT_PER_DIR: usize = 10_000;
 
-impl BuiltInToolTrait for Ls {
-    fn name() -> BuiltInToolName {
-        BuiltInToolName::Ls
-    }
-
-    fn description() -> std::borrow::Cow<'static, str> {
-        LS_TOOL_DESCRIPTION.into()
-    }
-
-    fn input_schema() -> std::borrow::Cow<'static, str> {
-        LS_SCHEMA.into()
-    }
-}
-
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct Ls {
+pub struct DirectoryOp {
     pub path: String,
     pub depth: Option<usize>,
-    pub ignore: Option<Vec<String>>,
+    pub exclude_patterns: Option<Vec<String>>,
 }
 
-impl Ls {
+impl DirectoryOp {
     const DEFAULT_DEPTH: usize = 0;
 
     pub async fn validate<P: SystemProvider>(&self, provider: &P) -> Result<(), String> {
@@ -112,7 +53,7 @@ impl Ls {
         if !path.exists() {
             return Err(format!("Directory not found: {}", path.to_string_lossy()));
         }
-        if !tokio::fs::symlink_metadata(&path)
+        if !tokio::fs::metadata(&path)
             .await
             .map_err(|e| {
                 format!(
@@ -217,7 +158,7 @@ impl Ls {
 
     fn matches_ignore_patterns(&self, path: impl AsRef<Path>) -> bool {
         let path = path.as_ref().to_string_lossy();
-        match &self.ignore {
+        match &self.exclude_patterns {
             Some(patterns) => matches_any_pattern(patterns, path),
             None => false,
         }
@@ -404,10 +345,10 @@ mod tests {
             .with_file(("file2.txt", "content2"))
             .await;
 
-        let tool = Ls {
+        let tool = DirectoryOp {
             path: test_base.join("").to_string_lossy().to_string(),
             depth: None,
-            ignore: None,
+            exclude_patterns: None,
         };
 
         assert!(tool.validate(&test_base).await.is_ok());
@@ -429,10 +370,10 @@ mod tests {
             .with_file(("subdir/nested.txt", "nested"))
             .await;
 
-        let tool = Ls {
+        let tool = DirectoryOp {
             path: test_base.join("").to_string_lossy().to_string(),
             depth: Some(1),
-            ignore: None,
+            exclude_patterns: None,
         };
 
         let result = tool.execute(&test_base).await.unwrap();
@@ -453,10 +394,10 @@ mod tests {
             .with_file(("ignore.log", "ignore"))
             .await;
 
-        let tool = Ls {
+        let tool = DirectoryOp {
             path: test_base.join("").to_string_lossy().to_string(),
             depth: None,
-            ignore: Some(vec!["*.log".to_string()]),
+            exclude_patterns: Some(vec!["*.log".to_string()]),
         };
 
         let result = tool.execute(&test_base).await.unwrap();
@@ -470,10 +411,10 @@ mod tests {
     #[tokio::test]
     async fn test_ls_validate_nonexistent_directory() {
         let test_base = TestBase::new().await;
-        let tool = Ls {
+        let tool = DirectoryOp {
             path: "/nonexistent/directory".to_string(),
             depth: None,
-            ignore: None,
+            exclude_patterns: None,
         };
 
         assert!(tool.validate(&test_base).await.is_err());
@@ -483,12 +424,39 @@ mod tests {
     async fn test_ls_validate_file_not_directory() {
         let test_base = TestBase::new().await.with_file(("file.txt", "content")).await;
 
-        let tool = Ls {
+        let tool = DirectoryOp {
             path: test_base.join("file.txt").to_string_lossy().to_string(),
             depth: None,
-            ignore: None,
+            exclude_patterns: None,
         };
 
         assert!(tool.validate(&test_base).await.is_err());
+    }
+
+    #[tokio::test]
+    #[cfg(unix)]
+    async fn test_ls_validate_symlink_to_directory() {
+        let test_base = TestBase::new()
+            .await
+            .with_file(("target_dir/file.txt", "content"))
+            .await;
+
+        tokio::fs::symlink(test_base.join("target_dir"), test_base.join("link_dir"))
+            .await
+            .unwrap();
+
+        let tool = DirectoryOp {
+            path: test_base.join("link_dir").to_string_lossy().to_string(),
+            depth: None,
+            exclude_patterns: None,
+        };
+
+        assert!(tool.validate(&test_base).await.is_ok());
+        let result = tool.execute(&test_base).await.unwrap();
+        if let ToolExecutionOutputItem::Text(content) = &result.items[0] {
+            assert!(content.contains("file.txt"));
+        } else {
+            panic!("expected text output");
+        }
     }
 }

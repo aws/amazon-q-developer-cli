@@ -2613,15 +2613,10 @@ impl Agent {
                     .validate(&self.sys_provider)
                     .await
                     .map_err(ToolParseErrorKind::invalid_args),
-                BuiltInTool::Ls(t) => t
-                    .validate(&self.sys_provider)
-                    .await
-                    .map_err(ToolParseErrorKind::invalid_args),
                 BuiltInTool::Mkdir(_) => Ok(()),
                 BuiltInTool::ExecuteCmd(_) => Ok(()),
                 BuiltInTool::Introspect(_) => Ok(()),
                 BuiltInTool::Summary(_) => Ok(()),
-                BuiltInTool::ImageRead(t) => t.validate().await.map_err(ToolParseErrorKind::invalid_args),
                 BuiltInTool::UseAws(t) => t.validate().await.map_err(ToolParseErrorKind::invalid_args),
                 BuiltInTool::WebFetch(_) => Ok(()),
                 BuiltInTool::WebSearch(_) => Ok(()),
@@ -2742,11 +2737,9 @@ impl Agent {
                     })
                 },
                 BuiltInTool::ExecuteCmd(t) => Box::pin(async move { t.execute(&provider).await }),
-                BuiltInTool::ImageRead(t) => Box::pin(async move { t.execute().await }),
                 BuiltInTool::Introspect(t) => Box::pin(async move { t.execute().await }),
                 BuiltInTool::Grep(t) => Box::pin(async move { t.execute(&provider).await }),
                 BuiltInTool::Glob(t) => Box::pin(async move { t.execute(&provider).await }),
-                BuiltInTool::Ls(t) => Box::pin(async move { t.execute(&provider).await }),
                 BuiltInTool::Mkdir(_) => panic!("unimplemented"),
                 BuiltInTool::Summary(t) => {
                     let result_tx = self.agent_event_tx.clone();

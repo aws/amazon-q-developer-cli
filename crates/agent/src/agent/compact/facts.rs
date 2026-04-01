@@ -226,8 +226,8 @@ fn extract_files(messages: &[Message]) -> (Vec<FileEntry>, usize) {
                     add_reasoning(&mut entry.3, tool.tool_use_purpose.as_deref());
                 },
                 ToolKind::BuiltIn(BuiltInTool::FileRead(fr)) => {
-                    if let Some(op) = fr.ops.first() {
-                        let entry = file_data.entry(op.path.clone()).or_insert((0, 0, 0, Vec::new()));
+                    for path in fr.all_paths() {
+                        let entry = file_data.entry(path).or_insert((0, 0, 0, Vec::new()));
                         entry.1 += 1;
                         entry.2 = pos;
                     }
@@ -364,9 +364,10 @@ mod tests {
     };
     use crate::agent::consts::TOOL_USE_PURPOSE_FIELD_NAME;
     use crate::agent::tools::execute_cmd::ExecuteCmd;
+    use crate::agent::tools::fs_read::file::FileOp;
     use crate::agent::tools::fs_read::{
         FsRead,
-        FsReadOp,
+        FsReadOperation,
     };
     use crate::agent::tools::fs_write::{
         FileCreate,
@@ -399,11 +400,11 @@ mod tests {
 
     fn create_fs_read_msg(path: &str) -> Message {
         let tool = FsRead {
-            ops: vec![FsReadOp {
+            operations: vec![FsReadOperation::Line(FileOp {
                 path: path.into(),
                 limit: None,
                 offset: None,
-            }],
+            })],
         };
         let input = serde_json::to_value(&tool).unwrap();
         Message::new(

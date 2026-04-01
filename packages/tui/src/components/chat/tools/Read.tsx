@@ -70,7 +70,7 @@ export const Read = React.memo(function Read({
   content,
 }: ReadProps) {
   const params = useMemo(
-    () => formatToolParams(content, ['ops', 'path']),
+    () => formatToolParams(content, ['operations', 'path']),
     [content]
   );
 
@@ -79,14 +79,26 @@ export const Read = React.memo(function Read({
     if (!content) return [];
     try {
       const parsed = JSON.parse(content);
-      if (parsed.ops && Array.isArray(parsed.ops)) {
-        return parsed.ops.map(
-          (op: { path?: string; limit?: number; offset?: number }): ReadOp => ({
-            path: op.path || '',
-            limit: op.limit,
-            offset: op.offset,
-          })
-        );
+      const rawOps = parsed.operations ?? parsed.ops;
+      if (Array.isArray(rawOps)) {
+        return rawOps.flatMap((op: Record<string, unknown>): ReadOp[] => {
+          const mode = op.mode as string | undefined;
+          if (mode === 'Directory') {
+            return [{ path: (op.path as string) || '' }];
+          }
+          if (mode === 'Image') {
+            const paths = (op.image_paths ?? op.paths) as string[] | undefined;
+            return (paths || []).map((p) => ({ path: p }));
+          }
+          // Line mode or legacy ops without mode
+          return [
+            {
+              path: (op.path as string) || '',
+              limit: op.limit as number | undefined,
+              offset: op.offset as number | undefined,
+            },
+          ];
+        });
       }
       return [];
     } catch {

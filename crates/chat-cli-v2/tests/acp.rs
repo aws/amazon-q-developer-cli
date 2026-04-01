@@ -331,7 +331,7 @@ async fn set_mode_switches_agent() {
     let swapped_config = AgentConfigV2025_08_22 {
         name: "swapped_agent".to_string(),
         global_prompt: Some("You are the swapped agent".to_string()),
-        tools: vec!["read".to_string(), "ls".to_string()],
+        tools: vec!["read".to_string(), "write".to_string()],
         ..Default::default()
     };
 
@@ -393,8 +393,8 @@ async fn set_mode_switches_agent() {
         })
         .collect();
     assert!(tool_names.contains(&"read"), "should have read tool");
-    assert!(tool_names.contains(&"ls"), "should have ls tool");
-    assert!(!tool_names.contains(&"write"), "should NOT have write tool after swap");
+    assert!(tool_names.contains(&"write"), "should have write tool");
+    assert!(!tool_names.contains(&"shell"), "should NOT have shell tool after swap");
 
     // Verify conversation history preserved
     assert!(
@@ -1257,7 +1257,7 @@ async fn auto_compaction_on_context_overflow() {
         .find(|e| matches!(&e.ty, chat_cli_v2::telemetry::core::EventType::ToolUseSuggested { .. }))
         .expect("expected toolUseSuggested event");
     if let chat_cli_v2::telemetry::core::EventType::ToolUseSuggested { tool_name, .. } = &tool_event.ty {
-        assert_eq!(tool_name.as_deref(), Some("ls"));
+        assert_eq!(tool_name.as_deref(), Some("read"));
     }
 }
 

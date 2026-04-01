@@ -1,8 +1,8 @@
 // Stream 1: Tool call response
 {"kind":"event","data":{"kind":"AssistantResponseEvent","data":{"content":"I'll check that for you."}}}
-{"kind":"event","data":{"kind":"ToolUseEvent","data":{"tool_use_id":"tooluse_ls_123","name":"ls","input":null,"stop":null}}}
-{"kind":"event","data":{"kind":"ToolUseEvent","data":{"tool_use_id":"tooluse_ls_123","name":"ls","input":"{\"path\": \".\"}","stop":null}}}
-{"kind":"event","data":{"kind":"ToolUseEvent","data":{"tool_use_id":"tooluse_ls_123","name":"ls","input":null,"stop":true}}}
+{"kind":"event","data":{"kind":"ToolUseEvent","data":{"tool_use_id":"tooluse_ls_123","name":"read","input":null,"stop":null}}}
+{"kind":"event","data":{"kind":"ToolUseEvent","data":{"tool_use_id":"tooluse_ls_123","name":"read","input":"{\"operations\": [{\"mode\": \"Directory\", \"path\": \".\"}]}","stop":null}}}
+{"kind":"event","data":{"kind":"ToolUseEvent","data":{"tool_use_id":"tooluse_ls_123","name":"read","input":null,"stop":true}}}
 
 // Stream 2: Context window overflow error (after tool result is sent)
 {"kind":"sendError","data":{"request_id":"ad9875de-b5c6-473c-83e7-f931cea17e05","status_code":400,"kind":"ContextWindowOverflow"}}

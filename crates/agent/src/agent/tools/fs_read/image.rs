@@ -4,98 +4,38 @@ use std::path::{
 };
 use std::str::FromStr as _;
 
-/// Cross-platform helper to get file size from metadata.
-fn get_file_size(md: &std::fs::Metadata) -> u64 {
-    md.len()
-}
-
 use serde::{
     Deserialize,
     Serialize,
 };
 use strum::IntoEnumIterator;
 
-use super::{
-    BuiltInToolName,
-    BuiltInToolTrait,
-    ToolExecutionError,
-    ToolExecutionOutput,
-    ToolExecutionOutputItem,
-    ToolExecutionResult,
-};
 use crate::agent::agent_loop::types::{
     ImageBlock,
     ImageFormat,
     ImageSource,
 };
 use crate::agent::consts::MAX_IMAGE_SIZE_BYTES;
+use crate::agent::tools::{
+    ToolExecutionError,
+    ToolExecutionOutput,
+    ToolExecutionOutputItem,
+    ToolExecutionResult,
+};
 use crate::agent::util::path::canonicalize_path;
 
-const IMAGE_READ_TOOL_DESCRIPTION: &str = r#"
-A tool for reading images.
-
-WHEN TO USE THIS TOOL:
-- Use when you want to read a file that you know is a supported image
-
-HOW TO USE:
-- Provide a list of paths to images you want to read
-
-FEATURES:
-- Able to read the following image formats: {IMAGE_FORMATS}
-- Can read multiple images in one go
-
-LIMITATIONS:
-- Maximum supported image size is 10 MB
-"#;
-
-const IMAGE_READ_SCHEMA: &str = r#"
-{
-    "type": "object",
-    "properties": {
-        "paths": {
-            "type": "array",
-            "description": "List of paths to images to read",
-            "items": {
-                "type": "string",
-                "description": "Path to an image"
-            }
-        }
-    },
-    "required": [
-        "paths"
-    ]
-}
-"#;
-
-impl BuiltInToolTrait for ImageRead {
-    fn name() -> BuiltInToolName {
-        BuiltInToolName::ImageRead
-    }
-
-    fn description() -> std::borrow::Cow<'static, str> {
-        make_tool_description().into()
-    }
-
-    fn input_schema() -> std::borrow::Cow<'static, str> {
-        IMAGE_READ_SCHEMA.into()
-    }
-}
-
-fn make_tool_description() -> String {
-    let supported_formats = ImageFormat::iter()
-        .map(|v| v.to_string())
-        .collect::<Vec<_>>()
-        .join(", ");
-    IMAGE_READ_TOOL_DESCRIPTION.replace("{IMAGE_FORMATS}", &supported_formats)
+/// Cross-platform helper to get file size from metadata.
+fn get_file_size(md: &std::fs::Metadata) -> u64 {
+    md.len()
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct ImageRead {
+pub struct ImageOp {
+    #[serde(alias = "image_paths")]
     pub paths: Vec<String>,
 }
 
-impl ImageRead {
+impl ImageOp {
     pub async fn validate(&self) -> Result<(), String> {
         let paths = self.processed_paths()?;
         let mut errors = Vec::new();
@@ -104,7 +44,7 @@ impl ImageRead {
                 errors.push(format!("'{}' is not a supported image type", path.to_string_lossy()));
                 continue;
             }
-            let md = match tokio::fs::symlink_metadata(&path).await {
+            let md = match tokio::fs::metadata(&path).await {
                 Ok(md) => md,
                 Err(err) => {
                     errors.push(format!(
@@ -142,7 +82,6 @@ impl ImageRead {
         for path in paths {
             match read_image(path).await {
                 Ok(block) => results.push(ToolExecutionOutputItem::Image(block)),
-                // Validate step should prevent errors from cropping up here.
                 Err(err) => errors.push(err),
             }
         }
@@ -164,6 +103,13 @@ impl ImageRead {
     }
 }
 
+pub fn supported_image_formats_description() -> String {
+    ImageFormat::iter()
+        .map(|v| v.to_string())
+        .collect::<Vec<_>>()
+        .join(", ")
+}
+
 /// Reads an image from the given path if it is a supported image type and within the size limits
 /// of the API, returning a human and model friendly error message otherwise.
 ///
@@ -180,7 +126,7 @@ pub async fn read_image(path: impl AsRef<Path>) -> Result<ImageBlock, String> {
         return Err(format!("unsupported format: {extension}"));
     };
 
-    let image_size = tokio::fs::symlink_metadata(path)
+    let image_size = tokio::fs::metadata(path)
         .await
         .map_err(|e| format!("failed to read file metadata for {}: {}", path.to_string_lossy(), e))?;
     let image_size = get_file_size(&image_size);
@@ -204,7 +150,7 @@ pub async fn read_image(path: impl AsRef<Path>) -> Result<ImageBlock, String> {
 }
 
 /// Macos screenshots insert a NNBSP character rather than a space between the timestamp and AM/PM
-/// part. An example of a screenshot name is: /path-to/Screenshot 2025-03-13 at 1.46.32 PM.png
+/// part. An example of a screenshot name is: /path-to/Screenshot 2025-03-13 at 1.46.32 PM.png
 ///
 /// However, the model will just treat it as a normal space and return the wrong path string to the
 /// `fs_read` tool. This will lead to file-not-found errors.
@@ -230,6 +176,7 @@ pub fn is_supported_image_type(path: impl AsRef<Path>) -> bool {
     path.extension()
         .is_some_and(|ext| ImageFormat::from_str(ext.to_string_lossy().to_lowercase().as_str()).is_ok())
 }
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -237,7 +184,6 @@ mod tests {
 
     // Create a minimal valid PNG for testing
     fn create_test_png() -> Vec<u8> {
-        // Minimal 1x1 PNG
         vec![
             0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, // PNG signature
             0x00, 0x00, 0x00, 0x0d, // IHDR chunk length
@@ -260,7 +206,7 @@ mod tests {
     async fn test_read_valid_image() {
         let test_base = TestBase::new().await.with_file(("test.png", create_test_png())).await;
 
-        let tool = ImageRead {
+        let tool = ImageOp {
             paths: vec![test_base.join("test.png").to_string_lossy().to_string()],
         };
 
@@ -282,7 +228,7 @@ mod tests {
             .with_file(("image2.png", create_test_png()))
             .await;
 
-        let tool = ImageRead {
+        let tool = ImageOp {
             paths: vec![
                 test_base.join("image1.png").to_string_lossy().to_string(),
                 test_base.join("image2.png").to_string_lossy().to_string(),
@@ -297,7 +243,7 @@ mod tests {
     async fn test_validate_unsupported_format() {
         let test_base = TestBase::new().await.with_file(("test.txt", "not an image")).await;
 
-        let tool = ImageRead {
+        let tool = ImageOp {
             paths: vec![test_base.join("test.txt").to_string_lossy().to_string()],
         };
 
@@ -306,7 +252,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_validate_nonexistent_file() {
-        let tool = ImageRead {
+        let tool = ImageOp {
             paths: vec!["/nonexistent/image.png".to_string()],
         };
 
@@ -317,7 +263,7 @@ mod tests {
     async fn test_validate_directory_path() {
         let test_base = TestBase::new().await;
 
-        let tool = ImageRead {
+        let tool = ImageOp {
             paths: vec![test_base.join("").to_string_lossy().to_string()],
         };
 

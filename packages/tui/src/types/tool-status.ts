@@ -18,6 +18,8 @@ export type BuiltinToolId =
   | 'write'
   | 'glob'
   | 'grep'
+  // TODO: Remove 'ls' and 'image_read' once enough time has passed that users are unlikely
+  // to load saved conversations containing old ls/imageRead tool calls.
   | 'ls'
   | 'introspect'
   | 'knowledge'
@@ -26,6 +28,7 @@ export type BuiltinToolId =
   | 'todo'
   | 'aws'
   | 'subagent'
+  // TODO: Remove 'image_read' (see 'ls' TODO above).
   | 'image_read'
   | 'web_fetch'
   | 'web_search'
@@ -38,6 +41,7 @@ export const TOOL_LABELS: Record<BuiltinToolId, string> = {
   write: 'Write',
   glob: 'Glob',
   grep: 'Grep',
+  // TODO: Remove ls and image_read labels (see BuiltinToolId TODO above).
   ls: 'Ls',
   image_read: 'ImageRead',
   introspect: 'Introspect',

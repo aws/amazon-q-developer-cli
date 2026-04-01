@@ -264,7 +264,7 @@ pub fn evaluate_tool_permission<P: SystemProvider>(
                     .denied_paths
                     .iter()
                     .chain(&permissions.filesystem.denied_read_paths),
-                file_read.ops.iter().map(|op| &op.path),
+                file_read.all_paths().iter(),
                 is_allowed,
                 provider,
             ),
@@ -284,37 +284,6 @@ pub fn evaluate_tool_permission<P: SystemProvider>(
                 provider,
             ),
 
-            // Reuse the same settings for fs read
-            BuiltInTool::Ls(ls) => evaluate_permission_for_paths(
-                settings
-                    .fs_read
-                    .allowed_paths
-                    .iter()
-                    .chain(&permissions.filesystem.allowed_read_paths),
-                settings
-                    .fs_read
-                    .denied_paths
-                    .iter()
-                    .chain(&permissions.filesystem.denied_read_paths),
-                [&ls.path],
-                is_allowed,
-                provider,
-            ),
-            BuiltInTool::ImageRead(image_read) => evaluate_permission_for_paths(
-                settings
-                    .fs_read
-                    .allowed_paths
-                    .iter()
-                    .chain(&permissions.filesystem.allowed_read_paths),
-                settings
-                    .fs_read
-                    .denied_paths
-                    .iter()
-                    .chain(&permissions.filesystem.denied_read_paths),
-                &image_read.paths,
-                is_allowed,
-                provider,
-            ),
             BuiltInTool::Grep(grep) => {
                 let path = grep.get_path(provider).map_err(|e| UtilError::Custom(e.to_string()))?;
                 evaluate_permission_for_paths(
@@ -646,10 +615,8 @@ where
 fn extract_paths_from_tool<P: SystemProvider>(tool: &ToolKind, provider: &P) -> (Vec<String>, PathAccessType) {
     match tool {
         ToolKind::BuiltIn(built_in) => match built_in {
-            BuiltInTool::FileRead(t) => (t.ops.iter().map(|op| op.path.clone()).collect(), PathAccessType::Read),
+            BuiltInTool::FileRead(t) => (t.all_paths(), PathAccessType::Read),
             BuiltInTool::FileWrite(t) => (vec![t.path().to_string()], PathAccessType::Write),
-            BuiltInTool::Ls(t) => (vec![t.path.clone()], PathAccessType::Read),
-            BuiltInTool::ImageRead(t) => (t.paths.clone(), PathAccessType::Read),
             BuiltInTool::Grep(t) => match t.get_path(provider) {
                 Ok(p) => (vec![p], PathAccessType::Read),
                 Err(_) => (vec![], PathAccessType::Read),
@@ -671,9 +638,10 @@ mod tests {
         GlobSettings,
         GrepSettings,
     };
+    use crate::tools::fs_read::file::FileOp;
     use crate::tools::fs_read::{
         FsRead,
-        FsReadOp,
+        FsReadOperation,
     };
     use crate::tools::fs_write::{
         FileCreate,
@@ -710,7 +678,7 @@ mod tests {
     #[test]
     fn test_evaluate_basic_tool_permission() {
         let provider = TestProvider::new();
-        let fs_read_tool = ToolKind::BuiltIn(BuiltInTool::FileRead(FsRead { ops: vec![] }));
+        let fs_read_tool = ToolKind::BuiltIn(BuiltInTool::FileRead(FsRead { operations: vec![] }));
         let perms = RuntimePermissions::default();
         let mut allowed_tools = HashSet::new();
 
@@ -1042,11 +1010,11 @@ mod tests {
 
         // Use ~ path to test canonicalization
         let fs_read_tool = ToolKind::BuiltIn(BuiltInTool::FileRead(FsRead {
-            ops: vec![FsReadOp {
+            operations: vec![FsReadOperation::Line(FileOp {
                 path: "~/file.txt".to_string(),
                 limit: None,
                 offset: None,
-            }],
+            })],
         }));
         let fs_write_tool = ToolKind::BuiltIn(BuiltInTool::FileWrite(FsWrite::Create(FileCreate {
             path: "~/file.txt".to_string(),
@@ -1112,11 +1080,11 @@ mod tests {
 
         let make_fs_read = |path: &str| {
             ToolKind::BuiltIn(BuiltInTool::FileRead(FsRead {
-                ops: vec![FsReadOp {
+                operations: vec![FsReadOperation::Line(FileOp {
                     path: path.to_string(),
                     limit: None,
                     offset: None,
-                }],
+                })],
             }))
         };
 
@@ -1199,7 +1167,7 @@ mod tests {
         let provider = TestProvider::new();
         let allowed_tools = HashSet::new();
         let settings = ToolsSettings::default();
-        let fs_read_tool = ToolKind::BuiltIn(BuiltInTool::FileRead(FsRead { ops: vec![] }));
+        let fs_read_tool = ToolKind::BuiltIn(BuiltInTool::FileRead(FsRead { operations: vec![] }));
         let tool_name = fs_read_tool.canonical_tool_name();
 
         let mut permissions = RuntimePermissions::default();
@@ -1219,11 +1187,11 @@ mod tests {
         settings.fs_read.denied_paths.push("/denied".to_string());
 
         let fs_read_tool = ToolKind::BuiltIn(BuiltInTool::FileRead(FsRead {
-            ops: vec![FsReadOp {
+            operations: vec![FsReadOperation::Line(FileOp {
                 path: "/denied/file.txt".to_string(),
                 limit: None,
                 offset: None,
-            }],
+            })],
         }));
         let tool_name = fs_read_tool.canonical_tool_name();
 

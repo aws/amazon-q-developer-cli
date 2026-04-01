@@ -20,11 +20,13 @@ use super::agent_loop::types::{
 use super::compact::CompactStrategy;
 use super::protocol::ToolCallResult;
 use super::tools::Tool;
+use super::tools::fs_read::backwards_compatibility::deserialize_tool_with_legacy_fallback;
 
 /// Tool execution with its result
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ToolResult {
     /// The parsed tool. None if the tool use block failed to parse.
+    #[serde(deserialize_with = "deserialize_tool_with_legacy_fallback")]
     pub tool: Option<Box<Tool>>,
     pub result: ToolCallResult,
 }
@@ -357,5 +359,121 @@ mod tests {
         let messages = log.derive_messages();
         assert_eq!(messages.len(), 3);
         assert!(messages[0].content[0].text().unwrap().contains("summary context"));
+    }
+
+    #[test]
+    fn test_deserialize_legacy_ls_tool_result() {
+        use crate::agent::tools::fs_read::FsReadOperation;
+        use crate::agent::tools::{
+            BuiltInTool,
+            ToolKind,
+        };
+
+        let json = r#"{
+            "version": "v1",
+            "kind": "ToolResults",
+            "data": {
+                "message_id": "test-msg",
+                "content": [{"kind": "toolResult", "data": {"toolUseId": "tu1", "content": [{"kind": "text", "data": "ok"}], "status": "success"}}],
+                "results": {
+                    "tu1": {
+                        "tool": {
+                            "tool_use_purpose": "List directory",
+                            "kind": {"BuiltIn": {"Ls": {"path": ".", "depth": null, "ignore": null}}}
+                        },
+                        "result": "Cancelled"
+                    }
+                }
+            }
+        }"#;
+        let entry: LogEntry = serde_json::from_str(json).expect("should deserialize legacy Ls");
+        let LogEntry::V1(LogEntryV1::ToolResults { results, .. }) = entry else {
+            panic!("expected ToolResults");
+        };
+        let tool = results["tu1"].tool.as_ref().expect("tool should be Some");
+        assert_eq!(tool.tool_use_purpose.as_deref(), Some("List directory"));
+        let ToolKind::BuiltIn(BuiltInTool::FileRead(fs_read)) = &tool.kind else {
+            panic!("expected FileRead, got {:?}", tool.kind);
+        };
+        assert_eq!(fs_read.operations.len(), 1);
+        assert!(matches!(&fs_read.operations[0], FsReadOperation::Directory(d) if d.path == "."));
+    }
+
+    #[test]
+    fn test_deserialize_legacy_image_read_tool_result() {
+        use crate::agent::tools::fs_read::FsReadOperation;
+        use crate::agent::tools::{
+            BuiltInTool,
+            ToolKind,
+        };
+
+        let json = r#"{
+            "version": "v1",
+            "kind": "ToolResults",
+            "data": {
+                "message_id": "test-msg",
+                "content": [{"kind": "toolResult", "data": {"toolUseId": "tu2", "content": [{"kind": "text", "data": "ok"}], "status": "success"}}],
+                "results": {
+                    "tu2": {
+                        "tool": {
+                            "tool_use_purpose": "Read image",
+                            "kind": {"BuiltIn": {"ImageRead": {"paths": ["/tmp/img.png"]}}}
+                        },
+                        "result": "Cancelled"
+                    }
+                }
+            }
+        }"#;
+        let entry: LogEntry = serde_json::from_str(json).expect("should deserialize legacy ImageRead");
+        let LogEntry::V1(LogEntryV1::ToolResults { results, .. }) = entry else {
+            panic!("expected ToolResults");
+        };
+        let tool = results["tu2"].tool.as_ref().expect("tool should be Some");
+        assert_eq!(tool.tool_use_purpose.as_deref(), Some("Read image"));
+        let ToolKind::BuiltIn(BuiltInTool::FileRead(fs_read)) = &tool.kind else {
+            panic!("expected FileRead, got {:?}", tool.kind);
+        };
+        assert_eq!(fs_read.operations.len(), 1);
+        assert!(matches!(&fs_read.operations[0], FsReadOperation::Image(img) if img.paths == vec!["/tmp/img.png"]));
+    }
+
+    #[test]
+    fn test_deserialize_legacy_file_read_with_ops() {
+        use crate::agent::tools::fs_read::FsReadOperation;
+        use crate::agent::tools::{
+            BuiltInTool,
+            ToolKind,
+        };
+
+        let json = r#"{
+            "version": "v1",
+            "kind": "ToolResults",
+            "data": {
+                "message_id": "test-msg",
+                "content": [{"kind": "toolResult", "data": {"toolUseId": "tu3", "content": [{"kind": "text", "data": "ok"}], "status": "success"}}],
+                "results": {
+                    "tu3": {
+                        "tool": {
+                            "tool_use_purpose": "Read file",
+                            "kind": {"BuiltIn": {"FileRead": {"ops": [{"path": "src/main.rs", "limit": 50, "offset": 10}]}}}
+                        },
+                        "result": "Cancelled"
+                    }
+                }
+            }
+        }"#;
+        let entry: LogEntry = serde_json::from_str(json).expect("should deserialize legacy FileRead with ops");
+        let LogEntry::V1(LogEntryV1::ToolResults { results, .. }) = entry else {
+            panic!("expected ToolResults");
+        };
+        let tool = results["tu3"].tool.as_ref().expect("tool should be Some");
+        assert_eq!(tool.tool_use_purpose.as_deref(), Some("Read file"));
+        let ToolKind::BuiltIn(BuiltInTool::FileRead(fs_read)) = &tool.kind else {
+            panic!("expected FileRead, got {:?}", tool.kind);
+        };
+        assert_eq!(fs_read.operations.len(), 1);
+        assert!(
+            matches!(&fs_read.operations[0], FsReadOperation::Line(f) if f.path == "src/main.rs" && f.limit == Some(50) && f.offset == Some(10))
+        );
     }
 }

@@ -235,6 +235,8 @@ const ToolUseContent = React.memo(function ToolUseContent({
     );
   }
 
+  // TODO: Remove Ls and ImageRead branches once legacy tool names are cleaned up.
+  // These only render for old saved conversations that had separate ls/imageRead tool calls.
   if (LS_TOOL_NAMES.has(name)) {
     return (
       <Ls
