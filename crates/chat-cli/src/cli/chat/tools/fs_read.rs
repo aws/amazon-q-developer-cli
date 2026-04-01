@@ -460,6 +460,9 @@ impl FsImage {
     pub async fn invoke(&self, updates: &mut impl Write) -> Result<InvokeOutput> {
         let pre_processed_paths: Vec<String> = self.image_paths.iter().map(|path| pre_process(path)).collect();
         let valid_images = handle_images_from_paths(updates, &pre_processed_paths);
+        if valid_images.is_empty() {
+            bail!("All images were dropped because they exceed the size limit. Please provide smaller images.");
+        }
         super::queue_function_result("Successfully read image", updates, false, false)?;
         Ok(InvokeOutput {
             output: OutputKind::Images(valid_images),
