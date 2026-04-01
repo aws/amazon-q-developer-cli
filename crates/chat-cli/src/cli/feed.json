@@ -12,6 +12,18 @@
     },
     {
       "type": "release",
+      "date": "2026-03-28",
+      "version": "1.28.3",
+      "title": "Version 1.28.3",
+      "changes": [
+        {
+          "type": "fixed",
+          "description": "Fix \"profileArn is required but no profiles are available\" error for some users"
+        }
+      ]
+    },
+    {
+      "type": "release",
       "date": "2026-03-26",
       "version": "1.28.2",
       "title": "Version 1.28.2",
