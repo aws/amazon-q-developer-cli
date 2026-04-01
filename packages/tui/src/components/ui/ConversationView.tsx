@@ -360,6 +360,34 @@ let _hadMessages = false;
 let _welcomeInStatic = false;
 let _hasAnimated = false;
 
+type StaticItem =
+  | { type: 'welcome'; id: string }
+  | {
+      type: 'system';
+      id: string;
+      message: StoreMessageType & { role: MessageRole.System };
+    }
+  | { type: 'turn'; id: string; turn: ConversationTurn }
+  | { type: 'divider'; id: string }
+  | {
+      type: 'msg';
+      id: string;
+      msg: StoreMessageType;
+      agentBarColor: string | undefined;
+      mainAgentName: string | undefined;
+      isLast: boolean;
+      prevRole?: MessageRole;
+    };
+
+// These must also be module-level so that <Static> items, emitted IDs, and
+// per-turn flush tracking survive the unmount/remount cycle that happens when
+// toggling alternate screen (Ctrl+G crew monitor). If these reset on remount,
+// the twinki ReactBridge's monotonic totalStaticWritten cursor will skip the
+// re-emitted items because their indices overlap with already-written ones.
+const _staticItems: StaticItem[] = [];
+const _emittedIds = new Set<string>();
+const _flushedMap = new Map<string, Set<string>>();
+
 /**
  * # ConversationView — Incremental Static Rendering
  *
@@ -430,25 +458,6 @@ let _hasAnimated = false;
 // How many messages to keep in the dynamic tail
 const TAIL_SIZE = 2;
 
-type StaticItem =
-  | { type: 'welcome'; id: string }
-  | {
-      type: 'system';
-      id: string;
-      message: StoreMessageType & { role: MessageRole.System };
-    }
-  | { type: 'turn'; id: string; turn: ConversationTurn }
-  | { type: 'divider'; id: string }
-  | {
-      type: 'msg';
-      id: string;
-      msg: StoreMessageType;
-      agentBarColor: string | undefined;
-      mainAgentName: string | undefined;
-      isLast: boolean;
-      prevRole?: MessageRole;
-    };
-
 /** Helper to append messages to static items with correct prevRole tracking */
 function appendMessagesToStatic(
   messages: StoreMessageType[],
@@ -493,11 +502,11 @@ export const ConversationView = React.memo(function ConversationView() {
     setFlushTurnId(activeTurnIdRef.current);
   }, []);
   // Per-turn set of message IDs already flushed to <Static>
-  const flushedRef = React.useRef<Map<string, Set<string>>>(new Map());
+  const flushedRef = React.useRef(_flushedMap);
   // Persistent, append-only array of static items — never shrinks.
   // <Static> uses array length as its index, so items must stay at stable positions.
-  const staticItemsRef = React.useRef<StaticItem[]>([]);
-  const emittedIdsRef = React.useRef(new Set<string>());
+  const staticItemsRef = React.useRef(_staticItems);
+  const emittedIdsRef = React.useRef(_emittedIds);
 
   if (messages.length > 0) {
     hadMessagesRef.current = true;
