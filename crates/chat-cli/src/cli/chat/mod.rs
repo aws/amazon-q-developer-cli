@@ -3042,24 +3042,14 @@ impl ChatSession {
 
         // Check if there's a pending clipboard paste from Ctrl+V
         let pasted_paths = self.input_source.take_clipboard_pastes();
-        if !pasted_paths.is_empty() {
-            // Check if the input contains image markers
-            let image_marker_regex = regex::Regex::new(r"\[Image #\d+\]").unwrap();
-            if image_marker_regex.is_match(&user_input) {
-                // Join all paths with spaces for processing
-                let paths_str = pasted_paths
-                    .iter()
-                    .map(|p| p.display().to_string())
-                    .collect::<Vec<_>>()
-                    .join(" ");
-
-                // Reset the counter for next message
-                self.input_source.reset_paste_count();
-
-                // Return HandleInput with all paths to automatically process the images
-                return Ok(ChatState::HandleInput { input: paths_str });
-            }
-        }
+        let user_input = if !pasted_paths.is_empty() {
+            // Replace [Image #N] markers with actual file paths, preserving surrounding text
+            let result = replace_image_markers(&user_input, &pasted_paths);
+            self.input_source.reset_paste_count();
+            result
+        } else {
+            user_input
+        };
 
         self.conversation.append_user_transcript(&user_input);
         Ok(ChatState::HandleInput { input: user_input })
@@ -5224,6 +5214,16 @@ fn does_input_reference_file(input: &str) -> Option<ChatState> {
     None
 }
 
+/// Replace `[Image #N]` markers in user input with the corresponding file paths.
+fn replace_image_markers(input: &str, paths: &[std::path::PathBuf]) -> String {
+    let mut result = input.to_string();
+    for (i, path) in paths.iter().enumerate() {
+        let marker = format!("[Image #{}]", i + 1);
+        result = result.replace(&marker, &path.display().to_string());
+    }
+    result
+}
+
 /// Check if input is a "trust" response (t/T)
 fn is_trust_response(input: &str) -> bool {
     ["t", "T"].contains(&input.trim())
@@ -5999,6 +5999,37 @@ mod tests {
             let actual = does_input_reference_file(input).is_some();
             assert_eq!(actual, *expected, "expected {expected} for input {input}");
         }
+    }
+
+    #[test]
+    fn test_replace_image_markers() {
+        use std::path::PathBuf;
+
+        // Single image with surrounding text
+        let paths = vec![PathBuf::from("/tmp/img1.png")];
+        assert_eq!(
+            replace_image_markers("read this file and use this screenshot [Image #1]", &paths),
+            "read this file and use this screenshot /tmp/img1.png"
+        );
+
+        // Multiple images
+        let paths = vec![PathBuf::from("/tmp/img1.png"), PathBuf::from("/tmp/img2.png")];
+        assert_eq!(
+            replace_image_markers("compare [Image #1] with [Image #2]", &paths),
+            "compare /tmp/img1.png with /tmp/img2.png"
+        );
+
+        // Image marker only, no surrounding text
+        let paths = vec![PathBuf::from("/tmp/img1.png")];
+        assert_eq!(replace_image_markers("[Image #1]", &paths), "/tmp/img1.png");
+
+        // No markers — input returned unchanged
+        let paths = vec![PathBuf::from("/tmp/img1.png")];
+        assert_eq!(replace_image_markers("hello world", &paths), "hello world");
+
+        // Empty paths — markers left as-is
+        let paths: Vec<PathBuf> = vec![];
+        assert_eq!(replace_image_markers("[Image #1]", &paths), "[Image #1]");
     }
 
     mod welcome_announcement_tests {
