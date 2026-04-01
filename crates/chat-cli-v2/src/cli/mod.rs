@@ -147,7 +147,11 @@ impl RootSubcommand {
     pub async fn execute(self, os: &mut Os) -> Result<ExitCode> {
         // Check for auth on subcommands that require it.
         if !is_logged_in(&mut os.database).await {
-            if matches!(self, Self::Chat(_)) {
+            if matches!(self, Self::Chat(ref args) if args.no_interactive) {
+                bail!(
+                    "Not logged in. Set the KIRO_API_KEY environment variable or run `{CLI_BINARY_NAME} login` first."
+                );
+            } else if matches!(self, Self::Chat(_)) {
                 let options = ["Yes", "No"];
                 match crate::util::choose(" You are not logged in. Login now?", &options)? {
                     Some(0) => {},

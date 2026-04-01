@@ -154,7 +154,10 @@ pub mod env_var {
         CODESPACES = "CODESPACES",
 
         /// CI environment
-        CI = "CI"
+        CI = "CI",
+
+        /// API key for headless/non-interactive authentication
+        KIRO_API_KEY = "KIRO_API_KEY"
     }
 }
 

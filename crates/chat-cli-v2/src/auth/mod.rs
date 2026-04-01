@@ -129,6 +129,11 @@ impl ResolveIdentity for UnifiedBearerResolver {
                     Some(token.expires_at.into()),
                 ));
             }
+
+            if let Some(api_key) = crate::util::env_var::get_api_key() {
+                return Ok(Identity::new(Token::new(api_key, None), None));
+            }
+
             Err(AuthError::NoToken.into())
         }))
     }

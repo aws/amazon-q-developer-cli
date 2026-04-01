@@ -75,7 +75,10 @@ use crate::api_client::send_message_output::{
     record_request,
     record_send_error,
 };
-use crate::api_client::token_type_interceptor::TokenTypeInterceptor;
+use crate::api_client::token_type_interceptor::{
+    AuthMode,
+    TokenTypeInterceptor,
+};
 use crate::auth::UnifiedBearerResolver;
 use crate::auth::external_idp::ExternalIdpToken;
 use crate::aws_common::{
@@ -277,6 +280,7 @@ struct RealApiClient {
     resolve_profile: ProfileResolver,
     model_cache: ModelCache,
     endpoint: Endpoint,
+    auth_mode: AuthMode,
 }
 
 /// Handle to an actor that owns a shared registry for mock API responses, keyed by session_id.
@@ -620,6 +624,20 @@ impl RealApiClient {
             .map(|t| t.is_some())
             .unwrap_or(false);
 
+        // Determine auth mode: must match UnifiedBearerResolver priority.
+        // Stored credentials take precedence; API key is only used as fallback.
+        let auth_mode = if is_external_idp {
+            AuthMode::ExternalIdp
+        } else if crate::auth::is_builder_id_logged_in(database).await
+            || crate::auth::social::is_social_logged_in(&*database).await
+        {
+            AuthMode::Normal
+        } else if crate::util::env_var::get_api_key().is_some() {
+            AuthMode::ApiKey
+        } else {
+            AuthMode::Normal
+        };
+
         // Check if using Builder ID (free tier) — these users have no IAM IdC profile,
         // so we inject a hardcoded prod profile ARN for routing purposes.
         let is_builder_id = matches!(
@@ -647,7 +665,7 @@ impl RealApiClient {
                 .http_client(crate::aws_common::http_client::client())
                 .interceptor(OptOutInterceptor::new(database))
                 .interceptor(UserAgentOverrideInterceptor::new())
-                .interceptor(TokenTypeInterceptor::new(is_external_idp))
+                .interceptor(TokenTypeInterceptor::new(auth_mode.clone()))
                 .interceptor(InternalRedirectInterceptor::new(is_internal))
                 .bearer_token_resolver(UnifiedBearerResolver)
                 .app_name(app_name())
@@ -661,7 +679,7 @@ impl RealApiClient {
                 .http_client(crate::aws_common::http_client::client())
                 .interceptor(OptOutInterceptor::new(database))
                 .interceptor(UserAgentOverrideInterceptor::new())
-                .interceptor(TokenTypeInterceptor::new(is_external_idp))
+                .interceptor(TokenTypeInterceptor::new(auth_mode.clone()))
                 .bearer_token_resolver(UnifiedBearerResolver)
                 .app_name(app_name())
                 .endpoint_resolver(StaticCodewhispererEndpointResolver::new(endpoint.url().to_string()))
@@ -677,6 +695,7 @@ impl RealApiClient {
                 resolve_profile: ProfileResolver::new(None),
                 model_cache: Arc::new(RwLock::new(None)),
                 endpoint: endpoint.clone(),
+                auth_mode: auth_mode.clone(),
             };
 
             if let Some(json) = crate::util::env_var::get_mock_chat_response(env) {
@@ -693,7 +712,7 @@ impl RealApiClient {
                 .interceptor(OptOutInterceptor::new(database))
                 .interceptor(UserAgentOverrideInterceptor::new())
                 .interceptor(DelayTrackingInterceptor::new())
-                .interceptor(TokenTypeInterceptor::new(is_external_idp))
+                .interceptor(TokenTypeInterceptor::new(auth_mode.clone()))
                 .interceptor(InternalRedirectInterceptor::new(is_internal))
                 .bearer_token_resolver(UnifiedBearerResolver)
                 .app_name(app_name())
@@ -736,6 +755,7 @@ impl RealApiClient {
             resolve_profile,
             model_cache: Arc::new(RwLock::new(None)),
             endpoint,
+            auth_mode,
         })
     }
 
@@ -744,6 +764,15 @@ impl RealApiClient {
         self.resolve_profile
             .require_arn(|| self.list_available_profiles())
             .await
+    }
+
+    /// Returns the profile ARN if available, or `None` for API key auth where
+    /// profile ARN is not used.
+    async fn optional_profile_arn(&self) -> Option<String> {
+        if matches!(self.auth_mode, AuthMode::ApiKey) {
+            return None;
+        }
+        self.require_profile_arn().await.ok()
     }
 
     pub async fn send_telemetry_event(
@@ -816,7 +845,7 @@ impl RealApiClient {
             .client
             .list_available_models()
             .set_origin(Some(Origin::KiroCli))
-            .set_profile_arn(Some(self.require_profile_arn().await?));
+            .set_profile_arn(self.optional_profile_arn().await);
         let mut paginator = request.into_paginator().send();
 
         while let Some(result) = paginator.next().await {
@@ -884,7 +913,7 @@ impl RealApiClient {
         let request = self
             .client
             .get_profile()
-            .set_profile_arn(Some(self.require_profile_arn().await?));
+            .set_profile_arn(self.optional_profile_arn().await);
 
         let response = request.send().await?;
         let mcp_config = response
@@ -909,7 +938,7 @@ impl RealApiClient {
 
         self.client
             .create_subscription_token()
-            .set_profile_arn(Some(self.require_profile_arn().await?))
+            .set_profile_arn(self.optional_profile_arn().await)
             .send()
             .await
             .map_err(ApiClientError::CreateSubscriptionToken)
@@ -921,7 +950,7 @@ impl RealApiClient {
         self.client
             .get_usage_limits()
             .set_origin(Some(amzn_codewhisperer_client::types::Origin::KiroCli))
-            .set_profile_arn(Some(self.require_profile_arn().await?))
+            .set_profile_arn(self.optional_profile_arn().await)
             .send()
             .await
             .map_err(ApiClientError::GetUsageLimitsError)
@@ -965,16 +994,7 @@ impl RealApiClient {
             match client
                 .generate_assistant_response()
                 .conversation_state(conversation_state)
-                .set_profile_arn(Some(self.require_profile_arn().await.map_err(|e| {
-                    ConverseStreamError {
-                        request_id: None,
-                        status_code: None,
-                        kind: ConverseStreamErrorKind::Unknown {
-                            reason_code: e.to_string(),
-                        },
-                        source: None,
-                    }
-                })?))
+                .set_profile_arn(self.optional_profile_arn().await)
                 .send()
                 .await
             {
@@ -1061,7 +1081,7 @@ impl RealApiClient {
             .id("1".into())
             .method(amzn_codewhisperer_streaming_client::types::McpMethod::ToolsCall)
             .params(params)
-            .set_profile_arn(Some(self.require_profile_arn().await?))
+            .set_profile_arn(self.optional_profile_arn().await)
             .send()
             .await
             .map_err(|e| ApiClientError::Other(format!("Failed to invoke MCP: {e}")))?;
@@ -1169,7 +1189,7 @@ impl RealApiClient {
     /// If the profile is not yet resolved, resolves it via `list_available_profiles` and
     /// persists the result to the database so subsequent sessions skip the API call.
     pub async fn resolve_profile_if_missing(&self, database: &mut Database) -> Result<(), ApiClientError> {
-        if self.resolve_profile.is_known() {
+        if matches!(self.auth_mode, AuthMode::ApiKey) || self.resolve_profile.is_known() {
             return Ok(());
         }
         if let Ok(_arn) = self.require_profile_arn().await
