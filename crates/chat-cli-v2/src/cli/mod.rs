@@ -36,13 +36,13 @@ use tracing::{
     Level,
     debug,
 };
+pub use user::is_logged_in;
 
 use crate::cli::chat::ChatArgs;
 use crate::cli::mcp::McpSubcommand;
 use crate::cli::user::{
     LoginArgs,
     WhoamiArgs,
-    is_logged_in,
 };
 use crate::logging::{
     LogArgs,

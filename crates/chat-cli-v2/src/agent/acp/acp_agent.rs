@@ -2708,6 +2708,9 @@ pub async fn execute(
         let _ = session_manager_handle.set_next_model_id(m).await;
     }
 
+    // Check auth status upfront so the initialize response only advertises auth methods when needed
+    let logged_in = crate::cli::is_logged_in(&mut os.database).await;
+
     // NOTE: It is _extremely_ easy to create a deadlock with sacp (read more about it
     // [here](https://docs.rs/sacp/10.1.0/sacp/concepts/ordering/index.html)). For that reason, it
     // is crucial that nothing we dispatch in these on_* callbacks are long running on the dispatch
@@ -2729,22 +2732,23 @@ pub async fn execute(
                             .initialize(info.name, info.version)
                             .await;
                     }
-                    request_cx.respond(
-                        InitializeResponse::new(ProtocolVersion::LATEST)
-                            .agent_capabilities(
-                                AgentCapabilities::default()
-                                    .load_session(true)
-                                    .prompt_capabilities(PromptCapabilities::default().image(true))
-                                    .mcp_capabilities(McpCapabilities::default().http(true)),
-                            )
-                            .agent_info(
-                                Implementation::new(crate::constants::AGENT_NAME, env!("CARGO_PKG_VERSION").to_string())
-                                    .title(crate::constants::AGENT_NAME),
-                            )
-                            .auth_methods(vec![AuthMethod::new("kiro-login", "Kiro Login").description(
-                                format!("Run '{} login' in terminal to authenticate. See https://kiro.dev/docs/cli/authentication/", crate::constants::CLI_NAME),
-                            )]),
-                    )
+                    let mut response = InitializeResponse::new(ProtocolVersion::LATEST)
+                        .agent_capabilities(
+                            AgentCapabilities::default()
+                                .load_session(true)
+                                .prompt_capabilities(PromptCapabilities::default().image(true))
+                                .mcp_capabilities(McpCapabilities::default().http(true)),
+                        )
+                        .agent_info(
+                            Implementation::new(crate::constants::AGENT_NAME, env!("CARGO_PKG_VERSION").to_string())
+                                .title(crate::constants::AGENT_NAME),
+                        );
+                    if !logged_in {
+                        response = response.auth_methods(vec![AuthMethod::new("kiro-login", "Kiro Login").description(
+                            format!("Run '{} login' in terminal to authenticate. See https://kiro.dev/docs/cli/authentication/", crate::constants::CLI_NAME),
+                        )]);
+                    }
+                    request_cx.respond(response)
                 }
             },
             sacp::on_receive_request!(),
