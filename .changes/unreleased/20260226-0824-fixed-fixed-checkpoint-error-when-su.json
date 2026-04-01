@@ -1,0 +1,4 @@
+{
+  "type": "fixed",
+  "description": "Fixed checkpoint error when subagent work tree directory is missing"
+}

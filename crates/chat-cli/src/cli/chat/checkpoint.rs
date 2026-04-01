@@ -323,6 +323,10 @@ impl CheckpointManager {
 
     /// Check for uncommitted changes
     pub fn has_changes(&self) -> Result<bool> {
+        if !self.work_tree_path.exists() {
+            debug!("work tree path gone, skipping has_changes");
+            return Ok(false);
+        }
         let output = run_git(&self.shadow_repo_path, Some(&self.work_tree_path), &[
             "status",
             "--porcelain",
