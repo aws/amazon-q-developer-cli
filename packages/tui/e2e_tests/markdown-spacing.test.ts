@@ -238,6 +238,24 @@ describe('Markdown Spacing', () => {
     expect(blanks2).toBe(0);
   }, 30000);
 
+  it('nested → top-level list item: exactly 1 blank line on de-indent', async () => {
+    const result = await renderMarkdown('spacing-list-deindent',
+      '1. First section\n   - sub-item A\n   - sub-item B\n2. Second section');
+    testCase = result.testCase;
+    // Top-level → nested: no spacing (sub-items belong to parent)
+    const nestBlanks = blankLinesBetween(result.snapshot, 'First section', 'sub-item A');
+    console.log('nest-indent blanks:', nestBlanks);
+    expect(nestBlanks).toBe(0);
+    // Sub-items should be tight (0 blank lines)
+    const subBlanks = blankLinesBetween(result.snapshot, 'sub-item A', 'sub-item B');
+    console.log('sub-item blanks:', subBlanks);
+    expect(subBlanks).toBe(0);
+    // De-indent from sub-item to top-level should have 1 blank line
+    const deindentBlanks = blankLinesBetween(result.snapshot, 'sub-item B', '2.');
+    console.log('de-indent blanks:', deindentBlanks);
+    expect(deindentBlanks).toBe(1);
+  }, 30000);
+
   // ── No blank line within consecutive blockquote lines ──
 
   it('consecutive blockquotes: 0 blank lines between them', async () => {

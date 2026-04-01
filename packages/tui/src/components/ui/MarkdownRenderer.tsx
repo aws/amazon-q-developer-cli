@@ -159,7 +159,12 @@ export const MarkdownRenderer = React.memo(function MarkdownRenderer({
     prev: RenderBlock,
     curr: RenderBlock
   ): boolean => {
-    if (prev.type === 'listItem' && curr.type === 'listItem') return false;
+    if (prev.type === 'listItem' && curr.type === 'listItem') {
+      const prevIndent = prev.segment.listItem!.indent;
+      const currIndent = curr.segment.listItem!.indent;
+      // Add spacing when de-indenting (e.g. sub-item → new top-level item)
+      return currIndent < prevIndent;
+    }
     if (prev.type === 'blockquote' && curr.type === 'blockquote') return false;
     return true;
   };
