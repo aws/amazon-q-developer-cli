@@ -158,8 +158,13 @@ Document each deployment step (toolbox beta, prod, CloudFront) as comments on th
      -f branch_name=prod \
      -f environment=gamma-release \
      -f release_to_cloudfront=false \
-     -f release_to_toolbox=true
+     -f release_to_toolbox=true \
+     -f enable_windows=true
    ```
+
+   <!-- TEMPORARY: Remove enable_windows once it defaults to true in all release workflows.
+        Tracking: When enable_windows is removed from workflow inputs or defaults to true,
+        this flag can be dropped and Windows will be included automatically like Mac/Linux. -->
 
 ## Step 8: Verify Toolbox Beta Installation
 
@@ -178,6 +183,12 @@ Document each deployment step (toolbox beta, prod, CloudFront) as comments on th
    - Expected version number
    - Commit hash matching `origin/prod` from their respective repos
 
+4. On Windows, verify:
+   ```powershell
+   toolbox install kiro-cli --channel beta --force
+   kiro-cli --version
+   ```
+
 ## Step 9: Run Release Prod Workflow
 
 1. Trigger the production release:
@@ -189,8 +200,11 @@ Document each deployment step (toolbox beta, prod, CloudFront) as comments on th
      -f version=<VERSION> \
      -f channel=stable \
      -f release_to_cloudfront=true \
-     -f release_to_toolbox=true
+     -f release_to_toolbox=true \
+     -f enable_windows=true
    ```
+
+   <!-- TEMPORARY: Remove enable_windows once it defaults to true in all release workflows. -->
 
 2. Approve the release in GitHub UI (`prod-release` environment requires manual approval).
 
@@ -219,6 +233,12 @@ Document each deployment step (toolbox beta, prod, CloudFront) as comments on th
 3. Confirm both show:
    - Expected version number
    - Commit hash matching `origin/prod` from their respective repos
+
+4. On Windows, verify:
+   ```powershell
+   toolbox install kiro-cli --channel stable --force
+   kiro-cli --version
+   ```
 
 ## Release Tracker
 
