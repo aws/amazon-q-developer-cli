@@ -84,6 +84,10 @@ impl LoadedAgentConfig {
         &self.config
     }
 
+    pub fn config_mut(&mut self) -> &mut AgentConfig {
+        &mut self.config
+    }
+
     pub fn name(&self) -> &str {
         self.config.name()
     }

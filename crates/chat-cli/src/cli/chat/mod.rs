@@ -3589,6 +3589,7 @@ impl ChatSession {
             }
 
             let conversation_id = self.conversation.conversation_id().to_owned();
+            let registry_data = self.conversation.mcp_registry_cache.as_ref().map(|c| &c.data);
             let invoke_result = tool
                 .tool
                 .invoke(
@@ -3599,6 +3600,7 @@ impl ChatSession {
                     &self.conversation.code_intelligence_client,
                     &mut self.conversation.tool_manager,
                     Some(&conversation_id),
+                    registry_data,
                 )
                 .await;
 

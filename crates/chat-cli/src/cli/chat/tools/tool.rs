@@ -187,6 +187,7 @@ impl Tool {
         code_intelligence_client: &Option<std::sync::Arc<tokio::sync::RwLock<code_agent_sdk::CodeIntelligence>>>,
         tool_manager: &mut crate::cli::chat::tool_manager::ToolManager,
         session_id: Option<&str>,
+        registry_data: Option<&crate::mcp_registry::McpRegistryResponse>,
     ) -> Result<super::InvokeOutput> {
         let active_agent = agents.get_active();
         match self {
@@ -206,7 +207,7 @@ impl Tool {
             Tool::WebFetch(web_fetch) => web_fetch.invoke(os, stdout).await,
             Tool::UseSubagent(use_subagent) => {
                 use_subagent
-                    .invoke(os, agents, code_intelligence_client, tool_manager)
+                    .invoke(os, agents, code_intelligence_client, tool_manager, registry_data)
                     .await
             },
             Tool::Glob(glob) => glob.invoke(os, stdout).await,

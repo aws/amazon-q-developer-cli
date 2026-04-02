@@ -770,6 +770,166 @@ pub fn filter_tools_by_registry(tools: &[String], valid_server_names: &std::coll
         .collect()
 }
 
+/// Resolve registry servers from a [`McpRegistryResponse`] into concrete
+/// [`agent::agent_config::definitions::McpServerConfig`] entries and inject them into the given
+/// [`agent::agent_config::LoadedAgentConfig`].
+///
+/// The agent crate's `McpServerConfig` only has `Local` (stdio) and `Remote` (http) variants, so
+/// `"type": "registry"` entries in agent config JSON are silently dropped during deserialization.
+/// This function re-materialises those entries by converting each registry server definition into
+/// the appropriate concrete variant and adding it via `add_mcp_servers`.
+///
+/// Only servers that are referenced in the agent's `tools` list (via `@server-name/…` patterns)
+/// **and** present in the registry are resolved.
+pub fn resolve_registry_servers_for_agent_config(
+    agent_config: &mut agent::agent_config::LoadedAgentConfig,
+    registry: &McpRegistryResponse,
+) {
+    use agent::agent_config::definitions::{
+        LocalMcpServerConfig,
+        McpServerConfig as AgentMcpServerConfig,
+        RemoteMcpServerConfig,
+    };
+
+    let existing_servers: std::collections::HashSet<String> =
+        agent_config.config().mcp_servers().keys().cloned().collect();
+
+    let mut missing_servers = std::collections::HashSet::new();
+    for tool in &agent_config.tools() {
+        if let Some(stripped) = tool.strip_prefix('@') {
+            let server_name = stripped.split('/').next().unwrap_or("");
+            if !server_name.is_empty() && !existing_servers.contains(server_name) {
+                missing_servers.insert(server_name.to_string());
+            }
+        }
+    }
+
+    let mut resolved: Vec<(String, AgentMcpServerConfig)> = Vec::new();
+
+    for server_name in &missing_servers {
+        let Some(def) = registry.get_server(server_name) else {
+            tracing::debug!(
+                "Registry server '{}' referenced in tools but not found in registry, skipping",
+                server_name
+            );
+            continue;
+        };
+
+        if !def.remotes.is_empty() {
+            let remote = &def.remotes[0];
+            let mut headers = std::collections::HashMap::new();
+            for h in &remote.headers {
+                headers.insert(h.name.clone(), h.value.clone());
+            }
+            resolved.push((
+                server_name.clone(),
+                AgentMcpServerConfig::Remote(RemoteMcpServerConfig {
+                    url: remote.url.clone(),
+                    headers,
+                    timeout_ms: agent::agent_config::definitions::default_timeout(),
+                    oauth_scopes: Vec::new(),
+                    oauth: None,
+                    disabled: false,
+                    disabled_tools: Vec::new(),
+                }),
+            ));
+        } else if !def.packages.is_empty() {
+            let package = &def.packages[0];
+            let (command, args, env) = match package.registry_type.as_str() {
+                "npm" => {
+                    let mut args = vec!["-y".to_string()];
+                    args.extend(package.runtime_arguments.iter().map(|a| a.value.clone()));
+                    args.push(format!("{}@{}", package.identifier, def.version));
+                    args.extend(package.package_arguments.iter().map(|a| a.value.clone()));
+                    let mut env_map = std::collections::HashMap::new();
+                    if let Some(ref url) = package.registry_base_url {
+                        env_map.insert("NPM_CONFIG_REGISTRY".to_string(), url.clone());
+                    }
+                    for ev in &package.environment_variables {
+                        env_map.insert(ev.name.clone(), ev.value.clone());
+                    }
+                    (
+                        "npx".to_string(),
+                        args,
+                        if env_map.is_empty() { None } else { Some(env_map) },
+                    )
+                },
+                "pypi" => {
+                    let mut args = Vec::new();
+                    if let Some(ref url) = package.registry_base_url {
+                        args.push(format!("--default-index={url}"));
+                    }
+                    args.extend(package.runtime_arguments.iter().map(|a| a.value.clone()));
+                    args.push(format!("{}@{}", package.identifier, def.version));
+                    args.extend(package.package_arguments.iter().map(|a| a.value.clone()));
+                    let mut env_map = std::collections::HashMap::new();
+                    for ev in &package.environment_variables {
+                        env_map.insert(ev.name.clone(), ev.value.clone());
+                    }
+                    (
+                        "uvx".to_string(),
+                        args,
+                        if env_map.is_empty() { None } else { Some(env_map) },
+                    )
+                },
+                "oci" => {
+                    let mut args = vec!["run".to_string()];
+                    args.extend(package.runtime_arguments.iter().map(|a| a.value.clone()));
+                    for ev in &package.environment_variables {
+                        if !ev.name.trim().is_empty() && !ev.value.trim().is_empty() {
+                            args.push("-e".to_string());
+                            args.push(format!("{}={}", ev.name, ev.value));
+                        }
+                    }
+                    let image = if let Some(ref url) = package.registry_base_url {
+                        if package.identifier.contains(':') {
+                            format!("{}/{}", url, package.identifier)
+                        } else {
+                            format!("{}/{}:{}", url, package.identifier, def.version)
+                        }
+                    } else if package.identifier.contains(':') {
+                        package.identifier.clone()
+                    } else {
+                        format!("{}:{}", package.identifier, def.version)
+                    };
+                    args.push(image);
+                    args.extend(package.package_arguments.iter().map(|a| a.value.clone()));
+                    ("docker".to_string(), args, None)
+                },
+                other => {
+                    tracing::warn!(
+                        "Unknown registry type '{}' for server '{}', skipping",
+                        other,
+                        server_name
+                    );
+                    continue;
+                },
+            };
+
+            resolved.push((
+                server_name.clone(),
+                AgentMcpServerConfig::Local(LocalMcpServerConfig {
+                    command,
+                    args,
+                    env,
+                    timeout_ms: agent::agent_config::definitions::default_timeout(),
+                    disabled: false,
+                    disabled_tools: Vec::new(),
+                }),
+            ));
+        }
+    }
+
+    if !resolved.is_empty() {
+        tracing::debug!(
+            "Resolved {} registry servers for agent config: {:?}",
+            resolved.len(),
+            resolved.iter().map(|(n, _)| n.as_str()).collect::<Vec<_>>()
+        );
+        agent_config.config_mut().add_mcp_servers(resolved);
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1244,6 +1404,218 @@ mod tests {
 
         // Agent timeout should be preserved
         assert_eq!(config.timeout, 45000);
+    }
+
+    #[test]
+    fn test_resolve_registry_servers_for_agent_config_npm() {
+        use agent::agent_config::definitions::{
+            AgentConfig,
+            AgentConfigV2025_08_22,
+            McpServerConfig as AgentMcpServerConfig,
+        };
+        use agent::agent_config::{
+            ConfigSource,
+            LoadedAgentConfig,
+            ResolvedGlobalPrompt,
+        };
+
+        let registry_json = r#"{
+            "servers": [{
+                "server": {
+                    "name": "my-npm-server",
+                    "description": "An NPM registry server",
+                    "version": "2.0.0",
+                    "packages": [{
+                        "registryType": "npm",
+                        "identifier": "@acme/mcp-server",
+                        "transport": {"type": "stdio"},
+                        "runtimeArguments": [{"type": "positional", "value": "--quiet"}],
+                        "packageArguments": [{"type": "positional", "value": "--readonly"}]
+                    }]
+                }
+            }]
+        }"#;
+        let registry: McpRegistryResponse = serde_json::from_str(registry_json).unwrap();
+
+        let config = AgentConfigV2025_08_22 {
+            name: "test-agent".to_string(),
+            tools: vec!["@my-npm-server/*".to_string(), "fs_read".to_string()],
+            ..Default::default()
+        };
+        let mut loaded = LoadedAgentConfig::new(
+            AgentConfig::V2025_08_22(config),
+            ConfigSource::Ephemeral,
+            ResolvedGlobalPrompt::None,
+        );
+
+        assert!(loaded.config().mcp_servers().is_empty());
+
+        resolve_registry_servers_for_agent_config(&mut loaded, &registry);
+
+        assert_eq!(loaded.config().mcp_servers().len(), 1);
+        let server = loaded.config().mcp_servers().get("my-npm-server").unwrap();
+        match server {
+            AgentMcpServerConfig::Local(local) => {
+                assert_eq!(local.command, "npx");
+                assert!(local.args.contains(&"-y".to_string()));
+                assert!(local.args.contains(&"@acme/mcp-server@2.0.0".to_string()));
+                assert!(local.args.contains(&"--quiet".to_string()));
+                assert!(local.args.contains(&"--readonly".to_string()));
+            },
+            AgentMcpServerConfig::Remote(_) => panic!("Expected Local variant for npm server"),
+        }
+    }
+
+    #[test]
+    fn test_resolve_registry_servers_for_agent_config_remote() {
+        use agent::agent_config::definitions::{
+            AgentConfig,
+            AgentConfigV2025_08_22,
+            McpServerConfig as AgentMcpServerConfig,
+        };
+        use agent::agent_config::{
+            ConfigSource,
+            LoadedAgentConfig,
+            ResolvedGlobalPrompt,
+        };
+
+        let registry_json = r#"{
+            "servers": [{
+                "server": {
+                    "name": "remote-server",
+                    "description": "A remote server",
+                    "version": "1.0.0",
+                    "remotes": [{"type": "sse", "url": "https://example.com/mcp", "headers": [{"name": "X-Api-Key", "value": "test"}]}]
+                }
+            }]
+        }"#;
+        let registry: McpRegistryResponse = serde_json::from_str(registry_json).unwrap();
+
+        let config = AgentConfigV2025_08_22 {
+            name: "test-agent".to_string(),
+            tools: vec!["@remote-server/*".to_string()],
+            ..Default::default()
+        };
+        let mut loaded = LoadedAgentConfig::new(
+            AgentConfig::V2025_08_22(config),
+            ConfigSource::Ephemeral,
+            ResolvedGlobalPrompt::None,
+        );
+
+        resolve_registry_servers_for_agent_config(&mut loaded, &registry);
+
+        let server = loaded.config().mcp_servers().get("remote-server").unwrap();
+        match server {
+            AgentMcpServerConfig::Remote(remote) => {
+                assert_eq!(remote.url, "https://example.com/mcp");
+                assert_eq!(remote.headers.get("X-Api-Key").unwrap(), "test");
+            },
+            AgentMcpServerConfig::Local(_) => panic!("Expected Remote variant"),
+        }
+    }
+
+    #[test]
+    fn test_resolve_registry_servers_skips_already_loaded() {
+        use std::collections::HashMap;
+
+        use agent::agent_config::definitions::{
+            AgentConfig,
+            AgentConfigV2025_08_22,
+            LocalMcpServerConfig,
+            McpServerConfig as AgentMcpServerConfig,
+        };
+        use agent::agent_config::{
+            ConfigSource,
+            LoadedAgentConfig,
+            ResolvedGlobalPrompt,
+        };
+
+        let registry_json = r#"{
+            "servers": [{
+                "server": {
+                    "name": "existing-server",
+                    "description": "Test",
+                    "version": "1.0.0",
+                    "remotes": [{"type": "sse", "url": "https://registry-url.com/mcp"}]
+                }
+            }]
+        }"#;
+        let registry: McpRegistryResponse = serde_json::from_str(registry_json).unwrap();
+
+        let mut mcp_servers = HashMap::new();
+        mcp_servers.insert(
+            "existing-server".to_string(),
+            AgentMcpServerConfig::Local(LocalMcpServerConfig {
+                command: "node".to_string(),
+                args: vec!["server.js".to_string()],
+                env: None,
+                timeout_ms: 120_000,
+                disabled: false,
+                disabled_tools: Vec::new(),
+            }),
+        );
+
+        let config = AgentConfigV2025_08_22 {
+            name: "test-agent".to_string(),
+            tools: vec!["@existing-server/*".to_string()],
+            mcp_servers,
+            ..Default::default()
+        };
+        let mut loaded = LoadedAgentConfig::new(
+            AgentConfig::V2025_08_22(config),
+            ConfigSource::Ephemeral,
+            ResolvedGlobalPrompt::None,
+        );
+
+        resolve_registry_servers_for_agent_config(&mut loaded, &registry);
+
+        let server = loaded.config().mcp_servers().get("existing-server").unwrap();
+        match server {
+            AgentMcpServerConfig::Local(local) => {
+                assert_eq!(local.command, "node");
+            },
+            AgentMcpServerConfig::Remote(_) => panic!("Should not have overwritten existing Local config"),
+        }
+    }
+
+    #[test]
+    fn test_resolve_registry_servers_skips_not_in_registry() {
+        use agent::agent_config::definitions::{
+            AgentConfig,
+            AgentConfigV2025_08_22,
+        };
+        use agent::agent_config::{
+            ConfigSource,
+            LoadedAgentConfig,
+            ResolvedGlobalPrompt,
+        };
+
+        let registry_json = r#"{
+            "servers": [{
+                "server": {
+                    "name": "other-server",
+                    "description": "Test",
+                    "version": "1.0.0",
+                    "remotes": [{"type": "sse", "url": "https://example.com"}]
+                }
+            }]
+        }"#;
+        let registry: McpRegistryResponse = serde_json::from_str(registry_json).unwrap();
+
+        let config = AgentConfigV2025_08_22 {
+            name: "test-agent".to_string(),
+            tools: vec!["@missing-server/*".to_string()],
+            ..Default::default()
+        };
+        let mut loaded = LoadedAgentConfig::new(
+            AgentConfig::V2025_08_22(config),
+            ConfigSource::Ephemeral,
+            ResolvedGlobalPrompt::None,
+        );
+
+        resolve_registry_servers_for_agent_config(&mut loaded, &registry);
+
+        assert!(loaded.config().mcp_servers().is_empty());
     }
 }
 /// Display registry error message to any writer that implements Write

@@ -208,6 +208,7 @@ pub struct Subagent<'a> {
     pub global_mcp_path: &'a PathBuf,
     pub parent_tool_use_id: &'a str,
     pub code_intelligence: Option<std::sync::Arc<tokio::sync::RwLock<code_agent_sdk::CodeIntelligence>>>,
+    pub registry_data: Option<&'a crate::mcp_registry::McpRegistryResponse>,
 }
 
 impl<'a> Subagent<'a> {
@@ -245,6 +246,11 @@ impl<'a> Subagent<'a> {
                 snapshot.agent_config = build_default_agent(&RealProvider);
             },
         };
+
+        // Resolve registry-type MCP servers that were dropped during agent config deserialization
+        if let Some(registry) = self.registry_data {
+            crate::mcp_registry::resolve_registry_servers_for_agent_config(&mut snapshot.agent_config, registry);
+        }
 
         // TODO: V1 uses a separate RtsModel implementation from V2 (chat-cli-v2/src/agent/rts)
         // because they have incompatible ApiClient types. V2's RtsModel has additional features
@@ -703,6 +709,7 @@ async fn test_sub_agent_routine(queries: Vec<(String, String)>) -> Result<Vec<Su
             global_mcp_path: &global_mcp_path,
             parent_tool_use_id: "",
             code_intelligence: None,
+            registry_data: None,
         })
         .collect::<Vec<_>>();
 

@@ -56,6 +56,7 @@ impl InvokeSubagent {
         parent_tool_use_id: &'a str,
         code_intelligence: Option<std::sync::Arc<tokio::sync::RwLock<code_agent_sdk::CodeIntelligence>>>,
         query_override: Option<&'a str>,
+        registry_data: Option<&'a crate::mcp_registry::McpRegistryResponse>,
     ) -> Subagent<'a> {
         let InvokeSubagent {
             query,
@@ -76,6 +77,7 @@ impl InvokeSubagent {
             global_mcp_path,
             parent_tool_use_id,
             code_intelligence,
+            registry_data,
         }
     }
 }
@@ -267,6 +269,7 @@ impl UseSubagent {
         agents: &Agents,
         code_intelligence: &Option<std::sync::Arc<tokio::sync::RwLock<code_agent_sdk::CodeIntelligence>>>,
         tool_manager: &mut crate::cli::chat::tool_manager::ToolManager,
+        registry_data: Option<&crate::mcp_registry::McpRegistryResponse>,
     ) -> Result<InvokeOutput> {
         match self {
             Self::ListAgents => {
@@ -331,6 +334,7 @@ impl UseSubagent {
                             parent_tool_use_id,
                             code_intelligence.clone(),
                             Some(resolved_queries[id].as_str()),
+                            registry_data,
                         )
                     })
                     .collect::<Vec<_>>();
