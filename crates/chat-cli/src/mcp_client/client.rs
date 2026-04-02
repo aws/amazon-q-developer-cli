@@ -164,6 +164,17 @@ pub enum McpClientError {
 macro_rules! decorate_with_auth_retry {
     ($param_type:ty, $method_name:ident, $return_type:ty) => {
         pub async fn $method_name(&self, param: $param_type) -> Result<$return_type, rmcp::ServiceError> {
+            // Proactively check token validity before making the call.
+            // This avoids a wasted round-trip to the server when the token is already expired.
+            if let Some(auth_client) = self.auth_client.as_ref() {
+                if let Err(e) = auth_client.auth_client.get_access_token().await {
+                    info!("Token pre-check failed ({e}), attempting re-authentication before call");
+                    if let Err(reauth_err) = auth_client.reauthorize().await {
+                        error!("Pre-call re-authentication failed: {reauth_err}");
+                    }
+                }
+            }
+
             let first_attempt = match &self.inner_service {
                 InnerService::Original(rs) => rs.$method_name(param.clone()).await,
                 InnerService::Peer(peer) => peer.$method_name(param.clone()).await,
@@ -184,7 +195,6 @@ macro_rules! decorate_with_auth_retry {
                                 }
                             },
                             Err(refresh_err) => {
-                                // Refresh failed — attempt full browser-based re-auth
                                 info!("Token refresh failed ({refresh_err}), attempting re-authentication");
                                 match auth_client.reauthorize().await {
                                     Ok(_) => {
@@ -665,7 +675,7 @@ impl Service<RoleClient> for McpClientService {
 /// enum is then flipped lazily (if applicable) when a [RunningService] is needed.
 pub enum InitializedMcpClient {
     Pending(JoinHandle<Result<RunningService, McpClientError>>),
-    Ready(RunningService),
+    Ready(Box<RunningService>),
 }
 
 impl std::fmt::Debug for InitializedMcpClient {
@@ -682,7 +692,7 @@ impl InitializedMcpClient {
         match self {
             InitializedMcpClient::Pending(handle) if handle.is_finished() => {
                 let running_service = handle.await??;
-                *self = InitializedMcpClient::Ready(running_service);
+                *self = InitializedMcpClient::Ready(Box::new(running_service));
                 let InitializedMcpClient::Ready(running_service) = self else {
                     unreachable!()
                 };

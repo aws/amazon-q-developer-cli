@@ -1,9 +1,6 @@
 use std::collections::HashMap;
 use std::net::SocketAddr;
-use std::path::{
-    Path,
-    PathBuf,
-};
+use std::path::{Path, PathBuf};
 use std::pin::Pin;
 use std::str::FromStr;
 use std::sync::Arc;
@@ -15,44 +12,19 @@ use hyper::body::Bytes;
 use hyper::server::conn::http1;
 use hyper_util::rt::TokioIo;
 use reqwest::Client;
-use rmcp::service::{
-    DynService,
-    ServiceExt,
-};
-use rmcp::transport::auth::{
-    AuthClient,
-    OAuthClientConfig,
-    OAuthState,
-    OAuthTokenResponse,
-};
+use rmcp::service::{DynService, ServiceExt};
+use rmcp::transport::auth::{AuthClient, OAuthClientConfig, OAuthState, OAuthTokenResponse};
+use rmcp::transport::common::auth;
 use rmcp::transport::streamable_http_client::StreamableHttpClientTransportConfig;
-use rmcp::transport::{
-    AuthorizationManager,
-    AuthorizationSession,
-    StreamableHttpClientTransport,
-};
-use rmcp::{
-    RoleClient,
-    Service,
-    serde_json,
-};
+use rmcp::transport::{AuthorizationManager, AuthorizationSession, StreamableHttpClientTransport};
+use rmcp::{RoleClient, Service, serde_json};
 use schemars::JsonSchema;
-use serde::{
-    Deserialize,
-    Serialize,
-};
-use sha2::{
-    Digest,
-    Sha256,
-};
+use serde::{Deserialize, Serialize};
+use sha2::{Digest, Sha256};
 use tokio::sync::mpsc;
 use tokio::sync::oneshot::Sender;
 use tokio_util::sync::CancellationToken;
-use tracing::{
-    debug,
-    error,
-    info,
-};
+use tracing::{debug, error, info};
 use url::Url;
 
 use super::actor::McpServerActorEvent;
@@ -191,45 +163,58 @@ impl AuthClientWrapper {
     /// `AuthorizationManager` in-place via the shared `Arc<Mutex<>>` so the existing transport
     /// picks up the new credentials automatically.
     pub async fn reauthorize(&self) -> Result<(), OauthUtilError> {
-        let ctx = self.reauth_ctx.as_ref().ok_or(OauthUtilError::MissingReauthContext)?;
+        let auth_client_wrapper_clone = self.clone();
 
-        let oauth_state = OAuthState::new(ctx.url.clone(), None).await?;
-        let (new_am, redirect_uri) = get_auth_manager_impl(
-            &ctx.server_name,
-            oauth_state,
-            &ctx.scopes,
-            &ctx.oauth_config,
-            &ctx.server_actor_event_tx,
-        )
-        .await?;
+        tokio::spawn(async move {
+            let ctx = auth_client_wrapper_clone
+                .reauth_ctx
+                .as_ref()
+                .ok_or(OauthUtilError::MissingReauthContext)?;
 
-        // Persist the new credentials and registration
-        let (client_id, credentials) = new_am.get_credentials().await?;
-        let reg = Registration {
-            client_id,
-            client_secret: None,
-            scopes: get_default_scopes()
-                .iter()
-                .map(|s| (*s).to_string())
-                .collect::<Vec<_>>(),
-            redirect_uri,
-        };
-        let reg_as_str = serde_json::to_string_pretty(&reg)?;
-        let reg_parent = ctx.reg_full_path.parent().ok_or(OauthUtilError::MalformDirectory)?;
-        tokio::fs::create_dir_all(reg_parent).await?;
-        tokio::fs::write(&ctx.reg_full_path, &reg_as_str).await?;
+            let oauth_state = OAuthState::new(ctx.url.clone(), None).await?;
+            let (new_am, redirect_uri) = get_auth_manager_impl(
+                &ctx.server_name,
+                oauth_state,
+                &ctx.scopes,
+                &ctx.oauth_config,
+                &ctx.server_actor_event_tx,
+            )
+            .await?;
 
-        let credentials = credentials.ok_or(OauthUtilError::MissingCredentials)?;
-        let cred_parent = self.cred_full_path.parent().ok_or(OauthUtilError::MalformDirectory)?;
-        tokio::fs::create_dir_all(cred_parent).await?;
-        let cred_as_str = serde_json::to_string_pretty(&credentials)?;
-        tokio::fs::write(&self.cred_full_path, &cred_as_str).await?;
+            // Persist the new credentials and registration
+            let (client_id, credentials) = new_am.get_credentials().await?;
+            let reg = Registration {
+                client_id,
+                client_secret: None,
+                scopes: get_default_scopes()
+                    .iter()
+                    .map(|s| (*s).to_string())
+                    .collect::<Vec<_>>(),
+                redirect_uri,
+            };
+            let reg_as_str = serde_json::to_string_pretty(&reg)?;
+            let reg_parent = ctx.reg_full_path.parent().ok_or(OauthUtilError::MalformDirectory)?;
+            tokio::fs::create_dir_all(reg_parent).await?;
+            tokio::fs::write(&ctx.reg_full_path, &reg_as_str).await?;
 
-        // Swap the AuthorizationManager in-place so the existing transport picks up new creds
-        let mut guard = self.auth_client.auth_manager.lock().await;
-        *guard = new_am;
+            let credentials = credentials.ok_or(OauthUtilError::MissingCredentials)?;
+            let cred_parent = auth_client_wrapper_clone
+                .cred_full_path
+                .parent()
+                .ok_or(OauthUtilError::MalformDirectory)?;
+            tokio::fs::create_dir_all(cred_parent).await?;
+            let cred_as_str = serde_json::to_string_pretty(&credentials)?;
+            tokio::fs::write(&auth_client_wrapper_clone.cred_full_path, &cred_as_str).await?;
 
-        info!("## mcp: re-authentication successful, credentials swapped in-place");
+            // Swap the AuthorizationManager in-place so the existing transport picks up new creds
+            let mut guard = auth_client_wrapper_clone.auth_client.auth_manager.lock().await;
+            *guard = new_am;
+
+            info!("## mcp: re-authentication successful, credentials swapped in-place");
+
+            Ok::<(), Box<dyn std::error::Error + Send + Sync + 'static>>(())
+        });
+
         Ok(())
     }
 }
@@ -357,12 +342,14 @@ impl<'a> HttpServiceBuilder<'a> {
                     };
 
                     info!("## mcp: attempting authenticated http for {server_name}");
-                    let transport =
-                        StreamableHttpClientTransport::with_client(ac.clone(), StreamableHttpClientTransportConfig {
+                    let transport = StreamableHttpClientTransport::with_client(
+                        ac.clone(),
+                        StreamableHttpClientTransportConfig {
                             uri: url.as_str().into(),
                             allow_stateless: true,
                             ..Default::default()
-                        });
+                        },
+                    );
 
                     match service.clone().into_dyn().serve(transport).await {
                         Ok(service) => {

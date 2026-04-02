@@ -347,6 +347,16 @@ pub struct LaunchMetadata {
 macro_rules! decorate_with_auth_retry {
     ($param_type:ty, $method_name:ident, $return_type:ty) => {
         pub async fn $method_name(&self, param: $param_type) -> Result<$return_type, rmcp::ServiceError> {
+            // Proactively check token validity before making the call.
+            if let Some(auth_client) = self.auth_client.as_ref() {
+                if let Err(e) = auth_client.auth_client.get_access_token().await {
+                    info!("Token pre-check failed ({e}), attempting re-authentication before call");
+                    if let Err(reauth_err) = auth_client.reauthorize().await {
+                        error!("Pre-call re-authentication failed: {reauth_err}");
+                    }
+                }
+            }
+
             let first_attempt = match &self.running_service {
                 InnerService::Original(rs) => rs.$method_name(param.clone()).await,
                 InnerService::Peer(peer) => peer.$method_name(param.clone()).await,
@@ -356,7 +366,6 @@ macro_rules! decorate_with_auth_retry {
                 Ok(result) => Ok(result),
                 Err(e) => {
                     if let Some(auth_client) = self.auth_client.as_ref() {
-                        // Try token refresh first (fast path)
                         let refresh_result = auth_client.refresh_token().await;
                         match refresh_result {
                             Ok(_) => {
@@ -367,7 +376,6 @@ macro_rules! decorate_with_auth_retry {
                                 }
                             },
                             Err(refresh_err) => {
-                                // Refresh failed — attempt full browser-based re-auth
                                 info!("Token refresh failed ({refresh_err}), attempting re-authentication");
                                 match auth_client.reauthorize().await {
                                     Ok(_) => {
@@ -393,6 +401,16 @@ macro_rules! decorate_with_auth_retry {
     };
     ($method_name:ident, $return_type:ty) => {
         pub async fn $method_name(&self) -> Result<$return_type, rmcp::ServiceError> {
+            // Proactively check token validity before making the call.
+            if let Some(auth_client) = self.auth_client.as_ref() {
+                if let Err(e) = auth_client.auth_client.get_access_token().await {
+                    info!("Token pre-check failed ({e}), attempting re-authentication before call");
+                    if let Err(reauth_err) = auth_client.reauthorize().await {
+                        error!("Pre-call re-authentication failed: {reauth_err}");
+                    }
+                }
+            }
+
             let first_attempt = match &self.running_service {
                 InnerService::Original(rs) => rs.$method_name().await,
                 InnerService::Peer(peer) => peer.$method_name().await,
