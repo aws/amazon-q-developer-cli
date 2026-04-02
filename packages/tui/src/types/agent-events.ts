@@ -122,6 +122,13 @@ export interface PermissionOption {
   optionId: string;
 }
 
+export interface TrustOption {
+  label: string;
+  display: string;
+  setting_key: string;
+  patterns: string[];
+}
+
 export interface PermissionResponseCancelled {
   outcome: 'cancelled';
 }
@@ -129,6 +136,7 @@ export interface PermissionResponseCancelled {
 export interface PermissionResponseSelected {
   outcome: 'selected';
   optionId: string;
+  _meta?: { trustOption?: TrustOption };
 }
 
 export type PermissionResponse =
@@ -139,6 +147,7 @@ export interface ApprovalRequestInfo {
   sessionId?: string;
   toolCall: { toolCallId: string };
   permissionOptions: PermissionOption[];
+  trustOptions?: TrustOption[];
   resolve: (response: PermissionResponse) => void;
 }
 

@@ -458,6 +458,7 @@ export class AcpClient implements acp.Client, SessionClient {
               name: opt.name,
               optionId: opt.optionId,
             })),
+            trustOptions: (params._meta as any)?.trustOptions,
             resolve: (userResponse) => {
               const acpResponse: acp.RequestPermissionResponse =
                 userResponse.outcome === 'selected'
@@ -466,6 +467,7 @@ export class AcpClient implements acp.Client, SessionClient {
                         outcome: 'selected' as const,
                         optionId: userResponse.optionId,
                       },
+                      _meta: userResponse._meta,
                     }
                   : { outcome: { outcome: 'cancelled' as const } };
               resolve(acpResponse);

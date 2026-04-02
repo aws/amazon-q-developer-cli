@@ -7,12 +7,17 @@ import { Menu } from './menu/Menu.js';
 import { PromptInput } from '../chat/prompt-bar/PromptInput.js';
 import { useKeypress } from '../../hooks/useKeypress.js';
 import { useApprovalState, useConversationState } from '../../stores/selectors';
-import { type PermissionOption } from '../../types/agent-events';
+import {
+  type PermissionOption,
+  type TrustOption,
+} from '../../types/agent-events';
 import { MessageRole } from '../../stores/app-store.js';
 
 interface ApprovalRequestProps {
   onDrillInSubmit: (value: string) => void;
 }
+
+const TRUST_ENTRY_ID = 'allow_always';
 
 export const ApprovalRequest: React.FC<ApprovalRequestProps> = ({
   onDrillInSubmit,
@@ -31,7 +36,6 @@ export const ApprovalRequest: React.FC<ApprovalRequestProps> = ({
   const secondary = getColor('secondary');
   const primary = getColor('primary');
 
-  // Derive subagent name if this approval is from a subagent session
   const approvalSessionId = pendingApproval?.sessionId;
   const subagentName =
     approvalSessionId && approvalSessionId !== mainSessionId
@@ -39,11 +43,13 @@ export const ApprovalRequest: React.FC<ApprovalRequestProps> = ({
       : undefined;
 
   const [focusedIndex, setFocusedIndex] = useState(0);
+  const [page, setPage] = useState<'default' | 'trust'>('default');
 
-  // Build options from what the backend sends, preserving order
   const options: PermissionOption[] = pendingApproval
     ? pendingApproval.permissionOptions
     : [];
+  const trustOptions: TrustOption[] = pendingApproval?.trustOptions ?? [];
+  const hasTrustPage = trustOptions.length > 0;
 
   const optionLabels: Record<string, string> = {
     allow_once: 'Yes, single permission',
@@ -61,16 +67,35 @@ export const ApprovalRequest: React.FC<ApprovalRequestProps> = ({
     reject_always: 'Never',
   };
 
-  // Keyboard shortcuts: y=allow_once, n=reject_once, t=whichever "always" option is present
+  // Page 1: all options as-is, but Trust gets a hint when _meta.trustOptions exists
+  const defaultMenuItems = options.map((opt) => ({
+    label: optionLabels[opt.optionId] ?? opt.name,
+    description: '',
+  }));
+
+  const trustMenuItems = trustOptions.map((t) => ({
+    label: t.label,
+    description: t.display,
+  }));
+
+  const menuItems = page === 'trust' ? trustMenuItems : defaultMenuItems;
+
+  const focusedOnTrust =
+    page === 'default' &&
+    options[focusedIndex]?.optionId === TRUST_ENTRY_ID &&
+    hasTrustPage;
+
+  const canDrillIn =
+    page === 'default' &&
+    (options[focusedIndex]?.optionId === 'allow_once' ||
+      options[focusedIndex]?.optionId === 'reject_once');
+
+  // Keyboard shortcuts: y=allow_once, n=reject_once, t=allow_always (direct, no page 2)
   const keyMap: Record<string, string> = { y: 'allow_once', n: 'reject_once' };
   const alwaysOpt = options.find(
     (o) => o.optionId === 'allow_all_session' || o.optionId === 'allow_always'
   );
-  if (alwaysOpt) keyMap['t'] = alwaysOpt.optionId;
-
-  const canDrillIn =
-    options[focusedIndex]?.optionId === 'allow_once' ||
-    options[focusedIndex]?.optionId === 'reject_once';
+  if (alwaysOpt && !hasTrustPage) keyMap['t'] = alwaysOpt.optionId;
 
   useKeypress((input) => {
     if (mode !== 'dropdown') return;
@@ -79,11 +104,6 @@ export const ApprovalRequest: React.FC<ApprovalRequestProps> = ({
     const opt = options.find((o) => o.optionId === optionId);
     if (opt) respondToApproval(opt.optionId);
   });
-
-  const menuItems = options.map((opt) => ({
-    label: optionLabels[opt.optionId] ?? opt.name,
-    description: '',
-  }));
 
   if (!pendingApproval) return null;
 
@@ -100,11 +120,16 @@ export const ApprovalRequest: React.FC<ApprovalRequestProps> = ({
   const title =
     mode === 'drill-in'
       ? `${prefix}${toolName} requires approval · ${shortLabels[focusedOptId] ?? ''}`
-      : `${prefix}${toolName} requires approval`;
+      : page === 'trust'
+        ? `${prefix}${toolName} requires approval · trust options`
+        : `${prefix}${toolName} requires approval`;
 
   const handleClose = () => {
     if (mode === 'drill-in') {
       setApprovalMode('dropdown');
+    } else if (page === 'trust') {
+      setPage('default');
+      setFocusedIndex(0);
     } else {
       cancelApproval();
     }
@@ -118,6 +143,42 @@ export const ApprovalRequest: React.FC<ApprovalRequestProps> = ({
     }
   };
 
+  const handleSelect = (item: { label: string }) => {
+    if (page === 'default') {
+      const opt = options.find(
+        (o) => (optionLabels[o.optionId] ?? o.name) === item.label
+      );
+      if (opt?.optionId === TRUST_ENTRY_ID && hasTrustPage) {
+        setPage('trust');
+        setFocusedIndex(0);
+        return;
+      }
+      if (opt) respondToApproval(opt.optionId);
+    } else {
+      const selected = trustOptions.find((t) => t.label === item.label);
+      if (selected) {
+        respondToApproval('allow_always', undefined, { trustOption: selected });
+      }
+    }
+  };
+
+  let footerLeft: React.ReactNode | undefined;
+  if (mode === 'dropdown') {
+    if (focusedOnTrust) {
+      footerLeft = (
+        <Text>
+          {primary('Enter')} {secondary('to see more options')}
+        </Text>
+      );
+    } else if (canDrillIn) {
+      footerLeft = (
+        <Text>
+          {primary('Tab')} {secondary('to edit')}
+        </Text>
+      );
+    }
+  }
+
   return (
     <Panel
       title={title}
@@ -127,24 +188,14 @@ export const ApprovalRequest: React.FC<ApprovalRequestProps> = ({
       }
       showTabHint={false}
       hideTitleDivider={true}
-      footerLeft={
-        mode === 'dropdown' && canDrillIn ? (
-          <Text>
-            {primary('Tab')} {secondary('to edit')}
-          </Text>
-        ) : undefined
-      }
+      footerLeft={footerLeft}
     >
       <Box flexDirection="column">
         {mode === 'dropdown' && (
           <Menu
+            key={page}
             items={menuItems}
-            onSelect={(item) => {
-              const opt = options.find(
-                (o) => (optionLabels[o.optionId] ?? o.name) === item.label
-              );
-              if (opt) respondToApproval(opt.optionId);
-            }}
+            onSelect={handleSelect}
             onHighlight={(item) => {
               const idx = menuItems.findIndex((m) => m.label === item.label);
               if (idx >= 0) setFocusedIndex(idx);

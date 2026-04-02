@@ -274,3 +274,104 @@ describe('Approval and input preservation', () => {
     expect(store.getState().commandInputValue).toBe('draft message');
   });
 });
+
+function makeApprovalEventWithTrustOptions(
+  toolCallId: string,
+  resolve?: (r: any) => void
+): AgentStreamEvent {
+  return {
+    type: AgentEventType.ApprovalRequest,
+    value: {
+      toolCall: { toolCallId },
+      permissionOptions: [
+        {
+          kind: ApprovalOptionId.AllowOnce,
+          name: 'Allow Once',
+          optionId: 'allow_once',
+        },
+        {
+          kind: ApprovalOptionId.AllowAlways,
+          name: 'Always',
+          optionId: 'allow_always',
+        },
+        {
+          kind: ApprovalOptionId.RejectOnce,
+          name: 'Reject Once',
+          optionId: 'reject_once',
+        },
+      ],
+      trustOptions: [
+        {
+          label: 'Full command',
+          display: 'df -h',
+          setting_key: 'allowedCommands',
+          patterns: ['df -h'],
+        },
+        {
+          label: 'Base command',
+          display: 'df *',
+          setting_key: 'allowedCommands',
+          patterns: ['df( .*)?'],
+        },
+      ],
+      resolve: resolve ?? (() => {}),
+    },
+  } as AgentStreamEvent;
+}
+
+describe('Trust options (_meta.trustOptions)', () => {
+  it('stores trustOptions from approval event', () => {
+    const store = createTestStore();
+    const handler = store.getState().createStreamEventHandler();
+
+    handler(makeToolCallEvent('t1', 'execute_bash', 'df -h'));
+    handler(makeApprovalEventWithTrustOptions('t1'));
+
+    const approval = store.getState().pendingApproval;
+    expect(approval).toBeDefined();
+    expect(approval!.trustOptions).toHaveLength(2);
+    expect(approval!.trustOptions![0]!.label).toBe('Full command');
+    expect(approval!.trustOptions![1]!.display).toBe('df *');
+  });
+
+  it('respondToApproval passes _meta through to resolve', () => {
+    const store = createTestStore();
+    const handler = store.getState().createStreamEventHandler();
+    let resolved: any = null;
+
+    handler(makeToolCallEvent('t1', 'execute_bash', 'df -h'));
+    handler(makeApprovalEventWithTrustOptions('t1', (r) => (resolved = r)));
+
+    const trustOption = {
+      label: 'Full command',
+      display: 'df -h',
+      setting_key: 'allowedCommands',
+      patterns: ['df -h'],
+    };
+
+    store.getState().respondToApproval('allow_always', undefined, {
+      trustOption,
+    });
+
+    expect(resolved).toBeDefined();
+    expect(resolved.outcome).toBe('selected');
+    expect(resolved.optionId).toBe('allow_always');
+    expect(resolved._meta).toEqual({ trustOption });
+  });
+
+  it('respondToApproval without _meta does not include it in resolve', () => {
+    const store = createTestStore();
+    const handler = store.getState().createStreamEventHandler();
+    let resolved: any = null;
+
+    handler(makeToolCallEvent('t1', 'execute_bash', 'df -h'));
+    handler(makeApprovalEvent('t1', (r) => (resolved = r)));
+
+    store.getState().respondToApproval('allow_once');
+
+    expect(resolved).toBeDefined();
+    expect(resolved.outcome).toBe('selected');
+    expect(resolved.optionId).toBe('allow_once');
+    expect(resolved._meta).toBeUndefined();
+  });
+});

@@ -202,7 +202,7 @@ export const InlineLayout: React.FC = () => {
 
   // Detect if pending approval is from a crew subagent (not the main session)
 
-  // Handle escape to cancel approval
+  // Handle escape to cancel approval (only when no approval panel is showing)
   useKeypress(
     (_input, key) => {
       if (!pendingApproval || mode !== 'inline') return;
@@ -212,7 +212,7 @@ export const InlineLayout: React.FC = () => {
         clearCommandInput();
       }
     },
-    { isActive: !!pendingApproval }
+    { isActive: !!pendingApproval && approvalMode !== 'dropdown' }
   );
 
   const { setCurrentAgent, setPreviousAgentName } = useAppStore(

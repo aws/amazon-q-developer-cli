@@ -253,7 +253,11 @@ interface BaseAppActions {
   cancelMessage: () => Promise<void>;
   setProcessing: (processing: boolean) => void;
   setAgentError: (error: string | null, guidance?: string | null) => void;
-  respondToApproval: (optionId: string, target?: ApprovalRequestInfo) => void;
+  respondToApproval: (
+    optionId: string,
+    target?: ApprovalRequestInfo,
+    _meta?: Record<string, unknown>
+  ) => void;
   cancelApproval: () => void;
   setApprovalMode: (mode: 'dropdown' | 'drill-in') => void;
   setAutoApproveCrewTools: (value: boolean) => void;
@@ -1572,7 +1576,11 @@ export const createAppStore = (props: AppStoreProps) => {
       });
     },
 
-    respondToApproval: (optionId: string, target?: ApprovalRequestInfo) => {
+    respondToApproval: (
+      optionId: string,
+      target?: ApprovalRequestInfo,
+      _meta?: Record<string, unknown>
+    ) => {
       const { pendingApproval, approvalQueue } = get();
       const approval = target ?? pendingApproval;
       if (approval) {
@@ -1609,6 +1617,7 @@ export const createAppStore = (props: AppStoreProps) => {
         approval.resolve({
           outcome: 'selected',
           optionId,
+          _meta,
         });
       }
     },
