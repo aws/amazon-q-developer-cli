@@ -332,6 +332,10 @@ const startInitialization = (resumePickerSessionId?: string) => {
           }, 0);
         });
       }
+
+      // Mark initialization complete and drain any messages queued while initializing
+      appStore.setState({ isInitialized: true });
+      await appStore.getState().processQueue();
     })
     .catch((error) => {
       logger.error('Failed to initialize Kiro:', error);

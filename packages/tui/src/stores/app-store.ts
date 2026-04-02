@@ -501,6 +501,9 @@ export interface AppState {
   cancelInProgress: Promise<void> | null;
   isShellEscape: boolean;
 
+  // Initialization state — true once the ACP session is ready
+  isInitialized: boolean;
+
   // Non-interactive mode
   noInteractive: boolean;
 
@@ -728,6 +731,7 @@ export const createAppStore = (props: AppStoreProps) => {
     tasks: [],
     activityTrayExpanded: false,
 
+    isInitialized: false,
     noInteractive: props.noInteractive ?? false,
 
     sendMessage: async (
@@ -735,8 +739,15 @@ export const createAppStore = (props: AppStoreProps) => {
       images?: Array<{ base64: string; mimeType: string }>,
       displayContent?: string
     ) => {
-      const { kiro, isProcessing, attachedFiles, pendingImages } = get();
-      if (isProcessing) {
+      const {
+        kiro,
+        isProcessing,
+        isInitialized,
+        attachedFiles,
+        pendingImages,
+      } = get();
+      if (!isInitialized || isProcessing) {
+        get().queueMessage(displayContent ?? content);
         return;
       }
 
@@ -2321,8 +2332,8 @@ export const createAppStore = (props: AppStoreProps) => {
       const state = get();
       state.resetExitSequence();
 
-      // Queue if processing — but always allow /quit and /exit through
-      if (state.isProcessing) {
+      // Queue if processing or not yet initialized — but always allow /quit and /exit through
+      if (state.isProcessing || !state.isInitialized) {
         const lower = trimmed.toLowerCase();
         if (lower === '/quit' || lower === '/exit') {
           state.clearInput();

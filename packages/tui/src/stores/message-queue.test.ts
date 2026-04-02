@@ -13,7 +13,9 @@ mock.module('../kiro', () => ({
 
 function createTestStore() {
   const mockKiro = new Kiro();
-  return createAppStore({ kiro: mockKiro });
+  const store = createAppStore({ kiro: mockKiro });
+  store.setState({ isInitialized: true });
+  return store;
 }
 
 describe('Message queue', () => {
@@ -140,6 +142,38 @@ describe('Message queue', () => {
 
       await store.getState().handleUserInput('   ');
       await store.getState().handleUserInput('');
+
+      expect(store.getState().queuedMessages).toEqual([]);
+    });
+  });
+
+  describe('queuing during initialization', () => {
+    it('queues message via handleUserInput when not initialized', async () => {
+      const store = createTestStore();
+      store.setState({ isInitialized: false });
+
+      await store.getState().handleUserInput('early message');
+
+      expect(store.getState().queuedMessages).toEqual(['early message']);
+    });
+
+    it('queues message via sendMessage when not initialized', async () => {
+      const store = createTestStore();
+      store.setState({ isInitialized: false });
+
+      await store.getState().sendMessage('early message');
+
+      expect(store.getState().queuedMessages).toEqual(['early message']);
+      expect(store.getState().isProcessing).toBe(false);
+    });
+
+    it('drains queue after isInitialized becomes true', async () => {
+      const store = createTestStore();
+      store.setState({ isInitialized: false });
+
+      store.getState().queueMessage('queued during init');
+      store.setState({ isInitialized: true });
+      await store.getState().processQueue();
 
       expect(store.getState().queuedMessages).toEqual([]);
     });
