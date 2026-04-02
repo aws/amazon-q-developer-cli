@@ -25,6 +25,26 @@ const cjsRequire = createRequire(import.meta.url);
 const KITTY_FLAGS = 1;
 
 /**
+ * xterm modifyOtherKeys escape sequences.
+ *
+ * modifyOtherKeys (https://invisible-island.net/xterm/manpage/xterm.html#VT100-Widget-Resources:modifyOtherKeys)
+ * is a widely supported xterm feature that reports modified keys using the
+ * format `CSI 27 ; modifier ; keycode ~`. This lets the application
+ * distinguish keypresses like Shift+Enter from plain Enter.
+ *
+ * Level 1 modifies only keys whose modifier would otherwise be lost (e.g.
+ * Shift+Enter, which normally sends the same `\r` as Enter). Level 2
+ * modifies all modified keys, which can break uppercase letter input in
+ * parsers that only expect lowercase keycodes.
+ *
+ * We use level 1 as a fallback when the Kitty keyboard protocol is not
+ * available. Supported by VTE ≥ 0.62 (GNOME Terminal), xterm, foot, and
+ * many other terminals.
+ */
+const MODIFY_OTHER_KEYS_ENABLE = "\x1b[>4;1m";
+const MODIFY_OTHER_KEYS_DISABLE = "\x1b[>4;0m";
+
+/**
  * Terminals known to support the Kitty keyboard protocol.
  *
  * Some terminals (notably iTerm2) support the protocol but do NOT respond to
@@ -67,6 +87,7 @@ export class ProcessTerminal implements Terminal {
 	private inputHandler?: (data: string) => void;
 	private resizeHandler?: () => void;
 	private _kittyProtocolActive = false;
+	private _modifyOtherKeysActive = false;
 	private stdinBuffer?: StdinBuffer;
 	private stdinDataHandler?: (data: string) => void;
 	private writeLogPath = process.env.TWINKI_WRITE_LOG || "";
@@ -193,17 +214,42 @@ export class ProcessTerminal implements Terminal {
 			return;
 		}
 
-		// Unknown terminal — query and wait for response
+		// Unknown terminal — query for Kitty protocol and enable modifyOtherKeys
+		// as a fallback. modifyOtherKeys is widely supported (VTE, xterm, foot)
+		// and lets us detect Shift+Enter even without Kitty protocol support.
+		// If the terminal responds to the Kitty query, enableKittyProtocol()
+		// will disable modifyOtherKeys since Kitty supersedes it.
 		process.stdout.write("\x1b[?u");
+		this.enableModifyOtherKeys();
 	}
 
 	/**
 	 * Enables Kitty keyboard protocol with {@link KITTY_FLAGS}.
+	 * Disables modifyOtherKeys since Kitty protocol supersedes it.
 	 */
 	private enableKittyProtocol(): void {
 		this._kittyProtocolActive = true;
 		setKittyProtocolActive(true);
 		process.stdout.write(`\x1b[>${KITTY_FLAGS}u`);
+		this.disableModifyOtherKeys();
+	}
+
+	/**
+	 * Enables xterm modifyOtherKeys level 1.
+	 */
+	private enableModifyOtherKeys(): void {
+		this._modifyOtherKeysActive = true;
+		process.stdout.write(MODIFY_OTHER_KEYS_ENABLE);
+	}
+
+	/**
+	 * Disables xterm modifyOtherKeys if active.
+	 */
+	private disableModifyOtherKeys(): void {
+		if (this._modifyOtherKeysActive) {
+			this._modifyOtherKeysActive = false;
+			process.stdout.write(MODIFY_OTHER_KEYS_DISABLE);
+		}
 	}
 
 	/**
@@ -250,6 +296,7 @@ export class ProcessTerminal implements Terminal {
 			this._kittyProtocolActive = false;
 			setKittyProtocolActive(false);
 		}
+		this.disableModifyOtherKeys();
 
 		const previousHandler = this.inputHandler;
 		this.inputHandler = undefined;
@@ -296,6 +343,9 @@ export class ProcessTerminal implements Terminal {
 			this._kittyProtocolActive = false;
 			setKittyProtocolActive(false);
 		}
+
+		// Disable modifyOtherKeys
+		this.disableModifyOtherKeys();
 
 		// Clean up StdinBuffer
 		if (this.stdinBuffer) {

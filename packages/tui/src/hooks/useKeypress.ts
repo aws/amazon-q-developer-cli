@@ -35,6 +35,12 @@ const PASTE_END = '\x1b[201~';
 // Ctrl+C byte
 const CTRL_C = '\x03';
 
+// xterm modifyOtherKeys level 1: causes terminals to send distinct escape
+// sequences for modified keys that would otherwise be ambiguous (e.g.
+// Shift+Enter sends \x1b[27;2;13~ instead of plain \r).
+const MODIFY_OTHER_KEYS_ENABLE = '\x1b[>4;1m';
+const MODIFY_OTHER_KEYS_DISABLE = '\x1b[>4;0m';
+
 // Shift+Enter escape sequences from various terminals
 const SHIFT_ENTER_SEQUENCES = [
   '\x1b[27;2;13~', // Ghostty, modern terminals
@@ -150,6 +156,11 @@ export const useKeypress = (
   useEffect(() => {
     if (useTwinki) return;
     if (!isActive || !internal_eventEmitter) return;
+
+    // Enable xterm modifyOtherKeys level 1 so terminals that don't support
+    // the Kitty keyboard protocol (e.g. GNOME Terminal) send distinct
+    // sequences for Shift+Enter.
+    process.stdout.write(MODIFY_OTHER_KEYS_ENABLE);
 
     let pasteBuffer = '';
     let isPasting = false;
@@ -349,6 +360,7 @@ export const useKeypress = (
 
     internal_eventEmitter.on('input', handleInput);
     return () => {
+      process.stdout.write(MODIFY_OTHER_KEYS_DISABLE);
       internal_eventEmitter.removeListener('input', handleInput);
       isPastingRef.current = false;
     };

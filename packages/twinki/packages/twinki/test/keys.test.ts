@@ -124,6 +124,22 @@ describe('matchesKey', () => {
 			expect(matchesKey('\x1b[32u', 'space')).toBe(true);
 		});
 	});
+
+	describe('modifyOtherKeys', () => {
+		it('matches shift+enter', () => {
+			expect(matchesKey('\x1b[27;2;13~', 'shift+enter')).toBe(true);
+		});
+
+		it('matches shift+enter in legacy mode too', () => {
+			// modifyOtherKeys sequences work regardless of Kitty protocol state
+			setKittyProtocolActive(false);
+			expect(matchesKey('\x1b[27;2;13~', 'shift+enter')).toBe(true);
+		});
+
+		it('does not match plain enter', () => {
+			expect(matchesKey('\x1b[27;2;13~', 'enter')).toBe(false);
+		});
+	});
 });
 
 describe('parseKey', () => {
@@ -195,6 +211,21 @@ describe('parseKey', () => {
 
 		it('parses enter in Kitty', () => {
 			expect(parseKey('\x1b[13u')).toBe('enter');
+		});
+	});
+
+	describe('modifyOtherKeys', () => {
+		it('parses shift+enter', () => {
+			expect(parseKey('\x1b[27;2;13~')).toBe('shift+enter');
+		});
+
+		it('parses ctrl+enter', () => {
+			expect(parseKey('\x1b[27;5;13~')).toBe('ctrl+enter');
+		});
+
+		it('parses shift+enter in legacy mode', () => {
+			setKittyProtocolActive(false);
+			expect(parseKey('\x1b[27;2;13~')).toBe('shift+enter');
 		});
 	});
 });
