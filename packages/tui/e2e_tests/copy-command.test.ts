@@ -22,6 +22,7 @@ describe('/copy command', () => {
       .launch();
 
     await testCase.waitForText('ask a question', 10000);
+    await testCase.waitForSlashCommands();
     await testCase.getSessionId();
 
     // Push a mock assistant response
@@ -41,11 +42,9 @@ describe('/copy command', () => {
     await testCase.sleepMs(100);
     await testCase.sendKeys('\r');
 
-    // Wait for the response to render
+    // Wait for the response to render and processing to finish
     await testCase.waitForText('multi-line response', 10000);
-
-    // Wait for processing to finish
-    await testCase.waitForStoreCondition((s) => !s.isProcessing, 10000);
+    await testCase.waitForIdle(15000);
     await testCase.sleepMs(500);
 
     // Type /copy and execute
