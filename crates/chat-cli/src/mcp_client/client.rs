@@ -283,6 +283,19 @@ impl RunningService {
             InnerService::Peer(peer) => peer.is_transport_closed(),
         }
     }
+
+    /// Returns the OAuth token status for this service.
+    ///
+    /// - `None` if the service doesn't use OAuth (e.g., stdio transport)
+    /// - `Some(Ok(()))` if the token is valid
+    /// - `Some(Err(msg))` if the token is expired or invalid
+    pub async fn auth_status(&self) -> Option<Result<(), String>> {
+        let auth_client = self.auth_client.as_ref()?;
+        match auth_client.auth_client.get_access_token().await {
+            Ok(_) => Some(Ok(())),
+            Err(e) => Some(Err(e.to_string())),
+        }
+    }
 }
 
 /// This struct implements the [Service] trait from rmcp. It is within this trait the logic of
