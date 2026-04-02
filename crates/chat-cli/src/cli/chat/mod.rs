@@ -258,6 +258,12 @@ fn get_shadow_repo_dir(os: &Os, conversation_id: String) -> Result<PathBuf, crat
     Ok(os.path_resolver().global().shadow_repo_dir()?.join(conversation_id))
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, clap::ValueEnum)]
+pub enum SessionSourceArg {
+    V1,
+    V2,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Default, Args)]
 pub struct ChatArgs {
     /// Resume the most recent conversation from this directory.
@@ -294,6 +300,9 @@ pub struct ChatArgs {
     /// Delete a saved chat session by ID.
     #[arg(short = 'd', long, value_name = "SESSION_ID")]
     pub delete_session: Option<String>,
+    /// Target only v1 or v2 store for --delete-session (default: both).
+    #[arg(long, value_name = "v1|v2", requires = "delete_session")]
+    pub session_source: Option<SessionSourceArg>,
     /// The first question to ask
     pub input: Option<String>,
     /// Control line wrapping behavior (default: auto-detect)
@@ -360,9 +369,13 @@ impl ChatArgs {
         // Handle --delete-session flag
         if let Some(session_id) = &self.delete_session {
             match os.database.delete_conversation_by_id(session_id) {
-                Ok(()) => {
+                Ok(true) => {
                     eprintln!("✔ Deleted chat session {session_id}");
                     return Ok(ExitCode::SUCCESS);
+                },
+                Ok(false) => {
+                    eprintln!("Error: Session {session_id} not found");
+                    return Ok(ExitCode::FAILURE);
                 },
                 Err(err) => {
                     eprintln!("Error: Failed to delete chat session {session_id}: {err}");

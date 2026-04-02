@@ -186,4 +186,5 @@ export interface SessionInfoEntry {
   cwd: string;
   title?: string;
   updatedAt?: string;
+  messageCount?: number;
 }

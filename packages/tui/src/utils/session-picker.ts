@@ -7,6 +7,7 @@
 
 import { listSessionsForCwd, formatSessionEntry } from './sessions.js';
 import type { SessionEntry } from './sessions.js';
+import type { SessionInfoEntry } from '../types/session-client.js';
 
 /**
  * Show an interactive session picker and return the selected session ID.
@@ -83,6 +84,97 @@ export async function pickSession(cwd: string): Promise<string | undefined> {
         return;
       }
 
+      if (key === '\x1b[A' || key === 'k') {
+        selectedIndex = Math.max(0, selectedIndex - 1);
+        updateScroll();
+        render();
+      } else if (key === '\x1b[B' || key === 'j') {
+        selectedIndex = Math.min(sessions.length - 1, selectedIndex + 1);
+        updateScroll();
+        render();
+      }
+    };
+
+    const cleanup = () => {
+      process.stdin.removeListener('data', onData);
+      process.stdin.setRawMode?.(wasRaw ?? false);
+      process.stdin.pause();
+    };
+
+    process.stdin.on('data', onData);
+  });
+}
+
+/**
+ * Show an interactive session picker from ACP session/list entries.
+ * Returns undefined if user cancels (Ctrl+C / Escape).
+ */
+export async function pickSessionFromEntries(
+  entries: SessionInfoEntry[]
+): Promise<string | undefined> {
+  // Convert to SessionEntry format for reuse of formatSessionEntry
+  const sessions: SessionEntry[] = entries.map((e) => ({
+    sessionId: e.sessionId,
+    cwd: e.cwd,
+    createdAt: '',
+    updatedAt: e.updatedAt ?? '',
+    msgCount: e.messageCount ?? 0,
+    summary: e.title ?? '(no title)',
+  }));
+  if (sessions.length === 0) {
+    process.stderr.write('No saved sessions found for this directory.\n');
+    return undefined;
+  }
+
+  return new Promise<string | undefined>((resolve) => {
+    let selectedIndex = 0;
+
+    const termRows = process.stderr.rows || 24;
+    const maxVisible = Math.max(3, termRows - 3);
+    let scrollOffset = 0;
+
+    const render = () => {
+      const visibleCount = Math.min(sessions.length, maxVisible);
+      const totalLines = visibleCount + 2;
+      process.stderr.write(`\x1b[${totalLines}A\x1b[J`);
+      process.stderr.write('Select a chat session to resume:\n');
+      for (let vi = 0; vi < visibleCount; vi++) {
+        const i = scrollOffset + vi;
+        const prefix = i === selectedIndex ? '\x1b[36m❯\x1b[0m ' : '  ';
+        const text = formatSessionEntry(sessions[i]!);
+        const styled = i === selectedIndex ? `\x1b[1m${text}\x1b[0m` : text;
+        process.stderr.write(`${prefix}${styled}\n`);
+      }
+      process.stderr.write('\n');
+    };
+
+    const updateScroll = () => {
+      const visibleCount = Math.min(sessions.length, maxVisible);
+      if (selectedIndex < scrollOffset) scrollOffset = selectedIndex;
+      else if (selectedIndex >= scrollOffset + visibleCount)
+        scrollOffset = selectedIndex - visibleCount + 1;
+    };
+
+    const initialVisible = Math.min(sessions.length, maxVisible);
+    for (let i = 0; i < initialVisible + 2; i++) process.stderr.write('\n');
+    render();
+
+    const wasRaw = process.stdin.isRaw;
+    process.stdin.setRawMode?.(true);
+    process.stdin.resume();
+
+    const onData = (data: Buffer) => {
+      const key = data.toString();
+      if (key === '\x03' || key === '\x1b') {
+        cleanup();
+        resolve(undefined);
+        return;
+      }
+      if (key === '\r' || key === '\n') {
+        cleanup();
+        resolve(sessions[selectedIndex]!.sessionId);
+        return;
+      }
       if (key === '\x1b[A' || key === 'k') {
         selectedIndex = Math.max(0, selectedIndex - 1);
         updateScroll();

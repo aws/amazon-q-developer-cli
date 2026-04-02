@@ -16,6 +16,7 @@ use std::io::{
     self,
     BufRead,
     BufReader,
+    Read,
     Write,
 };
 use std::path::{
@@ -655,6 +656,26 @@ pub fn session_exists(sessions_dir: &Path, session_id: &str) -> bool {
     metadata_path(sessions_dir, session_id).exists() && log_path(sessions_dir, session_id).exists()
 }
 
+/// Delete a session's metadata and log files from disk.
+///
+/// Acquires the session lock before deleting to prevent removing an active session.
+/// Returns `true` if at least one file was removed, `false` if the session was not found.
+pub fn delete_session(sessions_dir: &Path, session_id: &str) -> Result<bool, SessionError> {
+    delete_session_impl(sessions_dir, session_id, is_pid_alive, std::process::id())
+}
+
+fn delete_session_impl(
+    sessions_dir: &Path,
+    session_id: &str,
+    is_pid_alive: impl Fn(u32) -> bool,
+    current_pid: u32,
+) -> Result<bool, SessionError> {
+    let _lock = acquire_lock_impl(&lock_path(sessions_dir, session_id), is_pid_alive, current_pid)?;
+    let meta_removed = fs::remove_file(metadata_path(sessions_dir, session_id)).is_ok();
+    let log_removed = fs::remove_file(log_path(sessions_dir, session_id)).is_ok();
+    Ok(meta_removed || log_removed)
+}
+
 /// Derive a title from the first log entry of a session.
 ///
 /// Handles both `Prompt` (normal sessions) and `Compaction` (imported V1 sessions
@@ -697,6 +718,9 @@ pub struct SessionDataView {
     pub updated_at: DateTime<Utc>,
     #[serde(default)]
     pub title: Option<String>,
+    #[serde(default)]
+    #[typeshare(serialized_as = "u32")]
+    pub message_count: usize,
 }
 
 trait ListableSession: serde::de::DeserializeOwned {
@@ -728,8 +752,31 @@ impl ListableSession for SessionDataView {
 ///
 /// When `cwd` is `Some`, only sessions matching that working directory are returned.
 /// When `cwd` is `None`, all sessions are returned.
-pub fn list_sessions(cwd: Option<&Path>) -> Result<Vec<SessionDataView>, SessionError> {
-    list_sessions_impl(&sessions_dir()?, cwd)
+pub fn list_sessions(sessions_dir: &Path, cwd: Option<&Path>) -> Result<Vec<SessionDataView>, SessionError> {
+    let mut sessions: Vec<SessionDataView> = list_sessions_impl(sessions_dir, cwd)?;
+    for s in &mut sessions {
+        s.message_count = count_log_lines(sessions_dir, &s.session_id);
+    }
+    Ok(sessions)
+}
+
+/// Count lines in a session's JSONL log by counting `\n` bytes.
+/// Works for both Unix (`\n`) and Windows (`\r\n`) since each line ending
+/// contains exactly one `\n`.
+// TODO: Not an accurate message count — log entries include tool calls,
+// compactions, etc. — but a quick best-guess effort.
+fn count_log_lines(sessions_dir: &Path, session_id: &str) -> usize {
+    let mut count = 0;
+    if let Ok(mut f) = File::open(log_path(sessions_dir, session_id)) {
+        let mut buf = [0u8; 8192];
+        while let Ok(n) = f.read(&mut buf) {
+            if n == 0 {
+                break;
+            }
+            count += buf[..n].iter().filter(|&&b| b == b'\n').count();
+        }
+    }
+    count
 }
 
 fn list_sessions_impl<T: ListableSession>(sessions_dir: &Path, cwd: Option<&Path>) -> Result<Vec<T>, SessionError> {
@@ -1381,5 +1428,64 @@ mod tests {
             },
             SessionState::Unknown => panic!("Unknown state should have been replaced with V1"),
         }
+    }
+
+    #[test]
+    fn test_delete_session_removes_files() {
+        let temp_dir = TempDir::new().unwrap();
+        let sessions_dir = temp_dir.path();
+        let cwd = Path::new("/test/project");
+
+        let db = SessionDb::new_impl(
+            sessions_dir,
+            "del1".to_string(),
+            cwd,
+            test_state(),
+            pid_always_dead,
+            1000,
+        )
+        .unwrap();
+        write_dummy_log(&db);
+        drop(db);
+
+        assert!(metadata_path(sessions_dir, "del1").exists());
+        assert!(log_path(sessions_dir, "del1").exists());
+
+        assert!(delete_session_impl(sessions_dir, "del1", pid_always_dead, 2000).unwrap());
+        assert!(!metadata_path(sessions_dir, "del1").exists());
+        assert!(!log_path(sessions_dir, "del1").exists());
+    }
+
+    #[test]
+    fn test_delete_session_nonexistent_returns_false() {
+        let temp_dir = TempDir::new().unwrap();
+        // Lock acquisition succeeds (no conflicting lock), but no files to remove
+        assert!(!delete_session_impl(temp_dir.path(), "nonexistent", pid_always_dead, 2000).unwrap());
+    }
+
+    #[test]
+    fn test_delete_session_fails_when_active() {
+        let temp_dir = TempDir::new().unwrap();
+        let sessions_dir = temp_dir.path();
+        let cwd = Path::new("/test/project");
+
+        // Create session with PID 1000 and keep it alive (don't drop)
+        let _db = SessionDb::new_impl(
+            sessions_dir,
+            "active1".to_string(),
+            cwd,
+            test_state(),
+            pid_always_dead,
+            1000,
+        )
+        .unwrap();
+
+        // Delete as PID 2000 with pid_always_alive — lock holder (1000) appears alive
+        let result = delete_session_impl(sessions_dir, "active1", pid_always_alive, 2000);
+        assert!(result.is_err());
+        assert!(matches!(result.unwrap_err(), SessionError::ActiveSession { .. }));
+
+        // Files should still exist
+        assert!(metadata_path(sessions_dir, "active1").exists());
     }
 }

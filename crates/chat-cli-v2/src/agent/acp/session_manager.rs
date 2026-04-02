@@ -691,7 +691,9 @@ impl SessionManager {
                 _ = resp_sender.send(Ok(()));
             },
             SessionManagerRequestData::ListSessions { cwd, resp_sender } => {
-                let mut result = crate::agent::session::list_sessions(cwd.as_deref());
+                let mut result = crate::util::paths::sessions_dir()
+                    .map_err(crate::agent::session::SessionError::from)
+                    .and_then(|d| crate::agent::session::list_sessions(&d, cwd.as_deref()));
 
                 if let Some(cwd) = cwd {
                     let v1_sessions = match self.v1_session_exporter.list_sessions(&cwd) {
@@ -719,6 +721,7 @@ impl SessionManager {
                                     created_at: v1.updated_at,
                                     updated_at: v1.updated_at,
                                     title: v1.title,
+                                    message_count: v1.message_count,
                                 });
                             }
                         }

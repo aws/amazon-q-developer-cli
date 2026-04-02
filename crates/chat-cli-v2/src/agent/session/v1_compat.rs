@@ -43,6 +43,8 @@ pub struct V1SessionInfo {
     pub title: Option<String>,
     /// Last update timestamp.
     pub updated_at: DateTime<Utc>,
+    /// Number of messages in the conversation history.
+    pub message_count: usize,
 }
 
 /// Trait for accessing V1 conversation data from V2 code.

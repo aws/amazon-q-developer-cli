@@ -200,6 +200,8 @@ pub struct SessionInfoEntry {
     pub title: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub updated_at: Option<String>,
+    #[serde(default)]
+    pub message_count: usize,
 }
 
 /// Request to list user settings.

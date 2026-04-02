@@ -14,6 +14,7 @@ export interface SessionDataView {
 	created_at: string;
 	updated_at: string;
 	title?: string;
+	message_count?: number;
 }
 
 export type ChatResponseStream = 

@@ -175,5 +175,8 @@ export function formatSessionEntry(entry: SessionEntry): string {
   const timestamp = entry.updatedAt
     ? formatRelativeTime(entry.updatedAt)
     : 'unknown';
-  return `${timestamp} | ${entry.summary} | ${entry.msgCount} msgs`;
+  if (entry.msgCount > 0) {
+    return `${timestamp} | ${entry.summary} | ${entry.msgCount} msgs`;
+  }
+  return `${timestamp} | ${entry.summary}`;
 }

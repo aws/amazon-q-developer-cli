@@ -250,6 +250,11 @@ impl RootSubcommand {
                 Self::Issue(args) => args.execute(os).await,
                 Self::Version { changelog } => Cli::print_version(changelog),
                 Self::Chat(args) => {
+                    // Handle headless session commands before TUI launch
+                    if let Some(result) = handle_session_flags(&args, os) {
+                        return result;
+                    }
+
                     // Run cleanup before chat starts; show a message if it takes >3 seconds
                     let msg_handle = tokio::spawn(async {
                         tokio::time::sleep(std::time::Duration::from_secs(3)).await;
@@ -315,6 +320,11 @@ impl RootSubcommand {
             Self::Issue(args) => args.execute(os).await,
             Self::Version { changelog } => Cli::print_version(changelog),
             Self::Chat(args) => {
+                // Handle headless session commands before TUI launch
+                if let Some(result) = handle_session_flags(&args, os) {
+                    return result;
+                }
+
                 if let Err(e) = os.client.resolve_profile_if_missing(&mut os.database).await {
                     tracing::warn!("Failed to resolve profile: {e}");
                 }
@@ -367,6 +377,24 @@ impl RootSubcommand {
             Self::AcpClient { agent } => chat_cli_v2::agent::acp::acp_client::execute(agent).await,
         }
     }
+}
+
+/// Handle `--list-sessions` and `--delete-session` before TUI launch.
+///
+/// Returns `Some(Result)` if a flag was handled, `None` to continue normal dispatch.
+fn handle_session_flags(args: &ChatArgs, os: &Os) -> Option<Result<ExitCode>> {
+    use crate::cli::chat::SessionSourceArg;
+    use crate::cli::chat::cli::persist::SessionSource;
+    crate::cli::chat::cli::persist::handle_list_delete_session_flags(
+        args.list_sessions,
+        args.delete_session.as_deref(),
+        args.session_source.map(|s| match s {
+            SessionSourceArg::V1 => SessionSource::V1,
+            SessionSourceArg::V2 => SessionSource::V2,
+        }),
+        os,
+    )
+    .map(Ok)
 }
 
 impl Default for RootSubcommand {
@@ -595,6 +623,7 @@ mod test {
                 list_models: false,
                 format: OutputFormat::Plain,
                 delete_session: None,
+                session_source: None,
                 input: None,
                 agent: None,
                 model: None,
@@ -645,6 +674,7 @@ mod test {
                 list_models: false,
                 format: OutputFormat::Plain,
                 delete_session: None,
+                session_source: None,
                 input: None,
                 agent: Some("my-profile".to_string()),
                 model: None,
@@ -670,6 +700,7 @@ mod test {
                 list_models: false,
                 format: OutputFormat::Plain,
                 delete_session: None,
+                session_source: None,
                 input: Some("Hello".to_string()),
                 agent: Some("my-profile".to_string()),
                 model: None,
@@ -695,6 +726,7 @@ mod test {
                 list_models: false,
                 format: OutputFormat::Plain,
                 delete_session: None,
+                session_source: None,
                 input: None,
                 agent: Some("my-profile".to_string()),
                 model: None,
@@ -720,6 +752,7 @@ mod test {
                 list_models: false,
                 format: OutputFormat::Plain,
                 delete_session: None,
+                session_source: None,
                 input: None,
                 agent: None,
                 model: None,
@@ -741,6 +774,7 @@ mod test {
                 list_models: false,
                 format: OutputFormat::Plain,
                 delete_session: None,
+                session_source: None,
                 input: None,
                 agent: None,
                 model: None,
@@ -766,6 +800,7 @@ mod test {
                 list_models: false,
                 format: OutputFormat::Plain,
                 delete_session: None,
+                session_source: None,
                 input: None,
                 agent: None,
                 model: None,
@@ -791,6 +826,7 @@ mod test {
                 list_models: false,
                 format: OutputFormat::Plain,
                 delete_session: None,
+                session_source: None,
                 input: None,
                 agent: None,
                 model: None,
@@ -816,6 +852,7 @@ mod test {
                 list_models: false,
                 format: OutputFormat::Plain,
                 delete_session: None,
+                session_source: None,
                 input: None,
                 agent: None,
                 model: None,
@@ -841,6 +878,7 @@ mod test {
                 list_models: false,
                 format: OutputFormat::Plain,
                 delete_session: None,
+                session_source: None,
                 input: None,
                 agent: None,
                 model: None,
@@ -866,6 +904,7 @@ mod test {
                 list_models: false,
                 format: OutputFormat::Plain,
                 delete_session: None,
+                session_source: None,
                 input: None,
                 agent: None,
                 model: None,
@@ -887,6 +926,7 @@ mod test {
                 list_models: false,
                 format: OutputFormat::Plain,
                 delete_session: None,
+                session_source: None,
                 input: None,
                 agent: None,
                 model: None,
@@ -908,6 +948,7 @@ mod test {
                 list_models: false,
                 format: OutputFormat::Plain,
                 delete_session: None,
+                session_source: None,
                 input: None,
                 agent: None,
                 model: None,

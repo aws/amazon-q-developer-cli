@@ -15,8 +15,7 @@ import { Kiro } from './kiro';
 import { TestModeProvider } from './test-utils/TestModeProvider';
 import { parseCliArgs, buildAcpArgs } from './utils/cli-args';
 import { sessionConversationsStore } from './stores/session-conversations.js';
-import { getMostRecentSessionId } from './utils/sessions';
-import { pickSession } from './utils/session-picker';
+import { pickSessionFromEntries } from './utils/session-picker';
 import type { AgentStreamEvent } from './types/agent-events';
 
 // Enable bracketed paste mode escape sequences
@@ -65,20 +64,6 @@ const appStore = createAppStore({
   noInteractive: cliArgs.noInteractive,
   initialInput: cliArgs.input,
 });
-
-// Resolve resume session ID.
-// --resume: pick the most recent session for cwd (synchronous disk read).
-// --resume-picker: interactive selection (async, must run before Ink).
-// Both fall back to a new session if nothing is found.
-let resumeSessionId: string | undefined;
-if (cliArgs.resume) {
-  resumeSessionId = getMostRecentSessionId(process.cwd());
-  if (!resumeSessionId) {
-    process.stderr.write(
-      'No saved sessions found for this directory. Starting new session.\n'
-    );
-  }
-}
 
 // Start initialization immediately (non-blocking)
 let initPromise: Promise<void> | null = null;
@@ -161,7 +146,7 @@ const wireUpHandlers = () => {
   });
 };
 
-const startInitialization = (sessionId?: string) => {
+const startInitialization = (resumePickerSessionId?: string) => {
   if (initPromise) return initPromise;
 
   wireUpHandlers();
@@ -305,24 +290,47 @@ const startInitialization = (sessionId?: string) => {
     .then(async () => {
       appStore.setState({ settings: kiro.settings });
 
-      await kiro.createSession(sessionId);
+      // Resolve resume session ID via ACP (merged V1+V2 list from backend).
+      // --resume-picker is resolved before Twinki starts (pre-passed as resumePickerSessionId)
+      // because the interactive picker can't coexist with Twinki's terminal input.
+      let resolvedSessionId: string | undefined = resumePickerSessionId;
+      if (!resolvedSessionId && cliArgs.resume) {
+        const { sessions } = await kiro.listSessions(process.cwd());
+        if (sessions.length > 0) {
+          resolvedSessionId = sessions[0]!.sessionId;
+        } else {
+          process.stderr.write(
+            'No saved sessions found for this directory. Starting new session.\n'
+          );
+        }
+      }
+
+      await kiro.createSession(resolvedSessionId);
       appStore.setState({ sessionId: kiro.sessionId ?? null });
 
-      const events = pendingHistoryEvents;
-      pendingHistoryEvents = [];
       // Clear the history handler so future events (from live streaming)
       // don't get buffered.
       kiro.onHistoryEvent(() => {});
 
-      if (events.length > 0) {
-        setTimeout(() => {
-          logger.debug('[index] replaying', events.length, 'history events');
-          const handler = appStore.getState().createStreamEventHandler();
-          for (const event of events) {
-            handler(event);
-          }
-          (handler as any).flush?.();
-        }, 0);
+      if (pendingHistoryEvents.length > 0) {
+        // Await the deferred replay so callers that chain on startInitialization()
+        // (e.g. auto-submit of CLI input) don't race ahead of history.
+        await new Promise<void>((resolve) => {
+          setTimeout(() => {
+            logger.debug(
+              '[index] replaying',
+              pendingHistoryEvents.length,
+              'history events'
+            );
+            const handler = appStore.getState().createStreamEventHandler();
+            for (const event of pendingHistoryEvents) {
+              handler(event);
+            }
+            (handler as any).flush?.();
+            pendingHistoryEvents = [];
+            resolve();
+          }, 0);
+        });
       }
     })
     .catch((error) => {
@@ -352,21 +360,32 @@ const startInitialization = (sessionId?: string) => {
   return initPromise;
 };
 
-// For --resume-picker, we need to run the interactive picker before Ink renders.
-// We wrap the entire startup in an async IIFE so the picker can await user input.
+// We wrap the entire startup in an async IIFE.
 const startApp = async () => {
-  // Handle --resume-picker: interactive session selection before Ink starts
+  // Handle --resume-picker before Twinki renders: the interactive picker needs
+  // raw terminal access that can't coexist with Twinki's input handling.
+  // We start the ACP backend, list sessions, run the picker, then pass the
+  // resolved ID into startInitialization.
+  let resumePickerSessionId: string | undefined;
   if (cliArgs.resumePicker) {
-    const pickedId = await pickSession(process.cwd());
-    if (pickedId) {
-      resumeSessionId = pickedId;
+    wireUpHandlers();
+    await kiro.initialize(agentPath, acpArgs);
+    const { sessions } = await kiro.listSessions(process.cwd());
+    if (sessions.length > 0) {
+      resumePickerSessionId = await pickSessionFromEntries(sessions);
+      if (!resumePickerSessionId) {
+        process.stderr.write('No session selected. Starting new session.\n');
+      }
     } else {
-      process.stderr.write('No session selected. Starting new session.\n');
+      process.stderr.write(
+        'No saved sessions found for this directory. Starting new session.\n'
+      );
     }
   }
 
-  // Start initialization (non-blocking for the UI)
-  startInitialization(resumeSessionId);
+  // Start initialization (non-blocking for the UI).
+  // --resume is resolved inside startInitialization via session/list.
+  startInitialization(resumePickerSessionId);
 
   // Handle non-interactive mode: bail early if no input provided
   if (cliArgs.noInteractive && !cliArgs.input) {
@@ -415,7 +434,7 @@ const startApp = async () => {
     });
 
     // Auto-submit after initialization completes
-    startInitialization(resumeSessionId).then(() => {
+    startInitialization().then(() => {
       if (initError) return; // Error will be shown by the App component
       appStore.getState().sendMessage(nonInteractiveInput);
     });
@@ -424,7 +443,7 @@ const startApp = async () => {
   // Interactive mode with initial input: auto-submit after init, then stay interactive (V1 behavior)
   if (!cliArgs.noInteractive && cliArgs.input) {
     const interactiveInput = cliArgs.input;
-    startInitialization(resumeSessionId).then(() => {
+    startInitialization().then(() => {
       if (initError) return;
       appStore.getState().sendMessage(interactiveInput);
     });
@@ -446,7 +465,7 @@ const startApp = async () => {
 
     // Wait for initialization to complete (UI renders immediately)
     useEffect(() => {
-      startInitialization(resumeSessionId);
+      startInitialization();
     }, []);
 
     if (initError) {

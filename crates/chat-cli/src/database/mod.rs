@@ -544,13 +544,14 @@ impl Database {
     }
 
     /// Delete a specific conversation by its ID.
-    pub fn delete_conversation_by_id(&self, conversation_id: &str) -> Result<(), DatabaseError> {
-        self.pool
+    pub fn delete_conversation_by_id(&self, conversation_id: &str) -> Result<bool, DatabaseError> {
+        let rows = self
+            .pool
             .get()?
             .execute("DELETE FROM conversations_v2 WHERE conversation_id = ?1", [
                 conversation_id,
             ])?;
-        Ok(())
+        Ok(rows > 0)
     }
 
     /// Delete conversations older than the specified timestamp (in milliseconds since epoch).

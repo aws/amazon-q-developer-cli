@@ -87,6 +87,9 @@ impl V1SessionExporter for V1SessionExporterImpl {
                     cwd: cwd.to_path_buf(),
                     title,
                     updated_at: chrono::DateTime::from_timestamp_millis(updated).unwrap_or_default(),
+                    // HistoryEntry contains both the user and assistant message together, so
+                    // multiply by 2
+                    message_count: state.history().len() * 2,
                 }
             })
             .collect())

@@ -255,6 +255,7 @@ pub async fn list_sessions(
                 cwd: s.cwd,
                 title,
                 updated_at: Some(s.updated_at.to_rfc3339()),
+                message_count: s.message_count,
             }
         })
         .collect())

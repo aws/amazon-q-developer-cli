@@ -53,7 +53,7 @@ pub fn build_session_entries(
                 session_id: conv_id,
                 timestamp: format_timestamp(updated_at),
                 summary: format_conversation_summary(&conv_state),
-                msg_count: conv_state.history().len(),
+                msg_count: conv_state.history().len() * 2,
             },
         )
         .collect()
@@ -368,19 +368,169 @@ fn format_timestamp(timestamp_ms: i64) -> String {
     }
 }
 
+/// A unified session entry from either V1 (SQLite) or V2 (filesystem).
+pub struct SessionEntry {
+    pub session_id: String,
+    pub summary: String,
+    pub msg_count: usize,
+    pub updated_at_ms: i64,
+    pub source: SessionSource,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SessionSource {
+    V1,
+    V2,
+}
+
+impl std::fmt::Display for SessionSource {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::V1 => f.write_str("v1"),
+            Self::V2 => f.write_str("v2"),
+        }
+    }
+}
+
+/// Collect all sessions (V1 + V2) for a given cwd, sorted most-recent first.
+pub fn collect_all_sessions(db: &crate::database::Database, cwd: &std::path::Path) -> Vec<SessionEntry> {
+    let v2_dir = chat_cli_v2::util::paths::sessions_dir().ok();
+    collect_all_sessions_impl(db, cwd, v2_dir.as_deref())
+}
+
+fn collect_all_sessions_impl(
+    db: &crate::database::Database,
+    cwd: &std::path::Path,
+    v2_sessions_dir: Option<&std::path::Path>,
+) -> Vec<SessionEntry> {
+    let mut entries = Vec::new();
+
+    // V1 sessions from SQLite
+    if let Ok(conversations) = db.list_conversations_by_path(cwd) {
+        for (conv_id, conv_state, _created_at, updated_at) in conversations {
+            entries.push(SessionEntry {
+                session_id: conv_id,
+                summary: format_conversation_summary(&conv_state),
+                msg_count: conv_state.history().len() * 2,
+                updated_at_ms: updated_at,
+                source: SessionSource::V1,
+            });
+        }
+    }
+
+    // V2 sessions from filesystem
+    if let Some(sessions_dir) = v2_sessions_dir
+        && let Ok(v2_sessions) = chat_cli_v2::agent::session::list_sessions(sessions_dir, Some(cwd))
+    {
+        for s in v2_sessions {
+            entries.push(SessionEntry {
+                session_id: s.session_id,
+                summary: s.title.unwrap_or_else(|| "(no title)".to_string()),
+                msg_count: s.message_count,
+                updated_at_ms: s.updated_at.timestamp_millis(),
+                source: SessionSource::V2,
+            });
+        }
+    }
+
+    entries.sort_by(|a, b| b.updated_at_ms.cmp(&a.updated_at_ms));
+    entries
+}
+
+/// Delete a session from V1 (SQLite) and/or V2 (filesystem).
+///
+/// Returns which stores the session was deleted from, or `Err` if V2 lock fails.
+pub fn delete_any_session(
+    db: &crate::database::Database,
+    session_id: &str,
+    source: Option<SessionSource>,
+) -> std::result::Result<(bool, bool), String> {
+    let v2_dir = chat_cli_v2::util::paths::sessions_dir().ok();
+    delete_any_session_impl(db, session_id, v2_dir.as_deref(), source)
+}
+
+/// Returns `(v1_deleted, v2_deleted)`.
+fn delete_any_session_impl(
+    db: &crate::database::Database,
+    session_id: &str,
+    v2_sessions_dir: Option<&std::path::Path>,
+    source: Option<SessionSource>,
+) -> std::result::Result<(bool, bool), String> {
+    let delete_v1 = source.is_none() || source == Some(SessionSource::V1);
+    let delete_v2 = source.is_none() || source == Some(SessionSource::V2);
+
+    // Try V2 first — it requires a lock and can fail, so do it before the
+    // irreversible V1 delete.
+    let v2_ok = if delete_v2 {
+        match v2_sessions_dir.map(|d| chat_cli_v2::agent::session::delete_session(d, session_id)) {
+            Some(Ok(v)) => v,
+            Some(Err(e)) => return Err(e.to_string()),
+            None => false,
+        }
+    } else {
+        false
+    };
+
+    let v1_ok = delete_v1 && db.delete_conversation_by_id(session_id).unwrap_or(false);
+    Ok((v1_ok, v2_ok))
+}
+
+/// Handle `--list-sessions` and `--delete-session` flags before TUI launch.
+///
+/// Returns `Some(ExitCode)` if a flag was handled, `None` to continue normal dispatch.
+pub fn handle_list_delete_session_flags(
+    list_sessions: bool,
+    delete_session: Option<&str>,
+    delete_source: Option<SessionSource>,
+    os: &Os,
+) -> Option<std::process::ExitCode> {
+    use std::process::ExitCode;
+
+    if list_sessions {
+        if list_conversations(os, &mut std::io::stderr()).is_err() {
+            return Some(ExitCode::FAILURE);
+        }
+        return Some(ExitCode::SUCCESS);
+    }
+
+    if let Some(session_id) = delete_session {
+        match delete_any_session(&os.database, session_id, delete_source) {
+            Ok((v1, v2)) if v1 || v2 => {
+                if v1 {
+                    eprintln!("✔ Deleted chat session {session_id} (v1)");
+                }
+                if v2 {
+                    eprintln!("✔ Deleted chat session {session_id} (v2)");
+                }
+                return Some(ExitCode::SUCCESS);
+            },
+            Ok(_) => {
+                eprintln!("Error: Session {session_id} not found");
+                return Some(ExitCode::FAILURE);
+            },
+            Err(e) => {
+                eprintln!("Error: Failed to delete chat session {session_id}: {e}");
+                return Some(ExitCode::FAILURE);
+            },
+        }
+    }
+
+    None
+}
+
 /// List all chat sessions for the current directory to a writer.
+///
+/// Merges V1 sessions (from SQLite) and V2 sessions (from `~/.kiro/sessions/cli/`),
+/// sorted by most recently updated first.
 pub fn list_conversations(os: &Os, writer: &mut impl std::io::Write) -> Result<(), ChatError> {
     let cwd = match std::env::current_dir() {
         Ok(path) => path,
         Err(_) => return Ok(()),
     };
 
-    let conversations = match os.database.list_conversations_by_path(&cwd) {
-        Ok(convs) => convs,
-        Err(_) => return Ok(()),
-    };
+    let entries = collect_all_sessions(&os.database, &cwd);
 
-    if conversations.is_empty() {
+    if entries.is_empty() {
         execute!(
             writer,
             StyledText::info_fg(),
@@ -397,22 +547,20 @@ pub fn list_conversations(os: &Os, writer: &mut impl std::io::Write) -> Result<(
         StyledText::reset(),
     )?;
 
-    for (conv_id, conv_state, _created_at, updated_at) in conversations {
-        let summary = format_conversation_summary(&conv_state);
-        let msg_count = conv_state.history().len();
-        let timestamp = format_timestamp(updated_at);
-
+    for entry in &entries {
+        let timestamp = format_timestamp(entry.updated_at_ms);
         execute!(
             writer,
             style::Print("Chat SessionId: "),
             StyledText::brand_fg(),
-            style::Print(format!("{conv_id}\n")),
+            style::Print(format!("{}\n", entry.session_id)),
             StyledText::reset_attributes(),
             style::Print(format!(
-                "  {} | {} | {}\n\n",
+                "  {} | {} | {} | {}\n\n",
                 timestamp.dim(),
-                summary,
-                format!("{msg_count} msgs").dim()
+                entry.summary,
+                format!("{} msgs", entry.msg_count).dim(),
+                format!("{}", entry.source).dim(),
             )),
         )?;
     }
@@ -560,8 +708,117 @@ fn resume_chat_session(os: &Os, session: &mut ChatSession) -> Result<ChatState, 
 
 #[cfg(test)]
 mod tests {
+    use super::*;
     use crate::cli::chat::test_utils::create_test_session;
     use crate::os::Os;
+
+    /// Create a minimal V2 session on disk (metadata JSON + empty JSONL log).
+    fn create_v2_session(sessions_dir: &std::path::Path, session_id: &str, cwd: &std::path::Path, title: &str) {
+        use chrono::Utc;
+
+        std::fs::create_dir_all(sessions_dir).unwrap();
+        let meta = serde_json::json!({
+            "session_id": session_id,
+            "cwd": cwd,
+            "created_at": Utc::now(),
+            "updated_at": Utc::now(),
+            "title": title,
+        });
+        std::fs::write(
+            sessions_dir.join(format!("{session_id}.json")),
+            serde_json::to_string(&meta).unwrap(),
+        )
+        .unwrap();
+        // Write a non-empty log line so count_log_lines returns > 0
+        std::fs::write(
+            sessions_dir.join(format!("{session_id}.jsonl")),
+            "{\"version\":\"v1\",\"kind\":\"Prompt\",\"data\":{}}\n",
+        )
+        .unwrap();
+    }
+
+    #[tokio::test]
+    async fn test_collect_all_sessions_merges_and_sorts() {
+        let temp_dir = tempfile::TempDir::new().unwrap();
+        let sessions_dir = temp_dir.path().join("v2sessions");
+
+        let mut os = Os::new().await.unwrap();
+        let cwd = std::env::current_dir().unwrap();
+
+        // Create V1 session first (older)
+        let (_, _) = create_test_session(&mut os, vec!["v1 message", "exit"], vec!["response"], None).await;
+
+        // Small delay so V2 session has a later timestamp
+        tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+
+        create_v2_session(&sessions_dir, "v2-test-id", &cwd, "v2 session title");
+
+        let entries = collect_all_sessions_impl(&os.database, &cwd, Some(&sessions_dir));
+
+        // Merges both sources
+        assert!(
+            entries.len() >= 2,
+            "expected at least 2 sessions, got {}",
+            entries.len()
+        );
+        assert!(
+            entries.iter().any(|e| e.summary.contains("v1 message")),
+            "missing V1 session"
+        );
+        assert!(
+            entries.iter().any(|e| e.session_id == "v2-test-id"),
+            "missing V2 session"
+        );
+
+        let v2 = entries.iter().find(|e| e.session_id == "v2-test-id").unwrap();
+        assert_eq!(v2.summary, "v2 session title");
+        assert_eq!(v2.msg_count, 1);
+
+        // Sorted most-recent first (V2 was created after V1)
+        assert_eq!(entries[0].session_id, "v2-test-id");
+    }
+
+    #[tokio::test]
+    async fn test_delete_any_session_v1() {
+        let temp_dir = tempfile::TempDir::new().unwrap();
+        let sessions_dir = temp_dir.path().join("v2sessions");
+        std::fs::create_dir_all(&sessions_dir).unwrap();
+
+        let mut os = Os::new().await.unwrap();
+
+        let (conv_id, _) = create_test_session(&mut os, vec!["to delete", "exit"], vec!["r"], None).await;
+
+        assert_eq!(
+            delete_any_session_impl(&os.database, &conv_id, Some(&sessions_dir), None).unwrap(),
+            (true, false)
+        );
+    }
+
+    #[tokio::test]
+    async fn test_delete_any_session_v2() {
+        let temp_dir = tempfile::TempDir::new().unwrap();
+        let sessions_dir = temp_dir.path().join("v2sessions");
+
+        let os = Os::new().await.unwrap();
+
+        create_v2_session(&sessions_dir, "v2-del", temp_dir.path(), "to delete");
+        assert!(sessions_dir.join("v2-del.json").exists());
+
+        let (_v1, v2) = delete_any_session_impl(&os.database, "v2-del", Some(&sessions_dir), None).unwrap();
+        assert!(v2, "v2 session should be deleted");
+        // v1 delete is a no-op (SQL DELETE 0 rows = Ok), so v1 may be true
+        assert!(!sessions_dir.join("v2-del.json").exists());
+        assert!(!sessions_dir.join("v2-del.jsonl").exists());
+    }
+
+    #[tokio::test]
+    async fn test_delete_any_session_not_found_v2_only() {
+        let temp_dir = tempfile::TempDir::new().unwrap();
+        std::fs::create_dir_all(temp_dir.path()).unwrap();
+        let _os = Os::new().await.unwrap();
+        let result = chat_cli_v2::agent::session::delete_session(temp_dir.path(), "nonexistent");
+        assert!(matches!(result, Ok(false)));
+    }
 
     #[tokio::test]
     async fn test_auto_save_and_resume() {
