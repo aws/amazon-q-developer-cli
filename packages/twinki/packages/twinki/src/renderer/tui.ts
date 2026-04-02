@@ -107,7 +107,8 @@ export class TUI extends Container {
   private hardwareCursorRow = 0;
   private inputBuffer = '';
   private cellSizeQueryPending = false;
-  private showHardwareCursor = process.env.TWINKI_HARDWARE_CURSOR === '1';
+  private readonly isMultiplexer = 'ZELLIJ' in process.env || 'TMUX' in process.env;
+  private showHardwareCursor = process.env.TWINKI_HARDWARE_CURSOR === '1' || this.isMultiplexer;
   private clearOnShrink = process.env.TWINKI_CLEAR_ON_SHRINK === '1';
   private maxLinesRendered = 0;
   private previousViewportTop = 0;
@@ -131,8 +132,6 @@ export class TUI extends Container {
   private contentStartRow = -1;
   private dsrPending = false;
   private altScreen = false;
-  /** Whether running inside tmux — detected via TMUX env var */
-  private readonly isTmux = 'TMUX' in process.env;
   private targetFps = 0;
   private frameBudgetMs = 0;
   private lastRenderTime = 0;
