@@ -68,6 +68,8 @@ pub enum OauthUtilError {
     MissingAuthorizationManager,
     #[error("Missing auth client when token refresh is needed")]
     MissingAuthClient,
+    #[error("Missing re-authentication context")]
+    MissingReauthContext,
     #[error(transparent)]
     OneshotRecv(#[from] tokio::sync::oneshot::error::RecvError),
     #[error(transparent)]
@@ -127,6 +129,17 @@ impl From<OAuthClientConfig> for Registration {
     }
 }
 
+/// Context needed to perform a full browser-based re-authentication flow mid-session.
+#[derive(Clone, Debug)]
+pub struct ReauthContext {
+    pub url: Url,
+    pub reg_full_path: PathBuf,
+    pub scopes: Vec<String>,
+    pub oauth_config: Option<crate::cli::chat::tools::custom_tool::OAuthConfig>,
+    pub messenger: Arc<dyn Messenger>,
+    pub os: Os,
+}
+
 /// A wrapper that manages an authenticated MCP client.
 ///
 /// This struct wraps an `AuthClient` and provides access to OAuth credentials
@@ -136,6 +149,7 @@ impl From<OAuthClientConfig> for Registration {
 pub struct AuthClientWrapper {
     pub cred_full_path: PathBuf,
     pub auth_client: AuthClient<Client>,
+    pub reauth_ctx: Option<ReauthContext>,
 }
 
 impl AuthClientWrapper {
@@ -143,6 +157,7 @@ impl AuthClientWrapper {
         Self {
             cred_full_path,
             auth_client,
+            reauth_ctx: None,
         }
     }
 
@@ -156,6 +171,56 @@ impl AuthClientWrapper {
         let cred_as_bytes = serde_json::to_string_pretty(&cred)?;
         tokio::fs::write(&self.cred_full_path, &cred_as_bytes).await?;
 
+        Ok(())
+    }
+
+    /// Performs a full browser-based OAuth re-authentication flow mid-session.
+    ///
+    /// This is called when `refresh_token()` fails (e.g., no refresh token was issued by the
+    /// server). It spins up a new loopback server, opens the browser for the user to
+    /// authenticate, exchanges the auth code for a new token, and swaps the
+    /// `AuthorizationManager` in-place via the shared `Arc<Mutex<>>` so the existing transport
+    /// picks up the new credentials automatically.
+    pub async fn reauthorize(&self) -> Result<(), OauthUtilError> {
+        let ctx = self.reauth_ctx.as_ref().ok_or(OauthUtilError::MissingReauthContext)?;
+
+        let oauth_state = OAuthState::new(ctx.url.clone(), None).await?;
+        let (new_am, redirect_uri) = get_auth_manager_impl(
+            oauth_state,
+            &ctx.scopes,
+            &ctx.oauth_config,
+            ctx.messenger.as_ref(),
+            &ctx.os,
+        )
+        .await?;
+
+        // Persist the new credentials and registration
+        let (client_id, credentials) = new_am.get_credentials().await?;
+        let reg = Registration {
+            client_id,
+            client_secret: None,
+            scopes: get_default_scopes()
+                .iter()
+                .map(|s| (*s).to_string())
+                .collect::<Vec<_>>(),
+            redirect_uri,
+        };
+        let reg_as_str = serde_json::to_string_pretty(&reg)?;
+        let reg_parent = ctx.reg_full_path.parent().ok_or(OauthUtilError::MalformDirectory)?;
+        tokio::fs::create_dir_all(reg_parent).await?;
+        tokio::fs::write(&ctx.reg_full_path, &reg_as_str).await?;
+
+        let credentials = credentials.ok_or(OauthUtilError::MissingCredentials)?;
+        let cred_parent = self.cred_full_path.parent().ok_or(OauthUtilError::MalformDirectory)?;
+        tokio::fs::create_dir_all(cred_parent).await?;
+        let cred_as_str = serde_json::to_string_pretty(&credentials)?;
+        tokio::fs::write(&self.cred_full_path, &cred_as_str).await?;
+
+        // Swap the AuthorizationManager in-place so the existing transport picks up new creds
+        let mut guard = self.auth_client.auth_manager.lock().await;
+        *guard = new_am;
+
+        info!("## mcp: re-authentication successful, credentials swapped in-place");
         Ok(())
     }
 }
@@ -296,7 +361,15 @@ impl<'a> HttpServiceBuilder<'a> {
 
                     match service.clone().into_dyn().serve(transport).await {
                         Ok(service) => {
-                            let auth_client_wrapper = AuthClientWrapper::new(cred_full_path, ac);
+                            let mut auth_client_wrapper = AuthClientWrapper::new(cred_full_path, ac);
+                            auth_client_wrapper.reauth_ctx = Some(ReauthContext {
+                                url: url.clone(),
+                                reg_full_path,
+                                scopes: scopes.to_vec(),
+                                oauth_config: oauth_config.clone(),
+                                messenger: Arc::from(messenger.duplicate()),
+                                os: os.clone(),
+                            });
                             return Ok((service, Some(auth_client_wrapper)));
                         },
                         Err(e) => {

@@ -172,29 +172,36 @@ macro_rules! decorate_with_auth_retry {
             match first_attempt {
                 Ok(result) => Ok(result),
                 Err(e) => {
-                    // TODO: discern error type prior to retrying
-                    // Not entirely sure what is thrown when auth is required
                     if let Some(auth_client) = self.auth_client.as_ref() {
+                        // Try token refresh first (fast path)
                         let refresh_result = auth_client.refresh_token().await;
                         match refresh_result {
                             Ok(_) => {
                                 info!("Token refreshed");
-                                // Retry the operation after token refresh
                                 match &self.inner_service {
                                     InnerService::Original(rs) => rs.$method_name(param).await,
                                     InnerService::Peer(peer) => peer.$method_name(param).await,
                                 }
                             },
-                            Err(_) => {
-                                // If refresh fails, return the original error
-                                // Currently our event loop just does not allow us easy ways to
-                                // reauth entirely once a session starts since this would mean
-                                // swapping of transport (which also means swapping of client)
-                                Err(e)
+                            Err(refresh_err) => {
+                                // Refresh failed — attempt full browser-based re-auth
+                                info!("Token refresh failed ({refresh_err}), attempting re-authentication");
+                                match auth_client.reauthorize().await {
+                                    Ok(_) => {
+                                        info!("Re-authentication successful, retrying operation");
+                                        match &self.inner_service {
+                                            InnerService::Original(rs) => rs.$method_name(param).await,
+                                            InnerService::Peer(peer) => peer.$method_name(param).await,
+                                        }
+                                    },
+                                    Err(reauth_err) => {
+                                        error!("Re-authentication failed: {reauth_err}");
+                                        Err(e)
+                                    },
+                                }
                             },
                         }
                     } else {
-                        // No auth client available, return original error
                         Err(e)
                     }
                 },
