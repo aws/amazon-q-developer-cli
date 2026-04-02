@@ -1,2 +1,3 @@
 [test]
 root = "src"
+preload = ["./e2e_tests/preload.ts"]

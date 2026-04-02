@@ -172,12 +172,7 @@ E2E tests require **two build artifacts** to exist before they can run:
 
 If either is missing or stale, tests will fail with `Timeout waiting for TUI IPC connection`.
 
-`bun run test:e2e` builds **both** automatically. `--skip-rust-build` skips only the Rust build but still rebuilds the TUI bundle. When running individual test files directly with `bun test`, **neither** is built — you must ensure both exist:
-
-```bash
-cargo build -p chat_cli          # Rust binary → target/debug/chat_cli
-cd packages/tui && bun run build # TUI bundle  → dist/tui.js
-```
+The TUI bundle is auto-rebuilt before any E2E test run (via `e2e_tests/preload.ts`), whether you use `bun run test:e2e` or `bun test ./e2e_tests/...` directly. The Rust binary must be built separately unless you use `bun run test:e2e` (which builds both).
 
 ### Running E2E Tests
 

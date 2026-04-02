@@ -34,8 +34,12 @@ function runTests() {
     process.exit(1);
   }
 
+  // Pass through extra args (e.g. specific test file, -t "test name")
+  const extraArgs = process.argv.slice(2).filter(a => a !== "--skip-rust-build");
+
   console.log("Running E2E tests...");
-  const test = spawn("bun", ["test", "./e2e_tests/"], { cwd: TUI_ROOT, stdio: "inherit" });
+  const testArgs = ["test", "./e2e_tests/", ...extraArgs];
+  const test = spawn("bun", testArgs, { cwd: TUI_ROOT, stdio: "inherit" });
   test.on("exit", (code) => process.exit(code ?? 0));
 }
 
