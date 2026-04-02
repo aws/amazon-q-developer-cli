@@ -93,6 +93,7 @@ jobs:
           swap-storage: false
 
       - name: Cache Rust dependencies
+        if: inputs.branch_name != 'prod'
         uses: Swatinem/rust-cache@v2
 
       - name: Install cross (for cross-compilation)

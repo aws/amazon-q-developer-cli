@@ -71,6 +71,7 @@ jobs:
         run: rustup target add ${{ matrix.target }}
 
       - name: Cache Rust dependencies
+        if: inputs.branch_name != 'prod'
         uses: Swatinem/rust-cache@v2
 
       - name: Configure AWS credentials
