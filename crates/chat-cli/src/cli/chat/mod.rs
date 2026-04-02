@@ -315,7 +315,7 @@ pub struct ChatArgs {
     #[arg(long, conflicts_with = "legacy_ui")]
     pub tui: bool,
     /// Use the legacy terminal UI
-    #[arg(long, conflicts_with = "tui")]
+    #[arg(long, alias = "classic", conflicts_with = "tui")]
     pub legacy_ui: bool,
 }
 
@@ -1778,14 +1778,14 @@ impl ChatSession {
         }
     }
 
-    /// Randomly show a TUI promotion nudge (~10% of the time) after agent responses,
+    /// Randomly show a TUI promotion nudge (~2% of the time) after agent responses,
     /// up to 3 times per session.
     fn maybe_show_tui_nudge(&mut self) {
         if !self.interactive || self.tui_nudge_count >= 3 {
             return;
         }
         use rand::Rng;
-        if rand::rng().random_ratio(1, 10) {
+        if rand::rng().random_ratio(1, 50) {
             self.tui_nudge_count += 1;
             let _ = execute!(
                 self.stderr,

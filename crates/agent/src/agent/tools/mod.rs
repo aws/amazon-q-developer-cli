@@ -180,7 +180,7 @@ pub enum BuiltInToolName {
     Introspect,
     #[strum(serialize = "knowledge")]
     Knowledge,
-    #[strum(serialize = "task")]
+    #[strum(serialize = "task", serialize = "todo_list", serialize = "todo")]
     Task,
 }
 

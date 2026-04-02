@@ -441,7 +441,7 @@ pub struct Cli {
     #[arg(long)]
     tui: bool,
     /// Launch chat in legacy UI mode
-    #[arg(long)]
+    #[arg(long, alias = "classic")]
     legacy_ui: bool,
 }
 

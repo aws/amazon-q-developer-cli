@@ -145,6 +145,10 @@ impl BuiltInToolTrait for TaskTool {
     fn input_schema() -> Cow<'static, str> {
         TASK_TOOL_SCHEMA.into()
     }
+
+    fn aliases() -> Option<&'static [&'static str]> {
+        Some(&["todo_list", "todo"])
+    }
 }
 
 impl TaskTool {
