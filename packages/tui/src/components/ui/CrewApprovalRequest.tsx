@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React from 'react';
 import { Box } from './../../renderer.js';
 import { Text } from './text/Text.js';
 import { useTheme } from '../../hooks/useThemeContext.js';
@@ -7,8 +7,6 @@ import { useKeypress } from '../../hooks/useKeypress.js';
 import { useApprovalState } from '../../stores/selectors.js';
 import { useAppStore } from '../../stores/app-store.js';
 import type { PermissionOption } from '../../types/agent-events.js';
-
-const TRUST_ENTRY_LABEL = '(t) Trust';
 
 /**
  * Consolidated crew approval UI shown at the main agent page when a subagent
@@ -28,32 +26,17 @@ export const CrewApprovalRequest: React.FC<{
   const { respondToApproval, cancelApproval } = useApprovalState();
   const { getColor } = useTheme();
 
-  const [page, setPage] = useState<'default' | 'trust'>('default');
-  const [focusedIndex, setFocusedIndex] = useState(0);
-
   const count = approvalQueue.length;
 
-  const defaultItems = [
+  const items = [
     { label: '(a) Approve all pending', value: 'approve' },
-    {
-      label: TRUST_ENTRY_LABEL,
-      value: 'trust',
-      description: '',
-    },
-    { label: '(c) Configure individually (agent monitor)', value: 'configure' },
-    { label: '(x) Exit (cancel subagents)', value: 'exit' },
-  ];
-
-  const trustItems = [
     {
       label: '(f) Approve all pending and auto-approve all future requests',
       value: 'auto',
     },
+    { label: '(c) Configure individually (agent monitor)', value: 'configure' },
+    { label: '(x) Exit (cancel subagents)', value: 'exit' },
   ];
-
-  const visibleItems = page === 'trust' ? trustItems : defaultItems;
-  const focusedOnTrust =
-    page === 'default' && defaultItems[focusedIndex]?.value === 'trust';
 
   const approveAll = () => {
     for (const approval of [...approvalQueue]) {
@@ -71,13 +54,9 @@ export const CrewApprovalRequest: React.FC<{
   };
 
   const handleSelect = (item: { label: string }) => {
-    const allItems = [...defaultItems, ...trustItems];
-    const match = allItems.find((i) => i.label === item.label);
+    const match = items.find((i) => i.label === item.label);
     if (!match) return;
-    if (match.value === 'trust') {
-      setPage('trust');
-      setFocusedIndex(0);
-    } else if (match.value === 'approve') {
+    if (match.value === 'approve') {
       approveAll();
     } else if (match.value === 'auto') {
       setAutoApproveCrewTools(true);
@@ -92,22 +71,11 @@ export const CrewApprovalRequest: React.FC<{
   useKeypress((input, key) => {
     if (key.ctrl || key.meta || key.shift) return;
     const k = input.toLowerCase();
-    if (k === 'a') handleSelect({ label: defaultItems[0]!.label });
-    else if (k === 't') {
-      if (page === 'default') {
-        setPage('trust');
-        setFocusedIndex(0);
-      } else {
-        setPage('default');
-        setFocusedIndex(0);
-      }
-    } else if (k === 'f') handleSelect({ label: trustItems[0]!.label });
-    else if (k === 'c') handleSelect({ label: defaultItems[2]!.label });
-    else if (k === 'x') handleSelect({ label: defaultItems[3]!.label });
+    if (k === 'a') handleSelect({ label: items[0]!.label });
+    else if (k === 'f') handleSelect({ label: items[1]!.label });
+    else if (k === 'c') handleSelect({ label: items[2]!.label });
+    else if (k === 'x') handleSelect({ label: items[3]!.label });
   });
-
-  const secondary = getColor('secondary');
-  const primary = getColor('primary');
 
   return (
     <Box flexDirection="column" paddingX={1}>
@@ -118,31 +86,11 @@ export const CrewApprovalRequest: React.FC<{
           )}
         </Text>
       </Box>
-      {page === 'trust' && (
-        <Box>
-          <Text>{secondary('Trust options:')}</Text>
-        </Box>
-      )}
       <Menu
-        key={page}
-        items={visibleItems.map((i) => ({
-          label: i.label,
-          description: (i as any).description ?? '',
-        }))}
+        items={items.map((i) => ({ label: i.label, description: '' }))}
         onSelect={handleSelect}
-        onHighlight={(item) => {
-          const idx = visibleItems.findIndex((i) => i.label === item.label);
-          if (idx >= 0) setFocusedIndex(idx);
-        }}
         showSelectedIndicator={true}
       />
-      {focusedOnTrust ? (
-        <Box paddingX={1}>
-          <Text>
-            {primary('Enter')} {secondary('to see more options')}
-          </Text>
-        </Box>
-      ) : null}
     </Box>
   );
 };

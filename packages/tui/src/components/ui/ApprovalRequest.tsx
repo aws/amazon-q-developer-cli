@@ -73,10 +73,14 @@ export const ApprovalRequest: React.FC<ApprovalRequestProps> = ({
     description: '',
   }));
 
-  const trustMenuItems = trustOptions.map((t) => ({
-    label: t.label,
-    description: t.display,
-  }));
+  const ENTIRE_TOOL_LABEL = 'Entire tool';
+  const trustMenuItems = [
+    ...trustOptions.map((t) => ({
+      label: t.label,
+      description: t.display,
+    })),
+    { label: ENTIRE_TOOL_LABEL, description: '' },
+  ];
 
   const menuItems = page === 'trust' ? trustMenuItems : defaultMenuItems;
 
@@ -155,6 +159,10 @@ export const ApprovalRequest: React.FC<ApprovalRequestProps> = ({
       }
       if (opt) respondToApproval(opt.optionId);
     } else {
+      if (item.label === ENTIRE_TOOL_LABEL) {
+        respondToApproval('allow_always');
+        return;
+      }
       const selected = trustOptions.find((t) => t.label === item.label);
       if (selected) {
         respondToApproval('allow_always', undefined, { trustOption: selected });

@@ -466,8 +466,8 @@ export class AcpClient implements acp.Client, SessionClient {
                       outcome: {
                         outcome: 'selected' as const,
                         optionId: userResponse.optionId,
-                      },
-                      _meta: userResponse._meta,
+                        _meta: userResponse._meta,
+                      } as acp.RequestPermissionResponse['outcome'],
                     }
                   : { outcome: { outcome: 'cancelled' as const } };
               resolve(acpResponse);
