@@ -31,7 +31,10 @@ use agent::types::{
     AgentSettings,
     AgentSnapshot,
 };
-use agent::util::providers::RealProvider;
+use agent::util::providers::{
+    CwdProvider,
+    RealProvider,
+};
 use chat_cli_ui::conduit::{
     ControlEnd,
     get_conduit,
@@ -219,6 +222,7 @@ impl<'a> Subagent<'a> {
         mut control_end: ControlEnd<D>,
         parent_conversation_id: &str,
     ) -> Result<Summary> {
+        let cwd = RealProvider.cwd().unwrap_or_default();
         let mut snapshot = AgentSnapshot {
             settings: AgentSettings {
                 // one day
@@ -226,6 +230,7 @@ impl<'a> Subagent<'a> {
                 disable_auto_compact: Default::default(),
                 trust_all_tools: false,
             },
+            permissions: agent::permissions::RuntimePermissions::default().with_cwd(&cwd.to_string_lossy()),
             ..Default::default()
         };
 
@@ -736,4 +741,90 @@ async fn test_sub_agent_routine(queries: Vec<(String, String)>) -> Result<Vec<Su
     _ = indicator_handle.wait_for_clean_screen().await;
 
     res
+}
+
+#[cfg(test)]
+mod tests {
+    use std::collections::HashSet;
+
+    use agent::agent_config::definitions::ToolsSettings;
+    use agent::permissions::{
+        RuntimePermissions,
+        evaluate_tool_permission,
+    };
+    use agent::protocol::PermissionEvalResult;
+    use agent::tools::fs_read::file::FileOp;
+    use agent::tools::fs_read::{
+        FsRead,
+        FsReadOperation,
+    };
+    use agent::tools::{
+        BuiltInTool,
+        ToolKind,
+    };
+    use agent::util::providers::CwdProvider;
+
+    use super::*;
+
+    /// Verifies that the subagent snapshot includes CWD in allowed read paths,
+    /// so fs_read within the working directory doesn't require approval.
+    #[test]
+    fn test_subagent_snapshot_allows_fs_read_in_cwd() {
+        let cwd = RealProvider.cwd().unwrap();
+        let cwd_str = cwd.to_string_lossy();
+        let permissions = RuntimePermissions::default().with_cwd(&cwd_str);
+
+        // Simulate fs_read for a file in CWD
+        let tool = ToolKind::BuiltIn(BuiltInTool::FileRead(FsRead {
+            operations: vec![FsReadOperation::Line(FileOp {
+                path: format!("{}/some_file.rs", cwd_str),
+                limit: None,
+                offset: None,
+            })],
+        }));
+
+        let result = evaluate_tool_permission(
+            &permissions,
+            &HashSet::new(),
+            &ToolsSettings::default(),
+            &tool,
+            &RealProvider,
+        )
+        .unwrap();
+
+        assert!(
+            matches!(result, PermissionEvalResult::Allow),
+            "fs_read in CWD should be auto-allowed for subagents, got: {result:?}"
+        );
+    }
+
+    /// Verifies that fs_read outside CWD still requires approval.
+    #[test]
+    fn test_subagent_snapshot_asks_for_fs_read_outside_cwd() {
+        let cwd = RealProvider.cwd().unwrap();
+        let cwd_str = cwd.to_string_lossy();
+        let permissions = RuntimePermissions::default().with_cwd(&cwd_str);
+
+        let tool = ToolKind::BuiltIn(BuiltInTool::FileRead(FsRead {
+            operations: vec![FsReadOperation::Line(FileOp {
+                path: "/tmp/outside_cwd/secret.txt".to_string(),
+                limit: None,
+                offset: None,
+            })],
+        }));
+
+        let result = evaluate_tool_permission(
+            &permissions,
+            &HashSet::new(),
+            &ToolsSettings::default(),
+            &tool,
+            &RealProvider,
+        )
+        .unwrap();
+
+        assert!(
+            matches!(result, PermissionEvalResult::Ask { .. }),
+            "fs_read outside CWD should require approval, got: {result:?}"
+        );
+    }
 }
