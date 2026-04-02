@@ -12,7 +12,6 @@ const Region = isDevMode()
   : null;
 import { AnimationPausedContext } from '../../contexts/AnimationPausedContext.js';
 import { ConversationView } from '../ui/ConversationView';
-import { QueueStack } from '../ui/QueueStack';
 import { ActivityTray } from '../ui/activity-tray/index.js';
 import { ExitHint } from '../ui/ExitHint';
 import { CommandMenu } from '../ui/CommandMenu';
@@ -49,6 +48,7 @@ import {
   useConversationState,
   useApprovalState,
   useQueueState,
+  useQueueActions,
   useKiroClient,
 } from '../../stores/selectors.js';
 import { useAppStore, type CodePanelData } from '../../stores/app-store.js';
@@ -64,6 +64,31 @@ const TRIGGER_RULES = [
   { key: '/', type: 'start' as const },
   { key: '@', type: 'inline' as const },
 ];
+
+function getPlaceholder(opts: {
+  editingQueueIndex: number | null;
+  pendingApproval: boolean;
+  isShellEscape: boolean;
+  isProcessing: boolean;
+  queuedMessages: string[];
+  agentName: string | undefined;
+}): string {
+  if (opts.editingQueueIndex != null) {
+    return `Editing queued message ${opts.editingQueueIndex + 1} · esc to cancel`;
+  }
+  if (opts.pendingApproval || opts.isProcessing) {
+    return opts.queuedMessages.length > 0
+      ? 'Kiro is working · type to queue another message'
+      : 'Kiro is working · type to queue a message';
+  }
+  if (opts.isShellEscape) {
+    return 'running shell command · ctrl+c to cancel';
+  }
+  if (opts.agentName === 'kiro_planner') {
+    return 'Ask a question or describe a task ↵  ·  exit plan mode: shift+tab';
+  }
+  return 'Ask a question or describe a task ↵';
+}
 
 function triggerEasterEgg() {
   const cols = process.stdout.columns || 60;
@@ -179,7 +204,8 @@ export const InlineLayout: React.FC = () => {
     useCommandActions();
   const { handleUserInput, clearInput } = useInputActions();
   const { messages } = useConversationState();
-  const { queuedMessages } = useQueueState();
+  const { editingQueueIndex, queuedMessages } = useQueueState();
+  const { replaceQueuedMessage, cancelEditingQueue } = useQueueActions();
   const { kiro } = useKiroClient();
   const mode = useAppStore((state) => state.mode);
   const setMode = useAppStore((state) => state.setMode);
@@ -200,8 +226,6 @@ export const InlineLayout: React.FC = () => {
     setMode('crew-monitor');
   }, [setMode]);
 
-  // Detect if pending approval is from a crew subagent (not the main session)
-
   // Handle escape to cancel approval (only when no approval panel is showing)
   useKeypress(
     (_input, key) => {
@@ -213,6 +237,18 @@ export const InlineLayout: React.FC = () => {
       }
     },
     { isActive: !!pendingApproval && approvalMode !== 'dropdown' }
+  );
+
+  // Handle escape to cancel queue editing
+  useKeypress(
+    (_input, key) => {
+      if (key.escape) {
+        cancelEditingQueue();
+        clearInput();
+        clearCommandInput();
+      }
+    },
+    { isActive: editingQueueIndex != null }
   );
 
   const { setCurrentAgent, setPreviousAgentName } = useAppStore(
@@ -228,14 +264,14 @@ export const InlineLayout: React.FC = () => {
     if (!isProcessing) setGitBranch(getGitBranch());
   }, [isProcessing]);
 
-  // Handle Ctrl+O to toggle expansion (single state for both tool outputs and queue)
+  // Handle Ctrl+O to toggle tool output expansion
   useKeypress(
     (input, key) => {
       if (key.ctrl && input.toLowerCase() === 'o') {
         toggleToolOutputsExpanded();
       }
     },
-    { isActive: hasExpandableToolOutputs || queuedMessages.length > 0 }
+    { isActive: hasExpandableToolOutputs }
   );
 
   // Handle Esc to collapse expanded outputs
@@ -474,6 +510,17 @@ export const InlineLayout: React.FC = () => {
 
   const handleSubmit = useCallback(
     (value: string) => {
+      // Queue edit mode: replace the queued message in place
+      if (editingQueueIndex != null) {
+        const trimmed = value.trim();
+        if (trimmed) {
+          replaceQueuedMessage(editingQueueIndex, trimmed);
+        } else {
+          cancelEditingQueue();
+        }
+        return;
+      }
+
       if (approvalMode === 'drill-in') {
         cancelApproval();
         if (value.trim()) handleUserInput(value.trim());
@@ -486,7 +533,15 @@ export const InlineLayout: React.FC = () => {
       handleUserInput(value);
       setGitBranch(getGitBranch());
     },
-    [approvalMode, cancelApproval, handleUserInput, setGitBranch]
+    [
+      editingQueueIndex,
+      replaceQueuedMessage,
+      cancelEditingQueue,
+      approvalMode,
+      cancelApproval,
+      handleUserInput,
+      setGitBranch,
+    ]
   );
 
   const handleTriggerDetected = useCallback(
@@ -520,8 +575,6 @@ export const InlineLayout: React.FC = () => {
 
         {/* ConversationView - always rendered */}
         <ConversationView />
-
-        <QueueStack />
 
         <NotificationBar
           message={
@@ -568,34 +621,40 @@ export const InlineLayout: React.FC = () => {
             triggerRules={TRIGGER_RULES}
             onTriggerDetected={handleTriggerDetected}
             isProcessing={
-              isProcessing || isCompacting || !!activeCommand || !!agentError
+              editingQueueIndex != null
+                ? false
+                : isProcessing ||
+                  isCompacting ||
+                  !!activeCommand ||
+                  !!agentError
             }
-            placeholder={
-              pendingApproval
-                ? 'queue up your next message'
-                : isShellEscape
-                  ? 'running shell command · ctrl+c to cancel'
-                  : currentAgent?.name === 'kiro_planner'
-                    ? 'ask a question, or describe a task ↵  ·  exit plan mode: shift+tab'
-                    : undefined
-            }
+            placeholder={getPlaceholder({
+              editingQueueIndex,
+              pendingApproval: !!pendingApproval,
+              isShellEscape,
+              isProcessing,
+              queuedMessages,
+              agentName: currentAgent?.name,
+            })}
             hint={
               promptHint ||
               (activeCommand?.command.meta?.hint as string | undefined)
             }
             hideInput={
-              mode === 'session-view' ||
-              mode === 'crew-monitor' ||
-              toolOutputsExpanded ||
-              noInteractive ||
-              !!pendingApproval ||
-              showContextBreakdown ||
-              showHelpPanel ||
-              showUsagePanel ||
-              showMcpPanel ||
-              showToolsPanel ||
-              showKnowledgePanel ||
-              showCodePanel
+              editingQueueIndex != null
+                ? false
+                : mode === 'session-view' ||
+                  mode === 'crew-monitor' ||
+                  toolOutputsExpanded ||
+                  noInteractive ||
+                  !!pendingApproval ||
+                  showContextBreakdown ||
+                  showHelpPanel ||
+                  showUsagePanel ||
+                  showMcpPanel ||
+                  showToolsPanel ||
+                  showKnowledgePanel ||
+                  showCodePanel
             }
           >
             <CommandMenu />

@@ -243,12 +243,23 @@ export const useImageAttachmentActions = () =>
   );
 
 /**
- * Queue state selector - for QueueStack and ConversationView queued messages
+ * Queue state selector - for ActivityTray and ConversationView queued messages
  */
 export const useQueueState = () =>
   useAppStore(
     useShallow((state) => ({
       queuedMessages: state.queuedMessages,
+      editingQueueIndex: state.editingQueueIndex,
+    }))
+  );
+
+export const useQueueActions = () =>
+  useAppStore(
+    useShallow((state) => ({
+      removeQueuedMessage: state.removeQueuedMessage,
+      replaceQueuedMessage: state.replaceQueuedMessage,
+      startEditingQueue: state.startEditingQueue,
+      cancelEditingQueue: state.cancelEditingQueue,
     }))
   );
 

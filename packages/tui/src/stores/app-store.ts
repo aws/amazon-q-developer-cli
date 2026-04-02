@@ -275,6 +275,10 @@ interface BaseAppActions {
   queueMessage: (content: string) => void;
   processQueue: () => Promise<void>;
   clearQueue: () => void;
+  removeQueuedMessage: (index: number) => void;
+  replaceQueuedMessage: (index: number, content: string) => void;
+  startEditingQueue: (index: number) => void;
+  cancelEditingQueue: () => void;
   setSlashCommands: (commands: SlashCommand[]) => void;
   setPrompts: (
     prompts: Array<{
@@ -393,6 +397,7 @@ export interface AppState {
   // Chat state
   messages: MessageType[];
   queuedMessages: string[];
+  editingQueueIndex: number | null;
   slashCommands: SlashCommand[];
   prompts: Array<{
     name: string;
@@ -632,6 +637,7 @@ export const createAppStore = (props: AppStoreProps) => {
     // Initial state
     messages: [],
     queuedMessages: [],
+    editingQueueIndex: null,
     slashCommands: [
       {
         name: '/editor',
@@ -1269,12 +1275,20 @@ export const createAppStore = (props: AppStoreProps) => {
                 break;
               }
             }
+            const wasEditing = get().editingQueueIndex != null;
+
             set((state) => {
               const newQueue = [...state.approvalQueue, event.value];
               const toolCallId = event.value.toolCall.toolCallId;
               return {
                 approvalQueue: newQueue,
                 pendingApproval: state.pendingApproval ?? event.value,
+                // Cancel any active queue edit when an approval arrives
+                editingQueueIndex: null,
+                commandInputValue:
+                  state.editingQueueIndex != null
+                    ? ''
+                    : state.commandInputValue,
                 messages: state.messages.map((msg) =>
                   msg.role === MessageRole.ToolUse && msg.id === toolCallId
                     ? { ...msg, status: ToolUseStatus.Pending }
@@ -1282,6 +1296,14 @@ export const createAppStore = (props: AppStoreProps) => {
                 ),
               };
             });
+
+            if (wasEditing) {
+              get().showTransientAlert({
+                message: 'Queue message edit cancelled — approval required',
+                status: 'info',
+                autoHideMs: 3000,
+              });
+            }
             break;
           }
           case AgentEventType.ContextUsage:
@@ -1814,21 +1836,97 @@ export const createAppStore = (props: AppStoreProps) => {
     },
 
     processQueue: async () => {
-      const { cancelInProgress } = get();
+      const { cancelInProgress, isProcessing } = get();
       if (cancelInProgress) {
         await cancelInProgress;
       }
 
-      const { queuedMessages } = get();
+      // Don't drain if already processing (prevents double-send races)
+      if (isProcessing) return;
+
+      const { queuedMessages, editingQueueIndex, tasks } = get();
       const nextMessage = queuedMessages[0];
       if (!nextMessage) return;
 
-      set((state) => ({ queuedMessages: state.queuedMessages.slice(1) }));
+      // Don't drain the queue while there are pending tasks — let the agent
+      // finish its task list first.  Queued messages will be sent once all
+      // tasks are completed (or if there are no tasks at all).
+      const hasPendingTasks = tasks.some((t) => t.status === 'pending');
+      if (hasPendingTasks) return;
+
+      // Adjust editing index since we're removing index 0
+      let newEditingIndex = editingQueueIndex;
+      if (newEditingIndex != null) {
+        if (newEditingIndex === 0) {
+          newEditingIndex = null;
+        } else {
+          newEditingIndex = newEditingIndex - 1;
+        }
+      }
+      const stoppedEditing =
+        editingQueueIndex != null && newEditingIndex == null;
+
+      set((state) => ({
+        queuedMessages: state.queuedMessages.slice(1),
+        editingQueueIndex: newEditingIndex,
+        commandInputValue: stoppedEditing ? '' : state.commandInputValue,
+      }));
       await get().sendMessage(nextMessage);
     },
 
     clearQueue: () => {
-      set({ queuedMessages: [] });
+      set((state) => ({
+        queuedMessages: [],
+        editingQueueIndex: null,
+        commandInputValue:
+          state.editingQueueIndex != null ? '' : state.commandInputValue,
+      }));
+    },
+
+    removeQueuedMessage: (index: number) => {
+      set((state) => {
+        const newMessages = state.queuedMessages.filter((_, i) => i !== index);
+        // Adjust editing index: clear if the edited item was removed, shift down
+        // if an earlier item was removed
+        let newEditingIndex = state.editingQueueIndex;
+        if (newEditingIndex != null) {
+          if (newEditingIndex === index) {
+            newEditingIndex = null;
+          } else if (newEditingIndex > index) {
+            newEditingIndex = newEditingIndex - 1;
+          }
+        }
+        // Clear the input field if we just exited editing mode
+        const wasEditing = state.editingQueueIndex != null;
+        const stoppedEditing = wasEditing && newEditingIndex == null;
+        return {
+          queuedMessages: newMessages,
+          editingQueueIndex: newEditingIndex,
+          commandInputValue: stoppedEditing ? '' : state.commandInputValue,
+        };
+      });
+    },
+
+    replaceQueuedMessage: (index: number, content: string) => {
+      set((state) => {
+        if (index < 0 || index >= state.queuedMessages.length) {
+          return { editingQueueIndex: null };
+        }
+        const updated = [...state.queuedMessages];
+        updated[index] = content;
+        return { queuedMessages: updated, editingQueueIndex: null };
+      });
+    },
+
+    startEditingQueue: (index: number) => {
+      const msg = get().queuedMessages[index];
+      if (msg == null) return;
+      // Load the message text into the command input so PromptInput picks it up
+      set({ editingQueueIndex: index, commandInputValue: msg });
+    },
+
+    cancelEditingQueue: () => {
+      set({ editingQueueIndex: null, commandInputValue: '' });
     },
 
     // Input actions
@@ -2313,10 +2411,21 @@ export const createAppStore = (props: AppStoreProps) => {
 
     setTasks: (tasks: TaskItem[]) => {
       set({ tasks });
+      // If all tasks are now completed, drain any queued messages
+      const allDone =
+        tasks.length > 0 && tasks.every((t) => t.status === 'completed');
+      if (allDone && !get().isProcessing) {
+        get().processQueue();
+      }
     },
 
     toggleActivityTray: () => {
-      set((state) => ({ activityTrayExpanded: !state.activityTrayExpanded }));
+      set((state) => ({
+        activityTrayExpanded: !state.activityTrayExpanded,
+        editingQueueIndex: state.activityTrayExpanded
+          ? null
+          : state.editingQueueIndex,
+      }));
     },
 
     setHasExpandableToolOutputs: (has: boolean) => {

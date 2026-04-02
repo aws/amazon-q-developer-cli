@@ -19,6 +19,7 @@ export const AppContainer: React.FC = () => {
   const isShellEscape = useAppStore((state) => state.isShellEscape);
   const cancelMessage = useAppStore((state) => state.cancelMessage);
   const pendingApproval = useAppStore((state) => state.pendingApproval);
+  const editingQueueIndex = useAppStore((state) => state.editingQueueIndex);
 
   const transientAlert = useAppStore((state) => state.transientAlert);
   const dismissTransientAlert = useAppStore(
@@ -52,7 +53,7 @@ export const AppContainer: React.FC = () => {
         incrementExitSequence();
       }
     } else if (key.escape) {
-      if (isProcessing && !pendingApproval) {
+      if (isProcessing && !pendingApproval && editingQueueIndex == null) {
         cancelMessage();
       }
     } else if (

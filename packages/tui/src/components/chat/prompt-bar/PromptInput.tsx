@@ -674,6 +674,8 @@ export const PromptInput = React.memo(function PromptInput({
           setCursor(Math.min(totalWidth(segments), cursor + 1));
         }
       } else if (key.upArrow) {
+        // shift+arrow is used by ActivityTray for navigation — don't handle here
+        if (key.shift) return;
         // Skip if any menu is visible - let menu handle it
         if (slashMenuVisible || filePickerVisible || activeCommand) return;
         // Multi-line or visually wrapped: move cursor up a visual line
@@ -699,6 +701,8 @@ export const PromptInput = React.memo(function PromptInput({
           setCursor(command.length);
         }
       } else if (key.downArrow) {
+        // shift+arrow is used by ActivityTray for navigation — don't handle here
+        if (key.shift) return;
         // Skip if any menu is visible - let menu handle it
         if (slashMenuVisible || filePickerVisible || activeCommand) return;
         // Multi-line or visually wrapped: move cursor down a visual line
