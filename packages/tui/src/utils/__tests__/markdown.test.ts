@@ -59,7 +59,7 @@ describe('parseMarkdown', () => {
         {
           text: '',
           codeBlock: {
-            code: 'fn main() {}\n',
+            code: 'fn main() {}',
             language: 'rust',
             isComplete: true,
           },
@@ -72,7 +72,7 @@ describe('parseMarkdown', () => {
         {
           text: '',
           codeBlock: {
-            code: 'some code\n',
+            code: 'some code',
             language: undefined,
             isComplete: true,
           },
@@ -97,7 +97,7 @@ describe('parseMarkdown', () => {
         { text: 'Hello ' },
         {
           text: '',
-          codeBlock: { code: 'code\n', language: 'rust', isComplete: true },
+          codeBlock: { code: 'code', language: 'rust', isComplete: true },
         },
         { text: ' world' },
       ]);
@@ -109,11 +109,11 @@ describe('parseMarkdown', () => {
       ).toEqual([
         {
           text: '',
-          codeBlock: { code: 'code1\n', language: 'rust', isComplete: true },
+          codeBlock: { code: 'code1', language: 'rust', isComplete: true },
         },
         {
           text: '',
-          codeBlock: { code: 'code2\n', language: 'python', isComplete: true },
+          codeBlock: { code: 'code2', language: 'python', isComplete: true },
         },
       ]);
     });
@@ -126,7 +126,7 @@ describe('parseMarkdown', () => {
         { text: ' text' },
         {
           text: '',
-          codeBlock: { code: 'code\n', language: 'rust', isComplete: true },
+          codeBlock: { code: 'code', language: 'rust', isComplete: true },
         },
         { text: 'italic', italic: true },
       ]);
@@ -174,7 +174,7 @@ describe('parseMarkdown', () => {
       expect(parseMarkdown('```rust\ncode\n```')).toEqual([
         {
           text: '',
-          codeBlock: { code: 'code\n', language: 'rust', isComplete: true },
+          codeBlock: { code: 'code', language: 'rust', isComplete: true },
         },
       ]);
     });
@@ -184,7 +184,7 @@ describe('parseMarkdown', () => {
         {
           text: '',
           codeBlock: {
-            code: 'println!("use ```rust");\n',
+            code: 'println!("use ```rust");',
             language: 'rust',
             isComplete: true,
           },
@@ -199,7 +199,7 @@ describe('parseMarkdown', () => {
         {
           text: '',
           codeBlock: {
-            code: 'Use ```python for Python\n',
+            code: 'Use ```python for Python',
             language: 'markdown',
             isComplete: true,
           },
@@ -211,7 +211,7 @@ describe('parseMarkdown', () => {
       expect(parseMarkdown('```rust\ncode\n```   \nmore text')).toEqual([
         {
           text: '',
-          codeBlock: { code: 'code\n', language: 'rust', isComplete: true },
+          codeBlock: { code: 'code', language: 'rust', isComplete: true },
         },
         { text: '   \nmore text' },
       ]);
@@ -497,7 +497,7 @@ describe('parseMarkdown', () => {
         expect(result).toEqual([
           {
             text: '',
-            codeBlock: { code: 'code\n', language: 'python', isComplete: true },
+            codeBlock: { code: 'code', language: 'python', isComplete: true },
           },
         ]);
       });
@@ -568,7 +568,7 @@ describe('parseMarkdown', () => {
           { text: 'Title', header: 2 },
           {
             text: '',
-            codeBlock: { code: 'code\n', language: 'python', isComplete: true },
+            codeBlock: { code: 'code', language: 'python', isComplete: true },
           },
         ]);
       });
@@ -578,7 +578,7 @@ describe('parseMarkdown', () => {
         expect(result).toEqual([
           {
             text: '',
-            codeBlock: { code: 'code\n', language: 'python', isComplete: true },
+            codeBlock: { code: 'code', language: 'python', isComplete: true },
           },
           { text: 'Title', header: 2 },
         ]);
@@ -589,7 +589,7 @@ describe('parseMarkdown', () => {
         expect(result).toEqual([
           {
             text: '',
-            codeBlock: { code: 'code\n', language: 'python', isComplete: true },
+            codeBlock: { code: 'code', language: 'python', isComplete: true },
           },
           { text: 'Some text' },
         ]);
@@ -601,7 +601,7 @@ describe('parseMarkdown', () => {
           { text: 'Some text' },
           {
             text: '',
-            codeBlock: { code: 'code\n', language: 'python', isComplete: true },
+            codeBlock: { code: 'code', language: 'python', isComplete: true },
           },
         ]);
       });
@@ -618,7 +618,7 @@ describe('parseMarkdown', () => {
           { text: 'Title', header: 2 },
           {
             text: '',
-            codeBlock: { code: 'code\n', language: 'python', isComplete: true },
+            codeBlock: { code: 'code', language: 'python', isComplete: true },
           },
         ]);
       });
@@ -630,7 +630,7 @@ describe('parseMarkdown', () => {
         expect(result).toEqual([
           {
             text: '',
-            codeBlock: { code: 'code\n', language: 'python', isComplete: true },
+            codeBlock: { code: 'code', language: 'python', isComplete: true },
           },
           { text: 'Some text' },
           { text: 'Title', header: 2 },
@@ -646,7 +646,7 @@ describe('parseMarkdown', () => {
           { text: 'Title', header: 2 },
           {
             text: '',
-            codeBlock: { code: 'code\n', language: 'python', isComplete: true },
+            codeBlock: { code: 'code', language: 'python', isComplete: true },
           },
         ]);
       });
@@ -661,7 +661,7 @@ describe('parseMarkdown', () => {
           {
             text: '',
             codeBlock: {
-              code: 'def pancake_sort(arr):\n    pass\n',
+              code: 'def pancake_sort(arr):\n    pass',
               language: 'python',
               isComplete: true,
             },
@@ -670,7 +670,7 @@ describe('parseMarkdown', () => {
           {
             text: '',
             codeBlock: {
-              code: 'def quick_sort(arr):\n    pass\n',
+              code: 'def quick_sort(arr):\n    pass',
               language: 'python',
               isComplete: true,
             },
@@ -686,7 +686,7 @@ describe('parseMarkdown', () => {
         expect(result).toEqual([
           {
             text: '',
-            codeBlock: { code: 'code\n', language: 'js', isComplete: true },
+            codeBlock: { code: 'code', language: 'js', isComplete: true },
           },
           { text: 'Notes', header: 2 },
           { text: 'item1', listItem: { ordered: false, indent: 0 } },
@@ -732,7 +732,7 @@ describe('tryAppendMarkdownDelta', () => {
       {
         text: '',
         codeBlock: {
-          code: 'const a = 1;\n',
+          code: 'const a = 1;',
           language: 'js',
           isComplete: true,
         },
@@ -821,7 +821,7 @@ describe('tryAppendMarkdownDelta', () => {
       {
         text: '',
         codeBlock: {
-          code: 'const a = 1;\n',
+          code: 'const a = 1;',
           language: 'js',
           isComplete: true,
         },

@@ -175,9 +175,7 @@ export const MarkdownRenderer = React.memo(function MarkdownRenderer({
         const mt = i > 0 && needsSpacingBefore(blocks[i - 1]!, block) ? 1 : 0;
 
         if (block.type === 'code') {
-          const code = expandTabs(
-            block.segment.codeBlock!.code.replace(/^\n+|\n+$/g, '')
-          );
+          const code = expandTabs(block.segment.codeBlock!.code);
           return (
             <Box key={i} marginTop={mt}>
               <Text>

@@ -256,6 +256,18 @@ describe('Markdown Spacing', () => {
     expect(deindentBlanks).toBe(1);
   }, 30000);
 
+  it('indented code block under list item: exactly 1 blank line before and after', async () => {
+    const result = await renderMarkdown('spacing-indented-code-list',
+      '1. **Max iterations** — you pass a cap when you run it:\n   ```bash\n   ./ralph.sh 5\n   ```\n   If you don\'t pass one, check the default.');
+    testCase = result.testCase;
+    const blanksBefore = blankLinesBetween(result.snapshot, 'you pass a cap', './ralph.sh 5');
+    const blanksAfter = blankLinesBetween(result.snapshot, './ralph.sh 5', 'check the default');
+    console.log('list→indented-code blanks:', blanksBefore);
+    console.log('indented-code→text blanks:', blanksAfter);
+    expect(blanksBefore).toBe(1);
+    expect(blanksAfter).toBe(1);
+  }, 30000);
+
   // ── No blank line within consecutive blockquote lines ──
 
   it('consecutive blockquotes: 0 blank lines between them', async () => {

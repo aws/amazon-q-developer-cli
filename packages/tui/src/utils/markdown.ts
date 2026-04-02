@@ -557,14 +557,21 @@ export const parseMarkdown = (text: string): MarkdownSegment[] => {
       if (s === 0) {
         seg.text = seg.text.replace(/^\n+/, '');
       }
-      // Trim trailing newlines before code blocks
+      // Trim trailing newlines/whitespace before code blocks
       if (segments[s + 1]?.codeBlock) {
-        seg.text = seg.text.replace(/\n+$/, '');
+        seg.text = seg.text.replace(/\n\s*$/, '');
+        // Also clear whitespace-only segments (e.g. indentation before fenced code)
+        if (!seg.text.trim()) seg.text = '';
       }
       // Trim leading newlines after code blocks
       if (segments[s - 1]?.codeBlock) {
         seg.text = seg.text.replace(/^\n+/, '');
       }
+    }
+
+    // Trim code block content boundaries
+    if (seg?.codeBlock) {
+      seg.codeBlock.code = seg.codeBlock.code.replace(/^\n+|\n\s*$/g, '');
     }
   }
 
