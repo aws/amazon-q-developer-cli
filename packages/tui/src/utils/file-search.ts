@@ -14,41 +14,84 @@ import ignore from 'ignore';
 const MAX_SEARCH_DEPTH = 5;
 const MAX_COLLECT = 200;
 
-function loadGitignore(cwd: string) {
-  const ig = ignore();
+/** Directories always excluded regardless of .gitignore. */
+const DEFAULT_IGNORE_PATTERNS = [
+  // Build outputs
+  'build',
+  'dist',
+  'out',
+  'target',
+  // Dependencies
+  'node_modules',
+  'vendor',
+  '.venv',
+  'venv',
+  '__pycache__',
+  // IDE/Tools
+  '.idea',
+  '.vscode',
+  '.git',
+  // Package caches
+  '.cache',
+  '.gradle',
+  '.npm',
+  '.cargo',
+];
 
-  ig.add([
-    // Build outputs
-    'build',
-    'dist',
-    'out',
-    'target',
-    // Dependencies
-    'node_modules',
-    'vendor',
-    '.venv',
-    'venv',
-    '__pycache__',
-    // IDE/Tools
-    '.idea',
-    '.vscode',
-    '.git',
-    // Package caches
-    '.cache',
-    '.gradle',
-    '.npm',
-    '.cargo',
-  ]);
+/**
+ * An ignore checker scoped to a directory. Holds the `ignore` instance and the
+ * directory it applies to so that paths can be tested relative to that dir.
+ */
+interface ScopedIgnore {
+  ig: ReturnType<typeof ignore>;
+  /** Absolute path of the directory this .gitignore lives in. */
+  dir: string;
+}
 
-  const gitignorePath = join(cwd, '.gitignore');
-  if (existsSync(gitignorePath)) {
-    try {
-      ig.add(readFileSync(gitignorePath, 'utf-8'));
-    } catch {
-      // ignore
+/** Read a .gitignore from `dir` and return a ScopedIgnore, or null. */
+function readGitignore(dir: string): ScopedIgnore | null {
+  const p = join(dir, '.gitignore');
+  if (!existsSync(p)) return null;
+  try {
+    const ig = ignore().add(readFileSync(p, 'utf-8'));
+    return { ig, dir };
+  } catch {
+    return null;
+  }
+}
+
+/** Check whether `fullPath` is ignored by any of the scoped ignore rules. */
+function isIgnored(
+  fullPath: string,
+  isDir: boolean,
+  defaultIg: ReturnType<typeof ignore>,
+  basePath: string,
+  ignoreStack: ScopedIgnore[]
+): boolean {
+  // Check the default (hardcoded + root .gitignore) rules first.
+  const rootRel = relative(basePath, fullPath);
+  if (
+    rootRel &&
+    !rootRel.startsWith('..') &&
+    defaultIg.ignores(isDir ? `${rootRel}/` : rootRel)
+  )
+    return true;
+
+  // Check each nested .gitignore in the stack.
+  for (const scope of ignoreStack) {
+    const rel = relative(scope.dir, fullPath);
+    if (!rel.startsWith('..') && scope.ig.ignores(isDir ? `${rel}/` : rel)) {
+      return true;
     }
   }
+  return false;
+}
 
+/** Build the root ignore instance (hardcoded defaults + root .gitignore). */
+function loadRootIgnore(cwd: string): ReturnType<typeof ignore> {
+  const ig = ignore().add(DEFAULT_IGNORE_PATTERNS);
+  const root = readGitignore(cwd);
+  if (root) ig.add(root.ig);
   return ig;
 }
 
@@ -74,7 +117,8 @@ async function collectMatchingFiles(
   maxCollect: number,
   results: string[],
   basePath: string,
-  ig: ReturnType<typeof ignore>,
+  defaultIg: ReturnType<typeof ignore>,
+  ignoreStack: ScopedIgnore[],
   signal: AbortSignal
 ): Promise<void> {
   if (depth > maxDepth || results.length >= maxCollect || signal.aborted)
@@ -87,16 +131,24 @@ async function collectMatchingFiles(
     return;
   }
 
+  // Check for a nested .gitignore in this directory (skip root — already loaded).
+  let localStack = ignoreStack;
+  if (depth > 0) {
+    const nested = readGitignore(dir);
+    if (nested) localStack = [...ignoreStack, nested];
+  }
+
   try {
     for await (const entry of dirHandle) {
       if (signal.aborted || results.length >= maxCollect) break;
 
       const fullPath = join(dir, entry.name);
-      const relativePath = relative(basePath, fullPath);
+      const entryIsDir = entry.isDirectory();
 
-      if (ig.ignores(relativePath)) continue;
+      if (isIgnored(fullPath, entryIsDir, defaultIg, basePath, localStack))
+        continue;
 
-      if (entry.isDirectory()) {
+      if (entryIsDir) {
         await collectMatchingFiles(
           fullPath,
           query,
@@ -105,10 +157,12 @@ async function collectMatchingFiles(
           maxCollect,
           results,
           basePath,
-          ig,
+          defaultIg,
+          localStack,
           signal
         );
       } else if (entry.isFile()) {
+        const relativePath = relative(basePath, fullPath);
         const lowerName = entry.name.toLowerCase();
         const lowerPath = relativePath.toLowerCase();
         const lowerQuery = query.toLowerCase();
@@ -134,7 +188,7 @@ export async function searchFilesAbortable(
   if (!query || signal.aborted) return [];
 
   const cwd = process.cwd();
-  const ig = loadGitignore(cwd);
+  const ig = loadRootIgnore(cwd);
   const results: string[] = [];
 
   await collectMatchingFiles(
@@ -146,6 +200,7 @@ export async function searchFilesAbortable(
     results,
     cwd,
     ig,
+    [],
     signal
   );
 

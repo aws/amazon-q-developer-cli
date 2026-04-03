@@ -97,4 +97,18 @@ describe('file search', () => {
     const results = await searchFilesAbortable('file-', signal, 200);
     expect(results.length).toBeLessThan(200);
   });
+
+  test('respects nested .gitignore files', async () => {
+    // Create a subdirectory with its own .gitignore that excludes *.log files
+    const subDir = join(TEMP_DIR, 'project');
+    mkdirSync(subDir, { recursive: true });
+    writeFileSync(join(subDir, '.gitignore'), '*.log\n');
+    writeFileSync(join(subDir, 'visible.ts'), '');
+    writeFileSync(join(subDir, 'hidden.log'), '');
+
+    const results = await search('project/', 200);
+    const paths = results.map((r) => r.replace(/\\/g, '/'));
+    expect(paths).toContain('project/visible.ts');
+    expect(paths).not.toContain('project/hidden.log');
+  });
 });
