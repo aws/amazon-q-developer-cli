@@ -13,6 +13,8 @@ use super::{
     BuiltInToolName,
     BuiltInToolTrait,
     ToolExecutionError,
+    ToolExecutionOutput,
+    ToolExecutionOutputItem,
     ToolExecutionResult,
 };
 use crate::util::path::canonicalize_path_sys;
@@ -192,7 +194,6 @@ impl FsWrite {
     }
 
     pub async fn make_context(&self) -> eyre::Result<FsWriteContext> {
-        // TODO - return file diff context
         Ok(FsWriteContext {
             path: self.path().to_string(),
         })
@@ -205,13 +206,13 @@ impl FsWrite {
     ) -> ToolExecutionResult {
         let path = self.canonical_path(provider).map_err(ToolExecutionError::Custom)?;
 
-        match &self {
-            FsWrite::Create(v) => v.execute(path).await?,
-            FsWrite::StrReplace(v) => v.execute(path).await?,
-            FsWrite::Insert(v) => v.execute(path).await?,
-        }
+        let message = match &self {
+            FsWrite::Create(v) => v.execute(&path).await?,
+            FsWrite::StrReplace(v) => v.execute(&path).await?,
+            FsWrite::Insert(v) => v.execute(&path).await?,
+        };
 
-        Ok(Default::default())
+        Ok(ToolExecutionOutput::new(vec![ToolExecutionOutputItem::Text(message)]))
     }
 }
 
@@ -225,7 +226,7 @@ pub struct FileCreate {
 }
 
 impl FileCreate {
-    async fn execute(&self, path: impl AsRef<Path>) -> Result<(), ToolExecutionError> {
+    async fn execute(&self, path: impl AsRef<Path>) -> Result<String, ToolExecutionError> {
         let path = path.as_ref();
 
         if let Some(parent) = path.parent()
@@ -236,11 +237,16 @@ impl FileCreate {
             })?;
         }
 
+        let line_count = self.content.lines().count();
         tokio::fs::write(path, &self.content)
             .await
             .map_err(|e| ToolExecutionError::io(format!("failed to write to {}", path.to_string_lossy()), e))?;
 
-        Ok(())
+        Ok(format!(
+            "Successfully created {} ({} lines).",
+            path.to_string_lossy(),
+            line_count
+        ))
     }
 }
 
@@ -258,7 +264,7 @@ pub struct StrReplace {
 }
 
 impl StrReplace {
-    async fn execute(&self, path: impl AsRef<Path>) -> Result<(), ToolExecutionError> {
+    async fn execute(&self, path: impl AsRef<Path>) -> Result<String, ToolExecutionError> {
         let path = path.as_ref();
 
         let file = tokio::fs::read_to_string(path)
@@ -266,7 +272,8 @@ impl StrReplace {
             .map_err(|e| ToolExecutionError::io(format!("failed to read {}", path.to_string_lossy()), e))?;
 
         let matches = file.match_indices(&self.old_str).collect::<Vec<_>>();
-        match matches.len() {
+        let count = matches.len();
+        match count {
             0 => {
                 return Err(ToolExecutionError::Custom(format!(
                     "no occurrences of \"{}\" were found",
@@ -277,7 +284,7 @@ impl StrReplace {
                 let file = file.replacen(&self.old_str, &self.new_str, 1);
                 tokio::fs::write(path, file)
                     .await
-                    .map_err(|e| ToolExecutionError::io(format!("failed to read {}", path.to_string_lossy()), e))?;
+                    .map_err(|e| ToolExecutionError::io(format!("failed to write {}", path.to_string_lossy()), e))?;
             },
             x => {
                 if !self.replace_all {
@@ -288,11 +295,15 @@ impl StrReplace {
                 let file = file.replace(&self.old_str, &self.new_str);
                 tokio::fs::write(path, file)
                     .await
-                    .map_err(|e| ToolExecutionError::io(format!("failed to read {}", path.to_string_lossy()), e))?;
+                    .map_err(|e| ToolExecutionError::io(format!("failed to write {}", path.to_string_lossy()), e))?;
             },
         }
 
-        Ok(())
+        Ok(format!(
+            "Successfully replaced {} occurrence(s) in {}.",
+            count,
+            path.to_string_lossy()
+        ))
     }
 }
 
@@ -308,7 +319,7 @@ pub struct Insert {
 }
 
 impl Insert {
-    async fn execute(&self, path: impl AsRef<Path>) -> Result<(), ToolExecutionError> {
+    async fn execute(&self, path: impl AsRef<Path>) -> Result<String, ToolExecutionError> {
         let path = path.as_ref();
 
         let mut file = tokio::fs::read_to_string(path)
@@ -316,6 +327,7 @@ impl Insert {
             .map_err(|e| ToolExecutionError::io(format!("failed to read {}", path.to_string_lossy()), e))?;
 
         let line_count = file.lines().count() as u32;
+        let inserted_lines = self.content.lines().count();
 
         if let Some(insert_line) = self.insert_line {
             let insert_line = insert_line.clamp(0, line_count);
@@ -338,11 +350,20 @@ impl Insert {
             file.push_str(&self.content);
         }
 
-        tokio::fs::write(path, file)
+        tokio::fs::write(path, &file)
             .await
             .map_err(|e| ToolExecutionError::io(format!("failed to write to {}", path.to_string_lossy()), e))?;
 
-        Ok(())
+        let location = match self.insert_line {
+            Some(line) => format!("at line {}", line),
+            None => "at end of file".to_string(),
+        };
+        Ok(format!(
+            "Successfully inserted {} line(s) {} in {}.",
+            inserted_lines,
+            location,
+            path.to_string_lossy()
+        ))
     }
 }
 
