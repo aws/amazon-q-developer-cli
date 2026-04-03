@@ -21,7 +21,11 @@ import {
   ENABLE_BRACKETED_PASTE,
   DISABLE_BRACKETED_PASTE,
 } from './utils/terminal-sequences';
-import { gracefulExit, registerInstance, isExiting } from './utils/graceful-exit.js';
+import {
+  gracefulExit,
+  registerInstance,
+  isExiting,
+} from './utils/graceful-exit.js';
 
 const cleanup = () => {
   try {
@@ -33,9 +37,15 @@ const cleanup = () => {
   gracefulExit(0);
 };
 
-function hasDrainInput(inst: unknown): inst is { drainInput: () => Promise<void> } {
-  return typeof inst === 'object' && inst !== null && 'drainInput' in inst
-    && typeof (inst as Record<string, unknown>).drainInput === 'function';
+function hasDrainInput(
+  inst: unknown
+): inst is { drainInput: () => Promise<void> } {
+  return (
+    typeof inst === 'object' &&
+    inst !== null &&
+    'drainInput' in inst &&
+    typeof (inst as Record<string, unknown>).drainInput === 'function'
+  );
 }
 
 const getAgentPath = (): string => {
@@ -520,7 +530,9 @@ const startApp = async () => {
   }
 
   // Register drain + unmount for graceful exit (prevents Kitty protocol sequence leakage)
-  const drain = hasDrainInput(instance) ? () => instance.drainInput() : undefined;
+  const drain = hasDrainInput(instance)
+    ? () => instance.drainInput()
+    : undefined;
   registerInstance(drain, () => instance.unmount());
 
   // Last-resort: ensure twinki unmounts on process exit (synchronous, can't drain here)

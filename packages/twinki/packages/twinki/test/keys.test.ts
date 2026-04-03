@@ -228,6 +228,18 @@ describe('parseKey', () => {
 			expect(parseKey('\x1b[27;2;13~')).toBe('shift+enter');
 		});
 	});
+
+	describe('alt+enter (non-Kitty)', () => {
+		it('parses ESC+CR as alt+enter when Kitty is inactive', () => {
+			setKittyProtocolActive(false);
+			expect(parseKey('\x1b\r')).toBe('alt+enter');
+		});
+
+		it('parses ESC+CR as shift+enter when Kitty is active', () => {
+			setKittyProtocolActive(true);
+			expect(parseKey('\x1b\r')).toBe('shift+enter');
+		});
+	});
 });
 
 describe('parseKey - non-Latin characters (Kitty)', () => {

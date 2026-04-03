@@ -844,6 +844,10 @@ export function parseKey(data: string): KeyId | undefined {
 		if (data === "\x1b\r" || data === "\n") return "shift+enter";
 	}
 
+	// Alt+Enter: ESC followed by CR — sent by many terminals (VS Code, Terminal.app)
+	// when Option/Alt+Enter is pressed. Recognize regardless of Kitty protocol state.
+	if (data === "\x1b\r") return "alt+enter";
+
 	// Try common legacy sequences
 	if (data === "\x1b") return "escape";
 	if (data === "\r") return "enter";

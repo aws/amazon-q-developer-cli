@@ -13,7 +13,10 @@ let unmountFn: UnmountFn | null = null;
 let exiting = false;
 
 /** Register the render instance's drainInput and unmount for use during exit. */
-export function registerInstance(drain: DrainFn | undefined, unmount: UnmountFn): void {
+export function registerInstance(
+  drain: DrainFn | undefined,
+  unmount: UnmountFn
+): void {
   drainFn = drain ?? null;
   unmountFn = unmount;
 }
