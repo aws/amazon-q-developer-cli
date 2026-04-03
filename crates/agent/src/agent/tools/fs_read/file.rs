@@ -72,13 +72,18 @@ impl FileOp {
 
         let mut is_truncated = false;
         let mut content = Vec::new();
+        let mut byte_count: u32 = 0;
+        let start_line = self.offset.unwrap_or_default() as usize + 1; // 1-indexed
+        let mut last_line = start_line;
         while let Some((i, line)) = file_lines.next().await {
             match line {
                 Ok(l) => {
-                    if content.len() as u32 > MAX_READ_SIZE {
+                    byte_count += l.len() as u32 + 1; // +1 for newline
+                    if byte_count > MAX_READ_SIZE {
                         is_truncated = true;
                         break;
                     }
+                    last_line = i + 1; // 1-indexed
                     content.push(l);
                 },
                 Err(err) => {
@@ -89,7 +94,15 @@ impl FileOp {
 
         let mut content = content.join("\n");
         if is_truncated {
-            content.push_str("...truncated");
+            // Count remaining lines to report total
+            let mut total_lines = last_line;
+            while let Some((i, _)) = file_lines.next().await {
+                total_lines = i + 1;
+            }
+            content.push_str(&format!(
+                "\n...truncated (showing lines {}-{} of {}). Use offset: {} to continue reading.",
+                start_line, last_line, total_lines, last_line
+            ));
         }
         Ok(ToolExecutionOutputItem::Text(content))
     }
@@ -229,6 +242,61 @@ mod tests {
         let result = op.execute(&test_base).await.unwrap();
         if let ToolExecutionOutputItem::Text(content) = &result {
             assert_eq!(content, "symlink content");
+        } else {
+            panic!("expected text output");
+        }
+    }
+
+    #[tokio::test]
+    async fn test_fs_read_truncation_includes_metadata() {
+        let test_base = TestBase::new().await;
+
+        // Create a file larger than MAX_READ_SIZE (250KB)
+        let long_line = "x".repeat(1000);
+        let lines: Vec<&str> = (0..300).map(|_| long_line.as_str()).collect();
+        let large_content = lines.join("\n");
+
+        let file_path = test_base.join("large.txt");
+        tokio::fs::write(&file_path, &large_content).await.unwrap();
+
+        let tool = FsRead {
+            operations: vec![FsReadOperation::Line(FileOp {
+                path: file_path.to_string_lossy().to_string(),
+                limit: None,
+                offset: None,
+            })],
+        };
+
+        let result = tool.execute(&test_base).await.unwrap();
+        if let ToolExecutionOutputItem::Text(content) = &result.items[0] {
+            assert!(content.contains("showing lines"), "should include line range metadata");
+            assert!(content.contains("of 300"), "should include total line count");
+            assert!(content.contains("Use offset:"), "should suggest next offset");
+        } else {
+            panic!("expected text output");
+        }
+    }
+
+    #[tokio::test]
+    async fn test_fs_read_no_truncation_no_metadata() {
+        // Small file should NOT have truncation metadata
+        let test_base = TestBase::new()
+            .await
+            .with_file(("small.txt", "line1\nline2\nline3"))
+            .await;
+
+        let tool = FsRead {
+            operations: vec![FsReadOperation::Line(FileOp {
+                path: test_base.join("small.txt").to_string_lossy().to_string(),
+                limit: None,
+                offset: None,
+            })],
+        };
+
+        let result = tool.execute(&test_base).await.unwrap();
+        if let ToolExecutionOutputItem::Text(content) = &result.items[0] {
+            assert!(!content.contains("truncated"), "small file should not be truncated");
+            assert!(!content.contains("Use offset"), "small file should not suggest offset");
         } else {
             panic!("expected text output");
         }
