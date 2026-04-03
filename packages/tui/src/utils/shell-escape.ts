@@ -1,4 +1,5 @@
 import { spawn, spawnSync } from 'child_process';
+import { SHOW_CURSOR, HIDE_CURSOR } from './terminal-sequences';
 
 /** Commands that require direct terminal access (TTY) */
 const TTY_COMMANDS = new Set([
@@ -72,7 +73,7 @@ export function executeShellEscapeTTY(command: string): ShellEscapeResult {
     const wasRaw = process.stdin.isRaw;
     if (wasRaw) process.stdin.setRawMode(false);
     // Show cursor for the editor (Ink hides it)
-    process.stdout.write('\x1b[?25h');
+    process.stdout.write(SHOW_CURSOR);
 
     // Enter alternate screen buffer so the editor doesn't pollute Ink's output
     process.stdout.write('\x1b[?1049h');
@@ -91,14 +92,14 @@ export function executeShellEscapeTTY(command: string): ShellEscapeResult {
     // Leave alternate screen buffer to restore Ink's output
     process.stdout.write('\x1b[?1049l');
     // Hide cursor again before returning to Ink
-    process.stdout.write('\x1b[?25l');
+    process.stdout.write(HIDE_CURSOR);
     if (wasRaw) process.stdin.setRawMode(true);
 
     return { exitCode: result.status ?? 1, error: result.error?.message };
   } catch (err) {
     try {
       process.stdout.write('\x1b[?1049l');
-      process.stdout.write('\x1b[?25l');
+      process.stdout.write(HIDE_CURSOR);
       process.stdin.setRawMode(true);
     } catch {
       // stdin may not be a TTY, ignore

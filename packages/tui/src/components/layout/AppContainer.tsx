@@ -1,10 +1,35 @@
-import React from 'react';
+import React, { useEffect } from 'react';
 import { InlineLayout } from './InlineLayout';
 import { ExpandedLayout } from './ExpandedLayout';
 import { CrewMonitorScreen } from './CrewMonitorScreen';
 import { SessionViewScreen } from './SessionViewScreen';
 import { useAppStore } from '../../stores/app-store';
 import { useKeypress } from '../../hooks/useKeypress';
+import {
+  ENABLE_BRACKETED_PASTE,
+  DISABLE_BRACKETED_PASTE,
+  SHOW_CURSOR,
+  HIDE_CURSOR,
+} from '../../utils/terminal-sequences';
+
+/**
+ * Suspends the process by restoring terminal state and sending SIGTSTP
+ * to the entire process group (Bun TUI + parent Rust process).
+ */
+function suspendProcess(): void {
+  if (process.platform === 'win32') return;
+  try {
+    process.stdin.setRawMode?.(false);
+    process.stdout.write(DISABLE_BRACKETED_PASTE);
+    process.stdout.write(SHOW_CURSOR);
+    process.stdout.write(
+      '\nKiro CLI has been suspended. Run `fg` to resume.\n'
+    );
+  } catch {
+    // stdin/stdout may not be available
+  }
+  process.kill(0, 'SIGTSTP');
+}
 
 export const AppContainer: React.FC = () => {
   const mode = useAppStore((state) => state.mode);
@@ -26,7 +51,32 @@ export const AppContainer: React.FC = () => {
     (state) => state.dismissTransientAlert
   );
 
+  // Restore terminal state when the process is resumed after ctrl+z suspend
+  useEffect(() => {
+    if (process.platform === 'win32') return;
+    const handleCont = () => {
+      try {
+        process.stdin.setRawMode?.(true);
+        process.stdout.write(ENABLE_BRACKETED_PASTE);
+        process.stdout.write(HIDE_CURSOR);
+      } catch {
+        // stdin/stdout may not be available
+      }
+      // Trigger a resize so the renderer does a full redraw
+      process.kill(process.pid, 'SIGWINCH');
+    };
+    process.on('SIGCONT', handleCont);
+    return () => {
+      process.removeListener('SIGCONT', handleCont);
+    };
+  }, []);
+
   useKeypress((userInput, key) => {
+    // Suspend process on Ctrl+Z
+    if (key.ctrl && userInput === 'z') {
+      suspendProcess();
+      return;
+    }
     // Fire transient alert action on Ctrl+r
     if (key.ctrl && userInput === 'r' && transientAlert?.action) {
       transientAlert.action.onAction();

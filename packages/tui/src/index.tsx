@@ -17,10 +17,10 @@ import { parseCliArgs, buildAcpArgs } from './utils/cli-args';
 import { sessionConversationsStore } from './stores/session-conversations.js';
 import { pickSessionFromEntries } from './utils/session-picker';
 import type { AgentStreamEvent } from './types/agent-events';
-
-// Enable bracketed paste mode escape sequences
-const ENABLE_BRACKETED_PASTE = '\x1b[?2004h';
-const DISABLE_BRACKETED_PASTE = '\x1b[?2004l';
+import {
+  ENABLE_BRACKETED_PASTE,
+  DISABLE_BRACKETED_PASTE,
+} from './utils/terminal-sequences';
 
 const cleanup = () => {
   try {
