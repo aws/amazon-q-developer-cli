@@ -10,6 +10,7 @@ import {
   DISABLE_BRACKETED_PASTE,
   SHOW_CURSOR,
   HIDE_CURSOR,
+  CLEAR_SCREEN,
 } from '../../utils/terminal-sequences';
 
 /**
@@ -62,8 +63,10 @@ export const AppContainer: React.FC = () => {
       } catch {
         // stdin/stdout may not be available
       }
-      // Trigger a resize so the renderer does a full redraw
-      process.kill(process.pid, 'SIGWINCH');
+      // Write a clear sequence so twinki's stdout interceptor detects it
+      // and triggers handleExternalClear() — a full redraw including static
+      // scrollback content. SIGWINCH alone only redraws live content.
+      process.stdout.write(CLEAR_SCREEN);
     };
     process.on('SIGCONT', handleCont);
     return () => {

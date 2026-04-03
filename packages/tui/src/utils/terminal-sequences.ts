@@ -12,3 +12,6 @@ export const DISABLE_BRACKETED_PASTE = '\x1b[?2004l';
 // Cursor visibility
 export const SHOW_CURSOR = '\x1b[?25h';
 export const HIDE_CURSOR = '\x1b[?25l';
+
+// Screen clear (preserves scrollback)
+export const CLEAR_SCREEN = '\x1b[2J';
