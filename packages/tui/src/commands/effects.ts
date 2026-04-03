@@ -23,6 +23,7 @@ import type {
 } from '../stores/app-store.js';
 import { openEditorSync } from '../utils/editor.js';
 import { executeShellEscapeTTY } from '../utils/shell-escape.js';
+import { gracefulExit } from '../utils/graceful-exit.js';
 import { readFileSync } from 'fs';
 
 /** Effect handler function. Returns true if it handled its own messaging. */
@@ -271,7 +272,7 @@ const effectHandlers: Record<EffectName, EffectHandler> = {
 
   quit: (_result, ctx) => {
     ctx.kiro.close();
-    process.exit(0);
+    gracefulExit(0);
   },
 
   /** Open $EDITOR to compose a prompt, then send the content as a chat message */

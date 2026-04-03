@@ -64,6 +64,8 @@ export interface RenderMetrics {
 export interface Instance {
 	/** Unmounts the application and cleans up resources */
 	unmount(): void;
+	/** Drains stdin to prevent buffered escape sequences from leaking to the parent shell */
+	drainInput(maxMs?: number, idleMs?: number): Promise<void>;
 	/** Returns a promise that resolves when the application exits */
 	waitUntilExit(): Promise<void>;
 	/** Clears the display and forces a full redraw */
@@ -341,6 +343,9 @@ export function render(element: React.ReactElement, options: TwinkiRenderOptions
 			});
 			tui.stop();
 			if (exitResolve) exitResolve();
+		},
+		async drainInput(maxMs?: number, idleMs?: number) {
+			await tui.terminal.drainInput(maxMs, idleMs);
 		},
 		waitUntilExit() {
 			return exitPromise;
