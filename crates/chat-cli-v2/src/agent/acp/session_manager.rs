@@ -441,23 +441,22 @@ impl SessionManager {
                 };
 
                 // If ACP client provided MCP servers, create an ephemeral config with them merged in
-                let agent_config_to_use: LoadedAgentConfig = if !config.mcp_servers.is_empty() {
+                let converted_mcp_servers: Vec<_> = config
+                    .mcp_servers
+                    .into_iter()
+                    .filter_map(|server| match convert_mcp_server(server) {
+                        Ok((name, cfg)) => Some((name, cfg)),
+                        Err(e) => {
+                            warn!(?e, "Failed to convert MCP server, skipping");
+                            None
+                        },
+                    })
+                    .collect();
+
+                let agent_config_to_use: LoadedAgentConfig = if !converted_mcp_servers.is_empty() {
                     let mut ephemeral = base_agent_config.config().clone();
 
-                    // Convert ACP MCP servers to agent configs
-                    let converted: Vec<_> = config
-                        .mcp_servers
-                        .into_iter()
-                        .filter_map(|server| match convert_mcp_server(server) {
-                            Ok((name, cfg)) => Some((name, cfg)),
-                            Err(e) => {
-                                warn!(?e, "Failed to convert MCP server, skipping");
-                                None
-                            },
-                        })
-                        .collect();
-
-                    if let Some(overridden) = ephemeral.add_mcp_servers(converted) {
+                    if let Some(overridden) = ephemeral.add_mcp_servers(converted_mcp_servers.clone()) {
                         warn!(?overridden, "ACP MCP servers override existing servers in agent config");
                     }
 
@@ -489,7 +488,8 @@ impl SessionManager {
                     .trust_all_tools(self.trust_all_tools)
                     .acp_client_info(self.acp_client_info.clone())
                     .telemetry_event_store(self.telemetry_event_store.clone())
-                    .v1_session_exporter(Arc::clone(&self.v1_session_exporter));
+                    .v1_session_exporter(Arc::clone(&self.v1_session_exporter))
+                    .session_injected_mcp_servers(converted_mcp_servers);
 
                 // Pass client connection to session
                 if let Some(cx) = connection_cx {

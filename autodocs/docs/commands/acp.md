@@ -1,7 +1,7 @@
 ---
 doc_meta:
-  validated: 2026-02-03
-  commit: 1e26fbcf
+  validated: 2026-04-02
+  commit: 4ebbc406
   status: validated
   testable_headless: false
   category: command
@@ -77,6 +77,12 @@ Custom extension methods (prefixed with `_kiro.dev/` per ACP spec). These are cu
 | `_kiro.dev/compaction/status` | Notification | Context compaction progress |
 | `_kiro.dev/clear/status` | Notification | Session clear status |
 | `_session/terminate` | Notification | Terminate a subagent session |
+
+## MCP Server Handling
+
+ACP clients can provide MCP servers when creating or loading a session via `session/new` or `session/load`. These servers are merged into the agent configuration and remain available for the lifetime of the session.
+
+MCP servers provided at session creation persist across agent swaps. When using `session/set_mode` or the `/agent swap` command, the session-injected MCP servers are automatically re-merged into the new agent configuration.
 
 ## Session Storage
 

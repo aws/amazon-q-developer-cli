@@ -145,10 +145,17 @@ async fn do_switch_agent(index: usize, agent_info: &AgentInfo, ctx: &CommandCont
         None => return CommandResult::error(format!("Agent config not found: {}", agent_info.name)),
     };
 
+    let mut config = agent_config.clone();
+    if !ctx.session_injected_mcp_servers.is_empty() {
+        config
+            .config_mut()
+            .add_mcp_servers(ctx.session_injected_mcp_servers.to_vec());
+    }
+
     if let Err(e) = ctx
         .agent
         .swap_agent(SwapAgentArgs {
-            agent_config: agent_config.clone(),
+            agent_config: config,
             local_mcp_path: ctx.local_mcp_path.cloned(),
             global_mcp_path: ctx.global_mcp_path.cloned(),
         })

@@ -1141,7 +1141,7 @@ async fn auto_compaction_on_context_overflow() {
                         chat_cli_v2::api_client::model::ChatMessage::AssistantResponseMessage(a) => {
                             a.tool_uses.as_ref().is_some_and(|tu| !tu.is_empty())
                         },
-                        _ => false,
+                        chat_cli_v2::api_client::model::ChatMessage::UserInputMessage(_) => false,
                     })
                 })
         })
@@ -1161,7 +1161,7 @@ async fn auto_compaction_on_context_overflow() {
                     chat_cli_v2::api_client::model::ChatMessage::UserInputMessage(u) => {
                         u.content.contains("SUMMARY CONTENT:")
                     },
-                    _ => false,
+                    chat_cli_v2::api_client::model::ChatMessage::AssistantResponseMessage(_) => false,
                 })
             })
     });
@@ -2018,4 +2018,95 @@ async fn exits_when_stdin_closes() {
         .expect("failed to wait for agent");
 
     assert!(status.success(), "agent should exit cleanly, got {:?}", status);
+}
+
+/// Test that session-injected MCP servers survive a mode swap (setSessionMode).
+///
+/// Regression test: `handle_set_mode` used to look up the base agent config from
+/// `self.agent_configs` (which doesn't include session-injected servers) and pass it
+/// to `swap_agent`, causing injected MCP servers to be dropped.
+#[tokio::test]
+#[timeout(60000)]
+#[serial]
+async fn set_mode_preserves_session_injected_mcp_servers() {
+    use std::path::PathBuf;
+
+    use agent::agent_config::definitions::AgentConfigV2025_08_22;
+    use mock_mcp_server::prebuild_bin;
+    use sacp::schema::McpServerStdio;
+
+    prebuild_bin().expect("failed to build mock-mcp-server");
+
+    let binary_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .parent()
+        .unwrap()
+        .parent()
+        .unwrap()
+        .join("target/debug/mock-mcp-server");
+
+    let config_path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/mcp_configs/stdio_server.jsonl");
+
+    // Create a second agent to swap to
+    let alt_config = AgentConfigV2025_08_22 {
+        name: "alt_agent".to_string(),
+        global_prompt: Some("You are the alt agent".to_string()),
+        ..Default::default()
+    };
+
+    let (harness, client) = AcpTestHarnessBuilder::new("set_mode_preserves_mcp")
+        .with_agent_config("alt_agent", &alt_config)
+        .with_trust_all(true)
+        .build()
+        .await;
+
+    let cwd = harness.paths.cwd.clone();
+
+    // Create session with an injected MCP server
+    let mcp_server = sacp::schema::McpServer::Stdio(
+        McpServerStdio::new("injected-mcp", &binary_path)
+            .args(vec!["--config".to_string(), config_path.to_str().unwrap().to_string()]),
+    );
+
+    let resp = client
+        .new_session_with_mcp(cwd, vec![mcp_server])
+        .await
+        .expect("new_session failed");
+    let session_id = resp.session_id;
+
+    // Wait for the injected MCP server to initialize
+    let mcp_initialized_method = methods::MCP_SERVER_INITIALIZED
+        .strip_prefix("_")
+        .expect("method should have underscore prefix");
+
+    client
+        .wait_for(|captured| {
+            captured.ext_notifications.iter().any(|n| {
+                n.method.as_ref() == mcp_initialized_method && {
+                    let params: serde_json::Value = serde_json::from_str(n.params.get()).unwrap_or_default();
+                    params.get("serverName").and_then(|v| v.as_str()) == Some("injected-mcp")
+                }
+            })
+        })
+        .await;
+
+    // Clear notifications so we can detect re-initialization after swap
+    client.clear_captured().await;
+
+    // Swap to the alt agent
+    client
+        .set_session_mode(session_id.clone(), "alt_agent".to_string())
+        .await
+        .expect("set_session_mode failed");
+
+    // The injected MCP server should re-initialize after the swap
+    client
+        .wait_for(|captured| {
+            captured.ext_notifications.iter().any(|n| {
+                n.method.as_ref() == mcp_initialized_method && {
+                    let params: serde_json::Value = serde_json::from_str(n.params.get()).unwrap_or_default();
+                    params.get("serverName").and_then(|v| v.as_str()) == Some("injected-mcp")
+                }
+            })
+        })
+        .await;
 }

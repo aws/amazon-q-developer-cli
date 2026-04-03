@@ -642,6 +642,7 @@ pub struct AcpSessionBuilder<'a> {
     telemetry_event_store: Option<crate::agent::ipc_server::TelemetryEventStore>,
     subagent_info: Option<SubagentInfo>,
     v1_session_exporter: Option<Arc<dyn V1SessionExporter>>,
+    session_injected_mcp_servers: Vec<(String, agent::agent_config::definitions::McpServerConfig)>,
 }
 
 impl<'a> AcpSessionBuilder<'a> {
@@ -755,6 +756,14 @@ impl<'a> AcpSessionBuilder<'a> {
         self
     }
 
+    pub fn session_injected_mcp_servers(
+        mut self,
+        servers: Vec<(String, agent::agent_config::definitions::McpServerConfig)>,
+    ) -> Self {
+        self.session_injected_mcp_servers = servers;
+        self
+    }
+
     /// Spawns a new ACP session actor and returns a handle to communicate with it.
     ///
     /// The returned `ready_rx` resolves after historical notifications have been emitted
@@ -821,6 +830,9 @@ struct AcpSession {
     cwd: PathBuf,
     telemetry_observer: TelemetryObserverHandle,
     v1_session_exporter: Arc<dyn V1SessionExporter>,
+    /// MCP servers injected by the ACP client at session creation time.
+    /// Preserved across agent swaps so they are re-merged into each new agent config.
+    session_injected_mcp_servers: Vec<(String, agent::agent_config::definitions::McpServerConfig)>,
 }
 
 impl AcpSession {
@@ -829,6 +841,16 @@ impl AcpSession {
             .iter()
             .find(|a| a.name == agent_name)
             .and_then(|a| a.welcome_message.clone())
+    }
+
+    /// Re-merge session-injected MCP servers into an agent config.
+    /// Called before every agent swap so ACP-provided servers survive mode changes.
+    fn merge_session_mcp_servers(&self, config: &mut LoadedAgentConfig) {
+        if !self.session_injected_mcp_servers.is_empty() {
+            config
+                .config_mut()
+                .add_mcp_servers(self.session_injected_mcp_servers.clone());
+        }
     }
 
     /// Reload available agents from disk (e.g. after agent create)
@@ -886,6 +908,7 @@ impl AcpSession {
             os: &self.os,
             cwd: &self.cwd,
             v1_session_exporter: &self.v1_session_exporter,
+            session_injected_mcp_servers: &self.session_injected_mcp_servers,
         }
     }
 
@@ -1105,6 +1128,7 @@ impl AcpSession {
             v1_session_exporter: builder
                 .v1_session_exporter
                 .unwrap_or_else(|| Arc::new(crate::agent::session::v1_compat::NoOpV1SessionExporter)),
+            session_injected_mcp_servers: builder.session_injected_mcp_servers,
         })
     }
 
@@ -1403,9 +1427,12 @@ impl AcpSession {
                 });
             },
             AcpSessionRequest::SwapAgent {
-                agent_config,
+                mut agent_config,
                 respond_to,
             } => {
+                // Re-merge session-injected MCP servers into the new agent config
+                self.merge_session_mcp_servers(&mut agent_config);
+
                 if let Err(e) = update_model_info(
                     &self.api_client,
                     &self.os.database,
@@ -2012,13 +2039,16 @@ impl AcpSession {
             .unwrap_or(crate::constants::DEFAULT_AGENT_NAME)
             .to_string();
 
-        let agent_config = match self.agent_configs.iter().find(|c| c.name() == target) {
+        let mut agent_config = match self.agent_configs.iter().find(|c| c.name() == target) {
             Some(c) => c.clone(),
             None => {
                 tracing::error!("switch_to_execution: target agent '{}' not found", target);
                 return;
             },
         };
+
+        // Re-merge session-injected MCP servers into the new agent config
+        self.merge_session_mcp_servers(&mut agent_config);
 
         // Defer swap and plan injection to after EndTurn (agent must be idle for swap_agent)
         self.pending_swap = Some(agent_config);

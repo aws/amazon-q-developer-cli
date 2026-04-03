@@ -386,7 +386,7 @@ impl AcpTestClient {
     pub async fn list_sessions(&self, cwd: PathBuf) -> acp::Result<ListSessionsResponse> {
         let (reply, rx) = oneshot::channel();
         self.tx.send(Command::ListSessions { cwd, reply }).await.ok();
-        rx.await.map_err(|_| acp::Error {
+        rx.await.map_err(|_e| acp::Error {
             code: -1,
             message: "list_sessions actor channel closed".to_string(),
             data: None,
@@ -407,7 +407,7 @@ impl AcpTestClient {
             })
             .await
             .ok();
-        rx.await.map_err(|_| acp::Error {
+        rx.await.map_err(|_e| acp::Error {
             code: -1,
             message: "get_command_options actor channel closed".to_string(),
             data: None,
