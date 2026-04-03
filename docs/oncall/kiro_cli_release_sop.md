@@ -158,13 +158,8 @@ Document each deployment step (toolbox beta, prod, CloudFront) as comments on th
      -f branch_name=prod \
      -f environment=gamma-release \
      -f release_to_cloudfront=false \
-     -f release_to_toolbox=true \
-     -f enable_windows=true
+     -f release_to_toolbox=true
    ```
-
-   <!-- TEMPORARY: Remove enable_windows once it defaults to true in all release workflows.
-        Tracking: When enable_windows is removed from workflow inputs or defaults to true,
-        this flag can be dropped and Windows will be included automatically like Mac/Linux. -->
 
 ## Step 8: Verify Toolbox Beta Installation
 
@@ -190,30 +185,9 @@ Document each deployment step (toolbox beta, prod, CloudFront) as comments on th
    kiro-cli diagnostic
    ```
 
-## Step 9: Release to Toolbox (Internal)
+## Step 9: Run Release Prod Workflow
 
-1. Trigger the Toolbox production release (includes Windows):
-   ```bash
-   gh workflow run release-kiro-cli-prod.yml \
-     --repo kiro-team/kiro-cli-autocomplete \
-     --ref prod \
-     -f commit=<COMMIT_SHA> \
-     -f version=<VERSION> \
-     -f channel=stable \
-     -f release_to_cloudfront=false \
-     -f release_to_toolbox=true \
-     -f enable_windows=true
-   ```
-
-   <!-- TEMPORARY: Remove enable_windows once it defaults to true in all release workflows. -->
-
-2. Approve the release in GitHub UI (`prod-release` environment requires manual approval).
-
-## Step 10: Release to CloudFront (External)
-
-<!-- TEMPORARY: Add enable_windows=true here once Windows is approved for external distribution. -->
-
-1. Trigger the CloudFront production release (Windows excluded):
+1. Trigger the production release:
    ```bash
    gh workflow run release-kiro-cli-prod.yml \
      --repo kiro-team/kiro-cli-autocomplete \
@@ -222,21 +196,21 @@ Document each deployment step (toolbox beta, prod, CloudFront) as comments on th
      -f version=<VERSION> \
      -f channel=stable \
      -f release_to_cloudfront=true \
-     -f release_to_toolbox=false
+     -f release_to_toolbox=true
    ```
 
 2. Approve the release in GitHub UI (`prod-release` environment requires manual approval).
 
-## Step 11: Verify Release Workflows Complete
+## Step 10: Verify Release Workflow Completes
 
-1. Monitor the release workflows:
+1. Monitor the release workflow:
    ```bash
-   gh run list --repo kiro-team/kiro-cli-autocomplete --workflow release-kiro-cli-prod.yml --limit 2
+   gh run list --repo kiro-team/kiro-cli-autocomplete --workflow release-kiro-cli-prod.yml --limit 1
    ```
 
-2. Wait for both (Toolbox and CloudFront) to show `completed` with `success` conclusion.
+2. Wait for status to show `completed` with `success` conclusion.
 
-## Step 12: Verify Stable Release
+## Step 11: Verify Stable Release
 
 1. Install from toolbox stable:
    ```bash
