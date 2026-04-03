@@ -1,7 +1,7 @@
 {
   "tui": {
     "description": "Gradual rollout of the new React/Ink TUI to replace legacy terminal UI",
-    "treatment_percent": 25,
+    "treatment_percent": 50,
     "segment": "internal"
   },
   "test": {

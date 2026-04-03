@@ -12,6 +12,26 @@
     },
     {
       "type": "release",
+      "date": "2026-04-03",
+      "version": "1.29.2",
+      "title": "Version 1.29.2",
+      "changes": [
+        {
+          "type": "fixed",
+          "description": "Fixed session-injected MCP servers being lost across mode swaps"
+        },
+        {
+          "type": "fixed",
+          "description": "Fixed Kitty protocol sequence leakage by draining stdin on exit"
+        },
+        {
+          "type": "fixed",
+          "description": "Fixed missing keyboard shortcuts in TUI input"
+        }
+      ]
+    },
+    {
+      "type": "release",
       "date": "2026-04-02",
       "version": "1.29.1",
       "title": "Version 1.29.1",
