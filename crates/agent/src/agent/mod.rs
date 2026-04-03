@@ -2287,6 +2287,7 @@ impl Agent {
                 id: id.clone(),
                 prompt: prompt.clone(),
                 assistant_response: assistant_response.clone(),
+                session_id: Some(self.conversation_state.id.to_string()),
             };
             hooks_state.push(ExecutingHook {
                 id: id.clone(),

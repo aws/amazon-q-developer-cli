@@ -211,6 +211,7 @@ impl TaskExecutor {
                         req.prompt,
                         req.id.tool_context,
                         req.assistant_response,
+                        req.session_id,
                     );
                     tokio::select! {
                         _ = cancel_token_clone.cancelled() => {
@@ -331,6 +332,8 @@ pub struct StartHookExecution {
     pub prompt: Option<String>,
     /// The assistant's response text. Passed to stop hooks.
     pub assistant_response: Option<String>,
+    /// The session ID. Passed to hooks as context.
+    pub session_id: Option<String>,
 }
 
 #[derive(Debug)]
@@ -579,6 +582,7 @@ async fn run_command_hook(
     prompt: Option<String>,
     tool_context: Option<ToolContext>,
     assistant_response: Option<String>,
+    session_id: Option<String>,
 ) -> (Result<CommandResult, String>, Duration) {
     let start_time = Instant::now();
 
@@ -603,6 +607,10 @@ async fn run_command_hook(
         "hook_event_name": trigger.to_string(),
         "cwd": cwd
     });
+
+    if let Some(sid) = session_id {
+        hook_input["session_id"] = serde_json::Value::String(sid);
+    }
 
     // Set USER_PROMPT environment variable and add to JSON input if provided
     if let Some(prompt) = prompt {
@@ -721,6 +729,7 @@ mod tests {
                 },
                 prompt: None,
                 assistant_response: Some("Here is the assistant response.".to_string()),
+                session_id: None,
             })
             .await;
 
@@ -762,6 +771,7 @@ mod tests {
                 },
                 prompt: None,
                 assistant_response: None,
+                session_id: None,
             })
             .await;
 
@@ -791,5 +801,56 @@ mod tests {
             }
         })
         .await;
+    }
+
+    #[tokio::test]
+    async fn test_hook_execution_includes_session_id() {
+        let cwd = std::env::current_dir().expect("current dir exists");
+        let mut executor = TaskExecutor::new(Arc::new(TestProvider::new_with_base(cwd)));
+
+        let temp_dir = tempfile::TempDir::new().unwrap();
+        let test_file = temp_dir.path().join("hook_output.json");
+        let test_file_str = test_file.to_string_lossy().to_string();
+
+        let command = format!("cat > {test_file_str}");
+        let config: HookConfig = serde_json::from_value(serde_json::json!({
+            "command": command
+        }))
+        .unwrap();
+
+        executor
+            .start_hook_execution(StartHookExecution {
+                id: HookExecutionId {
+                    hook: Hook {
+                        trigger: HookTrigger::AgentSpawn,
+                        config,
+                    },
+                    tool_context: None,
+                },
+                prompt: None,
+                assistant_response: None,
+                session_id: Some("test-session-abc-123".to_string()),
+            })
+            .await;
+
+        run_with_timeout(Duration::from_millis(5000), async move {
+            let mut event_buf = Vec::new();
+            loop {
+                executor.recv_next(&mut event_buf).await;
+                if event_buf
+                    .iter()
+                    .any(|ev| matches!(ev, TaskExecutorEvent::HookExecutionEnd(_)))
+                {
+                    break;
+                }
+                event_buf.drain(..);
+            }
+        })
+        .await;
+
+        let content = std::fs::read_to_string(&test_file).unwrap();
+        let json: serde_json::Value = serde_json::from_str(&content).unwrap();
+        assert_eq!(json["hook_event_name"], "agentSpawn");
+        assert_eq!(json["session_id"], "test-session-abc-123");
     }
 }

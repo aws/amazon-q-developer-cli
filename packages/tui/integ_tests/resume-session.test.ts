@@ -326,3 +326,40 @@ describe('--resume-picker', () => {
     expect(exitCode).toBe(0);
   }, 20000);
 });
+
+describe('--resume-id', () => {
+  it('resumes the specific session by ID, ignoring recency', async () => {
+    const cwd = realpathSync(process.cwd());
+
+    // Create two sessions — the older one is the target
+    createFakeSession({
+      sessionId: 'target-session-old',
+      cwd,
+      updatedAt: '2025-01-01T00:00:00Z',
+      userPrompt: 'old target',
+    });
+    createFakeSession({
+      sessionId: 'newer-session',
+      cwd,
+      updatedAt: '2026-02-20T12:00:00Z',
+      userPrompt: 'newer prompt',
+    });
+
+    testCase = await TestCase.builder()
+      .withTestName('resume-id-specific')
+      .withArgs(['--resume-id', 'target-session-old'])
+      .withEnv({ KIRO_TEST_SESSIONS_DIR: sessionsDir })
+      .withTimeout(15000)
+      .launch();
+
+    await testCase.waitForVisibleText('ask a question', 10000);
+
+    // Should resume the specific session, not the most recent one
+    const store = await testCase.getStore();
+    expect(store.sessionId).toBe('target-session-old');
+
+    await testCase.pressCtrlCTwice();
+    const exitCode = await testCase.expectExit();
+    expect(exitCode).toBe(0);
+  }, 20000);
+});

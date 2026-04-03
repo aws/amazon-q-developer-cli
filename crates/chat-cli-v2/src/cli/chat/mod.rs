@@ -31,6 +31,9 @@ pub struct ChatArgs {
     /// Resume the most recent conversation from this directory.
     #[arg(short, long)]
     pub resume: bool,
+    /// Resume a specific conversation by session ID.
+    #[arg(long, value_name = "SESSION_ID", conflicts_with_all = ["resume", "resume_picker"])]
+    pub resume_id: Option<String>,
     /// Interactively select a conversation to resume from this directory.
     #[arg(long, conflicts_with = "resume")]
     pub resume_picker: bool,

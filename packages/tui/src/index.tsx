@@ -299,6 +299,9 @@ const startInitialization = (resumePickerSessionId?: string) => {
       // --resume-picker is resolved before Twinki starts (pre-passed as resumePickerSessionId)
       // because the interactive picker can't coexist with Twinki's terminal input.
       let resolvedSessionId: string | undefined = resumePickerSessionId;
+      if (!resolvedSessionId && cliArgs.resumeId) {
+        resolvedSessionId = cliArgs.resumeId;
+      }
       if (!resolvedSessionId && cliArgs.resume) {
         const { sessions } = await kiro.listSessions(process.cwd());
         if (sessions.length > 0) {

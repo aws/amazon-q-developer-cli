@@ -138,6 +138,20 @@ describe('parseCliArgs', () => {
     const result = parseCliArgs();
     expect(result.resume).toBe(false);
     expect(result.resumePicker).toBe(false);
+    expect(result.resumeId).toBeUndefined();
+  });
+
+  it('parses --resume-id with session id', () => {
+    setArgs('chat', '--resume-id', 'abc-123');
+    const result = parseCliArgs();
+    expect(result.resumeId).toBe('abc-123');
+  });
+
+  it('--resume-id does not set resume flag', () => {
+    setArgs('chat', '--resume-id', 'abc-123');
+    const result = parseCliArgs();
+    expect(result.resume).toBe(false);
+    expect(result.resumeId).toBe('abc-123');
   });
 });
 

@@ -23,6 +23,8 @@ export interface CliArgs extends AcpSpawnArgs {
   input?: string;
   /** Resume the most recent conversation from this directory (--resume / -r). TUI-only. */
   resume: boolean;
+  /** Resume a specific conversation by session ID (--resume-id <id>). TUI-only. */
+  resumeId?: string;
   /** Interactively select a conversation to resume (--resume-picker). TUI-only. */
   resumePicker: boolean;
 }
@@ -65,6 +67,8 @@ export function parseCliArgs(): CliArgs {
       result.noInteractive = true;
     } else if (arg === '--resume' || arg === '-r') {
       result.resume = true;
+    } else if (arg === '--resume-id') {
+      result.resumeId = args[++i];
     } else if (arg === '--resume-picker') {
       result.resumePicker = true;
     } else if (arg === '--tui') {
