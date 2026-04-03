@@ -72,7 +72,7 @@ export interface UsageData {
 
 export interface McpServerInfo {
   name: string;
-  status: 'running' | 'loading' | 'failed' | 'disabled';
+  status: 'running' | 'loading' | 'failed' | 'disabled' | 'auth-required';
   toolCount: number;
 }
 
@@ -551,6 +551,7 @@ export interface AppState {
   }>;
   showMcpPanel: boolean;
   mcpServers: McpServerInfo[];
+  pendingOAuthServers: Map<string, string>; // serverName → oauthUrl
   initErrors: InitError[];
   showToolsPanel: boolean;
   toolsList: ToolInfo[];
@@ -785,6 +786,7 @@ export const createAppStore = (props: AppStoreProps) => {
     usageData: null,
     showMcpPanel: false,
     mcpServers: [],
+    pendingOAuthServers: new Map(),
     initErrors: [],
     showToolsPanel: false,
     toolsList: [],
@@ -1450,6 +1452,26 @@ export const createAppStore = (props: AppStoreProps) => {
               if (message) {
                 get().showTransientAlert({ message, status: 'error' });
               }
+            }
+            break;
+          case AgentEventType.McpOauthRequest:
+            {
+              set((state) => {
+                const updated = new Map(state.pendingOAuthServers);
+                updated.set(event.serverName, event.oauthUrl);
+                return { pendingOAuthServers: updated };
+              });
+            }
+            break;
+          case AgentEventType.McpServerInitialized:
+            {
+              set((state) => {
+                if (!state.pendingOAuthServers.has(event.serverName))
+                  return state;
+                const updated = new Map(state.pendingOAuthServers);
+                updated.delete(event.serverName);
+                return { pendingOAuthServers: updated };
+              });
             }
             break;
           case AgentEventType.RateLimitError:

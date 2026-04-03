@@ -3,6 +3,8 @@ import { Box, Text as InkText } from './../../renderer.js';
 import { StatusBar, useStatusBar } from '../chat/status-bar/StatusBar.js';
 import { StatusInfo } from './status/StatusInfo.js';
 import type { StatusType } from '../../types/componentTypes.js';
+import { Text } from './text/Text.js';
+import { useTheme } from '../../hooks/useThemeContext.js';
 import { Write } from '../chat/tools/Write.js';
 import { Read } from '../chat/tools/Read.js';
 import { Shell } from '../chat/tools/Shell.js';
@@ -319,13 +321,7 @@ const ToolUseContent = React.memo(function ToolUseContent({
   // Fallback: use generic Tool component
   // For unrecognized tools that failed, show a one-liner matching Rejected/Cancelled pattern
   if (result?.status === 'error' && effectiveFinished) {
-    try {
-      const parsed = JSON.parse(content);
-      const target = parsed.path || parsed.command || parsed.pattern || name;
-      return <StatusInfo title="Failed" target={target} />;
-    } catch {
-      return <StatusInfo title="Failed" target={name} />;
-    }
+    return <FallbackError name={name} content={content} error={result.error} />;
   }
 
   const toolId = resolveToolId(name);
@@ -340,5 +336,33 @@ const ToolUseContent = React.memo(function ToolUseContent({
       locations={locations}
       content={content}
     />
+  );
+});
+
+/** Shows a failed tool call with the error message visible to the user. */
+const FallbackError = React.memo(function FallbackError({
+  name,
+  content,
+  error,
+}: {
+  name: string;
+  content: string;
+  error: string;
+}) {
+  const { getColor } = useTheme();
+  let target: string;
+  try {
+    const parsed = JSON.parse(content);
+    target = parsed.path || parsed.command || parsed.pattern || name;
+  } catch {
+    target = name;
+  }
+  return (
+    <Box flexDirection="column">
+      <StatusInfo title="Failed" target={target} />
+      <Box marginLeft={2}>
+        <Text>{getColor('error')(error)}</Text>
+      </Box>
+    </Box>
   );
 });

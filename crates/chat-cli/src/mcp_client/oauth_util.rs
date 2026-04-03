@@ -12,16 +12,42 @@ use hyper::body::Bytes;
 use hyper::server::conn::http1;
 use hyper_util::rt::TokioIo;
 use reqwest::Client;
-use rmcp::service::{DynService, ServiceExt};
-use rmcp::transport::auth::{AuthClient, OAuthClientConfig, OAuthState, OAuthTokenResponse};
+use rmcp::service::{
+    DynService,
+    ServiceExt,
+};
+use rmcp::transport::auth::{
+    AuthClient,
+    OAuthClientConfig,
+    OAuthState,
+    OAuthTokenResponse,
+};
 use rmcp::transport::streamable_http_client::StreamableHttpClientTransportConfig;
-use rmcp::transport::{AuthorizationManager, AuthorizationSession, StreamableHttpClientTransport};
-use rmcp::{RoleClient, Service, serde_json};
-use serde::{Deserialize, Serialize};
-use sha2::{Digest, Sha256};
+use rmcp::transport::{
+    AuthorizationManager,
+    AuthorizationSession,
+    StreamableHttpClientTransport,
+};
+use rmcp::{
+    RoleClient,
+    Service,
+    serde_json,
+};
+use serde::{
+    Deserialize,
+    Serialize,
+};
+use sha2::{
+    Digest,
+    Sha256,
+};
 use tokio::sync::oneshot::Sender;
 use tokio_util::sync::CancellationToken;
-use tracing::{debug, error, info};
+use tracing::{
+    debug,
+    error,
+    info,
+};
 use url::Url;
 
 use super::messenger::Messenger;
@@ -338,14 +364,12 @@ impl<'a> HttpServiceBuilder<'a> {
                     };
 
                     info!("## mcp: attempting authenticated http for {server_name}");
-                    let transport = StreamableHttpClientTransport::with_client(
-                        ac.clone(),
-                        StreamableHttpClientTransportConfig {
+                    let transport =
+                        StreamableHttpClientTransport::with_client(ac.clone(), StreamableHttpClientTransportConfig {
                             uri: url.as_str().into(),
                             allow_stateless: true,
                             ..Default::default()
-                        },
-                    );
+                        });
 
                     match service.clone().into_dyn().serve(transport).await {
                         Ok(service) => {

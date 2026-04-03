@@ -233,9 +233,11 @@ export class Kiro {
             });
           }
         }
-        // Forward init-time notifications (MCP failures, agent errors) to the store
+        // Forward init-time notifications (MCP failures, agent errors, OAuth) to the store
         if (
           (event.type === AgentEventType.McpServerInitFailure ||
+            event.type === AgentEventType.McpOauthRequest ||
+            event.type === AgentEventType.McpServerInitialized ||
             event.type === AgentEventType.AgentNotFound ||
             event.type === AgentEventType.AgentConfigError) &&
           this.initNotificationHandler

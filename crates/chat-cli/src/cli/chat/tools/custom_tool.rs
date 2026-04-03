@@ -494,7 +494,19 @@ impl CustomTool {
             task: None,
         };
 
-        let resp = self.client.call_tool(params.clone()).await?;
+        let resp = match self.client.call_tool(params.clone()).await {
+            Ok(resp) => resp,
+            Err(e) => {
+                let msg = e.to_string();
+                if msg.contains(crate::mcp_client::client::MCP_AUTH_REFRESH_FAILED) {
+                    eyre::bail!(
+                        "Authentication failed for MCP server '{}'. Token refresh failed. Please re-authenticate using /mcp.",
+                        self.server_name
+                    );
+                }
+                return Err(e.into());
+            },
+        };
 
         if resp.is_error.is_none_or(|v| !v) {
             Ok(InvokeOutput {

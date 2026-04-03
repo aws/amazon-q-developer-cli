@@ -875,7 +875,6 @@ const effectHandlers: Record<EffectName, EffectHandler> = {
 
 import { formatImageLabel } from '../utils/image-label.js';
 import { MessageRole } from '../stores/app-store.js';
-import { spawnSync } from 'child_process';
 import {
   promptPresets,
   responsePresets,
@@ -888,6 +887,7 @@ import {
   getBundledTheme,
 } from '../theme/user-theme.js';
 import { writeFileSync } from 'fs';
+import { spawnSync } from 'child_process';
 
 /**
  * Copy text to the system clipboard using platform-native tools.
@@ -898,7 +898,7 @@ import { writeFileSync } from 'fs';
  *   Windows → powershell Set-Clipboard (handles UTF-8 correctly, unlike clip.exe)
  *   Linux  → wl-copy (Wayland) → xclip (X11) → xsel (X11 fallback)
  */
-function copyToSystemClipboard(text: string): boolean {
+export function copyToSystemClipboard(text: string): boolean {
   const candidates: Array<{ bin: string; args: string[] }> = [];
 
   if (process.platform === 'darwin') {
@@ -950,7 +950,6 @@ function copyToSystemClipboard(text: string): boolean {
 
   return false;
 }
-
 /**
  * Run effect for a command.
  * Returns true if the effect handled its own messaging (suppresses dispatcher step 4).

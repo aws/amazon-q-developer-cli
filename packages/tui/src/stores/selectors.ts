@@ -17,6 +17,7 @@ export const useNotificationState = () =>
       agentError: state.agentError,
       agentErrorGuidance: state.agentErrorGuidance,
       initErrors: state.initErrors,
+      pendingOAuthServers: state.pendingOAuthServers,
     }))
   );
 

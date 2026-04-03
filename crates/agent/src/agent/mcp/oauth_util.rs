@@ -14,7 +14,6 @@ use hyper_util::rt::TokioIo;
 use reqwest::Client;
 use rmcp::service::{DynService, ServiceExt};
 use rmcp::transport::auth::{AuthClient, OAuthClientConfig, OAuthState, OAuthTokenResponse};
-use rmcp::transport::common::auth;
 use rmcp::transport::streamable_http_client::StreamableHttpClientTransportConfig;
 use rmcp::transport::{AuthorizationManager, AuthorizationSession, StreamableHttpClientTransport};
 use rmcp::{RoleClient, Service, serde_json};

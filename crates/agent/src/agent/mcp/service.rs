@@ -59,6 +59,11 @@ use crate::util::providers::RealProvider;
 
 const SHUTDOWN_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(3);
 
+/// Sentinel message returned when MCP OAuth token refresh and re-authentication both fail.
+/// Detected downstream to produce a user-facing error that mentions `/mcp`.
+pub const MCP_AUTH_REFRESH_FAILED: &str = "MCP_AUTH_REFRESH_FAILED";
+pub const MCP_AUTH_REAUTH_FAILED: &str = "MCP_AUTH_REAUTH_FAILED";
+
 /// This struct is consumed by the [rmcp] crate on server launch. The only purpose of this struct
 /// is to handle server-to-client requests. Client-side code will own a [RunningMcpService]
 /// instance.
@@ -379,17 +384,23 @@ macro_rules! decorate_with_auth_retry {
                                 info!("Token refresh failed ({refresh_err}), attempting re-authentication");
                                 match auth_client.reauthorize().await {
                                     Ok(_) => {
-                                        info!("Re-authentication successful, retrying operation");
-                                        match &self.running_service {
-                                            InnerService::Original(rs) => rs.$method_name(param).await,
-                                            InnerService::Peer(peer) => peer.$method_name(param).await,
-                                        }
+                                        info!("Reauth initiated");
                                     },
                                     Err(reauth_err) => {
                                         error!("Re-authentication failed: {reauth_err}");
-                                        Err(e)
+                                        return Err(rmcp::ServiceError::McpError(rmcp::ErrorData::new(
+                                            rmcp::model::ErrorCode::INTERNAL_ERROR,
+                                            MCP_AUTH_REAUTH_FAILED,
+                                            None,
+                                        )));
                                     },
                                 }
+
+                                Err(rmcp::ServiceError::McpError(rmcp::ErrorData::new(
+                                    rmcp::model::ErrorCode::INTERNAL_ERROR,
+                                    MCP_AUTH_REFRESH_FAILED,
+                                    None,
+                                )))
                             },
                         }
                     } else {
@@ -433,17 +444,23 @@ macro_rules! decorate_with_auth_retry {
                                 info!("Token refresh failed ({refresh_err}), attempting re-authentication");
                                 match auth_client.reauthorize().await {
                                     Ok(_) => {
-                                        info!("Re-authentication successful, retrying operation");
-                                        match &self.running_service {
-                                            InnerService::Original(rs) => rs.$method_name().await,
-                                            InnerService::Peer(peer) => peer.$method_name().await,
-                                        }
+                                        info!("Reauth initiated");
                                     },
                                     Err(reauth_err) => {
                                         error!("Re-authentication failed: {reauth_err}");
-                                        Err(e)
+                                        return Err(rmcp::ServiceError::McpError(rmcp::ErrorData::new(
+                                            rmcp::model::ErrorCode::INTERNAL_ERROR,
+                                            MCP_AUTH_REAUTH_FAILED,
+                                            None,
+                                        )));
                                     },
                                 }
+
+                                Err(rmcp::ServiceError::McpError(rmcp::ErrorData::new(
+                                    rmcp::model::ErrorCode::INTERNAL_ERROR,
+                                    MCP_AUTH_REFRESH_FAILED,
+                                    None,
+                                )))
                             },
                         }
                     } else {

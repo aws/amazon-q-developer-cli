@@ -32,6 +32,8 @@ const EXT_METHODS = {
   COMPACTION_STATUS: 'kiro.dev/compaction/status',
   CLEAR_STATUS: 'kiro.dev/clear/status',
   MCP_SERVER_INIT_FAILURE: 'kiro.dev/mcp/server_init_failure',
+  MCP_OAUTH_REQUEST: 'kiro.dev/mcp/oauth_request',
+  MCP_SERVER_INITIALIZED: 'kiro.dev/mcp/server_initialized',
   AGENT_NOT_FOUND: 'kiro.dev/agent/not_found',
   AGENT_CONFIG_ERROR: 'kiro.dev/agent/config_error',
   RATE_LIMIT_ERROR: 'kiro.dev/error/rate_limit',
@@ -584,6 +586,10 @@ export class AcpClient implements acp.Client, SessionClient {
     [EXT_METHODS.CLEAR_STATUS]: () => this.handleClearStatus(),
     [EXT_METHODS.MCP_SERVER_INIT_FAILURE]: (params) =>
       this.handleMcpServerInitFailure(params),
+    [EXT_METHODS.MCP_OAUTH_REQUEST]: (params) =>
+      this.handleMcpOauthRequest(params),
+    [EXT_METHODS.MCP_SERVER_INITIALIZED]: (params) =>
+      this.handleMcpServerInitialized(params),
     [EXT_METHODS.AGENT_NOT_FOUND]: (params) => this.handleAgentNotFound(params),
     [EXT_METHODS.AGENT_CONFIG_ERROR]: (params) =>
       this.handleAgentConfigError(params),
@@ -727,6 +733,26 @@ export class AcpClient implements acp.Client, SessionClient {
       type: AgentEventType.McpServerInitFailure,
       serverName,
       error,
+    });
+  }
+
+  private handleMcpOauthRequest(params: Record<string, unknown>) {
+    const serverName = params.serverName as string;
+    const oauthUrl = params.oauthUrl as string;
+    logger.debug('MCP OAuth request received:', { serverName, oauthUrl });
+    this.broadcastStreamEvent({
+      type: AgentEventType.McpOauthRequest,
+      serverName,
+      oauthUrl,
+    });
+  }
+
+  private handleMcpServerInitialized(params: Record<string, unknown>) {
+    const serverName = params.serverName as string;
+    logger.debug('MCP server initialized:', { serverName });
+    this.broadcastStreamEvent({
+      type: AgentEventType.McpServerInitialized,
+      serverName,
     });
   }
 

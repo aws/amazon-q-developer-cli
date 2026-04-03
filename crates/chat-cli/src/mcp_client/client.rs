@@ -151,8 +151,9 @@ pub enum McpClientError {
     LookUp(#[from] shellexpand::LookupError<std::env::VarError>),
 }
 
-/// Decorates the method passed in with retry logic, but only if the [RunningService] has an
-/// instance of [AuthClientDropGuard].
+pub const MCP_AUTH_REFRESH_FAILED: &str = "MCP_AUTH_REFRESH_FAILED";
+pub const MCP_AUTH_REAUTH_FAILED: &str = "MCP_AUTH_REAUTH_FAILED";
+
 /// The various methods to interact with the mcp server provided by RMCP supposedly does refresh
 /// token once the token expires but that logic would require us to also note down the time at
 /// which a token is obtained since the only time related information in the token is the duration
@@ -198,17 +199,23 @@ macro_rules! decorate_with_auth_retry {
                                 info!("Token refresh failed ({refresh_err}), attempting re-authentication");
                                 match auth_client.reauthorize().await {
                                     Ok(_) => {
-                                        info!("Re-authentication successful, retrying operation");
-                                        match &self.inner_service {
-                                            InnerService::Original(rs) => rs.$method_name(param).await,
-                                            InnerService::Peer(peer) => peer.$method_name(param).await,
-                                        }
+                                        info!("Reauth initiated");
                                     },
                                     Err(reauth_err) => {
                                         error!("Re-authentication failed: {reauth_err}");
-                                        Err(e)
+                                        return Err(rmcp::ServiceError::McpError(rmcp::ErrorData::new(
+                                            rmcp::model::ErrorCode::INTERNAL_ERROR,
+                                            MCP_AUTH_REAUTH_FAILED,
+                                            None,
+                                        )));
                                     },
                                 }
+
+                                Err(rmcp::ServiceError::McpError(rmcp::ErrorData::new(
+                                    rmcp::model::ErrorCode::INTERNAL_ERROR,
+                                    MCP_AUTH_REFRESH_FAILED,
+                                    None,
+                                )))
                             },
                         }
                     } else {
