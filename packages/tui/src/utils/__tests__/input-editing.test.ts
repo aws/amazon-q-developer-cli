@@ -1164,4 +1164,44 @@ describe('input-editing', () => {
       expect(result.cursor).toBe(5);
     });
   });
+
+  describe('deleteForward (Delete key)', () => {
+    it('deletes character after cursor', () => {
+      const result = deleteForward([text('hello')], 2);
+      expect(getVisibleText(result.segments)).toBe('helo');
+      expect(result.cursor).toBe(2);
+    });
+
+    it('is a no-op at end of text', () => {
+      const result = deleteForward([text('hello')], 5);
+      expect(getVisibleText(result.segments)).toBe('hello');
+      expect(result.cursor).toBe(5);
+    });
+
+    it('deletes chip when cursor is before chip', () => {
+      const segs = [text('hi'), file('test.ts', 'content'), text(' end')];
+      const result = deleteForward(segs, 2);
+      expect(getVisibleText(result.segments)).toBe('hi end');
+    });
+  });
+
+  describe('deleteWordForward (Alt+D / Delete key bug fix)', () => {
+    it('deletes word after cursor', () => {
+      const result = deleteWordForward([text('hello world')], 0);
+      expect(getVisibleText(result.segments)).toBe(' world');
+      expect(result.cursor).toBe(0);
+    });
+
+    it('deletes from mid-word to end of word', () => {
+      const result = deleteWordForward([text('hello world')], 2);
+      expect(getVisibleText(result.segments)).toBe('he world');
+      expect(result.cursor).toBe(2);
+    });
+
+    it('is a no-op at end of text', () => {
+      const result = deleteWordForward([text('hello')], 5);
+      expect(getVisibleText(result.segments)).toBe('hello');
+      expect(result.cursor).toBe(5);
+    });
+  });
 });

@@ -62,6 +62,10 @@ import {
   killToLogicalLineBeginning,
 } from '../../../utils/input-editing.js';
 import { CommandHistory } from '../../../utils/command-history.js';
+// TODO: Long-term, PromptInput should migrate to use Twinki's Input/TextInput
+// component (or a segment-aware extension of it) instead of reimplementing
+// editing logic. For now we import just the KillRing utility.
+import { KillRing } from 'twinki';
 import { useTerminalSize } from '../../../hooks/useTerminalSize.js';
 
 export interface TriggerRule {
@@ -200,6 +204,9 @@ export const PromptInput = React.memo(function PromptInput({
     }
   }, []);
 
+  const killRingRef = useRef(new KillRing());
+  const lastKillActionRef = useRef<'kill' | null>(null);
+  const lastYankRef = useRef<{ start: number; length: number } | null>(null);
   const undoStack = useRef<Array<{ segments: Segment[]; cursor: number }>>([]);
   const lastUndoPushTime = useRef(0);
 
@@ -597,6 +604,10 @@ export const PromptInput = React.memo(function PromptInput({
         setPathCandidates([]);
       }
 
+      // Save and clear last yank tracking; Ctrl+Y and Alt+Y will re-set it.
+      const prevYank = lastYankRef.current;
+      lastYankRef.current = null;
+
       // Check if slash command menu is visible (has matching commands)
       const hasMatchingSlashCommands =
         activeTrigger?.key === '/' && !commandInputValue.includes(' ')
@@ -650,12 +661,20 @@ export const PromptInput = React.memo(function PromptInput({
             setPathCandidates(result.candidates);
           }
         }
-      } else if (key.backspace || key.delete) {
+      } else if (key.backspace) {
         if (key.meta) {
-          // Alt+Backspace / Alt+Delete - delete word backward (matches V1 rustyline behavior)
+          // Alt+Backspace - delete word backward
           applyEdit(deleteWordBackward(segments, cursor));
         } else {
           handleBackspace();
+        }
+      } else if (key.delete) {
+        if (key.meta) {
+          // Alt+Delete (fn+alt+delete on macOS) - delete word forward
+          applyEdit(deleteWordForward(segments, cursor));
+        } else {
+          // fn+Delete on macOS - forward delete single char
+          applyEdit(deleteForward(segments, cursor));
         }
       } else if (key.leftArrow) {
         inputMetrics.markStateUpdate();
@@ -752,15 +771,36 @@ export const PromptInput = React.memo(function PromptInput({
           case 'd': // Ctrl+D - delete char under cursor (forward delete)
             applyEdit(deleteForward(segments, cursor));
             break;
-          case 'w': // Ctrl+W - delete word backward
+          case 'w': {
+            // Ctrl+W - delete word backward
+            const curBefore = cursor;
             applyEdit(deleteWordBackward(segments, cursor));
+            const curAfter = cursorRef.current;
+            const killed = getVisibleText(segments).slice(curAfter, curBefore);
+            if (killed) killRingRef.current.push(killed, { prepend: true });
             break;
-          case 'k': // Ctrl+K - kill to end of line
+          }
+          case 'k': {
+            // Ctrl+K - kill to end of line
+            const textBefore = getVisibleText(segments);
             applyEdit(killToLogicalLineEnd(segments, cursor));
+            const textAfter = getVisibleText(segmentsRef.current);
+            const killed = textBefore.slice(
+              cursor,
+              cursor + (textBefore.length - textAfter.length)
+            );
+            if (killed) killRingRef.current.push(killed, { prepend: false });
             break;
-          case 'u': // Ctrl+U - kill to beginning of line
+          }
+          case 'u': {
+            // Ctrl+U - kill to beginning of line
+            const curBefore = cursor;
             applyEdit(killToLogicalLineBeginning(segments, cursor));
+            const curAfter = cursorRef.current;
+            const killed = getVisibleText(segments).slice(curAfter, curBefore);
+            if (killed) killRingRef.current.push(killed, { prepend: true });
             break;
+          }
           case 't': // Ctrl+T - transpose characters
             applyEdit(transposeChars(segments, cursor));
             break;
@@ -835,6 +875,19 @@ export const PromptInput = React.memo(function PromptInput({
           case 'v': // Ctrl+V - paste image from clipboard
             handlePasteImage();
             break;
+          case 'y': {
+            // Ctrl+Y - yank (paste from kill ring)
+            const yanked = killRingRef.current.peek();
+            if (yanked) {
+              const yankStart = cursor;
+              insertText(yanked);
+              lastYankRef.current = { start: yankStart, length: yanked.length };
+            }
+            break;
+          }
+          case 'h': // Ctrl+H - backspace alias
+            handleBackspace();
+            break;
           default:
             break;
         }
@@ -849,9 +902,18 @@ export const PromptInput = React.memo(function PromptInput({
             inputMetrics.markStateUpdate();
             setCursor(moveWordForward(segments, cursor));
             break;
-          case 'd': // Alt+D - delete word forward
+          case 'd': {
+            // Alt+D - delete word forward (kill command)
+            const textBefore = getVisibleText(segments);
             applyEdit(deleteWordForward(segments, cursor));
+            const textAfter = getVisibleText(segmentsRef.current);
+            const killed = textBefore.slice(
+              cursor,
+              cursor + (textBefore.length - textAfter.length)
+            );
+            if (killed) killRingRef.current.push(killed, { prepend: false });
             break;
+          }
           case 't': // Alt+T - transpose words
             applyEdit(transposeWords(segments, cursor));
             break;
@@ -864,6 +926,26 @@ export const PromptInput = React.memo(function PromptInput({
           case 'c': // Alt+C - capitalize word
             applyEdit(capitalizeWord(segments, cursor));
             break;
+          case 'y': {
+            // Alt+Y - yank-pop (cycle kill ring, replace last yank)
+            if (prevYank && killRingRef.current.length > 1) {
+              const { start, length } = prevYank;
+              // Delete the previously yanked text
+              const text = getVisibleText(segments);
+              const newText = text.slice(0, start) + text.slice(start + length);
+              // Rotate and insert next entry
+              killRingRef.current.rotate();
+              const next = killRingRef.current.peek();
+              if (next) {
+                const final =
+                  newText.slice(0, start) + next + newText.slice(start);
+                setSegments([{ type: 'text', value: final }]);
+                setCursor(start + next.length);
+                lastYankRef.current = { start, length: next.length };
+              }
+            }
+            break;
+          }
           default:
             break;
         }
