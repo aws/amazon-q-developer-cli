@@ -45,6 +45,18 @@ export interface AvailableCommand {
   meta?: CommandMeta;
 }
 
+/** Check if the first token after "/" looks like a file path rather than a command name. */
+function looksLikeFilePath(afterSlash: string): boolean {
+  const spaceIndex = afterSlash.indexOf(' ');
+  const firstToken =
+    spaceIndex === -1 ? afterSlash : afterSlash.slice(0, spaceIndex);
+  return (
+    firstToken.includes('/') ||
+    firstToken.includes('\\') ||
+    firstToken.includes('.')
+  );
+}
+
 /** Parse command from input text */
 export function parseCommand(input: string): {
   isCommand: boolean;
@@ -57,6 +69,13 @@ export function parseCommand(input: string): {
   }
 
   const withoutSlash = trimmed.slice(1);
+
+  // Treat input as a regular message if the first token looks like a file path
+  // (contains path separators or dots), matching V1 behavior.
+  if (looksLikeFilePath(withoutSlash)) {
+    return { isCommand: false, name: '', args: '' };
+  }
+
   const spaceIndex = withoutSlash.indexOf(' ');
 
   if (spaceIndex === -1) {

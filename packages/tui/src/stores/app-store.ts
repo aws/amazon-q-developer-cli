@@ -2522,8 +2522,9 @@ export const createAppStore = (props: AppStoreProps) => {
             }),
           getMessages: () => get().messages,
         };
-        await executeCommand(trimmed, ctx);
-        return;
+        const handled = await executeCommand(trimmed, ctx);
+        if (handled) return;
+        // Not a command (e.g. file path like /Users/...) — fall through to send as message
       }
 
       // Handle shell escape commands

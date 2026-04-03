@@ -23,14 +23,12 @@ export function NotificationBar({
   }
 
   return (
-    <Box minHeight={1}>
-      <Alert
-        message={message}
-        status={status}
-        autoHideMs={autoHideMs}
-        onDismiss={onDismiss}
-        actionHint={actionHint}
-      />
-    </Box>
+    <Alert
+      message={message}
+      status={status}
+      autoHideMs={autoHideMs}
+      onDismiss={onDismiss}
+      actionHint={actionHint}
+    />
   );
 }
