@@ -73,7 +73,11 @@ export const SESSION_TOOL_NAMES: Set<string> = new Set([
   'agent_crew',
 ]);
 export const INTROSPECT_TOOL_NAMES: Set<string> = new Set(['introspect']);
-export const TASK_TOOL_NAMES: Set<string> = new Set(['task']);
+export const TASK_TOOL_NAMES: Set<string> = new Set([
+  'task',
+  'todo_list',
+  'todo',
+]);
 
 /** Map a wire tool name to its BuiltinToolId, or undefined for MCP/unknown tools. */
 export function resolveToolId(name: string): BuiltinToolId | undefined {
