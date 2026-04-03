@@ -91,9 +91,14 @@ pub struct StartSessionResult {
     /// Resolves when the session is ready to accept prompts.
     pub ready_rx: oneshot::Receiver<()>,
     pub current_agent_name: String,
+    /// The agent name originally requested (before fallback). `None` if no
+    /// specific agent was requested or the requested agent was found.
+    pub requested_agent_name: Option<String>,
     pub available_agents: Vec<AgentInfo>,
     pub available_models: Vec<ModelInfo>,
     pub current_model_id: String,
+    /// Agent config errors encountered during loading.
+    pub agent_config_errors: Vec<AgentConfigLoadError>,
 }
 
 /// Result returned when spawning an orchestrated session.
@@ -156,18 +161,37 @@ impl SessionManagerBuilder {
 
         tokio::spawn(async move {
             // Load agent configs once at startup
-            let agent_configs: Vec<LoadedAgentConfig> = match load_agents(&RealProvider).await {
-                Ok((configs, errors)) => {
-                    for err in &errors {
-                        error!(%err, "Failed to load agent config");
-                    }
-                    configs
-                },
-                Err(e) => {
-                    error!(%e, "Failed to load agents");
-                    Vec::new()
-                },
-            };
+            let (agent_configs, agent_config_errors): (Vec<LoadedAgentConfig>, Vec<AgentConfigLoadError>) =
+                match load_agents(&RealProvider).await {
+                    Ok((configs, errors)) => {
+                        let structured: Vec<AgentConfigLoadError> = errors
+                            .iter()
+                            .map(|e| match e {
+                                agent::agent_config::AgentConfigError::InvalidAgentConfig { path, message } => {
+                                    AgentConfigLoadError {
+                                        path: Some(path.clone()),
+                                        message: message.clone(),
+                                    }
+                                },
+                                other => AgentConfigLoadError {
+                                    path: None,
+                                    message: other.to_string(),
+                                },
+                            })
+                            .collect();
+                        for err in &errors {
+                            error!(%err, "Failed to load agent config");
+                        }
+                        (configs, structured)
+                    },
+                    Err(e) => {
+                        error!(%e, "Failed to load agents");
+                        (Vec::new(), vec![AgentConfigLoadError {
+                            path: None,
+                            message: e.to_string(),
+                        }])
+                    },
+                };
 
             // In test mode, spawn IpcServer and MockResponseRegistry
             let (mock_registry, telemetry_event_store) = if std::env::var(KIRO_TEST_MODE).is_ok() {
@@ -183,6 +207,7 @@ impl SessionManagerBuilder {
 
             let mut session_manager = SessionManager::new(
                 agent_configs,
+                agent_config_errors,
                 os,
                 local_mcp_path,
                 global_mcp_path,
@@ -260,6 +285,15 @@ pub struct SessionManager {
     group_completion_waiters: HashMap<String, GroupCompletionSender>,
     /// V1 session exporter for lazy migration of V1 conversations.
     v1_session_exporter: Arc<dyn V1SessionExporter>,
+    /// Agent config errors encountered during loading at startup.
+    agent_config_errors: Vec<AgentConfigLoadError>,
+}
+
+/// An agent config error with optional file path.
+#[derive(Debug, Clone)]
+pub struct AgentConfigLoadError {
+    pub path: Option<String>,
+    pub message: String,
 }
 
 impl SessionManager {
@@ -270,6 +304,7 @@ impl SessionManager {
     #[allow(clippy::too_many_arguments)]
     fn new(
         agent_configs: Vec<LoadedAgentConfig>,
+        agent_config_errors: Vec<AgentConfigLoadError>,
         os: Os,
         local_mcp_path: Option<PathBuf>,
         global_mcp_path: Option<PathBuf>,
@@ -300,6 +335,7 @@ impl SessionManager {
             connection_cx: None,
             group_completion_waiters: HashMap::new(),
             v1_session_exporter,
+            agent_config_errors,
         }
     }
 
@@ -432,13 +468,15 @@ impl SessionManager {
                     .find(|c| c.name() == DEFAULT_AGENT_NAME)
                     .expect("missing default agent");
 
-                let (base_agent_config, agent_name) = match self.agent_configs.iter().find(|c| c.name() == agent_name) {
-                    Some(config) => (config, agent_name),
-                    None => {
-                        warn!("Agent '{}' not found, falling back to default", agent_name);
-                        (default_agent, DEFAULT_AGENT_NAME.to_string())
-                    },
-                };
+                let (base_agent_config, agent_name, requested_agent_name) =
+                    match self.agent_configs.iter().find(|c| c.name() == agent_name) {
+                        Some(config) => (config, agent_name, None),
+                        None => {
+                            warn!("Agent '{}' not found, falling back to default", agent_name);
+                            let requested = agent_name;
+                            (default_agent, DEFAULT_AGENT_NAME.to_string(), Some(requested))
+                        },
+                    };
 
                 // If ACP client provided MCP servers, create an ephemeral config with them merged in
                 let converted_mcp_servers: Vec<_> = config
@@ -574,9 +612,11 @@ impl SessionManager {
                             handle: handle_to_give,
                             ready_rx,
                             current_agent_name: agent_name,
+                            requested_agent_name,
                             available_agents,
                             available_models,
                             current_model_id,
+                            agent_config_errors: self.agent_config_errors.clone(),
                         }));
 
                         // Send SUBAGENT_LIST_UPDATE notification after session creation

@@ -16,6 +16,7 @@ export const useNotificationState = () =>
       loadingMessage: state.loadingMessage,
       agentError: state.agentError,
       agentErrorGuidance: state.agentErrorGuidance,
+      initErrors: state.initErrors,
     }))
   );
 

@@ -34,6 +34,10 @@ pub mod methods {
     pub const SESSION_ACTIVITY: &str = "_kiro.dev/session/activity";
     /// Agent switched notification
     pub const AGENT_SWITCHED: &str = "_kiro.dev/agent/switched";
+    /// Agent not found — requested agent fell back to default
+    pub const AGENT_NOT_FOUND: &str = "_kiro.dev/agent/not_found";
+    /// Agent config parse error at startup
+    pub const AGENT_CONFIG_ERROR: &str = "_kiro.dev/agent/config_error";
     /// List sessions (temporary extension until sacp adds native session/list)
     pub const SESSION_LIST: &str = "_kiro.dev/session/list";
     /// Session update extension notification (e.g. tool_call_chunk)
@@ -164,6 +168,24 @@ pub struct AgentSwitchedNotification {
     pub agent_name: String,
     pub previous_agent_name: Option<String>,
     pub welcome_message: Option<String>,
+}
+
+/// Agent not found notification payload — requested agent fell back to default.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AgentNotFoundNotification {
+    pub session_id: SessionId,
+    pub requested_agent: String,
+    pub fallback_agent: String,
+}
+
+/// Agent config parse error notification payload.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AgentConfigErrorNotification {
+    pub session_id: SessionId,
+    pub path: Option<String>,
+    pub error: String,
 }
 
 /// Extension session update notification payload.

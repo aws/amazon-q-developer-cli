@@ -108,7 +108,10 @@ pub mod oauth_util;
 mod service;
 pub mod types;
 
-use std::collections::HashMap;
+use std::collections::{
+    HashMap,
+    HashSet,
+};
 use std::path::PathBuf;
 use std::time::Duration;
 
@@ -307,6 +310,8 @@ pub struct McpManager {
 
     initializing_servers: HashMap<String, (McpServerActorHandle, oneshot::Sender<LaunchServerResult>)>,
     servers: HashMap<String, McpServerActorHandle>,
+    /// Names of servers that failed initialization.
+    failed_servers: HashSet<String>,
     event_buf: Vec<McpServerActorEvent>,
 }
 
@@ -323,6 +328,7 @@ impl McpManager {
             cred_path,
             initializing_servers: HashMap::new(),
             servers: HashMap::new(),
+            failed_servers: HashSet::new(),
             event_buf: Vec::<McpServerActorEvent>::new(),
         }
     }
@@ -398,6 +404,12 @@ impl McpManager {
             },
             McpManagerRequest::GetToolSpecs { server_name } => match self.servers.get(&server_name) {
                 Some(handle) => Ok(McpManagerResponse::ToolSpecs(handle.get_tool_specs().await?)),
+                None if self.failed_servers.contains(&server_name) => {
+                    Err(McpManagerError::ServerFailed { name: server_name })
+                },
+                None if self.initializing_servers.contains_key(&server_name) => {
+                    Err(McpManagerError::ServerCurrentlyInitializing { name: server_name })
+                },
                 None => Err(McpManagerError::ServerNotInitialized { name: server_name }),
             },
             McpManagerRequest::GetPrompts { server_name } => match self.servers.get(&server_name) {
@@ -473,6 +485,7 @@ impl McpManager {
                 {
                     error!(?server_name, ?e, "failed to send server initialized message");
                 }
+                self.failed_servers.insert(server_name.clone());
             },
             McpServerActorEvent::OauthRequest { server_name, oauth_url } => {
                 info!(?server_name, ?oauth_url, "received oauth request");
@@ -543,6 +556,8 @@ pub enum McpManagerError {
     ServerNotInitialized { name: String },
     #[error("Server with the name {} is currently initializing", .name)]
     ServerCurrentlyInitializing { name: String },
+    #[error("Server with the name {} failed to initialize", .name)]
+    ServerFailed { name: String },
     #[error("Server with the name {} has already launched", .name)]
     ServerAlreadyLaunched { name: String },
     #[error(transparent)]

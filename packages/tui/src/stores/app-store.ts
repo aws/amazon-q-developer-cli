@@ -214,10 +214,60 @@ export interface TransientAlert {
   action?: { label: string; key: string; onAction: () => void };
 }
 
+export type InitError =
+  | { type: 'mcp_failure'; serverName: string; error: string }
+  | { type: 'agent_not_found'; requestedAgent: string; fallbackAgent: string }
+  | { type: 'agent_config_error'; path?: string; error: string };
+
 export interface LastTurnTokens {
   input: number;
   output: number;
   cached: number;
+}
+
+/** Extract just the filename from a path. */
+function basename(p: string): string {
+  const i = Math.max(p.lastIndexOf('/'), p.lastIndexOf('\\'));
+  return i >= 0 ? p.slice(i + 1) : p;
+}
+
+/** Compute a summary message from accumulated init errors. */
+export function summarizeInitErrors(errors: InitError[]): string | null {
+  if (errors.length === 0) return null;
+
+  const mcpFailures = errors.filter((e) => e.type === 'mcp_failure');
+  const agentNotFound = errors.filter((e) => e.type === 'agent_not_found');
+  const configErrors = errors.filter((e) => e.type === 'agent_config_error');
+
+  const parts: string[] = [];
+
+  // Agent not found
+  if (agentNotFound.length > 0) {
+    const e = agentNotFound[0]!;
+    parts.push(
+      `agent "${e.requestedAgent}" not found, using "${e.fallbackAgent}"`
+    );
+  }
+
+  // Agent config errors — show up to 3 filenames
+  if (configErrors.length > 0) {
+    const names = configErrors
+      .slice(0, 3)
+      .map((e) => (e.path ? basename(e.path) : 'unknown'))
+      .join(', ');
+    const extra =
+      configErrors.length > 3 ? ` +${configErrors.length - 3} more` : '';
+    parts.push(`invalid agent config: ${names}${extra}`);
+  }
+
+  // MCP failures
+  if (mcpFailures.length > 0) {
+    parts.push(
+      `${mcpFailures.length} MCP failure${mcpFailures.length > 1 ? 's' : ''} — see /mcp`
+    );
+  }
+
+  return parts.join(', ');
 }
 
 const initialInputBufferState = (): InputBufferState => ({
@@ -488,6 +538,7 @@ export interface AppState {
   }>;
   showMcpPanel: boolean;
   mcpServers: McpServerInfo[];
+  initErrors: InitError[];
   showToolsPanel: boolean;
   toolsList: ToolInfo[];
   showKnowledgePanel: boolean;
@@ -715,6 +766,7 @@ export const createAppStore = (props: AppStoreProps) => {
     usageData: null,
     showMcpPanel: false,
     mcpServers: [],
+    initErrors: [],
     showToolsPanel: false,
     toolsList: [],
     showKnowledgePanel: false,
@@ -1360,12 +1412,27 @@ export const createAppStore = (props: AppStoreProps) => {
             break;
           case AgentEventType.McpServerInitFailure:
             {
-              const message = `MCP server "${event.serverName}" failed to initialize: ${event.error}`;
-              get().showTransientAlert({
-                message,
-                status: 'error',
-                autoHideMs: 5000,
-              });
+              const current = get().initErrors;
+              // Deduplicate by server name
+              const updated = [
+                ...current.filter(
+                  (e) =>
+                    !(
+                      e.type === 'mcp_failure' &&
+                      e.serverName === event.serverName
+                    )
+                ),
+                {
+                  type: 'mcp_failure' as const,
+                  serverName: event.serverName,
+                  error: event.error,
+                },
+              ];
+              set({ initErrors: updated });
+              const message = summarizeInitErrors(updated);
+              if (message) {
+                get().showTransientAlert({ message, status: 'error' });
+              }
             }
             break;
           case AgentEventType.RateLimitError:
@@ -1384,6 +1451,40 @@ export const createAppStore = (props: AppStoreProps) => {
             });
             if (event.previousAgentName) {
               set({ previousAgentName: event.previousAgentName });
+            }
+            break;
+          case AgentEventType.AgentNotFound:
+            {
+              const updated = [
+                ...get().initErrors,
+                {
+                  type: 'agent_not_found' as const,
+                  requestedAgent: event.requestedAgent,
+                  fallbackAgent: event.fallbackAgent,
+                },
+              ];
+              set({ initErrors: updated });
+              const message = summarizeInitErrors(updated);
+              if (message) {
+                get().showTransientAlert({ message, status: 'error' });
+              }
+            }
+            break;
+          case AgentEventType.AgentConfigError:
+            {
+              const updated = [
+                ...get().initErrors,
+                {
+                  type: 'agent_config_error' as const,
+                  path: event.path,
+                  error: event.error,
+                },
+              ];
+              set({ initErrors: updated });
+              const message = summarizeInitErrors(updated);
+              if (message) {
+                get().showTransientAlert({ message, status: 'error' });
+              }
             }
             break;
           case AgentEventType.TurnSummary:
@@ -1792,7 +1893,8 @@ export const createAppStore = (props: AppStoreProps) => {
         resetMessages: state.resetMessages,
         sendMessage: state.sendMessage,
         createStreamEventHandler: state.createStreamEventHandler,
-        setSessionId: (id: string | null) => set({ sessionId: id }),
+        setSessionId: (id: string | null) =>
+          set({ sessionId: id, initErrors: [] }),
         addSystemMessage: (content: string, success: boolean) =>
           set((s) => ({
             messages: [
@@ -2489,7 +2591,8 @@ export const createAppStore = (props: AppStoreProps) => {
           resetMessages: state.resetMessages,
           sendMessage: state.sendMessage,
           createStreamEventHandler: state.createStreamEventHandler,
-          setSessionId: (id: string | null) => set({ sessionId: id }),
+          setSessionId: (id: string | null) =>
+            set({ sessionId: id, initErrors: [] }),
           addSystemMessage: (content: string, success: boolean) =>
             set((s) => ({
               messages: [

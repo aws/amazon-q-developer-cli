@@ -149,6 +149,13 @@ const wireUpHandlers = () => {
   kiro.onTurnSummary((event) => {
     appStore.getState().handleTurnSummaryEvent(event);
   });
+
+  // Wire up init-time notification handler (MCP failures, agent errors)
+  // Create a single handler instance to avoid allocating buffering state per event.
+  const initHandler = appStore.getState().createStreamEventHandler();
+  kiro.onInitNotification((event) => {
+    initHandler(event);
+  });
 };
 
 const startInitialization = (resumePickerSessionId?: string) => {

@@ -32,6 +32,8 @@ const EXT_METHODS = {
   COMPACTION_STATUS: 'kiro.dev/compaction/status',
   CLEAR_STATUS: 'kiro.dev/clear/status',
   MCP_SERVER_INIT_FAILURE: 'kiro.dev/mcp/server_init_failure',
+  AGENT_NOT_FOUND: 'kiro.dev/agent/not_found',
+  AGENT_CONFIG_ERROR: 'kiro.dev/agent/config_error',
   RATE_LIMIT_ERROR: 'kiro.dev/error/rate_limit',
   SUBAGENT_LIST_UPDATE: 'kiro.dev/subagent/list_update',
   SESSION_ACTIVITY: 'kiro.dev/session/activity',
@@ -582,6 +584,9 @@ export class AcpClient implements acp.Client, SessionClient {
     [EXT_METHODS.CLEAR_STATUS]: () => this.handleClearStatus(),
     [EXT_METHODS.MCP_SERVER_INIT_FAILURE]: (params) =>
       this.handleMcpServerInitFailure(params),
+    [EXT_METHODS.AGENT_NOT_FOUND]: (params) => this.handleAgentNotFound(params),
+    [EXT_METHODS.AGENT_CONFIG_ERROR]: (params) =>
+      this.handleAgentConfigError(params),
     [EXT_METHODS.RATE_LIMIT_ERROR]: (params) =>
       this.handleRateLimitError(params),
     [EXT_METHODS.SUBAGENT_LIST_UPDATE]: (params) =>
@@ -604,26 +609,6 @@ export class AcpClient implements acp.Client, SessionClient {
         description: string;
         meta?: Record<string, unknown>;
       }>) || [];
-    this.broadcastStreamEvent({
-      type: AgentEventType.CommandsUpdate,
-      commands: commands.map((cmd) => {
-        // Enrich /tools and /mcp descriptions with metadata counts
-        let description = cmd.description;
-        if (cmd.name === 'tools' && tools.length > 0) {
-          description = `${cmd.description} (${tools.length} available)`;
-        } else if (cmd.name === 'mcp' && mcpServers.length > 0) {
-          const running = mcpServers.filter(
-            (s) => s.status === 'running'
-          ).length;
-          description = `${cmd.description} (${running}/${mcpServers.length} running)`;
-        }
-        return {
-          name: cmd.name,
-          description,
-          meta: cmd.meta,
-        };
-      }),
-    });
 
     const prompts =
       (params.prompts as Array<{
@@ -650,6 +635,27 @@ export class AcpClient implements acp.Client, SessionClient {
         status: string;
         toolCount: number;
       }>) || [];
+
+    this.broadcastStreamEvent({
+      type: AgentEventType.CommandsUpdate,
+      commands: commands.map((cmd) => {
+        // Enrich /tools and /mcp descriptions with metadata counts
+        let description = cmd.description;
+        if (cmd.name === 'tools' && tools.length > 0) {
+          description = `${cmd.description} (${tools.length} available)`;
+        } else if (cmd.name === 'mcp' && mcpServers.length > 0) {
+          const running = mcpServers.filter(
+            (s) => s.status === 'running'
+          ).length;
+          description = `${cmd.description} (${running}/${mcpServers.length} running)`;
+        }
+        return {
+          name: cmd.name,
+          description,
+          meta: cmd.meta,
+        };
+      }),
+    });
 
     logger.debug(
       '[acp] commands advertising: commands=',
@@ -730,6 +736,31 @@ export class AcpClient implements acp.Client, SessionClient {
     this.broadcastStreamEvent({
       type: AgentEventType.RateLimitError,
       message,
+    });
+  }
+
+  private handleAgentNotFound(params: Record<string, unknown>) {
+    const requestedAgent = params.requestedAgent as string;
+    const fallbackAgent = params.fallbackAgent as string;
+    logger.debug('Agent not found received:', {
+      requestedAgent,
+      fallbackAgent,
+    });
+    this.broadcastStreamEvent({
+      type: AgentEventType.AgentNotFound,
+      requestedAgent,
+      fallbackAgent,
+    });
+  }
+
+  private handleAgentConfigError(params: Record<string, unknown>) {
+    const error = params.error as string;
+    const path = params.path as string | undefined;
+    logger.debug('Agent config error received:', { path, error });
+    this.broadcastStreamEvent({
+      type: AgentEventType.AgentConfigError,
+      path,
+      error,
     });
   }
 

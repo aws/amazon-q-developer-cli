@@ -5,11 +5,12 @@ import { Table, type Row } from './table/index.js';
 import { useTheme } from '../../hooks/useThemeContext';
 import { useTerminalSize } from '../../hooks/useTerminalSize';
 import { fuzzyScore } from '../../utils/fuzzyScore.js';
-import type { McpServerInfo } from '../../stores/app-store.js';
+import type { McpServerInfo, InitError } from '../../stores/app-store.js';
 import { visibleWidth } from '../../utils/text-width.js';
 
 interface McpPanelProps {
   servers: McpServerInfo[];
+  initErrors?: InitError[];
   onClose: () => void;
 }
 
@@ -22,7 +23,11 @@ const statusLabels: Record<McpServerInfo['status'], string> = {
 
 const GAP = 2;
 
-export const McpPanel: React.FC<McpPanelProps> = ({ servers, onClose }) => {
+export const McpPanel: React.FC<McpPanelProps> = ({
+  servers,
+  initErrors = [],
+  onClose,
+}) => {
   const { getColor } = useTheme();
   const { height: termHeight } = useTerminalSize();
   const primary = getColor('primary');
@@ -30,6 +35,17 @@ export const McpPanel: React.FC<McpPanelProps> = ({ servers, onClose }) => {
   const success = getColor('success');
   const warning = getColor('warning');
   const error = getColor('error');
+
+  // Build a lookup of MCP failure reasons from initErrors
+  const failureReasons = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const e of initErrors) {
+      if (e.type === 'mcp_failure') {
+        map.set(e.serverName, e.error);
+      }
+    }
+    return map;
+  }, [initErrors]);
 
   const maxVisible = Math.max(termHeight - 9, 5);
   const [scrollOffset, setScrollOffset] = useState(0);
@@ -76,23 +92,28 @@ export const McpPanel: React.FC<McpPanelProps> = ({ servers, onClose }) => {
   const columns = [
     { label: 'Name', width: nameCol },
     { label: 'Status', width: statusCol },
-    { label: 'Tools' },
+    { label: 'Details' },
   ];
 
   const rows: Row[] = useMemo(
     () =>
-      visible.map((server) => [
-        { text: server.name, color: primary },
-        {
-          text: statusLabels[server.status],
-          color: statusColor(server.status),
-        },
-        {
-          text: `${server.toolCount} tool${server.toolCount === 1 ? '' : 's'}`,
-          color: dim,
-        },
-      ]),
-    [visible, primary, dim, success, warning, error]
+      visible.map((server) => {
+        const reason = failureReasons.get(server.name);
+        const detail =
+          server.status === 'failed' && reason
+            ? reason
+            : `${server.toolCount} tool${server.toolCount === 1 ? '' : 's'}`;
+        const detailColor = server.status === 'failed' && reason ? error : dim;
+        return [
+          { text: server.name, color: primary },
+          {
+            text: statusLabels[server.status],
+            color: statusColor(server.status),
+          },
+          { text: detail, color: detailColor },
+        ];
+      }),
+    [visible, primary, dim, success, warning, error, failureReasons]
   );
 
   const handleSearchChange = useCallback((s: string) => {

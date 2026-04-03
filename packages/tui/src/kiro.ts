@@ -53,6 +53,7 @@ export class Kiro {
   private inboxHandler?: (notification: any) => void;
   private historyHandler?: (event: AgentStreamEvent) => void;
   private turnSummaryHandler?: (event: AgentStreamEvent) => void;
+  private initNotificationHandler?: (event: AgentStreamEvent) => void;
   private globalUpdateUnsubscribe?: () => void;
   private pendingPrompt: Promise<void> | null = null;
 
@@ -105,6 +106,14 @@ export class Kiro {
 
   onCompactionStatus(handler: (event: AgentStreamEvent) => void): void {
     this.compactionHandler = handler;
+  }
+
+  /**
+   * Register a handler for notifications that arrive during initialization
+   * (before any prompt), such as MCP server failures and agent config errors.
+   */
+  onInitNotification(handler: (event: AgentStreamEvent) => void): void {
+    this.initNotificationHandler = handler;
   }
 
   onSubagentListUpdate(
@@ -223,6 +232,15 @@ export class Kiro {
               welcomeMessage: event.welcomeMessage,
             });
           }
+        }
+        // Forward init-time notifications (MCP failures, agent errors) to the store
+        if (
+          (event.type === AgentEventType.McpServerInitFailure ||
+            event.type === AgentEventType.AgentNotFound ||
+            event.type === AgentEventType.AgentConfigError) &&
+          this.initNotificationHandler
+        ) {
+          this.initNotificationHandler(event);
         }
         // Forward historical content events (user messages, assistant text,
         // tool calls) so the store can populate the message list on resume.

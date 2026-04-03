@@ -2012,7 +2012,10 @@ impl AcpSession {
                     session_id: self.session_id.clone(),
                     server_name,
                     error,
-                })
+                })?;
+
+                // Re-advertise so /mcp panel shows updated "failed" status
+                self.advertise_commands_and_prompts().await
             },
             // Other MCP events don't need forwarding to client
             McpServerEvent::Initializing { .. } => Ok(()),
@@ -2838,6 +2841,9 @@ pub async fn execute(
                     // Advertise after responding so the TUI has processed the session response
                     result.handle.advertise_commands().await;
 
+                    // Notify TUI about agent loading issues
+                    send_agent_load_notifications(&cx, &session_id, &result.requested_agent_name, &result.agent_config_errors);
+
                     Ok(())
                 }
             },
@@ -2863,6 +2869,9 @@ pub async fn execute(
 
                             // Advertise after responding so the TUI has processed the session response
                             result.handle.advertise_commands().await;
+
+                            // Notify TUI about agent loading issues
+                            send_agent_load_notifications(&cx, &request.session_id, &result.requested_agent_name, &result.agent_config_errors);
 
                             Ok(())
                         },
@@ -3141,6 +3150,48 @@ pub async fn execute(
     });
 
     Ok(ExitCode::SUCCESS)
+}
+
+/// Send agent loading notifications to the TUI client.
+///
+/// Notifies about:
+/// - Agent not found (fell back to default)
+/// - Agent config parse errors from startup
+fn send_agent_load_notifications(
+    cx: &JrConnectionCx<AgentToClient>,
+    session_id: &SessionId,
+    requested_agent_name: &Option<String>,
+    agent_config_errors: &[super::session_manager::AgentConfigLoadError],
+) {
+    use super::extensions::{
+        AgentConfigErrorNotification,
+        AgentNotFoundNotification,
+        methods,
+    };
+
+    if let Some(requested) = requested_agent_name {
+        let notif = AgentNotFoundNotification {
+            session_id: session_id.clone(),
+            requested_agent: requested.clone(),
+            fallback_agent: agent::consts::DEFAULT_AGENT_NAME.to_string(),
+        };
+        if let Ok(raw) = serde_json::value::to_raw_value(&notif) {
+            let ext = sacp::schema::ExtNotification::new(methods::AGENT_NOT_FOUND, std::sync::Arc::from(raw));
+            let _ = cx.send_notification(sacp::schema::AgentNotification::ExtNotification(ext));
+        }
+    }
+
+    for error in agent_config_errors {
+        let notif = AgentConfigErrorNotification {
+            session_id: session_id.clone(),
+            path: error.path.clone(),
+            error: error.message.clone(),
+        };
+        if let Ok(raw) = serde_json::value::to_raw_value(&notif) {
+            let ext = sacp::schema::ExtNotification::new(methods::AGENT_CONFIG_ERROR, std::sync::Arc::from(raw));
+            let _ = cx.send_notification(sacp::schema::AgentNotification::ExtNotification(ext));
+        }
+    }
 }
 
 fn to_session_mode_state(current: String, agents: Vec<AgentInfo>) -> SessionModeState {

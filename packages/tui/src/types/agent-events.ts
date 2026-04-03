@@ -18,6 +18,8 @@ export enum AgentEventType {
   AuthError = 'auth_error',
   SessionError = 'session_error',
   AgentSwitched = 'agent_switched',
+  AgentNotFound = 'agent_not_found',
+  AgentConfigError = 'agent_config_error',
   TurnSummary = 'turn_summary',
 }
 
@@ -279,6 +281,18 @@ export interface AgentSwitchedEvent {
   welcomeMessage?: string;
 }
 
+export interface AgentNotFoundEvent {
+  type: AgentEventType.AgentNotFound;
+  requestedAgent: string;
+  fallbackAgent: string;
+}
+
+export interface AgentConfigErrorEvent {
+  type: AgentEventType.AgentConfigError;
+  path?: string;
+  error: string;
+}
+
 export interface MeteringUsage {
   value: number;
   unit: string;
@@ -311,4 +325,6 @@ export type AgentStreamEvent =
   | AuthErrorEvent
   | SessionErrorEvent
   | AgentSwitchedEvent
+  | AgentNotFoundEvent
+  | AgentConfigErrorEvent
   | TurnSummaryEvent;

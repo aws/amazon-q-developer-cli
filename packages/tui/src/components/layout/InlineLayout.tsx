@@ -51,7 +51,11 @@ import {
   useQueueActions,
   useKiroClient,
 } from '../../stores/selectors.js';
-import { useAppStore, type CodePanelData } from '../../stores/app-store.js';
+import {
+  useAppStore,
+  summarizeInitErrors,
+  type CodePanelData,
+} from '../../stores/app-store.js';
 import { useSessionConversation } from '../../stores/session-conversations.js';
 import { useShallow } from 'zustand/react/shallow';
 import { useKeypress } from '../../hooks/useKeypress';
@@ -150,8 +154,13 @@ const RenderMetricsChip: React.FC = () => {
 export const InlineLayout: React.FC = () => {
   const { getColor } = useTheme();
   // Grouped selectors using useShallow - prevents re-render cascades
-  const { transientAlert, loadingMessage, agentError, agentErrorGuidance } =
-    useNotificationState();
+  const {
+    transientAlert,
+    loadingMessage,
+    agentError,
+    agentErrorGuidance,
+    initErrors,
+  } = useNotificationState();
   const { dismissTransientAlert, setAgentError, setLoadingMessage } =
     useNotificationActions();
   const {
@@ -580,10 +589,16 @@ export const InlineLayout: React.FC = () => {
           message={
             !sessionId
               ? 'Initializing...'
-              : (loadingMessage ?? transientAlert?.message)
+              : (loadingMessage ??
+                transientAlert?.message ??
+                summarizeInitErrors(initErrors) ??
+                undefined)
           }
           status={
-            !sessionId || loadingMessage ? 'loading' : transientAlert?.status
+            !sessionId || loadingMessage
+              ? 'loading'
+              : (transientAlert?.status ??
+                (initErrors.length > 0 ? 'error' : undefined))
           }
           autoHideMs={
             !sessionId || loadingMessage
@@ -591,7 +606,11 @@ export const InlineLayout: React.FC = () => {
               : transientAlert?.autoHideMs
           }
           onDismiss={
-            !sessionId || loadingMessage ? undefined : dismissTransientAlert
+            !sessionId || loadingMessage
+              ? undefined
+              : transientAlert
+                ? dismissTransientAlert
+                : undefined
           }
           actionHint={
             transientAlert?.action
@@ -689,7 +708,11 @@ export const InlineLayout: React.FC = () => {
               />
             )}
             {showMcpPanel && (
-              <McpPanel servers={mcpServers} onClose={handleCloseMcpPanel} />
+              <McpPanel
+                servers={mcpServers}
+                initErrors={initErrors}
+                onClose={handleCloseMcpPanel}
+              />
             )}
             {showToolsPanel && (
               <ToolsPanel tools={toolsList} onClose={handleCloseToolsPanel} />
