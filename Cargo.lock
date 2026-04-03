@@ -39,7 +39,7 @@ dependencies = [
 
 [[package]]
 name = "agent"
-version = "1.29.0"
+version = "1.29.1"
 dependencies = [
  "amzn-codewhisperer-client",
  "amzn-codewhisperer-streaming-client",
@@ -1704,7 +1704,7 @@ dependencies = [
 
 [[package]]
 name = "chat-cli-ui"
-version = "1.29.0"
+version = "1.29.1"
 dependencies = [
  "arboard",
  "chrono",
@@ -1732,7 +1732,7 @@ dependencies = [
 
 [[package]]
 name = "chat_cli"
-version = "1.29.0"
+version = "1.29.1"
 dependencies = [
  "agent",
  "agent-client-protocol",
@@ -1875,7 +1875,7 @@ dependencies = [
 
 [[package]]
 name = "chat_cli_v2"
-version = "1.29.0"
+version = "1.29.1"
 dependencies = [
  "agent",
  "agent-client-protocol",
@@ -2175,7 +2175,7 @@ dependencies = [
 
 [[package]]
 name = "code-agent-sdk"
-version = "1.29.0"
+version = "1.29.1"
 dependencies = [
  "anyhow",
  "ast-grep-core",
@@ -4337,9 +4337,9 @@ checksum = "964de6e86d545b246d84badc0fef527924ace5134f30641c203ef52ba83f58d5"
 
 [[package]]
 name = "indexmap"
-version = "2.13.0"
+version = "2.13.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7714e70437a7dc3ac8eb7e6f8df75fd8eb422675fc7678aff7364301092b1017"
+checksum = "45a8a2b9cb3e0b0c1803dbb0758ffac5de2f425b23c28f518faabd9d805342ff"
 dependencies = [
  "equivalent",
  "hashbrown 0.16.1",
@@ -6258,7 +6258,7 @@ version = "3.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e67ba7e9b2b56446f1d419b1d807906278ffa1a658a8a5d8a39dcb1f5a78614f"
 dependencies = [
- "toml_edit 0.25.9+spec-1.1.0",
+ "toml_edit 0.25.10+spec-1.1.0",
 ]
 
 [[package]]
@@ -7455,7 +7455,7 @@ dependencies = [
 
 [[package]]
 name = "semantic_search_client"
-version = "1.29.0"
+version = "1.29.1"
 dependencies = [
  "anyhow",
  "bm25",
@@ -8566,9 +8566,9 @@ dependencies = [
 
 [[package]]
 name = "toml_edit"
-version = "0.25.9+spec-1.1.0"
+version = "0.25.10+spec-1.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "da053d28fe57e2c9d21b48261e14e7b4c8b670b54d2c684847b91feaf4c7dac5"
+checksum = "a82418ca169e235e6c399a84e395ab6debeb3bc90edc959bf0f48647c6a32d1b"
 dependencies = [
  "indexmap",
  "toml_datetime 1.1.1+spec-1.1.0",
@@ -8578,9 +8578,9 @@ dependencies = [
 
 [[package]]
 name = "toml_parser"
-version = "1.1.1+spec-1.1.0"
+version = "1.1.2+spec-1.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "39ca317ebc49f06bd748bfba29533eac9485569dc9bf80b849024b025e814fb9"
+checksum = "a2abe9b86193656635d2411dc43050282ca48aa31c2451210f4202550afb7526"
 dependencies = [
  "winnow 1.0.1",
 ]
@@ -10411,9 +10411,9 @@ dependencies = [
 
 [[package]]
 name = "writeable"
-version = "0.6.2"
+version = "0.6.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9edde0db4769d2dc68579893f2306b26c6ecfbe0ef499b013d731b7b9247e0b9"
+checksum = "1ffae5123b2d3fc086436f8834ae3ab053a283cfac8fe0a0b8eaae044768a4c4"
 
 [[package]]
 name = "x11rb"

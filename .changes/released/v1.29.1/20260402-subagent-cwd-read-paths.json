@@ -1,0 +1,1 @@
+{"type": "fixed", "description": "Fixed V1 subagent not having access to read files in the current working directory"}

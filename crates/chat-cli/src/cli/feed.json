@@ -12,6 +12,34 @@
     },
     {
       "type": "release",
+      "date": "2026-04-02",
+      "version": "1.29.1",
+      "title": "Version 1.29.1",
+      "changes": [
+        {
+          "type": "added",
+          "description": "Added UX for managing queued messages in V2 TUI"
+        },
+        {
+          "type": "fixed",
+          "description": "Fixed V1 subagent not having access to read files in the current working directory"
+        },
+        {
+          "type": "fixed",
+          "description": "Fixed IME input in terminal multiplexers by enabling hardware cursor"
+        },
+        {
+          "type": "fixed",
+          "description": "Fixed feedback URL being clipped and input filepath handling in V2 TUI"
+        },
+        {
+          "type": "fixed",
+          "description": "Fixed Ctrl+Z to properly suspend and resume the process in V2 TUI"
+        }
+      ]
+    },
+    {
+      "type": "release",
       "date": "2026-04-01",
       "version": "1.29.0",
       "title": "Version 1.29.0",

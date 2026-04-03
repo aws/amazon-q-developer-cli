@@ -1,0 +1,1 @@
+{"type": "fixed", "description": "Fixed Ctrl+Z to properly suspend and resume the process in V2 TUI"}
