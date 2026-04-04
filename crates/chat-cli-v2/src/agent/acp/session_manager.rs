@@ -115,6 +115,7 @@ pub struct SessionManagerBuilder {
     local_mcp_path: Option<PathBuf>,
     global_mcp_path: Option<PathBuf>,
     trust_all_tools: bool,
+    trust_tools: Option<Vec<String>>,
     v1_session_exporter: Option<Arc<dyn V1SessionExporter>>,
 }
 
@@ -139,6 +140,11 @@ impl SessionManagerBuilder {
         self
     }
 
+    pub fn trust_tools(mut self, tools: Option<Vec<String>>) -> Self {
+        self.trust_tools = tools;
+        self
+    }
+
     pub fn v1_session_exporter(mut self, exporter: Arc<dyn V1SessionExporter>) -> Self {
         self.v1_session_exporter = Some(exporter);
         self
@@ -151,6 +157,7 @@ impl SessionManagerBuilder {
             local_mcp_path,
             global_mcp_path,
             trust_all_tools,
+            trust_tools,
             v1_session_exporter,
         } = self;
         let os = os.expect("Os not found");
@@ -214,6 +221,7 @@ impl SessionManagerBuilder {
                 session_manager_handle_clone,
                 mock_registry,
                 trust_all_tools,
+                trust_tools,
                 telemetry_event_store,
                 v1_session_exporter,
             );
@@ -266,6 +274,8 @@ pub struct SessionManager {
     code_intelligence: HashMap<PathBuf, Arc<RwLock<CodeIntelligence>>>,
     /// When true, all tool permission checks are bypassed for new sessions
     trust_all_tools: bool,
+    /// Specific tools to trust for new sessions (from --trust-tools CLI flag)
+    trust_tools: Option<Vec<String>>,
     /// ACP client identity from InitializeRequest, propagated to all sessions
     acp_client_info: Option<crate::telemetry::observer::AcpClientInfo>,
     /// Telemetry event store for recording events in test scenarios.
@@ -311,6 +321,7 @@ impl SessionManager {
         session_manager_handle: SessionManagerHandle,
         mock_registry: Option<MockResponseRegistryHandle>,
         trust_all_tools: bool,
+        trust_tools: Option<Vec<String>>,
         telemetry_event_store: Option<TelemetryEventStore>,
         v1_session_exporter: Arc<dyn V1SessionExporter>,
     ) -> Self {
@@ -326,6 +337,7 @@ impl SessionManager {
             next_model_id: None,
             code_intelligence: HashMap::new(),
             trust_all_tools,
+            trust_tools,
             acp_client_info: None,
             telemetry_event_store,
             inbox_store: InboxStore::new(),
@@ -524,6 +536,7 @@ impl SessionManager {
                     .set_as_subagent(config.is_subagent)
                     .code_intelligence(code_intel)
                     .trust_all_tools(self.trust_all_tools)
+                    .trust_tools(self.trust_tools.clone())
                     .acp_client_info(self.acp_client_info.clone())
                     .telemetry_event_store(self.telemetry_event_store.clone())
                     .v1_session_exporter(Arc::clone(&self.v1_session_exporter))

@@ -108,6 +108,10 @@ impl LoadedAgentConfig {
         self.config.allowed_tools()
     }
 
+    pub fn allowed_tools_mut(&mut self) -> &mut HashSet<String> {
+        self.config.allowed_tools_mut()
+    }
+
     pub fn hooks(&self) -> &HashMap<HookTrigger, Vec<HookConfig>> {
         self.config.hooks()
     }

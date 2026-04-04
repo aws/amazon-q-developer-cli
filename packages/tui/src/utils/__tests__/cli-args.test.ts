@@ -99,6 +99,35 @@ describe('parseCliArgs', () => {
     expect(parseCliArgs().model).toBe('gpt-4');
   });
 
+  it('parses --model=value syntax', () => {
+    setArgs('chat', '--model=claude-opus-4.6-1m');
+    expect(parseCliArgs().model).toBe('claude-opus-4.6-1m');
+  });
+
+  it('parses --agent=value syntax', () => {
+    setArgs('chat', '--agent=my-agent');
+    expect(parseCliArgs().agent).toBe('my-agent');
+  });
+
+  it('parses --resume-id=value syntax', () => {
+    setArgs('chat', '--resume-id=abc-123');
+    expect(parseCliArgs().resumeId).toBe('abc-123');
+  });
+
+  it('parses --trust-tools=value and forwards to ACP', () => {
+    setArgs('chat', '--trust-tools=fs_read,fs_write', '--model', 'gpt-4');
+    const result = parseCliArgs();
+    expect(result.model).toBe('gpt-4');
+    expect(result.trustTools).toEqual(['fs_read', 'fs_write']);
+  });
+
+  it('forwards --trust-tools in buildAcpArgs', () => {
+    expect(buildAcpArgs({ trustTools: ['read', 'write'] })).toEqual([
+      '--trust-tools',
+      'read,write',
+    ]);
+  });
+
   it('parses positional input after --model', () => {
     setArgs('chat', '--model', 'gpt-4', 'hello');
     const result = parseCliArgs();

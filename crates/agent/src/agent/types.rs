@@ -148,6 +148,9 @@ pub struct AcpSpawnArgs {
     /// Auto-approve all tool permission requests.
     #[serde(default)]
     pub trust_all_tools: bool,
+    /// Trust only this set of tools (comma-separated names from CLI).
+    #[serde(default)]
+    pub trust_tools: Option<Vec<String>>,
 }
 
 /// Settings to modify the runtime behavior of the agent.

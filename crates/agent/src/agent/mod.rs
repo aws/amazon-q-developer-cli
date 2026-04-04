@@ -1178,7 +1178,7 @@ impl Agent {
 
                         let status = if self.permissions.is_tool_denied(canonical) {
                             tui_commands::ToolStatus::Denied
-                        } else if self.permissions.is_tool_trusted(canonical) {
+                        } else if self.permissions.is_tool_trusted(canonical) || self.settings.trust_all_tools {
                             tui_commands::ToolStatus::Allowed
                         } else {
                             // Check config-level allowed_tools

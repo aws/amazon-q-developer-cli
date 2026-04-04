@@ -83,6 +83,12 @@ impl AgentConfig {
         }
     }
 
+    pub fn allowed_tools_mut(&mut self) -> &mut HashSet<String> {
+        match self {
+            AgentConfig::V2025_08_22(a) => &mut a.allowed_tools,
+        }
+    }
+
     pub fn hooks(&self) -> &HashMap<HookTrigger, Vec<HookConfig>> {
         match self {
             AgentConfig::V2025_08_22(a) => &a.hooks,

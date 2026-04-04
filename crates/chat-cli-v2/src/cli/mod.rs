@@ -126,6 +126,9 @@ pub enum RootSubcommand {
         /// Auto-approve all tool permission requests
         #[arg(long, short = 'a')]
         trust_all_tools: bool,
+        /// Trust only this set of tools
+        #[arg(long, value_delimiter = ',', value_name = "TOOL_NAMES")]
+        trust_tools: Option<Vec<String>>,
     },
     /// ACP test client
     #[command(hide = true)]
@@ -196,11 +199,13 @@ impl RootSubcommand {
                 agent,
                 model,
                 trust_all_tools,
+                trust_tools,
             } => {
                 let spawn_args = ::agent::types::AcpSpawnArgs {
                     agent,
                     model,
                     trust_all_tools,
+                    trust_tools,
                 };
                 use std::sync::Arc;
 

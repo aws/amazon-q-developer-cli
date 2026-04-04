@@ -4,6 +4,9 @@
  * Parses process.argv and builds the extra args forwarded to the ACP backend.
  * The ACP args contract is defined by the generated {@link AcpSpawnArgs} type
  * (Rust → typeshare → TypeScript) so both sides stay in sync.
+ *
+ * To add a new flag, add an entry to {@link FLAG_DEFS} — parsing, forwarding,
+ * and `--key=value` handling are all automatic.
  */
 
 import type { AcpSpawnArgs } from '../types/generated/agent.js';
@@ -29,15 +32,70 @@ export interface CliArgs extends AcpSpawnArgs {
   resumePicker: boolean;
 }
 
+// ── Flag definitions ────────────────────────────────────────────────────
+// Each entry declares one CLI flag. The parser and buildAcpArgs both
+// derive their behaviour from this single table.
+
+type StringKeys = {
+  [K in keyof CliArgs]-?: NonNullable<CliArgs[K]> extends string ? K : never;
+}[keyof CliArgs];
+type BooleanKeys = {
+  [K in keyof CliArgs]-?: NonNullable<CliArgs[K]> extends boolean ? K : never;
+}[keyof CliArgs];
+type StringListKeys = {
+  [K in keyof CliArgs]-?: NonNullable<CliArgs[K]> extends string[] ? K : never;
+}[keyof CliArgs];
+
+type FlagDef =
+  | { type: 'string'; key: StringKeys; flags: string[]; acp?: string }
+  | { type: 'boolean'; key: BooleanKeys; flags: string[]; acp?: string }
+  | { type: 'string-list'; key: StringListKeys; flags: string[]; acp?: string }
+  | { type: 'skip'; flags: string[]; hasValue?: boolean };
+
+const FLAG_DEFS: FlagDef[] = [
+  {
+    type: 'string',
+    key: 'agent',
+    flags: ['--agent', '--profile'],
+    acp: '--agent',
+  },
+  { type: 'string', key: 'model', flags: ['--model'], acp: '--model' },
+  { type: 'string', key: 'resumeId', flags: ['--resume-id'] },
+  {
+    type: 'boolean',
+    key: 'trustAllTools',
+    flags: ['--trust-all-tools', '-a'],
+    acp: '--trust-all-tools',
+  },
+  {
+    type: 'string-list',
+    key: 'trustTools',
+    flags: ['--trust-tools'],
+    acp: '--trust-tools',
+  },
+  {
+    type: 'boolean',
+    key: 'noInteractive',
+    flags: ['--no-interactive', '--non-interactive'],
+  },
+  { type: 'boolean', key: 'resume', flags: ['--resume', '-r'] },
+  { type: 'boolean', key: 'resumePicker', flags: ['--resume-picker'] },
+  // consumed by Rust ChatArgs before TUI is launched — skip without error
+  { type: 'skip', flags: ['--tui'] },
+];
+
+// Build a lookup map: flag string → FlagDef (built once at module load)
+const FLAG_MAP = new Map<string, FlagDef>();
+for (const def of FLAG_DEFS) {
+  for (const f of def.flags) {
+    FLAG_MAP.set(f, def);
+  }
+}
+
 /**
  * Parse CLI arguments from process.argv.
  *
- * Supports:
- *   --agent <name> / --profile <name>
- *   --model <id>
- *   --trust-all-tools / -a
- *   --no-interactive / --non-interactive
- *   positional input (first non-flag argument after "chat")
+ * Supports both `--key value` and `--key=value` syntax for all flags.
  */
 export function parseCliArgs(): CliArgs {
   const args = process.argv.slice(2);
@@ -55,33 +113,34 @@ export function parseCliArgs(): CliArgs {
   }
 
   for (let i = startIdx; i < args.length; i++) {
-    const arg = args[i]!;
+    const raw = args[i]!;
 
-    if (arg === '--agent' || arg === '--profile') {
-      result.agent = args[++i];
-    } else if (arg === '--model') {
-      result.model = args[++i];
-    } else if (arg === '--trust-all-tools' || arg === '-a') {
-      result.trustAllTools = true;
-    } else if (arg === '--no-interactive' || arg === '--non-interactive') {
-      result.noInteractive = true;
-    } else if (arg === '--resume' || arg === '-r') {
-      result.resume = true;
-    } else if (arg === '--resume-id') {
-      result.resumeId = args[++i];
-    } else if (arg === '--resume-picker') {
-      result.resumePicker = true;
-    } else if (arg === '--tui') {
-      // Boolean flag consumed by the Rust launcher — ignore without consuming next arg
-    } else if (arg.startsWith('-')) {
-      // Unknown flag — skip its value if the next arg looks like a value (not another flag)
-      const next = args[i + 1];
-      if (next && !next.startsWith('-')) {
-        i++;
+    // Normalize --key=value → key + value
+    const eqIdx = raw.indexOf('=');
+    const flag = eqIdx > 0 ? raw.slice(0, eqIdx) : raw;
+    const eqValue = eqIdx > 0 ? raw.slice(eqIdx + 1) : undefined;
+
+    const def = FLAG_MAP.get(flag);
+
+    if (def) {
+      if (def.type === 'string') {
+        (result as any)[def.key] = eqValue ?? args[++i];
+      } else if (def.type === 'string-list') {
+        const csv = eqValue ?? args[++i] ?? '';
+        (result as any)[def.key] = csv.split(',');
+      } else if (def.type === 'boolean') {
+        (result as any)[def.key] = true;
+      } else if (def.type === 'skip' && def.hasValue) {
+        if (eqValue === undefined) i++; // consume next arg
+      }
+    } else if (raw.startsWith('-')) {
+      // Unknown flag — skip its value if the next arg looks like a value
+      if (eqValue === undefined) {
+        const next = args[i + 1];
+        if (next && !next.startsWith('-')) i++;
       }
     } else if (!result.input) {
-      // First positional arg is the input
-      result.input = arg;
+      result.input = raw;
     }
   }
 
@@ -91,20 +150,26 @@ export function parseCliArgs(): CliArgs {
 /**
  * Build the extra arguments to forward to the ACP backend process.
  *
- * Only flags matching {@link AcpSpawnArgs} are forwarded — TUI-only
+ * Only flags with an `acp` field in {@link FLAG_DEFS} are forwarded. TUI-only
  * fields like `noInteractive` are intentionally excluded.
  */
-export function buildAcpArgs(cliArgs: AcpSpawnArgs): string[] {
+export function buildAcpArgs(cliArgs: Partial<AcpSpawnArgs>): string[] {
   const args: string[] = [];
 
-  if (cliArgs.agent) {
-    args.push('--agent', cliArgs.agent);
-  }
-  if (cliArgs.model) {
-    args.push('--model', cliArgs.model);
-  }
-  if (cliArgs.trustAllTools) {
-    args.push('--trust-all-tools');
+  for (const def of FLAG_DEFS) {
+    if (def.type === 'skip' || !def.acp) continue;
+    const value = (cliArgs as any)[def.key];
+    if (def.type === 'string' && value) {
+      args.push(def.acp, value);
+    } else if (
+      def.type === 'string-list' &&
+      Array.isArray(value) &&
+      value.length > 0
+    ) {
+      args.push(def.acp, value.join(','));
+    } else if (def.type === 'boolean' && value) {
+      args.push(def.acp);
+    }
   }
 
   return args;

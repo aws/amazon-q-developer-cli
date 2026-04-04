@@ -10,6 +10,8 @@ export interface AcpSpawnArgs {
 	model?: string;
 	/** Auto-approve all tool permission requests. */
 	trustAllTools?: boolean;
+	/** Trust only this set of tools (comma-separated names from CLI). */
+	trustTools?: string[];
 }
 
 /** Arguments for /agent command */

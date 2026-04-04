@@ -637,6 +637,7 @@ pub struct AcpSessionBuilder<'a> {
     agent_configs: Vec<LoadedAgentConfig>,
     current_agent_name: Option<String>,
     trust_all_tools: bool,
+    trust_tools: Option<Vec<String>>,
     acp_client_info: Option<AcpClientInfo>,
     /// Telemetry event store for recording events in test scenarios. `None` in production.
     telemetry_event_store: Option<crate::agent::ipc_server::TelemetryEventStore>,
@@ -733,6 +734,11 @@ impl<'a> AcpSessionBuilder<'a> {
 
     pub fn trust_all_tools(mut self, trust: bool) -> Self {
         self.trust_all_tools = trust;
+        self
+    }
+
+    pub fn trust_tools(mut self, tools: Option<Vec<String>>) -> Self {
+        self.trust_tools = tools;
         self
     }
 
@@ -1034,6 +1040,17 @@ impl AcpSession {
         let snapshot = {
             let mut s = snapshot;
             s.settings.trust_all_tools = builder.trust_all_tools;
+            if let Some(tools) = builder.trust_tools {
+                for tool in &tools {
+                    if !tool.starts_with('@') && tool.parse::<agent::tools::BuiltInToolName>().is_err() {
+                        warn!(
+                            "--trust-tools: custom tool '{}' should be prefixed with @{{MCPSERVERNAME}}/",
+                            tool
+                        );
+                    }
+                }
+                s.agent_config.allowed_tools_mut().extend(tools);
+            }
             s
         };
 
@@ -2760,6 +2777,7 @@ pub async fn execute(
         .local_mcp_path(local_mcp_path)
         .global_mcp_path(global_mcp_path)
         .trust_all_tools(args.trust_all_tools)
+        .trust_tools(args.trust_tools)
         .v1_session_exporter(v1_session_exporter)
         .spawn();
 
