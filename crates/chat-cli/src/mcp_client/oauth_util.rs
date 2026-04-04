@@ -1,6 +1,9 @@
 use std::collections::HashMap;
 use std::net::SocketAddr;
-use std::path::PathBuf;
+use std::path::{
+    Path,
+    PathBuf,
+};
 use std::pin::Pin;
 use std::str::FromStr;
 use std::sync::Arc;
@@ -68,8 +71,6 @@ pub enum OauthUtilError {
     MissingAuthorizationManager,
     #[error("Missing auth client when token refresh is needed")]
     MissingAuthClient,
-    #[error("Missing re-authentication context")]
-    MissingReauthContext,
     #[error(transparent)]
     OneshotRecv(#[from] tokio::sync::oneshot::error::RecvError),
     #[error(transparent)]
@@ -140,6 +141,24 @@ pub struct ReauthContext {
     pub os: Os,
 }
 
+/// Refreshes an OAuth token and persists the new credentials to disk.
+///
+/// This is a standalone function used during connection setup when a token
+/// might be expired. For mid-session refresh, use `AuthClientWrapper::refresh_token()`.
+pub async fn refresh_and_persist_token(
+    auth_client: &AuthClient<Client>,
+    cred_full_path: &Path,
+) -> Result<(), OauthUtilError> {
+    let cred = auth_client.auth_manager.lock().await.refresh_token().await?;
+    let parent_path = cred_full_path.parent().ok_or(OauthUtilError::MalformDirectory)?;
+    tokio::fs::create_dir_all(parent_path).await?;
+
+    let cred_as_bytes = serde_json::to_string_pretty(&cred)?;
+    tokio::fs::write(cred_full_path, &cred_as_bytes).await?;
+
+    Ok(())
+}
+
 /// A wrapper that manages an authenticated MCP client.
 ///
 /// This struct wraps an `AuthClient` and provides access to OAuth credentials
@@ -149,29 +168,22 @@ pub struct ReauthContext {
 pub struct AuthClientWrapper {
     pub cred_full_path: PathBuf,
     pub auth_client: AuthClient<Client>,
-    pub reauth_ctx: Option<ReauthContext>,
+    pub reauth_ctx: ReauthContext,
 }
 
 impl AuthClientWrapper {
-    pub fn new(cred_full_path: PathBuf, auth_client: AuthClient<Client>) -> Self {
+    pub fn new(cred_full_path: PathBuf, auth_client: AuthClient<Client>, reauth_ctx: ReauthContext) -> Self {
         Self {
             cred_full_path,
             auth_client,
-            reauth_ctx: None,
+            reauth_ctx,
         }
     }
 
     /// Refreshes token in memory using the registration read from when the auth client was
     /// spawned. This also persists the retrieved token
     pub async fn refresh_token(&self) -> Result<(), OauthUtilError> {
-        let cred = self.auth_client.auth_manager.lock().await.refresh_token().await?;
-        let parent_path = self.cred_full_path.parent().ok_or(OauthUtilError::MalformDirectory)?;
-        tokio::fs::create_dir_all(parent_path).await?;
-
-        let cred_as_bytes = serde_json::to_string_pretty(&cred)?;
-        tokio::fs::write(&self.cred_full_path, &cred_as_bytes).await?;
-
-        Ok(())
+        refresh_and_persist_token(&self.auth_client, &self.cred_full_path).await
     }
 
     /// Performs a full browser-based OAuth re-authentication flow mid-session.
@@ -185,10 +197,7 @@ impl AuthClientWrapper {
         let auth_client_wrapper_clone = self.clone();
 
         tokio::spawn(async move {
-            let ctx = auth_client_wrapper_clone
-                .reauth_ctx
-                .as_ref()
-                .ok_or(OauthUtilError::MissingReauthContext)?;
+            let ctx = &auth_client_wrapper_clone.reauth_ctx;
 
             let oauth_state = OAuthState::new(ctx.url.clone(), None).await?;
             let (new_am, redirect_uri) = get_auth_manager_impl(
@@ -373,8 +382,7 @@ impl<'a> HttpServiceBuilder<'a> {
 
                     match service.clone().into_dyn().serve(transport).await {
                         Ok(service) => {
-                            let mut auth_client_wrapper = AuthClientWrapper::new(cred_full_path, ac);
-                            auth_client_wrapper.reauth_ctx = Some(ReauthContext {
+                            let auth_client_wrapper = AuthClientWrapper::new(cred_full_path, ac, ReauthContext {
                                 url: url.clone(),
                                 reg_full_path,
                                 scopes: scopes.to_vec(),
@@ -397,8 +405,7 @@ impl<'a> HttpServiceBuilder<'a> {
                 },
                 HttpServiceBuilderState::FailedBecauseTokenMightBeExpired => {
                     let auth_client_ref = auth_client.as_ref().ok_or(OauthUtilError::MissingAuthClient)?;
-                    let auth_client_wrapper = AuthClientWrapper::new(cred_full_path.clone(), auth_client_ref.clone());
-                    let refresh_res = auth_client_wrapper.refresh_token().await;
+                    let refresh_res = refresh_and_persist_token(auth_client_ref, &cred_full_path).await;
 
                     if let Err(e) = refresh_res {
                         error!("## mcp: token refresh failed: {e:?}");

@@ -67,7 +67,7 @@ export const McpPanel: React.FC<McpPanelProps> = ({
       const name = item.label.slice(2);
       const url = pendingOAuthUrls.get(name);
       if (url) {
-        copyToSystemClipboard(url);
+        void copyToSystemClipboard(url);
       }
     },
     [pendingOAuthUrls]

@@ -603,7 +603,7 @@ export const InlineLayout: React.FC = () => {
               : (loadingMessage ??
                 transientAlert?.message ??
                 (pendingOAuthServers.size > 0
-                  ? `${pendingOAuthServers.keys().next().value} requires OAuth — Ctrl+r to copy URL`
+                  ? `${pendingOAuthServers.keys().next().value} requires OAuth — Ctrl+y to copy URL`
                   : undefined) ??
                 summarizeInitErrors(initErrors) ??
                 undefined)
@@ -634,7 +634,7 @@ export const InlineLayout: React.FC = () => {
             transientAlert?.action
               ? `${transientAlert.action.key}: ${transientAlert.action.label}`
               : pendingOAuthServers.size > 0
-                ? 'Ctrl+r: Copy URL'
+                ? 'Ctrl+y: Copy URL'
                 : undefined
           }
         />

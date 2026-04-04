@@ -83,14 +83,14 @@ export const AppContainer: React.FC = () => {
       suspendProcess();
       return;
     }
-    // Fire transient alert action on Ctrl+r
-    if (key.ctrl && userInput === 'r' && transientAlert?.action) {
+    // Fire transient alert action on Ctrl+y
+    if (key.ctrl && userInput === 'y' && transientAlert?.action) {
       transientAlert.action.onAction();
       dismissTransientAlert();
       return;
     }
-    // Copy OAuth URL on Ctrl+r when a server is pending auth
-    if (key.ctrl && userInput === 'r' && pendingOAuthServers.size > 0) {
+    // Copy OAuth URL on Ctrl+y when a server is pending auth
+    if (key.ctrl && userInput === 'y' && pendingOAuthServers.size > 0) {
       const [, url] = pendingOAuthServers.entries().next().value as [
         string,
         string,

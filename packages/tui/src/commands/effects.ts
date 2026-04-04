@@ -192,10 +192,10 @@ const effectHandlers: Record<EffectName, EffectHandler> = {
     // If the result has breakdown data, show the panel (this is /context show or bare /context)
     const data = result?.data as
       | {
-          breakdown?: any;
-          contextUsagePercentage?: number;
-          initialExpanded?: boolean;
-        }
+        breakdown?: any;
+        contextUsagePercentage?: number;
+        initialExpanded?: boolean;
+      }
       | undefined;
     if (data?.breakdown) {
       if (data?.contextUsagePercentage != null) {
@@ -615,7 +615,7 @@ const effectHandlers: Record<EffectName, EffectHandler> = {
   },
 
   /** Copy last assistant response to system clipboard */
-  copyToClipboard: (_result, ctx) => {
+  copyToClipboard: async (_result, ctx) => {
     const messages = ctx.getMessages();
     // Collect all Model messages from the last assistant turn (everything
     // after the most recent User message). Tool calls interleave Model
@@ -763,7 +763,7 @@ const effectHandlers: Record<EffectName, EffectHandler> = {
       const category = args.slice(0, colonIdx);
       const presetId = args.slice(colonIdx + 1);
 
-      const updatedPrefs = { ...prefs };
+      let updatedPrefs = { ...prefs };
       if (category === 'prompt') {
         const preset = getPromptPreset(presetId);
         if (!preset) {
