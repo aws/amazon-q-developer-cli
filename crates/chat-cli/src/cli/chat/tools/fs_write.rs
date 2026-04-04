@@ -143,12 +143,16 @@ impl FsWrite {
                     style::Print("\n"),
                 )?;
                 match matches.len() {
-                    0 => return Err(eyre!("no occurrences of \"{old_str}\" were found")),
+                    0 => return Err(eyre!(
+                        "no occurrences of \"{old_str}\" were found — \
+                        use fs_read to read the current file content and retry str_replace with the exact text. \
+                        Do NOT fall back to shell commands like sed."
+                    )),
                     1 => {
                         let file = file.replacen(old_str, new_str, 1);
                         os.fs.write(&path, file).await?;
                     },
-                    x => return Err(eyre!("{x} occurrences of old_str were found when only 1 is expected")),
+                    x => return Err(eyre!("{x} occurrences of old_str were found when only 1 is expected — add more surrounding context to old_str to make it unique")),
                 }
             },
             FsWrite::Insert {
