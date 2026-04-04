@@ -482,6 +482,10 @@ const startApp = async () => {
   // Clear screen and move cursor to top
   process.stdout.write('\x1b[2J\x1b[H');
 
+  // Set process title so tmux automatic-rename shows "kiro" instead of "twinki:c".
+  // This doesn't override manual pane renames — only affects automatic-rename.
+  process.title = 'kiro';
+
   function App() {
     const appStoreRef = useRef<AppStoreApi>(appStore);
 

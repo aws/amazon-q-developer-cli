@@ -107,8 +107,10 @@ export class TUI extends Container {
   private hardwareCursorRow = 0;
   private inputBuffer = '';
   private cellSizeQueryPending = false;
-  private readonly isMultiplexer = 'ZELLIJ' in process.env || 'TMUX' in process.env;
-  private showHardwareCursor = process.env.TWINKI_HARDWARE_CURSOR === '1' || this.isMultiplexer;
+  private readonly isMultiplexer =
+    'ZELLIJ' in process.env || 'TMUX' in process.env;
+  private showHardwareCursor =
+    process.env.TWINKI_HARDWARE_CURSOR === '1' || this.isMultiplexer;
   private clearOnShrink = process.env.TWINKI_CLEAR_ON_SHRINK === '1';
   private maxLinesRendered = 0;
   private previousViewportTop = 0;
@@ -1118,6 +1120,8 @@ export class TUI extends Container {
     height: number
   ): { row: number; col: number } | null {
     const viewportTop = Math.max(0, lines.length - height);
+
+    // Fast path: scan viewport (where the cursor almost always is)
     for (let row = lines.length - 1; row >= viewportTop; row--) {
       const line = lines[row]!;
       const idx = line.indexOf(CURSOR_MARKER);
@@ -1126,6 +1130,17 @@ export class TUI extends Container {
         lines[row] =
           line.slice(0, idx) + line.slice(idx + CURSOR_MARKER.length);
         return { row, col };
+      }
+    }
+
+    // Cleanup: strip any marker above viewport so it never leaks to terminal
+    for (let row = viewportTop - 1; row >= 0; row--) {
+      const idx = lines[row]!.indexOf(CURSOR_MARKER);
+      if (idx !== -1) {
+        lines[row] =
+          lines[row]!.slice(0, idx) +
+          lines[row]!.slice(idx + CURSOR_MARKER.length);
+        break; // only one marker exists
       }
     }
     return null;
