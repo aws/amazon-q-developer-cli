@@ -610,15 +610,18 @@ const effectHandlers: Record<EffectName, EffectHandler> = {
   /** Copy last assistant response to system clipboard */
   copyToClipboard: (_result, ctx) => {
     const messages = ctx.getMessages();
-    // Find the last Model message
-    let lastContent = '';
+    // Collect all Model messages from the last assistant turn (everything
+    // after the most recent User message). Tool calls interleave Model
+    // messages, so we need to concatenate all of them.
+    const parts: string[] = [];
     for (let i = messages.length - 1; i >= 0; i--) {
-      const msg = messages[i];
-      if (msg && msg.role === MessageRole.Model && msg.content) {
-        lastContent = msg.content;
-        break;
+      const msg = messages[i]!;
+      if (msg.role === MessageRole.User) break;
+      if (msg.role === MessageRole.Model && msg.content) {
+        parts.push(msg.content);
       }
     }
+    const lastContent = parts.reverse().join('\n\n');
 
     if (!lastContent) {
       ctx.showAlert('No response to copy', 'error', 3000);
