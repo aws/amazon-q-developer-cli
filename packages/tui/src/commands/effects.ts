@@ -887,6 +887,7 @@ import {
   getResponsePreset,
   getBundledTheme,
 } from '../theme/user-theme.js';
+import { writeFileSync } from 'fs';
 
 /**
  * Copy text to the system clipboard using platform-native tools.
@@ -931,6 +932,19 @@ function copyToSystemClipboard(text: string): boolean {
       // Tool not found or failed — try next candidate
     }
   }
+
+  // Last resort: OSC 52 escape sequence — works over SSH/multiplexers
+  // Most terminals cap OSC 52 at ~1MB; use conservative limit.
+  if (process.platform !== 'win32' && Buffer.byteLength(text, 'utf-8') <= 100_000) {
+    try {
+      const b64 = Buffer.from(text, 'utf-8').toString('base64');
+      writeFileSync('/dev/tty', `\x1b]52;c;${b64}\x07`);
+      return true;
+    } catch {
+      // /dev/tty not available or write failed
+    }
+  }
+
   return false;
 }
 
