@@ -11,6 +11,7 @@ interface ContextBreakdownProps {
   breakdown?: CategoryBreakdown;
   model: string | null;
   agentName: string | null;
+  initialExpanded?: boolean;
   onClose: () => void;
   onTabSwitch?: () => void;
 }
@@ -107,6 +108,7 @@ export function ContextBreakdown({
   percent,
   breakdown,
   agentName,
+  initialExpanded,
   onClose,
   onTabSwitch,
 }: ContextBreakdownProps) {
@@ -118,7 +120,7 @@ export function ContextBreakdown({
 
   const displayPercent = percent ?? 0;
   const barWidth = Math.max(20, termWidth - 24);
-  const [expanded, setExpanded] = React.useState(false);
+  const [expanded, setExpanded] = React.useState(initialExpanded ?? false);
 
   // ~18 chars per category item, 5 items = ~90 chars
   const useHorizontalLayout = termWidth >= 90;

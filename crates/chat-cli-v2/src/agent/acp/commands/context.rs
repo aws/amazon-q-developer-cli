@@ -29,9 +29,10 @@ pub async fn execute(args: &ContextArgs, ctx: &CommandContext<'_>) -> CommandRes
         "add" => execute_add(rest.trim(), ctx).await,
         "remove" | "rm" => execute_remove(rest.trim(), ctx).await,
         "clear" => execute_clear(ctx).await,
-        "" => execute_show(args, ctx).await,
+        "show" => execute_show(args, ctx, true).await,
+        "" => execute_show(args, ctx, false).await,
         other => CommandResult::error(format!(
-            "Unknown subcommand '{other}'. Available: add <path>, remove <path>, clear"
+            "Unknown subcommand '{other}'. Available: add <path>, remove <path>, clear, show"
         )),
     }
 }
@@ -157,7 +158,7 @@ async fn execute_clear(ctx: &CommandContext<'_>) -> CommandResult {
     }
 }
 
-async fn execute_show(args: &ContextArgs, ctx: &CommandContext<'_>) -> CommandResult {
+async fn execute_show(args: &ContextArgs, ctx: &CommandContext<'_>, expanded: bool) -> CommandResult {
     // Default behavior - show context usage
     let model = ctx.rts_state.model_id().unwrap_or_else(|| "default".to_string());
     let backend_usage = ctx.rts_state.context_usage_percentage();
@@ -182,6 +183,7 @@ async fn execute_show(args: &ContextArgs, ctx: &CommandContext<'_>) -> CommandRe
             "model": model,
             "contextUsagePercentage": context_usage,
             "verbose": args.verbose,
+            "initialExpanded": expanded,
             "breakdown": breakdown
         }),
     )

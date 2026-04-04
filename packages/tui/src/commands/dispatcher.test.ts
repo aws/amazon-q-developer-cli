@@ -182,6 +182,28 @@ describe('dispatch', () => {
       expect(ctx._spies.showAlert!.mock.calls[0]?.[1]).toBe('error');
     });
 
+    it('passes initialExpanded through for /context show', async () => {
+      const ctx = createMockCtx();
+      (ctx.kiro.executeCommand as any).mockResolvedValue({
+        success: true,
+        message: 'Context breakdown - 42% used',
+        data: {
+          contextUsagePercentage: 42,
+          initialExpanded: true,
+          breakdown: { contextFiles: { tokens: 100, percent: 10 } },
+        },
+      });
+
+      const cmd = makeCmd({
+        name: '/context',
+        meta: { inputType: 'panel' },
+      });
+      await dispatch(cmd, 'show', ctx);
+
+      const calls = ctx._spies.setShowContextBreakdown!.mock.calls;
+      expect(calls[0]?.[1]?.initialExpanded).toBe(true);
+    });
+
     it('does not open panel for /context add result without breakdown', async () => {
       const ctx = createMockCtx();
       (ctx.kiro.executeCommand as any).mockResolvedValue({

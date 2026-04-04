@@ -40,6 +40,8 @@ export interface ContextBreakdownData {
   kiroResponses: { percent: number; tokens: number };
   yourPrompts: { percent: number; tokens: number };
   sessionFiles?: { percent: number; tokens: number };
+  /** UI-specific: initially show context breakdown in expanded mode */
+  initialExpanded?: boolean;
 }
 
 export interface UsageBreakdownItem {

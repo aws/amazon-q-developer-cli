@@ -191,13 +191,20 @@ const effectHandlers: Record<EffectName, EffectHandler> = {
   showContextPanel: (result, ctx) => {
     // If the result has breakdown data, show the panel (this is /context show or bare /context)
     const data = result?.data as
-      | { breakdown?: any; contextUsagePercentage?: number }
+      | {
+          breakdown?: any;
+          contextUsagePercentage?: number;
+          initialExpanded?: boolean;
+        }
       | undefined;
     if (data?.breakdown) {
       if (data?.contextUsagePercentage != null) {
         ctx.setContextUsage(data.contextUsagePercentage);
       }
-      ctx.setShowContextBreakdown(true, data?.breakdown);
+      ctx.setShowContextBreakdown(true, {
+        ...data.breakdown,
+        initialExpanded: data.initialExpanded,
+      });
     }
     // Otherwise it's an add/remove/clear result - alert is shown by dispatcher step 4
   },

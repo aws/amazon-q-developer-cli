@@ -690,6 +690,7 @@ export const InlineLayout: React.FC = () => {
                 breakdown={contextBreakdown ?? undefined}
                 model={currentModel?.name ?? null}
                 agentName={currentAgent?.name ?? null}
+                initialExpanded={contextBreakdown?.initialExpanded}
                 onClose={handleCloseContextBreakdown}
                 onTabSwitch={handleTabFromContext}
               />
