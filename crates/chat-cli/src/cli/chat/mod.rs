@@ -3099,7 +3099,11 @@ impl ChatSession {
 
             // Print the response for normal cases
             loop {
-                let input = Partial::new(&buf[offset..]);
+                // Use `get` to avoid panicking if `offset` lands on a non-UTF-8 boundary,
+                // which can happen when the response contains multi-byte characters (e.g.
+                // non-ASCII text adjacent to triple backticks). See: #3715
+                let Some(slice) = buf.get(offset..) else { break };
+                let input = Partial::new(slice);
                 if self.stdout.should_send_structured_event {
                     match interpret_markdown(input, &mut temp_buf, &mut state) {
                         Ok(parsed) => {
