@@ -412,6 +412,17 @@ interface BaseAppActions {
   attachFile: (path: string) => void;
   removeAttachedFile: (path: string) => void;
   clearAttachedFiles: () => void;
+
+  // User theme color callback (set by ThemeProvider bridge)
+  _userColorsSetter: ((prompt?: any, response?: any) => void) | null;
+  registerUserColorsSetter: (
+    setter: (prompt?: any, response?: any) => void
+  ) => void;
+
+  // Theme preview string (rendered below menu during /theme flow)
+  themePreview: string | null;
+  setThemePreview: (preview: string | null) => void;
+
   setPendingFileAttachment: (
     path: string | null,
     triggerPosition?: number
@@ -714,6 +725,12 @@ export const createAppStore = (props: AppStoreProps) => {
         source: 'local' as const,
         meta: { local: true },
       },
+      {
+        name: '/theme',
+        description: 'Customize prompt or response text colors',
+        source: 'local' as const,
+        meta: { local: true },
+      },
     ], // Backend sends all commands via CommandsUpdate
     prompts: [],
     kiro: props.kiro,
@@ -778,6 +795,8 @@ export const createAppStore = (props: AppStoreProps) => {
       join(process.cwd(), '.kiro', 'settings', 'lsp.json')
     ),
     attachedFiles: [],
+    _userColorsSetter: null,
+    themePreview: null,
     pendingFileAttachment: null,
     pendingImages: [],
     currentAbortController: null,
@@ -1926,6 +1945,13 @@ export const createAppStore = (props: AppStoreProps) => {
             codeData: null,
           }),
         getMessages: () => get().messages,
+        setUserColors: (prompt?: any, response?: any) => {
+          const setter = get()._userColorsSetter;
+          if (setter) setter(prompt, response);
+        },
+        setThemePreview: (preview: string | null) => {
+          set({ themePreview: preview });
+        },
       };
 
       await executeCommandWithArg(cmdName, arg, ctx);
@@ -2482,6 +2508,14 @@ export const createAppStore = (props: AppStoreProps) => {
       set({ attachedFiles: [] });
     },
 
+    registerUserColorsSetter: (setter) => {
+      set({ _userColorsSetter: setter });
+    },
+
+    setThemePreview: (preview) => {
+      set({ themePreview: preview });
+    },
+
     setPendingFileAttachment: (path, triggerPosition = 0) => {
       set({ pendingFileAttachment: path ? { path, triggerPosition } : null });
     },
@@ -2622,6 +2656,13 @@ export const createAppStore = (props: AppStoreProps) => {
               usageData: null,
             }),
           getMessages: () => get().messages,
+          setUserColors: (prompt?: any, response?: any) => {
+            const setter = get()._userColorsSetter;
+            if (setter) setter(prompt, response);
+          },
+          setThemePreview: (preview: string | null) => {
+            set({ themePreview: preview });
+          },
         };
         const handled = await executeCommand(trimmed, ctx);
         if (handled) return;

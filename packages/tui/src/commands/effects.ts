@@ -86,7 +86,8 @@ type EffectName =
   | 'showFeedbackUrl'
   | 'spawnSession'
   | 'switchSession'
-  | 'copyToClipboard';
+  | 'copyToClipboard'
+  | 'showThemeMenu';
 
 /**
  * Command → Effect mapping.
@@ -113,6 +114,7 @@ const commandEffects: Partial<Record<string, EffectName>> = {
   code: 'showCodePanel',
   spawn: 'spawnSession',
   copy: 'copyToClipboard',
+  theme: 'showThemeMenu',
 };
 
 /**
@@ -631,11 +633,250 @@ const effectHandlers: Record<EffectName, EffectHandler> = {
     ctx.showAlert('Copied to clipboard', 'success', 3000);
     return true;
   },
+
+  /** Show theme color selection menu */
+  showThemeMenu: (_result, ctx, cmd, args) => {
+    const prefs = loadUserThemePrefs();
+    const themeCmd = ctx.slashCommands.find((c) => c.name === '/theme');
+    if (!themeCmd) return;
+
+    // /theme bundled:<id> — apply a bundled theme (Light/Dark)
+    if (args.startsWith('bundled:')) {
+      const themeId = args.slice('bundled:'.length);
+      const bundled = getBundledTheme(themeId);
+      if (!bundled) {
+        ctx.showAlert(`Unknown theme: ${themeId}`, 'error', 3000);
+        return true;
+      }
+      ctx.setUserColors(
+        { text: bundled.prompt.textColor, bg: bundled.prompt.bgColor },
+        bundled.response.textColor
+      );
+      const saved = saveUserThemePrefs({
+        promptPreset:
+          bundled.prompt.id === 'default' ? undefined : bundled.prompt.id,
+        responsePreset:
+          bundled.response.id === 'default' ? undefined : bundled.response.id,
+      });
+      ctx.showAlert(
+        saved
+          ? `Theme set to ${bundled.label}`
+          : `Theme applied but failed to save`,
+        saved ? 'success' : 'error',
+        3000
+      );
+      ctx.setThemePreview(null);
+      return true;
+    }
+
+    // /theme custom — show prompt vs response selection with current preview
+    if (args === 'custom') {
+      const currentPrompt = getPromptPreset(prefs.promptPreset);
+      const currentResponse = getResponsePreset(prefs.responsePreset);
+      ctx.setThemePreview(buildCurrentPreview(prefs));
+      ctx.setActiveCommand({
+        command: {
+          ...themeCmd,
+          meta: {
+            ...themeCmd.meta,
+            inputType: 'selection' as const,
+            searchable: false,
+          },
+        },
+        options: [
+          {
+            value: 'prompt',
+            label: 'Prompt style',
+            description: currentPrompt ? currentPrompt.label : 'Default',
+          },
+          {
+            value: 'response',
+            label: 'Response text color',
+            description: currentResponse ? currentResponse.label : 'Default',
+          },
+        ],
+      });
+      return true;
+    }
+
+    // /theme prompt — show prompt combo presets with preview
+    if (args === 'prompt') {
+      ctx.setThemePreview(buildCurrentPreview(prefs));
+      ctx.setActiveCommand({
+        command: {
+          ...themeCmd,
+          meta: {
+            ...themeCmd.meta,
+            inputType: 'selection' as const,
+            searchable: false,
+          },
+        },
+        options: promptPresets.map((p) => {
+          const isActive = p.id === (prefs.promptPreset ?? 'default');
+          return {
+            value: `prompt:${p.id}`,
+            label: p.label,
+            description: isActive ? '[active]' : '',
+          };
+        }),
+      });
+      return true;
+    }
+
+    // /theme response — show response color presets with preview
+    if (args === 'response') {
+      ctx.setThemePreview(buildCurrentPreview(prefs));
+      ctx.setActiveCommand({
+        command: {
+          ...themeCmd,
+          meta: {
+            ...themeCmd.meta,
+            inputType: 'selection' as const,
+            searchable: false,
+          },
+        },
+        options: responsePresets.map((p) => {
+          const isActive = p.id === (prefs.responsePreset ?? 'default');
+          return {
+            value: `response:${p.id}`,
+            label: p.label,
+            description: isActive ? '[active]' : '',
+          };
+        }),
+      });
+      return true;
+    }
+
+    // /theme prompt:<id> or /theme response:<id> — apply custom selection, then return to custom menu
+    if (args.startsWith('prompt:') || args.startsWith('response:')) {
+      const colonIdx = args.indexOf(':');
+      const category = args.slice(0, colonIdx);
+      const presetId = args.slice(colonIdx + 1);
+
+      let updatedPrefs = { ...prefs };
+      if (category === 'prompt') {
+        const preset = getPromptPreset(presetId);
+        if (!preset) {
+          ctx.showAlert(`Unknown prompt preset: ${presetId}`, 'error', 3000);
+          return true;
+        }
+        updatedPrefs.promptPreset =
+          preset.id === 'default' ? undefined : preset.id;
+        ctx.setUserColors(
+          { text: preset.textColor, bg: preset.bgColor },
+          undefined
+        );
+        const saved1 = saveUserThemePrefs(updatedPrefs);
+        ctx.showAlert(
+          saved1
+            ? `Prompt style set to ${preset.label}`
+            : `Prompt applied but failed to save`,
+          saved1 ? 'success' : 'error',
+          3000
+        );
+      } else {
+        const preset = getResponsePreset(presetId);
+        if (!preset) {
+          ctx.showAlert(`Unknown response preset: ${presetId}`, 'error', 3000);
+          return true;
+        }
+        updatedPrefs.responsePreset =
+          preset.id === 'default' ? undefined : preset.id;
+        ctx.setUserColors(undefined, preset.textColor);
+        const saved2 = saveUserThemePrefs(updatedPrefs);
+        ctx.showAlert(
+          saved2
+            ? `Response color set to ${preset.label}`
+            : `Response applied but failed to save`,
+          saved2 ? 'success' : 'error',
+          3000
+        );
+      }
+
+      // Return to custom menu with updated preview
+      const currentPrompt = getPromptPreset(updatedPrefs.promptPreset);
+      const currentResponse = getResponsePreset(updatedPrefs.responsePreset);
+      ctx.setThemePreview(buildCurrentPreview(updatedPrefs));
+      ctx.setActiveCommand({
+        command: {
+          ...themeCmd,
+          meta: {
+            ...themeCmd.meta,
+            inputType: 'selection' as const,
+            searchable: false,
+          },
+        },
+        options: [
+          {
+            value: 'prompt',
+            label: 'Prompt style',
+            description: currentPrompt ? currentPrompt.label : 'Default',
+          },
+          {
+            value: 'response',
+            label: 'Response text color',
+            description: currentResponse ? currentResponse.label : 'Default',
+          },
+        ],
+      });
+      return true;
+    }
+
+    // Bare /theme — show top-level: Dark Theme, Light Theme, Custom
+    ctx.setThemePreview(buildCurrentPreview(prefs));
+
+    // Determine which option is currently active
+    const activeBundledId = bundledThemes.find((t) => {
+      const matchPrompt = (prefs.promptPreset ?? 'default') === t.prompt.id;
+      const matchResponse =
+        (prefs.responsePreset ?? 'default') === t.response.id;
+      return matchPrompt && matchResponse;
+    })?.id;
+    const isCustomActive =
+      !activeBundledId && (prefs.promptPreset || prefs.responsePreset);
+
+    ctx.setActiveCommand({
+      command: {
+        ...themeCmd,
+        meta: {
+          ...themeCmd.meta,
+          inputType: 'selection' as const,
+          searchable: false,
+        },
+      },
+      options: [
+        ...bundledThemes.map((t) => ({
+          value: `bundled:${t.id}`,
+          label: t.label,
+          description: t.id === activeBundledId ? '[active]' : '',
+        })),
+        {
+          value: 'custom',
+          label: 'Custom',
+          description: isCustomActive
+            ? '[active]'
+            : 'Choose prompt and response colors separately',
+        },
+      ],
+    });
+    return true;
+  },
 };
 
 import { formatImageLabel } from '../utils/image-label.js';
 import { MessageRole } from '../stores/app-store.js';
 import { spawnSync } from 'child_process';
+import {
+  promptPresets,
+  responsePresets,
+  bundledThemes,
+  buildCurrentPreview,
+  loadUserThemePrefs,
+  saveUserThemePrefs,
+  getPromptPreset,
+  getResponsePreset,
+  getBundledTheme,
+} from '../theme/user-theme.js';
 
 /**
  * Copy text to the system clipboard using platform-native tools.

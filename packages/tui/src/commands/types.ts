@@ -95,4 +95,8 @@ export interface CommandContext {
     role: string;
     content: string;
   }>;
+  /** Update user theme colors (prompt text+bg combo and/or response text) */
+  setUserColors: (prompt?: { text: any; bg: any }, response?: any) => void;
+  /** Set theme preview string (rendered below menu during /theme flow) */
+  setThemePreview: (preview: string | null) => void;
 }

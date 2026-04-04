@@ -44,10 +44,17 @@ const MessageContent = React.memo(function MessageContent({
   content: string;
   type: MessageType;
 }) {
-  const { getColor } = useTheme();
+  const { getUserPromptColor, getUserPromptBgHex, getUserResponseColor } =
+    useTheme();
   const { requestRemeasure } = useStatusBar();
 
-  const messageColor = useMemo(() => getColor('primary'), [getColor]);
+  const messageColor = useMemo(
+    () =>
+      type === MessageType.AGENT
+        ? getUserResponseColor()
+        : getUserPromptColor(),
+    [type, getUserResponseColor, getUserPromptColor]
+  );
 
   // Remeasure when content length changes (new lines during streaming)
   const lineCount = useMemo(() => content.split('\n').length, [content]);
@@ -59,7 +66,7 @@ const MessageContent = React.memo(function MessageContent({
     return <MarkdownRenderer content={content} color={messageColor} />;
   }
 
-  const backgroundColor = getColor('surface').hex;
+  const backgroundColor = getUserPromptBgHex();
   const displayContent = expandTabs(normalizeLineEndings(content));
   return (
     <Box>

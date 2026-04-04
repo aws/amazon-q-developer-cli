@@ -210,12 +210,15 @@ export const PromptInput = React.memo(function PromptInput({
   const undoStack = useRef<Array<{ segments: Segment[]; cursor: number }>>([]);
   const lastUndoPushTime = useRef(0);
 
-  const { getColor } = useTheme();
+  const { getColor, getUserPromptColor } = useTheme();
   const { width: termWidth } = useTerminalSize();
   const prevTriggerRef = useRef<TriggerInfo | null>(null);
   const suppressNextTriggerRef = useRef(false);
 
-  const primaryColor = useMemo(() => getColor('primary'), [getColor]);
+  const primaryColor = useMemo(
+    () => getUserPromptColor(),
+    [getUserPromptColor]
+  );
   const brandColor = useMemo(() => getColor('brand'), [getColor]);
   const styleInputText = useCallback(
     (text: string, isFirstSegment: boolean) => {

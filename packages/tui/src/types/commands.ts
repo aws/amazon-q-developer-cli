@@ -36,6 +36,8 @@ export interface CommandMeta {
     required?: boolean;
   }>;
   serverName?: string;
+  /** When true, Menu uses bold instead of accent color for selected items, preserving embedded ANSI colors. */
+  preserveLabelColors?: boolean;
 }
 
 /** Command advertised by backend */

@@ -4,6 +4,7 @@ import { Text, render } from './renderer.js';
 import { ErrorBoundary } from './components/ui/ErrorBoundary';
 import { AppContainer } from './components/layout/AppContainer';
 import { ThemeProvider } from './theme';
+import { UserThemeBridge } from './theme/UserThemeBridge';
 import {
   AppStoreContext,
   createAppStore,
@@ -505,6 +506,7 @@ const startApp = async () => {
       <ErrorBoundary>
         <ThemeProvider>
           <AppStoreContext.Provider value={appStoreRef.current}>
+            <UserThemeBridge />
             <TestModeProvider>
               <AppContainer />
             </TestModeProvider>

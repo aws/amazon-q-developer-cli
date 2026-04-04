@@ -12,6 +12,7 @@ import {
   truncateToWidth,
   padToWidth,
 } from '../../../utils/text-width.js';
+import chalk from 'chalk';
 
 export interface MenuItem {
   label: string;
@@ -36,6 +37,8 @@ export interface MenuProps {
   searchPlaceholder?: string;
   /** When true, shows ESC/↑↓ footer hints. Defaults to same as searchable. */
   showFooterHints?: boolean;
+  /** When true, selected item uses bold instead of accent color, preserving embedded ANSI colors in labels. */
+  preserveLabelColors?: boolean;
 }
 
 import { fuzzyScore } from '../../../utils/fuzzyScore.js';
@@ -53,6 +56,7 @@ export const Menu = React.memo(function Menu({
   searchLabel = 'search',
   searchPlaceholder = 'type to search',
   showFooterHints,
+  preserveLabelColors = false,
 }: MenuProps) {
   const [selectedIndex, setSelectedIndex] = useState(0);
   const [searchText, setSearchText] = useState('');
@@ -202,7 +206,10 @@ export const Menu = React.memo(function Menu({
             {showSelectedIndicator && (
               <>
                 {isSelected ? (
-                  <Icon type={IconType.CHEVRON_RIGHT} color={selectedLabel} />
+                  <Icon
+                    type={IconType.CHEVRON_RIGHT}
+                    color={preserveLabelColors ? brandText : selectedLabel}
+                  />
                 ) : (
                   <Text> </Text>
                 )}
@@ -210,7 +217,13 @@ export const Menu = React.memo(function Menu({
               </>
             )}
             <Text>
-              {isSelected ? selectedLabel(paddedItem) : label(paddedItem)}
+              {isSelected
+                ? preserveLabelColors
+                  ? chalk.bold(paddedItem)
+                  : selectedLabel(paddedItem)
+                : preserveLabelColors
+                  ? paddedItem
+                  : label(paddedItem)}
             </Text>
             <Box width={4} />
             {hasGroups && (
