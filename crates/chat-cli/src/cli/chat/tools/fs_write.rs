@@ -641,7 +641,14 @@ fn print_diff(
     new_str: &StylizedFile,
     start_line: usize,
 ) -> Result<()> {
-    let diff = similar::TextDiff::from_lines(&old_str.content, &new_str.content);
+    // Strip at most one trailing newline from both sides before diffing. This prevents a
+    // spurious Delete/Insert pair on the last line when the only difference is whether the
+    // file ends with a newline — a cosmetic artefact caused by write_to_file always appending
+    // one. We strip only a single '\n' so that intentional multi-newline differences are still
+    // shown. See: #923
+    let old_content = old_str.content.strip_suffix('\n').unwrap_or(&old_str.content);
+    let new_content = new_str.content.strip_suffix('\n').unwrap_or(&new_str.content);
+    let diff = similar::TextDiff::from_lines(old_content, new_content);
 
     // First, get the gutter width required for both the old and new lines.
     let (mut max_old_i, mut max_new_i) = (1, 1);
@@ -1576,4 +1583,48 @@ mod tests {
             "after_lines should match the actual line count in the file"
         );
     }
+
+    /// Render `print_diff` to a plain string (no ANSI codes) for assertion.
+    fn diff_output(old: &str, new: &str) -> String {
+        let old = StylizedFile { content: old.to_string(), ..Default::default() };
+        let new = StylizedFile { content: new.to_string(), ..Default::default() };
+        let mut buf = Vec::new();
+        print_diff(&mut buf, &old, &new, 1).unwrap();
+        strip_ansi_escapes::strip_str(String::from_utf8(buf).unwrap())
+    }
+
+    /// Returns the number of lines tagged with `sign` ('+' or '-') in the diff output.
+    fn count_sign(output: &str, sign: char) -> usize {
+        output.lines().filter(|l| l.starts_with(sign)).count()
+    }
+
+    #[test]
+    fn test_print_diff_trailing_newline_only_change_is_not_shown() {
+        // old ends with \n, new does not — only difference is a trailing newline.
+        // write_to_file always appends \n, so this is a common artefact. The diff
+        // should show no additions or deletions. See: #923
+        let output = diff_output("fi\n", "fi");
+        assert_eq!(count_sign(&output, '-'), 0, "no deletions expected:\n{output}");
+        assert_eq!(count_sign(&output, '+'), 0, "no insertions expected:\n{output}");
+    }
+
+    #[test]
+    fn test_print_diff_real_change_is_shown() {
+        // A genuine content change must still appear in the diff.
+        let output = diff_output("old line\n", "new line\n");
+        insta::assert_snapshot!(output, @"
+        - 1   : old line
+        +    1: new line
+        ");
+    }
+
+    #[test]
+    fn test_print_diff_multiple_trailing_newlines_difference_is_shown() {
+        // Intentional multi-newline difference must not be silently swallowed.
+        // old has one trailing \n, new has three — strip_suffix removes only one from each,
+        // leaving new with two extra blank lines that should appear as insertions.
+        let output = diff_output("fi\n", "fi\n\n\n");
+        assert!(count_sign(&output, '+') > 0, "insertions expected for extra newlines:\n{output}");
+    }
+
 }
