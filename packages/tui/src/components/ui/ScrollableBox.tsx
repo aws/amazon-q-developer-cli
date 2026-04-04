@@ -44,11 +44,11 @@ export const ScrollableBox: React.FC<ScrollableBoxProps> = ({
       measurePending.current = false;
       if (containerRef.current) {
         const { width: w } = measureElement(containerRef.current);
-        setContainerWidth(w);
+        setContainerWidth((prev) => (prev === w ? prev : w));
       }
       if (contentRef.current) {
         const { height: measured } = measureElement(contentRef.current);
-        setContentHeight(measured);
+        setContentHeight((prev) => (prev === measured ? prev : measured));
       }
     }, 32);
   });
