@@ -2,7 +2,7 @@ import { describe, it, expect, mock, beforeEach, afterEach } from 'bun:test';
 
 // --- Module mocks MUST be declared before importing the module under test ---
 const mockSpawnSync = mock(() => ({ status: 1 }));
-const mockWriteFileSync = mock(() => {});
+const mockWriteFileSync = mock((_path: string, _data: string) => {});
 
 mock.module('child_process', () => ({ spawnSync: mockSpawnSync }));
 mock.module('fs', () => ({

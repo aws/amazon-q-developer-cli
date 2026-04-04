@@ -935,7 +935,10 @@ function copyToSystemClipboard(text: string): boolean {
 
   // Last resort: OSC 52 escape sequence — works over SSH/multiplexers
   // Most terminals cap OSC 52 at ~1MB; use conservative limit.
-  if (process.platform !== 'win32' && Buffer.byteLength(text, 'utf-8') <= 100_000) {
+  if (
+    process.platform !== 'win32' &&
+    Buffer.byteLength(text, 'utf-8') <= 100_000
+  ) {
     try {
       const b64 = Buffer.from(text, 'utf-8').toString('base64');
       writeFileSync('/dev/tty', `\x1b]52;c;${b64}\x07`);
