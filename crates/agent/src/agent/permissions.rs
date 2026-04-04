@@ -72,6 +72,18 @@ impl RuntimePermissions {
         self.trusted_tools.clear();
     }
 
+    /// Reset all runtime permissions accumulated during the session.
+    /// CWD read permission must be re-granted by the caller if needed.
+    pub fn reset(&mut self) {
+        self.trusted_tools.clear();
+        self.denied_tools.clear();
+        self.allowed_commands.clear();
+        self.filesystem.allowed_read_paths.clear();
+        self.filesystem.allowed_write_paths.clear();
+        self.filesystem.denied_read_paths.clear();
+        self.filesystem.denied_write_paths.clear();
+    }
+
     /// Set CWD as allowed for read operations.
     pub fn with_cwd(mut self, cwd: &str) -> Self {
         self.filesystem.allowed_read_paths.insert(cwd.to_string());
@@ -1224,5 +1236,41 @@ mod tests {
         // Path-level deny should take precedence over tool-level trust
         let result = evaluate_tool_permission(&permissions, &allowed_tools, &settings, &fs_read_tool, &provider);
         assert!(matches!(result, Ok(PermissionEvalResult::Deny { .. })));
+    }
+
+    #[test]
+    fn test_reset_clears_all_runtime_permissions() {
+        let provider = TestProvider::new();
+        let cwd = "/home/testuser/project";
+        let mut permissions = RuntimePermissions::default().with_cwd(cwd);
+
+        // Accumulate various runtime permissions
+        let shell_tool: CanonicalToolName = "shell".parse().unwrap();
+        permissions.trusted_tools.insert(shell_tool);
+        let mcp_tool = CanonicalToolName::from_mcp_parts("server".into(), "dangerous".into());
+        permissions.denied_tools.insert(mcp_tool);
+        permissions.allowed_commands.push("cargo build.*".to_string());
+        permissions.grant_path("/tmp/trusted", PathAccessType::Write, &provider);
+
+        // Verify they're populated
+        assert!(!permissions.trusted_tools.is_empty());
+        assert!(!permissions.denied_tools.is_empty());
+        assert!(!permissions.allowed_commands.is_empty());
+        assert!(!permissions.filesystem.allowed_write_paths.is_empty());
+
+        // Reset like /tools reset does
+        permissions.reset();
+        // Re-grant CWD like the handler does
+        permissions.grant_path_canonicalized(cwd.to_string(), PathAccessType::Read);
+
+        // Everything cleared except CWD read
+        assert!(permissions.trusted_tools.is_empty());
+        assert!(permissions.denied_tools.is_empty());
+        assert!(permissions.allowed_commands.is_empty());
+        assert!(permissions.filesystem.allowed_write_paths.is_empty());
+        assert!(permissions.filesystem.denied_read_paths.is_empty());
+        assert!(permissions.filesystem.denied_write_paths.is_empty());
+        assert!(permissions.filesystem.allowed_read_paths.contains(cwd));
+        assert_eq!(permissions.filesystem.allowed_read_paths.len(), 1);
     }
 }

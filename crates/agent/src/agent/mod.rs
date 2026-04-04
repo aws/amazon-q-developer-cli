@@ -79,6 +79,7 @@ use futures::stream::FuturesUnordered;
 use mcp::McpServerEvent;
 use mcp::types::Prompt;
 use permissions::{
+    PathAccessType,
     RuntimePermissions,
     apply_approval_to_permissions,
     evaluate_tool_permission,
@@ -1303,7 +1304,11 @@ impl Agent {
             },
             AgentRequest::ResetToolPermissions => {
                 self.settings.trust_all_tools = false;
-                self.permissions.clear_trusted_tools();
+                self.permissions.reset();
+                if let Ok(cwd) = self.sys_provider.cwd() {
+                    self.permissions
+                        .grant_path_canonicalized(cwd.to_string_lossy().into_owned(), PathAccessType::Read);
+                }
                 Ok(AgentResponse::Success)
             },
             AgentRequest::SetTrustAllTools(trust) => {
