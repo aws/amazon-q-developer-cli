@@ -1,3 +1,5 @@
+use std::time::SystemTime;
+
 use serde::{
     Deserialize,
     Serialize,
@@ -19,6 +21,10 @@ pub struct FileLineTracker {
     pub lines_removed_by_agent: usize,
     /// Whether or not this is the first `fs_write` invocation
     pub is_first_write: bool,
+    /// mtime of the file at the time it was last read by `fs_read`.
+    /// Used by `fs_write` to detect external modifications between read and write.
+    #[serde(skip)]
+    pub last_read_mtime: Option<SystemTime>,
 }
 
 impl Default for FileLineTracker {
@@ -30,6 +36,7 @@ impl Default for FileLineTracker {
             lines_added_by_agent: 0,
             lines_removed_by_agent: 0,
             is_first_write: true,
+            last_read_mtime: None,
         }
     }
 }

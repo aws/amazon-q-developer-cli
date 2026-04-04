@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::collections::VecDeque;
 use std::fs::Metadata;
 use std::io::Write;
@@ -43,6 +44,7 @@ use crate::cli::chat::{
     CONTINUATION_LINE,
     sanitize_unicode_tags,
 };
+use crate::cli::chat::line_tracker::FileLineTracker;
 use crate::os::Os;
 use crate::theme::StyledText;
 use crate::util::paths;
@@ -266,7 +268,25 @@ impl FsRead {
         }
     }
 
-    pub async fn invoke(&self, os: &Os, updates: &mut impl Write) -> Result<InvokeOutput> {
+    pub async fn invoke(
+        &self,
+        os: &Os,
+        updates: &mut impl Write,
+        line_tracker: &mut HashMap<String, FileLineTracker>,
+    ) -> Result<InvokeOutput> {
+        // Record mtime for each file-read operation so fs_write can detect
+        // external modifications between read and write.
+        for op in &self.operations {
+            if let Some(path) = op.file_path(os) {
+                if let Ok(meta) = std::fs::metadata(&path) {
+                    if let Ok(mtime) = meta.modified() {
+                        let key = path.to_string_lossy().to_string();
+                        line_tracker.entry(key).or_default().last_read_mtime = Some(mtime);
+                    }
+                }
+            }
+        }
+
         if self.operations.len() == 1 {
             // Single operation - return result directly
             self.operations[0].invoke(os, updates).await
@@ -358,6 +378,15 @@ impl FsRead {
 }
 
 impl FsReadOperation {
+    /// Returns the resolved file path for Line operations (the only type that reads file content).
+    /// Used to record mtime for freshness checking in fs_write.
+    pub fn file_path(&self, os: &Os) -> Option<std::path::PathBuf> {
+        match self {
+            FsReadOperation::Line(fs_line) => Some(sanitize_path_tool_arg(os, &fs_line.path)),
+            _ => None,
+        }
+    }
+
     pub async fn validate(&mut self, os: &Os) -> Result<()> {
         match self {
             FsReadOperation::Line(fs_line) => fs_line.validate(os).await,
@@ -943,7 +972,7 @@ mod tests {
                 });
                 let output = serde_json::from_value::<FsRead>(v)
                     .unwrap()
-                    .invoke(&os, &mut stdout)
+                    .invoke(&os, &mut stdout, &mut HashMap::new())
                     .await
                     .unwrap();
 
@@ -977,7 +1006,7 @@ mod tests {
         assert!(
             serde_json::from_value::<FsRead>(v)
                 .unwrap()
-                .invoke(&os, &mut stdout)
+                .invoke(&os, &mut stdout, &mut HashMap::new())
                 .await
                 .is_err()
         );
@@ -1010,7 +1039,7 @@ mod tests {
         }]});
         let output = serde_json::from_value::<FsRead>(v)
             .unwrap()
-            .invoke(&os, &mut stdout)
+            .invoke(&os, &mut stdout, &mut HashMap::new())
             .await
             .unwrap();
 
@@ -1029,7 +1058,7 @@ mod tests {
         });
         let output = serde_json::from_value::<FsRead>(v)
             .unwrap()
-            .invoke(&os, &mut stdout)
+            .invoke(&os, &mut stdout, &mut HashMap::new())
             .await
             .unwrap();
 
@@ -1055,7 +1084,7 @@ mod tests {
                 let v = serde_json::json!($value);
                 let output = serde_json::from_value::<FsRead>(v)
                     .unwrap()
-                    .invoke(&os, &mut stdout)
+                    .invoke(&os, &mut stdout, &mut HashMap::new())
                     .await
                     .unwrap();
 
@@ -1102,7 +1131,7 @@ mod tests {
         });
         let output = serde_json::from_value::<FsRead>(v)
             .unwrap()
-            .invoke(&os, &mut stdout)
+            .invoke(&os, &mut stdout, &mut HashMap::new())
             .await
             .unwrap();
 
@@ -1134,7 +1163,7 @@ mod tests {
         });
         let output = serde_json::from_value::<FsRead>(v)
             .unwrap()
-            .invoke(&os, &mut stdout)
+            .invoke(&os, &mut stdout, &mut HashMap::new())
             .await
             .unwrap();
 
@@ -1171,7 +1200,7 @@ mod tests {
         });
         let output = serde_json::from_value::<FsRead>(v)
             .unwrap()
-            .invoke(&os, &mut stdout)
+            .invoke(&os, &mut stdout, &mut HashMap::new())
             .await
             .unwrap();
 
@@ -1195,7 +1224,7 @@ mod tests {
         });
         let output = serde_json::from_value::<FsRead>(v)
             .unwrap()
-            .invoke(&os, &mut stdout)
+            .invoke(&os, &mut stdout, &mut HashMap::new())
             .await
             .unwrap();
 
@@ -1232,7 +1261,7 @@ mod tests {
         });
         let output = serde_json::from_value::<FsRead>(v)
             .unwrap()
-            .invoke(&os, &mut stdout)
+            .invoke(&os, &mut stdout, &mut HashMap::new())
             .await
             .unwrap();
 
@@ -1272,7 +1301,7 @@ mod tests {
         });
         let output = serde_json::from_value::<FsRead>(v)
             .unwrap()
-            .invoke(&os, &mut stdout)
+            .invoke(&os, &mut stdout, &mut HashMap::new())
             .await
             .unwrap();
 
@@ -1302,7 +1331,7 @@ mod tests {
         });
         let output = serde_json::from_value::<FsRead>(v)
             .unwrap()
-            .invoke(&os, &mut stdout)
+            .invoke(&os, &mut stdout, &mut HashMap::new())
             .await
             .unwrap();
 
@@ -1321,7 +1350,7 @@ mod tests {
         });
         let output = serde_json::from_value::<FsRead>(v)
             .unwrap()
-            .invoke(&os, &mut stdout)
+            .invoke(&os, &mut stdout, &mut HashMap::new())
             .await
             .unwrap();
 
@@ -1353,7 +1382,7 @@ mod tests {
 
         let output = serde_json::from_value::<FsRead>(v)
             .unwrap()
-            .invoke(&os, &mut stdout)
+            .invoke(&os, &mut stdout, &mut HashMap::new())
             .await
             .unwrap();
         // All text operations should return combined text

@@ -152,7 +152,7 @@ impl Tool {
     ) -> Result<InvokeOutput> {
         let active_agent = agents.get_active();
         match self {
-            Tool::FsRead(fs_read) => fs_read.invoke(os, stdout).await,
+            Tool::FsRead(fs_read) => fs_read.invoke(os, stdout, line_tracker).await,
             Tool::FsWrite(fs_write) => fs_write.invoke(os, stdout, line_tracker).await,
             Tool::ExecuteCommand(execute_command) => execute_command.invoke(os, stdout).await,
             Tool::UseAws(use_aws) => use_aws.invoke(os, stdout).await,
