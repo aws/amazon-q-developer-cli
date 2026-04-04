@@ -141,7 +141,9 @@ describe('user-theme', () => {
       process.env.HOME = originalHome;
       try {
         rmSync(testDir, { recursive: true, force: true });
-      } catch {}
+      } catch {
+        /* cleanup */
+      }
     });
 
     it('loadUserThemePrefs returns empty object when no file exists', () => {

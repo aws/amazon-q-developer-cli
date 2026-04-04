@@ -16,8 +16,8 @@ import { TestCase } from '../src/test-utils/TestCase';
 const CTRL_A = '\x01';
 const CTRL_B = '\x02';
 const CTRL_D = '\x04';
-const CTRL_E = '\x05';
-const CTRL_F = '\x06';
+const _CTRL_E = '\x05';
+const _CTRL_F = '\x06';
 const CTRL_H = '\x08';
 const CTRL_K = '\x0b';
 const CTRL_U = '\x15';
@@ -27,10 +27,10 @@ const CTRL_Y = '\x19';
 // Special keys
 const DELETE = '\x1b[3~';
 const ALT_DELETE = '\x1b[3;3~';
-const ALT_BACKSPACE = '\x1b\x7f';
+const _ALT_BACKSPACE = '\x1b\x7f';
 const ALT_D = '\x1bd';
 const ALT_F = '\x1bf';
-const ALT_B = '\x1bb';
+const _ALT_B = '\x1bb';
 
 async function sendCtrl(tc: TestCase, key: string) {
   await tc.sendKeys(key);

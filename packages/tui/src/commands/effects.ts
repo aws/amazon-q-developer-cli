@@ -763,7 +763,7 @@ const effectHandlers: Record<EffectName, EffectHandler> = {
       const category = args.slice(0, colonIdx);
       const presetId = args.slice(colonIdx + 1);
 
-      let updatedPrefs = { ...prefs };
+      const updatedPrefs = { ...prefs };
       if (category === 'prompt') {
         const preset = getPromptPreset(presetId);
         if (!preset) {

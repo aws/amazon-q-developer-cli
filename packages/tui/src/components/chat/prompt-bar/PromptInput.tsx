@@ -205,7 +205,7 @@ export const PromptInput = React.memo(function PromptInput({
   }, []);
 
   const killRingRef = useRef(new KillRing());
-  const lastKillActionRef = useRef<'kill' | null>(null);
+  const _lastKillActionRef = useRef<'kill' | null>(null);
   const lastYankRef = useRef<{ start: number; length: number } | null>(null);
   const undoStack = useRef<Array<{ segments: Segment[]; cursor: number }>>([]);
   const lastUndoPushTime = useRef(0);
