@@ -672,7 +672,8 @@ mod tests {
                 let mut offset = 0;
 
                 loop {
-                    let input = Partial::new(&input[offset..]);
+                    let Some(slice) = input.get(offset..) else { break };
+                    let input = Partial::new(slice);
                     match interpret_markdown(input, &mut presult, &mut state) {
                         Ok(parsed) => {
                             offset += parsed.offset_from(&input);
@@ -824,4 +825,42 @@ mod tests {
         [style::Print("+ % @ . ?")],
         true
     );
+
+    /// Regression test for #3715: multi-byte UTF-8 characters adjacent to triple backticks
+    /// must not cause a panic from byte-index slicing.
+    #[test]
+    fn multibyte_utf8_adjacent_to_triple_backticks_does_not_panic() {
+        // Indonesian / non-ASCII text followed by a code fence — the combination that
+        // triggered "byte index N is out of bounds" in the wild.
+        let inputs = [
+            "Benar. Ganti dengan deskripsi langsung. Gunakan ini:\n\n```\ncontoh kode\n```",
+            "移除 eagleeye-ec-databases 任務狀況確認\n```bash\necho ok\n```",
+            "emoji 🎉 before ``` fence ```",
+        ];
+
+        for raw in inputs {
+            let mut input = raw.to_owned();
+            input.push_str("  "); // simulate incomplete stream sentinel
+
+            let mut state = ParseState::new(Some(80), Some(false));
+            let mut out = vec![];
+            let mut offset = 0;
+
+            loop {
+                let Some(slice) = input.get(offset..) else { break };
+                let partial = Partial::new(slice);
+                match interpret_markdown(partial, &mut out, &mut state) {
+                    Ok(parsed) => {
+                        offset += parsed.offset_from(&partial);
+                        state.newline = state.set_newline;
+                        state.set_newline = false;
+                    },
+                    Err(err) => match err.into_inner() {
+                        Some(err) => panic!("parse error on input {:?}: {err}", raw),
+                        None => break,
+                    },
+                }
+            }
+        }
+    }
 }
