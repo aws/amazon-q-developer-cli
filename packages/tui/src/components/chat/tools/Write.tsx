@@ -1,17 +1,15 @@
-import React, { useEffect, useRef, useMemo } from 'react';
+import React, { useRef, useMemo } from 'react';
 import { Box } from './../../../renderer.js';
 import { Text } from '../../ui/text/Text.js';
 import { useTheme } from '../../../hooks/useThemeContext.js';
 import { useSyntaxHighlight } from '../../../utils/syntax-highlight.js';
 import { expandTabs, normalizeLineEndings } from '../../../utils/string.js';
-import { useStatusBar } from '../status-bar/StatusBar.js';
 import { StatusInfo } from '../../ui/status/StatusInfo.js';
 import { useExpandableOutput } from '../../../hooks/useExpandableOutput.js';
 import { diffLines, type Change } from 'diff';
 import { getToolLabel } from '../../../types/tool-status.js';
 import { formatToolParams } from '../../../utils/tool-params.js';
 import { ToolMeta } from './ToolMeta.js';
-import { visibleWidth, truncateToWidth } from '../../../utils/text-width.js';
 
 export interface WriteProps {
   /** Old text content for diff (empty string for new files) */
@@ -47,7 +45,6 @@ export interface WriteProps {
  *
  * Features:
  * - Syntax-highlighted diff display
- * - Status bar line coloring for added/removed lines
  * - Parses tool call content for command type detection
  * - Supports create, strReplace, and insert operations
  */
@@ -55,7 +52,6 @@ export const Write = React.memo<WriteProps>(function Write({
   oldText,
   newText,
   filePath,
-  lineOffset = 0,
   startLine,
   isFinished = false,
   isStatic = false,
@@ -64,13 +60,6 @@ export const Write = React.memo<WriteProps>(function Write({
   const { getColor } = useTheme();
   const highlightCode = useSyntaxHighlight();
   const contentRef = useRef<any>(null);
-
-  let statusBar: ReturnType<typeof useStatusBar> | null = null;
-  try {
-    statusBar = useStatusBar();
-  } catch {
-    // Not within a StatusBar
-  }
 
   // Parse content if provided to extract operation details
   const parsedContent = useMemo(() => {
@@ -150,12 +139,6 @@ export const Write = React.memo<WriteProps>(function Write({
     return count;
   }, [changes]);
 
-  // Calculate available width for content
-  const fillsEdgeMargin = process.env.TERM_PROGRAM === 'iTerm.app';
-  const terminalWidth =
-    (process.stdout.columns || 80) - (fillsEdgeMargin ? 5 : 4);
-  const contentWidth = terminalWidth - 7; // Line number (4) + prefix (3)
-
   const PREVIEW_DIFF_LINES = 20;
 
   // Use expandable output hook for collapsing large diffs
@@ -168,47 +151,6 @@ export const Write = React.memo<WriteProps>(function Write({
 
   // Static/past turns always show full diff
   const expanded = isStatic || expandedFromHook;
-
-  const truncateLine = (line: string, maxWidth: number): string => {
-    if (visibleWidth(line) <= maxWidth) return line;
-    return truncateToWidth(line, maxWidth);
-  };
-
-  // When rendered with a StatusInfo header (content prop), the diff starts after:
-  // - 1 line for StatusInfo header
-  // - 1 line for diff summary (when hasDiffSummary)
-  const headerLines = content ? (hasDiffSummary ? 2 : 1) : 0;
-
-  // Set bar colors for each diff line (only visible lines when collapsed)
-  const visibleDiffLines = expanded
-    ? totalDiffLines
-    : Math.min(totalDiffLines, PREVIEW_DIFF_LINES);
-
-  useEffect(() => {
-    if (!statusBar) return;
-
-    const colors = new Map<number, string>();
-    let currentLine = lineOffset + headerLines;
-    let diffLineCount = 0;
-    for (const change of changes) {
-      const lines = change.value.split('\n');
-      if (lines[lines.length - 1] === '') lines.pop();
-      for (let i = 0; i < lines.length; i++) {
-        if (diffLineCount >= visibleDiffLines) break;
-        if (change.removed) {
-          colors.set(currentLine, getColor('diff.removed.bar').hex);
-        } else if (change.added) {
-          colors.set(currentLine, getColor('diff.added.bar').hex);
-        } else {
-          colors.set(currentLine, getColor('diff.unchanged.bar').hex);
-        }
-        currentLine++;
-        diffLineCount++;
-      }
-      if (diffLineCount >= visibleDiffLines) break;
-    }
-    statusBar.setLineColors(colors);
-  }, [statusBar, changes, getColor, lineOffset, headerLines, visibleDiffLines]);
 
   // If content prop was provided, render with StatusInfo header
   if (content) {
@@ -243,8 +185,6 @@ export const Write = React.memo<WriteProps>(function Write({
               changes={changes}
               highlightCode={highlightCode}
               language={language}
-              contentWidth={contentWidth}
-              truncateLine={truncateLine}
               getColor={getColor}
               maxLines={expanded ? undefined : PREVIEW_DIFF_LINES}
               diffStartLine={diffStartLine}
@@ -276,8 +216,7 @@ export const Write = React.memo<WriteProps>(function Write({
         }
 
         return lines.map((line: string, lineIdx: number) => {
-          const truncatedLine = truncateLine(expandTabs(line), contentWidth);
-          const highlightedLine = highlightCode(truncatedLine, language);
+          const highlightedLine = highlightCode(expandTabs(line), language);
 
           if (change.removed) {
             const currentOldLine = oldLineNum++;
@@ -332,8 +271,6 @@ interface WriteContentProps {
   changes: Change[];
   highlightCode: (code: string, language?: string) => string;
   language?: string;
-  contentWidth: number;
-  truncateLine: (line: string, maxWidth: number) => string;
   getColor: (path: string) => any;
   maxLines?: number;
   /** 1-based start line for the diff (defaults to 1) */
@@ -352,8 +289,6 @@ const WriteContent: React.FC<WriteContentProps> = ({
   changes,
   highlightCode,
   language,
-  contentWidth,
-  truncateLine,
   getColor,
   maxLines,
   diffStartLine = 1,
@@ -402,8 +337,7 @@ const WriteContent: React.FC<WriteContentProps> = ({
   return (
     <Box flexDirection="column" flexGrow={1}>
       {visibleLines.map((dl) => {
-        const truncated = truncateLine(expandTabs(dl.line), contentWidth);
-        const highlighted = highlightCode(truncated, language);
+        const highlighted = highlightCode(expandTabs(dl.line), language);
         const lineNumber = String(dl.lineNum).padStart(4);
 
         if (dl.type === 'removed') {
