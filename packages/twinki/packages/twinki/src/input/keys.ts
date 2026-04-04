@@ -854,6 +854,7 @@ export function parseKey(data: string): KeyId | undefined {
 	if (data === "\t") return "tab";
 	if (data === " ") return "space";
 	if (data === "\x7f" || data === "\x08") return "backspace";
+	if (data === "\x1b\x7f" || data === "\x1b\x08") return "alt+backspace" as KeyId;
 	if (data === "\x1b[Z") return "shift+tab";
 
 	// xterm modifyOtherKeys format: CSI 27 ; modifier ; keycode ~
