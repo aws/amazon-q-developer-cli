@@ -414,7 +414,11 @@ impl TodoList {
                 }
                 for i in completed_indices.iter() {
                     if *i >= state.tasks.len() {
-                        bail!("Index {i} is out of bounds for length {}, ", state.tasks.len());
+                        bail!(
+                            "Index {i} is out of bounds — valid indices are 0..{} (current list has {} tasks)",
+                            state.tasks.len(),
+                            state.tasks.len()
+                        );
                     }
                 }
             },
@@ -428,15 +432,23 @@ impl TodoList {
                 if new_tasks.iter().any(|task| task.trim().is_empty()) {
                     bail!("New tasks cannot be empty");
                 } else if has_duplicates(insert_indices) {
-                    bail!("Insertion indices must be unique")
+                    bail!("Insertion indices must be unique — each task must have a distinct index")
                 } else if new_tasks.len() != insert_indices.len() {
-                    bail!("Must provide an index for every new task");
+                    bail!(
+                        "Must provide an index for every new task — got {} tasks but {} indices",
+                        new_tasks.len(),
+                        insert_indices.len()
+                    );
                 } else if new_description.is_some() && new_description.as_ref().unwrap().trim().is_empty() {
                     bail!("New description cannot be empty");
                 }
                 for i in insert_indices.iter() {
                     if *i > state.tasks.len() {
-                        bail!("Index {i} is out of bounds for length {}, ", state.tasks.len());
+                        bail!(
+                            "Index {i} is out of bounds — valid insertion indices are 0..={} (current list has {} tasks)",
+                            state.tasks.len(),
+                            state.tasks.len()
+                        );
                     }
                 }
             },
@@ -447,13 +459,17 @@ impl TodoList {
             } => {
                 let state = TodoListState::load(os, id).await?;
                 if has_duplicates(remove_indices) {
-                    bail!("Removal indices must be unique")
+                    bail!("Removal indices must be unique — each index must appear only once")
                 } else if new_description.is_some() && new_description.as_ref().unwrap().trim().is_empty() {
                     bail!("New description cannot be empty");
                 }
                 for i in remove_indices.iter() {
                     if *i >= state.tasks.len() {
-                        bail!("Index {i} is out of bounds for length {}, ", state.tasks.len());
+                        bail!(
+                            "Index {i} is out of bounds — valid indices are 0..{} (current list has {} tasks)",
+                            state.tasks.len(),
+                            state.tasks.len()
+                        );
                     }
                 }
             },
