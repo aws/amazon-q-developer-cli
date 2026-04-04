@@ -12,6 +12,34 @@
     },
     {
       "type": "release",
+      "date": "2026-04-04",
+      "version": "1.29.3",
+      "title": "Version 1.29.3",
+      "changes": [
+        {
+          "type": "added",
+          "description": "Added /theme command to override theme colors for prompt and UI elements"
+        },
+        {
+          "type": "fixed",
+          "description": "Fixed long diff lines being truncated with ellipsis instead of wrapping"
+        },
+        {
+          "type": "fixed",
+          "description": "Fixed tmux pane title showing 'twinki:c' and APC sequence corruption"
+        },
+        {
+          "type": "fixed",
+          "description": "Fixed support for `--key=value` syntax and `--trust-tools` flag"
+        },
+        {
+          "type": "fixed",
+          "description": "Fixed /copy command only copying the tail end of responses that include tool calls"
+        }
+      ]
+    },
+    {
+      "type": "release",
       "date": "2026-04-03",
       "version": "1.29.2",
       "title": "Version 1.29.2",
