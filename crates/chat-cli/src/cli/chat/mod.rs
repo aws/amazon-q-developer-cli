@@ -624,7 +624,70 @@ impl ReasonCode for ChatError {
 
 impl From<ApiClientError> for ChatError {
     fn from(value: ApiClientError) -> Self {
+        // A dispatch failure with "No token" in the error chain means the session has
+        // expired. Surface this as AuthError::NoToken so the handler in handle_chat_error
+        // can display a clear "run `q login`" message instead of an opaque SDK error.
+        // See: #3173
+        if is_no_token_error(&value) {
+            return Self::Auth(crate::auth::AuthError::NoToken);
+        }
         Self::Client(Box::new(value))
+    }
+}
+
+/// Returns true if the error chain contains a "No token" dispatch failure,
+/// which indicates the user's session has expired.
+fn is_no_token_error(err: &ApiClientError) -> bool {
+    use std::error::Error;
+    let mut source: Option<&dyn Error> = Some(err);
+    while let Some(e) = source {
+        if e.to_string().contains("No token") {
+            return true;
+        }
+        source = e.source();
+    }
+    false
+}
+
+#[cfg(test)]
+mod is_no_token_error_tests {
+    use crate::api_client::error::ApiClientError;
+    use crate::auth::AuthError;
+
+    use super::{ChatError, is_no_token_error};
+
+    #[test]
+    fn detects_auth_no_token() {
+        let err = ApiClientError::AuthError(AuthError::NoToken);
+        assert!(is_no_token_error(&err));
+    }
+
+    #[test]
+    fn ignores_unrelated_errors() {
+        let err = ApiClientError::DefaultModelNotFound;
+        assert!(!is_no_token_error(&err));
+    }
+
+    #[test]
+    fn from_api_client_error_converts_no_token_to_auth_error() {
+        let err = ApiClientError::AuthError(AuthError::NoToken);
+        let chat_err = ChatError::from(err);
+        assert!(
+            matches!(chat_err, ChatError::Auth(AuthError::NoToken)),
+            "expected ChatError::Auth(NoToken), got: {:?}",
+            chat_err
+        );
+    }
+
+    #[test]
+    fn from_api_client_error_keeps_other_errors_as_client() {
+        let err = ApiClientError::DefaultModelNotFound;
+        let chat_err = ChatError::from(err);
+        assert!(
+            matches!(chat_err, ChatError::Client(_)),
+            "expected ChatError::Client, got: {:?}",
+            chat_err
+        );
     }
 }
 
