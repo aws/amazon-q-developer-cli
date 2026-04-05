@@ -1479,10 +1479,20 @@ impl AcpSession {
                             let agent = self.agent.clone();
                             let cwd = self.cwd.clone();
                             tokio::spawn(async move {
-                                // Priority: local file > global file > MCP (per docs)
+                                // Priority: local file > global file > skill > MCP (per docs)
                                 if let Some(content) = agent::prompts::resolve_file_prompt(&cwd, &name) {
                                     let template = agent::prompts::PromptTemplateArgs::parse(&content);
                                     let expanded = template.expand(&content, &args);
+                                    let _ = agent
+                                        .send_prompt(SendPromptArgs {
+                                            content: vec![agent::protocol::ContentChunk::Text(expanded)],
+                                            should_continue_turn: None,
+                                        })
+                                        .await;
+                                } else if let Some(body) = agent::prompts::resolve_skill(&cwd, &name) {
+                                    // Skill: frontmatter already stripped by resolve_skill()
+                                    let template = agent::prompts::PromptTemplateArgs::parse(&body);
+                                    let expanded = template.expand(&body, &args);
                                     let _ = agent
                                         .send_prompt(SendPromptArgs {
                                             content: vec![agent::protocol::ContentChunk::Text(expanded)],
@@ -2298,6 +2308,27 @@ async fn advertise_commands_and_prompts_to_client(
                     server_name: source.clone(),
                 });
             }
+        }
+    }
+
+    // Add skills as prompts (skills use the same prompt dispatch flow)
+    for (source, skill_prompts) in agent::prompts::discover_skills(&std::env::current_dir().unwrap_or_default()) {
+        for prompt in skill_prompts {
+            prompts.push(super::schema::PromptInfo {
+                name: prompt.name,
+                description: prompt.description,
+                arguments: prompt
+                    .arguments
+                    .unwrap_or_default()
+                    .into_iter()
+                    .map(|arg| super::schema::PromptArgumentInfo {
+                        name: arg.name,
+                        description: arg.description,
+                        required: arg.required.unwrap_or(false),
+                    })
+                    .collect(),
+                server_name: source.clone(),
+            });
         }
     }
 

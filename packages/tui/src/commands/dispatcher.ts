@@ -29,8 +29,8 @@ export async function dispatch(
   const isLocal = cmd.meta?.local === true;
   const cmdName = cmd.name.replace(/^\//, '');
 
-  // Handle prompt commands - send as regular message, backend resolves via session/prompt interception
-  if (type === 'prompt') {
+  // Handle prompt and skill commands - send as regular message, backend resolves via session/prompt interception
+  if (type === 'prompt' || type === 'skill') {
     const message = args ? `/${cmdName} ${args}` : `/${cmdName}`;
     await ctx.sendMessage(message);
     return;

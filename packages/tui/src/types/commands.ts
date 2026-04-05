@@ -30,7 +30,7 @@ export interface CommandMeta {
   subcommandHints?: Record<string, string>;
   hint?: string;
   local?: boolean;
-  type?: 'action' | 'prompt';
+  type?: 'action' | 'prompt' | 'skill';
   arguments?: Array<{
     name: string;
     description?: string;
