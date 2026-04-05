@@ -2,10 +2,6 @@ import { describe, it, expect } from 'vitest';
 import React, { useState } from 'react';
 import { TestTerminal, wait } from './helpers.ts';
 import { render, Box, Text, Static } from '../src/index.js';
-import { renderTree } from '../src/renderer/tree-renderer.js';
-import { createNode } from '../src/reconciler/node-factory.js';
-import { createYogaNode, Yoga } from '../src/layout/yoga.js';
-import type { RootContainer } from '../src/reconciler/types.js';
 
 describe('Memory management', () => {
   it('unmount clears TUI internal state', async () => {
@@ -33,37 +29,6 @@ describe('Memory management', () => {
       instance.unmount();
     }
     // If we get here without crashing, cleanup works
-  });
-
-  it('Static component frees Yoga nodes of flushed items', () => {
-    const yogaNode = createYogaNode();
-    yogaNode.setFlexDirection(Yoga.FLEX_DIRECTION_COLUMN);
-    const root: RootContainer = { yogaNode, children: [], onRender: () => {} };
-
-    const staticNode = createNode('twinki-static', {});
-    const N = 10;
-    for (let i = 0; i < N; i++) {
-      const child = createNode('twinki-box', {});
-      staticNode.children.push(child);
-      child.parent = staticNode;
-      staticNode.yogaNode!.insertChild(child.yogaNode!, i);
-    }
-    root.children.push(staticNode);
-    root.yogaNode.insertChild(staticNode.yogaNode!, 0);
-
-    // Simulate: all N items already flushed to scrollback
-    renderTree(root, 80, N);
-
-    // All children's Yoga nodes must be freed and nulled
-    for (const child of staticNode.children) {
-      expect(child.yogaNode).toBeNull();
-    }
-    // Static node's own yogaNode must remain intact
-    expect(staticNode.yogaNode).not.toBeNull();
-
-    root.yogaNode.removeChild(staticNode.yogaNode!);
-    staticNode.yogaNode!.free();
-    root.yogaNode.free();
   });
 
   it('1000-turn chat with 1MB messages: heap stays flat after GC', async () => {

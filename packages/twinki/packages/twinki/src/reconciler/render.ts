@@ -189,11 +189,13 @@ class ReactBridge implements Component {
 	}
 
 	/**
-	 * Called on resize. Does NOT reset totalStaticWritten — freed Yoga nodes must
-	 * stay skipped. The TUI's accumulatedStaticOutput buffer holds the already-rendered
-	 * lines and is re-emitted as-is by the resize handler.
+	 * Called on resize. Resets the static write cursor so all static items
+	 * are re-rendered at the new width on the next frame. The staticReset
+	 * flag tells render() to call replaceStaticOutput instead of append.
 	 */
 	resetStatic(): void {
+		this.staticReset = true;
+		this.totalStaticWritten = 0;
 		this.dirty = true;
 	}
 

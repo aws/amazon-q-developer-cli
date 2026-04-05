@@ -151,17 +151,8 @@ export function renderTree(
 			staticLines.push(...renderNode(sc, validWidth));
 		}
 
-		// Free Yoga nodes of already-flushed static children to prevent Wasm memory growth.
-		// Safe because: (a) renderNode guards against null yogaNode, (b) on resize we use
-		// accumulatedStaticOutput rather than re-rendering from Yoga (see resetStatic).
-		for (let i = 0; i < skipStaticItems && i < staticNode.children.length; i++) {
-			const child = staticNode.children[i]!;
-			if (child.yogaNode) {
-				staticNode.yogaNode!.removeChild(child.yogaNode);
-				child.yogaNode.free();
-				child.yogaNode = null;
-			}
-		}
+		// Static children keep their Yoga nodes alive so they can be
+		// re-rendered at a new width on terminal resize (see resetStatic).
 	}
 
 	// Render live content
