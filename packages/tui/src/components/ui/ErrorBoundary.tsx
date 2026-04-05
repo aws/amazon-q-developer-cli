@@ -9,25 +9,28 @@ export const ErrorBoundary: React.FC<ErrorBoundaryProps> = ({ children }) => {
   const [error, setError] = useState<Error | null>(null);
 
   useEffect(() => {
-    // In Node.js/Bun environment, use process events instead of window
-    if (typeof process !== 'undefined') {
-      process.on('uncaughtException', (err) => {
-        setError(err);
-      });
+    if (typeof process === 'undefined') return;
 
-      process.on('unhandledRejection', (reason: any) => {
-        setError(
-          new Error(
-            typeof reason === 'string'
-              ? reason
-              : reason?.message || 'Unhandled promise rejection'
-          )
-        );
-      });
-    }
+    const handleException = (err: Error) => {
+      setError(err);
+    };
+
+    const handleRejection = (reason: unknown) => {
+      setError(
+        new Error(
+          typeof reason === 'string'
+            ? reason
+            : (reason as any)?.message || 'Unhandled promise rejection'
+        )
+      );
+    };
+
+    process.on('uncaughtException', handleException);
+    process.on('unhandledRejection', handleRejection);
 
     return () => {
-      // Cleanup if needed
+      process.removeListener('uncaughtException', handleException);
+      process.removeListener('unhandledRejection', handleRejection);
     };
   }, []);
 
