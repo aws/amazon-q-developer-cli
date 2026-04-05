@@ -508,7 +508,11 @@ const startApp = async () => {
     });
   }
 
-  // Clear screen and move cursor to top
+  // Some terminals (ghostty, cmux) erase the viewport on \x1b[2J without
+  // preserving it in scrollback. Push content up first so it's not lost.
+  if (process.env.TERM_PROGRAM === 'ghostty') {
+    process.stdout.write('\n'.repeat(process.stdout.rows || 24));
+  }
   process.stdout.write('\x1b[2J\x1b[H');
 
   // Set process title so tmux automatic-rename shows "kiro" instead of "twinki:c".
