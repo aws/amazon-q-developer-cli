@@ -98,9 +98,10 @@ describe('/copy OSC 52 clipboard fallback', () => {
     runEffect(copyCmd, null, ctx, '');
 
     expect(mockWriteFileSync).toHaveBeenCalledTimes(1);
-    expect(mockWriteFileSync.mock.calls[0]![0]).toBe('/dev/tty');
+    const calls = mockWriteFileSync.mock.calls as unknown as unknown[][];
+    expect(calls[0]![0]).toBe('/dev/tty');
     const b64 = Buffer.from(text, 'utf-8').toString('base64');
-    expect(mockWriteFileSync.mock.calls[0]![1]).toBe(`\x1b]52;c;${b64}\x07`);
+    expect(calls[0]![1]).toBe(`\x1b]52;c;${b64}\x07`);
     expect(ctx._spies.showAlert!.mock.calls[0]![0]).toContain('Copied');
     expect(ctx._spies.showAlert!.mock.calls[0]![1]).toBe('success');
   });
@@ -112,7 +113,8 @@ describe('/copy OSC 52 clipboard fallback', () => {
     runEffect(copyCmd, null, ctx, '');
 
     const expected = `\x1b]52;c;${Buffer.from(text, 'utf-8').toString('base64')}\x07`;
-    expect(mockWriteFileSync.mock.calls[0]![1]).toBe(expected);
+    const wfCalls = mockWriteFileSync.mock.calls as unknown as unknown[][];
+    expect(wfCalls[0]![1]).toBe(expected);
   });
 
   it('skips OSC 52 for payloads > 100KB', () => {

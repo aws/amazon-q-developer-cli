@@ -87,9 +87,28 @@ jobs:
       - name: Build twinki package
         run: bun run build
         working-directory: packages/twinki/packages/twinki
-      - name: Run tests
-        run: bun test
+      - name: Run tui tests
+        run: |
+          bun test 2>&1 | tee /tmp/tui-coverage.txt
+          # Extract coverage from "All files" line: "All files | %Funcs | %Lines |"
+          FUNCS=$(grep "All files" /tmp/tui-coverage.txt | awk -F'|' '{gsub(/ /,"",$2); print $2}')
+          LINES=$(grep "All files" /tmp/tui-coverage.txt | awk -F'|' '{gsub(/ /,"",$3); print $3}')
+          echo "Coverage — functions: ${FUNCS}%, lines: ${LINES}%"
+          # Minimum thresholds (ratchet these up as coverage improves)
+          MIN_FUNCS=46
+          MIN_LINES=55
+          if [ "$(echo "$FUNCS < $MIN_FUNCS" | bc -l)" = "1" ]; then
+            echo "::error::Function coverage regression! ${FUNCS}% < ${MIN_FUNCS}%"
+            exit 1
+          fi
+          if [ "$(echo "$LINES < $MIN_LINES" | bc -l)" = "1" ]; then
+            echo "::error::Line coverage regression! ${LINES}% < ${MIN_LINES}%"
+            exit 1
+          fi
         working-directory: packages/tui
+      - name: Run twinki tests
+        run: bun run test:run
+        working-directory: packages/twinki
 
   tui-e2e:
     name: E2E Tests (${{ matrix.os }})

@@ -9,6 +9,7 @@
   "scripts": {
     "build": "bun --filter='./packages/*' run build",
     "test": "vitest",
+    "test:run": "vitest run",
     "lint": "tsc --noEmit"
   },
   "dependencies": {
@@ -30,6 +31,7 @@
     "@types/react-reconciler": "^0.28.9",
     "@xterm/headless": "^5.3.0",
     "typescript": "^5.3.0",
-    "vitest": "^3.2.1"
+    "vitest": "^3.2.1",
+    "@vitest/coverage-v8": "^3.2.1"
   }
 }

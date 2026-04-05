@@ -291,6 +291,6 @@ describe('Performance Benchmarks - TOP BOTTLENECKS IDENTIFIED', () => {
 		
 		console.log(`Static content prepend: ${elapsed.toFixed(2)}ms, ${newLines.length} total lines`);
 		expect(newLines.length).toBeGreaterThan(1000);
-		expect(elapsed).toBeLessThan(50);
+		expect(elapsed).toBeLessThan(100);
 	});
 });

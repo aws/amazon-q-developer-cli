@@ -17,6 +17,9 @@ async function renderAndCapture(element: React.ReactElement, cols = 40, rows = 1
 	const instance = render(element, { terminal: term });
 	await wait();
 	await term.flush();
+	// Extra cycle for useEffect-triggered overlays to render
+	await wait();
+	await term.flush();
 	return { term, instance };
 }
 
