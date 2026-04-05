@@ -1019,14 +1019,13 @@ export const createAppStore = (props: AppStoreProps) => {
       const commitBufferedContent = () => {
         if (!bufferedContent) return;
         set((state) => {
-          const messages = [...state.messages];
-
-          const lastModelMsgIndex = messages.findLastIndex(
+          const lastModelMsgIndex = state.messages.findLastIndex(
             (msg) => msg.role === MessageRole.Model
           );
           if (lastModelMsgIndex !== -1) {
-            const msg = messages[lastModelMsgIndex];
+            const msg = state.messages[lastModelMsgIndex];
             if (msg && msg.role === MessageRole.Model) {
+              const messages = [...state.messages];
               messages[lastModelMsgIndex] = {
                 ...msg,
                 content: bufferedContent,
@@ -1034,7 +1033,7 @@ export const createAppStore = (props: AppStoreProps) => {
               return { messages };
             }
           }
-          return { messages };
+          return {};
         });
       };
 
@@ -1043,25 +1042,22 @@ export const createAppStore = (props: AppStoreProps) => {
         if (!bufferedContent) return;
 
         set((state) => {
-          const messages = [...state.messages];
-
-          const lastMsg = messages[messages.length - 1];
+          const lastMsg = state.messages[state.messages.length - 1];
           if (lastMsg?.role === MessageRole.Model) {
-            return {
-              messages: [
-                ...messages.slice(0, -1),
-                {
-                  id: lastMsg.id,
-                  role: MessageRole.Model,
-                  content: bufferedContent,
-                  agentName: lastMsg.agentName ?? state.currentAgent?.name,
-                },
-              ],
+            // Update existing model message: single array copy, direct index write
+            const messages = [...state.messages];
+            messages[messages.length - 1] = {
+              id: lastMsg.id,
+              role: MessageRole.Model,
+              content: bufferedContent,
+              agentName: lastMsg.agentName ?? state.currentAgent?.name,
             };
+            return { messages };
           } else {
+            // First content chunk — append a new model message
             return {
               messages: [
-                ...messages,
+                ...state.messages,
                 {
                   id: lastContentEventId ?? crypto.randomUUID(),
                   role: MessageRole.Model,
