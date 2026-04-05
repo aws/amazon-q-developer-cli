@@ -22,7 +22,7 @@ import type { StatusType } from '../../../types/componentTypes.js';
 
 interface StatusBarContextType {
   setLineColor: (lineIndex: number, color: string) => void;
-  setLineColors: (colors: Map<number, string>) => void;
+  setLineColors: (colors: Record<number, string>) => void;
   getNextLineIndex: (count?: number) => number;
   requestRemeasure: () => void;
   setStatus: (status: StatusType | undefined) => void;
@@ -56,7 +56,7 @@ export const StatusBar = React.memo(function StatusBar({
   const { active } = useCardContext();
   const contentRef = useRef<any>(null);
   const [lineCount, setLineCount] = useState(0);
-  const [lineColors, setLineColors] = useState<Map<number, string>>(new Map());
+  const [lineColors, setLineColors] = useState<Record<number, string>>({});
   const [statusOverride, setStatusOverride] = useState<StatusType | undefined>(
     undefined
   );
@@ -69,22 +69,12 @@ export const StatusBar = React.memo(function StatusBar({
 
   // Set color for a specific line
   const setLineColor = useCallback((lineIndex: number, color: string) => {
-    setLineColors((prev) => {
-      const newMap = new Map(prev);
-      newMap.set(lineIndex, color);
-      return newMap;
-    });
+    setLineColors((prev) => ({ ...prev, [lineIndex]: color }));
   }, []);
 
   // Batch set colors for multiple lines at once
-  const setLineColorsBatch = useCallback((colors: Map<number, string>) => {
-    setLineColors((prev) => {
-      const newMap = new Map(prev);
-      for (const [index, color] of colors) {
-        newMap.set(index, color);
-      }
-      return newMap;
-    });
+  const setLineColorsBatch = useCallback((colors: Record<number, string>) => {
+    setLineColors((prev) => ({ ...prev, ...colors }));
   }, []);
 
   // Get next line index and advance counter
@@ -214,7 +204,7 @@ export const StatusBar = React.memo(function StatusBar({
         // Use line-specific override color, or barColor prop, or status color, or default
         // Don't show bar for paused status (only show the arrow icon)
         const color =
-          lineColors.get(i) ||
+          lineColors[i] ||
           (status && status !== 'active'
             ? getStatusColor(status, getColor).hex
             : defaultBarColor);
