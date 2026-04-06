@@ -151,8 +151,9 @@ pub enum McpClientError {
     LookUp(#[from] shellexpand::LookupError<std::env::VarError>),
 }
 
-/// Decorates the method passed in with retry logic, but only if the [RunningService] has an
-/// instance of [AuthClientDropGuard].
+pub const MCP_AUTH_REFRESH_FAILED: &str = "MCP_AUTH_REFRESH_FAILED";
+pub const MCP_AUTH_REAUTH_FAILED: &str = "MCP_AUTH_REAUTH_FAILED";
+
 /// The various methods to interact with the mcp server provided by RMCP supposedly does refresh
 /// token once the token expires but that logic would require us to also note down the time at
 /// which a token is obtained since the only time related information in the token is the duration
@@ -164,6 +165,17 @@ pub enum McpClientError {
 macro_rules! decorate_with_auth_retry {
     ($param_type:ty, $method_name:ident, $return_type:ty) => {
         pub async fn $method_name(&self, param: $param_type) -> Result<$return_type, rmcp::ServiceError> {
+            // Proactively check token validity before making the call.
+            // This avoids a wasted round-trip to the server when the token is already expired.
+            if let Some(auth_client) = self.auth_client.as_ref() {
+                if let Err(e) = auth_client.auth_client.get_access_token().await {
+                    info!("Token pre-check failed ({e}), attempting re-authentication before call");
+                    if let Err(reauth_err) = auth_client.reauthorize().await {
+                        error!("Pre-call re-authentication failed: {reauth_err}");
+                    }
+                }
+            }
+
             let first_attempt = match &self.inner_service {
                 InnerService::Original(rs) => rs.$method_name(param.clone()).await,
                 InnerService::Peer(peer) => peer.$method_name(param.clone()).await,
@@ -172,29 +184,41 @@ macro_rules! decorate_with_auth_retry {
             match first_attempt {
                 Ok(result) => Ok(result),
                 Err(e) => {
-                    // TODO: discern error type prior to retrying
-                    // Not entirely sure what is thrown when auth is required
                     if let Some(auth_client) = self.auth_client.as_ref() {
+                        // Try token refresh first (fast path)
                         let refresh_result = auth_client.refresh_token().await;
                         match refresh_result {
                             Ok(_) => {
                                 info!("Token refreshed");
-                                // Retry the operation after token refresh
                                 match &self.inner_service {
                                     InnerService::Original(rs) => rs.$method_name(param).await,
                                     InnerService::Peer(peer) => peer.$method_name(param).await,
                                 }
                             },
-                            Err(_) => {
-                                // If refresh fails, return the original error
-                                // Currently our event loop just does not allow us easy ways to
-                                // reauth entirely once a session starts since this would mean
-                                // swapping of transport (which also means swapping of client)
-                                Err(e)
+                            Err(refresh_err) => {
+                                info!("Token refresh failed ({refresh_err}), attempting re-authentication");
+                                match auth_client.reauthorize().await {
+                                    Ok(_) => {
+                                        info!("Reauth initiated");
+                                    },
+                                    Err(reauth_err) => {
+                                        error!("Re-authentication failed: {reauth_err}");
+                                        return Err(rmcp::ServiceError::McpError(rmcp::ErrorData::new(
+                                            rmcp::model::ErrorCode::INTERNAL_ERROR,
+                                            MCP_AUTH_REAUTH_FAILED,
+                                            None,
+                                        )));
+                                    },
+                                }
+
+                                Err(rmcp::ServiceError::McpError(rmcp::ErrorData::new(
+                                    rmcp::model::ErrorCode::INTERNAL_ERROR,
+                                    MCP_AUTH_REFRESH_FAILED,
+                                    None,
+                                )))
                             },
                         }
                     } else {
-                        // No auth client available, return original error
                         Err(e)
                     }
                 },
@@ -274,6 +298,19 @@ impl RunningService {
         match &self.inner_service {
             InnerService::Original(rs) => rs.is_transport_closed(),
             InnerService::Peer(peer) => peer.is_transport_closed(),
+        }
+    }
+
+    /// Returns the OAuth token status for this service.
+    ///
+    /// - `None` if the service doesn't use OAuth (e.g., stdio transport)
+    /// - `Some(Ok(()))` if the token is valid
+    /// - `Some(Err(msg))` if the token is expired or invalid
+    pub async fn auth_status(&self) -> Option<Result<(), String>> {
+        let auth_client = self.auth_client.as_ref()?;
+        match auth_client.auth_client.get_access_token().await {
+            Ok(_) => Some(Ok(())),
+            Err(e) => Some(Err(e.to_string())),
         }
     }
 }
@@ -645,7 +682,7 @@ impl Service<RoleClient> for McpClientService {
 /// enum is then flipped lazily (if applicable) when a [RunningService] is needed.
 pub enum InitializedMcpClient {
     Pending(JoinHandle<Result<RunningService, McpClientError>>),
-    Ready(RunningService),
+    Ready(Box<RunningService>),
 }
 
 impl std::fmt::Debug for InitializedMcpClient {
@@ -662,7 +699,7 @@ impl InitializedMcpClient {
         match self {
             InitializedMcpClient::Pending(handle) if handle.is_finished() => {
                 let running_service = handle.await??;
-                *self = InitializedMcpClient::Ready(running_service);
+                *self = InitializedMcpClient::Ready(Box::new(running_service));
                 let InitializedMcpClient::Ready(running_service) = self else {
                     unreachable!()
                 };

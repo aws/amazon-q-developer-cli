@@ -59,6 +59,11 @@ use crate::util::providers::RealProvider;
 
 const SHUTDOWN_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(3);
 
+/// Sentinel message returned when MCP OAuth token refresh and re-authentication both fail.
+/// Detected downstream to produce a user-facing error that mentions `/mcp`.
+pub const MCP_AUTH_REFRESH_FAILED: &str = "MCP_AUTH_REFRESH_FAILED";
+pub const MCP_AUTH_REAUTH_FAILED: &str = "MCP_AUTH_REAUTH_FAILED";
+
 /// This struct is consumed by the [rmcp] crate on server launch. The only purpose of this struct
 /// is to handle server-to-client requests. Client-side code will own a [RunningMcpService]
 /// instance.
@@ -347,6 +352,16 @@ pub struct LaunchMetadata {
 macro_rules! decorate_with_auth_retry {
     ($param_type:ty, $method_name:ident, $return_type:ty) => {
         pub async fn $method_name(&self, param: $param_type) -> Result<$return_type, rmcp::ServiceError> {
+            // Proactively check token validity before making the call.
+            if let Some(auth_client) = self.auth_client.as_ref() {
+                if let Err(e) = auth_client.auth_client.get_access_token().await {
+                    info!("Token pre-check failed ({e}), attempting re-authentication before call");
+                    if let Err(reauth_err) = auth_client.reauthorize().await {
+                        error!("Pre-call re-authentication failed: {reauth_err}");
+                    }
+                }
+            }
+
             let first_attempt = match &self.running_service {
                 InnerService::Original(rs) => rs.$method_name(param.clone()).await,
                 InnerService::Peer(peer) => peer.$method_name(param.clone()).await,
@@ -355,29 +370,40 @@ macro_rules! decorate_with_auth_retry {
             match first_attempt {
                 Ok(result) => Ok(result),
                 Err(e) => {
-                    // TODO: discern error type prior to retrying
-                    // Not entirely sure what is thrown when auth is required
                     if let Some(auth_client) = self.auth_client.as_ref() {
                         let refresh_result = auth_client.refresh_token().await;
                         match refresh_result {
                             Ok(_) => {
                                 info!("Token refreshed");
-                                // Retry the operation after token refresh
                                 match &self.running_service {
                                     InnerService::Original(rs) => rs.$method_name(param).await,
                                     InnerService::Peer(peer) => peer.$method_name(param).await,
                                 }
                             },
-                            Err(_) => {
-                                // If refresh fails, return the original error
-                                // Currently our event loop just does not allow us easy ways to
-                                // reauth entirely once a session starts since this would mean
-                                // swapping of transport (which also means swapping of client)
-                                Err(e)
+                            Err(refresh_err) => {
+                                info!("Token refresh failed ({refresh_err}), attempting re-authentication");
+                                match auth_client.reauthorize().await {
+                                    Ok(_) => {
+                                        info!("Reauth initiated");
+                                    },
+                                    Err(reauth_err) => {
+                                        error!("Re-authentication failed: {reauth_err}");
+                                        return Err(rmcp::ServiceError::McpError(rmcp::ErrorData::new(
+                                            rmcp::model::ErrorCode::INTERNAL_ERROR,
+                                            MCP_AUTH_REAUTH_FAILED,
+                                            None,
+                                        )));
+                                    },
+                                }
+
+                                Err(rmcp::ServiceError::McpError(rmcp::ErrorData::new(
+                                    rmcp::model::ErrorCode::INTERNAL_ERROR,
+                                    MCP_AUTH_REFRESH_FAILED,
+                                    None,
+                                )))
                             },
                         }
                     } else {
-                        // No auth client available, return original error
                         Err(e)
                     }
                 },
@@ -386,6 +412,16 @@ macro_rules! decorate_with_auth_retry {
     };
     ($method_name:ident, $return_type:ty) => {
         pub async fn $method_name(&self) -> Result<$return_type, rmcp::ServiceError> {
+            // Proactively check token validity before making the call.
+            if let Some(auth_client) = self.auth_client.as_ref() {
+                if let Err(e) = auth_client.auth_client.get_access_token().await {
+                    info!("Token pre-check failed ({e}), attempting re-authentication before call");
+                    if let Err(reauth_err) = auth_client.reauthorize().await {
+                        error!("Pre-call re-authentication failed: {reauth_err}");
+                    }
+                }
+            }
+
             let first_attempt = match &self.running_service {
                 InnerService::Original(rs) => rs.$method_name().await,
                 InnerService::Peer(peer) => peer.$method_name().await,
@@ -394,29 +430,40 @@ macro_rules! decorate_with_auth_retry {
             match first_attempt {
                 Ok(result) => Ok(result),
                 Err(e) => {
-                    // TODO: discern error type prior to retrying
-                    // Not entirely sure what is thrown when auth is required
                     if let Some(auth_client) = self.auth_client.as_ref() {
                         let refresh_result = auth_client.refresh_token().await;
                         match refresh_result {
                             Ok(_) => {
                                 info!("Token refreshed");
-                                // Retry the operation after token refresh
                                 match &self.running_service {
                                     InnerService::Original(rs) => rs.$method_name().await,
                                     InnerService::Peer(peer) => peer.$method_name().await,
                                 }
                             },
-                            Err(_) => {
-                                // If refresh fails, return the original error
-                                // Currently our event loop just does not allow us easy ways to
-                                // reauth entirely once a session starts since this would mean
-                                // swapping of transport (which also means swapping of client)
-                                Err(e)
+                            Err(refresh_err) => {
+                                info!("Token refresh failed ({refresh_err}), attempting re-authentication");
+                                match auth_client.reauthorize().await {
+                                    Ok(_) => {
+                                        info!("Reauth initiated");
+                                    },
+                                    Err(reauth_err) => {
+                                        error!("Re-authentication failed: {reauth_err}");
+                                        return Err(rmcp::ServiceError::McpError(rmcp::ErrorData::new(
+                                            rmcp::model::ErrorCode::INTERNAL_ERROR,
+                                            MCP_AUTH_REAUTH_FAILED,
+                                            None,
+                                        )));
+                                    },
+                                }
+
+                                Err(rmcp::ServiceError::McpError(rmcp::ErrorData::new(
+                                    rmcp::model::ErrorCode::INTERNAL_ERROR,
+                                    MCP_AUTH_REFRESH_FAILED,
+                                    None,
+                                )))
                             },
                         }
                     } else {
-                        // No auth client available, return original error
                         Err(e)
                     }
                 },
@@ -485,7 +532,22 @@ impl RunningMcpService {
                                 InnerService::Peer(peer) => peer.get_prompt(params).await,
                             }
                         },
-                        Err(_) => Err(e),
+                        Err(refresh_err) => {
+                            info!("Token refresh failed ({refresh_err}), attempting re-authentication");
+                            match auth_client.reauthorize().await {
+                                Ok(_) => {
+                                    info!("Re-authentication successful, retrying operation");
+                                    match &self.running_service {
+                                        InnerService::Original(rs) => rs.get_prompt(params).await,
+                                        InnerService::Peer(peer) => peer.get_prompt(params).await,
+                                    }
+                                },
+                                Err(reauth_err) => {
+                                    error!("Re-authentication failed: {reauth_err}");
+                                    Err(e)
+                                },
+                            }
+                        },
                     }
                 } else {
                     Err(e)

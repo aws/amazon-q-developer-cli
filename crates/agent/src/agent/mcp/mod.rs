@@ -105,7 +105,7 @@
 
 pub mod actor;
 pub mod oauth_util;
-mod service;
+pub(crate) mod service;
 pub mod types;
 
 use std::collections::{

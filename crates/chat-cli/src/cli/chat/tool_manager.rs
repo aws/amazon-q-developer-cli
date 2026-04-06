@@ -1441,7 +1441,7 @@ impl ToolManager {
                             },
                         }
                     },
-                    InitializedMcpClient::Ready(service) => service,
+                    InitializedMcpClient::Ready(service) => *service,
                 };
 
                 let InnerService::Original(mut inner) = running_service.inner_service else {

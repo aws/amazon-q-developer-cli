@@ -2847,9 +2847,21 @@ impl Agent {
                                 )]))
                             }
                         },
-                        Err(err) => Err(ToolExecutionError::Custom(format!(
-                            "failed to send call tool request to the MCP server: {err}"
-                        ))),
+                        Err(err) => {
+                            let msg = err.to_string();
+                            if msg.contains(crate::agent::mcp::service::MCP_AUTH_REFRESH_FAILED)
+                                || msg.contains(crate::agent::mcp::service::MCP_AUTH_REAUTH_FAILED)
+                            {
+                                Err(ToolExecutionError::Custom(format!(
+                                    "Authentication failed for MCP server '{}'. Token refresh failed. Please re-authenticate using /mcp.",
+                                    mcp_tool.server_name
+                                )))
+                            } else {
+                                Err(ToolExecutionError::Custom(format!(
+                                    "failed to send call tool request to the MCP server: {err}"
+                                )))
+                            }
+                        },
                     }
                 })
             },

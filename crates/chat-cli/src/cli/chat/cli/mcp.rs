@@ -291,6 +291,21 @@ async fn execute_status(session: &mut ChatSession) -> Result<ChatState, ChatErro
                         style::Print(msg),
                         style::Print("\n")
                     )?;
+
+                    // Check OAuth token status for this server
+                    if let Some(crate::mcp_client::InitializedMcpClient::Ready(running_service)) =
+                        session.conversation.tool_manager.clients.get(&server_name)
+                        && let Some(Err(auth_err)) = running_service.auth_status().await
+                    {
+                        queue!(
+                            session.stderr,
+                            StyledText::warning_fg(),
+                            style::Print("⚠ OAuth token expired or invalid: "),
+                            StyledText::reset(),
+                            style::Print(&auth_err),
+                            style::Print("\n  Token will be refreshed on next tool call.\n"),
+                        )?;
+                    }
                 } else {
                     // Server is configured but no load record yet - show as loading
                     queue!(

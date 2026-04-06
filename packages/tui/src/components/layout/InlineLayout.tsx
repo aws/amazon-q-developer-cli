@@ -160,6 +160,7 @@ export const InlineLayout: React.FC = () => {
     agentError,
     agentErrorGuidance,
     initErrors,
+    pendingOAuthServers,
   } = useNotificationState();
   const { dismissTransientAlert, setAgentError, setLoadingMessage } =
     useNotificationActions();
@@ -392,6 +393,16 @@ export const InlineLayout: React.FC = () => {
     clearCommandInput();
   }, [setShowMcpPanel, setActiveCommand, clearCommandInput]);
 
+  // Overlay auth-required status onto MCP servers that are pending OAuth
+  const mcpServersWithAuth = useMemo(() => {
+    if (pendingOAuthServers.size === 0) return mcpServers;
+    return mcpServers.map((s) =>
+      pendingOAuthServers.has(s.name)
+        ? { ...s, status: 'auth-required' as const }
+        : s
+    );
+  }, [mcpServers, pendingOAuthServers]);
+
   const handleCloseToolsPanel = useCallback(() => {
     setShowToolsPanel(false);
     setActiveCommand(null);
@@ -591,6 +602,9 @@ export const InlineLayout: React.FC = () => {
               ? 'Initializing...'
               : (loadingMessage ??
                 transientAlert?.message ??
+                (pendingOAuthServers.size > 0
+                  ? `${pendingOAuthServers.keys().next().value} requires OAuth — Ctrl+y to copy URL`
+                  : undefined) ??
                 summarizeInitErrors(initErrors) ??
                 undefined)
           }
@@ -598,7 +612,11 @@ export const InlineLayout: React.FC = () => {
             !sessionId || loadingMessage
               ? 'loading'
               : (transientAlert?.status ??
-                (initErrors.length > 0 ? 'error' : undefined))
+                (pendingOAuthServers.size > 0
+                  ? 'info'
+                  : initErrors.length > 0
+                    ? 'error'
+                    : undefined))
           }
           autoHideMs={
             !sessionId || loadingMessage
@@ -615,7 +633,9 @@ export const InlineLayout: React.FC = () => {
           actionHint={
             transientAlert?.action
               ? `${transientAlert.action.key}: ${transientAlert.action.label}`
-              : undefined
+              : pendingOAuthServers.size > 0
+                ? 'Ctrl+y: Copy URL'
+                : undefined
           }
         />
 
@@ -710,8 +730,9 @@ export const InlineLayout: React.FC = () => {
             )}
             {showMcpPanel && (
               <McpPanel
-                servers={mcpServers}
+                servers={mcpServersWithAuth}
                 initErrors={initErrors}
+                pendingOAuthUrls={pendingOAuthServers}
                 onClose={handleCloseMcpPanel}
               />
             )}

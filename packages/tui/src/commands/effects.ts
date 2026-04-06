@@ -192,10 +192,10 @@ const effectHandlers: Record<EffectName, EffectHandler> = {
     // If the result has breakdown data, show the panel (this is /context show or bare /context)
     const data = result?.data as
       | {
-          breakdown?: any;
-          contextUsagePercentage?: number;
-          initialExpanded?: boolean;
-        }
+        breakdown?: any;
+        contextUsagePercentage?: number;
+        initialExpanded?: boolean;
+      }
       | undefined;
     if (data?.breakdown) {
       if (data?.contextUsagePercentage != null) {
@@ -615,7 +615,7 @@ const effectHandlers: Record<EffectName, EffectHandler> = {
   },
 
   /** Copy last assistant response to system clipboard */
-  copyToClipboard: (_result, ctx) => {
+  copyToClipboard: async (_result, ctx) => {
     const messages = ctx.getMessages();
     // Collect all Model messages from the last assistant turn (everything
     // after the most recent User message). Tool calls interleave Model
@@ -763,7 +763,7 @@ const effectHandlers: Record<EffectName, EffectHandler> = {
       const category = args.slice(0, colonIdx);
       const presetId = args.slice(colonIdx + 1);
 
-      const updatedPrefs = { ...prefs };
+      let updatedPrefs = { ...prefs };
       if (category === 'prompt') {
         const preset = getPromptPreset(presetId);
         if (!preset) {
@@ -875,7 +875,6 @@ const effectHandlers: Record<EffectName, EffectHandler> = {
 
 import { formatImageLabel } from '../utils/image-label.js';
 import { MessageRole } from '../stores/app-store.js';
-import { spawnSync } from 'child_process';
 import {
   promptPresets,
   responsePresets,
@@ -888,6 +887,7 @@ import {
   getBundledTheme,
 } from '../theme/user-theme.js';
 import { writeFileSync } from 'fs';
+import { spawnSync } from 'child_process';
 
 /**
  * Copy text to the system clipboard using platform-native tools.
@@ -898,7 +898,7 @@ import { writeFileSync } from 'fs';
  *   Windows → powershell Set-Clipboard (handles UTF-8 correctly, unlike clip.exe)
  *   Linux  → wl-copy (Wayland) → xclip (X11) → xsel (X11 fallback)
  */
-function copyToSystemClipboard(text: string): boolean {
+export function copyToSystemClipboard(text: string): boolean {
   const candidates: Array<{ bin: string; args: string[] }> = [];
 
   if (process.platform === 'darwin') {
@@ -950,7 +950,6 @@ function copyToSystemClipboard(text: string): boolean {
 
   return false;
 }
-
 /**
  * Run effect for a command.
  * Returns true if the effect handled its own messaging (suppresses dispatcher step 4).

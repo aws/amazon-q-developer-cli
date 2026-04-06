@@ -21,6 +21,8 @@ export enum AgentEventType {
   AgentNotFound = 'agent_not_found',
   AgentConfigError = 'agent_config_error',
   TurnSummary = 'turn_summary',
+  McpOauthRequest = 'mcp_oauth_request',
+  McpServerInitialized = 'mcp_server_initialized',
 }
 
 export enum ContentType {
@@ -305,6 +307,17 @@ export interface TurnSummaryEvent {
   turnDurationMs?: number;
 }
 
+export interface McpOauthRequestEvent {
+  type: AgentEventType.McpOauthRequest;
+  serverName: string;
+  oauthUrl: string;
+}
+
+export interface McpServerInitializedEvent {
+  type: AgentEventType.McpServerInitialized;
+  serverName: string;
+}
+
 export type AuthErrorType = string;
 export type SessionErrorType = string;
 
@@ -327,4 +340,6 @@ export type AgentStreamEvent =
   | AgentSwitchedEvent
   | AgentNotFoundEvent
   | AgentConfigErrorEvent
-  | TurnSummaryEvent;
+  | TurnSummaryEvent
+  | McpOauthRequestEvent
+  | McpServerInitializedEvent;

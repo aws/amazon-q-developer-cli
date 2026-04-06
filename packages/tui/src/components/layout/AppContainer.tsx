@@ -12,6 +12,7 @@ import {
   HIDE_CURSOR,
   CLEAR_SCREEN,
 } from '../../utils/terminal-sequences';
+import { copyToSystemClipboard } from '../../commands/effects.js';
 
 /**
  * Suspends the process by restoring terminal state and sending SIGTSTP
@@ -51,6 +52,8 @@ export const AppContainer: React.FC = () => {
   const dismissTransientAlert = useAppStore(
     (state) => state.dismissTransientAlert
   );
+  const pendingOAuthServers = useAppStore((state) => state.pendingOAuthServers);
+  const showTransientAlert = useAppStore((state) => state.showTransientAlert);
 
   // Restore terminal state when the process is resumed after ctrl+z suspend
   useEffect(() => {
@@ -80,10 +83,25 @@ export const AppContainer: React.FC = () => {
       suspendProcess();
       return;
     }
-    // Fire transient alert action on Ctrl+r
-    if (key.ctrl && userInput === 'r' && transientAlert?.action) {
+    // Fire transient alert action on Ctrl+y
+    if (key.ctrl && userInput === 'y' && transientAlert?.action) {
       transientAlert.action.onAction();
       dismissTransientAlert();
+      return;
+    }
+    // Copy OAuth URL on Ctrl+y when a server is pending auth
+    if (key.ctrl && userInput === 'y' && pendingOAuthServers.size > 0) {
+      const [, url] = pendingOAuthServers.entries().next().value as [
+        string,
+        string,
+      ];
+      if (copyToSystemClipboard(url)) {
+        showTransientAlert({
+          message: 'OAuth URL copied to clipboard',
+          status: 'info',
+          autoHideMs: 3000,
+        });
+      }
       return;
     }
     if (key.ctrl && userInput === 'c') {
