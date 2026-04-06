@@ -11,6 +11,7 @@ permissions:
 
 jobs:
   check-bun-version:
+    if: github.event_name != 'schedule' || github.repository == 'kiro-team/kiro-cli'
     name: Check for new Bun releases
     runs-on: ubuntu-latest
     timeout-minutes: 10

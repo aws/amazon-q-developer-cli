@@ -55,6 +55,7 @@ concurrency:
 
 jobs:
   check_nightly_skip:
+    if: github.event_name != 'schedule' || github.repository == 'kiro-team/kiro-cli'
     name: Check if Nightly Should Skip
     runs-on: ubuntu-latest
     outputs:
@@ -343,7 +344,7 @@ jobs:
   BuildSummary:
     name: Chat Build Summary
     needs: [check_nightly_skip, generate_timestamp, UpdateVersionNumber, TriggerDarwinBuild, TriggerLinuxBuild, TriggerWindowsBuild, TriggerAutocompleteBuild]
-    if: always()
+    if: always() && (github.event_name != 'schedule' || github.repository == 'kiro-team/kiro-cli')
     runs-on: ubuntu-latest
     steps:
       - name: Generate Build Summary

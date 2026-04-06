@@ -15,6 +15,7 @@ permissions:
 
 jobs:
   osv-scan:
+    if: github.event_name != 'schedule' || github.repository == 'kiro-team/kiro-cli'
     name: OSV Scanner
     runs-on: ubuntu-latest
     timeout-minutes: 15
