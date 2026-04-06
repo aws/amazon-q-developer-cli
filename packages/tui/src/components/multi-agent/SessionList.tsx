@@ -45,14 +45,15 @@ export const SessionList: React.FC<SessionListProps> = React.memo(
     const [spinnerIndex, setSpinnerIndex] = useState(0);
     const { getColor } = useTheme();
 
-    // Animate spinner for busy sessions
+    // Animate spinner only when at least one session is busy
+    const hasBusy = sessions.some((s) => s.status === 'busy');
     useEffect(() => {
+      if (!hasBusy) return;
       const interval = setInterval(() => {
         setSpinnerIndex((prev) => (prev + 1) % SPINNER_CHARS.length);
       }, 100);
-
       return () => clearInterval(interval);
-    }, []);
+    }, [hasBusy]);
 
     // Update focused index when selectedId changes
     useEffect(() => {

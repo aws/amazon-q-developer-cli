@@ -19,22 +19,18 @@ export default function Wordmark({ animate = false }: WordmarkProps) {
   const [visibleLetters, setVisibleLetters] = useState(animate ? 0 : 4);
 
   useEffect(() => {
-    if (!animate) return;
+    if (!animate || visibleLetters >= 4) return;
 
     const timer = setInterval(() => {
-      setVisibleLetters((prev) => (prev < 4 ? prev + 1 : 4));
+      setVisibleLetters((prev) => {
+        const next = prev + 1;
+        if (next >= 4) return 4;
+        return next;
+      });
     }, 300);
 
-    // Reset animation every 5 seconds
-    // const resetTimer = setInterval(() => {
-    //     setVisibleLetters(0);
-    // }, 5000);
-
-    return () => {
-      clearInterval(timer);
-      // clearInterval(resetTimer);
-    };
-  }, [animate]);
+    return () => clearInterval(timer);
+  }, [animate, visibleLetters >= 4]);
 
   const letterK = ` ⢀⣴⣶⣶⣦⡀⠀⠀⠀⠀⢀⣴⣶⣦⣄⡀
 ⢰⣿⠋⠁⠈⠙⣿⡆⠀⢀⣾⡿⠁  ⠈⢻⡆

@@ -30,10 +30,10 @@ export function getSegmenter(): Intl.Segmenter {
 // string-width re-evaluation (including the expensive RGI_Emoji regex)
 // on the next wrap-ansi pass.
 
-const GRAPHEME_CACHE_SIZE = 2_000;
+const GRAPHEME_CACHE_SIZE = 4_000;
 const graphemeCache = new Map<string, number>();
 
-const LINE_CACHE_SIZE = 10_000;
+const LINE_CACHE_SIZE = 25_000;
 const lineCache = new Map<string, number>();
 
 /**
