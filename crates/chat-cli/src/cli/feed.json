@@ -12,6 +12,30 @@
     },
     {
       "type": "release",
+      "date": "2026-04-06",
+      "version": "1.29.4",
+      "title": "Version 1.29.4",
+      "changes": [
+        {
+          "type": "added",
+          "description": "Added MCP registry support to V2 ACP code path"
+        },
+        {
+          "type": "fixed",
+          "description": "Fixed orphaned bun processes on terminal close"
+        },
+        {
+          "type": "fixed",
+          "description": "Fixed MCP OAuth mid-session re-authentication and token expiry detection"
+        },
+        {
+          "type": "fixed",
+          "description": "Fixed /tools reset not clearing all runtime permissions"
+        }
+      ]
+    },
+    {
+      "type": "release",
       "date": "2026-04-04",
       "version": "1.29.3",
       "title": "Version 1.29.3",

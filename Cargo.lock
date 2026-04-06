@@ -39,7 +39,7 @@ dependencies = [
 
 [[package]]
 name = "agent"
-version = "1.29.3"
+version = "1.29.4"
 dependencies = [
  "amzn-codewhisperer-client",
  "amzn-codewhisperer-streaming-client",
@@ -351,9 +351,9 @@ checksum = "4b46cbb362ab8752921c97e041f5e366ee6297bd428a31275b9fcf1e380f7299"
 
 [[package]]
 name = "anndists"
-version = "0.1.4"
+version = "0.1.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8238f99889a837cd6641360f9f3ead18f70b07bf6ce1f04a319bc6bd8a2f48f1"
+checksum = "9a8396b473aa0bceed68fb32462505387ea39fa47c7029417e0a49f10592b036"
 dependencies = [
  "anyhow",
  "cfg-if",
@@ -1704,7 +1704,7 @@ dependencies = [
 
 [[package]]
 name = "chat-cli-ui"
-version = "1.29.3"
+version = "1.29.4"
 dependencies = [
  "arboard",
  "chrono",
@@ -1732,7 +1732,7 @@ dependencies = [
 
 [[package]]
 name = "chat_cli"
-version = "1.29.3"
+version = "1.29.4"
 dependencies = [
  "agent",
  "agent-client-protocol",
@@ -1875,7 +1875,7 @@ dependencies = [
 
 [[package]]
 name = "chat_cli_v2"
-version = "1.29.3"
+version = "1.29.4"
 dependencies = [
  "agent",
  "agent-client-protocol",
@@ -2175,7 +2175,7 @@ dependencies = [
 
 [[package]]
 name = "code-agent-sdk"
-version = "1.29.3"
+version = "1.29.4"
 dependencies = [
  "anyhow",
  "ast-grep-core",
@@ -3235,9 +3235,9 @@ dependencies = [
 
 [[package]]
 name = "fastrand"
-version = "2.3.0"
+version = "2.4.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "37909eebbb50d72f9059c3b6d82c0463f2ff062c9e95845c43a6c9c0355411be"
+checksum = "a043dc74da1e37d6afe657061213aa6f425f855399a11d3463c6ecccc4dfda1f"
 
 [[package]]
 name = "fax"
@@ -4726,9 +4726,9 @@ dependencies = [
 
 [[package]]
 name = "liblzma-sys"
-version = "0.4.5"
+version = "0.4.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9f2db66f3268487b5033077f266da6777d057949b8f93c8ad82e441df25e6186"
+checksum = "1a60851d15cd8c5346eca4ab8babff585be2ae4bc8097c067291d3ffe2add3b6"
 dependencies = [
  "cc",
  "libc",
@@ -7455,7 +7455,7 @@ dependencies = [
 
 [[package]]
 name = "semantic_search_client"
-version = "1.29.3"
+version = "1.29.4"
 dependencies = [
  "anyhow",
  "bm25",
