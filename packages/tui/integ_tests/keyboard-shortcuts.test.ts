@@ -62,7 +62,7 @@ describe('Keyboard shortcuts', () => {
     testCase = await TestCase.builder()
       .withTestName('kb-forward-delete')
       .launch();
-    await testCase.waitForVisibleText('Ask a question', 15000);
+    await testCase.waitForVisibleText('ask a question', 15000);
 
     await testCase.sendKeys('hello');
     await testCase.sleepMs(100);
@@ -88,7 +88,7 @@ describe('Keyboard shortcuts', () => {
     testCase = await TestCase.builder()
       .withTestName('kb-alt-backspace')
       .launch();
-    await testCase.waitForVisibleText('Ask a question', 15000);
+    await testCase.waitForVisibleText('ask a question', 15000);
 
     await testCase.sendKeys('hello world');
     await testCase.sleepMs(100);
@@ -106,7 +106,7 @@ describe('Keyboard shortcuts', () => {
     testCase = await TestCase.builder()
       .withTestName('kb-alt-delete-forward')
       .launch();
-    await testCase.waitForVisibleText('Ask a question', 15000);
+    await testCase.waitForVisibleText('ask a question', 15000);
 
     await testCase.sendKeys('hello world');
     await testCase.sleepMs(100);
@@ -125,7 +125,7 @@ describe('Keyboard shortcuts', () => {
 
   it('Ctrl+K then Ctrl+Y round-trip', async () => {
     testCase = await TestCase.builder().withTestName('kb-ctrl-k-y').launch();
-    await testCase.waitForVisibleText('Ask a question', 15000);
+    await testCase.waitForVisibleText('ask a question', 15000);
 
     await testCase.sendKeys('hello world');
     await testCase.sleepMs(100);
@@ -143,7 +143,7 @@ describe('Keyboard shortcuts', () => {
 
   it('Ctrl+U then Ctrl+Y restores text', async () => {
     testCase = await TestCase.builder().withTestName('kb-ctrl-u-y').launch();
-    await testCase.waitForVisibleText('Ask a question', 15000);
+    await testCase.waitForVisibleText('ask a question', 15000);
 
     await testCase.sendKeys('hello world');
     await testCase.sleepMs(100);
@@ -160,7 +160,7 @@ describe('Keyboard shortcuts', () => {
 
   it('Ctrl+W then Ctrl+Y restores word', async () => {
     testCase = await TestCase.builder().withTestName('kb-ctrl-w-y').launch();
-    await testCase.waitForVisibleText('Ask a question', 15000);
+    await testCase.waitForVisibleText('ask a question', 15000);
 
     await testCase.sendKeys('hello world');
     await testCase.sleepMs(100);
@@ -179,7 +179,7 @@ describe('Keyboard shortcuts', () => {
 
   it('Ctrl+H deletes backward', async () => {
     testCase = await TestCase.builder().withTestName('kb-ctrl-h').launch();
-    await testCase.waitForVisibleText('Ask a question', 15000);
+    await testCase.waitForVisibleText('ask a question', 15000);
 
     await testCase.sendKeys('hello');
     await testCase.sleepMs(100);
@@ -197,7 +197,7 @@ describe('Keyboard shortcuts', () => {
 
   it('Ctrl+A moves to start, Ctrl+E moves to end', async () => {
     testCase = await TestCase.builder().withTestName('kb-ctrl-a-e').launch();
-    await testCase.waitForVisibleText('Ask a question', 15000);
+    await testCase.waitForVisibleText('ask a question', 15000);
 
     await testCase.sendKeys('hello');
     await testCase.sleepMs(100);
@@ -213,7 +213,7 @@ describe('Keyboard shortcuts', () => {
 
   it('Ctrl+D performs forward delete', async () => {
     testCase = await TestCase.builder().withTestName('kb-ctrl-d').launch();
-    await testCase.waitForVisibleText('Ask a question', 15000);
+    await testCase.waitForVisibleText('ask a question', 15000);
 
     await testCase.sendKeys('hello');
     await testCase.sleepMs(100);
@@ -230,7 +230,7 @@ describe('Keyboard shortcuts', () => {
 
   it('Ctrl+W deletes word backward', async () => {
     testCase = await TestCase.builder().withTestName('kb-ctrl-w').launch();
-    await testCase.waitForVisibleText('Ask a question', 15000);
+    await testCase.waitForVisibleText('ask a question', 15000);
 
     await testCase.sendKeys('hello world');
     await testCase.sleepMs(100);
@@ -246,7 +246,7 @@ describe('Keyboard shortcuts', () => {
 
   it('Alt+D deletes word forward', async () => {
     testCase = await TestCase.builder().withTestName('kb-alt-d').launch();
-    await testCase.waitForVisibleText('Ask a question', 15000);
+    await testCase.waitForVisibleText('ask a question', 15000);
 
     await testCase.sendKeys('hello world');
     await testCase.sleepMs(100);
@@ -263,7 +263,7 @@ describe('Keyboard shortcuts', () => {
 
   it('Alt+F and Alt+B move by word', async () => {
     testCase = await TestCase.builder().withTestName('kb-alt-f-b').launch();
-    await testCase.waitForVisibleText('Ask a question', 15000);
+    await testCase.waitForVisibleText('ask a question', 15000);
 
     await testCase.sendKeys('hello world');
     await testCase.sleepMs(100);

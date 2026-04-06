@@ -38,7 +38,7 @@ describe('Write diff wrapping', () => {
       .withTerminal({ width: 60, height: 30 })
       .launch();
 
-    await testCase.waitForText('Ask a question', 10000);
+    await testCase.waitForText('ask a question', 10000);
     await testCase.getSessionId();
 
     await testCase.pushSendMessageResponse([

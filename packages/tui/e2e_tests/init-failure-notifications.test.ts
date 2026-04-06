@@ -37,7 +37,7 @@ describe('Initialization failure notifications', () => {
       .withCliArgs('--agent', 'test-broken-mcp')
       .launch();
 
-    await testCase.waitForText('Ask a question', 15000);
+    await testCase.waitForText('ask a question', 15000);
 
     const store = await testCase.waitForStoreCondition(
       (s) => s.initErrors.some((e) => e.type === 'mcp_failure'),
@@ -73,7 +73,7 @@ describe('Initialization failure notifications', () => {
       .withCliArgs('--agent', 'test-broken-mcp2')
       .launch();
 
-    await testCase.waitForText('Ask a question', 15000);
+    await testCase.waitForText('ask a question', 15000);
     await testCase.waitForSlashCommands();
 
     await testCase.waitForStoreCondition(
@@ -116,7 +116,7 @@ describe('Initialization failure notifications', () => {
       .withCliArgs('--agent', 'nonexistent-agent-xyz')
       .launch();
 
-    await testCase.waitForText('Ask a question', 15000);
+    await testCase.waitForText('ask a question', 15000);
 
     const store = await testCase.waitForStoreCondition(
       (s) => s.initErrors.some((e) => e.type === 'agent_not_found'),

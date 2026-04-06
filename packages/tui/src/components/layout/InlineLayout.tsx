@@ -90,9 +90,9 @@ function getPlaceholder(opts: {
     return 'running shell command · ctrl+c to cancel';
   }
   if (opts.agentName === 'kiro_planner') {
-    return 'Ask a question or describe a task ↵  ·  exit plan mode: shift+tab';
+    return 'ask a question or describe a task ↵  ·  exit plan mode: shift+tab';
   }
-  return 'Ask a question or describe a task ↵';
+  return 'ask a question or describe a task ↵';
 }
 
 function triggerEasterEgg() {
