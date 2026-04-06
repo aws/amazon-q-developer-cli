@@ -104,7 +104,7 @@ fn default_context_window() -> usize {
 /// actual size; all others fall back to the generic default.
 pub fn default_context_window_for_model(model_id: &str) -> usize {
     match model_id {
-        "claude-sonnet-4.6" | "claude-opus-4.6" => 1_000_000,
+        "claude-sonnet-4.6" | "claude-sonnet-4.6-1m" | "claude-opus-4.6" | "claude-opus-4.6-1m" => 1_000_000,
         _ => default_context_window(),
     }
 }
