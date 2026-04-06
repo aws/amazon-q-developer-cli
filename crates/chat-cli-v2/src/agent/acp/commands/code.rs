@@ -149,17 +149,6 @@ async fn execute_overview(ctx: &CommandContext<'_>, is_summary: bool) -> Command
 
     let mut client = ci.write().await;
 
-    // Auto-initialize if needed
-    if client.workspace_status() == WorkspaceStatus::NotInitialized {
-        if client.should_auto_initialize() {
-            if let Err(e) = client.initialize().await {
-                return CommandResult::error(format!("Failed to initialize workspace: {e}"));
-            }
-        } else {
-            return CommandResult::error("Workspace not initialized. Run /code init first.".to_string());
-        }
-    }
-
     let request = code_agent_sdk::model::types::GenerateCodebaseOverviewRequest {
         path: None,
         timeout_secs: None,
