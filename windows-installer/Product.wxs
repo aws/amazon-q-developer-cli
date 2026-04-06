@@ -6,7 +6,7 @@
            Manufacturer="Kiro"
            Version="$(var.ProductVersion)"
            UpgradeCode="A1B2C3D4-E5F6-7890-ABCD-EF1234567890"
-           Scope="perMachine">
+           Scope="perUser">
 
     <MajorUpgrade DowngradeErrorMessage="A newer version of Kiro CLI is already installed." />
     <MediaTemplate EmbedCab="yes" />
@@ -17,21 +17,21 @@
     <!-- UI with Welcome, License, Directory Selection, and Finish screens -->
     <ui:WixUI Id="WixUI_InstallDir" InstallDirectory="INSTALLFOLDER" />
 
-    <StandardDirectory Id="ProgramFiles64Folder">
+    <StandardDirectory Id="LocalAppDataFolder">
       <Directory Id="INSTALLFOLDER" Name="Kiro-Cli">
         <!-- Main CLI executable -->
         <Component Id="MainExecutable" Guid="D4E5F6A7-B8C9-0123-DEF0-456789012345">
           <File Id="KiroCliExe" Source="$(var.BinarySource)" Name="kiro-cli.exe" KeyPath="yes" />
         </Component>
 
-        <!-- PATH entry -->
+        <!-- PATH entry (user-level) -->
         <Component Id="PathEntry" Guid="C3D4E5F6-A7B8-9012-CDEF-345678901234">
-          <Environment Id="PATH" Name="PATH" Value="[INSTALLFOLDER]" Permanent="no" Part="last" Action="set" System="yes" />
+          <Environment Id="PATH" Name="PATH" Value="[INSTALLFOLDER]" Permanent="no" Part="last" Action="set" System="no" />
         </Component>
 
-        <!-- Registry entry for installed version -->
+        <!-- Registry entry for installed version (user-level) -->
         <Component Id="RegistryEntry" Guid="B8C9D0E1-F2A3-4567-1234-890123456789">
-          <RegistryKey Root="HKLM" Key="SOFTWARE\Kiro\CLI">
+          <RegistryKey Root="HKCU" Key="SOFTWARE\Kiro\CLI">
             <RegistryValue Name="CliVersion" Type="string" Value="$(var.DefaultCliVersion)" KeyPath="yes" />
             <RegistryValue Name="InstallPath" Type="string" Value="[INSTALLFOLDER]" />
             <RegistryValue Name="ProductVersion" Type="string" Value="$(var.ProductVersion)" />
