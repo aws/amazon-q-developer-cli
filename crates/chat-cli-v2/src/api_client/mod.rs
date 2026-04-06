@@ -592,7 +592,7 @@ impl IpcMockApiClient {
 
     #[allow(clippy::todo)]
     pub async fn get_mcp_config(&self) -> Result<(bool, Option<String>), ApiClientError> {
-        todo!("IpcMockApiClient::get_mcp_config")
+        Ok((true, None))
     }
 
     #[allow(clippy::todo)]

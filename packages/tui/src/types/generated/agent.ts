@@ -208,6 +208,7 @@ export interface KnowledgeArgs {
 
 /** Arguments for /mcp command */
 export interface McpArgs {
+	subcommand?: string;
 }
 
 export enum Role {

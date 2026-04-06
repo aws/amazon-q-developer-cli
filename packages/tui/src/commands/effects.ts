@@ -241,8 +241,10 @@ const effectHandlers: Record<EffectName, EffectHandler> = {
   },
 
   showMcpPanel: (result, ctx) => {
-    const data = result?.data as { servers?: McpServerInfo[] } | undefined;
-    ctx.setShowMcpPanel(true, data?.servers ?? []);
+    const data = result?.data as
+      | { servers?: McpServerInfo[]; message?: string; mode?: string }
+      | undefined;
+    ctx.setShowMcpPanel(true, data?.servers ?? [], data?.mode ?? 'list');
   },
 
   showToolsPanel: (result, ctx) => {

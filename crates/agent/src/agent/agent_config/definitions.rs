@@ -227,6 +227,24 @@ impl AgentConfig {
         }
     }
 
+    /// Remove MCP servers whose names don't satisfy the predicate.
+    pub fn retain_mcp_servers(&mut self, mut f: impl FnMut(&str) -> bool) {
+        match self {
+            AgentConfig::V2025_08_22(c) => {
+                c.mcp_servers.retain(|name, _| f(name));
+            },
+        }
+    }
+
+    /// Override the `use_legacy_mcp_json` / `includeMcpJson` flag.
+    pub fn set_use_legacy_mcp_json(&mut self, value: bool) {
+        match self {
+            AgentConfig::V2025_08_22(c) => {
+                c.use_legacy_mcp_json = value;
+            },
+        }
+    }
+
     /// Sets the tools available to the agent
     pub fn set_tools(&mut self, tools: Vec<String>) {
         match self {

@@ -50,7 +50,11 @@ export interface CommandContext {
   /** Show/hide usage panel */
   setShowUsagePanel: (show: boolean, data?: any) => void;
   /** Show/hide MCP servers panel */
-  setShowMcpPanel: (show: boolean, servers?: McpServerInfo[]) => void;
+  setShowMcpPanel: (
+    show: boolean,
+    servers?: McpServerInfo[],
+    mode?: string
+  ) => void;
   /** Show/hide tools panel */
   setShowToolsPanel: (show: boolean, tools?: ToolInfo[]) => void;
   /** Show/hide knowledge panel */

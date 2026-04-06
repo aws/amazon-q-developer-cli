@@ -681,6 +681,46 @@ pub fn convert_registry_to_config(
     Ok(config)
 }
 
+/// Filter tools and MCP servers in a `LoadedAgentConfig` to only allow servers
+/// present in the registry. Also disables `use_legacy_mcp_json` so that user
+/// `mcp.json` servers not in the registry cannot bypass filtering.
+/// Companion to [`resolve_registry_servers_for_agent_config`].
+pub fn filter_agent_config_tools_by_registry(
+    agent_config: &mut agent::agent_config::LoadedAgentConfig,
+    registry: &McpRegistryResponse,
+) {
+    let registry_servers: std::collections::HashSet<&str> =
+        registry.servers.iter().map(|e| e.server.name.as_str()).collect();
+
+    // Remove MCP servers not in the registry
+    agent_config
+        .config_mut()
+        .retain_mcp_servers(|name| registry_servers.contains(name));
+
+    // Prevent mcp.json from re-adding non-registry servers downstream
+    agent_config.config_mut().set_use_legacy_mcp_json(false);
+
+    let existing_servers: std::collections::HashSet<String> =
+        agent_config.config().mcp_servers().keys().cloned().collect();
+
+    let filtered: Vec<String> = agent_config
+        .tools()
+        .into_iter()
+        .filter(|tool| {
+            if tool == "*" {
+                return true;
+            }
+            if let Some(stripped) = tool.strip_prefix('@') {
+                let server_name = stripped.split('/').next().unwrap_or("");
+                existing_servers.contains(server_name) || registry_servers.contains(server_name)
+            } else {
+                true
+            }
+        })
+        .collect();
+    agent_config.config_mut().set_tools(filtered);
+}
+
 /// Apply registry filtering to an agent's MCP servers
 /// This validates registry servers exist but keeps original minimal configuration
 pub fn apply_registry_filtering_to_agent(
@@ -1616,6 +1656,163 @@ mod tests {
         resolve_registry_servers_for_agent_config(&mut loaded, &registry);
 
         assert!(loaded.config().mcp_servers().is_empty());
+    }
+
+    #[test]
+    fn test_filter_agent_config_removes_non_registry_servers() {
+        use agent::agent_config::definitions::{
+            AgentConfig,
+            AgentConfigV2025_08_22,
+            LocalMcpServerConfig,
+            McpServerConfig as AgentMcpServerConfig,
+        };
+        use agent::agent_config::{
+            ConfigSource,
+            LoadedAgentConfig,
+            ResolvedGlobalPrompt,
+        };
+
+        let registry: McpRegistryResponse = serde_json::from_str(
+            r#"{"servers": [{"server": {"name": "approved", "description": "ok", "version": "1.0.0",
+                "remotes": [{"type": "sse", "url": "https://example.com"}]}}]}"#,
+        )
+        .unwrap();
+
+        let mut servers = std::collections::HashMap::new();
+        servers.insert(
+            "approved".to_string(),
+            AgentMcpServerConfig::Local(LocalMcpServerConfig {
+                command: "approved-cmd".to_string(),
+                args: vec![],
+                env: None,
+                timeout_ms: 120000,
+                disabled: false,
+                disabled_tools: vec![],
+            }),
+        );
+        servers.insert(
+            "user-local".to_string(),
+            AgentMcpServerConfig::Local(LocalMcpServerConfig {
+                command: "my-tool".to_string(),
+                args: vec![],
+                env: None,
+                timeout_ms: 120000,
+                disabled: false,
+                disabled_tools: vec![],
+            }),
+        );
+
+        let config = AgentConfigV2025_08_22 {
+            name: "test".to_string(),
+            mcp_servers: servers,
+            tools: vec![
+                "@approved/tool".to_string(),
+                "@user-local/tool".to_string(),
+                "read".to_string(),
+            ],
+            ..Default::default()
+        };
+        let mut loaded = LoadedAgentConfig::new(
+            AgentConfig::V2025_08_22(config),
+            ConfigSource::Ephemeral,
+            ResolvedGlobalPrompt::None,
+        );
+
+        filter_agent_config_tools_by_registry(&mut loaded, &registry);
+
+        // Only "approved" server survives
+        assert_eq!(loaded.config().mcp_servers().len(), 1);
+        assert!(loaded.config().mcp_servers().contains_key("approved"));
+        assert!(!loaded.config().mcp_servers().contains_key("user-local"));
+
+        // Tools filtered accordingly
+        let tools = loaded.tools();
+        assert!(tools.contains(&"@approved/tool".to_string()));
+        assert!(!tools.contains(&"@user-local/tool".to_string()));
+        assert!(tools.contains(&"read".to_string()));
+    }
+
+    #[test]
+    fn test_filter_agent_config_disables_legacy_mcp_json() {
+        use agent::agent_config::definitions::{
+            AgentConfig,
+            AgentConfigV2025_08_22,
+        };
+        use agent::agent_config::{
+            ConfigSource,
+            LoadedAgentConfig,
+            ResolvedGlobalPrompt,
+        };
+
+        let registry: McpRegistryResponse = serde_json::from_str(
+            r#"{"servers": [{"server": {"name": "s", "description": "d", "version": "1",
+                "remotes": [{"type": "sse", "url": "https://x.com"}]}}]}"#,
+        )
+        .unwrap();
+
+        let config = AgentConfigV2025_08_22 {
+            name: "test".to_string(),
+            use_legacy_mcp_json: true,
+            ..Default::default()
+        };
+        let mut loaded = LoadedAgentConfig::new(
+            AgentConfig::V2025_08_22(config),
+            ConfigSource::Ephemeral,
+            ResolvedGlobalPrompt::None,
+        );
+
+        assert!(loaded.config().use_legacy_mcp_json());
+        filter_agent_config_tools_by_registry(&mut loaded, &registry);
+        assert!(!loaded.config().use_legacy_mcp_json());
+    }
+
+    #[test]
+    fn test_filter_agent_config_empty_registry_removes_all_servers() {
+        use agent::agent_config::definitions::{
+            AgentConfig,
+            AgentConfigV2025_08_22,
+            LocalMcpServerConfig,
+            McpServerConfig as AgentMcpServerConfig,
+        };
+        use agent::agent_config::{
+            ConfigSource,
+            LoadedAgentConfig,
+            ResolvedGlobalPrompt,
+        };
+
+        let empty_registry = McpRegistryResponse { servers: vec![] };
+
+        let mut servers = std::collections::HashMap::new();
+        servers.insert(
+            "some-server".to_string(),
+            AgentMcpServerConfig::Local(LocalMcpServerConfig {
+                command: "cmd".to_string(),
+                args: vec![],
+                env: None,
+                timeout_ms: 120000,
+                disabled: false,
+                disabled_tools: vec![],
+            }),
+        );
+
+        let config = AgentConfigV2025_08_22 {
+            name: "test".to_string(),
+            mcp_servers: servers,
+            tools: vec!["@some-server/tool".to_string(), "read".to_string()],
+            ..Default::default()
+        };
+        let mut loaded = LoadedAgentConfig::new(
+            AgentConfig::V2025_08_22(config),
+            ConfigSource::Ephemeral,
+            ResolvedGlobalPrompt::None,
+        );
+
+        filter_agent_config_tools_by_registry(&mut loaded, &empty_registry);
+
+        assert!(loaded.config().mcp_servers().is_empty());
+        let tools = loaded.tools();
+        assert!(!tools.contains(&"@some-server/tool".to_string()));
+        assert!(tools.contains(&"read".to_string()));
     }
 }
 /// Display registry error message to any writer that implements Write

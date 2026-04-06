@@ -121,6 +121,7 @@ export const useUIState = () =>
       usageData: state.usageData,
       showMcpPanel: state.showMcpPanel,
       mcpServers: state.mcpServers,
+      mcpMode: state.mcpMode,
       showToolsPanel: state.showToolsPanel,
       toolsList: state.toolsList,
       showKnowledgePanel: state.showKnowledgePanel,

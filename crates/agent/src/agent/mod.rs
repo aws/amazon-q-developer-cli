@@ -1364,7 +1364,7 @@ impl Agent {
         // request. It is not clear to me whether or not ACP is meant to be used this way. As a
         // preemptive measure, we'll try to guard against this via first checking if we even need
         // to swap.
-        if self.agent_config.name() == args.agent_config.name() {
+        if !args.force && self.agent_config.name() == args.agent_config.name() {
             return Ok(AgentResponse::SwapComplete);
         }
 

@@ -514,6 +514,8 @@ pub struct SwapAgentArgs {
     pub local_mcp_path: Option<PathBuf>,
     /// Path to global mcp.json
     pub global_mcp_path: Option<PathBuf>,
+    /// Skip the same-name short-circuit check (used for registry refresh)
+    pub force: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

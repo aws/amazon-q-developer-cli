@@ -74,6 +74,10 @@ export interface McpServerInfo {
   name: string;
   status: 'running' | 'loading' | 'failed' | 'disabled' | 'auth-required';
   toolCount: number;
+  // Registry fields (present in /mcp list response)
+  version?: string;
+  description?: string;
+  enabled?: boolean;
 }
 
 export interface ToolInfo {
@@ -401,7 +405,11 @@ interface BaseAppActions {
     }>
   ) => void;
   setShowUsagePanel: (show: boolean, data?: any) => void;
-  setShowMcpPanel: (show: boolean, servers?: McpServerInfo[]) => void;
+  setShowMcpPanel: (
+    show: boolean,
+    servers?: McpServerInfo[],
+    mode?: string
+  ) => void;
   setShowToolsPanel: (show: boolean, tools?: ToolInfo[]) => void;
   setShowKnowledgePanel: (
     show: boolean,
@@ -553,6 +561,7 @@ export interface AppState {
   mcpServers: McpServerInfo[];
   pendingOAuthServers: Map<string, string>; // serverName → oauthUrl
   initErrors: InitError[];
+  mcpMode: string;
   showToolsPanel: boolean;
   toolsList: ToolInfo[];
   showKnowledgePanel: boolean;
@@ -788,6 +797,7 @@ export const createAppStore = (props: AppStoreProps) => {
     mcpServers: [],
     pendingOAuthServers: new Map(),
     initErrors: [],
+    mcpMode: 'list',
     showToolsPanel: false,
     toolsList: [],
     showKnowledgePanel: false,
@@ -2483,8 +2493,8 @@ export const createAppStore = (props: AppStoreProps) => {
       set({ showUsagePanel: show, usageData: data ?? null });
     },
 
-    setShowMcpPanel: (show, servers = []) => {
-      set({ showMcpPanel: show, mcpServers: servers });
+    setShowMcpPanel: (show, servers = [], mode = 'list') => {
+      set({ showMcpPanel: show, mcpServers: servers, mcpMode: mode });
     },
 
     setShowToolsPanel: (show, tools = []) => {

@@ -55,6 +55,7 @@ import {
   useAppStore,
   summarizeInitErrors,
   type CodePanelData,
+  type McpServerInfo,
 } from '../../stores/app-store.js';
 import { useSessionConversation } from '../../stores/session-conversations.js';
 import { useShallow } from 'zustand/react/shallow';
@@ -183,6 +184,7 @@ export const InlineLayout: React.FC = () => {
     usageData,
     showMcpPanel,
     mcpServers,
+    mcpMode,
     showToolsPanel,
     toolsList,
     showKnowledgePanel,
@@ -733,7 +735,30 @@ export const InlineLayout: React.FC = () => {
                 servers={mcpServersWithAuth}
                 initErrors={initErrors}
                 pendingOAuthUrls={pendingOAuthServers}
+                mode={mcpMode}
                 onClose={handleCloseMcpPanel}
+                onAction={async (serverNames: string[]) => {
+                  const action = mcpMode === 'add' ? 'add' : 'remove';
+                  await kiro.executeCommand({
+                    command: 'mcp',
+                    args: { value: `${action} ${serverNames.join(',')}` },
+                  } as any);
+                  const result = await kiro.executeCommand({
+                    command: 'mcp',
+                    args: { value: action },
+                  } as any);
+                  if (result?.data) {
+                    const data = result.data as {
+                      servers?: McpServerInfo[];
+                      mode?: string;
+                    };
+                    setShowMcpPanel(
+                      true,
+                      data.servers ?? [],
+                      data.mode ?? action
+                    );
+                  }
+                }}
               />
             )}
             {showToolsPanel && (

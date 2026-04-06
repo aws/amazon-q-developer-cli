@@ -258,6 +258,11 @@ pub enum AcpSessionRequest {
     Shutdown { respond_to: oneshot::Sender<()> },
     /// Trigger command/prompt advertising to the client.
     AdvertiseCommands,
+    /// Queue an MCP server refresh with updated registry data.
+    /// The actual swap happens in the event loop when the session is idle.
+    RefreshMcpServers {
+        agent_config: Box<agent::agent_config::LoadedAgentConfig>,
+    },
 }
 
 #[derive(Debug)]
@@ -363,6 +368,19 @@ impl AcpSessionHandle {
             .await
             .map_err(|_e| agent::protocol::AgentError::Channel)?;
         rx.await.map_err(|_e| agent::protocol::AgentError::Channel)?
+    }
+
+    /// Queue an MCP server refresh with updated registry data.
+    /// The session will apply it when idle.
+    pub async fn refresh_mcp_servers(
+        &self,
+        agent_config: agent::agent_config::LoadedAgentConfig,
+    ) -> Result<(), sacp::Error> {
+        self.tx
+            .send(AcpSessionRequest::RefreshMcpServers {
+                agent_config: agent_config.into(),
+            })
+            .await
     }
 
     /// Set the model ID for this session
@@ -831,6 +849,8 @@ struct AcpSession {
     pending_plan: Option<String>,
     pending_swap: Option<agent::agent_config::LoadedAgentConfig>,
     pending_prompt_response: Option<tokio::sync::Mutex<JrRequestCx<PromptResponse>>>,
+    /// Agent config to swap to when the session becomes idle (set by registry refresh)
+    pending_mcp_refresh: Option<Box<agent::agent_config::LoadedAgentConfig>>,
     compaction_summary: Option<String>,
     os: Os,
     cwd: PathBuf,
@@ -1138,6 +1158,7 @@ impl AcpSession {
             rts_state,
             api_client,
             pending_prompt_response: None,
+            pending_mcp_refresh: None,
             compaction_summary: None,
             os,
             cwd,
@@ -1187,6 +1208,27 @@ impl AcpSession {
         let _ = ready_tx.send(());
 
         loop {
+            // Apply pending MCP registry refresh when idle (no prompt in progress)
+            if self.pending_prompt_response.is_none()
+                && let Some(agent_config) = self.pending_mcp_refresh.take()
+            {
+                let resolver = crate::util::paths::PathResolver::new(&self.os);
+                let local_mcp_path = resolver.workspace().mcp_config().ok();
+                let global_mcp_path = resolver.global().mcp_config().ok();
+                if let Err(e) = self
+                    .agent
+                    .swap_agent(agent::protocol::SwapAgentArgs {
+                        agent_config: *agent_config,
+                        local_mcp_path,
+                        global_mcp_path,
+                        force: true,
+                    })
+                    .await
+                {
+                    warn!(%e, "Failed to apply pending MCP registry refresh");
+                }
+            }
+
             tokio::select! {
                 // Handle new ACP requests
                 req = self.request_rx.recv() => {
@@ -1474,6 +1516,7 @@ impl AcpSession {
                         agent_config: *agent_config,
                         local_mcp_path,
                         global_mcp_path,
+                        force: false,
                     })
                     .await;
 
@@ -1661,6 +1704,9 @@ impl AcpSession {
                     warn!("Failed to advertise commands: {}", e);
                 }
             },
+            AcpSessionRequest::RefreshMcpServers { agent_config } => {
+                self.pending_mcp_refresh = Some(agent_config);
+            },
         }
     }
 
@@ -1775,6 +1821,7 @@ impl AcpSession {
                             agent_config,
                             local_mcp_path,
                             global_mcp_path,
+                            force: false,
                         })
                         .await
                     {

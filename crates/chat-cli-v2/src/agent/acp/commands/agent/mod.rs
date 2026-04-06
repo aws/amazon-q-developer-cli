@@ -158,6 +158,7 @@ async fn do_switch_agent(index: usize, agent_info: &AgentInfo, ctx: &CommandCont
             agent_config: config,
             local_mcp_path: ctx.local_mcp_path.cloned(),
             global_mcp_path: ctx.global_mcp_path.cloned(),
+            force: false,
         })
         .await
     {

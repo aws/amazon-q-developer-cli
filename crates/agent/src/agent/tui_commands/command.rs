@@ -138,7 +138,10 @@ pub struct PasteImageArgs {}
 #[typeshare]
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct McpArgs {}
+pub struct McpArgs {
+    #[serde(alias = "value", skip_serializing_if = "Option::is_none")]
+    pub subcommand: Option<String>,
+}
 
 /// Arguments for /tools command
 #[typeshare]
@@ -299,6 +302,7 @@ impl TuiCommand {
             TuiCommand::Tools(_) => vec!["trust-all", "trust", "untrust", "reset"],
             TuiCommand::Chat(_) => vec!["save", "load", "new"],
             TuiCommand::Code(_) => vec!["status", "init", "logs", "overview", "summary"],
+            TuiCommand::Mcp(_) => vec!["list", "add", "remove"],
             _ => vec![],
         }
     }
@@ -437,7 +441,9 @@ impl TuiCommand {
             "clear" => Some(Self::Clear(ClearArgs::default())),
             "quit" => Some(Self::Quit(QuitArgs::default())),
             "usage" => Some(Self::Usage(UsageArgs::default())),
-            "mcp" => Some(Self::Mcp(McpArgs::default())),
+            "mcp" => Some(Self::Mcp(McpArgs {
+                subcommand: (!args.is_empty()).then(|| args.to_string()),
+            })),
             "tools" => Some(Self::Tools(ToolsArgs {
                 subcommand: (!args.is_empty()).then(|| args.to_string()),
             })),

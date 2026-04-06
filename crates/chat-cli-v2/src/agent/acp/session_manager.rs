@@ -212,6 +212,70 @@ impl SessionManagerBuilder {
                 (None, None)
             };
 
+            // Fetch MCP registry data for enterprise users
+            let (mcp_registry_data, mcp_registry_url) = match os.client.get_mcp_config().await {
+                Ok((enabled, Some(registry_url))) if enabled => {
+                    let client = crate::mcp_registry::McpRegistryClient::new();
+                    match client.fetch_registry(&registry_url).await {
+                        Ok(registry) => {
+                            info!(
+                                servers = registry.servers.len(),
+                                "Fetched MCP registry from {}", registry_url
+                            );
+                            (Some(registry), Some(registry_url))
+                        },
+                        Err(e) => {
+                            error!(%e, "Failed to fetch MCP registry — registry servers disabled for this session");
+                            // Registry URL was configured but fetch failed — use empty registry
+                            // to disable registry-dependent MCP servers (matches V1 behavior)
+                            (
+                                Some(crate::mcp_registry::McpRegistryResponse { servers: vec![] }),
+                                Some(registry_url),
+                            )
+                        },
+                    }
+                },
+                Ok(_) => (None, None),
+                Err(e) => {
+                    error!(%e, "Failed to get MCP config from API — MCP registry features disabled");
+                    // API call failed — we can't determine if registry is configured,
+                    // so use empty registry to disable registry-dependent MCP servers
+                    (Some(crate::mcp_registry::McpRegistryResponse { servers: vec![] }), None)
+                },
+            };
+
+            // Spawn background task to refresh registry every 24 hours
+            if mcp_registry_data.is_some()
+                && let Some(url) = mcp_registry_url
+            {
+                let sm_handle = session_manager_handle_clone.clone();
+                tokio::spawn(async move {
+                    loop {
+                        tokio::time::sleep(std::time::Duration::from_secs(24 * 60 * 60)).await;
+                        let client = crate::mcp_registry::McpRegistryClient::new();
+                        match client.fetch_registry(&url).await {
+                            Ok(registry) => {
+                                info!(
+                                    servers = registry.servers.len(),
+                                    "Background registry refresh succeeded"
+                                );
+                                if let Err(e) = sm_handle.refresh_registry(registry).await {
+                                    error!(%e, "Failed to send registry refresh to SessionManager");
+                                }
+                            },
+                            Err(e) => {
+                                error!(%e, "Background registry refresh failed — disabling registry servers until next refresh");
+                                // Clear registry so new sessions/swaps won't use stale data
+                                let empty = crate::mcp_registry::McpRegistryResponse { servers: vec![] };
+                                if let Err(e) = sm_handle.refresh_registry(empty).await {
+                                    error!(%e, "Failed to send empty registry to SessionManager");
+                                }
+                            },
+                        }
+                    }
+                });
+            }
+
             let mut session_manager = SessionManager::new(
                 agent_configs,
                 agent_config_errors,
@@ -224,6 +288,7 @@ impl SessionManagerBuilder {
                 trust_tools,
                 telemetry_event_store,
                 v1_session_exporter,
+                mcp_registry_data,
             );
 
             loop {
@@ -297,6 +362,10 @@ pub struct SessionManager {
     v1_session_exporter: Arc<dyn V1SessionExporter>,
     /// Agent config errors encountered during loading at startup.
     agent_config_errors: Vec<AgentConfigLoadError>,
+    /// MCP registry data for enterprise users, fetched once at startup
+    mcp_registry_data: Option<crate::mcp_registry::McpRegistryResponse>,
+    /// Tracks which agent config each session is using (for registry refresh)
+    session_agent_names: HashMap<SessionId, String>,
 }
 
 /// An agent config error with optional file path.
@@ -324,6 +393,7 @@ impl SessionManager {
         trust_tools: Option<Vec<String>>,
         telemetry_event_store: Option<TelemetryEventStore>,
         v1_session_exporter: Arc<dyn V1SessionExporter>,
+        mcp_registry_data: Option<crate::mcp_registry::McpRegistryResponse>,
     ) -> Self {
         Self {
             sessions: HashMap::new(),
@@ -348,6 +418,8 @@ impl SessionManager {
             group_completion_waiters: HashMap::new(),
             v1_session_exporter,
             agent_config_errors,
+            mcp_registry_data,
+            session_agent_names: HashMap::new(),
         }
     }
 
@@ -427,12 +499,43 @@ impl SessionManager {
             .find(|c| c.name() == mode_id)
             .ok_or_else(|| sacp::util::internal_error(format!("Mode '{}' not found", mode_id)))?;
 
+        let agent_config = if let Some(ref registry) = self.mcp_registry_data {
+            let mut config = agent_config.clone();
+            crate::mcp_registry::filter_agent_config_tools_by_registry(&mut config, registry);
+            crate::mcp_registry::resolve_registry_servers_for_agent_config(&mut config, registry);
+            config
+        } else {
+            agent_config.clone()
+        };
+
         session
-            .swap_agent(agent_config.clone())
+            .swap_agent(agent_config)
             .await
             .map_err(|e| sacp::util::internal_error(format!("Failed to swap agent: {}", e)))?;
 
         Ok(())
+    }
+
+    async fn handle_refresh_registry(&mut self, registry: crate::mcp_registry::McpRegistryResponse) {
+        info!("Refreshing MCP registry data ({} servers)", registry.servers.len());
+        self.mcp_registry_data = Some(registry.clone());
+
+        for (session_id, session_handle) in &self.sessions {
+            let Some(agent_name) = self.session_agent_names.get(session_id) else {
+                continue;
+            };
+            let Some(base_config) = self.agent_configs.iter().find(|c| c.name() == agent_name.as_str()) else {
+                continue;
+            };
+
+            let mut config = base_config.clone();
+            crate::mcp_registry::filter_agent_config_tools_by_registry(&mut config, &registry);
+            crate::mcp_registry::resolve_registry_servers_for_agent_config(&mut config, &registry);
+
+            if let Err(e) = session_handle.refresh_mcp_servers(config).await {
+                warn!(?session_id, %e, "Failed to queue registry refresh for session");
+            }
+        }
     }
 
     async fn handle_request(&mut self, request: SessionManagerRequest) {
@@ -518,6 +621,16 @@ impl SessionManager {
                     LoadedAgentConfig::new(ephemeral, ConfigSource::BuiltIn, resolved_prompt)
                 } else {
                     base_agent_config.clone()
+                };
+
+                // Resolve registry servers if registry data is available
+                let agent_config_to_use = if let Some(ref registry) = self.mcp_registry_data {
+                    let mut config = agent_config_to_use;
+                    crate::mcp_registry::filter_agent_config_tools_by_registry(&mut config, registry);
+                    crate::mcp_registry::resolve_registry_servers_for_agent_config(&mut config, registry);
+                    config
+                } else {
+                    agent_config_to_use
                 };
 
                 // Initialize or get shared code intelligence client
@@ -621,6 +734,7 @@ impl SessionManager {
                         let current_model_id = initial_model_id.unwrap_or_default();
                         let handle_to_give = handle.clone();
                         self.sessions.insert(session_id.clone(), handle);
+                        self.session_agent_names.insert(session_id.clone(), agent_name.clone());
                         _ = resp_sender.send(Ok(StartSessionResult {
                             handle: handle_to_give,
                             ready_rx,
@@ -655,6 +769,7 @@ impl SessionManager {
             },
             SessionManagerRequestData::TerminateSession => {
                 if let Some(handle) = self.sessions.remove(&session_id) {
+                    self.session_agent_names.remove(&session_id);
                     if tokio::time::timeout(std::time::Duration::from_secs(4), handle.shutdown())
                         .await
                         .is_err()
@@ -719,6 +834,9 @@ impl SessionManager {
             },
             SessionManagerRequestData::SetMode { mode_id, resp_sender } => {
                 let result = self.handle_set_mode(&session_id, &mode_id).await;
+                if result.is_ok() {
+                    self.session_agent_names.insert(session_id.clone(), mode_id);
+                }
                 _ = resp_sender.send(result);
             },
             SessionManagerRequestData::SetNextAgentName {
@@ -1130,6 +1248,13 @@ impl SessionManager {
             SessionManagerRequestData::GetSessionLiveActivity { target, resp_sender } => {
                 let activity = self.handle_get_live_activity(&target).await;
                 _ = resp_sender.send(activity);
+            },
+            SessionManagerRequestData::RefreshRegistry { registry, resp_sender } => {
+                self.handle_refresh_registry(registry).await;
+                _ = resp_sender.send(());
+            },
+            SessionManagerRequestData::GetRegistryData { resp_sender } => {
+                _ = resp_sender.send(self.mcp_registry_data.clone());
             },
         }
     }
@@ -1997,6 +2122,13 @@ pub(crate) enum SessionManagerRequestData {
         target: String,
         resp_sender: oneshot::Sender<Option<String>>,
     },
+    RefreshRegistry {
+        registry: crate::mcp_registry::McpRegistryResponse,
+        resp_sender: oneshot::Sender<()>,
+    },
+    GetRegistryData {
+        resp_sender: oneshot::Sender<Option<crate::mcp_registry::McpRegistryResponse>>,
+    },
 }
 
 /// Handle for communicating with a [`SessionManager`] actor.
@@ -2548,5 +2680,33 @@ impl SessionManagerHandle {
             })
             .await;
         rx.await.ok().flatten()
+    }
+
+    pub async fn refresh_registry(
+        &self,
+        registry: crate::mcp_registry::McpRegistryResponse,
+    ) -> Result<(), sacp::Error> {
+        let (resp_sender, rx) = oneshot::channel();
+        self.tx
+            .send(SessionManagerRequest {
+                session_id: SessionId::new(String::new()),
+                data: SessionManagerRequestData::RefreshRegistry { registry, resp_sender },
+            })
+            .await
+            .map_err(|_e| sacp::util::internal_error("Failed to send refresh request"))?;
+        rx.await
+            .map_err(|_e| sacp::util::internal_error("Failed to receive refresh response"))
+    }
+
+    pub async fn get_registry_data(&self) -> Option<crate::mcp_registry::McpRegistryResponse> {
+        let (resp_sender, rx) = oneshot::channel();
+        self.tx
+            .send(SessionManagerRequest {
+                session_id: SessionId::new(String::new()),
+                data: SessionManagerRequestData::GetRegistryData { resp_sender },
+            })
+            .await
+            .ok()?;
+        rx.await.ok()?
     }
 }
