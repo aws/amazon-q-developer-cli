@@ -82,11 +82,13 @@ pub async fn launch_v2(os: &Os) -> Result<ExitCode> {
         .arg(&asset_paths.tui_js_path)
         .args(&args[1..])
         .env("KIRO_AGENT_PATH", &current_exe)
+        .kill_on_drop(true)
         .spawn()?;
 
-    // Kill the child if we receive SIGTERM/SIGINT, otherwise it becomes an orphan
-    // since the default signal handler terminates without running destructors
-    // (so kill_on_drop never fires).
+    // Kill the child on SIGTERM, SIGHUP, or Ctrl-C. Without this the default
+    // signal handler terminates the process without running destructors, so
+    // kill_on_drop never fires and bun becomes an orphan at 100% CPU.
+    // SIGHUP is sent when the terminal tab/window is closed (Cmd+W).
     let status;
 
     #[cfg(unix)]
@@ -96,11 +98,16 @@ pub async fn launch_v2(os: &Os) -> Result<ExitCode> {
             signal,
         };
         let mut sigterm = signal(SignalKind::terminate())?;
+        let mut sighup = signal(SignalKind::hangup())?;
         tokio::select! {
             s = child.wait() => {
                 status = Some(s?);
             }
             _ = sigterm.recv() => {
+                let _ = child.kill().await;
+                status = None;
+            }
+            _ = sighup.recv() => {
                 let _ = child.kill().await;
                 status = None;
             }
