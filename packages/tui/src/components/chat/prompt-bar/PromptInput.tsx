@@ -70,7 +70,6 @@ import {
   backspaceQuery,
   cycleOlder,
   exitSearch,
-  formatPrompt,
 } from '../../../utils/reverse-search.js';
 // TODO: Long-term, PromptInput should migrate to use Twinki's Input/TextInput
 // component (or a segment-aware extension of it) instead of reimplementing
@@ -180,8 +179,10 @@ export const PromptInput = React.memo(function PromptInput({
   ]);
   const [cursor, _setCursor] = useState(0);
   const [pathCandidates, setPathCandidates] = useState<string[]>([]);
-  const reverseSearchRef = useRef<ReverseSearchState>(createReverseSearchState());
-  const [reverseSearchActive, setReverseSearchActive] = useState(false);
+  const reverseSearchRef = useRef<ReverseSearchState>(
+    createReverseSearchState()
+  );
+  const [_reverseSearchActive, setReverseSearchActive] = useState(false);
 
   // Refs shadow the latest state so input handlers never read stale closures.
   // Without these, keypresses arriving faster than React re-renders would
@@ -613,7 +614,6 @@ export const PromptInput = React.memo(function PromptInput({
     syncToStore(newSegs);
   };
 
-
   useKeypress(
     (userInput: string, key: Key) => {
       // Read latest state from refs to avoid stale closures when keypresses
@@ -1029,7 +1029,6 @@ export const PromptInput = React.memo(function PromptInput({
   const renderContent = () => {
     // Reverse search mode: show the search prompt
     if (reverseSearchRef.current.active) {
-      const prompt = formatPrompt(reverseSearchRef.current);
       const rs = reverseSearchRef.current;
       const matchLine = rs.match?.line ?? '';
       const matchPos = rs.match?.matchPosition ?? 0;

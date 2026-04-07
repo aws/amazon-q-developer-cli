@@ -19,7 +19,6 @@ const CTRL_R = '\x12';
 const RIGHT_ARROW = '\x1b[C';
 const UP_ARROW = '\x1b[A';
 const BACKSPACE = '\x7f';
-const ESCAPE = '\x1b';
 
 async function sendCtrl(tc: TestCase, key: string) {
   await tc.sendKeys(key);
@@ -255,6 +254,19 @@ describe('Reverse incremental search (Ctrl+R)', () => {
     const snap = testCase.getSnapshot().join('\n');
     expect(snap).not.toContain('reverse-i-search');
     expect(snap).toContain('hello world');
+
+    // Verify cursor is at match position + 1 (right arrow accepts then moves forward one)
+    // "world" starts at offset 6 in "hello world", right arrow advances to 7
+    const cursorPos = testCase.getCursorPosition();
+    const snapLines = testCase.getSnapshot();
+    // Find the input row (last row containing "hello world" — the prompt, not conversation)
+    let inputRowIdx = -1;
+    for (let i = snapLines.length - 1; i >= 0; i--) {
+      if (snapLines[i]!.includes('hello world')) { inputRowIdx = i; break; }
+    }
+    expect(inputRowIdx).not.toBe(-1);
+    const helloIdx = snapLines[inputRowIdx]!.indexOf('hello ');
+    expect(cursorPos.x).toBe(helloIdx + 6 + 1); // matchPos=6, +1 for right arrow
 
     await exitCleanly(testCase);
   }, 20000);

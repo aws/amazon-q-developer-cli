@@ -16,7 +16,11 @@ describe('searchHistory', () => {
 
   it('finds substring match from newest', () => {
     const result = searchHistory(history, 'abc', history.length);
-    expect(result).toEqual({ historyIndex: 2, matchPosition: 0, line: 'abcdef' });
+    expect(result).toEqual({
+      historyIndex: 2,
+      matchPosition: 0,
+      line: 'abcdef',
+    });
   });
 
   it('with startBefore skips recent entries', () => {

@@ -25,7 +25,14 @@ export interface ReverseSearchState {
 }
 
 export function createReverseSearchState(): ReverseSearchState {
-  return { active: false, query: '', match: null, savedInput: '', savedCursor: 0, lastQuery: '' };
+  return {
+    active: false,
+    query: '',
+    match: null,
+    savedInput: '',
+    savedCursor: 0,
+    lastQuery: '',
+  };
 }
 
 /**
@@ -38,7 +45,7 @@ export function createReverseSearchState(): ReverseSearchState {
 export function searchHistory(
   history: string[],
   query: string,
-  startBefore: number,
+  startBefore: number
 ): ReverseSearchMatch | null {
   if (!query) return null;
   for (let i = Math.min(startBefore, history.length) - 1; i >= 0; i--) {
@@ -52,7 +59,11 @@ export function searchHistory(
 }
 
 /** Enter reverse search mode, saving current input for potential Escape restore. */
-export function enterSearch(state: ReverseSearchState, currentInput: string, currentCursor: number): void {
+export function enterSearch(
+  state: ReverseSearchState,
+  currentInput: string,
+  currentCursor: number
+): void {
   state.active = true;
   state.query = '';
   state.match = null;
@@ -61,9 +72,15 @@ export function enterSearch(state: ReverseSearchState, currentInput: string, cur
 }
 
 /** Append a character to the query and re-search. */
-export function appendQuery(state: ReverseSearchState, char: string, history: string[]): void {
+export function appendQuery(
+  state: ReverseSearchState,
+  char: string,
+  history: string[]
+): void {
   state.query += char;
-  const startBefore = state.match ? state.match.historyIndex + 1 : history.length;
+  const startBefore = state.match
+    ? state.match.historyIndex + 1
+    : history.length;
   const result = searchHistory(history, state.query, startBefore);
   if (result) {
     state.match = result;
@@ -76,7 +93,10 @@ export function appendQuery(state: ReverseSearchState, char: string, history: st
 }
 
 /** Delete last character from query and re-search from newest. */
-export function backspaceQuery(state: ReverseSearchState, history: string[]): void {
+export function backspaceQuery(
+  state: ReverseSearchState,
+  history: string[]
+): void {
   if (state.query.length === 0) return;
   state.query = state.query.slice(0, -1);
   if (state.query.length === 0) {
@@ -105,7 +125,7 @@ export function cycleOlder(state: ReverseSearchState, history: string[]): void {
 /** Exit search, returning the accepted line and cursor position. */
 export function exitSearch(
   state: ReverseSearchState,
-  cursorMode: 'matchPos' | 'start' | 'end',
+  cursorMode: 'matchPos' | 'start' | 'end'
 ): { text: string; cursor: number } {
   const text = state.match?.line ?? state.savedInput;
   let cursor: number;
@@ -128,7 +148,10 @@ export function exitSearch(
 }
 
 /** Abort search (Escape), restoring original input. */
-export function abortSearch(state: ReverseSearchState): { text: string; cursor: number } {
+export function abortSearch(state: ReverseSearchState): {
+  text: string;
+  cursor: number;
+} {
   const result = { text: state.savedInput, cursor: state.savedCursor };
   state.active = false;
   state.query = '';
