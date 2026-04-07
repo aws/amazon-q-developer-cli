@@ -63,32 +63,6 @@ process.stdin.on('end', () => {
   cleanup();
 });
 
-// Defense-in-depth: detect parent death via ppid polling (works when stdin is a TTY).
-// process.ppid is cached at startup, so we use FFI getppid() for a live syscall.
-// When the parent is SIGKILLed, the OS re-parents us to PID 1 (launchd/init).
-// Wrapped in try-catch — this is purely defensive; failure must not crash the app.
-try {
-  const { dlopen, FFIType } = await import('bun:ffi');
-  const libPath =
-    process.platform === 'darwin' ? 'libSystem.B.dylib' : 'libc.so.6';
-  const libc = dlopen(libPath, {
-    getppid: { returns: FFIType.i32, args: [] },
-  });
-  const originalPpid = libc.symbols.getppid();
-  setInterval(() => {
-    try {
-      if (libc.symbols.getppid() !== originalPpid) {
-        kiro.close();
-        cleanup();
-      }
-    } catch {
-      /* ignore */
-    }
-  }, 2_000);
-} catch {
-  /* FFI unavailable — rely on other signal handlers */
-}
-
 // Pre-create kiro and store outside of React to start initialization immediately
 const agentPath = getAgentPath();
 const cliArgs = parseCliArgs();
