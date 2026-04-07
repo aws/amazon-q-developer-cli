@@ -1,6 +1,5 @@
 import { describe, it, expect, mock, beforeEach, afterEach } from 'bun:test';
 import { dispatch } from '../dispatcher';
-import type { CommandContext } from '../types';
 import type { SlashCommand } from '../../stores/app-store';
 import { mkdirSync, rmSync } from 'fs';
 import { join } from 'path';
@@ -10,63 +9,7 @@ import {
   saveUserThemePrefs,
   bundledThemes,
 } from '../../theme/user-theme';
-
-/** Create a mock CommandContext with spies */
-function createMockCtx(): CommandContext & {
-  _spies: Record<string, ReturnType<typeof mock>>;
-} {
-  const spies: Record<string, ReturnType<typeof mock>> = {};
-  const spy = (name: string) => {
-    const fn = mock(() => {});
-    spies[name] = fn;
-    return fn;
-  };
-
-  const themeCmd: SlashCommand = {
-    name: '/theme',
-    description: 'Customize prompt or response text colors',
-    source: 'local',
-    meta: { local: true },
-  };
-
-  return {
-    kiro: {
-      executeCommand: mock(() =>
-        Promise.resolve({ success: true, message: '', data: undefined })
-      ),
-      getCommandOptions: mock(() => Promise.resolve({ options: [] })),
-    } as any,
-    slashCommands: [themeCmd],
-    showAlert: spy('showAlert') as any,
-    setLoadingMessage: spy('setLoadingMessage') as any,
-    setActiveCommand: spy('setActiveCommand') as any,
-    setCurrentModel: spy('setCurrentModel') as any,
-    setCurrentAgent: spy('setCurrentAgent') as any,
-    setContextUsage: spy('setContextUsage') as any,
-    setShowContextBreakdown: spy('setShowContextBreakdown') as any,
-    setShowHelpPanel: spy('setShowHelpPanel') as any,
-    setShowUsagePanel: spy('setShowUsagePanel') as any,
-    setShowMcpPanel: spy('setShowMcpPanel') as any,
-    setShowToolsPanel: spy('setShowToolsPanel') as any,
-    setShowKnowledgePanel: spy('setShowKnowledgePanel') as any,
-    setShowCodePanel: spy('setShowCodePanel') as any,
-    clearMessages: spy('clearMessages') as any,
-    resetMessages: spy('resetMessages') as any,
-    sendMessage: spy('sendMessage') as any,
-    clearUIState: spy('clearUIState') as any,
-    createStreamEventHandler: spy('createStreamEventHandler') as any,
-    setSessionId: spy('setSessionId') as any,
-    addSystemMessage: spy('addSystemMessage') as any,
-    addSession: spy('addSession') as any,
-    setActiveSession: spy('setActiveSession') as any,
-    sessions: new Map(),
-    setMode: spy('setMode') as any,
-    getMessages: mock(() => []) as any,
-    setUserColors: spy('setUserColors') as any,
-    setThemePreview: spy('setThemePreview') as any,
-    _spies: spies,
-  };
-}
+import { createMockCommandContext } from './test-helpers.js';
 
 const themeCmd: SlashCommand = {
   name: '/theme',
@@ -100,7 +43,7 @@ describe('/theme command', () => {
 
   describe('bare /theme (no args)', () => {
     it('shows top-level options: bundled themes + Custom', async () => {
-      const ctx = createMockCtx();
+      const ctx = createMockCommandContext({ slashCommands: [themeCmd] });
       await dispatch(themeCmd, '', ctx);
 
       expect(ctx._spies.setActiveCommand!).toHaveBeenCalled();
@@ -112,7 +55,7 @@ describe('/theme command', () => {
     });
 
     it('bundled theme options have plain labels', async () => {
-      const ctx = createMockCtx();
+      const ctx = createMockCommandContext({ slashCommands: [themeCmd] });
       await dispatch(themeCmd, '', ctx);
 
       const call = ctx._spies.setActiveCommand!.mock.calls[0]!;
@@ -126,7 +69,7 @@ describe('/theme command', () => {
 
   describe('bundled themes (Dark/Light)', () => {
     it('applies dark bundled theme and persists both prompt and response', async () => {
-      const ctx = createMockCtx();
+      const ctx = createMockCommandContext({ slashCommands: [themeCmd] });
       await dispatch(themeCmd, 'bundled:dark', ctx);
 
       expect(ctx._spies.setUserColors!).toHaveBeenCalled();
@@ -143,7 +86,7 @@ describe('/theme command', () => {
     });
 
     it('applies light bundled theme', async () => {
-      const ctx = createMockCtx();
+      const ctx = createMockCommandContext({ slashCommands: [themeCmd] });
       await dispatch(themeCmd, 'bundled:light', ctx);
 
       const colorCall = ctx._spies.setUserColors!.mock.calls[0]!;
@@ -156,7 +99,7 @@ describe('/theme command', () => {
     });
 
     it('shows error for unknown bundled theme', async () => {
-      const ctx = createMockCtx();
+      const ctx = createMockCommandContext({ slashCommands: [themeCmd] });
       await dispatch(themeCmd, 'bundled:nonexistent', ctx);
 
       expect(ctx._spies.showAlert!.mock.calls[0]?.[1]).toBe('error');
@@ -165,7 +108,7 @@ describe('/theme command', () => {
 
   describe('/theme custom', () => {
     it('shows prompt and response category selection', async () => {
-      const ctx = createMockCtx();
+      const ctx = createMockCommandContext({ slashCommands: [themeCmd] });
       await dispatch(themeCmd, 'custom', ctx);
 
       expect(ctx._spies.setActiveCommand!).toHaveBeenCalled();
@@ -177,7 +120,7 @@ describe('/theme command', () => {
     });
 
     it('sets theme preview when entering custom flow', async () => {
-      const ctx = createMockCtx();
+      const ctx = createMockCommandContext({ slashCommands: [themeCmd] });
       await dispatch(themeCmd, 'custom', ctx);
 
       expect(ctx._spies.setThemePreview!).toHaveBeenCalled();
@@ -190,7 +133,7 @@ describe('/theme command', () => {
   describe('custom flow — [active] markers', () => {
     it('shows [active] on the current prompt preset', async () => {
       saveUserThemePrefs({ promptPreset: 'ocean' });
-      const ctx = createMockCtx();
+      const ctx = createMockCommandContext({ slashCommands: [themeCmd] });
       await dispatch(themeCmd, 'prompt', ctx);
 
       const call = ctx._spies.setActiveCommand!.mock.calls[0]!;
@@ -202,7 +145,7 @@ describe('/theme command', () => {
     });
 
     it('shows [active] on default when no prefs set', async () => {
-      const ctx = createMockCtx();
+      const ctx = createMockCommandContext({ slashCommands: [themeCmd] });
       await dispatch(themeCmd, 'prompt', ctx);
 
       const call = ctx._spies.setActiveCommand!.mock.calls[0]!;
@@ -214,26 +157,22 @@ describe('/theme command', () => {
 
   describe('custom flow — applying presets', () => {
     it('applies purple prompt preset and persists', async () => {
-      const ctx = createMockCtx();
+      const ctx = createMockCommandContext({ slashCommands: [themeCmd] });
       await dispatch(themeCmd, 'prompt:purple', ctx);
 
-      // setUserColors should be called with the purple preset colors
       expect(ctx._spies.setUserColors!).toHaveBeenCalled();
       const colorCall = ctx._spies.setUserColors!.mock.calls[0]!;
-      expect(colorCall[0]).toBeDefined(); // prompt { text, bg }
+      expect(colorCall[0]).toBeDefined();
       expect(colorCall[0].text.truecolor).toBe('#ffffff');
       expect(colorCall[0].bg.truecolor).toBe('#552B99');
-      expect(colorCall[1]).toBeUndefined(); // response unchanged
+      expect(colorCall[1]).toBeUndefined();
 
-      // Should show success alert
       expect(ctx._spies.showAlert!.mock.calls[0]?.[0]).toContain('Purple');
       expect(ctx._spies.showAlert!.mock.calls[0]?.[1]).toBe('success');
 
-      // Should persist
       const prefs = loadUserThemePrefs();
       expect(prefs.promptPreset).toBe('purple');
 
-      // Should return to custom menu (setActiveCommand called again with prompt/response options)
       const lastCall = ctx._spies.setActiveCommand!.mock.calls.at(-1)!;
       const options = lastCall[0].options;
       expect(options).toHaveLength(2);
@@ -243,7 +182,7 @@ describe('/theme command', () => {
 
     it('applies default preset and clears persisted value', async () => {
       saveUserThemePrefs({ promptPreset: 'purple' });
-      const ctx = createMockCtx();
+      const ctx = createMockCommandContext({ slashCommands: [themeCmd] });
       await dispatch(themeCmd, 'prompt:default', ctx);
 
       expect(ctx._spies.setUserColors!).toHaveBeenCalled();
@@ -252,20 +191,20 @@ describe('/theme command', () => {
     });
 
     it('shows error for unknown prompt preset', async () => {
-      const ctx = createMockCtx();
+      const ctx = createMockCommandContext({ slashCommands: [themeCmd] });
       await dispatch(themeCmd, 'prompt:nonexistent', ctx);
 
       expect(ctx._spies.showAlert!.mock.calls[0]?.[1]).toBe('error');
     });
 
     it('applies light response preset and persists', async () => {
-      const ctx = createMockCtx();
+      const ctx = createMockCommandContext({ slashCommands: [themeCmd] });
       await dispatch(themeCmd, 'response:light', ctx);
 
       expect(ctx._spies.setUserColors!).toHaveBeenCalled();
       const colorCall = ctx._spies.setUserColors!.mock.calls[0]!;
-      expect(colorCall[0]).toBeUndefined(); // prompt unchanged
-      expect(colorCall[1]).toBeDefined(); // response color
+      expect(colorCall[0]).toBeUndefined();
+      expect(colorCall[1]).toBeDefined();
       expect(colorCall[1].truecolor).toBe('#FFFFFF');
 
       expect(ctx._spies.showAlert!.mock.calls[0]?.[0]).toContain('Light');
@@ -275,7 +214,7 @@ describe('/theme command', () => {
     });
 
     it('applies dark preset', async () => {
-      const ctx = createMockCtx();
+      const ctx = createMockCommandContext({ slashCommands: [themeCmd] });
       await dispatch(themeCmd, 'response:dark', ctx);
 
       const colorCall = ctx._spies.setUserColors!.mock.calls[0]!;
@@ -286,7 +225,7 @@ describe('/theme command', () => {
     });
 
     it('shows error for unknown response preset', async () => {
-      const ctx = createMockCtx();
+      const ctx = createMockCommandContext({ slashCommands: [themeCmd] });
       await dispatch(themeCmd, 'response:nonexistent', ctx);
 
       expect(ctx._spies.showAlert!.mock.calls[0]?.[1]).toBe('error');
@@ -296,7 +235,7 @@ describe('/theme command', () => {
   describe('independent persistence', () => {
     it('changing prompt does not affect response', async () => {
       saveUserThemePrefs({ responsePreset: 'dark' });
-      const ctx = createMockCtx();
+      const ctx = createMockCommandContext({ slashCommands: [themeCmd] });
       await dispatch(themeCmd, 'prompt:ocean', ctx);
 
       const prefs = loadUserThemePrefs();
@@ -306,7 +245,7 @@ describe('/theme command', () => {
 
     it('changing response does not affect prompt', async () => {
       saveUserThemePrefs({ promptPreset: 'forest' });
-      const ctx = createMockCtx();
+      const ctx = createMockCommandContext({ slashCommands: [themeCmd] });
       await dispatch(themeCmd, 'response:light', ctx);
 
       const prefs = loadUserThemePrefs();

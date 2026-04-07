@@ -185,6 +185,33 @@ export interface FeedbackArgs {
 export interface HelpArgs {
 }
 
+export enum HookTrigger {
+	/** Triggered during agent spawn */
+	AgentSpawn = "agentSpawn",
+	/** Triggered per user message submission */
+	UserPromptSubmit = "userPromptSubmit",
+	/** Triggered before tool execution */
+	PreToolUse = "preToolUse",
+	/** Triggered after tool execution */
+	PostToolUse = "postToolUse",
+	/** Triggered when the assistant finishes responding */
+	Stop = "stop",
+}
+
+/** Information about a configured hook */
+export interface HookInfo {
+	/** The trigger type (e.g. agentSpawn, preToolUse) */
+	trigger: HookTrigger;
+	/** The shell command to run */
+	command: string;
+	/** Optional glob matcher for tool-scoped hooks */
+	matcher?: string;
+}
+
+/** Arguments for /hooks command */
+export interface HooksArgs {
+}
+
 export enum ImageFormat {
 	Gif = "gif",
 	Jpeg = "jpeg",
@@ -507,5 +534,7 @@ export type TuiCommand =
 	/** Open editor pre-filled with the last assistant message to compose a reply */
 	| { command: "reply", args: ReplyArgs }
 	/** Code intelligence workspace management */
-	| { command: "code", args: CodeArgs };
+	| { command: "code", args: CodeArgs }
+	/** View configured hooks */
+	| { command: "hooks", args: HooksArgs };
 

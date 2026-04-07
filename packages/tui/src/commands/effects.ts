@@ -16,6 +16,7 @@ import {
   type AgentStreamEvent,
 } from '../types/agent-events.js';
 import type {
+  HookInfo,
   KnowledgeEntry,
   McpServerInfo,
   SlashCommand,
@@ -72,6 +73,7 @@ type EffectName =
   | 'showUsagePanel'
   | 'showMcpPanel'
   | 'showToolsPanel'
+  | 'showHooksPanel'
   | 'showKnowledgePanel'
   | 'executePrompt'
   | 'clearMessages'
@@ -105,6 +107,7 @@ const commandEffects: Partial<Record<string, EffectName>> = {
   exit: 'quit',
   mcp: 'showMcpPanel',
   tools: 'showToolsPanel',
+  hooks: 'showHooksPanel',
   knowledge: 'showKnowledgePanel',
   paste: 'pasteImage',
   editor: 'promptEditor',
@@ -252,6 +255,11 @@ const effectHandlers: Record<EffectName, EffectHandler> = {
       ctx.setShowToolsPanel(true, data.tools);
     }
     // Subcommands (trust-all, reset) return no tools data — let dispatcher show the alert
+  },
+
+  showHooksPanel: (result, ctx) => {
+    const data = result?.data as { hooks?: HookInfo[] } | undefined;
+    ctx.setShowHooksPanel(true, data?.hooks ?? []);
   },
 
   showKnowledgePanel: (result, ctx) => {

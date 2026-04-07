@@ -57,6 +57,8 @@ pub enum TuiCommand {
     Reply(ReplyArgs),
     /// Code intelligence workspace management
     Code(CodeArgs),
+    /// View configured hooks
+    Hooks(HooksArgs),
 }
 
 /// Arguments for /help command
@@ -218,6 +220,12 @@ pub struct CodeArgs {
     pub subcommand: Option<String>,
 }
 
+/// Arguments for /hooks command
+#[typeshare]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct HooksArgs {}
+
 impl TuiCommand {
     /// Command name with leading slash
     pub fn name(&self) -> &'static str {
@@ -240,6 +248,7 @@ impl TuiCommand {
             TuiCommand::Chat(_) => "/chat",
             TuiCommand::Reply(_) => "/reply",
             TuiCommand::Code(_) => "/code",
+            TuiCommand::Hooks(_) => "/hooks",
         }
     }
 
@@ -264,6 +273,7 @@ impl TuiCommand {
             TuiCommand::Chat(_) => "Load a previous session or start a new one",
             TuiCommand::Reply(_) => "Open editor pre-filled with the last assistant message to compose a reply",
             TuiCommand::Code(_) => "Code intelligence workspace management",
+            TuiCommand::Hooks(_) => "View configured hooks",
         }
     }
 
@@ -290,6 +300,7 @@ impl TuiCommand {
             TuiCommand::Chat(_) => "/chat [save [--force] <path>|load <path>|new [prompt]]",
             TuiCommand::Reply(_) => "/reply",
             TuiCommand::Code(_) => "/code [status|init|logs|overview|summary]",
+            TuiCommand::Hooks(_) => "/hooks",
         }
     }
 
@@ -392,6 +403,11 @@ impl TuiCommand {
                 meta.insert("inputType".into(), "panel".into());
                 Some(meta)
             },
+            TuiCommand::Hooks(_) => {
+                let mut meta = serde_json::Map::new();
+                meta.insert("inputType".into(), "panel".into());
+                Some(meta)
+            },
         }
     }
 
@@ -416,6 +432,7 @@ impl TuiCommand {
             TuiCommand::Chat(ChatArgs::default()),
             TuiCommand::Reply(ReplyArgs::default()),
             TuiCommand::Code(CodeArgs::default()),
+            TuiCommand::Hooks(HooksArgs::default()),
         ];
         commands.sort_by_key(|cmd| cmd.name());
         commands
@@ -467,6 +484,7 @@ impl TuiCommand {
             "code" => Some(Self::Code(CodeArgs {
                 subcommand: (!args.is_empty()).then(|| args.to_string()),
             })),
+            "hooks" => Some(Self::Hooks(HooksArgs::default())),
             _ => None,
         }
     }
@@ -677,5 +695,51 @@ mod tests {
             TuiCommand::Chat(args) => assert!(args.subcommand.is_none()),
             _ => panic!("expected Chat"),
         }
+    }
+
+    #[test]
+    fn test_parse_hooks() {
+        let cmd = TuiCommand::parse("hooks", "").unwrap();
+        assert!(matches!(cmd, TuiCommand::Hooks(_)));
+    }
+
+    #[test]
+    fn test_parse_hooks_ignores_args() {
+        let cmd = TuiCommand::parse("hooks", "some extra args").unwrap();
+        assert!(matches!(cmd, TuiCommand::Hooks(_)));
+    }
+
+    #[test]
+    fn test_serialize_hooks() {
+        let cmd = TuiCommand::Hooks(HooksArgs::default());
+        let json = serde_json::to_string(&cmd).unwrap();
+        assert!(json.contains(r#""command":"hooks""#));
+    }
+
+    #[test]
+    fn test_deserialize_hooks() {
+        let json = r#"{"command":"hooks","args":{}}"#;
+        let cmd: TuiCommand = serde_json::from_str(json).unwrap();
+        assert!(matches!(cmd, TuiCommand::Hooks(_)));
+    }
+
+    #[test]
+    fn test_hooks_metadata() {
+        let cmd = TuiCommand::Hooks(HooksArgs::default());
+        assert_eq!(cmd.name(), "/hooks");
+        assert_eq!(cmd.description(), "View configured hooks");
+        assert_eq!(cmd.usage(), "/hooks");
+        assert!(cmd.subcommands().is_empty());
+        let meta = cmd.meta().expect("hooks should have meta");
+        assert_eq!(meta.get("inputType").unwrap(), "panel");
+    }
+
+    #[test]
+    fn test_hooks_in_all_commands() {
+        let all = TuiCommand::all_commands();
+        assert!(
+            all.iter().any(|c| matches!(c, TuiCommand::Hooks(_))),
+            "Hooks should be in all_commands()"
+        );
     }
 }

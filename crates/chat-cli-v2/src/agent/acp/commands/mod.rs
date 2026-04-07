@@ -8,6 +8,7 @@ pub mod compact;
 pub mod context;
 pub mod exit;
 pub mod help;
+pub mod hooks;
 pub mod issue;
 pub mod knowledge;
 pub mod mcp;
@@ -80,5 +81,6 @@ pub async fn execute(command: TuiCommand, ctx: &CommandContext<'_>) -> CommandRe
         TuiCommand::Chat(ref args) => chat::execute(args, ctx).await,
         TuiCommand::Reply(_) => reply::execute(ctx).await,
         TuiCommand::Code(ref args) => code::execute(args, ctx).await,
+        TuiCommand::Hooks(_) => hooks::execute(ctx).await,
     }
 }

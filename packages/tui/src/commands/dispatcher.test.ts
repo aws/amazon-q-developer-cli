@@ -1,57 +1,7 @@
 import { describe, it, expect, mock } from 'bun:test';
 import { dispatch } from './dispatcher';
-import type { CommandContext } from './types';
 import type { SlashCommand } from '../stores/app-store';
-
-/** Create a mock CommandContext with spies on all methods */
-function createMockCtx(): CommandContext & {
-  _spies: Record<string, ReturnType<typeof mock>>;
-} {
-  const spies: Record<string, ReturnType<typeof mock>> = {};
-  const spy = (name: string) => {
-    const fn = mock(() => {});
-    spies[name] = fn;
-    return fn;
-  };
-
-  return {
-    kiro: {
-      executeCommand: mock(() =>
-        Promise.resolve({ success: true, message: '', data: undefined })
-      ),
-      getCommandOptions: mock(() => Promise.resolve({ options: [] })),
-    } as any,
-    slashCommands: [],
-    showAlert: spy('showAlert') as any,
-    setLoadingMessage: spy('setLoadingMessage') as any,
-    setActiveCommand: spy('setActiveCommand') as any,
-    setCurrentModel: spy('setCurrentModel') as any,
-    setCurrentAgent: spy('setCurrentAgent') as any,
-    setContextUsage: spy('setContextUsage') as any,
-    setShowContextBreakdown: spy('setShowContextBreakdown') as any,
-    setShowHelpPanel: spy('setShowHelpPanel') as any,
-    setShowUsagePanel: spy('setShowUsagePanel') as any,
-    setShowMcpPanel: spy('setShowMcpPanel') as any,
-    setShowToolsPanel: spy('setShowToolsPanel') as any,
-    setShowKnowledgePanel: spy('setShowKnowledgePanel') as any,
-    setShowCodePanel: spy('setShowCodePanel') as any,
-    clearMessages: spy('clearMessages') as any,
-    resetMessages: spy('resetMessages') as any,
-    sendMessage: spy('sendMessage') as any,
-    clearUIState: spy('clearUIState') as any,
-    createStreamEventHandler: spy('createStreamEventHandler') as any,
-    setSessionId: spy('setSessionId') as any,
-    addSystemMessage: spy('addSystemMessage') as any,
-    addSession: spy('addSession') as any,
-    setActiveSession: spy('setActiveSession') as any,
-    sessions: new Map(),
-    setMode: spy('setMode') as any,
-    getMessages: mock(() => []) as any,
-    setUserColors: spy('setUserColors') as any,
-    setThemePreview: spy('setThemePreview') as any,
-    _spies: spies,
-  };
-}
+import { createMockCommandContext } from './__tests__/test-helpers.js';
 
 function makeCmd(overrides: Partial<SlashCommand> = {}): SlashCommand {
   return {
@@ -65,7 +15,7 @@ function makeCmd(overrides: Partial<SlashCommand> = {}): SlashCommand {
 describe('dispatch', () => {
   describe('/feedback command', () => {
     it('shows selection menu when options are returned', async () => {
-      const ctx = createMockCtx();
+      const ctx = createMockCommandContext();
       (ctx.kiro.getCommandOptions as any).mockResolvedValue({
         options: [
           {
@@ -100,7 +50,7 @@ describe('dispatch', () => {
     });
 
     it('shows alert when executed with args (after selection)', async () => {
-      const ctx = createMockCtx();
+      const ctx = createMockCommandContext();
       (ctx.kiro.executeCommand as any).mockResolvedValue({
         success: true,
         message: 'Opening in browser...',
@@ -123,7 +73,7 @@ describe('dispatch', () => {
 
   describe('/context command', () => {
     it('opens panel when no args provided', async () => {
-      const ctx = createMockCtx();
+      const ctx = createMockCommandContext();
       (ctx.kiro.executeCommand as any).mockResolvedValue({
         success: true,
         message: 'Context breakdown - 42% used',
@@ -144,7 +94,7 @@ describe('dispatch', () => {
     });
 
     it('shows alert for /context add with args', async () => {
-      const ctx = createMockCtx();
+      const ctx = createMockCommandContext();
       (ctx.kiro.executeCommand as any).mockResolvedValue({
         success: true,
         message: "Added 'foo.txt' to context",
@@ -165,7 +115,7 @@ describe('dispatch', () => {
     });
 
     it('shows error alert for /context remove with missing path', async () => {
-      const ctx = createMockCtx();
+      const ctx = createMockCommandContext();
       (ctx.kiro.executeCommand as any).mockResolvedValue({
         success: false,
         message: 'Resource not found: nonexistent.txt',
@@ -183,7 +133,7 @@ describe('dispatch', () => {
     });
 
     it('passes initialExpanded through for /context show', async () => {
-      const ctx = createMockCtx();
+      const ctx = createMockCommandContext();
       (ctx.kiro.executeCommand as any).mockResolvedValue({
         success: true,
         message: 'Context breakdown - 42% used',
@@ -205,7 +155,7 @@ describe('dispatch', () => {
     });
 
     it('does not open panel for /context add result without breakdown', async () => {
-      const ctx = createMockCtx();
+      const ctx = createMockCommandContext();
       (ctx.kiro.executeCommand as any).mockResolvedValue({
         success: true,
         message: "Added 'src/*.rs' to context",
@@ -228,7 +178,7 @@ describe('dispatch', () => {
 
   describe('/chat command', () => {
     it('shows "No previous sessions found" when options list is empty', async () => {
-      const ctx = createMockCtx();
+      const ctx = createMockCommandContext();
       (ctx.kiro.listSessions as any) = mock(() =>
         Promise.resolve({ sessions: [] })
       );
@@ -247,7 +197,7 @@ describe('dispatch', () => {
     });
 
     it('/chat new skips selection menu, resets messages and UI state', async () => {
-      const ctx = createMockCtx();
+      const ctx = createMockCommandContext();
       (ctx.kiro as any).newSession = mock(() =>
         Promise.resolve({
           sessionId: 'new-session-123',
@@ -268,7 +218,7 @@ describe('dispatch', () => {
     });
 
     it('/chat new with prompt sends message after session creation', async () => {
-      const ctx = createMockCtx();
+      const ctx = createMockCommandContext();
       let resolveNewSession: (v: any) => void;
       const newSessionPromise = new Promise((r) => {
         resolveNewSession = r;
@@ -297,7 +247,7 @@ describe('dispatch', () => {
     });
 
     it('/chat <sessionId> loads existing session without calling newSession', async () => {
-      const ctx = createMockCtx();
+      const ctx = createMockCommandContext();
       const newSessionSpy = mock(() => Promise.resolve({}));
       (ctx.kiro as any).newSession = newSessionSpy;
       let resolveLoad: (v: any) => void;

@@ -86,6 +86,12 @@ export interface ToolInfo {
   status: 'allowed' | 'requires-approval' | 'denied';
 }
 
+export interface HookInfo {
+  trigger: string;
+  command: string;
+  matcher?: string;
+}
+
 export interface KnowledgeEntry {
   name: string;
   id: string;
@@ -420,6 +426,7 @@ interface BaseAppActions {
     mode?: string
   ) => void;
   setShowToolsPanel: (show: boolean, tools?: ToolInfo[]) => void;
+  setShowHooksPanel: (show: boolean, hooks?: HookInfo[]) => void;
   setShowKnowledgePanel: (
     show: boolean,
     entries?: KnowledgeEntry[],
@@ -574,6 +581,8 @@ export interface AppState {
   mcpMode: string;
   showToolsPanel: boolean;
   toolsList: ToolInfo[];
+  showHooksPanel: boolean;
+  hooksList: HookInfo[];
   showKnowledgePanel: boolean;
   knowledgeEntries: KnowledgeEntry[];
   knowledgeStatus: string | null;
@@ -810,6 +819,8 @@ export const createAppStore = (props: AppStoreProps) => {
     mcpMode: 'list',
     showToolsPanel: false,
     toolsList: [],
+    showHooksPanel: false,
+    hooksList: [],
     showKnowledgePanel: false,
     knowledgeEntries: [],
     knowledgeStatus: null,
@@ -1963,6 +1974,7 @@ export const createAppStore = (props: AppStoreProps) => {
         setShowUsagePanel: state.setShowUsagePanel,
         setShowMcpPanel: state.setShowMcpPanel,
         setShowToolsPanel: state.setShowToolsPanel,
+        setShowHooksPanel: state.setShowHooksPanel,
         setShowKnowledgePanel: state.setShowKnowledgePanel,
         setShowCodePanel: state.setShowCodePanel,
         clearMessages: state.clearMessages,
@@ -1995,6 +2007,7 @@ export const createAppStore = (props: AppStoreProps) => {
             showUsagePanel: false,
             showMcpPanel: false,
             showToolsPanel: false,
+            showHooksPanel: false,
             showKnowledgePanel: false,
             showCodePanel: false,
             contextBreakdown: null,
@@ -2529,6 +2542,10 @@ export const createAppStore = (props: AppStoreProps) => {
       set({ showToolsPanel: show, toolsList: tools });
     },
 
+    setShowHooksPanel: (show, hooks = []) => {
+      set({ showHooksPanel: show, hooksList: hooks });
+    },
+
     setShowKnowledgePanel: (show, entries = [], status) => {
       set({
         showKnowledgePanel: show,
@@ -2678,6 +2695,7 @@ export const createAppStore = (props: AppStoreProps) => {
           setShowUsagePanel: state.setShowUsagePanel,
           setShowMcpPanel: state.setShowMcpPanel,
           setShowToolsPanel: state.setShowToolsPanel,
+          setShowHooksPanel: state.setShowHooksPanel,
           setShowKnowledgePanel: state.setShowKnowledgePanel,
           setShowCodePanel: state.setShowCodePanel,
           clearMessages: state.clearMessages,
@@ -2710,6 +2728,7 @@ export const createAppStore = (props: AppStoreProps) => {
               showUsagePanel: false,
               showMcpPanel: false,
               showToolsPanel: false,
+              showHooksPanel: false,
               showKnowledgePanel: false,
               contextBreakdown: null,
               usageData: null,

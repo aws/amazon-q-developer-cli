@@ -8,6 +8,7 @@ use serde::{
     Deserialize,
     Serialize,
 };
+use typeshare::typeshare;
 
 use super::types::ResourcePath;
 use crate::mcp::oauth_util::OAuthConfig;
@@ -641,6 +642,7 @@ pub struct InputSchema(pub serde_json::Value);
 //     pub post_tool_use: Vec<HookConfig>,
 // }
 
+#[typeshare]
 #[derive(
     Debug, Copy, Clone, PartialEq, Eq, Hash, Serialize, Deserialize, strum::EnumString, strum::Display, JsonSchema,
 )]

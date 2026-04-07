@@ -7,6 +7,7 @@ import type { Kiro } from '../kiro.js';
 import type {
   SlashCommand,
   ActiveCommand,
+  HookInfo,
   KnowledgeEntry,
   McpServerInfo,
   ToolInfo,
@@ -57,6 +58,8 @@ export interface CommandContext {
   ) => void;
   /** Show/hide tools panel */
   setShowToolsPanel: (show: boolean, tools?: ToolInfo[]) => void;
+  /** Show/hide hooks panel */
+  setShowHooksPanel: (show: boolean, hooks?: HookInfo[]) => void;
   /** Show/hide knowledge panel */
   setShowKnowledgePanel: (
     show: boolean,

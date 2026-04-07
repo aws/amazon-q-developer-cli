@@ -19,6 +19,7 @@ import { ActionHint } from '../ui/hint/ActionHint.js';
 import { HelpPanel } from '../ui/HelpPanel';
 import { McpPanel } from '../ui/McpPanel';
 import { ToolsPanel } from '../ui/ToolsPanel';
+import { HooksPanel } from '../ui/HooksPanel';
 import { KnowledgePanel } from '../ui/KnowledgePanel';
 import {
   PromptBar,
@@ -187,6 +188,8 @@ export const InlineLayout: React.FC = () => {
     mcpMode,
     showToolsPanel,
     toolsList,
+    showHooksPanel,
+    hooksList,
     showKnowledgePanel,
     knowledgeEntries,
     knowledgeStatus,
@@ -200,6 +203,7 @@ export const InlineLayout: React.FC = () => {
     setShowUsagePanel,
     setShowMcpPanel,
     setShowToolsPanel,
+    setShowHooksPanel,
     setShowKnowledgePanel,
     setShowCodePanel,
   } = useUIActions();
@@ -410,6 +414,12 @@ export const InlineLayout: React.FC = () => {
     setActiveCommand(null);
     clearCommandInput();
   }, [setShowToolsPanel, setActiveCommand, clearCommandInput]);
+
+  const handleCloseHooksPanel = useCallback(() => {
+    setShowHooksPanel(false);
+    setActiveCommand(null);
+    clearCommandInput();
+  }, [setShowHooksPanel, setActiveCommand, clearCommandInput]);
 
   const handleCloseKnowledgePanel = useCallback(() => {
     setShowKnowledgePanel(false);
@@ -651,6 +661,7 @@ export const InlineLayout: React.FC = () => {
               showUsagePanel ||
               showMcpPanel ||
               showToolsPanel ||
+              showHooksPanel ||
               showKnowledgePanel ||
               showCodePanel ||
               !!pendingApproval
@@ -694,6 +705,7 @@ export const InlineLayout: React.FC = () => {
                   showUsagePanel ||
                   showMcpPanel ||
                   showToolsPanel ||
+                  showHooksPanel ||
                   showKnowledgePanel ||
                   showCodePanel
             }
@@ -763,6 +775,9 @@ export const InlineLayout: React.FC = () => {
             )}
             {showToolsPanel && (
               <ToolsPanel tools={toolsList} onClose={handleCloseToolsPanel} />
+            )}
+            {showHooksPanel && (
+              <HooksPanel hooks={hooksList} onClose={handleCloseHooksPanel} />
             )}
             {showKnowledgePanel && (
               <KnowledgePanel

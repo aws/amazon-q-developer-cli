@@ -124,6 +124,8 @@ export const useUIState = () =>
       mcpMode: state.mcpMode,
       showToolsPanel: state.showToolsPanel,
       toolsList: state.toolsList,
+      showHooksPanel: state.showHooksPanel,
+      hooksList: state.hooksList,
       showKnowledgePanel: state.showKnowledgePanel,
       knowledgeEntries: state.knowledgeEntries,
       knowledgeStatus: state.knowledgeStatus,
@@ -145,6 +147,7 @@ export const useUIActions = () =>
       setShowUsagePanel: state.setShowUsagePanel,
       setShowMcpPanel: state.setShowMcpPanel,
       setShowToolsPanel: state.setShowToolsPanel,
+      setShowHooksPanel: state.setShowHooksPanel,
       setShowKnowledgePanel: state.setShowKnowledgePanel,
       setShowCodePanel: state.setShowCodePanel,
     }))
