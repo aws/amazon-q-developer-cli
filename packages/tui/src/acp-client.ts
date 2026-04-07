@@ -795,7 +795,10 @@ export class AcpClient implements acp.Client, SessionClient {
   private handleModelNotFound(params: Record<string, unknown>) {
     const requestedModel = params.requestedModel as string;
     const fallbackModel = params.fallbackModel as string;
-    logger.debug('Model not found received:', { requestedModel, fallbackModel });
+    logger.debug('Model not found received:', {
+      requestedModel,
+      fallbackModel,
+    });
     this.broadcastStreamEvent({
       type: AgentEventType.ModelNotFound,
       requestedModel,

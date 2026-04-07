@@ -8,6 +8,7 @@
 
 import { readFileSync, writeFileSync, mkdirSync } from 'fs';
 import { join } from 'path';
+import { homedir } from 'os';
 import chalk from 'chalk';
 import type { TerminalColor } from '../types/themeTypes.js';
 import { logger } from '../utils/logger.js';
@@ -27,10 +28,27 @@ export interface ResponsePreset {
   textColor: TerminalColor;
 }
 
+/** A diff color preset defines added/removed line colors */
+export interface DiffPreset {
+  id: string;
+  label: string;
+  added: {
+    background: TerminalColor;
+    bar: TerminalColor;
+    highlight: TerminalColor;
+  };
+  removed: {
+    background: TerminalColor;
+    bar: TerminalColor;
+    highlight: TerminalColor;
+  };
+}
+
 /** Persisted user theme preferences */
 export interface UserThemePrefs {
   promptPreset?: string;
   responsePreset?: string;
+  diffPreset?: string;
 }
 
 // All colors below are taken directly from kiroDark.ts / kiroLight.ts
@@ -89,12 +107,91 @@ export const responsePresets: ResponsePreset[] = [
   }, // muted
 ];
 
+/** Diff presets — covers dark bg, light bg, and colorblind-friendly palettes */
+export const diffPresets: DiffPreset[] = [
+  {
+    id: 'default',
+    label: 'Default',
+    added: {
+      background: { named: 'default' },
+      bar: { named: 'default' },
+      highlight: { named: 'default' },
+    },
+    removed: {
+      background: { named: 'default' },
+      bar: { named: 'default' },
+      highlight: { named: 'default' },
+    },
+  },
+  {
+    // Classic green/red on dark background — matches kiroDark
+    id: 'dark',
+    label: 'Dark',
+    added: {
+      background: { truecolor: '#2d3a30', color256: 235 },
+      bar: { truecolor: '#80ffb5', color256: 121 },
+      highlight: { truecolor: '#2d3a30', color256: 236 },
+    },
+    removed: {
+      background: { truecolor: '#3a2d2f', color256: 235 },
+      bar: { truecolor: '#ff8080', color256: 210 },
+      highlight: { truecolor: '#3a2d2f', color256: 236 },
+    },
+  },
+  {
+    // Green/red on light background — matches kiroLight with stronger contrast
+    id: 'light',
+    label: 'Light',
+    added: {
+      background: { truecolor: '#d4f0d4', color256: 157 },
+      bar: { truecolor: '#00875F', color256: 35 },
+      highlight: { truecolor: '#c0e8c0', color256: 157 },
+    },
+    removed: {
+      background: { truecolor: '#f0d4d4', color256: 224 },
+      bar: { truecolor: '#d94d4d', color256: 167 },
+      highlight: { truecolor: '#e8c2c2', color256: 217 },
+    },
+  },
+  {
+    // Blue/pink — deuteranopia & protanopia safe, dark background
+    id: 'colorblind-dark',
+    label: 'Accessible Dark',
+    added: {
+      background: { truecolor: '#1a2a3a', color256: 236 },
+      bar: { truecolor: '#80F4FF', color256: 123 },
+      highlight: { truecolor: '#1a2a3a', color256: 236 },
+    },
+    removed: {
+      background: { truecolor: '#3a2a2e', color256: 236 },
+      bar: { truecolor: '#FFAFD1', color256: 218 },
+      highlight: { truecolor: '#3a2a2e', color256: 236 },
+    },
+  },
+  {
+    // Blue/pink — deuteranopia & protanopia safe, light background
+    id: 'colorblind-light',
+    label: 'Accessible Light',
+    added: {
+      background: { truecolor: '#d4e4f0', color256: 189 },
+      bar: { truecolor: '#5aa3d9', color256: 74 },
+      highlight: { truecolor: '#d4e4f0', color256: 189 },
+    },
+    removed: {
+      background: { truecolor: '#f0d4e0', color256: 224 },
+      bar: { truecolor: '#d94d8a', color256: 168 },
+      highlight: { truecolor: '#f0d4e0', color256: 224 },
+    },
+  },
+];
+
 /** A bundled theme applies both prompt and response styles in one shot */
 export interface BundledTheme {
   id: string;
   label: string;
   prompt: PromptPreset;
   response: ResponsePreset;
+  diff: DiffPreset;
 }
 
 /** Bundled themes — one-click combos for Light and Dark */
@@ -113,6 +210,7 @@ export const bundledThemes: BundledTheme[] = [
       label: 'Light',
       textColor: { truecolor: '#FFFFFF', color256: 255 },
     },
+    diff: diffPresets.find((p) => p.id === 'dark')!,
   },
   {
     id: 'light',
@@ -128,14 +226,61 @@ export const bundledThemes: BundledTheme[] = [
       label: 'Dark',
       textColor: { truecolor: '#626262', color256: 241 },
     },
+    diff: diffPresets.find((p) => p.id === 'light')!,
   },
 ];
 
-const PROMPT_PREVIEW = 'This is how your prompt will look';
-const RESPONSE_PREVIEW = 'This is how the response will look';
+export const PROMPT_PREVIEW = 'This is how your prompt will look';
+export const RESPONSE_PREVIEW = 'This is how the response will look';
+export const DIFF_ADDED_PREVIEW = '+  const result = compute(input);';
+export const DIFF_REMOVED_PREVIEW = '-  const result = calculate(input);';
+export const DIFF_HEADER = chalk.gray(
+  'Code diff — added and removed lines will look like:'
+);
 
-/** Build a combined preview for a bundled theme showing prompt and response on separate lines */
-export function buildBundledPreview(theme: BundledTheme): string {
+/** Build a short diff preview showing one added and one removed line.
+ *  @param fallbackDiff - base theme diff colors, used when preset is 'default'
+ */
+export function buildDiffPreview(
+  preset: DiffPreset,
+  currentId?: string,
+  fallbackDiff?: DiffPreset
+): string {
+  const marker = preset.id === (currentId ?? 'default') ? '  ✓' : '';
+  // Resolve effective preset: if 'default', use fallback (base theme colors)
+  const effective =
+    preset.added.bar.named === 'default' && fallbackDiff
+      ? fallbackDiff
+      : preset;
+  // If still no truecolor values, render plain
+  if (!effective.added.bar.truecolor) {
+    return `\n${DIFF_HEADER}\n${DIFF_ADDED_PREVIEW}\n${DIFF_REMOVED_PREVIEW}${marker}`;
+  }
+  const addedBg = effective.added.background.truecolor
+    ? chalk.bgHex(effective.added.background.truecolor)
+    : (s: string) => s;
+  const addedBar = effective.added.bar.truecolor
+    ? chalk.hex(effective.added.bar.truecolor)
+    : (s: string) => s;
+  const removedBg = effective.removed.background.truecolor
+    ? chalk.bgHex(effective.removed.background.truecolor)
+    : (s: string) => s;
+  const removedBar = effective.removed.bar.truecolor
+    ? chalk.hex(effective.removed.bar.truecolor)
+    : (s: string) => s;
+
+  const addedLine = addedBg(`${addedBar(DIFF_ADDED_PREVIEW)}`);
+  const removedLine = removedBg(`${removedBar(DIFF_REMOVED_PREVIEW)}`);
+  return `\n${DIFF_HEADER}\n${addedLine}\n${removedLine}${marker}`;
+}
+
+/** Build a combined preview for a bundled theme showing prompt, response, and diff.
+ *  @param fallbackDiff - base theme diff colors, used when diff preset is 'default'
+ */
+export function buildBundledPreview(
+  theme: BundledTheme,
+  fallbackDiff?: DiffPreset
+): string {
   const bgHex = theme.prompt.bgColor.truecolor ?? '#262626';
   const bg = chalk.bgHex(bgHex);
   const promptText = ` ${PROMPT_PREVIEW} `;
@@ -155,7 +300,9 @@ export function buildBundledPreview(theme: BundledTheme): string {
     responsePart = hex ? chalk.hex(hex)(RESPONSE_PREVIEW) : RESPONSE_PREVIEW;
   }
 
-  return `${promptPart}\n${responsePart}`;
+  const diffPart = buildDiffPreview(theme.diff, undefined, fallbackDiff);
+
+  return `${promptPart}\n${responsePart}\n${diffPart}`;
 }
 
 /** Look up a bundled theme by id */
@@ -166,18 +313,27 @@ export function getBundledTheme(
   return bundledThemes.find((t) => t.id === id);
 }
 
-/** Build a preview from current prefs (for custom flow — shows what the user currently has) */
-export function buildCurrentPreview(prefs: UserThemePrefs): string {
+/** Build a preview from current prefs (for custom flow — shows what the user currently has).
+ *  @param fallbackDiff - base theme diff colors, used when diff preset is 'default'
+ */
+export function buildCurrentPreview(
+  prefs: UserThemePrefs,
+  fallbackDiff?: DiffPreset
+): string {
   const prompt = getPromptPreset(prefs.promptPreset) ?? promptPresets[0]!;
   const response =
     getResponsePreset(prefs.responsePreset) ?? responsePresets[0]!;
-  // Reuse bundled preview logic with an ad-hoc bundled theme
-  return buildBundledPreview({
-    id: 'current',
-    label: 'Current',
-    prompt,
-    response,
-  });
+  const diff = getDiffPreset(prefs.diffPreset) ?? diffPresets[0]!;
+  return buildBundledPreview(
+    {
+      id: 'current',
+      label: 'Current',
+      prompt,
+      response,
+      diff,
+    },
+    fallbackDiff
+  );
 }
 
 /**
@@ -223,8 +379,7 @@ export function buildResponsePreview(
 }
 
 function getThemePath(): string {
-  const home =
-    process.env.HOME || process.env.USERPROFILE || require('os').homedir();
+  const home = process.env.HOME || process.env.USERPROFILE || homedir();
   return join(home, '.kiro', 'settings', 'kiro_cli_theme.json');
 }
 
@@ -269,4 +424,31 @@ export function getResponsePreset(
 ): ResponsePreset | undefined {
   if (!id) return undefined;
   return responsePresets.find((p) => p.id === id);
+}
+
+/** Look up a diff preset by id */
+export function getDiffPreset(id: string | undefined): DiffPreset | undefined {
+  if (!id) return undefined;
+  return diffPresets.find((p) => p.id === id);
+}
+
+/** Build a DiffPreset from raw theme diff hex values (for use as fallback in previews) */
+export function buildFallbackDiff(themeDiff: {
+  added: { background: string; bar: string; highlight: string };
+  removed: { background: string; bar: string; highlight: string };
+}): DiffPreset {
+  return {
+    id: '_fallback',
+    label: 'Theme default',
+    added: {
+      background: { truecolor: themeDiff.added.background },
+      bar: { truecolor: themeDiff.added.bar },
+      highlight: { truecolor: themeDiff.added.highlight },
+    },
+    removed: {
+      background: { truecolor: themeDiff.removed.background },
+      bar: { truecolor: themeDiff.removed.bar },
+      highlight: { truecolor: themeDiff.removed.highlight },
+    },
+  };
 }

@@ -208,13 +208,14 @@ function detectLinuxTheme(): DetectionResult | null {
     if (gtkTheme.includes('dark')) {
       return { theme: 'dark', method: 'GNOME-color-scheme', confidence: 'low' };
     }
-    if (gtkTheme.includes('light') || gtkTheme.includes('default')) {
+    if (gtkTheme.includes('light')) {
       return {
         theme: 'light',
         method: 'GNOME-color-scheme',
         confidence: 'low',
       };
     }
+    // 'default' or 'prefer-no-preference' means no preference — don't guess
   } catch {
     // gsettings not available or GNOME not in use
   }

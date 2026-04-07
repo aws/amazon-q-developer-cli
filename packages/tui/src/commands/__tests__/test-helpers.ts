@@ -74,6 +74,11 @@ export function createMockCommandContext(
     getMessages: mock(() => opts.messages ?? []) as any,
     setUserColors: spy('setUserColors') as any,
     setThemePreview: spy('setThemePreview') as any,
+    getThemeDiffHex: mock(() => ({
+      added: { background: '', bar: '', highlight: '' },
+      removed: { background: '', bar: '', highlight: '' },
+    })) as any,
+    getAutoPreview: mock(() => '') as any,
     _spies: spies,
   };
 }

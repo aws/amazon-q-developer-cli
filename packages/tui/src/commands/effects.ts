@@ -659,6 +659,21 @@ const effectHandlers: Record<EffectName, EffectHandler> = {
     const themeCmd = ctx.slashCommands.find((c) => c.name === '/theme');
     if (!themeCmd) return;
 
+    const fallbackDiff = buildFallbackDiff(ctx.getThemeDiffHex());
+
+    // /theme bundled:default — reset to auto-detected theme
+    if (args === 'bundled:default') {
+      ctx.setUserColors(null, null, null);
+      const saved = saveUserThemePrefs({});
+      ctx.showAlert(
+        saved ? 'Theme reset to default' : 'Theme reset but failed to save',
+        saved ? 'success' : 'error',
+        3000
+      );
+      ctx.setThemePreview(null);
+      return true;
+    }
+
     // /theme bundled:<id> — apply a bundled theme (Light/Dark)
     if (args.startsWith('bundled:')) {
       const themeId = args.slice('bundled:'.length);
@@ -669,13 +684,15 @@ const effectHandlers: Record<EffectName, EffectHandler> = {
       }
       ctx.setUserColors(
         { text: bundled.prompt.textColor, bg: bundled.prompt.bgColor },
-        bundled.response.textColor
+        bundled.response.textColor,
+        bundled.diff
       );
       const saved = saveUserThemePrefs({
         promptPreset:
           bundled.prompt.id === 'default' ? undefined : bundled.prompt.id,
         responsePreset:
           bundled.response.id === 'default' ? undefined : bundled.response.id,
+        diffPreset: bundled.diff.id === 'default' ? undefined : bundled.diff.id,
       });
       ctx.showAlert(
         saved
@@ -688,11 +705,12 @@ const effectHandlers: Record<EffectName, EffectHandler> = {
       return true;
     }
 
-    // /theme custom — show prompt vs response selection with current preview
+    // /theme custom — show prompt vs response vs diff selection with current preview
     if (args === 'custom') {
       const currentPrompt = getPromptPreset(prefs.promptPreset);
       const currentResponse = getResponsePreset(prefs.responsePreset);
-      ctx.setThemePreview(buildCurrentPreview(prefs));
+      const currentDiff = getDiffPreset(prefs.diffPreset);
+      ctx.setThemePreview(buildCurrentPreview(prefs, fallbackDiff));
       ctx.setActiveCommand({
         command: {
           ...themeCmd,
@@ -713,6 +731,11 @@ const effectHandlers: Record<EffectName, EffectHandler> = {
             label: 'Response text color',
             description: currentResponse ? currentResponse.label : 'Default',
           },
+          {
+            value: 'diff',
+            label: 'Code diff colors',
+            description: currentDiff ? currentDiff.label : 'Default',
+          },
         ],
       });
       return true;
@@ -720,7 +743,7 @@ const effectHandlers: Record<EffectName, EffectHandler> = {
 
     // /theme prompt — show prompt combo presets with preview
     if (args === 'prompt') {
-      ctx.setThemePreview(buildCurrentPreview(prefs));
+      ctx.setThemePreview(buildCurrentPreview(prefs, fallbackDiff));
       ctx.setActiveCommand({
         command: {
           ...themeCmd,
@@ -744,7 +767,7 @@ const effectHandlers: Record<EffectName, EffectHandler> = {
 
     // /theme response — show response color presets with preview
     if (args === 'response') {
-      ctx.setThemePreview(buildCurrentPreview(prefs));
+      ctx.setThemePreview(buildCurrentPreview(prefs, fallbackDiff));
       ctx.setActiveCommand({
         command: {
           ...themeCmd,
@@ -766,8 +789,36 @@ const effectHandlers: Record<EffectName, EffectHandler> = {
       return true;
     }
 
-    // /theme prompt:<id> or /theme response:<id> — apply custom selection, then return to custom menu
-    if (args.startsWith('prompt:') || args.startsWith('response:')) {
+    // /theme diff — show diff color presets with preview
+    if (args === 'diff') {
+      ctx.setThemePreview(buildCurrentPreview(prefs, fallbackDiff));
+      ctx.setActiveCommand({
+        command: {
+          ...themeCmd,
+          meta: {
+            ...themeCmd.meta,
+            inputType: 'selection' as const,
+            searchable: false,
+          },
+        },
+        options: diffPresets.map((p) => {
+          const isActive = p.id === (prefs.diffPreset ?? 'default');
+          return {
+            value: `diff:${p.id}`,
+            label: p.label,
+            description: isActive ? '[active]' : '',
+          };
+        }),
+      });
+      return true;
+    }
+
+    // /theme prompt:<id>, response:<id>, or diff:<id> — apply custom selection, then return to custom menu
+    if (
+      args.startsWith('prompt:') ||
+      args.startsWith('response:') ||
+      args.startsWith('diff:')
+    ) {
       const colonIdx = args.indexOf(':');
       const category = args.slice(0, colonIdx);
       const presetId = args.slice(colonIdx + 1);
@@ -783,6 +834,7 @@ const effectHandlers: Record<EffectName, EffectHandler> = {
           preset.id === 'default' ? undefined : preset.id;
         ctx.setUserColors(
           { text: preset.textColor, bg: preset.bgColor },
+          undefined,
           undefined
         );
         const saved1 = saveUserThemePrefs(updatedPrefs);
@@ -793,7 +845,7 @@ const effectHandlers: Record<EffectName, EffectHandler> = {
           saved1 ? 'success' : 'error',
           3000
         );
-      } else {
+      } else if (category === 'response') {
         const preset = getResponsePreset(presetId);
         if (!preset) {
           ctx.showAlert(`Unknown response preset: ${presetId}`, 'error', 3000);
@@ -801,7 +853,7 @@ const effectHandlers: Record<EffectName, EffectHandler> = {
         }
         updatedPrefs.responsePreset =
           preset.id === 'default' ? undefined : preset.id;
-        ctx.setUserColors(undefined, preset.textColor);
+        ctx.setUserColors(undefined, preset.textColor, undefined);
         const saved2 = saveUserThemePrefs(updatedPrefs);
         ctx.showAlert(
           saved2
@@ -810,12 +862,31 @@ const effectHandlers: Record<EffectName, EffectHandler> = {
           saved2 ? 'success' : 'error',
           3000
         );
+      } else {
+        // diff
+        const preset = getDiffPreset(presetId);
+        if (!preset) {
+          ctx.showAlert(`Unknown diff preset: ${presetId}`, 'error', 3000);
+          return true;
+        }
+        updatedPrefs.diffPreset =
+          preset.id === 'default' ? undefined : preset.id;
+        ctx.setUserColors(undefined, undefined, preset);
+        const saved3 = saveUserThemePrefs(updatedPrefs);
+        ctx.showAlert(
+          saved3
+            ? `Diff colors set to ${preset.label}`
+            : `Diff applied but failed to save`,
+          saved3 ? 'success' : 'error',
+          3000
+        );
       }
 
       // Return to custom menu with updated preview
       const currentPrompt = getPromptPreset(updatedPrefs.promptPreset);
       const currentResponse = getResponsePreset(updatedPrefs.responsePreset);
-      ctx.setThemePreview(buildCurrentPreview(updatedPrefs));
+      const currentDiff = getDiffPreset(updatedPrefs.diffPreset);
+      ctx.setThemePreview(buildCurrentPreview(updatedPrefs, fallbackDiff));
       ctx.setActiveCommand({
         command: {
           ...themeCmd,
@@ -836,23 +907,33 @@ const effectHandlers: Record<EffectName, EffectHandler> = {
             label: 'Response text color',
             description: currentResponse ? currentResponse.label : 'Default',
           },
+          {
+            value: 'diff',
+            label: 'Code diff colors',
+            description: currentDiff ? currentDiff.label : 'Default',
+          },
         ],
       });
       return true;
     }
 
-    // Bare /theme — show top-level: Dark Theme, Light Theme, Custom
-    ctx.setThemePreview(buildCurrentPreview(prefs));
+    // Bare /theme — show top-level: Auto, Dark Theme, Light Theme, Custom
+    // Initial preview matches first highlighted item (Auto)
+    ctx.setThemePreview(ctx.getAutoPreview() || null);
 
     // Determine which option is currently active
     const activeBundledId = bundledThemes.find((t) => {
       const matchPrompt = (prefs.promptPreset ?? 'default') === t.prompt.id;
       const matchResponse =
         (prefs.responsePreset ?? 'default') === t.response.id;
-      return matchPrompt && matchResponse;
+      const matchDiff = (prefs.diffPreset ?? 'default') === t.diff.id;
+      return matchPrompt && matchResponse && matchDiff;
     })?.id;
     const isCustomActive =
-      !activeBundledId && (prefs.promptPreset || prefs.responsePreset);
+      !activeBundledId &&
+      (prefs.promptPreset || prefs.responsePreset || prefs.diffPreset);
+
+    const isDefaultActive = !activeBundledId && !isCustomActive;
 
     ctx.setActiveCommand({
       command: {
@@ -864,6 +945,13 @@ const effectHandlers: Record<EffectName, EffectHandler> = {
         },
       },
       options: [
+        {
+          value: 'bundled:default',
+          label: 'Auto',
+          description: isDefaultActive
+            ? '[active]'
+            : 'Auto-detected theme for your terminal',
+        },
         ...bundledThemes.map((t) => ({
           value: `bundled:${t.id}`,
           label: t.label,
@@ -874,7 +962,7 @@ const effectHandlers: Record<EffectName, EffectHandler> = {
           label: 'Custom',
           description: isCustomActive
             ? '[active]'
-            : 'Choose prompt and response colors separately',
+            : 'Choose prompt, response, and diff colors separately',
         },
       ],
     });
@@ -887,12 +975,15 @@ import { MessageRole } from '../stores/app-store.js';
 import {
   promptPresets,
   responsePresets,
+  diffPresets,
   bundledThemes,
   buildCurrentPreview,
+  buildFallbackDiff,
   loadUserThemePrefs,
   saveUserThemePrefs,
   getPromptPreset,
   getResponsePreset,
+  getDiffPreset,
   getBundledTheme,
 } from '../theme/user-theme.js';
 import { writeFileSync } from 'fs';

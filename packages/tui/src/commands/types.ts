@@ -102,8 +102,20 @@ export interface CommandContext {
     role: string;
     content: string;
   }>;
-  /** Update user theme colors (prompt text+bg combo and/or response text) */
-  setUserColors: (prompt?: { text: any; bg: any }, response?: any) => void;
+  /** Update user theme colors (prompt text+bg combo and/or response text and/or diff colors).
+   *  Pass null to clear an override, undefined to leave unchanged. */
+  setUserColors: (
+    prompt?: { text: any; bg: any } | null,
+    response?: any | null,
+    diff?: any | null
+  ) => void;
   /** Set theme preview string (rendered below menu during /theme flow) */
   setThemePreview: (preview: string | null) => void;
+  /** Get the base theme's diff hex colors (for preview fallback when user preset is 'default') */
+  getThemeDiffHex: () => {
+    added: { background: string; bar: string; highlight: string };
+    removed: { background: string; bar: string; highlight: string };
+  };
+  /** Get a preview string showing the auto-detected theme with no user overrides */
+  getAutoPreview: () => string;
 }

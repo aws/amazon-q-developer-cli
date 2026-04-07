@@ -16,6 +16,8 @@ import {
   loadUserThemePrefs,
   getPromptPreset,
   getResponsePreset,
+  getDiffPreset,
+  type DiffPreset,
 } from './user-theme';
 
 /**
@@ -30,11 +32,15 @@ export interface ThemeContextValue extends Theme {
   getUserPromptBgHex: () => string | undefined;
   /** User-customized response text color (falls back to primary) */
   getUserResponseColor: () => any;
-  /** Update user color overrides at runtime (triggers re-render) */
+  /** Update user color overrides at runtime (triggers re-render).
+   *  Pass null to clear an override, undefined to leave unchanged. */
   setUserColors: (
-    prompt?: { text: TerminalColor; bg: TerminalColor },
-    response?: TerminalColor
+    prompt?: { text: TerminalColor; bg: TerminalColor } | null,
+    response?: TerminalColor | null,
+    diff?: DiffPreset | null
   ) => void;
+  /** The raw base theme before user overrides (for Auto preview) */
+  baseTheme: Theme;
 }
 
 /**
@@ -52,69 +58,96 @@ const createThemeContext = (
   userPromptColor: TerminalColor | undefined,
   userPromptBgColor: TerminalColor | undefined,
   userResponseColor: TerminalColor | undefined,
+  userDiffPreset: DiffPreset | undefined,
   setUserColors: (
-    prompt?: { text: TerminalColor; bg: TerminalColor },
-    response?: TerminalColor
+    prompt?: { text: TerminalColor; bg: TerminalColor } | null,
+    response?: TerminalColor | null,
+    diff?: DiffPreset | null
   ) => void
-): ThemeContextValue => ({
-  ...theme,
-  getColor: (colorPath: string) => {
-    const keys = colorPath.split('.');
-    let colorDef: any = theme.colors;
+): ThemeContextValue => {
+  // Merge user diff overrides into theme colors so getColor('diff.*') picks them up
+  const effectiveColors =
+    userDiffPreset && userDiffPreset.added.bar.named !== 'default'
+      ? {
+          ...theme.colors,
+          diff: {
+            added: {
+              background: userDiffPreset.added.background,
+              bar: userDiffPreset.added.bar,
+              highlight: userDiffPreset.added.highlight,
+            },
+            removed: {
+              background: userDiffPreset.removed.background,
+              bar: userDiffPreset.removed.bar,
+              highlight: userDiffPreset.removed.highlight,
+            },
+            unchanged: theme.colors.diff.unchanged,
+          },
+        }
+      : theme.colors;
 
-    for (const key of keys) {
-      colorDef = colorDef[key];
-      if (!colorDef) {
-        throw new Error(`Color path '${colorPath}' not found in theme`);
+  return {
+    ...theme,
+    colors: effectiveColors,
+    getColor: (colorPath: string) => {
+      const keys = colorPath.split('.');
+      let colorDef: any = effectiveColors;
+
+      for (const key of keys) {
+        colorDef = colorDef[key];
+        if (!colorDef) {
+          throw new Error(`Color path '${colorPath}' not found in theme`);
+        }
       }
-    }
 
-    return getTerminalChalkColor(
-      colorDef.truecolor,
-      colorDef.color256,
-      colorDef.named
-    );
-  },
-  getUserPromptColor: () => {
-    if (!userPromptColor) {
       return getTerminalChalkColor(
-        theme.colors.primary.truecolor,
-        theme.colors.primary.color256,
-        theme.colors.primary.named
+        colorDef.truecolor,
+        colorDef.color256,
+        colorDef.named
       );
-    }
-    return getTerminalChalkColor(
-      userPromptColor.truecolor,
-      userPromptColor.color256,
-      userPromptColor.named
-    );
-  },
-  getUserPromptBgHex: () => {
-    if (userPromptBgColor?.truecolor) return userPromptBgColor.truecolor;
-    // Fall back to theme surface; guard against 'inherit' from named:'default'
-    const surfaceHex = getTerminalChalkColor(
-      theme.colors.surface.truecolor,
-      theme.colors.surface.color256,
-      theme.colors.surface.named
-    ).hex;
-    return surfaceHex === 'inherit' ? undefined : surfaceHex;
-  },
-  getUserResponseColor: () => {
-    if (!userResponseColor) {
+    },
+    getUserPromptColor: () => {
+      if (!userPromptColor) {
+        return getTerminalChalkColor(
+          theme.colors.primary.truecolor,
+          theme.colors.primary.color256,
+          theme.colors.primary.named
+        );
+      }
       return getTerminalChalkColor(
-        theme.colors.primary.truecolor,
-        theme.colors.primary.color256,
-        theme.colors.primary.named
+        userPromptColor.truecolor,
+        userPromptColor.color256,
+        userPromptColor.named
       );
-    }
-    return getTerminalChalkColor(
-      userResponseColor.truecolor,
-      userResponseColor.color256,
-      userResponseColor.named
-    );
-  },
-  setUserColors,
-});
+    },
+    getUserPromptBgHex: () => {
+      if (userPromptBgColor?.truecolor) return userPromptBgColor.truecolor;
+      // Fall back to theme surface; guard against 'inherit' from named:'default'
+      const surfaceHex = getTerminalChalkColor(
+        theme.colors.surface.truecolor,
+        theme.colors.surface.color256,
+        theme.colors.surface.named
+      ).hex;
+      return surfaceHex === 'inherit' ? undefined : surfaceHex;
+    },
+    getUserResponseColor: () => {
+      if (!userResponseColor) {
+        return getTerminalChalkColor(
+          theme.colors.primary.truecolor,
+          theme.colors.primary.color256,
+          theme.colors.primary.named
+        );
+      }
+      return getTerminalChalkColor(
+        userResponseColor.truecolor,
+        userResponseColor.color256,
+        userResponseColor.named
+      );
+    },
+    setUserColors,
+    baseTheme: theme,
+  };
+};
 
 /**
  * Gets the appropriate theme based on terminal/OS appearance detection.
@@ -125,18 +158,26 @@ const getAutoTheme = (): Theme => {
   const result = detectTerminalThemeWithDetails();
 
   // High/medium confidence: we know the actual background, pick accordingly
-  if (result.confidence !== 'low' || result.method !== 'default') {
+  if (result.confidence === 'high' || result.confidence === 'medium') {
     return result.theme === 'light' ? kiroLight : kiroDark;
   }
 
-  // Low confidence default fallback: use the safe ANSI theme that works on
-  // both light and dark backgrounds (common in SSH sessions to headless servers)
+  // Low confidence: use the safe ANSI theme that works on both light and dark
+  // backgrounds. This covers SSH sessions to headless servers, terminals where
+  // OSC 11 fails, and cases where gsettings/env vars give unreliable signals.
   return kiroSafe;
 };
 
 // Create the React context with the default theme as the initial value
 export const ThemeContext = createContext<ThemeContextValue>(
-  createThemeContext(kiroDark, undefined, undefined, undefined, () => {})
+  createThemeContext(
+    kiroDark,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    () => {}
+  )
 );
 
 /**
@@ -159,7 +200,12 @@ export const ThemeProvider = ({
   theme = 'auto',
   children,
 }: ThemeProviderProps) => {
-  const resolvedTheme = theme === 'auto' ? getAutoTheme() : theme;
+  // Detect theme once on mount — avoid re-running OSC 11 queries on every render
+  // which can corrupt terminal state (especially over SSH).
+  const resolvedTheme = useMemo(
+    () => (theme === 'auto' ? getAutoTheme() : theme),
+    [theme]
+  );
 
   // Load persisted user color prefs on mount
   const initialPrefs = useMemo(() => loadUserThemePrefs(), []);
@@ -172,17 +218,34 @@ export const ThemeProvider = ({
   const [userResponseColor, setUserResponseColor] = useState<
     TerminalColor | undefined
   >(() => getResponsePreset(initialPrefs.responsePreset)?.textColor);
+  const [userDiffPreset, setUserDiffPreset] = useState<DiffPreset | undefined>(
+    () => getDiffPreset(initialPrefs.diffPreset)
+  );
 
   const setUserColors = useCallback(
     (
-      prompt?: { text: TerminalColor; bg: TerminalColor },
-      response?: TerminalColor
+      prompt?: { text: TerminalColor; bg: TerminalColor } | null,
+      response?: TerminalColor | null,
+      diff?: DiffPreset | null
     ) => {
-      if (prompt !== undefined) {
+      // null = clear override, undefined = don't change
+      if (prompt === null) {
+        setUserPromptColor(undefined);
+        setUserPromptBgColor(undefined);
+      } else if (prompt !== undefined) {
         setUserPromptColor(prompt.text);
         setUserPromptBgColor(prompt.bg);
       }
-      if (response !== undefined) setUserResponseColor(response);
+      if (response === null) {
+        setUserResponseColor(undefined);
+      } else if (response !== undefined) {
+        setUserResponseColor(response);
+      }
+      if (diff === null) {
+        setUserDiffPreset(undefined);
+      } else if (diff !== undefined) {
+        setUserDiffPreset(diff);
+      }
     },
     []
   );
@@ -194,6 +257,7 @@ export const ThemeProvider = ({
         userPromptColor,
         userPromptBgColor,
         userResponseColor,
+        userDiffPreset,
         setUserColors
       ),
     [
@@ -201,6 +265,7 @@ export const ThemeProvider = ({
       userPromptColor,
       userPromptBgColor,
       userResponseColor,
+      userDiffPreset,
       setUserColors,
     ]
   );

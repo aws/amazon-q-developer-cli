@@ -3,6 +3,7 @@ import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { Kiro } from '../kiro';
 import chalk from 'chalk';
+import { kiroSafe } from '../theme/kiroSafe';
 import { createContext, useContext } from 'react';
 import {
   AgentEventType,
@@ -440,10 +441,30 @@ interface BaseAppActions {
   clearAttachedFiles: () => void;
 
   // User theme color callback (set by ThemeProvider bridge)
-  _userColorsSetter: ((prompt?: any, response?: any) => void) | null;
+  _userColorsSetter:
+    | ((prompt?: any, response?: any, diff?: any) => void)
+    | null;
   registerUserColorsSetter: (
-    setter: (prompt?: any, response?: any) => void
+    setter: (prompt?: any, response?: any, diff?: any) => void
   ) => void;
+
+  // Theme diff hex getter (set by ThemeProvider bridge)
+  _themeDiffHexGetter:
+    | (() => {
+        added: { background: string; bar: string; highlight: string };
+        removed: { background: string; bar: string; highlight: string };
+      })
+    | null;
+  registerThemeDiffHexGetter: (
+    getter: () => {
+      added: { background: string; bar: string; highlight: string };
+      removed: { background: string; bar: string; highlight: string };
+    }
+  ) => void;
+
+  // Auto preview getter (set by ThemeProvider bridge)
+  _autoPreviewGetter: (() => string) | null;
+  registerAutoPreviewGetter: (getter: () => string) => void;
 
   // Theme preview string (rendered below menu during /theme flow)
   themePreview: string | null;
@@ -760,7 +781,7 @@ export const createAppStore = (props: AppStoreProps) => {
       },
       {
         name: '/theme',
-        description: 'Customize prompt or response text colors',
+        description: 'Select a theme that looks best for your terminal',
         source: 'local' as const,
         meta: { local: true },
       },
@@ -837,6 +858,8 @@ export const createAppStore = (props: AppStoreProps) => {
     ),
     attachedFiles: [],
     _userColorsSetter: null,
+    _themeDiffHexGetter: null,
+    _autoPreviewGetter: null,
     themePreview: null,
     pendingFileAttachment: null,
     pendingImages: [],
@@ -2021,12 +2044,33 @@ export const createAppStore = (props: AppStoreProps) => {
             codeData: null,
           }),
         getMessages: () => get().messages,
-        setUserColors: (prompt?: any, response?: any) => {
+        setUserColors: (prompt?: any, response?: any, diff?: any) => {
           const setter = get()._userColorsSetter;
-          if (setter) setter(prompt, response);
+          if (setter) setter(prompt, response, diff);
         },
         setThemePreview: (preview: string | null) => {
           set({ themePreview: preview });
+        },
+        getThemeDiffHex: () => {
+          const getter = get()._themeDiffHexGetter;
+          if (getter) return getter();
+          const d = kiroSafe.colors.diff;
+          return {
+            added: {
+              background: d.added.background.truecolor ?? '',
+              bar: d.added.bar.truecolor ?? '',
+              highlight: d.added.highlight.truecolor ?? '',
+            },
+            removed: {
+              background: d.removed.background.truecolor ?? '',
+              bar: d.removed.bar.truecolor ?? '',
+              highlight: d.removed.highlight.truecolor ?? '',
+            },
+          };
+        },
+        getAutoPreview: () => {
+          const getter = get()._autoPreviewGetter;
+          return getter ? getter() : '';
         },
       };
 
@@ -2593,6 +2637,14 @@ export const createAppStore = (props: AppStoreProps) => {
       set({ _userColorsSetter: setter });
     },
 
+    registerThemeDiffHexGetter: (getter) => {
+      set({ _themeDiffHexGetter: getter });
+    },
+
+    registerAutoPreviewGetter: (getter) => {
+      set({ _autoPreviewGetter: getter });
+    },
+
     setThemePreview: (preview) => {
       set({ themePreview: preview });
     },
@@ -2740,12 +2792,33 @@ export const createAppStore = (props: AppStoreProps) => {
               usageData: null,
             }),
           getMessages: () => get().messages,
-          setUserColors: (prompt?: any, response?: any) => {
+          setUserColors: (prompt?: any, response?: any, diff?: any) => {
             const setter = get()._userColorsSetter;
-            if (setter) setter(prompt, response);
+            if (setter) setter(prompt, response, diff);
           },
           setThemePreview: (preview: string | null) => {
             set({ themePreview: preview });
+          },
+          getThemeDiffHex: () => {
+            const getter = get()._themeDiffHexGetter;
+            if (getter) return getter();
+            const d = kiroSafe.colors.diff;
+            return {
+              added: {
+                background: d.added.background.truecolor ?? '',
+                bar: d.added.bar.truecolor ?? '',
+                highlight: d.added.highlight.truecolor ?? '',
+              },
+              removed: {
+                background: d.removed.background.truecolor ?? '',
+                bar: d.removed.bar.truecolor ?? '',
+                highlight: d.removed.highlight.truecolor ?? '',
+              },
+            };
+          },
+          getAutoPreview: () => {
+            const getter = get()._autoPreviewGetter;
+            return getter ? getter() : '';
           },
         };
         const handled = await executeCommand(trimmed, ctx);

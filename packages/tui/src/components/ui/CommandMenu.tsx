@@ -15,10 +15,14 @@ import { searchFilesAbortable } from '../../utils/file-search.js';
 import {
   getBundledTheme,
   buildBundledPreview,
+  buildCurrentPreview,
+  buildFallbackDiff,
   getPromptPreset,
   getResponsePreset,
+  getDiffPreset,
   promptPresets,
   responsePresets,
+  diffPresets,
   loadUserThemePrefs,
 } from '../../theme/user-theme.js';
 
@@ -45,6 +49,7 @@ export const CommandMenu: React.FC = () => {
   const setActiveTrigger = useAppStore((state) => state.setActiveTrigger);
   const setPromptHint = useAppStore((state) => state.setPromptHint);
   const setThemePreview = useAppStore((state) => state.setThemePreview);
+  const getAutoPreview = useAppStore((state) => state._autoPreviewGetter);
 
   // File search state
   const [fileResults, setFileResults] = useState<string[]>([]);
@@ -215,11 +220,37 @@ export const CommandMenu: React.FC = () => {
       const opt = activeCommand.options.find((o) => o.label === item.label);
       if (!opt) return;
 
+      const fallbackDiff = buildFallbackDiff({
+        added: {
+          background: getColor('diff.added.background').hex,
+          bar: getColor('diff.added.bar').hex,
+          highlight: getColor('diff.added.highlight').hex,
+        },
+        removed: {
+          background: getColor('diff.removed.background').hex,
+          bar: getColor('diff.removed.bar').hex,
+          highlight: getColor('diff.removed.highlight').hex,
+        },
+      });
+
       // Top-level: bundled theme preview
       if (opt.value.startsWith('bundled:')) {
         const themeId = opt.value.slice('bundled:'.length);
+        if (themeId === 'default') {
+          // Auto — show base theme preview with no user overrides
+          const preview = getAutoPreview?.();
+          setThemePreview(preview || null);
+          return;
+        }
         const theme = getBundledTheme(themeId);
-        if (theme) setThemePreview(buildBundledPreview(theme));
+        if (theme) setThemePreview(buildBundledPreview(theme, fallbackDiff));
+        return;
+      }
+
+      // Custom option — show current prefs preview
+      if (opt.value === 'custom') {
+        const currentPrefs = loadUserThemePrefs();
+        setThemePreview(buildCurrentPreview(currentPrefs, fallbackDiff));
         return;
       }
 
@@ -230,13 +261,18 @@ export const CommandMenu: React.FC = () => {
         const prompt = getPromptPreset(presetId) ?? promptPresets[0]!;
         const response =
           getResponsePreset(prefs.responsePreset) ?? responsePresets[0]!;
+        const diff = getDiffPreset(prefs.diffPreset) ?? diffPresets[0]!;
         setThemePreview(
-          buildBundledPreview({
-            id: 'preview',
-            label: 'Preview',
-            prompt,
-            response,
-          })
+          buildBundledPreview(
+            {
+              id: 'preview',
+              label: 'Preview',
+              prompt,
+              response,
+              diff,
+            },
+            fallbackDiff
+          )
         );
         return;
       }
@@ -244,20 +280,45 @@ export const CommandMenu: React.FC = () => {
         const presetId = opt.value.slice('response:'.length);
         const prompt = getPromptPreset(prefs.promptPreset) ?? promptPresets[0]!;
         const response = getResponsePreset(presetId) ?? responsePresets[0]!;
+        const diff = getDiffPreset(prefs.diffPreset) ?? diffPresets[0]!;
         setThemePreview(
-          buildBundledPreview({
-            id: 'preview',
-            label: 'Preview',
-            prompt,
-            response,
-          })
+          buildBundledPreview(
+            {
+              id: 'preview',
+              label: 'Preview',
+              prompt,
+              response,
+              diff,
+            },
+            fallbackDiff
+          )
+        );
+        return;
+      }
+      if (opt.value.startsWith('diff:')) {
+        const presetId = opt.value.slice('diff:'.length);
+        const prompt = getPromptPreset(prefs.promptPreset) ?? promptPresets[0]!;
+        const response =
+          getResponsePreset(prefs.responsePreset) ?? responsePresets[0]!;
+        const diff = getDiffPreset(presetId) ?? diffPresets[0]!;
+        setThemePreview(
+          buildBundledPreview(
+            {
+              id: 'preview',
+              label: 'Preview',
+              prompt,
+              response,
+              diff,
+            },
+            fallbackDiff
+          )
         );
         return;
       }
 
       // Keep current preview for other options (Custom, Prompt style, Response text color)
     },
-    [isThemeMenu, activeCommand, setThemePreview]
+    [isThemeMenu, activeCommand, setThemePreview, getColor]
   );
 
   if (showFilePicker && !activeCommand) {

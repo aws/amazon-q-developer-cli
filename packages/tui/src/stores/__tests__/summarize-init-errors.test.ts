@@ -39,7 +39,11 @@ describe('summarizeInitErrors', () => {
 
   it('agent not found + model not found', () => {
     const errors: InitError[] = [
-      { type: 'agent_not_found', requestedAgent: 'foo', fallbackAgent: 'kiro_default' },
+      {
+        type: 'agent_not_found',
+        requestedAgent: 'foo',
+        fallbackAgent: 'kiro_default',
+      },
       { type: 'model_not_found', requestedModel: 'xx', fallbackModel: 'auto' },
     ];
     expect(summarizeInitErrors(errors)).toBe(
