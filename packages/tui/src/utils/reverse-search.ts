@@ -81,8 +81,9 @@ export function backspaceQuery(state: ReverseSearchState, history: string[]): vo
     state.match = null;
     return;
   }
-  // Re-search from newest since query shortened
-  state.match = searchHistory(history, state.query, history.length);
+  // Re-search from newest since query shortened; keep previous match if still no match
+  const result = searchHistory(history, state.query, history.length);
+  if (result) state.match = result;
 }
 
 /** Cycle to the next older match (Ctrl+R pressed again). */

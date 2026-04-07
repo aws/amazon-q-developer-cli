@@ -96,6 +96,11 @@ export class CommandHistory {
     this.savedInput = null;
   }
 
+  /** Set the navigation index directly (e.g. after reverse search acceptance). */
+  setIndex(index: number): void {
+    this.currentIndex = index;
+  }
+
   clear(): void {
     this.history = [];
     this.currentIndex = -1;

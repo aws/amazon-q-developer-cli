@@ -602,7 +602,11 @@ export const PromptInput = React.memo(function PromptInput({
 
   /** Accept reverse search result into the input buffer. */
   const acceptReverseSearch = () => {
-    const result = exitSearch(reverseSearchRef.current, 'matchPos');
+    const rs = reverseSearchRef.current;
+    if (rs.match) {
+      CommandHistory.getInstance().setIndex(rs.match.historyIndex);
+    }
+    const result = exitSearch(rs, 'matchPos');
     setReverseSearchActive(false);
     const newSegs: Segment[] = [{ type: 'text', value: result.text }];
     setSegments(newSegs);

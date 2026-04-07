@@ -17,6 +17,7 @@ const CTRL_A = '\x01';
 const CTRL_E = '\x05';
 const CTRL_R = '\x12';
 const RIGHT_ARROW = '\x1b[C';
+const UP_ARROW = '\x1b[A';
 const BACKSPACE = '\x7f';
 const ESCAPE = '\x1b';
 
@@ -339,6 +340,84 @@ describe('Reverse incremental search (Ctrl+R)', () => {
     expect(snap).not.toContain('reverse-i-search');
     // Original input should be restored
     expect(snap).toContain('my current input');
+
+    await exitCleanly(testCase);
+  }, 20000);
+
+  it('backspace after failed search re-finds previous match', async () => {
+    testCase = await TestCase.builder()
+      .withTestName('rsearch-backspace-after-fail')
+      .launch();
+    await testCase.waitForVisibleText('ask a question', 10000);
+
+    await submitCommand(testCase, 'hello world');
+
+    await sendCtrl(testCase, CTRL_R);
+    await testCase.sendKeys('hello');
+    await testCase.sleepMs(200);
+
+    let snap = testCase.getSnapshot().join('\n');
+    expect(snap).toContain('hello world');
+
+    // Type chars that won't match: "hello" -> "hellosss"
+    await testCase.sendKeys('sss');
+    await testCase.sleepMs(200);
+
+    snap = testCase.getSnapshot().join('\n');
+    // Should still show hello world (no-match keeps last result)
+    expect(snap).toContain('hello world');
+
+    // Backspace once: "hellosss" -> "helloss" — still no match
+    await testCase.sendKeys(BACKSPACE);
+    await testCase.sleepMs(200);
+
+    snap = testCase.getSnapshot().join('\n');
+    // Should still show hello world, not lose the match
+    expect(snap).toContain('hello world');
+
+    // Backspace twice more: "helloss" -> "hello" — should match again
+    await testCase.sendKeys(BACKSPACE);
+    await testCase.sleepMs(100);
+    await testCase.sendKeys(BACKSPACE);
+    await testCase.sleepMs(200);
+
+    snap = testCase.getSnapshot().join('\n');
+    expect(snap).toContain("(reverse-i-search)`hello': hello world");
+
+    await testCase.pressEscape();
+    await testCase.sleepMs(100);
+    await exitCleanly(testCase);
+  }, 20000);
+
+  it('up arrow after accepting search navigates relative to matched entry', async () => {
+    testCase = await TestCase.builder()
+      .withTestName('rsearch-up-after-accept')
+      .launch();
+    await testCase.waitForVisibleText('ask a question', 10000);
+
+    // Build history: oldest to newest
+    await submitCommand(testCase, 'first command');
+    await submitCommand(testCase, 'hello world');
+    await submitCommand(testCase, 'how are you');
+
+    // Search for "hello"
+    await sendCtrl(testCase, CTRL_R);
+    await testCase.sendKeys('hello');
+    await testCase.sleepMs(200);
+
+    let snap = testCase.getSnapshot().join('\n');
+    expect(snap).toContain('hello world');
+
+    // Accept with right arrow (exits search, cursor at match pos)
+    await testCase.sendKeys(RIGHT_ARROW);
+    await testCase.sleepMs(200);
+
+    // Now press up — should show "first command" (the entry before "hello world")
+    await testCase.sendKeys(UP_ARROW);
+    await testCase.sleepMs(200);
+
+    snap = testCase.getSnapshot().join('\n');
+    expect(snap).toContain('first command');
 
     await exitCleanly(testCase);
   }, 20000);
