@@ -473,6 +473,40 @@ describe('Reverse incremental search (Ctrl+R)', () => {
     await exitCleanly(testCase);
   }, 20000);
 
+  it('Ctrl+C aborts search and clears input', async () => {
+    testCase = await TestCase.builder()
+      .withTestName('rsearch-ctrl-c-abort')
+      .launch();
+    await testCase.waitForVisibleText('ask a question', 10000);
+
+    // Type something, then add history
+    await submitCommand(testCase, 'hello world');
+
+    // Type current input before searching
+    await testCase.sendKeys('my current input');
+    await testCase.sleepMs(200);
+
+    // Enter reverse search and find a match
+    await sendCtrl(testCase, CTRL_R);
+    await testCase.sendKeys('hello');
+    await testCase.sleepMs(200);
+
+    let snap = testCase.getSnapshot().join('\n');
+    expect(snap).toContain('hello world');
+
+    // Ctrl+C to abort — should clear input entirely
+    await testCase.pressCtrlC();
+    await testCase.sleepMs(200);
+
+    snap = testCase.getSnapshot().join('\n');
+    expect(snap).not.toContain('reverse-i-search');
+    // Should NOT contain the matched line or the original input
+    expect(snap).not.toContain('hello world');
+    expect(snap).not.toContain('my current input');
+
+    await exitCleanly(testCase);
+  }, 20000);
+
   it('Ctrl+R with no matching query shows empty result', async () => {
     testCase = await TestCase.builder()
       .withTestName('rsearch-empty-history')

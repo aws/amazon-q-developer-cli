@@ -10,6 +10,7 @@ import React, {
 import { useTheme } from '../../../hooks/useThemeContext.js';
 import { useKeypress, type Key } from '../../../hooks/useKeypress.js';
 import { Text } from '../../ui/text/Text.js';
+import { useAppStore } from '../../../stores/app-store.js';
 
 /** Visual cursor (inverse block) + hardware cursor marker (APC sequence for twinki IME positioning). */
 const CursorBlock = ({ char = ' ' }: { char?: string }) => (
@@ -70,6 +71,7 @@ import {
   backspaceQuery,
   cycleOlder,
   exitSearch,
+  abortSearch,
 } from '../../../utils/reverse-search.js';
 // TODO: Long-term, PromptInput should migrate to use Twinki's Input/TextInput
 // component (or a segment-aware extension of it) instead of reimplementing
@@ -179,10 +181,18 @@ export const PromptInput = React.memo(function PromptInput({
   ]);
   const [cursor, _setCursor] = useState(0);
   const [pathCandidates, setPathCandidates] = useState<string[]>([]);
+  const setStoreReverseSearchActive = useAppStore(
+    (state) => state.setReverseSearchActive
+  );
   const reverseSearchRef = useRef<ReverseSearchState>(
     createReverseSearchState()
   );
   const [_reverseSearchActive, setReverseSearchActive] = useState(false);
+
+  // Clean up store flag if component unmounts while reverse search is active
+  useEffect(() => {
+    return () => setStoreReverseSearchActive(false);
+  }, [setStoreReverseSearchActive]);
 
   // Refs shadow the latest state so input handlers never read stale closures.
   // Without these, keypresses arriving faster than React re-renders would
@@ -608,6 +618,7 @@ export const PromptInput = React.memo(function PromptInput({
     }
     const result = exitSearch(rs, 'matchPos');
     setReverseSearchActive(false);
+    setStoreReverseSearchActive(false);
     const newSegs: Segment[] = [{ type: 'text', value: result.text }];
     setSegments(newSegs);
     setCursor(result.cursor);
@@ -631,6 +642,17 @@ export const PromptInput = React.memo(function PromptInput({
 
         if (key.escape) {
           acceptReverseSearch();
+          return;
+        }
+        if (key.ctrl && userInput === 'c') {
+          // Ctrl+C: abort search and clear input (readline convention)
+          abortSearch(rs);
+          setReverseSearchActive(false);
+          setStoreReverseSearchActive(false);
+          const newSegs: Segment[] = [{ type: 'text', value: '' }];
+          setSegments(newSegs);
+          setCursor(0);
+          syncToStore(newSegs);
           return;
         }
         if (key.ctrl && userInput === 'r') {
@@ -956,6 +978,7 @@ export const PromptInput = React.memo(function PromptInput({
               const currentText = getVisibleText(segments);
               enterSearch(reverseSearchRef.current, currentText, cursor);
               setReverseSearchActive(true);
+              setStoreReverseSearchActive(true);
             }
             break;
           default:

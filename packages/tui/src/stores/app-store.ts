@@ -530,6 +530,8 @@ export interface AppState {
 
   // Input state
   input: InputBufferState;
+  reverseSearchActive: boolean;
+  setReverseSearchActive: (active: boolean) => void;
 
   // UI state
   mode: 'inline' | 'expanded' | 'crew-monitor' | 'session-view';
@@ -787,6 +789,10 @@ export const createAppStore = (props: AppStoreProps) => {
     promptHint: null,
 
     input: initialInputBufferState(),
+    reverseSearchActive: false,
+    setReverseSearchActive: (active: boolean) => {
+      set({ reverseSearchActive: active });
+    },
 
     mode: 'inline',
     sessions: new Map(),

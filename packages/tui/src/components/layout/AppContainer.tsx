@@ -45,6 +45,7 @@ export const AppContainer: React.FC = () => {
   const isProcessing = useAppStore((state) => state.isProcessing);
   const isShellEscape = useAppStore((state) => state.isShellEscape);
   const cancelMessage = useAppStore((state) => state.cancelMessage);
+  const reverseSearchActive = useAppStore((state) => state.reverseSearchActive);
   const pendingApproval = useAppStore((state) => state.pendingApproval);
   const editingQueueIndex = useAppStore((state) => state.editingQueueIndex);
 
@@ -105,6 +106,10 @@ export const AppContainer: React.FC = () => {
       return;
     }
     if (key.ctrl && userInput === 'c') {
+      if (reverseSearchActive) {
+        // PromptInput handles Ctrl+C during reverse search
+        return;
+      }
       if (isProcessing) {
         cancelMessage();
       } else if (commandInputValue) {
