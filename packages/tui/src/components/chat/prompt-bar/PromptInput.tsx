@@ -62,6 +62,17 @@ import {
   killToLogicalLineBeginning,
 } from '../../../utils/input-editing.js';
 import { CommandHistory } from '../../../utils/command-history.js';
+import {
+  type ReverseSearchState,
+  createReverseSearchState,
+  enterSearch,
+  appendQuery,
+  backspaceQuery,
+  cycleOlder,
+  exitSearch,
+  abortSearch,
+  formatPrompt,
+} from '../../../utils/reverse-search.js';
 // TODO: Long-term, PromptInput should migrate to use Twinki's Input/TextInput
 // component (or a segment-aware extension of it) instead of reimplementing
 // editing logic. For now we import just the KillRing utility.
@@ -170,6 +181,8 @@ export const PromptInput = React.memo(function PromptInput({
   ]);
   const [cursor, _setCursor] = useState(0);
   const [pathCandidates, setPathCandidates] = useState<string[]>([]);
+  const reverseSearchRef = useRef<ReverseSearchState>(createReverseSearchState());
+  const [reverseSearchActive, setReverseSearchActive] = useState(false);
 
   // Refs shadow the latest state so input handlers never read stale closures.
   // Without these, keypresses arriving faster than React re-renders would
@@ -587,6 +600,27 @@ export const PromptInput = React.memo(function PromptInput({
     syncToStore(result.segments);
   };
 
+  /** Accept reverse search result into the input buffer. */
+  const acceptReverseSearch = (cursorMode: 'matchPos' | 'start' | 'end') => {
+    const result = exitSearch(reverseSearchRef.current, cursorMode);
+    setReverseSearchActive(false);
+    const newSegs: Segment[] = [{ type: 'text', value: result.text }];
+    setSegments(newSegs);
+    setCursor(result.cursor);
+    syncToStore(newSegs);
+    return result;
+  };
+
+  /** Abort reverse search, restoring original input. */
+  const cancelReverseSearch = () => {
+    const result = abortSearch(reverseSearchRef.current);
+    setReverseSearchActive(false);
+    const newSegs: Segment[] = [{ type: 'text', value: result.text }];
+    setSegments(newSegs);
+    setCursor(result.cursor);
+    syncToStore(newSegs);
+  };
+
   useKeypress(
     (userInput: string, key: Key) => {
       // Read latest state from refs to avoid stale closures when keypresses
@@ -596,6 +630,69 @@ export const PromptInput = React.memo(function PromptInput({
 
       // Don't process input when selection menu is open (Menu handles its own input)
       if (activeCommand) return;
+
+      // --- Reverse incremental search (Ctrl+R) key handling ---
+      if (reverseSearchRef.current.active) {
+        const history = CommandHistory.getInstance().getAll();
+        const rs = reverseSearchRef.current;
+
+        if (key.escape) {
+          cancelReverseSearch();
+          return;
+        }
+        if (key.return) {
+          // Accept and submit
+          const result = acceptReverseSearch('matchPos');
+          if (result.text) {
+            clearAll();
+            onSubmit(result.text);
+          }
+          return;
+        }
+        if (key.ctrl && userInput === 'r') {
+          cycleOlder(rs, history);
+          setReverseSearchActive((v) => !v); // force re-render
+          return;
+        }
+        if (key.backspace || (key.ctrl && userInput === 'h')) {
+          backspaceQuery(rs, history);
+          setReverseSearchActive((v) => !v);
+          return;
+        }
+        // Exit keys — accept result, then let the key's normal action apply
+        if (key.ctrl && userInput === 'a') {
+          acceptReverseSearch('start');
+          return;
+        }
+        if (key.ctrl && userInput === 'e') {
+          acceptReverseSearch('end');
+          return;
+        }
+        if (key.rightArrow || (key.ctrl && userInput === 'f')) {
+          acceptReverseSearch('matchPos');
+          return;
+        }
+        if (key.leftArrow || (key.ctrl && userInput === 'b')) {
+          acceptReverseSearch('matchPos');
+          return;
+        }
+        if (key.tab || key.upArrow || key.downArrow || key.home || key.end) {
+          acceptReverseSearch('matchPos');
+          // Don't return — fall through to normal handling
+        } else if (key.ctrl || key.meta) {
+          // Any other ctrl/meta key exits search, then falls through
+          acceptReverseSearch('matchPos');
+          // Don't return — fall through to normal handling
+        } else if (userInput && isPrintable(userInput)) {
+          // Printable chars: append to search query
+          for (const ch of userInput) {
+            appendQuery(rs, ch, history);
+          }
+          setReverseSearchActive((v) => !v);
+          return;
+        }
+        // For anything else, exit and fall through
+      }
 
       if (key.paste) {
         handlePaste(userInput);
@@ -891,6 +988,13 @@ export const PromptInput = React.memo(function PromptInput({
           case 'h': // Ctrl+H - backspace alias
             handleBackspace();
             break;
+          case 'r': // Ctrl+R - reverse incremental search
+            {
+              const currentText = getVisibleText(segments);
+              enterSearch(reverseSearchRef.current, currentText, cursor);
+              setReverseSearchActive(true);
+            }
+            break;
           default:
             break;
         }
@@ -960,6 +1064,36 @@ export const PromptInput = React.memo(function PromptInput({
   );
 
   const renderContent = () => {
+    // Reverse search mode: show the search prompt
+    if (reverseSearchRef.current.active) {
+      const prompt = formatPrompt(reverseSearchRef.current);
+      const rs = reverseSearchRef.current;
+      const matchLine = rs.match?.line ?? '';
+      const matchPos = rs.match?.matchPosition ?? 0;
+      const prefix = `(reverse-i-search)\`${rs.query}': `;
+
+      if (matchLine) {
+        // Show cursor at the match position within the matched line
+        const beforeMatch = matchLine.slice(0, matchPos);
+        const charAtCursor = matchLine[matchPos] ?? ' ';
+        const afterCursor = matchLine.slice(matchPos + 1);
+        return (
+          <Text wrap="wrap">
+            <Text>{placeholderColor(prefix)}</Text>
+            <Text>{primaryColor(beforeMatch)}</Text>
+            <CursorBlock char={charAtCursor} />
+            {afterCursor && <Text>{primaryColor(afterCursor)}</Text>}
+          </Text>
+        );
+      }
+      return (
+        <Text wrap="wrap">
+          <Text>{placeholderColor(prefix)}</Text>
+          <CursorBlock />
+        </Text>
+      );
+    }
+
     // When selection menu is open, show the command name statically (no cursor)
     if (activeCommand) {
       const cmdName = activeCommand.command.name;
