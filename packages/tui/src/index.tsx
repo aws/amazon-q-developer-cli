@@ -22,32 +22,17 @@ import {
   ENABLE_BRACKETED_PASTE,
   DISABLE_BRACKETED_PASTE,
 } from './utils/terminal-sequences';
-import {
-  gracefulExit,
-  registerInstance,
-  isExiting,
-} from './utils/graceful-exit.js';
 
 const cleanup = () => {
   try {
     process.stdout.write(DISABLE_BRACKETED_PASTE);
+    process.stdin.setRawMode?.(false);
     clearTerminalProgress();
   } catch {
     // stdout/stdin may already be dead (e.g. PTY closed), ignore errors
   }
-  gracefulExit(0);
+  process.exit(0);
 };
-
-function hasDrainInput(
-  inst: unknown
-): inst is { drainInput: () => Promise<void> } {
-  return (
-    typeof inst === 'object' &&
-    inst !== null &&
-    'drainInput' in inst &&
-    typeof (inst as Record<string, unknown>).drainInput === 'function'
-  );
-}
 
 const getAgentPath = (): string => {
   if (process.env.KIRO_MOCK_ACP === 'true') {
@@ -84,7 +69,8 @@ process.stdin.on('end', () => {
 // Wrapped in try-catch — this is purely defensive; failure must not crash the app.
 try {
   const { dlopen, FFIType } = await import('bun:ffi');
-  const libPath = process.platform === 'darwin' ? 'libSystem.B.dylib' : 'libc.so.6';
+  const libPath =
+    process.platform === 'darwin' ? 'libSystem.B.dylib' : 'libc.so.6';
   const libc = dlopen(libPath, {
     getppid: { returns: FFIType.i32, args: [] },
   });
@@ -95,9 +81,13 @@ try {
         kiro.close();
         cleanup();
       }
-    } catch { /* ignore */ }
+    } catch {
+      /* ignore */
+    }
   }, 2_000);
-} catch { /* FFI unavailable — rely on other signal handlers */ }
+} catch {
+  /* FFI unavailable — rely on other signal handlers */
+}
 
 // Pre-create kiro and store outside of React to start initialization immediately
 const agentPath = getAgentPath();
@@ -478,7 +468,7 @@ const startApp = async () => {
             'Tool approval required but --no-interactive was specified.',
             'Use --trust-all-tools to automatically approve tools.'
           );
-        setTimeout(() => gracefulExit(1), 200);
+        setTimeout(() => process.exit(1), 200);
       }
 
       // Exit after the turn completes
@@ -487,7 +477,7 @@ const startApp = async () => {
         // Give Ink a moment to flush the final render
         setTimeout(() => {
           kiro.close();
-          gracefulExit(0);
+          process.exit(0);
         }, 100);
       }
     });
@@ -568,15 +558,10 @@ const startApp = async () => {
     (globalThis as any).__TWINKI_INSTANCE__ = instance;
   }
 
-  // Register drain + unmount for graceful exit (prevents Kitty protocol sequence leakage)
-  const drain = hasDrainInput(instance)
-    ? () => instance.drainInput()
-    : undefined;
-  registerInstance(drain, () => instance.unmount());
-
-  // Last-resort: ensure twinki unmounts on process exit (synchronous, can't drain here)
+  // Ensure twinki unmounts cleanly on exit to prevent stale terminal writes
+  appStore.setState({ onExit: () => instance.unmount() });
   process.on('exit', () => {
-    if (!isExiting()) instance.unmount();
+    instance.unmount();
   });
 };
 

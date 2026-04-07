@@ -23,7 +23,6 @@ import type {
 } from '../stores/app-store.js';
 import { openEditorSync } from '../utils/editor.js';
 import { executeShellEscapeTTY } from '../utils/shell-escape.js';
-import { gracefulExit } from '../utils/graceful-exit.js';
 import { readFileSync } from 'fs';
 
 /** Effect handler function. Returns true if it handled its own messaging. */
@@ -192,10 +191,10 @@ const effectHandlers: Record<EffectName, EffectHandler> = {
     // If the result has breakdown data, show the panel (this is /context show or bare /context)
     const data = result?.data as
       | {
-        breakdown?: any;
-        contextUsagePercentage?: number;
-        initialExpanded?: boolean;
-      }
+          breakdown?: any;
+          contextUsagePercentage?: number;
+          initialExpanded?: boolean;
+        }
       | undefined;
     if (data?.breakdown) {
       if (data?.contextUsagePercentage != null) {
@@ -283,7 +282,7 @@ const effectHandlers: Record<EffectName, EffectHandler> = {
 
   quit: (_result, ctx) => {
     ctx.kiro.close();
-    gracefulExit(0);
+    process.exit(0);
   },
 
   /** Open $EDITOR to compose a prompt, then send the content as a chat message */
@@ -765,7 +764,7 @@ const effectHandlers: Record<EffectName, EffectHandler> = {
       const category = args.slice(0, colonIdx);
       const presetId = args.slice(colonIdx + 1);
 
-      let updatedPrefs = { ...prefs };
+      const updatedPrefs = { ...prefs };
       if (category === 'prompt') {
         const preset = getPromptPreset(presetId);
         if (!preset) {

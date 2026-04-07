@@ -93,7 +93,7 @@ describe('Streaming content flush', () => {
     const handler = store.getState().createStreamEventHandler();
 
     // Send a content event — this buffers the text
-    handler({
+    handler!({
       type: AgentEventType.Content,
       id: 'm1',
       content: { type: ContentType.Text, text: 'updated response' },
@@ -119,7 +119,7 @@ describe('Streaming content flush', () => {
 
     const handler = store.getState().createStreamEventHandler();
 
-    handler({
+    handler!({
       type: AgentEventType.Content,
       id: 'new-m1',
       content: { type: ContentType.Text, text: 'first chunk' },
@@ -151,7 +151,7 @@ describe('Streaming content flush', () => {
     // We need to set bufferedContent — simulate by sending a content event
     // while buffering is active (it won't schedule a flush, just buffers)
     const handler = store.getState().createStreamEventHandler();
-    handler({
+    handler!({
       type: AgentEventType.Content,
       id: 'x',
       content: { type: ContentType.Text, text: 'buffered text' },

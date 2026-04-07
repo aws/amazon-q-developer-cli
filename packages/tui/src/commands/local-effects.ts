@@ -3,8 +3,6 @@
  * Backend handles execution, this handles TUI-side effects after success.
  */
 
-import { gracefulExit } from '../utils/graceful-exit.js';
-
 export enum LocalCommand {
   Exit = 'exit',
   Clear = 'clear',
@@ -18,7 +16,7 @@ export type LocalEffectContext = {
 type LocalEffect = (ctx: LocalEffectContext) => void;
 
 const effects: Record<LocalCommand, LocalEffect> = {
-  [LocalCommand.Exit]: () => gracefulExit(0),
+  [LocalCommand.Exit]: () => process.exit(0),
   [LocalCommand.Clear]: (ctx) => {
     // Only show alert - backend clears conversation history, UI keeps displaying messages
     ctx.showAlert('Conversation history cleared');

@@ -1,5 +1,5 @@
 import { describe, it, expect, mock } from 'bun:test';
-import { createAppStore, MessageRole } from '../app-store';
+import { createAppStore, MessageRole, type MessageType } from '../app-store';
 import { AgentEventType, ContentType } from '../../types/agent-events';
 import { Kiro } from '../../kiro';
 
@@ -17,7 +17,7 @@ describe('Streaming flush performance', () => {
     const store = createAppStore({ kiro: mockKiro });
     store.setState({ isInitialized: true });
 
-    const messages = [];
+    const messages: MessageType[] = [];
     for (let i = 0; i < turnCount; i++) {
       messages.push({
         id: `u${i}`,
@@ -63,7 +63,7 @@ describe('Streaming flush performance', () => {
       // Warm up
       for (let i = 0; i < 10; i++) {
         streamingBuffer?.startBuffering();
-        handler({
+        handler!({
           type: AgentEventType.Content,
           id: 'm-active',
           content: { type: ContentType.Text, text: `w${i} ` },
@@ -75,7 +75,7 @@ describe('Streaming flush performance', () => {
       const start = performance.now();
       for (let i = 0; i < iterations; i++) {
         streamingBuffer?.startBuffering();
-        handler({
+        handler!({
           type: AgentEventType.Content,
           id: 'm-active',
           content: { type: ContentType.Text, text: `t${i} ` },

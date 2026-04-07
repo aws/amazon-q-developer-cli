@@ -4,7 +4,6 @@ import { join } from 'node:path';
 import { Kiro } from '../kiro';
 import chalk from 'chalk';
 import { createContext, useContext } from 'react';
-import { gracefulExit } from '../utils/graceful-exit.js';
 import {
   AgentEventType,
   ApprovalOptionId,
@@ -484,6 +483,7 @@ export interface AppState {
 
   // Kiro/Agent state
   kiro: Kiro;
+  onExit?: () => void;
   sessionId: string | null;
   isProcessing: boolean;
   isCompacting: boolean;
@@ -2435,7 +2435,8 @@ export const createAppStore = (props: AppStoreProps) => {
         if (newSequence >= 2) {
           // Clean up kiro and renderer before exiting
           state.kiro.close();
-          gracefulExit(0);
+          state.onExit?.();
+          process.exit(0);
         }
 
         const timer = setTimeout(() => {
@@ -2612,7 +2613,8 @@ export const createAppStore = (props: AppStoreProps) => {
         if (lower === '/quit' || lower === '/exit') {
           state.clearInput();
           state.kiro.close();
-          gracefulExit(0);
+          state.onExit?.();
+          process.exit(0);
         }
         state.queueMessage(trimmed);
         state.clearInput();
