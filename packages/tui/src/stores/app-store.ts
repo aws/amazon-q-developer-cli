@@ -1709,8 +1709,15 @@ export const createAppStore = (props: AppStoreProps) => {
           agentErrorGuidance: getErrorGuidance(errorMessage).message,
         });
       } finally {
+        // Always clear isProcessing — this is the safety net that prevents
+        // the "Prompt already in progress" desync. Without this, if
+        // kiro.cancel() throws or the abort signal doesn't propagate,
+        // isProcessing stays true forever and blocks all future prompts.
+        set({ isProcessing: false, currentAbortController: null });
         resolveCancelPromise!();
         set({ cancelInProgress: null });
+        // Drain any queued messages now that isProcessing is cleared.
+        await get().processQueue();
       }
     },
 
