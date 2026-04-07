@@ -38,6 +38,8 @@ pub mod methods {
     pub const AGENT_NOT_FOUND: &str = "_kiro.dev/agent/not_found";
     /// Agent config parse error at startup
     pub const AGENT_CONFIG_ERROR: &str = "_kiro.dev/agent/config_error";
+    /// Model not found — requested model fell back to default
+    pub const MODEL_NOT_FOUND: &str = "_kiro.dev/model/not_found";
     /// List sessions (temporary extension until sacp adds native session/list)
     pub const SESSION_LIST: &str = "_kiro.dev/session/list";
     /// Session update extension notification (e.g. tool_call_chunk)
@@ -186,6 +188,15 @@ pub struct AgentConfigErrorNotification {
     pub session_id: SessionId,
     pub path: Option<String>,
     pub error: String,
+}
+
+/// Model not found notification payload — requested model fell back to default.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ModelNotFoundNotification {
+    pub session_id: SessionId,
+    pub requested_model: String,
+    pub fallback_model: String,
 }
 
 /// Extension session update notification payload.

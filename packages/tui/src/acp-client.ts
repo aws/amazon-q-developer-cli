@@ -36,6 +36,7 @@ const EXT_METHODS = {
   MCP_SERVER_INITIALIZED: 'kiro.dev/mcp/server_initialized',
   AGENT_NOT_FOUND: 'kiro.dev/agent/not_found',
   AGENT_CONFIG_ERROR: 'kiro.dev/agent/config_error',
+  MODEL_NOT_FOUND: 'kiro.dev/model/not_found',
   RATE_LIMIT_ERROR: 'kiro.dev/error/rate_limit',
   SUBAGENT_LIST_UPDATE: 'kiro.dev/subagent/list_update',
   SESSION_ACTIVITY: 'kiro.dev/session/activity',
@@ -593,6 +594,7 @@ export class AcpClient implements acp.Client, SessionClient {
     [EXT_METHODS.AGENT_NOT_FOUND]: (params) => this.handleAgentNotFound(params),
     [EXT_METHODS.AGENT_CONFIG_ERROR]: (params) =>
       this.handleAgentConfigError(params),
+    [EXT_METHODS.MODEL_NOT_FOUND]: (params) => this.handleModelNotFound(params),
     [EXT_METHODS.RATE_LIMIT_ERROR]: (params) =>
       this.handleRateLimitError(params),
     [EXT_METHODS.SUBAGENT_LIST_UPDATE]: (params) =>
@@ -787,6 +789,17 @@ export class AcpClient implements acp.Client, SessionClient {
       type: AgentEventType.AgentConfigError,
       path,
       error,
+    });
+  }
+
+  private handleModelNotFound(params: Record<string, unknown>) {
+    const requestedModel = params.requestedModel as string;
+    const fallbackModel = params.fallbackModel as string;
+    logger.debug('Model not found received:', { requestedModel, fallbackModel });
+    this.broadcastStreamEvent({
+      type: AgentEventType.ModelNotFound,
+      requestedModel,
+      fallbackModel,
     });
   }
 

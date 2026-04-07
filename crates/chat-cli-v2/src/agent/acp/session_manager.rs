@@ -99,6 +99,9 @@ pub struct StartSessionResult {
     pub current_model_id: String,
     /// Agent config errors encountered during loading.
     pub agent_config_errors: Vec<AgentConfigLoadError>,
+    /// The model name originally requested (before fallback). `None` if no
+    /// specific model was requested or the requested model was found.
+    pub requested_model_name: Option<String>,
 }
 
 /// Result returned when spawning an orchestrated session.
@@ -730,7 +733,7 @@ impl SessionManager {
                     .await
                     .map_err(|e| sacp::util::internal_error(format!("Failed to start session: {}", e)))
                 {
-                    Ok((handle, ready_rx, initial_model_id)) => {
+                    Ok((handle, ready_rx, initial_model_id, requested_model_name)) => {
                         let current_model_id = initial_model_id.unwrap_or_default();
                         let handle_to_give = handle.clone();
                         self.sessions.insert(session_id.clone(), handle);
@@ -744,6 +747,7 @@ impl SessionManager {
                             available_models,
                             current_model_id,
                             agent_config_errors: self.agent_config_errors.clone(),
+                            requested_model_name,
                         }));
 
                         // Send SUBAGENT_LIST_UPDATE notification after session creation
