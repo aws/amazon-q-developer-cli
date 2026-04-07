@@ -8,5 +8,8 @@
   "devDependencies": {
     "eslint": "^9.17.0",
     "prettier": "^3.4.2"
+  },
+  "overrides": {
+    "vite": "7.3.2"
   }
 }
