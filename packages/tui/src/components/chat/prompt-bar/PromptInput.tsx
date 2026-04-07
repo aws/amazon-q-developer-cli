@@ -70,7 +70,6 @@ import {
   backspaceQuery,
   cycleOlder,
   exitSearch,
-  abortSearch,
   formatPrompt,
 } from '../../../utils/reverse-search.js';
 // TODO: Long-term, PromptInput should migrate to use Twinki's Input/TextInput
@@ -614,15 +613,6 @@ export const PromptInput = React.memo(function PromptInput({
     syncToStore(newSegs);
   };
 
-  /** Abort reverse search, restoring original input. */
-  const cancelReverseSearch = () => {
-    const result = abortSearch(reverseSearchRef.current);
-    setReverseSearchActive(false);
-    const newSegs: Segment[] = [{ type: 'text', value: result.text }];
-    setSegments(newSegs);
-    setCursor(result.cursor);
-    syncToStore(newSegs);
-  };
 
   useKeypress(
     (userInput: string, key: Key) => {
@@ -640,7 +630,7 @@ export const PromptInput = React.memo(function PromptInput({
         const rs = reverseSearchRef.current;
 
         if (key.escape) {
-          cancelReverseSearch();
+          acceptReverseSearch();
           return;
         }
         if (key.ctrl && userInput === 'r') {

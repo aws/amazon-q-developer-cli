@@ -312,9 +312,9 @@ describe('Reverse incremental search (Ctrl+R)', () => {
     await exitCleanly(testCase);
   }, 20000);
 
-  it('Escape aborts search and restores original input', async () => {
+  it('Escape accepts search and keeps matched line', async () => {
     testCase = await TestCase.builder()
-      .withTestName('rsearch-escape-abort')
+      .withTestName('rsearch-escape-accept')
       .launch();
     await testCase.waitForVisibleText('ask a question', 10000);
 
@@ -332,14 +332,15 @@ describe('Reverse incremental search (Ctrl+R)', () => {
     let snap = testCase.getSnapshot().join('\n');
     expect(snap).toContain('hello world');
 
-    // Escape to abort
+    // Escape to accept (not abort — keeps matched line)
     await testCase.pressEscape();
     await testCase.sleepMs(200);
 
     snap = testCase.getSnapshot().join('\n');
     expect(snap).not.toContain('reverse-i-search');
-    // Original input should be restored
-    expect(snap).toContain('my current input');
+    // Should show the matched line, NOT the original input
+    expect(snap).toContain('hello world');
+    expect(snap).not.toContain('my current input');
 
     await exitCleanly(testCase);
   }, 20000);
@@ -419,6 +420,44 @@ describe('Reverse incremental search (Ctrl+R)', () => {
     snap = testCase.getSnapshot().join('\n');
     expect(snap).toContain('first command');
 
+    await exitCleanly(testCase);
+  }, 20000);
+
+  it('double Ctrl+R reuses last search string', async () => {
+    testCase = await TestCase.builder()
+      .withTestName('rsearch-double-ctrl-r')
+      .launch();
+    await testCase.waitForVisibleText('ask a question', 10000);
+
+    await submitCommand(testCase, 'echo alpha');
+    await submitCommand(testCase, 'echo beta');
+
+    // First search: type "echo", find "echo beta"
+    await sendCtrl(testCase, CTRL_R);
+    await testCase.sendKeys('echo');
+    await testCase.sleepMs(200);
+
+    let snap = testCase.getSnapshot().join('\n');
+    expect(snap).toContain('echo beta');
+
+    // Accept with Escape
+    await testCase.pressEscape();
+    await testCase.sleepMs(200);
+
+    // Start a new search with Ctrl+R, then immediately Ctrl+R again
+    // Should reuse "echo" as the query
+    await sendCtrl(testCase, CTRL_R);
+    await testCase.sleepMs(100);
+    await sendCtrl(testCase, CTRL_R);
+    await testCase.sleepMs(200);
+
+    snap = testCase.getSnapshot().join('\n');
+    // Should have reused "echo" and found a match
+    expect(snap).toContain("(reverse-i-search)`echo':");
+    expect(snap).toContain('echo');
+
+    await testCase.pressEscape();
+    await testCase.sleepMs(100);
     await exitCleanly(testCase);
   }, 20000);
 

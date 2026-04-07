@@ -20,10 +20,12 @@ export interface ReverseSearchState {
   savedInput: string;
   /** Saved cursor position before search started */
   savedCursor: number;
+  /** Last query from a previous search session (for double Ctrl+R reuse) */
+  lastQuery: string;
 }
 
 export function createReverseSearchState(): ReverseSearchState {
-  return { active: false, query: '', match: null, savedInput: '', savedCursor: 0 };
+  return { active: false, query: '', match: null, savedInput: '', savedCursor: 0, lastQuery: '' };
 }
 
 /**
@@ -88,11 +90,16 @@ export function backspaceQuery(state: ReverseSearchState, history: string[]): vo
 
 /** Cycle to the next older match (Ctrl+R pressed again). */
 export function cycleOlder(state: ReverseSearchState, history: string[]): void {
+  // If query is empty, reuse the last search string (double Ctrl+R behavior)
+  if (!state.query && state.lastQuery) {
+    state.query = state.lastQuery;
+    state.match = searchHistory(history, state.query, history.length);
+    return;
+  }
   if (!state.query) return;
   const startBefore = state.match ? state.match.historyIndex : history.length;
   const result = searchHistory(history, state.query, startBefore);
   if (result) state.match = result;
-  // If no older match, keep current
 }
 
 /** Exit search, returning the accepted line and cursor position. */
@@ -113,6 +120,7 @@ export function exitSearch(
       cursor = state.match?.matchPosition ?? 0;
       break;
   }
+  if (state.query) state.lastQuery = state.query;
   state.active = false;
   state.query = '';
   state.match = null;
