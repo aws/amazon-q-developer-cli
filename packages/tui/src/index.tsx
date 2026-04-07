@@ -22,6 +22,7 @@ import {
   ENABLE_BRACKETED_PASTE,
   DISABLE_BRACKETED_PASTE,
 } from './utils/terminal-sequences';
+import { normalizeAtPrompt } from './utils/normalize-at-prompt';
 
 const cleanup = () => {
   try {
@@ -459,7 +460,8 @@ const startApp = async () => {
     // Auto-submit after initialization completes
     startInitialization().then(() => {
       if (initError) return; // Error will be shown by the App component
-      appStore.getState().sendMessage(nonInteractiveInput);
+      const { sendMessage, slashCommands } = appStore.getState();
+      sendMessage(normalizeAtPrompt(nonInteractiveInput, slashCommands));
     });
   }
 
@@ -468,7 +470,8 @@ const startApp = async () => {
     const interactiveInput = cliArgs.input;
     startInitialization().then(() => {
       if (initError) return;
-      appStore.getState().sendMessage(interactiveInput);
+      const { sendMessage, slashCommands } = appStore.getState();
+      sendMessage(normalizeAtPrompt(interactiveInput, slashCommands));
     });
   }
 
