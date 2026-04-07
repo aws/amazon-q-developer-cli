@@ -10,7 +10,7 @@ import { Menu } from '../ui/menu/Menu';
 import { Text } from '../ui/text/Text.js';
 import { Divider } from '../ui/divider/Divider.js';
 import { useTheme } from '../../hooks/useThemeContext.js';
-import { useAppStore } from '../../stores/app-store';
+import { useAppStore, type SlashCommand } from '../../stores/app-store';
 import { searchFilesAbortable } from '../../utils/file-search.js';
 import {
   getBundledTheme,
@@ -25,6 +25,10 @@ import {
   diffPresets,
   loadUserThemePrefs,
 } from '../../theme/user-theme.js';
+import {
+  filterPromptsByQuery,
+  buildAtMenuItems,
+} from './command-menu-utils.js';
 
 export const CommandMenu: React.FC = () => {
   const { getColor } = useTheme();
@@ -89,7 +93,7 @@ export const CommandMenu: React.FC = () => {
   }, [slashCommands, setCommandInput, setPromptHint]);
 
   // Extract @query from input
-  const fileQuery = useMemo(() => {
+  const atQuery = useMemo(() => {
     if (activeTrigger?.key !== '@') return '';
     const afterAt = commandInputValue.slice(activeTrigger.position + 1);
     const match = afterAt.match(/^(\S*)/);
@@ -99,10 +103,10 @@ export const CommandMenu: React.FC = () => {
   // Debounce file search. The search uses async opendir with AbortSignal,
   // so the previous walk is cancelled mid-flight when the query changes.
   useEffect(() => {
-    if (activeTrigger?.key === '@' && fileQuery) {
+    if (activeTrigger?.key === '@' && atQuery) {
       const ac = new AbortController();
       const timer = setTimeout(() => {
-        searchFilesAbortable(fileQuery, ac.signal).then((results) => {
+        searchFilesAbortable(atQuery, ac.signal).then((results) => {
           if (ac.signal.aborted) return;
           setFileResults(results);
           setFilePickerHasResults(results.length > 0);
@@ -115,7 +119,7 @@ export const CommandMenu: React.FC = () => {
     }
     setFileResults([]);
     setFilePickerHasResults(false);
-  }, [fileQuery, activeTrigger, setFilePickerHasResults]);
+  }, [atQuery, activeTrigger, setFilePickerHasResults]);
 
   const filteredCommands = useMemo(() => {
     if (activeTrigger?.key !== '/' || commandInputValue.includes(' '))
@@ -153,51 +157,77 @@ export const CommandMenu: React.FC = () => {
     [filteredCommands]
   );
 
-  const fileMenuItems = useMemo(
+  // Filter prompts matching @query
+  const filteredPrompts = useMemo(
     () =>
-      fileResults.map((path) => ({
-        label: path,
-        description: '',
-      })),
-    [fileResults]
+      activeTrigger?.key === '@'
+        ? filterPromptsByQuery(slashCommands, atQuery)
+        : [],
+    [activeTrigger, atQuery, slashCommands]
   );
 
+  // Unified @ menu: prompts first, then files
+  const atMenuItems = useMemo(
+    () => buildAtMenuItems(filteredPrompts, fileResults),
+    [filteredPrompts, fileResults]
+  );
+
+  const showAtMenu = atMenuItems.length > 0 && activeTrigger?.key === '@';
+
   const showCommandMenu = menuItems.length > 0 && activeTrigger?.key === '/';
-  const showFilePicker = fileMenuItems.length > 0 && activeTrigger?.key === '@';
 
-  const handleCommandSelect = useCallback(
-    async (item: { label: string; description: string }) => {
-      const fullCommand = `/${item.label}`;
-      const cmd = slashCommands.find((c) => c.name === fullCommand);
-      const isPrompt = cmd?.meta?.type === 'prompt';
-
-      // For prompts with args, prefill command and show arg hints
-      if (isPrompt && cmd?.meta?.arguments?.length) {
+  // Shared: prefill args or execute a prompt command
+  const executePromptOrPrefill = useCallback(
+    async (cmd: SlashCommand) => {
+      if (cmd.meta?.arguments?.length) {
         const argHint = cmd.meta.arguments
           .map((a) => (a.required ? `<${a.name}>` : `[${a.name}]`))
           .join(' ');
-        setCommandInput(`${fullCommand} `);
+        setCommandInput(`${cmd.name} `);
         setPromptHint(argHint);
+        setActiveTrigger(null);
         return;
       }
-
-      setPromptHint(null);
-      await handleUserInput(fullCommand);
+      await handleUserInput(cmd.name);
     },
-    [handleUserInput, slashCommands, setCommandInput, setPromptHint]
+    [handleUserInput, setCommandInput, setPromptHint, setActiveTrigger]
   );
 
-  const handleFileSelect = useCallback(
-    (item: { label: string }) => {
+  const handleCommandSelect = useCallback(
+    async (item: { label: string; description: string }) => {
+      const cmd = slashCommands.find((c) => c.name === `/${item.label}`);
+      if (cmd?.meta?.type === 'prompt') {
+        await executePromptOrPrefill(cmd);
+        return;
+      }
+      setPromptHint(null);
+      await handleUserInput(`/${item.label}`);
+    },
+    [slashCommands, handleUserInput, setPromptHint, executePromptOrPrefill]
+  );
+
+  const handleAtMenuSelect = useCallback(
+    async (item: { label: string; description: string; group?: string }) => {
+      if (item.group === 'Prompt') {
+        const cmd = slashCommands.find((c) => c.name === `/${item.label}`);
+        if (cmd) await executePromptOrPrefill(cmd);
+        return;
+      }
       if (activeTrigger) {
         setPendingFileAttachment(item.label, activeTrigger.position);
         setActiveTrigger(null);
       }
     },
-    [activeTrigger, setPendingFileAttachment, setActiveTrigger]
+    [
+      slashCommands,
+      activeTrigger,
+      executePromptOrPrefill,
+      setPendingFileAttachment,
+      setActiveTrigger,
+    ]
   );
 
-  const handleFilePickerEscape = useCallback(() => {
+  const handleAtMenuEscape = useCallback(() => {
     setActiveTrigger(null);
     setPromptHint(null);
   }, [setActiveTrigger, setPromptHint]);
@@ -321,13 +351,13 @@ export const CommandMenu: React.FC = () => {
     [isThemeMenu, activeCommand, setThemePreview, getColor]
   );
 
-  if (showFilePicker && !activeCommand) {
+  if (showAtMenu && !activeCommand) {
     return (
       <Menu
-        items={fileMenuItems}
+        items={atMenuItems}
         prefix="@"
-        onSelect={handleFileSelect}
-        onEscape={handleFilePickerEscape}
+        onSelect={handleAtMenuSelect}
+        onEscape={handleAtMenuEscape}
       />
     );
   }
