@@ -421,6 +421,58 @@ describe('Reverse incremental search (Ctrl+R)', () => {
 
     await exitCleanly(testCase);
   }, 20000);
+
+  it('Ctrl+R with no matching query shows empty result', async () => {
+    testCase = await TestCase.builder()
+      .withTestName('rsearch-empty-history')
+      .launch();
+    await testCase.waitForVisibleText('ask a question', 10000);
+
+    // Enter reverse search and type something unlikely to match
+    await sendCtrl(testCase, CTRL_R);
+    await testCase.sendKeys('zzzzxqwv9999');
+    await testCase.sleepMs(200);
+
+    const snap = testCase.getSnapshot().join('\n');
+    // Should show the query in the prompt without crashing
+    expect(snap).toContain("(reverse-i-search)`zzzzxqwv9999':");
+
+    await testCase.pressEscape();
+    await testCase.sleepMs(100);
+    await exitCleanly(testCase);
+  }, 20000);
+
+  it('cursor is positioned at the match start within the matched line', async () => {
+    testCase = await TestCase.builder()
+      .withTestName('rsearch-cursor-at-match')
+      .launch();
+    await testCase.waitForVisibleText('ask a question', 10000);
+
+    await submitCommand(testCase, 'hello world');
+
+    await sendCtrl(testCase, CTRL_R);
+    await testCase.sendKeys('world');
+    await testCase.sleepMs(200);
+
+    // The prompt renders: (reverse-i-search)`world': hello world
+    // Cursor should be on the "w" of "world" in "hello world"
+    const snap = testCase.getSnapshot();
+    const cursorPos = testCase.getCursorPosition();
+
+    // Find the row containing "hello " to locate the matched line text
+    const searchRow = snap.findIndex((r) => r.includes("reverse-i-search") && r.includes('hello'));
+    expect(searchRow).not.toBe(-1);
+    const row = snap[searchRow]!;
+
+    // "world" starts at offset 6 in "hello world"
+    const helloIdx = row.indexOf('hello ');
+    expect(helloIdx).not.toBe(-1);
+    expect(cursorPos.x).toBe(helloIdx + 6);
+
+    await testCase.pressEscape();
+    await testCase.sleepMs(100);
+    await exitCleanly(testCase);
+  }, 20000);
 });
 
 /** Helper to exit after a command was submitted (mock ACP may be processing) */
