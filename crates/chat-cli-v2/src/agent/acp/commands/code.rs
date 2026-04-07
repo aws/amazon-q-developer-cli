@@ -149,6 +149,12 @@ async fn execute_overview(ctx: &CommandContext<'_>, is_summary: bool) -> Command
 
     let mut client = ci.write().await;
 
+    if client.workspace_manager.is_unprojected_root() {
+        return CommandResult::error(
+            "Cannot generate overview for home or root directory — the scan would be too large. Navigate to a project directory and try again.".to_string(),
+        );
+    }
+
     let request = code_agent_sdk::model::types::GenerateCodebaseOverviewRequest {
         path: None,
         timeout_secs: None,

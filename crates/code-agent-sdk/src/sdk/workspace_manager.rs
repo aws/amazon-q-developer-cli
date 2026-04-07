@@ -694,6 +694,18 @@ impl WorkspaceManager {
         &self.workspace_root
     }
 
+    /// Check if the workspace root is the user's home directory or a filesystem root.
+    /// These directories are too large for codebase-wide scans like overview generation.
+    pub fn is_unprojected_root(&self) -> bool {
+        if self.workspace_root.parent().is_none() {
+            return true;
+        }
+        dirs::home_dir()
+            .and_then(|home| home.canonicalize().ok())
+            .zip(self.workspace_root.canonicalize().ok())
+            .is_some_and(|(home, ws)| home == ws)
+    }
+
     /// Get the code store for pattern search/rewrite operations
     pub fn code_store(&self) -> &Arc<CodeStore> {
         &self.code_store
@@ -1406,5 +1418,26 @@ mod tests {
 
         workspace_manager.mark_file_opened(test_path.clone());
         assert!(workspace_manager.is_file_opened(&test_path));
+    }
+
+    #[test]
+    fn test_is_unprojected_root_normal_project() {
+        let temp_dir = create_temp_workspace(&["Cargo.toml", "src/main.rs"]);
+        let wm = WorkspaceManager::new(temp_dir.path().to_path_buf());
+        assert!(!wm.is_unprojected_root());
+    }
+
+    #[test]
+    fn test_is_unprojected_root_filesystem_root() {
+        let wm = WorkspaceManager::new(PathBuf::from("/"));
+        assert!(wm.is_unprojected_root());
+    }
+
+    #[test]
+    fn test_is_unprojected_root_home_dir() {
+        if let Some(home) = dirs::home_dir() {
+            let wm = WorkspaceManager::new(home);
+            assert!(wm.is_unprojected_root());
+        }
     }
 }

@@ -141,6 +141,21 @@ impl CodeSubcommand {
 
         let mut client = code_client_lock.write().await;
 
+        if client.workspace_manager.is_unprojected_root() {
+            queue!(
+                session.stderr,
+                StyledText::error_fg(),
+                style::Print(
+                    "Cannot generate overview for home or root directory — the scan would be too large.\nNavigate to a project directory and try again.\n"
+                ),
+                StyledText::reset(),
+            )?;
+            session.stderr.flush()?;
+            return Ok(ChatState::PromptUser {
+                skip_printing_tools: true,
+            });
+        }
+
         let spinner = Some(Spinner::new(
             Spinners::Dots,
             "Generating codebase overview...".to_string(),
@@ -564,6 +579,21 @@ impl CodeSubcommand {
         };
 
         let mut client = code_client_lock.write().await;
+
+        if client.workspace_manager.is_unprojected_root() {
+            queue!(
+                session.stderr,
+                StyledText::error_fg(),
+                style::Print(
+                    "Cannot generate overview for home or root directory — the scan would be too large.\nNavigate to a project directory and try again.\n"
+                ),
+                StyledText::reset(),
+            )?;
+            session.stderr.flush()?;
+            return Ok(ChatState::PromptUser {
+                skip_printing_tools: true,
+            });
+        }
 
         let spinner = Some(Spinner::new(
             Spinners::Dots,
