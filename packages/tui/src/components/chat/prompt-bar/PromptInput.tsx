@@ -601,14 +601,13 @@ export const PromptInput = React.memo(function PromptInput({
   };
 
   /** Accept reverse search result into the input buffer. */
-  const acceptReverseSearch = (cursorMode: 'matchPos' | 'start' | 'end') => {
-    const result = exitSearch(reverseSearchRef.current, cursorMode);
+  const acceptReverseSearch = () => {
+    const result = exitSearch(reverseSearchRef.current, 'matchPos');
     setReverseSearchActive(false);
     const newSegs: Segment[] = [{ type: 'text', value: result.text }];
     setSegments(newSegs);
     setCursor(result.cursor);
     syncToStore(newSegs);
-    return result;
   };
 
   /** Abort reverse search, restoring original input. */
@@ -625,8 +624,8 @@ export const PromptInput = React.memo(function PromptInput({
     (userInput: string, key: Key) => {
       // Read latest state from refs to avoid stale closures when keypresses
       // arrive faster than React can re-render.
-      const segments = segmentsRef.current;
-      const cursor = cursorRef.current;
+      let segments = segmentsRef.current;
+      let cursor = cursorRef.current;
 
       // Don't process input when selection menu is open (Menu handles its own input)
       if (activeCommand) return;
@@ -640,15 +639,6 @@ export const PromptInput = React.memo(function PromptInput({
           cancelReverseSearch();
           return;
         }
-        if (key.return) {
-          // Accept and submit
-          const result = acceptReverseSearch('matchPos');
-          if (result.text) {
-            clearAll();
-            onSubmit(result.text);
-          }
-          return;
-        }
         if (key.ctrl && userInput === 'r') {
           cycleOlder(rs, history);
           setReverseSearchActive((v) => !v); // force re-render
@@ -659,39 +649,18 @@ export const PromptInput = React.memo(function PromptInput({
           setReverseSearchActive((v) => !v);
           return;
         }
-        // Exit keys — accept result, then let the key's normal action apply
-        if (key.ctrl && userInput === 'a') {
-          acceptReverseSearch('start');
-          return;
-        }
-        if (key.ctrl && userInput === 'e') {
-          acceptReverseSearch('end');
-          return;
-        }
-        if (key.rightArrow || (key.ctrl && userInput === 'f')) {
-          acceptReverseSearch('matchPos');
-          return;
-        }
-        if (key.leftArrow || (key.ctrl && userInput === 'b')) {
-          acceptReverseSearch('matchPos');
-          return;
-        }
-        if (key.tab || key.upArrow || key.downArrow || key.home || key.end) {
-          acceptReverseSearch('matchPos');
-          // Don't return — fall through to normal handling
-        } else if (key.ctrl || key.meta) {
-          // Any other ctrl/meta key exits search, then falls through
-          acceptReverseSearch('matchPos');
-          // Don't return — fall through to normal handling
-        } else if (userInput && isPrintable(userInput)) {
-          // Printable chars: append to search query
+        if (userInput && isPrintable(userInput) && !key.ctrl && !key.meta) {
           for (const ch of userInput) {
             appendQuery(rs, ch, history);
           }
           setReverseSearchActive((v) => !v);
           return;
         }
-        // For anything else, exit and fall through
+        // Any other key: accept matched result and fall through to normal handling
+        acceptReverseSearch();
+        // Re-read from refs since acceptReverseSearch updated them
+        segments = segmentsRef.current;
+        cursor = cursorRef.current;
       }
 
       if (key.paste) {
