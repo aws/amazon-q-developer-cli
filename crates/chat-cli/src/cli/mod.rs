@@ -253,6 +253,13 @@ impl RootSubcommand {
                 Self::Issue(args) => args.execute(os).await,
                 Self::Version { changelog } => Cli::print_version(changelog),
                 Self::Chat(args) => {
+                    // Handle --list-models before TUI launch
+                    if args.list_models {
+                        return crate::cli::chat::cli::model::print_model_list(os, args.format)
+                            .await
+                            .map_err(|e| e.into());
+                    }
+
                     // Handle headless session commands before TUI launch
                     if let Some(result) = handle_session_flags(&args, os) {
                         return result;
@@ -325,6 +332,13 @@ impl RootSubcommand {
             Self::Issue(args) => args.execute(os).await,
             Self::Version { changelog } => Cli::print_version(changelog),
             Self::Chat(args) => {
+                // Handle --list-models before TUI launch
+                if args.list_models {
+                    return crate::cli::chat::cli::model::print_model_list(os, args.format)
+                        .await
+                        .map_err(|e| e.into());
+                }
+
                 // Handle headless session commands before TUI launch
                 if let Some(result) = handle_session_flags(&args, os) {
                     return result;

@@ -313,7 +313,10 @@ impl Cli {
             let status;
             #[cfg(unix)]
             {
-                use tokio::signal::unix::{SignalKind, signal};
+                use tokio::signal::unix::{
+                    SignalKind,
+                    signal,
+                };
                 let mut sigterm = signal(SignalKind::terminate())?;
                 let mut sighup = signal(SignalKind::hangup())?;
                 tokio::select! {
