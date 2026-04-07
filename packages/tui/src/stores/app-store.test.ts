@@ -146,7 +146,7 @@ describe('Streaming content flush', () => {
     const { streamingBuffer } = store.getState();
 
     // Start buffering, add content, then stop (triggers commitBufferedContent)
-    streamingBuffer?.startBuffering();
+    streamingBuffer?.startBuffering?.();
 
     // We need to set bufferedContent — simulate by sending a content event
     // while buffering is active (it won't schedule a flush, just buffers)
@@ -158,7 +158,7 @@ describe('Streaming content flush', () => {
     });
 
     // stopBuffering calls commitBufferedContent
-    store.getState().streamingBuffer?.stopBuffering();
+    store.getState().streamingBuffer?.stopBuffering?.();
 
     // Messages should not have been unnecessarily replaced
     const msgsAfter = store.getState().messages;

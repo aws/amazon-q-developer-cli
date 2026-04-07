@@ -62,25 +62,25 @@ describe('Streaming flush performance', () => {
 
       // Warm up
       for (let i = 0; i < 10; i++) {
-        streamingBuffer?.startBuffering();
-        handler!({
+        streamingBuffer?.startBuffering?.();
+        handler({
           type: AgentEventType.Content,
           id: 'm-active',
           content: { type: ContentType.Text, text: `w${i} ` },
         });
-        streamingBuffer?.stopBuffering();
+        streamingBuffer?.stopBuffering?.();
       }
 
       // Benchmark: measure just the flush (startBuffer → content → stopBuffer)
       const start = performance.now();
       for (let i = 0; i < iterations; i++) {
-        streamingBuffer?.startBuffering();
-        handler!({
+        streamingBuffer?.startBuffering?.();
+        handler({
           type: AgentEventType.Content,
           id: 'm-active',
           content: { type: ContentType.Text, text: `t${i} ` },
         });
-        streamingBuffer?.stopBuffering(); // triggers synchronous set()
+        streamingBuffer?.stopBuffering?.(); // triggers synchronous set()
       }
       const elapsed = performance.now() - start;
 
