@@ -7,6 +7,7 @@ pub mod code;
 pub mod compact;
 pub mod context;
 pub mod exit;
+pub mod guide;
 pub mod help;
 pub mod hooks;
 pub mod issue;
@@ -135,6 +136,7 @@ pub struct CommandContext<'a> {
     pub global_mcp_path: Option<&'a PathBuf>,
     pub session_id: &'a str,
     pub current_agent_name: &'a str,
+    pub previous_agent_name: Option<&'a str>,
     pub os: &'a crate::os::Os,
     pub cwd: &'a std::path::Path,
     pub legacy_session_exporter: &'a Arc<dyn crate::agent::session::legacy_compat::LegacySessionExporter>,
@@ -168,6 +170,7 @@ pub async fn execute(command: TuiCommand, ctx: &CommandContext<'_>) -> CommandRe
         TuiCommand::Reply(_) => reply::execute(ctx).await,
         TuiCommand::Code(ref args) => code::execute(args, ctx).await,
         TuiCommand::Hooks(_) => hooks::execute(ctx).await,
+        TuiCommand::Guide(ref args) => guide::execute(args, ctx).await,
     }
 }
 

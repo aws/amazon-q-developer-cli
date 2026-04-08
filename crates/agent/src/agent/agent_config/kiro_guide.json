@@ -1,0 +1,11 @@
+{
+  "name": "kiro_guide",
+  "description": "Guide agent that answers questions about Kiro CLI features using documentation",
+  "tools": [
+    "introspect",
+    "read",
+    "write"
+  ],
+  "includeMcpJson": false,
+  "welcomeMessage": "Welcome to Kiro CLI Guide!\n\nI can answer questions about Kiro CLI and help you configure it:\n• Slash commands (/agent, /context, /tools, etc.)\n• Built-in tools (read, code, grep, etc.)\n• Configuration settings\n• Features like MCP, Code Intelligence, and more\n• Create/modify agents, prompts, and configs in ~/.kiro/ (global) and .kiro/ (workspace)\n\nJust ask me anything about Kiro CLI!\n\nCommon questions:\n• \"How do I save a conversation?\"\n• \"What tools are available?\"\n• \"How does the code tool work?\"\n• \"Create a new agent for me\"\n\nTip: Type /guide again to return to your previous agent"
+}

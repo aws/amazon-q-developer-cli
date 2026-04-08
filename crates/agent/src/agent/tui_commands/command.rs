@@ -59,6 +59,8 @@ pub enum TuiCommand {
     Code(CodeArgs),
     /// View configured hooks
     Hooks(HooksArgs),
+    /// Switch to the guide agent for help with Kiro CLI
+    Guide(GuideArgs),
 }
 
 /// Arguments for /help command
@@ -226,6 +228,16 @@ pub struct CodeArgs {
 #[serde(rename_all = "camelCase")]
 pub struct HooksArgs {}
 
+/// Arguments for /guide command
+#[typeshare]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GuideArgs {
+    /// Optional question to ask the guide agent
+    #[serde(default)]
+    pub question: Option<String>,
+}
+
 impl TuiCommand {
     /// Command name with leading slash
     pub fn name(&self) -> &'static str {
@@ -249,6 +261,7 @@ impl TuiCommand {
             TuiCommand::Reply(_) => "/reply",
             TuiCommand::Code(_) => "/code",
             TuiCommand::Hooks(_) => "/hooks",
+            TuiCommand::Guide(_) => "/guide",
         }
     }
 
@@ -274,6 +287,7 @@ impl TuiCommand {
             TuiCommand::Reply(_) => "Open editor pre-filled with the last assistant message to compose a reply",
             TuiCommand::Code(_) => "Code intelligence workspace management",
             TuiCommand::Hooks(_) => "View configured hooks",
+            TuiCommand::Guide(_) => "Get help with Kiro CLI features from the guide agent",
         }
     }
 
@@ -301,6 +315,7 @@ impl TuiCommand {
             TuiCommand::Reply(_) => "/reply",
             TuiCommand::Code(_) => "/code [status|init|logs|overview|summary]",
             TuiCommand::Hooks(_) => "/hooks",
+            TuiCommand::Guide(_) => "/guide [question]",
         }
     }
 
@@ -408,6 +423,7 @@ impl TuiCommand {
                 meta.insert("inputType".into(), "panel".into());
                 Some(meta)
             },
+            TuiCommand::Guide(_) => None,
         }
     }
 
@@ -433,6 +449,7 @@ impl TuiCommand {
             TuiCommand::Reply(ReplyArgs::default()),
             TuiCommand::Code(CodeArgs::default()),
             TuiCommand::Hooks(HooksArgs::default()),
+            TuiCommand::Guide(GuideArgs::default()),
         ];
         commands.sort_by_key(|cmd| cmd.name());
         commands
@@ -485,6 +502,9 @@ impl TuiCommand {
                 subcommand: (!args.is_empty()).then(|| args.to_string()),
             })),
             "hooks" => Some(Self::Hooks(HooksArgs::default())),
+            "guide" => Some(Self::Guide(GuideArgs {
+                question: (!args.is_empty()).then(|| args.to_string()),
+            })),
             _ => None,
         }
     }

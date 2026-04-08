@@ -82,6 +82,7 @@ pub async fn load_agents<P: SystemProvider>(
     // Add default agent
     agent_configs.push(build_default_agent(system));
     agent_configs.push(build_planner_agent());
+    agent_configs.push(build_guide_agent());
 
     info!(?agent_configs, "loaded agent configs");
 
@@ -197,6 +198,17 @@ pub fn build_planner_agent() -> LoadedAgentConfig {
     let mut config: AgentConfigV2025_08_22 =
         serde_json::from_str(include_str!("kiro_planner.json")).expect("Invalid kiro_planner.json");
     config.global_prompt = Some(include_str!("planner_prompt.md").to_string());
+    let resolved_prompt = config
+        .global_prompt
+        .clone()
+        .map(ResolvedGlobalPrompt::Resolved)
+        .unwrap_or_default();
+    LoadedAgentConfig::new(AgentConfig::V2025_08_22(config), ConfigSource::BuiltIn, resolved_prompt)
+}
+
+pub fn build_guide_agent() -> LoadedAgentConfig {
+    let config: AgentConfigV2025_08_22 =
+        serde_json::from_str(include_str!("kiro_guide.json")).expect("Invalid kiro_guide.json");
     let resolved_prompt = config
         .global_prompt
         .clone()

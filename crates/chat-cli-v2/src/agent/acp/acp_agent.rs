@@ -938,6 +938,7 @@ impl AcpSession {
             global_mcp_path: self.global_mcp_path.as_ref(),
             session_id: &self.session_id_str,
             current_agent_name: &self.current_agent_name,
+            previous_agent_name: self.previous_agent_name.as_deref(),
             os: &self.os,
             cwd: &self.cwd,
             legacy_session_exporter: &self.legacy_session_exporter,
@@ -1393,8 +1394,8 @@ impl AcpSession {
                 if let Some(route) = slash_router::parse(&request.prompt) {
                     match route {
                         slash_router::SlashRoute::Action(command) => {
-                            let is_agent_swap =
-                                matches!(&command, TuiCommand::Agent(args) if args.agent_name.is_some());
+                            let is_agent_swap = matches!(&command, TuiCommand::Agent(args) if args.agent_name.is_some())
+                                || matches!(&command, TuiCommand::Guide(_));
                             let is_agent_create = matches!(&command, TuiCommand::Agent(args) if args.agent_name.as_deref().is_some_and(|n| n == "create" || n.starts_with("create ")));
                             let ctx = self.command_context();
                             let result = super::commands::execute(command, &ctx).await;
@@ -1593,7 +1594,8 @@ impl AcpSession {
             },
             AcpSessionRequest::ExecuteCommand { command, respond_to } => {
                 let is_agent_swap = matches!(&command, TuiCommand::Agent(args) if args.agent_name.is_some())
-                    || matches!(&command, TuiCommand::Plan(_));
+                    || matches!(&command, TuiCommand::Plan(_))
+                    || matches!(&command, TuiCommand::Guide(_));
                 let is_agent_create = matches!(&command, TuiCommand::Agent(args) if args.agent_name.as_deref().is_some_and(|n| n == "create" || n.starts_with("create ")));
                 debug!(
                     is_agent_swap,

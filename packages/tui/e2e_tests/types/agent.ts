@@ -181,6 +181,12 @@ export interface FeedbackArgs {
 	feedbackType?: string;
 }
 
+/** Arguments for /guide command */
+export interface GuideArgs {
+	/** Optional question to ask the guide agent */
+	question?: string;
+}
+
 /** Arguments for /help command */
 export interface HelpArgs {
 }
@@ -536,5 +542,7 @@ export type TuiCommand =
 	/** Code intelligence workspace management */
 	| { command: "code", args: CodeArgs }
 	/** View configured hooks */
-	| { command: "hooks", args: HooksArgs };
+	| { command: "hooks", args: HooksArgs }
+	/** Switch to the guide agent for help with Kiro CLI */
+	| { command: "guide", args: GuideArgs };
 

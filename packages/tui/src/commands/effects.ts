@@ -88,7 +88,8 @@ type EffectName =
   | 'spawnSession'
   | 'switchSession'
   | 'copyToClipboard'
-  | 'showThemeMenu';
+  | 'showThemeMenu'
+  | 'switchToGuideAgent';
 
 /**
  * Command → Effect mapping.
@@ -117,6 +118,7 @@ const commandEffects: Partial<Record<string, EffectName>> = {
   spawn: 'spawnSession',
   copy: 'copyToClipboard',
   theme: 'showThemeMenu',
+  guide: 'switchToGuideAgent',
 };
 
 /**
@@ -967,6 +969,18 @@ const effectHandlers: Record<EffectName, EffectHandler> = {
       ],
     });
     return true;
+  },
+
+  switchToGuideAgent: (result, ctx) => {
+    const data = result?.data as
+      | { agent?: { name: string }; prompt?: string }
+      | undefined;
+    if (data?.agent) {
+      ctx.setCurrentAgent(data.agent);
+    }
+    if (data?.prompt) {
+      ctx.sendMessage(data.prompt);
+    }
   },
 };
 
