@@ -62,6 +62,7 @@ import { useSessionConversation } from '../../stores/session-conversations.js';
 import { useShallow } from 'zustand/react/shallow';
 import { useKeypress } from '../../hooks/useKeypress';
 import { getGitBranch } from '../../utils/git';
+import { openTranscriptInPager } from '../../utils/open-transcript.js';
 import { shortenPath } from '../../utils/string';
 import { getAgentColor } from '../../utils/agentColors.js';
 import { useTheme } from '../../hooks/useThemeContext.js';
@@ -288,6 +289,16 @@ export const InlineLayout: React.FC = () => {
       }
     },
     { isActive: toolOutputsExpanded }
+  );
+
+  // Handle Ctrl+T to open transcript in $PAGER
+  useKeypress(
+    (input, key) => {
+      if (key.ctrl && input.toLowerCase() === 't') {
+        openTranscriptInPager(messages);
+      }
+    },
+    { isActive: true }
   );
 
   // Handle Shift+Tab for agent switching

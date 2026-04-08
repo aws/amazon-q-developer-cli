@@ -24,7 +24,9 @@ import type {
 } from '../stores/app-store.js';
 import { openEditorSync } from '../utils/editor.js';
 import { executeShellEscapeTTY } from '../utils/shell-escape.js';
-import { readFileSync } from 'fs';
+import { readFileSync, writeFileSync } from 'fs';
+import { join } from 'path';
+import { openTranscriptInPager } from '../utils/open-transcript.js';
 
 /** Effect handler function. Returns true if it handled its own messaging. */
 type EffectHandler = (
@@ -88,6 +90,7 @@ type EffectName =
   | 'spawnSession'
   | 'switchSession'
   | 'copyToClipboard'
+  | 'openRawView'
   | 'showThemeMenu'
   | 'switchToGuideAgent';
 
@@ -117,6 +120,7 @@ const commandEffects: Partial<Record<string, EffectName>> = {
   code: 'showCodePanel',
   spawn: 'spawnSession',
   copy: 'copyToClipboard',
+  transcript: 'openRawView',
   theme: 'showThemeMenu',
   guide: 'switchToGuideAgent',
 };
@@ -655,6 +659,18 @@ const effectHandlers: Record<EffectName, EffectHandler> = {
     return true;
   },
 
+  /** Open full conversation as raw markdown in $PAGER */
+  openRawView: (_result, ctx) => {
+    const messages = ctx.getMessages();
+    if (!messages.length) {
+      ctx.showAlert('No conversation to display', 'error', 3000);
+      return true;
+    }
+
+    openTranscriptInPager(messages);
+    return true;
+  },
+
   /** Show theme color selection menu */
   showThemeMenu: (_result, ctx, cmd, args) => {
     const prefs = loadUserThemePrefs();
@@ -1000,7 +1016,6 @@ import {
   getDiffPreset,
   getBundledTheme,
 } from '../theme/user-theme.js';
-import { writeFileSync } from 'fs';
 import { spawnSync } from 'child_process';
 
 /**
