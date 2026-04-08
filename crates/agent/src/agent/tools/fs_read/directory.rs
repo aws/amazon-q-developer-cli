@@ -22,7 +22,7 @@ use crate::agent::tools::{
     ToolExecutionResult,
 };
 use crate::agent::util::glob::matches_any_pattern;
-use crate::util::path::canonicalize_path_sys;
+use crate::util::path::resolve_path_fuzzy;
 use crate::util::providers::SystemProvider;
 
 /// Directory names to not search through when performing recursive directory listings.
@@ -166,7 +166,7 @@ impl DirectoryOp {
 
     fn canonical_path<P: SystemProvider>(&self, provider: &P) -> Result<PathBuf, String> {
         Ok(PathBuf::from(
-            canonicalize_path_sys(&self.path, provider).map_err(|e| e.to_string())?,
+            resolve_path_fuzzy(&self.path, provider).map_err(|e| e.to_string())?,
         ))
     }
 

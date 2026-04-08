@@ -2,6 +2,7 @@ import { useEffect, useContext, useRef } from 'react';
 import { useStore, createStore } from 'zustand';
 import { AppStoreContext } from '../stores/app-store.js';
 import { useStatusBar } from '../components/chat/status-bar/StatusBar.js';
+import { Settings } from '../constants/settings.js';
 
 // Fallback store when AppStoreContext is null (e.g. storybook, tests).
 // Called unconditionally so hook count is stable.
@@ -9,6 +10,7 @@ const createNoopStore = () =>
   createStore(() => ({
     toolOutputsExpanded: false as boolean,
     setHasExpandableToolOutputs: (() => {}) as (v: boolean) => void,
+    settings: null as Record<string, unknown> | null,
   }));
 
 export interface UseExpandableOutputOptions {
@@ -66,6 +68,18 @@ export function useExpandableOutput({
     (state) => state.setHasExpandableToolOutputs
   );
 
+  // When the auto-expand setting is on, always show full output inline —
+  // no truncation, no ctrl+o hints, no alternate read-only view.
+  const autoExpand = useStore(
+    activeStore,
+    (state) =>
+      (
+        state as Record<string, unknown> & {
+          settings?: Record<string, unknown> | null;
+        }
+      ).settings?.[Settings.CHAT_AUTO_EXPAND_TOOL_OUTPUT] === true
+  );
+
   // Snapshot the expanded state so it's preserved when transitioning to static.
   // While active, the ref tracks the live store value.
   // Once isStatic flips to true, the ref retains the last active value.
@@ -74,17 +88,19 @@ export function useExpandableOutput({
     frozenExpanded.current = storeExpanded;
   }
 
-  const expanded = isStatic ? frozenExpanded.current : storeExpanded;
+  const expanded =
+    autoExpand || (isStatic ? frozenExpanded.current : storeExpanded);
 
   const hasExpandableContent = totalItems > previewCount;
   const hiddenCount = Math.max(0, totalItems - previewCount);
 
-  // Register that we have expandable output (only for active/non-static)
+  // Register that we have expandable output (only for active/non-static,
+  // and only when auto-expand is off — no need for ctrl+o when always expanded)
   useEffect(() => {
-    if (hasExpandableContent && !isStatic) {
+    if (hasExpandableContent && !isStatic && !autoExpand) {
       setHasExpandableToolOutputs(true);
     }
-  }, [hasExpandableContent, isStatic, setHasExpandableToolOutputs]);
+  }, [hasExpandableContent, isStatic, autoExpand, setHasExpandableToolOutputs]);
 
   // Request remeasure when expanded state changes (only for active)
   useEffect(() => {
@@ -94,7 +110,7 @@ export function useExpandableOutput({
   }, [expanded, isStatic, requestRemeasure]);
 
   const expandHint =
-    hiddenCount > 0 && !isStatic
+    hiddenCount > 0 && !isStatic && !autoExpand
       ? `...+${hiddenCount} ${unit} (ctrl+o to toggle)`
       : '';
 

@@ -115,8 +115,12 @@ export const ActivityTrayExpanded = React.memo(function ActivityTrayExpanded({
     { isActive: isNavigable }
   );
 
-  const bg = getColor('surface').hex;
-  const fg = getColor('primary').hex;
+  const rawBg = getColor('surface').hex;
+  const bg = rawBg === 'inherit' ? undefined : rawBg;
+  // Guard against 'inherit' from named:'default' — when backgroundColor is
+  // explicitly set, Ink needs a real color value or undefined (terminal default).
+  const rawFg = getColor('primary').hex;
+  const fg = rawFg === 'inherit' ? undefined : rawFg;
   const successHex = getColor('success').hex;
   const infoHex = getColor('info').hex;
   const mutedHex = getColor('muted').hex;
@@ -244,8 +248,8 @@ interface TaskListProps {
   }>;
   scrollOffset: number;
   maxVisible: number;
-  bg: string;
-  fg: string;
+  bg: string | undefined;
+  fg: string | undefined;
   successHex: string;
   infoHex: string;
   mutedHex: string;
@@ -318,8 +322,8 @@ interface QueueListProps {
   maxVisible: number;
   selectedIndex: number;
   editingIndex: number | null;
-  bg: string;
-  fg: string;
+  bg: string | undefined;
+  fg: string | undefined;
   mutedHex: string;
   brandHex: string;
   termWidth: number;

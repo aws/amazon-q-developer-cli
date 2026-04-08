@@ -8,4 +8,5 @@ export const Settings = {
   CHAT_GREETING_ENABLED: 'chat.greeting.enabled',
   CHAT_ENABLE_NOTIFICATIONS: 'chat.enableNotifications',
   CHAT_NOTIFICATION_METHOD: 'chat.notificationMethod',
+  CHAT_AUTO_EXPAND_TOOL_OUTPUT: 'chat.autoExpandToolOutput',
 } as const;

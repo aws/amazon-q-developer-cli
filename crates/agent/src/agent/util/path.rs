@@ -36,6 +36,12 @@ pub fn canonicalize_path(path: impl AsRef<str>) -> Result<String, UtilError> {
     canonicalize_path_sys(path, &sys)
 }
 
+/// Convenience wrapper around [`resolve_path_fuzzy`] using the real system provider.
+pub fn resolve_path_fuzzy_real(path: impl AsRef<str>) -> Result<String, UtilError> {
+    let sys = RealProvider;
+    resolve_path_fuzzy(path, &sys)
+}
+
 pub fn canonicalize_path_sys<P: SystemProvider>(path: impl AsRef<str>, provider: &P) -> Result<String, UtilError> {
     let expanded =
         shellexpand::full_with_context(path.as_ref(), shellexpand_home(provider), shellexpand_context(provider))?;
@@ -69,6 +75,62 @@ pub fn canonicalize_path_sys<P: SystemProvider>(path: impl AsRef<str>, provider:
             Ok(normalized.to_string_lossy().to_string())
         },
     }
+}
+
+/// Normalize all Unicode whitespace characters to ASCII space for comparison.
+/// Safer than stripping — preserves space positions so "my file.txt" won't
+/// accidentally match "myfile.txt". Only matches when whitespace differs in
+/// type (e.g., U+202F vs U+0020), not in position.
+fn normalize_whitespace(s: &str) -> String {
+    s.chars().map(|c| if c.is_whitespace() { ' ' } else { c }).collect()
+}
+
+/// Try to find a file in the parent directory that matches after normalizing
+/// Unicode whitespace. Handles cases where filenames contain special whitespace
+/// characters but the LLM outputs regular ASCII spaces.
+fn try_fuzzy_whitespace_match(path: &Path) -> Option<PathBuf> {
+    let parent = path.parent().filter(|p| !p.as_os_str().is_empty())?;
+    let filename = path.file_name()?.to_str()?;
+    let normalized = normalize_whitespace(filename);
+
+    let mut matched: Option<PathBuf> = None;
+    for entry in std::fs::read_dir(parent).ok()?.flatten() {
+        let entry_name = entry.file_name();
+        let Some(entry_str) = entry_name.to_str() else {
+            continue;
+        };
+        if normalize_whitespace(entry_str) == normalized {
+            if matched.is_some() {
+                // Multiple fuzzy matches — ambiguous, bail out
+                return None;
+            }
+            let actual = entry.path();
+            matched = Some(actual.canonicalize().ok().unwrap_or(actual));
+        }
+    }
+    matched
+}
+
+/// Resolve a path with fuzzy Unicode whitespace matching.
+///
+/// First attempts exact canonicalization via [`canonicalize_path_sys`]. If the
+/// path doesn't exist, falls back to scanning the parent directory for a file
+/// whose name matches after normalizing Unicode whitespace to ASCII spaces.
+///
+/// Use this instead of `canonicalize_path_sys` when the path originates from
+/// an LLM tool call, where Unicode whitespace variants (U+202F, U+00A0) in
+/// real filenames may have been replaced with regular ASCII spaces.
+pub fn resolve_path_fuzzy<P: SystemProvider>(path: impl AsRef<str>, provider: &P) -> Result<String, UtilError> {
+    let canonical = canonicalize_path_sys(path, provider)?;
+    let canonical_path = Path::new(&canonical);
+    if canonical_path.exists() {
+        return Ok(canonical);
+    }
+    // Exact path doesn't exist — try fuzzy whitespace matching
+    if let Some(matched) = try_fuzzy_whitespace_match(canonical_path) {
+        return Ok(matched.to_string_lossy().to_string());
+    }
+    Ok(canonical)
 }
 
 /// Manually normalize a path by resolving . and .. components
@@ -128,5 +190,72 @@ mod tests {
                 path, expected, actual
             );
         }
+    }
+
+    #[test]
+    fn test_normalize_whitespace() {
+        assert_eq!(normalize_whitespace("hello world"), "hello world");
+        assert_eq!(normalize_whitespace("no\u{202F}break"), "no break");
+        assert_eq!(normalize_whitespace("no\u{00A0}break"), "no break");
+        assert_eq!(normalize_whitespace("a\u{202F}b\u{00A0}c"), "a b c");
+    }
+
+    #[test]
+    fn test_fuzzy_whitespace_match_finds_unicode_spaces() {
+        let dir = tempfile::tempdir().unwrap();
+        // Create a file with narrow no-break space (U+202F) — like macOS screenshots
+        let actual_name = "Screenshot\u{202F}2026-03-22.png";
+        std::fs::write(dir.path().join(actual_name), b"test").unwrap();
+
+        // Query with regular ASCII space
+        let query_path = dir.path().join("Screenshot 2026-03-22.png");
+        let result = try_fuzzy_whitespace_match(&query_path);
+        assert!(result.is_some(), "should find file with Unicode whitespace");
+        assert!(result.unwrap().exists(), "matched path should exist");
+    }
+
+    #[test]
+    fn test_fuzzy_whitespace_match_returns_none_for_no_match() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("other_file.txt"), b"test").unwrap();
+
+        let query_path = dir.path().join("nonexistent file.txt");
+        assert!(try_fuzzy_whitespace_match(&query_path).is_none());
+    }
+
+    #[test]
+    fn test_fuzzy_whitespace_match_exact_match_not_needed() {
+        let dir = tempfile::tempdir().unwrap();
+        // File exists with exact name — canonicalize would succeed, so fuzzy
+        // match shouldn't be needed, but it should still work if called
+        let name = "file with spaces.txt";
+        std::fs::write(dir.path().join(name), b"test").unwrap();
+
+        let query_path = dir.path().join(name);
+        let result = try_fuzzy_whitespace_match(&query_path);
+        assert!(result.is_some());
+    }
+
+    #[test]
+    fn test_fuzzy_whitespace_match_ambiguous_returns_none() {
+        let dir = tempfile::tempdir().unwrap();
+        // Two files that differ only in whitespace type — ambiguous
+        std::fs::write(dir.path().join("file name.txt"), b"a").unwrap();
+        std::fs::write(dir.path().join("file\u{00A0}name.txt"), b"b").unwrap();
+
+        // Both normalize to "file name.txt" — should return None (ambiguous)
+        let query_path = dir.path().join("file\u{202F}name.txt");
+        assert!(try_fuzzy_whitespace_match(&query_path).is_none());
+    }
+
+    #[test]
+    fn test_fuzzy_whitespace_match_no_false_positive_on_missing_spaces() {
+        let dir = tempfile::tempdir().unwrap();
+        // "myfile.txt" exists but user asked for "my file.txt"
+        // Normalize preserves space positions, so these should NOT match
+        std::fs::write(dir.path().join("myfile.txt"), b"test").unwrap();
+
+        let query_path = dir.path().join("my file.txt");
+        assert!(try_fuzzy_whitespace_match(&query_path).is_none());
     }
 }

@@ -17,7 +17,7 @@ use crate::agent::tools::{
     ToolExecutionError,
     ToolExecutionOutputItem,
 };
-use crate::util::path::canonicalize_path_sys;
+use crate::util::path::resolve_path_fuzzy;
 use crate::util::providers::SystemProvider;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -32,7 +32,7 @@ pub struct FileOp {
 
 impl FileOp {
     pub async fn validate<P: SystemProvider>(&self, provider: &P) -> Result<(), String> {
-        let path = PathBuf::from(canonicalize_path_sys(&self.path, provider).map_err(|e| e.to_string())?);
+        let path = PathBuf::from(resolve_path_fuzzy(&self.path, provider).map_err(|e| e.to_string())?);
         if !path.exists() {
             return Err(format!("'{}' does not exist", path.to_string_lossy()));
         }
@@ -54,7 +54,7 @@ impl FileOp {
         provider: &P,
     ) -> Result<ToolExecutionOutputItem, ToolExecutionError> {
         let path = PathBuf::from(
-            canonicalize_path_sys(&self.path, provider).map_err(|e| ToolExecutionError::Custom(e.to_string()))?,
+            resolve_path_fuzzy(&self.path, provider).map_err(|e| ToolExecutionError::Custom(e.to_string()))?,
         );
 
         let file_lines = LinesStream::new(

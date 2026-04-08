@@ -142,6 +142,8 @@ pub enum Setting {
         props(scope = "global_only")
     )]
     DisableAutoupdates,
+    #[strum(message = "Always show full tool output inline without truncation (boolean)")]
+    ChatAutoExpandToolOutput,
 }
 
 impl Setting {
@@ -206,6 +208,7 @@ impl AsRef<str> for Setting {
             Self::CleanupPeriodDays => "cleanup.periodDays",
             Self::ChatDisableGranularTrust => "chat.disableGranularTrust",
             Self::DisableAutoupdates => "app.disableAutoupdates",
+            Self::ChatAutoExpandToolOutput => "chat.autoExpandToolOutput",
         }
     }
 }
@@ -271,6 +274,7 @@ impl TryFrom<&str> for Setting {
             "cleanup.periodDays" => Ok(Self::CleanupPeriodDays),
             "chat.disableGranularTrust" => Ok(Self::ChatDisableGranularTrust),
             "app.disableAutoupdates" => Ok(Self::DisableAutoupdates),
+            "chat.autoExpandToolOutput" => Ok(Self::ChatAutoExpandToolOutput),
             _ => Err(DatabaseError::InvalidSetting(value.to_string())),
         }
     }
@@ -595,5 +599,52 @@ mod test {
         assert_eq!(settings.get(Setting::McpLoadedBefore), None);
         assert_eq!(settings.get(Setting::ChatDisableMarkdownRendering), None);
         assert_eq!(settings.get(Setting::EnabledCheckpoint), None);
+    }
+
+    #[test]
+    fn test_auto_expand_tool_output_setting_key() {
+        // Verify the setting key roundtrips through AsRef and TryFrom
+        let key = Setting::ChatAutoExpandToolOutput.as_ref();
+        assert_eq!(key, "chat.autoExpandToolOutput");
+        let parsed = Setting::try_from(key).unwrap();
+        assert!(matches!(parsed, Setting::ChatAutoExpandToolOutput));
+    }
+
+    #[test]
+    fn test_auto_expand_tool_output_is_workspace_overridable() {
+        // UI settings should be overridable per workspace
+        assert!(Setting::ChatAutoExpandToolOutput.is_workspace_overridable());
+    }
+
+    #[tokio::test]
+    async fn test_auto_expand_tool_output_read_write() {
+        let mut settings = Settings::new().await.unwrap();
+
+        // Default: not set
+        assert_eq!(settings.get(Setting::ChatAutoExpandToolOutput), None);
+
+        // Set to true
+        settings
+            .set(Setting::ChatAutoExpandToolOutput, true, None)
+            .await
+            .unwrap();
+        assert_eq!(
+            settings.get(Setting::ChatAutoExpandToolOutput),
+            Some(&Value::Bool(true))
+        );
+
+        // Set to false
+        settings
+            .set(Setting::ChatAutoExpandToolOutput, false, None)
+            .await
+            .unwrap();
+        assert_eq!(
+            settings.get(Setting::ChatAutoExpandToolOutput),
+            Some(&Value::Bool(false))
+        );
+
+        // Remove
+        settings.remove(Setting::ChatAutoExpandToolOutput, None).await.unwrap();
+        assert_eq!(settings.get(Setting::ChatAutoExpandToolOutput), None);
     }
 }

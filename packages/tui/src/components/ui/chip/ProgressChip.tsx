@@ -12,6 +12,8 @@ interface ProgressChipProps {
   showPercentage?: boolean;
   /** Threshold percentage where color changes from green to yellow (default: 60) */
   warningThreshold?: number;
+  /** Optional chalk color function that overrides all colors (e.g. for dimmed state) */
+  colorOverride?: (text: string) => string;
 }
 
 export default function ProgressChip({
@@ -19,6 +21,7 @@ export default function ProgressChip({
   label,
   showPercentage = true,
   warningThreshold = 60,
+  colorOverride,
 }: ProgressChipProps) {
   const { getColor } = useTheme();
 
@@ -46,12 +49,16 @@ export default function ProgressChip({
     colorFn = getColor('warning');
   }
 
-  const secondaryColor = getColor('secondary');
+  const secondaryColor = colorOverride ?? getColor('secondary');
 
   return (
     <Box flexDirection="row" gap={1}>
-      <Text>{colorFn(icon)}</Text>
-      {showPercentage && <Text>{colorFn(`${Math.round(clampedValue)}%`)}</Text>}
+      <Text>{(colorOverride ?? colorFn)(icon)}</Text>
+      {showPercentage && (
+        <Text>
+          {(colorOverride ?? colorFn)(`${Math.round(clampedValue)}%`)}
+        </Text>
+      )}
       {label && <Text>{secondaryColor(label)}</Text>}
     </Box>
   );

@@ -2130,15 +2130,9 @@ export const createAppStore = (props: AppStoreProps) => {
       // Don't drain if already processing (prevents double-send races)
       if (isProcessing) return;
 
-      const { queuedMessages, editingQueueIndex, tasks } = get();
+      const { queuedMessages, editingQueueIndex } = get();
       const nextMessage = queuedMessages[0];
       if (!nextMessage) return;
-
-      // Don't drain the queue while there are pending tasks — let the agent
-      // finish its task list first.  Queued messages will be sent once all
-      // tasks are completed (or if there are no tasks at all).
-      const hasPendingTasks = tasks.some((t) => t.status === 'pending');
-      if (hasPendingTasks) return;
 
       // Adjust editing index since we're removing index 0
       let newEditingIndex = editingQueueIndex;
@@ -2717,12 +2711,6 @@ export const createAppStore = (props: AppStoreProps) => {
 
     setTasks: (tasks: TaskItem[]) => {
       set({ tasks });
-      // If all tasks are now completed, drain any queued messages
-      const allDone =
-        tasks.length > 0 && tasks.every((t) => t.status === 'completed');
-      if (allDone && !get().isProcessing) {
-        get().processQueue();
-      }
     },
 
     toggleActivityTray: () => {
@@ -2755,6 +2743,18 @@ export const createAppStore = (props: AppStoreProps) => {
           state.kiro.close();
           state.onExit?.();
           process.exit(0);
+        }
+        // TODO: support queuing non-interactive slash commands (e.g. /clear, /compact)
+        //       that don't require UI interaction to complete
+        if (trimmed.startsWith('/')) {
+          state.showTransientAlert({
+            message:
+              "Slash commands can't be queued — wait for the current task to finish",
+            status: 'warning',
+            autoHideMs: 4000,
+          });
+          state.clearInput();
+          return;
         }
         state.queueMessage(trimmed);
         state.clearInput();

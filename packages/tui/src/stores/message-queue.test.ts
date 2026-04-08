@@ -145,6 +145,59 @@ describe('Message queue', () => {
 
       expect(store.getState().queuedMessages).toEqual([]);
     });
+
+    it('rejects slash commands with a warning when processing', async () => {
+      const store = createTestStore();
+      store.setState({ isProcessing: true });
+
+      await store.getState().handleUserInput('/help');
+
+      // Slash command should NOT be queued
+      expect(store.getState().queuedMessages).toEqual([]);
+      // A transient alert should be shown
+      expect(store.getState().transientAlert).not.toBeNull();
+      expect(store.getState().transientAlert?.status).toBe('warning');
+    });
+
+    it('rejects slash commands with a warning when not initialized', async () => {
+      const store = createTestStore();
+      store.setState({ isInitialized: false });
+
+      await store.getState().handleUserInput('/context');
+
+      expect(store.getState().queuedMessages).toEqual([]);
+      expect(store.getState().transientAlert).not.toBeNull();
+    });
+
+    it('still allows /quit when processing', async () => {
+      // We can't fully test process.exit, but we can verify /quit
+      // doesn't get queued or trigger the slash command warning
+      const store = createTestStore();
+      store.setState({ isProcessing: true });
+
+      // /quit calls process.exit so we can't actually invoke it,
+      // but we can verify other slash commands are blocked
+      await store.getState().handleUserInput('/help');
+      await store.getState().handleUserInput('/context');
+      await store.getState().handleUserInput('/model');
+
+      expect(store.getState().queuedMessages).toEqual([]);
+    });
+
+    it('queues regular messages but not slash commands when processing', async () => {
+      const store = createTestStore();
+      store.setState({ isProcessing: true });
+
+      await store.getState().handleUserInput('fix the bug');
+      await store.getState().handleUserInput('/help');
+      await store.getState().handleUserInput('add tests too');
+
+      // Only regular messages should be queued
+      expect(store.getState().queuedMessages).toEqual([
+        'fix the bug',
+        'add tests too',
+      ]);
+    });
   });
 
   describe('queuing during initialization', () => {

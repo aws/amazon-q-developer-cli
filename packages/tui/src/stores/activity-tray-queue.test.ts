@@ -187,10 +187,11 @@ describe('Queue editing', () => {
 });
 
 describe('Task-aware queue draining', () => {
-  describe('processQueue with pending tasks', () => {
-    it('does not drain queue when tasks are pending', async () => {
+  describe('processQueue with tasks present', () => {
+    it('drains queue even when tasks are pending', async () => {
       const store = createTestStore();
       store.setState({
+        isInitialized: true,
         queuedMessages: ['queued msg'],
         tasks: [
           { id: '1', subject: 'Task A', status: 'pending' },
@@ -200,13 +201,14 @@ describe('Task-aware queue draining', () => {
 
       await store.getState().processQueue();
 
-      // Queue should be untouched
-      expect(store.getState().queuedMessages).toEqual(['queued msg']);
+      // Queue should drain — pending tasks no longer block it
+      expect(store.getState().queuedMessages).toEqual([]);
     });
 
-    it('does not drain queue when some tasks are pending', async () => {
+    it('drains queue when some tasks are pending', async () => {
       const store = createTestStore();
       store.setState({
+        isInitialized: true,
         queuedMessages: ['queued msg'],
         tasks: [
           { id: '1', subject: 'Task A', status: 'completed' },
@@ -216,7 +218,7 @@ describe('Task-aware queue draining', () => {
 
       await store.getState().processQueue();
 
-      expect(store.getState().queuedMessages).toEqual(['queued msg']);
+      expect(store.getState().queuedMessages).toEqual([]);
     });
 
     it('drains queue when all tasks are completed', async () => {
@@ -262,11 +264,24 @@ describe('Task-aware queue draining', () => {
     });
   });
 
-  describe('setTasks triggers queue drain', () => {
-    it('drains queue when all tasks become completed', async () => {
+  describe('setTasks updates task state', () => {
+    it('updates tasks in the store', () => {
+      const store = createTestStore();
+
+      store.getState().setTasks([
+        { id: '1', subject: 'Task A', status: 'completed' },
+        { id: '2', subject: 'Task B', status: 'pending' },
+      ]);
+
+      expect(store.getState().tasks).toEqual([
+        { id: '1', subject: 'Task A', status: 'completed' },
+        { id: '2', subject: 'Task B', status: 'pending' },
+      ]);
+    });
+
+    it('does not automatically drain queue', () => {
       const store = createTestStore();
       store.setState({
-        isInitialized: true,
         queuedMessages: ['waiting msg'],
         isProcessing: false,
       });
@@ -276,49 +291,8 @@ describe('Task-aware queue draining', () => {
         { id: '2', subject: 'Task B', status: 'completed' },
       ]);
 
-      // Allow async processQueue to complete
-      await new Promise((r) => setTimeout(r, 10));
-
-      expect(store.getState().queuedMessages).toEqual([]);
-    });
-
-    it('does not drain queue when some tasks are still pending', () => {
-      const store = createTestStore();
-      store.setState({
-        queuedMessages: ['waiting msg'],
-        isProcessing: false,
-      });
-
-      store.getState().setTasks([
-        { id: '1', subject: 'Task A', status: 'completed' },
-        { id: '2', subject: 'Task B', status: 'pending' },
-      ]);
-
-      expect(store.getState().queuedMessages).toEqual(['waiting msg']);
-    });
-
-    it('does not drain queue when isProcessing is true even if all tasks done', () => {
-      const store = createTestStore();
-      store.setState({
-        queuedMessages: ['waiting msg'],
-        isProcessing: true,
-      });
-
-      store
-        .getState()
-        .setTasks([{ id: '1', subject: 'Task A', status: 'completed' }]);
-
-      expect(store.getState().queuedMessages).toEqual(['waiting msg']);
-    });
-
-    it('does not trigger drain for empty task list', () => {
-      const store = createTestStore();
-      store.setState({ queuedMessages: ['waiting msg'] });
-
-      store.getState().setTasks([]);
-
-      // Empty task list doesn't trigger drain (allDone requires tasks.length > 0)
-      // Queue drains via normal processQueue after turn ends
+      // setTasks no longer triggers processQueue — queue drains via
+      // normal turn-end flow
       expect(store.getState().queuedMessages).toEqual(['waiting msg']);
     });
   });

@@ -22,7 +22,7 @@ use crate::agent::tools::{
     ToolExecutionOutputItem,
     ToolExecutionResult,
 };
-use crate::agent::util::path::canonicalize_path;
+use crate::agent::util::path::resolve_path_fuzzy_real;
 
 /// Cross-platform helper to get file size from metadata.
 fn get_file_size(md: &std::fs::Metadata) -> u64 {
@@ -95,7 +95,7 @@ impl ImageOp {
     fn processed_paths(&self) -> Result<Vec<PathBuf>, String> {
         let mut paths = Vec::new();
         for path in &self.paths {
-            let path = canonicalize_path(path).map_err(|e| format!("failed to process path {path}: {e}"))?;
+            let path = resolve_path_fuzzy_real(path).map_err(|e| format!("failed to process path {path}: {e}"))?;
             let path = pre_process_image_path(&path);
             paths.push(PathBuf::from(path));
         }

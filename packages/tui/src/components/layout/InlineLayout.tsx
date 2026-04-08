@@ -142,13 +142,15 @@ function triggerEasterEgg() {
 }
 
 /** Only mounted when KIRO_DEV=1 — keeps the hook out of production renders. */
-const RenderMetricsChip: React.FC = () => {
+const RenderMetricsChip: React.FC<{
+  color?: ChipColor | ((text: string) => string);
+}> = ({ color }) => {
   const metrics = useRenderMetrics();
   if (!metrics) return null;
   return (
     <Chip
       value={`${metrics.lastRenderMs.toFixed(1)}ms · ${metrics.yogaNodeCount}n · ${metrics.heapUsedMB}MB · #${metrics.renderCount} · r${metrics.fullRedrawCount}`}
-      color={ChipColor.PRIMARY}
+      color={color ?? ChipColor.PRIMARY}
     />
   );
 };
@@ -530,6 +532,56 @@ export const InlineLayout: React.FC = () => {
     getColor,
   ]);
 
+  // Build a dimmed version of the context bar for when tool outputs are expanded
+  const dimmedPromptBarHeader = useMemo(() => {
+    if (!toolOutputsExpanded) return null;
+    const mutedColor = getColor('muted');
+
+    const primaryItems = [
+      currentAgent && (
+        <Chip
+          value={
+            currentAgent.name === 'kiro_default' ? 'Kiro' : currentAgent.name
+          }
+          color={mutedColor}
+        />
+      ),
+      currentModel && <Chip value={currentModel.name} color={mutedColor} />,
+      contextUsagePercent != null && (
+        <ProgressChip
+          value={contextUsagePercent}
+          warningThreshold={60}
+          colorOverride={mutedColor}
+        />
+      ),
+      codeIntelligenceActive && <Text>{mutedColor('λ')}</Text>,
+    ];
+
+    const secondaryItems = [
+      isDevMode() && Region ? (
+        <Region id="metrics">
+          <RenderMetricsChip color={mutedColor} />
+        </Region>
+      ) : (
+        isDevMode() && <RenderMetricsChip color={mutedColor} />
+      ),
+      <Chip value={shortenPath(process.cwd())} color={mutedColor} />,
+      gitBranch && <Chip value={gitBranch} color={mutedColor} wrap={true} />,
+    ];
+
+    return (
+      <ContextBar primaryItems={primaryItems} secondaryItems={secondaryItems} />
+    ) as PromptBarHeader;
+  }, [
+    toolOutputsExpanded,
+    currentAgent,
+    currentModel,
+    contextUsagePercent,
+    codeIntelligenceActive,
+    gitBranch,
+    getColor,
+  ]);
+
   const handleSubmit = useCallback(
     (value: string) => {
       // Queue edit mode: replace the queued message in place
@@ -656,7 +708,9 @@ export const InlineLayout: React.FC = () => {
               showCodePanel ||
               !!pendingApproval
                 ? undefined
-                : promptBarHeader
+                : toolOutputsExpanded
+                  ? (dimmedPromptBarHeader ?? undefined)
+                  : promptBarHeader
             }
             subHeader={undefined}
             onSubmit={handleSubmit}
@@ -786,6 +840,10 @@ export const InlineLayout: React.FC = () => {
             <ActionHint
               text="Showing detailed output · ctrl+o to toggle"
               visible={toolOutputsExpanded}
+              overlay={{
+                badge: 'Viewing detailed tool output',
+                hint: 'Press Ctrl+O to return to chat',
+              }}
             />
             <ExitHint />
           </PromptBar>

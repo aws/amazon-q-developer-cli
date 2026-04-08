@@ -158,6 +158,7 @@ const detectTrigger = (
 
 export const PromptInput = React.memo(function PromptInput({
   onSubmit,
+  isProcessing,
   triggerRules = [],
   onTriggerDetected,
   placeholder = 'ask a question, or describe a task ↵',
@@ -714,6 +715,16 @@ export const PromptInput = React.memo(function PromptInput({
           // Alt+Enter or Shift+Enter - insert newline
           insertText('\n');
         } else {
+          // When processing, dismiss menus and submit directly (for queuing
+          // or slash command rejection — the menus aren't useful here).
+          if (isProcessing) {
+            const content = buildContent(segments);
+            if (content) {
+              clearAll();
+              onSubmit(content);
+            }
+            return;
+          }
           // Block Enter if file picker menu is visible with results
           if (filePickerVisible) return;
           // Block Enter if slash command menu is visible

@@ -15,8 +15,10 @@ export const ActivityTrayCollapsed = React.memo(function ActivityTrayCollapsed({
   const { getColor } = useTheme();
   const { width: termWidth } = useTerminalSize();
 
-  const bg = getColor('surface').hex;
-  const fg = getColor('primary').hex;
+  const rawBg = getColor('surface').hex;
+  const bg = rawBg === 'inherit' ? undefined : rawBg;
+  const rawFg = getColor('primary').hex;
+  const fg = rawFg === 'inherit' ? undefined : rawFg;
   const success = getColor('success').hex;
   const muted = getColor('muted').hex;
 
