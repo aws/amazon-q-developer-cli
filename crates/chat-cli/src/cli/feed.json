@@ -12,6 +12,54 @@
     },
     {
       "type": "release",
+      "date": "2026-04-08",
+      "version": "1.29.6",
+      "title": "Version 1.29.6",
+      "changes": [
+        {
+          "type": "added",
+          "description": "Support @prompt syntax for triggering prompts in TUI and CLI arguments"
+        },
+        {
+          "type": "added",
+          "description": "Added Ctrl+R reverse incremental search to TUI prompt input"
+        },
+        {
+          "type": "added",
+          "description": "Added /hooks command in V2 TUI"
+        },
+        {
+          "type": "added",
+          "description": "Added /theme customization for code diff colors"
+        },
+        {
+          "type": "fixed",
+          "description": "Fixed --list-models not working without --classic"
+        },
+        {
+          "type": "fixed",
+          "description": "Fixed reverse search bugs: Ctrl+C, Escape, backspace after fail, up arrow context"
+        },
+        {
+          "type": "fixed",
+          "description": "Fixed viewport content preservation in scrollback on Ghostty"
+        }
+      ]
+    },
+    {
+      "type": "release",
+      "date": "2026-04-06",
+      "version": "1.29.5",
+      "title": "Version 1.29.5",
+      "changes": [
+        {
+          "type": "fixed",
+          "description": "Prevent bun application crashing causing TUI issues"
+        }
+      ]
+    },
+    {
+      "type": "release",
       "date": "2026-04-06",
       "version": "1.29.4",
       "title": "Version 1.29.4",
