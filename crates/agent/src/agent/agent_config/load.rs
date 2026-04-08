@@ -544,8 +544,8 @@ mod tests {
         assert!(errors.is_empty(), "expected no errors, got: {:?}", errors);
         assert_eq!(
             agents.len(),
-            4,
-            "expected 4 agents (workspace, global, default, planner)"
+            5,
+            "expected 5 agents (workspace, global, default, planner, guide)"
         );
 
         let names: Vec<&str> = agents.iter().map(|a| a.name()).collect();
@@ -553,6 +553,7 @@ mod tests {
         assert!(names.contains(&"global-agent"));
         assert!(names.contains(&DEFAULT_AGENT_NAME));
         assert!(names.contains(&"kiro_planner"));
+        assert!(names.contains(&"kiro_guide"));
         assert!(!names.contains(&"backup-agent"), "should not load .json.bak files");
     }
 
