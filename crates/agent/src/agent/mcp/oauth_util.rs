@@ -205,7 +205,10 @@ impl AuthClientWrapper {
         tokio::spawn(async move {
             let ctx = &auth_client_wrapper_clone.reauth_ctx;
 
-            let oauth_state = OAuthState::new(ctx.url.clone(), None).await?;
+            let oauth_state = OAuthState::new(ctx.url.clone(), None).await.map_err(|e| {
+                error!("## mcp: reauthorize failed to create OAuthState for {}: {e}", ctx.url);
+                e
+            })?;
             let (new_am, redirect_uri) = get_auth_manager_impl(
                 &ctx.server_name,
                 oauth_state,
@@ -213,10 +216,17 @@ impl AuthClientWrapper {
                 &ctx.oauth_config,
                 &ctx.server_actor_event_tx,
             )
-            .await?;
+            .await
+            .map_err(|e| {
+                error!("## mcp: reauthorize failed during auth flow for {}: {e}", ctx.url);
+                e
+            })?;
 
             // Persist the new credentials and registration
-            let (client_id, credentials) = new_am.get_credentials().await?;
+            let (client_id, credentials) = new_am.get_credentials().await.map_err(|e| {
+                error!("## mcp: reauthorize failed to get credentials for {}: {e}", ctx.url);
+                e
+            })?;
             let reg = Registration {
                 client_id,
                 client_secret: None,
@@ -226,19 +236,60 @@ impl AuthClientWrapper {
                     .collect::<Vec<_>>(),
                 redirect_uri,
             };
-            let reg_as_str = serde_json::to_string_pretty(&reg)?;
-            let reg_parent = ctx.reg_full_path.parent().ok_or(OauthUtilError::MalformDirectory)?;
-            tokio::fs::create_dir_all(reg_parent).await?;
-            tokio::fs::write(&ctx.reg_full_path, &reg_as_str).await?;
+            let reg_as_str = serde_json::to_string_pretty(&reg).map_err(|e| {
+                error!(
+                    "## mcp: reauthorize failed to serialize registration for {}: {e}",
+                    ctx.url
+                );
+                e
+            })?;
+            let reg_parent = ctx.reg_full_path.parent().ok_or_else(|| {
+                error!(
+                    "## mcp: reauthorize failed: malformed registration path for {}",
+                    ctx.url
+                );
+                OauthUtilError::MalformDirectory
+            })?;
+            tokio::fs::create_dir_all(reg_parent).await.map_err(|e| {
+                error!(
+                    "## mcp: reauthorize failed to create registration dir for {}: {e}",
+                    ctx.url
+                );
+                e
+            })?;
+            tokio::fs::write(&ctx.reg_full_path, &reg_as_str).await.map_err(|e| {
+                error!("## mcp: reauthorize failed to write registration for {}: {e}", ctx.url);
+                e
+            })?;
 
-            let credentials = credentials.ok_or(OauthUtilError::MissingCredentials)?;
-            let cred_parent = auth_client_wrapper_clone
-                .cred_full_path
-                .parent()
-                .ok_or(OauthUtilError::MalformDirectory)?;
-            tokio::fs::create_dir_all(cred_parent).await?;
-            let cred_as_str = serde_json::to_string_pretty(&credentials)?;
-            tokio::fs::write(&auth_client_wrapper_clone.cred_full_path, &cred_as_str).await?;
+            let credentials = credentials.ok_or_else(|| {
+                error!("## mcp: reauthorize failed: missing credentials for {}", ctx.url);
+                OauthUtilError::MissingCredentials
+            })?;
+            let cred_parent = auth_client_wrapper_clone.cred_full_path.parent().ok_or_else(|| {
+                error!("## mcp: reauthorize failed: malformed credential path for {}", ctx.url);
+                OauthUtilError::MalformDirectory
+            })?;
+            tokio::fs::create_dir_all(cred_parent).await.map_err(|e| {
+                error!(
+                    "## mcp: reauthorize failed to create credential dir for {}: {e}",
+                    ctx.url
+                );
+                e
+            })?;
+            let cred_as_str = serde_json::to_string_pretty(&credentials).map_err(|e| {
+                error!(
+                    "## mcp: reauthorize failed to serialize credentials for {}: {e}",
+                    ctx.url
+                );
+                e
+            })?;
+            tokio::fs::write(&auth_client_wrapper_clone.cred_full_path, &cred_as_str)
+                .await
+                .map_err(|e| {
+                    error!("## mcp: reauthorize failed to write credentials for {}: {e}", ctx.url);
+                    e
+                })?;
 
             // Swap the AuthorizationManager in-place so the existing transport picks up new creds
             let mut guard = auth_client_wrapper_clone.auth_client.auth_manager.lock().await;
