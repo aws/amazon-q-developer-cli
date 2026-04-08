@@ -53,11 +53,11 @@ const INTROSPECT_SCHEMA: &str = r#"
 }
 "#;
 
-// Embed pre-built search index at compile time
-const DOC_SEARCH_INDEX_GZ: &[u8] = include_bytes!("../../../../../autodocs/meta/doc-search-index.tar.gz");
+// Embed pre-built search index at compile time (V2 docs)
+const DOC_SEARCH_INDEX_GZ: &[u8] = include_bytes!("../../../../../autodocs-v2/meta/doc-search-index.tar.gz");
 
-// Embed doc index for progressive loading fallback
-const DOC_INDEX_JSON: &str = include_str!("../../../../../autodocs/meta/doc-index.json");
+// Embed doc index for progressive loading fallback (V2 docs)
+const DOC_INDEX_JSON: &str = include_str!("../../../../../autodocs-v2/meta/doc-index.json");
 
 // Lazy-initialized semantic search client
 static DOC_SEARCH_CLIENT: LazyLock<Mutex<Option<std::sync::Arc<semantic_search_client::AsyncSemanticSearchClient>>>> =

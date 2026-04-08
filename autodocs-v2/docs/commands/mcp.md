@@ -1,0 +1,183 @@
+---
+doc_meta:
+  validated: 2026-01-28
+  commit: 0fce279f
+  status: validated
+  testable_headless: true
+  category: command
+  title: kiro-cli mcp
+  description: Manage Model Context Protocol servers with add, remove, list, import, and status operations
+  keywords: [mcp, servers, protocol, manage]
+  related: [slash-mcp, agent-config]
+---
+
+# kiro-cli mcp
+
+Manage Model Context Protocol servers with add, remove, list, import, and status operations.
+
+## Overview
+
+Manages MCP servers that provide additional tools and resources. Add servers, remove them, list available servers, import configurations, and check server status.
+
+## Usage
+
+```bash
+kiro-cli mcp <subcommand>
+```
+
+## Options
+
+| Option | Short | Description |
+|--------|-------|-------------|
+| `--verbose` | `-v` | Increase logging verbosity (can be repeated) |
+| `--help` | `-h` | Print help information |
+
+## Subcommands
+
+### add
+
+Add MCP server.
+
+```bash
+kiro-cli mcp add [OPTIONS]
+```
+
+**Parameters**:
+- `--name <NAME>`: Server name (optional with registry - shows interactive menu)
+- `--scope <SCOPE>`: Scope (default, workspace, global)
+- `--command <COMMAND>`: Command to launch server (required for custom servers)
+- `--args <ARGS>`: Arguments to pass to command
+- `--agent <AGENT>`: Agent to add server to (defaults to global mcp.json)
+- `--env <ENV>`: Environment variables
+- `--timeout <TIMEOUT>`: Launch timeout in milliseconds
+- `--disabled`: Disable server (don't load)
+- `--force`: Overwrite existing server
+
+### remove
+
+Remove MCP server.
+
+```bash
+kiro-cli mcp remove --name <NAME> [OPTIONS]
+```
+
+**Parameters**:
+- `--name <NAME>`: Server name (required)
+- `--scope <SCOPE>`: Scope (default, workspace, global)
+- `--agent <AGENT>`: Agent to remove server from
+
+### list
+
+List configured MCP servers.
+
+```bash
+kiro-cli mcp list [SCOPE]
+```
+
+**Parameters**:
+- `[SCOPE]`: Optional scope filter (default, workspace, global)
+
+### import
+
+Import server configuration from file.
+
+```bash
+kiro-cli mcp import --file <FILE> [SCOPE] [OPTIONS]
+```
+
+**Parameters**:
+- `--file <FILE>`: Configuration file to import (required)
+- `[SCOPE]`: Target scope (default, workspace, global)
+- `--force`: Overwrite existing servers
+
+### status
+
+Get server status.
+
+```bash
+kiro-cli mcp status --name <NAME>
+```
+
+**Parameters**:
+- `--name <NAME>`: Server name (required)
+
+## Examples
+
+### Example 1: Add Server
+
+```bash
+kiro-cli mcp add --name git --command mcp-server-git --args --stdio
+```
+
+### Example 2: List Servers
+
+```bash
+kiro-cli mcp list
+```
+
+### Example 3: Remove Server
+
+```bash
+kiro-cli mcp remove --name git
+```
+
+### Example 4: Import Configuration
+
+```bash
+kiro-cli mcp import --file servers.json workspace
+```
+
+### Example 5: Check Server Status
+
+```bash
+kiro-cli mcp status --name git
+```
+
+## Related
+
+- [/mcp](../slash-commands/mcp.md) - View server status in chat
+- [Agent Configuration](../features/agent-configuration.md) - Configure MCP in agents
+
+## Configuration Files
+
+MCP server configurations are stored in:
+
+**Global** (user-wide): `~/.kiro/settings/mcp.json`  
+**Workspace** (project-specific): `.kiro/settings/mcp.json`
+
+Workspace configuration takes precedence over global.
+
+## Troubleshooting
+
+### Issue: Server Not Found
+
+**Symptom**: "Command not found" error  
+**Cause**: MCP server binary not in PATH  
+**Solution**: Install server or provide full path to command
+
+### Issue: Server Won't Start
+
+**Symptom**: Server fails to initialize  
+**Cause**: Invalid args or missing dependencies  
+**Solution**: Test command manually: `<command> <args>`. Check server documentation.
+
+### Issue: Can't Remove Server
+
+**Symptom**: Remove fails  
+**Cause**: Server not in configuration  
+**Solution**: Use `kiro-cli mcp list` to see configured servers
+
+### Issue: Tool Excluded Due to Validation Error
+
+**Symptom**: Message "The following tools have been excluded due to validation errors"  
+**Cause**: Tool fails validation requirements:
+- Tool name exceeds 64 characters (including server prefix)
+- Tool name contains invalid characters (must match `^[a-zA-Z][a-zA-Z0-9_]*$`)
+- Tool description is empty  
+**Solution**: Contact MCP server maintainer to fix tool specification.
+
+### Issue: Large Description Warning
+
+**Symptom**: Message "The following tools have large descriptions which may impact agent performance"  
+**Cause**: Tool description exceeds 10,000 characters  
+**Solution**: Tool still works but may slow down agent responses. Consider asking server maintainer to shorten description.

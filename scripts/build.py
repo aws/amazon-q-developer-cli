@@ -800,6 +800,8 @@ def build(
     if run_autodocs_embeddings and not isWindows():
         info("Generating documentation embeddings")
         run_cmd(["./scripts/generate-embeddings.sh"])
+        info("Generating V2 documentation embeddings")
+        run_cmd(["./scripts/generate-embeddings-v2.sh"])
 
     if run_autodocs_embeddings and isWindows():
         info("Generating documentation embeddings (Windows)")
@@ -813,6 +815,17 @@ def build(
         with tarfile.open(tar_path, "w:gz") as tar:
             tar.add(str(doc_search_dir), arcname=".")
         info(f"Search index: {tar_path}")
+
+        info("Generating V2 documentation embeddings (Windows)")
+        run_cmd(["python3", "autodocs-v2/meta/scripts/build-doc-index.py"])
+        doc_search_dir_v2 = pathlib.Path.home() / ".kiro" / "doc-search-v2"
+        if doc_search_dir_v2.exists():
+            shutil.rmtree(doc_search_dir_v2)
+        run_cmd(["cargo", "run", "--quiet", "-p", "agent", "--example", "index_autodocs_v2"])
+        tar_path_v2 = pathlib.Path("autodocs-v2/meta/doc-search-index.tar.gz")
+        with tarfile.open(tar_path_v2, "w:gz") as tar:
+            tar.add(str(doc_search_dir_v2), arcname=".")
+        info(f"V2 search index: {tar_path_v2}")
 
     info("Building", CHAT_PACKAGE_NAME)
     chat_path = build_chat_bin(
