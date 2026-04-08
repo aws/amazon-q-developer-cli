@@ -138,13 +138,18 @@ export const AppContainer: React.FC = () => {
       userInput === 'q' &&
       (mode === 'crew-monitor' || mode === 'session-view')
     ) {
-      process.stdout.write('\x1b[?1049l');
+      // Don't manually write \x1b[?1049l here — CrewMonitorScreen's
+      // useFullscreen() hook handles alt screen exit on unmount.
+      // Writing it manually causes a double exit which resets keyboard
+      // mode state in terminals with Kitty protocol, breaking Option key.
       setMode('inline');
     } else if (key.ctrl && userInput === 'g') {
       if (mode === 'crew-monitor') {
-        process.stdout.write('\x1b[?1049l');
         setMode('inline');
       } else {
+        // Enter alt screen immediately (before React re-renders) to prevent
+        // CrewMonitorScreen content from polluting main screen scrollback.
+        // useFullscreen() will sync twinki's internal altScreen flag on mount.
         process.stdout.write('\x1b[?1049h');
         setMode('crew-monitor');
       }
