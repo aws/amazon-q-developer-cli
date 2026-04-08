@@ -106,6 +106,9 @@ export const AppContainer: React.FC = () => {
       return;
     }
     if (key.ctrl && userInput === 'c') {
+      if (mode === 'crew-monitor' || mode === 'session-view') {
+        return;
+      }
       if (reverseSearchActive) {
         // PromptInput handles Ctrl+C during reverse search
         return;
@@ -119,6 +122,10 @@ export const AppContainer: React.FC = () => {
         incrementExitSequence();
       }
     } else if (key.ctrl && userInput === 'd') {
+      // Don't trigger exit sequence on non-chat screens
+      if (mode === 'crew-monitor' || mode === 'session-view') {
+        return;
+      }
       // Ctrl+D only starts exit sequence when idle with empty input;
       // when there's text, PromptInput handles it as forward-delete.
       // During shell escapes, allow Ctrl+D to cancel and exit.
