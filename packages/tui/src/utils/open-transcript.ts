@@ -19,6 +19,10 @@ export function openTranscriptInPager(
     const quotedPath = `'${tempFile.replace(/'/g, "'\\''")}'`;
     executeShellEscapeTTY(`${pager} ${quotedPath}`);
   } finally {
-    try { unlinkSync(tempFile); } catch { /* ignore */ }
+    try {
+      unlinkSync(tempFile);
+    } catch {
+      /* ignore */
+    }
   }
 }

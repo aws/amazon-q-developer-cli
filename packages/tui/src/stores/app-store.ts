@@ -771,13 +771,14 @@ export const createAppStore = (props: AppStoreProps) => {
       },
       {
         name: '/copy',
-        description: 'Copy last response to clipboard',
+        description:
+          'Copy last response to clipboard (use /transcript for full conversation)',
         source: 'local' as const,
         meta: { local: true },
       },
       {
         name: '/transcript',
-        description: 'Open conversation transcript in $PAGER',
+        description: 'Open conversation transcript in $PAGER (quit with q)',
         source: 'local' as const,
         meta: { local: true },
       },

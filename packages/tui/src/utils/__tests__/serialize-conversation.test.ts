@@ -58,9 +58,7 @@ describe('serializeConversationToMarkdown', () => {
       toolUse('grep', '{"pattern":"foo"}'),
       model('Found it.'),
     ]);
-    expect(result).toBe(
-      '## User\n\nSearch for foo\n\n## Kiro\n\nFound it.'
-    );
+    expect(result).toBe('## User\n\nSearch for foo\n\n## Kiro\n\nFound it.');
   });
 
   it('skips model messages with empty content', () => {
@@ -78,7 +76,10 @@ describe('serializeConversationToMarkdown', () => {
 
   it('preserves raw markdown in model content', () => {
     const md = '```rust\nfn main() {}\n```\n\n- item 1\n- item 2';
-    const result = serializeConversationToMarkdown([user('Show code'), model(md)]);
+    const result = serializeConversationToMarkdown([
+      user('Show code'),
+      model(md),
+    ]);
     expect(result).toBe(`## User\n\nShow code\n\n## Kiro\n\n${md}`);
   });
 
