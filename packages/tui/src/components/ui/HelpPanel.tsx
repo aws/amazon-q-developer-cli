@@ -109,6 +109,9 @@ export const HelpPanel: React.FC<HelpPanelProps> = ({ commands, onClose }) => {
         <Text>{primary('<COMMAND>')}</Text>
         <Text>{dim(' [subcommand]')}</Text>
       </Box>
+      <Box marginBottom={1}>
+        <Text>{dim('Tip: Type /guide to ask questions about commands, tools, settings, and features')}</Text>
+      </Box>
       {commands.length === 0 ? (
         <Text>{dim('No commands available')}</Text>
       ) : (
