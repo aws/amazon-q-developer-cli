@@ -845,6 +845,22 @@ export const InlineLayout: React.FC = () => {
                 hint: 'Press Ctrl+O to return to chat',
               }}
             />
+            <ActionHint
+              text="shift+tab: switch agents · ctrl+g: agent monitor · /copy: copy last response"
+              visible={
+                !toolOutputsExpanded &&
+                !isProcessing &&
+                !pendingApproval &&
+                !showContextBreakdown &&
+                !showHelpPanel &&
+                !showUsagePanel &&
+                !showMcpPanel &&
+                !showToolsPanel &&
+                !showHooksPanel &&
+                !showKnowledgePanel &&
+                !showCodePanel
+              }
+            />
             <ExitHint />
           </PromptBar>
         </Box>

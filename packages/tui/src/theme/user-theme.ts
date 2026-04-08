@@ -128,14 +128,14 @@ export const diffPresets: DiffPreset[] = [
     id: 'dark',
     label: 'Dark',
     added: {
-      background: { truecolor: '#2d3a30', color256: 235 },
+      background: { truecolor: '#2d3a30', color256: 22 },
       bar: { truecolor: '#80ffb5', color256: 121 },
-      highlight: { truecolor: '#2d3a30', color256: 236 },
+      highlight: { truecolor: '#2d3a30', color256: 22 },
     },
     removed: {
-      background: { truecolor: '#3a2d2f', color256: 235 },
+      background: { truecolor: '#3a2d2f', color256: 52 },
       bar: { truecolor: '#ff8080', color256: 210 },
-      highlight: { truecolor: '#3a2d2f', color256: 236 },
+      highlight: { truecolor: '#3a2d2f', color256: 52 },
     },
   },
   {
@@ -158,14 +158,14 @@ export const diffPresets: DiffPreset[] = [
     id: 'colorblind-dark',
     label: 'Accessible Dark',
     added: {
-      background: { truecolor: '#1a2a3a', color256: 236 },
+      background: { truecolor: '#1a2a3a', color256: 17 },
       bar: { truecolor: '#80F4FF', color256: 123 },
-      highlight: { truecolor: '#1a2a3a', color256: 236 },
+      highlight: { truecolor: '#1a2a3a', color256: 17 },
     },
     removed: {
-      background: { truecolor: '#3a2a2e', color256: 236 },
+      background: { truecolor: '#3a2a2e', color256: 52 },
       bar: { truecolor: '#FFAFD1', color256: 218 },
-      highlight: { truecolor: '#3a2a2e', color256: 236 },
+      highlight: { truecolor: '#3a2a2e', color256: 52 },
     },
   },
   {

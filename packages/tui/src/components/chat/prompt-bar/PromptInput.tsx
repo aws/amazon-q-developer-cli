@@ -1133,7 +1133,6 @@ export const PromptInput = React.memo(function PromptInput({
         <>
           <CursorBlock />
           <Text>{placeholderColor(placeholder)}</Text>
-          <Text>{placeholderColor('  ctrl+g: agent monitor')}</Text>
         </>
       );
     }
