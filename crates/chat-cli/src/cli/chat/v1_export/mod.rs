@@ -26,10 +26,10 @@ use agent::event_log::LogEntry;
 use agent::permissions::RuntimePermissions;
 use agent::types::ConversationMetadata;
 use chat_cli_v2::agent::rts::RtsStateSnapshot;
-use chat_cli_v2::agent::session::v1_compat::{
-    V1ExportError,
-    V1SessionExporter,
-    V1SessionInfo,
+use chat_cli_v2::agent::session::legacy_compat::{
+    LegacyExportError,
+    LegacySessionExporter,
+    LegacySessionInfo,
 };
 use chat_cli_v2::agent::session::{
     SessionData,
@@ -58,22 +58,22 @@ use crate::database::Database;
 
 /// V1 session exporter backed by the shared SQLite database.
 #[derive(Debug)]
-pub struct V1SessionExporterImpl {
+pub struct LegacySessionExporterImpl {
     database: Arc<Database>,
 }
 
-impl V1SessionExporterImpl {
+impl LegacySessionExporterImpl {
     pub fn new(database: Arc<Database>) -> Self {
         Self { database }
     }
 }
 
-impl V1SessionExporter for V1SessionExporterImpl {
-    fn list_sessions(&self, cwd: &Path) -> Result<Vec<V1SessionInfo>, V1ExportError> {
+impl LegacySessionExporter for LegacySessionExporterImpl {
+    fn list_sessions(&self, cwd: &Path) -> Result<Vec<LegacySessionInfo>, LegacyExportError> {
         let convos = self
             .database
             .list_conversations_by_path(cwd)
-            .map_err(|e| V1ExportError {
+            .map_err(|e| LegacyExportError {
                 message: "failed to list V1 conversations".into(),
                 source: Some(Box::new(e)),
             })?;
@@ -81,8 +81,8 @@ impl V1SessionExporter for V1SessionExporterImpl {
         Ok(convos
             .into_iter()
             .map(|(id, state, _created, updated)| {
-                let title = first_user_prompt_title(&state).map(|t| format!("(v1) {t}"));
-                V1SessionInfo {
+                let title = first_user_prompt_title(&state).map(|t| format!("(legacy) {t}"));
+                LegacySessionInfo {
                     conversation_id: id,
                     cwd: cwd.to_path_buf(),
                     title,
@@ -126,7 +126,7 @@ impl V1SessionExporter for V1SessionExporterImpl {
     /// - **`tangent_state`**: Tangent mode checkpoints are not migrated.
     /// - **`transcript`**: Terminal display history, not relevant to V2.
     /// - **`request_metadata`**: Per-turn API metadata
-    fn export_session(&self, conversation_id: &str, sessions_dir: &Path) -> Result<(), V1ExportError> {
+    fn export_session(&self, conversation_id: &str, sessions_dir: &Path) -> Result<(), LegacyExportError> {
         // Idempotent: skip if already exported
         if chat_cli_v2::agent::session::session_exists(sessions_dir, conversation_id) {
             debug!(?conversation_id, "session already exists, skipping export");
@@ -134,11 +134,12 @@ impl V1SessionExporter for V1SessionExporterImpl {
         }
 
         // Acquire a session lock to prevent concurrent exports
-        let _lock =
-            chat_cli_v2::agent::session::acquire_lock(sessions_dir, conversation_id).map_err(|e| V1ExportError {
+        let _lock = chat_cli_v2::agent::session::acquire_lock(sessions_dir, conversation_id).map_err(|e| {
+            LegacyExportError {
                 message: format!("failed to acquire lock for session {conversation_id}"),
                 source: Some(Box::new(e)),
-            })?;
+            }
+        })?;
 
         // Safety: re-check after acquiring lock since another process may have exported
         if chat_cli_v2::agent::session::session_exists(sessions_dir, conversation_id) {
@@ -148,11 +149,11 @@ impl V1SessionExporter for V1SessionExporterImpl {
         let (cwd, state) = self
             .database
             .get_conversation_by_id_with_cwd(conversation_id)
-            .map_err(|e| V1ExportError {
+            .map_err(|e| LegacyExportError {
                 message: format!("failed to read V1 conversation {conversation_id}"),
                 source: Some(Box::new(e)),
             })?
-            .ok_or_else(|| V1ExportError {
+            .ok_or_else(|| LegacyExportError {
                 message: format!("V1 conversation not found: {conversation_id}"),
                 source: None,
             })?;
@@ -167,8 +168,8 @@ impl V1SessionExporter for V1SessionExporterImpl {
         cwd: &Path,
         sessions_dir: &Path,
         imported_from: Option<&Path>,
-    ) -> Result<(), V1ExportError> {
-        let state: ConversationState = serde_json::from_str(json_content).map_err(|e| V1ExportError {
+    ) -> Result<(), LegacyExportError> {
+        let state: ConversationState = serde_json::from_str(json_content).map_err(|e| LegacyExportError {
             message: "failed to deserialize as V1 ConversationState".into(),
             source: Some(Box::new(e)),
         })?;
@@ -177,10 +178,11 @@ impl V1SessionExporter for V1SessionExporterImpl {
             return Ok(());
         }
 
-        let _lock = chat_cli_v2::agent::session::acquire_lock(sessions_dir, session_id).map_err(|e| V1ExportError {
-            message: format!("failed to acquire lock for session {session_id}"),
-            source: Some(Box::new(e)),
-        })?;
+        let _lock =
+            chat_cli_v2::agent::session::acquire_lock(sessions_dir, session_id).map_err(|e| LegacyExportError {
+                message: format!("failed to acquire lock for session {session_id}"),
+                source: Some(Box::new(e)),
+            })?;
 
         if chat_cli_v2::agent::session::session_exists(sessions_dir, session_id) {
             return Ok(());
@@ -197,7 +199,7 @@ fn write_v1_session(
     cwd: &str,
     sessions_dir: &Path,
     imported_from: Option<&Path>,
-) -> Result<(), V1ExportError> {
+) -> Result<(), LegacyExportError> {
     let (log_entries, title) = convert_conversation(state);
 
     let model_info = state
@@ -231,38 +233,38 @@ fn write_v1_session(
         }),
     };
 
-    fs::create_dir_all(sessions_dir).map_err(|e| V1ExportError {
+    fs::create_dir_all(sessions_dir).map_err(|e| LegacyExportError {
         message: format!("failed to create sessions directory {}", sessions_dir.display()),
         source: Some(Box::new(e)),
     })?;
 
     let log_path = sessions_dir.join(format!("{conversation_id}.jsonl"));
     let meta_path = sessions_dir.join(format!("{conversation_id}.json"));
-    let meta_content = serde_json::to_string_pretty(&session_data).map_err(|e| V1ExportError {
+    let meta_content = serde_json::to_string_pretty(&session_data).map_err(|e| LegacyExportError {
         message: "failed to serialize session metadata".into(),
         source: Some(Box::new(e)),
     })?;
 
     let mut created_files: Vec<&Path> = Vec::new();
-    let result = (|| -> Result<(), V1ExportError> {
-        let mut log_file = fs::File::create(&log_path).map_err(|e| V1ExportError {
+    let result = (|| -> Result<(), LegacyExportError> {
+        let mut log_file = fs::File::create(&log_path).map_err(|e| LegacyExportError {
             message: format!("failed to create log file {}", log_path.display()),
             source: Some(Box::new(e)),
         })?;
         created_files.push(&log_path);
 
         for entry in &log_entries {
-            let line = serde_json::to_string(entry).map_err(|e| V1ExportError {
+            let line = serde_json::to_string(entry).map_err(|e| LegacyExportError {
                 message: "failed to serialize log entry".into(),
                 source: Some(Box::new(e)),
             })?;
-            writeln!(log_file, "{line}").map_err(|e| V1ExportError {
+            writeln!(log_file, "{line}").map_err(|e| LegacyExportError {
                 message: "failed to write log entry".into(),
                 source: Some(Box::new(e)),
             })?;
         }
 
-        fs::write(&meta_path, &meta_content).map_err(|e| V1ExportError {
+        fs::write(&meta_path, &meta_content).map_err(|e| LegacyExportError {
             message: format!("failed to write session metadata {}", meta_path.display()),
             source: Some(Box::new(e)),
         })?;
@@ -484,7 +486,7 @@ mod tests {
     use agent::agent_loop::types::Role;
     use agent::detect_invariant_violations;
     use agent::event_log::EventLog;
-    use chat_cli_v2::agent::session::v1_compat::V1SessionExporter;
+    use chat_cli_v2::agent::session::legacy_compat::LegacySessionExporter;
     use chat_cli_v2::agent::session::{
         SessionData,
         SessionDb,
@@ -508,7 +510,7 @@ mod tests {
         db.set_conversation_by_path(cwd, &state).unwrap();
 
         let conversation_id = state.conversation_id().to_string();
-        let exporter = V1SessionExporterImpl::new(Arc::new(db));
+        let exporter = LegacySessionExporterImpl::new(Arc::new(db));
 
         let sessions_dir = TempDir::new().unwrap();
         exporter.export_session(&conversation_id, sessions_dir.path()).unwrap();
@@ -661,7 +663,7 @@ mod tests {
         db.set_conversation_by_path("/test/v1_export", &state).unwrap();
 
         let conversation_id = state.conversation_id().to_string();
-        let exporter = V1SessionExporterImpl::new(Arc::new(db));
+        let exporter = LegacySessionExporterImpl::new(Arc::new(db));
         let sessions_dir = TempDir::new().unwrap();
 
         exporter.export_session(&conversation_id, sessions_dir.path()).unwrap();
@@ -694,7 +696,7 @@ mod tests {
         db.set_conversation_by_path("/test/v1_export", &state).unwrap();
 
         let conversation_id = state.conversation_id().to_string();
-        let exporter = V1SessionExporterImpl::new(Arc::new(db));
+        let exporter = LegacySessionExporterImpl::new(Arc::new(db));
         let sessions_dir = TempDir::new().unwrap();
 
         // Create a directory at the .json path so fs::write fails after .jsonl is created
@@ -715,7 +717,7 @@ mod tests {
         let raw = std::fs::read_to_string(&fixture_path).unwrap();
 
         let db = crate::database::Database::new_default().await.unwrap();
-        let exporter = V1SessionExporterImpl::new(Arc::new(db));
+        let exporter = LegacySessionExporterImpl::new(Arc::new(db));
         let sessions_dir = TempDir::new().unwrap();
         let session_id = "test-session-id";
         let cwd = Path::new("/test/cwd");
@@ -735,7 +737,7 @@ mod tests {
     #[tokio::test]
     async fn test_try_export_from_json_not_v1() {
         let db = crate::database::Database::new_default().await.unwrap();
-        let exporter = V1SessionExporterImpl::new(Arc::new(db));
+        let exporter = LegacySessionExporterImpl::new(Arc::new(db));
         let sessions_dir = TempDir::new().unwrap();
 
         let result =

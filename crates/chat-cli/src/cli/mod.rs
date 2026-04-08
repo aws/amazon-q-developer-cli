@@ -297,10 +297,11 @@ impl RootSubcommand {
                     use std::sync::Arc;
 
                     use chat_cli_v2::os::Os as NewOs;
-                    let v1_session_exporter: Arc<dyn chat_cli_v2::agent::session::v1_compat::V1SessionExporter> =
-                        Arc::new(crate::cli::chat::v1_export::V1SessionExporterImpl::new(Arc::new(
-                            os.database.clone(),
-                        )));
+                    let legacy_session_exporter: Arc<
+                        dyn chat_cli_v2::agent::session::legacy_compat::LegacySessionExporter,
+                    > = Arc::new(crate::cli::chat::v1_export::LegacySessionExporterImpl::new(Arc::new(
+                        os.database.clone(),
+                    )));
                     let mut os = NewOs::new().await?;
                     let spawn_args = ::agent::types::AcpSpawnArgs {
                         agent,
@@ -308,7 +309,7 @@ impl RootSubcommand {
                         trust_all_tools,
                         trust_tools,
                     };
-                    chat_cli_v2::agent::acp::acp_agent::execute(&mut os, spawn_args, v1_session_exporter).await
+                    chat_cli_v2::agent::acp::acp_agent::execute(&mut os, spawn_args, legacy_session_exporter).await
                 },
                 Self::AcpClient { agent } => chat_cli_v2::agent::acp::acp_client::execute(agent).await,
             };
@@ -380,9 +381,11 @@ impl RootSubcommand {
                 use std::sync::Arc;
 
                 use chat_cli_v2::os::Os as NewOs;
-                let v1_session_exporter: Arc<dyn chat_cli_v2::agent::session::v1_compat::V1SessionExporter> = Arc::new(
-                    crate::cli::chat::v1_export::V1SessionExporterImpl::new(Arc::new(os.database.clone())),
-                );
+                let legacy_session_exporter: Arc<
+                    dyn chat_cli_v2::agent::session::legacy_compat::LegacySessionExporter,
+                > = Arc::new(crate::cli::chat::v1_export::LegacySessionExporterImpl::new(Arc::new(
+                    os.database.clone(),
+                )));
                 let mut os = NewOs::new().await?;
                 if let Err(e) = os.client.resolve_profile_if_missing(&mut os.database).await {
                     tracing::warn!("Failed to resolve profile: {e}");
@@ -393,7 +396,7 @@ impl RootSubcommand {
                     trust_all_tools,
                     trust_tools,
                 };
-                chat_cli_v2::agent::acp::acp_agent::execute(&mut os, spawn_args, v1_session_exporter).await
+                chat_cli_v2::agent::acp::acp_agent::execute(&mut os, spawn_args, legacy_session_exporter).await
             },
             Self::AcpClient { agent } => chat_cli_v2::agent::acp::acp_client::execute(agent).await,
         }

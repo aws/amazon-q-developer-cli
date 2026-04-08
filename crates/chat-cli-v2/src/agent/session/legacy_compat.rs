@@ -26,7 +26,7 @@ use chrono::{
 /// Error from a V1 export operation.
 #[derive(Debug, thiserror::Error)]
 #[error("{message}")]
-pub struct V1ExportError {
+pub struct LegacyExportError {
     pub message: String,
     #[source]
     pub source: Option<Box<dyn std::error::Error + Send + Sync>>,
@@ -34,7 +34,7 @@ pub struct V1ExportError {
 
 /// Lightweight V1 session info for listing in the V2 session picker.
 #[derive(Debug, Clone)]
-pub struct V1SessionInfo {
+pub struct LegacySessionInfo {
     /// The V1 conversation UUID, reused as the V2 session ID.
     pub conversation_id: String,
     /// The filesystem path (cwd) the conversation was created in.
@@ -50,15 +50,15 @@ pub struct V1SessionInfo {
 /// Trait for accessing V1 conversation data from V2 code.
 ///
 /// Implemented in `chat-cli` which has access to V1 types.
-pub trait V1SessionExporter: Send + Sync + std::fmt::Debug {
+pub trait LegacySessionExporter: Send + Sync + std::fmt::Debug {
     /// List V1 sessions for the given working directory.
-    fn list_sessions(&self, cwd: &Path) -> Result<Vec<V1SessionInfo>, V1ExportError>;
+    fn list_sessions(&self, cwd: &Path) -> Result<Vec<LegacySessionInfo>, LegacyExportError>;
 
     /// Export a V1 conversation to V2 session format on disk.
     ///
     /// Writes `{session_id}.json` and `{session_id}.jsonl` to `sessions_dir`.
     /// No-op if session files already exist (idempotent).
-    fn export_session(&self, conversation_id: &str, sessions_dir: &Path) -> Result<(), V1ExportError>;
+    fn export_session(&self, conversation_id: &str, sessions_dir: &Path) -> Result<(), LegacyExportError>;
 
     /// Try to parse raw JSON as a V1 `ConversationState` and export it.
     ///
@@ -72,23 +72,23 @@ pub trait V1SessionExporter: Send + Sync + std::fmt::Debug {
         cwd: &Path,
         sessions_dir: &Path,
         imported_from: Option<&Path>,
-    ) -> Result<(), V1ExportError>;
+    ) -> Result<(), LegacyExportError>;
 }
 
 /// No-op exporter for contexts where V1 database is unavailable, only created for the
 /// compiler. No-op implementation used by the `chat_cli_v2` binary, which has no access to the
-/// V1 database. The real implementation lives in `chat_cli::V1SessionExporterImpl`.
+/// V1 database. The real implementation lives in `chat_cli::LegacySessionExporterImpl`.
 ///
 /// TODO: Remove once the standalone `chat_cli_v2` binary is cleaned up and removed.
 #[derive(Debug)]
-pub struct NoOpV1SessionExporter;
+pub struct NoOpLegacySessionExporter;
 
-impl V1SessionExporter for NoOpV1SessionExporter {
-    fn list_sessions(&self, _cwd: &Path) -> Result<Vec<V1SessionInfo>, V1ExportError> {
+impl LegacySessionExporter for NoOpLegacySessionExporter {
+    fn list_sessions(&self, _cwd: &Path) -> Result<Vec<LegacySessionInfo>, LegacyExportError> {
         Ok(Vec::new())
     }
 
-    fn export_session(&self, _conversation_id: &str, _sessions_dir: &Path) -> Result<(), V1ExportError> {
+    fn export_session(&self, _conversation_id: &str, _sessions_dir: &Path) -> Result<(), LegacyExportError> {
         Ok(())
     }
 
@@ -99,8 +99,8 @@ impl V1SessionExporter for NoOpV1SessionExporter {
         _cwd: &Path,
         _sessions_dir: &Path,
         _imported_from: Option<&Path>,
-    ) -> Result<(), V1ExportError> {
-        Err(V1ExportError {
+    ) -> Result<(), LegacyExportError> {
+        Err(LegacyExportError {
             message: "V1 export not available".into(),
             source: None,
         })

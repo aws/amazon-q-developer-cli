@@ -209,8 +209,8 @@ impl RootSubcommand {
                 };
                 use std::sync::Arc;
 
-                use crate::agent::session::v1_compat::NoOpV1SessionExporter;
-                crate::agent::acp::acp_agent::execute(os, spawn_args, Arc::new(NoOpV1SessionExporter)).await
+                use crate::agent::session::legacy_compat::NoOpLegacySessionExporter;
+                crate::agent::acp::acp_agent::execute(os, spawn_args, Arc::new(NoOpLegacySessionExporter)).await
             },
             Self::AcpClient { agent } => crate::agent::acp::acp_client::execute(agent).await,
         }

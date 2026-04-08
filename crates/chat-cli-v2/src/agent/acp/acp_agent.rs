@@ -153,7 +153,7 @@ use crate::agent::rts::{
     RtsModel,
     RtsState,
 };
-use crate::agent::session::v1_compat::V1SessionExporter;
+use crate::agent::session::legacy_compat::LegacySessionExporter;
 use crate::agent::session::{
     SessionDb,
     SessionState,
@@ -660,7 +660,7 @@ pub struct AcpSessionBuilder<'a> {
     /// Telemetry event store for recording events in test scenarios. `None` in production.
     telemetry_event_store: Option<crate::agent::ipc_server::TelemetryEventStore>,
     subagent_info: Option<SubagentInfo>,
-    v1_session_exporter: Option<Arc<dyn V1SessionExporter>>,
+    legacy_session_exporter: Option<Arc<dyn LegacySessionExporter>>,
     session_injected_mcp_servers: Vec<(String, agent::agent_config::definitions::McpServerConfig)>,
 }
 
@@ -775,8 +775,8 @@ impl<'a> AcpSessionBuilder<'a> {
         self
     }
 
-    pub fn v1_session_exporter(mut self, exporter: Arc<dyn V1SessionExporter>) -> Self {
-        self.v1_session_exporter = Some(exporter);
+    pub fn legacy_session_exporter(mut self, exporter: Arc<dyn LegacySessionExporter>) -> Self {
+        self.legacy_session_exporter = Some(exporter);
         self
     }
 
@@ -862,7 +862,7 @@ struct AcpSession {
     os: Os,
     cwd: PathBuf,
     telemetry_observer: TelemetryObserverHandle,
-    v1_session_exporter: Arc<dyn V1SessionExporter>,
+    legacy_session_exporter: Arc<dyn LegacySessionExporter>,
     /// MCP servers injected by the ACP client at session creation time.
     /// Preserved across agent swaps so they are re-merged into each new agent config.
     session_injected_mcp_servers: Vec<(String, agent::agent_config::definitions::McpServerConfig)>,
@@ -940,7 +940,7 @@ impl AcpSession {
             current_agent_name: &self.current_agent_name,
             os: &self.os,
             cwd: &self.cwd,
-            v1_session_exporter: &self.v1_session_exporter,
+            legacy_session_exporter: &self.legacy_session_exporter,
             session_injected_mcp_servers: &self.session_injected_mcp_servers,
         }
     }
@@ -1177,9 +1177,9 @@ impl AcpSession {
             os,
             cwd,
             telemetry_observer,
-            v1_session_exporter: builder
-                .v1_session_exporter
-                .unwrap_or_else(|| Arc::new(crate::agent::session::v1_compat::NoOpV1SessionExporter)),
+            legacy_session_exporter: builder
+                .legacy_session_exporter
+                .unwrap_or_else(|| Arc::new(crate::agent::session::legacy_compat::NoOpLegacySessionExporter)),
             session_injected_mcp_servers: builder.session_injected_mcp_servers,
         })
     }
@@ -2833,7 +2833,7 @@ async fn update_model_info(
 pub async fn execute(
     os: &mut Os,
     args: agent::types::AcpSpawnArgs,
-    v1_session_exporter: Arc<dyn V1SessionExporter>,
+    legacy_session_exporter: Arc<dyn LegacySessionExporter>,
 ) -> eyre::Result<ExitCode> {
     let resolver = PathResolver::new(os);
     let local_mcp_path = resolver.workspace().mcp_config().ok();
@@ -2845,7 +2845,7 @@ pub async fn execute(
         .global_mcp_path(global_mcp_path)
         .trust_all_tools(args.trust_all_tools)
         .trust_tools(args.trust_tools)
-        .v1_session_exporter(v1_session_exporter)
+        .legacy_session_exporter(legacy_session_exporter)
         .spawn();
 
     if let Some(n) = args.agent {

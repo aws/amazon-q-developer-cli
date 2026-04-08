@@ -51,7 +51,7 @@ pub struct CommandContext<'a> {
     pub current_agent_name: &'a str,
     pub os: &'a crate::os::Os,
     pub cwd: &'a std::path::Path,
-    pub v1_session_exporter: &'a Arc<dyn crate::agent::session::v1_compat::V1SessionExporter>,
+    pub legacy_session_exporter: &'a Arc<dyn crate::agent::session::legacy_compat::LegacySessionExporter>,
     pub session_injected_mcp_servers: &'a [(String, ::agent::agent_config::definitions::McpServerConfig)],
 }
 /// Execute a slash command by dispatching to the appropriate module

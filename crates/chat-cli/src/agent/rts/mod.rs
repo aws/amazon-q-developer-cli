@@ -40,7 +40,7 @@ use agent::consts::{
     CONTEXT_ENTRY_END_HEADER,
     CONTEXT_ENTRY_START_HEADER,
 };
-use chat_cli_v2::agent::session::v1_compat::{
+use chat_cli_v2::agent::session::legacy_compat::{
     USER_MESSAGE_END_HEADER,
     USER_MESSAGE_START_HEADER,
 };

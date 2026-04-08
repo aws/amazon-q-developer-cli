@@ -62,7 +62,7 @@ use crate::agent::ipc_server::{
     IpcServer,
     TelemetryEventStore,
 };
-use crate::agent::session::v1_compat::V1SessionExporter;
+use crate::agent::session::legacy_compat::LegacySessionExporter;
 use crate::api_client::{
     ApiClient,
     MockResponseRegistryHandle,
@@ -119,7 +119,7 @@ pub struct SessionManagerBuilder {
     global_mcp_path: Option<PathBuf>,
     trust_all_tools: bool,
     trust_tools: Option<Vec<String>>,
-    v1_session_exporter: Option<Arc<dyn V1SessionExporter>>,
+    legacy_session_exporter: Option<Arc<dyn LegacySessionExporter>>,
 }
 
 impl SessionManagerBuilder {
@@ -148,8 +148,8 @@ impl SessionManagerBuilder {
         self
     }
 
-    pub fn v1_session_exporter(mut self, exporter: Arc<dyn V1SessionExporter>) -> Self {
-        self.v1_session_exporter = Some(exporter);
+    pub fn legacy_session_exporter(mut self, exporter: Arc<dyn LegacySessionExporter>) -> Self {
+        self.legacy_session_exporter = Some(exporter);
         self
     }
 
@@ -161,10 +161,10 @@ impl SessionManagerBuilder {
             global_mcp_path,
             trust_all_tools,
             trust_tools,
-            v1_session_exporter,
+            legacy_session_exporter,
         } = self;
         let os = os.expect("Os not found");
-        let v1_session_exporter = v1_session_exporter.expect("V1SessionExporter not set");
+        let legacy_session_exporter = legacy_session_exporter.expect("LegacySessionExporter not set");
 
         let session_manager_handle = SessionManagerHandle { tx };
         let session_manager_handle_clone = session_manager_handle.clone();
@@ -290,7 +290,7 @@ impl SessionManagerBuilder {
                 trust_all_tools,
                 trust_tools,
                 telemetry_event_store,
-                v1_session_exporter,
+                legacy_session_exporter,
                 mcp_registry_data,
             );
 
@@ -362,7 +362,7 @@ pub struct SessionManager {
     /// Pending group completion waiters: group_name -> sender
     group_completion_waiters: HashMap<String, GroupCompletionSender>,
     /// V1 session exporter for lazy migration of V1 conversations.
-    v1_session_exporter: Arc<dyn V1SessionExporter>,
+    legacy_session_exporter: Arc<dyn LegacySessionExporter>,
     /// Agent config errors encountered during loading at startup.
     agent_config_errors: Vec<AgentConfigLoadError>,
     /// MCP registry data for enterprise users, fetched once at startup
@@ -395,7 +395,7 @@ impl SessionManager {
         trust_all_tools: bool,
         trust_tools: Option<Vec<String>>,
         telemetry_event_store: Option<TelemetryEventStore>,
-        v1_session_exporter: Arc<dyn V1SessionExporter>,
+        legacy_session_exporter: Arc<dyn LegacySessionExporter>,
         mcp_registry_data: Option<crate::mcp_registry::McpRegistryResponse>,
     ) -> Self {
         Self {
@@ -419,7 +419,7 @@ impl SessionManager {
             groups: HashMap::new(),
             connection_cx: None,
             group_completion_waiters: HashMap::new(),
-            v1_session_exporter,
+            legacy_session_exporter,
             agent_config_errors,
             mcp_registry_data,
             session_agent_names: HashMap::new(),
@@ -558,7 +558,7 @@ impl SessionManager {
                     && let Ok(sessions_dir) = crate::util::paths::sessions_dir()
                     && !crate::agent::session::session_exists(&sessions_dir, &config.session_id)
                     && let Err(e) = self
-                        .v1_session_exporter
+                        .legacy_session_exporter
                         .export_session(&config.session_id, &sessions_dir)
                 {
                     warn!(session_id = %config.session_id, error = %e, "Failed to export V1 session");
@@ -655,7 +655,7 @@ impl SessionManager {
                     .trust_tools(self.trust_tools.clone())
                     .acp_client_info(self.acp_client_info.clone())
                     .telemetry_event_store(self.telemetry_event_store.clone())
-                    .v1_session_exporter(Arc::clone(&self.v1_session_exporter))
+                    .legacy_session_exporter(Arc::clone(&self.legacy_session_exporter))
                     .session_injected_mcp_servers(converted_mcp_servers);
 
                 // Pass client connection to session
@@ -871,7 +871,7 @@ impl SessionManager {
                     .and_then(|d| crate::agent::session::list_sessions(&d, cwd.as_deref()));
 
                 if let Some(cwd) = cwd {
-                    let v1_sessions = match self.v1_session_exporter.list_sessions(&cwd) {
+                    let v1_sessions = match self.legacy_session_exporter.list_sessions(&cwd) {
                         Ok(v) => {
                             debug!(?cwd, v1_sessions_len = v.len(), "found v1 sessions for cwd");
                             v

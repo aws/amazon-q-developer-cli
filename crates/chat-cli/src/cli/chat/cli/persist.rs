@@ -497,7 +497,7 @@ pub fn handle_list_delete_session_flags(
         match delete_any_session(&os.database, session_id, delete_source) {
             Ok((v1, v2)) if v1 || v2 => {
                 if v1 {
-                    eprintln!("✔ Deleted chat session {session_id} (v1)");
+                    eprintln!("✔ Deleted chat session {session_id} (legacy)");
                 }
                 if v2 {
                     eprintln!("✔ Deleted chat session {session_id} (v2)");

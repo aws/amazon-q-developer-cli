@@ -64,7 +64,7 @@ use tracing::{
     warn,
 };
 
-use crate::agent::session::v1_compat::{
+use crate::agent::session::legacy_compat::{
     USER_MESSAGE_END_HEADER,
     USER_MESSAGE_START_HEADER,
 };
