@@ -642,6 +642,7 @@ mod test {
         assert_eq!(Cli::parse_from([CHAT_BINARY_NAME, "chat", "-vv"]), Cli {
             subcommand: Some(RootSubcommand::Chat(ChatArgs {
                 resume: false,
+                resume_id: None,
                 resume_picker: false,
                 list_sessions: false,
                 list_models: false,
@@ -693,6 +694,7 @@ mod test {
             ["chat", "--profile", "my-profile"],
             RootSubcommand::Chat(ChatArgs {
                 resume: false,
+                resume_id: None,
                 resume_picker: false,
                 list_sessions: false,
                 list_models: false,
@@ -719,6 +721,7 @@ mod test {
             ["chat", "--profile", "my-profile", "Hello"],
             RootSubcommand::Chat(ChatArgs {
                 resume: false,
+                resume_id: None,
                 resume_picker: false,
                 list_sessions: false,
                 list_models: false,
@@ -745,6 +748,7 @@ mod test {
             ["chat", "--profile", "my-profile", "--trust-all-tools"],
             RootSubcommand::Chat(ChatArgs {
                 resume: false,
+                resume_id: None,
                 resume_picker: false,
                 list_sessions: false,
                 list_models: false,
@@ -771,6 +775,7 @@ mod test {
             ["chat", "--no-interactive", "--resume"],
             RootSubcommand::Chat(ChatArgs {
                 resume: true,
+                resume_id: None,
                 resume_picker: false,
                 list_sessions: false,
                 list_models: false,
@@ -793,6 +798,7 @@ mod test {
             ["chat", "--non-interactive", "-r"],
             RootSubcommand::Chat(ChatArgs {
                 resume: true,
+                resume_id: None,
                 resume_picker: false,
                 list_sessions: false,
                 list_models: false,
@@ -814,11 +820,39 @@ mod test {
     }
 
     #[test]
+    fn test_chat_with_resume_id() {
+        assert_parse!(
+            ["chat", "--resume-id", "abc-123"],
+            RootSubcommand::Chat(ChatArgs {
+                resume: false,
+                resume_id: Some("abc-123".to_string()),
+                resume_picker: false,
+                list_sessions: false,
+                list_models: false,
+                format: OutputFormat::Plain,
+                delete_session: None,
+                session_source: None,
+                input: None,
+                agent: None,
+                model: None,
+                trust_all_tools: false,
+                trust_tools: None,
+                no_interactive: false,
+                wrap: None,
+                require_mcp_startup: false,
+                tui: false,
+                legacy_ui: false,
+            })
+        );
+    }
+
+    #[test]
     fn test_chat_with_tool_trust_all() {
         assert_parse!(
             ["chat", "--trust-all-tools"],
             RootSubcommand::Chat(ChatArgs {
                 resume: false,
+                resume_id: None,
                 resume_picker: false,
                 list_sessions: false,
                 list_models: false,
@@ -845,6 +879,7 @@ mod test {
             ["chat", "--trust-tools="],
             RootSubcommand::Chat(ChatArgs {
                 resume: false,
+                resume_id: None,
                 resume_picker: false,
                 list_sessions: false,
                 list_models: false,
@@ -871,6 +906,7 @@ mod test {
             ["chat", "--trust-tools=fs_read,fs_write"],
             RootSubcommand::Chat(ChatArgs {
                 resume: false,
+                resume_id: None,
                 resume_picker: false,
                 list_sessions: false,
                 list_models: false,
@@ -897,6 +933,7 @@ mod test {
             ["chat", "--require-mcp-startup"],
             RootSubcommand::Chat(ChatArgs {
                 resume: false,
+                resume_id: None,
                 resume_picker: false,
                 list_sessions: false,
                 list_models: false,
@@ -923,6 +960,7 @@ mod test {
             ["chat", "-w", "never"],
             RootSubcommand::Chat(ChatArgs {
                 resume: false,
+                resume_id: None,
                 resume_picker: false,
                 list_sessions: false,
                 list_models: false,
@@ -945,6 +983,7 @@ mod test {
             ["chat", "--wrap", "always"],
             RootSubcommand::Chat(ChatArgs {
                 resume: false,
+                resume_id: None,
                 resume_picker: false,
                 list_sessions: false,
                 list_models: false,
@@ -967,6 +1006,7 @@ mod test {
             ["chat", "--wrap", "auto"],
             RootSubcommand::Chat(ChatArgs {
                 resume: false,
+                resume_id: None,
                 resume_picker: false,
                 list_sessions: false,
                 list_models: false,
