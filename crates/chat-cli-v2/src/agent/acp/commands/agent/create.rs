@@ -34,13 +34,13 @@ pub struct AgentCreateArgs {
 /// Supports: `<name>`, `<name> --from <agent>`, `<name> --directory <path>`
 pub fn parse_args(args: &str) -> AgentCreateArgs {
     let mut result = AgentCreateArgs::default();
-    let parts: Vec<&str> = args.split_whitespace().collect();
+    let parts = super::super::shell_split(args);
     let mut i = 0;
     while i < parts.len() {
-        match parts[i] {
+        match parts[i].as_str() {
             "--from" | "-f" => {
                 if i + 1 < parts.len() {
-                    result.from = Some(parts[i + 1].to_string());
+                    result.from = Some(parts[i + 1].clone());
                     i += 2;
                 } else {
                     i += 1;
@@ -48,7 +48,7 @@ pub fn parse_args(args: &str) -> AgentCreateArgs {
             },
             "--directory" | "-d" => {
                 if i + 1 < parts.len() {
-                    result.directory = Some(parts[i + 1].to_string());
+                    result.directory = Some(parts[i + 1].clone());
                     i += 2;
                 } else {
                     i += 1;
@@ -56,7 +56,7 @@ pub fn parse_args(args: &str) -> AgentCreateArgs {
             },
             _ => {
                 if result.name.is_none() {
-                    result.name = Some(parts[i].to_string());
+                    result.name = Some(parts[i].clone());
                 }
                 i += 1;
             },
@@ -229,6 +229,28 @@ mod tests {
     fn test_parse_args_empty() {
         let args = parse_args("");
         assert_eq!(args.name, None);
+    }
+
+    #[test]
+    fn test_parse_args_directory_with_spaces() {
+        let args = parse_args(r#"myagent -d "/path/with spaces/agents""#);
+        assert_eq!(args.name, Some("myagent".to_string()));
+        assert_eq!(args.directory, Some("/path/with spaces/agents".to_string()));
+    }
+
+    #[test]
+    fn test_parse_args_from_with_spaces() {
+        let args = parse_args(r#"myagent --from "base agent""#);
+        assert_eq!(args.name, Some("myagent".to_string()));
+        assert_eq!(args.from, Some("base agent".to_string()));
+    }
+
+    #[test]
+    fn test_parse_args_all_flags_with_quoted_values() {
+        let args = parse_args(r#"myagent -f "base agent" -d "/tmp/my agents""#);
+        assert_eq!(args.name, Some("myagent".to_string()));
+        assert_eq!(args.from, Some("base agent".to_string()));
+        assert_eq!(args.directory, Some("/tmp/my agents".to_string()));
     }
 
     #[test]

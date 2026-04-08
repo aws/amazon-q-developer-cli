@@ -1,12 +1,10 @@
 import { describe, it, expect, mock } from 'bun:test';
 
-// --- Module mocks MUST be declared before importing the module under test ---
+// Mock child_process and fs to prevent side effects from other effects
+// that import these modules (e.g. /copy, /hooks edit).
+// Note: these mocks are scoped to this file's imports only.
 mock.module('child_process', () => ({
   spawnSync: mock(() => ({ status: 1 })),
-}));
-mock.module('fs', () => ({
-  writeFileSync: mock(() => {}),
-  readFileSync: () => '',
 }));
 
 import { runEffect } from '../effects.js';

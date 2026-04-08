@@ -1,0 +1,2 @@
+// Response from the default agent after receiving the plan
+{"kind":"event","data":{"kind":"AssistantResponseEvent","data":{"content":"I'll implement the plan now."}}}

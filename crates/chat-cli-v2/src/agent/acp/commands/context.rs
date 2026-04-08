@@ -45,8 +45,8 @@ async fn execute_add(rest: &str, ctx: &CommandContext<'_>) -> CommandResult {
         return CommandResult::error("Usage: /context add [--force] <path or glob pattern> [...]");
     }
 
-    // Split into individual paths
-    let paths: Vec<&str> = paths_str.split_whitespace().collect();
+    // Split into individual paths, respecting quoted strings for paths with spaces
+    let paths: Vec<String> = super::shell_split(&paths_str);
 
     // Validate all paths before adding any (unless forced)
     if !force {
@@ -79,7 +79,9 @@ async fn execute_add(rest: &str, ctx: &CommandContext<'_>) -> CommandResult {
                 };
 
                 if !abs_path.exists() {
-                    return CommandResult::error(format!("Path not found: {path}. Use --force to add anyway."));
+                    return CommandResult::error(format!(
+                        "Path not found: {path}. Wrap paths containing spaces in quotes, or use --force to add anyway."
+                    ));
                 }
             }
         }
@@ -88,7 +90,7 @@ async fn execute_add(rest: &str, ctx: &CommandContext<'_>) -> CommandResult {
     // Add all paths
     let mut added = 0;
     for path in &paths {
-        match ctx.agent.add_resource((*path).to_string()).await {
+        match ctx.agent.add_resource(path.clone()).await {
             Ok(()) => added += 1,
             Err(e) => {
                 return CommandResult::error(format!("{e}"));
@@ -131,12 +133,12 @@ async fn execute_remove(rest: &str, ctx: &CommandContext<'_>) -> CommandResult {
         return CommandResult::error("Usage: /context remove <path or glob pattern> [...]");
     }
 
-    let paths: Vec<&str> = rest.split_whitespace().collect();
+    let paths: Vec<String> = super::shell_split(rest);
     let mut removed = 0;
     let mut errors = Vec::new();
 
     for path in &paths {
-        match ctx.agent.remove_resource((*path).to_string()).await {
+        match ctx.agent.remove_resource(path.clone()).await {
             Ok(()) => removed += 1,
             Err(e) => errors.push(format!("{e}")),
         }
@@ -532,6 +534,84 @@ mod tests {
     fn test_context_args_default() {
         let args = ContextArgs::default();
         assert!(!args.verbose);
+    }
+
+    #[test]
+    fn test_shell_split_simple() {
+        assert_eq!(super::super::shell_split("a b c"), vec!["a", "b", "c"]);
+        assert_eq!(super::super::shell_split("  a  b  "), vec!["a", "b"]);
+        assert_eq!(super::super::shell_split(""), Vec::<String>::new());
+    }
+
+    #[test]
+    fn test_shell_split_quoted_path_with_spaces() {
+        assert_eq!(
+            super::super::shell_split(r#""/Users/user/Documents/Obsidian Vault/SIM/mosaic-26855 FIP support.md""#),
+            vec!["/Users/user/Documents/Obsidian Vault/SIM/mosaic-26855 FIP support.md"]
+        );
+    }
+
+    #[test]
+    fn test_shell_split_mixed_quoted_and_unquoted() {
+        assert_eq!(
+            super::super::shell_split(r#""/path/with spaces/file.md" src/main.rs"#),
+            vec!["/path/with spaces/file.md", "src/main.rs"]
+        );
+    }
+
+    #[test]
+    fn test_shell_split_unclosed_quote() {
+        assert_eq!(super::super::shell_split(r#""unclosed path"#), vec!["unclosed path"]);
+    }
+
+    #[test]
+    fn test_parse_force_flag_with_quoted_path() {
+        let (force, rest) = parse_force_flag(r#"--force "/path/with spaces/file.md""#);
+        assert!(force);
+        assert_eq!(rest, r#""/path/with spaces/file.md""#);
+    }
+
+    #[test]
+    fn test_parse_force_flag_no_flag() {
+        let (force, rest) = parse_force_flag(r#""/path/with spaces/file.md""#);
+        assert!(!force);
+        assert_eq!(rest, r#""/path/with spaces/file.md""#);
+    }
+
+    #[test]
+    fn test_context_add_full_flow_quoted_path() {
+        // Simulate the full parse flow for: /context add "/path/with spaces/file.md"
+        let input = r#""/path/with spaces/file.md""#;
+        let (force, paths_str) = parse_force_flag(input);
+        assert!(!force);
+        let paths = super::super::shell_split(&paths_str);
+        assert_eq!(paths, vec!["/path/with spaces/file.md"]);
+    }
+
+    #[test]
+    fn test_context_add_full_flow_force_quoted_path() {
+        // Simulate: /context add --force "/path/with spaces/file.md"
+        let input = r#"--force "/path/with spaces/file.md""#;
+        let (force, paths_str) = parse_force_flag(input);
+        assert!(force);
+        let paths = super::super::shell_split(&paths_str);
+        assert_eq!(paths, vec!["/path/with spaces/file.md"]);
+    }
+
+    #[test]
+    fn test_context_add_multiple_quoted_paths() {
+        // Simulate: /context add "/path/one two/a.md" "/path/three four/b.md"
+        let input = r#""/path/one two/a.md" "/path/three four/b.md""#;
+        let (force, paths_str) = parse_force_flag(input);
+        assert!(!force);
+        let paths = super::super::shell_split(&paths_str);
+        assert_eq!(paths, vec!["/path/one two/a.md", "/path/three four/b.md"]);
+    }
+
+    #[test]
+    fn test_context_add_backslash_escaped_path() {
+        let paths = super::super::shell_split(r"path/to\ file.md");
+        assert_eq!(paths, vec!["path/to file.md"]);
     }
 
     #[test]

@@ -37,6 +37,92 @@ use crate::agent::acp::session_manager::{
 use crate::agent::rts::RtsState;
 use crate::api_client::ApiClient;
 
+/// Split a string into arguments, respecting quoted strings and backslash escapes.
+///
+/// Examples:
+/// - `"/path/with spaces/file.md" other` → `["/path/with spaces/file.md", "other"]`
+/// - `'/path/with spaces/file.md'` → `["/path/with spaces/file.md"]`
+/// - `~/path/with\ spaces/file.md` → `["~/path/with spaces/file.md"]`
+pub fn shell_split(input: &str) -> Vec<String> {
+    let mut args = Vec::new();
+    let mut chars = input.chars().peekable();
+
+    while chars.peek().is_some() {
+        skip_whitespace(&mut chars);
+        if chars.peek().is_none() {
+            break;
+        }
+        let arg = match chars.peek() {
+            Some(&'"') => parse_quoted(&mut chars, '"'),
+            Some(&'\'') => parse_quoted(&mut chars, '\''),
+            _ => parse_unquoted(&mut chars),
+        };
+        args.push(arg);
+    }
+    args
+}
+
+/// Advance past any leading whitespace.
+fn skip_whitespace(chars: &mut std::iter::Peekable<std::str::Chars<'_>>) {
+    while chars.peek().is_some_and(|c| c.is_whitespace()) {
+        chars.next();
+    }
+}
+
+/// Parse a quoted argument. Consumes the opening and closing quote character.
+fn parse_quoted(chars: &mut std::iter::Peekable<std::str::Chars<'_>>, quote: char) -> String {
+    chars.next(); // consume opening quote
+    let mut arg = String::new();
+    while let Some(&c) = chars.peek() {
+        if c == quote {
+            chars.next(); // consume closing quote
+            break;
+        }
+        arg.push(c);
+        chars.next();
+    }
+    arg
+}
+
+/// Parse an unquoted argument, handling backslash escapes.
+fn parse_unquoted(chars: &mut std::iter::Peekable<std::str::Chars<'_>>) -> String {
+    let mut arg = String::new();
+    while let Some(&c) = chars.peek() {
+        match c {
+            '\\' => {
+                chars.next();
+                if let Some(&next) = chars.peek() {
+                    arg.push(next);
+                    chars.next();
+                }
+            },
+            c if c.is_whitespace() => break,
+            _ => {
+                arg.push(c);
+                chars.next();
+            },
+        }
+    }
+    arg
+}
+
+/// Strip surrounding quotes (single or double) from a string.
+/// e.g. `"/path/with spaces"` → `/path/with spaces`
+pub fn strip_quotes(s: &str) -> &str {
+    s.trim().trim_matches('"').trim_matches('\'')
+}
+
+/// Split input into a name (first word) and a trailing path, stripping quotes from the path.
+/// Used by commands like `/knowledge add <name> <path>` where the path is the last argument
+/// and may contain unquoted spaces.
+pub fn split_name_and_path(input: &str) -> Option<(&str, &str)> {
+    let parts: Vec<&str> = input.splitn(2, ' ').collect();
+    if parts.len() < 2 || parts[0].is_empty() || parts[1].is_empty() {
+        return None;
+    }
+    Some((parts[0], strip_quotes(parts[1])))
+}
+
 /// Context passed to command executors
 pub struct CommandContext<'a> {
     pub api_client: &'a ApiClient,
@@ -82,5 +168,103 @@ pub async fn execute(command: TuiCommand, ctx: &CommandContext<'_>) -> CommandRe
         TuiCommand::Reply(_) => reply::execute(ctx).await,
         TuiCommand::Code(ref args) => code::execute(args, ctx).await,
         TuiCommand::Hooks(_) => hooks::execute(ctx).await,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_shell_split_simple() {
+        assert_eq!(shell_split("a b c"), vec!["a", "b", "c"]);
+        assert_eq!(shell_split("  a  b  "), vec!["a", "b"]);
+        assert_eq!(shell_split(""), Vec::<String>::new());
+    }
+
+    #[test]
+    fn test_shell_split_quoted_path_with_spaces() {
+        assert_eq!(shell_split(r#""/Users/user/Documents/Obsidian Vault/file.md""#), vec![
+            "/Users/user/Documents/Obsidian Vault/file.md"
+        ]);
+    }
+
+    #[test]
+    fn test_shell_split_mixed() {
+        assert_eq!(shell_split(r#"--force "/path/with spaces/file.md""#), vec![
+            "--force",
+            "/path/with spaces/file.md"
+        ]);
+    }
+
+    #[test]
+    fn test_shell_split_unclosed_quote() {
+        assert_eq!(shell_split(r#""unclosed"#), vec!["unclosed"]);
+    }
+
+    #[test]
+    fn test_shell_split_multiple_quoted() {
+        assert_eq!(shell_split(r#""first arg" "second arg""#), vec![
+            "first arg",
+            "second arg"
+        ]);
+    }
+
+    #[test]
+    fn test_shell_split_backslash_escaped_spaces() {
+        assert_eq!(shell_split(r"hello\ world"), vec!["hello world"]);
+        assert_eq!(shell_split(r"a\ b c"), vec!["a b", "c"]);
+    }
+
+    #[test]
+    fn test_shell_split_single_quoted() {
+        assert_eq!(shell_split("'/path/with spaces/file.md'"), vec![
+            "/path/with spaces/file.md"
+        ]);
+        assert_eq!(shell_split("'/a b' \"/c d\""), vec!["/a b", "/c d"]);
+    }
+
+    // Tests for single-path commands that use strip_quotes / split_name_and_path
+    // (e.g. /chat load, /knowledge add, /knowledge remove)
+
+    #[test]
+    fn test_strip_quotes_unquoted_with_spaces() {
+        assert_eq!(
+            strip_quotes("/path/with spaces/session.zip"),
+            "/path/with spaces/session.zip"
+        );
+    }
+
+    #[test]
+    fn test_strip_quotes_double_quoted() {
+        assert_eq!(
+            strip_quotes(r#""/path/with spaces/file.md""#),
+            "/path/with spaces/file.md"
+        );
+    }
+
+    #[test]
+    fn test_strip_quotes_single_quoted() {
+        assert_eq!(strip_quotes("'/path/with spaces/file.md'"), "/path/with spaces/file.md");
+    }
+
+    #[test]
+    fn test_split_name_and_path_unquoted_with_spaces() {
+        let (name, path) = split_name_and_path("mydb /path/with spaces/data.db").unwrap();
+        assert_eq!(name, "mydb");
+        assert_eq!(path, "/path/with spaces/data.db");
+    }
+
+    #[test]
+    fn test_split_name_and_path_quoted() {
+        let (name, path) = split_name_and_path(r#"mydb "/path/with spaces/data.db""#).unwrap();
+        assert_eq!(name, "mydb");
+        assert_eq!(path, "/path/with spaces/data.db");
+    }
+
+    #[test]
+    fn test_split_name_and_path_missing_path() {
+        assert!(split_name_and_path("mydb").is_none());
+        assert!(split_name_and_path("").is_none());
     }
 }

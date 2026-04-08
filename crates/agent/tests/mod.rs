@@ -1029,3 +1029,53 @@ async fn test_invalid_json_preserves_valid_tool_uses() {
         "retry prompt should ask model to split up the work"
     );
 }
+
+/// Tests that switch_to_execution ends the turn without sending tool results
+/// back to the LLM, so the caller can swap agents and inject the plan.
+#[tokio::test]
+async fn test_switch_to_execution_ends_turn_without_tool_results() {
+    let _ = tracing_subscriber::fmt::try_init();
+
+    let agent_config = AgentConfig::V2025_08_22(AgentConfigV2025_08_22 {
+        name: "kiro_planner".to_string(),
+        global_prompt: Some("You are a planning agent".to_string()),
+        tools: vec!["switch_to_execution".to_string()],
+        ..Default::default()
+    });
+
+    let mut test = TestCase::builder()
+        .test_name("switch_to_execution ends turn")
+        .with_agent_config(agent_config)
+        .with_trust_all_tools(true)
+        .with_responses(
+            parse_response_streams(include_str!("./mock_responses/switch_to_execution.jsonl"))
+                .await
+                .unwrap(),
+        )
+        .build()
+        .await
+        .unwrap();
+
+    test.send_prompt("build me a todo app".to_string()).await;
+    test.wait_until_agent_event(Duration::from_secs(5), |evt| matches!(evt, AgentEvent::EndTurn(_)))
+        .await
+        .unwrap();
+
+    // Only 1 request should have been sent to the LLM (the initial prompt).
+    // If the tool result was sent back, there would be 2 requests.
+    let requests = test.requests();
+    assert_eq!(
+        requests.len(),
+        1,
+        "should send only 1 request — switch_to_execution must not send tool results back to the LLM"
+    );
+
+    // Verify the EndTurn event was emitted
+    let has_end_turn = test.log_entry_appended_events().iter().any(
+        |e| matches!(e, AgentEvent::LogEntryAppended { entry, .. } if format!("{:?}", entry).contains("cancelled")),
+    );
+    assert!(
+        has_end_turn,
+        "should have ended the turn (cancelled tool results in log)"
+    );
+}

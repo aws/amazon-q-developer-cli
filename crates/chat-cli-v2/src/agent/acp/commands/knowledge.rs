@@ -39,18 +39,17 @@ pub async fn execute(args: &agent::tui_commands::KnowledgeArgs, ctx: &CommandCon
             format_show(&store).await
         },
         "add" => {
-            let parts: Vec<&str> = rest.splitn(2, ' ').collect();
-            if parts.len() < 2 || parts[0].is_empty() || parts[1].is_empty() {
+            let Some((name, path)) = super::split_name_and_path(rest) else {
                 return CommandResult::error("Usage: /knowledge add <name> <path>");
-            }
+            };
             let mut store = store.lock().await;
-            match store.add(parts[0], parts[1], AddOptions::new()).await {
-                Ok(_) => CommandResult::success(format!("Indexing '{}' started", parts[0])),
+            match store.add(name, path, AddOptions::new()).await {
+                Ok(_) => CommandResult::success(format!("Indexing '{name}' started")),
                 Err(e) => CommandResult::error(format!("Failed to add: {e}")),
             }
         },
         "remove" | "rm" => {
-            let target = rest.trim();
+            let target = super::strip_quotes(rest);
             if target.is_empty() {
                 return CommandResult::error("Usage: /knowledge remove <name|path>");
             }
@@ -62,7 +61,7 @@ pub async fn execute(args: &agent::tui_commands::KnowledgeArgs, ctx: &CommandCon
             }
         },
         "update" => {
-            let path = rest.trim();
+            let path = super::strip_quotes(rest);
             if path.is_empty() {
                 return CommandResult::error("Usage: /knowledge update <path>");
             }

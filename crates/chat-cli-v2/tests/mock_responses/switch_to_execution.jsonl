@@ -1,0 +1,5 @@
+// Planner agent calls switch_to_execution with a plan
+{"kind":"event","data":{"kind":"AssistantResponseEvent","data":{"content":"Here's the plan. "}}}
+{"kind":"event","data":{"kind":"ToolUseEvent","data":{"tool_use_id":"tooluse_switch_001","name":"switch_to_execution","input":null,"stop":null}}}
+{"kind":"event","data":{"kind":"ToolUseEvent","data":{"tool_use_id":"tooluse_switch_001","name":"switch_to_execution","input":"{\"plan\": \"Create a hello.py file\"}","stop":null}}}
+{"kind":"event","data":{"kind":"ToolUseEvent","data":{"tool_use_id":"tooluse_switch_001","name":"switch_to_execution","input":null,"stop":true}}}

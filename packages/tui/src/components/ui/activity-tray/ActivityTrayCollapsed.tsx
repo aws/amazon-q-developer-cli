@@ -39,7 +39,7 @@ export const ActivityTrayCollapsed = React.memo(function ActivityTrayCollapsed({
             </Text>
             <Text backgroundColor={bg} color={fg}>
               {' '}
-              · {queueCount} pending
+              · {queueCount} pending · ctrl+x to view and manage
             </Text>
           </Text>
         </Box>

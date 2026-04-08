@@ -113,18 +113,22 @@ pub async fn execute(args: &ChatArgs, ctx: &CommandContext<'_>) -> CommandResult
             let Some(rest) = parts.get(1).filter(|s| !s.is_empty()) else {
                 return CommandResult::error("Usage: /chat save [--force] <path>");
             };
-            let words: Vec<&str> = rest.split_whitespace().collect();
-            let force = words.iter().any(|w| *w == "--force" || *w == "-f");
-            let path_str = words.iter().find(|w| **w != "--force" && **w != "-f");
+            let args = super::shell_split(rest);
+            let force = args.iter().any(|w| w == "--force" || w == "-f");
+            let path_str = args.iter().find(|w| *w != "--force" && *w != "-f");
             let Some(path_str) = path_str else {
                 return CommandResult::error("Usage: /chat save [--force] <path>");
             };
             save_session(path_str, force, ctx).await
         },
         "load" => {
-            let Some(path_str) = parts.get(1).filter(|s| !s.is_empty()) else {
+            let Some(rest) = parts.get(1).filter(|s| !s.is_empty()) else {
                 return CommandResult::error("Usage: /chat load <path>");
             };
+            let path_str = super::strip_quotes(rest);
+            if path_str.is_empty() {
+                return CommandResult::error("Usage: /chat load <path>");
+            }
             load_session(path_str, ctx).await
         },
         _ => CommandResult::error(format!(

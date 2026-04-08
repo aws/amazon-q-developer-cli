@@ -85,9 +85,16 @@ export const ActivityTrayExpanded = React.memo(function ActivityTrayExpanded({
 
   useInput(
     (_input, key) => {
-      if (key.shift && key.upArrow) {
+      if ((key.shift || key.meta) && key.upArrow) {
         setSelectedIndex((prev) => Math.max(0, prev - 1));
-      } else if (key.shift && key.downArrow) {
+      } else if ((key.shift || key.meta) && key.downArrow) {
+        setSelectedIndex((prev) => Math.min(itemCount - 1, prev + 1));
+      } else if (_input === 'p' && key.ctrl) {
+        // ctrl+p — alternative up navigation for terminals that
+        // don't send shift modifier with arrow keys (e.g. Terminal.app)
+        setSelectedIndex((prev) => Math.max(0, prev - 1));
+      } else if (_input === 'n' && key.ctrl) {
+        // ctrl+n — alternative down navigation
         setSelectedIndex((prev) => Math.min(itemCount - 1, prev + 1));
       } else if (key.tab && !key.shift) {
         if (hasTasks && hasQueue) {
@@ -137,7 +144,7 @@ export const ActivityTrayExpanded = React.memo(function ActivityTrayExpanded({
   if (editingQueueIndex != null) {
     hints.push('esc to cancel');
   } else if (activeTab === 'queue' && queuedMessages.length > 1) {
-    hints.push('shift+↑↓ to navigate');
+    hints.push('shift+↑↓ or ctrl+p/n to navigate');
   }
   if (
     activeTab === 'queue' &&

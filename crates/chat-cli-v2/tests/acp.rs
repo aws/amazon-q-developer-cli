@@ -2110,3 +2110,107 @@ async fn set_mode_preserves_session_injected_mcp_servers() {
         })
         .await;
 }
+
+/// Verifies that switch_to_execution auto-swaps back to the default agent
+/// and injects the plan as a new prompt, keeping the TUI prompt response
+/// alive through the swap so the plan execution streams back to the client.
+#[tokio::test]
+#[timeout(30000)]
+#[serial]
+async fn switch_to_execution_swaps_and_executes_plan() {
+    use agent::agent_config::definitions::AgentConfigV2025_08_22;
+    use agent::tools::BuiltInToolName;
+
+    // Create a planner agent config with switch_to_execution tool
+    let planner_config = AgentConfigV2025_08_22 {
+        name: "kiro_planner".to_string(),
+        global_prompt: Some("You are a planning agent".to_string()),
+        tools: vec![
+            BuiltInToolName::FsRead.to_string(),
+            BuiltInToolName::SwitchToExecution.to_string(),
+        ],
+        ..Default::default()
+    };
+
+    let (mut harness, client, session_id, _) =
+        AcpTestHarnessBuilder::new("switch_to_execution_swaps_and_executes_plan")
+            .with_agent_config("kiro_planner", &planner_config)
+            .with_trust_all(true)
+            .build_with_session()
+            .await;
+
+    // Push mock response for the planner (calls switch_to_execution)
+    harness
+        .push_mock_responses_from_file(&session_id.0, "tests/mock_responses/switch_to_execution.jsonl")
+        .await;
+
+    // Push mock response for the default agent (receives the plan and responds)
+    harness
+        .push_mock_responses_from_file(
+            &session_id.0,
+            "tests/mock_responses/switch_to_execution_plan_response.jsonl",
+        )
+        .await;
+
+    // Switch to planner agent first
+    client
+        .set_session_mode(session_id.clone(), "kiro_planner".to_string())
+        .await
+        .expect("set_session_mode to planner failed");
+
+    // Clear captured notifications from the mode switch
+    client.clear_captured().await;
+
+    // Send prompt to the planner — this should:
+    // 1. Planner calls switch_to_execution
+    // 2. ACP intercepts, swaps to default agent
+    // 3. Injects plan as new prompt to default agent
+    // 4. Default agent responds
+    // 5. EndTurn fires, prompt response sent to client
+    let result = client
+        .prompt_text(session_id.clone(), "build me a todo app")
+        .await
+        .expect("prompt failed");
+
+    // The prompt should complete successfully (not hang)
+    assert_eq!(
+        result.stop_reason,
+        agent_client_protocol::StopReason::EndTurn,
+        "prompt should complete with EndTurn"
+    );
+
+    // Verify agent switched notification was sent
+    let captured = client.captured().await;
+    let agent_switched = captured
+        .ext_notifications
+        .iter()
+        .find(|n| n.method.as_ref().contains("agent/switched"));
+    assert!(
+        agent_switched.is_some(),
+        "should have received AgentSwitched notification"
+    );
+
+    // Verify the switch was back to the default agent
+    let params: serde_json::Value = serde_json::from_str(agent_switched.unwrap().params.get()).unwrap();
+    assert_eq!(
+        params.get("agentName").and_then(|v| v.as_str()),
+        Some("kiro_default"),
+        "should have switched to kiro_default"
+    );
+
+    // Verify the plan execution happened — the second mock response should have been consumed
+    let session_updates = &captured.session_updates;
+    let has_plan_response = session_updates.iter().any(|u| {
+        if let SessionUpdate::AgentMessageChunk(chunk) = u {
+            if let agent_client_protocol::ContentBlock::Text(text) = &chunk.content {
+                return text.text.contains("implement the plan");
+            }
+        }
+        false
+    });
+    assert!(
+        has_plan_response,
+        "should have received content from plan execution, got: {:?}",
+        session_updates
+    );
+}

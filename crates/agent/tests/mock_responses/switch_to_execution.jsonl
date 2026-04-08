@@ -1,0 +1,8 @@
+// Planner calls switch_to_execution with a plan
+{"result":"ok","data":{"kind":"messageStart","data":{"role":"assistant"}}}
+{"result":"ok","data":{"kind":"contentBlockDelta","data":{"delta":{"kind":"text","data":"Here is the plan."},"contentBlockIndex":null}}}
+{"result":"ok","data":{"kind":"contentBlockStart","data":{"contentBlockStart":{"kind":"toolUse","data":{"toolUseId":"tooluse_switch_001","name":"switch_to_execution"}},"contentBlockIndex":null}}}
+{"result":"ok","data":{"kind":"contentBlockDelta","data":{"delta":{"kind":"toolUse","data":{"input":"{\"plan\": \"Create hello.py\"}"}},"contentBlockIndex":null}}}
+{"result":"ok","data":{"kind":"contentBlockStop","data":{"contentBlockIndex":null}}}
+{"result":"ok","data":{"kind":"messageStop","data":{"stopReason":"toolUse"}}}
+{"result":"ok","data":{"kind":"metadata","data":{"metrics":{"requestStartTime":"2025-10-29T17:26:16.190846Z","requestEndTime":"2025-10-29T17:26:20.590402Z","timeToFirstChunk":{"secs":0,"nanos":1000000},"timeBetweenChunks":[],"responseStreamLen":50},"usage":null,"service":{"requestId":"test-switch","statusCode":null}}}}

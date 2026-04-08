@@ -1811,20 +1811,27 @@ impl AcpSession {
                 if let Err(e) = self.send_turn_metadata(&md) {
                     warn!("Failed to send turn metadata: {}", e);
                 }
-                // Send prompt response directly to the client - this ends the turn so we take() it
-                if let Some(respond_to) = self.pending_prompt_response.take() {
-                    self.persist_session_state().await;
-                    let respond_to = respond_to.into_inner();
-                    let stop_reason = match md.end_reason {
-                        agent::agent_loop::protocol::LoopEndReason::UserTurnEnd => StopReason::EndTurn,
-                        agent::agent_loop::protocol::LoopEndReason::ToolUseRejected => StopReason::Refusal,
-                        agent::agent_loop::protocol::LoopEndReason::Cancelled => StopReason::Cancelled,
-                        // This does not quite match 1 to 1 so we'll settle for this for now
-                        _ => StopReason::EndTurn,
-                    };
-                    let _ = respond_to.respond(PromptResponse::new(stop_reason));
+
+                // If a switch_to_execution swap is pending, keep the prompt response alive
+                // so the TUI stays in isProcessing through the agent swap and plan execution.
+                // The response will be sent when the plan execution's EndTurn fires instead.
+                let has_pending_swap = self.pending_swap.is_some();
+
+                if !has_pending_swap {
+                    // Normal EndTurn — respond to the TUI to end the turn
+                    if let Some(respond_to) = self.pending_prompt_response.take() {
+                        self.persist_session_state().await;
+                        let respond_to = respond_to.into_inner();
+                        let stop_reason = match md.end_reason {
+                            agent::agent_loop::protocol::LoopEndReason::UserTurnEnd => StopReason::EndTurn,
+                            agent::agent_loop::protocol::LoopEndReason::ToolUseRejected => StopReason::Refusal,
+                            agent::agent_loop::protocol::LoopEndReason::Cancelled => StopReason::Cancelled,
+                            _ => StopReason::EndTurn,
+                        };
+                        let _ = respond_to.respond(PromptResponse::new(stop_reason));
+                    }
                 }
-                // Execute pending swap from switch_to_execution (deferred because agent must be idle)
+                // Execute pending swap from switch_to_execution (agent is idle after end_current_turn)
                 if let Some(agent_config) = self.pending_swap.take() {
                     let target_name = agent_config.name().to_string();
                     let resolver = crate::util::paths::PathResolver::new(&self.os);
@@ -1840,8 +1847,13 @@ impl AcpSession {
                         })
                         .await
                     {
-                        tracing::error!("deferred switch_to_execution swap failed: {e}");
-                        self.pending_plan = None; // discard plan if swap failed
+                        tracing::error!("switch_to_execution swap failed: {e}");
+                        self.pending_plan = None;
+                        // Swap failed — respond to TUI now since we deferred it
+                        if let Some(respond_to) = self.pending_prompt_response.take() {
+                            let respond_to = respond_to.into_inner();
+                            let _ = respond_to.respond(PromptResponse::new(StopReason::EndTurn));
+                        }
                     } else {
                         self.previous_agent_name =
                             Some(std::mem::replace(&mut self.current_agent_name, target_name.clone()));
@@ -1858,18 +1870,18 @@ impl AcpSession {
                             tracing::warn!("Failed to advertise after switch_to_execution: {e}");
                         }
                     }
-                }
-                // Inject pending plan after swap
-                if let Some(plan_prompt) = self.pending_plan.take() {
-                    let agent = self.agent.clone();
-                    tokio::spawn(async move {
-                        let _ = agent
-                            .send_prompt(agent::protocol::SendPromptArgs {
-                                content: vec![agent::protocol::ContentChunk::Text(plan_prompt)],
-                                should_continue_turn: None,
-                            })
-                            .await;
-                    });
+                    // Inject pending plan after swap
+                    if let Some(plan_prompt) = self.pending_plan.take() {
+                        let agent = self.agent.clone();
+                        tokio::spawn(async move {
+                            let _ = agent
+                                .send_prompt(agent::protocol::SendPromptArgs {
+                                    content: vec![agent::protocol::ContentChunk::Text(plan_prompt)],
+                                    should_continue_turn: None,
+                                })
+                                .await;
+                        });
+                    }
                 }
             },
             AgentEvent::Stop(AgentStopReason::Error(agent_error)) => {
@@ -2028,8 +2040,6 @@ impl AcpSession {
             },
             AgentEvent::Stop(AgentStopReason::EndTurn) => {
                 // Resolve the pending prompt response if it hasn't been resolved yet.
-                // This can happen when the agent loop channel drops without an EndTurn event
-                // (e.g., the stream was interrupted or the loop exited unexpectedly).
                 if let Some(respond_to) = self.pending_prompt_response.take() {
                     warn!("Resolving pending prompt via Stop(EndTurn) — no EndTurn event was received");
                     let respond_to = respond_to.into_inner();

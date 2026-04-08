@@ -2399,6 +2399,19 @@ impl Agent {
             return Ok(());
         }
 
+        // Check if switch_to_execution was called and approved — if so, end the turn
+        // instead of sending tool results back to the LLM. This mirrors V1's behavior
+        // of returning to PromptUser when a pending agent swap is detected.
+        if self.should_end_turn_for_switch_to_execution(&executing_tools) {
+            self.end_current_turn().await?;
+            // Transition to Idle so the ACP layer can immediately swap_agent
+            // when it processes the EndTurn event.
+            if !matches!(self.active_state(), ActiveState::Idle) {
+                self.set_active_state(ActiveState::Idle).await;
+            }
+            return Ok(());
+        }
+
         // All tools have finished executing, so send the results back to the model.
         self.send_tool_results(&executing_tools).await?;
         Ok(())
@@ -2876,6 +2889,26 @@ impl Agent {
             })
             .await;
         Ok(())
+    }
+
+    /// Check if switch_to_execution was among the completed tools and returned approved.
+    /// When this is true, the turn should end without sending tool results back to the LLM,
+    /// allowing the caller (ACP layer) to swap agents and inject the plan as a new prompt.
+    #[allow(clippy::unused_self)]
+    fn should_end_turn_for_switch_to_execution(&self, executing_tools: &ExecutingTools) -> bool {
+        use tools::switch_to_execution::SwitchToExecutionResult;
+
+        for tool in executing_tools.tools() {
+            if let ToolKind::BuiltIn(BuiltInTool::SwitchToExecution(_)) = &tool.tool.kind
+                && let Some(ToolExecutorResult::Completed { result: Ok(output), .. }) = &tool.result
+                && let Some(ToolExecutionOutputItem::Text(json_str)) = output.items.first()
+                && let Ok(result) = serde_json::from_str::<SwitchToExecutionResult>(json_str)
+                && result.approved
+            {
+                return true;
+            }
+        }
+        false
     }
 
     async fn send_tool_results(&mut self, executing_tools: &ExecutingTools) -> Result<(), AgentError> {

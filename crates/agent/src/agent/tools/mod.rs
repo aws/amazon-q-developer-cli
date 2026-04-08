@@ -640,8 +640,15 @@ pub(crate) fn get_available_tool_names(
             // Only include knowledge tool when a provider is available
             CanonicalToolName::BuiltIn(BuiltInToolName::Knowledge) => has_knowledge_provider,
             // Tools not yet ready
-            CanonicalToolName::BuiltIn(BuiltInToolName::SessionManagement | BuiltInToolName::SwitchToExecution) => {
-                false
+            CanonicalToolName::BuiltIn(BuiltInToolName::SessionManagement) => false,
+            // SwitchToExecution is excluded from wildcard (*) expansion — it must be
+            // explicitly listed in the agent's tools config (e.g. kiro_planner).
+            // This matches V1's exclude_from_builtin behavior.
+            CanonicalToolName::BuiltIn(BuiltInToolName::SwitchToExecution) => {
+                !is_subagent
+                    && agent_tools
+                        .iter()
+                        .any(|t| t == "switch_to_execution" || t == "@builtin/switch_to_execution")
             },
             CanonicalToolName::BuiltIn(BuiltInToolName::AgentCrew) => !is_subagent,
             CanonicalToolName::BuiltIn(BuiltInToolName::Summary) => is_subagent,
@@ -987,11 +994,23 @@ mod tests {
         }
 
         #[test]
-        fn test_switch_to_execution_excluded() {
+        fn test_switch_to_execution_excluded_from_wildcard() {
+            // * should NOT include switch_to_execution (matches V1's exclude_from_builtin)
             let names = run(&["*"], &HashMap::new(), &[], false, false);
             assert!(!names.contains(&"switch_to_execution".into()));
+        }
 
-            let names = run(&["*"], &HashMap::new(), &[], true, false);
+        #[test]
+        fn test_switch_to_execution_included_when_explicit() {
+            // Explicitly listed in agent tools config (like kiro_planner)
+            let names = run(&["switch_to_execution"], &HashMap::new(), &[], false, false);
+            assert!(names.contains(&"switch_to_execution".into()));
+        }
+
+        #[test]
+        fn test_switch_to_execution_excluded_for_subagent() {
+            // Even when explicitly listed, subagents should not get it
+            let names = run(&["switch_to_execution"], &HashMap::new(), &[], true, false);
             assert!(!names.contains(&"switch_to_execution".into()));
         }
 
