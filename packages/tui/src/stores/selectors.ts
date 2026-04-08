@@ -43,6 +43,7 @@ export const useCommandState = () =>
       activeTrigger: state.activeTrigger,
       filePickerHasResults: state.filePickerHasResults,
       promptHint: state.promptHint,
+      commandShadowText: state.commandShadowText,
     }))
   );
 
@@ -55,6 +56,7 @@ export const useCommandActions = () =>
       setActiveTrigger: state.setActiveTrigger,
       setFilePickerHasResults: state.setFilePickerHasResults,
       setPromptHint: state.setPromptHint,
+      setCommandShadowText: state.setCommandShadowText,
       clearCommandInput: state.clearCommandInput,
       executeCommandWithArg: state.executeCommandWithArg,
     }))

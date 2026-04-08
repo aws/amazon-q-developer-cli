@@ -52,6 +52,10 @@ export const CommandMenu: React.FC = () => {
   );
   const setActiveTrigger = useAppStore((state) => state.setActiveTrigger);
   const setPromptHint = useAppStore((state) => state.setPromptHint);
+  const setCommandShadowText = useAppStore(
+    (state) => state.setCommandShadowText
+  );
+  const kiro = useAppStore((state) => state.kiro);
   const setThemePreview = useAppStore((state) => state.setThemePreview);
   const getAutoPreview = useAppStore((state) => state._autoPreviewGetter);
 
@@ -133,6 +137,78 @@ export const CommandMenu: React.FC = () => {
     cmds.sort((a, b) => a.name.localeCompare(b.name));
     return [...cmds, ...promptCmds];
   }, [commandInputValue, slashCommands, activeTrigger]);
+
+  // No shadow text for top-level command menu — the dropdown handles that.
+  // Shadow text is only for argument completion (e.g. /model clau → de-opus-4.6).
+
+  // Cache options per command to avoid re-fetching on every keystroke.
+  const optionsCacheRef = useRef<{
+    cmdName: string;
+    options: Array<{ label: string; value: string }>;
+  }>({ cmdName: '', options: [] });
+
+  // Argument shadow text for selection commands (e.g. /agent <name>, /model <name>)
+  useEffect(() => {
+    if (!commandInputValue.startsWith('/') || !commandInputValue.includes(' '))
+      return;
+
+    const spaceIdx = commandInputValue.indexOf(' ');
+    const cmdName = commandInputValue.slice(0, spaceIdx);
+    const partial = commandInputValue.slice(spaceIdx + 1);
+
+    const cmd = slashCommands.find((c) => c.name === cmdName);
+    if (!cmd || cmd.meta?.inputType !== 'selection' || !partial) {
+      setCommandShadowText(null);
+      return;
+    }
+
+    // Use cached options for instant matching (no blink)
+    const cache = optionsCacheRef.current;
+    if (cache.cmdName === cmdName && cache.options.length > 0) {
+      const match = cache.options.find((o) =>
+        o.label.toLowerCase().startsWith(partial.toLowerCase())
+      );
+      setCommandShadowText(
+        match && match.label.length > partial.length
+          ? match.label.slice(partial.length)
+          : null
+      );
+    }
+
+    // Fetch (or refresh) options in background
+    let cancelled = false;
+    const needsFetch = cache.cmdName !== cmdName;
+    if (needsFetch && kiro?.getCommandOptions) {
+      const timer = setTimeout(async () => {
+        try {
+          const result = await kiro.getCommandOptions(cmd.name, '');
+          if (cancelled) return;
+          const options = (result?.options ?? []) as Array<{
+            label: string;
+            value: string;
+          }>;
+          optionsCacheRef.current = { cmdName, options };
+          const match = options.find((o) =>
+            o.label.toLowerCase().startsWith(partial.toLowerCase())
+          );
+          setCommandShadowText(
+            match && match.label.length > partial.length
+              ? match.label.slice(partial.length)
+              : null
+          );
+        } catch {
+          // Silently ignore
+        }
+      }, 50);
+      return () => {
+        cancelled = true;
+        clearTimeout(timer);
+      };
+    }
+  }, [commandInputValue, slashCommands, kiro, setCommandShadowText]);
+
+  // Clean up shadow text on unmount
+  useEffect(() => () => setCommandShadowText(null), [setCommandShadowText]);
 
   const menuItems = useMemo(
     () =>

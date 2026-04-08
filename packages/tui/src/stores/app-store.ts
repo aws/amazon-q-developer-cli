@@ -375,6 +375,7 @@ interface BaseAppActions {
   ) => void;
   setFilePickerHasResults: (hasResults: boolean) => void;
   setPromptHint: (hint: string | null) => void;
+  setCommandShadowText: (text: string | null) => void;
   clearCommandInput: () => void;
 
   navigateHistory: (direction: 'up' | 'down') => string | null;
@@ -548,6 +549,7 @@ export interface AppState {
   } | null;
   filePickerHasResults: boolean;
   promptHint: string | null;
+  commandShadowText: string | null;
 
   // Input state
   input: InputBufferState;
@@ -808,6 +810,7 @@ export const createAppStore = (props: AppStoreProps) => {
     activeTrigger: null,
     filePickerHasResults: false,
     promptHint: null,
+    commandShadowText: null,
 
     input: initialInputBufferState(),
     reverseSearchActive: false,
@@ -1994,12 +1997,17 @@ export const createAppStore = (props: AppStoreProps) => {
       set({ promptHint: hint });
     },
 
+    setCommandShadowText: (text) => {
+      set({ commandShadowText: text });
+    },
+
     clearCommandInput: () => {
       set({
         commandInputValue: '',
         activeTrigger: null,
         filePickerHasResults: false,
         promptHint: null,
+        commandShadowText: null,
       });
     },
 
@@ -2755,6 +2763,7 @@ export const createAppStore = (props: AppStoreProps) => {
         commandInputValue: '',
         activeTrigger: null,
         promptHint: null,
+        commandShadowText: null,
       });
       state.clearInput();
 

@@ -169,6 +169,7 @@ export const PromptInput = React.memo(function PromptInput({
     promptHint,
     slashCommands,
     activeCommand,
+    commandShadowText,
   } = useCommandState();
   const { setCommandInput, clearCommandInput, setPromptHint } =
     useCommandActions();
@@ -725,9 +726,29 @@ export const PromptInput = React.memo(function PromptInput({
           }
         }
       } else if (key.tab && !key.shift) {
-        // Tab completion for filesystem paths
         // Skip if a menu is handling tab
         if (slashMenuVisible || filePickerVisible) return;
+        // Accept shadow text completion (e.g. /agent ro → /agent roberto)
+        if (commandShadowText) {
+          const text = getVisibleText(segments);
+          const newText = text + commandShadowText;
+          const newSegs: Segment[] = [{ type: 'text', value: newText }];
+          setSegments(newSegs);
+          setCursor(newText.length);
+          syncToStore(newSegs);
+          return;
+        }
+        // Block file completion for selection commands awaiting argument shadow text
+        // (shadow text may not have arrived yet due to debounce)
+        {
+          const text = getVisibleText(segments);
+          if (text.startsWith('/') && text.includes(' ')) {
+            const cmdName = text.slice(0, text.indexOf(' '));
+            const cmd = slashCommands.find((c) => c.name === cmdName);
+            if (cmd?.meta?.inputType === 'selection') return;
+          }
+        }
+        // Tab completion for filesystem paths
         const text = getVisibleText(segments);
         const result = completePathAtCursor(text, cursor);
         if (result) {
@@ -771,6 +792,16 @@ export const PromptInput = React.memo(function PromptInput({
         }
       } else if (key.rightArrow) {
         inputMetrics.markStateUpdate();
+        // Accept shadow text when cursor is at end of input
+        if (commandShadowText && cursor === totalWidth(segments)) {
+          const text = getVisibleText(segments);
+          const newText = text + commandShadowText;
+          const newSegs: Segment[] = [{ type: 'text', value: newText }];
+          setSegments(newSegs);
+          setCursor(newText.length);
+          syncToStore(newSegs);
+          return;
+        }
         if (key.ctrl || key.meta) {
           // Ctrl+Right or Cmd+Right - move word forward
           setCursor(moveWordForward(segments, cursor));
@@ -1114,18 +1145,30 @@ export const PromptInput = React.memo(function PromptInput({
           // render a visible space for the cursor block, and keep the \n in `after`
           // so the line break still renders.
           const onNewline = seg.value[localCursor] === '\n';
+          // When shadow text exists and cursor is at end of input, show
+          // the first shadow char inside the cursor block so it looks like
+          // one continuous word (matching v1 rustyline hinter behavior).
+          const hasShadowAtEnd =
+            commandShadowText && cursor === total && !onNewline;
           const charAtCursor = onNewline
             ? ' '
-            : (seg.value[localCursor] ?? ' ');
+            : (seg.value[localCursor] ??
+              (hasShadowAtEnd ? commandShadowText[0] : ' '));
           const afterStart = onNewline ? localCursor : localCursor + 1;
           const after =
             afterStart < seg.value.length ? seg.value.slice(afterStart) : '';
+          const shadowRemainder = hasShadowAtEnd
+            ? commandShadowText.slice(1)
+            : null;
           parts.push(
             <React.Fragment key={i}>
               <Text>
                 {styleInputText(seg.value.slice(0, localCursor), i === 0)}
               </Text>
               <CursorBlock char={charAtCursor} />
+              {shadowRemainder && (
+                <Text>{placeholderColor(shadowRemainder)}</Text>
+              )}
               {after && <Text>{primaryColor(after)}</Text>}
             </React.Fragment>
           );

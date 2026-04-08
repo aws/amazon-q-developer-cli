@@ -95,8 +95,8 @@ jobs:
           LINES=$(grep "All files" /tmp/tui-coverage.txt | awk -F'|' '{gsub(/ /,"",$3); print $3}')
           echo "Coverage — functions: ${FUNCS}%, lines: ${LINES}%"
           # Minimum thresholds (ratchet these up as coverage improves)
-          MIN_FUNCS=46
-          MIN_LINES=55
+          MIN_FUNCS=52
+          MIN_LINES=60
           if [ "$(echo "$FUNCS < $MIN_FUNCS" | bc -l)" = "1" ]; then
             echo "::error::Function coverage regression! ${FUNCS}% < ${MIN_FUNCS}%"
             exit 1
