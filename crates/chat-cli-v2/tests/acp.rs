@@ -176,6 +176,61 @@ async fn load_session_emits_history() {
 #[tokio::test]
 #[timeout(30000)]
 #[serial]
+async fn load_session_emits_failed_for_orphaned_tool_calls() {
+    let (mut harness, client, session_id, cwd) =
+        AcpTestHarnessBuilder::new("load_session_emits_failed_for_orphaned_tool_calls")
+            .with_trust_all(true)
+            .build_with_session()
+            .await;
+
+    harness
+        .push_mock_responses_from_file(&session_id.0, "tests/mock_responses/write_hello_world_in_bash.jsonl")
+        .await;
+
+    client
+        .prompt_text(session_id.clone(), "write hello world in bash to hello.sh")
+        .await
+        .expect("prompt failed");
+
+    // Remove the ToolResults line from the session log to simulate a crash mid-tool-execution.
+    let log_path = harness.paths.sessions_dir.join(format!("{}.jsonl", session_id.0));
+    let content = std::fs::read_to_string(&log_path).expect("failed to read session log");
+    let filtered: String = content
+        .lines()
+        .filter(|line| !line.contains("\"ToolResults\""))
+        .map(|line| format!("{}\n", line))
+        .collect();
+    std::fs::write(&log_path, filtered).expect("failed to write session log");
+
+    client.clear_captured().await;
+
+    client
+        .load_session(session_id.clone(), cwd)
+        .await
+        .expect("load_session failed");
+
+    sleep(Duration::from_millis(100)).await;
+
+    let captured = client.captured().await;
+    let updates: Vec<_> = captured
+        .session_updates
+        .iter()
+        .filter(|u| !matches!(u, SessionUpdate::AvailableCommandsUpdate(_)))
+        .collect();
+
+    // Should have a ToolCall followed by a ToolCallUpdate with Failed status (orphaned)
+    let mut iter = updates.iter();
+    assert!(iter.any(|u| matches!(u, SessionUpdate::ToolCall(_))));
+    assert!(
+        iter.any(
+            |u| matches!(u, SessionUpdate::ToolCallUpdate(upd) if upd.fields.status == Some(ToolCallStatus::Failed))
+        )
+    );
+}
+
+#[tokio::test]
+#[timeout(30000)]
+#[serial]
 async fn prompt_with_send_error() {
     let (mut harness, client, session_id, _) = AcpTestHarnessBuilder::new("prompt_with_send_error")
         .build_with_session()

@@ -1,0 +1,4 @@
+{
+  "type": "fixed",
+  "description": "Tool calls no longer shown as running when resuming a session that was interrupted during tool execution"
+}

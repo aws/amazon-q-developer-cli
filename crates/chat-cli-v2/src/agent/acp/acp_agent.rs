@@ -1342,11 +1342,42 @@ impl AcpSession {
             .load_log_entries()
             .map_err(|e| sacp::util::internal_error(format!("Failed to load log entries: {}", e)))?;
 
-        for entry in entries {
-            for update in log_entry_to_session_updates(&entry) {
+        let mut pending_tool_call_ids: Vec<String> = Vec::new();
+
+        for entry in &entries {
+            // Track tool calls that start (from AssistantMessage) and finish (from ToolResults)
+            match entry {
+                LogEntry::V1(LogEntryV1::AssistantMessage { content, .. }) => {
+                    for block in content {
+                        if let AgentContentBlock::ToolUse(tool_use) = block {
+                            pending_tool_call_ids.push(tool_use.tool_use_id.clone());
+                        }
+                    }
+                },
+                LogEntry::V1(LogEntryV1::ToolResults { results, .. }) => {
+                    pending_tool_call_ids.retain(|id| !results.contains_key(id));
+                },
+                LogEntry::V1(LogEntryV1::Compaction { .. } | LogEntryV1::Clear) => {
+                    pending_tool_call_ids.clear();
+                },
+                LogEntry::V1(LogEntryV1::Prompt { .. } | LogEntryV1::ResetTo { .. } | LogEntryV1::CancelledPrompt) => {
+                },
+            }
+
+            for update in log_entry_to_session_updates(entry) {
                 self.send_session_notification(update)?;
             }
         }
+
+        // Emit failed status for any tool calls that were never completed
+        // (e.g. session was killed mid-execution)
+        for tool_call_id in pending_tool_call_ids {
+            self.send_session_notification(SessionUpdate::ToolCallUpdate(ToolCallUpdate::new(
+                ToolCallId::new(tool_call_id),
+                ToolCallUpdateFields::new().status(ToolCallStatus::Failed),
+            )))?;
+        }
+
         Ok(())
     }
 
