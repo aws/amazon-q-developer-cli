@@ -941,6 +941,13 @@ describe('input-editing', () => {
       expect(isVisuallyMultiLine([text('a'.repeat(200))], 0)).toBe(false);
       expect(isVisuallyMultiLine([text('hello\nworld')], 0)).toBe(true);
     });
+
+    it('uses visual width, not string length (zero-width chars)', () => {
+      // 80 visible chars + 1 zero-width char = 81 string length but 80 columns
+      const str = 'a'.repeat(40) + '\u200E' + 'a'.repeat(40);
+      expect(str.length).toBe(81);
+      expect(isVisuallyMultiLine([text(str)], 80)).toBe(false);
+    });
   });
 
   describe('getVisualLines', () => {
@@ -984,6 +991,13 @@ describe('input-editing', () => {
         { start: 2, length: 0 },
         { start: 3, length: 1 },
       ]);
+    });
+
+    it('wraps based on visual width, not string length (zero-width chars)', () => {
+      // U+200E (left-to-right mark) has visual width 0 but string length 1.
+      // "ab\u200Ecde" is 6 chars but only 5 columns wide — should NOT wrap at width 5.
+      const lines = getVisualLines('ab\u200Ecde', 5);
+      expect(lines).toEqual([{ start: 0, length: 6 }]);
     });
   });
 

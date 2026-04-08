@@ -1,6 +1,7 @@
 /**
  * Utility functions for text input editing operations (emacs/readline style)
  */
+import { visibleWidth } from '../utils/text-width.js';
 
 // Segment types (shared with PromptInput)
 type TextSegment = { type: 'text'; value: string };
@@ -589,7 +590,7 @@ export const isVisuallyMultiLine = (
   if (wrapWidth <= 0) return isMultiLine(segments);
   const text = getVisibleText(segments);
   if (text.includes('\n')) return true;
-  return text.length > wrapWidth;
+  return visibleWidth(text) > wrapWidth;
 };
 
 /**
@@ -694,13 +695,23 @@ export const getVisualLines = (
       // Empty line (e.g. consecutive \n)
       lines.push({ start: offset, length: 0 });
     } else {
-      let remaining = logicalLine.length;
-      let lineOffset = offset;
-      while (remaining > 0) {
-        const len = Math.min(remaining, wrapWidth);
-        lines.push({ start: lineOffset, length: len });
-        lineOffset += len;
-        remaining -= len;
+      let lineStart = offset;
+      let lineLen = 0; // string length of current visual line
+      let lineVisualWidth = 0;
+
+      for (const ch of logicalLine) {
+        const charWidth = visibleWidth(ch);
+        if (lineVisualWidth + charWidth > wrapWidth && lineLen > 0) {
+          lines.push({ start: lineStart, length: lineLen });
+          lineStart += lineLen;
+          lineLen = 0;
+          lineVisualWidth = 0;
+        }
+        lineLen += ch.length;
+        lineVisualWidth += charWidth;
+      }
+      if (lineLen > 0) {
+        lines.push({ start: lineStart, length: lineLen });
       }
     }
     offset += logicalLine.length + 1; // +1 for \n
