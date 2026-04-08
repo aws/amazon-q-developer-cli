@@ -55,19 +55,9 @@ export const ApprovalRequest: React.FC<ApprovalRequestProps> = ({
     allow_once: 'Yes, single permission',
     allow_always: 'Trust, always allow in this session',
     allow_all_session: 'Trust, allow all for this session',
-    reject_once: 'No',
-    reject_always: 'Never',
+    reject_once: 'No (Tab to edit)',
   };
 
-  const shortLabels: Record<string, string> = {
-    allow_once: 'Yes',
-    allow_always: 'Trust',
-    allow_all_session: 'Trust all',
-    reject_once: 'No',
-    reject_always: 'Never',
-  };
-
-  // Page 1: all options as-is, but Trust gets a hint when _meta.trustOptions exists
   const defaultMenuItems = options.map((opt) => ({
     label: optionLabels[opt.optionId] ?? opt.name,
     description: '',
@@ -89,26 +79,6 @@ export const ApprovalRequest: React.FC<ApprovalRequestProps> = ({
     options[focusedIndex]?.optionId === TRUST_ENTRY_ID &&
     hasTrustPage;
 
-  const canDrillIn =
-    page === 'default' &&
-    (options[focusedIndex]?.optionId === 'allow_once' ||
-      options[focusedIndex]?.optionId === 'reject_once');
-
-  // Keyboard shortcuts: y=allow_once, n=reject_once, t=allow_always (direct, no page 2)
-  const keyMap: Record<string, string> = { y: 'allow_once', n: 'reject_once' };
-  const alwaysOpt = options.find(
-    (o) => o.optionId === 'allow_all_session' || o.optionId === 'allow_always'
-  );
-  if (alwaysOpt && !hasTrustPage) keyMap['t'] = alwaysOpt.optionId;
-
-  useKeypress((input) => {
-    if (mode !== 'dropdown') return;
-    const optionId = keyMap[input.toLowerCase()];
-    if (!optionId) return;
-    const opt = options.find((o) => o.optionId === optionId);
-    if (opt) respondToApproval(opt.optionId);
-  });
-
   if (!pendingApproval) return null;
 
   const toolMsg = messages.find(
@@ -120,10 +90,9 @@ export const ApprovalRequest: React.FC<ApprovalRequestProps> = ({
     toolMsg && toolMsg.role === MessageRole.ToolUse ? toolMsg.name : 'Tool';
 
   const prefix = subagentName ? `${subagentName} > ` : '';
-  const focusedOptId = options[focusedIndex]?.optionId ?? '';
   const title =
     mode === 'drill-in'
-      ? `${prefix}${toolName} requires approval · ${shortLabels[focusedOptId] ?? ''}`
+      ? `${prefix}${toolName} requires approval · Modify request`
       : page === 'trust'
         ? `${prefix}${toolName} requires approval · trust options`
         : `${prefix}${toolName} requires approval`;
@@ -140,12 +109,21 @@ export const ApprovalRequest: React.FC<ApprovalRequestProps> = ({
   };
 
   const handleTabSwitch = () => {
-    if (mode === 'dropdown' && canDrillIn) {
+    if (mode === 'dropdown') {
       setApprovalMode('drill-in');
     } else {
       setApprovalMode('dropdown');
     }
   };
+
+  // Right arrow → drill-in, Left arrow → back (same as Esc)
+  useKeypress((_input, key) => {
+    if (key.rightArrow && mode === 'dropdown') {
+      setApprovalMode('drill-in');
+    } else if (key.leftArrow) {
+      handleClose();
+    }
+  });
 
   const handleSelect = (item: { label: string }) => {
     if (page === 'default') {
@@ -171,29 +149,25 @@ export const ApprovalRequest: React.FC<ApprovalRequestProps> = ({
   };
 
   let footerLeft: React.ReactNode | undefined;
-  if (mode === 'dropdown') {
-    if (focusedOnTrust) {
-      footerLeft = (
-        <Text>
-          {primary('Enter')} {secondary('to see more options')}
-        </Text>
-      );
-    } else if (canDrillIn) {
-      footerLeft = (
-        <Text>
-          {primary('Tab')} {secondary('to edit')}
-        </Text>
-      );
-    }
+  if (mode === 'dropdown' && focusedOnTrust) {
+    footerLeft = (
+      <Text>
+        {primary('Enter')} {secondary('to see more options')}
+      </Text>
+    );
+  } else if (mode === 'dropdown') {
+    footerLeft = (
+      <Text>
+        {primary('Tab')} {secondary('to edit')}
+      </Text>
+    );
   }
 
   return (
     <Panel
       title={title}
       onClose={handleClose}
-      onTabSwitch={
-        mode === 'dropdown' && canDrillIn ? handleTabSwitch : undefined
-      }
+      onTabSwitch={mode === 'dropdown' ? handleTabSwitch : undefined}
       showTabHint={false}
       hideTitleDivider={true}
       footerLeft={footerLeft}

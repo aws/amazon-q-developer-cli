@@ -242,18 +242,8 @@ export const InlineLayout: React.FC = () => {
     setMode('crew-monitor');
   }, [setMode]);
 
-  // Handle escape to cancel approval (only when no approval panel is showing)
-  useKeypress(
-    (_input, key) => {
-      if (!pendingApproval || mode !== 'inline') return;
-      if (key.escape) {
-        cancelApproval();
-        clearInput();
-        clearCommandInput();
-      }
-    },
-    { isActive: !!pendingApproval && approvalMode !== 'dropdown' }
-  );
+  // Esc during approval is handled by Panel's useInput → handleClose in
+  // ApprovalRequest (drill-in → dropdown, trust → default, dropdown → cancel).
 
   // Handle escape to cancel queue editing
   useKeypress(

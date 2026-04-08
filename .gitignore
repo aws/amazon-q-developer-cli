@@ -82,3 +82,4 @@ crates/**/Info.plist
 packages/.kiro/
 packages/tui/.kiro/
 .claude/settings.local.json
+target
