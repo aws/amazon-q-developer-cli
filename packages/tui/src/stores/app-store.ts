@@ -1510,7 +1510,11 @@ export const createAppStore = (props: AppStoreProps) => {
               set({ initErrors: updated });
               const message = summarizeInitErrors(updated);
               if (message) {
-                get().showTransientAlert({ message, status: 'error' });
+                get().showTransientAlert({
+                  message,
+                  status: 'error',
+                  autoHideMs: 8000,
+                });
               }
             }
             break;
@@ -1565,7 +1569,11 @@ export const createAppStore = (props: AppStoreProps) => {
               set({ initErrors: updated });
               const message = summarizeInitErrors(updated);
               if (message) {
-                get().showTransientAlert({ message, status: 'error' });
+                get().showTransientAlert({
+                  message,
+                  status: 'error',
+                  autoHideMs: 8000,
+                });
               }
             }
             break;
@@ -1582,7 +1590,11 @@ export const createAppStore = (props: AppStoreProps) => {
               set({ initErrors: updated });
               const message = summarizeInitErrors(updated);
               if (message) {
-                get().showTransientAlert({ message, status: 'error' });
+                get().showTransientAlert({
+                  message,
+                  status: 'error',
+                  autoHideMs: 8000,
+                });
               }
             }
             break;
@@ -1602,7 +1614,11 @@ export const createAppStore = (props: AppStoreProps) => {
               set({ initErrors: updated });
               const message = summarizeInitErrors(updated);
               if (message) {
-                get().showTransientAlert({ message, status: 'error' });
+                get().showTransientAlert({
+                  message,
+                  status: 'error',
+                  autoHideMs: 8000,
+                });
               }
             }
             break;

@@ -24,12 +24,18 @@ describe('Cancel state recovery (P409238957)', () => {
       .withTestName('cancel-state-recovery')
       .launch();
 
-    await testCase.waitForText('Ask a question', 10000);
+    await testCase.waitForText('ask a question', 10000);
     await testCase.getSessionId();
 
     // Push a streaming response that never closes — keeps the turn open
     await testCase.pushSendMessageResponse([
-      { kind: 'event', data: { kind: 'AssistantResponseEvent', data: { content: 'Working on it...' } } },
+      {
+        kind: 'event',
+        data: {
+          kind: 'AssistantResponseEvent',
+          data: { content: 'Working on it...' },
+        },
+      },
     ]);
     // Deliberately NO null push — stream stays open so isProcessing stays true
 
@@ -39,10 +45,7 @@ describe('Cancel state recovery (P409238957)', () => {
     await testCase.pressEnter();
 
     // Wait for isProcessing to become true via store (not PTY text)
-    await testCase.waitForStoreCondition(
-      (s) => s.isProcessing === true,
-      10000,
-    );
+    await testCase.waitForStoreCondition((s) => s.isProcessing === true, 10000);
 
     // Cancel with Ctrl+C
     await testCase.pressCtrlC();
@@ -51,13 +54,19 @@ describe('Cancel state recovery (P409238957)', () => {
     // The fix: isProcessing must clear after cancel
     const afterCancel = await testCase.waitForStoreCondition(
       (s) => !s.isProcessing,
-      5000,
+      5000
     );
     expect(afterCancel.isProcessing).toBe(false);
 
     // Verify we can send a second prompt — push a complete response
     await testCase.pushSendMessageResponse([
-      { kind: 'event', data: { kind: 'AssistantResponseEvent', data: { content: 'Second response OK' } } },
+      {
+        kind: 'event',
+        data: {
+          kind: 'AssistantResponseEvent',
+          data: { content: 'Second response OK' },
+        },
+      },
     ]);
     await testCase.pushSendMessageResponse(null);
 
@@ -69,8 +78,10 @@ describe('Cancel state recovery (P409238957)', () => {
     // This proves we're not stuck in "Prompt already in progress".
     const afterSecond = await testCase.waitForStoreCondition(
       (s) => s.messages.length > afterCancel.messages.length,
-      10000,
+      10000
     );
-    expect(afterSecond.messages.length).toBeGreaterThan(afterCancel.messages.length);
+    expect(afterSecond.messages.length).toBeGreaterThan(
+      afterCancel.messages.length
+    );
   }, 60000);
 });

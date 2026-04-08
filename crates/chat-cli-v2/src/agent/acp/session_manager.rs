@@ -216,35 +216,41 @@ impl SessionManagerBuilder {
             };
 
             // Fetch MCP registry data for enterprise users
-            let (mcp_registry_data, mcp_registry_url) = match os.client.get_mcp_config().await {
-                Ok((enabled, Some(registry_url))) if enabled => {
-                    let client = crate::mcp_registry::McpRegistryClient::new();
-                    match client.fetch_registry(&registry_url).await {
-                        Ok(registry) => {
-                            info!(
-                                servers = registry.servers.len(),
-                                "Fetched MCP registry from {}", registry_url
-                            );
-                            (Some(registry), Some(registry_url))
-                        },
-                        Err(e) => {
-                            error!(%e, "Failed to fetch MCP registry — registry servers disabled for this session");
-                            // Registry URL was configured but fetch failed — use empty registry
-                            // to disable registry-dependent MCP servers (matches V1 behavior)
-                            (
-                                Some(crate::mcp_registry::McpRegistryResponse { servers: vec![] }),
-                                Some(registry_url),
-                            )
-                        },
-                    }
-                },
-                Ok(_) => (None, None),
-                Err(e) => {
-                    error!(%e, "Failed to get MCP config from API — MCP registry features disabled");
-                    // API call failed — we can't determine if registry is configured,
-                    // so use empty registry to disable registry-dependent MCP servers
-                    (Some(crate::mcp_registry::McpRegistryResponse { servers: vec![] }), None)
-                },
+            // Skip in test mode — no real auth available, and the real API client
+            // would fail with Err causing an empty registry that strips all MCP servers.
+            let (mcp_registry_data, mcp_registry_url) = if std::env::var(KIRO_TEST_MODE).is_ok() {
+                (None, None)
+            } else {
+                match os.client.get_mcp_config().await {
+                    Ok((enabled, Some(registry_url))) if enabled => {
+                        let client = crate::mcp_registry::McpRegistryClient::new();
+                        match client.fetch_registry(&registry_url).await {
+                            Ok(registry) => {
+                                info!(
+                                    servers = registry.servers.len(),
+                                    "Fetched MCP registry from {}", registry_url
+                                );
+                                (Some(registry), Some(registry_url))
+                            },
+                            Err(e) => {
+                                error!(%e, "Failed to fetch MCP registry — registry servers disabled for this session");
+                                // Registry URL was configured but fetch failed — use empty registry
+                                // to disable registry-dependent MCP servers (matches V1 behavior)
+                                (
+                                    Some(crate::mcp_registry::McpRegistryResponse { servers: vec![] }),
+                                    Some(registry_url),
+                                )
+                            },
+                        }
+                    },
+                    Ok(_) => (None, None),
+                    Err(e) => {
+                        error!(%e, "Failed to get MCP config from API — MCP registry features disabled");
+                        // API call failed — we can't determine if registry is configured,
+                        // so use empty registry to disable registry-dependent MCP servers
+                        (Some(crate::mcp_registry::McpRegistryResponse { servers: vec![] }), None)
+                    },
+                }
             };
 
             // Spawn background task to refresh registry every 24 hours

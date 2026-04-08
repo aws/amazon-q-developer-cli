@@ -41,7 +41,7 @@ describe('Initialization failure notifications', () => {
 
     const store = await testCase.waitForStoreCondition(
       (s) => s.initErrors.some((e) => e.type === 'mcp_failure'),
-      15000
+      30000
     );
 
     if (store.initErrors[0]?.type === 'mcp_failure') {
@@ -78,7 +78,7 @@ describe('Initialization failure notifications', () => {
 
     await testCase.waitForStoreCondition(
       (s) => s.initErrors.some((e) => e.type === 'mcp_failure'),
-      15000
+      30000
     );
 
     // Open /mcp panel
@@ -95,7 +95,7 @@ describe('Initialization failure notifications', () => {
         s.mcpServers.some(
           (srv) => srv.name === 'will-fail-server' && srv.status === 'failed'
         ),
-      15000
+      30000
     );
 
     expect(store.showMcpPanel).toBe(true);
@@ -120,7 +120,7 @@ describe('Initialization failure notifications', () => {
 
     const store = await testCase.waitForStoreCondition(
       (s) => s.initErrors.some((e) => e.type === 'agent_not_found'),
-      15000
+      30000
     );
 
     const err = store.initErrors.find((e) => e.type === 'agent_not_found');

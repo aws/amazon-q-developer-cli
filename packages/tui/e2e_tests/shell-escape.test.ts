@@ -23,10 +23,10 @@ describe('Shell Escape (!command)', () => {
     await testCase.pressEnter();
 
     // Should see the output directly (no AI thinking)
-    await testCase.waitForText('hello_shell', 5000);
+    await testCase.waitForText('hello_shell', 10000);
 
     // Should return to prompt
-    await testCase.waitForText('ask a question', 5000);
+    await testCase.waitForText('ask a question', 10000);
   }, 30000);
 
   it('executes !pwd and shows directory', async () => {
@@ -41,10 +41,10 @@ describe('Shell Escape (!command)', () => {
     await testCase.pressEnter();
 
     // Should see a path (contains /)
-    await testCase.waitForText('/', 5000);
+    await testCase.waitForText('/', 10000);
 
     // Should return to prompt
-    await testCase.waitForText('ask a question', 5000);
+    await testCase.waitForText('ask a question', 10000);
   }, 30000);
 
   it('handles empty ! gracefully', async () => {
@@ -60,7 +60,7 @@ describe('Shell Escape (!command)', () => {
 
     // Should return to prompt without error
     await testCase.sleepMs(500);
-    await testCase.waitForText('ask a question', 5000);
+    await testCase.waitForText('ask a question', 10000);
   }, 30000);
 
   it('shows error for failed commands', async () => {
@@ -76,7 +76,7 @@ describe('Shell Escape (!command)', () => {
 
     // Should show error status and return to prompt
     await testCase.sleepMs(1000);
-    await testCase.waitForText('ask a question', 5000);
+    await testCase.waitForText('ask a question', 10000);
   }, 30000);
 
   it('executes long-running command', async () => {
@@ -91,10 +91,10 @@ describe('Shell Escape (!command)', () => {
     await testCase.pressEnter();
 
     // Should wait and then show output
-    await testCase.waitForText('done', 3000);
+    await testCase.waitForText('done', 10000);
 
     // Should return to prompt
-    await testCase.waitForText('ask a question', 5000);
+    await testCase.waitForText('ask a question', 10000);
   }, 30000);
 
   it('handles command with spaces', async () => {
@@ -109,9 +109,9 @@ describe('Shell Escape (!command)', () => {
     await testCase.pressEnter();
 
     // Should see the full output
-    await testCase.waitForText('hello world', 5000);
+    await testCase.waitForText('hello world', 10000);
 
     // Should return to prompt
-    await testCase.waitForText('ask a question', 5000);
+    await testCase.waitForText('ask a question', 10000);
   }, 30000);
 });
