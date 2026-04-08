@@ -170,6 +170,7 @@ pub struct AgentSwitchedNotification {
     pub agent_name: String,
     pub previous_agent_name: Option<String>,
     pub welcome_message: Option<String>,
+    pub model: Option<String>,
 }
 
 /// Agent not found notification payload — requested agent fell back to default.

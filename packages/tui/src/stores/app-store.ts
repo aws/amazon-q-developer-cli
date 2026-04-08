@@ -1565,6 +1565,9 @@ export const createAppStore = (props: AppStoreProps) => {
             if (event.previousAgentName) {
               set({ previousAgentName: event.previousAgentName });
             }
+            if (event.model) {
+              get().setCurrentModel({ id: event.model, name: event.model });
+            }
             break;
           case AgentEventType.AgentNotFound:
             {

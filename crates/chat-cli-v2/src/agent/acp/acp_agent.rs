@@ -1418,6 +1418,7 @@ impl AcpSession {
                                         agent_name: self.current_agent_name.clone(),
                                         previous_agent_name: self.previous_agent_name.clone(),
                                         welcome_message: self.welcome_message_for(&self.current_agent_name),
+                                        model: self.rts_state.model_id(),
                                     },
                                 );
 
@@ -1618,6 +1619,23 @@ impl AcpSession {
                     && let Some(name) = data.get("agent").and_then(|a| a.get("name")).and_then(|n| n.as_str())
                     && name != self.current_agent_name
                 {
+                    // Update model info from the new agent's config
+                    let new_model = self
+                        .agent_configs
+                        .iter()
+                        .find(|c| c.name() == name)
+                        .and_then(|c| c.model().map(String::from));
+                    if let Err(e) = update_model_info(
+                        &self.api_client,
+                        &self.os.database,
+                        &self.rts_state,
+                        new_model.as_deref(),
+                    )
+                    .await
+                    {
+                        warn!("Failed to update model during agent switch: {}", e);
+                    }
+
                     self.previous_agent_name = Some(std::mem::replace(&mut self.current_agent_name, name.to_string()));
                     let _ = self.send_ext_notification(
                         super::extensions::methods::AGENT_SWITCHED,
@@ -1626,6 +1644,7 @@ impl AcpSession {
                             agent_name: self.current_agent_name.clone(),
                             previous_agent_name: self.previous_agent_name.clone(),
                             welcome_message: self.welcome_message_for(&self.current_agent_name),
+                            model: self.rts_state.model_id(),
                         },
                     );
                 }
@@ -1897,6 +1916,7 @@ impl AcpSession {
                                 agent_name: target_name.clone(),
                                 previous_agent_name: self.previous_agent_name.clone(),
                                 welcome_message: self.welcome_message_for(&target_name),
+                                model: self.rts_state.model_id(),
                             },
                         );
                         if let Err(e) = self.advertise_commands_and_prompts().await {

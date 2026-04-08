@@ -282,6 +282,7 @@ export interface AgentSwitchedEvent {
   agentName: string;
   previousAgentName?: string;
   welcomeMessage?: string;
+  model?: string;
 }
 
 export interface AgentNotFoundEvent {

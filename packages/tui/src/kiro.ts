@@ -232,6 +232,9 @@ export class Kiro {
               welcomeMessage: event.welcomeMessage,
             });
           }
+          if (event.model && this.modelHandler) {
+            this.modelHandler({ id: event.model, name: event.model });
+          }
         }
         // Forward init-time notifications (MCP failures, agent errors, OAuth) to the store
         if (

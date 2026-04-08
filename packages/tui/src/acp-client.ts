@@ -894,12 +894,14 @@ export class AcpClient implements acp.Client, SessionClient {
       agentName: string;
       previousAgentName?: string;
       welcomeMessage?: string;
+      model?: string;
     };
     this.broadcastStreamEvent({
       type: AgentEventType.AgentSwitched,
       agentName: payload.agentName,
       previousAgentName: payload.previousAgentName,
       welcomeMessage: payload.welcomeMessage,
+      model: payload.model,
     });
   }
 
