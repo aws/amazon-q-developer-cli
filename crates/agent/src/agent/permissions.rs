@@ -23,6 +23,7 @@ use crate::agent::protocol::{
     PermissionEvalResult,
     PermissionOptionId,
 };
+use crate::agent::tool_permission::file_trust::generate_file_trust_options;
 use crate::agent::tools::use_aws::UseAws;
 use crate::agent::tools::{
     BuiltInTool,
@@ -297,6 +298,7 @@ pub fn evaluate_tool_permission<P: SystemProvider>(
                     .chain(&permissions.filesystem.denied_read_paths),
                 file_read.all_paths().iter(),
                 is_allowed,
+                PathAccessType::Read,
                 provider,
             ),
             BuiltInTool::FileWrite(file_write) => evaluate_permission_for_paths(
@@ -312,6 +314,7 @@ pub fn evaluate_tool_permission<P: SystemProvider>(
                     .chain(&permissions.filesystem.denied_write_paths),
                 [file_write.path()],
                 is_allowed,
+                PathAccessType::Write,
                 provider,
             ),
 
@@ -330,6 +333,7 @@ pub fn evaluate_tool_permission<P: SystemProvider>(
                         .chain(&permissions.filesystem.denied_read_paths),
                     [path],
                     is_allowed,
+                    PathAccessType::Read,
                     provider,
                 )
             },
@@ -348,6 +352,7 @@ pub fn evaluate_tool_permission<P: SystemProvider>(
                         .chain(&permissions.filesystem.denied_read_paths),
                     [path],
                     is_allowed,
+                    PathAccessType::Read,
                     provider,
                 )
             },
@@ -524,6 +529,7 @@ fn evaluate_permission_for_paths<A, B, C, P>(
     denied_paths: B,
     paths_to_check: C,
     is_allowed: bool,
+    access_type: PathAccessType,
     provider: &P,
 ) -> Result<PermissionEvalResult, UtilError>
 where
@@ -537,7 +543,7 @@ where
 {
     let allowed_paths = canonicalize_paths(allowed_paths, provider);
     let denied_paths = canonicalize_paths(denied_paths, provider);
-    let mut ask = false;
+    let mut ask_paths: Vec<String> = Vec::new();
     for path in paths_to_check {
         let path = canonicalize_path_sys(path, provider)?;
         match evaluate_permission_for_path(&path, allowed_paths.iter(), denied_paths.iter()) {
@@ -546,12 +552,14 @@ where
                     reason: items.join(", "),
                 });
             },
-            PermissionCheckResult::Ask => ask = true,
+            PermissionCheckResult::Ask => ask_paths.push(path),
             PermissionCheckResult::Allow => (),
         }
     }
-    Ok(if ask && !is_allowed {
-        PermissionEvalResult::ask()
+    Ok(if !ask_paths.is_empty() && !is_allowed {
+        let cwd = provider.cwd().unwrap_or_default();
+        let trust_options = generate_file_trust_options(&ask_paths, access_type, &cwd);
+        PermissionEvalResult::ask_with_options(trust_options)
     } else {
         PermissionEvalResult::Allow
     })
