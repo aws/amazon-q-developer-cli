@@ -3387,6 +3387,7 @@ impl ChatSession {
             }
 
             let mut denied_match_set = None::<Vec<String>>;
+            let interactive = self.interactive;
             let allowed =
                 self.conversation
                     .agents
@@ -3394,7 +3395,13 @@ impl ChatSession {
                     .is_some_and(|a| match tool.tool.requires_acceptance(os, a) {
                         PermissionEvalResult::Allow => true,
                         PermissionEvalResult::Ask { trust_options } => {
-                            tool.trust_options = trust_options;
+                            if !interactive {
+                                // In non-interactive mode, treat Ask as Deny so the LLM
+                                // can recover instead of crashing.
+                                denied_match_set.replace(vec!["non-interactive mode (no user to approve)".to_string()]);
+                            } else {
+                                tool.trust_options = trust_options;
+                            }
                             false
                         },
                         PermissionEvalResult::Deny(matches) => {
@@ -6556,6 +6563,67 @@ mod tests {
             "Expected PromptUser after tool execution with pending_swap, got {:?}. \
              This means tool_use_execute is not checking for pending_swap.",
             session.inner
+        );
+    }
+
+    /// Non-interactive mode should auto-deny tools that require approval instead of crashing.
+    /// Regression test for: tool approval prompt in headless mode caused a fatal
+    /// `NonInteractiveToolApproval` error.
+    #[tokio::test]
+    async fn test_non_interactive_tool_approval_denied() {
+        let mut os = Os::new().await.unwrap();
+        // First response: LLM tries fs_write (needs approval).
+        // Second response: LLM receives the denial and responds without tools.
+        os.client.set_mock_output(serde_json::json!([
+            [
+                "I'll create a file",
+                {
+                    "tool_use_id": "1",
+                    "name": "fs_write",
+                    "args": {
+                        "command": "create",
+                        "file_text": "hello",
+                        "path": "/denied.txt",
+                    }
+                }
+            ],
+            [
+                "The tool was denied, so I can't create the file.",
+            ],
+        ]));
+
+        let agents = get_test_agents(&os).await;
+        let tool_manager = ToolManager::default();
+        let tool_config = serde_json::from_str::<HashMap<String, ToolSpec>>(include_str!("tools/tool_index.json"))
+            .expect("Tools failed to load");
+        let mut session = ChatSession::new(
+            &mut os,
+            "fake_conv_id",
+            agents,
+            Some("create a file".to_string()),
+            InputSource::new_mock(vec![]),
+            None,
+            || Some(80),
+            tool_manager,
+            None,
+            tool_config,
+            false, // non-interactive
+            false,
+            None,
+            false,
+            None,
+            None,
+        )
+        .await
+        .unwrap();
+        let result = session.spawn(&mut os).await;
+
+        // Should succeed (not crash with NonInteractiveToolApproval)
+        assert!(result.is_ok(), "Non-interactive mode should not crash on tool approval");
+        // File should NOT have been created since the tool was denied
+        assert!(
+            !os.fs.exists("/denied.txt"),
+            "Tool should have been denied, file should not exist"
         );
     }
 }
