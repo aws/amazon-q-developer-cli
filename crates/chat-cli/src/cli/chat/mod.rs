@@ -346,7 +346,7 @@ pub struct ChatArgs {
     #[arg(long, conflicts_with = "legacy_ui")]
     pub tui: bool,
     /// Use the legacy terminal UI
-    #[arg(long, alias = "classic", conflicts_with = "tui")]
+    #[arg(long, visible_alias = "classic", conflicts_with = "tui")]
     pub legacy_ui: bool,
     /// Agent engine to use: "rust" (default) or "kas" (TypeScript KAS agent)
     #[arg(long, value_name = "ENGINE")]
