@@ -53,6 +53,7 @@ macro_rules! migrations {
 }
 
 const CREDENTIALS_KEY: &str = "telemetry-cognito-credentials";
+const COGNITO_IDENTITY_ID_KEY: &str = "telemetry-cognito-identity-id";
 const CLIENT_ID_KEY: &str = "telemetryClientId";
 const CODEWHISPERER_PROFILE_KEY: &str = "api.codewhisperer.profile";
 const START_URL_KEY: &str = "auth.idc.start-url";
@@ -266,6 +267,21 @@ impl Database {
                 .expiration
                 .and_then(|t| t.fmt(DateTimeFormat::DateTime).ok()),
         })
+    }
+
+    /// Get cached cognito identity ID used by toolkit telemetry.
+    pub fn get_cognito_identity_id(&self) -> Result<Option<String>, DatabaseError> {
+        self.get_json_entry::<String>(Table::State, COGNITO_IDENTITY_ID_KEY)
+    }
+
+    /// Set cached cognito identity ID used by toolkit telemetry.
+    pub fn set_cognito_identity_id(&self, identity_id: &str) -> Result<usize, DatabaseError> {
+        self.set_json_entry(Table::State, COGNITO_IDENTITY_ID_KEY, identity_id)
+    }
+
+    /// Clear cached cognito identity ID.
+    pub fn clear_cognito_identity_id(&self) -> Result<(), DatabaseError> {
+        self.delete_entry(Table::State, COGNITO_IDENTITY_ID_KEY)
     }
 
     /// Get the current user profile used to determine API endpoints.

@@ -11,6 +11,7 @@ use aws_sdk_cognitoidentity::primitives::{
     DateTimeFormat,
 };
 use tracing::{
+    info,
     trace,
     warn,
 };
@@ -36,25 +37,60 @@ async fn send_cognito_request(
     database: &mut Database,
     telemetry_stage: &TelemetryStage,
 ) -> Result<Credentials, CredentialsError> {
-    let identity_id = client
-        .get_id()
-        .identity_pool_id(telemetry_stage.cognito_pool_id)
-        .send()
-        .await
-        .map_err(CredentialsError::provider_error)?
-        .identity_id
-        .ok_or(CredentialsError::provider_error("no identity_id from get_id"))?;
+    let identity_id = match database.get_cognito_identity_id().ok().flatten() {
+        Some(id) => {
+            trace!("Using cached cognito identity_id");
+            id
+        },
+        None => {
+            info!("Cognito GetId called, no cached identity_id");
+            let id = client
+                .get_id()
+                .identity_pool_id(telemetry_stage.cognito_pool_id)
+                .send()
+                .await
+                .map_err(CredentialsError::provider_error)?
+                .identity_id
+                .ok_or(CredentialsError::provider_error("no identity_id from get_id"))?;
+            database.set_cognito_identity_id(&id).ok();
+            id
+        },
+    };
 
-    let credentials = client
+    let credentials = match client
         .get_credentials_for_identity()
-        .identity_id(identity_id)
+        .identity_id(&identity_id)
         .send()
         .await
-        .map_err(CredentialsError::provider_error)?
-        .credentials
-        .ok_or(CredentialsError::provider_error(
+    {
+        Ok(resp) => resp.credentials.ok_or(CredentialsError::provider_error(
             "no credentials from get_credentials_for_identity",
-        ))?;
+        ))?,
+        Err(err) => {
+            // Identity may be invalid — clear cache and retry with a fresh GetId
+            warn!(?err, "GetCredentialsForIdentity failed, clearing cached identity_id");
+            database.clear_cognito_identity_id().ok();
+            let new_id = client
+                .get_id()
+                .identity_pool_id(telemetry_stage.cognito_pool_id)
+                .send()
+                .await
+                .map_err(CredentialsError::provider_error)?
+                .identity_id
+                .ok_or(CredentialsError::provider_error("no identity_id from get_id"))?;
+            database.set_cognito_identity_id(&new_id).ok();
+            client
+                .get_credentials_for_identity()
+                .identity_id(new_id)
+                .send()
+                .await
+                .map_err(CredentialsError::provider_error)?
+                .credentials
+                .ok_or(CredentialsError::provider_error(
+                    "no credentials from get_credentials_for_identity after retry",
+                ))?
+        },
+    };
 
     database.set_credentials_entry(&credentials).ok();
 
@@ -174,7 +210,10 @@ fn is_expired(expiration: Option<&String>) -> bool {
 
 #[cfg(test)]
 mod test {
-    use aws_sdk_cognitoidentity::operation::get_credentials_for_identity::GetCredentialsForIdentityOutput;
+    use aws_sdk_cognitoidentity::operation::get_credentials_for_identity::{
+        GetCredentialsForIdentityError,
+        GetCredentialsForIdentityOutput,
+    };
     use aws_sdk_cognitoidentity::operation::get_id::GetIdOutput;
     use aws_sdk_cognitoidentity::types::Credentials as CognitoCredentials;
     use aws_smithy_mocks::{
@@ -185,6 +224,14 @@ mod test {
 
     use super::*;
 
+    fn mock_creds() -> CognitoCredentials {
+        CognitoCredentials::builder()
+            .access_key_id("test_access_key")
+            .secret_key("test_secret_key")
+            .session_token("test_session_token")
+            .build()
+    }
+
     #[tokio::test]
     async fn pools() {
         let get_id_rule = mock!(aws_sdk_cognitoidentity::Client::get_id)
@@ -192,13 +239,7 @@ mod test {
 
         let get_creds_rule = mock!(aws_sdk_cognitoidentity::Client::get_credentials_for_identity).then_output(|| {
             GetCredentialsForIdentityOutput::builder()
-                .credentials(
-                    CognitoCredentials::builder()
-                        .access_key_id("test_access_key")
-                        .secret_key("test_secret_key")
-                        .session_token("test_session_token")
-                        .build(),
-                )
+                .credentials(mock_creds())
                 .build()
         });
 
@@ -217,5 +258,118 @@ mod test {
                 "credentials should come from mock"
             );
         }
+    }
+
+    #[tokio::test]
+    async fn caches_identity_id_skips_get_id() {
+        let mut db = Database::new().await.unwrap();
+        db.set_cognito_identity_id("us-east-1:cached-id").unwrap();
+
+        let get_id_rule = mock!(aws_sdk_cognitoidentity::Client::get_id).then_output(|| {
+            GetIdOutput::builder()
+                .identity_id("us-east-1:should-not-be-called")
+                .build()
+        });
+
+        let get_creds_rule = mock!(aws_sdk_cognitoidentity::Client::get_credentials_for_identity).then_output(|| {
+            GetCredentialsForIdentityOutput::builder()
+                .credentials(mock_creds())
+                .build()
+        });
+
+        let client = mock_client!(aws_sdk_cognitoidentity, RuleMode::MatchAny, [
+            &get_id_rule,
+            &get_creds_rule
+        ]);
+
+        let creds = send_cognito_request(&client, &mut db, &TelemetryStage::BETA)
+            .await
+            .unwrap();
+
+        assert_eq!(creds.access_key_id(), "test_access_key");
+        assert_eq!(
+            get_id_rule.num_calls(),
+            0,
+            "GetId should not be called when identity_id is cached"
+        );
+        assert_eq!(get_creds_rule.num_calls(), 1);
+    }
+
+    #[tokio::test]
+    async fn no_cached_identity_calls_get_id() {
+        let mut db = Database::new().await.unwrap();
+
+        let get_id_rule = mock!(aws_sdk_cognitoidentity::Client::get_id)
+            .then_output(|| GetIdOutput::builder().identity_id("us-east-1:new-id").build());
+
+        let get_creds_rule = mock!(aws_sdk_cognitoidentity::Client::get_credentials_for_identity).then_output(|| {
+            GetCredentialsForIdentityOutput::builder()
+                .credentials(mock_creds())
+                .build()
+        });
+
+        let client = mock_client!(aws_sdk_cognitoidentity, RuleMode::MatchAny, [
+            &get_id_rule,
+            &get_creds_rule
+        ]);
+
+        send_cognito_request(&client, &mut db, &TelemetryStage::BETA)
+            .await
+            .unwrap();
+
+        assert_eq!(
+            get_id_rule.num_calls(),
+            1,
+            "GetId should be called when no cached identity_id"
+        );
+        assert_eq!(get_creds_rule.num_calls(), 1);
+        assert_eq!(
+            db.get_cognito_identity_id().unwrap(),
+            Some("us-east-1:new-id".to_string())
+        );
+    }
+
+    #[tokio::test]
+    async fn invalid_cached_identity_falls_back_to_get_id() {
+        let mut db = Database::new().await.unwrap();
+        db.set_cognito_identity_id("us-east-1:invalid-id").unwrap();
+
+        let get_creds_rule = mock!(aws_sdk_cognitoidentity::Client::get_credentials_for_identity)
+            .sequence()
+            .error(|| GetCredentialsForIdentityError::unhandled("invalid identity"))
+            .output(|| {
+                GetCredentialsForIdentityOutput::builder()
+                    .credentials(mock_creds())
+                    .build()
+            })
+            .build();
+
+        let get_id_rule = mock!(aws_sdk_cognitoidentity::Client::get_id)
+            .then_output(|| GetIdOutput::builder().identity_id("us-east-1:fresh-id").build());
+
+        let client = mock_client!(aws_sdk_cognitoidentity, RuleMode::MatchAny, [
+            &get_id_rule,
+            &get_creds_rule
+        ]);
+
+        let creds = send_cognito_request(&client, &mut db, &TelemetryStage::BETA)
+            .await
+            .unwrap();
+
+        assert_eq!(creds.access_key_id(), "test_access_key");
+        assert_eq!(
+            get_id_rule.num_calls(),
+            1,
+            "GetId should be called after invalid identity"
+        );
+        assert_eq!(
+            get_creds_rule.num_calls(),
+            2,
+            "GetCredentialsForIdentity should be called twice"
+        );
+        assert_eq!(
+            db.get_cognito_identity_id().unwrap(),
+            Some("us-east-1:fresh-id".to_string())
+        );
     }
 }
