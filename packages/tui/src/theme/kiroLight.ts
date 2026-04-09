@@ -44,13 +44,13 @@ export const kiroLight: Theme = {
     },
     diff: {
       added: {
-        background: { truecolor: '#d4f0d4', color256: 157 }, // diffEditor.insertedLineBackground - light green
-        bar: { truecolor: '#5de89d', color256: 78 }, // editorGutter.addedBackground - darker green
+        background: { truecolor: '#d4f0d4', color256: 194 }, // diffEditor.insertedLineBackground - light green
+        bar: { truecolor: '#5de89d', color256: 79 }, // editorGutter.addedBackground - darker green
         highlight: { truecolor: '#cffffff', color256: 15 }, // diffEditor.insertedTextBackground - medium green
       },
       removed: {
         background: { truecolor: '#f0d4d4', color256: 224 }, // diffEditor.removedLineBackground - light red
-        bar: { truecolor: '#eb5c5c', color256: 203 }, // editorGutter.deletedBackground - darker red
+        bar: { truecolor: '#eb5c5c', color256: 167 }, // editorGutter.deletedBackground - darker red
         highlight: { truecolor: '#e8c2c2', color256: 217 }, // diffEditor.removedTextBackground - medium red
       },
       unchanged: {

@@ -17,7 +17,7 @@ export const kiroDark: Theme = {
     highlight: { truecolor: '#0087FF', color256: 33 },
     components: {
       snackbar: {
-        background: { truecolor: '#552B99', color256: 57 }, // Always dark purple (same as dark mode)
+        background: { truecolor: '#552B99', color256: 54 }, // Always dark purple (same as dark mode)
         text: { truecolor: '#ffffff', color256: 15 }, // Always bright purple (same as dark mode)
       },
     },
@@ -44,14 +44,14 @@ export const kiroDark: Theme = {
     },
     diff: {
       added: {
-        background: { truecolor: '#2d3a30', color256: 22 }, // diffEditor.insertedLineBackground (blended with bg)
+        background: { truecolor: '#2d3a30', color256: 22 }, // diffEditor.insertedLineBackground
         bar: { truecolor: '#80ffb5', color256: 121 }, // editorGutter.addedBackground
-        highlight: { truecolor: '#2d3a30', color256: 22 }, // diffEditor.insertedTextBackground (blended with bg)
+        highlight: { truecolor: '#2d3a30', color256: 22 }, // diffEditor.insertedTextBackground
       },
       removed: {
-        background: { truecolor: '#3a2d2f', color256: 52 }, // diffEditor.removedLineBackground (blended with bg)
+        background: { truecolor: '#3a2d2f', color256: 52 }, // diffEditor.removedLineBackground
         bar: { truecolor: '#ff8080', color256: 210 }, // editorGutter.deletedBackground
-        highlight: { truecolor: '#3a2d2f', color256: 52 }, // diffEditor.removedTextBackground (blended with bg)
+        highlight: { truecolor: '#3a2d2f', color256: 52 }, // diffEditor.removedTextBackground
       },
       unchanged: {
         bar: { truecolor: '#303030', color256: 236 },

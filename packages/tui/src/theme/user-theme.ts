@@ -67,7 +67,7 @@ export const promptPresets: PromptPreset[] = [
     id: 'purple',
     label: 'Purple',
     textColor: { truecolor: '#ffffff', color256: 15 },
-    bgColor: { truecolor: '#552B99', color256: 57 },
+    bgColor: { truecolor: '#552B99', color256: 54 },
   },
   // cyan text on dark surface
   {
@@ -143,7 +143,7 @@ export const diffPresets: DiffPreset[] = [
     id: 'light',
     label: 'Light',
     added: {
-      background: { truecolor: '#d4f0d4', color256: 157 },
+      background: { truecolor: '#d4f0d4', color256: 194 },
       bar: { truecolor: '#00875F', color256: 35 },
       highlight: { truecolor: '#c0e8c0', color256: 157 },
     },

@@ -2908,7 +2908,13 @@ export const createAppStore = (props: AppStoreProps) => {
         };
         const handled = await executeCommand(trimmed, ctx);
         if (handled) return;
-        // Not a command (e.g. file path like /Users/...) — fall through to send as message
+        // Not a command (e.g. file path like /Users/...) — send as message
+        // without the leading "/" to match V1 behavior.
+        // Leaving it in the message somehow confuses
+        // the LLM's path extraction for tool calls.
+        // Display the original input (with /) so the user sees what they typed.
+        await state.sendMessage(trimmed.slice(1), undefined, trimmed);
+        return;
       }
 
       // Handle shell escape commands
