@@ -261,5 +261,11 @@
       {"command": "export LD_PRELOAD=/tmp/evil.so", "command_path": "export", "command_name": "export", "args": [], "operator": "And", "variable_assignments": ["LD_PRELOAD"]},
       {"command": "cat /etc/passwd", "command_path": "cat", "command_name": "cat", "args": ["/etc/passwd"]}
     ]
+  },
+  {
+    "name": "inline_variable_assignment",
+    "input": "PAGER= GIT_PAGER=cat git log",
+    "parse_failed": false,
+    "commands": [{"command": "PAGER= GIT_PAGER=cat git log", "command_path": "git", "command_name": "git", "args": ["log"], "variable_assignments": ["PAGER=", "GIT_PAGER=cat"]}]
   }
 ]

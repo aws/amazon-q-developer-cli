@@ -14,7 +14,14 @@
       {"input": "echo hello > file.txt", "expected": "Ask"},
       {"input": "echo $(whoami)", "expected": "Ask"},
       {"input": "find . -${t}exec rm {} +", "expected": "Ask"},
-      {"input": "export PAGER=evil", "expected": "Ask"}
+      {"input": "export PAGER=evil", "expected": "Ask"},
+      {"input": "export PAGER=", "expected": "Ask"},
+      {"input": "export GIT_PAGER=cat", "expected": "Ask"},
+      {"input": "PAGER=evil git log", "expected": "Ask"},
+      {"input": "PAGER= git log", "expected": "Allow"},
+      {"input": "PAGER= rm -rf /", "expected": "Ask"},
+      {"input": "EDITOR=true git commit", "expected": "Ask"},
+      {"input": "GIT_PAGER=cat git log", "expected": "Allow"}
     ]
   },
   {

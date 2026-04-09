@@ -42,6 +42,7 @@ pub struct DetectResult {
 struct DetectorConfig {
     dangerous_options: HashMap<String, Vec<String>>,
     dangerous_env_vars: Vec<String>,
+    safe_env_values: Vec<String>,
     shells: Vec<String>,
     safe_commands: Vec<String>,
     safe_options: HashMap<String, Vec<String>>,
@@ -142,12 +143,30 @@ fn has_dangerous_command_options(cmd: &ParsedCommand, config: &DetectorConfig) -
 }
 
 fn is_dangerous_env_manipulation(cmd: &ParsedCommand, config: &DetectorConfig) -> bool {
-    cmd.variable_assignments.iter().any(|var_name| {
-        config
+    cmd.variable_assignments.iter().any(|assignment| {
+        let Some((var_name, var_value)) = assignment.split_once('=') else {
+            // No '=' means we can't determine the value; treat as dangerous
+            return config
+                .dangerous_env_vars
+                .iter()
+                .any(|v| v.eq_ignore_ascii_case(assignment));
+        };
+        let is_dangerous_var = config
             .dangerous_env_vars
             .iter()
-            .any(|v| v.eq_ignore_ascii_case(var_name))
+            .any(|v| v.eq_ignore_ascii_case(var_name));
+        let is_safe_value = is_safe_env_value(var_value, &config.safe_env_values);
+        is_dangerous_var && !is_safe_value
     })
+}
+
+/// Check if a value is in the safe list, stripping one layer of matching quotes.
+fn is_safe_env_value(value: &str, safe_values: &[String]) -> bool {
+    let stripped = match value.as_bytes() {
+        [b'"', .., b'"'] | [b'\'', .., b'\''] => &value[1..value.len() - 1],
+        _ => value,
+    };
+    safe_values.iter().any(|s| s == stripped)
 }
 
 /// Detect dangerous prompt expansion like `${var@P}` that can execute code.
@@ -280,24 +299,59 @@ mod tests {
         // --- Dangerous env vars — export ---
         assert_eq!(
             get_danger_level(&make_cmd_with_flags("export PAGER=evil", false, false, false, &[
-                "PAGER"
+                "PAGER=evil"
             ])),
             DangerLevel::High
         );
         assert_eq!(
             get_danger_level(&make_cmd_with_flags("export MY_VAR=value", false, false, false, &[
-                "MY_VAR"
+                "MY_VAR=value"
             ])),
             DangerLevel::None
         );
 
         // --- Dangerous env vars — inline ---
         let mut cmd = make_cmd("PAGER=evil git log");
-        cmd.variable_assignments = vec!["PAGER".to_string()];
+        cmd.variable_assignments = vec!["PAGER=evil".to_string()];
         assert_eq!(get_danger_level(&cmd), DangerLevel::High);
         let mut cmd = make_cmd("LANG=C sort file");
-        cmd.variable_assignments = vec!["LANG".to_string()];
+        cmd.variable_assignments = vec!["LANG=C".to_string()];
         assert_eq!(get_danger_level(&cmd), DangerLevel::None);
+
+        // --- Safe env var values — no-op assignments are allowed ---
+        assert_eq!(
+            get_danger_level(&make_cmd_with_flags("PAGER= git log", false, false, false, &["PAGER="])),
+            DangerLevel::None
+        );
+        assert_eq!(
+            get_danger_level(&make_cmd_with_flags("EDITOR=true git commit", false, false, false, &[
+                "EDITOR=true"
+            ])),
+            DangerLevel::None
+        );
+        assert_eq!(
+            get_danger_level(&make_cmd_with_flags("GIT_PAGER=cat git log", false, false, false, &[
+                "GIT_PAGER=cat"
+            ])),
+            DangerLevel::None
+        );
+        // Quoted safe values
+        assert_eq!(
+            get_danger_level(&make_cmd_with_flags("PAGER=\"\" git log", false, false, false, &[
+                "PAGER=\"\""
+            ])),
+            DangerLevel::None
+        );
+        assert_eq!(
+            get_danger_level(&make_cmd_with_flags(
+                "EDITOR='true' git commit",
+                false,
+                false,
+                false,
+                &["EDITOR='true'"]
+            )),
+            DangerLevel::None
+        );
     }
 
     #[test]
@@ -324,7 +378,7 @@ mod tests {
         // Safe variable assignment doesn't block readonly
         let mut cmd = make_cmd("ls");
         cmd.command = "LANG=C ls".to_string();
-        cmd.variable_assignments = vec!["LANG".to_string()];
+        cmd.variable_assignments = vec!["LANG=C".to_string()];
         assert!(is_readonly_command(&cmd));
 
         // Safe subcommand with destructive flags (safe_subcommand_except)

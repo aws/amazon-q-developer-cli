@@ -18,6 +18,7 @@
     "GIT_EDITOR", "GIT_SEQUENCE_EDITOR", "GIT_ASKPASS", "GIT_EXTERNAL_DIFF",
     "GIT_SSH", "GIT_SSH_COMMAND", "GIT_PROXY_COMMAND", "GIT_EXEC_PATH", "GIT_TEMPLATE_DIR"
   ],
+  "safe_env_values": ["", "true", "cat"],
   "shells": ["sh", "bash", "zsh", "dash", "ksh", "csh", "tcsh", "fish", "nu", "pwsh", "powershell"],
   "safe_commands": [
     "ls", "cat", "echo", "pwd", "which", "head", "tail", "dir", "type", "wc", "cd", "file", "df", "du",

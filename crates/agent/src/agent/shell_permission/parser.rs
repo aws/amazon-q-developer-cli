@@ -34,7 +34,6 @@ mod node {
     // Other
     pub const HEREDOC_BODY: &str = "heredoc_body";
     pub const VARIABLE_ASSIGNMENT: &str = "variable_assignment";
-    pub const VARIABLE_NAME: &str = "variable_name";
 
     // Substitutions
     pub const COMMAND_SUBSTITUTION: &str = "command_substitution";
@@ -104,7 +103,7 @@ pub struct ParsedCommand {
     /// Variable expansion (`$VAR`, `${VAR}`, `$((...))`).
     #[serde(default)]
     pub has_variable_expansion: bool,
-    /// Variable assignment names (`VAR=value` → `["VAR"]`, `IFS=: cmd` → `["IFS"]`).
+    /// Variable assignment texts (`VAR=value` → `["VAR=value"]`, `IFS=: cmd` → `["IFS=:"]`).
     #[serde(default)]
     pub variable_assignments: Vec<String>,
     /// ANSI-C string (`$'\x41'`, `$'\n'`).
@@ -225,12 +224,7 @@ fn extract_commands(node: &tree_sitter::Node<'_>, source: &str, commands: &mut V
                 has_heredoc: has_descendant(node, node::HEREDOC_NODES),
                 has_process_substitution: has_descendant(node, &[node::PROCESS_SUBSTITUTION]),
                 has_variable_expansion: has_descendant(node, node::VARIABLE_EXPANSION_NODES),
-                variable_assignments: collect_descendant_text(
-                    node,
-                    source,
-                    node::VARIABLE_ASSIGNMENT,
-                    node::VARIABLE_NAME,
-                ),
+                variable_assignments: collect_matching_text(node, source, node::VARIABLE_ASSIGNMENT),
                 has_ansi_c_string: has_descendant(node, &[node::ANSI_C_STRING]),
             });
         },
@@ -290,12 +284,7 @@ fn extract_commands(node: &tree_sitter::Node<'_>, source: &str, commands: &mut V
                     has_heredoc: node_has_heredoc,
                     has_process_substitution: node_has_process_sub,
                     has_variable_expansion: has_descendant(node, node::VARIABLE_EXPANSION_NODES),
-                    variable_assignments: collect_descendant_text(
-                        node,
-                        source,
-                        node::VARIABLE_ASSIGNMENT,
-                        node::VARIABLE_NAME,
-                    ),
+                    variable_assignments: collect_matching_text(node, source, node::VARIABLE_ASSIGNMENT),
                     has_ansi_c_string: has_descendant(node, &[node::ANSI_C_STRING]),
                 });
             }
@@ -395,39 +384,23 @@ fn has_descendant(node: &tree_sitter::Node<'_>, kinds: &[&str]) -> bool {
     node.children(&mut cursor).any(|c| has_descendant(&c, kinds))
 }
 
-/// Collect text of `child_kind` nodes that are children of `parent_kind` nodes.
-fn collect_descendant_text(
-    node: &tree_sitter::Node<'_>,
-    source: &str,
-    parent_kind: &str,
-    child_kind: &str,
-) -> Vec<String> {
+/// Collect text of all descendant nodes matching `kind`.
+fn collect_matching_text(node: &tree_sitter::Node<'_>, source: &str, kind: &str) -> Vec<String> {
     let mut results = Vec::new();
-    collect_descendant_text_inner(node, source, parent_kind, child_kind, &mut results);
+    collect_matching_text_inner(node, source, kind, &mut results);
     results
 }
 
-fn collect_descendant_text_inner(
-    node: &tree_sitter::Node<'_>,
-    source: &str,
-    parent_kind: &str,
-    child_kind: &str,
-    results: &mut Vec<String>,
-) {
-    if node.kind() == parent_kind {
-        let mut cursor = node.walk();
-        for child in node.children(&mut cursor) {
-            if child.kind() == child_kind
-                && let Ok(text) = child.utf8_text(source.as_bytes())
-            {
-                results.push(text.to_string());
-            }
+fn collect_matching_text_inner(node: &tree_sitter::Node<'_>, source: &str, kind: &str, results: &mut Vec<String>) {
+    if node.kind() == kind {
+        if let Ok(text) = node.utf8_text(source.as_bytes()) {
+            results.push(text.to_string());
         }
         return;
     }
     let mut cursor = node.walk();
     for child in node.children(&mut cursor) {
-        collect_descendant_text_inner(&child, source, parent_kind, child_kind, results);
+        collect_matching_text_inner(&child, source, kind, results);
     }
 }
 
