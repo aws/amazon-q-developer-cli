@@ -350,6 +350,10 @@ impl TestCase {
             .filter(|e| matches!(e, AgentEvent::ApprovalRequest(_)))
             .collect()
     }
+
+    pub fn agent_events(&self) -> &[AgentEvent] {
+        &self.agent_events
+    }
 }
 
 impl Drop for TestCase {

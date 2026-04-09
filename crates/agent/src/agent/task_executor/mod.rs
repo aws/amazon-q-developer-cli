@@ -489,6 +489,9 @@ impl HookExecutorResult {
 pub struct HookExecutionId {
     pub hook: Hook,
     pub tool_context: Option<ToolContext>,
+    /// Index to disambiguate multiple instances of the same hook config.
+    #[serde(default)]
+    pub index: usize,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -726,6 +729,7 @@ mod tests {
                         config,
                     },
                     tool_context: None,
+                    index: 0,
                 },
                 prompt: None,
                 assistant_response: Some("Here is the assistant response.".to_string()),
@@ -768,6 +772,7 @@ mod tests {
                         config: serde_json::from_str(TEST_COMMAND_HOOK).unwrap(),
                     },
                     tool_context: None,
+                    index: 0,
                 },
                 prompt: None,
                 assistant_response: None,
@@ -826,6 +831,7 @@ mod tests {
                         config,
                     },
                     tool_context: None,
+                    index: 0,
                 },
                 prompt: None,
                 assistant_response: None,

@@ -707,11 +707,13 @@ impl Agent {
         if !hooks.is_empty() {
             let hooks = hooks
                 .into_iter()
-                .map(|hook| {
+                .enumerate()
+                .map(|(index, hook)| {
                     (
                         HookExecutionId {
                             hook,
                             tool_context: None,
+                            index,
                         },
                         None,
                     )
@@ -861,11 +863,11 @@ impl Agent {
 
                 _ = self.task_executor.recv_next(&mut task_executor_event_buf) => {
                     for evt in task_executor_event_buf.drain(..) {
-                        if let Err(e) = self.handle_task_executor_event(evt.clone()).await {
+                        self.agent_event_buf.push(evt.clone().into());
+                        if let Err(e) = self.handle_task_executor_event(evt).await {
                             error!(?e, "failed to handle tool executor event");
                             self.set_active_state(ActiveState::Errored(e)).await;
                         }
-                        self.agent_event_buf.push(evt.into());
                     }
                 },
 
@@ -1569,11 +1571,13 @@ impl Agent {
                     let assistant_response = md.result.as_ref().and_then(|r| r.as_ref().ok()).map(|msg| msg.text());
                     let hooks = hooks
                         .into_iter()
-                        .map(|hook| {
+                        .enumerate()
+                        .map(|(index, hook)| {
                             (
                                 HookExecutionId {
                                     hook,
                                     tool_context: None,
+                                    index,
                                 },
                                 None,
                             )
@@ -1856,11 +1860,13 @@ impl Agent {
         if !hooks.is_empty() {
             let hooks = hooks
                 .into_iter()
-                .map(|hook| {
+                .enumerate()
+                .map(|(index, hook)| {
                     (
                         HookExecutionId {
                             hook,
                             tool_context: None,
+                            index,
                         },
                         None,
                     )
@@ -2228,15 +2234,22 @@ impl Agent {
         let hooks = self.get_hooks(HookTrigger::PreToolUse);
         let mut hooks_to_execute = Vec::new();
         for (block, tool) in &tools {
-            hooks_to_execute.extend(hooks.iter().filter(|h| hook_matches_tool(&h.config, tool)).map(|h| {
-                (
-                    HookExecutionId {
-                        hook: h.clone(),
-                        tool_context: Some((block, tool).into()),
-                    },
-                    Some((block.clone(), tool.clone())),
-                )
-            }));
+            hooks_to_execute.extend(
+                hooks
+                    .iter()
+                    .filter(|h| hook_matches_tool(&h.config, tool))
+                    .enumerate()
+                    .map(|(index, h)| {
+                        (
+                            HookExecutionId {
+                                hook: h.clone(),
+                                tool_context: Some((block, tool).into()),
+                                index,
+                            },
+                            Some((block.clone(), tool.clone())),
+                        )
+                    }),
+            );
         }
         if !hooks_to_execute.is_empty() {
             debug!(?hooks_to_execute, "found hooks to execute for preToolUse");
@@ -2379,13 +2392,15 @@ impl Agent {
                 hooks
                     .iter()
                     .filter(|h| hook_matches_tool(&h.config, &executing_tool.tool))
-                    .map(|h| {
+                    .enumerate()
+                    .map(|(index, h)| {
                         (
                             HookExecutionId {
                                 hook: h.clone(),
                                 tool_context: Some(
                                     (&executing_tool.tool_use_block, &executing_tool.tool, &output).into(),
                                 ),
+                                index,
                             },
                             Some((executing_tool.tool_use_block.clone(), executing_tool.tool.clone())),
                         )

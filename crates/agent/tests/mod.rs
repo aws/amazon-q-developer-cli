@@ -1079,3 +1079,37 @@ async fn test_switch_to_execution_ends_turn_without_tool_results() {
         "should have ended the turn (cancelled tool results in log)"
     );
 }
+
+#[tokio::test]
+async fn test_duplicate_agent_spawn_hooks_all_complete() {
+    let _ = tracing_subscriber::fmt::try_init();
+
+    let hook = HookConfig::ShellCommand(CommandHook {
+        command: "echo duplicate".to_string(),
+        opts: Default::default(),
+    });
+
+    let mut test = TestCase::builder()
+        .test_name("duplicate agent spawn hooks all complete")
+        .with_hook(HookTrigger::AgentSpawn, hook.clone())
+        .with_hook(HookTrigger::AgentSpawn, hook)
+        .build()
+        .await
+        .unwrap();
+
+    test.wait_until_agent_event(Duration::from_secs(5), |evt| matches!(evt, AgentEvent::Initialized))
+        .await
+        .expect("agent should initialize after duplicate spawn hooks complete");
+
+    // Verify both hooks were executed (HookExecutionEnd events now arrive before Initialized).
+    let hook_end_count = test
+        .agent_events()
+        .iter()
+        .filter(|evt| {
+            matches!(evt, AgentEvent::Internal(
+                agent::protocol::InternalEvent::TaskExecutor(te)
+            ) if matches!(te.as_ref(), agent::task_executor::TaskExecutorEvent::HookExecutionEnd(_)))
+        })
+        .count();
+    assert_eq!(hook_end_count, 2, "both duplicate hooks should have executed");
+}
