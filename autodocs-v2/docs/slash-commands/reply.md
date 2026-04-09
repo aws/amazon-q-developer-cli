@@ -29,7 +29,7 @@ Opens editor with assistant's last message quoted.
 
 ## Related
 
-- [/editor](editor.md) - Compose without quote
+- [/paste](paste.md) - Paste image from clipboard
 - [/paste](paste.md) - Paste from clipboard
 
 ## Limitations

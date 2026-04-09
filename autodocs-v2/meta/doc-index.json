@@ -1,6 +1,6 @@
 {
-  "generated_at": "2026-04-08T17:23:07.433995",
-  "total_docs": 100,
+  "generated_at": "2026-04-09T18:06:43.822472",
+  "total_docs": 67,
   "by_category": {
     "command": [
       "commands/acp.md",
@@ -16,73 +16,40 @@
     "feature": [
       "features/agent-configuration.md",
       "features/code-intelligence.md",
-      "features/diff-tool.md",
       "features/exit-codes.md",
-      "features/experiments.md",
-      "features/file-references.md",
-      "features/help-agent.md",
       "features/hooks.md",
       "features/knowledge-management.md",
       "features/mcp-registry.md",
       "features/planning-agent.md",
-      "features/session-management.md",
-      "features/tangent-mode.md",
-      "features/terminal-progress-indicator.md"
+      "features/session-management.md"
     ],
     "settings-group": [
       "settings/api-service-settings.md",
-      "settings/chat-interface-settings.md",
-      "settings/key-bindings-settings.md",
       "settings/knowledge-base-settings.md",
-      "settings/mcp-settings.md",
       "settings/telemetry-privacy-settings.md"
     ],
     "setting": [
-      "settings/cleanup-period-days.md",
-      "settings/context-usage-indicator.md",
       "settings/default-agent.md",
-      "settings/default-model.md",
-      "settings/diff-tool-settings.md",
-      "settings/disable-markdown-rendering.md",
-      "settings/enable-checkpoint.md",
-      "settings/enable-code-intelligence.md",
-      "settings/enable-knowledge.md",
-      "settings/enable-tangent-mode.md",
-      "settings/enable-thinking.md",
-      "settings/enable-todo-list.md",
-      "settings/greeting-enabled.md",
-      "settings/hooks-show-status.md",
-      "settings/introspect-progressive-mode.md",
-      "settings/introspect-tangent-mode.md",
-      "settings/tangent-mode-key.md"
+      "settings/default-model.md"
     ],
     "slash_command": [
       "slash-commands/agent-create.md",
       "slash-commands/agent-edit.md",
-      "slash-commands/agent-generate.md",
-      "slash-commands/agent-schema.md",
-      "slash-commands/agent-set-default.md",
-      "slash-commands/agent-show.md",
       "slash-commands/agent-swap.md",
-      "slash-commands/changelog.md",
       "slash-commands/chat-load.md",
       "slash-commands/chat-new.md",
-      "slash-commands/chat-save-via-script.md",
       "slash-commands/chat-save.md",
-      "slash-commands/checkpoint.md",
       "slash-commands/clear.md",
       "slash-commands/code.md",
       "slash-commands/compact.md",
       "slash-commands/context.md",
+      "slash-commands/copy.md",
       "slash-commands/editor.md",
-      "slash-commands/experiment.md",
+      "slash-commands/feedback.md",
+      "slash-commands/guide.md",
       "slash-commands/help.md",
       "slash-commands/hooks.md",
-      "slash-commands/issue.md",
-      "slash-commands/kiro-cli chat-delete-session.md",
-      "slash-commands/kiro-cli-chat-list.md",
       "slash-commands/knowledge.md",
-      "slash-commands/logdump.md",
       "slash-commands/mcp.md",
       "slash-commands/model.md",
       "slash-commands/paste.md",
@@ -90,14 +57,14 @@
       "slash-commands/prompts.md",
       "slash-commands/quit.md",
       "slash-commands/reply.md",
-      "slash-commands/tangent.md",
-      "slash-commands/todo.md",
+      "slash-commands/spawn.md",
+      "slash-commands/theme.md",
       "slash-commands/tools.md",
+      "slash-commands/transcript.md",
       "slash-commands/usage.md"
     ],
     "tool": [
       "tools/code.md",
-      "tools/delegate.md",
       "tools/execute-bash.md",
       "tools/fs-read.md",
       "tools/fs-write.md",
@@ -105,12 +72,12 @@
       "tools/grep.md",
       "tools/introspect.md",
       "tools/knowledge.md",
-      "tools/report-issue.md",
+      "tools/session-management.md",
+      "tools/subagent.md",
+      "tools/summary.md",
       "tools/switch-to-execution.md",
-      "tools/thinking.md",
       "tools/todo-list.md",
       "tools/use-aws.md",
-      "tools/use-subagent.md",
       "tools/web-fetch.md",
       "tools/web-search.md"
     ]
@@ -149,7 +116,6 @@
         "manage",
         "validate",
         "create",
-        "schema",
         "description"
       ],
       "related": [
@@ -173,7 +139,6 @@
         "interactive",
         "headless",
         "mcp",
-        "require-mcp-startup",
         "log",
         "logging",
         "history",
@@ -196,15 +161,17 @@
       "category": "command",
       "keywords": [
         "diagnostic",
+        "diagnostics",
         "test",
         "troubleshoot",
         "debug",
         "system"
       ],
       "related": [
-        "logdump"
+        "feedback",
+        "whoami"
       ],
-      "validated": "2025-12-19",
+      "validated": "2026-04-09",
       "status": "validated"
     },
     {
@@ -270,21 +237,18 @@
       "path": "commands/settings.md",
       "file": "settings.md",
       "title": "kiro-cli settings",
-      "description": "Configure Kiro CLI behavior at global and workspace levels with get, set, list, open, and delete operations",
+      "description": "Configure Kiro CLI behavior with get, set, list, open, and delete operations",
       "category": "command",
       "keywords": [
         "settings",
         "config",
         "configure",
-        "preferences",
-        "workspace",
-        "global"
+        "preferences"
       ],
       "related": [
-        "slash-experiment",
         "agent-configuration"
       ],
-      "validated": "2026-01-27",
+      "validated": "2026-04-09",
       "status": "validated"
     },
     {
@@ -327,11 +291,11 @@
         "skill"
       ],
       "related": [
-        "cmd-agent",
-        "slash-agent",
-        "slash-agent-generate"
+        "agent-create",
+        "agent-edit",
+        "agent-swap"
       ],
-      "validated": "2026-02-10",
+      "validated": "2026-04-09",
       "status": "validated"
     },
     {
@@ -354,118 +318,31 @@
       ],
       "related": [
         "code-tool",
-        "slash-code",
-        "enable-code-intelligence"
+        "slash-code"
       ],
       "validated": "2026-01-27",
-      "status": "validated"
-    },
-    {
-      "path": "features/diff-tool.md",
-      "file": "diff-tool.md",
-      "title": "Custom diff tool",
-      "description": "Configure an custom diff tool for viewing write tool changes",
-      "category": "feature",
-      "keywords": [
-        "setting",
-        "diff",
-        "write-tool",
-        "code-review"
-      ],
-      "related": [
-        "write-tool"
-      ],
-      "validated": "2026-01-13",
       "status": "validated"
     },
     {
       "path": "features/exit-codes.md",
       "file": "exit-codes.md",
       "title": "Exit Codes",
-      "description": "CLI exit codes for scripting and CI/CD integration",
+      "description": "Exit codes returned by kiro-cli commands for scripting and automation",
       "category": "feature",
       "keywords": [
         "exit",
         "code",
         "status",
-        "error",
-        "ci",
-        "cd",
         "automation",
-        "script",
-        "mcp"
+        "scripting",
+        "CI",
+        "headless"
       ],
       "related": [
         "chat",
         "hooks"
       ],
-      "validated": "2026-01-28",
-      "status": "validated"
-    },
-    {
-      "path": "features/experiments.md",
-      "file": "experiments.md",
-      "title": "Experiments",
-      "description": "Experimental features including tangent mode, thinking, knowledge, todo lists, checkpoints, and delegate",
-      "category": "feature",
-      "keywords": [
-        "experiments",
-        "experimental",
-        "beta",
-        "features",
-        "toggle"
-      ],
-      "related": [
-        "slash-experiment"
-      ],
-      "validated": "2025-12-19",
-      "status": "validated"
-    },
-    {
-      "path": "features/file-references.md",
-      "file": "file-references.md",
-      "title": "File References",
-      "description": "Use @path syntax to include file contents or directory listings inline in chat messages",
-      "category": "feature",
-      "keywords": [
-        "file",
-        "directory",
-        "reference",
-        "at",
-        "path",
-        "inline",
-        "context",
-        "tree",
-        "quoted"
-      ],
-      "related": [
-        "prompts",
-        "fs-read",
-        "context"
-      ],
-      "validated": "2026-02-09",
-      "status": "validated"
-    },
-    {
-      "path": "features/help-agent.md",
-      "file": "help-agent.md",
-      "title": "Help Agent",
-      "description": "Built-in agent that answers questions about Kiro CLI features using documentation",
-      "category": "feature",
-      "keywords": [
-        "help",
-        "agent",
-        "documentation",
-        "introspect",
-        "questions",
-        "features"
-      ],
-      "related": [
-        "slash-help",
-        "introspect",
-        "planning-agent"
-      ],
-      "validated": "2026-03-27",
+      "validated": "2026-04-09",
       "status": "validated"
     },
     {
@@ -487,8 +364,7 @@
       ],
       "related": [
         "agent-configuration",
-        "slash-hooks",
-        "hooks-show-status"
+        "hooks"
       ],
       "validated": "2026-03-10",
       "status": "validated"
@@ -511,7 +387,7 @@
       "related": [
         "knowledge-tool",
         "slash-knowledge",
-        "enable-knowledge"
+        "knowledge-base-settings"
       ],
       "validated": "2025-12-22",
       "status": "validated"
@@ -520,12 +396,12 @@
       "path": "features/mcp-registry.md",
       "file": "mcp-registry.md",
       "title": "MCP Registry",
-      "description": "Enterprise MCP server governance allowing administrators to control which servers users can access",
+      "description": "Enterprise MCP server security allowing administrators to control which servers users can access",
       "category": "feature",
       "keywords": [
         "mcp",
         "registry",
-        "governance",
+        "security",
         "enterprise",
         "admin",
         "pro"
@@ -553,17 +429,17 @@
         "workflow"
       ],
       "related": [
-        "slash-plan",
+        "plan",
         "agent-configuration"
       ],
-      "validated": "2025-12-22",
+      "validated": "2026-04-09",
       "status": "validated"
     },
     {
       "path": "features/session-management.md",
       "file": "session-management.md",
       "title": "Session Management",
-      "description": "Automatic session saving, resumption, and custom storage via scripts",
+      "description": "Automatic session saving, resumption, and file-based storage",
       "category": "feature",
       "keywords": [
         "session",
@@ -576,127 +452,32 @@
       "related": [
         "chat-save",
         "chat-load",
-        "cmd-chat"
+        "chat"
       ],
-      "validated": "2026-03-24",
-      "status": "validated"
-    },
-    {
-      "path": "features/tangent-mode.md",
-      "file": "tangent-mode.md",
-      "title": "Tangent Mode",
-      "description": "Experimental feature for creating conversation checkpoints to explore side topics without disrupting main flow",
-      "category": "feature",
-      "keywords": [
-        "tangent",
-        "checkpoint",
-        "experimental",
-        "branch",
-        "explore"
-      ],
-      "related": [
-        "slash-tangent",
-        "enable-tangent-mode"
-      ],
-      "validated": "2025-12-19",
-      "status": "validated"
-    },
-    {
-      "path": "features/terminal-progress-indicator.md",
-      "file": "terminal-progress-indicator.md",
-      "title": "Terminal progress indicator",
-      "description": "OSC 9;4 progress indicator in the terminal tab/title bar",
-      "category": "feature",
-      "keywords": [
-        "terminal",
-        "progress",
-        "osc",
-        "iterm2",
-        "wezterm",
-        "indicator"
-      ],
-      "related": [
-        "terminal-hyperlinks"
-      ],
-      "validated": "2026-03-13",
+      "validated": "2026-04-09",
       "status": "validated"
     },
     {
       "path": "settings/api-service-settings.md",
       "file": "api-service-settings.md",
       "title": "API and Service Settings",
-      "description": "Settings for API timeouts and service configurations",
+      "description": "Settings for API timeouts and service endpoint configurations",
       "category": "settings-group",
       "keywords": [
         "settings",
         "api",
         "timeout",
         "service",
-        "network"
+        "network",
+        "endpoint",
+        "codewhisperer",
+        "oidc"
       ],
-      "related": [],
-      "validated": "2026-01-05",
-      "status": "validated"
-    },
-    {
-      "path": "settings/chat-interface-settings.md",
-      "file": "chat-interface-settings.md",
-      "title": "Chat Interface Settings",
-      "description": "Settings for chat interface behavior and appearance",
-      "category": "settings-group",
-      "keywords": [
+      "related": [
         "settings",
-        "chat",
-        "interface",
-        "ui",
-        "notifications",
-        "bell",
-        "osc9"
+        "default-model"
       ],
-      "related": [],
-      "validated": "2026-03-25",
-      "status": "validated"
-    },
-    {
-      "path": "settings/cleanup-period-days.md",
-      "file": "cleanup-period-days.md",
-      "title": "cleanup.periodDays",
-      "description": "Days after which old conversations, sessions, and knowledge bases are deleted",
-      "category": "setting",
-      "keywords": [
-        "setting",
-        "cleanup",
-        "retention",
-        "delete",
-        "conversations",
-        "sessions",
-        "knowledge",
-        "storage"
-      ],
-      "related": [
-        "session-management",
-        "knowledge-management"
-      ],
-      "validated": "2026-02-28",
-      "status": "validated"
-    },
-    {
-      "path": "settings/context-usage-indicator.md",
-      "file": "context-usage-indicator.md",
-      "title": "chat.enableContextUsageIndicator",
-      "description": "Show context usage percentage in prompt",
-      "category": "setting",
-      "keywords": [
-        "setting",
-        "context",
-        "usage",
-        "indicator",
-        "percentage"
-      ],
-      "related": [
-        "context"
-      ],
-      "validated": "2025-12-19",
+      "validated": "2026-04-09",
       "status": "validated"
     },
     {
@@ -716,7 +497,7 @@
         "slash-agent",
         "agent-config"
       ],
-      "validated": "2025-12-19",
+      "validated": "2026-04-09",
       "status": "validated"
     },
     {
@@ -739,249 +520,6 @@
       "status": "validated"
     },
     {
-      "path": "settings/diff-tool-settings.md",
-      "file": "diff-tool-settings.md",
-      "title": "chat.diffTool",
-      "description": "Configure an custom diff tool for viewing write tool changes",
-      "category": "setting",
-      "keywords": [
-        "setting",
-        "diff",
-        "write-tool"
-      ],
-      "related": [
-        "write-tool"
-      ],
-      "validated": "2026-01-13",
-      "status": "validated"
-    },
-    {
-      "path": "settings/disable-markdown-rendering.md",
-      "file": "disable-markdown-rendering.md",
-      "title": "chat.disableMarkdownRendering",
-      "description": "Disable markdown formatting in chat output for plain text display",
-      "category": "setting",
-      "keywords": [
-        "setting",
-        "markdown",
-        "rendering",
-        "format",
-        "plain"
-      ],
-      "related": [],
-      "validated": "2025-12-19",
-      "status": "validated"
-    },
-    {
-      "path": "settings/enable-checkpoint.md",
-      "file": "enable-checkpoint.md",
-      "title": "chat.enableCheckpoint",
-      "description": "Enable checkpoint feature for creating workspace snapshots",
-      "category": "setting",
-      "keywords": [
-        "setting",
-        "checkpoint",
-        "experimental",
-        "snapshot"
-      ],
-      "related": [
-        "slash-checkpoint"
-      ],
-      "validated": "2025-12-19",
-      "status": "validated"
-    },
-    {
-      "path": "settings/enable-code-intelligence.md",
-      "file": "enable-code-intelligence.md",
-      "title": "chat.enableCodeIntelligence",
-      "description": "Enable code intelligence with LSP integration",
-      "category": "setting",
-      "keywords": [
-        "setting",
-        "code",
-        "intelligence",
-        "lsp"
-      ],
-      "related": [
-        "code-tool",
-        "slash-code"
-      ],
-      "validated": "2025-12-19",
-      "status": "validated"
-    },
-    {
-      "path": "settings/enable-knowledge.md",
-      "file": "enable-knowledge.md",
-      "title": "chat.enableKnowledge",
-      "description": "Enable knowledge base functionality for persistent context storage",
-      "category": "setting",
-      "keywords": [
-        "setting",
-        "knowledge",
-        "base",
-        "persistent",
-        "experimental"
-      ],
-      "related": [
-        "knowledge-tool",
-        "slash-knowledge"
-      ],
-      "validated": "2025-12-19",
-      "status": "validated"
-    },
-    {
-      "path": "settings/enable-tangent-mode.md",
-      "file": "enable-tangent-mode.md",
-      "title": "chat.enableTangentMode",
-      "description": "Enable tangent mode feature for conversation checkpoints",
-      "category": "setting",
-      "keywords": [
-        "setting",
-        "tangent",
-        "checkpoint",
-        "experimental"
-      ],
-      "related": [
-        "slash-tangent",
-        "tangent-mode"
-      ],
-      "validated": "2025-12-19",
-      "status": "validated"
-    },
-    {
-      "path": "settings/enable-thinking.md",
-      "file": "enable-thinking.md",
-      "title": "chat.enableThinking",
-      "description": "Enable thinking tool for complex reasoning",
-      "category": "setting",
-      "keywords": [
-        "setting",
-        "thinking",
-        "reasoning",
-        "experimental"
-      ],
-      "related": [
-        "thinking-tool"
-      ],
-      "validated": "2025-12-19",
-      "status": "validated"
-    },
-    {
-      "path": "settings/enable-todo-list.md",
-      "file": "enable-todo-list.md",
-      "title": "chat.enableTodoList",
-      "description": "Enable TODO list feature for task tracking",
-      "category": "setting",
-      "keywords": [
-        "setting",
-        "todo",
-        "list",
-        "task",
-        "experimental"
-      ],
-      "related": [
-        "todo-list-tool",
-        "slash-todo"
-      ],
-      "validated": "2025-12-19",
-      "status": "validated"
-    },
-    {
-      "path": "settings/greeting-enabled.md",
-      "file": "greeting-enabled.md",
-      "title": "chat.greetingEnabled",
-      "description": "Show or hide greeting message when starting chat sessions",
-      "category": "setting",
-      "keywords": [
-        "setting",
-        "greeting",
-        "welcome",
-        "message"
-      ],
-      "related": [],
-      "validated": "2025-12-19",
-      "status": "validated"
-    },
-    {
-      "path": "settings/hooks-show-status.md",
-      "file": "hooks-show-status.md",
-      "title": "hooks.showStatus",
-      "description": "Show or hide hook execution status messages (spinner and summary)",
-      "category": "setting",
-      "keywords": [
-        "setting",
-        "hooks",
-        "status",
-        "spinner",
-        "quiet",
-        "silent"
-      ],
-      "related": [
-        "hooks",
-        "slash-hooks"
-      ],
-      "validated": "2026-03-08",
-      "status": "validated"
-    },
-    {
-      "path": "settings/introspect-progressive-mode.md",
-      "file": "introspect-progressive-mode.md",
-      "title": "introspect.progressiveMode",
-      "description": "Use progressive loading instead of semantic search for introspect",
-      "category": "setting",
-      "keywords": [
-        "setting",
-        "introspect",
-        "progressive",
-        "semantic",
-        "search",
-        "enterprise",
-        "model"
-      ],
-      "related": [
-        "introspect",
-        "introspect-tangent-mode"
-      ],
-      "validated": "2026-02-03",
-      "status": "validated"
-    },
-    {
-      "path": "settings/introspect-tangent-mode.md",
-      "file": "introspect-tangent-mode.md",
-      "title": "chat.introspectTangentMode",
-      "description": "Auto-enter tangent mode for introspect questions",
-      "category": "setting",
-      "keywords": [
-        "setting",
-        "introspect",
-        "tangent",
-        "auto"
-      ],
-      "related": [
-        "introspect",
-        "enable-tangent-mode"
-      ],
-      "validated": "2025-12-19",
-      "status": "validated"
-    },
-    {
-      "path": "settings/key-bindings-settings.md",
-      "file": "key-bindings-settings.md",
-      "title": "Key Bindings Settings",
-      "description": "Settings for keyboard shortcuts and key bindings",
-      "category": "settings-group",
-      "keywords": [
-        "settings",
-        "key",
-        "bindings",
-        "shortcuts",
-        "keyboard"
-      ],
-      "related": [],
-      "validated": "2026-01-27",
-      "status": "validated"
-    },
-    {
       "path": "settings/knowledge-base-settings.md",
       "file": "knowledge-base-settings.md",
       "title": "Knowledge Base Settings",
@@ -995,45 +533,7 @@
         "patterns"
       ],
       "related": [],
-      "validated": "2026-01-05",
-      "status": "validated"
-    },
-    {
-      "path": "settings/mcp-settings.md",
-      "file": "mcp-settings.md",
-      "title": "MCP Settings",
-      "description": "Settings for Model Context Protocol (MCP) configuration",
-      "category": "settings-group",
-      "keywords": [
-        "settings",
-        "mcp",
-        "model",
-        "context",
-        "protocol",
-        "timeout"
-      ],
-      "related": [],
-      "validated": "2026-01-05",
-      "status": "validated"
-    },
-    {
-      "path": "settings/tangent-mode-key.md",
-      "file": "tangent-mode-key.md",
-      "title": "chat.tangentModeKey",
-      "description": "Configure keyboard shortcut for tangent mode toggle",
-      "category": "setting",
-      "keywords": [
-        "setting",
-        "tangent",
-        "key",
-        "shortcut",
-        "keybinding"
-      ],
-      "related": [
-        "enable-tangent-mode",
-        "slash-tangent"
-      ],
-      "validated": "2025-12-19",
+      "validated": "2026-04-09",
       "status": "validated"
     },
     {
@@ -1049,31 +549,28 @@
         "analytics"
       ],
       "related": [],
-      "validated": "2026-01-05",
+      "validated": "2026-04-09",
       "status": "validated"
     },
     {
       "path": "slash-commands/agent-create.md",
       "file": "agent-create.md",
       "title": "/agent create",
-      "description": "Create a new agent with AI assistance or manual mode",
+      "description": "Create a new agent configuration",
       "category": "slash_command",
       "keywords": [
         "agent",
         "create",
         "new",
         "configuration",
-        "generate",
-        "ai"
+        "profile"
       ],
       "related": [
         "agent-swap",
-        "agent-list",
         "agent-edit",
-        "cmd-agent",
-        "agent-config"
+        "agent-configuration"
       ],
-      "validated": "2026-02-18",
+      "validated": "2026-04-09",
       "status": "validated"
     },
     {
@@ -1090,96 +587,10 @@
       ],
       "related": [
         "agent-swap",
-        "agent-list",
         "agent-create",
-        "cmd-agent",
-        "agent-config"
+        "agent-configuration"
       ],
-      "validated": "2026-02-17",
-      "status": "validated"
-    },
-    {
-      "path": "slash-commands/agent-generate.md",
-      "file": "agent-generate.md",
-      "title": "/agent generate",
-      "description": "Alias for /agent create - Create agent with AI assistance",
-      "category": "slash_command",
-      "keywords": [
-        "agent",
-        "generate",
-        "create",
-        "ai"
-      ],
-      "related": [
-        "agent-create",
-        "agent-swap",
-        "cmd-agent"
-      ],
-      "validated": "2026-02-16",
-      "status": "redirect"
-    },
-    {
-      "path": "slash-commands/agent-schema.md",
-      "file": "agent-schema.md",
-      "title": "/agent schema",
-      "description": "Show agent config schema",
-      "category": "slash_command",
-      "keywords": [
-        "agent",
-        "schema",
-        "configuration",
-        "format"
-      ],
-      "related": [
-        "agent-swap",
-        "agent-list",
-        "agent-create",
-        "agent-edit",
-        "agent-config"
-      ],
-      "validated": "2026-01-05",
-      "status": "validated"
-    },
-    {
-      "path": "slash-commands/agent-set-default.md",
-      "file": "agent-set-default.md",
-      "title": "/agent set-default",
-      "description": "Define a default agent to use when kiro-cli chat launches",
-      "category": "slash_command",
-      "keywords": [
-        "agent",
-        "default",
-        "set",
-        "launch",
-        "configuration"
-      ],
-      "related": [
-        "agent-swap",
-        "agent-list",
-        "agent-create",
-        "cmd-agent",
-        "agent-config"
-      ],
-      "validated": "2026-02-11",
-      "status": "validated"
-    },
-    {
-      "path": "slash-commands/agent-show.md",
-      "file": "agent-show.md",
-      "title": "/agent show",
-      "description": "Display current agent configuration with syntax highlighting",
-      "category": "slash_command",
-      "keywords": [
-        "agent",
-        "show",
-        "display",
-        "config"
-      ],
-      "related": [
-        "agent-swap",
-        "agent-config"
-      ],
-      "validated": "2025-12-19",
+      "validated": "2026-04-09",
       "status": "validated"
     },
     {
@@ -1196,28 +607,11 @@
         "description"
       ],
       "related": [
-        "agent-generate",
-        "cmd-agent",
-        "agent-config"
+        "agent-create",
+        "agent-edit",
+        "agent-configuration"
       ],
-      "validated": "2026-02-02",
-      "status": "validated"
-    },
-    {
-      "path": "slash-commands/changelog.md",
-      "file": "changelog.md",
-      "title": "/changelog",
-      "description": "View Kiro CLI changelog and version history with recent updates",
-      "category": "slash_command",
-      "keywords": [
-        "changelog",
-        "version",
-        "history",
-        "releases",
-        "updates"
-      ],
-      "related": [],
-      "validated": "2025-12-19",
+      "validated": "2026-04-09",
       "status": "validated"
     },
     {
@@ -1232,14 +626,15 @@
         "import",
         "restore",
         "resume",
-        "session"
+        "session",
+        "zip",
+        "json"
       ],
       "related": [
         "chat-save",
-        "chat-list",
-        "cmd-chat"
+        "chat-new"
       ],
-      "validated": "2026-01-27",
+      "validated": "2026-04-09",
       "status": "validated"
     },
     {
@@ -1265,32 +660,10 @@
       "status": "validated"
     },
     {
-      "path": "slash-commands/chat-save-via-script.md",
-      "file": "chat-save-via-script.md",
-      "title": "/chat save-via-script",
-      "description": "Save the current chat session using a custom script that receives conversation JSON via stdin",
-      "category": "slash_command",
-      "keywords": [
-        "chat",
-        "save",
-        "script",
-        "export",
-        "conversation",
-        "json"
-      ],
-      "related": [
-        "chat-save",
-        "chat-load",
-        "chat-export"
-      ],
-      "validated": "2026-01-05",
-      "status": "validated"
-    },
-    {
       "path": "slash-commands/chat-save.md",
       "file": "chat-save.md",
       "title": "/chat save",
-      "description": "Save current conversation to file or database for later resumption",
+      "description": "Save current conversation to file for later resumption",
       "category": "slash_command",
       "keywords": [
         "chat",
@@ -1301,29 +674,9 @@
       ],
       "related": [
         "chat-load",
-        "chat-list",
-        "cmd-chat"
+        "chat-new"
       ],
-      "validated": "2026-01-27",
-      "status": "validated"
-    },
-    {
-      "path": "slash-commands/checkpoint.md",
-      "file": "checkpoint.md",
-      "title": "/checkpoint",
-      "description": "Manage workspace checkpoints with init, list, restore, expand, diff, and clean operations",
-      "category": "slash_command",
-      "keywords": [
-        "checkpoint",
-        "workspace",
-        "snapshot",
-        "restore",
-        "backup"
-      ],
-      "related": [
-        "enable-checkpoint"
-      ],
-      "validated": "2025-12-19",
+      "validated": "2026-04-09",
       "status": "validated"
     },
     {
@@ -1341,7 +694,7 @@
       "related": [
         "compact"
       ],
-      "validated": "2025-12-19",
+      "validated": "2026-04-09",
       "status": "validated"
     },
     {
@@ -1365,7 +718,7 @@
         "code-tool",
         "enable-code-intelligence"
       ],
-      "validated": "2026-01-13",
+      "validated": "2026-04-09",
       "status": "validated"
     },
     {
@@ -1379,12 +732,14 @@
         "summarize",
         "context",
         "memory",
-        "space"
+        "history",
+        "compress"
       ],
       "related": [
+        "clear",
         "context"
       ],
-      "validated": "2026-01-27",
+      "validated": "2026-04-09",
       "status": "validated"
     },
     {
@@ -1407,71 +762,108 @@
         "agent-config",
         "hooks"
       ],
-      "validated": "2026-02-04",
+      "validated": "2026-04-09",
+      "status": "validated"
+    },
+    {
+      "path": "slash-commands/copy.md",
+      "file": "copy.md",
+      "title": "/copy",
+      "description": "Copy the last assistant response to the system clipboard",
+      "category": "slash_command",
+      "keywords": [
+        "copy",
+        "clipboard",
+        "response",
+        "output"
+      ],
+      "related": [
+        "transcript"
+      ],
+      "validated": "2026-04-08",
       "status": "validated"
     },
     {
       "path": "slash-commands/editor.md",
       "file": "editor.md",
       "title": "/editor",
-      "description": "Open $EDITOR to compose multi-line prompts with optional initial text",
+      "description": "Open $EDITOR to compose a multi-line prompt",
       "category": "slash_command",
       "keywords": [
         "editor",
         "compose",
-        "multiline",
-        "vim",
-        "text"
+        "multi-line",
+        "prompt",
+        "EDITOR",
+        "VISUAL"
       ],
       "related": [
-        "reply",
-        "paste"
+        "reply"
       ],
-      "validated": "2025-12-19",
+      "validated": "2026-04-08",
       "status": "validated"
     },
     {
-      "path": "slash-commands/experiment.md",
-      "file": "experiment.md",
-      "title": "/experiment",
-      "description": "Toggle experimental features like tangent mode, thinking, knowledge, and checkpoints",
+      "path": "slash-commands/feedback.md",
+      "file": "feedback.md",
+      "title": "feedback",
+      "description": "Submit feedback, request features, or report issues",
       "category": "slash_command",
       "keywords": [
-        "experiment",
-        "experimental",
-        "features",
-        "toggle",
-        "beta"
+        "feedback",
+        "issue",
+        "bug",
+        "feature",
+        "request",
+        "report"
       ],
       "related": [
-        "experiments",
-        "tangent-mode",
-        "enable-thinking"
+        "help"
       ],
-      "validated": "2025-12-19",
+      "validated": "2026-04-08",
+      "status": "validated"
+    },
+    {
+      "path": "slash-commands/guide.md",
+      "file": "guide.md",
+      "title": "/guide",
+      "description": "Switch to the guide agent for help with Kiro CLI features and commands",
+      "category": "slash_command",
+      "keywords": [
+        "guide",
+        "help",
+        "agent",
+        "documentation",
+        "questions",
+        "kiro_guide"
+      ],
+      "related": [
+        "help",
+        "agent-swap",
+        "introspect"
+      ],
+      "validated": "2026-04-08",
       "status": "validated"
     },
     {
       "path": "slash-commands/help.md",
       "file": "help.md",
       "title": "/help",
-      "description": "Switch to the Help Agent to ask questions about Kiro CLI features and commands",
+      "description": "Show all available slash commands with descriptions and usage",
       "category": "slash_command",
       "keywords": [
         "help",
-        "agent",
-        "documentation",
         "commands",
-        "features",
-        "questions",
-        "legacy"
+        "list",
+        "usage"
       ],
       "related": [
-        "help-agent",
-        "introspect",
-        "tools"
+        "tools",
+        "guide",
+        "model",
+        "agent"
       ],
-      "validated": "2026-03-27",
+      "validated": "2026-04-08",
       "status": "validated"
     },
     {
@@ -1488,107 +880,30 @@
         "stop"
       ],
       "related": [
-        "hooks-feature",
-        "agent-config"
+        "hooks",
+        "agent-configuration"
       ],
       "validated": "2026-01-27",
-      "status": "validated"
-    },
-    {
-      "path": "slash-commands/issue.md",
-      "file": "issue.md",
-      "title": "/issue",
-      "description": "Create GitHub issue or feature request with pre-filled template",
-      "category": "slash_command",
-      "keywords": [
-        "issue",
-        "github",
-        "bug",
-        "feature",
-        "report"
-      ],
-      "related": [
-        "report-issue"
-      ],
-      "validated": "2025-12-19",
-      "status": "validated"
-    },
-    {
-      "path": "slash-commands/kiro-cli chat-delete-session.md",
-      "file": "kiro-cli chat-delete-session.md",
-      "title": "/chat delete",
-      "description": "Delete saved chat session by ID",
-      "category": "slash_command",
-      "keywords": [
-        "chat",
-        "delete",
-        "remove",
-        "session"
-      ],
-      "related": [
-        "chat-list",
-        "chat-save"
-      ],
-      "validated": "2026-01-05",
-      "status": "validated"
-    },
-    {
-      "path": "slash-commands/kiro-cli-chat-list.md",
-      "file": "kiro-cli-chat-list.md",
-      "title": "/chat list",
-      "description": "List all saved chat sessions for current directory",
-      "category": "slash_command",
-      "keywords": [
-        "chat",
-        "list",
-        "sessions",
-        "saved"
-      ],
-      "related": [
-        "chat-save",
-        "chat-load",
-        "chat-delete"
-      ],
-      "validated": "2026-01-05",
       "status": "validated"
     },
     {
       "path": "slash-commands/knowledge.md",
       "file": "knowledge.md",
       "title": "/knowledge",
-      "description": "Manage knowledge base with add, search, remove, show, and clear operations",
+      "description": "Manage knowledge base with add, remove, show, update, clear, and cancel operations",
       "category": "slash_command",
       "keywords": [
         "knowledge",
         "base",
-        "search",
         "semantic",
-        "manage"
+        "manage",
+        "index"
       ],
       "related": [
         "knowledge-tool",
-        "enable-knowledge"
+        "knowledge-base-settings"
       ],
-      "validated": "2025-12-19",
-      "status": "validated"
-    },
-    {
-      "path": "slash-commands/logdump.md",
-      "file": "logdump.md",
-      "title": "/logdump",
-      "description": "Create zip file with diagnostic logs for support investigation",
-      "category": "slash_command",
-      "keywords": [
-        "logdump",
-        "logs",
-        "debug",
-        "support",
-        "zip"
-      ],
-      "related": [
-        "diagnostic"
-      ],
-      "validated": "2025-12-19",
+      "validated": "2026-04-09",
       "status": "validated"
     },
     {
@@ -1648,7 +963,7 @@
       "related": [
         "fs-read"
       ],
-      "validated": "2025-12-19",
+      "validated": "2026-04-09",
       "status": "validated"
     },
     {
@@ -1673,28 +988,26 @@
       "path": "slash-commands/prompts.md",
       "file": "prompts.md",
       "title": "/prompts",
-      "description": "Manage local and MCP prompts with list, get, create, edit, and remove operations",
+      "description": "Select and execute available prompts from MCP servers and local files",
       "category": "slash_command",
       "keywords": [
         "prompts",
-        "templates",
         "mcp",
-        "local",
-        "global",
-        "manage",
-        "autocomplete"
+        "template",
+        "reusable",
+        "select"
       ],
       "related": [
-        "agent-config",
-        "mcp"
+        "mcp",
+        "agent-configuration"
       ],
-      "validated": "2026-01-27",
+      "validated": "2026-04-08",
       "status": "validated"
     },
     {
       "path": "slash-commands/quit.md",
       "file": "quit.md",
-      "title": "/quit",
+      "title": "quit",
       "description": "Exit the chat session and return to terminal",
       "category": "slash_command",
       "keywords": [
@@ -1729,43 +1042,47 @@
       "status": "validated"
     },
     {
-      "path": "slash-commands/tangent.md",
-      "file": "tangent.md",
-      "title": "/tangent",
-      "description": "Create conversation checkpoints to explore side topics without disrupting main conversation flow",
+      "path": "slash-commands/spawn.md",
+      "file": "spawn.md",
+      "title": "/spawn",
+      "description": "Spawn a new agent session with a task to run in parallel",
       "category": "slash_command",
       "keywords": [
-        "tangent",
-        "checkpoint",
-        "branch",
-        "explore",
-        "forget"
+        "spawn",
+        "session",
+        "parallel",
+        "agent",
+        "task",
+        "background"
       ],
       "related": [
-        "tangent-mode",
-        "introspect"
+        "subagent",
+        "agent-swap"
       ],
-      "validated": "2025-12-19",
+      "validated": "2026-04-08",
       "status": "validated"
     },
     {
-      "path": "slash-commands/todo.md",
-      "file": "todo.md",
-      "title": "/todo",
-      "description": "View, manage, and resume TODO lists with clear-finished, resume, view, and delete operations",
+      "path": "slash-commands/theme.md",
+      "file": "theme.md",
+      "title": "/theme",
+      "description": "Select and customize the terminal color theme",
       "category": "slash_command",
       "keywords": [
-        "todo",
-        "task",
-        "list",
-        "manage",
-        "resume"
+        "theme",
+        "colors",
+        "dark",
+        "light",
+        "auto",
+        "custom",
+        "appearance",
+        "prompt",
+        "diff"
       ],
       "related": [
-        "todo-list",
-        "enable-todo-list"
+        "settings"
       ],
-      "validated": "2025-12-19",
+      "validated": "2026-04-09",
       "status": "validated"
     },
     {
@@ -1778,31 +1095,53 @@
         "tools",
         "permissions",
         "trust",
-        "schema",
-        "approve",
-        "tokens"
+        "approve"
       ],
       "related": [
-        "agent-config",
-        "cmd-chat"
+        "agent-configuration"
       ],
-      "validated": "2026-02-09",
+      "validated": "2026-04-09",
+      "status": "validated"
+    },
+    {
+      "path": "slash-commands/transcript.md",
+      "file": "transcript.md",
+      "title": "/transcript",
+      "description": "Open the full conversation transcript in $PAGER for review",
+      "category": "slash_command",
+      "keywords": [
+        "transcript",
+        "conversation",
+        "pager",
+        "review",
+        "history",
+        "less"
+      ],
+      "related": [
+        "copy"
+      ],
+      "validated": "2026-04-08",
       "status": "validated"
     },
     {
       "path": "slash-commands/usage.md",
       "file": "usage.md",
       "title": "/usage",
-      "description": "Show billing and credits information for current session",
+      "description": "Show account-level usage limits and subscription plan information",
       "category": "slash_command",
       "keywords": [
         "usage",
         "billing",
         "credits",
-        "cost"
+        "plan",
+        "limits",
+        "subscription"
       ],
-      "related": [],
-      "validated": "2025-12-19",
+      "related": [
+        "model",
+        "settings"
+      ],
+      "validated": "2026-04-09",
       "status": "validated"
     },
     {
@@ -1829,34 +1168,14 @@
         "grep",
         "slash-code"
       ],
-      "validated": "2026-01-27",
-      "status": "validated"
-    },
-    {
-      "path": "tools/delegate.md",
-      "file": "delegate.md",
-      "title": "delegate",
-      "description": "Launch and manage asynchronous agent processes running independently in background",
-      "category": "tool",
-      "keywords": [
-        "delegate",
-        "async",
-        "background",
-        "agent",
-        "task"
-      ],
-      "related": [
-        "use-subagent",
-        "slash-agent"
-      ],
-      "validated": "2025-12-19",
+      "validated": "2026-04-09",
       "status": "validated"
     },
     {
       "path": "tools/execute-bash.md",
       "file": "execute-bash.md",
       "title": "execute_bash",
-      "description": "Execute bash commands on the user's system with output capture and safety checks",
+      "description": "Execute bash commands on the user's system with output capture",
       "category": "tool",
       "keywords": [
         "execute_bash",
@@ -1865,22 +1184,21 @@
         "command",
         "terminal",
         "run",
-        "working_dir",
-        "directory"
+        "working_dir"
       ],
       "related": [
         "fs-read",
         "fs-write",
         "use-aws"
       ],
-      "validated": "2026-02-06",
+      "validated": "2026-04-08",
       "status": "validated"
     },
     {
       "path": "tools/fs-read.md",
       "file": "fs-read.md",
       "title": "fs_read",
-      "description": "Read files, directories, and images with support for line ranges, pattern search, and batch operations",
+      "description": "Read files, directories, and images with support for line ranges and batch operations",
       "category": "tool",
       "keywords": [
         "fs_read",
@@ -1888,22 +1206,24 @@
         "file",
         "directory",
         "image",
-        "search",
-        "batch"
+        "batch",
+        "line",
+        "offset",
+        "limit"
       ],
       "related": [
         "fs-write",
         "grep",
         "glob"
       ],
-      "validated": "2025-12-19",
+      "validated": "2026-04-08",
       "status": "validated"
     },
     {
       "path": "tools/fs-write.md",
       "file": "fs-write.md",
       "title": "fs_write",
-      "description": "Create and modify files with support for create, str_replace, insert, and append operations",
+      "description": "Create and modify text files with create, strReplace, and insert operations",
       "category": "tool",
       "keywords": [
         "fs_write",
@@ -1912,15 +1232,16 @@
         "edit",
         "modify",
         "file",
-        "str_replace",
+        "strReplace",
         "insert",
-        "append"
+        "append",
+        "replaceAll"
       ],
       "related": [
         "fs-read",
         "code"
       ],
-      "validated": "2025-12-19",
+      "validated": "2026-04-08",
       "status": "validated"
     },
     {
@@ -1978,13 +1299,14 @@
         "help",
         "documentation",
         "capabilities",
-        "features"
+        "features",
+        "search"
       ],
       "related": [
-        "slash-help",
-        "tangent-mode"
+        "guide",
+        "help"
       ],
-      "validated": "2025-12-19",
+      "validated": "2026-04-08",
       "status": "validated"
     },
     {
@@ -2005,26 +1327,76 @@
         "slash-knowledge",
         "enable-knowledge"
       ],
-      "validated": "2025-12-19",
+      "validated": "2026-04-09",
       "status": "validated"
     },
     {
-      "path": "tools/report-issue.md",
-      "file": "report-issue.md",
-      "title": "report_issue",
-      "description": "Open browser with pre-filled GitHub issue template for reporting bugs or feature requests",
+      "path": "tools/session-management.md",
+      "file": "session-management.md",
+      "title": "session-management",
+      "description": "Agent-to-agent orchestration tool for spawning sessions, messaging, and group management",
       "category": "tool",
       "keywords": [
-        "report_issue",
-        "github",
-        "issue",
-        "bug",
-        "feature"
+        "session",
+        "orchestration",
+        "spawn",
+        "message",
+        "group",
+        "agent",
+        "inbox",
+        "escalation"
       ],
       "related": [
-        "slash-issue"
+        "subagent",
+        "summary"
       ],
-      "validated": "2025-12-19",
+      "validated": "2026-04-08",
+      "status": "validated"
+    },
+    {
+      "path": "tools/subagent.md",
+      "file": "subagent.md",
+      "title": "subagent",
+      "description": "Spawn and coordinate multiple AI agents in a pipeline (DAG) with dependency management",
+      "category": "tool",
+      "keywords": [
+        "subagent",
+        "agent_crew",
+        "crew",
+        "pipeline",
+        "DAG",
+        "stages",
+        "parallel",
+        "blocking",
+        "use_subagent"
+      ],
+      "related": [
+        "summary",
+        "session-management",
+        "agent-configuration"
+      ],
+      "validated": "2026-04-08",
+      "status": "validated"
+    },
+    {
+      "path": "tools/summary.md",
+      "file": "summary.md",
+      "title": "summary",
+      "description": "Subagent tool for reporting task results back to the main agent",
+      "category": "tool",
+      "keywords": [
+        "summary",
+        "subagent",
+        "task",
+        "result",
+        "report",
+        "agent-crew",
+        "pipeline"
+      ],
+      "related": [
+        "subagent"
+      ],
+      "validated": "2026-04-08",
       "status": "validated"
     },
     {
@@ -2044,40 +1416,24 @@
       "status": "validated"
     },
     {
-      "path": "tools/thinking.md",
-      "file": "thinking.md",
-      "title": "thinking",
-      "description": "Internal reasoning tool for complex problem-solving and decision-making",
-      "category": "tool",
-      "keywords": [
-        "thinking",
-        "reasoning",
-        "internal",
-        "complex"
-      ],
-      "related": [
-        "enable-thinking"
-      ],
-      "validated": "2025-12-19",
-      "status": "validated"
-    },
-    {
       "path": "tools/todo-list.md",
       "file": "todo-list.md",
       "title": "todo_list",
-      "description": "Create and manage TODO lists for tracking multi-step tasks with progress and context",
+      "description": "Task list tool for tracking multi-step work with create, complete, add, remove, and list commands",
       "category": "tool",
       "keywords": [
         "todo_list",
         "todo",
         "task",
+        "task_list",
+        "plan",
         "checklist",
         "tracking"
       ],
       "related": [
-        "slash-todo"
+        "switch-to-execution"
       ],
-      "validated": "2025-12-19",
+      "validated": "2026-04-08",
       "status": "validated"
     },
     {
@@ -2102,28 +1458,6 @@
       "status": "validated"
     },
     {
-      "path": "tools/use-subagent.md",
-      "file": "use-subagent.md",
-      "title": "use_subagent",
-      "description": "Delegate tasks to specialized subagents running in parallel with isolated context",
-      "category": "tool",
-      "keywords": [
-        "use_subagent",
-        "subagent",
-        "delegate",
-        "parallel",
-        "multi-agent",
-        "availableAgents",
-        "trustedAgents"
-      ],
-      "related": [
-        "delegate",
-        "slash-agent"
-      ],
-      "validated": "2026-02-19",
-      "status": "validated"
-    },
-    {
       "path": "tools/web-fetch.md",
       "file": "web-fetch.md",
       "title": "web_fetch",
@@ -2135,16 +1469,12 @@
         "url",
         "web",
         "content",
-        "extract",
-        "trusted",
-        "blocked",
-        "permissions",
-        "enterprise"
+        "extract"
       ],
       "related": [
         "web-search"
       ],
-      "validated": "2026-01-27",
+      "validated": "2026-04-09",
       "status": "validated"
     },
     {
@@ -2158,13 +1488,12 @@
         "search",
         "web",
         "internet",
-        "research",
-        "enterprise"
+        "research"
       ],
       "related": [
         "web-fetch"
       ],
-      "validated": "2026-01-27",
+      "validated": "2026-04-09",
       "status": "validated"
     }
   ]

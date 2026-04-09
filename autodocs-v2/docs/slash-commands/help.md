@@ -1,172 +1,122 @@
 ---
 doc_meta:
-  validated: 2026-03-27
-  commit: 4c868fbc
-  status: validated
-  testable_headless: false
-  category: slash_command
   title: /help
-  description: Switch to the Help Agent to ask questions about Kiro CLI features and commands
-  keywords: [help, agent, documentation, commands, features, questions, legacy]
-  related: [help-agent, introspect, tools]
+  description: Show all available slash commands with descriptions and usage
+  category: slash_command
+  keywords: [help, commands, list, usage]
+  related: [tools, guide, model, agent]
+  validated: 2026-04-08
+  commit: 1a984cb0
+  status: validated
+  testable_headless: true
 ---
-
-# /help
-
-Switch to the Help Agent to ask questions about Kiro CLI features and commands.
 
 ## Overview
 
-The `/help` command switches to the built-in Help Agent, which can answer questions about Kiro CLI features, commands, tools, and configuration. The Help Agent uses the `introspect` tool to search documentation and can also create/modify configuration files in `.kiro/` directories.
+The `/help` command displays all available slash commands with their descriptions and usage syntax.
 
 ## Usage
 
-### Switch to Help Agent
-
 ```
 /help
 ```
-
-Switches to the Help Agent and shows a welcome message.
-
-### Ask a Question Directly
-
-```
-/help <question>
-```
-
-Switches to the Help Agent and immediately asks your question.
-
-### Return to Previous Agent
-
-```
-/help
-```
-
-When already in the Help Agent, running `/help` again toggles back to your previous agent.
-
-### Show Classic Help Text
-
-```
-/help --legacy
-```
-
-Shows the classic help text listing all slash commands instead of switching to the Help Agent.
 
 ## Examples
 
-### Example 1: Switch to Help Agent
+### Show available commands
 
 ```
 /help
 ```
 
-**Output**:
-```
-✔ Switched to agent: kiro_help
-
-Welcome to Kiro CLI Help!
-
-I can answer questions about Kiro CLI and help you configure it:
-• Slash commands (/agent, /context, /tools, etc.)
-• Built-in tools (fs_read, code, grep, etc.)
-• Configuration settings
-• Features like MCP, Tangent Mode, Code Intelligence
-• Create/modify agents, prompts, and LSP configs in .kiro/
-
-Just ask me anything about Kiro CLI!
-
-Common questions:
-• "How do I save a conversation?"
-• "What tools are available?"
-• "How does the code tool work?"
-• "Create a new agent for me"
-
-Tip: Use /help to return to your previous agent
-For the classic help text, use /help --legacy
-
-[help] > 
-```
-
-### Example 2: Ask Question Directly
+Output:
 
 ```
-/help How do I save a conversation?
+Available Commands:
+
+  /agent                    Select or list available agents
+    Usage: /agent [agent-name|create <name>|edit [name]|swap <name>]
+
+  /chat                     Load a previous session or start a new one
+    Usage: /chat [save [--force] <path>|load <path>|new [prompt]]
+
+  /clear                    Clear conversation history
+    Usage: /clear
+
+  /code                     Code intelligence workspace management
+    Usage: /code [status|init|logs|overview|summary]
+
+  /compact                  Compact conversation history
+    Usage: /compact
+
+  /context                  Manage context files or show token usage
+    Usage: /context [add [--force] <path>...|remove <path>...|clear]
+
+  /feedback                 Submit feedback, request features, or report issues
+    Usage: /feedback
+
+  /guide                    Get help with Kiro CLI features from the guide agent
+    Usage: /guide [question]
+
+  /help                     Show available commands
+    Usage: /help
+
+  /hooks                    View configured hooks
+    Usage: /hooks
+
+  /knowledge                Manage knowledge base
+    Usage: /knowledge [show|add <name> <path>|remove <name|path>|update <path>|clear|cancel]
+
+  /mcp                      Show configured MCP servers
+    Usage: /mcp
+
+  /model                    Select or list available models
+    Usage: /model [model-name]
+
+  /paste                    Paste image from clipboard
+    Usage: /paste
+
+  /plan                     Switch to Plan agent for breaking down ideas into implementation plans
+    Usage: /plan [prompt]
+
+  /prompts                  Select or list available prompts
+    Usage: /prompts [prompt-name]
+
+  /quit                     Quit the application
+    Usage: /quit
+
+  /reply                    Open editor pre-filled with the last assistant message to compose a reply
+    Usage: /reply
+
+  /tools                    Show available tools
+    Usage: /tools [trust-all|trust <name>|untrust <name>|reset]
+
+  /usage                    Show billing and usage information
+    Usage: /usage
 ```
 
-**Output**:
-```
-✔ Switched to agent: kiro_help
+## TUI-Only Commands
 
-[help] > How do I save a conversation?
-
-To save a conversation, use the `/chat save` command:
-...
-```
-
-### Example 3: Return to Previous Agent
-
-When already in the Help Agent:
+These commands are available in the TUI interface and appear in autocomplete, but are not listed in the `/help` panel:
 
 ```
-[help] > /help
-```
-
-**Output**:
-```
-✔ Switched to agent: kiro_default
-
-> 
-```
-
-### Example 4: Ask Another Question While in Help Agent
-
-```
-[help] > /help What tools are available?
-```
-
-When already in the Help Agent, `/help <question>` just asks the question without switching agents.
-
-### Example 5: Show Classic Help Text
-
-```
-/help --legacy
-```
-
-**Output**:
-```
-Usage: /[COMMAND]
-
-Commands:
-  agent      Manage agents
-  changelog  Show recent changes
-  ...
+  /copy                     Copy last response to clipboard (use /transcript for full conversation)
+  /editor                   Open $EDITOR to compose a prompt
+  /exit                     Quit the application (alias for /quit)
+  /spawn                    Spawn a new agent session with a task
+  /theme                    Select a theme that looks best for your terminal
+  /transcript               Open conversation transcript in $PAGER (quit with q)
 ```
 
 ## Troubleshooting
 
-### Issue: Help Agent Not Responding
+### Command not recognized
 
-**Symptom**: No response after asking question  
-**Cause**: Network or service issue  
-**Solution**: Check connection and try again
+If a slash command isn't listed in `/help`, it may be a prompt name. Use `/prompts` to see available prompts.
 
-### Issue: Can't Find Information
+## Related
 
-**Symptom**: Help Agent says feature isn't documented  
-**Cause**: Feature may be new or undocumented  
-**Solution**: Try rephrasing question or check `/tools` for available tools
-
-## Related Features
-
-- [Help Agent](../features/help-agent.md) - Full Help Agent documentation
-- [introspect](../tools/introspect.md) - Tool used by Help Agent
-- [/tools](tools.md) - View available tools
-
-## Technical Details
-
-**Agent Name**: `kiro_help`
-
-**Tools Available**: `introspect` (documentation search) and `fs_write` (restricted to `.kiro/` directories)
-
-**Prompt Indicator**: `[help]` shown in purple (brand color)
+- [/guide](guide.md) — Get help from the guide agent
+- [/tools](tools.md) — Show available tools
+- [/model](model.md) — Switch models
+- [/agent](agent-swap.md) — Switch agents

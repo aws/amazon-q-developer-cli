@@ -1,6 +1,6 @@
 ---
 doc_meta:
-  validated: 2026-02-10
+  validated: 2026-04-09
   commit: 69e517e1
   status: validated
   testable_headless: true
@@ -8,7 +8,7 @@ doc_meta:
   title: Agent Configuration
   description: Complete guide to agent configuration format including tools, settings, resources, hooks, and MCP servers
   keywords: [agent, configuration, json, tools, settings, resources, hooks, mcp, keyboardShortcut, welcomeMessage, skill]
-  related: [cmd-agent, slash-agent, slash-agent-generate]
+  related: [agent-create, agent-edit, agent-swap]
 ---
 
 # Agent Configuration
@@ -40,12 +40,13 @@ Local agents take precedence over global with same name.
       "allowedPaths": ["~/projects/**"]
     }
   },
-  "resources": ["src/**/*.rs", "Cargo.toml"],
+  "resources": ["file://src/**/*.rs", "file://Cargo.toml"],
   "hooks": {
-    "agentSpawn": {
-      "command": "git status",
-      "description": "Show git status"
-    }
+    "agentSpawn": [
+      {
+        "command": "git status"
+      }
+    ]
   },
   "mcpServers": {
     "git": {
@@ -196,45 +197,39 @@ name: dynamodb-data-modeling
 description: Guide for DynamoDB data modeling best practices. Use when designing or analyzing DynamoDB schema.
 ---
 ```
-```
 
 ### hooks
 
-Commands executed at trigger points.
+Commands executed at trigger points. Each trigger maps to an array of hook configurations.
 
 ```json
 {
   "hooks": {
     "agentSpawn": [
       {
-        "command": "git status",
-        "description": "Show repository status"
+        "command": "git status"
       }
     ],
     "userPromptSubmit": [
       {
-        "command": "date",
-        "description": "Current timestamp"
+        "command": "date"
       }
     ],
     "preToolUse": [
       {
         "matcher": "fs_write",
-        "command": "git diff",
-        "description": "Show changes before write"
+        "command": "git diff"
       }
     ],
     "postToolUse": [
       {
         "matcher": "execute_bash",
-        "command": "echo 'Command executed'",
-        "description": "Log after execution"
+        "command": "echo 'Command executed'"
       }
     ],
     "stop": [
       {
-        "command": "echo 'Response complete'",
-        "description": "Log completion"
+        "command": "echo 'Response complete'"
       }
     ]
   }
@@ -251,7 +246,9 @@ Commands executed at trigger points.
 **Hook Fields**:
 - `command` (required): Command to execute
 - `matcher` (optional): Pattern for preToolUse/postToolUse
-- `description` (optional): Human-readable description
+- `timeout_ms` (optional): Max execution time in ms (default: 10000)
+- `max_output_size` (optional): Max output bytes before truncation (default: 10240)
+- `cache_ttl_seconds` (optional): Cache duration for hook output (default: 0)
 
 ### toolAliases
 
@@ -294,7 +291,9 @@ If not specified, uses default model. Falls back to default if model unavailable
 
 ### mcpServers
 
-MCP server configurations.
+MCP server configurations. Supports local (stdio) and remote (HTTP) servers.
+
+**Local (stdio) server**:
 
 ```json
 {
@@ -305,64 +304,44 @@ MCP server configurations.
       "env": {
         "GIT_DIR": "/path/to/repo"
       },
-      "timeout": 120000
+      "timeout": 120000,
+      "disabledTools": ["dangerous_tool"]
     }
   }
 }
 ```
 
-**MCP Server Fields**:
+**Remote (HTTP) server**:
+
+```json
+{
+  "mcpServers": {
+    "remote-api": {
+      "url": "https://mcp.example.com/sse",
+      "headers": {
+        "Authorization": "Bearer $API_TOKEN"
+      },
+      "oauthScopes": ["mcp", "profile"]
+    }
+  }
+}
+```
+
+**Local Server Fields**:
 - `command` (required): Command to start server
 - `args` (optional): Command arguments
 - `env` (optional): Environment variables
 - `timeout` (optional): Request timeout in milliseconds (default: 120000)
 - `disabled` (optional): Set to `true` to skip loading this server (default: false)
+- `disabledTools` (optional): List of tool names from this server to disable
 
-### toolAliases
-
-Remap tool names to resolve naming collisions.
-
-```json
-{
-  "toolAliases": {
-    "@github-mcp/get_issues": "github_issues",
-    "@gitlab-mcp/get_issues": "gitlab_issues",
-    "@aws-tools/deploy_stack": "deploy"
-  }
-}
-```
-
-Use when multiple MCP servers provide tools with same name, or to create shorter names.
-
-### useLegacyMcpJson
-
-Include MCP servers from legacy configuration files.
-
-```json
-{
-  "useLegacyMcpJson": true
-}
-```
-
-**Alias**: `includeMcpJson`
-
-When `true`, loads MCP servers from:
-- Global: `~/.aws/amazonq/mcp.json`
-- Workspace: `.amazonq/mcp.json`
-
-Tools from legacy servers can be referenced same as servers in `mcpServers` field.
-
-### model
-
-Specify model ID for this agent.
-
-```json
-{
-  "model": "<model-id>"
-}
-```
-
-If not specified, uses default model. Falls back to default if specified model unavailable.
+**Remote Server Fields**:
+- `url` (required): HTTP endpoint URL
+- `headers` (optional): HTTP headers for requests
+- `oauthScopes` (optional): OAuth scopes for authentication
+- `timeout` (optional): Request timeout in milliseconds (default: 120000)
+- `disabled` (optional): Set to `true` to skip loading this server (default: false)
+- `disabledTools` (optional): List of tool names from this server to disable
 
 ### keyboardShortcut
 
@@ -389,10 +368,10 @@ Keyboard shortcut for quickly switching to this agent during a chat session.
 
 **Examples**:
 ```json
-"keyboardShortcut": "ctrl+a"           // Control + A
-"keyboardShortcut": "ctrl+shift+b"     // Control + Shift + B
-"keyboardShortcut": "alt+f1"           // Alt + F1
-"keyboardShortcut": "shift+tab"        // Shift + Tab
+"keyboardShortcut": "ctrl+a"
+"keyboardShortcut": "ctrl+shift+b"
+"keyboardShortcut": "alt+f1"
+"keyboardShortcut": "shift+tab"
 ```
 
 **Toggle Behavior**: Pressing shortcut while already on this agent switches back to previous agent.
@@ -453,14 +432,12 @@ Appears after agent switch confirmation to orient users to agent's purpose.
   "hooks": {
     "agentSpawn": [
       {
-        "command": "cargo --version && rustc --version",
-        "description": "Show Rust toolchain versions"
+        "command": "cargo --version && rustc --version"
       }
     ],
     "stop": [
       {
-        "command": "echo 'Response complete'",
-        "description": "Log completion"
+        "command": "echo 'Response complete'"
       }
     ]
   },
@@ -480,7 +457,7 @@ Appears after agent switch confirmation to orient users to agent's purpose.
 ### Method 1: AI Generation
 
 ```
-/agent generate
+/agent create
 ```
 
 Interactive process with AI assistance.
@@ -515,7 +492,7 @@ Checks JSON syntax and schema compliance.
   "description": "Read-only agent for browsing code",
   "tools": ["fs_read", "grep", "glob"],
   "allowedTools": ["fs_read", "grep", "glob"],
-  "resources": ["src/**/*", "README.md"]
+  "resources": ["file://src/**/*", "file://README.md"]
 }
 ```
 
@@ -538,12 +515,13 @@ Checks JSON syntax and schema compliance.
       "autoAllowReadonly": true
     }
   },
-  "resources": ["src/**/*.rs", "Cargo.toml"],
+  "resources": ["file://src/**/*.rs", "file://Cargo.toml"],
   "hooks": {
-    "agentSpawn": {
-      "command": "cargo --version",
-      "description": "Show Rust version"
-    }
+    "agentSpawn": [
+      {
+        "command": "cargo --version"
+      }
+    ]
   }
 }
 ```
@@ -668,6 +646,6 @@ WARNING: Agent config specifies 2 unavailable tools from @github: get_isues, lis
 ## Related
 
 - [kiro-cli agent](../commands/agent.md) - Manage agents
-- [/agent](../slash-commands/agent-switch.md) - Switch agents
-- [/agent generate](../slash-commands/agent-generate.md) - Generate with AI
+- [/agent](../slash-commands/agent-swap.md) - Switch agents
+- [/agent create](../slash-commands/agent-create.md) - Create with AI
 - [Hooks](../features/hooks.md) - Hook system details

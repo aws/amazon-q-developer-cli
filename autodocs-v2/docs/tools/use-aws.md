@@ -159,7 +159,7 @@ Configure service restrictions in agent's `toolsSettings`:
 | `parameters` | object | No | Operation parameters as key-value pairs |
 | `region` | string | Yes | AWS region (e.g., us-east-1, eu-west-1) |
 | `profile_name` | string | No | AWS profile from ~/.aws/credentials |
-| `label` | string | No | Human-readable description |
+| `label` | string | Yes | Human-readable description |
 
 ## Parameter Format
 
@@ -304,7 +304,7 @@ Auto-approved by default (`autoAllowReadonly: true`). Uses a comprehensive list 
 ## Related Features
 
 - [execute_bash](execute-bash.md) - Alternative for AWS CLI commands
-- [Agent Configuration](../agent-config/overview.md) - Configure tool permissions
+- [Agent Configuration](../features/agent-configuration.md) - Configure tool permissions
 
 ## Limitations
 

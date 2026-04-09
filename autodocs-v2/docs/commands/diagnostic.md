@@ -1,14 +1,14 @@
 ---
 doc_meta:
-  validated: 2025-12-19
-  commit: 57090ffe
+  validated: 2026-04-09
+  commit: 4ae084db
   status: validated
   testable_headless: true
   category: command
   title: kiro-cli diagnostic
   description: Run diagnostic tests and generate system information report for troubleshooting
-  keywords: [diagnostic, test, troubleshoot, debug, system]
-  related: [logdump]
+  keywords: [diagnostic, diagnostics, test, troubleshoot, debug, system]
+  related: [feedback, whoami]
 ---
 
 # kiro-cli diagnostic
@@ -17,14 +17,13 @@ Run diagnostic tests and generate system information report for troubleshooting.
 
 ## Overview
 
-The diagnostic command runs system diagnostics and generates a report with environment information, configuration status, and potential issues. Useful for troubleshooting problems or providing information to support.
+The diagnostic command collects system diagnostics and generates a report with build details, system information, environment details, and relevant environment variables. Useful for troubleshooting problems or providing information to support.
 
 ## Usage
 
-### Basic Usage
-
 ```bash
 kiro-cli diagnostic
+kiro-cli diagnostics  # alias
 ```
 
 ### With Output Format
@@ -44,20 +43,18 @@ kiro-cli diagnostic --force
 
 | Option | Short | Description |
 |--------|-------|-------------|
-| `--format <FORMAT>` | `-f` | Output format: plain (markdown), json, json-pretty (default: plain) |
+| `--format <FORMAT>` | `-f` | Output format: plain (TOML), json, json-pretty (default: plain) |
 | `--force` | | Force limited diagnostic output |
-| `--verbose` | `-v` | Increase logging verbosity (can be repeated) |
 | `--help` | `-h` | Print help information |
 
 ## Output Information
 
 Diagnostic report includes:
-- System information (OS, architecture)
-- Kiro CLI version
-- Configuration status
-- Environment variables
-- Installed dependencies
-- Potential issues
+- Build details (version, commit hash, build date)
+- System info (OS, chip, cores, memory)
+- Environment (cwd, cli-path, install-method, terminal)
+- Conditional flags: in-ssh, in-ci, in-wsl, in-codespaces (shown only when true)
+- Relevant environment variables
 
 ## Examples
 
@@ -73,7 +70,6 @@ kiro-cli diagnostic
 version = "1.23.0"
 hash = "97d58722cd90f6d3dda465f6462ee4c6dc104b22"
 date = "2025-12-18T16:49:27.015389Z (4d ago)"
-variant = "full"
 
 [system-info]
 os = "macOS 15.7.1 (24G231)"
@@ -82,19 +78,15 @@ total-cores = 10
 memory = "32.00 GB"
 
 [environment]
-cwd = "/Users/user/project"
-cli-path = "/Users/user/.cargo/bin/kiro-cli"
-os = "Mac"
-shell-path = "/bin/bash"
-shell-version = "5.1.16"
-terminal = "iTerm2"
+cwd = "/Users/USER/project"
+cli-path = "/Users/USER/.cargo/bin/kiro-cli"
 install-method = "cargo"
+terminal = "iTerm2 3.5.0"
 
 [env-vars]
 PATH = "..."
 SHELL = "/bin/zsh"
 TERM = "xterm-256color"
-...
 ```
 
 ### Example 2: JSON Output
@@ -129,24 +121,17 @@ Generates minimal diagnostic report (faster).
 
 ## Related Features
 
-- [/logdump](../slash-commands/logdump.md) - Create log archive
+- [/feedback](../slash-commands/feedback.md) - Submit feedback or report issues
 - [kiro-cli whoami](whoami.md) - User information
-
-## Limitations
-
-- Some checks may require network access
-- Limited output with --force flag
-- May not detect all issues
 
 ## Technical Details
 
-**Checks Performed**:
-- Version information
-- File system paths
-- Configuration validity
-- Dependency availability
-- Environment variables
+**Information Collected**:
+- Build details (version, hash, date)
+- System info (OS, chip, cores, memory)
+- Current environment (cwd, cli path, install method, terminal, SSH/CI/WSL/Codespaces detection)
+- Filtered environment variables
 
-**Output Formats**: plain (human-readable), json, json-pretty
+**Output Formats**: plain (TOML), json, json-pretty
 
 **Spinner**: Shows progress indicator in terminal mode

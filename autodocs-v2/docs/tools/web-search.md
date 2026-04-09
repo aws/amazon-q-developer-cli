@@ -1,13 +1,13 @@
 ---
 doc_meta:
-  validated: 2026-01-27
+  validated: 2026-04-09
   commit: b3f10998
   status: validated
   testable_headless: true
   category: tool
   title: web_search
   description: Search the web for current information with automatic source citation
-  keywords: [web_search, search, web, internet, research, enterprise]
+  keywords: [web_search, search, web, internet, research]
   related: [web-fetch]
 ---
 
@@ -145,27 +145,13 @@ References:
 **Cause**: Query too specific or no matches  
 **Solution**: Rephrase with different keywords
 
-### Issue: Not Available
-
-**Symptom**: "Web search not available in your region"  
-**Cause**: Feature not enabled in eu-central-1  
-**Solution**: Feature unavailable in that region
-
-### Issue: Tool Not Listed
-
-**Symptom**: web_search doesn't appear in available tools  
-**Cause**: Enterprise administrator has disabled web tools  
-**Solution**: Contact your organization's administrator
-
 ## Related Features
 
 - [web_fetch](web-fetch.md) - Fetch detailed content from URLs
-- [Agent Configuration](../agent-config/overview.md) - Permanent tool trust
+- [Agent Configuration](../features/agent-configuration.md) - Permanent tool trust
 
 ## Limitations
 
-- Regional availability (not in eu-central-1)
-- Enterprise administrators can disable web tools for their organization
 - Requires approval unless in allowedTools
 - Results quality depends on search service
 - No control over result ranking
@@ -176,7 +162,5 @@ References:
 **Aliases**: `web_search`
 
 **Permissions**: Requires approval unless in allowedTools.
-
-**Regional**: Available in most regions except eu-central-1.
 
 **Content Rules**: Max 30 consecutive words from any source, must paraphrase and cite.

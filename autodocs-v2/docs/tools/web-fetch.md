@@ -1,13 +1,13 @@
 ---
 doc_meta:
-  validated: 2026-01-27
-  commit: 7943adae
+  validated: 2026-04-09
+  commit: 4ae084db
   status: validated
   testable_headless: true
   category: tool
   title: web_fetch
   description: Fetch and extract content from specific URLs with selective, truncated, or full modes
-  keywords: [web_fetch, fetch, url, web, content, extract, trusted, blocked, permissions, enterprise]
+  keywords: [web_fetch, fetch, url, web, content, extract]
   related: [web-search]
 ---
 
@@ -71,8 +71,6 @@ The web_fetch tool retrieves content from web pages. Supports three extraction m
 
 ## Configuration
 
-### Basic Trust
-
 Add to agent config for permanent trust:
 
 ```json
@@ -80,34 +78,6 @@ Add to agent config for permanent trust:
   "allowedTools": ["web_fetch"]
 }
 ```
-
-### URL-Based Permissions
-
-Configure granular URL permissions using `toolsSettings`:
-
-```json
-{
-  "toolsSettings": {
-    "web_fetch": {
-      "trusted": [".*docs\\.aws\\.amazon\\.com.*", ".*github\\.com.*"],
-      "blocked": [".*pastebin\\.com.*", ".*malicious\\.org.*"]
-    }
-  }
-}
-```
-
-| Option | Type | Description |
-|--------|------|-------------|
-| `trusted` | array of regex | URL patterns to auto-allow without prompting |
-| `blocked` | array of regex | URL patterns to deny (takes precedence over trusted) |
-
-**Pattern behavior**:
-- Patterns are regex and automatically anchored with `^` and `$`
-- Invalid regex patterns in `blocked` deny all URLs (fail-safe)
-- Invalid regex patterns in `trusted` are skipped
-- `blocked` patterns take precedence over `trusted`
-- If tool is in `allowedTools` and URL matches neither list, it's allowed
-- If tool is not in `allowedTools` and URL matches neither list, user is prompted
 
 ## Modes
 
@@ -192,28 +162,10 @@ Complete content.
 **Cause**: Search terms don't match page content  
 **Solution**: Try different search terms or use truncated/full mode.
 
-### Issue: Tool Requires Approval
-
-**Symptom**: Prompted for permission  
-**Cause**: web_fetch not in allowedTools and URL not in trusted patterns  
-**Solution**: Approve, add to allowedTools, or add URL pattern to trusted list.
-
-### Issue: URL Blocked
-
-**Symptom**: Permission denied for URL  
-**Cause**: URL matches a pattern in blocked list  
-**Solution**: Remove pattern from blocked list in toolsSettings.
-
-### Issue: Tool Not Listed
-
-**Symptom**: web_fetch doesn't appear in available tools  
-**Cause**: Enterprise administrator has disabled web tools  
-**Solution**: Contact your organization's administrator
-
 ## Related Features
 
 - [web_search](web-search.md) - Search web for URLs
-- [Agent Configuration](../agent-config/overview.md) - Permanent tool trust
+- [Agent Configuration](../features/agent-configuration.md) - Permanent tool trust
 
 ## Limitations
 
@@ -221,11 +173,9 @@ Complete content.
 - 30 second timeout
 - Max 10 redirects
 - HTML/text content only (binary rejected)
-- 3 automatic retries with exponential backoff (1s, 2s, 4s)
+- 3 automatic retries with exponential backoff (1s, 2s)
 - No JavaScript execution
 - No authentication support
-- Regional availability (not in eu-central-1)
-- Enterprise administrators can disable web tools for their organization
 
 ## Technical Details
 
@@ -241,6 +191,4 @@ Complete content.
 - Redirects: 10 max
 - Retries: 3 with exponential backoff
 
-**Permissions**: Requires approval unless in allowedTools or URL matches trusted pattern.
-
-**Regional**: Available in most regions except eu-central-1.
+**Permissions**: Requires approval unless in allowedTools.

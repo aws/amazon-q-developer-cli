@@ -1,19 +1,19 @@
 ---
 doc_meta:
-  validated: 2026-01-27
-  commit: 85403a86
+  validated: 2026-04-09
+  commit: 4ae084db
   status: validated
   testable_headless: false
   category: slash_command
   title: /chat save
-  description: Save current conversation to file or database for later resumption
+  description: Save current conversation to file for later resumption
   keywords: [chat, save, export, persist, session]
-  related: [chat-load, chat-list, cmd-chat]
+  related: [chat-load, chat-new]
 ---
 
 # /chat save
 
-Save current conversation to file or database for later resumption.
+Save current conversation to file for later resumption.
 
 ## Overview
 
@@ -21,19 +21,10 @@ The `/chat save` command exports the current conversation state to a JSON file. 
 
 ## Usage
 
-### Basic Usage
-
 ```
 /chat save <path>
-```
-
-### With Force Overwrite
-
-```
 /chat save <path> --force
 ```
-
-**Aliases**: `/save` (deprecated - use `/chat save`)
 
 ## Parameters
 
@@ -44,14 +35,11 @@ The `/chat save` command exports the current conversation state to a JSON file. 
 
 ## How It Works
 
-Exports current conversation state as JSON including:
-- Complete message history
-- Agent configuration
-- Context files
-- Tool manager state
-- Model information
+Exports current conversation state as `kiro-session-export-v1` JSON including:
+- Session metadata (session ID, working directory, timestamps, title)
+- Complete log entries (message history)
 
-File can be loaded later with `/chat load` to restore exact conversation state.
+File can be loaded later with `/chat load` to restore the conversation.
 
 ## Examples
 
@@ -63,31 +51,30 @@ File can be loaded later with `/chat load` to restore exact conversation state.
 
 **Output**:
 ```
-✔ Exported chat session state to my-session.json
-To restore this session later, use: /chat load my-session.json
+Saved session to my-session.json
 ```
 
-### Example 2: Overwrite Existing File
+### Example 2: Save Without Extension
+
+If no extension is provided, `.json` is automatically added:
+
+```
+/chat save my-session
+```
+
+Saves to `my-session.json`.
+
+### Example 3: Overwrite Existing File
 
 ```
 /chat save backup.json --force
 ```
 
-### Example 3: Save with Path
+### Example 4: Save with Path
 
 ```
 /chat save ~/backups/important-conversation.json
 ```
-
-## Advanced: Script-Based Save
-
-Save via custom script that receives JSON via stdin:
-
-```
-/chat save-via-script ./my-save-script.sh
-```
-
-Script receives conversation JSON on stdin and should exit 0 on success.
 
 ## Troubleshooting
 
@@ -99,7 +86,7 @@ Script receives conversation JSON on stdin and should exit 0 on success.
 
 ### Issue: Permission Denied
 
-**Symptom**: "Failed to export" error  
+**Symptom**: "Failed to write" error  
 **Cause**: No write permission for path  
 **Solution**: Check directory permissions or use different path
 
@@ -112,35 +99,39 @@ Script receives conversation JSON on stdin and should exit 0 on success.
 ## Related Features
 
 - [/chat load](chat-load.md) - Load saved conversation
-- [/chat list](chat-list.md) - List saved conversations
-- [kiro-cli chat --list-sessions](../commands/chat.md) - List database sessions
-- [kiro-cli chat --delete-session](../commands/chat.md) - Delete session
-
-## Limitations
-
-- Saves to file, not database (use auto-save for database)
-- File format is JSON (not human-readable)
-- Large conversations create large files
-- No compression or encryption
-- Context files referenced by path (not embedded)
+- [/chat new](chat-new.md) - Start fresh conversation
+- [kiro-cli chat](../commands/chat.md) - CLI session management
 
 ## Technical Details
 
-**File Format**: JSON with ConversationState structure
+**File Format**: `kiro-session-export-v1` JSON envelope
 
-**Auto-Save**: Conversations automatically saved to database per-directory. This command is for explicit file exports.
+**Structure**:
+```json
+{
+  "format": "kiro-session-export-v1",
+  "metadata": {
+    "session_id": "...",
+    "cwd": "/path/to/dir",
+    "created_at": "2026-01-01T00:00:00Z",
+    "updated_at": "2026-01-01T00:00:00Z",
+    "title": "Session Title",
+    "session_state": "..."
+  },
+  "log_entries": [...]
+}
+```
 
 **State Preserved**:
-- Message history
-- Agent configuration
-- Context file paths
-- Tool manager state
-- Model information
-- MCP server state
+- Session ID
+- Working directory (cwd)
+- Created/updated timestamps
+- Session title
+- Log entries (complete message history)
 
 **State Not Preserved**:
 - Tool manager instance (recreated on load)
 - MCP connections (reconnected on load)
-- Model info (uses current session's model)
+- Agent configuration (uses current session's config)
 
-**Deprecated**: `/save` command deprecated in favor of `/chat save`
+**Auto-Extension**: `.json` extension added automatically if no extension provided.

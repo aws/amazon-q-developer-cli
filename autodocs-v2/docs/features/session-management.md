@@ -1,31 +1,33 @@
 ---
 doc_meta:
-  validated: 2026-03-24
-  commit: 21e95839
+  validated: 2026-04-09
+  commit: 4ae084db
   status: validated
   testable_headless: false
   category: feature
   title: Session Management
-  description: Automatic session saving, resumption, and custom storage via scripts
+  description: Automatic session saving, resumption, and file-based storage
   keywords: [session, save, load, resume, auto-save, storage]
-  related: [chat-save, chat-load, cmd-chat]
+  related: [chat-save, chat-load, chat]
 ---
 
 # Session Management
 
-Automatic session saving, resumption, and custom storage via scripts.
+Automatic session saving, resumption, and file-based storage.
 
 ## Overview
 
-Kiro CLI automatically saves all chat sessions on every conversation turn. Sessions are stored per-directory in the database. Resume from any previous session, export to files, or use custom scripts for version control/cloud storage integration.
+Kiro CLI automatically saves all chat sessions on every conversation turn. Sessions are stored per-directory as files. Resume from any previous session or export to portable files.
 
 ## Auto-Save
 
-**Automatic**: Every conversation turn saved to database  
+**Automatic**: Every conversation turn saved  
 **Scope**: Per-directory (each project has own sessions)  
-**Storage**: SQLite database in application data directory:
-- macOS: `~/Library/Application Support/kiro-cli/data.sqlite3`
-- Linux: `~/.local/share/kiro-cli/data.sqlite3`  
+**Storage**: `~/.kiro/sessions/cli/`
+- `{session_id}.json` - metadata (cwd, timestamps, session state)
+- `{session_id}.jsonl` - append-only conversation log
+- `{session_id}.lock` - lock file (exists only when session is active)
+
 **Session ID**: UUID for each session
 
 ## Managing Sessions
@@ -49,9 +51,6 @@ kiro-cli chat --delete-session <SESSION_ID>
 ### From Chat
 
 ```bash
-# Resume session (interactive)
-/chat resume
-
 # Save to file
 /chat save <path>
 
@@ -61,49 +60,10 @@ kiro-cli chat --delete-session <SESSION_ID>
 
 **Note**: `.json` extension optional when loading.
 
-## Custom Storage via Scripts
-
-Use custom scripts to save/load sessions from version control, cloud storage, or databases.
-
-### Save via Script
-
-```bash
-/chat save-via-script <script-path>
-```
-
-Script receives session JSON via stdin.
-
-**Example: Save to Git Notes**
-```bash
-#!/bin/bash
-COMMIT=$(git rev-parse HEAD)
-TEMP=$(mktemp)
-cat > "$TEMP"
-git notes --ref=kiro/notes add -F "$TEMP" "$COMMIT" --force
-rm "$TEMP"
-echo "Saved to commit ${COMMIT:0:8}" >&2
-```
-
-### Load via Script
-
-```bash
-/chat load-via-script <script-path>
-```
-
-Script outputs session JSON to stdout.
-
-**Example: Load from Git Notes**
-```bash
-#!/bin/bash
-COMMIT=$(git rev-parse HEAD)
-git notes --ref=kiro/notes show "$COMMIT"
-```
-
 ## Session Storage
 
-**Database**: Sessions auto-saved per-directory  
-**Files**: Manual export via `/chat save`  
-**Custom**: Script-based integration
+**Files**: Sessions auto-saved per-directory to `~/.kiro/sessions/cli/`  
+**Export**: Manual export via `/chat save`
 
 **Session ID**: UUID format (e.g., `f2946a26-3735-4b08-8d05-c928010302d5`)
 
@@ -133,14 +93,14 @@ Shows list of sessions to choose from.
 
 Exports current session to file.
 
-### Example 4: Version Control Integration
+### Example 4: Save and Load Workflow
 
 ```bash
-# Save to git notes
-/chat save-via-script ./scripts/save-to-git.sh
+# Save current session
+/chat save ./backup.json
 
-# Load from git notes
-/chat load-via-script ./scripts/load-from-git.sh
+# Later, load it back
+/chat load ./backup.json
 ```
 
 ## Troubleshooting
@@ -151,18 +111,6 @@ Exports current session to file.
 **Cause**: No sessions in current directory  
 **Solution**: Sessions are per-directory. Navigate to correct directory.
 
-### Issue: Script Save Fails
-
-**Symptom**: Script exits with error  
-**Cause**: Script returned non-zero exit code  
-**Solution**: Test script manually. Ensure it exits 0 on success.
-
-### Issue: Script Load Fails
-
-**Symptom**: Can't load session  
-**Cause**: Script didn't output valid JSON  
-**Solution**: Test script outputs valid session JSON to stdout.
-
 ## Related
 
 - [/chat save](../slash-commands/chat-save.md) - Save command
@@ -172,21 +120,17 @@ Exports current session to file.
 ## Limitations
 
 - Sessions stored per-directory
-- Auto-save to database only (not files)
+- Auto-save to files only (not cloud)
 - Session IDs are UUIDs (not human-readable)
-- No cloud sync (use scripts for custom storage)
+- No cloud sync built-in
 - No session search by content
 
 ## Technical Details
 
-**Storage**: SQLite database in application data directory (`data.sqlite3`)
+**Storage**: File-based in `~/.kiro/sessions/cli/`
 
 **Scope**: Sessions keyed by directory path
 
 **Auto-Save**: After every conversation turn
 
 **Model Preservation**: When resuming via `--resume`, the model active when the session was saved is restored. This includes models switched mid-session with `/model`. The `--model` CLI flag overrides the saved model.
-
-**Script Interface**: 
-- Save: JSON via stdin, exit 0 on success
-- Load: JSON via stdout, exit 0 on success

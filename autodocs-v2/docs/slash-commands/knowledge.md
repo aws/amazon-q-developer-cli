@@ -1,70 +1,59 @@
 ---
 doc_meta:
-  validated: 2025-12-19
-  commit: 57090ffe
+  validated: 2026-04-09
+  commit: 727bdf89
   status: validated
   testable_headless: false
   category: slash_command
   title: /knowledge
-  description: Manage knowledge base with add, search, remove, show, and clear operations
-  keywords: [knowledge, base, search, semantic, manage]
-  related: [knowledge-tool, enable-knowledge]
+  description: Manage knowledge base with add, remove, show, update, clear, and cancel operations
+  keywords: [knowledge, base, semantic, manage, index]
+  related: [knowledge-tool, knowledge-base-settings]
 ---
-
-# /knowledge
-
-Manage knowledge base with add, search, remove, show, and clear operations.
 
 ## Overview
 
-The `/knowledge` command provides slash command interface for knowledge base management. The AI assistant also uses the `knowledge` tool automatically to store and retrieve information during conversations. Add files or text, search semantically, remove entries, view all entries, and clear knowledge base.
+The `/knowledge` command manages the knowledge base. Add files or directories, remove entries, view all entries, and clear the knowledge base. The AI assistant also uses the `knowledge` tool automatically to store and retrieve information during conversations.
 
 ## Usage
 
 ```
-/knowledge <subcommand>
+/knowledge [subcommand]
 ```
+
+Without a subcommand, defaults to `show`.
 
 ## Subcommands
 
 ### show
 
-List all knowledge base entries.
+List all knowledge base entries with status.
 
 ```
 /knowledge show
 ```
 
-Shows all entries with status and background operations.
-
 ### add
 
-Add content to knowledge base.
+Add a file or directory to the knowledge base.
 
 ```
-/knowledge add --name <name> --path <path> [--include pattern] [--exclude pattern] [--index-type Fast|Best]
+/knowledge add <name> <path>
 ```
-
-**Options**:
-- `--name, -n`: Entry name (required)
-- `--path, -p`: File or directory path (required)
-- `--include`: Include patterns (can specify multiple)
-- `--exclude`: Exclude patterns (can specify multiple)
-- `--index-type`: Fast or Best (default from settings)
 
 ### remove
 
-Remove entry by path.
+Remove an entry by name or path.
 
 ```
-/knowledge remove <path>
+/knowledge remove <name|path>
 ```
 
-**Alias**: `/knowledge rm`
+Alias: `/knowledge rm`
 
 ### update
 
-Re-index existing entry.
+Re-index an existing entry.
 
 ```
 /knowledge update <path>
@@ -72,101 +61,54 @@ Re-index existing entry.
 
 ### clear
 
-Clear entire knowledge base.
+Clear the entire knowledge base.
 
 ```
 /knowledge clear
 ```
 
-Requires confirmation.
-
 ### cancel
 
-Cancel background operation.
+Cancel a background indexing operation.
 
 ```
 /knowledge cancel [operation-id]
 ```
 
-Without ID, cancels most recent operation.
-
-### fix
-
-Fix knowledge base directory names after agent path changes.
-
-```
-/knowledge fix [--apply]
-```
-
-Default is dry-run. Use `--apply` to actually fix.
-
-## Configuration
-
-Enable knowledge feature:
-
-```bash
-kiro-cli settings chat.enableKnowledge true
-```
+Without ID, cancels the most recent operation.
 
 ## Examples
 
-### Example 1: Add Files
+### Add documentation
 
 ```
-/knowledge add --name rust-docs --path docs/
+/knowledge add rust-docs docs/
 ```
 
-Prompts for additional options (include/exclude patterns, index type).
-
-### Example 2: Show Entries
+### Show entries
 
 ```
 /knowledge show
 ```
 
-Lists all stored entries with status.
-
-### Example 3: Remove Entry
+### Remove an entry
 
 ```
-/knowledge remove docs/
+/knowledge remove rust-docs
 ```
-
-Removes entry by path.
-
-## Related Features
-
-- [knowledge](../tools/knowledge.md) - Knowledge tool
-- [chat.enableKnowledge](../settings/enable-knowledge.md) - Enable setting
-
-## Limitations
-
-- Experimental feature
-- Requires explicit enablement
-- Interactive only (not in headless mode)
-
-## Technical Details
-
-**Storage**: Local knowledge base in workspace
-
-**Search**: Semantic search using embeddings
 
 ## Troubleshooting
 
-### Issue: Feature Not Enabled
+### Entry not found
 
-**Symptom**: Commands don't work  
-**Cause**: Knowledge feature not enabled  
-**Solution**: `kiro-cli settings chat.enableKnowledge true`
+Use `/knowledge show` to list all entries and verify the name or path.
 
-### Issue: Can't Find Entry
+### Indexing seems stuck
 
-**Symptom**: Entry not in list  
-**Cause**: Entry removed or never added  
-**Solution**: Use `/knowledge show` to list all entries
+Use `/knowledge cancel` to cancel the current operation and try again.
 
-### Issue: Search Returns Nothing
+## Related
 
-**Symptom**: No results from search  
-**Cause**: Query doesn't match indexed content  
-**Solution**: Try different search terms or verify content was indexed
+- [knowledge tool](../tools/knowledge.md) — Knowledge tool used by the assistant
+- [Knowledge settings](../settings/knowledge-base-settings.md) — Configuration options
+- [Knowledge management](../features/knowledge-management.md) — Feature overview

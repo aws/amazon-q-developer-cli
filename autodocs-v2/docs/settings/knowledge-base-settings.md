@@ -1,7 +1,7 @@
 ---
 doc_meta:
-  validated: 2026-01-05
-  commit: a1d370b5
+  validated: 2026-04-09
+  commit: 4ae084db
   status: validated
   testable_headless: true
   category: settings-group
@@ -29,7 +29,7 @@ kiro-cli settings knowledge.defaultIncludePatterns '["*.py", "*.js", "*.md"]'
 ```
 
 **Type**: Array of strings  
-**Default**: `["*.md", "*.txt", "*.py", "*.js", "*.ts"]`
+**Default**: None (empty array if not set)
 
 ### Pattern Examples
 
@@ -55,7 +55,7 @@ kiro-cli settings knowledge.defaultExcludePatterns '["*.log", "node_modules", ".
 ```
 
 **Type**: Array of strings  
-**Default**: `["node_modules", ".git", "*.log", "*.tmp"]`
+**Default**: None (empty array if not set)
 
 ### Common Exclusions
 
@@ -79,11 +79,11 @@ Sets the maximum number of files that can be indexed in the knowledge base to pr
 ### Usage
 
 ```bash
-kiro-cli settings knowledge.maxFiles 1000
+kiro-cli settings knowledge.maxFiles 5000
 ```
 
 **Type**: Number  
-**Default**: `1000`
+**Default**: `10000`
 
 ### Considerations
 
@@ -137,19 +137,19 @@ Sets the number of characters that overlap between adjacent text chunks. Overlap
 ### Usage
 
 ```bash
-kiro-cli settings knowledge.chunkOverlap 50
+kiro-cli settings knowledge.chunkOverlap 64
 ```
 
 **Type**: Number  
-**Default**: `50`  
+**Default**: `128`  
 **Unit**: Characters
 
 ### Overlap Guidelines
 
 - **0**: No overlap, maximum efficiency
-- **25**: Minimal overlap
-- **50**: Balanced (default)
-- **100**: High overlap, best context preservation
+- **64**: Minimal overlap
+- **128**: Balanced (default)
+- **256**: High overlap, best context preservation
 
 ---
 
@@ -159,7 +159,7 @@ Type of knowledge base index to use.
 
 ### Overview
 
-Specifies the indexing algorithm for the knowledge base. Different index types offer different trade-offs between speed, accuracy, and memory usage.
+Specifies the indexing algorithm for the knowledge base. Different index types offer different trade-offs between speed, accuracy, and resource usage.
 
 ### Usage
 
@@ -168,22 +168,19 @@ kiro-cli settings knowledge.indexType "fast"
 ```
 
 **Type**: String  
-**Default**: `"balanced"`  
-**Values**: `"fast"`, `"balanced"`, `"accurate"`
+**Default**: `"best"` (on most platforms; `"fast"` on Linux ARM)  
+**Values**: `"fast"`, `"best"`
 
 ### Index Types
 
 **fast**:
-- Fastest retrieval
+- Uses BM25 text matching
+- Available on all platforms
 - Lower memory usage
-- Reduced accuracy
+- Faster indexing
 
-**balanced** (default):
-- Good speed/accuracy balance
-- Moderate memory usage
-- Recommended for most use cases
-
-**accurate**:
-- Highest accuracy
-- Slower retrieval
-- Higher memory usage
+**best** (default):
+- Uses all-MiniLM-L6-v2 embeddings
+- Semantic understanding of content
+- Higher accuracy for natural language queries
+- Not available on Linux ARM (falls back to fast)

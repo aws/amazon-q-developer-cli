@@ -52,19 +52,6 @@ Remove an enabled MCP server (only available if a registry has been configured b
 /mcp remove
 ```
 
-### help
-
-Print help message or help for specific subcommand.
-
-```
-/mcp help
-/mcp help <subcommand>
-```
-
-## Options
-
-- `-h, --help` - Print help
-
 ## Output
 
 Shows for each server:
@@ -76,7 +63,7 @@ Shows for each server:
 ## Related
 
 - [kiro-cli mcp](../commands/mcp.md) - Manage MCP servers
-- [Agent Configuration](../agent-config/overview.md) - Configure MCP servers
+- [Agent Configuration](../features/agent-configuration.md) - Configure MCP servers
 
 ## Examples
 
@@ -130,16 +117,6 @@ Select MCP server to remove:
 ### Example 4: Get Help
 
 ```
-/mcp help
-/mcp help add
-```
-
-**Output**:
-```
-Usage: /mcp add
-Add an MCP server from the registry
-```
-
 ## Troubleshooting
 
 ### Issue: Server Not Initialized

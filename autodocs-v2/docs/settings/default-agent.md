@@ -1,6 +1,6 @@
 ---
 doc_meta:
-  validated: 2025-12-19
+  validated: 2026-04-09
   commit: 57090ffe
   status: validated
   testable_headless: true
@@ -59,8 +59,12 @@ If specified agent not found, falls back to next level with warning.
 
 When no agent specified, uses built-in `kiro_default` with:
 - **Tools**: All tools (`"*"` wildcard)
-- **Allowed**: Only `fs_read` auto-approved
-- **Resources**: `README.md`, `KIRO.md`, `.kiro/rules/**/*.md`
+- **Resources**: 
+  - `AGENTS.md`, `README.md`
+  - `.kiro/skills/*/SKILL.md` (local and global)
+  - `.kiro/steering/**/*.md` (if exists, local and global)
+  - `AmazonQ.md` (if exists)
+  - `.amazonq/rules/**/*.md` (legacy, if .amazonq exists but .kiro doesn't)
 - **Legacy MCP**: Enabled (`useLegacyMcpJson: true`)
 
 ## Examples
@@ -92,7 +96,7 @@ Returns to built-in default agent.
 ## Related
 
 - [kiro-cli agent](../commands/agent.md) - Manage agents
-- [/agent](../slash-commands/agent-switch.md) - Switch agents in session
+- [/agent](../slash-commands/agent-swap.md) - Switch agents in session
 - [Agent Configuration](../features/agent-configuration.md) - Create agents
 
 ## Troubleshooting

@@ -32,14 +32,6 @@ The `/model` command selects an AI model for the current session. You can either
 
 Type `/model ` and press Tab to autocomplete model names. Hints appear as you type.
 
-### Set Current as Default
-
-```
-/model set-current-as-default
-```
-
-Sets currently selected model as default for new sessions.
-
 ## Subcommands
 
 ### (no subcommand)
@@ -59,16 +51,6 @@ Select a model directly by name.
 ```
 
 Supports partial matching and is case-insensitive.
-
-### set-current-as-default
-
-Save current model as default.
-
-```
-/model set-current-as-default
-```
-
-Equivalent to: `kiro-cli settings chat.defaultModel <current-model>`
 
 ## Examples
 
@@ -112,16 +94,13 @@ Model 'claud-sonet' not found. Did you mean claude-sonnet-4? Run /model to brows
 
 Fuzzy matching suggests similar model names when the exact name isn't found.
 
-### Example 4: Set as Default
+### Example 4: Set Default Model via Settings
 
-```
-/model set-current-as-default
+```bash
+kiro-cli settings chat.defaultModel claude-sonnet-4
 ```
 
-**Output**:
-```
-✓ Set Claude 3.5 Sonnet as default model
-```
+Sets the default model for new sessions.
 
 ## Related
 

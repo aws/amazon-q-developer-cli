@@ -17,7 +17,7 @@ Switch to Plan agent for breaking down ideas into implementation plans.
 
 ## Overview
 
-Switches to specialized Plan agent that breaks down complex ideas into actionable implementation plans. Use Shift+Tab to return to previous agent.
+Switches to specialized Plan agent that breaks down complex ideas into actionable implementation plans. Use `/agent` to return to your previous agent.
 
 ## Usage
 
@@ -52,7 +52,7 @@ Switches to Plan agent and sends prompt.
 
 ## Technical Details
 
-**Return**: Use Shift+Tab to return to previous agent.
+**Return**: Use /agent to return to previous agent.
 
 **Built-in**: Plan agent is built-in, always available.
 
@@ -60,7 +60,7 @@ Switches to Plan agent and sends prompt.
 
 ### Issue: Can't Return to Previous Agent
 
-**Symptom**: Shift+Tab doesn't work  
+**Symptom**: /agent doesn't work  
 **Cause**: Terminal doesn't support key binding  
 **Solution**: Use `/agent swap <previous-agent-name>`
 

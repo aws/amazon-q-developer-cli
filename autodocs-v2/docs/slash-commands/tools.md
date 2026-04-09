@@ -1,14 +1,14 @@
 ---
 doc_meta:
-  validated: 2026-02-09
-  commit: c1055bde
+  validated: 2026-04-09
+  commit: 4ae084db
   status: validated
   testable_headless: true
   category: slash_command
   title: /tools
   description: View available tools and manage tool permissions with trust, untrust, and reset operations
-  keywords: [tools, permissions, trust, schema, approve, tokens]
-  related: [agent-config, cmd-chat]
+  keywords: [tools, permissions, trust, approve]
+  related: [agent-configuration]
 ---
 
 # /tools
@@ -51,15 +51,12 @@ Display all available tools and permissions.
 Shows:
 - Native tools (built-in)
 - MCP server tools (by server)
-- Estimated token count per tool (~Tokens column)
-- Total token count per origin (Native, each MCP server)
 - Permission status for each tool
-- Loading MCP servers
 
 **Permission Labels**:
-- `Trusted` - Auto-approved
-- `Ask` - Requires confirmation
-- `Allowed` - In agent's allowedTools
+- `allowed` - Auto-approved
+- `requires-approval` - Requires confirmation
+- `denied` - Tool is blocked
 
 ### trust
 
@@ -87,8 +84,6 @@ Trust all tools (no confirmation prompts).
 /tools trust-all
 ```
 
-**Alias**: `/acceptall` (deprecated)
-
 ### reset
 
 Reset all tools to agent's default permissions.
@@ -98,16 +93,6 @@ Reset all tools to agent's default permissions.
 ```
 
 Removes session trust changes, restores agent configuration.
-
-### schema
-
-Show JSON schema for all tools.
-
-```
-/tools schema
-```
-
-Outputs complete tool specifications.
 
 ## Examples
 
@@ -119,22 +104,8 @@ Outputs complete tool specifications.
 
 **Output**:
 ```
-Tool                ~Tokens    Permission
-▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔
-Native
-- fs_read              1.2k    Trusted
-- fs_write             892     Ask
-- execute_bash         756     Ask
-- grep                 1.1k    Trusted
-  Total                4.0k
-
-@git
-- git_status           423     Allowed
-- git_commit           512     Ask
-  Total                935
+12 tools available
 ```
-
-The `~Tokens` column shows estimated token usage for each tool's schema. Values 1000+ display as `k` (e.g., `1.2k` = ~1200 tokens). Each section shows a **Total** line with the combined token count for all tools in that origin.
 
 ### Example 2: Trust Tool
 
@@ -144,13 +115,18 @@ The `~Tokens` column shows estimated token usage for each tool's schema. Values 
 
 **Output**:
 ```
-✔ Tool 'fs_write' is now trusted. I will not ask for confirmation before running this tool.
+fs_write now trusted
 ```
 
 ### Example 3: Trust Multiple Tools
 
 ```
 /tools trust execute_bash grep
+```
+
+**Output**:
+```
+execute_bash, grep now trusted
 ```
 
 ### Example 4: Untrust Tool
@@ -161,7 +137,7 @@ The `~Tokens` column shows estimated token usage for each tool's schema. Values 
 
 **Output**:
 ```
-✔ Tool 'fs_write' is set to per-request confirmation.
+fs_write set to per-request confirmation
 ```
 
 ### Example 5: Trust All
@@ -172,7 +148,7 @@ The `~Tokens` column shows estimated token usage for each tool's schema. Values 
 
 **Output**:
 ```
-✔ All tools are now trusted. I will not ask for confirmation before running any tool.
+All tools are now trusted for this session. Tools will run without approval prompts.
 ```
 
 ### Example 6: Reset Permissions
@@ -183,25 +159,35 @@ The `~Tokens` column shows estimated token usage for each tool's schema. Values 
 
 **Output**:
 ```
-✔ Reset all tools to the permission levels as defined in agent.
+Tool trust has been reset to default permission levels.
+```
+
+### Example 7: Invalid Tool Name
+
+```
+/tools trust nonexistent_tool
+```
+
+**Output**:
+```
+not found: nonexistent_tool
 ```
 
 ## Tool Permissions
 
 ### Permission Levels
 
-1. **Trusted** - Auto-approved, no prompts
+1. **allowed** - Auto-approved, no prompts
    - Set via `/tools trust`
    - Or `--trust-all-tools` flag
    - Or `--trust-tools=tool1,tool2` flag
+   - Or in agent's `allowedTools` list
 
-2. **Allowed** - In agent's `allowedTools` list
-   - Defined in agent configuration
-   - Auto-approved without prompts
-
-3. **Ask** - Requires confirmation
+2. **requires-approval** - Requires confirmation
    - Default for tools not in allowedTools
    - Prompts before each use
+
+3. **denied** - Tool is blocked from use
 
 ### MCP Tools
 
@@ -213,7 +199,7 @@ MCP server tools shown with `@server-name` prefix:
 
 ### Issue: Tool Not Found
 
-**Symptom**: "Cannot trust 'tool', it does not exist"  
+**Symptom**: "not found: tool_name"  
 **Cause**: Tool name invalid or not loaded  
 **Solution**: Use `/tools` to see available tools. Check spelling.
 
@@ -237,7 +223,7 @@ MCP server tools shown with `@server-name` prefix:
 
 ## Related Features
 
-- [Agent Configuration](../agent-config/overview.md) - Permanent tool permissions
+- [Agent Configuration](../features/agent-configuration.md) - Permanent tool permissions
 - [kiro-cli chat --trust-all-tools](../commands/chat.md) - Trust all at startup
 - [kiro-cli chat --trust-tools](../commands/chat.md) - Trust specific at startup
 - [/mcp](mcp.md) - Manage MCP servers
@@ -248,7 +234,6 @@ MCP server tools shown with `@server-name` prefix:
 - Can't modify agent's allowedTools from chat
 - MCP tools require server to be loaded
 - Tool names case-sensitive
-- Native tool aliases accepted (e.g., "read" for "fs_read")
 
 ## Technical Details
 
@@ -262,6 +247,4 @@ MCP server tools shown with `@server-name` prefix:
 3. Agent's `allowedTools` - Permanent trust
 4. Default - Requires confirmation
 
-**Tool Names**: Use preferred aliases for native tools (fs_read, not read). MCP tools use full name with server prefix.
-
-**Schema**: Tool schema shows JSON specification for each tool's parameters.
+**Tool Names**: Use full tool names. MCP tools use full name with server prefix.

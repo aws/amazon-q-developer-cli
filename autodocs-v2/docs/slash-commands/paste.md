@@ -1,6 +1,6 @@
 ---
 doc_meta:
-  validated: 2025-12-19
+  validated: 2026-04-09
   commit: 57090ffe
   status: validated
   testable_headless: false
@@ -30,9 +30,9 @@ Pastes image from clipboard and sends to AI.
 ## How It Works
 
 1. Reads image from system clipboard
-2. Saves image to temporary file
-3. Sends file path to AI as input
-4. AI analyzes image (if vision-capable model)
+2. Converts image to PNG format in memory
+3. Encodes image as base64
+4. Sends base64 data to AI for analysis
 
 ## Examples
 
@@ -57,19 +57,26 @@ Pastes image from clipboard and sends to AI.
 
 ## Troubleshooting
 
-### Issue: "Failed to paste image"
+### Issue: "No image in clipboard"
 
 **Symptom**: Error message when pasting  
 **Causes**:
 - Clipboard is empty
 - Clipboard contains text, not image
-- Clipboard access denied
-- Unsupported image format
 
-**Solution**: 
-- Ensure image is copied to clipboard
-- Check clipboard contains image, not text
-- Grant clipboard permissions to terminal
+**Solution**: Ensure image is copied to clipboard
+
+### Issue: "Failed to access clipboard"
+
+**Symptom**: Clipboard access error  
+**Cause**: Clipboard permissions denied or unavailable  
+**Solution**: Grant clipboard permissions to terminal
+
+### Issue: "Unsupported image format"
+
+**Symptom**: Format conversion error  
+**Cause**: Clipboard image format not supported  
+**Solution**: Copy image in a standard format
 
 ### Issue: AI Can't See Image
 
@@ -77,16 +84,10 @@ Pastes image from clipboard and sends to AI.
 **Cause**: Model doesn't support vision  
 **Solution**: Switch to vision-capable model (Claude 3.5 Sonnet, Claude 3 Opus)
 
-### Issue: Image Quality Poor
-
-**Symptom**: AI misreads image content  
-**Cause**: Low resolution or unclear image  
-**Solution**: Use higher resolution screenshot or clearer image
-
 ## Related Features
 
 - [fs_read Image mode](../tools/fs-read.md) - Read image files directly
-- [/editor](editor.md) - Compose text prompts
+- [/reply](reply.md) - Compose a reply
 - [/model](model.md) - Switch to vision-capable model
 
 ## Limitations
@@ -96,16 +97,15 @@ Pastes image from clipboard and sends to AI.
 - Not available in headless mode
 - Platform-dependent clipboard support
 - Requires vision-capable model
-- Supported formats: PNG, JPG, JPEG, GIF, WEBP
 
 ## Technical Details
 
-**Clipboard**: Uses system clipboard API to read image data
+**Clipboard**: Uses system clipboard API (arboard) to read image data
 
 **Platforms**: macOS, Linux, Windows
 
-**Image Handling**: Saves to temporary file, passes path to AI
+**Image Handling**: Converts to PNG in memory, encodes as base64, sends inline to AI
+
+**Output Format**: Always PNG (converted internally regardless of source format)
 
 **Vision Models**: Claude 3.5 Sonnet, Claude 3 Opus, Claude 3 Haiku support images
-
-**File Cleanup**: Temporary image files managed by system

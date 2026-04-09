@@ -8,7 +8,7 @@ doc_meta:
   title: Hooks System
   description: Execute commands at trigger points with JSON input/output and exit code control
   keywords: [hooks, commands, triggers, context, dynamic, exit, stdin, stop, assistant_response]
-  related: [agent-configuration, slash-hooks, hooks-show-status]
+  related: [agent-configuration, hooks]
 ---
 
 # Hooks System
@@ -32,14 +32,12 @@ Add hooks to your agent's JSON configuration file (`.kiro/agents/your-agent.json
     "agentSpawn": [
       {
         "command": "git status",
-        "description": "Show repository status"
       }
     ],
     "preToolUse": [
       {
         "matcher": "fs_write",
         "command": "echo 'About to write file'",
-        "description": "Log before file writes"
       }
     ]
   }
@@ -73,7 +71,6 @@ chmod +x ~/.kiro/hooks/validate-write.sh
       {
         "matcher": "fs_write",
         "command": "~/.kiro/hooks/validate-write.sh",
-        "description": "Validate file writes"
       }
     ]
   }
@@ -127,21 +124,19 @@ Use the `matcher` field to specify which tools the hook applies to:
 - `"@builtin"` - All built-in tools only
 - No matcher - Applies to all tools
 
-### Tool Aliases
+### Tool Names
 
-Hook matchers recognize tool aliases, so you can use shorter names:
+Hook matchers use tool names. Common tools:
 
-| Alias | Matches Tool |
-|-------|-------------|
-| `read` | `fs_read` |
-| `write` | `fs_write` |
-| `shell` | `execute_bash` |
-| `aws` | `use_aws` |
-| `report` | `gh_issue` |
-| `todo` | `todo_list` |
-| `subagent` | `use_subagent` |
+| Tool | Aliases |
+|------|---------|
+| `read` | `fs_read`, `fsRead` |
+| `write` | `fs_write`, `fsWrite` |
+| `shell` | `execute_bash`, `execute_cmd` |
+| `subagent` | `agent_crew`, `use_subagent` |
+| `task` | `todo_list`, `todo` |
 
-For complete tool reference format, see [agent format documentation](agent-format.md#tools-field).
+For complete tool reference, see [agent configuration](agent-configuration.md).
 
 ## Hook Types
 
@@ -277,7 +272,7 @@ For MCP tools, the tool name includes the full namespaced format including the M
 
 ## Timeout
 
-Default timeout is 30 seconds (30,000ms). Configure with `timeout_ms` field.
+Default timeout is 10 seconds (10,000ms). Configure with `timeout_ms` field.
 
 ## Caching
 
@@ -294,4 +289,4 @@ To hide the spinner and summary line during hook execution:
 kiro-cli settings hooks.showStatus false
 ```
 
-When disabled, hooks run silently but error messages for failed hooks are still displayed. See [hooks.showStatus](../settings/hooks-show-status.md) for details.
+When disabled, hooks run silently but error messages for failed hooks are still displayed.

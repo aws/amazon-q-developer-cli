@@ -7,7 +7,7 @@ doc_meta:
   category: command
   title: kiro-cli chat
   description: Start AI assistant session with support for agents, models, tool trust, and conversation management
-  keywords: [chat, conversation, agent, model, interactive, headless, mcp, require-mcp-startup, log, logging, history, KIRO_LOG_NO_COLOR]
+  keywords: [chat, conversation, agent, model, interactive, headless, mcp, log, logging, history, KIRO_LOG_NO_COLOR]
   related: [slash-chat-save, slash-chat-load, slash-agent, exit-codes]
 ---
 
@@ -90,6 +90,7 @@ kiro-cli chat --resume-picker
 | Option | Short | Type | Description |
 |--------|-------|------|-------------|
 | `--resume` | `-r` | flag | Resume most recent conversation (restores saved model) |
+| `--resume-id` | | string | Resume a specific conversation by session ID |
 | `--resume-picker` | | flag | Interactively select conversation to resume |
 | `--agent` | | string | Agent to use (default: default agent) |
 | `--model` | | string | Model to use (default: default model) |
@@ -99,7 +100,7 @@ kiro-cli chat --resume-picker
 | `--list-sessions` | `-l` | flag | List saved conversations |
 | `--delete-session` | `-d` | string | Delete conversation by ID |
 | `--wrap` | `-w` | enum | Line wrapping (always/never/auto) |
-| `--require-mcp-startup` | | flag | Exit with code 3 if any MCP server fails to start |
+| `--legacy-mode` | | flag | Use legacy terminal UI instead of embedded TUI |
 | `--verbose` | `-v` | flag | Increase logging verbosity (can be repeated) |
 | `--help` | `-h` | flag | Print help information |
 | `[INPUT]` | | string | Initial query to send |
@@ -154,14 +155,6 @@ kiro-cli chat --delete-session abc123
 ✔ Deleted chat session abc123
 ```
 
-### Example 6: Require MCP Servers
-
-```bash
-kiro-cli chat --require-mcp-startup --no-interactive "Run analysis"
-```
-
-**What this does**: Exits with code 3 if any configured MCP server fails to start. Useful for CI/CD pipelines.
-
 ## Headless Mode
 
 Use `--no-interactive` for automation and scripts:
@@ -169,7 +162,7 @@ Use `--no-interactive` for automation and scripts:
 **Requirements**:
 - Must provide initial query as argument
 - Use `--trust-all-tools` or `--trust-tools` to avoid hanging on tool approvals
-- Interactive slash commands won't work (/experiment, /model picker, /agent picker)
+- Interactive slash commands won't work (/model picker, /agent picker)
 - No mid-session user input possible
 
 **What Works**:
@@ -208,11 +201,11 @@ Use `--no-interactive` for automation and scripts:
 
 **Symptom**: Error "not a terminal"  
 **Cause**: Interactive slash command used in headless mode  
-**Solution**: Use direct CLI commands instead (e.g., `kiro-cli settings` instead of `/experiment`)
+**Solution**: Use direct CLI commands instead (e.g., `kiro-cli settings`)
 
 ### Issue: MCP Server Startup Failure
 
-**Symptom**: Exit code 3 with `--require-mcp-startup`  
+**Symptom**: MCP servers fail to start  
 **Cause**: One or more MCP servers failed to start  
 **Solution**: Check MCP server configuration. Verify server paths and dependencies are correct.
 
@@ -220,7 +213,7 @@ Use `--no-interactive` for automation and scripts:
 
 - [/chat save](../slash-commands/chat-save.md) - Save conversations
 - [/chat load](../slash-commands/chat-load.md) - Load conversations
-- [/agent](../slash-commands/agent-switch.md) - Switch agents mid-session
+- [/agent](../slash-commands/agent-swap.md) - Switch agents mid-session
 - [kiro-cli agent](agent.md) - Manage agent configurations
 - [kiro-cli settings](settings.md) - Configure behavior
 
@@ -255,7 +248,6 @@ Use `--no-interactive` for automation and scripts:
 **Keyboard Shortcuts**:
 - `Ctrl+R`: Search command history (case-insensitive)
 - `Ctrl+C`: Cancel current operation or exit
-- `Ctrl+T`: Toggle tangent mode (if enabled)
 - `Up/Down`: Navigate command history
 
 **Logging**: Chat sessions write logs to platform-specific locations:

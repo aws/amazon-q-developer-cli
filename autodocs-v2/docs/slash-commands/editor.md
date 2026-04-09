@@ -1,148 +1,75 @@
 ---
 doc_meta:
-  validated: 2025-12-19
-  commit: 57090ffe
+  title: /editor
+  description: Open $EDITOR to compose a multi-line prompt
+  category: slash_command
+  keywords: [editor, compose, multi-line, prompt, EDITOR, VISUAL]
+  related: [reply]
+  validated: 2026-04-08
+  commit: 1a984cb0
   status: validated
   testable_headless: false
-  category: slash_command
-  title: /editor
-  description: Open $EDITOR to compose multi-line prompts with optional initial text
-  keywords: [editor, compose, multiline, vim, text]
-  related: [reply, paste]
 ---
-
-# /editor
-
-Open $EDITOR to compose multi-line prompts with optional initial text.
 
 ## Overview
 
-Opens your default editor ($EDITOR, defaults to vi) to compose multi-line prompts. Creates temporary markdown file, opens in editor, and sends content as prompt after save. Useful for complex queries, code snippets, or formatted text.
+The `/editor` command opens your system editor (`$VISUAL` or `$EDITOR`) to compose a prompt. Useful for writing multi-line messages, pasting large code blocks, or crafting detailed instructions.
+
+The content you write is sent as a message when you save and close the editor.
 
 ## Usage
 
-### Basic Usage
-
 ```
 /editor
 ```
 
-Opens empty editor.
-
-### With Initial Text
+Opens an empty editor.
 
 ```
-/editor Explain this code:
+/editor <initial text>
 ```
 
-Opens editor pre-filled with "Explain this code:".
-
-## How It Works
-
-1. Creates temporary `.md` file in system temp directory
-2. Writes initial text if provided
-3. Opens file in $EDITOR
-4. Waits for editor to close
-5. Reads content from file
-6. Sends as prompt (if not empty)
-7. Cleans up temporary file
+Opens the editor pre-filled with the provided text.
 
 ## Examples
 
-### Example 1: Compose Long Prompt
+### Compose a multi-line prompt
 
 ```
 /editor
 ```
 
-Editor opens. Write multi-line prompt, save, exit. Content sent to AI.
+Your editor opens with an empty `prompt.md` file. Write your message, save, and quit.
 
-### Example 2: Start with Template
-
-```
-/editor Review this code for:
-```
-
-Editor opens with "Review this code for:" already written. Add details, save, exit.
-
-### Example 3: Empty Content
+### Pre-fill with text
 
 ```
-/editor
+/editor Please review the following code changes
 ```
 
-Write nothing, save, exit.
+Opens the editor with the text already filled in for you to expand on.
 
-**Output**:
-```
-⚠ Empty content from editor, not submitting.
-```
+## How It Works
 
-## Editor Configuration
-
-### Set Editor
-
-```bash
-export EDITOR=vim
-export EDITOR=nano
-export EDITOR="code --wait"
-export EDITOR="emacs -nw"
-```
-
-### Default
-
-If $EDITOR not set, uses `vi`.
+1. Creates a temporary file (`kiro-editor-*.prompt.md`)
+2. Opens it in `$VISUAL` or `$EDITOR` (falls back to `vi`)
+3. On save and quit, sends the content as your message
+4. Empty content is not submitted
 
 ## Troubleshooting
 
-### Issue: Wrong Editor Opens
+### Editor doesn't open
 
-**Symptom**: Unexpected editor launches  
-**Cause**: $EDITOR set to different editor  
-**Solution**: Check `echo $EDITOR`. Set to preferred editor.
+Set the `EDITOR` or `VISUAL` environment variable:
 
-### Issue: Editor Doesn't Wait
+```bash
+export EDITOR=vim
+```
 
-**Symptom**: Content not captured  
-**Cause**: Editor doesn't block (e.g., `code` without `--wait`)  
-**Solution**: Add wait flag: `export EDITOR="code --wait"`
+### Empty content not submitted
 
-### Issue: Can't Save
+If you save an empty file or quit without saving, nothing is sent.
 
-**Symptom**: Error saving file  
-**Cause**: Permission issue with temp directory  
-**Solution**: Check temp directory permissions
+## Related
 
-### Issue: Content Not Sent
-
-**Symptom**: Editor closes but nothing happens  
-**Cause**: File was empty  
-**Solution**: Write content before saving
-
-## Related Features
-
-- [/reply](reply.md) - Open editor with assistant message quoted
-- [/paste](paste.md) - Paste image from clipboard
-- [/prompts](prompts.md) - Manage reusable prompts
-
-## Limitations
-
-- Requires $EDITOR or vi installed
-- Not available in headless mode
-- Temporary file in system temp directory
-- No auto-save or recovery
-- Editor must block (wait for close)
-
-## Technical Details
-
-**Temp File**: `q_prompt_<uuid>.md` in system temp directory
-
-**Editor Command**: Parsed with shlex to support arguments (e.g., "code --wait")
-
-**Cleanup**: Temporary file deleted after reading content
-
-**Empty Check**: Trims whitespace. Empty content not submitted.
-
-**History**: Content added to input history (accessible with up arrow)
-
-**Display**: Content echoed to terminal before sending to AI
+- [/reply](reply.md) — Open editor pre-filled with the last assistant message

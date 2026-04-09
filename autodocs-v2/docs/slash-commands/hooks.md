@@ -8,7 +8,7 @@ doc_meta:
   title: /hooks
   description: View context hooks configuration and execution status
   keywords: [hooks, context, commands, triggers, stop]
-  related: [hooks-feature, agent-config]
+  related: [hooks, agent-configuration]
 ---
 
 # /hooks
@@ -36,7 +36,7 @@ Shows:
 ## Related
 
 - [Hooks](../features/hooks.md) - Complete hooks guide
-- [Agent Configuration](../agent-config/overview.md) - Configure hooks
+- [Agent Configuration](../features/agent-configuration.md) - Configure hooks
 
 ## Examples
 

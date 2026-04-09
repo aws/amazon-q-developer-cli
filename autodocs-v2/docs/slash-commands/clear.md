@@ -1,9 +1,9 @@
 ---
 doc_meta:
-  validated: 2025-12-19
-  commit: 57090ffe
+  validated: 2026-04-09
+  commit: 4ae084db
   status: validated
-  testable_headless: false
+  testable_headless: true
   category: slash_command
   title: /clear
   description: Erase conversation history and context from current session
@@ -17,7 +17,7 @@ Erase conversation history and context from current session.
 
 ## Overview
 
-The `/clear` command erases all conversation history and context from hooks for the current session. Requires confirmation. Unlike `/compact`, does not create summary - completely clears conversation.
+The `/clear` command erases all conversation history and context for the current session. Unlike `/compact`, does not create a summary - completely clears the conversation.
 
 ## Usage
 
@@ -25,7 +25,7 @@ The `/clear` command erases all conversation history and context from hooks for 
 /clear
 ```
 
-Prompts for confirmation before clearing.
+Clears immediately without confirmation.
 
 ## Examples
 
@@ -37,32 +37,24 @@ Prompts for confirmation before clearing.
 
 **Output**:
 ```
-Are you sure? This will erase the conversation history and context from hooks for the current session. [y/n]:
-
-> y
-
-✔ Conversation cleared
+Conversation cleared
 ```
 
 ## Related
 
-- [/compact](compact.md) - Summarize before clearing
-- [/tangent](tangent.md) - Temporary branch without clearing
+- [/compact](compact.md) - Summarize and compact conversation without clearing
 
 ## Limitations
 
 - Cannot be undone
 - Clears all history (no selective clearing)
-- Requires confirmation
 
 ## Technical Details
 
-**Confirmation Required**: Prevents accidental clearing.
-
 **What's Cleared**:
 - All message history
-- Hook-generated context
-- Conversation state
+- Conversation metadata
+- Tool state
 
 **What's Preserved**:
 - Agent configuration

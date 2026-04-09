@@ -1,14 +1,14 @@
 ---
 doc_meta:
-  validated: 2026-02-02
-  commit: 2cfa80d8
+  validated: 2026-04-09
+  commit: 4ae084db
   status: validated
   testable_headless: false
   category: slash_command
   title: /agent
   description: Switch to different agent configuration during chat session
   keywords: [agent, switch, swap, profile, description]
-  related: [agent-generate, cmd-agent, agent-config]
+  related: [agent-create, agent-edit, agent-configuration]
 ---
 
 # /agent swap
@@ -17,64 +17,61 @@ Switch to different agent configuration during chat session.
 
 ## Overview
 
-The `/agent` command (also `/agent swap`) switches to a different agent configuration mid-session. Shows interactive picker to select from available agents or specify agent name directly.
+The `/agent` command lists available agents and switches between them. Use `/agent` alone to list agents, or `/agent <name>` to switch directly.
 
 ## Usage
 
-### Interactive Selection
+### List Agents
 
 ```
-/agent swap
+/agent
 ```
 
-Shows picker with all available agents.
+Shows all available agents with current agent marked.
 
 ### Direct Switch
+
+```
+/agent <name>
+```
+
+Switches directly to named agent.
+
+### Switch with swap Keyword
 
 ```
 /agent swap <name>
 ```
 
-Switches directly to named agent.
+Use `swap` to switch to agents named after subcommands (e.g., `/agent swap create` switches to an agent named "create").
 
-**Aliases**: `/agent swap`, `/agent set`
+Note: `/agent swap` without a name tries to switch to an agent named "swap" and will fail if none exists.
 
 ## Subcommands
 
-### swap (default)
+### create
 
-Switch to different agent.
-
-```
-/agent swap [name]
-```
-
-Without name: Shows interactive picker  
-With name: Switches directly
-
-### list
-
-List all available agents.
+Create a new agent configuration.
 
 ```
-/agent list
-```
-
-Shows agents with paths and marks active agent with `*`.
-
-### generate
-
-Generate agent configuration using AI.
-
-```
-/agent generate
+/agent create [name]
 ```
 
 Interactive process to create new agent with AI assistance.
 
+### edit
+
+Edit an existing agent configuration.
+
+```
+/agent edit [name]
+```
+
+Opens agent for editing.
+
 ## Examples
 
-### Example 1: Interactive Switch
+### Example 1: List Agents
 
 ```
 /agent
@@ -82,51 +79,44 @@ Interactive process to create new agent with AI assistance.
 
 **Output**:
 ```
-Workspace: ~/project/.kiro/agents
-Global:    ~/.kiro/agents
-
-  kiro_default    (Built-in)    Default agent
-* rust-expert     Workspace     Rust development with cargo and clippy
-  python-dev      Global        Python development assistant
+→ rust-expert - Rust development with cargo and clippy
+  python-dev - Python development assistant
+  kiro_default - Default agent
 ```
 
-Shows agents sorted alphabetically with active agent first. Descriptions help identify the right agent.
+Current agent marked with `→`. Shows name and description.
 
 ### Example 2: Direct Switch
 
 ```
-/agent swap python-dev
+/agent python-dev
 ```
 
 **Output**:
 ```
-✔ Switched to agent: python-dev
-
-Python development assistant with pytest and type checking support.
+Agent changed to python-dev
 ```
 
-The agent's welcome message is displayed after switching.
-
-### Example 3: List Agents
+### Example 3: Switch to Agent Named After Subcommand
 
 ```
-/agent list
+/agent swap create
+```
+
+Switches to an agent named "create" (bypasses the create subcommand).
+
+### Example 4: Fuzzy Matching Suggestion
+
+```
+/agent pythn-dev
 ```
 
 **Output**:
 ```
-Workspace: ~/project/.kiro/agents
-Global:    ~/.kiro/agents
-
-* rust-expert       Workspace     Rust development with cargo and clippy
-  code-reviewer     Workspace     Code review agent focused on security and best practices
-  python-dev        Global        Python development assistant
-  kiro_default      (Built-in)    Default agent
-  kiro_help         (Built-in)    Help agent that answers questions about Kiro CLI features
-  kiro_planner      (Built-in)    Specialized planning agent for implementation plans
+Agent 'pythn-dev' not found. Did you mean python-dev? Run /agent to browse available agents.
 ```
 
-Active agent marked with `*`. Shows name, source (Workspace/Global/Built-in), and description. Long descriptions wrap to fit terminal width.
+Uses Jaro-Winkler similarity (threshold 0.6) to suggest similar agent names.
 
 ## Agent Resolution
 
@@ -141,15 +131,15 @@ Local agents take precedence over global.
 
 ### Issue: Agent Not Found
 
-**Symptom**: "Agent not found" error  
+**Symptom**: `Unknown agent: <name>. Run /agent to browse available agents.`  
 **Cause**: Agent doesn't exist  
-**Solution**: Use `/agent list` to see available agents
+**Solution**: Run `/agent` to see available agents
 
-### Issue: Can't Switch Agent
+### Issue: Typo in Agent Name
 
-**Symptom**: Switch fails  
-**Cause**: Invalid agent configuration  
-**Solution**: Validate agent with `kiro-cli agent validate <name>`
+**Symptom**: `Agent '<name>' not found. Did you mean <suggestion>?`  
+**Cause**: Similar agent exists  
+**Solution**: Use the suggested name or run `/agent` to browse
 
 ### Issue: MCP Servers Not Loading
 
@@ -159,9 +149,10 @@ Local agents take precedence over global.
 
 ## Related Features
 
-- [/agent generate](agent-generate.md) - Create agent with AI
+- [/agent create](agent-create.md) - Create a new agent
+- [/agent edit](agent-edit.md) - Edit an existing agent
 - [kiro-cli agent](../commands/agent.md) - Manage agents from CLI
-- [Agent Configuration](../agent-config/overview.md) - Agent format guide
+- [Agent Configuration](../features/agent-configuration.md) - Agent format guide
 - [kiro-cli chat --agent](../commands/chat.md) - Start with specific agent
 
 ## Limitations
@@ -170,15 +161,3 @@ Local agents take precedence over global.
 - Context files from previous agent remain as temporary context
 - Tool permissions reset to new agent's configuration
 - MCP servers reconnect with new agent's configuration
-
-## Technical Details
-
-**Agent Loading**: Local (`.kiro/agents/`) checked first, then global (`~/.kiro/agents/`), then built-in.
-
-**State Preservation**: Message history and conversation state preserved when switching agents.
-
-**Context Handling**: Previous agent's context files added as temporary context. New agent's permanent context also loaded.
-
-**Tool Manager**: Recreated with new agent's tool configuration and permissions.
-
-**MCP Servers**: Disconnected from old agent, reconnected with new agent's MCP configuration.

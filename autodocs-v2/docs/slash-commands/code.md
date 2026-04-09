@@ -1,6 +1,6 @@
 ---
 doc_meta:
-  validated: 2026-01-13
+  validated: 2026-04-09
   commit: be9ce792
   status: validated
   testable_headless: false
@@ -23,7 +23,6 @@ Manages code intelligence. The AI assistant also uses the `code` tool automatica
 
 ```
 /code init
-/code init -f
 /code status
 /code logs
 /code overview
@@ -40,12 +39,7 @@ Initialize code intelligence in workspace.
 /code init
 ```
 
-Detects languages, creates lsp.json, starts servers.
-
-**Force restart**:
-```
-/code init -f
-```
+Detects languages, creates lsp.json, starts servers. If already initialized, displays "Workspace already initialized".
 
 ### status
 
@@ -62,13 +56,11 @@ Display LSP logs.
 ```
 /code logs
 /code logs -l INFO -n 50
-/code logs -p ./lsp-logs.json
 ```
 
 **Options**:
 - `-l, --level <LEVEL>`: Log level (ERROR, WARN, INFO, DEBUG, TRACE). Default: ERROR
 - `-n, --lines <N>`: Number of lines. Default: 20
-- `-p, --path <PATH>`: Export to JSON file
 
 ### overview
 
@@ -76,11 +68,7 @@ Get a high-level overview of the codebase structure.
 
 ```
 /code overview
-/code overview --silent
 ```
-
-**Options**:
-- `--silent`: Cleaner output for deep dives
 
 Ideal for:
 - Onboarding to new codebases
@@ -173,11 +161,11 @@ I'll help you create comprehensive documentation. Please provide:
 ## Related
 
 - [code](../tools/code.md) - Code intelligence tool
-- [chat.enableCodeIntelligence](../settings/enable-code-intelligence.md) - Enable setting
+- [chat.enableCodeIntelligence](../features/code-intelligence.md) - Enable setting
 
 ## Technical Details
 
-**Config**: Creates `.kiro/lsp.json` in workspace.
+**Config**: Creates `.kiro/settings/lsp.json` in workspace.
 
 **Auto-init**: Automatically initializes on startup if lsp.json exists.
 
@@ -187,7 +175,7 @@ I'll help you create comprehensive documentation. Please provide:
 
 **Symptom**: Commands fail with initialization message  
 **Cause**: LSP servers starting up  
-**Solution**: Wait a moment and retry. If persists, use `/code init -f`
+**Solution**: Wait a moment and retry. If persists, use `/code init`
 
 ### Issue: Language Server Not Starting
 
@@ -205,4 +193,10 @@ I'll help you create comprehensive documentation. Please provide:
 
 **Symptom**: Errors in `/code logs`  
 **Cause**: LSP server errors or incompatibility  
-**Solution**: Check server version. Try `/code init -f` to restart.
+**Solution**: Check server version. Try `/code init` to restart.
+
+### Issue: Home Directory Warning
+
+**Symptom**: Warning about workspace being home directory  
+**Cause**: Running `/code init` from home directory  
+**Solution**: Navigate to a project directory. If initialized by mistake, remove `~/.kiro/settings/lsp.json`

@@ -1,328 +1,87 @@
 ---
 doc_meta:
-  validated: 2026-01-27
-  commit: 85403a86
+  validated: 2026-04-08
+  commit: 1a984cb0
   status: validated
   testable_headless: false
   category: slash_command
   title: /prompts
-  description: Manage local and MCP prompts with list, get, create, edit, and remove operations
-  keywords: [prompts, templates, mcp, local, global, manage, autocomplete]
-  related: [agent-config, mcp]
+  description: Select and execute available prompts from MCP servers and local files
+  keywords: [prompts, mcp, template, reusable, select]
+  related: [mcp, agent-configuration]
 ---
-
-# /prompts
-
-Manage local and MCP prompts with list, get, create, edit, and remove operations.
 
 ## Overview
 
-The `/prompts` command manages prompt templates from local files, global files, and MCP servers. Create reusable prompts, edit them, retrieve with arguments, and list available prompts from all sources.
+The `/prompts` command lists available prompts from MCP servers and local/global prompt files, and lets you select one to execute. Prompts are reusable templates that can accept arguments.
 
 ## Quick Access with @
 
-Type `@` followed by Tab to auto-complete available prompts from all sources (local, global, and MCP). Local and global file-based prompts are included alongside MCP prompts.
+Type `@` followed by Tab to auto-complete available prompts from all sources (local, global, and MCP).
 
 ```
 @<Tab>           # Shows all available prompts
-@fix<Tab>        # Auto-completes prompts starting with "fix"
+@code<Tab>       # Filters to prompts matching "code"
 ```
-
-File-based prompts take precedence over MCP prompts with the same name.
 
 ## Usage
 
 ```
-/prompts <subcommand>
+/prompts
 ```
 
-## Prompt Locations
-
-**Local (workspace)**: `.kiro/prompts/` in current directory  
-**Global (user-wide)**: `~/.kiro/prompts/` in home directory  
-**MCP**: From connected MCP servers
-
-Local prompts take precedence over global with same name.
-
-## Subcommands
-
-### list
-
-List available prompts.
+Opens a selection menu showing all available prompts grouped by source.
 
 ```
-/prompts list [search-word]
+/prompts <prompt-name>
 ```
 
-Shows prompts from local, global, and MCP sources. Optional search word filters results.
-
-**Output**:
-- Prompt name
-- Description
-- Required arguments (marked with *)
-- Source (local/global/MCP server)
-
-### get
-
-Retrieve and use prompt.
-
-```
-/prompts get <name> [arguments...]
-```
-
-Loads prompt content and sends as message. Supports argument substitution.
-
-### create
-
-Create new local prompt.
-
-```
-/prompts create --name <name> [--content <content>] [--global]
-```
-
-**Options**:
-- `--name, -n`: Prompt name (required)
-- `--content`: Prompt content (if omitted, opens editor)
-- `--global`: Create in global directory instead of local
-
-### edit
-
-Edit existing prompt.
-
-```
-/prompts edit <name> [--global]
-```
-
-Opens editor with prompt content.
-
-**Options**:
-- `--global`: Edit global prompt instead of local
-
-### remove
-
-Delete prompt.
-
-```
-/prompts remove <name> [--global]
-```
-
-**Options**:
-- `--global`: Remove global prompt instead of local
-
-### details
-
-Show detailed information about prompt.
-
-```
-/prompts details <name>
-```
-
-Shows description, arguments, and source.
+Executes a prompt by name directly.
 
 ## Examples
 
-### Example 1: List All Prompts
+### Select a prompt interactively
 
 ```
-/prompts list
+/prompts
 ```
 
-**Output**:
-```
-Local Prompts
-- code-review          Review code for issues           file*, language
-- api-design           Design REST API                  
+Shows a selection menu with prompts from all sources (MCP servers, local `.kiro/prompts/`, global `~/.kiro/prompts/`).
 
-Global Prompts
-- debug-help           Debug assistance                 error*
-
-@git
-- commit-message       Generate commit message          changes*
-```
-
-### Example 2: Search Prompts
+### Execute a prompt directly
 
 ```
-/prompts list code
+/prompts code-review
 ```
 
-Shows only prompts matching "code".
+Runs the `code-review` prompt immediately.
 
-### Example 3: Get Prompt
-
-```
-/prompts get code-review src/main.rs rust
-```
-
-Loads code-review prompt with arguments: file=src/main.rs, language=rust.
-
-### Example 4: Create Local Prompt
+### Use @ shortcut
 
 ```
-/prompts create --name test-helper --content "Help me write tests for this code"
+@code-review src/main.rs
 ```
 
-Creates `.kiro/prompts/test-helper.md`.
+Executes the prompt with arguments.
 
-### Example 5: Create with Editor
+## Prompt Sources
 
-```
-/prompts create --name refactor-guide
-```
-
-Opens editor to write prompt content.
-
-### Example 6: Create Global Prompt
-
-```
-/prompts create --name sql-optimizer --global
-```
-
-Creates in `~/.kiro/prompts/`.
-
-### Example 7: Edit Prompt
-
-```
-/prompts edit code-review
-```
-
-Opens editor with existing content.
-
-### Example 8: Remove Prompt
-
-```
-/prompts remove old-prompt
-```
-
-Deletes local prompt.
-
-### Example 9: View Details
-
-```
-/prompts details commit-message
-```
-
-**Output**:
-```
-Prompt: commit-message
-Source: @git
-Description: Generate commit message
-Arguments: changes* (required)
-```
-
-### Example 10: Use File Prompt with Arguments
-
-```
-/review-file src/main.rs "error handling"
-```
-
-Expands `${1}` to `src/main.rs` and `${2}` to `error handling` in the prompt template.
-
-## Prompt File Format
-
-Prompts are markdown files (`.md`) stored in prompts directory.
-
-**Simple prompt**:
-```markdown
-Review this code for potential issues and suggest improvements.
-```
-
-**With arguments**:
-File-based prompts support placeholder-based argument substitution. MCP prompts use server-defined arguments.
-
-| Placeholder | Behavior |
-| --- | --- |
-| `${1}`–`${10}` | Positional argument |
-| `$ARGUMENTS` | All arguments joined by spaces |
-| `${@}` | Same as `$ARGUMENTS` (shell-style alias) |
-
-**Example file prompt** (`.kiro/prompts/review-file.md`):
-```markdown
-Review the file `${1}` with focus on `${2}`.
-
-Full context: $ARGUMENTS
-```
-
-**Usage**:
-```
-/review-file src/main.rs "error handling"
-```
-
-**Result sent to model**:
-```
-Review the file `src/main.rs` with focus on `error handling`.
-
-Full context: src/main.rs error handling
-```
-
-Arguments are passed positionally. Double-quoted strings are treated as a single argument.
-
-## Prompt Name Rules
-
-- Alphanumeric, hyphens, underscores only
-- Max 50 characters
-- No spaces or special characters
-- Pattern: `^[a-zA-Z0-9_-]+$`
+Prompts are discovered from:
+1. MCP servers — prompts exposed by configured MCP servers
+2. Local prompts — `.kiro/prompts/*.md` in the workspace
+3. Global prompts — `~/.kiro/prompts/*.md`
 
 ## Troubleshooting
 
-### Issue: Prompt Not Found
+### Prompt not found
 
-**Symptom**: "Prompt does not exist" error  
-**Cause**: Prompt name doesn't exist  
-**Solution**: Use `/prompts list` to see available prompts
+The prompt name may not match any available prompt. Use `/prompts` without arguments to see all available prompts.
 
-### Issue: Ambiguous Prompt
+### No prompts available
 
-**Symptom**: "Prompt offered by more than one server"  
-**Cause**: Multiple MCP servers provide same prompt name  
-**Solution**: Use server-specific name: `@server-name/prompt-name`
+Ensure MCP servers are configured or prompt files exist in `.kiro/prompts/` or `~/.kiro/prompts/`.
 
-### Issue: Invalid Prompt Name
+## Related
 
-**Symptom**: Error creating prompt  
-**Cause**: Name contains invalid characters or too long  
-**Solution**: Use only alphanumeric, hyphens, underscores. Max 50 chars.
-
-### Issue: Can't Edit Global Prompt
-
-**Symptom**: Edit fails  
-**Cause**: Trying to edit global without --global flag  
-**Solution**: Add `--global` flag: `/prompts edit name --global`
-
-### Issue: Local Overrides Global
-
-**Symptom**: Editing global but local version used  
-**Cause**: Local prompt with same name exists  
-**Solution**: Remove local prompt or edit local instead
-
-## Related Features
-
-- [Agent Configuration](../agent-config/overview.md) - Agent prompts
-- [/mcp](mcp.md) - MCP server prompts
-- [/editor](editor.md) - Compose prompts
-
-## Limitations
-
-- Prompt names max 50 characters
-- Alphanumeric, hyphens, underscores only
-- Local overrides global with same name
-- MCP prompts read-only (can't edit)
-- No prompt versioning
-- No prompt sharing (except via file system)
-
-## Technical Details
-
-**File Format**: Markdown (.md)
-
-**Storage**:
-- Local: `.kiro/prompts/` in workspace
-- Global: `~/.kiro/prompts/` in home directory
-
-**Resolution**: Local checked first, then global, then MCP servers
-
-**Editor**: Uses $EDITOR environment variable, falls back to vi
-
-**MCP Integration**: MCP servers can provide prompts with arguments
-
-**Arguments**: File-based prompts support `${1}`–`${10}`, `$ARGUMENTS`, and `${@}` placeholders for argument substitution. MCP prompts support server-defined argument substitution. Required arguments marked with *.
+- [/mcp](mcp.md) — Manage MCP servers that provide prompts
+- [Agent Configuration](../features/agent-configuration.md) — Configure agents

@@ -1,265 +1,79 @@
 ---
 doc_meta:
-  validated: 2026-02-06
-  commit: 7ba9105a
+  title: execute_bash
+  description: Execute bash commands on the user's system with output capture
+  category: tool
+  keywords: [execute_bash, shell, bash, command, terminal, run, working_dir]
+  related: [fs-read, fs-write, use-aws]
+  validated: 2026-04-08
+  commit: 1a984cb0
   status: validated
   testable_headless: true
-  category: tool
-  title: execute_bash
-  description: Execute bash commands on the user's system with output capture and safety checks
-  keywords: [execute_bash, shell, bash, command, terminal, run, working_dir, directory]
-  related: [fs-read, fs-write, use-aws]
 ---
-
-# execute_bash
-
-Execute bash commands on the user's system with output capture and safety checks.
 
 ## Overview
 
-> **Note**: This tool is used by the AI assistant to fulfill your requests. You don't invoke it directly - simply ask questions naturally, and the assistant will use this tool to execute commands as needed.
+> This tool is used by the AI assistant to fulfill your requests. You don't invoke it directly - simply ask questions naturally.
 
-The execute_bash tool runs shell commands and captures stdout, stderr, and exit codes. It includes safety checks for dangerous patterns and supports configuration for auto-allowing read-only commands or specific command patterns.
+The execute_bash tool runs shell commands and captures stdout, stderr, and exit codes. It is used as a last resort when no other tool can accomplish the task.
 
-## How It Works
-
-Commands are validated against allowed/denied lists and safety patterns before execution. Read-only commands (ls, cat, pwd, etc.) can be auto-approved. Multi-line commands and dangerous patterns (pipes, redirects, command substitution) require explicit approval unless configured otherwise.
+Limitations:
+- Output is buffered — appears after command completes, not streamed in real-time
+- Interactive commands that require stdin (e.g., `rm -i`, `npm init`, `sudo`) will not work — use non-interactive alternatives (`rm` without `-i`, `npm init -y`, etc.)
+- Does not respect the user's bash profile or aliases
+- Use `working_dir` instead of prefixing commands with `cd`
 
 ## Usage
 
-> **Technical Reference**: The JSON examples below show the internal tool format used by the AI assistant. Users should not copy or type these - they are provided for developers and agent configuration authors only.
-
 ### Parameters
 
-| Parameter | Type | Required | Description |
-|-----------|------|----------|-------------|
-| `command` | string | Yes | The bash command to execute |
-| `summary` | string | No | Brief explanation of what the command does |
-| `working_dir` | string | No | Working directory for command execution. Supports tilde expansion (e.g., `~/projects`). Defaults to current working directory |
+- `command` (string, required) — The bash command to execute
+- `working_dir` (string, optional) — Working directory for command execution. Defaults to the current working directory
 
-### Basic Usage
+## Examples
 
-```json
-{
-  "command": "ls -la"
-}
-```
-
-### Common Use Cases
-
-#### Use Case 1: List Files
+### List directory contents
 
 ```json
 {
-  "command": "ls -la src/",
-  "summary": "List source directory contents"
+  "command": "ls -la src/"
 }
 ```
 
-**What this does**: Executes ls command and returns output. Auto-approved if autoAllowReadonly is enabled.
-
-#### Use Case 2: Check Git Status
-
-```json
-{
-  "command": "git status",
-  "summary": "Check repository status"
-}
-```
-
-**What this does**: Runs git status and captures output. Requires approval unless in allowedCommands.
-
-#### Use Case 3: Run Tests
-
-```json
-{
-  "command": "cargo test --lib",
-  "summary": "Run library tests"
-}
-```
-
-**What this does**: Executes test command and returns results with exit code.
-
-#### Use Case 4: Search Files
-
-```json
-{
-  "command": "find . -name '*.rs' -type f",
-  "summary": "Find all Rust files"
-}
-```
-
-**What this does**: Searches for files matching pattern. Auto-approved if no dangerous flags (-exec, -delete).
-
-#### Use Case 5: Run Command in Different Directory
+### Run in a specific directory
 
 ```json
 {
   "command": "npm install",
-  "summary": "Install dependencies in frontend directory",
-  "working_dir": "~/projects/myapp/frontend"
+  "working_dir": "/path/to/frontend"
 }
 ```
 
-**What this does**: Runs npm install in the specified directory without changing the session's current directory.
-
-## Configuration
-
-Configure command restrictions in agent's `toolsSettings`:
+### Check git status
 
 ```json
 {
-  "toolsSettings": {
-    "execute_bash": {
-      "allowedCommands": ["git status", "git fetch", "cargo check"],
-      "deniedCommands": ["rm -rf .*", "git push .*"],
-      "autoAllowReadonly": true,
-      "denyByDefault": false
-    }
-  }
+  "command": "git status --short"
 }
 ```
-
-| Option | Type | Default | Description |
-|--------|------|---------|-------------|
-| `allowedCommands` | array | `[]` | Commands allowed without prompting. Supports regex (anchored with \\A and \\z) |
-| `deniedCommands` | array | `[]` | Commands that are blocked. Supports regex. Evaluated before allow rules |
-| `autoAllowReadonly` | boolean | `false` | Auto-approve read-only commands (ls, cat, echo, pwd, which, head, tail, find, grep) |
-| `denyByDefault` | boolean | `false` | Deny commands not in allowedCommands instead of prompting |
-
-**Note**: Regex does NOT support look-around (look-ahead/look-behind).
-
-## Safety Checks
-
-The tool automatically requires approval for:
-
-- **Multi-line commands** - Commands containing `\n` or `\r`
-- **Dangerous patterns** - `<(`, `$(`, backticks, `>`, `&&`, `||`, `&`, `;`, `$`, IFS manipulation
-- **Command substitution** - Any form of command execution within commands
-- **find with mutations** - `-exec`, `-execdir`, `-delete`, `-ok`, `-okdir`, `-fprint`, `-fls`
-- **grep with RCE** - `-P` or `--perl-regexp` flags
-
-## Examples
-
-### Example 1: Check System Information
-
-```json
-{
-  "command": "uname -a"
-}
-```
-
-**Expected Output**:
-```
-Linux hostname 5.15.0 #1 SMP x86_64 GNU/Linux
-```
-
-### Example 2: Count Lines of Code
-
-```json
-{
-  "command": "find src -name '*.rs' | xargs wc -l"
-}
-```
-
-**Expected Output**:
-```
-  150 src/main.rs
-  200 src/lib.rs
-  350 total
-```
-
-### Example 3: Check Disk Usage
-
-```json
-{
-  "command": "df -h ."
-}
-```
-
-**Expected Output**:
-```
-Filesystem      Size  Used Avail Use% Mounted on
-/dev/sda1       100G   45G   50G  48% /
-```
-
-### Example 4: Run Build Command
-
-```json
-{
-  "command": "cargo build --release",
-  "summary": "Build release binary"
-}
-```
-
-**Expected Output**: Build logs with compilation progress and final binary location.
 
 ## Troubleshooting
 
-### Issue: Command Requires Approval Every Time
+### Command not found
 
-**Symptom**: Prompted for approval on every execution  
-**Cause**: Command not in allowedCommands and autoAllowReadonly is false  
-**Solution**: Add command to allowedCommands or enable autoAllowReadonly for read-only commands.
+The tool uses a bare shell without the user's profile. Commands that depend on aliases or profile-loaded paths may not work. Use full paths to binaries if needed.
 
-### Issue: Command Denied Unexpectedly
+### Working directory not found
 
-**Symptom**: Command blocked without prompt  
-**Cause**: Command matches deniedCommands pattern or denyByDefault is true  
-**Solution**: Check deniedCommands list. If denyByDefault is true, add command to allowedCommands.
+The `working_dir` must be an existing directory. Verify the path exists before using it.
 
-### Issue: Pipe Commands Always Require Approval
+### Output truncated
 
-**Symptom**: Commands with `|` always prompt  
-**Cause**: Pipes are considered potentially dangerous  
-**Solution**: Add full piped command to allowedCommands with regex pattern, or approve when prompted.
+Large outputs are truncated to prevent context window overflow. Use `head`, `tail`, or `grep` to limit output in the command itself.
 
-### Issue: Multi-line Script Fails
+## Related
 
-**Symptom**: Multi-line commands always require approval  
-**Cause**: Safety feature - multi-line commands are complex  
-**Solution**: This is intentional. Approve when prompted or split into separate commands.
-
-### Issue: Output Truncated
-
-**Symptom**: Command output cut off  
-**Cause**: Output exceeds MAX_TOOL_RESPONSE_SIZE  
-**Solution**: Use output redirection to file, then read file with fs_read.
-
-### Issue: Working Directory Not Found
-
-**Symptom**: Error "Working directory is not a directory"  
-**Cause**: The specified `working_dir` path doesn't exist or isn't a directory  
-**Solution**: Verify the path exists and is a directory. Tilde expansion is supported (e.g., `~/projects`).
-
-## Related Features
-
-- [fs_read](fs-read.md) - Read command output from files
-- [fs_write](fs-write.md) - Create scripts to execute
-- [use_aws](use-aws.md) - AWS CLI integration
-
-## Limitations
-
-- Multi-line commands always require approval (safety feature)
-- Output limited by MAX_TOOL_RESPONSE_SIZE
-- No interactive command support (commands requiring user input will hang, though prompts display immediately)
-- Output streams in real-time to terminal but is truncated in the final result if it exceeds size limits
-- Commands run in user's shell environment
-- No timeout configuration (commands can run indefinitely)
-- Regex patterns don't support look-around assertions
-
-## Technical Details
-
-**Aliases**: `execute_bash`, `execute_cmd`, `shell`
-
-**Platform**: Works on Unix/Linux/macOS (bash) and Windows (cmd/PowerShell)
-
-**Environment**: Commands execute in user's current shell with environment variables. Working directory defaults to current directory but can be overridden with `working_dir` parameter (supports tilde expansion).
-
-**Read-only Commands**: ls, cat, echo, pwd, which, head, tail, find (without mutation flags), grep (without -P), dir, type
-
-**Permissions**: Prompts by default unless command in allowedCommands or is read-only with autoAllowReadonly enabled. Deny rules evaluated before allow rules.
-
-**Exit Codes**: Captured and included in output. Non-zero exit codes don't cause tool failure.
-
-**Output Handling**: stdout and stderr captured separately, then combined in output. Output streams to terminal in real-time (including partial lines and prompts). Final result truncated if exceeding size limits. Unicode tags sanitized for safety.
+- [fs_read](fs-read.md) — Prefer this for reading files instead of `cat`
+- [fs_write](fs-write.md) — Prefer this for writing files instead of `echo >`
+- [grep](grep.md) — Prefer this for searching files instead of `grep` command
+- [use_aws](use-aws.md) — Prefer this for AWS CLI calls

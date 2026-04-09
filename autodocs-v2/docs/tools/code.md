@@ -1,7 +1,7 @@
 ---
 doc_meta:
-  validated: 2026-01-27
-  commit: 85403a86
+  validated: 2026-04-09
+  commit: 4ae084db
   status: validated
   testable_headless: true
   category: tool
@@ -134,9 +134,9 @@ Find symbols by name across workspace.
 
 **Parameters**:
 - `symbol_name` (string, required): Name to search for
-- `file_path` (string, optional): Limit to specific file
+- `path` (string, optional): Limit to specific directory
 - `symbol_type` (string, optional): Filter by type (Function, Method, Class, Struct, Enum, Interface, Constant, Variable, Module, Import)
-- `limit` (integer, optional): Max results (default 50, max 50)
+- `limit` (integer, optional): Max results (default 20, max 50)
 - `language` (string, optional): Filter by language (rust, typescript, python, etc.)
 - `exact_match` (boolean, optional): Require exact name match (default false)
 
@@ -167,7 +167,7 @@ List symbols in file.
 
 **Parameters**:
 - `file_path` (string, required): File to analyze
-- `top_level_only` (boolean, optional): Only top-level symbols (default true)
+- `top_level_only` (boolean, optional): Only top-level symbols
 
 ### lookup_symbols
 
@@ -176,6 +176,7 @@ Look up specific symbols by name.
 **Parameters**:
 - `symbols` (array, required): List of symbol names
 - `file_path` (string, optional): Limit to specific file
+- `include_source` (boolean, optional): Include source code in results (default false)
 
 ### rename_symbol
 
@@ -186,7 +187,17 @@ Rename symbol across codebase.
 - `row` (integer, required): Line number (1-based)
 - `column` (integer, required): Column number (1-based)
 - `new_name` (string, required): New symbol name
-- `dry_run` (boolean, optional): Preview without applying (default false)
+- `dry_run` (boolean, optional): Preview without applying (default true)
+
+### format
+
+Format code in a file.
+
+**Parameters**:
+- `file_path` (string, optional): File to format
+- `tab_size` (integer, optional): Tab size (default 4)
+- `insert_spaces` (boolean, optional): Use spaces instead of tabs (default true)
+- `dry_run` (boolean, optional): Preview without applying (default true)
 
 ### get_diagnostics
 
@@ -215,6 +226,7 @@ Get available completions at position (LSP required).
 - `filter` (string, optional): Fuzzy search filter (recommended)
 - `symbol_type` (string, optional): Filter by type
 - `trigger_character` (string, optional): Trigger character (`.`, `::`, etc.)
+- `limit` (integer, optional): Max results (default 50)
 
 ### pattern_search
 
@@ -224,7 +236,8 @@ AST-based structural code search. Language-specific.
 - `pattern` (string, required): AST pattern to match
 - `language` (string, required): Programming language
 - `file_path` (string, optional): Limit to specific file
-- `limit` (integer, optional): Max results
+- `limit` (integer, optional): Max results (default 20)
+- `offset` (integer, optional): Skip first N results for pagination
 
 **Metavariables**:
 - `$VAR` - Matches single node (identifier, expression)
@@ -347,11 +360,11 @@ Initialize LSP servers for workspace.
 
 - [/code](../slash-commands/code.md) - Slash commands for code intelligence
 - [grep](grep.md) - Text-based pattern search
-- [fs_read](fs-read.md) - Read source files
+- [fs-read](fs-read.md) - Read source files
 
 ## Limitations
 
-- Requires language server installation
+- Requires language server installation for LSP features
 - Initial indexing can be slow for large codebases
 - LSP feature support varies by language server
 - Position-based operations require exact row/column
@@ -377,7 +390,7 @@ Initialize LSP servers for workspace.
 
 **Tree-sitter Operations** (no setup required): search_symbols, get_document_symbols, lookup_symbols, pattern_search, pattern_rewrite, generate_codebase_overview, search_codebase_map
 
-**LSP Operations** (requires `/code init`): find_references, goto_definition, rename_symbol, get_diagnostics, get_hover, get_completions
+**LSP Operations** (requires `/code init`): find_references, goto_definition, rename_symbol, format, get_diagnostics, get_hover, get_completions
 
 **Initialization**: Run `/code init` in project root. Creates `lsp.json` config. Auto-initializes on subsequent startups.
 

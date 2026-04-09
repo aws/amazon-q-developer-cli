@@ -8,7 +8,7 @@ doc_meta:
   title: Code Intelligence
   description: Code understanding with tree-sitter (built-in) and LSP integration (optional) for symbol search, pattern matching, and codebase exploration
   keywords: [code, intelligence, lsp, semantic, symbols, references, tree-sitter, pattern, ast, codebase-overview]
-  related: [code-tool, slash-code, enable-code-intelligence]
+  related: [code-tool, slash-code]
 ---
 
 # Code Intelligence
@@ -609,5 +609,5 @@ Additional languages can be added via custom `lsp.json` configuration (see Custo
 
 ## Related Features
 
-- **File Operations**: See [Built-in Tools](built-in-tools.md) for fs_read/fs_write
-- **Agent Configuration**: See [Agent Format](agent-format.md) for permanent trust
+- **Code Tool**: See [code](../tools/code.md) for the code tool reference
+- **Agent Configuration**: See [Agent Configuration](agent-configuration.md) for agent setup

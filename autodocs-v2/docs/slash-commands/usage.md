@@ -1,22 +1,23 @@
 ---
 doc_meta:
-  validated: 2025-12-19
-  commit: 57090ffe
+  validated: 2026-04-09
+  commit: 4ae084db
   status: validated
   testable_headless: false
   category: slash_command
   title: /usage
-  description: Show billing and credits information for current session
-  keywords: [usage, billing, credits, cost]
+  description: Show account-level usage limits and subscription plan information
+  keywords: [usage, billing, credits, plan, limits, subscription]
+  related: [model, settings]
 ---
 
 # /usage
 
-Show billing and credits information for current session.
+Show account-level usage limits and subscription plan information.
 
 ## Overview
 
-Displays billing information including credits used and remaining for current conversation session.
+Retrieves your account's usage limits from the API, including subscription plan details, usage breakdowns by resource type, and bonus credits with expiry information.
 
 ## Usage
 
@@ -26,19 +27,25 @@ Displays billing information including credits used and remaining for current co
 
 ## Output
 
-Shows:
-- Credits used in session
-- Remaining credits
-- Cost breakdown
+Returns JSON data containing:
+- `planName` - Your subscription plan title
+- `overagesEnabled` - Whether overage charges are enabled
+- `isEnterprise` - Whether this is an enterprise-managed plan
+- `usageBreakdowns[]` - Array of usage by resource type:
+  - `resourceType`, `displayName`
+  - `used`, `limit`, `percentage`
+  - `currentOverages`, `overageRate`, `overageCharges`, `currency`
+- `bonusCredits[]` - Array of bonus credits:
+  - `name`, `used`, `total`, `daysUntilExpiry`
 
 ## Limitations
 
-- Shows session data only
-- Not available in all regions
+- Enterprise users see "Your plan is managed by admin" message
+- Requires valid API authentication
 
 ## Technical Details
 
-**Billing**: Based on token usage and model rates.
+Calls `get_usage_limits()` API to retrieve account-level subscription and usage data.
 
 ## Examples
 
@@ -50,25 +57,49 @@ Shows:
 
 **Output**:
 ```
-Session Usage:
-  Input tokens: 1,234
-  Output tokens: 5,678
-  Total tokens: 6,912
-  
-  Estimated cost: $0.15
-  Credits remaining: 9.85
+Plan: Q Developer Pro | 2 usage breakdowns
+```
+
+With JSON data:
+```json
+{
+  "planName": "Q Developer Pro",
+  "overagesEnabled": false,
+  "isEnterprise": false,
+  "usageBreakdowns": [
+    {
+      "resourceType": "AGENTIC_REQUESTS",
+      "displayName": "Agentic requests",
+      "used": 150.0,
+      "limit": 1000.0,
+      "percentage": 15,
+      "currentOverages": 0.0,
+      "overageRate": 0.0,
+      "overageCharges": null,
+      "currency": "USD"
+    }
+  ],
+  "bonusCredits": [
+    {
+      "name": "Welcome bonus",
+      "used": 10.0,
+      "total": 50.0,
+      "daysUntilExpiry": 25
+    }
+  ]
+}
 ```
 
 ## Troubleshooting
 
-### Issue: No Usage Data
+### Issue: "Your plan is managed by admin"
 
-**Symptom**: Empty or zero usage  
-**Cause**: New session or no API calls yet  
-**Solution**: Usage tracked after first AI response
+**Symptom**: Message says plan is managed by admin  
+**Cause**: Enterprise account with centrally managed billing  
+**Solution**: Contact your organization's admin for usage details
 
-### Issue: Cost Seems Wrong
+### Issue: Failed to retrieve usage information
 
-**Symptom**: Unexpected cost  
-**Cause**: Different model rates  
-**Solution**: Costs vary by model. Check model pricing.
+**Symptom**: Error message about retrieval failure  
+**Cause**: API authentication or connectivity issue  
+**Solution**: Check your login status with `/whoami` and re-authenticate if needed

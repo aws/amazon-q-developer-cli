@@ -1,14 +1,14 @@
 ---
 doc_meta:
-  validated: 2025-12-22
-  commit: 57090ffe
+  validated: 2026-04-09
+  commit: 4ae084db
   status: validated
   testable_headless: false
   category: feature
   title: Planning Agent
   description: Built-in agent that transforms ideas into structured implementation plans with requirements gathering and task breakdown
   keywords: [planning, agent, plan, requirements, tasks, workflow]
-  related: [slash-plan, agent-configuration]
+  related: [plan, agent-configuration]
 ---
 
 # Planning Agent
@@ -76,7 +76,7 @@ d. **Other** - Describe your specific needs
 The planner explores your codebase and researches relevant technologies.
 
 **Capabilities:**
-- **Code Exploration**: Uses `code`, `grep`, and `glob` tools to understand existing code
+- **Code Exploration**: Uses `read`, `grep`, and `glob` tools to understand existing code
 - **Technology Research**: Identifies relevant frameworks, libraries, and patterns
 - **Architecture Analysis**: Reviews existing project structure and conventions
 
@@ -138,12 +138,11 @@ Ready to exit [plan] agent to start your implementation? [y/n]:
 
 **Read-Only Design**: Planning agent cannot modify files or execute commands - keeps focus on planning rather than implementation.
   * **Restricted Operations:**
-    1. **File Writing**: Cannot create or modify files (`fs_write` denied)
+    1. **File Writing**: Cannot create or modify files (write tool denied)
     1. **Command Execution**: Limited to read-only bash commands
     1. **MCP Tools**: Excluded from most external tools
   * **Allowed Operations:**
     1. **File Reading**: Full access to explore codebase
-    1. **Code Intelligence**: LSP operations for understanding code structure
     1. **Search Operations**: `grep`, `glob` for code exploration
     1. **Research Tools**: Web search and documentation access
 

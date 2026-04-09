@@ -1,14 +1,14 @@
 ---
 doc_meta:
-  validated: 2026-01-27
-  commit: 85403a86
+  validated: 2026-04-09
+  commit: 4ae084db
   status: validated
   testable_headless: false
   category: slash_command
   title: /chat load
   description: Load previously saved conversation from file to resume session
-  keywords: [chat, load, import, restore, resume, session]
-  related: [chat-save, chat-list, cmd-chat]
+  keywords: [chat, load, import, restore, resume, session, zip, json]
+  related: [chat-save, chat-new]
 ---
 
 # /chat load
@@ -17,42 +17,45 @@ Load previously saved conversation from file to resume session.
 
 ## Overview
 
-The `/chat load` command imports a conversation from a JSON file saved with `/chat save`. Restores message history, context files, and conversation state. Automatically requests summary of conversation after loading.
+The `/chat load` command imports a conversation from a saved session file. Supports multiple file formats including the native Kiro export format, zip archives, and legacy V1 sessions.
 
 ## Usage
-
-### Basic Usage
 
 ```
 /chat load <path>
 ```
 
-**Aliases**: `/load` (deprecated - use `/chat load`)
-
 ## Parameters
 
 | Parameter | Required | Description |
 |-----------|----------|-------------|
-| `path` | Yes | Path to saved conversation file |
+| `path` | Yes | Path to saved session file (.json or .zip) |
+
+## Supported Formats
+
+| Format | Description |
+|--------|-------------|
+| Kiro | `kiro-session-export-v1` JSON (created by `/chat save`) |
+| Zip | Archive containing `session_metadata.json` + `conversation_log.jsonl` |
+| Legacy | V1 `ConversationState` JSON from older CLI versions |
+| SessionDataOnly | Bare `SessionData` JSON with optional companion `.jsonl` file |
 
 ## How It Works
 
-Loads conversation JSON file and restores:
-- Message history
-- Context file paths (as temporary context)
-- Conversation state
+1. Reads the file and auto-detects format
+2. Extracts session metadata and conversation log
+3. Creates a new session with a fresh UUID
+4. Sets `imported_from` field to track origin
 
-Preserves current session's:
-- Tool manager
-- MCP connections
-- Model configuration
+The loaded session uses your current:
 - Agent configuration
-
-After loading, automatically asks "In a few words, summarize our conversation so far" to provide context.
+- Model configuration
+- MCP connections
+- Hooks
 
 ## Examples
 
-### Example 1: Load from File
+### Example 1: Load from JSON File
 
 ```
 /chat load my-session.json
@@ -60,99 +63,59 @@ After loading, automatically asks "In a few words, summarize our conversation so
 
 **Output**:
 ```
-✔ Imported chat session state from my-session.json
-
-[AI provides conversation summary]
+Loaded session from /home/user/my-session.json
 ```
 
-### Example 2: Load with .json Extension Auto-Added
+### Example 2: Load from Zip Archive
+
+```
+/chat load backup.zip
+```
+
+### Example 3: Load with Extension Fallback
 
 ```
 /chat load backup
 ```
 
-Tries `backup` first, then `backup.json` if not found.
+Tries `backup` first, then `backup.zip`, then `backup.json` if not found.
 
-### Example 3: Load from Path
+### Example 4: Load from Absolute Path
 
 ```
 /chat load ~/backups/important-conversation.json
 ```
 
-## Advanced: Script-Based Load
-
-Load via custom script that outputs JSON to stdout:
-
-```
-/chat load-via-script ./my-load-script.sh
-```
-
-Script should output conversation JSON to stdout and exit 0 on success.
-
-## Context File Handling
-
-Context files from loaded conversation are added as **temporary context** (session-scoped). They don't override agent's permanent context files.
-
-If context file path doesn't exist, it's still added but won't be readable.
-
 ## Troubleshooting
 
 ### Issue: File Not Found
 
-**Symptom**: "Failed to import" error  
+**Symptom**: "Failed to read" error  
 **Cause**: File doesn't exist at path  
-**Solution**: Check path. Command tries adding `.json` extension automatically.
+**Solution**: Check path. Command tries `.zip` then `.json` extensions automatically.
 
-### Issue: Invalid JSON
+### Issue: Unrecognized Format
 
-**Symptom**: "Failed to import" error with JSON parse error  
-**Cause**: File is not valid conversation JSON  
-**Solution**: Ensure file was created with `/chat save`
+**Symptom**: "Unrecognized session file format" error  
+**Cause**: File is not a valid session export  
+**Solution**: Ensure file was created with `/chat save` or is a valid legacy export.
 
-### Issue: Context Files Missing
+### Issue: Invalid Zip Archive
 
-**Symptom**: Loaded but context files not working  
-**Cause**: Context file paths from saved session don't exist  
-**Solution**: Context files are referenced by path. Ensure files exist at same paths.
-
-### Issue: Different Agent Behavior
-
-**Symptom**: Agent behaves differently after load  
-**Cause**: Current session's agent used, not saved agent  
-**Solution**: Switch to desired agent before loading, or after loading
+**Symptom**: "File has .zip extension but is not a valid zip archive"  
+**Cause**: Corrupted or invalid zip file  
+**Solution**: Re-export the session or use JSON format.
 
 ## Related Features
 
 - [/chat save](chat-save.md) - Save conversation to file
-- [/chat resume](chat-list.md) - Resume from database
+- [/chat new](chat-new.md) - Start a new conversation
 - [kiro-cli chat --resume](../commands/chat.md) - Resume last conversation
-- [/context](context.md) - Manage context files
-
-## Limitations
-
-- Uses current session's agent (not saved agent)
-- Uses current session's model (not saved model)
-- Context files added as temporary (not permanent)
-- Hooks not restored (uses current agent's hooks)
-- Tool manager recreated (not restored)
-- MCP connections reestablished
 
 ## Technical Details
 
-**File Format**: JSON with ConversationState structure
+**Extension Handling**: If path has no extension and file not found, tries `.zip` first, then `.json`.
 
-**State Restoration**:
-- ✅ Message history
-- ✅ Context file paths (as temporary)
-- ✅ Conversation metadata
-- ❌ Tool manager (uses current)
-- ❌ MCP state (reconnects)
-- ❌ Model info (uses current)
-- ❌ Agent config (uses current)
-- ❌ Hooks (uses current)
+**Session ID**: Loaded sessions get a new UUID. The original path is stored in `imported_from`.
 
-**Auto-Summary**: After loading, automatically triggers conversation summary to provide context.
-
-**Extension Handling**: If path doesn't end with `.json` and file not found, automatically tries with `.json` appended.
-
-**Deprecated**: `/load` command deprecated in favor of `/chat load`
+**Format Detection**: Uses file extension for `.zip`, then probes JSON structure for other formats.

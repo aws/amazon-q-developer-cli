@@ -19,7 +19,7 @@ Start a fresh conversation without restarting the CLI.
 
 The `/chat new` command creates a brand new conversation session, clearing all messages and starting fresh. The previous session is preserved and can be resumed later with `/chat`.
 
-This command is available in both V1 (legacy UI) and V2 (TUI). In V2, it creates a new ACP session and terminates the old one.
+Creates a new ACP session and terminates the old one.
 
 ## Usage
 
@@ -60,7 +60,7 @@ This creates a new conversation and immediately sends "explain how async works i
 2. A new session is created with a fresh conversation ID
 3. All messages are cleared from the display
 4. Model and agent settings are preserved
-5. MCP servers remain available (V2 creates new server instances)
+5. MCP servers remain available (creates new server instances)
 
 ## Differences from /clear
 
@@ -82,5 +82,4 @@ This creates a new conversation and immediately sends "explain how async works i
 
 ## Limitations
 
-- In V1, the previous session must have been saved to the database to be resumable
-- In V2, MCP servers are re-initialized in the new session (brief startup delay)
+- MCP servers are re-initialized in the new session (brief startup delay)

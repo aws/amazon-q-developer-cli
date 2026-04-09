@@ -1,7 +1,7 @@
 ---
 doc_meta:
-  validated: 2026-02-04
-  commit: 1c24e37d
+  validated: 2026-04-09
+  commit: 4ae084db
   status: validated
   testable_headless: false
   category: slash_command
@@ -50,14 +50,15 @@ Display context window token usage breakdown.
 
 Shows:
 - Context files usage
-- Tool definitions usage
-- Assistant responses usage
-- User prompts usage
+- Tools usage
+- Kiro responses usage
+- Your prompts usage
+- Session files usage
 - Total usage and percentage
 
 ### show
 
-Display context rules and matched files.
+Display context rules and matched files with expanded details.
 
 ```
 /context show
@@ -69,13 +70,6 @@ Shows:
 - Matched files with token counts
 - Files dropped due to size limits
 
-**With --expand**:
-```
-/context show --expand
-```
-
-Shows file contents and conversation summary.
-
 ### add
 
 Add context file rules (paths or glob patterns).
@@ -84,12 +78,13 @@ Add context file rules (paths or glob patterns).
 /context add <paths...>
 ```
 
-**With --force**:
+**With --force or -f**:
 ```
 /context add --force <paths...>
+/context add -f <paths...>
 ```
 
-Adds even if files exceed size limits.
+Adds even if files exceed size limits or don't exist.
 
 **Note**: Changes are temporary (session-only). For permanent context, edit agent configuration.
 
@@ -123,13 +118,15 @@ Clears all session context files.
 
 **Output**:
 ```
-Context Window Usage:
-  Context files:     15,234 tokens (15.2%)
-  Tool definitions:   2,456 tokens (2.5%)
-  Assistant:         45,678 tokens (45.7%)
-  User prompts:      12,345 tokens (12.3%)
-  Total:            75,713 tokens (75.7%)
+Context breakdown - 75% used
 ```
+
+The UI displays a breakdown with categories:
+- `context_files` - Agent context files
+- `tools` - Tool definitions
+- `kiro_responses` - Assistant responses
+- `your_prompts` - User prompts
+- `session_files` - Temporary session files
 
 ### Example 2: Show Context Files
 
@@ -170,14 +167,33 @@ Both regular files and skill resources show their estimated context usage.
 
 **Output**:
 ```
-✔ Added 2 path(s) to context.
-Note: Context modifications via slash command is temporary.
+Added 2 path(s) to context
+```
+
+For a single file:
+```
+/context add README.md
+```
+
+**Output**:
+```
+Added 'README.md' to context
 ```
 
 ### Example 4: Remove Context
 
 ```
 /context remove README.md
+```
+
+**Output**:
+```
+Removed 'README.md' from context
+```
+
+Using the alias:
+```
+/context rm README.md
 ```
 
 ### Example 5: Clear All
@@ -188,8 +204,7 @@ Note: Context modifications via slash command is temporary.
 
 **Output**:
 ```
-✔ Cleared context
-Note: Context modifications via slash command is temporary.
+Cleared all context rules
 ```
 
 ## Context File Types
@@ -216,7 +231,7 @@ Added via `/context add` or loaded from saved conversations. Cleared when sessio
 Context files have size limits to prevent overwhelming context window:
 - Files exceeding limit are dropped (oldest first)
 - Warning shown when files dropped
-- Use `--force` to add despite limits
+- Use `--force` or `-f` to add despite limits
 
 ## Troubleshooting
 
@@ -238,9 +253,21 @@ Context files have size limits to prevent overwhelming context window:
 **Cause**: `/context add/remove` are temporary  
 **Solution**: Edit agent configuration for permanent changes
 
+### Issue: Path Not Found Error
+
+**Symptom**: Error "Path not found: <path>"  
+**Cause**: File doesn't exist or path contains unquoted spaces  
+**Solution**: Wrap paths with spaces in quotes, or use `--force` to add anyway
+
+### Issue: None of the Paths Found
+
+**Symptom**: Error "None of the specified paths were found in the context"  
+**Cause**: Trying to remove paths that aren't in the context  
+**Solution**: Use `/context show` to see current context paths
+
 ## Related Features
 
-- [Agent Configuration](../agent-config/overview.md) - Permanent context configuration
+- [Agent Configuration](../features/agent-configuration.md) - Permanent context configuration
 - [Hooks](../features/hooks.md) - Context hooks for dynamic content
 - [/agent](agent-swap.md) - Switch agents with different context
 
@@ -254,7 +281,7 @@ Context files have size limits to prevent overwhelming context window:
 
 ## Technical Details
 
-**Token Counting**: Uses approximate token counter based on model.
+**Token Counting**: Uses approximate token counter (characters / 4).
 
 **Context Window**: Size varies by model (e.g., 200K for Claude 3.5 Sonnet).
 

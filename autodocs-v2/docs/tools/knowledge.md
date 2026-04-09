@@ -1,6 +1,6 @@
 ---
 doc_meta:
-  validated: 2025-12-19
+  validated: 2026-04-09
   commit: 57090ffe
   status: validated
   testable_headless: true
@@ -19,7 +19,7 @@ Store and retrieve information across chat sessions with semantic search capabil
 
 > **Note**: This tool is used by the AI assistant to fulfill your requests. You don't invoke it directly - simply ask questions naturally, and the assistant will use this tool to store and retrieve information as needed.
 
-The knowledge tool provides persistent information storage across chat sessions. Store files, directories, or text snippets, then search semantically. Experimental feature requiring explicit enablement.
+The knowledge tool provides persistent information storage across chat sessions. Store files, directories, or text snippets, then search semantically using MiniLLM or keyword search (BM25). Supports code, markdown, CSV, PDF, and other text file formats.
 
 ## Usage
 
@@ -108,6 +108,12 @@ No agent configuration needed - knowledge is trusted by default.
 
 ## Commands
 
+### status
+
+Check knowledge base status and active operations.
+
+- `command`: "status"
+
 ### add
 
 Add files or text to knowledge base.
@@ -137,19 +143,19 @@ Search knowledge base semantically.
 - `limit` (integer, optional): Max results
 - `offset` (integer, optional): Pagination offset
 - `snippet_length` (integer, optional): Result snippet length
-- `sort_by` (string, optional): Sort order
-- `file_type` (string, optional): Filter by file type
+- `sort_by` (string, optional): Sort order - one of: `relevance` (default), `path`, `name`
+- `file_type` (string, optional): Filter by file type (e.g., 'Code', 'Markdown', 'Text')
 
 ### update
 
 Re-index existing entry.
 
 **Parameters**:
+- `path` (string, required): New content location
 - `name` (string): Entry name
 - `context_id` (string): Entry ID
-- `path` (string): File path
 
-At least one parameter required.
+Requires `path` plus one of `name` or `context_id`.
 
 ### show
 
@@ -161,15 +167,14 @@ List all knowledge base entries.
 
 Clear entire knowledge base.
 
-**Parameters**:
-- `confirm` (boolean, required): Must be true
+**Parameters**: None
 
 ### cancel
 
-Cancel background operation.
+Cancel background operations.
 
 **Parameters**:
-- `operation_id` (string, required): Operation ID or "all"
+- `operation_id` (string, optional): Operation ID to cancel. If not provided, all active operations will be cancelled.
 
 ## Examples
 
@@ -244,12 +249,11 @@ Stores text note.
 ## Related Features
 
 - [/knowledge](../slash-commands/knowledge.md) - Slash commands for knowledge management
-- [chat.enableKnowledge](../settings/enable-knowledge.md) - Enable setting
+- [chat.enableKnowledge](../settings/knowledge-base-settings.md) - Enable setting
 - [fs_read](fs-read.md) - Read files for indexing
 
 ## Limitations
 
-- Experimental feature (may change)
 - Requires explicit enablement
 - Storage location not configurable
 - No cloud sync

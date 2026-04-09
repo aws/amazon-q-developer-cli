@@ -8,7 +8,7 @@ doc_meta:
   title: Knowledge Management
   description: Persistent knowledge base with semantic search, agent isolation, and auto-sync capabilities
   keywords: [knowledge, base, semantic, search, persistent, agent, isolation]
-  related: [knowledge-tool, slash-knowledge, enable-knowledge]
+  related: [knowledge-tool, slash-knowledge, knowledge-base-settings]
 ---
 
 # Knowledge Management
@@ -25,7 +25,7 @@ Knowledge Management provides persistent storage and semantic search across chat
 kiro-cli settings chat.enableKnowledge true
 ```
 
-Experimental feature, disabled by default.
+Available by default.
 
 ## Index Types
 
@@ -227,7 +227,7 @@ kiro-cli settings knowledge.defaultExcludePatterns '["target/**"]'
 
 - [knowledge tool](../tools/knowledge.md) - Tool parameters
 - [/knowledge](../slash-commands/knowledge.md) - Slash commands
-- [chat.enableKnowledge](../settings/enable-knowledge.md) - Enable setting
+- [Knowledge Base Settings](../settings/knowledge-base-settings.md) - Knowledge configuration
 
 ## Limitations
 

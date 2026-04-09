@@ -6,18 +6,18 @@ doc_meta:
   testable_headless: false
   category: feature
   title: MCP Registry
-  description: Enterprise MCP server governance allowing administrators to control which servers users can access
-  keywords: [mcp, registry, governance, enterprise, admin, pro]
+  description: Enterprise MCP server security allowing administrators to control which servers users can access
+  keywords: [mcp, registry, security, enterprise, admin, pro]
   related: [cmd-mcp, slash-mcp, agent-configuration]
 ---
 
 # MCP Registry
 
-Enterprise MCP server governance allowing administrators to control which servers users can access.
+Enterprise MCP server security allowing administrators to control which servers users can access.
 
 ## Overview
 
-Pro-tier customers using IAM Identity Center can have MCP server access controlled through an MCP registry. When configured by administrators, users can only use MCP servers explicitly allowed in the registry. Provides centralized governance for enterprise deployments.
+Pro-tier customers using IAM Identity Center can have MCP server access controlled through an MCP registry. When configured by administrators, users can only use MCP servers explicitly allowed in the registry. Provides centralized security for enterprise deployments.
 
 ## How It Works
 
@@ -30,7 +30,7 @@ Pro-tier customers using IAM Identity Center can have MCP server access controll
 - Administrator configures allowed servers
 - Users select from registry list
 - Cannot add custom servers
-- Centralized governance and security
+- Centralized security and security
 
 ## Adding Servers (Registry Mode)
 
@@ -201,4 +201,4 @@ Your token overrides registry defaults.
 
 **Fallback**: If registry unavailable, MCP functionality disabled
 
-**Documentation**: For administrators, see [MCP Governance Documentation](https://kiro.dev/docs/cli/mcp/governance/)
+**Documentation**: For administrators, see [MCP Governance Documentation](https://kiro.dev/docs/cli/mcp/security/)

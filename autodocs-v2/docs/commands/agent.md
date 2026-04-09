@@ -7,7 +7,7 @@ doc_meta:
   category: command
   title: kiro-cli agent
   description: Manage agent configurations including list, validate, create, edit, migrate, and set-default operations
-  keywords: [agent, config, manage, validate, create, schema, description]
+  keywords: [agent, config, manage, validate, create, description]
   related: [slash-agent, agent-config]
 ---
 
@@ -110,11 +110,11 @@ kiro-cli agent validate --path <PATH>
 Create new agent configuration.
 
 ```bash
-kiro-cli agent create <AGENT_NAME> [--directory <DIR>] [--from <TEMPLATE>]
+kiro-cli agent create --name <NAME> [--directory <DIR>] [--from <TEMPLATE>]
 ```
 
 **Arguments**:
-- `<AGENT_NAME>`: Name for new agent (required)
+- `--name, -n`: Name for new agent (required)
 
 **Options**:
 - `--directory, -d`: Directory to save agent (optional, defaults to global)
@@ -127,11 +127,11 @@ kiro-cli agent create <AGENT_NAME> [--directory <DIR>] [--from <TEMPLATE>]
 Edit existing agent configuration.
 
 ```bash
-kiro-cli agent edit [AGENT_NAME] [--path <PATH>]
+kiro-cli agent edit --name <NAME> [--path <PATH>]
 ```
 
 **Arguments**:
-- `[AGENT_NAME]`: Name of agent to edit (optional, defaults to current agent)
+- `--name, -n`: Name of agent to edit (optional, opens picker if omitted)
 
 **Options**:
 - `--path`: Path to agent configuration file
@@ -155,11 +155,11 @@ kiro-cli agent migrate
 Set default agent for new chat sessions.
 
 ```bash
-kiro-cli agent set-default <AGENT_NAME>
+kiro-cli agent set-default --name <NAME>
 ```
 
 **Arguments**:
-- `<AGENT_NAME>`: Name of agent to set as default (required)
+- `--name, -n`: Name of agent to set as default (required)
 
 ### help
 
@@ -186,7 +186,7 @@ Global:    ~/.kiro/agents
   code-reviewer     Workspace     Code review agent focused on security and best practices
   python-dev        Global        Python development assistant
   kiro_default      (Built-in)    Default agent
-  kiro_help         (Built-in)    Help agent that answers questions about Kiro CLI features
+  kiro_guide        (Built-in)    Guide agent that answers questions about Kiro CLI features
   kiro_planner      (Built-in)    Specialized planning agent for implementation plans
 ```
 
@@ -269,9 +269,9 @@ Local agents take precedence over global agents with same name.
 
 **Symptom**: Schema mismatch error  
 **Cause**: Invalid agent configuration  
-**Solution**: Check error message for specific issue. Use `kiro-cli agent schema` to see required format.
+**Solution**: Check error message for specific issue. Check the agent configuration documentation for the required format.
 
-### Issue: Can't Generate Agent
+### Issue: Can't Create Agent
 
 **Symptom**: Permission denied or directory not found  
 **Cause**: `.kiro/agents/` directory doesn't exist  
@@ -279,8 +279,8 @@ Local agents take precedence over global agents with same name.
 
 ## Related Features
 
-- [/agent](../slash-commands/agent-switch.md) - Switch agents in chat
-- [/agent generate](../slash-commands/agent-generate.md) - Generate agent in chat
+- [/agent](../slash-commands/agent-swap.md) - Switch agents in chat
+- [/agent create](../slash-commands/agent-create.md) - Create agent in chat
 - [Agent Configuration](../features/agent-configuration.md) - Complete agent format guide
 
 ## Limitations
@@ -298,4 +298,4 @@ Local agents take precedence over global agents with same name.
 
 **Validation**: Uses JSON schema validation against agent format specification.
 
-**Example Agent Tools**: fs_read, fs_write, execute_bash, use_aws, gh_issue, introspect, knowledge, thinking, todo_list, delegate, grep, glob.
+**Example Agent Tools**: fs_read, fs_write, execute_bash, use_aws, introspect, knowledge, grep, glob, code, subagent.

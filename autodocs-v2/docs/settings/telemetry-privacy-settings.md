@@ -1,6 +1,6 @@
 ---
 doc_meta:
-  validated: 2026-01-05
+  validated: 2026-04-09
   commit: a1d370b5
   status: validated
   testable_headless: true
@@ -22,6 +22,8 @@ Enable or disable telemetry collection.
 
 Controls whether Kiro CLI collects anonymous usage data to improve the product. When enabled, sends usage statistics and error reports to help development team understand how the tool is used.
 
+This is a **global-only** setting and cannot be overridden per-workspace.
+
 ### Usage
 
 ```bash
@@ -29,7 +31,20 @@ kiro-cli settings telemetry.enabled true
 ```
 
 **Type**: Boolean  
-**Default**: `false`
+**Default**: `true`  
+**Scope**: Global only
+
+### Environment Variables
+
+Telemetry can also be disabled via environment variables, which take precedence over the setting:
+
+- `KIRO_DISABLE_TELEMETRY` - Set to any value to disable telemetry
+- `Q_DISABLE_TELEMETRY` - Set to any value to disable telemetry
+
+```bash
+# Disable telemetry via environment variable
+export KIRO_DISABLE_TELEMETRY=1
+```
 
 ### Examples
 
@@ -54,11 +69,13 @@ kiro-cli settings telemetry.enabled
 
 ## telemetryClientId
 
-Client identifier for telemetry data.
+Legacy client identifier for telemetry data.
 
 ### Overview
 
-Sets a unique client identifier used for telemetry collection. This helps correlate usage data while maintaining anonymity.
+A legacy setting that stores a client identifier for telemetry collection. The actual client ID is now managed internally in the database state.
+
+This is a **global-only** setting and cannot be overridden per-workspace.
 
 ### Usage
 
@@ -67,7 +84,8 @@ kiro-cli settings telemetryClientId "client-123"
 ```
 
 **Type**: String  
-**Default**: Auto-generated
+**Default**: Auto-generated  
+**Scope**: Global only
 
 ### Examples
 
