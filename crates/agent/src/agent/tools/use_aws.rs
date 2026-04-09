@@ -202,6 +202,7 @@ impl UseAws {
         }
 
         let child = command
+            .stdin(Stdio::null())
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
             .spawn()
@@ -245,6 +246,8 @@ impl UseAws {
 
 fn env_vars_with_user_agent() -> HashMap<String, String> {
     let mut env_vars: HashMap<String, String> = std::env::vars().collect();
+    // Disable AWS CLI pager to prevent hanging when stdout is piped
+    env_vars.insert("AWS_PAGER".to_string(), String::new());
     let user_agent_metadata_value =
         format!("{USER_AGENT_APP_NAME} {USER_AGENT_VERSION_KEY}/{USER_AGENT_VERSION_VALUE}");
 
