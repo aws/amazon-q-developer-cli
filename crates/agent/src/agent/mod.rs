@@ -239,7 +239,7 @@ impl AgentHandle {
     }
 
     pub async fn send_tool_use_approval_result(&self, args: SendApprovalResultArgs) -> Result<(), AgentError> {
-        tracing::error!("tool use approval sent");
+        tracing::trace!("tool use approval sent");
         match self
             .sender
             .send_recv(AgentRequest::SendApprovalResult(args))

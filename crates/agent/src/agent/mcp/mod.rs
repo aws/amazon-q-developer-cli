@@ -136,7 +136,6 @@ use tokio::sync::{
 };
 use tracing::{
     debug,
-    error,
     info,
     warn,
 };
@@ -472,7 +471,7 @@ impl McpManager {
                 };
 
                 if let Err(e) = result_tx.send(Ok(())) {
-                    error!(?server_name, ?e, "failed to send server initialized message");
+                    warn!(?server_name, ?e, "failed to send server initialized message");
                 }
 
                 if self.servers.insert(server_name.clone(), handle).is_some() {
@@ -483,7 +482,7 @@ impl McpManager {
                 if let Some((_, result_tx)) = self.initializing_servers.remove(server_name)
                     && let Err(e) = result_tx.send(Err(McpManagerError::Custom(error.clone())))
                 {
-                    error!(?server_name, ?e, "failed to send server initialized message");
+                    warn!(?server_name, ?e, "failed to send server initialized message");
                 }
                 self.failed_servers.insert(server_name.clone());
             },

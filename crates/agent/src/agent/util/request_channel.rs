@@ -6,6 +6,7 @@ use tokio::sync::{
 use tracing::{
     error,
     trace,
+    warn,
 };
 
 /// A request to a specific task
@@ -74,7 +75,7 @@ where
 
         // Errors if the request receiver has closed
         if (self.tx.send(request).await).is_err() {
-            error!("request receiver has closed");
+            warn!("request receiver has closed");
             return None;
         }
 
@@ -96,7 +97,7 @@ where
 
         // Errors if the channel is full or the channel has closed
         if (self.tx.try_send(request)).is_err() {
-            error!("request receiver has closed");
+            warn!("request receiver has closed");
             return None;
         }
 
