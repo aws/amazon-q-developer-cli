@@ -333,6 +333,34 @@ const CODEPOINTS = {
 	kpEnter: 57414, // Numpad Enter (Kitty protocol)
 } as const;
 
+/**
+ * Kitty keyboard protocol assigns codepoints 57399–57427 to numpad keys.
+ * When the Kitty protocol is active (e.g. on iTerm2, Kitty, WezTerm, Ghostty),
+ * numpad digits and operators arrive as CSI-u sequences with these codepoints
+ * instead of their ASCII equivalents. We map them back to printable characters
+ * so they behave identically to their main-keyboard counterparts.
+ *
+ * Reference: https://sw.kovidgoyal.net/kitty/keyboard-protocol/#functional-key-definitions
+ */
+export const NUMPAD_CODEPOINT_TO_PRINTABLE: Record<number, string> = {
+	57399: '0',  // KP_0
+	57400: '1',  // KP_1
+	57401: '2',  // KP_2
+	57402: '3',  // KP_3
+	57403: '4',  // KP_4
+	57404: '5',  // KP_5
+	57405: '6',  // KP_6
+	57406: '7',  // KP_7
+	57407: '8',  // KP_8
+	57408: '9',  // KP_9
+	57409: '.',  // KP_DECIMAL
+	57410: '/',  // KP_DIVIDE
+	57411: '*',  // KP_MULTIPLY
+	57412: '-',  // KP_SUBTRACT
+	57413: '+',  // KP_ADD
+	57415: '=',  // KP_EQUAL
+};
+
 const ARROW_CODEPOINTS = {
 	up: -1,
 	down: -2,
@@ -804,7 +832,14 @@ export function parseKey(data: string): KeyId | undefined {
 			// is authoritative regardless of physical key position.
 			const isLatinLetter = codepoint >= 97 && codepoint <= 122; // a-z
 			const isKnownSymbol = SYMBOL_KEYS.has(String.fromCharCode(codepoint));
-			const effectiveCodepoint = isLatinLetter || isKnownSymbol ? codepoint : (baseLayoutKey ?? codepoint);
+			let effectiveCodepoint = isLatinLetter || isKnownSymbol ? codepoint : (baseLayoutKey ?? codepoint);
+
+			// Map numpad codepoints to their printable equivalents so numpad
+			// digits/operators are treated identically to main-keyboard keys.
+			const numpadChar = NUMPAD_CODEPOINT_TO_PRINTABLE[effectiveCodepoint];
+			if (numpadChar !== undefined) {
+				effectiveCodepoint = numpadChar.charCodeAt(0);
+			}
 
 			let keyName: string | undefined;
 			if (effectiveCodepoint === CODEPOINTS.escape) keyName = "escape";

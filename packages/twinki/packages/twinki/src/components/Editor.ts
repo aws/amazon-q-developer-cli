@@ -1,5 +1,5 @@
 import { getEditorKeybindings } from '../input/keybindings.js';
-import { matchesKey } from '../input/keys.js';
+import { matchesKey, NUMPAD_CODEPOINT_TO_PRINTABLE } from '../input/keys.js';
 import { KillRing } from '../utils/kill-ring.js';
 import type { Component, Focusable } from '../renderer/component.js';
 import { CURSOR_MARKER } from '../renderer/component.js';
@@ -28,6 +28,10 @@ function decodeKittyPrintable(data: string): string | undefined {
 	if (modifier & (KITTY_MOD_ALT | KITTY_MOD_CTRL)) return undefined;
 	let effectiveCodepoint = codepoint;
 	if (modifier & KITTY_MOD_SHIFT && typeof shiftedKey === 'number') effectiveCodepoint = shiftedKey;
+	// Map Kitty numpad codepoints (57399–57415) to their printable equivalents
+	// so numpad digits/operators insert the expected characters.
+	const numpadChar = NUMPAD_CODEPOINT_TO_PRINTABLE[effectiveCodepoint];
+	if (numpadChar !== undefined) return numpadChar;
 	if (!Number.isFinite(effectiveCodepoint) || effectiveCodepoint < 32) return undefined;
 	try { return String.fromCodePoint(effectiveCodepoint); } catch { return undefined; }
 }

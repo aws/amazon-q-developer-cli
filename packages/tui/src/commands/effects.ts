@@ -25,7 +25,6 @@ import type {
 import { openEditorSync } from '../utils/editor.js';
 import { executeShellEscapeTTY } from '../utils/shell-escape.js';
 import { readFileSync, writeFileSync } from 'fs';
-import { join } from 'path';
 import { openTranscriptInPager } from '../utils/open-transcript.js';
 
 /** Effect handler function. Returns true if it handled its own messaging. */

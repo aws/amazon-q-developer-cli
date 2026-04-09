@@ -283,3 +283,90 @@ describe('parseInputData - non-Latin characters (Kitty)', () => {
 		expect(key.ctrl).toBe(true);
 	});
 });
+
+/**
+ * Numpad key mapping tests.
+ *
+ * When the Kitty keyboard protocol is active (iTerm2, Kitty, WezTerm, Ghostty),
+ * numpad keys are reported with dedicated codepoints (57399–57427) instead of
+ * their ASCII equivalents. Without explicit mapping, these arrive as Unicode
+ * private-use characters and are either silently dropped or inserted as garbage.
+ *
+ * These tests verify that numpad codepoints are correctly mapped to their
+ * printable equivalents so numpad input works identically to main-keyboard input.
+ */
+describe('parseKey - numpad keys (Kitty protocol)', () => {
+	beforeEach(() => setKittyProtocolActive(true));
+	afterEach(() => setKittyProtocolActive(false));
+
+	it('maps numpad digits 0-9 to their printable equivalents', () => {
+		expect(parseKey('\x1b[57399u')).toBe('0');
+		expect(parseKey('\x1b[57400u')).toBe('1');
+		expect(parseKey('\x1b[57401u')).toBe('2');
+		expect(parseKey('\x1b[57402u')).toBe('3');
+		expect(parseKey('\x1b[57403u')).toBe('4');
+		expect(parseKey('\x1b[57404u')).toBe('5');
+		expect(parseKey('\x1b[57405u')).toBe('6');
+		expect(parseKey('\x1b[57406u')).toBe('7');
+		expect(parseKey('\x1b[57407u')).toBe('8');
+		expect(parseKey('\x1b[57408u')).toBe('9');
+	});
+
+	it('maps numpad operators to their printable equivalents', () => {
+		expect(parseKey('\x1b[57409u')).toBe('.');  // decimal
+		expect(parseKey('\x1b[57410u')).toBe('/');  // divide
+		expect(parseKey('\x1b[57411u')).toBe('*');  // multiply
+		expect(parseKey('\x1b[57412u')).toBe('-');  // subtract
+		expect(parseKey('\x1b[57413u')).toBe('+');  // add
+		expect(parseKey('\x1b[57415u')).toBe('=');  // equal
+	});
+
+	it('maps numpad enter to enter', () => {
+		expect(parseKey('\x1b[57414u')).toBe('enter');
+	});
+
+	it('handles numpad keys with shift modifier', () => {
+		// Shift+numpad 5: CSI 57404 ; 2 u
+		expect(parseKey('\x1b[57404;2u')).toBe('shift+5');
+	});
+
+	it('handles numpad keys with ctrl modifier', () => {
+		// Ctrl+numpad 5: CSI 57404 ; 5 u
+		expect(parseKey('\x1b[57404;5u')).toBe('ctrl+5');
+	});
+});
+
+describe('matchesKey - numpad keys (Kitty protocol)', () => {
+	beforeEach(() => setKittyProtocolActive(true));
+	afterEach(() => setKittyProtocolActive(false));
+
+	it('matches numpad enter as enter', () => {
+		expect(matchesKey('\x1b[57414u', 'enter')).toBe(true);
+	});
+
+	it('matches numpad enter with shift', () => {
+		expect(matchesKey('\x1b[57414;2u', 'shift+enter')).toBe(true);
+	});
+});
+
+describe('parseInputData - numpad keys (Kitty protocol)', () => {
+	beforeEach(() => setKittyProtocolActive(true));
+	afterEach(() => setKittyProtocolActive(false));
+
+	it('extracts numpad digit as input character', () => {
+		const { input, key } = parseInputData('\x1b[57404u');
+		expect(input).toBe('5');
+		expect(key.return).toBe(false);
+	});
+
+	it('extracts numpad operator as input character', () => {
+		const { input } = parseInputData('\x1b[57413u');
+		expect(input).toBe('+');
+	});
+
+	it('treats numpad enter as enter key', () => {
+		const { input, key } = parseInputData('\x1b[57414u');
+		expect(input).toBe('');
+		expect(key.return).toBe(true);
+	});
+});

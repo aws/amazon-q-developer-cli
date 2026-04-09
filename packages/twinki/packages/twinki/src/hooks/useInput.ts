@@ -142,9 +142,15 @@ export function parseInputData(data: string): { input: string; key: Key } {
 		if (m) {
 			input = m[1]!;
 		} else if (!isSpecialKey) {
-			// Non-Latin printable character from Kitty CSI u (e.g. CJK, Cyrillic)
-			const last = parsed.split('+').pop()!;
-			if (last.length >= 1 && last.codePointAt(0)! >= 0x20) input = last;
+			// Printable character from Kitty CSI u (e.g. numpad digits, CJK, Cyrillic).
+			// Use parsed directly when it's a single character to avoid split('+')
+			// mangling the '+' symbol itself.
+			if (parsed.length === 1 && parsed.codePointAt(0)! >= 0x20) {
+				input = parsed;
+			} else {
+				const last = parsed.split('+').pop()!;
+				if (last.length >= 1 && last.codePointAt(0)! >= 0x20) input = last;
+			}
 		}
 	}
 	return { input, key };

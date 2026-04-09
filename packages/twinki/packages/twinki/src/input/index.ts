@@ -8,7 +8,8 @@ export {
 	isKeyRelease, 
 	isKeyRepeat, 
 	matchesKey, 
-	parseKey 
+	parseKey,
+	NUMPAD_CODEPOINT_TO_PRINTABLE,
 } from './keys.js';
 export { parseSGRMouse, isSGRMouse } from './mouse.js';
 export type { MouseEvent, MouseButton, MouseEventType } from './mouse.js';

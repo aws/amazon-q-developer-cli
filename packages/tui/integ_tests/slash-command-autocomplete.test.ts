@@ -13,7 +13,7 @@ import { afterEach, describe, expect, it } from 'bun:test';
 import { TestCase } from '../src/test-utils/TestCase';
 
 const CTRL_U = '\x15';
-const BACKSPACE = '\x7f';
+const _BACKSPACE = '\x7f';
 
 async function typeSlowly(tc: TestCase, text: string) {
   for (const char of text) {
@@ -106,7 +106,7 @@ describe('Slash command autocomplete', () => {
     // Since mock doesn't have selection commands, just verify Tab
     // doesn't crash and input stays the same.
     await typeSlowly(testCase, '/copy something');
-    const before = (await testCase.getStore()).commandInputValue;
+    const _before = (await testCase.getStore()).commandInputValue;
     await testCase.sendKeys('\t');
     await testCase.sleepMs(300);
     const after = (await testCase.getStore()).commandInputValue;
