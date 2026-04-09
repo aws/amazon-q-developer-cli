@@ -186,3 +186,29 @@ impl Introspect {
         Ok(())
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn deserialize_with_query() {
+        let v = serde_json::json!({ "query": "how do I use /compact?" });
+        let i = serde_json::from_value::<Introspect>(v).unwrap();
+        assert_eq!(i.query, Some("how do I use /compact?".to_string()));
+    }
+
+    #[test]
+    fn deserialize_without_query() {
+        let v = serde_json::json!({});
+        let i = serde_json::from_value::<Introspect>(v).unwrap();
+        assert_eq!(i.query, None);
+    }
+
+    #[tokio::test]
+    async fn validate_always_succeeds() {
+        let i = Introspect { query: None };
+        let os = crate::os::Os::new().await.unwrap();
+        assert!(i.validate(&os).await.is_ok());
+    }
+}
