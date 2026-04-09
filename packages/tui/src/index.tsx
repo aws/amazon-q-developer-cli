@@ -18,6 +18,11 @@ import { parseCliArgs, buildAcpArgs } from './utils/cli-args';
 import { sessionConversationsStore } from './stores/session-conversations.js';
 import { pickSessionFromEntries } from './utils/session-picker';
 import type { AgentStreamEvent } from './types/agent-events';
+import { getAnnouncements } from './constants/feed.js';
+import {
+  getActiveAnnouncement,
+  incrementShowCount,
+} from './utils/feed-state.js';
 import {
   ENABLE_BRACKETED_PASTE,
   DISABLE_BRACKETED_PASTE,
@@ -306,6 +311,19 @@ const startInitialization = (resumePickerSessionId?: string) => {
     .initialize(agentPath, acpArgs)
     .then(async () => {
       appStore.setState({ settings: kiro.settings });
+
+      // Initialize announcement if greeting is enabled
+      if (kiro.settings?.['chat.greeting.enabled'] !== false) {
+        const active = getActiveAnnouncement(getAnnouncements());
+        if (active) {
+          incrementShowCount(active.id);
+          appStore.getState().setAnnouncement({
+            id: active.id,
+            content: active.content,
+            maxLines: active.maxLines,
+          });
+        }
+      }
 
       // Resolve resume session ID via ACP (merged V1+V2 list from backend).
       // --resume-picker is resolved before Twinki starts (pre-passed as resumePickerSessionId)

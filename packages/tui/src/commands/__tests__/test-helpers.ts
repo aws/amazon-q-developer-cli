@@ -54,6 +54,7 @@ export function createMockCommandContext(
     setContextUsage: spy('setContextUsage') as any,
     setShowContextBreakdown: spy('setShowContextBreakdown') as any,
     setShowHelpPanel: spy('setShowHelpPanel') as any,
+    setShowTuiPanel: spy('setShowTuiPanel') as any,
     setShowUsagePanel: spy('setShowUsagePanel') as any,
     setShowMcpPanel: spy('setShowMcpPanel') as any,
     setShowToolsPanel: spy('setShowToolsPanel') as any,

@@ -18,6 +18,7 @@ import { TurnUsageSummary } from '../chat/message/TurnUsageSummary';
 import { StatusBar } from '../chat/status-bar/StatusBar';
 import { Text } from '../ui/text/Text';
 import { WelcomeScreen } from '../welcome-screen/index.js';
+import { WelcomeMessageBar } from './WelcomeMessageBar.js';
 import { getAgentColor } from '../../utils/agentColors.js';
 import { Settings } from '../../constants/settings.js';
 import { computeFlushSet } from '../../utils/turn-flush-machine.js';
@@ -357,6 +358,7 @@ const StaticTurnCard = React.memo(function StaticTurnCard({
 
 // Module-level: survive component unmount/remount (e.g. ctrl+g crew monitor toggle)
 let _hadMessages = false;
+let _hadUserMessage = false;
 let _welcomeInStatic = false;
 let _hasAnimated = false;
 
@@ -511,6 +513,9 @@ export const ConversationView = React.memo(function ConversationView() {
   if (messages.length > 0) {
     hadMessagesRef.current = true;
     _hadMessages = true;
+  }
+  if (!_hadUserMessage && messages.some((m) => m.role === MessageRole.User)) {
+    _hadUserMessage = true;
   }
 
   // Only animate the wordmark on the very first mount ever, not on remounts
@@ -695,6 +700,8 @@ export const ConversationView = React.memo(function ConversationView() {
           <WelcomeScreen agent="kiro" mcpServers={[]} animate={shouldAnimate} />
         </Box>
       )}
+      {/* Announcement: dynamic (Ctrl+O works) until first user message, then unmounted */}
+      {!_hadUserMessage && <WelcomeMessageBar />}
 
       {staticItems.length > 0 && (
         <Static items={staticItems}>

@@ -412,6 +412,7 @@ interface BaseAppActions {
     show: boolean,
     breakdown?: ContextBreakdownData
   ) => void;
+  setShowTuiPanel: (show: boolean) => void;
   setShowHelpPanel: (
     show: boolean,
     commands?: Array<{
@@ -494,6 +495,12 @@ interface BaseAppActions {
   // Task management actions
   setTasks: (tasks: TaskItem[]) => void;
   toggleActivityTray: () => void;
+
+  // Announcement actions
+  setAnnouncement: (
+    msg: { id: string; content: string; maxLines: number } | null
+  ) => void;
+  toggleAnnouncementExpanded: () => void;
 
   // Main orchestrator
   handleUserInput: (input: string) => Promise<void>;
@@ -592,6 +599,7 @@ export interface AppState {
   }>;
   showContextBreakdown: boolean;
   contextBreakdown: ContextBreakdownData | null;
+  showTuiPanel: boolean;
   showHelpPanel: boolean;
   helpCommands: Array<{
     name: string;
@@ -618,6 +626,10 @@ export interface AppState {
   // Task management state
   tasks: TaskItem[];
   activityTrayExpanded: boolean;
+
+  // Announcement state
+  announcement: { id: string; content: string; maxLines: number } | null;
+  announcementExpanded: boolean;
 
   // Abort controller for current stream
   currentAbortController: AbortController | null;
@@ -794,6 +806,12 @@ export const createAppStore = (props: AppStoreProps) => {
         source: 'local' as const,
         meta: { local: true },
       },
+      {
+        name: '/tui',
+        description: "What's new in the TUI experience",
+        source: 'local' as const,
+        meta: { local: true, inputType: 'panel' as const },
+      },
     ], // Backend sends all commands via CommandsUpdate
     prompts: [],
     kiro: props.kiro,
@@ -845,6 +863,7 @@ export const createAppStore = (props: AppStoreProps) => {
     turnSummaries: new Map(),
     showContextBreakdown: false,
     contextBreakdown: null,
+    showTuiPanel: false,
     showHelpPanel: false,
     helpCommands: [],
     showUsagePanel: false,
@@ -881,6 +900,10 @@ export const createAppStore = (props: AppStoreProps) => {
     // Task management
     tasks: [],
     activityTrayExpanded: false,
+
+    // Announcement
+    announcement: null,
+    announcementExpanded: false,
 
     isInitialized: false,
     noInteractive: props.noInteractive ?? false,
@@ -2041,6 +2064,7 @@ export const createAppStore = (props: AppStoreProps) => {
         setContextUsage: state.setContextUsage,
         setShowContextBreakdown: state.setShowContextBreakdown,
         setShowHelpPanel: state.setShowHelpPanel,
+        setShowTuiPanel: state.setShowTuiPanel,
         setShowUsagePanel: state.setShowUsagePanel,
         setShowMcpPanel: state.setShowMcpPanel,
         setShowToolsPanel: state.setShowToolsPanel,
@@ -2073,6 +2097,7 @@ export const createAppStore = (props: AppStoreProps) => {
           set({
             activeCommand: null,
             showContextBreakdown: false,
+            showTuiPanel: false,
             showHelpPanel: false,
             showUsagePanel: false,
             showMcpPanel: false,
@@ -2611,6 +2636,10 @@ export const createAppStore = (props: AppStoreProps) => {
       set({ showContextBreakdown: show, contextBreakdown: breakdown ?? null });
     },
 
+    setShowTuiPanel: (show) => {
+      set({ showTuiPanel: show });
+    },
+
     setShowHelpPanel: (show, commands = []) => {
       set({ showHelpPanel: show, helpCommands: commands });
     },
@@ -2725,6 +2754,14 @@ export const createAppStore = (props: AppStoreProps) => {
       }));
     },
 
+    setAnnouncement: (msg) => {
+      set({ announcement: msg });
+    },
+
+    toggleAnnouncementExpanded: () => {
+      set((state) => ({ announcementExpanded: !state.announcementExpanded }));
+    },
+
     setHasExpandableToolOutputs: (has: boolean) => {
       set({ hasExpandableToolOutputs: has });
     },
@@ -2777,6 +2814,11 @@ export const createAppStore = (props: AppStoreProps) => {
       });
       state.clearInput();
 
+      // Clear announcement on first user interaction
+      if (state.announcement) {
+        set({ announcement: null, announcementExpanded: false });
+      }
+
       // Handle slash commands via command registry
       if (trimmed.startsWith('/')) {
         CommandHistory.getInstance().add(trimmed);
@@ -2792,6 +2834,7 @@ export const createAppStore = (props: AppStoreProps) => {
           setContextUsage: state.setContextUsage,
           setShowContextBreakdown: state.setShowContextBreakdown,
           setShowHelpPanel: state.setShowHelpPanel,
+          setShowTuiPanel: state.setShowTuiPanel,
           setShowUsagePanel: state.setShowUsagePanel,
           setShowMcpPanel: state.setShowMcpPanel,
           setShowToolsPanel: state.setShowToolsPanel,

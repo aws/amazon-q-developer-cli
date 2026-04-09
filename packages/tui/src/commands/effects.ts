@@ -91,6 +91,7 @@ type EffectName =
   | 'copyToClipboard'
   | 'openRawView'
   | 'showThemeMenu'
+  | 'showTuiPanel'
   | 'switchToGuideAgent';
 
 /**
@@ -121,6 +122,7 @@ const commandEffects: Partial<Record<string, EffectName>> = {
   copy: 'copyToClipboard',
   transcript: 'openRawView',
   theme: 'showThemeMenu',
+  tui: 'showTuiPanel',
   guide: 'switchToGuideAgent',
 };
 
@@ -671,6 +673,10 @@ const effectHandlers: Record<EffectName, EffectHandler> = {
   },
 
   /** Show theme color selection menu */
+  showTuiPanel: (_result, ctx) => {
+    ctx.setShowTuiPanel(true);
+  },
+
   showThemeMenu: (_result, ctx, cmd, args) => {
     const prefs = loadUserThemePrefs();
     const themeCmd = ctx.slashCommands.find((c) => c.name === '/theme');

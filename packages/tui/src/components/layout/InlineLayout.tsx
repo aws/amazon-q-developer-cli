@@ -17,6 +17,7 @@ import { ExitHint } from '../ui/ExitHint';
 import { CommandMenu } from '../ui/CommandMenu';
 import { ActionHint } from '../ui/hint/ActionHint.js';
 import { HelpPanel } from '../ui/HelpPanel';
+import { TuiPanel } from '../ui/TuiPanel';
 import { McpPanel } from '../ui/McpPanel';
 import { ToolsPanel } from '../ui/ToolsPanel';
 import { HooksPanel } from '../ui/HooksPanel';
@@ -180,6 +181,7 @@ export const InlineLayout: React.FC = () => {
     hasExpandableToolOutputs,
     showContextBreakdown,
     contextBreakdown,
+    showTuiPanel,
     showHelpPanel,
     helpCommands,
     showUsagePanel,
@@ -201,6 +203,7 @@ export const InlineLayout: React.FC = () => {
     toggleToolOutputsExpanded,
     setShowContextBreakdown,
     setShowHelpPanel,
+    setShowTuiPanel,
     setShowUsagePanel,
     setShowMcpPanel,
     setShowToolsPanel,
@@ -273,13 +276,25 @@ export const InlineLayout: React.FC = () => {
   }, [isProcessing]);
 
   // Handle Ctrl+O to toggle tool output expansion
+  const announcement = useAppStore((s) => s.announcement);
+  const toggleAnnouncementExpanded = useAppStore(
+    (s) => s.toggleAnnouncementExpanded
+  );
+  const announcementTruncated =
+    !!announcement &&
+    announcement.content.split('\n').length > announcement.maxLines;
+
   useKeypress(
     (input, key) => {
       if (key.ctrl && input.toLowerCase() === 'o') {
-        toggleToolOutputsExpanded();
+        if (hasExpandableToolOutputs) {
+          toggleToolOutputsExpanded();
+        } else if (announcementTruncated) {
+          toggleAnnouncementExpanded();
+        }
       }
     },
-    { isActive: hasExpandableToolOutputs }
+    { isActive: hasExpandableToolOutputs || announcementTruncated }
   );
 
   // Handle Esc to collapse expanded outputs
@@ -344,6 +359,12 @@ export const InlineLayout: React.FC = () => {
     setActiveCommand(null);
     clearCommandInput();
   }, [setShowHelpPanel, setActiveCommand, clearCommandInput]);
+
+  const handleCloseTuiPanel = useCallback(() => {
+    setShowTuiPanel(false);
+    setActiveCommand(null);
+    clearCommandInput();
+  }, [setShowTuiPanel, setActiveCommand, clearCommandInput]);
 
   const handleCloseUsagePanel = useCallback(() => {
     setShowUsagePanel(false);
@@ -700,6 +721,7 @@ export const InlineLayout: React.FC = () => {
             header={
               showContextBreakdown ||
               showHelpPanel ||
+              showTuiPanel ||
               showUsagePanel ||
               showMcpPanel ||
               showToolsPanel ||
@@ -746,6 +768,7 @@ export const InlineLayout: React.FC = () => {
                   !!pendingApproval ||
                   showContextBreakdown ||
                   showHelpPanel ||
+                  showTuiPanel ||
                   showUsagePanel ||
                   showMcpPanel ||
                   showToolsPanel ||
@@ -786,6 +809,7 @@ export const InlineLayout: React.FC = () => {
                 onClose={handleCloseHelpPanel}
               />
             )}
+            {showTuiPanel && <TuiPanel onClose={handleCloseTuiPanel} />}
             {showMcpPanel && (
               <McpPanel
                 servers={mcpServersWithAuth}
@@ -853,6 +877,7 @@ export const InlineLayout: React.FC = () => {
                 !pendingApproval &&
                 !showContextBreakdown &&
                 !showHelpPanel &&
+                !showTuiPanel &&
                 !showUsagePanel &&
                 !showMcpPanel &&
                 !showToolsPanel &&

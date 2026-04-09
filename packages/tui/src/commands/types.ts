@@ -48,6 +48,8 @@ export interface CommandContext {
       subcommands?: string[];
     }>
   ) => void;
+  /** Show/hide TUI info panel */
+  setShowTuiPanel: (show: boolean) => void;
   /** Show/hide usage panel */
   setShowUsagePanel: (show: boolean, data?: any) => void;
   /** Show/hide MCP servers panel */
