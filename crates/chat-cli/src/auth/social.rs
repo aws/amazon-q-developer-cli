@@ -299,7 +299,38 @@ pub async fn is_social_logged_in(database: &Database) -> bool {
 }
 
 pub async fn logout_social(database: &Database) -> Result<(), AuthError> {
+    // Read the refresh token before deleting, so we can revoke it server-side.
+    let refresh_token = database
+        .get_secret(SocialToken::SECRET_KEY)
+        .await
+        .ok()
+        .flatten()
+        .and_then(|s| serde_json::from_str::<Option<SocialToken>>(&s.0).ok().flatten())
+        .and_then(|t| t.refresh_token);
+
+    // Delete local token first — user is immediately logged out.
     database.delete_secret(SocialToken::SECRET_KEY).await?;
+
+    // Then revoke the token server-side. Failures are non-fatal.
+    if let Some(refresh_token) = refresh_token {
+        let endpoint = get_kiro_auth_endpoint(database);
+        match Client::new()
+            .post(format!("{endpoint}/logout"))
+            .header("Content-Type", "application/json")
+            .header("User-Agent", USER_AGENT)
+            .json(&serde_json::json!({ "refreshToken": refresh_token.0 }))
+            .send()
+            .await
+        {
+            Ok(resp) if !resp.status().is_success() => {
+                debug!("server-side token revocation returned {}", resp.status());
+            },
+            Err(err) => {
+                debug!(%err, "server-side token revocation failed");
+            },
+            _ => {},
+        }
+    }
     Ok(())
 }
 
