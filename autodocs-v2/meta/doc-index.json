@@ -1,6 +1,6 @@
 {
-  "generated_at": "2026-04-09T18:06:43.822472",
-  "total_docs": 67,
+  "generated_at": "2026-04-09T19:48:22.079619",
+  "total_docs": 68,
   "by_category": {
     "command": [
       "commands/acp.md",
@@ -15,6 +15,7 @@
     ],
     "feature": [
       "features/agent-configuration.md",
+      "features/classic-vs-tui.md",
       "features/code-intelligence.md",
       "features/exit-codes.md",
       "features/hooks.md",
@@ -294,6 +295,31 @@
         "agent-create",
         "agent-edit",
         "agent-swap"
+      ],
+      "validated": "2026-04-09",
+      "status": "validated"
+    },
+    {
+      "path": "features/classic-vs-tui.md",
+      "file": "classic-vs-tui.md",
+      "title": "Classic Mode vs New TUI",
+      "description": "Differences between classic mode (V1) and the new TUI experience, including what changed, what's new, and how to switch",
+      "category": "feature",
+      "keywords": [
+        "classic",
+        "tui",
+        "v1",
+        "v2",
+        "migration",
+        "legacy",
+        "differences",
+        "new"
+      ],
+      "related": [
+        "help",
+        "theme",
+        "spawn",
+        "feedback"
       ],
       "validated": "2026-04-09",
       "status": "validated"
