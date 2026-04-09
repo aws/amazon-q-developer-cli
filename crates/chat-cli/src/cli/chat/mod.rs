@@ -252,10 +252,18 @@ pub struct ChatArgs {
     /// Control line wrapping behavior (default: auto-detect)
     #[arg(short = 'w', long, value_enum)]
     pub wrap: Option<WrapMode>,
+    /// Set the working directory for this chat session
+    #[arg(long = "workdir", short = 'C', value_name = "PATH")]
+    pub workdir: Option<PathBuf>,
 }
 
 impl ChatArgs {
     pub async fn execute(mut self, os: &mut Os) -> Result<ExitCode> {
+        if let Some(ref workdir) = self.workdir {
+            std::env::set_current_dir(workdir)
+                .map_err(|e| eyre::eyre!("Failed to set working directory '{}': {}", workdir.display(), e))?;
+        }
+
         let mut input = self.input;
 
         if self.no_interactive && input.is_none() {
