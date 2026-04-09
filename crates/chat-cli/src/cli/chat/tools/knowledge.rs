@@ -579,3 +579,46 @@ impl Knowledge {
         output.trim_end().to_string() // Remove trailing newline
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn deserialize_add() {
+        let v = serde_json::json!({
+            "command": "add",
+            "name": "my-kb",
+            "value": "/some/path"
+        });
+        let k = serde_json::from_value::<Knowledge>(v).unwrap();
+        assert!(matches!(k, Knowledge::Add(_)));
+    }
+
+    #[test]
+    fn deserialize_search() {
+        let v = serde_json::json!({
+            "command": "search",
+            "query": "find something"
+        });
+        let k = serde_json::from_value::<Knowledge>(v).unwrap();
+        assert!(matches!(k, Knowledge::Search(_)));
+    }
+
+    #[test]
+    fn deserialize_remove() {
+        let v = serde_json::json!({
+            "command": "remove",
+            "identifier": "my-kb"
+        });
+        let k = serde_json::from_value::<Knowledge>(v).unwrap();
+        assert!(matches!(k, Knowledge::Remove(_)));
+    }
+
+    #[test]
+    fn deserialize_clear() {
+        let v = serde_json::json!({ "command": "clear", "confirm": true });
+        let k = serde_json::from_value::<Knowledge>(v).unwrap();
+        assert!(matches!(k, Knowledge::Clear(_)));
+    }
+}
