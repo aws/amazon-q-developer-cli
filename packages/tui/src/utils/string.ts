@@ -53,6 +53,19 @@ export const isPrintable = (str: string): boolean =>
   });
 
 /**
+ * Strip zero-width and non-printable Unicode characters that have no visual
+ * representation but inflate string length, breaking wrapping calculations.
+ *
+ * Preserves: printable chars, tab (U+0009), newline (U+000A), space (U+0020).
+ */
+/* eslint-disable no-control-regex */
+const NON_PRINTABLE_RE =
+  /[\u0000-\u0008\u000B-\u001F\u007F-\u009F\u00AD\u200B-\u200F\u2028-\u202F\u2060-\u206F\uFEFF\uFFF9-\uFFFB]/g;
+/* eslint-enable no-control-regex */
+export const stripNonPrintable = (str: string): string =>
+  str.replace(NON_PRINTABLE_RE, '');
+
+/**
  * Characters that macOS Finder (and common shells) escape with a backslash
  * when producing a shell-safe path string for drag-and-drop.
  *

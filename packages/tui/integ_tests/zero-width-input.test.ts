@@ -1,9 +1,6 @@
 /**
- * Integration test for zero-width Unicode character input rendering.
- *
- * Reproduces the "pyramid" / duplicated-lines bug where pasting text
- * containing zero-width characters (e.g. U+200E left-to-right mark)
- * causes the input box to render duplicate lines when typing.
+ * Integration test verifying that zero-width Unicode characters are stripped
+ * from input, preventing rendering mismatches (pyramid/duplicate lines).
  */
 
 import { afterEach, describe, expect, it } from 'bun:test';
@@ -28,36 +25,35 @@ describe('Zero-width character input', () => {
     }
   });
 
-  it('does not produce duplicate lines when typing after zero-width chars', async () => {
+  it('pasting path with U+200E then typing does not duplicate lines', async () => {
     testCase = await TestCase.builder()
-      .withTestName('zero-width-no-pyramid')
+      .withTestName('zero-width-pyramid-repro')
       .withTerminal({ width: 60, height: 20 })
       .launch();
+    await testCase.waitForVisibleText('ask a question', 15000);
 
-    await testCase.waitForVisibleText('ask a question', 10000);
-
-    // Send text containing U+200E (left-to-right mark) — the exact repro string.
-    // This is a zero-width char: string length 1, visual width 0.
-    const textWithZeroWidth = '\u200Ecrates/agent/src/agent/agent_config/load.rs';
-    await testCase.sendKeys(textWithZeroWidth);
+    // Exact repro: paste a path with leading U+200E, then type '?' repeatedly
+    await testCase.sendKeys('\u200Epackages/tui/src/utils/input-editing.ts');
     await testCase.sleepMs(300);
 
-    // Type a few more characters (the repro says pressing '?' triggers it)
-    await testCase.sendKeys('???');
+    for (let i = 0; i < 5; i++) {
+      await testCase.sendKeys('?');
+      await testCase.sleepMs(100);
+    }
     await testCase.sleepMs(300);
 
     const snapshot = testCase.getSnapshot();
-    const screenText = snapshot.join('\n');
 
-    // The text should appear exactly once — no pyramid/duplication
-    const needle = 'agent_config/load.rs???';
-    const occurrences = snapshot.filter((line) =>
-      line.includes('agent_config/load.rs')
-    ).length;
-    expect(occurrences).toBe(1);
+    // The text "input-editing.ts" should appear on exactly one line.
+    // The pyramid bug causes it to appear on multiple lines.
+    const matchingLines = snapshot.filter((l) =>
+      l.includes('input-editing.ts')
+    );
+    expect(matchingLines.length).toBe(1);
 
-    // The full text should be present
-    expect(screenText).toContain(needle);
+    // The full text should be on screen
+    const screen = snapshot.join('\n');
+    expect(screen).toContain('input-editing.ts?????');
 
     await exitCleanly(testCase);
   }, 20000);

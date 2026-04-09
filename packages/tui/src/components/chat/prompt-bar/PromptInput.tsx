@@ -25,6 +25,7 @@ import {
   normalizeLineEndings,
   isPrintable,
   unescapeShellPath,
+  stripNonPrintable,
 } from '../../../utils/index.js';
 import { completePathAtCursor } from '../../../utils/path-completion.js';
 import { logger } from '../../../utils/logger.js';
@@ -403,7 +404,9 @@ export const PromptInput = React.memo(function PromptInput({
     clearCommandInput();
   };
 
-  const insertText = (text: string) => {
+  const insertText = (raw: string) => {
+    const text = stripNonPrintable(raw);
+    if (!text) return;
     pushUndo();
     inputMetrics.markStateUpdate();
     const segs = segmentsRef.current;
