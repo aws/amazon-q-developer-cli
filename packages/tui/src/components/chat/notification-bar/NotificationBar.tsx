@@ -11,7 +11,7 @@ interface NotificationBarProps {
   actionHint?: string;
 }
 
-export function NotificationBar({
+export const NotificationBar = React.memo(function NotificationBar({
   message,
   status,
   autoHideMs,
@@ -31,4 +31,4 @@ export function NotificationBar({
       actionHint={actionHint}
     />
   );
-}
+});

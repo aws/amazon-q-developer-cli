@@ -2,7 +2,7 @@ import React from 'react';
 import { useAppStore } from '../../stores/app-store';
 import { ActionHint } from './hint/ActionHint.js';
 
-export const ExitHint: React.FC = () => {
+export const ExitHint: React.FC = React.memo(function ExitHint() {
   const exitSequence = useAppStore((state) => state.exitSequence);
 
   return (
@@ -11,4 +11,4 @@ export const ExitHint: React.FC = () => {
       visible={exitSequence > 0}
     />
   );
-};
+});

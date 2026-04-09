@@ -32,7 +32,7 @@ interface PromptBarProps {
   hideInput?: boolean;
 }
 
-export function PromptBar({
+export const PromptBar = React.memo(function PromptBar({
   header,
   subHeader,
   children,
@@ -70,4 +70,4 @@ export function PromptBar({
       </Box>
     </Box>
   );
-}
+});

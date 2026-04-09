@@ -41,7 +41,7 @@ export const AppContainer: React.FC = () => {
   );
   const resetExitSequence = useAppStore((state) => state.resetExitSequence);
   const clearCommandInput = useAppStore((state) => state.clearCommandInput);
-  const commandInputValue = useAppStore((state) => state.commandInputValue);
+  const hasCommandInput = useAppStore((state) => !!state.commandInputValue);
   const isProcessing = useAppStore((state) => state.isProcessing);
   const isShellEscape = useAppStore((state) => state.isShellEscape);
   const cancelMessage = useAppStore((state) => state.cancelMessage);
@@ -115,7 +115,7 @@ export const AppContainer: React.FC = () => {
       }
       if (isProcessing) {
         cancelMessage();
-      } else if (commandInputValue) {
+      } else if (hasCommandInput) {
         clearCommandInput();
         resetExitSequence();
       } else {
@@ -132,7 +132,7 @@ export const AppContainer: React.FC = () => {
       if (isShellEscape) {
         cancelMessage();
         incrementExitSequence();
-      } else if (!isProcessing && !commandInputValue) {
+      } else if (!isProcessing && !hasCommandInput) {
         incrementExitSequence();
       }
     } else if (key.escape) {

@@ -43,7 +43,6 @@ import {
   useUIState,
   useUIActions,
   useContextState,
-  useCommandState,
   useCommandActions,
   useInputActions,
   useConversationState,
@@ -217,7 +216,8 @@ export const InlineLayout: React.FC = () => {
     previousAgentName,
     codeIntelligenceActive,
   } = useContextState();
-  const { activeCommand, promptHint } = useCommandState();
+  const activeCommand = useAppStore((state) => state.activeCommand);
+  const promptHint = useAppStore((state) => state.promptHint);
   const { setActiveCommand, setActiveTrigger, clearCommandInput } =
     useCommandActions();
   const { handleUserInput, clearInput } = useInputActions();
