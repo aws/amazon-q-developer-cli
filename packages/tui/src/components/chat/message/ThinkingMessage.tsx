@@ -11,10 +11,14 @@ export const ThinkingMessage: React.FC<ThinkingMessageProps> = ({
 }) => {
   const { getColor } = useTheme();
   const secondaryColor = getColor('secondary');
+  const dim = getColor('muted');
 
   return (
     <StatusBar status="thinking" barColor={barColor}>
-      <Text>{secondaryColor('Thinking...')}</Text>
+      <Text>
+        {secondaryColor('Thinking...')}
+        {dim(' (esc to cancel)')}
+      </Text>
     </StatusBar>
   );
 };

@@ -221,6 +221,7 @@ export const InlineLayout: React.FC = () => {
   } = useContextState();
   const activeCommand = useAppStore((state) => state.activeCommand);
   const promptHint = useAppStore((state) => state.promptHint);
+  const commandInputValue = useAppStore((state) => state.commandInputValue);
   const { setActiveCommand, setActiveTrigger, clearCommandInput } =
     useCommandActions();
   const { handleUserInput, clearInput } = useInputActions();
@@ -870,7 +871,7 @@ export const InlineLayout: React.FC = () => {
               }}
             />
             <ActionHint
-              text="shift+tab: switch agents · ctrl+g: agent monitor · /copy: copy last response"
+              text="/copy to clipboard"
               visible={
                 !toolOutputsExpanded &&
                 !isProcessing &&
@@ -883,7 +884,8 @@ export const InlineLayout: React.FC = () => {
                 !showToolsPanel &&
                 !showHooksPanel &&
                 !showKnowledgePanel &&
-                !showCodePanel
+                !showCodePanel &&
+                commandInputValue.length === 0
               }
             />
             <ExitHint />

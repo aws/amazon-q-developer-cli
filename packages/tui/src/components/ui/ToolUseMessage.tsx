@@ -69,6 +69,7 @@ export const ToolUseMessage = React.memo<ToolUseMessageProps>(
     agentLabel,
     agentLabelColor,
   }) {
+    const { getColor } = useTheme();
     // Map tool status to StatusBar status icon
     const statusIcon: StatusType | undefined = useMemo(() => {
       if (status === ToolUseStatus.Rejected) return 'error';
@@ -79,6 +80,8 @@ export const ToolUseMessage = React.memo<ToolUseMessageProps>(
       if (isFinished) return 'success';
       return 'executing';
     }, [status, isFinished, result]);
+
+    const showEscHint = statusIcon === 'executing' && !isStatic;
 
     return (
       <StatusBar status={statusIcon} barColor={barColor}>
@@ -98,6 +101,9 @@ export const ToolUseMessage = React.memo<ToolUseMessageProps>(
           isStatic={isStatic}
           locations={locations}
         />
+        {showEscHint && (
+          <Text>{getColor('muted')('esc to cancel')}</Text>
+        )}
       </StatusBar>
     );
   }

@@ -19,7 +19,6 @@ export const ActionHint: React.FC<ActionHintProps> = ({
   overlay,
 }) => {
   const { getColor } = useTheme();
-  const secondary = getColor('secondary');
 
   if (!visible) return null;
 
@@ -38,9 +37,11 @@ export const ActionHint: React.FC<ActionHintProps> = ({
     );
   }
 
+  const dim = getColor('muted');
+
   return (
-    <Box paddingX={1} marginBottom={1}>
-      <Text>{secondary.italic(text)}</Text>
+    <Box paddingX={1} marginBottom={1} justifyContent="flex-end">
+      <Text>{dim(text)}</Text>
     </Box>
   );
 };
