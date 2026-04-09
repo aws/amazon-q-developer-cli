@@ -34,3 +34,17 @@ export function buildAtMenuItems(
   }));
   return [...promptItems, ...fileItems];
 }
+
+/**
+ * Find a prompt SlashCommand by its menu item label.
+ * Handles labels with or without leading `/`.
+ */
+export function findPromptByMenuLabel(
+  slashCommands: SlashCommand[],
+  label: string
+): SlashCommand | undefined {
+  const name = label.startsWith('/') ? label : `/${label}`;
+  return slashCommands.find(
+    (c) => c.name === name && c.meta?.type === 'prompt'
+  );
+}

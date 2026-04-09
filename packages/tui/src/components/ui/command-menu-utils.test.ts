@@ -1,5 +1,9 @@
 import { describe, it, expect } from 'bun:test';
-import { filterPromptsByQuery, buildAtMenuItems } from './command-menu-utils';
+import {
+  filterPromptsByQuery,
+  buildAtMenuItems,
+  findPromptByMenuLabel,
+} from './command-menu-utils';
 import type { SlashCommand } from '../../stores/app-store';
 
 const makePrompt = (
@@ -90,5 +94,37 @@ describe('buildAtMenuItems', () => {
   it('strips leading slash from prompt names', () => {
     const items = buildAtMenuItems([makePrompt('/research', '')], []);
     expect(items[0]!.label).toBe('research');
+  });
+});
+
+describe('findPromptByMenuLabel', () => {
+  const prompts: SlashCommand[] = [
+    makePrompt('/agent-sop:code-assist', 'Code assist', [
+      { name: 'task', required: true },
+    ]),
+    makePrompt('/explain-tools', 'Explain tools'),
+    makeCommand('/save', 'Save session'),
+  ];
+
+  it('finds prompt when label already has leading slash', () => {
+    const result = findPromptByMenuLabel(prompts, '/agent-sop:code-assist');
+    expect(result?.name).toBe('/agent-sop:code-assist');
+  });
+
+  it('finds prompt when label has no leading slash', () => {
+    const result = findPromptByMenuLabel(prompts, 'explain-tools');
+    expect(result?.name).toBe('/explain-tools');
+  });
+
+  it('returns undefined for non-existent label', () => {
+    expect(findPromptByMenuLabel(prompts, 'nonexistent')).toBeUndefined();
+  });
+
+  it('ignores non-prompt commands', () => {
+    expect(findPromptByMenuLabel(prompts, '/save')).toBeUndefined();
+  });
+
+  it('handles empty commands list', () => {
+    expect(findPromptByMenuLabel([], 'anything')).toBeUndefined();
   });
 });

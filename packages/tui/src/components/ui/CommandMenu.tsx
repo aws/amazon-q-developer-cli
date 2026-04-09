@@ -29,6 +29,7 @@ import {
   filterPromptsByQuery,
   buildAtMenuItems,
 } from './command-menu-utils.js';
+import { PromptsMenu } from './menu/PromptsMenu.js';
 
 export const CommandMenu: React.FC = () => {
   const { getColor } = useTheme();
@@ -455,10 +456,23 @@ export const CommandMenu: React.FC = () => {
   }
 
   if (activeCommand) {
+    if (activeCommand.command.name === '/prompts') {
+      return (
+        <PromptsMenu
+          activeCommand={activeCommand}
+          onDismiss={() => {
+            setActiveCommand(null);
+            clearCommandInput();
+            setPromptHint(null);
+          }}
+        />
+      );
+    }
+
     const isSelection = activeCommand.command.meta?.inputType === 'selection';
-    // /feedback: selection menu without search (few options). /model, /agent: selection with search
     const isSearchable =
       isSelection && activeCommand.command.meta?.searchable !== false;
+
     return (
       <Box flexDirection="column">
         <Menu
@@ -474,7 +488,6 @@ export const CommandMenu: React.FC = () => {
             );
             if (opt) {
               if (opt.hint) {
-                // Has required args — prefill command and show hint
                 setCommandInput(`${opt.label} `);
                 setPromptHint(opt.hint);
                 setActiveCommand(null);

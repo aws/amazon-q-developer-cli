@@ -352,6 +352,7 @@ const server = Bun.serve({
         case '/api/escape': await p.sendKeys(String.fromCharCode(0x1b)); await sleep(100); return json({ ok: true });
         case '/api/up': await p.sendKeys('\x1b[A'); await sleep(100); return json({ ok: true });
         case '/api/down': await p.sendKeys('\x1b[B'); await sleep(100); return json({ ok: true });
+        case '/api/right': await p.sendKeys('\x1b[C'); await sleep(100); return json({ ok: true });
         case '/api/ctrlc': await p.sendKeys(String.fromCharCode(0x03)); await sleep(100); return json({ ok: true });
         case '/api/wait-for-text': { const { text, timeout } = await readBody(req); if (!text) return json({ error: 'missing "text"' }, 400); await p.waitForVisibleText(text, timeout ?? 10000); return json({ ok: true }); }
         case '/api/sleep': { const { ms } = await readBody(req); await sleep(ms ?? 1000); return json({ ok: true }); }

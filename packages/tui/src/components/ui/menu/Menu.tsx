@@ -27,6 +27,8 @@ export interface MenuProps {
   onHighlight?: (item: MenuItem) => void;
   onEscape?: () => void;
   onTabComplete?: () => void;
+  /** Called when → is pressed on the highlighted item (e.g. drill-in to details). */
+  onRightArrow?: (item: MenuItem) => void;
   visibleItems?: number; // defaults to 8
   showSelectedIndicator?: boolean; // show chevron indicator for selected item
   /** When true, renders a search input line above the list for type-to-filter. */
@@ -50,6 +52,7 @@ export const Menu = React.memo(function Menu({
   onHighlight,
   onEscape,
   onTabComplete,
+  onRightArrow,
   visibleItems = 8,
   showSelectedIndicator = false,
   searchable = false,
@@ -136,6 +139,9 @@ export const Menu = React.memo(function Menu({
       onEscape();
     } else if (key.tab && onTabComplete) {
       onTabComplete();
+    } else if (key.rightArrow && onRightArrow) {
+      const selectedItem = displayItems[selectedIndex];
+      if (selectedItem) onRightArrow(selectedItem);
     } else if (!searchable) {
       // Reserved for future use
     } else if (searchable && key.ctrl && input) {
@@ -251,6 +257,14 @@ export const Menu = React.memo(function Menu({
               {brandText('ESC')} {dimText('to cancel')}
               {dimText(' · ')}
               {brandText('↑↓')} {dimText('to navigate')}
+              {onRightArrow && (
+                <>
+                  {dimText(' · ')}
+                  {brandText('→')} {dimText('to view details')}
+                  {dimText(' · ')}
+                  {brandText('↵')} {dimText('to run')}
+                </>
+              )}
             </Text>
           </Box>
         </>
