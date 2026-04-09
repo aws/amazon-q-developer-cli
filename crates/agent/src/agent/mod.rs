@@ -7,6 +7,7 @@ pub mod mcp;
 pub mod permissions;
 pub mod prompts;
 pub mod protocol;
+mod resource_budget;
 pub mod shell_permission;
 pub mod task_executor;
 pub mod tool_permission;
@@ -1954,6 +1955,7 @@ impl Agent {
             latest_summary,
             task_context,
             knowledge_context,
+            self.model.context_window_size(),
         )
         .await
     }
@@ -3033,6 +3035,7 @@ async fn format_request<T, U, P>(
     latest_summary: Option<String>,
     task_context: Option<String>,
     knowledge_context: Option<String>,
+    context_window_size: Option<usize>,
 ) -> SendRequestArgs
 where
     T: IntoIterator<Item = U>,
@@ -3048,6 +3051,7 @@ where
         task_context,
         knowledge_context,
         provider,
+        context_window_size,
     )
     .await;
     for msg in ctx_messages.into_iter().rev() {
@@ -3083,6 +3087,7 @@ async fn create_context_messages<T, U, P>(
     task_context: Option<String>,
     knowledge_context: Option<String>,
     provider: &P,
+    context_window_size: Option<usize>,
 ) -> Vec<Message>
 where
     T: IntoIterator<Item = U>,
@@ -3090,7 +3095,9 @@ where
     P: SystemProvider,
 {
     let global_prompt = agent_config.global_prompt();
-    let (files, skills) = collect_resources(agent_config.resources(), provider).await;
+    let (mut files, skills) = collect_resources(agent_config.resources(), provider).await;
+
+    drop_resources_exceeding_budget(&mut files, context_window_size);
 
     let content = format_user_context_message(
         global_prompt.as_deref(),
@@ -3383,14 +3390,10 @@ pub(super) fn enforce_conversation_invariants(messages: &mut VecDeque<Message>, 
     }
 }
 
-#[derive(Debug, Clone)]
-struct Resource {
-    /// Exact value from the config this resource was taken from
-    #[allow(dead_code)]
-    config_value: String,
-    /// Resource content
-    content: String,
-}
+use resource_budget::{
+    Resource,
+    drop_resources_exceeding_budget,
+};
 
 /// Parse skill frontmatter and format as hint
 fn format_skill_hint(file_path: &str, content: &str) -> Option<String> {

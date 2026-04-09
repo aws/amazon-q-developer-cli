@@ -13,7 +13,15 @@ pub const MAX_CONVERSATION_STATE_HISTORY_LEN: usize = 500;
 
 pub const DUMMY_TOOL_NAME: &str = "dummy";
 
-pub const MAX_RESOURCE_FILE_LENGTH: u64 = 1024 * 50;
+/// Safety cap to prevent loading extremely large files into memory.
+/// The actual context budget is enforced separately in create_context_messages.
+pub const MAX_RESOURCE_FILE_LENGTH: u64 = 5 * 1024 * 1024;
+
+/// Approximate bytes per token for estimation.
+pub const BYTES_PER_TOKEN: usize = 4;
+
+/// Default context window size (in tokens) when the model doesn't report one.
+pub const DEFAULT_CONTEXT_WINDOW_SIZE: usize = 200_000;
 
 pub const RTS_VALID_TOOL_NAME_REGEX: &str = "^[a-zA-Z][a-zA-Z0-9_-]{0,64}$";
 
