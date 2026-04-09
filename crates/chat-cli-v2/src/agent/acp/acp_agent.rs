@@ -1465,11 +1465,15 @@ impl AcpSession {
                                         })
                                         .await;
                                 } else {
-                                    // Fall back to MCP prompt
-                                    let mcp_args = slash_router::args_to_mcp_map(&args);
+                                    // Fall back to MCP prompt — fetch schema to map positional args to named params
+                                    let schema =
+                                        agent.get_mcp_prompts().await.ok().and_then(|prompts| {
+                                            super::mcp_prompts::resolve_prompt_schema(prompts, &name)
+                                        });
+                                    let mcp_args = super::mcp_prompts::args_to_mcp_map(&args, schema.as_deref());
                                     match agent.get_mcp_prompt(name.clone(), mcp_args).await {
                                         Ok(messages) => {
-                                            let resolved_text = slash_router::extract_prompt_text(&messages);
+                                            let resolved_text = super::mcp_prompts::extract_prompt_text(&messages);
                                             if !resolved_text.is_empty() {
                                                 let _ = agent
                                                     .send_prompt(SendPromptArgs {

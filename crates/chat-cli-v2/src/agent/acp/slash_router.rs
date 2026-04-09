@@ -79,23 +79,6 @@ fn parse_prompt_args(input: &str) -> Vec<String> {
     args
 }
 
-/// Convert positional args to a HashMap for MCP prompt arguments.
-pub fn args_to_mcp_map(args: &[String]) -> std::collections::HashMap<String, String> {
-    args.iter()
-        .enumerate()
-        .map(|(i, v)| (format!("arg{i}"), v.clone()))
-        .collect()
-}
-
-/// Extract text content from resolved MCP prompt messages.
-pub fn extract_prompt_text(messages: &[serde_json::Value]) -> String {
-    messages
-        .iter()
-        .filter_map(|m| m.get("content")?.get("text")?.as_str())
-        .collect::<Vec<_>>()
-        .join("\n")
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -121,13 +104,5 @@ mod tests {
     fn test_parse_prompt_args_unclosed_quote() {
         // Unclosed quote consumes to end of input
         assert_eq!(parse_prompt_args(r#""unclosed"#), vec!["unclosed"]);
-    }
-
-    #[test]
-    fn test_args_to_mcp_map() {
-        let args = vec!["a".to_string(), "b".to_string()];
-        let map = args_to_mcp_map(&args);
-        assert_eq!(map.get("arg0"), Some(&"a".to_string()));
-        assert_eq!(map.get("arg1"), Some(&"b".to_string()));
     }
 }

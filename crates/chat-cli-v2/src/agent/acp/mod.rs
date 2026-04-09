@@ -5,6 +5,7 @@ pub mod command_handler;
 pub mod commands;
 pub mod extensions;
 pub mod mcp_conversion;
+mod mcp_prompts;
 pub mod orchestration;
 pub mod schema;
 pub mod session_manager;
