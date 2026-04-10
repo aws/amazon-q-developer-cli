@@ -392,6 +392,8 @@ pub struct FsReadSettings {
     pub allowed_paths: Vec<String>,
     #[serde(default)]
     pub denied_paths: Vec<String>,
+    #[serde(default)]
+    pub allow_read_only: bool,
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize, JsonSchema)]
@@ -423,6 +425,8 @@ pub struct GrepSettings {
     pub allowed_paths: Vec<String>,
     #[serde(default)]
     pub denied_paths: Vec<String>,
+    #[serde(default)]
+    pub allow_read_only: bool,
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize, JsonSchema)]
@@ -432,6 +436,8 @@ pub struct GlobSettings {
     pub allowed_paths: Vec<String>,
     #[serde(default)]
     pub denied_paths: Vec<String>,
+    #[serde(default)]
+    pub allow_read_only: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]

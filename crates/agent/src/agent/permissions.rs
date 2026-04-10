@@ -297,7 +297,7 @@ pub fn evaluate_tool_permission<P: SystemProvider>(
                     .iter()
                     .chain(&permissions.filesystem.denied_read_paths),
                 file_read.all_paths().iter(),
-                is_allowed,
+                is_allowed || settings.fs_read.allow_read_only,
                 PathAccessType::Read,
                 provider,
             ),
@@ -332,7 +332,7 @@ pub fn evaluate_tool_permission<P: SystemProvider>(
                         .iter()
                         .chain(&permissions.filesystem.denied_read_paths),
                     [path],
-                    is_allowed,
+                    is_allowed || settings.grep.allow_read_only,
                     PathAccessType::Read,
                     provider,
                 )
@@ -351,7 +351,7 @@ pub fn evaluate_tool_permission<P: SystemProvider>(
                         .iter()
                         .chain(&permissions.filesystem.denied_read_paths),
                     [path],
-                    is_allowed,
+                    is_allowed || settings.glob.allow_read_only,
                     PathAccessType::Read,
                     provider,
                 )
@@ -678,6 +678,7 @@ fn extract_paths_from_tool<P: SystemProvider>(tool: &ToolKind, provider: &P) -> 
 mod tests {
     use super::*;
     use crate::agent::agent_config::definitions::{
+        FsReadSettings,
         GlobSettings,
         GrepSettings,
     };
@@ -941,6 +942,7 @@ mod tests {
             grep: GrepSettings {
                 allowed_paths: vec!["/some".to_string()],
                 denied_paths: vec![],
+                ..Default::default()
             },
             ..Default::default()
         };
@@ -958,6 +960,7 @@ mod tests {
         settings.grep = GrepSettings {
             allowed_paths: vec![],
             denied_paths: vec!["/some".to_string()],
+            ..Default::default()
         };
 
         let result = evaluate_tool_permission(
@@ -973,6 +976,7 @@ mod tests {
         settings.grep = GrepSettings {
             allowed_paths: vec!["/some".to_string()],
             denied_paths: vec![],
+            ..Default::default()
         };
 
         let result = evaluate_tool_permission(
@@ -1001,6 +1005,7 @@ mod tests {
             glob: GlobSettings {
                 allowed_paths: vec!["/some".to_string()],
                 denied_paths: vec![],
+                ..Default::default()
             },
             ..Default::default()
         };
@@ -1018,6 +1023,7 @@ mod tests {
         settings.glob = GlobSettings {
             allowed_paths: vec![],
             denied_paths: vec!["/some".to_string()],
+            ..Default::default()
         };
 
         let result = evaluate_tool_permission(
@@ -1033,6 +1039,7 @@ mod tests {
         settings.glob = GlobSettings {
             allowed_paths: vec!["/some".to_string()],
             denied_paths: vec![],
+            ..Default::default()
         };
 
         let result = evaluate_tool_permission(
@@ -1191,6 +1198,52 @@ mod tests {
         assert!(
             matches!(result, Ok(PermissionEvalResult::Allow)),
             "CWD itself: {result:?}"
+        );
+    }
+
+    #[test]
+    fn test_auto_allow_readonly_approves_reads_outside_cwd() {
+        use crate::tools::fs_read::file::FileOp;
+        use crate::tools::fs_read::{
+            FsRead,
+            FsReadOperation,
+        };
+        use crate::util::providers::CwdProvider;
+
+        let provider = TestProvider::new();
+        let cwd = provider.cwd().unwrap();
+        let cwd_str = cwd.to_string_lossy();
+        let allowed_tools = HashSet::new();
+        let permissions = RuntimePermissions::default().with_cwd(&cwd_str);
+
+        let outside_tool = ToolKind::BuiltIn(BuiltInTool::FileRead(FsRead {
+            operations: vec![FsReadOperation::Line(FileOp {
+                path: "/tmp/other/file.txt".to_string(),
+                limit: None,
+                offset: None,
+            })],
+        }));
+
+        // Without autoAllowReadonly - should ask
+        let settings = ToolsSettings::default();
+        let result = evaluate_tool_permission(&permissions, &allowed_tools, &settings, &outside_tool, &provider);
+        assert!(
+            matches!(result, Ok(PermissionEvalResult::Ask { .. })),
+            "should ask: {result:?}"
+        );
+
+        // With autoAllowReadonly - should allow
+        let settings = ToolsSettings {
+            fs_read: FsReadSettings {
+                allow_read_only: true,
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+        let result = evaluate_tool_permission(&permissions, &allowed_tools, &settings, &outside_tool, &provider);
+        assert!(
+            matches!(result, Ok(PermissionEvalResult::Allow)),
+            "should allow: {result:?}"
         );
     }
 
