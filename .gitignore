@@ -85,3 +85,4 @@ packages/.kiro/
 packages/tui/.kiro/
 .claude/settings.local.json
 target
+scripts/.es-cookie
