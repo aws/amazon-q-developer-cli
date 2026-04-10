@@ -86,6 +86,9 @@ export async function dispatch(
       const displayName = args.startsWith('swap ') ? args.slice(5) : args;
       ctx.setLoadingMessage(`Agent changing to ${displayName}`);
     }
+    if (cmdName === 'guide') {
+      ctx.setLoadingMessage('Switching agent...');
+    }
     try {
       result = await ctx.kiro.executeCommand({
         command: cmdName,
