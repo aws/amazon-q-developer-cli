@@ -674,6 +674,66 @@ async fn test_pretooluse_hook_matches_fs_read() {
     run_pretooluse_hook_matcher_test("fs_read").await;
 }
 
+/// Verifies that userPromptSubmit hook output is included in the LLM request
+/// as additional_context metadata on the user message.
+#[tokio::test]
+async fn test_user_prompt_submit_hook_output_in_request() {
+    let _ = tracing_subscriber::fmt::try_init();
+
+    let mut test = TestCase::builder()
+        .test_name("prompt hook output in request")
+        .with_default_agent_config()
+        .with_hook(
+            HookTrigger::UserPromptSubmit,
+            HookConfig::ShellCommand(CommandHook {
+                command: "echo PROMPT_HOOK_MARKER_42".to_string(),
+                opts: Default::default(),
+            }),
+        )
+        .with_responses(
+            parse_response_streams(include_str!("./mock_responses/single_turn.jsonl"))
+                .await
+                .unwrap(),
+        )
+        .build()
+        .await
+        .unwrap();
+
+    test.send_prompt("hello from user".to_string()).await;
+    test.wait_until_agent_stop(Duration::from_secs(10))
+        .await
+        .expect("agent should stop");
+
+    // The last user message in the sent request should carry the hook output
+    // in its metadata.additional_context field.
+    let requests = test.requests();
+    assert!(!requests.is_empty(), "should have at least one request");
+
+    let last_user_msg = requests[0]
+        .messages()
+        .iter()
+        .rev()
+        .find(|m| m.role == Role::User)
+        .expect("should have a user message");
+
+    let meta = last_user_msg.meta.as_ref().expect("user message should have metadata");
+
+    assert!(
+        meta.additional_context.contains("PROMPT_HOOK_MARKER_42"),
+        "hook output should be in additional_context, got: {:?}",
+        meta.additional_context
+    );
+
+    // Also verify the original prompt text is in the content
+    assert!(
+        last_user_msg
+            .content
+            .iter()
+            .any(|c| matches!(c, ContentBlock::Text(t) if t.contains("hello from user"))),
+        "original prompt should be in content blocks"
+    );
+}
+
 #[tokio::test]
 async fn test_compaction_retry_on_context_overflow_success() {
     let _ = tracing_subscriber::fmt::try_init();

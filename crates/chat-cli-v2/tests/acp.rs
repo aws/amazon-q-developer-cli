@@ -331,9 +331,10 @@ async fn captured_request_contains_conversation_state() {
     // Verify we have access to the conversation structure
     let conv = &captured[0];
     assert!(conv.conversation_id.is_some(), "should have conversation_id");
-    assert_eq!(
-        conv.user_input_message.content, "hello",
-        "current message should be the prompt"
+    assert!(
+        conv.user_input_message.content.contains("hello"),
+        "current message should contain the prompt, got: {}",
+        conv.user_input_message.content
     );
     assert!(conv.history.is_some(), "should have history");
 

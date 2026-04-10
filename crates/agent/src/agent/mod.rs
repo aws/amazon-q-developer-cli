@@ -1944,7 +1944,12 @@ impl Agent {
     async fn format_request(&mut self, pending: &PendingUserMessage) -> SendRequestArgs {
         let latest_summary = self.conversation_state.event_log().latest_summary().map(String::from);
         let mut messages = VecDeque::from(self.conversation_state.messages().to_vec());
-        messages.push_back(Message::new(Role::User, pending.content().to_vec(), None));
+        let mut user_msg = Message::new(Role::User, pending.content().to_vec(), None);
+        // Preserve metadata from the pending message (e.g. per-prompt hook context).
+        if let Some(meta) = pending.meta() {
+            user_msg.meta = Some(meta.clone());
+        }
+        messages.push_back(user_msg);
 
         let task_context = self.task_store.as_ref().and_then(|s| s.format_context().ok().flatten());
         let knowledge_context = match &self.knowledge_provider {
