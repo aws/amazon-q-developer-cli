@@ -34,6 +34,7 @@ use crate::agent::session::{
 };
 
 const TITLE_NOT_AVAILABLE: &str = "<title not available>";
+const ZIP_MAGIC_BYTES: [u8; 4] = [0x50, 0x4b, 0x03, 0x04];
 
 /// The on-disk format detected when loading a session file.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -50,14 +51,14 @@ pub enum DetectedFormat {
 
 impl DetectedFormat {
     /// Detect the format of a file at `path`.
-    /// Order: extension-based (zip) → JSON probing (KiroV1 → Legacy → SessionDataOnly).
-    pub fn detect(path: &Path, data: &[u8]) -> Result<Self, String> {
-        // 1. Zip by extension or magic bytes
-        if path.extension().and_then(|e| e.to_str()) == Some("zip") {
+    /// Order: zip magic bytes → JSON probing (KiroV1 → Legacy → SessionDataOnly).
+    pub fn detect(data: &[u8]) -> Result<Self, String> {
+        // 1. Zip by magic bytes (PK\x03\x04)
+        if data.starts_with(&ZIP_MAGIC_BYTES) {
             return if ZipArchive::new(Cursor::new(data)).is_ok() {
                 Ok(Self::Zip)
             } else {
-                Err("File has .zip extension but is not a valid zip archive".into())
+                Err("File has zip magic bytes but is not a valid zip archive".into())
             };
         }
 
@@ -223,7 +224,7 @@ fn load_session_impl(
     debug!(?input_path, ?sessions_dir, "loading session");
     let (data, resolved_path) = read_path_with_optional_extension(input_path)?;
 
-    let format = DetectedFormat::detect(&resolved_path, &data)?;
+    let format = DetectedFormat::detect(&data)?;
     debug!(?resolved_path, ?format, data_len = data.len(), "detected format");
 
     let abs_path = resolved_path.to_string_lossy().into_owned();
@@ -494,25 +495,22 @@ mod tests {
 
         // Successful detection
         assert_eq!(
-            DetectedFormat::detect(Path::new("s.json"), KIRO_STR.as_bytes()).unwrap(),
+            DetectedFormat::detect(KIRO_STR.as_bytes()).unwrap(),
             DetectedFormat::Kiro
         );
+        assert_eq!(DetectedFormat::detect(&zip_data).unwrap(), DetectedFormat::Zip);
         assert_eq!(
-            DetectedFormat::detect(Path::new("s.zip"), &zip_data).unwrap(),
-            DetectedFormat::Zip
-        );
-        assert_eq!(
-            DetectedFormat::detect(Path::new("s.json"), LEGACY_STR.as_bytes()).unwrap(),
+            DetectedFormat::detect(LEGACY_STR.as_bytes()).unwrap(),
             DetectedFormat::Legacy
         );
         assert_eq!(
-            DetectedFormat::detect(Path::new("s.json"), SESSION_DATA_STR.as_bytes()).unwrap(),
+            DetectedFormat::detect(SESSION_DATA_STR.as_bytes()).unwrap(),
             DetectedFormat::SessionDataOnly
         );
 
         // Error cases
-        assert!(DetectedFormat::detect(Path::new("f.json"), br#"{"random":true}"#).is_err());
-        assert!(DetectedFormat::detect(Path::new("f.zip"), b"not a zip").is_err());
+        assert!(DetectedFormat::detect(br#"{"random":true}"#).is_err());
+        assert!(DetectedFormat::detect(b"not a zip").is_err());
     }
 
     fn make_jsonl(entries: &[serde_json::Value]) -> String {
@@ -549,10 +547,7 @@ mod tests {
 
         // Verify saved file is Kiro format
         let saved = std::fs::read(&saved_path).unwrap();
-        assert_eq!(
-            DetectedFormat::detect(&saved_path, &saved).unwrap(),
-            DetectedFormat::Kiro
-        );
+        assert_eq!(DetectedFormat::detect(&saved).unwrap(), DetectedFormat::Kiro);
 
         // Load into fresh sessions dir
         let import_sessions = dir.path().join("import_sessions");
