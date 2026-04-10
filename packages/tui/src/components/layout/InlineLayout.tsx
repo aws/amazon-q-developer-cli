@@ -34,6 +34,7 @@ import { Chip, ChipColor, ProgressChip } from '../ui/chip/index.js';
 import { ContextBreakdown } from '../ui/ContextBreakdown';
 import { ApprovalRequest } from '../ui/ApprovalRequest.js';
 import { CrewApprovalRequest } from '../ui/CrewApprovalRequest.js';
+import { TrustAllToolsBanner } from '../ui/TrustAllToolsBanner.js';
 import { UsagePanel } from '../ui/UsagePanel';
 import { CodePanel } from '../ui/CodePanel';
 
@@ -176,6 +177,9 @@ export const InlineLayout: React.FC = () => {
     noInteractive,
   } = useProcessingState();
   const { cancelApproval, approvalMode } = useApprovalState();
+  const trustAllToolsAccepted = useAppStore(
+    (state) => state.trustAllToolsConfirmed
+  );
   const {
     toolOutputsExpanded,
     hasExpandableToolOutputs,
@@ -717,6 +721,7 @@ export const InlineLayout: React.FC = () => {
 
         <ActivityTray />
 
+        {trustAllToolsAccepted && <TrustAllToolsBanner />}
         <Box marginBottom={1}>
           <PromptBar
             header={

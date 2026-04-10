@@ -78,6 +78,7 @@ const appStore = createAppStore({
   kiro,
   noInteractive: cliArgs.noInteractive,
   initialInput: cliArgs.input,
+  trustAllTools: cliArgs.trustAllTools,
 });
 
 // Start initialization immediately (non-blocking)
@@ -435,6 +436,11 @@ const startApp = async () => {
       'Error: Input must be supplied when running in non-interactive mode\n'
     );
     process.exit(1);
+  }
+
+  // In non-interactive mode, auto-accept trust-all-tools (no user to interact with the gate)
+  if (cliArgs.noInteractive && cliArgs.trustAllTools) {
+    appStore.getState().confirmTrustAllTools();
   }
 
   // Non-interactive mode: auto-submit input after init, exit after turn, error on approval

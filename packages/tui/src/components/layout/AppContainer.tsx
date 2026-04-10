@@ -3,6 +3,7 @@ import { InlineLayout } from './InlineLayout';
 import { ExpandedLayout } from './ExpandedLayout';
 import { CrewMonitorScreen } from './CrewMonitorScreen';
 import { SessionViewScreen } from './SessionViewScreen';
+import { TrustAllToolsGate } from '../ui/TrustAllToolsGate';
 import { useAppStore } from '../../stores/app-store';
 import { useKeypress } from '../../hooks/useKeypress';
 import {
@@ -36,6 +37,17 @@ function suspendProcess(): void {
 export const AppContainer: React.FC = () => {
   const mode = useAppStore((state) => state.mode);
   const setMode = useAppStore((state) => state.setMode);
+  const trustAllToolsRequested = useAppStore(
+    (state) => state.trustAllToolsRequested
+  );
+  const trustAllToolsConfirmed = useAppStore(
+    (state) => state.trustAllToolsConfirmed
+  );
+  const confirmTrustAllTools = useAppStore(
+    (state) => state.confirmTrustAllTools
+  );
+  const onExit = useAppStore((state) => state.onExit);
+  const kiro = useAppStore((state) => state.kiro);
   const incrementExitSequence = useAppStore(
     (state) => state.incrementExitSequence
   );
@@ -164,6 +176,20 @@ export const AppContainer: React.FC = () => {
       resetExitSequence();
     }
   });
+
+  // Show trust-all-tools confirmation gate before allowing session to proceed
+  if (trustAllToolsRequested && !trustAllToolsConfirmed) {
+    return (
+      <TrustAllToolsGate
+        onAccept={confirmTrustAllTools}
+        onExit={() => {
+          kiro.close();
+          onExit?.();
+          process.exit(0);
+        }}
+      />
+    );
+  }
 
   return (
     <>

@@ -368,7 +368,7 @@ const effectHandlers: Record<EffectName, EffectHandler> = {
     const data = result?.data as { url?: string } | undefined;
     if (data?.url) {
       // URL is in the message from backend; use longer timeout so user can copy it
-      ctx.showAlert(result?.message ?? data.url, 'error', 10000);
+      ctx.showAlert(result?.message ?? data.url, 'warning', 10000);
       return true;
     }
   },

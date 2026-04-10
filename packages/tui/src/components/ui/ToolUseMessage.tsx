@@ -101,9 +101,7 @@ export const ToolUseMessage = React.memo<ToolUseMessageProps>(
           isStatic={isStatic}
           locations={locations}
         />
-        {showEscHint && (
-          <Text>{getColor('muted')('esc to cancel')}</Text>
-        )}
+        {showEscHint && <Text>{getColor('muted')('esc to cancel')}</Text>}
       </StatusBar>
     );
   }

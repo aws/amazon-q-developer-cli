@@ -504,6 +504,9 @@ interface BaseAppActions {
 
   // Main orchestrator
   handleUserInput: (input: string) => Promise<void>;
+
+  // Trust all tools acceptance
+  confirmTrustAllTools: () => void;
 }
 
 export const AppStoreContext = createContext<AppStoreApi | null>(null);
@@ -642,6 +645,10 @@ export interface AppState {
   // Non-interactive mode
   noInteractive: boolean;
 
+  // Trust all tools mode
+  trustAllToolsRequested: boolean;
+  trustAllToolsConfirmed: boolean;
+
   // Streaming buffer control (typed properly instead of `any`)
   streamingBuffer: {
     startBuffering: (() => void) | null;
@@ -653,12 +660,14 @@ interface AppStoreProps {
   kiro: Kiro;
   noInteractive?: boolean;
   initialInput?: string;
+  trustAllTools?: boolean;
 }
 
 interface AppStoreProps {
   kiro: Kiro;
   noInteractive?: boolean;
   initialInput?: string;
+  trustAllTools?: boolean;
 }
 
 export const useAppStore = <T>(
@@ -907,6 +916,8 @@ export const createAppStore = (props: AppStoreProps) => {
 
     isInitialized: false,
     noInteractive: props.noInteractive ?? false,
+    trustAllToolsRequested: props.trustAllTools ?? false,
+    trustAllToolsConfirmed: false,
 
     sendMessage: async (
       content: string,
@@ -2764,6 +2775,10 @@ export const createAppStore = (props: AppStoreProps) => {
 
     setHasExpandableToolOutputs: (has: boolean) => {
       set({ hasExpandableToolOutputs: has });
+    },
+
+    confirmTrustAllTools: () => {
+      set({ trustAllToolsConfirmed: true });
     },
 
     // Main orchestrator

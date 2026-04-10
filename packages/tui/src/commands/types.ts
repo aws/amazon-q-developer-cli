@@ -23,7 +23,7 @@ export interface CommandContext {
   /** Show transient alert */
   showAlert: (
     message: string,
-    status: 'success' | 'error',
+    status: 'success' | 'warning' | 'error',
     autoHideMs?: number
   ) => void;
   /** Set loading message (shows shimmer) */
