@@ -2,7 +2,7 @@ use std::sync::OnceLock;
 
 /// Returns the platform-appropriate shell and its command-execution flag.
 ///
-/// - **Unix**: `("bash", "-c")`
+/// - **Unix**: Reads `$SHELL` (e.g. `("/usr/bin/zsh", "-c")`), falling back to `("bash", "-c")`
 /// - **Windows**: Walks the parent process chain to detect if running inside PowerShell, returning
 ///   `("pwsh", "-Command")` or `("powershell", "-Command")` accordingly. Falls back to `("cmd",
 ///   "/C")`. Result is cached after first call.
@@ -19,7 +19,10 @@ fn detect_shell() -> (&'static str, &'static str) {
 
     #[cfg(not(windows))]
     {
-        ("bash", "-c")
+        // Respect the user's preferred shell (e.g. zsh, fish) when available.
+        static SHELL: OnceLock<String> = OnceLock::new();
+        let shell = SHELL.get_or_init(|| std::env::var("SHELL").unwrap_or_else(|_| "bash".into()));
+        (shell.as_str(), "-c")
     }
 }
 
@@ -76,7 +79,9 @@ mod tests {
                     || (shell == "pwsh" && flag == "-Command")
             );
         } else {
-            assert_eq!(shell, "bash");
+            // Should respect $SHELL, falling back to bash
+            let expected = std::env::var("SHELL").unwrap_or_else(|_| "bash".into());
+            assert_eq!(shell, expected);
             assert_eq!(flag, "-c");
         }
     }

@@ -50,7 +50,7 @@ let _windowsShell: { shell: string; flag: string } | undefined;
 /** Returns the shell and flag for the current platform. Cached on first call. */
 function getShellAndFlag(): { shell: string; flag: string } {
   if (process.platform !== 'win32') {
-    return { shell: 'bash', flag: '-c' };
+    return { shell: process.env.SHELL || 'bash', flag: '-c' };
   }
   _windowsShell ??= detectWindowsShell();
   return _windowsShell;
@@ -105,6 +105,7 @@ function isClearCommand(command: string): boolean {
 function executeClearCommand(): void {
   process.stdout.write('\x1b[3J\x1b[2J\x1b[H');
 }
+
 
 /**
  * On macOS, Bun raises RLIMIT_NOFILE to 2^63-1 which overflows Python's sh library.
