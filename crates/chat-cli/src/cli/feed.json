@@ -12,6 +12,42 @@
     },
     {
       "type": "release",
+      "date": "2026-04-10",
+      "version": "1.29.7",
+      "title": "Version 1.29.7",
+      "changes": [
+        {
+          "type": "added",
+          "description": "Added /guide command to swap to the Kiro guide agent"
+        },
+        {
+          "type": "added",
+          "description": "Added /transcript command and Ctrl+T to open conversation in $PAGER"
+        },
+        {
+          "type": "added",
+          "description": "Added prompt details drill-in view to /prompts command"
+        },
+        {
+          "type": "fixed",
+          "description": "Fixed duplicate hooks causing TUI hang"
+        },
+        {
+          "type": "fixed",
+          "description": "Fixed crash when tool approval triggered in non-interactive mode"
+        },
+        {
+          "type": "fixed",
+          "description": "Fixed server-side token revocation on social logout"
+        },
+        {
+          "type": "fixed",
+          "description": "Fixed approval UX keybindings for arrow navigation, esc, and tab"
+        }
+      ]
+    },
+    {
+      "type": "release",
       "date": "2026-04-08",
       "version": "1.29.6",
       "title": "Version 1.29.6",
