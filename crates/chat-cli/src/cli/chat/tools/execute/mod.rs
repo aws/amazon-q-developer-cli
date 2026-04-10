@@ -172,7 +172,9 @@ impl ExecuteCommand {
                 Ok(settings) => settings,
                 Err(e) => {
                     error!("Failed to deserialize tool settings for execute_bash: {:?}", e);
-                    return PermissionEvalResult::ask();
+                    return PermissionEvalResult::Deny(vec![format!(
+                        "Tool settings are not valid, report this issue to the user: {e}"
+                    )]);
                 },
             },
             None => Settings {
@@ -797,6 +799,50 @@ mod tests {
         assert!(
             matches!(rake_cmd.eval_perm(&os, &agent), PermissionEvalResult::Allow),
             "newly trusted pattern should be allowed"
+        );
+    }
+
+    /// Regression test for V2119470195: empty string allowedCommands must not bypass
+    /// deniedCommands. When allowedCommands is "" (string instead of array), deny rules must
+    /// still be evaluated.
+    #[tokio::test]
+    async fn test_empty_string_allowed_commands_does_not_bypass_deny() {
+        let os = Os::new().await.unwrap();
+        let tool_name = ExecuteCommand::INFO.preferred_alias;
+
+        // Reproduce the exact config from the ticket: allowedCommands: "", deniedCommands: ["cd .*"]
+        let agent = Agent {
+            name: "test_agent".to_string(),
+            tools_settings: {
+                let mut map = HashMap::<ToolSettingTarget, serde_json::Value>::new();
+                map.insert(
+                    ToolSettingTarget(tool_name.to_string()),
+                    serde_json::json!({
+                        "allowedCommands": "",
+                        "deniedCommands": ["cd .*"]
+                    }),
+                );
+                map
+            },
+            ..Default::default()
+        };
+
+        // "cd .." should be DENIED, not Ask
+        let cd_cmd = serde_json::from_value::<ExecuteCommand>(serde_json::json!({"command": "cd .."})).unwrap();
+        let res = cd_cmd.eval_perm(&os, &agent);
+        assert!(
+            matches!(res, PermissionEvalResult::Deny(_)),
+            "cd should be denied even with allowedCommands: \"\", got {:?}",
+            res
+        );
+
+        // Non-denied command should also be denied (malformed config = deny all)
+        let ls_cmd = serde_json::from_value::<ExecuteCommand>(serde_json::json!({"command": "ls -la"})).unwrap();
+        let res = ls_cmd.eval_perm(&os, &agent);
+        assert!(
+            matches!(res, PermissionEvalResult::Deny(_)),
+            "malformed settings should deny all commands, got {:?}",
+            res
         );
     }
 }
