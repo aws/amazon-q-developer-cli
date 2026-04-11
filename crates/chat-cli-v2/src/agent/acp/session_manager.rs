@@ -215,12 +215,15 @@ impl SessionManagerBuilder {
                 (None, None)
             };
 
-            // Fetch MCP registry data for enterprise users
-            // Skip for non-enterprise users and test mode — non-enterprise users (API key,
-            // Builder ID, social auth) don't have registry access, and the API call would fail
-            // with Err causing an empty registry that strips all MCP servers.
+            // Fetch MCP registry data for enterprise users and API key users.
+            // Skip for non-enterprise, non-API-key users (Builder ID, social auth) and test mode.
+            // API key users may be enterprise users whose admin configured MCP governance,
+            // so they must go through the GetProfile check (fail-closed: no MCP if it fails).
             let is_enterprise = crate::auth::builder_id::is_enterprise_user(&os.database).await;
-            let (mcp_registry_data, mcp_registry_url) = if std::env::var(KIRO_TEST_MODE).is_ok() || !is_enterprise {
+            let is_api_key = crate::util::env_var::get_api_key().is_some();
+            let (mcp_registry_data, mcp_registry_url) = if std::env::var(KIRO_TEST_MODE).is_ok()
+                || (!is_enterprise && !is_api_key)
+            {
                 (None, None)
             } else {
                 match os.client.get_mcp_config().await {

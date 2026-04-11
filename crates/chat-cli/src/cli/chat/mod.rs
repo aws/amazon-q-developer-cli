@@ -454,9 +454,12 @@ impl ChatArgs {
         }
 
         // Check MCP status once at the beginning of the session
-        // For non-enterprise users, skip the API call and default to enabled with no registry
+        // For non-enterprise, non-API-key users, skip the API call and default to enabled with no registry.
+        // API key users may be enterprise users whose admin configured MCP governance,
+        // so they must go through the GetProfile check.
         let is_enterprise = crate::auth::builder_id::is_enterprise_user(&os.database).await;
-        let (mut mcp_enabled, mcp_registry_url, mcp_api_failure) = if !is_enterprise {
+        let is_api_key = crate::util::env_var::get_api_key().is_some();
+        let (mut mcp_enabled, mcp_registry_url, mcp_api_failure) = if !is_enterprise && !is_api_key {
             tracing::debug!("Non-enterprise user detected, enabling MCP without registry");
             (true, None, false)
         } else {

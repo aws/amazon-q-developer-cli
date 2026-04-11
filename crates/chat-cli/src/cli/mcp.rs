@@ -501,9 +501,10 @@ pub struct ListArgs {
 impl ListArgs {
     pub async fn execute(self, os: &mut Os, output: &mut impl Write) -> Result<()> {
         // Check if registry mode is enabled
-        // For non-enterprise users, skip the API call and default to enabled with no registry
+        // For non-enterprise, non-API-key users, skip the API call and default to enabled with no registry
         let is_enterprise = crate::auth::builder_id::is_enterprise_user(&os.database).await;
-        let (mcp_enabled, registry_url) = if !is_enterprise {
+        let is_api_key = crate::util::env_var::get_api_key().is_some();
+        let (mcp_enabled, registry_url) = if !is_enterprise && !is_api_key {
             (true, None)
         } else {
             match os.client.get_mcp_config(&os.database).await {
@@ -745,9 +746,10 @@ async fn get_mcp_server_configs(os: &mut Os) -> Result<BTreeMap<Scope, Vec<(Stri
     let mut results = BTreeMap::new();
     let mut stderr = std::io::stderr();
 
-    // For non-enterprise users, skip the API call and default to enabled
+    // For non-enterprise, non-API-key users, skip the API call and default to enabled
     let is_enterprise = crate::auth::builder_id::is_enterprise_user(&os.database).await;
-    let (mcp_enabled, mcp_api_failure) = if !is_enterprise {
+    let is_api_key = crate::util::env_var::get_api_key().is_some();
+    let (mcp_enabled, mcp_api_failure) = if !is_enterprise && !is_api_key {
         (true, false)
     } else {
         match os.client.is_mcp_enabled(&os.database).await {
