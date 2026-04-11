@@ -12,6 +12,42 @@
     },
     {
       "type": "release",
+      "date": "2026-04-11",
+      "version": "1.29.8",
+      "title": "Version 1.29.8",
+      "changes": [
+        {
+          "type": "added",
+          "description": "Added confirmation and warning for --trust-all-tools"
+        },
+        {
+          "type": "fixed",
+          "description": "Fixed typing lag in TUI mode during long conversations"
+        },
+        {
+          "type": "fixed",
+          "description": "Tool calls no longer shown as running when resuming a session that was interrupted during tool execution"
+        },
+        {
+          "type": "fixed",
+          "description": "Fixed 'Prompt already in progress' error when cancelling a prompt"
+        },
+        {
+          "type": "fixed",
+          "description": "Fixed shell commands being allowed when toolsSettings deserialization fails"
+        },
+        {
+          "type": "fixed",
+          "description": "Fixed userPromptSubmit hook not included in message"
+        },
+        {
+          "type": "fixed",
+          "description": "Fixed max conversation length in agent crate to match v1 limit of 10000"
+        }
+      ]
+    },
+    {
+      "type": "release",
       "date": "2026-04-10",
       "version": "1.29.7",
       "title": "Version 1.29.7",
