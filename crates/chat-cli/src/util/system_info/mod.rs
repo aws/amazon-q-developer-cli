@@ -150,6 +150,16 @@ pub fn os_version() -> Option<&'static OSVersion> {
         .as_ref()
 }
 
+pub fn is_tui_supported() -> bool {
+    cfg_if! {
+        if #[cfg(target_os = "linux")] {
+            linux::is_tui_supported()
+        } else {
+            true
+        }
+    }
+}
+
 pub fn in_ssh() -> bool {
     static IN_SSH: OnceLock<bool> = OnceLock::new();
     *IN_SSH.get_or_init(|| Env::new().in_ssh())

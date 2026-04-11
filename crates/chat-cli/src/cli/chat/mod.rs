@@ -322,44 +322,81 @@ pub struct ChatArgs {
     pub legacy_ui: bool,
 }
 
+/// Why the TUI should or should not be launched.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[allow(dead_code)]
+pub enum TuiShouldLaunchResult {
+    /// User explicitly requested TUI via `--tui` flag
+    CliArg,
+    /// User requested TUI via KIRO_CHAT_UI env var
+    EnvVar,
+    /// User requested TUI via chat.ui setting
+    Setting,
+    /// TUI enabled by rollout
+    Rollout,
+    /// Platform default (e.g. Windows)
+    Default,
+    /// Should not launch TUI
+    No,
+}
+
+impl TuiShouldLaunchResult {
+    pub fn should_launch(&self) -> bool {
+        !matches!(self, Self::No)
+    }
+
+    /// True when the user explicitly opted in (not rollout or default).
+    pub fn is_user_requested(&self) -> bool {
+        matches!(self, Self::CliArg | Self::EnvVar | Self::Setting)
+    }
+}
+
 impl ChatArgs {
     /// Resolve whether to launch the TUI.
     /// Precedence: CLI flag > env var KIRO_CHAT_UI > setting chat.ui > rollout % > default (legacy)
-    pub fn should_launch_tui(&self, os: &Os) -> bool {
+    pub fn should_launch_tui(&self, os: &Os) -> TuiShouldLaunchResult {
         // Non-interactive mode always uses the legacy (v1) path
         if self.no_interactive {
-            return false;
+            return TuiShouldLaunchResult::No;
         }
 
         // CLI flags take highest precedence
         if self.tui {
-            return true;
+            return TuiShouldLaunchResult::CliArg;
         }
         if self.legacy_ui {
-            return false;
+            return TuiShouldLaunchResult::No;
         }
 
         // Env var next
         if let Ok(val) = std::env::var(crate::util::consts::env_var::KIRO_CHAT_UI) {
-            return val.eq_ignore_ascii_case("tui");
+            return if val.eq_ignore_ascii_case("tui") {
+                TuiShouldLaunchResult::EnvVar
+            } else {
+                TuiShouldLaunchResult::No
+            };
         }
 
         // Setting next
         if let Some(val) = os.database.settings.get_string(Setting::ChatUi) {
-            return val.eq_ignore_ascii_case("tui");
+            return if val.eq_ignore_ascii_case("tui") {
+                TuiShouldLaunchResult::Setting
+            } else {
+                TuiShouldLaunchResult::No
+            };
         }
 
         if Rollout::is_enabled(Feature::Tui) {
-            return true;
+            return TuiShouldLaunchResult::Rollout;
         }
 
         // Windows always defaults to TUI (no autocomplete wrapper to handle this)
         #[cfg(target_os = "windows")]
-        return true;
+        return TuiShouldLaunchResult::Default;
 
         // Default: legacy
         #[cfg(not(target_os = "windows"))]
-        false
+        TuiShouldLaunchResult::No
     }
 
     pub async fn execute(mut self, os: &mut Os) -> Result<ExitCode> {

@@ -277,10 +277,10 @@ impl RootSubcommand {
 
                     let tui_available =
                         crate::embedded_tui::are_assets_embedded(os) || std::env::var(KIRO_TEST_TUI_JS_PATH).is_ok();
-                    if args.should_launch_tui(os) && tui_available {
+                    if args.should_launch_tui(os).should_launch() && tui_available {
                         crate::embedded_tui::launch_v2(os).await
                     } else {
-                        if args.should_launch_tui(os) {
+                        if args.should_launch_tui(os).should_launch() {
                             tracing::error!("TUI requested but assets not available, falling back to legacy UI");
                         }
                         args.execute(os).await
@@ -361,11 +361,22 @@ impl RootSubcommand {
 
                 let tui_available =
                     crate::embedded_tui::are_assets_embedded(os) || std::env::var(KIRO_TEST_TUI_JS_PATH).is_ok();
-                if args.should_launch_tui(os) && tui_available {
+                let should_launch_tui = args.should_launch_tui(os);
+                let is_tui_supported = crate::util::system_info::is_tui_supported();
+                tracing::debug!(
+                    ?should_launch_tui,
+                    is_tui_supported,
+                    tui_available,
+                    "TUI launch decision"
+                );
+                if should_launch_tui.should_launch() && tui_available {
                     crate::embedded_tui::launch_v2(os).await
                 } else {
-                    if args.should_launch_tui(os) {
+                    if should_launch_tui.should_launch() && !tui_available {
                         tracing::error!("TUI requested but assets not available, falling back to legacy UI");
+                    }
+                    if !is_tui_supported && should_launch_tui.is_user_requested() {
+                        eprintln!("The TUI is currently not supported for the current platform");
                     }
                     args.execute(os).await
                 }

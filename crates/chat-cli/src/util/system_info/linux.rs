@@ -34,6 +34,12 @@ pub fn get_os_release() -> Option<&'static OsRelease> {
     OS_RELEASE.get_or_init(|| OsRelease::load().ok()).as_ref()
 }
 
+pub fn is_tui_supported() -> bool {
+    get_os_release()
+        .and_then(|r| r.id.as_deref())
+        .map_or(true, |id| id != "rhel")
+}
+
 pub fn get_os_version() -> Option<OSVersion> {
     let kernel_version = uname().ok()?.release().to_string_lossy().into();
     let os_release = get_os_release().cloned();
