@@ -102,43 +102,30 @@ Some settings are global-only and cannot be overridden at workspace level (e.g.,
 |---------|------|-------------|
 | `chat.defaultAgent` | string | Default agent for new sessions |
 | `chat.defaultModel` | string | Default AI model |
-| `chat.enableThinking` | boolean | Enable thinking tool for complex reasoning |
-| `chat.enableKnowledge` | boolean | Enable knowledge base functionality |
+| `chat.enableThinking` | boolean | Enable thinking tool |
+| `chat.enableKnowledge` | boolean | Enable knowledge base |
 | `chat.enableCodeIntelligence` | boolean | Enable code intelligence with LSP |
-| `chat.enableTangentMode` | boolean | Enable tangent mode feature |
 | `chat.enableSubagent` | boolean | Enable subagent feature |
 | `chat.enableTodoList` | boolean | Enable todo list feature |
-| `chat.enableCheckpoint` | boolean | Enable checkpoint feature |
-| `chat.enableDelegate` | boolean | Enable delegate tool |
-| `chat.enableContextUsageIndicator` | boolean | Show context usage in prompt |
 | `chat.enableNotifications` | boolean | Enable desktop notifications |
-| `chat.enableHistoryHints` | boolean | Show conversation history hints |
-| `chat.editMode` | boolean | Enable edit mode for chat |
 | `chat.greeting.enabled` | boolean | Show greeting message on start |
-| `chat.disableMarkdownRendering` | boolean | Disable markdown formatting |
 | `chat.disableAutoCompaction` | boolean | Disable automatic summarization |
-| `chat.skimCommandKey` | string | Key binding for fuzzy search |
-| `chat.autocompletionKey` | string | Key binding for autocompletion |
-| `chat.tangentModeKey` | string | Key binding for tangent mode |
-| `chat.delegateModeKey` | string | Key binding for delegate |
-| `chat.diffTool` | string | External diff tool command |
-| `chat.uiMode` | string | UI variant to use |
+| `chat.disableGranularTrust` | boolean | Disable granular trust options |
+| `chat.autoExpandToolOutput` | boolean | Always show full tool output |
 | `telemetry.enabled` | boolean | Enable/disable telemetry |
 | `knowledge.defaultIncludePatterns` | array | File patterns to include |
 | `knowledge.defaultExcludePatterns` | array | File patterns to exclude |
 | `knowledge.maxFiles` | number | Maximum files for indexing |
 | `knowledge.chunkSize` | number | Text chunk size |
 | `knowledge.chunkOverlap` | number | Overlap between chunks |
-| `knowledge.indexType` | string | Type of knowledge index |
-| `api.timeout` | number | API request timeout (seconds) |
-| `api.codewhisperer.service` | string | CodeWhisperer endpoint |
-| `api.q.service` | string | Q service endpoint |
+| `knowledge.indexType` | string | Index type: fast (BM25) or best (semantic) |
+| `api.timeout` | number | API request timeout in milliseconds |
+| `api.codewhisperer.service` | string | CodeWhisperer endpoint (global only) |
+| `api.q.service` | string | Q service endpoint (global only) |
 | `mcp.initTimeout` | number | MCP server init timeout |
 | `mcp.noInteractiveTimeout` | number | Non-interactive MCP timeout |
-| `mcp.loadedBefore` | boolean | Track loaded MCP servers |
 | `compaction.excludeContextWindowPercent` | number | Context % to exclude from compaction |
 | `compaction.excludeMessages` | number | Messages to exclude from compaction |
-| `introspect.tangentMode` | boolean | Auto-tangent for introspect |
 
 ## Examples
 
