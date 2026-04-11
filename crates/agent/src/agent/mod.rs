@@ -2552,11 +2552,41 @@ impl Agent {
                 Ok(())
             },
             HookStage::Stop { user_turn_metadata } => {
-                self.agent_event_buf
-                    .push(AgentEvent::EndTurn((**user_turn_metadata).clone()));
-                self.agent_event_buf.push(AgentEvent::Stop(AgentStopReason::EndTurn));
-                self.set_active_state(ActiveState::Idle).await;
-                Ok(())
+                // Check if any stop hook wants to block the stop and continue the conversation.
+                // A hook can return JSON: {"decision": "block", "reason": "..."}
+                let block_reason = executing_hooks.hooks().iter().find_map(|hook| {
+                    let output = hook.result.as_ref()?.output()?;
+                    let json: serde_json::Value = serde_json::from_str(output).ok()?;
+                    if json.get("decision")?.as_str()? == "block" {
+                        json.get("reason")?.as_str().map(|s| s.to_string())
+                    } else {
+                        None
+                    }
+                });
+
+                if let Some(reason) = block_reason {
+                    // Send the reason as a new user message to continue the conversation.
+                    // The existing AgentLoop is still alive in UserTurnEnded state and can
+                    // accept new requests, so we reuse it rather than spawning a new one.
+                    let pending = PendingUserMessage::Prompt {
+                        content: vec![ContentBlock::Text(reason)],
+                        meta: None,
+                    };
+                    let args = self.format_request(&pending).await;
+                    self.send_request(args).await?;
+                    self.set_active_state(ActiveState::ExecutingRequest {
+                        compaction_retry: None,
+                        pending_user_message: Some(pending),
+                    })
+                    .await;
+                    Ok(())
+                } else {
+                    self.agent_event_buf
+                        .push(AgentEvent::EndTurn((**user_turn_metadata).clone()));
+                    self.agent_event_buf.push(AgentEvent::Stop(AgentStopReason::EndTurn));
+                    self.set_active_state(ActiveState::Idle).await;
+                    Ok(())
+                }
             },
         }
     }

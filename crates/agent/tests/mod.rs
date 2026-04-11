@@ -399,6 +399,95 @@ async fn test_manual_compaction() {
 }
 
 #[tokio::test]
+async fn test_stop_hook_block_decision_continues_conversation() {
+    let _ = tracing_subscriber::fmt::try_init();
+
+    // Stop hook that returns {"decision": "block", "reason": "Keep going, you haven't run the tests."}
+    let mut agent_config = AgentConfig::default();
+    agent_config.add_hook(
+        HookTrigger::Stop,
+        HookConfig::ShellCommand(CommandHook {
+            command: r#"echo '{"decision":"block","reason":"Keep going, you haven'"'"'t run the tests."}'"#.to_string(),
+            opts: Default::default(),
+        }),
+    );
+
+    // Two mock responses: first turn (triggers stop hook) + second turn (after hook continues)
+    let mut test = TestCase::builder()
+        .test_name("stop hook block decision continues conversation")
+        .with_agent_config(agent_config)
+        .with_responses(
+            parse_response_streams(include_str!("./mock_responses/single_turn.jsonl"))
+                .await
+                .unwrap(),
+        )
+        .with_responses(
+            parse_response_streams(include_str!("./mock_responses/single_turn.jsonl"))
+                .await
+                .unwrap(),
+        )
+        .build()
+        .await
+        .unwrap();
+
+    test.send_prompt("test prompt".to_string()).await;
+    test.wait_until_agent_stop(Duration::from_secs(5))
+        .await
+        .expect("agent should eventually stop after second turn");
+
+    // The second request sent to the LLM should contain the stop hook reason
+    let requests = test.requests();
+    assert!(
+        requests.len() >= 2,
+        "expected at least 2 requests (initial + stop hook continue), got {}",
+        requests.len()
+    );
+    assert!(
+        requests[1].prompt_contains_text("Keep going, you haven't run the tests."),
+        "second request should contain the stop hook reason"
+    );
+}
+
+#[tokio::test]
+async fn test_stop_hook_without_block_decision_stops_normally() {
+    let _ = tracing_subscriber::fmt::try_init();
+
+    // Stop hook that returns JSON without decision:block — agent should stop normally
+    let mut agent_config = AgentConfig::default();
+    agent_config.add_hook(
+        HookTrigger::Stop,
+        HookConfig::ShellCommand(CommandHook {
+            command: r#"echo '{"some_key":"some_value"}'"#.to_string(),
+            opts: Default::default(),
+        }),
+    );
+
+    let mut test = TestCase::builder()
+        .test_name("stop hook without block decision stops normally")
+        .with_agent_config(agent_config)
+        .with_responses(
+            parse_response_streams(include_str!("./mock_responses/single_turn.jsonl"))
+                .await
+                .unwrap(),
+        )
+        .build()
+        .await
+        .unwrap();
+
+    test.send_prompt("test prompt".to_string()).await;
+    test.wait_until_agent_stop(Duration::from_secs(5))
+        .await
+        .expect("agent should stop normally");
+
+    // Only one request should have been sent
+    assert_eq!(
+        test.requests().len(),
+        1,
+        "expected exactly 1 request, agent should not continue"
+    );
+}
+
+#[tokio::test]
 async fn test_stop_hook_runs_synchronously() {
     let _ = tracing_subscriber::fmt::try_init();
 

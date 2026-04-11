@@ -143,13 +143,28 @@ or cleanup after the assistant's response.
 ```json
 {
   "hook_event_name": "stop",
-  "cwd": "/current/working/directory"
+  "cwd": "/current/working/directory",
+  "session_id": "conversation-uuid",
+  "assistant_response": "The assistant's last response text..."
 }
 ```
 
+- `session_id`: The current conversation/session identifier.
+- `assistant_response`: The text content of the assistant's last response. Use this to inspect what the agent said without needing to parse a transcript.
+
 **Exit Code Behavior:**
-- **0**: Hook succeeded.
+- **0**: Hook succeeded. If STDOUT contains JSON with a block decision (see below), the agent continues instead of stopping.
 - **Other**: Show STDERR warning to user.
+
+**Block Decision:** A stop hook can prevent the agent from stopping by returning JSON on STDOUT:
+
+```json
+{"decision": "block", "reason": "You haven't run the tests yet."}
+```
+
+When a stop hook returns `decision: "block"`, the `reason` is sent as a new user message to the LLM, continuing the conversation. This enables a feedback loop where a script can evaluate the agent's work and nudge it to keep going — e.g., checking if tests pass, verifying lint rules, or confirming that required files were updated before allowing the agent to stop.
+
+If no block decision is returned (no output, non-JSON output, or JSON without `"decision": "block"`), the agent stops normally. This is fully backward compatible.
 
 **Note**: Stop hooks do not use matchers since they don't relate to specific tools.
 
