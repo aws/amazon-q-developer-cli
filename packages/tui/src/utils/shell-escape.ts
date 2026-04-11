@@ -1,5 +1,36 @@
-import { spawn, spawnSync } from 'child_process';
+import { spawn, spawnSync, execFileSync } from 'child_process';
 import { SHOW_CURSOR, HIDE_CURSOR } from './terminal-sequences';
+
+/**
+ * Detect the appropriate shell on Windows.
+ * Mirrors the Rust `detect_windows_shell()` in `agent/src/agent/util/shell.rs`:
+ * checks PSModulePath to detect PowerShell sessions, preferring pwsh (7+) over
+ * powershell (5.1), falling back to cmd.exe.
+ */
+function detectWindowsShell(): { shell: string; flag: string } {
+  if (process.env.PSModulePath) {
+    try {
+      execFileSync('where.exe', ['pwsh'], { stdio: 'ignore' });
+      return { shell: 'pwsh', flag: '-Command' };
+    } catch {
+      // pwsh not found, fall back to powershell 5.1
+    }
+    return { shell: 'powershell', flag: '-Command' };
+  }
+  return { shell: 'cmd', flag: '/C' };
+}
+
+/** Cached result of Windows shell detection. */
+let _windowsShell: { shell: string; flag: string } | undefined;
+
+/** Returns the shell and flag for the current platform. Cached on first call. */
+function getShellAndFlag(): { shell: string; flag: string } {
+  if (process.platform !== 'win32') {
+    return { shell: 'bash', flag: '-c' };
+  }
+  _windowsShell ??= detectWindowsShell();
+  return _windowsShell;
+}
 
 /** Commands that require direct terminal access (TTY) */
 const TTY_COMMANDS = new Set([
@@ -78,12 +109,10 @@ export function executeShellEscapeTTY(command: string): ShellEscapeResult {
     // Enter alternate screen buffer so the editor doesn't pollute Ink's output
     process.stdout.write('\x1b[?1049h');
 
-    const shell = process.platform === 'win32' ? 'cmd' : 'bash';
-    const args =
-      process.platform === 'win32'
-        ? ['/C', command]
-        : ['-c', wrapWithFdLimit(command)];
-    const result = spawnSync(shell, args, {
+    const { shell, flag } = getShellAndFlag();
+    const cmd =
+      process.platform === 'win32' ? command : wrapWithFdLimit(command);
+    const result = spawnSync(shell, [flag, cmd], {
       stdio: 'inherit',
       cwd: process.cwd(),
       env: process.env,
@@ -119,13 +148,10 @@ export function executeShellEscapeStreaming(
   command: string,
   onData: (chunk: string) => void
 ): { promise: Promise<ShellEscapeResult>; kill: () => void } {
-  const shell = process.platform === 'win32' ? 'cmd' : 'bash';
-  const args =
-    process.platform === 'win32'
-      ? ['/C', command]
-      : ['-c', wrapWithFdLimit(command)];
+  const { shell, flag } = getShellAndFlag();
+  const cmd = process.platform === 'win32' ? command : wrapWithFdLimit(command);
 
-  const child = spawn(shell, args, {
+  const child = spawn(shell, [flag, cmd], {
     stdio: ['ignore', 'pipe', 'pipe'],
     cwd: process.cwd(),
     env: process.env,
