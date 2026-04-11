@@ -49,7 +49,7 @@ The refreshed terminal experience is now the default — a full TUI with live un
 - Custom prompts are now invoked with \`/\` instead of \`@\`; \`@\` is now for file context
 - Shell commands — output appears after completion and does not support interactive input
 
-Learn more: https://kiro.dev/docs/cli/tui/
+Learn more: https://kiro.dev/docs/cli/terminal-ui/
 
 The new TUI is now the default experience.
 Prefer classic? \`kiro-cli --classic\` for a single session, or \`kiro-cli settings chat.ui classic\` to make it the default.
