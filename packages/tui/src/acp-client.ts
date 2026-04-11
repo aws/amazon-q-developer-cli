@@ -105,13 +105,13 @@ export class AcpClient implements acp.Client, SessionClient {
         stderrBuf = lines.pop() || '';
         for (const line of lines) {
           if (line.trim()) {
-            logger.debug('[agent-stderr]', line);
+            logger.warn('[agent-stderr]', line);
           }
         }
       });
       this.agentProcess.stderr.on('end', () => {
         if (stderrBuf.trim()) {
-          logger.debug('[agent-stderr]', stderrBuf);
+          logger.warn('[agent-stderr]', stderrBuf);
         }
       });
     }
@@ -426,7 +426,7 @@ export class AcpClient implements acp.Client, SessionClient {
         sessionId,
       });
     } catch (err) {
-      logger.debug('terminateSession failed (best-effort)', { sessionId, err });
+      logger.warn('terminateSession failed (best-effort)', { sessionId, err });
     }
   }
 
@@ -730,7 +730,7 @@ export class AcpClient implements acp.Client, SessionClient {
   private handleMcpServerInitFailure(params: Record<string, unknown>) {
     const serverName = params.serverName as string;
     const error = params.error as string;
-    logger.debug('MCP server init failure received:', { serverName, error });
+    logger.error('MCP server init failure received:', { serverName, error });
     this.broadcastStreamEvent({
       type: AgentEventType.McpServerInitFailure,
       serverName,
@@ -760,7 +760,7 @@ export class AcpClient implements acp.Client, SessionClient {
 
   private handleRateLimitError(params: Record<string, unknown>) {
     const message = params.message as string;
-    logger.debug('Rate limit error received:', { message });
+    logger.error('Rate limit error received:', { message });
     this.broadcastStreamEvent({
       type: AgentEventType.RateLimitError,
       message,
@@ -770,7 +770,7 @@ export class AcpClient implements acp.Client, SessionClient {
   private handleAgentNotFound(params: Record<string, unknown>) {
     const requestedAgent = params.requestedAgent as string;
     const fallbackAgent = params.fallbackAgent as string;
-    logger.debug('Agent not found received:', {
+    logger.warn('Agent not found received:', {
       requestedAgent,
       fallbackAgent,
     });
@@ -784,7 +784,7 @@ export class AcpClient implements acp.Client, SessionClient {
   private handleAgentConfigError(params: Record<string, unknown>) {
     const error = params.error as string;
     const path = params.path as string | undefined;
-    logger.debug('Agent config error received:', { path, error });
+    logger.error('Agent config error received:', { path, error });
     this.broadcastStreamEvent({
       type: AgentEventType.AgentConfigError,
       path,
@@ -795,7 +795,7 @@ export class AcpClient implements acp.Client, SessionClient {
   private handleModelNotFound(params: Record<string, unknown>) {
     const requestedModel = params.requestedModel as string;
     const fallbackModel = params.fallbackModel as string;
-    logger.debug('Model not found received:', {
+    logger.warn('Model not found received:', {
       requestedModel,
       fallbackModel,
     });

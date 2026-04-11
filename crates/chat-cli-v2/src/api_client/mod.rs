@@ -466,6 +466,14 @@ async fn mock_registry_actor(mut rx: mpsc::Receiver<MockRegistryRequest>) {
                 respond_to,
             } => {
                 let state = sessions.entry(session_id.clone()).or_default();
+
+                // If a previous stream's receiver was dropped (e.g. agent cancelled),
+                // the sender is stale — clear it so we can start a new stream.
+                if let Some(ref tx) = state.stream_tx
+                    && tx.is_closed()
+                {
+                    state.stream_tx = None;
+                }
                 assert!(
                     state.stream_tx.is_none(),
                     "GetStream called while previous stream for session {} is still active",

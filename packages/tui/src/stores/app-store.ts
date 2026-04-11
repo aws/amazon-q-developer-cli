@@ -1809,7 +1809,7 @@ export const createAppStore = (props: AppStoreProps) => {
 
     handleCompactionEvent: async (event) => {
       if (event.type === AgentEventType.ContextUsage) {
-        logger.info(
+        logger.debug(
           '[context-usage] ContextUsage event in compactionHandler, percent=',
           event.percent
         );
@@ -2631,7 +2631,7 @@ export const createAppStore = (props: AppStoreProps) => {
 
     // Context usage actions
     setContextUsage: (percent) => {
-      logger.info('[context-usage] setContextUsage called, percent=', percent);
+      logger.debug('[context-usage] setContextUsage called, percent=', percent);
       set({ contextUsagePercent: percent });
     },
 

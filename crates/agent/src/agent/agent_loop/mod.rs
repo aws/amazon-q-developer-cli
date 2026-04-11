@@ -532,9 +532,11 @@ impl StreamParseState {
             return;
         }
 
-        // Debug assertion that we always start with either a MessageStart, or an error.
+        // Debug assertion: the first event must be MessageStart, Metadata, or an error.
+        // Metadata can arrive first when a request is cancelled before the backend sends
+        // any message content (RTS emits Metadata then Interrupted on cancel).
         match &ev {
-            StreamResult::Ok(StreamEvent::MessageStart(_)) | StreamResult::Err(_) => (),
+            StreamResult::Ok(StreamEvent::MessageStart(_) | StreamEvent::Metadata(_)) | StreamResult::Err(_) => (),
             other @ StreamResult::Ok(_) => debug_assert!(
                 self.message_start.is_some(),
                 "received an unexpected event at the start of the response stream: {other:?}"

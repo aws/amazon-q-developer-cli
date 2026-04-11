@@ -1,4 +1,6 @@
-import { writeFileSync, appendFileSync, existsSync } from 'fs';
+import { writeFileSync, appendFileSync, existsSync, mkdirSync } from 'fs';
+import { tmpdir } from 'os';
+import { join } from 'path';
 
 type LogLevel = 'error' | 'warn' | 'info' | 'debug' | 'trace';
 
@@ -10,20 +12,40 @@ const LOG_LEVELS: Record<LogLevel, number> = {
   trace: 4,
 };
 
+/**
+ * Resolves the default log file path, matching the backend's log directory.
+ * Backend uses: $TMPDIR/kiro-log/kiro-chat.log
+ * TUI uses:     $TMPDIR/kiro-log/kiro-tui.log
+ */
+function getDefaultLogFile(): string {
+  const logsDir = join(tmpdir(), 'kiro-log');
+  if (!existsSync(logsDir)) {
+    mkdirSync(logsDir, { recursive: true });
+  }
+  return join(logsDir, 'kiro-tui.log');
+}
+
 class Logger {
   private logFile: string | null;
   private logLevel: LogLevel;
 
   constructor() {
-    this.logFile = process.env.KIRO_TUI_LOG_FILE || null;
-    this.logLevel = (process.env.KIRO_TUI_LOG_LEVEL as LogLevel) || 'info';
+    this.logFile = process.env.KIRO_TUI_LOG_FILE || getDefaultLogFile();
+    this.logLevel = (process.env.KIRO_TUI_LOG_LEVEL as LogLevel) || 'error';
 
-    // Initialize log file if configured
+    // Initialize log file
     if (this.logFile && !existsSync(this.logFile)) {
-      writeFileSync(
-        this.logFile,
-        `=== TUI Log Started ${new Date().toISOString()} ===\n`
-      );
+      try {
+        writeFileSync(
+          this.logFile,
+          `=== TUI Log Started ${new Date().toISOString()} ===\n`
+        );
+      } catch {
+        // If we can't write the default log file, disable file logging
+        if (!process.env.KIRO_TUI_LOG_FILE) {
+          this.logFile = null;
+        }
+      }
     }
   }
 

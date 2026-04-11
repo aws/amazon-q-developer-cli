@@ -74,7 +74,7 @@ export function listSessionsForCwd(cwd: string): SessionEntry[] {
         summary: formatSummary(lastUserPrompt),
       });
     } catch (err) {
-      logger.debug(`Skipping malformed session file ${file}:`, err);
+      logger.warn(`Skipping malformed session file ${file}:`, err);
     }
   }
 

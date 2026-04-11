@@ -1588,14 +1588,20 @@ impl AcpSession {
                 let _ = respond_to.send(self.rts_state.model_id().unwrap_or_default());
             },
             AcpSessionRequest::Cancel => {
-                // Send cancellation request to the underlying agent. This is only half of the ACP protocol.
-                // To conform with the protocol, we would also need to respond to the client with cancelled
-                // as stop reason. This egress part is assumed to happen through the normal agent event flow
-                // when the agent emits AgentEvent::Stop(AgentStopReason::Cancelled).
+                // Send cancellation to the underlying agent so it stops any in-flight work.
                 if let Err(e) = self.agent.cancel().await {
                     error!("Failed to cancel agent: {}", e);
                 }
-                error!("cancel called on agent handle");
+                // Immediately clear pending_prompt_response so the next prompt isn't
+                // rejected with "Prompt already in progress". This is necessary because
+                // the agent may not have started processing yet (e.g. slow network,
+                // queued LLM call), so its Stop(Cancelled) event may never fire.
+                // If the agent does emit EndTurn/Cancelled later, the .take() there
+                // will be a harmless no-op since we already consumed it.
+                if let Some(respond_to) = self.pending_prompt_response.take() {
+                    let respond_to = respond_to.into_inner();
+                    let _ = respond_to.respond(PromptResponse::new(StopReason::Cancelled));
+                }
             },
             AcpSessionRequest::ExecuteCommand { command, respond_to } => {
                 let is_agent_swap = matches!(&command, TuiCommand::Agent(args) if args.agent_name.is_some())

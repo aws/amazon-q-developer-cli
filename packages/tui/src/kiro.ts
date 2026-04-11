@@ -348,7 +348,8 @@ export class Kiro {
       contentLength: content.length,
     });
 
-    const INITIAL_RESPONSE_TIMEOUT_MS = 90_000;
+    const INITIAL_RESPONSE_TIMEOUT_MS =
+      Number(process.env.KIRO_INITIAL_RESPONSE_TIMEOUT_MS) || 180_000;
     let receivedFirstEvent = false;
     let timeoutId: ReturnType<typeof setTimeout> | null = null;
 
@@ -418,14 +419,31 @@ export class Kiro {
       // Start initial-response timeout
       timeoutId = setTimeout(() => {
         if (!receivedFirstEvent && !settled) {
-          logger.error('[stream] initial response timeout reached');
-          settle(() =>
-            reject(
-              new Error(
-                'Agent not responding. The backend may be misconfigured or unresponsive. Press Ctrl+C to cancel.'
-              )
-            )
+          logger.error(
+            '[stream] initial response timeout reached after',
+            INITIAL_RESPONSE_TIMEOUT_MS,
+            'ms — sending session/cancel to backend'
           );
+          // Send cancel to backend so it clears the pending prompt state.
+          // Without this, the backend still thinks a prompt is in progress
+          // and will reject the next request with "Prompt already in progress".
+          this.sessionClient
+            ?.cancel()
+            .catch((cancelErr) => {
+              logger.error(
+                '[stream] failed to send cancel on timeout:',
+                cancelErr
+              );
+            })
+            .finally(() => {
+              settle(() =>
+                reject(
+                  new Error(
+                    'Agent not responding. The backend may be misconfigured or unresponsive. Press Ctrl+C to cancel.'
+                  )
+                )
+              );
+            });
         }
       }, INITIAL_RESPONSE_TIMEOUT_MS);
 
