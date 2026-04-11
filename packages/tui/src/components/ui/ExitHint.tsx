@@ -9,6 +9,7 @@ export const ExitHint: React.FC = React.memo(function ExitHint() {
     <ActionHint
       text="Press Ctrl+C or Ctrl+D again to exit"
       visible={exitSequence > 0}
+      align="left"
     />
   );
 });

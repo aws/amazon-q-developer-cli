@@ -6,6 +6,7 @@ import { useTheme } from '../../../hooks/useThemeContext.js';
 export interface ActionHintProps {
   text: string;
   visible?: boolean;
+  align?: 'left' | 'right';
   /** When true, renders as an overlay with blue background badge + standard hint */
   overlay?: {
     badge: string;
@@ -16,6 +17,7 @@ export interface ActionHintProps {
 export const ActionHint: React.FC<ActionHintProps> = ({
   text,
   visible = true,
+  align = 'right',
   overlay,
 }) => {
   const { getColor } = useTheme();
@@ -40,7 +42,11 @@ export const ActionHint: React.FC<ActionHintProps> = ({
   const dim = getColor('muted');
 
   return (
-    <Box paddingX={1} marginBottom={1} justifyContent="flex-end">
+    <Box
+      paddingX={1}
+      marginBottom={1}
+      justifyContent={align === 'left' ? 'flex-start' : 'flex-end'}
+    >
       <Text>{dim(text)}</Text>
     </Box>
   );

@@ -235,6 +235,7 @@ export const InlineLayout: React.FC = () => {
   const { kiro } = useKiroClient();
   const mode = useAppStore((state) => state.mode);
   const setMode = useAppStore((state) => state.setMode);
+  const exitSequence = useAppStore((state) => state.exitSequence);
 
   // Detect if pending approval is from a crew subagent (not the main session)
   const isCrewApproval = !!(
@@ -890,7 +891,8 @@ export const InlineLayout: React.FC = () => {
                 !showHooksPanel &&
                 !showKnowledgePanel &&
                 !showCodePanel &&
-                commandInputValue.length === 0
+                commandInputValue.length === 0 &&
+                exitSequence === 0
               }
             />
             <ExitHint />
