@@ -1,0 +1,4 @@
+{
+  "type": "fixed",
+  "description": "Fixed false 'web tools disabled' warning for social login users"
+}

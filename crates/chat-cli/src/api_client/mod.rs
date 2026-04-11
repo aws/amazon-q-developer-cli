@@ -581,8 +581,16 @@ impl ApiClient {
         Ok((mcp_enabled, registry_url))
     }
 
-    /// Check if web tools (web_search, web_fetch) are enabled for this profile
-    pub async fn is_web_tools_enabled(&self, _database: &Database) -> Result<bool, ApiClientError> {
+    /// Only enterprise (IDC/ExternalIDP) and API-key users need the GetProfile governance check;
+    /// social and Builder ID users skip it and default to enabled.
+    pub async fn is_web_tools_enabled(&self, database: &Database) -> Result<bool, ApiClientError> {
+        let is_enterprise = crate::auth::builder_id::is_enterprise_user(database).await;
+        let is_api_key = crate::util::env_var::get_api_key().is_some();
+        if !is_enterprise && !is_api_key {
+            debug!("Non-enterprise user detected, enabling web tools without GetProfile check");
+            return Ok(true);
+        }
+
         let Some(arn) = self.resolve_profile.arn_if_known() else {
             debug!("No profile ARN available, skipping web_tools check (enabled by default)");
             return Ok(true);
