@@ -53,6 +53,8 @@ export interface AgentSettings {
 	disable_auto_compact?: boolean;
 	/** When true, all tool permission checks are bypassed (auto-approve everything). */
 	trust_all_tools?: boolean;
+	/** When false, web_search and web_fetch tools are excluded (governance disabled them). */
+	web_tools_enabled: boolean;
 }
 
 /** State associated with a history of messages. */

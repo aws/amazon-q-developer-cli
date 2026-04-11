@@ -165,10 +165,17 @@ pub struct AgentSettings {
     /// When true, all tool permission checks are bypassed (auto-approve everything).
     #[serde(default)]
     pub trust_all_tools: bool,
+    /// When false, web_search and web_fetch tools are excluded (governance disabled them).
+    #[serde(default = "default_true")]
+    pub web_tools_enabled: bool,
 }
 
 impl AgentSettings {
     const DEFAULT_MCP_INIT_TIMEOUT: Duration = Duration::from_secs(5);
+}
+
+fn default_true() -> bool {
+    true
 }
 
 impl Default for AgentSettings {
@@ -177,6 +184,7 @@ impl Default for AgentSettings {
             mcp_init_timeout: Self::DEFAULT_MCP_INIT_TIMEOUT,
             disable_auto_compact: false,
             trust_all_tools: false,
+            web_tools_enabled: true,
         }
     }
 }

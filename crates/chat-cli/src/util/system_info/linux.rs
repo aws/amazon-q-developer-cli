@@ -35,9 +35,7 @@ pub fn get_os_release() -> Option<&'static OsRelease> {
 }
 
 pub fn is_tui_supported() -> bool {
-    get_os_release()
-        .and_then(|r| r.id.as_deref())
-        .map_or(true, |id| id != "rhel")
+    get_os_release().and_then(|r| r.id.as_deref()) != Some("rhel")
 }
 
 pub fn get_os_version() -> Option<OSVersion> {

@@ -603,6 +603,10 @@ impl IpcMockApiClient {
         Ok((true, None))
     }
 
+    pub async fn get_governance_config(&self) -> Result<(bool, Option<String>, bool), ApiClientError> {
+        Ok((true, None, true))
+    }
+
     #[allow(clippy::todo)]
     pub async fn create_subscription_token(&self) -> Result<CreateSubscriptionTokenOutput, ApiClientError> {
         todo!("IpcMockApiClient::create_subscription_token")
@@ -916,22 +920,29 @@ impl RealApiClient {
         Ok(enabled)
     }
 
-    /// Get MCP configuration including enabled status and registry URL
-    pub async fn get_mcp_config(&self) -> Result<(bool, Option<String>), ApiClientError> {
-        let request = self
+    /// Get MCP and web tools governance config in a single GetProfile call.
+    /// Returns `(mcp_enabled, registry_url, web_tools_enabled)`.
+    pub async fn get_governance_config(&self) -> Result<(bool, Option<String>, bool), ApiClientError> {
+        let response = self
             .client
             .get_profile()
-            .set_profile_arn(self.optional_profile_arn().await);
+            .set_profile_arn(self.optional_profile_arn().await)
+            .send()
+            .await?;
 
-        let response = request.send().await?;
-        let mcp_config = response
-            .profile()
-            .opt_in_features()
-            .and_then(|features| features.mcp_configuration());
+        let opt_in = response.profile().opt_in_features();
+        let mcp_config = opt_in.and_then(|f| f.mcp_configuration());
+        let mcp_enabled = mcp_config.is_none_or(|c| matches!(c.toggle(), OptInFeatureToggle::On));
+        let registry_url = mcp_config.and_then(|c| c.mcp_registry_url().map(|s| s.to_string()));
+        let web_tools = opt_in.and_then(|f| f.web_tools());
+        let web_tools_enabled = web_tools.is_none_or(|wt| matches!(wt.toggle(), OptInFeatureToggle::On));
 
-        let mcp_enabled = mcp_config.is_none_or(|config| matches!(config.toggle(), OptInFeatureToggle::On));
-        let registry_url = mcp_config.and_then(|config| config.mcp_registry_url().map(|s| s.to_string()));
+        Ok((mcp_enabled, registry_url, web_tools_enabled))
+    }
 
+    /// Get MCP configuration including enabled status and registry URL
+    pub async fn get_mcp_config(&self) -> Result<(bool, Option<String>), ApiClientError> {
+        let (mcp_enabled, registry_url, _) = self.get_governance_config().await?;
         Ok((mcp_enabled, registry_url))
     }
 
@@ -1342,6 +1353,13 @@ impl ApiClient {
         match &self.inner {
             ApiClientInner::Real(c) => c.get_mcp_config().await,
             ApiClientInner::IpcMock(c) => c.get_mcp_config().await,
+        }
+    }
+
+    pub async fn get_governance_config(&self) -> Result<(bool, Option<String>, bool), ApiClientError> {
+        match &self.inner {
+            ApiClientInner::Real(c) => c.get_governance_config().await,
+            ApiClientInner::IpcMock(c) => c.get_governance_config().await,
         }
     }
 

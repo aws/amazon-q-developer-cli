@@ -212,6 +212,7 @@ pub struct Subagent<'a> {
     pub parent_tool_use_id: &'a str,
     pub code_intelligence: Option<std::sync::Arc<tokio::sync::RwLock<code_agent_sdk::CodeIntelligence>>>,
     pub registry_data: Option<&'a crate::mcp_registry::McpRegistryResponse>,
+    pub web_tools_enabled: bool,
 }
 
 impl<'a> Subagent<'a> {
@@ -229,6 +230,7 @@ impl<'a> Subagent<'a> {
                 mcp_init_timeout: std::time::Duration::from_secs(86400),
                 disable_auto_compact: Default::default(),
                 trust_all_tools: false,
+                web_tools_enabled: self.web_tools_enabled,
             },
             permissions: agent::permissions::RuntimePermissions::default().with_cwd(&cwd.to_string_lossy()),
             ..Default::default()
@@ -715,6 +717,7 @@ async fn test_sub_agent_routine(queries: Vec<(String, String)>) -> Result<Vec<Su
             parent_tool_use_id: "",
             code_intelligence: None,
             registry_data: None,
+            web_tools_enabled: true,
         })
         .collect::<Vec<_>>();
 

@@ -2578,6 +2578,7 @@ impl Agent {
             &self.cached_mcp_configs.configs,
             self.is_subagent,
             self.knowledge_provider.is_some(),
+            self.settings.web_tools_enabled,
         );
 
         let lsp_initialized = self

@@ -215,45 +215,42 @@ impl SessionManagerBuilder {
                 (None, None)
             };
 
-            // Fetch MCP registry data for enterprise users and API key users.
+            // Fetch MCP and web tools governance in a single GetProfile call for enterprise/API key users.
             // Skip for non-enterprise, non-API-key users (Builder ID, social auth) and test mode.
-            // API key users may be enterprise users whose admin configured MCP governance,
-            // so they must go through the GetProfile check (fail-closed: no MCP if it fails).
+            // Fail-closed: MCP registry disabled and web tools disabled if GetProfile fails.
             let is_enterprise = crate::auth::builder_id::is_enterprise_user(&os.database).await;
             let is_api_key = crate::util::env_var::get_api_key().is_some();
-            let (mcp_registry_data, mcp_registry_url) = if std::env::var(KIRO_TEST_MODE).is_ok()
+            let (mcp_registry_data, mcp_registry_url, web_tools_enabled) = if std::env::var(KIRO_TEST_MODE).is_ok()
                 || (!is_enterprise && !is_api_key)
             {
-                (None, None)
+                (None, None, true)
             } else {
-                match os.client.get_mcp_config().await {
-                    Ok((enabled, Some(registry_url))) if enabled => {
+                match os.client.get_governance_config().await {
+                    Ok((mcp_enabled, Some(registry_url), web_tools_enabled)) if mcp_enabled => {
                         let client = crate::mcp_registry::McpRegistryClient::new();
-                        match client.fetch_registry(&registry_url).await {
+                        let registry_data = match client.fetch_registry(&registry_url).await {
                             Ok(registry) => {
                                 info!(
                                     servers = registry.servers.len(),
                                     "Fetched MCP registry from {}", registry_url
                                 );
-                                (Some(registry), Some(registry_url))
+                                Some(registry)
                             },
                             Err(e) => {
                                 error!(%e, "Failed to fetch MCP registry — registry servers disabled for this session");
-                                // Registry URL was configured but fetch failed — use empty registry
-                                // to disable registry-dependent MCP servers (matches V1 behavior)
-                                (
-                                    Some(crate::mcp_registry::McpRegistryResponse { servers: vec![] }),
-                                    Some(registry_url),
-                                )
+                                Some(crate::mcp_registry::McpRegistryResponse { servers: vec![] })
                             },
-                        }
+                        };
+                        (registry_data, Some(registry_url), web_tools_enabled)
                     },
-                    Ok(_) => (None, None),
+                    Ok((_, _, web_tools_enabled)) => (None, None, web_tools_enabled),
                     Err(e) => {
-                        error!(%e, "Failed to get MCP config from API — MCP registry features disabled");
-                        // API call failed — we can't determine if registry is configured,
-                        // so use empty registry to disable registry-dependent MCP servers
-                        (Some(crate::mcp_registry::McpRegistryResponse { servers: vec![] }), None)
+                        error!(%e, "Failed to get governance config from API — MCP registry disabled, web tools disabled");
+                        (
+                            Some(crate::mcp_registry::McpRegistryResponse { servers: vec![] }),
+                            None,
+                            false,
+                        )
                     },
                 }
             };
@@ -303,6 +300,7 @@ impl SessionManagerBuilder {
                 telemetry_event_store,
                 legacy_session_exporter,
                 mcp_registry_data,
+                web_tools_enabled,
             );
 
             loop {
@@ -380,6 +378,8 @@ pub struct SessionManager {
     mcp_registry_data: Option<crate::mcp_registry::McpRegistryResponse>,
     /// Tracks which agent config each session is using (for registry refresh)
     session_agent_names: HashMap<SessionId, String>,
+    /// Whether web tools (web_search, web_fetch) are enabled by governance
+    web_tools_enabled: bool,
 }
 
 /// An agent config error with optional file path.
@@ -408,6 +408,7 @@ impl SessionManager {
         telemetry_event_store: Option<TelemetryEventStore>,
         legacy_session_exporter: Arc<dyn LegacySessionExporter>,
         mcp_registry_data: Option<crate::mcp_registry::McpRegistryResponse>,
+        web_tools_enabled: bool,
     ) -> Self {
         Self {
             sessions: HashMap::new(),
@@ -434,6 +435,7 @@ impl SessionManager {
             agent_config_errors,
             mcp_registry_data,
             session_agent_names: HashMap::new(),
+            web_tools_enabled,
         }
     }
 
@@ -664,6 +666,7 @@ impl SessionManager {
                     .code_intelligence(code_intel)
                     .trust_all_tools(self.trust_all_tools)
                     .trust_tools(self.trust_tools.clone())
+                    .web_tools_enabled(self.web_tools_enabled)
                     .acp_client_info(self.acp_client_info.clone())
                     .telemetry_event_store(self.telemetry_event_store.clone())
                     .legacy_session_exporter(Arc::clone(&self.legacy_session_exporter))

@@ -662,6 +662,8 @@ pub struct AcpSessionBuilder<'a> {
     subagent_info: Option<SubagentInfo>,
     legacy_session_exporter: Option<Arc<dyn LegacySessionExporter>>,
     session_injected_mcp_servers: Vec<(String, agent::agent_config::definitions::McpServerConfig)>,
+    /// Whether web tools (web_search, web_fetch) are enabled by governance
+    web_tools_enabled: bool,
 }
 
 impl<'a> AcpSessionBuilder<'a> {
@@ -757,6 +759,11 @@ impl<'a> AcpSessionBuilder<'a> {
 
     pub fn trust_tools(mut self, tools: Option<Vec<String>>) -> Self {
         self.trust_tools = tools;
+        self
+    }
+
+    pub fn web_tools_enabled(mut self, enabled: bool) -> Self {
+        self.web_tools_enabled = enabled;
         self
     }
 
@@ -1074,6 +1081,7 @@ impl AcpSession {
         let snapshot = {
             let mut s = snapshot;
             s.settings.trust_all_tools = builder.trust_all_tools;
+            s.settings.web_tools_enabled = builder.web_tools_enabled;
             if let Some(tools) = builder.trust_tools {
                 for tool in &tools {
                     if !tool.starts_with('@') && tool.parse::<agent::tools::BuiltInToolName>().is_err() {

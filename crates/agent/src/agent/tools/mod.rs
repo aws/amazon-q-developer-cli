@@ -554,12 +554,14 @@ pub fn built_in_tool_names() -> Vec<CanonicalToolName> {
 /// * `mcp_server_configs` - Loaded MCP server configs
 /// * `is_subagent` - Whether this agent is a subagent
 /// * `has_knowledge_provider` - Whether a knowledge provider is available
+/// * `web_tools_enabled` - Whether web tools are enabled by governance
 pub(crate) fn get_available_tool_names(
     agent_tools: &[String],
     mcp_tool_specs: &HashMap<String, Vec<ToolSpec>>,
     mcp_server_configs: &[LoadedMcpServerConfig],
     is_subagent: bool,
     has_knowledge_provider: bool,
+    web_tools_enabled: bool,
 ) -> HashSet<CanonicalToolName> {
     let mut tool_names = HashSet::new();
     let built_in_tool_names = built_in_tool_names();
@@ -641,6 +643,8 @@ pub(crate) fn get_available_tool_names(
             CanonicalToolName::BuiltIn(BuiltInToolName::Knowledge) => has_knowledge_provider,
             // Tools not yet ready
             CanonicalToolName::BuiltIn(BuiltInToolName::SessionManagement) => false,
+            // Web tools gated by enterprise governance
+            CanonicalToolName::BuiltIn(BuiltInToolName::WebSearch | BuiltInToolName::WebFetch) => web_tools_enabled,
             // SwitchToExecution is excluded from wildcard (*) expansion — it must be
             // explicitly listed in the agent's tools config (e.g. kiro_planner).
             // This matches V1's exclude_from_builtin behavior.
@@ -905,7 +909,7 @@ mod tests {
             has_knowledge: bool,
         ) -> Vec<String> {
             let tools: Vec<String> = agent_tools.iter().map(|s| s.to_string()).collect();
-            get_available_tool_names(&tools, specs, configs, is_subagent, has_knowledge)
+            get_available_tool_names(&tools, specs, configs, is_subagent, has_knowledge, true)
                 .iter()
                 .map(|n| n.tool_name().to_string())
                 .collect()
@@ -947,7 +951,7 @@ mod tests {
             ]);
             let configs = mcp_configs(&[("s1", &["*_file"]), ("s2", &[])]);
             let tools: Vec<String> = ["@s1", "@s2"].iter().map(|s| s.to_string()).collect();
-            let names = get_available_tool_names(&tools, &specs, &configs, false, false);
+            let names = get_available_tool_names(&tools, &specs, &configs, false, false, true);
 
             assert!(!names.contains(&CanonicalToolName::from_mcp_parts("s1".into(), "read_file".into())));
             assert!(!names.contains(&CanonicalToolName::from_mcp_parts("s1".into(), "write_file".into())));
@@ -1021,6 +1025,32 @@ mod tests {
 
             let names = run(&["*"], &HashMap::new(), &[], false, true);
             assert!(names.contains(&"knowledge".into()));
+        }
+
+        #[test]
+        fn test_web_tools_excluded_when_governance_disabled() {
+            // Wildcard should not include web tools when governance disables them
+            let tools: Vec<String> = vec!["*".to_string()];
+            let names = get_available_tool_names(&tools, &HashMap::new(), &[], false, false, false);
+            assert!(!names.contains(&CanonicalToolName::BuiltIn(BuiltInToolName::WebSearch)));
+            assert!(!names.contains(&CanonicalToolName::BuiltIn(BuiltInToolName::WebFetch)));
+        }
+
+        #[test]
+        fn test_web_tools_excluded_when_explicitly_listed_but_governance_disabled() {
+            // Even explicit listing is blocked by governance (e.g. kiro_planner config)
+            let tools: Vec<String> = vec!["web_search".to_string(), "web_fetch".to_string()];
+            let names = get_available_tool_names(&tools, &HashMap::new(), &[], false, false, false);
+            assert!(!names.contains(&CanonicalToolName::BuiltIn(BuiltInToolName::WebSearch)));
+            assert!(!names.contains(&CanonicalToolName::BuiltIn(BuiltInToolName::WebFetch)));
+        }
+
+        #[test]
+        fn test_web_tools_included_when_governance_enabled() {
+            let tools: Vec<String> = vec!["*".to_string()];
+            let names = get_available_tool_names(&tools, &HashMap::new(), &[], false, false, true);
+            assert!(names.contains(&CanonicalToolName::BuiltIn(BuiltInToolName::WebSearch)));
+            assert!(names.contains(&CanonicalToolName::BuiltIn(BuiltInToolName::WebFetch)));
         }
     }
 }

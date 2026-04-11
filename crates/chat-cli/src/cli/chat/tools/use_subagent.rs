@@ -57,6 +57,7 @@ impl InvokeSubagent {
         code_intelligence: Option<std::sync::Arc<tokio::sync::RwLock<code_agent_sdk::CodeIntelligence>>>,
         query_override: Option<&'a str>,
         registry_data: Option<&'a crate::mcp_registry::McpRegistryResponse>,
+        web_tools_enabled: bool,
     ) -> Subagent<'a> {
         let InvokeSubagent {
             query,
@@ -78,6 +79,7 @@ impl InvokeSubagent {
             parent_tool_use_id,
             code_intelligence,
             registry_data,
+            web_tools_enabled,
         }
     }
 }
@@ -312,6 +314,7 @@ impl UseSubagent {
                 let global_mcp_path = resolver.global().mcp_config()?;
                 let is_interactive = subagents.iter().any(|agent| agent.is_interactive);
                 let parent_tool_use_id = tool_use_id.as_deref().unwrap_or_default();
+                let web_tools_enabled = tool_manager.web_tools_enabled;
 
                 // Resolve @prompt-name references in each subagent query using the parent's
                 // tool_manager (which has MCP servers already running). This allows the main
@@ -335,6 +338,7 @@ impl UseSubagent {
                             code_intelligence.clone(),
                             Some(resolved_queries[id].as_str()),
                             registry_data,
+                            web_tools_enabled,
                         )
                     })
                     .collect::<Vec<_>>();
