@@ -331,3 +331,48 @@ impl<'a> GlobalPaths<'a> {
             .join("data.sqlite3"))
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use globset::GlobSetBuilder;
+
+    use super::*;
+
+    #[test]
+    fn add_gitignore_globs_adds_file_and_dir_patterns() {
+        let mut builder = GlobSetBuilder::new();
+        add_gitignore_globs(&mut builder, "target").unwrap();
+        let set = builder.build().unwrap();
+        assert!(set.is_match("target"), "should match the path itself");
+        assert!(set.is_match("target/debug/foo"), "should match children");
+    }
+
+    #[test]
+    fn add_gitignore_globs_with_trailing_slash() {
+        let mut builder = GlobSetBuilder::new();
+        add_gitignore_globs(&mut builder, "node_modules/").unwrap();
+        let set = builder.build().unwrap();
+        assert!(set.is_match("node_modules/package/index.js"));
+    }
+
+    #[test]
+    fn add_gitignore_globs_invalid_pattern_returns_error() {
+        let mut builder = GlobSetBuilder::new();
+        // '[' without closing ']' is an invalid glob
+        assert!(add_gitignore_globs(&mut builder, "[invalid").is_err());
+    }
+
+    #[tokio::test]
+    async fn canonicalizes_absolute_path() {
+        let os = Os::new().await.unwrap();
+        let result = canonicalizes_path(&os, "/tmp").unwrap();
+        assert!(result.starts_with('/'), "result must be absolute: {result}");
+    }
+
+    #[tokio::test]
+    async fn canonicalizes_path_with_dotdot() {
+        let os = Os::new().await.unwrap();
+        let result = canonicalizes_path(&os, "/tmp/../tmp").unwrap();
+        assert!(!result.contains(".."), ".. should be resolved: {result}");
+    }
+}
