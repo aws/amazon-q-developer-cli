@@ -369,7 +369,7 @@ impl RootSubcommand {
                     tui_available,
                     "TUI launch decision"
                 );
-                if should_launch_tui.should_launch() && tui_available {
+                if should_launch_tui.should_launch() && is_tui_supported && tui_available {
                     crate::embedded_tui::launch_v2(os).await
                 } else {
                     if should_launch_tui.should_launch() && !tui_available {
