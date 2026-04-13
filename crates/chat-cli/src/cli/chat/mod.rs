@@ -225,10 +225,6 @@ use crate::constants::{
 };
 use crate::database::settings::Setting;
 use crate::os::Os;
-use crate::rollout::{
-    Feature,
-    Rollout,
-};
 use crate::telemetry::core::{
     AgentConfigInitArgs,
     ChatAddedMessageParams,
@@ -386,17 +382,8 @@ impl ChatArgs {
             };
         }
 
-        if Rollout::is_enabled(Feature::Tui) {
-            return TuiShouldLaunchResult::Rollout;
-        }
-
-        // Windows always defaults to TUI (no autocomplete wrapper to handle this)
-        #[cfg(target_os = "windows")]
-        return TuiShouldLaunchResult::Default;
-
-        // Default: legacy
-        #[cfg(not(target_os = "windows"))]
-        TuiShouldLaunchResult::No
+        // Default to TUI for all users
+        TuiShouldLaunchResult::Default
     }
 
     pub async fn execute(mut self, os: &mut Os) -> Result<ExitCode> {
