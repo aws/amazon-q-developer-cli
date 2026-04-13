@@ -12,6 +12,26 @@
     },
     {
       "type": "release",
+      "date": "2026-04-13",
+      "version": "2.0.0",
+      "title": "Version 2.0.0",
+      "changes": [
+        {
+          "type": "added",
+          "description": "Windows support. Native install with full access to Kiro agents directly in your terminal."
+        },
+        {
+          "type": "added",
+          "description": "Headless mode. Run Kiro CLI programmatically with an API key — full access to all tools and agents, now scriptable. Get your access key from https://kiro.dev/"
+        },
+        {
+          "type": "changed",
+          "description": "UX refresh (GA). New UX is now the default with subagent monitoring (ctrl+g), real-time task lists, and stability fixes. Switch back anytime with kiro-cli --classic, or let us know /feedback."
+        }
+      ]
+    },
+    {
+      "type": "release",
       "date": "2026-04-11",
       "version": "1.29.8",
       "title": "Version 1.29.8",
