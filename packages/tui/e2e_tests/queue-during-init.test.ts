@@ -33,8 +33,13 @@ describe('Queue input during initialization', () => {
     await testCase.sleepMs(50);
     await testCase.sendKeys('\r');
 
-    // Now wait for init to complete
-    await testCase.waitForText('ask a question', 15000);
+    // Wait for init to complete — on slower machines (CI), the queued
+    // message may already be processing by the time we check, so the
+    // placeholder never appears. Accept either state.
+    await Promise.race([
+      testCase.waitForText('ask a question', 15000),
+      testCase.waitForText('Thinking', 15000),
+    ]);
 
     // Wait for session to be established
     const sessionId = await testCase.getSessionId(10000);

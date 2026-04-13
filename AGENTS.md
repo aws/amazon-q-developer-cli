@@ -347,6 +347,10 @@ cargo clippy --locked --workspace --color always -- -D warnings
 cargo +nightly fmt
 ```
 
+## GitHub CLI (`gh`)
+
+If the `gh` CLI is installed, use it to interact with GitHub — for example, creating PRs, reviewing PR comments and discussions, and checking GitHub Actions workflow status. Run `gh --version` to verify availability before use.
+
 ## Log Files
 
 **macOS/Linux**: `$TMPDIR/kiro-log/kiro-chat.log` (or `$XDG_RUNTIME_DIR/kiro-log/kiro-chat.log`)
