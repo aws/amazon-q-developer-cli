@@ -17,6 +17,7 @@ use serde::{
     Serialize,
 };
 use tokio::sync::{
+    Mutex,
     mpsc,
     oneshot,
 };
@@ -61,6 +62,8 @@ pub struct TaskExecutor {
 
     hooks_cache: HashMap<Hook, CachedHook>,
 
+    write_mutex: Arc<Mutex<()>>,
+
     sys_provider: Arc<dyn SystemProvider>,
 }
 
@@ -77,6 +80,7 @@ impl TaskExecutor {
             executing_tools: HashMap::new(),
             executing_hooks: HashMap::new(),
             hooks_cache: HashMap::new(),
+            write_mutex: Arc::new(Mutex::new(())),
             sys_provider,
         }
     }
@@ -149,12 +153,22 @@ impl TaskExecutor {
 
         let id_clone = req.id.clone();
         let cancel_token_clone = cancel_token.clone();
+        let is_write = req.tool.is_write_operation();
+        let write_mutex = Arc::clone(&self.write_mutex);
+
         tokio::spawn(async move {
             tokio::select! {
                 _ = cancel_token_clone.cancelled() => {
                     let _ = result_tx.send(ExecutorResult::Tool(ToolExecutorResult::Cancelled { id: id_clone })).await;
                 }
-                result = req.fut => {
+                result = async {
+                    if is_write {
+                        let _guard = write_mutex.lock().await;
+                        req.fut.await
+                    } else {
+                        req.fut.await
+                    }
+                } => {
                     let _ = result_tx.send(ExecutorResult::Tool(ToolExecutorResult::Completed { id: id_clone, result })).await;
                 }
             }

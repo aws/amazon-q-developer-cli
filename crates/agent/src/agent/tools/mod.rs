@@ -283,6 +283,14 @@ impl Tool {
         self.kind.mcp_server_name()
     }
 
+    /// Whether this tool writes to the filesystem and should be serialized.
+    pub fn is_write_operation(&self) -> bool {
+        match &self.kind {
+            ToolKind::BuiltIn(b) => b.is_write_operation(),
+            ToolKind::Mcp(_) => false,
+        }
+    }
+
     /// Returns the tool name if this is an MCP tool
     pub fn mcp_tool_name(&self) -> Option<&str> {
         self.kind.mcp_tool_name()
@@ -476,6 +484,15 @@ impl BuiltInTool {
             BuiltInToolName::Knowledge => generate_tool_spec_from_trait::<Knowledge>(),
             BuiltInToolName::ToolSearch => generate_tool_spec_from_trait::<ToolSearch>(),
             BuiltInToolName::Task => generate_tool_spec_from_trait::<TaskTool>(),
+        }
+    }
+
+    /// Whether this tool writes to the filesystem and should be serialized.
+    pub fn is_write_operation(&self) -> bool {
+        match self {
+            Self::FileWrite(_) => true,
+            Self::Code(c) => c.is_write_operation(),
+            _ => false,
         }
     }
 
