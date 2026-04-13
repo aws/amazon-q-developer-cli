@@ -42,7 +42,8 @@ function startTUI() {
     cwd: resolve(import.meta.dir, ".."),
     env: {
       ...process.env,
-      KIRO_AGENT_PATH: CARGO_BIN
+      KIRO_AGENT_PATH: CARGO_BIN,
+      JSC_numberOfGCMarkers: "1",
     }
   });
 

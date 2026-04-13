@@ -181,6 +181,26 @@ bun test ./e2e_tests/ -t "test name here"  # single test
 bun run build         # production build
 ```
 
+### Running TUI via Rust (V2 launch path)
+
+To test the full Rust → bun launch path without embedding assets, use `KIRO_TEST_TUI_JS_PATH`:
+
+```bash
+# 1. Build the TUI bundle
+cd packages/tui && bun run build && cd ../..
+
+# 2. Launch via Rust using the local bundle (uses system bun, skips embedding)
+KIRO_TEST_TUI_JS_PATH=$(pwd)/packages/tui/dist/tui.js cargo run -p chat_cli --bin chat_cli -- chat --tui
+```
+
+This exercises the same `launch_v2()` code path as production (env var injection, signal handling, etc.) but without needing `BUN_EXECUTABLE_PATH` / `TUI_JS_PATH` build-time embedding.
+
+To verify env vars are correctly injected on the spawned bun process (from another terminal):
+
+```bash
+ps eww $(pgrep -f "bun.*tui") | tr ' ' '\n' | grep JSC
+```
+
 ### Type Generation
 
 TypeScript types in `packages/tui/e2e_tests/types/` are auto-generated from Rust using `typeshare`. Do not manually edit.

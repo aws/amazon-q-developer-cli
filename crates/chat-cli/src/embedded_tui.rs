@@ -82,6 +82,13 @@ pub async fn launch_v2(os: &Os) -> Result<ExitCode> {
         .arg(&asset_paths.tui_js_path)
         .args(&args[1..])
         .env("KIRO_AGENT_PATH", &current_exe)
+        // Limit JSC garbage collector to 1 marker thread. By default JSC
+        // uses up to min(4, core_count) marker threads on Apple Silicon
+        // (see overrideDefaults() and computeNumberOfGCMarkers in Options.cpp).
+        // https://github.com/WebKit/WebKit/blob/4a93a28675f1cacb54b7e280d5d4a2ca3bf7557c/Source/JavaScriptCore/runtime/Options.cpp#L455
+        // Related: https://github.com/anthropics/claude-code/issues/38092
+        // Related: https://github.com/oven-sh/bun/issues/17723
+        .env("JSC_numberOfGCMarkers", "1")
         .kill_on_drop(true)
         .spawn()?;
 
