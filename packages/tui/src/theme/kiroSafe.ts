@@ -32,11 +32,11 @@ export const kiroSafe: Theme = {
     syntax: {
       keyword: { named: 'magenta' },
       built_in: { named: 'cyan' },
-      string: { named: 'green' },
+      string: { named: 'yellow' },
       comment: { named: 'gray' },
       number: { named: 'magentaBright' },
-      literal: { named: 'red' },
-      regexp: { named: 'green' },
+      literal: { named: 'cyanBright' },
+      regexp: { named: 'yellowBright' },
       function: { named: 'blue' },
       class: { named: 'magentaBright' },
       type: { named: 'default' },
@@ -52,14 +52,14 @@ export const kiroSafe: Theme = {
     },
     diff: {
       added: {
-        background: { named: 'default' },
+        background: { named: 'green' },
         bar: { named: 'green' },
-        highlight: { named: 'default' },
+        highlight: { named: 'green' },
       },
       removed: {
-        background: { named: 'default' },
+        background: { named: 'red' },
         bar: { named: 'red' },
-        highlight: { named: 'default' },
+        highlight: { named: 'red' },
       },
       unchanged: {
         bar: { named: 'gray' },
