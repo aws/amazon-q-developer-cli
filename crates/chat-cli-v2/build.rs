@@ -409,7 +409,10 @@ fn embed_bun_and_tui() {
         println!("cargo:rerun-if-changed={path}");
 
         // Copy to OUT_DIR for cross-compilation compatibility
+        // Remove existing file first — the bun binary is often installed read-only,
+        // and std::fs::copy preserves permissions, so overwriting fails on subsequent builds.
         let dest_path = std::path::Path::new(&out_dir).join("bun_embedded");
+        let _ = std::fs::remove_file(&dest_path);
         std::fs::copy(&path, &dest_path).expect("Failed to copy bun executable to OUT_DIR");
 
         println!("cargo:rustc-cfg=bun_executable_path");
@@ -422,6 +425,7 @@ fn embed_bun_and_tui() {
 
         // Copy to OUT_DIR for cross-compilation compatibility
         let dest_path = std::path::Path::new(&out_dir).join("tui_embedded.js");
+        let _ = std::fs::remove_file(&dest_path);
         std::fs::copy(&path, &dest_path).expect("Failed to copy TUI js to OUT_DIR");
 
         println!("cargo:rustc-cfg=tui_js_path");
