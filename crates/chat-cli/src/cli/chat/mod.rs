@@ -466,6 +466,9 @@ impl ChatArgs {
         let conversation_id = uuid::Uuid::new_v4().to_string();
         info!(?conversation_id, "Generated new conversation id");
 
+        // Publish session ID so all child processes inherit it
+        agent::util::consts::env_var::publish_session_id(&conversation_id);
+
         // Check if both .kiro and .amazonq folders exist and show warning
         if let Ok(current_dir) = std::env::current_dir() {
             let kiro_path = current_dir.join(".kiro");
@@ -1299,8 +1302,13 @@ impl ChatSession {
         let mcp_registry_error_type = old.mcp_registry_error_type.take();
         let mcp_disabled_due_to_api_failure = old.mcp_disabled_due_to_api_failure;
 
+        let new_conversation_id = uuid::Uuid::new_v4().to_string();
+
+        // Update KIRO_SESSION_ID to reflect the new interactive session
+        agent::util::consts::env_var::publish_session_id(&new_conversation_id);
+
         self.conversation = ConversationState::new(
-            &uuid::Uuid::new_v4().to_string(),
+            &new_conversation_id,
             agents,
             tool_config,
             tool_manager,

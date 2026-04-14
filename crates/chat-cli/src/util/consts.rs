@@ -163,7 +163,14 @@ pub mod env_var {
         KIRO_NO_AUTO_UPDATE = "KIRO_NO_AUTO_UPDATE",
 
         /// Override the update release URL at runtime
-        KIRO_DESKTOP_RELEASE_URL = "KIRO_DESKTOP_RELEASE_URL"
+        KIRO_DESKTOP_RELEASE_URL = "KIRO_DESKTOP_RELEASE_URL",
+
+        /// The session ID of the current Kiro chat session.
+        ///
+        /// Set on the process environment at session creation so that all child
+        /// processes can detect they are running inside a Kiro agent context and
+        /// correlate activity back to a specific session for telemetry purposes.
+        KIRO_SESSION_ID = "KIRO_SESSION_ID"
     }
 
     /// Default update manifest URL. Set this to the production URL when ready.

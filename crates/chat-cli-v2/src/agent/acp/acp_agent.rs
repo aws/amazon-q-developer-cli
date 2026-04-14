@@ -2988,6 +2988,9 @@ pub async fn execute(
                 async move |request: NewSessionRequest, request_cx, cx: JrConnectionCx<AgentToClient>| {
                     let session_id = SessionId::new(Uuid::new_v4().to_string());
 
+                    // Publish session ID so all child processes inherit it
+                    agent::util::consts::env_var::publish_session_id(&session_id.to_string());
+
                     let config = AcpSessionConfig::new(session_id.to_string(), request.cwd.clone())
                         .mcp_servers(request.mcp_servers);
                     let result = session_tx.start_session(&session_id, config, Some(cx.clone())).await?;
@@ -3020,6 +3023,9 @@ pub async fn execute(
             {
                 let session_tx = session_manager_handle.clone();
                 async move |request: LoadSessionRequest, request_cx, cx: JrConnectionCx<AgentToClient>| {
+                    // Publish session ID so all child processes inherit it
+                    agent::util::consts::env_var::publish_session_id(&request.session_id.to_string());
+
                     // Convert ACP MCP servers to agent configs
                     let config = AcpSessionConfig::new(request.session_id.to_string(), request.cwd.clone())
                         .load(true)

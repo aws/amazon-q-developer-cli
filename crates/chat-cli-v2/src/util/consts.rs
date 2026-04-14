@@ -157,7 +157,14 @@ pub mod env_var {
         CI = "CI",
 
         /// API key for headless/non-interactive authentication
-        KIRO_API_KEY = "KIRO_API_KEY"
+        KIRO_API_KEY = "KIRO_API_KEY",
+
+        /// The session ID of the current Kiro chat session.
+        ///
+        /// Set on the process environment at session creation so that all child
+        /// processes can detect they are running inside a Kiro agent context and
+        /// correlate activity back to a specific session for telemetry purposes.
+        KIRO_SESSION_ID = "KIRO_SESSION_ID"
     }
 }
 
