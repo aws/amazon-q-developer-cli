@@ -1,5 +1,5 @@
 import React from 'react';
-import { Box, Text } from 'ink';
+import { Box, Text } from '../../renderer.js';
 import { useAppStore, MessageRole } from '../../stores/app-store.js';
 import type { MessageType } from '../../stores/app-store.js';
 import { SessionOutput } from '../multi-agent/SessionOutput.js';

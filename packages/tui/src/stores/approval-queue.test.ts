@@ -120,6 +120,32 @@ describe('Approval queue', () => {
     expect(resolved[0].outcome).toBe('cancelled');
     expect(resolved[1].outcome).toBe('cancelled');
   });
+
+  it('marks ALL queued tool messages as finished on cancel', () => {
+    const store = createTestStore();
+    const handler = store.getState().createStreamEventHandler();
+
+    handler(makeToolCallEvent('t1', 'execute_bash', 'git status'));
+    handler(makeToolCallEvent('t2', 'execute_bash', 'git log'));
+    handler(makeToolCallEvent('t3', 'execute_bash', 'git branch'));
+
+    handler(makeApprovalEvent('t1'));
+    handler(makeApprovalEvent('t2'));
+    handler(makeApprovalEvent('t3'));
+
+    store.getState().cancelApproval();
+
+    const toolMsgs = store
+      .getState()
+      .messages.filter((m) => m.role === MessageRole.ToolUse);
+
+    for (const msg of toolMsgs) {
+      if (msg.role === MessageRole.ToolUse) {
+        expect(msg.isFinished).toBe(true);
+        expect(msg.result).toEqual({ status: 'cancelled' });
+      }
+    }
+  });
 });
 
 describe('Tool approval status tracking', () => {

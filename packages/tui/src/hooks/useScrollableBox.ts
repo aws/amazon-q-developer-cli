@@ -1,5 +1,5 @@
 import { useState, useCallback } from 'react';
-import { useMouse } from 'ink';
+import { useMouse } from '../renderer.js';
 
 export function useScrollableBox({
   contentHeight,

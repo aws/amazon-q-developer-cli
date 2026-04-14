@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Box, Text } from 'ink';
+import { Box, Text } from '../../renderer.js';
 import { useKeypress } from '../../hooks/useKeypress';
 import { useTheme } from '../../hooks/useThemeContext';
 

@@ -150,9 +150,12 @@ export function measureText(text: string): { width: number; height: number } {
  */
 export function measureElement(node: any): { width: number; height: number } {
   if (node?.yogaNode) {
-    // Force layout via rootContainer if available and dirty
+    // Only recalculate layout if the yoga tree is dirty.
+    // During streaming, renderTree already calls calculateLayout before
+    // rendering — calling it again from useLayoutEffect/setTimeout is
+    // redundant and was responsible for ~79% of yoga WASM overhead.
     const rc = node.rootContainer;
-    if (rc?.yogaNode) {
+    if (rc?.yogaNode?.isDirty()) {
       const width = process.stdout.columns || 80;
       rc.yogaNode.setWidth(width);
       rc.yogaNode.calculateLayout(width, undefined, 1 /* LTR */);

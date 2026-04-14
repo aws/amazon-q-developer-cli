@@ -1722,17 +1722,9 @@ export const createAppStore = (props: AppStoreProps) => {
         // Cancel any pending approval
         get().cancelApproval();
 
-        // Terminate any active crew sessions so subagents don't keep running
-        if (get().sessions.size > 0) {
-          await get().terminateAllCrewSessions();
-        }
-
-        // Then notify backend — this must complete before a new prompt
-        // can be sent, otherwise the backend rejects with
-        // "Prompt already in progress".
-        await kiro.cancel();
-
-        // Mark any unfinished tool uses as finished with cancelled status.
+        // Mark any unfinished tool uses as finished with cancelled status
+        // immediately — before async calls. This stops spinners and prevents
+        // a leak if kiro.cancel() is slow or throws.
         set((state) => {
           const hasUnfinishedToolCalls = state.messages.some(
             (msg) => msg.role === MessageRole.ToolUse && !msg.isFinished
@@ -1754,6 +1746,16 @@ export const createAppStore = (props: AppStoreProps) => {
 
           return {};
         });
+
+        // Terminate any active crew sessions so subagents don't keep running
+        if (get().sessions.size > 0) {
+          await get().terminateAllCrewSessions();
+        }
+
+        // Then notify backend — this must complete before a new prompt
+        // can be sent, otherwise the backend rejects with
+        // "Prompt already in progress".
+        await kiro.cancel();
 
         // Only show the alert when the queue is empty — if there are
         // queued messages the next one will start immediately and the
@@ -1953,10 +1955,17 @@ export const createAppStore = (props: AppStoreProps) => {
           (a) => a !== pendingApproval
         );
 
-        // Mark the tool call as cancelled
+        // Collect all tool call IDs to cancel (current + queued)
+        const cancelIds = new Set<string>();
+        cancelIds.add(toolCallId);
+        for (const queued of remainingQueue) {
+          cancelIds.add(queued.toolCall.toolCallId);
+        }
+
+        // Mark all cancelled tool calls as finished
         set((state) => ({
           messages: state.messages.map((msg) => {
-            if (msg.role === MessageRole.ToolUse && msg.id === toolCallId) {
+            if (msg.role === MessageRole.ToolUse && cancelIds.has(msg.id)) {
               return {
                 ...msg,
                 isFinished: true,

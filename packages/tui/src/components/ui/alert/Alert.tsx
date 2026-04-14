@@ -1,5 +1,5 @@
 import React, { useEffect } from 'react';
-import { Box } from 'ink';
+import { Box } from '../../../renderer.js';
 import { StatusBar } from '../../chat/status-bar/StatusBar.js';
 import { StatusInfo } from '../status/StatusInfo.js';
 import { useTheme } from '../../../hooks/useThemeContext.js';

@@ -1,4 +1,4 @@
-import React, { useCallback, useMemo, useState, useEffect } from 'react';
+import React, { useCallback, useMemo, useState } from 'react';
 import { Box, Text } from './../../renderer.js';
 import { useRenderMetrics, isDevMode } from '../../hooks/useRenderMetrics.js';
 import { truncateToWidth } from '../../utils/text-width.js';
@@ -276,10 +276,6 @@ export const InlineLayout: React.FC = () => {
   );
 
   const [gitBranch, setGitBranch] = useState(() => getGitBranch());
-
-  useEffect(() => {
-    if (!isProcessing) setGitBranch(getGitBranch());
-  }, [isProcessing]);
 
   // Handle Ctrl+O to toggle tool output expansion
   const announcement = useAppStore((s) => s.announcement);
@@ -632,7 +628,6 @@ export const InlineLayout: React.FC = () => {
         return;
       }
       handleUserInput(value);
-      setGitBranch(getGitBranch());
     },
     [
       editingQueueIndex,

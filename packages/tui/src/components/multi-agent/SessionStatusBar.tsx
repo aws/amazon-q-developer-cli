@@ -1,4 +1,4 @@
-import { Box } from 'ink';
+import { Box } from '../../renderer.js';
 import React from 'react';
 import { Text } from '../ui/text/Text.js';
 import { getAgentColor } from '../../utils/agentColors.js';

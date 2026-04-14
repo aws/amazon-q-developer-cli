@@ -1,5 +1,5 @@
 import React, { useMemo } from 'react';
-import { Box } from 'ink';
+import { Box } from '../../renderer.js';
 import {
   MessageRole,
   type MessageType as StoreMessageType,

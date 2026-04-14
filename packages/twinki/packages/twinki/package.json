@@ -23,6 +23,7 @@
     "chalk": "^5.6.2",
     "diff": "^8.0.3",
     "get-east-asian-width": "^1.2.0",
+    "strip-ansi": "^7.1.0",
     "marked": "^17.0.0",
     "react-reconciler": "^0.33.0",
     "shiki": "^3.23.0",
