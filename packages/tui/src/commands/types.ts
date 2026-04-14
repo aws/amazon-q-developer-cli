@@ -56,7 +56,8 @@ export interface CommandContext {
   setShowMcpPanel: (
     show: boolean,
     servers?: McpServerInfo[],
-    mode?: string
+    mode?: string,
+    registryServers?: McpServerInfo[]
   ) => void;
   /** Show/hide tools panel */
   setShowToolsPanel: (show: boolean, tools?: ToolInfo[]) => void;

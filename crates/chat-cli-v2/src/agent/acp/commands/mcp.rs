@@ -32,7 +32,7 @@ pub async fn execute(ctx: &CommandContext<'_>, args: &McpArgs) -> CommandResult 
         return execute_remove(ctx, &names).await;
     }
     if sub == "list" {
-        return execute_registry_list(ctx, "list").await;
+        return execute_list(ctx).await;
     }
     CommandResult::error(format!(
         "Unknown subcommand: {sub}. Try /mcp, /mcp list, /mcp add, or /mcp remove"
@@ -73,7 +73,60 @@ async fn execute_status(ctx: &CommandContext<'_>) -> CommandResult {
     CommandResult::success_with_data(&message, json!({ "servers": servers_json, "message": message }))
 }
 
-/// `/mcp list`, `/mcp add` (no name), `/mcp remove` (no name) — show registry servers
+/// `/mcp list` — show both configured servers and registry servers
+async fn execute_list(ctx: &CommandContext<'_>) -> CommandResult {
+    let configured = ctx.agent.get_mcp_server_info().await.unwrap_or_default();
+    let configured_json: Vec<serde_json::Value> = configured
+        .iter()
+        .map(|s| {
+            json!({
+                "name": s.name,
+                "status": s.status,
+                "toolCount": s.tool_count,
+            })
+        })
+        .collect();
+
+    let registry = ctx.session_tx.get_registry_data().await;
+    let registry_json: Vec<serde_json::Value> = registry
+        .as_ref()
+        .map(|r| {
+            let configured_names: std::collections::HashSet<_> = configured.iter().map(|s| s.name.as_str()).collect();
+            r.servers
+                .iter()
+                .map(|entry| {
+                    let s = &entry.server;
+                    json!({
+                        "name": s.name,
+                        "version": s.version,
+                        "description": s.description,
+                        "enabled": configured_names.contains(s.name.as_str()),
+                    })
+                })
+                .collect()
+        })
+        .unwrap_or_default();
+
+    let message = format!(
+        "{} configured server{}, {} registry server{}",
+        configured_json.len(),
+        if configured_json.len() == 1 { "" } else { "s" },
+        registry_json.len(),
+        if registry_json.len() == 1 { "" } else { "s" },
+    );
+
+    CommandResult::success_with_data(
+        &message,
+        json!({
+            "servers": configured_json,
+            "registryServers": registry_json,
+            "message": message,
+            "mode": "list",
+        }),
+    )
+}
+
+/// `/mcp add` (no name), `/mcp remove` (no name) — show registry servers
 async fn execute_registry_list(ctx: &CommandContext<'_>, mode: &str) -> CommandResult {
     let registry = ctx.session_tx.get_registry_data().await;
 

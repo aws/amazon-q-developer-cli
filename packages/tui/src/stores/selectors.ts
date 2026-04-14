@@ -124,6 +124,7 @@ export const useUIState = () =>
       usageData: state.usageData,
       showMcpPanel: state.showMcpPanel,
       mcpServers: state.mcpServers,
+      mcpRegistryServers: state.mcpRegistryServers,
       mcpMode: state.mcpMode,
       showToolsPanel: state.showToolsPanel,
       toolsList: state.toolsList,

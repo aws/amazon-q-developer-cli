@@ -192,6 +192,7 @@ export const InlineLayout: React.FC = () => {
     usageData,
     showMcpPanel,
     mcpServers,
+    mcpRegistryServers,
     mcpMode,
     showToolsPanel,
     toolsList,
@@ -815,6 +816,7 @@ export const InlineLayout: React.FC = () => {
             {showMcpPanel && (
               <McpPanel
                 servers={mcpServersWithAuth}
+                registryServers={mcpRegistryServers}
                 initErrors={initErrors}
                 pendingOAuthUrls={pendingOAuthServers}
                 mode={mcpMode}

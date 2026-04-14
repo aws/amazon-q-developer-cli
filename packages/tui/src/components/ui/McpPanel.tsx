@@ -1,5 +1,5 @@
 import React, { useState, useCallback, useMemo } from 'react';
-import { useInput } from '../../renderer.js';
+import { useInput, Box } from '../../renderer.js';
 import { Text } from './text/Text';
 import { Panel } from './panel/index.js';
 import { Table, type Row } from './table/index.js';
@@ -12,6 +12,7 @@ import { copyToSystemClipboard } from '../../commands/effects.js';
 
 interface McpPanelProps {
   servers: McpServerInfo[];
+  registryServers?: McpServerInfo[];
   initErrors?: InitError[];
   pendingOAuthUrls?: Map<string, string>;
   mode: string;
@@ -31,6 +32,7 @@ const GAP = 2;
 
 export const McpPanel: React.FC<McpPanelProps> = ({
   servers,
+  registryServers = [],
   initErrors = [],
   pendingOAuthUrls = new Map(),
   mode,
@@ -257,12 +259,52 @@ export const McpPanel: React.FC<McpPanelProps> = ({
     setCursorIndex(0);
   }, []);
 
+  // Registry table for /mcp list mode
+  const registryNameCol =
+    registryServers.length > 0
+      ? Math.max(
+          registryServers.reduce(
+            (max, s) => Math.max(max, visibleWidth(s.name)),
+            0
+          ),
+          12
+        ) + GAP
+      : nameCol;
+
+  const registryColumns = [
+    { label: 'Name', width: registryNameCol },
+    { label: 'Status', width: 14 + GAP },
+    { label: 'Version', width: 12 + GAP },
+    { label: 'Description' },
+  ];
+
+  const registryRows: Row[] = useMemo(
+    () =>
+      registryServers.map((server) => {
+        const statusText = server.enabled ? '✓ enabled' : '  disabled';
+        const statusClr = server.enabled ? success : dim;
+        return [
+          { text: server.name, color: primary },
+          { text: statusText, color: statusClr },
+          { text: server.version ?? '', color: dim },
+          { text: server.description ?? '', color: dim },
+        ];
+      }),
+    [registryServers, primary, dim, success]
+  );
+
+  const hasConfigured = servers.length > 0;
+  const hasRegistry = registryServers.length > 0;
+  const isListMode = mode === 'list';
+
   const modeLabel =
     mode === 'add' ? 'add' : mode === 'remove' ? 'remove' : 'list';
   const selCount = selected.size + pending.size;
   const title = isRegistryView
     ? `/mcp ${modeLabel} · ${servers.length} server${servers.length === 1 ? '' : 's'}${selCount > 0 ? ` · ${selCount} selected` : ''}`
-    : `/mcp · ${servers.length} server${servers.length === 1 ? '' : 's'}`;
+    : isListMode
+      ? `/mcp list · ${servers.length} configured${hasRegistry ? `, ${registryServers.length} registry` : ''}`
+      : `/mcp · ${servers.length} server${servers.length === 1 ? '' : 's'}`;
 
   const emptyMessage = isRegistryView
     ? 'No servers in MCP registry'
@@ -291,8 +333,23 @@ export const McpPanel: React.FC<McpPanelProps> = ({
       }
       footerExtra={footerExtra}
     >
-      {servers.length === 0 ? (
+      {!hasConfigured && !hasRegistry ? (
         <Text>{dim(emptyMessage)}</Text>
+      ) : isListMode && !isRegistryView ? (
+        <Box flexDirection="column">
+          {hasConfigured && (
+            <Box flexDirection="column">
+              <Text>{primary.bold('Configured Servers')}</Text>
+              <Table columns={columns} rows={rows} />
+            </Box>
+          )}
+          {hasRegistry && (
+            <Box flexDirection="column" marginTop={hasConfigured ? 1 : 0}>
+              <Text>{primary.bold('Registry Servers')}</Text>
+              <Table columns={registryColumns} rows={registryRows} />
+            </Box>
+          )}
+        </Box>
       ) : (
         <Table
           columns={columns}
