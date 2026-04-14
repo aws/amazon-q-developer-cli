@@ -27,6 +27,7 @@ export interface CommandMeta {
   inputType?: 'text' | 'selection' | 'multiselect' | 'panel';
   searchable?: boolean;
   subcommands?: string[];
+  subcommandHints?: Record<string, string>;
   hint?: string;
   local?: boolean;
   type?: 'action' | 'prompt';

@@ -63,7 +63,7 @@ export const CommandMenu: React.FC = () => {
   // File search state
   const [fileResults, setFileResults] = useState<string[]>([]);
 
-  // Add at the top of the component, after the existing useState/useCallback hooks:
+  // Track the currently highlighted item in the slash command dropdown
   const highlightedRef = useRef<{ label: string; description: string } | null>(
     null
   );
@@ -75,11 +75,37 @@ export const CommandMenu: React.FC = () => {
     []
   );
 
+  // Show the sub-command dropdown for a command that has sub-commands
+  const showSubcommandMenu = useCallback(
+    (cmd: SlashCommand) => {
+      const subs = cmd.meta?.subcommands;
+      const subHints = cmd.meta?.subcommandHints ?? {};
+      if (!subs || subs.length === 0) return false;
+
+      const subOptions = subs.map((sub) => ({
+        value: sub,
+        label: sub,
+        description: `${cmd.name} ${sub}`,
+        hint: subHints[sub] ?? undefined,
+      }));
+      setActiveCommand({ command: cmd, options: subOptions });
+      setCommandInput(`${cmd.name} `);
+      setPromptHint(null);
+      return true;
+    },
+    [setActiveCommand, setCommandInput, setPromptHint]
+  );
+
   const handleTabComplete = useCallback(() => {
     if (highlightedRef.current) {
       const fullCommand = `/${highlightedRef.current.label}`;
       const cmd = slashCommands.find((c) => c.name === fullCommand);
       const isPrompt = cmd?.meta?.type === 'prompt';
+
+      // If the command has sub-commands, show them in a dropdown
+      if (cmd && showSubcommandMenu(cmd)) {
+        return;
+      }
 
       // Fill the command into input with trailing space
       setCommandInput(`${fullCommand} `);
@@ -95,7 +121,7 @@ export const CommandMenu: React.FC = () => {
         setPromptHint(null);
       }
     }
-  }, [slashCommands, setCommandInput, setPromptHint]);
+  }, [slashCommands, setCommandInput, setPromptHint, showSubcommandMenu]);
 
   // Extract @query from input
   const atQuery = useMemo(() => {
@@ -215,6 +241,7 @@ export const CommandMenu: React.FC = () => {
     () =>
       filteredCommands.map((cmd) => {
         const isPrompt = cmd.meta?.type === 'prompt';
+        const subs = cmd.meta?.subcommands;
         const argHints =
           isPrompt && cmd.meta?.arguments
             ? cmd.meta.arguments
@@ -225,10 +252,12 @@ export const CommandMenu: React.FC = () => {
             : '';
 
         const typeLabel = isPrompt ? ' (prompt)' : '';
+        const subHint =
+          subs && subs.length > 0 ? ' (tab for sub-commands)' : '';
 
         return {
           label: cmd.name.slice(1),
-          description: `${cmd.description}${typeLabel}${argHints ? ` ${argHints}` : ''}`,
+          description: `${cmd.description}${typeLabel}${argHints ? ` ${argHints}` : ''}${subHint}`,
         };
       }),
     [filteredCommands]
@@ -470,8 +499,16 @@ export const CommandMenu: React.FC = () => {
     }
 
     const isSelection = activeCommand.command.meta?.inputType === 'selection';
+    const subs = activeCommand.command.meta?.subcommands;
+    const isSubcommandMenu =
+      subs &&
+      subs.length > 0 &&
+      activeCommand.options.length === subs.length &&
+      activeCommand.options.every((o) => subs.includes(o.value));
     const isSearchable =
-      isSelection && activeCommand.command.meta?.searchable !== false;
+      !isSubcommandMenu &&
+      isSelection &&
+      activeCommand.command.meta?.searchable !== false;
 
     return (
       <Box flexDirection="column">
@@ -487,7 +524,15 @@ export const CommandMenu: React.FC = () => {
               (o) => o.label === item.label
             );
             if (opt) {
-              if (opt.hint) {
+              if (isSubcommandMenu) {
+                // Sub-command selected: always prefill with the full command path.
+                // If the sub-command needs args (has hint), show the hint.
+                // If it doesn't need args, prefill and let the user press Enter to submit.
+                const prefix = `${activeCommand.command.name} ${opt.label}`;
+                setCommandInput(opt.hint ? `${prefix} ` : prefix);
+                setPromptHint(opt.hint ?? null);
+                setActiveCommand(null);
+              } else if (opt.hint) {
                 setCommandInput(`${opt.label} `);
                 setPromptHint(opt.hint);
                 setActiveCommand(null);
@@ -507,12 +552,14 @@ export const CommandMenu: React.FC = () => {
           showSelectedIndicator={true}
           searchable={isSearchable}
           searchLabel={
-            isSearchable
-              ? `Select ${activeCommand.command.name.slice(1)}`
-              : undefined
+            isSubcommandMenu
+              ? undefined
+              : isSearchable
+                ? `Select ${activeCommand.command.name.slice(1)}`
+                : undefined
           }
           searchPlaceholder={isSearchable ? 'type to search' : undefined}
-          showFooterHints={isSelection}
+          showFooterHints={isSelection || isSubcommandMenu}
           preserveLabelColors={
             activeCommand.command.meta?.preserveLabelColors === true
           }

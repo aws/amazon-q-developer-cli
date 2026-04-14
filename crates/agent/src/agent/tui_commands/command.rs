@@ -333,9 +333,28 @@ impl TuiCommand {
         }
     }
 
+    /// Argument hints for subcommands that require additional input.
+    /// Returns (subcommand_name, hint_text) pairs. Subcommands not listed here
+    /// execute immediately when selected.
+    pub fn subcommand_hints(&self) -> Vec<(&'static str, &'static str)> {
+        match self {
+            TuiCommand::Agent(_) => vec![("create", "<name>"), ("edit", "[name]"), ("swap", "<name>")],
+            TuiCommand::Context(_) => vec![("add", "[--force] <path>..."), ("remove", "<path>...")],
+            TuiCommand::Knowledge(_) => vec![
+                ("add", "<name> <path>"),
+                ("remove", "<name|path>"),
+                ("update", "<path>"),
+            ],
+            TuiCommand::Tools(_) => vec![("trust", "<name>"), ("untrust", "<name>")],
+            TuiCommand::Chat(_) => vec![("save", "[--force] <path>"), ("load", "<path>"), ("new", "[prompt]")],
+            TuiCommand::Mcp(_) => vec![("add", "<server-name>"), ("remove", "<server-name>")],
+            _ => vec![],
+        }
+    }
+
     /// Metadata for TUI (options method, input type, etc.)
     pub fn meta(&self) -> Option<serde_json::Map<String, serde_json::Value>> {
-        match self {
+        let mut meta = match self {
             TuiCommand::Help(_) => {
                 let mut meta = serde_json::Map::new();
                 meta.insert("inputType".into(), "panel".into());
@@ -424,7 +443,30 @@ impl TuiCommand {
                 Some(meta)
             },
             TuiCommand::Guide(_) => None,
+        };
+
+        // Attach subcommands to meta so the TUI can offer a sub-command dropdown
+        let subs = self.subcommands();
+        if !subs.is_empty() {
+            let arr: Vec<serde_json::Value> = subs
+                .into_iter()
+                .map(|s| serde_json::Value::String(s.to_string()))
+                .collect();
+            let meta = meta.get_or_insert_with(serde_json::Map::new);
+            meta.insert("subcommands".into(), serde_json::Value::Array(arr));
+
+            // Include arg hints so the TUI knows which sub-commands need more input
+            let hints = self.subcommand_hints();
+            if !hints.is_empty() {
+                let hints_map: serde_json::Map<String, serde_json::Value> = hints
+                    .into_iter()
+                    .map(|(name, hint)| (name.to_string(), serde_json::Value::String(hint.to_string())))
+                    .collect();
+                meta.insert("subcommandHints".into(), serde_json::Value::Object(hints_map));
+            }
         }
+
+        meta
     }
 
     /// All available commands with default args (for advertising to TUI)
@@ -761,5 +803,219 @@ mod tests {
             all.iter().any(|c| matches!(c, TuiCommand::Hooks(_))),
             "Hooks should be in all_commands()"
         );
+    }
+
+    #[test]
+    fn test_parse_model_no_args() {
+        let cmd = TuiCommand::parse("model", "").unwrap();
+        assert!(matches!(cmd, TuiCommand::Model(ModelArgs { model_name: None })));
+    }
+
+    #[test]
+    fn test_parse_model_switch() {
+        let cmd = TuiCommand::parse("model", "claude-sonnet-4").unwrap();
+        match cmd {
+            TuiCommand::Model(args) => {
+                assert_eq!(args.model_name, Some("claude-sonnet-4".to_string()));
+            },
+            _ => panic!("expected Model"),
+        }
+    }
+
+    #[test]
+    fn test_parse_model_set_current_as_default() {
+        let cmd = TuiCommand::parse("model", "set-current-as-default").unwrap();
+        match cmd {
+            TuiCommand::Model(args) => {
+                assert_eq!(args.model_name, Some("set-current-as-default".to_string()));
+            },
+            _ => panic!("expected Model"),
+        }
+    }
+
+    #[test]
+    fn test_model_subcommands_empty() {
+        let cmd = TuiCommand::Model(ModelArgs::default());
+        let subs = cmd.subcommands();
+        assert!(subs.is_empty(), "model should have no subcommands");
+    }
+
+    #[test]
+    fn test_meta_includes_subcommands_for_agent() {
+        let cmd = TuiCommand::Agent(AgentArgs::default());
+        let meta = cmd.meta().expect("agent should have meta");
+        let subs = meta.get("subcommands").expect("agent meta should have subcommands");
+        let arr = subs.as_array().expect("subcommands should be an array");
+        let values: Vec<&str> = arr.iter().map(|v| v.as_str().unwrap()).collect();
+        assert!(values.contains(&"create"));
+        assert!(values.contains(&"edit"));
+        assert!(values.contains(&"swap"));
+    }
+
+    #[test]
+    fn test_meta_includes_subcommands_for_context() {
+        let cmd = TuiCommand::Context(ContextArgs::default());
+        let meta = cmd.meta().expect("context should have meta");
+        let subs = meta.get("subcommands").expect("context meta should have subcommands");
+        let arr = subs.as_array().expect("subcommands should be an array");
+        let values: Vec<&str> = arr.iter().map(|v| v.as_str().unwrap()).collect();
+        assert!(values.contains(&"add"));
+        assert!(values.contains(&"remove"));
+        assert!(values.contains(&"clear"));
+    }
+
+    #[test]
+    fn test_meta_includes_subcommands_for_chat() {
+        let cmd = TuiCommand::Chat(ChatArgs::default());
+        let meta = cmd.meta().expect("chat should have meta");
+        let subs = meta.get("subcommands").expect("chat meta should have subcommands");
+        let arr = subs.as_array().expect("subcommands should be an array");
+        let values: Vec<&str> = arr.iter().map(|v| v.as_str().unwrap()).collect();
+        assert!(values.contains(&"save"));
+        assert!(values.contains(&"load"));
+        assert!(values.contains(&"new"));
+    }
+
+    #[test]
+    fn test_meta_excludes_subcommands_for_commands_without_them() {
+        let cmd = TuiCommand::Hooks(HooksArgs::default());
+        let meta = cmd.meta().expect("hooks should have meta");
+        assert!(
+            meta.get("subcommands").is_none(),
+            "hooks should not have subcommands in meta"
+        );
+
+        let cmd = TuiCommand::Help(HelpArgs::default());
+        let meta = cmd.meta().expect("help should have meta");
+        assert!(
+            meta.get("subcommands").is_none(),
+            "help should not have subcommands in meta"
+        );
+    }
+
+    #[test]
+    fn test_meta_no_subcommands_for_commands_with_no_meta() {
+        // Commands that return None from meta() and have no subcommands should stay None
+        let cmd = TuiCommand::Clear(ClearArgs::default());
+        assert!(cmd.subcommands().is_empty());
+        assert!(cmd.meta().is_none(), "clear should have no meta");
+
+        let cmd = TuiCommand::Compact(CompactArgs::default());
+        assert!(cmd.subcommands().is_empty());
+        assert!(cmd.meta().is_none(), "compact should have no meta");
+    }
+
+    #[test]
+    fn test_meta_subcommands_match_subcommands_method() {
+        // For every command, meta subcommands should exactly match subcommands()
+        for cmd in TuiCommand::all_commands() {
+            let subs = cmd.subcommands();
+            let meta = cmd.meta();
+            if subs.is_empty() {
+                // Should not have subcommands key in meta
+                if let Some(ref m) = meta {
+                    assert!(
+                        m.get("subcommands").is_none(),
+                        "{} has empty subcommands() but meta contains subcommands key",
+                        cmd.name()
+                    );
+                }
+            } else {
+                // Should have subcommands key in meta matching exactly
+                let m = meta.unwrap_or_else(|| panic!("{} has subcommands but no meta", cmd.name()));
+                let arr = m
+                    .get("subcommands")
+                    .unwrap_or_else(|| panic!("{} meta missing subcommands key", cmd.name()))
+                    .as_array()
+                    .unwrap();
+                let meta_subs: Vec<&str> = arr.iter().map(|v| v.as_str().unwrap()).collect();
+                assert_eq!(
+                    meta_subs,
+                    subs,
+                    "{} meta subcommands don't match subcommands()",
+                    cmd.name()
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn test_subcommand_hints_for_agent() {
+        let cmd = TuiCommand::Agent(AgentArgs::default());
+        let hints = cmd.subcommand_hints();
+        assert!(hints.contains(&("create", "<name>")));
+        assert!(hints.contains(&("edit", "[name]")));
+        assert!(hints.contains(&("swap", "<name>")));
+    }
+
+    #[test]
+    fn test_subcommand_hints_for_context() {
+        let cmd = TuiCommand::Context(ContextArgs::default());
+        let hints = cmd.subcommand_hints();
+        // "add" and "remove" need args, "clear" does not
+        assert!(hints.iter().any(|(name, _)| *name == "add"));
+        assert!(hints.iter().any(|(name, _)| *name == "remove"));
+        assert!(
+            !hints.iter().any(|(name, _)| *name == "clear"),
+            "clear should not have a hint"
+        );
+    }
+
+    #[test]
+    fn test_subcommand_hints_for_tools() {
+        let cmd = TuiCommand::Tools(ToolsArgs::default());
+        let hints = cmd.subcommand_hints();
+        // "trust" and "untrust" need args, "trust-all" and "reset" do not
+        assert!(hints.iter().any(|(name, _)| *name == "trust"));
+        assert!(hints.iter().any(|(name, _)| *name == "untrust"));
+        assert!(
+            !hints.iter().any(|(name, _)| *name == "trust-all"),
+            "trust-all should not have a hint"
+        );
+        assert!(
+            !hints.iter().any(|(name, _)| *name == "reset"),
+            "reset should not have a hint"
+        );
+    }
+
+    #[test]
+    fn test_meta_includes_subcommand_hints() {
+        let cmd = TuiCommand::Agent(AgentArgs::default());
+        let meta = cmd.meta().expect("agent should have meta");
+        let hints = meta
+            .get("subcommandHints")
+            .expect("agent meta should have subcommandHints");
+        let obj = hints.as_object().expect("subcommandHints should be an object");
+        assert_eq!(obj.get("create").unwrap().as_str().unwrap(), "<name>");
+        assert_eq!(obj.get("swap").unwrap().as_str().unwrap(), "<name>");
+    }
+
+    #[test]
+    fn test_meta_no_subcommand_hints_when_none_needed() {
+        // /code has subcommands but none need args
+        let cmd = TuiCommand::Code(CodeArgs::default());
+        let meta = cmd.meta().expect("code should have meta");
+        assert!(meta.get("subcommands").is_some(), "code should have subcommands");
+        assert!(
+            meta.get("subcommandHints").is_none(),
+            "code should not have subcommandHints since no sub-commands need args"
+        );
+    }
+
+    #[test]
+    fn test_subcommand_hints_only_for_subcommands_that_exist() {
+        // Every hint key should be a valid subcommand
+        for cmd in TuiCommand::all_commands() {
+            let subs = cmd.subcommands();
+            let hints = cmd.subcommand_hints();
+            for (hint_name, _) in &hints {
+                assert!(
+                    subs.contains(hint_name),
+                    "{}: subcommand_hints contains '{}' which is not in subcommands()",
+                    cmd.name(),
+                    hint_name
+                );
+            }
+        }
     }
 }
