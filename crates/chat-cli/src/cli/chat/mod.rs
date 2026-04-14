@@ -356,6 +356,11 @@ impl ChatArgs {
             return TuiShouldLaunchResult::No;
         }
 
+        // Piped/heredoc stdin — TUI requires an interactive terminal
+        if !std::io::stdin().is_terminal() {
+            return TuiShouldLaunchResult::No;
+        }
+
         // CLI flags take highest precedence
         if self.tui {
             return TuiShouldLaunchResult::CliArg;
