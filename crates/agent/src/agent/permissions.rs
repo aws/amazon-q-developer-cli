@@ -482,6 +482,23 @@ fn evaluate_permission_for_shell_command(
 }
 
 /// Evaluate permission for AWS commands using glob patterns.
+/// Normalizes AWS service entries for glob matching against "service:operation" keys.
+/// Bare service names like "dynamodb" are expanded to "dynamodb:*" so they match
+/// "dynamodb:put-item". Entries already containing ':' or '*' are left unchanged,
+/// preserving support for fine-grained patterns like "s3:get-*".
+fn normalize_aws_service_patterns(entries: &[String]) -> Vec<String> {
+    entries
+        .iter()
+        .map(|e| {
+            if e.contains(':') || e.contains('*') {
+                e.clone()
+            } else {
+                format!("{e}:*")
+            }
+        })
+        .collect()
+}
+
 fn evaluate_permission_for_aws_command(
     allowed_commands: &[String],
     denied_commands: &[String],
@@ -489,8 +506,10 @@ fn evaluate_permission_for_aws_command(
     is_allowed: bool,
     auto_allow_readonly: bool,
 ) -> Result<PermissionEvalResult, UtilError> {
-    let allow = create_globset(allowed_commands.iter());
-    let deny = create_globset(denied_commands.iter());
+    let normalized_allow = normalize_aws_service_patterns(allowed_commands);
+    let normalized_deny = normalize_aws_service_patterns(denied_commands);
+    let allow = create_globset(normalized_allow.iter());
+    let deny = create_globset(normalized_deny.iter());
 
     let (Ok((_, allow_set)), Ok((deny_items, deny_set))) = (allow, deny) else {
         return Ok(PermissionEvalResult::ask());
@@ -1297,6 +1316,35 @@ mod tests {
         // Path-level deny should take precedence over tool-level trust
         let result = evaluate_tool_permission(&permissions, &allowed_tools, &settings, &fs_read_tool, &provider);
         assert!(matches!(result, Ok(PermissionEvalResult::Deny { .. })));
+    }
+
+    #[test]
+    fn test_normalize_aws_service_patterns() {
+        // Bare service name gets ":*" appended
+        assert_eq!(normalize_aws_service_patterns(&["dynamodb".into()]), vec!["dynamodb:*"]);
+        // Already has colon — left unchanged
+        assert_eq!(normalize_aws_service_patterns(&["s3:get-*".into()]), vec!["s3:get-*"]);
+        // Already has wildcard — left unchanged
+        assert_eq!(normalize_aws_service_patterns(&["s3*".into()]), vec!["s3*"]);
+    }
+
+    #[test]
+    fn test_aws_bare_service_name_allows_all_operations() {
+        // "dynamodb" in allowedServices should allow "dynamodb:create-table"
+        let result =
+            evaluate_permission_for_aws_command(&["dynamodb".into()], &[], "dynamodb:create-table", false, false)
+                .unwrap();
+        assert!(matches!(result, PermissionEvalResult::Allow));
+
+        // "dynamodb" in deniedServices should deny "dynamodb:put-item"
+        let result =
+            evaluate_permission_for_aws_command(&[], &["dynamodb".into()], "dynamodb:put-item", false, false).unwrap();
+        assert!(matches!(result, PermissionEvalResult::Deny { .. }));
+
+        // Explicit pattern still works
+        let result =
+            evaluate_permission_for_aws_command(&["s3:get-*".into()], &[], "s3:get-object", false, false).unwrap();
+        assert!(matches!(result, PermissionEvalResult::Allow));
     }
 
     #[test]
