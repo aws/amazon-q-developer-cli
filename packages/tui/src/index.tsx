@@ -28,6 +28,7 @@ import {
   DISABLE_BRACKETED_PASTE,
 } from './utils/terminal-sequences';
 import { normalizeAtPrompt } from './utils/normalize-at-prompt';
+import { isTrustGateAccepted } from './utils/trust-gate-state';
 
 const cleanup = () => {
   try {
@@ -440,6 +441,11 @@ const startApp = async () => {
 
   // In non-interactive mode, auto-accept trust-all-tools (no user to interact with the gate)
   if (cliArgs.noInteractive && cliArgs.trustAllTools) {
+    appStore.getState().confirmTrustAllTools();
+  }
+
+  // Skip the trust-all-tools gate if the user previously chose "don't ask again"
+  if (cliArgs.trustAllTools && isTrustGateAccepted()) {
     appStore.getState().confirmTrustAllTools();
   }
 

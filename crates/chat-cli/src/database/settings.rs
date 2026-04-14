@@ -149,6 +149,13 @@ pub enum Setting {
     DisableAutoupdates,
     #[strum(message = "Show hook execution status messages (boolean, default: true)")]
     HooksShowStatus,
+    #[strum(message = "Always show full tool output inline without truncation (boolean)")]
+    ChatAutoExpandToolOutput,
+    #[strum(
+        message = "Skip the trust-all-tools confirmation gate on startup (boolean)",
+        props(scope = "global_only")
+    )]
+    ChatDisableTrustAllConfirmation,
 }
 
 impl Setting {
@@ -201,6 +208,8 @@ impl Setting {
                 | Self::ChatDisableGranularTrust
                 // Hooks
                 | Self::HooksShowStatus
+                // Tool output display
+                | Self::ChatAutoExpandToolOutput
         )
     }
 }
@@ -260,6 +269,8 @@ impl AsRef<str> for Setting {
             Self::ChatDisableGranularTrust => "chat.disableGranularTrust",
             Self::DisableAutoupdates => "app.disableAutoupdates",
             Self::HooksShowStatus => "hooks.showStatus",
+            Self::ChatAutoExpandToolOutput => "chat.autoExpandToolOutput",
+            Self::ChatDisableTrustAllConfirmation => "chat.disableTrustAllConfirmation",
         }
     }
 }
@@ -325,6 +336,8 @@ impl TryFrom<&str> for Setting {
             "chat.disableGranularTrust" => Ok(Self::ChatDisableGranularTrust),
             "app.disableAutoupdates" => Ok(Self::DisableAutoupdates),
             "hooks.showStatus" => Ok(Self::HooksShowStatus),
+            "chat.autoExpandToolOutput" => Ok(Self::ChatAutoExpandToolOutput),
+            "chat.disableTrustAllConfirmation" => Ok(Self::ChatDisableTrustAllConfirmation),
             _ => Err(DatabaseError::InvalidSetting(value.to_string())),
         }
     }

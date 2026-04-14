@@ -14,6 +14,7 @@ import {
   CLEAR_SCREEN,
 } from '../../utils/terminal-sequences';
 import { copyToSystemClipboard } from '../../commands/effects.js';
+import { saveTrustGateAccepted } from '../../utils/trust-gate-state.js';
 
 /**
  * Suspends the process by restoring terminal state and sending SIGTSTP
@@ -182,6 +183,10 @@ export const AppContainer: React.FC = () => {
     return (
       <TrustAllToolsGate
         onAccept={confirmTrustAllTools}
+        onAcceptAlways={() => {
+          saveTrustGateAccepted();
+          confirmTrustAllTools();
+        }}
         onExit={() => {
           kiro.close();
           onExit?.();

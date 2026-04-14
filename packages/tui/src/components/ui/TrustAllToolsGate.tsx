@@ -8,16 +8,19 @@ import { Divider } from './divider/Divider.js';
 
 interface TrustAllToolsGateProps {
   onAccept: () => void;
+  onAcceptAlways: () => void;
   onExit: () => void;
 }
 
 const MENU_ITEMS: MenuItem[] = [
   { label: 'No, exit', description: '' },
   { label: 'Yes, I accept', description: '' },
+  { label: "Yes, and don't ask again", description: '' },
 ];
 
 export const TrustAllToolsGate: React.FC<TrustAllToolsGateProps> = ({
   onAccept,
+  onAcceptAlways,
   onExit,
 }) => {
   const { getColor } = useTheme();
@@ -27,6 +30,8 @@ export const TrustAllToolsGate: React.FC<TrustAllToolsGateProps> = ({
   const handleSelect = (item: MenuItem) => {
     if (item.label === 'No, exit') {
       onExit();
+    } else if (item.label === "Yes, and don't ask again") {
+      onAcceptAlways();
     } else {
       onAccept();
     }
@@ -75,7 +80,7 @@ export const TrustAllToolsGate: React.FC<TrustAllToolsGateProps> = ({
           onEscape={onExit}
           showSelectedIndicator={true}
           showFooterHints={true}
-          visibleItems={2}
+          visibleItems={3}
         />
       </Box>
     </Box>
