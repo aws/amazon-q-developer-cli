@@ -21,6 +21,7 @@ interface ContextFileItem {
   tokens: number;
   matched: boolean;
   percent: number;
+  autoIncluded?: boolean;
 }
 
 interface CategoryBreakdown {

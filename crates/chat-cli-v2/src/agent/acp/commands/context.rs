@@ -11,6 +11,7 @@ use agent::tui_commands::{
 };
 use agent::types::AgentSnapshot;
 use agent::util::steering::{
+    extract_yaml_frontmatter,
     is_steering_file,
     should_include_steering_file,
 };
@@ -220,6 +221,11 @@ pub struct BreakdownItem {
     tokens: usize,
     matched: bool,
     percent: f32,
+    /// When true, only a frontmatter summary (name + description) is sent to the
+    /// model instead of the full file content. The TUI can use this to show an
+    /// indicator like "(auto)" vs "(active)" for skill files.
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    auto_included: bool,
 }
 
 fn calculate_context_breakdown(
@@ -395,7 +401,11 @@ fn calculate_context_files_tokens(snapshot: &AgentSnapshot) -> (usize, Vec<Break
     for r in resources {
         let path_str = r.as_ref();
         let is_session = snapshot.session_resource_paths.contains(path_str);
-        let path = path_str.strip_prefix("file://").unwrap_or(path_str);
+        let is_skill = path_str.starts_with("skill://");
+        let path = path_str
+            .strip_prefix("file://")
+            .or_else(|| path_str.strip_prefix("skill://"))
+            .unwrap_or(path_str);
 
         // Expand ~ in paths
         let expanded_path = if path.starts_with('~') {
@@ -415,13 +425,14 @@ fn calculate_context_files_tokens(snapshot: &AgentSnapshot) -> (usize, Vec<Break
                     for file_path in entries.flatten() {
                         if file_path.is_file() {
                             let file_path_str = file_path.to_string_lossy().to_string();
-                            let (tokens, matched) = calculate_file_tokens(&file_path_str);
+                            let (tokens, matched, auto_included) = calculate_file_tokens(&file_path_str, is_skill);
                             if matched {
                                 let item = BreakdownItem {
                                     name: file_path_str,
                                     tokens,
                                     matched,
                                     percent: 0.0,
+                                    auto_included,
                                 };
                                 if is_session {
                                     session_total += tokens;
@@ -441,6 +452,7 @@ fn calculate_context_files_tokens(snapshot: &AgentSnapshot) -> (usize, Vec<Break
                         tokens: 0,
                         matched: false,
                         percent: 0.0,
+                        auto_included: false,
                     };
                     if is_session {
                         session_items.push(item);
@@ -451,12 +463,13 @@ fn calculate_context_files_tokens(snapshot: &AgentSnapshot) -> (usize, Vec<Break
             }
         } else {
             // Regular file path
-            let (tokens, matched) = calculate_file_tokens(&expanded_path);
+            let (tokens, matched, auto_included) = calculate_file_tokens(&expanded_path, is_skill);
             let item = BreakdownItem {
                 name: expanded_path,
                 tokens,
                 matched,
                 percent: 0.0,
+                auto_included,
             };
             if is_session {
                 session_total += tokens;
@@ -470,21 +483,55 @@ fn calculate_context_files_tokens(snapshot: &AgentSnapshot) -> (usize, Vec<Break
     (agent_total, agent_items, session_total, session_items)
 }
 
-fn calculate_file_tokens(path: &str) -> (usize, bool) {
+/// Returns (tokens, matched, auto_included).
+/// For skill files with frontmatter (name + description), only the summary line
+/// is counted — matching v1 behavior where auto-included skills send a one-liner
+/// to the model instead of the full content.
+fn calculate_file_tokens(path: &str, is_skill: bool) -> (usize, bool, bool) {
     match std::fs::read_to_string(path) {
         Ok(content) => {
             // Apply steering file filtering
             if is_steering_file(path) {
                 if should_include_steering_file(&content) {
-                    (content.len() / 4, true)
+                    (content.len() / 4, true, false)
                 } else {
-                    (0, false) // Excluded by frontmatter
+                    (0, false, false) // Excluded by frontmatter
+                }
+            } else if is_skill {
+                // Skill files use auto-inclusion by default: only a summary
+                // line (name + description + filepath) is sent to the model.
+                // Parse frontmatter to compute the actual token cost.
+                if let Some(yaml) = extract_yaml_frontmatter(&content) {
+                    #[derive(serde::Deserialize)]
+                    struct SkillMeta {
+                        name: Option<String>,
+                        description: Option<String>,
+                        inclusion: Option<String>,
+                    }
+                    if let Ok(meta) = serde_yaml::from_str::<SkillMeta>(&yaml) {
+                        let is_always = meta.inclusion.as_deref() == Some("always");
+                        if is_always {
+                            (content.len() / 4, true, false)
+                        } else {
+                            // Auto: only the summary line is sent
+                            let name = meta.name.as_deref().unwrap_or(path);
+                            let desc = meta.description.as_deref().unwrap_or("No description available");
+                            let summary = format!("{name}: {desc} (file: {path})\n");
+                            (summary.len() / 4, true, true)
+                        }
+                    } else {
+                        // Malformed frontmatter — fallback to full content (same as v1)
+                        (content.len() / 4, true, false)
+                    }
+                } else {
+                    // No frontmatter — fallback to full content (same as v1)
+                    (content.len() / 4, true, false)
                 }
             } else {
-                (content.len() / 4, true)
+                (content.len() / 4, true, false)
             }
         },
-        Err(_) => (0, false),
+        Err(_) => (0, false, false),
     }
 }
 
