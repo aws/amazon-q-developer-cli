@@ -235,6 +235,15 @@ pub enum AcpSessionRequest {
     GetFilePrompts {
         respond_to: oneshot::Sender<Result<HashMap<String, Vec<Prompt>>, String>>,
     },
+    /// Get invocable skills from agent_config resources.
+    GetSkills {
+        respond_to: oneshot::Sender<Result<HashMap<String, Vec<Prompt>>, String>>,
+    },
+    /// Resolve a skill by name, returning its content (frontmatter stripped).
+    ResolveSkill {
+        name: String,
+        respond_to: oneshot::Sender<Result<Option<String>, String>>,
+    },
     /// Get a specific MCP prompt with arguments.
     GetMcpPrompt {
         name: String,
@@ -488,6 +497,36 @@ impl AcpSessionHandle {
         if self
             .tx
             .send(AcpSessionRequest::GetFilePrompts { respond_to })
+            .await
+            .is_err()
+        {
+            return Err("Channel closed".to_string());
+        }
+        rx.await
+            .map_err(|e| format!("Response channel closed: {e}").to_string())?
+    }
+
+    /// Get invocable skills from agent_config resources
+    pub async fn get_skills(&self) -> Result<HashMap<String, Vec<Prompt>>, String> {
+        let (respond_to, rx) = oneshot::channel();
+        if self
+            .tx
+            .send(AcpSessionRequest::GetSkills { respond_to })
+            .await
+            .is_err()
+        {
+            return Err("Channel closed".to_string());
+        }
+        rx.await
+            .map_err(|e| format!("Response channel closed: {e}").to_string())?
+    }
+
+    /// Resolve a skill by name, returning its content (frontmatter stripped)
+    pub async fn resolve_skill(&self, name: String) -> Result<Option<String>, String> {
+        let (respond_to, rx) = oneshot::channel();
+        if self
+            .tx
+            .send(AcpSessionRequest::ResolveSkill { name, respond_to })
             .await
             .is_err()
         {
@@ -1489,7 +1528,9 @@ impl AcpSession {
                                             should_continue_turn: None,
                                         })
                                         .await;
-                                } else if let Some(body) = agent::prompts::resolve_skill(&cwd, &name) {
+                                } else if let Some(body) =
+                                    agent.resolve_skill(name.clone()).await.ok().flatten()
+                                {
                                     // Skill: frontmatter already stripped by resolve_skill()
                                     let template = agent::prompts::PromptTemplateArgs::parse(&body);
                                     let expanded = template.expand(&body, &args);
@@ -1766,6 +1807,22 @@ impl AcpSession {
                     .get_file_prompts()
                     .await
                     .map_err(|e| format!("Failed to get file prompts: {}", e));
+                let _ = respond_to.send(result);
+            },
+            AcpSessionRequest::GetSkills { respond_to } => {
+                let result = self
+                    .agent
+                    .get_skills()
+                    .await
+                    .map_err(|e| format!("Failed to get skills: {}", e));
+                let _ = respond_to.send(result);
+            },
+            AcpSessionRequest::ResolveSkill { name, respond_to } => {
+                let result = self
+                    .agent
+                    .resolve_skill(name)
+                    .await
+                    .map_err(|e| format!("Failed to resolve skill: {}", e));
                 let _ = respond_to.send(result);
             },
             AcpSessionRequest::GetMcpPrompt {
@@ -2312,23 +2369,25 @@ async fn advertise_commands_and_prompts_to_client(
     }
 
     // Add skills as prompts (skills use the same prompt dispatch flow)
-    for (source, skill_prompts) in agent::prompts::discover_skills(&std::env::current_dir().unwrap_or_default()) {
-        for prompt in skill_prompts {
-            prompts.push(super::schema::PromptInfo {
-                name: prompt.name,
-                description: prompt.description,
-                arguments: prompt
-                    .arguments
-                    .unwrap_or_default()
-                    .into_iter()
-                    .map(|arg| super::schema::PromptArgumentInfo {
-                        name: arg.name,
-                        description: arg.description,
-                        required: arg.required.unwrap_or(false),
-                    })
-                    .collect(),
-                server_name: source.clone(),
-            });
+    if let Ok(skill_map) = agent_handle.get_skills().await {
+        for (source, skill_prompts) in skill_map {
+            for prompt in skill_prompts {
+                prompts.push(super::schema::PromptInfo {
+                    name: prompt.name,
+                    description: prompt.description,
+                    arguments: prompt
+                        .arguments
+                        .unwrap_or_default()
+                        .into_iter()
+                        .map(|arg| super::schema::PromptArgumentInfo {
+                            name: arg.name,
+                            description: arg.description,
+                            required: arg.required.unwrap_or(false),
+                        })
+                        .collect(),
+                    server_name: source.clone(),
+                });
+            }
         }
     }
 

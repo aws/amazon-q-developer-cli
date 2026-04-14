@@ -223,6 +223,10 @@ pub enum AgentRequest {
     GetMcpPrompts,
     /// Get file-based prompts from .kiro/prompts/ directories
     GetFilePrompts,
+    /// Get invocable skills from agent_config resources (skill:// URIs)
+    GetSkills,
+    /// Resolve a skill by name, returning its content (frontmatter stripped)
+    ResolveSkill { name: String },
     /// Get a specific MCP prompt with arguments
     GetMcpPrompt {
         name: String,
@@ -525,6 +529,8 @@ pub enum AgentResponse {
     Snapshot(AgentSnapshot),
     McpPrompts(HashMap<String, Vec<Prompt>>),
     FilePrompts(HashMap<String, Vec<Prompt>>),
+    Skills(HashMap<String, Vec<Prompt>>),
+    SkillContent(Option<String>),
     McpPrompt(Vec<serde_json::Value>),
     TerminateAcknowledged,
     SwapComplete,

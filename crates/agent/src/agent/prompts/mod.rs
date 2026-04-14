@@ -12,7 +12,9 @@ pub static PROMPT_NAME_REGEX: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^[
 pub use file_prompts::discover;
 pub use skills::{
     discover as discover_skills,
+    discover_from_resources as discover_skills_from_resources,
     resolve_skill,
+    resolve_skill_from_resources,
 };
 pub use template_args::{
     PromptTemplateArgs,

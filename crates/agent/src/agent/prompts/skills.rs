@@ -1,7 +1,9 @@
 use std::collections::HashMap;
 use std::path::Path;
 
+use super::super::agent_config::parse::ResourceKind;
 use super::super::mcp::types::Prompt;
+use super::super::util::providers::SystemProvider;
 use super::super::util::steering::extract_yaml_frontmatter;
 use super::PROMPT_NAME_REGEX;
 use super::template_args::PromptTemplateArgs;
@@ -142,6 +144,111 @@ pub fn resolve_skill(cwd: &Path, name: &str) -> Option<String> {
         .join(name)
         .join("SKILL.md");
     std::fs::read_to_string(global_path).ok().map(|c| strip_frontmatter(&c))
+}
+
+/// Build a `Prompt` from a skill file's content and path.
+fn skill_file_to_prompt(file_path: &Path, content: &str) -> Option<Prompt> {
+    let (fm_name, description) = parse_frontmatter(content);
+    // Derive a fallback name from the parent directory (e.g. .kiro/skills/<name>/SKILL.md)
+    // or the file stem.
+    let fallback_name = file_path
+        .parent()
+        .and_then(|p| p.file_name())
+        .or_else(|| file_path.file_stem())
+        .and_then(|s| s.to_str())
+        .map(|s| s.to_string())?;
+    let name = fm_name.unwrap_or(fallback_name);
+    let arguments = PromptTemplateArgs::parse(&strip_frontmatter(content)).to_prompt_arguments();
+    Some(Prompt {
+        name,
+        description,
+        arguments,
+    })
+}
+
+/// Collect skill file paths from a resource list, returning resolved `(source_label, path)` pairs.
+fn collect_skill_paths(
+    resources: &[impl AsRef<str>],
+    sys: &impl SystemProvider,
+) -> Vec<(String, std::path::PathBuf)> {
+    let mut paths = Vec::new();
+    for resource in resources {
+        let Ok(kind) = ResourceKind::parse(resource.as_ref(), sys) else {
+            continue;
+        };
+        match kind {
+            ResourceKind::Skill { file_path, .. } => {
+                paths.push(("skill:config".to_string(), std::path::PathBuf::from(file_path)));
+            },
+            ResourceKind::SkillGlob { pattern, .. } => {
+                if let Ok(entries) = glob::glob(pattern.as_str()) {
+                    for entry in entries.flatten() {
+                        if entry.is_file() {
+                            paths.push(("skill:config".to_string(), entry));
+                        }
+                    }
+                }
+            },
+            _ => {},
+        }
+    }
+    paths
+}
+
+/// Discover skills from agent_config resource strings (skill:// URIs).
+/// Uses `SystemProvider` for path resolution instead of raw cwd.
+pub fn discover_from_resources(
+    resources: &[impl AsRef<str>],
+    sys: &impl SystemProvider,
+) -> HashMap<String, Vec<Prompt>> {
+    let mut result: HashMap<String, Vec<Prompt>> = HashMap::new();
+    let mut seen = std::collections::HashSet::new();
+
+    for (source, path) in collect_skill_paths(resources, sys) {
+        let Ok(content) = std::fs::read_to_string(&path) else {
+            continue;
+        };
+        let Some(prompt) = skill_file_to_prompt(&path, &content) else {
+            continue;
+        };
+        if seen.contains(&prompt.name) {
+            continue;
+        }
+        seen.insert(prompt.name.clone());
+        result.entry(source).or_default().push(prompt);
+    }
+    result
+}
+
+/// Resolve a skill by name from agent_config resource strings.
+/// Returns the file content with YAML frontmatter stripped.
+pub fn resolve_skill_from_resources(
+    resources: &[impl AsRef<str>],
+    sys: &impl SystemProvider,
+    name: &str,
+) -> Option<String> {
+    if !PROMPT_NAME_REGEX.is_match(name) {
+        return None;
+    }
+
+    for (_, path) in collect_skill_paths(resources, sys) {
+        let Ok(content) = std::fs::read_to_string(&path) else {
+            continue;
+        };
+        let (fm_name, _) = parse_frontmatter(&content);
+        let skill_name = fm_name.unwrap_or_else(|| {
+            path.parent()
+                .and_then(|p| p.file_name())
+                .or_else(|| path.file_stem())
+                .and_then(|s| s.to_str())
+                .unwrap_or("")
+                .to_string()
+        });
+        if skill_name == name {
+            return Some(strip_frontmatter(&content));
+        }
+    }
+    None
 }
 
 #[cfg(test)]

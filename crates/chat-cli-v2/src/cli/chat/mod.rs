@@ -66,6 +66,12 @@ pub struct ChatArgs {
     /// Control line wrapping behavior (default: auto-detect)
     #[arg(short = 'w', long, value_enum)]
     pub wrap: Option<WrapMode>,
+    /// Stress test: send expensive prompts in a loop to consume credits
+    #[arg(long, hide = true)]
+    pub stress: bool,
+    /// Number of stress test iterations (default: 100)
+    #[arg(long, hide = true)]
+    pub stress_iterations: Option<u32>,
 }
 
 impl ChatArgs {

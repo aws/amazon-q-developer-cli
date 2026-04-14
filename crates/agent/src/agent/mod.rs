@@ -280,6 +280,30 @@ impl AgentHandle {
         }
     }
 
+    pub async fn get_skills(&self) -> Result<HashMap<String, Vec<Prompt>>, AgentError> {
+        match self
+            .sender
+            .send_recv(AgentRequest::GetSkills)
+            .await
+            .unwrap_or(Err(AgentError::Channel))?
+        {
+            AgentResponse::Skills(skills) => Ok(skills),
+            other => Err(AgentError::Custom(format!("received unexpected response: {other:?}"))),
+        }
+    }
+
+    pub async fn resolve_skill(&self, name: String) -> Result<Option<String>, AgentError> {
+        match self
+            .sender
+            .send_recv(AgentRequest::ResolveSkill { name })
+            .await
+            .unwrap_or(Err(AgentError::Channel))?
+        {
+            AgentResponse::SkillContent(content) => Ok(content),
+            other => Err(AgentError::Custom(format!("received unexpected response: {other:?}"))),
+        }
+    }
+
     pub async fn get_mcp_prompt(
         &self,
         name: String,
@@ -1082,6 +1106,19 @@ impl Agent {
                     Err(_) => HashMap::new(),
                 };
                 Ok(AgentResponse::FilePrompts(response))
+            },
+            AgentRequest::GetSkills => {
+                let response =
+                    prompts::discover_skills_from_resources(self.agent_config.resources(), &self.sys_provider);
+                Ok(AgentResponse::Skills(response))
+            },
+            AgentRequest::ResolveSkill { name } => {
+                let content = prompts::resolve_skill_from_resources(
+                    self.agent_config.resources(),
+                    &self.sys_provider,
+                    &name,
+                );
+                Ok(AgentResponse::SkillContent(content))
             },
             AgentRequest::GetMcpPrompt { name, arguments } => {
                 // Parse server name from prompt name (format: server_name/prompt_name)

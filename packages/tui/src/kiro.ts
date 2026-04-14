@@ -350,8 +350,10 @@ export class Kiro {
 
     const INITIAL_RESPONSE_TIMEOUT_MS =
       Number(process.env.KIRO_INITIAL_RESPONSE_TIMEOUT_MS) || 180_000;
+    const STREAM_IDLE_TIMEOUT_MS = 45_000;
     let receivedFirstEvent = false;
     let timeoutId: ReturnType<typeof setTimeout> | null = null;
+    let idleTimeoutId: ReturnType<typeof setTimeout> | null = null;
 
     return new Promise<void>((resolve, reject) => {
       let settled = false;
@@ -361,6 +363,10 @@ export class Kiro {
         if (timeoutId) {
           clearTimeout(timeoutId);
           timeoutId = null;
+        }
+        if (idleTimeoutId) {
+          clearTimeout(idleTimeoutId);
+          idleTimeoutId = null;
         }
         // Defer unsubscribe so that in-flight notification handlers in the
         // ACP SDK can finish broadcasting before we remove our listener.
@@ -407,6 +413,35 @@ export class Kiro {
           clearTimeout(timeoutId);
           timeoutId = null;
         }
+
+        // Rolling idle watchdog: reset on every event.
+        // Pause while waiting for user approval (user may take minutes).
+        if (event.type === AgentEventType.ApprovalRequest) {
+          if (idleTimeoutId) {
+            clearTimeout(idleTimeoutId);
+            idleTimeoutId = null;
+          }
+        } else {
+          if (idleTimeoutId) {
+            clearTimeout(idleTimeoutId);
+          }
+          idleTimeoutId = setTimeout(() => {
+            if (!settled) {
+              logger.error(
+                '[stream] idle timeout — no events for %dms',
+                STREAM_IDLE_TIMEOUT_MS
+              );
+              settle(() =>
+                reject(
+                  new Error(
+                    'Connection lost — response interrupted. You can retry your message.'
+                  )
+                )
+              );
+            }
+          }, STREAM_IDLE_TIMEOUT_MS);
+        }
+
         try {
           onEvent(event);
         } catch (err) {
