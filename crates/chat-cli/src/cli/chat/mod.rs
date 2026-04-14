@@ -130,6 +130,7 @@ use tool_manager::{
 };
 use tools::delegate::{
     AgentExecution,
+    completion_channel,
     save_agent_execution,
     status_all_agents,
 };
@@ -680,6 +681,10 @@ pub struct ChatSession {
     prompt_ack_rx: std::sync::mpsc::Receiver<()>,
     /// Additional context to be added to the next user message (e.g., delegate task summaries)
     pending_additional_context: Option<String>,
+    /// Sender for subagent completion notifications (cloned into each spawned agent)
+    subagent_completion_tx: tokio::sync::mpsc::UnboundedSender<AgentExecution>,
+    /// Receiver for subagent completion notifications
+    subagent_completion_rx: tokio::sync::mpsc::UnboundedReceiver<AgentExecution>,
 }
 
 impl ChatSession {
@@ -794,6 +799,8 @@ impl ChatSession {
             }
         });
 
+        let (subagent_completion_tx, subagent_completion_rx) = completion_channel();
+
         Ok(Self {
             stdout: control_end_stdout,
             stderr: control_end_stderr,
@@ -817,6 +824,8 @@ impl ChatSession {
             wrap,
             prompt_ack_rx,
             pending_additional_context: None,
+            subagent_completion_tx,
+            subagent_completion_rx,
         })
     }
 
@@ -2503,6 +2512,7 @@ impl ChatSession {
                     &mut self.stdout,
                     &mut self.conversation.file_line_tracker,
                     &self.conversation.agents,
+                    Some(self.subagent_completion_tx.clone()),
                 )
                 .await;
 
@@ -2853,228 +2863,270 @@ impl ChatSession {
         }
 
         loop {
-            match rx.recv().await {
-                Some(Ok(msg_event)) => {
-                    trace!("Consumed: {:?}", msg_event);
-
-                    match msg_event {
-                        parser::ResponseEvent::ToolUseStart { name } => {
-                            // We need to flush the buffer here, otherwise text will not be
-                            // printed while we are receiving tool use events.
-                            buf.push('\n');
-                            tool_name_being_recvd = Some(name);
+            tokio::select! {
+                biased;
+                // Check for subagent completions (non-blocking priority)
+                Some(execution) = self.subagent_completion_rx.recv() => {
+                    let status = if execution.status == tools::delegate::AgentStatus::Completed {
+                        "✓"
+                    } else {
+                        "✗"
+                    };
+                    // Brief inline notification on stderr (doesn't disrupt model stream)
+                    let _ = execute!(
+                        self.stderr,
+                        style::Print(format!(
+                            "\n  {} Background task '{}' finished {}\n",
+                            status, execution.agent, status
+                        )),
+                    );
+                    // Play bell to alert user
+                    if os.database.settings.get_bool(Setting::ChatEnableNotifications).unwrap_or(false) {
+                        play_notification_bell(true);
+                    }
+                    // Mark as notified and save
+                    let mut exec = execution;
+                    exec.user_notified = true;
+                    if let Err(e) = save_agent_execution(os, &exec).await {
+                        eprintln!("Failed to mark agent execution as notified: {}", e);
+                    }
+                    // Queue the full details for the next prompt context
+                    let summary = exec.summary.as_deref().unwrap_or("No summary available");
+                    let ctx = format!(
+                        "Background agent '{}' completed. Summary: {}",
+                        exec.agent, summary
+                    );
+                    match &mut self.pending_additional_context {
+                        Some(existing) => {
+                            existing.push('\n');
+                            existing.push_str(&ctx);
                         },
-                        parser::ResponseEvent::AssistantText(text) => {
-                            if self.stdout.should_send_structured_event {
-                                if !response_prefix_printed && !text.trim().is_empty() {
-                                    let msg_start = TextMessageStart {
-                                        message_id: request_id.clone().unwrap_or_default(),
-                                        role: MessageRole::Assistant,
-                                    };
+                        None => self.pending_additional_context = Some(ctx),
+                    }
+                    continue;
+                }
+                msg = rx.recv() => {
+                    match msg {
+                        Some(Ok(msg_event)) => {
+                            trace!("Consumed: {:?}", msg_event);
 
-                                    self.stdout.send(Event::TextMessageStart(msg_start))?;
-                                    response_prefix_printed = true;
-                                }
-                            } else {
-                                // Add Q response prefix before the first assistant text.
-                                if !response_prefix_printed && !text.trim().is_empty() {
-                                    queue!(
+                            match msg_event {
+                                parser::ResponseEvent::ToolUseStart { name } => {
+                                    // We need to flush the buffer here, otherwise text will not be
+                                    // printed while we are receiving tool use events.
+                                    buf.push('\n');
+                                    tool_name_being_recvd = Some(name);
+                                },
+                                parser::ResponseEvent::AssistantText(text) => {
+                                    if self.stdout.should_send_structured_event {
+                                        if !response_prefix_printed && !text.trim().is_empty() {
+                                            let msg_start = TextMessageStart {
+                                                message_id: request_id.clone().unwrap_or_default(),
+                                                role: MessageRole::Assistant,
+                                            };
+
+                                            self.stdout.send(Event::TextMessageStart(msg_start))?;
+                                            response_prefix_printed = true;
+                                        }
+                                    } else {
+                                        // Add Q response prefix before the first assistant text.
+                                        if !response_prefix_printed && !text.trim().is_empty() {
+                                            queue!(
+                                                self.stdout,
+                                                StyledText::success_fg(),
+                                                style::Print("> "),
+                                                StyledText::reset(),
+                                            )?;
+                                            response_prefix_printed = true;
+                                        }
+                                    }
+                                    buf.push_str(&text);
+                                },
+                                parser::ResponseEvent::ToolUse(tool_use) => {
+                                    if self.spinner.is_some() {
+                                        drop(self.spinner.take());
+                                        queue!(
+                                            self.stderr,
+                                            terminal::Clear(terminal::ClearType::CurrentLine),
+                                            cursor::MoveToColumn(0),
+                                        )?;
+                                    }
+                                    tool_uses.push(tool_use);
+                                    tool_name_being_recvd = None;
+                                },
+                                parser::ResponseEvent::EndStream {
+                                    message,
+                                    request_metadata: rm,
+                                } => {
+                                    // This log is attempting to help debug instances where users encounter
+                                    // the response timeout message.
+                                    if message.content() == RESPONSE_TIMEOUT_CONTENT {
+                                        error!(?request_id, ?message, "Encountered an unexpected model response");
+                                    }
+                                    self.conversation.push_assistant_message(os, message, Some(rm.clone()));
+                                    self.user_turn_request_metadata.push(rm);
+                                    ended = true;
+                                },
+                            }
+                        },
+                        Some(Err(recv_error)) => {
+                            if let Some(request_id) = &recv_error.request_metadata.request_id {
+                                self.failed_request_ids.push(request_id.clone());
+                            };
+
+                            self.user_turn_request_metadata
+                                .push(recv_error.request_metadata.clone());
+                            let (reason, reason_desc) = get_error_reason(&recv_error);
+                            let status_code = recv_error.status_code();
+
+                            match recv_error.source {
+                                RecvErrorKind::StreamTimeout { source, duration } => {
+                                    self.send_chat_telemetry(
+                                        os,
+                                        TelemetryResult::Failed,
+                                        Some(reason),
+                                        Some(reason_desc),
+                                        status_code,
+                                        false,
+                                    )
+                                    .await;
+
+                                    error!(
+                                        recv_error.request_metadata.request_id,
+                                        ?source,
+                                        "Encountered a stream timeout after waiting for {}s",
+                                        duration.as_secs()
+                                    );
+
+                                    execute!(self.stderr, cursor::Hide)?;
+                                    self.spinner = Some(Spinner::new(Spinners::Dots, "Dividing up the work...".to_string()));
+
+                                    self.conversation.push_assistant_message(
+                                        os,
+                                        AssistantMessage::new_response(None, RESPONSE_TIMEOUT_CONTENT.to_string()),
+                                        None,
+                                    );
+                                    self.conversation
+                                        .set_next_user_message(
+                                            "You took too long to respond - try to split up the work into smaller steps."
+                                                .to_string(),
+                                        )
+                                        .await;
+                                    self.send_tool_use_telemetry(os).await;
+                                    return Ok(ChatState::HandleResponseStream(
+                                        self.conversation
+                                            .as_sendable_conversation_state(os, &mut self.stderr, false)
+                                            .await?,
+                                    ));
+                                },
+                                RecvErrorKind::UnexpectedToolUseEos {
+                                    tool_use_id,
+                                    name,
+                                    message,
+                                    ..
+                                } => {
+                                    self.send_chat_telemetry(
+                                        os,
+                                        TelemetryResult::Failed,
+                                        Some(reason),
+                                        Some(reason_desc),
+                                        status_code,
+                                        false,
+                                    )
+                                    .await;
+
+                                    error!(
+                                        recv_error.request_metadata.request_id,
+                                        tool_use_id, name, "The response stream ended before the entire tool use was received"
+                                    );
+                                    self.conversation
+                                        .push_assistant_message(os, *message, Some(recv_error.request_metadata));
+                                    let tool_results = vec![ToolUseResult {
+                                            tool_use_id,
+                                            content: vec![ToolUseResultBlock::Text(
+                                                "The generated tool was too large, try again but this time split up the work between multiple tool uses".to_string(),
+                                            )],
+                                            status: ToolResultStatus::Error,
+                                        }];
+                                    self.conversation.add_tool_results(tool_results);
+                                    self.send_tool_use_telemetry(os).await;
+                                    return Ok(ChatState::HandleResponseStream(
+                                        self.conversation
+                                            .as_sendable_conversation_state(os, &mut self.stderr, false)
+                                            .await?,
+                                    ));
+                                },
+                                RecvErrorKind::ToolValidationError {
+                                    tool_use_id,
+                                    name,
+                                    message,
+                                    error_message,
+                                } => {
+                                    self.send_chat_telemetry(
+                                        os,
+                                        TelemetryResult::Failed,
+                                        Some(reason),
+                                        Some(reason_desc),
+                                        status_code,
+                                        false,
+                                    )
+                                    .await;
+
+                                    error!(
+                                        recv_error.request_metadata.request_id,
+                                        tool_use_id, name, error_message, "Tool validation failed"
+                                    );
+                                    self.conversation
+                                        .push_assistant_message(os, *message, Some(recv_error.request_metadata));
+                                    let tool_results = vec![ToolUseResult {
+                                        tool_use_id,
+                                        content: vec![ToolUseResultBlock::Text(format!(
+                                            "Tool validation failed: {}. Please ensure tool arguments are provided as a valid JSON object.",
+                                            error_message
+                                        ))],
+                                        status: ToolResultStatus::Error,
+                                    }];
+                                    let _ = queue!(
                                         self.stdout,
-                                        StyledText::success_fg(),
-                                        style::Print("> "),
+                                        style::Print("\n\n"),
+                                        StyledText::warning_fg(),
+                                        style::Print(format!(
+                                            "Tool validation failed: {}\n Retrying the request...",
+                                            error_message
+                                        )),
                                         StyledText::reset(),
-                                    )?;
-                                    response_prefix_printed = true;
-                                }
+                                        style::Print("\n"),
+                                    );
+                                    self.conversation.add_tool_results(tool_results);
+                                    self.send_tool_use_telemetry(os).await;
+                                    return Ok(ChatState::HandleResponseStream(
+                                        self.conversation
+                                            .as_sendable_conversation_state(os, &mut self.stderr, false)
+                                            .await?,
+                                    ));
+                                },
+                                _ => {
+                                    self.send_chat_telemetry(
+                                        os,
+                                        TelemetryResult::Failed,
+                                        Some(reason),
+                                        Some(reason_desc),
+                                        status_code,
+                                        true,
+                                    )
+                                    .await;
+
+                                    return Err(recv_error.into());
+                                },
                             }
-                            buf.push_str(&text);
                         },
-                        parser::ResponseEvent::ToolUse(tool_use) => {
-                            if self.spinner.is_some() {
-                                drop(self.spinner.take());
-                                queue!(
-                                    self.stderr,
-                                    terminal::Clear(terminal::ClearType::CurrentLine),
-                                    cursor::MoveToColumn(0),
-                                )?;
-                            }
-                            tool_uses.push(tool_use);
-                            tool_name_being_recvd = None;
-                        },
-                        parser::ResponseEvent::EndStream {
-                            message,
-                            request_metadata: rm,
-                        } => {
-                            // This log is attempting to help debug instances where users encounter
-                            // the response timeout message.
-                            if message.content() == RESPONSE_TIMEOUT_CONTENT {
-                                error!(?request_id, ?message, "Encountered an unexpected model response");
-                            }
-                            self.conversation.push_assistant_message(os, message, Some(rm.clone()));
-                            self.user_turn_request_metadata.push(rm);
+                        None => {
+                            warn!("response stream receiver closed before receiving a stop event");
                             ended = true;
                         },
                     }
-                },
-                Some(Err(recv_error)) => {
-                    if let Some(request_id) = &recv_error.request_metadata.request_id {
-                        self.failed_request_ids.push(request_id.clone());
-                    };
-
-                    self.user_turn_request_metadata
-                        .push(recv_error.request_metadata.clone());
-                    let (reason, reason_desc) = get_error_reason(&recv_error);
-                    let status_code = recv_error.status_code();
-
-                    match recv_error.source {
-                        RecvErrorKind::StreamTimeout { source, duration } => {
-                            self.send_chat_telemetry(
-                                os,
-                                TelemetryResult::Failed,
-                                Some(reason),
-                                Some(reason_desc),
-                                status_code,
-                                false, // We retry the request, so don't end the current turn yet.
-                            )
-                            .await;
-
-                            error!(
-                                recv_error.request_metadata.request_id,
-                                ?source,
-                                "Encountered a stream timeout after waiting for {}s",
-                                duration.as_secs()
-                            );
-
-                            execute!(self.stderr, cursor::Hide)?;
-                            self.spinner = Some(Spinner::new(Spinners::Dots, "Dividing up the work...".to_string()));
-
-                            // For stream timeouts, we'll tell the model to try and split its response into
-                            // smaller chunks.
-                            self.conversation.push_assistant_message(
-                                os,
-                                AssistantMessage::new_response(None, RESPONSE_TIMEOUT_CONTENT.to_string()),
-                                None,
-                            );
-                            self.conversation
-                                .set_next_user_message(
-                                    "You took too long to respond - try to split up the work into smaller steps."
-                                        .to_string(),
-                                )
-                                .await;
-                            self.send_tool_use_telemetry(os).await;
-                            return Ok(ChatState::HandleResponseStream(
-                                self.conversation
-                                    .as_sendable_conversation_state(os, &mut self.stderr, false)
-                                    .await?,
-                            ));
-                        },
-                        RecvErrorKind::UnexpectedToolUseEos {
-                            tool_use_id,
-                            name,
-                            message,
-                            ..
-                        } => {
-                            self.send_chat_telemetry(
-                                os,
-                                TelemetryResult::Failed,
-                                Some(reason),
-                                Some(reason_desc),
-                                status_code,
-                                false, // We retry the request, so don't end the current turn yet.
-                            )
-                            .await;
-
-                            error!(
-                                recv_error.request_metadata.request_id,
-                                tool_use_id, name, "The response stream ended before the entire tool use was received"
-                            );
-                            self.conversation
-                                .push_assistant_message(os, *message, Some(recv_error.request_metadata));
-                            let tool_results = vec![ToolUseResult {
-                                    tool_use_id,
-                                    content: vec![ToolUseResultBlock::Text(
-                                        "The generated tool was too large, try again but this time split up the work between multiple tool uses".to_string(),
-                                    )],
-                                    status: ToolResultStatus::Error,
-                                }];
-                            self.conversation.add_tool_results(tool_results);
-                            self.send_tool_use_telemetry(os).await;
-                            return Ok(ChatState::HandleResponseStream(
-                                self.conversation
-                                    .as_sendable_conversation_state(os, &mut self.stderr, false)
-                                    .await?,
-                            ));
-                        },
-                        RecvErrorKind::ToolValidationError {
-                            tool_use_id,
-                            name,
-                            message,
-                            error_message,
-                        } => {
-                            self.send_chat_telemetry(
-                                os,
-                                TelemetryResult::Failed,
-                                Some(reason),
-                                Some(reason_desc),
-                                status_code,
-                                false, // We retry the request, so don't end the current turn yet.
-                            )
-                            .await;
-
-                            error!(
-                                recv_error.request_metadata.request_id,
-                                tool_use_id, name, error_message, "Tool validation failed"
-                            );
-                            self.conversation
-                                .push_assistant_message(os, *message, Some(recv_error.request_metadata));
-                            let tool_results = vec![ToolUseResult {
-                                tool_use_id,
-                                content: vec![ToolUseResultBlock::Text(format!(
-                                    "Tool validation failed: {}. Please ensure tool arguments are provided as a valid JSON object.",
-                                    error_message
-                                ))],
-                                status: ToolResultStatus::Error,
-                            }];
-                            // User hint of what happened
-                            let _ = queue!(
-                                self.stdout,
-                                style::Print("\n\n"),
-                                StyledText::warning_fg(),
-                                style::Print(format!(
-                                    "Tool validation failed: {}\n Retrying the request...",
-                                    error_message
-                                )),
-                                StyledText::reset(),
-                                style::Print("\n"),
-                            );
-                            self.conversation.add_tool_results(tool_results);
-                            self.send_tool_use_telemetry(os).await;
-                            return Ok(ChatState::HandleResponseStream(
-                                self.conversation
-                                    .as_sendable_conversation_state(os, &mut self.stderr, false)
-                                    .await?,
-                            ));
-                        },
-                        _ => {
-                            self.send_chat_telemetry(
-                                os,
-                                TelemetryResult::Failed,
-                                Some(reason),
-                                Some(reason_desc),
-                                status_code,
-                                true, // Hard fail -> end the current user turn.
-                            )
-                            .await;
-
-                            return Err(recv_error.into());
-                        },
-                    }
-                },
-                None => {
-                    warn!("response stream receiver closed before receiving a stop event");
-                    ended = true;
-                },
-            }
+                }
+            } // tokio::select!
 
             // Fix for the markdown parser copied over from q chat:
             // this is a hack since otherwise the parser might report Incomplete with useful data
@@ -3608,7 +3660,21 @@ impl ChatSession {
             prompt::generate_prompt(profile.as_deref(), all_trusted, tangent_mode, usage_percentage);
 
         if ExperimentManager::is_enabled(os, ExperimentName::Delegate) {
+            // Drain any channel-based completions from this session's spawned agents
+            let mut channel_executions = Vec::new();
+            while let Ok(execution) = self.subagent_completion_rx.try_recv() {
+                channel_executions.push(execution);
+            }
+
+            // Also check filesystem for completions from other sessions
             if let Ok(mut executions) = status_all_agents(os).await {
+                // Merge: filesystem results + channel results (dedup by agent name)
+                for ch_exec in channel_executions {
+                    if !executions.iter().any(|e| e.agent == ch_exec.agent) {
+                        executions.push(ch_exec);
+                    }
+                }
+
                 if !executions.is_empty() {
                     let rich_notification = format_rich_notification(&executions);
                     generated_prompt = format!("{}\n{}", rich_notification, generated_prompt);

@@ -149,6 +149,7 @@ impl Tool {
         stdout: &mut impl Write,
         line_tracker: &mut HashMap<String, FileLineTracker>,
         agents: &crate::cli::agent::Agents,
+        completion_tx: Option<tokio::sync::mpsc::UnboundedSender<delegate::AgentExecution>>,
     ) -> Result<InvokeOutput> {
         let active_agent = agents.get_active();
         match self {
@@ -162,7 +163,7 @@ impl Tool {
             Tool::Knowledge(knowledge) => knowledge.invoke(os, stdout, active_agent).await,
             Tool::Thinking(think) => think.invoke(stdout).await,
             Tool::Todo(todo) => todo.invoke(os, stdout).await,
-            Tool::Delegate(delegate) => delegate.invoke(os, stdout, agents).await,
+            Tool::Delegate(delegate) => delegate.invoke(os, stdout, agents, completion_tx).await,
         }
     }
 
