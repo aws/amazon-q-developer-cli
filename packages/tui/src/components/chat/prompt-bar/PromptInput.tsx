@@ -172,8 +172,12 @@ export const PromptInput = React.memo(function PromptInput({
     activeCommand,
     commandShadowText,
   } = useCommandState();
-  const { setCommandInput, clearCommandInput, setPromptHint } =
-    useCommandActions();
+  const {
+    setCommandInput,
+    clearCommandInput,
+    setPromptHint,
+    setActiveCommand,
+  } = useCommandActions();
   const { pendingFileAttachment } = useFileAttachmentState();
   const { consumePendingFileAttachment } = useFileAttachmentActions();
   const { kiro } = useKiroClient();
@@ -748,6 +752,27 @@ export const PromptInput = React.memo(function PromptInput({
           setCursor(newText.length);
           syncToStore(newSegs);
           return;
+        }
+        // Tab on "/command " shows sub-command dropdown (e.g. /agent → create, edit, swap)
+        {
+          const text = getVisibleText(segments);
+          if (text.startsWith('/') && text.includes(' ')) {
+            const spaceIdx = text.indexOf(' ');
+            const cmdName = text.slice(0, spaceIdx);
+            const cmd = slashCommands.find((c) => c.name === cmdName);
+            const subs = cmd?.meta?.subcommands;
+            if (cmd && subs && subs.length > 0) {
+              const subHints = cmd.meta?.subcommandHints ?? {};
+              const subOptions = subs.map((sub) => ({
+                value: sub,
+                label: sub,
+                description: `${cmdName} ${sub}`,
+                hint: subHints[sub] ?? undefined,
+              }));
+              setActiveCommand({ command: cmd, options: subOptions });
+              return;
+            }
+          }
         }
         // Block file completion for selection commands awaiting argument shadow text
         // (shadow text may not have arrived yet due to debounce)

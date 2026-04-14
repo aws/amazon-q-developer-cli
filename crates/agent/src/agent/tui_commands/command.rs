@@ -297,13 +297,13 @@ impl TuiCommand {
             TuiCommand::Help(_) => "/help",
             TuiCommand::Model(_) => "/model [model-name]",
             TuiCommand::Agent(_) => "/agent [agent-name|create <name>|edit [name]|swap <name>]",
-            TuiCommand::Context(_) => "/context [add [--force] <path>...|remove <path>...|clear]",
+            TuiCommand::Context(_) => "/context [show|add [--force] <path>...|remove <path>...|clear]",
             TuiCommand::Compact(_) => "/compact",
             TuiCommand::Clear(_) => "/clear",
             TuiCommand::Quit(_) => "/quit",
             TuiCommand::Usage(_) => "/usage",
             TuiCommand::PasteImage(_) => "/paste",
-            TuiCommand::Mcp(_) => "/mcp",
+            TuiCommand::Mcp(_) => "/mcp [list|add <name>|remove <name>]",
             TuiCommand::Tools(_) => "/tools [trust-all|trust <name>|untrust <name>|reset]",
             TuiCommand::Plan(_) => "/plan [prompt]",
             TuiCommand::Feedback(_) => "/feedback",
@@ -323,7 +323,7 @@ impl TuiCommand {
     pub fn subcommands(&self) -> Vec<&'static str> {
         match self {
             TuiCommand::Agent(_) => vec!["create", "edit", "swap"],
-            TuiCommand::Context(_) => vec!["add", "remove", "clear"],
+            TuiCommand::Context(_) => vec!["show", "add", "remove", "clear"],
             TuiCommand::Knowledge(_) => vec!["show", "add", "remove", "update", "clear", "cancel"],
             TuiCommand::Tools(_) => vec!["trust-all", "trust", "untrust", "reset"],
             TuiCommand::Chat(_) => vec!["save", "load", "new"],
@@ -1014,6 +1014,25 @@ mod tests {
                     "{}: subcommand_hints contains '{}' which is not in subcommands()",
                     cmd.name(),
                     hint_name
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn test_subcommands_match_usage_string() {
+        // Every subcommand listed in subcommands() should appear in the usage() string.
+        // This catches drift between the two lists.
+        for cmd in TuiCommand::all_commands() {
+            let subs = cmd.subcommands();
+            let usage = cmd.usage();
+            for sub in &subs {
+                assert!(
+                    usage.contains(sub),
+                    "{}: subcommand '{}' is in subcommands() but not in usage() \"{}\"",
+                    cmd.name(),
+                    sub,
+                    usage
                 );
             }
         }
