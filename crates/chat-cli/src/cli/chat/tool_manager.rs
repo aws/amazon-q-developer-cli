@@ -2209,6 +2209,7 @@ async fn process_tool_specs(
             host_tool_name: spec.name.clone(),
         });
         spec.name = model_tool_name;
+        spec.description = format!("(MCP tool from {server_name}) {}", spec.description);
         spec.tool_origin = ToolOrigin::McpServer(server_name.to_string());
         number_of_tools += 1;
     }
