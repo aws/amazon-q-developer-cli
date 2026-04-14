@@ -31,6 +31,7 @@ interface BonusCredit {
 
 interface UsageData {
   planName: string;
+  billingCycleReset: string;
   overagesEnabled: boolean;
   isEnterprise: boolean;
   usageBreakdowns: UsageBreakdownItem[];
@@ -99,6 +100,20 @@ export function UsagePanel({ data, onClose, onTabSwitch }: UsagePanelProps) {
       showTabHint={true}
       tabHintLabel="to switch to /context"
     >
+      <Box>
+        <Text>
+          {primary.bold('Estimated Usage')}
+          {secondary(` | resets on ${data.billingCycleReset}`)}
+          {data.planName !== 'Unknown' ? (
+            <>
+              {secondary(' | ')}
+              {brand(data.planName)}
+            </>
+          ) : (
+            ''
+          )}
+        </Text>
+      </Box>
       {data.usageBreakdowns.map((item, i) => {
         const pct = item.limit > 0 ? (item.used / item.limit) * 100 : 0;
         return (
@@ -165,20 +180,20 @@ export function UsagePanel({ data, onClose, onTabSwitch }: UsagePanelProps) {
 
       <Box marginTop={1}>
         <Text>
-          {secondary('To manage your plan or configure overages navigate to ')}
-          {brand('app.kiro.dev/account/usage')}
+          {data.isEnterprise ? (
+            secondary(
+              'Since your account is through your organization, for account management please contact your account administrator.'
+            )
+          ) : (
+            <>
+              {secondary(
+                'To manage your plan or configure overages navigate to '
+              )}
+              {brand('app.kiro.dev/account/usage')}
+            </>
+          )}
         </Text>
       </Box>
-
-      {data.isEnterprise && (
-        <Box marginTop={1}>
-          <Text>
-            {secondary(
-              'Since your account is through your organization, contact your admin for billing details.'
-            )}
-          </Text>
-        </Box>
-      )}
     </Panel>
   );
 }

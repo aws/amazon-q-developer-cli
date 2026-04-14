@@ -64,6 +64,7 @@ export interface BonusCredit {
 
 export interface UsageData {
   planName: string;
+  billingCycleReset: string;
   overagesEnabled: boolean;
   isEnterprise: boolean;
   usageBreakdowns: UsageBreakdownItem[];

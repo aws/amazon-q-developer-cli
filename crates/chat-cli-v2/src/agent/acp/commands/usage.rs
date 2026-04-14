@@ -14,6 +14,15 @@ pub async fn execute(ctx: &CommandContext<'_>) -> CommandResult {
                 .map_or("Unknown", |si| si.subscription_title())
                 .to_string();
 
+            let billing_cycle_reset = usage_limits.next_date_reset().map_or_else(
+                || "Unknown".to_string(),
+                |next_reset| {
+                    let reset_date =
+                        chrono::DateTime::from_timestamp(next_reset.secs(), 0).unwrap_or_else(chrono::Utc::now);
+                    reset_date.format("%Y-%m-%d").to_string()
+                },
+            );
+
             let overages_enabled = usage_limits
                 .overage_configuration()
                 .is_some_and(|config| config.overage_status().as_str() == "ENABLED");
@@ -82,10 +91,7 @@ pub async fn execute(ctx: &CommandContext<'_>) -> CommandResult {
                 }
             }
 
-            // Check if enterprise
-            let is_enterprise = usage_limits
-                .overage_configuration()
-                .is_some_and(|config| config.overage_status().as_str() == "MANAGED");
+            let is_enterprise = crate::auth::builder_id::is_enterprise_user(&ctx.os.database).await;
 
             let message = format!("Plan: {} | {} usage breakdowns", plan_name, breakdowns.len());
 
@@ -93,6 +99,7 @@ pub async fn execute(ctx: &CommandContext<'_>) -> CommandResult {
                 message,
                 json!({
                     "planName": plan_name,
+                    "billingCycleReset": billing_cycle_reset,
                     "overagesEnabled": overages_enabled,
                     "isEnterprise": is_enterprise,
                     "usageBreakdowns": breakdowns,
@@ -115,6 +122,7 @@ pub async fn execute(ctx: &CommandContext<'_>) -> CommandResult {
                     "Your plan is managed by admin".to_string(),
                     json!({
                         "planName": "Q Developer Pro",
+                        "billingCycleReset": "Unknown",
                         "overagesEnabled": false,
                         "isEnterprise": true,
                         "usageBreakdowns": [],
