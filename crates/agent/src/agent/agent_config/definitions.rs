@@ -237,6 +237,18 @@ impl AgentConfig {
         }
     }
 
+    /// Insert MCP server configs without modifying the tools list.
+    /// Use this when the tools list already references the server.
+    pub fn insert_mcp_servers(&mut self, servers: impl IntoIterator<Item = (String, McpServerConfig)>) {
+        match self {
+            AgentConfig::V2025_08_22(c) => {
+                for (name, config) in servers {
+                    c.mcp_servers.insert(name, config);
+                }
+            },
+        }
+    }
+
     /// Override the `use_legacy_mcp_json` / `includeMcpJson` flag.
     pub fn set_use_legacy_mcp_json(&mut self, value: bool) {
         match self {
@@ -562,6 +574,22 @@ pub struct McpServers {
 pub enum McpServerConfig {
     Local(LocalMcpServerConfig),
     Remote(RemoteMcpServerConfig),
+    /// Placeholder for registry-type servers (`"type": "registry"`).
+    /// These are resolved into Local/Remote by `resolve_registry_servers_for_agent_config`
+    /// before the agent launches MCP servers.
+    Registry(RegistryMcpServerConfig),
+}
+
+/// Minimal config that captures `{"type": "registry"}` entries so they survive
+/// deserialization. V1 uses a flat struct with all-optional fields; V2 uses an
+/// untagged enum, so we need an explicit variant whose required field (`type`)
+/// matches the JSON.
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct RegistryMcpServerConfig {
+    /// Must be `"registry"`.
+    #[serde(rename = "type")]
+    pub server_type: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
@@ -623,7 +651,13 @@ impl McpServerConfig {
         match self {
             McpServerConfig::Local(c) => &c.disabled_tools,
             McpServerConfig::Remote(c) => &c.disabled_tools,
+            McpServerConfig::Registry(_) => &[],
         }
+    }
+
+    /// Returns true if this is a registry placeholder that needs resolution.
+    pub fn is_registry(&self) -> bool {
+        matches!(self, McpServerConfig::Registry(_))
     }
 }
 
@@ -825,7 +859,7 @@ mod tests {
                 assert_eq!(remote.url, "https://mcp.api.coingecko.com/sse");
                 assert!(remote.oauth_scopes.is_empty());
             },
-            McpServerConfig::Local(_) => panic!("Expected Remote variant"),
+            McpServerConfig::Local(_) | McpServerConfig::Registry(_) => panic!("Expected Remote variant"),
         }
 
         // Test HTTP server with oauth scopes
@@ -839,7 +873,7 @@ mod tests {
                 assert_eq!(remote.url, "https://mcp.datadoghq.com/api/unstable/mcp-server/mcp");
                 assert_eq!(remote.oauth_scopes, vec!["mcp", "profile", "email"]);
             },
-            McpServerConfig::Local(_) => panic!("Expected Remote variant"),
+            McpServerConfig::Local(_) | McpServerConfig::Registry(_) => panic!("Expected Remote variant"),
         }
 
         // Test HTTP server with empty oauth scopes
@@ -853,7 +887,7 @@ mod tests {
                 assert_eq!(remote.url, "https://example-server.modelcontextprotocol.io/mcp");
                 assert!(remote.oauth_scopes.is_empty());
             },
-            McpServerConfig::Local(_) => panic!("Expected Remote variant"),
+            McpServerConfig::Local(_) | McpServerConfig::Registry(_) => panic!("Expected Remote variant"),
         }
     }
 
@@ -869,7 +903,7 @@ mod tests {
                 assert_eq!(local.command, "node");
                 assert_eq!(local.args, vec!["server.js"]);
             },
-            McpServerConfig::Remote(_) => panic!("Expected Local variant"),
+            McpServerConfig::Remote(_) | McpServerConfig::Registry(_) => panic!("Expected Local variant"),
         }
     }
 
@@ -885,7 +919,9 @@ mod tests {
                 assert_eq!(local.command, "node");
                 assert_eq!(local.args, vec!["server.js"]);
             },
-            McpServerConfig::Remote(_) => panic!("Expected Local variant when command is present"),
+            McpServerConfig::Remote(_) | McpServerConfig::Registry(_) => {
+                panic!("Expected Local variant when command is present")
+            },
         }
     }
 
@@ -899,7 +935,9 @@ mod tests {
             McpServerConfig::Remote(remote) => {
                 assert_eq!(remote.url, "https://example.com/mcp");
             },
-            McpServerConfig::Local(_) => panic!("Expected Remote variant when url is present"),
+            McpServerConfig::Local(_) | McpServerConfig::Registry(_) => {
+                panic!("Expected Remote variant when url is present")
+            },
         }
     }
 
@@ -939,7 +977,9 @@ mod tests {
             McpServerConfig::Local(local) => {
                 assert_eq!(local.command, "node");
             },
-            McpServerConfig::Remote(_) => panic!("Expected Local variant when both are present"),
+            McpServerConfig::Remote(_) | McpServerConfig::Registry(_) => {
+                panic!("Expected Local variant when both are present")
+            },
         }
     }
 

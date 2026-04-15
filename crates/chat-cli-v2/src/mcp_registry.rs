@@ -710,11 +710,14 @@ pub fn filter_agent_config_tools_by_registry(
             if tool == "*" {
                 return true;
             }
-            if let Some(stripped) = tool.strip_prefix('@') {
-                let server_name = stripped.split('/').next().unwrap_or("");
-                existing_servers.contains(server_name) || registry_servers.contains(server_name)
-            } else {
-                true
+            // Only filter MCP server tool references; let everything else through
+            match agent::agent_config::parse::ToolNameKind::parse(tool) {
+                Ok(
+                    agent::agent_config::parse::ToolNameKind::McpFullName { server_name, .. }
+                    | agent::agent_config::parse::ToolNameKind::McpServer { server_name }
+                    | agent::agent_config::parse::ToolNameKind::McpGlob { server_name, .. },
+                ) => existing_servers.contains(server_name) || registry_servers.contains(server_name),
+                _ => true,
             }
         })
         .collect();
@@ -831,22 +834,38 @@ pub fn resolve_registry_servers_for_agent_config(
         RemoteMcpServerConfig,
     };
 
+    // Collect servers that need resolution:
+    // 1. Registry-type entries already in mcp_servers (explicit `"type": "registry"`)
+    // 2. Servers referenced in tools but missing from mcp_servers (implicit registry)
+    let mut servers_to_resolve = std::collections::HashSet::new();
+
+    // Find explicit Registry entries in mcp_servers
+    for (name, config) in agent_config.config().mcp_servers() {
+        if config.is_registry() {
+            servers_to_resolve.insert(name.clone());
+        }
+    }
+
+    // Find MCP servers referenced in tools but not in mcp_servers
     let existing_servers: std::collections::HashSet<String> =
         agent_config.config().mcp_servers().keys().cloned().collect();
-
-    let mut missing_servers = std::collections::HashSet::new();
     for tool in &agent_config.tools() {
-        if let Some(stripped) = tool.strip_prefix('@') {
-            let server_name = stripped.split('/').next().unwrap_or("");
-            if !server_name.is_empty() && !existing_servers.contains(server_name) {
-                missing_servers.insert(server_name.to_string());
-            }
+        let server_name = match agent::agent_config::parse::ToolNameKind::parse(tool) {
+            Ok(
+                agent::agent_config::parse::ToolNameKind::McpFullName { server_name, .. }
+                | agent::agent_config::parse::ToolNameKind::McpServer { server_name }
+                | agent::agent_config::parse::ToolNameKind::McpGlob { server_name, .. },
+            ) => server_name,
+            _ => continue,
+        };
+        if !existing_servers.contains(server_name) {
+            servers_to_resolve.insert(server_name.to_string());
         }
     }
 
     let mut resolved: Vec<(String, AgentMcpServerConfig)> = Vec::new();
 
-    for server_name in &missing_servers {
+    for server_name in &servers_to_resolve {
         let Some(def) = registry.get_server(server_name) else {
             tracing::debug!(
                 "Registry server '{}' referenced in tools but not found in registry, skipping",
@@ -966,7 +985,22 @@ pub fn resolve_registry_servers_for_agent_config(
             resolved.len(),
             resolved.iter().map(|(n, _)| n.as_str()).collect::<Vec<_>>()
         );
-        agent_config.config_mut().add_mcp_servers(resolved);
+        agent_config.config_mut().insert_mcp_servers(resolved);
+    }
+
+    // Remove any Registry placeholders that weren't resolved
+    let unresolved: std::collections::HashSet<String> = agent_config
+        .config()
+        .mcp_servers()
+        .iter()
+        .filter(|(_, c)| c.is_registry())
+        .map(|(n, _)| n.clone())
+        .collect();
+    if !unresolved.is_empty() {
+        tracing::warn!("Removing unresolved registry servers: {:?}", unresolved);
+        agent_config
+            .config_mut()
+            .retain_mcp_servers(|name| !unresolved.contains(name));
     }
 }
 
@@ -1502,7 +1536,9 @@ mod tests {
                 assert!(local.args.contains(&"--quiet".to_string()));
                 assert!(local.args.contains(&"--readonly".to_string()));
             },
-            AgentMcpServerConfig::Remote(_) => panic!("Expected Local variant for npm server"),
+            AgentMcpServerConfig::Remote(_) | AgentMcpServerConfig::Registry(_) => {
+                panic!("Expected Local variant for npm server")
+            },
         }
     }
 
@@ -1550,7 +1586,7 @@ mod tests {
                 assert_eq!(remote.url, "https://example.com/mcp");
                 assert_eq!(remote.headers.get("X-Api-Key").unwrap(), "test");
             },
-            AgentMcpServerConfig::Local(_) => panic!("Expected Remote variant"),
+            AgentMcpServerConfig::Local(_) | AgentMcpServerConfig::Registry(_) => panic!("Expected Remote variant"),
         }
     }
 
@@ -1614,7 +1650,9 @@ mod tests {
             AgentMcpServerConfig::Local(local) => {
                 assert_eq!(local.command, "node");
             },
-            AgentMcpServerConfig::Remote(_) => panic!("Should not have overwritten existing Local config"),
+            AgentMcpServerConfig::Remote(_) | AgentMcpServerConfig::Registry(_) => {
+                panic!("Should not have overwritten existing Local config")
+            },
         }
     }
 

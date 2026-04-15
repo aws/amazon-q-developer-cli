@@ -152,6 +152,12 @@ async fn do_switch_agent(index: usize, agent_info: &AgentInfo, ctx: &CommandCont
             .add_mcp_servers(ctx.session_injected_mcp_servers.to_vec());
     }
 
+    // Resolve registry-type MCP servers before swapping
+    if let Some(registry) = ctx.session_tx.get_registry_data().await {
+        crate::mcp_registry::filter_agent_config_tools_by_registry(&mut config, &registry);
+        crate::mcp_registry::resolve_registry_servers_for_agent_config(&mut config, &registry);
+    }
+
     if let Err(e) = ctx
         .agent
         .swap_agent(SwapAgentArgs {

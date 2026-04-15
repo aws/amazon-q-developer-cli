@@ -175,6 +175,12 @@ impl McpService {
 
                 (service, None, auth_client)
             },
+            McpServerConfig::Registry(_) => {
+                eyre::bail!(
+                    "Registry server '{}' was not resolved before launch. This is a bug.",
+                    self.server_name
+                );
+            },
         };
 
         let launch_md = match service.peer_info() {

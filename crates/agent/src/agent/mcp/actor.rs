@@ -339,7 +339,7 @@ impl McpServerActor {
                              non-JSON-RPC output to stdout which caused the connection to close.",
                             self.server_name
                         ),
-                        McpServerConfig::Remote(_) => format!(
+                        McpServerConfig::Remote(_) | McpServerConfig::Registry(_) => format!(
                             "Transport to MCP server '{}' is closed. The server may have \
                              terminated or the connection was lost.",
                             self.server_name
@@ -372,7 +372,7 @@ impl McpServerActor {
                              non-JSON-RPC output to stdout which caused the connection to close.",
                             self.server_name
                         ),
-                        McpServerConfig::Remote(_) => format!(
+                        McpServerConfig::Remote(_) | McpServerConfig::Registry(_) => format!(
                             "Transport to MCP server '{}' is closed. The server may have \
                              terminated or the connection was lost.",
                             self.server_name

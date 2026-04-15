@@ -231,6 +231,7 @@ impl LoadedMcpServerConfig {
         match &self.config {
             McpServerConfig::Local(local_mcp_server_config) => !local_mcp_server_config.disabled,
             McpServerConfig::Remote(remote_mcp_server_config) => !remote_mcp_server_config.disabled,
+            McpServerConfig::Registry(_) => false, // placeholder, not launchable
         }
     }
 }
