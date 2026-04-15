@@ -184,7 +184,7 @@ impl ChatSubcommand {
                 return Ok(ChatState::HandleInput { input });
             },
             Self::Resume => {
-                return resume_chat_session(os, session);
+                return resume_chat_session(os, session).await;
             },
             Self::Save { path, force } => {
                 let expanded_path = tri!(paths::expand_path(os, &path), "expand path", &path);
@@ -257,6 +257,7 @@ impl ChatSubcommand {
 
                 let new_state: ConversationState = tri!(serde_json::from_str(&contents), "import from", &path);
                 let chat_state = restore_conversation_state(session, new_state);
+                session.conversation.update_state(true).await;
 
                 execute!(
                     session.stderr,
@@ -271,6 +272,7 @@ impl ChatSubcommand {
                 match script_load(&script) {
                     Ok(new_state) => {
                         let chat_state = restore_conversation_state(session, new_state);
+                        session.conversation.update_state(true).await;
                         execute!(
                             session.stderr,
                             StyledText::success_fg(),
@@ -619,7 +621,7 @@ pub fn select_chat_session(entries: &[ChatSessionDisplayEntry], prompt_str: &str
         .unwrap_or(None)
 }
 
-fn resume_chat_session(os: &Os, session: &mut ChatSession) -> Result<ChatState, ChatError> {
+async fn resume_chat_session(os: &Os, session: &mut ChatSession) -> Result<ChatState, ChatError> {
     let result = (|| -> Option<ChatState> {
         let cwd = std::env::current_dir()
             .inspect_err(|_| {
@@ -700,6 +702,10 @@ fn resume_chat_session(os: &Os, session: &mut ChatSession) -> Result<ChatState, 
 
         Some(chat_state)
     })();
+
+    if result.is_some() {
+        session.conversation.update_state(true).await;
+    }
 
     Ok(result.unwrap_or(ChatState::PromptUser {
         skip_printing_tools: true,
@@ -1114,6 +1120,68 @@ mod tests {
             context_window,
             Some(stale_window),
             "context_window_tokens should have been refreshed from the API"
+        );
+    }
+
+    /// Verifies that `restore_conversation_state` + `update_state(true)` refreshes
+    /// the tools list so that MCP servers installed after a session was saved become
+    /// available when the session is loaded back.
+    #[tokio::test]
+    async fn test_restore_conversation_state_refreshes_tools() {
+        use std::collections::HashMap;
+
+        use crate::cli::agent::Agents;
+        use crate::cli::chat::tool_manager::ToolManager;
+        use crate::cli::chat::tools::{
+            InputSchema,
+            ToolOrigin,
+            ToolSpec,
+        };
+
+        let mut os = Os::new().await.unwrap();
+
+        let (_, mut session) = create_test_session(&mut os, vec!["hello", "exit"], vec!["Hi!"], None).await;
+
+        // Simulate a tool in the current session's tool_manager schema
+        // (as if it was loaded at CLI startup but not yet in the conversation's tools HashMap)
+        let new_tool = ToolSpec {
+            name: "mcp_new_tool".to_string(),
+            description: "A tool from a newly installed server".to_string(),
+            input_schema: InputSchema(serde_json::json!({"type": "object", "properties": {}})),
+            tool_origin: ToolOrigin::Native,
+        };
+        session
+            .conversation
+            .tool_manager
+            .schema
+            .insert("mcp_new_tool".to_string(), new_tool);
+
+        // Create a "loaded" ConversationState with empty tools (simulating deserialized saved session)
+        let loaded_state = ConversationState::new(
+            "loaded-conv-id",
+            Agents::default(),
+            HashMap::new(),
+            ToolManager::default(),
+            None,
+            &os,
+            false,
+            None,
+        )
+        .await;
+
+        assert!(loaded_state.tools.is_empty(), "loaded state should start with no tools");
+
+        // Restore then refresh — mirrors what the fixed /chat load does
+        let _chat_state = restore_conversation_state(&mut session, loaded_state);
+        session.conversation.update_state(true).await;
+
+        let has_mcp_tool = session.conversation.tools.values().flatten().any(|t| match t {
+            crate::api_client::model::Tool::ToolSpecification(spec) => spec.name == "mcp_new_tool",
+        });
+
+        assert!(
+            has_mcp_tool,
+            "After restore, tools should include MCP tools from the current tool_manager"
         );
     }
 }
