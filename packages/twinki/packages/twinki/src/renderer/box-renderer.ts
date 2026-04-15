@@ -182,8 +182,9 @@ function renderBoxFrame(
 
   // Top padding
   for (let i = 0; i < pTop; i++) {
+    const fillWidth = (bgCode || border) ? width - borderW * 2 : 0;
     const padLine = bgCode + (border ? borderColor + border.vertical + borderReset : '') +
-      ' '.repeat(width - borderW * 2) +
+      ' '.repeat(fillWidth) +
       (border ? borderColor + border.vertical + borderReset : '') + bgReset;
     lines.push(padLine);
   }
@@ -193,8 +194,9 @@ function renderBoxFrame(
 
   // Bottom padding
   for (let i = 0; i < pBottom; i++) {
+    const fillWidth = (bgCode || border) ? width - borderW * 2 : 0;
     const padLine = bgCode + (border ? borderColor + border.vertical + borderReset : '') +
-      ' '.repeat(width - borderW * 2) +
+      ' '.repeat(fillWidth) +
       (border ? borderColor + border.vertical + borderReset : '') + bgReset;
     lines.push(padLine);
   }
@@ -236,14 +238,18 @@ export function renderBox(node: TwinkiNode, width: number, height: number, rende
 
   // Format content lines with padding
   const leftPad = ' '.repeat(pLeft);
-  const rightPad = ' '.repeat(pRight);
+  // Trailing fill and right padding are only needed when a background color
+  // or border must be painted across the full width. Without them the spaces
+  // are invisible and pollute terminal selection / clipboard copies.
+  const needsTrailingFill = !!(bgCode || border);
+  const rightPad = needsTrailingFill ? ' '.repeat(pRight) : '';
   const content = childContent.map(({ text: line, width: lineW }) => {
     // Re-apply bgCode after any \x1b[0m (full reset) in child content
     // so the background color survives chalk/ANSI resets in text children.
     const RESET = String.fromCharCode(0x1b) + '[0m';
     const safeLine = bgCode ? line.replaceAll(RESET, RESET + bgCode) : line;
     const w = lineW >= 0 ? lineW : visibleWidth(line);
-    const fill = Math.max(0, innerWidth - w);
+    const fill = needsTrailingFill ? Math.max(0, innerWidth - w) : 0;
     return bgCode +
       (border ? borderColor + border.vertical + borderReset : '') +
       leftPad + safeLine + ' '.repeat(fill) + rightPad +
