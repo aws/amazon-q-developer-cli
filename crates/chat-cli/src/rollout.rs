@@ -1,6 +1,5 @@
 // Rollout framework is intentionally kept for future feature gating even though
 // `variation()` / `is_enabled()` have no callers after the TUI rollout completed.
-#![allow(dead_code)]
 
 use std::collections::HashMap;
 use std::sync::OnceLock;

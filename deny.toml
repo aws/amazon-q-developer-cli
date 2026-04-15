@@ -5,6 +5,10 @@ db-urls = ["https://github.com/rustsec/advisory-db"]
 yanked = "deny"
 
 ignore = [
+  # rustls-webpki 0.101.7 vulnerabilities, pinned by AWS SDK's rustls 0.21
+  # Tracking: https://github.com/smithy-lang/smithy-rs/issues/4605
+  "RUSTSEC-2026-0098",
+  "RUSTSEC-2026-0099",
   # boxfnonce is obsolete, transitive dep via sacp
   "RUSTSEC-2019-0040",
   # yaml-rust is unmaintained, transitive dep via syntect

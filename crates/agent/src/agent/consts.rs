@@ -9,9 +9,6 @@ pub const DEFAULT_AGENT_RESOURCES: &[&str] = &[
     "skill://~/.kiro/skills/*/SKILL.md",
 ];
 
-/// Limit to send the number of messages as part of chat.
-pub const MAX_CONVERSATION_STATE_HISTORY_LEN: usize = 10000;
-
 pub const DUMMY_TOOL_NAME: &str = "dummy";
 
 /// Safety cap to prevent loading extremely large files into memory.

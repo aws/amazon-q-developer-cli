@@ -258,8 +258,7 @@ pub fn sanitize_tool_specs(
                     ));
                 }
                 spec.name = sanitized_name.clone();
-                spec.description =
-                    format!("(MCP tool from {server_name}) {}", spec.description);
+                spec.description = format!("(MCP tool from {server_name}) {}", spec.description);
                 tool_map.insert(sanitized_name, SanitizedToolSpec {
                     canonical_name,
                     tool_spec: spec,

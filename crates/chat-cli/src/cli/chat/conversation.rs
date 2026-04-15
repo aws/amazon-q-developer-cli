@@ -30,10 +30,7 @@ use tracing::{
 use super::cli::compact::CompactStrategy;
 use super::cli::hooks::HookOutput;
 use super::cli::model::context_window_tokens;
-use super::consts::{
-    DUMMY_TOOL_NAME,
-    MAX_CONVERSATION_STATE_HISTORY_LEN,
-};
+use super::consts::DUMMY_TOOL_NAME;
 
 /// Maximum bytes for excluded messages after compaction
 /// Approximately 10,000 characters worth of content
@@ -898,9 +895,7 @@ impl ConversationState {
     }
 
     /// Updates the history so that, when non-empty, the following invariants are in place:
-    /// 1. The history length is `<= MAX_CONVERSATION_STATE_HISTORY_LEN`. Oldest messages are
-    ///    dropped.
-    /// 2. The first message is from the user, and does not contain tool results. Oldest messages
+    /// 1. The first message is from the user, and does not contain tool results. Oldest messages
     ///    are dropped.
     /// 3. If the last message from the assistant contains tool results, and a next user message is
     ///    set without tool results, then the user message will have "cancelled" tool results.
@@ -1454,9 +1449,6 @@ Return only the JSON configuration, no additional text."
     }
 
     pub fn append_transcript(&mut self, message: String) {
-        if self.transcript.len() >= MAX_CONVERSATION_STATE_HISTORY_LEN {
-            self.transcript.pop_front();
-        }
         self.transcript.push_back(message);
     }
 
@@ -1724,41 +1716,10 @@ fn enforce_conversation_invariants(
     next_message: &mut Option<UserMessage>,
     tools: &HashMap<ToolOrigin, Vec<Tool>>,
 ) -> (usize, usize) {
-    // First set the valid range as the entire history - this will be truncated as necessary
-    // later below.
-    let mut valid_history_range = (0, history.len());
-
-    // Trim the conversation history by finding the second oldest message from the user without
-    // tool results - this will be the new oldest message in the history.
-    //
-    // Note that we reserve extra slots for [ConversationState::context_messages].
-    if (history.len() * 2) > MAX_CONVERSATION_STATE_HISTORY_LEN - 6 {
-        match history
-            .iter()
-            .enumerate()
-            .skip(1)
-            .find(|(_, HistoryEntry { user, .. })| -> bool { !user.has_tool_use_results() })
-            .map(|v| v.0)
-        {
-            Some(i) => {
-                debug!("removing the first {i} user/assistant response pairs in the history");
-                valid_history_range.0 = i;
-            },
-            None => {
-                debug!("no valid starting user message found in the history, clearing");
-                valid_history_range = (0, 0);
-                // Edge case: if the next message contains tool results, then we have to just
-                // abandon them.
-                if next_message.as_ref().is_some_and(|m| m.has_tool_use_results()) {
-                    debug!("abandoning tool results");
-                    *next_message = Some(UserMessage::new_prompt(
-                        "The conversation history has overflowed, clearing state".to_string(),
-                        None,
-                    ));
-                }
-            },
-        }
-    }
+    // valid_history_range was previously used by sliding window logic to trim old messages.
+    // It's now always (0, len) but callers still reference it. Not refactoring out since
+    // V1 chat-cli is being removed soon.
+    let valid_history_range = (0, history.len());
 
     // If the first message contains tool results, then we add the results to the content field
     // instead. This is required to avoid validation errors.
@@ -1955,12 +1916,6 @@ mod tests {
                 }
             }
         }
-
-        let actual_history_len = state.history.unwrap_or_default().len();
-        assert!(
-            actual_history_len <= MAX_CONVERSATION_STATE_HISTORY_LEN,
-            "history should not extend past the max limit of {MAX_CONVERSATION_STATE_HISTORY_LEN}, instead found length {actual_history_len}"
-        );
 
         let os = state
             .user_input_message

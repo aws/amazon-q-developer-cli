@@ -173,10 +173,7 @@ use crate::agent::compact::{
     CompactStrategy,
     create_compaction_request,
 };
-use crate::agent::consts::{
-    DUMMY_TOOL_NAME,
-    MAX_CONVERSATION_STATE_HISTORY_LEN,
-};
+use crate::agent::consts::DUMMY_TOOL_NAME;
 use crate::agent::mcp::{
     McpManager,
     McpManagerHandle,
@@ -3340,35 +3337,11 @@ pub fn detect_invariant_violations(messages: &[Message]) -> ConversationInvarian
 }
 
 /// Updates the history so that, when non-empty, the following invariants are in place:
-/// - The history length is `<= MAX_CONVERSATION_STATE_HISTORY_LEN`. Oldest messages are dropped.
 /// - Any tool uses that do not exist in the provided tool specs will have their arguments replaced
 ///   with dummy content.
 pub(super) fn enforce_conversation_invariants(messages: &mut VecDeque<Message>, tools: &mut Vec<ToolSpec>) {
     if messages.is_empty() {
         return;
-    }
-
-    // Trim the conversation history by finding the oldest message from the user without
-    // tool results - this will be the new oldest message in the history.
-    //
-    // Note that we reserve extra slots for context messages.
-    const MAX_HISTORY_LEN: usize = MAX_CONVERSATION_STATE_HISTORY_LEN - 2;
-    if messages.len() > MAX_HISTORY_LEN {
-        match messages
-            .iter()
-            .enumerate()
-            .find(|(i, v)| (messages.len() - i) < MAX_HISTORY_LEN && v.role == Role::User && v.tool_results().is_none())
-        {
-            Some((i, m)) => {
-                trace!(i, ?m, "found valid starting user message with no tool results");
-                messages.drain(0..i);
-            },
-            None => {
-                trace!("no valid starting user message found in the history, clearing");
-                messages.clear();
-                return;
-            },
-        }
     }
 
     debug_assert!(messages.front().is_some_and(|msg| msg.role == Role::User));
