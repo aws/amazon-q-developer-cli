@@ -127,9 +127,9 @@ pub mod ui_text {
     pub fn limit_reached_text() -> String {
         use crate::constants::KIRO_PRICING_URL;
         format!(
-            "You've used all your free requests for this month. You have two options:
+            "You've used all your requests for this month. You have two options:
 
-1. Upgrade to a paid subscription for increased limits. See our Pricing page for what's included> {}
+1. Upgrade your plan for increased limits. See our Pricing page for what's included> {}
 2. Wait until next month when your limit automatically resets.",
             StyledText::brand(KIRO_PRICING_URL)
         )

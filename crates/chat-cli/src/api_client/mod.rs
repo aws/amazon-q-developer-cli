@@ -14,13 +14,11 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use amzn_codewhisperer_client::Client as CodewhispererClient;
-use amzn_codewhisperer_client::operation::create_subscription_token::CreateSubscriptionTokenOutput;
 use amzn_codewhisperer_client::types::{
     Model,
     OptInFeatureToggle,
     OptOutPreference,
     Origin,
-    SubscriptionStatus,
     TelemetryEvent,
     UserContext,
 };
@@ -626,23 +624,6 @@ impl ApiClient {
         debug!(enabled = enabled, "web_tools_enabled result");
 
         Ok(enabled)
-    }
-
-    pub async fn create_subscription_token(&self) -> Result<CreateSubscriptionTokenOutput, ApiClientError> {
-        if cfg!(test) {
-            return Ok(CreateSubscriptionTokenOutput::builder()
-                .set_encoded_verification_url(Some("test/url".to_string()))
-                .set_status(Some(SubscriptionStatus::Inactive))
-                .set_token(Some("test-token".to_string()))
-                .build()?);
-        }
-
-        self.client
-            .create_subscription_token()
-            .set_profile_arn(self.optional_profile_arn().await)
-            .send()
-            .await
-            .map_err(ApiClientError::CreateSubscriptionToken)
     }
 
     pub async fn get_usage_limits(

@@ -63,7 +63,7 @@ use std::time::{
     Instant,
 };
 
-use amzn_codewhisperer_client::types::SubscriptionStatus;
+use amzn_codewhisperer_client::types::UpgradeCapability;
 use chat_cli_ui::conduit::{
     ConduitError,
     ControlEnd,
@@ -1655,18 +1655,7 @@ impl ChatSession {
                     (error_messages::TROUBLE_RESPONDING, eyre!(err), false)
                 },
                 ConverseStreamErrorKind::MonthlyLimitReached => {
-                    let subscription_status = get_subscription_status(os).await;
-                    if subscription_status.is_err() {
-                        execute!(
-                            self.stderr,
-                            StyledText::error_fg(),
-                            style::Print(format!(
-                                "Unable to verify subscription status: {}\n\n",
-                                subscription_status.as_ref().err().unwrap()
-                            )),
-                            StyledText::reset(),
-                        )?;
-                    }
+                    use crate::constants::KIRO_PRICING_URL;
 
                     execute!(
                         self.stderr,
@@ -1680,28 +1669,95 @@ impl ChatSession {
                         OffsetDateTime::now_utc().month().next() as u8
                     );
 
-                    if subscription_status.is_err()
-                        || subscription_status.is_ok_and(|s| s == ActualSubscriptionStatus::None)
-                    {
+                    let info = get_limit_reached_info(os).await;
+
+                    // Show API error if applicable, then fall through to upgrade prompt.
+                    if let LimitReachedInfo::Error(ref err_msg) = info {
                         execute!(
                             self.stderr,
-                            style::Print(format!("\n\n{} {limits_text}", ui_text::limit_reached_text())),
-                            StyledText::secondary_fg(),
-                            style::Print("\n\nUse "),
-                            StyledText::success_fg(),
-                            style::Print("/subscribe"),
-                            StyledText::secondary_fg(),
-                            style::Print(" to upgrade your subscription.\n\n"),
-                            StyledText::reset(),
-                        )?;
-                    } else {
-                        execute!(
-                            self.stderr,
-                            StyledText::warning_fg(),
-                            style::Print(format!(" - {limits_text}\n\n")),
+                            StyledText::error_fg(),
+                            style::Print(format!("\n\nUnable to verify subscription status: {err_msg}")),
                             StyledText::reset(),
                         )?;
                     }
+
+                    let msg = match info {
+                        // Enterprise: admin-managed account.
+                        LimitReachedInfo::Enterprise => {
+                            format!("\n\n{limits_text} Contact your administrator for account management.\n\n")
+                        },
+                        // Legacy Q Dev Pro on BuilderID: suggest switching to Kiro.
+                        LimitReachedInfo::LegacyQDevPro => {
+                            format!(
+                                "\n\nYou're on a legacy Q Developer Pro subscription. \
+                                 You can cancel it and purchase a Kiro subscription for increased limits.\n\
+                                 See {}\n\n{limits_text}\n\n",
+                                KIRO_PRICING_URL
+                            )
+                        },
+                        // Overages already enabled: user can keep going.
+                        LimitReachedInfo::Kiro {
+                            overages_enabled: true,
+                            can_upgrade: true,
+                            ..
+                        } => {
+                            format!(
+                                "\n\nYou've used your monthly included requests and are now using overages.\n\
+                                 Upgrade your plan to get more included requests and avoid overage charges. \n\
+                                 See {}\n\n{limits_text}\n\n",
+                                KIRO_PRICING_URL
+                            )
+                        },
+                        // Overage already enabled but cannot upgrade
+                        LimitReachedInfo::Kiro {
+                            overages_enabled: true, ..
+                        } => {
+                            format!(
+                                "\n\nYou've used your monthly included requests and are now using overages.\n\n\
+                                 {limits_text}\n\n"
+                            )
+                        },
+                        // Overages available but not enabled.
+                        LimitReachedInfo::Kiro {
+                            overage_capable: true,
+                            can_upgrade: true,
+                            ..
+                        } => {
+                            format!(
+                                "\n\nYou can enable overages to continue making requests, \
+                                 or upgrade your plan for more included requests.\n\
+                                 See {}\n\n{limits_text}\n\n",
+                                KIRO_PRICING_URL
+                            )
+                        },
+                        // Overage available but cannot upgrade
+                        LimitReachedInfo::Kiro {
+                            overage_capable: true, ..
+                        } => {
+                            format!(
+                                "\n\nYou can enable overages to continue making requests.\n\n\
+                                 {limits_text}\n\n"
+                            )
+                        },
+                        // No overage support, but can upgrade.
+                        LimitReachedInfo::Kiro { can_upgrade: true, .. } => {
+                            format!(
+                                "\n\nUpgrade your plan for increased limits.\n\
+                                 See {}\n\n{limits_text}\n\n",
+                                KIRO_PRICING_URL
+                            )
+                        },
+                        // Highest tier, no overages: nothing to suggest.
+                        LimitReachedInfo::Kiro { .. } => {
+                            format!(" - {limits_text}\n\n")
+                        },
+                        // API error: fallback to generic upgrade prompt.
+                        LimitReachedInfo::Error(_) => {
+                            format!("\n\n{} {limits_text}\n\n", ui_text::limit_reached_text())
+                        },
+                    };
+
+                    execute!(self.stderr, style::Print(msg), StyledText::reset(),)?;
 
                     self.inner = Some(ChatState::PromptUser {
                         skip_printing_tools: false,
@@ -5185,51 +5241,81 @@ impl ChatSession {
     }
 }
 
-/// Replaces amzn_codewhisperer_client::types::SubscriptionStatus with a more descriptive type.
-/// See response expectations in [`get_subscription_status`] for reasoning.
-#[derive(Debug, Clone, PartialEq, Eq)]
-enum ActualSubscriptionStatus {
-    Active,   // User has paid for this month
-    Expiring, // User has paid for this month but cancelled
-    None,     // User has not paid for this month
+/// Information gathered from GetUsageLimits to decide what to show when the monthly limit is
+/// reached.
+///
+/// User type decision tree:
+///   1. Enterprise → contact admin
+///   2. Legacy Q Dev Pro (type == Q_DEVELOPER_STANDALONE) → suggest switching to Kiro subscription
+///   3. All other Kiro users → check overage + upgrade capability:
+///      - Overages enabled → user can keep going, optionally suggest upgrade
+///      - Overages disabled but capable → suggest enabling overages and/or upgrading
+///      - No overage support → suggest upgrade if capable, otherwise just show reset date
+enum LimitReachedInfo {
+    /// Enterprise user (IdC / external IdP) — managed by admin.
+    Enterprise,
+    /// Legacy Q Developer Pro subscription on Builder ID.
+    /// User should cancel old subscription and purchase a Kiro subscription.
+    LegacyQDevPro,
+    /// Normal Kiro user — carry overage and upgrade details.
+    Kiro {
+        can_upgrade: bool,
+        overage_capable: bool,
+        overages_enabled: bool,
+    },
+    /// GetUsageLimits API call failed — carry error message for display.
+    Error(String),
 }
 
-// NOTE: The subscription API behaves in a non-intuitive way. We expect the following responses:
-//
-// 1. SubscriptionStatus::Active:
-//    - The user *has* a subscription, but it is set to *not auto-renew* (i.e., cancelled).
-//    - We return ActualSubscriptionStatus::Expiring to indicate they are eligible to re-subscribe
-//
-// 2. SubscriptionStatus::Inactive:
-//    - The user has no subscription at all (no Pro access).
-//    - We return ActualSubscriptionStatus::None to indicate they are eligible to subscribe.
-//
-// 3. ConflictException (as an error):
-//    - The user already has an active subscription *with auto-renewal enabled*.
-//    - We return ActualSubscriptionStatus::Active since they don’t need to subscribe again.
-//
-// Also, it is currently not possible to subscribe or re-subscribe via console, only IDE/CLI.
-async fn get_subscription_status(os: &mut Os) -> Result<ActualSubscriptionStatus> {
+/// Calls GetUsageLimits and extracts the info needed for the MonthlyLimitReached prompt.
+/// Enterprise users are detected via auth type before making the API call.
+/// Legacy Q Dev Pro (Q_DEVELOPER_STANDALONE) users get AccessDenied + FEATURE_NOT_SUPPORTED
+/// from GetUsageLimits, so we detect them in the error branch for non-enterprise users.
+async fn get_limit_reached_info(os: &mut Os) -> LimitReachedInfo {
+    use amzn_codewhisperer_client::types::{
+        OverageCapability,
+        OverageStatus,
+    };
+
+    use crate::api_client::error_utils::{
+        GetUsageLimitsErrorType,
+        classify_get_usage_limits_error,
+    };
+
+    // Enterprise users can't self-manage subscriptions.
     if is_enterprise_user(&os.database).await {
-        return Ok(ActualSubscriptionStatus::Active);
+        return LimitReachedInfo::Enterprise;
     }
 
-    match os.client.create_subscription_token().await {
-        Ok(response) => match response.status() {
-            SubscriptionStatus::Active => Ok(ActualSubscriptionStatus::Expiring),
-            SubscriptionStatus::Inactive => Ok(ActualSubscriptionStatus::None),
-            _ => Ok(ActualSubscriptionStatus::None),
-        },
-        Err(ApiClientError::CreateSubscriptionToken(e)) => {
-            let sdk_error_code = e.as_service_error().and_then(|err| err.meta().code());
+    match os.client.get_usage_limits().await {
+        Ok(response) => {
+            let sub_info = response.subscription_info();
 
-            if sdk_error_code.is_some_and(|c| c.contains("ConflictException")) {
-                Ok(ActualSubscriptionStatus::Active)
-            } else {
-                Err(e.into())
+            let can_upgrade = sub_info.is_some_and(|si| *si.upgrade_capability() == UpgradeCapability::UpgradeCapable);
+            let overage_capable =
+                sub_info.is_some_and(|si| *si.overage_capability() == OverageCapability::OverageCapable);
+            let overages_enabled = response
+                .overage_configuration()
+                .is_some_and(|oc| *oc.overage_status() == OverageStatus::Enabled);
+
+            LimitReachedInfo::Kiro {
+                can_upgrade,
+                overage_capable,
+                overages_enabled,
             }
         },
-        Err(e) => Err(e.into()),
+        Err(err) => {
+            // FEATURE_NOT_SUPPORTED for a non-enterprise user means legacy Q Dev Pro
+            // (Q_DEVELOPER_STANDALONE) — credits don't apply to this subscription type.
+            if matches!(
+                classify_get_usage_limits_error(&err),
+                GetUsageLimitsErrorType::FeatureNotSupported
+            ) {
+                LimitReachedInfo::LegacyQDevPro
+            } else {
+                LimitReachedInfo::Error(err.to_string())
+            }
+        },
     }
 }
 
