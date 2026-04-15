@@ -143,7 +143,11 @@ fn normalize_path(path: &Path) -> PathBuf {
             },
             std::path::Component::ParentDir => {
                 // Pop the last component for parent directory
-                components.pop();
+                let prev_component = components.pop().expect("only traverse to parent for absolute paths");
+                if prev_component == std::path::Component::RootDir {
+                    // interpret self-referencing parent link for root on most systems
+                    components.push(prev_component);
+                }
             },
             _ => {
                 components.push(component);
@@ -180,6 +184,7 @@ mod tests {
             ("~", "/home/testuser"),
             ("~/file/**.md", "/home/testuser/file/**.md"),
             ("~/.././../home//testuser/path/..", "/home/testuser"),
+            ("../../../../../../abc", "/abc"), // traversing through root multiple times
         ];
 
         for (path, expected) in tests {
@@ -189,6 +194,15 @@ mod tests {
                 "Expected '{}' to expand to '{}', instead got '{}'",
                 path, expected, actual
             );
+        }
+    }
+
+    #[test]
+    fn test_normalize_path() {
+        let tests = [("/./abc/.", "/abc"), ("/abc/../def/", "/def"), ("/../abc/", "/abc")];
+
+        for (path, expected) in tests {
+            assert_eq!(Path::new(&expected), normalize_path(Path::new(&path)));
         }
     }
 
