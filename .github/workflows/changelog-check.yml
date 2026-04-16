@@ -1,0 +1,79 @@
+name: "PR: Changelog Check"
+
+on:
+  pull_request:
+    types: [opened, synchronize, labeled, unlabeled]
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  changelog:
+    name: Changelog fragment required
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Skip if label is present
+        if: contains(github.event.pull_request.labels.*.name, 'no-changelog')
+        run: echo "::notice::Changelog check skipped — 'no-changelog' label is present."
+
+      - uses: actions/checkout@v4
+        if: ${{ !contains(github.event.pull_request.labels.*.name, 'no-changelog') }}
+        with:
+          fetch-depth: 0
+
+      - name: Check for new changelog fragments
+        if: ${{ !contains(github.event.pull_request.labels.*.name, 'no-changelog') }}
+        id: check
+        run: |
+          BASE_SHA=$(git merge-base origin/${{ github.event.pull_request.base.ref }} HEAD)
+          NEW_FRAGMENTS=$(git diff --name-only --diff-filter=A "$BASE_SHA" HEAD -- '.changes/unreleased/*.json')
+
+          if [ -z "$NEW_FRAGMENTS" ]; then
+            echo "found=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "found=true" >> "$GITHUB_OUTPUT"
+            echo "Found new changelog fragment(s):"
+            echo "$NEW_FRAGMENTS"
+          fi
+
+      - name: Post or update comment
+        if: ${{ !contains(github.event.pull_request.labels.*.name, 'no-changelog') && steps.check.outputs.found == 'false' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          MARKER="<!-- changelog-check -->"
+          BODY="${MARKER}
+          > [!WARNING]
+          > **Changelog fragment missing**
+          >
+          > This PR doesn't include a changelog entry in \`.changes/unreleased/\`. If this PR has user-facing changes, please add one.
+          >
+          > **Example fragment** — create a JSON file in \`.changes/unreleased/\`:
+          > \`\`\`json
+          > {
+          >   \"type\": \"fixed\",
+          >   \"description\": \"Your concise, customer-facing description here\"
+          > }
+          > \`\`\`
+          >
+          > Valid types: \`added\`, \`changed\`, \`deprecated\`, \`removed\`, \`fixed\`, \`security\`
+          >
+          > **No user-facing changes?** Add the \`no-changelog\` label to skip this check."
+
+          COMMENT_ID=$(gh api "repos/${{ github.repository }}/issues/${{ github.event.pull_request.number }}/comments" \
+            --jq ".[] | select(.body | startswith(\"${MARKER}\")) | .id" | head -1)
+
+          if [ -n "$COMMENT_ID" ]; then
+            gh api "repos/${{ github.repository }}/issues/comments/${COMMENT_ID}" \
+              --method PATCH --field body="$BODY"
+          else
+            gh pr comment "${{ github.event.pull_request.number }}" --body "$BODY"
+          fi
+
+      - name: Fail if no fragment
+        if: ${{ !contains(github.event.pull_request.labels.*.name, 'no-changelog') && steps.check.outputs.found == 'false' }}
+        run: |
+          echo "::error::No changelog fragment found. Add one to .changes/unreleased/ or apply the 'no-changelog' label."
+          exit 1
