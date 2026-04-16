@@ -305,6 +305,39 @@ describe('--resume-picker', () => {
     expect(exitCode).toBe(0);
   }, 20000);
 
+  it('picker displays long titles without over-truncating', async () => {
+    const cwd = realpathSync(process.cwd());
+    const longPrompt =
+      'Can you review the authentication middleware and make sure the JWT validation handles expired tokens correctly';
+
+    createFakeSession({
+      sessionId: 'long-title-session',
+      cwd,
+      updatedAt: '2026-02-20T12:00:00Z',
+      userPrompt: longPrompt,
+    });
+
+    testCase = await TestCase.builder()
+      .withTestName('resume-picker-long-title')
+      .withArgs(['--resume-picker'])
+      .withEnv({ KIRO_TEST_SESSIONS_DIR: sessionsDir })
+      .withTerminal({ width: 160, height: 40 })
+      .withTimeout(15000)
+      .launchWithoutWaiting();
+
+    await testCase.waitForVisibleText('Select a chat session', 10000);
+
+    const snapshot = testCase.getSnapshot().join('\n');
+    // With a 160-col terminal, the full prompt (110 chars) should be visible
+    expect(snapshot).toContain(longPrompt);
+
+    await testCase.pressEscape();
+    await testCase.waitForReady();
+    await testCase.pressCtrlCTwice();
+    const exitCode = await testCase.expectExit();
+    expect(exitCode).toBe(0);
+  }, 20000);
+
   it('picker with no sessions starts new session', async () => {
     // Empty sessions dir
 

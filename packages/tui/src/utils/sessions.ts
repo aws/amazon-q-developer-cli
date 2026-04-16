@@ -169,14 +169,21 @@ export function formatRelativeTime(dateStr: string): string {
 
 /**
  * Format a session entry for display in the picker.
- * Matches V1 format: "{relative_time} | {summary} | {count} msgs"
+ * Truncates to terminal width to prevent line wrapping which breaks picker redraw.
+ * Format: "{relative_time} | {summary} | {count} msgs"
  */
 export function formatSessionEntry(entry: SessionEntry): string {
   const timestamp = entry.updatedAt
     ? formatRelativeTime(entry.updatedAt)
     : 'unknown';
-  if (entry.msgCount > 0) {
-    return `${timestamp} | ${entry.summary} | ${entry.msgCount} msgs`;
+  const line =
+    entry.msgCount > 0
+      ? `${timestamp} | ${entry.summary} | ${entry.msgCount} msgs`
+      : `${timestamp} | ${entry.summary}`;
+  // Leave a small buffer beyond the 2-char picker prefix to avoid edge cases
+  const maxLen = (process.stderr.columns || 80) - 4;
+  if (line.length > maxLen) {
+    return line.slice(0, maxLen - 3) + '...';
   }
-  return `${timestamp} | ${entry.summary}`;
+  return line;
 }

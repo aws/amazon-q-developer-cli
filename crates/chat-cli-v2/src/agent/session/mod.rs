@@ -628,9 +628,9 @@ impl SessionDb {
 
 /// Create a human-readable session title from prompt content blocks.
 ///
-/// Takes the first text block, collapses to a single line, and truncates to 30 characters.
+/// Takes the first text block, collapses to a single line, and truncates to 150 characters.
 pub fn create_session_title(content: &[agent::agent_loop::types::ContentBlock]) -> Option<String> {
-    const MAX_TITLE_LEN: usize = 30;
+    const MAX_TITLE_LEN: usize = 150;
     const SUFFIX: &str = "...";
 
     let text = content.iter().find_map(|b| b.text())?;
@@ -1093,14 +1093,14 @@ mod tests {
     }
 
     #[test]
-    fn test_create_session_title_truncates_at_30() {
+    fn test_create_session_title_truncates_at_150() {
         use agent::agent_loop::types::ContentBlock;
         let content = vec![ContentBlock::Text(
-            "This is a very long prompt that should be truncated".to_string(),
+            "This is a very long prompt that should be truncated after one hundred and fifty characters to keep the picker readable and consistent with the V1 behavior which also uses 150".to_string(),
         )];
         let title = create_session_title(&content).unwrap();
-        assert_eq!(title, "This is a very long prompt ...");
-        assert_eq!(title.len(), 30);
+        assert!(title.ends_with("..."));
+        assert_eq!(title.len(), 150);
     }
 
     #[test]
@@ -1321,7 +1321,7 @@ mod tests {
         drop(db);
 
         let title = title_from_first_log_entry(sessions_dir, "t1");
-        assert_eq!(title.as_deref(), Some("Explain how websockets work..."));
+        assert_eq!(title.as_deref(), Some("Explain how websockets work in Rust"));
 
         // No log file → None
         assert!(title_from_first_log_entry(sessions_dir, "nonexistent").is_none());
