@@ -7,11 +7,11 @@ use agent::tui_commands::{
 };
 
 const INTERNAL_GENERAL_URL: &str =
-    "https://taskei.amazon.dev/tasks/create?template=c1d1a001-24af-4fd4-806c-46a9399dfe11";
+    "https://taskei.amazon.dev/tasks/create?template=f5ac492c-9ec3-4a2d-8abb-2f486c7222eb";
 const EXTERNAL_GENERAL_URL: &str = "https://github.com/kirodotdev/Kiro/issues/new/choose";
 
 const INTERNAL_FEATURE_URL: &str =
-    "https://taskei.amazon.dev/tasks/create?template=c1d1a001-24af-4fd4-806c-46a9399dfe11";
+    "https://taskei.amazon.dev/tasks/create?template=a05ddcbb-e4c6-4783-8eca-ef46ae5d7ef6";
 const EXTERNAL_FEATURE_URL: &str = "https://github.com/kirodotdev/Kiro/issues/new?template=feature_request.yml";
 
 const INTERNAL_ISSUE_URL: &str = "https://taskei.amazon.dev/tasks/create?template=c0312360-3f55-432d-a6d2-e3060ad2cc59";
