@@ -253,9 +253,6 @@ pub struct Cli {
     /// Increase logging verbosity
     #[arg(long, short = 'v', action = ArgAction::Count, global = true)]
     pub verbose: u8,
-    /// Print help for all subcommands
-    #[arg(long)]
-    help_all: bool,
 }
 
 impl Cli {
@@ -465,19 +462,11 @@ mod test {
         assert_eq!(Cli::parse_from([CHAT_BINARY_NAME, "-v"]), Cli {
             subcommand: None,
             verbose: 1,
-            help_all: false,
         });
 
         assert_eq!(Cli::parse_from([CHAT_BINARY_NAME, "-vvv"]), Cli {
             subcommand: None,
             verbose: 3,
-            help_all: false,
-        });
-
-        assert_eq!(Cli::parse_from([CHAT_BINARY_NAME, "--help-all"]), Cli {
-            subcommand: None,
-            verbose: 0,
-            help_all: true,
         });
 
         assert_eq!(Cli::parse_from([CHAT_BINARY_NAME, "chat", "-vv"]), Cli {
@@ -497,7 +486,6 @@ mod test {
                 wrap: None,
             })),
             verbose: 2,
-            help_all: false,
         });
     }
 
