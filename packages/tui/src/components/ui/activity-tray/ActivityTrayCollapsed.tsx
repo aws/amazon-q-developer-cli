@@ -20,7 +20,8 @@ export const ActivityTrayCollapsed = React.memo(function ActivityTrayCollapsed({
   const rawFg = getColor('primary').hex;
   const fg = rawFg === 'inherit' ? undefined : rawFg;
   const success = getColor('success').hex;
-  const muted = getColor('muted').hex;
+  const rawMuted = getColor('muted').hex;
+  const muted = rawMuted === 'inherit' ? undefined : rawMuted;
 
   const hasTasks = tasks.length > 0;
   const done = tasks.filter((t) => t.status === 'completed').length;

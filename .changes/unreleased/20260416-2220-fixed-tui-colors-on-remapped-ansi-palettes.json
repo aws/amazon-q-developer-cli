@@ -1,0 +1,4 @@
+{
+  "type": "fixed",
+  "description": "TUI colors no longer render as black on terminals with remapped ANSI palettes. Themes now use named ANSI colors instead of hardcoded hex values, `/theme` now supports base theme switching, and the NO_COLOR environment variable is respected."
+}

@@ -14,8 +14,10 @@ export const FileChip = React.memo(function FileChip({
 }: FileChipProps) {
   const fileName = path.basename(filePath);
   const { getColor } = useTheme();
+  const rawMutedBg = getColor('muted').hex;
+  const mutedBg = rawMutedBg === 'inherit' ? undefined : rawMutedBg;
   return (
-    <Text backgroundColor={getColor('muted').hex} color={getColor('brand').hex}>
+    <Text backgroundColor={mutedBg} color={getColor('brand').hex}>
       {` ${fileName}  ${lineCount} lines `}
     </Text>
   );

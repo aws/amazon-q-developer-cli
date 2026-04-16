@@ -698,6 +698,7 @@ const effectHandlers: Record<EffectName, EffectHandler> = {
     // /theme bundled:default — reset to auto-detected theme
     if (args === 'bundled:default') {
       ctx.setUserColors(null, null, null);
+      ctx.setBaseTheme(null);
       const saved = saveUserThemePrefs({});
       ctx.showAlert(
         saved ? 'Theme reset to default' : 'Theme reset but failed to save',
@@ -716,17 +717,24 @@ const effectHandlers: Record<EffectName, EffectHandler> = {
         ctx.showAlert(`Unknown theme: ${themeId}`, 'error', 3000);
         return true;
       }
+      // Switch the base theme (kiroDark/kiroLight) so ALL UI elements update
+      ctx.setBaseTheme(
+        themeId === 'light' ? kiroLight : themeId === 'dark' ? kiroDark : null
+      );
       ctx.setUserColors(
         { text: bundled.prompt.textColor, bg: bundled.prompt.bgColor },
         bundled.response.textColor,
         bundled.diff
       );
+      const baseThemePref: 'dark' | 'light' | undefined =
+        themeId === 'light' ? 'light' : themeId === 'dark' ? 'dark' : undefined;
       const saved = saveUserThemePrefs({
         promptPreset:
           bundled.prompt.id === 'default' ? undefined : bundled.prompt.id,
         responsePreset:
           bundled.response.id === 'default' ? undefined : bundled.response.id,
         diffPreset: bundled.diff.id === 'default' ? undefined : bundled.diff.id,
+        baseTheme: baseThemePref,
       });
       ctx.showAlert(
         saved
@@ -1018,6 +1026,8 @@ const effectHandlers: Record<EffectName, EffectHandler> = {
 
 import { formatImageLabel } from '../utils/image-label.js';
 import { MessageRole } from '../stores/app-store.js';
+import { kiroDark } from '../theme/kiroDark.js';
+import { kiroLight } from '../theme/kiroLight.js';
 import {
   promptPresets,
   responsePresets,

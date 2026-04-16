@@ -45,15 +45,13 @@ function UsageProgressBar({
   percentage: number;
   width: number;
 }) {
-  const { colors } = useTheme();
+  const { getColor } = useTheme();
 
-  let color = colors.brand.truecolor ?? colors.brand.named ?? 'blue';
-  if (percentage >= 100)
-    color = colors.error.truecolor ?? colors.error.named ?? 'red';
-  else if (percentage >= 90)
-    color = colors.warning.truecolor ?? colors.warning.named ?? 'yellow';
-
-  const emptyColor = colors.muted.truecolor ?? colors.muted.named ?? 'gray';
+  const colorKey =
+    percentage >= 100 ? 'error' : percentage >= 90 ? 'warning' : 'brand';
+  const color = getColor(colorKey).hex;
+  const rawEmptyColor = getColor('muted').hex;
+  const emptyColor = rawEmptyColor === 'inherit' ? undefined : rawEmptyColor;
 
   const filled =
     percentage > 0

@@ -4,6 +4,7 @@ import type { ChalkColorName } from '../types/themeTypes.js';
 import type { StatusType } from '../types/componentTypes.js';
 
 // Named color to hex conversion
+// Named color to hex conversion
 const namedColorToHex: { [key in ChalkColorName]: string } = {
   default: 'inherit', // Special marker for terminal default color
   black: '#000000',
@@ -88,12 +89,11 @@ export const getTerminalChalkColor = (
   let resolvedHex: string = '#000000'; // Default fallback
 
   // Special case: 'default' means use terminal's default foreground color
-  // Return chalk.reset which applies no color but has .bold, .italic, etc. with chaining
+  // Return chalk.reset which applies no color but supports chaining (.bold, etc.)
   if (named === 'default') {
     const baseChalk = chalk.reset;
     const colorWrapper = (text: string) => baseChalk(text);
-    colorWrapper.hex = 'inherit'; // Special marker for components that need hex values
-    // Copy chalk modifiers to support chaining (e.g., messageColor.bold.italic)
+    colorWrapper.hex = 'inherit';
     Object.setPrototypeOf(colorWrapper, baseChalk);
     return colorWrapper;
   }

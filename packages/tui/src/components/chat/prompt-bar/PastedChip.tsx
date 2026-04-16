@@ -47,6 +47,8 @@ export const PastedChip = React.memo(function PastedChip({
   imageSizeBytes,
 }: PastedChipProps) {
   const { getColor } = useTheme();
+  const rawMutedBg = getColor('muted').hex;
+  const mutedBg = rawMutedBg === 'inherit' ? undefined : rawMutedBg;
   let label: string;
 
   if (type === 'image') {
@@ -62,7 +64,7 @@ export const PastedChip = React.memo(function PastedChip({
   }
 
   return (
-    <Text backgroundColor={getColor('muted').hex} color={getColor('brand').hex}>
+    <Text backgroundColor={mutedBg} color={getColor('brand').hex}>
       {` ${label} `}
     </Text>
   );

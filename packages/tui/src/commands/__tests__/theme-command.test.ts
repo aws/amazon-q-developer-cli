@@ -80,11 +80,18 @@ describe('/theme command', () => {
       expect(colorCall[0]).toBeDefined(); // prompt { text, bg }
       expect(colorCall[1]).toBeDefined(); // response color
 
+      // Should switch base theme to kiroDark
+      expect(ctx._spies.setBaseTheme!).toHaveBeenCalled();
+      const baseThemeCall = ctx._spies.setBaseTheme!.mock.calls[0]!;
+      expect(baseThemeCall[0]).toBeDefined();
+      expect(baseThemeCall[0].colors.surface.truecolor).toBe('#262626');
+
       expect(ctx._spies.showAlert!.mock.calls[0]?.[0]).toContain('Dark');
       expect(ctx._spies.showAlert!.mock.calls[0]?.[1]).toBe('success');
 
       const prefs = loadUserThemePrefs();
       expect(prefs.responsePreset).toBe('light');
+      expect(prefs.baseTheme).toBe('dark');
     });
 
     it('applies light bundled theme', async () => {
@@ -95,9 +102,16 @@ describe('/theme command', () => {
       expect(colorCall[0]).toBeDefined();
       expect(colorCall[1]).toBeDefined();
 
+      // Should switch base theme to kiroLight
+      expect(ctx._spies.setBaseTheme!).toHaveBeenCalled();
+      const baseThemeCall = ctx._spies.setBaseTheme!.mock.calls[0]!;
+      expect(baseThemeCall[0]).toBeDefined();
+      expect(baseThemeCall[0].colors.surface.truecolor).toBe('#EEEEEE');
+
       const prefs = loadUserThemePrefs();
       expect(prefs.promptPreset).toBe('paper');
       expect(prefs.responsePreset).toBe('dark');
+      expect(prefs.baseTheme).toBe('light');
     });
 
     it('shows error for unknown bundled theme', async () => {
@@ -112,6 +126,7 @@ describe('/theme command', () => {
         promptPreset: 'purple',
         responsePreset: 'light',
         diffPreset: 'colorblind-dark',
+        baseTheme: 'light',
       });
       const ctx = createMockCommandContext({ slashCommands: [themeCmd] });
       await dispatch(themeCmd, 'bundled:default', ctx);
@@ -122,6 +137,10 @@ describe('/theme command', () => {
       expect(colorCall[1]).toBeNull();
       expect(colorCall[2]).toBeNull();
 
+      // Should reset base theme to auto-detect
+      expect(ctx._spies.setBaseTheme!).toHaveBeenCalled();
+      expect(ctx._spies.setBaseTheme!.mock.calls[0]![0]).toBeNull();
+
       expect(ctx._spies.showAlert!.mock.calls[0]?.[0]).toContain('reset');
       expect(ctx._spies.showAlert!.mock.calls[0]?.[1]).toBe('success');
 
@@ -129,6 +148,7 @@ describe('/theme command', () => {
       expect(prefs.promptPreset).toBeUndefined();
       expect(prefs.responsePreset).toBeUndefined();
       expect(prefs.diffPreset).toBeUndefined();
+      expect(prefs.baseTheme).toBeUndefined();
     });
   });
 
@@ -351,6 +371,7 @@ describe('/theme command', () => {
 
       const prefs = loadUserThemePrefs();
       expect(prefs.diffPreset).toBe('dark');
+      expect(prefs.baseTheme).toBe('dark');
     });
 
     it('bundled light theme persists diff preset', async () => {
@@ -359,6 +380,7 @@ describe('/theme command', () => {
 
       const prefs = loadUserThemePrefs();
       expect(prefs.diffPreset).toBe('light');
+      expect(prefs.baseTheme).toBe('light');
     });
 
     it('shows [active] on current diff preset', async () => {

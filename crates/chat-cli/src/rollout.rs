@@ -1,6 +1,3 @@
-// Rollout framework is intentionally kept for future feature gating even though
-// `variation()` / `is_enabled()` have no callers after the TUI rollout completed.
-
 use std::collections::HashMap;
 use std::sync::OnceLock;
 
@@ -42,7 +39,6 @@ pub enum Segment {
 pub struct FeatureRollout {
     /// What this experiment is testing.
     #[serde(default)]
-    #[allow(dead_code)]
     pub description: String,
     /// Percentage of eligible users that get TREATMENT (0-100). The rest get CONTROL.
     pub treatment_percent: u8,

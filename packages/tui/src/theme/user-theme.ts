@@ -49,6 +49,8 @@ export interface UserThemePrefs {
   promptPreset?: string;
   responsePreset?: string;
   diffPreset?: string;
+  /** Base theme override: 'dark', 'light', or undefined (auto-detect) */
+  baseTheme?: 'dark' | 'light';
 }
 
 // All colors below are taken directly from kiroDark.ts / kiroLight.ts

@@ -112,6 +112,8 @@ export interface CommandContext {
     response?: any | null,
     diff?: any | null
   ) => void;
+  /** Switch the base theme at runtime. Pass null to reset to auto-detected. */
+  setBaseTheme: (theme: any) => void;
   /** Set theme preview string (rendered below menu during /theme flow) */
   setThemePreview: (preview: string | null) => void;
   /** Get the base theme's diff hex colors (for preview fallback when user preset is 'default') */

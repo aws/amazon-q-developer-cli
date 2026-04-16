@@ -71,6 +71,31 @@ pub async fn extract_tui_assets_if_needed(os: &Os) -> Result<TuiAssetPaths> {
     })
 }
 
+/// Determine the `FORCE_COLOR` value to pass to the bun/chalk process.
+///
+/// Returns `None` when color should not be forced (i.e. `NO_COLOR` is set),
+/// otherwise returns the appropriate chalk color level:
+/// - User's explicit `FORCE_COLOR` value if already set
+/// - `"3"` (truecolor) when `COLORTERM` is `truecolor` or `24bit`
+/// - `"2"` (256-color) as fallback
+///
+/// ES module imports are hoisted so env vars must be set before bun starts,
+/// not in JS top-level code. Without this, chalk downgrades hex colors to
+/// ANSI 256/basic codes which some terminals render incorrectly (e.g. gray
+/// as black on non-standard palettes).
+fn resolve_force_color(no_color: bool, force_color: Option<String>, colorterm: Option<&str>) -> Option<String> {
+    if no_color {
+        return None;
+    }
+    if let Some(val) = force_color {
+        return Some(val);
+    }
+    match colorterm {
+        Some("truecolor" | "24bit") => Some("3".to_string()),
+        _ => Some("2".to_string()),
+    }
+}
+
 /// Launch the V2 TUI. Extracts embedded assets and spawns bun with the TUI JS bundle.
 pub async fn launch_v2(os: &Os) -> Result<ExitCode> {
     let asset_paths = extract_tui_assets_if_needed(os).await?;
@@ -78,10 +103,20 @@ pub async fn launch_v2(os: &Os) -> Result<ExitCode> {
     let args: Vec<String> = std::env::args().collect();
     let current_exe = std::env::current_exe()?;
 
-    let mut child = tokio::process::Command::new(&asset_paths.bun_path)
-        .arg(&asset_paths.tui_js_path)
+    let force_color = resolve_force_color(
+        std::env::var_os("NO_COLOR").is_some(),
+        std::env::var("FORCE_COLOR").ok(),
+        std::env::var("COLORTERM").ok().as_deref(),
+    );
+
+    let mut cmd = tokio::process::Command::new(&asset_paths.bun_path);
+    cmd.arg(&asset_paths.tui_js_path)
         .args(&args[1..])
-        .env("KIRO_AGENT_PATH", &current_exe)
+        .env("KIRO_AGENT_PATH", &current_exe);
+    if let Some(ref force_color) = force_color {
+        cmd.env("FORCE_COLOR", force_color);
+    }
+    let mut child = cmd
         // Limit JSC garbage collector to 1 marker thread. By default JSC
         // uses up to min(4, core_count) marker threads on Apple Silicon
         // (see overrideDefaults() and computeNumberOfGCMarkers in Options.cpp).
@@ -354,5 +389,36 @@ mod tests {
         assert_eq!(bun_sha_content, BUN_RUNTIME_SHA256);
         assert_eq!(tui_content, TUI_JS);
         assert_eq!(tui_sha_content, TUI_JS_SHA256);
+    }
+
+    #[test]
+    fn test_resolve_force_color_no_color_set() {
+        assert_eq!(resolve_force_color(true, None, None), None);
+    }
+
+    #[test]
+    fn test_resolve_force_color_no_color_overrides_force_color() {
+        assert_eq!(resolve_force_color(true, Some("3".into()), Some("truecolor")), None);
+    }
+
+    #[test]
+    fn test_resolve_force_color_respects_explicit_force_color() {
+        assert_eq!(resolve_force_color(false, Some("1".into()), None), Some("1".into()));
+    }
+
+    #[test]
+    fn test_resolve_force_color_truecolor() {
+        assert_eq!(resolve_force_color(false, None, Some("truecolor")), Some("3".into()));
+    }
+
+    #[test]
+    fn test_resolve_force_color_24bit() {
+        assert_eq!(resolve_force_color(false, None, Some("24bit")), Some("3".into()));
+    }
+
+    #[test]
+    fn test_resolve_force_color_fallback() {
+        assert_eq!(resolve_force_color(false, None, None), Some("2".into()));
+        assert_eq!(resolve_force_color(false, None, Some("256color")), Some("2".into()));
     }
 }

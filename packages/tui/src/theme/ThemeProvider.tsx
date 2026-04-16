@@ -39,6 +39,8 @@ export interface ThemeContextValue extends Theme {
     response?: TerminalColor | null,
     diff?: DiffPreset | null
   ) => void;
+  /** Switch the base theme at runtime. Pass null to reset to auto-detected. */
+  setBaseTheme: (theme: Theme | null) => void;
   /** The raw base theme before user overrides (for Auto preview) */
   baseTheme: Theme;
 }
@@ -63,7 +65,8 @@ const createThemeContext = (
     prompt?: { text: TerminalColor; bg: TerminalColor } | null,
     response?: TerminalColor | null,
     diff?: DiffPreset | null
-  ) => void
+  ) => void,
+  setBaseTheme: (theme: Theme | null) => void
 ): ThemeContextValue => {
   // Merge user diff overrides into theme colors so getColor('diff.*') picks them up
   const effectiveColors =
@@ -145,6 +148,7 @@ const createThemeContext = (
       );
     },
     setUserColors,
+    setBaseTheme,
     baseTheme: theme,
   };
 };
@@ -176,6 +180,7 @@ export const ThemeContext = createContext<ThemeContextValue>(
     undefined,
     undefined,
     undefined,
+    () => {},
     () => {}
   )
 );
@@ -202,13 +207,29 @@ export const ThemeProvider = ({
 }: ThemeProviderProps) => {
   // Detect theme once on mount — avoid re-running OSC 11 queries on every render
   // which can corrupt terminal state (especially over SSH).
-  const resolvedTheme = useMemo(
+  const autoTheme = useMemo(
     () => (theme === 'auto' ? getAutoTheme() : theme),
     [theme]
   );
 
   // Load persisted user color prefs on mount
   const initialPrefs = useMemo(() => loadUserThemePrefs(), []);
+
+  // Base theme override: null = use auto-detected, Theme = user-selected
+  const [baseThemeOverride, setBaseThemeOverride] = useState<Theme | null>(
+    () => {
+      if (initialPrefs.baseTheme === 'dark') return kiroDark;
+      if (initialPrefs.baseTheme === 'light') return kiroLight;
+      return null;
+    }
+  );
+
+  const resolvedTheme = baseThemeOverride ?? autoTheme;
+
+  const setBaseTheme = useCallback((newTheme: Theme | null) => {
+    setBaseThemeOverride(newTheme);
+  }, []);
+
   const [userPromptColor, setUserPromptColor] = useState<
     TerminalColor | undefined
   >(() => getPromptPreset(initialPrefs.promptPreset)?.textColor);
@@ -258,7 +279,8 @@ export const ThemeProvider = ({
         userPromptBgColor,
         userResponseColor,
         userDiffPreset,
-        setUserColors
+        setUserColors,
+        setBaseTheme
       ),
     [
       resolvedTheme,
@@ -267,6 +289,7 @@ export const ThemeProvider = ({
       userResponseColor,
       userDiffPreset,
       setUserColors,
+      setBaseTheme,
     ]
   );
   return (

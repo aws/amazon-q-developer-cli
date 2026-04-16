@@ -17,9 +17,12 @@ import {
 } from './user-theme.js';
 
 export const UserThemeBridge = () => {
-  const { setUserColors, getColor, baseTheme } = useTheme();
+  const { setUserColors, setBaseTheme, getColor, baseTheme } = useTheme();
   const registerUserColorsSetter = useAppStore(
     (state) => state.registerUserColorsSetter
+  );
+  const registerBaseThemeSetter = useAppStore(
+    (state) => state.registerBaseThemeSetter
   );
   const registerThemeDiffHexGetter = useAppStore(
     (state) => state.registerThemeDiffHexGetter
@@ -80,6 +83,10 @@ export const UserThemeBridge = () => {
   useEffect(() => {
     registerUserColorsSetter(setUserColors);
   }, [setUserColors, registerUserColorsSetter]);
+
+  useEffect(() => {
+    registerBaseThemeSetter(setBaseTheme);
+  }, [setBaseTheme, registerBaseThemeSetter]);
 
   useEffect(() => {
     registerThemeDiffHexGetter(getThemeDiffHex);

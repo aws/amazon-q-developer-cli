@@ -11,8 +11,8 @@ import type { Theme } from './types.js';
 export const kiroSafe: Theme = {
   colors: {
     primary: { named: 'default' },
-    secondary: { named: 'gray' },
-    muted: { named: 'gray' },
+    secondary: { named: 'default' },
+    muted: { named: 'default' },
     surface: { named: 'default' },
     link: { named: 'blue' },
     accent: { named: 'magenta' },

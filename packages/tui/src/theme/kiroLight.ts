@@ -46,7 +46,7 @@ export const kiroLight: Theme = {
       added: {
         background: { truecolor: '#d4f0d4', color256: 194 }, // diffEditor.insertedLineBackground - light green
         bar: { truecolor: '#5de89d', color256: 79 }, // editorGutter.addedBackground - darker green
-        highlight: { truecolor: '#cffffff', color256: 15 }, // diffEditor.insertedTextBackground - medium green
+        highlight: { truecolor: '#c0e8c0', color256: 15 }, // diffEditor.insertedTextBackground - medium green
       },
       removed: {
         background: { truecolor: '#f0d4d4', color256: 224 }, // diffEditor.removedLineBackground - light red

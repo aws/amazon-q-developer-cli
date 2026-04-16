@@ -52,7 +52,9 @@ export default function Chip({
   );
 
   if (background) {
-    return <Box backgroundColor={getColor('muted').hex}>{content}</Box>;
+    const rawMutedBg = getColor('muted').hex;
+    const mutedBg = rawMutedBg === 'inherit' ? undefined : rawMutedBg;
+    return <Box backgroundColor={mutedBg}>{content}</Box>;
   }
 
   return content;

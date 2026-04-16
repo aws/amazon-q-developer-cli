@@ -123,7 +123,8 @@ export const ActivityTrayExpanded = React.memo(function ActivityTrayExpanded({
   const fg = rawFg === 'inherit' ? undefined : rawFg;
   const successHex = getColor('success').hex;
   const infoHex = getColor('info').hex;
-  const mutedHex = getColor('muted').hex;
+  const rawMuted = getColor('muted').hex;
+  const mutedHex = rawMuted === 'inherit' ? undefined : rawMuted;
   const brandHex = getColor('brand').hex;
 
   // Scroll offset keeps the visible window positioned correctly
@@ -252,7 +253,7 @@ interface TaskListProps {
   fg: string | undefined;
   successHex: string;
   infoHex: string;
-  mutedHex: string;
+  mutedHex: string | undefined;
   termWidth: number;
 }
 
@@ -384,8 +385,8 @@ function QueueList({
 function getStatusIcon(
   status: 'pending' | 'completed',
   isNext: boolean,
-  colors: { successHex: string; infoHex: string; mutedHex: string }
-): { icon: string; color: string } {
+  colors: { successHex: string; infoHex: string; mutedHex: string | undefined }
+): { icon: string; color: string | undefined } {
   if (status === 'completed') {
     return { icon: '●', color: colors.successHex };
   }

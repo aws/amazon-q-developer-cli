@@ -452,6 +452,10 @@ interface BaseAppActions {
     setter: (prompt?: any, response?: any, diff?: any) => void
   ) => void;
 
+  // Base theme setter (set by ThemeProvider bridge)
+  _baseThemeSetter: ((theme: any) => void) | null;
+  registerBaseThemeSetter: (setter: (theme: any) => void) => void;
+
   // Theme diff hex getter (set by ThemeProvider bridge)
   _themeDiffHexGetter:
     | (() => {
@@ -900,6 +904,7 @@ export const createAppStore = (props: AppStoreProps) => {
     ),
     attachedFiles: [],
     _userColorsSetter: null,
+    _baseThemeSetter: null,
     _themeDiffHexGetter: null,
     _autoPreviewGetter: null,
     themePreview: null,
@@ -2138,6 +2143,10 @@ export const createAppStore = (props: AppStoreProps) => {
           const setter = get()._userColorsSetter;
           if (setter) setter(prompt, response, diff);
         },
+        setBaseTheme: (theme: any) => {
+          const setter = get()._baseThemeSetter;
+          if (setter) setter(theme);
+        },
         setThemePreview: (preview: string | null) => {
           set({ themePreview: preview });
         },
@@ -2735,6 +2744,10 @@ export const createAppStore = (props: AppStoreProps) => {
       set({ _userColorsSetter: setter });
     },
 
+    registerBaseThemeSetter: (setter) => {
+      set({ _baseThemeSetter: setter });
+    },
+
     registerThemeDiffHexGetter: (getter) => {
       set({ _themeDiffHexGetter: getter });
     },
@@ -2918,6 +2931,10 @@ export const createAppStore = (props: AppStoreProps) => {
           setUserColors: (prompt?: any, response?: any, diff?: any) => {
             const setter = get()._userColorsSetter;
             if (setter) setter(prompt, response, diff);
+          },
+          setBaseTheme: (theme: any) => {
+            const setter = get()._baseThemeSetter;
+            if (setter) setter(theme);
           },
           setThemePreview: (preview: string | null) => {
             set({ themePreview: preview });

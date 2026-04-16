@@ -13,6 +13,8 @@ mod mcp_client;
 mod mcp_registry;
 mod os;
 mod request;
+// Rollout gating not currently used — TUI is now the default for all users.
+// Keeping the module for future rollout needs.
 #[allow(dead_code)]
 mod rollout;
 mod telemetry;
