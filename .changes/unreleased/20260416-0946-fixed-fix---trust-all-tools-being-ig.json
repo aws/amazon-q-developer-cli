@@ -1,0 +1,4 @@
+{
+  "type": "fixed",
+  "description": "Fix --trust-all-tools being ignored in non-interactive mode"
+}

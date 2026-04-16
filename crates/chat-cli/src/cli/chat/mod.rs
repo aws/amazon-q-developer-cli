@@ -3478,7 +3478,9 @@ impl ChatSession {
             let tool = &mut self.tool_uses[i];
 
             // Manually accepted by the user or otherwise verified already.
-            if tool.accepted {
+            // trust_all_tools bypasses all permission evaluation (consistent with V2).
+            if tool.accepted || self.conversation.agents.trust_all_tools {
+                tool.accepted = true;
                 continue;
             }
 
@@ -6750,6 +6752,67 @@ mod tests {
         assert!(
             !os.fs.exists("/denied.txt"),
             "Tool should have been denied, file should not exist"
+        );
+    }
+
+    /// When --no-interactive AND --trust-all-tools are both set, tools should be
+    /// auto-approved (not denied). Regression test for trust_all_tools being
+    /// ignored in non-interactive mode.
+    #[tokio::test]
+    async fn test_non_interactive_trust_all_tools_approves() {
+        let mut os = Os::new().await.unwrap();
+        os.client.set_mock_output(serde_json::json!([
+            [
+                "I'll create a file",
+                {
+                    "tool_use_id": "1",
+                    "name": "fs_write",
+                    "args": {
+                        "command": "create",
+                        "file_text": "hello",
+                        "path": "/trusted.txt",
+                    }
+                }
+            ],
+            [
+                "Done!",
+            ],
+        ]));
+
+        let mut agents = get_test_agents(&os).await;
+        agents.trust_all_tools = true;
+        let tool_manager = ToolManager::default();
+        let tool_config = serde_json::from_str::<HashMap<String, ToolSpec>>(include_str!("tools/tool_index.json"))
+            .expect("Tools failed to load");
+        let mut session = ChatSession::new(
+            &mut os,
+            "fake_conv_id",
+            agents,
+            Some("create a file".to_string()),
+            InputSource::new_mock(vec![]),
+            None,
+            || Some(80),
+            tool_manager,
+            None,
+            tool_config,
+            false, // non-interactive
+            false,
+            None,
+            false,
+            None,
+            None,
+        )
+        .await
+        .unwrap();
+        let result = session.spawn(&mut os).await;
+
+        assert!(
+            result.is_ok(),
+            "trust-all-tools + non-interactive should succeed: {result:?}"
+        );
+        assert!(
+            os.fs.exists("/trusted.txt"),
+            "Tool should have been approved and file created"
         );
     }
 }
