@@ -30,10 +30,6 @@ export interface CliArgs extends AcpSpawnArgs {
   resumeId?: string;
   /** Interactively select a conversation to resume (--resume-picker). TUI-only. */
   resumePicker: boolean;
-  /** Stress test mode: send expensive prompts in a loop (--stress). TUI-only. */
-  stress: boolean;
-  /** Number of stress iterations (--stress-iterations N, default 100). TUI-only. */
-  stressIterations?: number;
 }
 
 // ── Flag definitions ────────────────────────────────────────────────────
@@ -84,8 +80,6 @@ const FLAG_DEFS: FlagDef[] = [
   },
   { type: 'boolean', key: 'resume', flags: ['--resume', '-r'] },
   { type: 'boolean', key: 'resumePicker', flags: ['--resume-picker'] },
-  { type: 'boolean', key: 'stress', flags: ['--stress'] },
-  { type: 'string', key: 'stressIterations' as any, flags: ['--stress-iterations'] },
   // consumed by Rust ChatArgs before TUI is launched — skip without error
   { type: 'skip', flags: ['--tui'] },
 ];
@@ -110,7 +104,6 @@ export function parseCliArgs(): CliArgs {
     noInteractive: false,
     resume: false,
     resumePicker: false,
-    stress: false,
   };
 
   // Skip past "chat" subcommand if present

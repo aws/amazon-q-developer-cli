@@ -509,12 +509,7 @@ impl AcpSessionHandle {
     /// Get invocable skills from agent_config resources
     pub async fn get_skills(&self) -> Result<HashMap<String, Vec<Prompt>>, String> {
         let (respond_to, rx) = oneshot::channel();
-        if self
-            .tx
-            .send(AcpSessionRequest::GetSkills { respond_to })
-            .await
-            .is_err()
-        {
+        if self.tx.send(AcpSessionRequest::GetSkills { respond_to }).await.is_err() {
             return Err("Channel closed".to_string());
         }
         rx.await
@@ -1528,9 +1523,7 @@ impl AcpSession {
                                             should_continue_turn: None,
                                         })
                                         .await;
-                                } else if let Some(body) =
-                                    agent.resolve_skill(name.clone()).await.ok().flatten()
-                                {
+                                } else if let Some(body) = agent.resolve_skill(name.clone()).await.ok().flatten() {
                                     // Skill: frontmatter already stripped by resolve_skill()
                                     let template = agent::prompts::PromptTemplateArgs::parse(&body);
                                     let expanded = template.expand(&body, &args);

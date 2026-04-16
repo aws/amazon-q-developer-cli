@@ -73,11 +73,6 @@ process.stdin.on('end', () => {
 // Pre-create kiro and store outside of React to start initialization immediately
 const agentPath = getAgentPath();
 const cliArgs = parseCliArgs();
-// Stress mode implies non-interactive + trust-all-tools
-if (cliArgs.stress) {
-  cliArgs.noInteractive = true;
-  cliArgs.trustAllTools = true;
-}
 const acpArgs = buildAcpArgs(cliArgs);
 const kiro = new Kiro();
 const appStore = createAppStore({
@@ -464,7 +459,7 @@ const startApp = async () => {
   }
 
   // Non-interactive mode: auto-submit input after init, exit after turn, error on approval
-  if (cliArgs.noInteractive && cliArgs.input && !cliArgs.stress) {
+  if (cliArgs.noInteractive && cliArgs.input) {
     const nonInteractiveInput = cliArgs.input;
     let hasStartedProcessing = false;
     let isExiting = false;
@@ -506,64 +501,6 @@ const startApp = async () => {
       if (initError) return; // Error will be shown by the App component
       const { sendMessage, slashCommands } = appStore.getState();
       sendMessage(normalizeAtPrompt(nonInteractiveInput, slashCommands));
-    });
-  }
-
-  // Stress test mode: send expensive prompts in a loop to consume credits
-  if (cliArgs.stress) {
-    const maxIterations = cliArgs.stressIterations ? Number(cliArgs.stressIterations) : 100;
-    const STRESS_PROMPTS = [
-      'List every file in the current directory tree recursively using tools (glob **/*), then read the 10 largest files entirely and provide a detailed analysis of each one including line counts, complexity metrics, and potential issues. Be extremely thorough.',
-      'Search the entire codebase for all function definitions, class definitions, type definitions, and interface definitions. For each one found, read the surrounding context (at least 50 lines) and explain what it does. Use grep and read tools extensively.',
-      'Do a comprehensive security audit: read every file that handles user input, network requests, file I/O, or shell commands. Analyze each for injection vulnerabilities, path traversal, SSRF, and other OWASP top 10 issues. Read full files, not snippets.',
-      'Read package.json, Cargo.toml, and every config file in the repo. Then read the top 20 most recently modified source files. For each file, suggest 3 concrete improvements with code examples.',
-      'Find all test files in the repo using glob, read each one, then read the source files they test. Identify every untested code path and write detailed test suggestions with example code for each gap found.',
-    ];
-
-    let iteration = 0;
-    let isExiting = false;
-    let hasStartedProcessing = false;
-
-    appStore.subscribe((state) => {
-      if (isExiting) return;
-
-      if (state.isProcessing) {
-        hasStartedProcessing = true;
-      }
-
-      // When a turn completes, send the next prompt
-      if (hasStartedProcessing && !state.isProcessing) {
-        hasStartedProcessing = false;
-        iteration++;
-        process.stderr.write(`\n[stress] Completed iteration ${iteration}/${maxIterations}\n`);
-
-        if (iteration >= maxIterations) {
-          isExiting = true;
-          process.stderr.write(`[stress] All ${maxIterations} iterations complete. Exiting.\n`);
-          setTimeout(() => {
-            kiro.close();
-            process.exit(0);
-          }, 100);
-          return;
-        }
-
-        // Send the next prompt
-        const prompt = STRESS_PROMPTS[iteration % STRESS_PROMPTS.length]!;
-        process.stderr.write(`[stress] Sending iteration ${iteration + 1}/${maxIterations}...\n`);
-        const { sendMessage } = appStore.getState();
-        sendMessage(prompt);
-      }
-    });
-
-    // Auto-submit first prompt after initialization
-    startInitialization().then(() => {
-      if (initError) return;
-      appStore.getState().confirmTrustAllTools();
-      const { sendMessage } = appStore.getState();
-      const prompt = cliArgs.input || STRESS_PROMPTS[0]!;
-      process.stderr.write(`[stress] Starting stress test: ${maxIterations} iterations\n`);
-      process.stderr.write(`[stress] Sending iteration 1/${maxIterations}...\n`);
-      sendMessage(prompt);
     });
   }
 

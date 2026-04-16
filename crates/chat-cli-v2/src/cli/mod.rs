@@ -484,8 +484,6 @@ mod test {
                 no_interactive: false,
                 legacy_mode: false,
                 wrap: None,
-                stress: false,
-                stress_iterations: None,
             })),
             verbose: 2,
         });
@@ -530,8 +528,6 @@ mod test {
                 no_interactive: false,
                 legacy_mode: false,
                 wrap: None,
-                stress: false,
-                stress_iterations: None,
             })
         );
     }
@@ -554,8 +550,6 @@ mod test {
                 no_interactive: false,
                 legacy_mode: false,
                 wrap: None,
-                stress: false,
-                stress_iterations: None,
             })
         );
     }
@@ -578,8 +572,6 @@ mod test {
                 no_interactive: false,
                 legacy_mode: false,
                 wrap: None,
-                stress: false,
-                stress_iterations: None,
             })
         );
     }
@@ -602,8 +594,6 @@ mod test {
                 no_interactive: true,
                 legacy_mode: false,
                 wrap: None,
-                stress: false,
-                stress_iterations: None,
             })
         );
         assert_parse!(
@@ -622,8 +612,6 @@ mod test {
                 no_interactive: true,
                 legacy_mode: false,
                 wrap: None,
-                stress: false,
-                stress_iterations: None,
             })
         );
     }
@@ -646,8 +634,6 @@ mod test {
                 no_interactive: false,
                 legacy_mode: false,
                 wrap: None,
-                stress: false,
-                stress_iterations: None,
             })
         );
     }
@@ -670,8 +656,6 @@ mod test {
                 no_interactive: false,
                 legacy_mode: false,
                 wrap: None,
-                stress: false,
-                stress_iterations: None,
             })
         );
     }
@@ -694,8 +678,6 @@ mod test {
                 no_interactive: false,
                 legacy_mode: false,
                 wrap: None,
-                stress: false,
-                stress_iterations: None,
             })
         );
     }
@@ -718,8 +700,6 @@ mod test {
                 no_interactive: false,
                 legacy_mode: false,
                 wrap: None,
-                stress: false,
-                stress_iterations: None,
             })
         );
     }
@@ -742,8 +722,6 @@ mod test {
                 no_interactive: false,
                 legacy_mode: false,
                 wrap: Some(Never),
-                stress: false,
-                stress_iterations: None,
             })
         );
         assert_parse!(
@@ -762,8 +740,6 @@ mod test {
                 no_interactive: false,
                 legacy_mode: false,
                 wrap: Some(Always),
-                stress: false,
-                stress_iterations: None,
             })
         );
         assert_parse!(
@@ -782,8 +758,6 @@ mod test {
                 no_interactive: false,
                 legacy_mode: false,
                 wrap: Some(Auto),
-                stress: false,
-                stress_iterations: None,
             })
         );
     }

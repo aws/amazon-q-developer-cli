@@ -1113,11 +1113,8 @@ impl Agent {
                 Ok(AgentResponse::Skills(response))
             },
             AgentRequest::ResolveSkill { name } => {
-                let content = prompts::resolve_skill_from_resources(
-                    self.agent_config.resources(),
-                    &self.sys_provider,
-                    &name,
-                );
+                let content =
+                    prompts::resolve_skill_from_resources(self.agent_config.resources(), &self.sys_provider, &name);
                 Ok(AgentResponse::SkillContent(content))
             },
             AgentRequest::GetMcpPrompt { name, arguments } => {

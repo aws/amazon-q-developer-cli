@@ -226,7 +226,9 @@ pub enum AgentRequest {
     /// Get invocable skills from agent_config resources (skill:// URIs)
     GetSkills,
     /// Resolve a skill by name, returning its content (frontmatter stripped)
-    ResolveSkill { name: String },
+    ResolveSkill {
+        name: String,
+    },
     /// Get a specific MCP prompt with arguments
     GetMcpPrompt {
         name: String,
