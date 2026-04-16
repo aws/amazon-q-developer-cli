@@ -1,0 +1,4 @@
+{
+  "type": "fixed",
+  "description": "Fix resume picker over-truncating session titles to 30 characters"
+}

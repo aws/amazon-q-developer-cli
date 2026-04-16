@@ -13,6 +13,7 @@ import type {
   CommandResult,
   TuiCommand,
 } from '../types/commands';
+import { listSessionsForCwd } from '../utils/sessions.js';
 
 // Global reference for test commands
 let mockSessionClientInstance: MockSessionClient | null = null;
@@ -117,7 +118,19 @@ export class MockSessionClient implements SessionClient {
     return {};
   }
 
-  async listSessions(_cwd: string): Promise<ListSessionsResponse> {
+  async listSessions(cwd: string): Promise<ListSessionsResponse> {
+    if (process.env.KIRO_TEST_SESSIONS_DIR) {
+      const entries = listSessionsForCwd(cwd);
+      return {
+        sessions: entries.map((e) => ({
+          sessionId: e.sessionId,
+          cwd: e.cwd,
+          title: e.summary,
+          updatedAt: e.updatedAt,
+          messageCount: e.msgCount,
+        })),
+      };
+    }
     return { sessions: [] };
   }
 
