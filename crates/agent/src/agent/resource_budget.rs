@@ -8,6 +8,8 @@ use crate::agent::consts::{
 pub struct Resource {
     /// Exact value from the config this resource was taken from
     pub config_value: String,
+    /// Resolved absolute file path on disk
+    pub file_path: String,
     /// Resource content
     pub content: String,
 }
@@ -41,6 +43,7 @@ mod tests {
     fn make_resource(name: &str, size: usize) -> Resource {
         Resource {
             config_value: name.to_string(),
+            file_path: name.to_string(),
             content: "x".repeat(size),
         }
     }

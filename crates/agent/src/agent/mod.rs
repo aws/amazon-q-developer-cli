@@ -3149,7 +3149,7 @@ where
 
     let content = format_user_context_message(
         global_prompt.as_deref(),
-        files.iter().map(|r| &r.content),
+        files.iter().map(|r| (r.file_path.as_str(), r.content.as_str())),
         skills.iter().map(|r| &r.content),
         agent_spawn_hooks,
         latest_summary,
@@ -3171,7 +3171,7 @@ where
     vec![user_msg, assistant_msg]
 }
 
-fn format_user_context_message<T, U, S, V, W, X>(
+fn format_user_context_message<'a, T, U, V, W, X>(
     system_prompt: Option<&str>,
     files: T,
     skills: W,
@@ -3181,10 +3181,9 @@ fn format_user_context_message<T, U, S, V, W, X>(
     knowledge_context: Option<String>,
 ) -> String
 where
-    T: IntoIterator<Item = S>,
+    T: IntoIterator<Item = (&'a str, &'a str)>,
     U: IntoIterator<Item = V>,
     W: IntoIterator<Item = X>,
-    S: AsRef<str>,
     V: AsRef<str>,
     X: AsRef<str>,
 {
@@ -3223,10 +3222,9 @@ where
         context_content.push_str(CONTEXT_ENTRY_END_HEADER);
     }
 
-    for file in files {
-        let content = file.as_ref();
+    for (file_path, content) in files {
         context_content.push_str(CONTEXT_ENTRY_START_HEADER);
-        context_content.push_str(content);
+        context_content.push_str(&format!("[{}]\n{}", file_path, content));
         context_content.push_str("\n\n");
         context_content.push_str(CONTEXT_ENTRY_END_HEADER);
     }
@@ -3460,12 +3458,13 @@ where
                 let Ok(path) = canonicalize_path_sys(file_path, provider) else {
                     continue;
                 };
-                let Ok((content, _)) = read_file_with_max_limit(path, MAX_RESOURCE_FILE_LENGTH, "...truncated").await
+                let Ok((content, _)) = read_file_with_max_limit(&path, MAX_RESOURCE_FILE_LENGTH, "...truncated").await
                 else {
                     continue;
                 };
                 files.push(Resource {
                     config_value: original.to_string(),
+                    file_path: path.clone(),
                     content,
                 });
             },
@@ -3485,6 +3484,7 @@ where
                         };
                         files.push(Resource {
                             config_value: original.to_string(),
+                            file_path: entry.to_string_lossy().to_string(),
                             content,
                         });
                     }
@@ -3501,6 +3501,7 @@ where
                 let hint = format_skill_hint(&file_path, &content).unwrap_or(content);
                 skills.push(Resource {
                     config_value: original.to_string(),
+                    file_path: path.clone(),
                     content: hint,
                 });
             },
@@ -3513,15 +3514,16 @@ where
                         continue;
                     };
                     if entry.is_file() {
-                        let file_path = entry.to_string_lossy().to_string();
+                        let file_path_str = entry.to_string_lossy().to_string();
                         let Ok((content, _)) =
                             read_file_with_max_limit(entry.as_path(), MAX_RESOURCE_FILE_LENGTH, "...truncated").await
                         else {
                             continue;
                         };
-                        let hint = format_skill_hint(&file_path, &content).unwrap_or(content);
+                        let hint = format_skill_hint(&file_path_str, &content).unwrap_or(content);
                         skills.push(Resource {
                             config_value: original.to_string(),
+                            file_path: file_path_str,
                             content: hint,
                         });
                     }
