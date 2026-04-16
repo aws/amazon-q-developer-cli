@@ -348,6 +348,11 @@ fn sanitize_unicode_tags(text: impl AsRef<str>) -> String {
 fn env_vars_with_user_agent() -> HashMap<String, String> {
     let mut env_vars: HashMap<String, String> = std::env::vars().collect();
 
+    // Prevent git from spawning an interactive editor (e.g. for `git commit -e`
+    // during `git rebase --continue`). Since child processes run with stdin as
+    // /dev/null, editors like vim and nvim hang indefinitely instead of exiting.
+    env_vars.insert("GIT_EDITOR".to_string(), "true".to_string());
+
     // Set up additional metadata for the AWS CLI user agent
     let user_agent_metadata_value =
         format!("{USER_AGENT_APP_NAME} {USER_AGENT_VERSION_KEY}/{USER_AGENT_VERSION_VALUE}");
