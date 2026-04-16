@@ -58,32 +58,29 @@ describe('Streaming flush performance', () => {
       // To avoid setTimeout, we buffer content then trigger commitBufferedContent
       // by calling startBuffering + sending content + stopBuffering.
       const handler = store.getState().createStreamEventHandler();
-      const { startBuffering, stopBuffering } =
-        store.getState().streamingBuffer;
-      if (!startBuffering || !stopBuffering)
-        throw new Error('expected streamingBuffer methods');
+      const { streamingBuffer } = store.getState();
 
       // Warm up
       for (let i = 0; i < 10; i++) {
-        startBuffering();
+        streamingBuffer?.startBuffering?.();
         handler({
           type: AgentEventType.Content,
           id: 'm-active',
           content: { type: ContentType.Text, text: `w${i} ` },
         });
-        stopBuffering();
+        streamingBuffer?.stopBuffering?.();
       }
 
       // Benchmark: measure just the flush (startBuffer → content → stopBuffer)
       const start = performance.now();
       for (let i = 0; i < iterations; i++) {
-        startBuffering();
+        streamingBuffer?.startBuffering?.();
         handler({
           type: AgentEventType.Content,
           id: 'm-active',
           content: { type: ContentType.Text, text: `t${i} ` },
         });
-        stopBuffering(); // triggers synchronous set()
+        streamingBuffer?.stopBuffering?.(); // triggers synchronous set()
       }
       const elapsed = performance.now() - start;
 

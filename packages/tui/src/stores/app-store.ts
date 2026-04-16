@@ -1043,22 +1043,7 @@ export const createAppStore = (props: AppStoreProps) => {
         });
         await get().processQueue();
       } catch (error) {
-        // Abort the in-flight stream and notify the backend so it clears
-        // pending prompt state. Without this, the next prompt would be
-        // rejected with "Prompt already in progress".
-        const controller = get().currentAbortController;
-        if (controller) {
-          controller.abort();
-        }
         set({ currentAbortController: null });
-        try {
-          await Promise.race([
-            kiro.cancel(),
-            new Promise<void>((r) => setTimeout(r, 5000)),
-          ]);
-        } catch {
-          // Ignore cancel errors during recovery
-        }
         logger.error('[store] sendMessage: caught error', error);
         if (error instanceof DOMException && error.name === 'AbortError') {
           set({ isProcessing: false });
