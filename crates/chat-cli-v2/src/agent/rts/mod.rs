@@ -534,7 +534,14 @@ impl std::fmt::Debug for RtsState {
     }
 }
 
-type UsageTokens = Option<(Option<i32>, Option<i32>, Option<i32>, Option<i32>)>;
+/// Token usage from a MetadataEvent in the response stream.
+#[derive(Debug, Clone, Default)]
+struct UsageTokens {
+    uncached_input_tokens: Option<i32>,
+    output_tokens: Option<i32>,
+    cache_read_input_tokens: Option<i32>,
+    cache_write_input_tokens: Option<i32>,
+}
 
 #[derive(Debug)]
 struct ResponseParser {
@@ -575,7 +582,7 @@ struct ResponseParser {
     /// Context usage percentage from ContextUsageEvent
     context_usage_percentage: Option<f32>,
     /// Token usage from MetadataEvent
-    usage_tokens: UsageTokens,
+    usage_tokens: Option<UsageTokens>,
     /// Metering usage from MeteringEvent(s)
     metering_usage: Vec<MeteringUsageInfo>,
 }
@@ -744,12 +751,12 @@ impl ResponseParser {
                         cache_read_input_tokens,
                         cache_write_input_tokens,
                     } => {
-                        self.usage_tokens = Some((
+                        self.usage_tokens = Some(UsageTokens {
                             uncached_input_tokens,
                             output_tokens,
                             cache_read_input_tokens,
                             cache_write_input_tokens,
-                        ));
+                        });
                     },
                     ChatResponseStream::MeteringEvent {
                         usage,
@@ -855,12 +862,12 @@ impl ResponseParser {
 
     fn make_metadata(&self) -> StreamEvent {
         let usage = if self.usage_tokens.is_some() || self.context_usage_percentage.is_some() {
-            let (input, output, cache_read, cache_write) = self.usage_tokens.unwrap_or((None, None, None, None));
+            let tokens = self.usage_tokens.as_ref();
             Some(MetadataUsage {
-                input_tokens: input.map(|v| v as u32),
-                output_tokens: output.map(|v| v as u32),
-                cache_read_input_tokens: cache_read.map(|v| v as u32),
-                cache_write_input_tokens: cache_write.map(|v| v as u32),
+                input_tokens: tokens.and_then(|t| t.uncached_input_tokens.map(|v| v as u32)),
+                output_tokens: tokens.and_then(|t| t.output_tokens.map(|v| v as u32)),
+                cache_read_input_tokens: tokens.and_then(|t| t.cache_read_input_tokens.map(|v| v as u32)),
+                cache_write_input_tokens: tokens.and_then(|t| t.cache_write_input_tokens.map(|v| v as u32)),
                 context_usage_percentage: self.context_usage_percentage,
             })
         } else {

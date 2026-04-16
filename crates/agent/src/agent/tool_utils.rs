@@ -17,7 +17,10 @@ use super::consts::{
     TOOL_USE_PURPOSE_FIELD_DESCRIPTION,
     TOOL_USE_PURPOSE_FIELD_NAME,
 };
-use super::tools::BuiltInTool;
+use super::tools::{
+    BuiltInTool,
+    BuiltInToolName,
+};
 
 /// Categorizes different types of tool name validation failures according to the requirements by
 /// the RTS API.
@@ -92,8 +95,26 @@ impl SanitizedToolSpecs {
     /// Returns a list of valid tool specs to send to the model.
     ///
     /// These tool specs are "sanitized", meaning they *should not* cause validation errors.
+    ///
+    /// Tool specs are sorted deterministically to ensure the prompt prefix is
+    /// byte-identical across turns, which is required for prompt caching.
+    ///
+    /// Following classic mode behavior, the code tool is pinned first to
+    /// prioritize it in the model's context window. Remaining tools are sorted
+    /// alphabetically.
     pub fn tool_specs(&self) -> Vec<ToolSpec> {
-        self.tool_map.values().map(|v| v.tool_spec.clone()).collect()
+        let code_tool_name = BuiltInToolName::Code.to_string();
+        let mut specs: Vec<ToolSpec> = self.tool_map.values().map(|v| v.tool_spec.clone()).collect();
+        specs.sort_by(|a, b| {
+            let a_is_code = a.name == code_tool_name;
+            let b_is_code = b.name == code_tool_name;
+            match (a_is_code, b_is_code) {
+                (true, false) => std::cmp::Ordering::Less,
+                (false, true) => std::cmp::Ordering::Greater,
+                _ => a.name.cmp(&b.name),
+            }
+        });
+        specs
     }
 }
 
@@ -304,4 +325,56 @@ pub fn add_tool_use_purpose_arg(tool_specs: &mut Vec<ToolSpec>) {
     }
 }
 
-// pub fn parse_tool() -> Result<Tool,
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn make_sanitized_specs(names: &[CanonicalToolName]) -> SanitizedToolSpecs {
+        let tool_map = names
+            .iter()
+            .map(|cn| {
+                let name = match cn {
+                    CanonicalToolName::BuiltIn(b) => b.to_string(),
+                    CanonicalToolName::Mcp { tool_name, .. } => tool_name.clone(),
+                    CanonicalToolName::Agent { agent_name } => agent_name.clone(),
+                };
+                (name.clone(), SanitizedToolSpec {
+                    canonical_name: cn.clone(),
+                    tool_spec: ToolSpec {
+                        name: name.clone(),
+                        description: format!("{name} tool"),
+                        input_schema: serde_json::Map::new(),
+                    },
+                })
+            })
+            .collect();
+        SanitizedToolSpecs {
+            tool_map,
+            filtered_specs: vec![],
+            transformed_tool_specs: vec![],
+        }
+    }
+
+    /// Following classic mode behavior, the code tool is prioritized first in the
+    /// tool spec ordering. Remaining tools are sorted alphabetically. The ordering
+    /// must be deterministic for prompt caching.
+    #[test]
+    fn tool_specs_code_tool_is_always_first() {
+        let specs = make_sanitized_specs(&[
+            CanonicalToolName::BuiltIn(BuiltInToolName::FsWrite),
+            CanonicalToolName::BuiltIn(BuiltInToolName::ExecuteCmd),
+            CanonicalToolName::BuiltIn(BuiltInToolName::Code),
+            CanonicalToolName::BuiltIn(BuiltInToolName::Glob),
+            CanonicalToolName::BuiltIn(BuiltInToolName::FsRead),
+            CanonicalToolName::Mcp {
+                server_name: "test".into(),
+                tool_name: "alpha_mcp".into(),
+            },
+        ]);
+
+        let result = specs.tool_specs();
+        let names: Vec<&str> = result.iter().map(|s| s.name.as_str()).collect();
+        assert_eq!(names[0], BuiltInToolName::Code.to_string(), "code tool must be first");
+        assert_eq!(&names[1..], &["alpha_mcp", "glob", "read", "shell", "write"]);
+    }
+}

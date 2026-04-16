@@ -47,6 +47,11 @@ mod tests {
             kirocli_app_type: None,
             kirocli_acp_client_name: None,
             kirocli_acp_client_version: None,
+            codewhispererterminal_total_tokens: None,
+            codewhispererterminal_uncached_input_tokens: None,
+            codewhispererterminal_output_tokens: None,
+            codewhispererterminal_cache_read_input_tokens: None,
+            codewhispererterminal_cache_write_input_tokens: None,
         });
 
         let s = serde_json::to_string_pretty(&metric_datum_init).unwrap();

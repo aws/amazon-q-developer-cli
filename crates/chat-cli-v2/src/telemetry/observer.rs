@@ -436,6 +436,8 @@ impl TelemetryObserver {
         });
         let response_len = metrics.map(|m| m.response_stream_len as i32);
 
+        let usage = metadata.stream.as_ref().and_then(|s| s.usage.as_ref());
+
         let tool_use_ids: Vec<String> = metadata.tool_uses.iter().map(|t| t.tool_use_id.clone()).collect();
         let tool_names: Vec<String> = metadata.tool_uses.iter().map(|t| t.name.clone()).collect();
         let has_tool_use = !metadata.tool_uses.is_empty();
@@ -489,6 +491,19 @@ impl TelemetryObserver {
             },
             assistant_response_length: response_len,
             message_meta_tags: vec![], // TODO: populate meta tags (e.g. Compact) for V1 parity
+            total_tokens: usage.and_then(|u| {
+                // total = uncached_input + cache_read + output
+                // cache_write is a subset of uncached_input, not additive
+                let input = u.input_tokens.unwrap_or(0);
+                let output = u.output_tokens.unwrap_or(0);
+                let cache_read = u.cache_read_input_tokens.unwrap_or(0);
+                let total = input as i32 + output as i32 + cache_read as i32;
+                if total > 0 { Some(total) } else { None }
+            }),
+            uncached_input_tokens: usage.and_then(|u| u.input_tokens.map(|v| v as i32)),
+            output_tokens: usage.and_then(|u| u.output_tokens.map(|v| v as i32)),
+            cache_read_input_tokens: usage.and_then(|u| u.cache_read_input_tokens.map(|v| v as i32)),
+            cache_write_input_tokens: usage.and_then(|u| u.cache_write_input_tokens.map(|v| v as i32)),
         };
         self.emit(EventType::ChatAddedMessage {
             conversation_id: session_id.to_string(),

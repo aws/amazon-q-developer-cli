@@ -199,6 +199,11 @@ impl Event {
                         tool_use_id,
                         assistant_response_length,
                         message_meta_tags,
+                        total_tokens,
+                        uncached_input_tokens,
+                        output_tokens,
+                        cache_read_input_tokens,
+                        cache_write_input_tokens,
                     },
             } => Some(
                 CodewhispererterminalAddChatMessage {
@@ -240,6 +245,17 @@ impl Event {
                     kirocli_app_type: app_type_enum.clone(),
                     kirocli_acp_client_name: self.acp_client_name.map(Into::into),
                     kirocli_acp_client_version: self.acp_client_version.map(Into::into),
+                    codewhispererterminal_total_tokens: total_tokens.map(|v| v as i64).map(Into::into),
+                    codewhispererterminal_uncached_input_tokens: uncached_input_tokens
+                        .map(|v| v as i64)
+                        .map(Into::into),
+                    codewhispererterminal_output_tokens: output_tokens.map(|v| v as i64).map(Into::into),
+                    codewhispererterminal_cache_read_input_tokens: cache_read_input_tokens
+                        .map(|v| v as i64)
+                        .map(Into::into),
+                    codewhispererterminal_cache_write_input_tokens: cache_write_input_tokens
+                        .map(|v| v as i64)
+                        .map(Into::into),
                 }
                 .into_metric_datum(),
             ),
@@ -636,6 +652,11 @@ pub struct ChatAddedMessageParams {
     pub tool_use_id: Option<String>,
     pub assistant_response_length: Option<i32>,
     pub message_meta_tags: Vec<MessageMetaTag>,
+    pub total_tokens: Option<i32>,
+    pub uncached_input_tokens: Option<i32>,
+    pub output_tokens: Option<i32>,
+    pub cache_read_input_tokens: Option<i32>,
+    pub cache_write_input_tokens: Option<i32>,
 }
 
 /// Optional fields for tangent mode session telemetry event.

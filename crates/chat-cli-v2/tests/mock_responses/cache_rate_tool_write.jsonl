@@ -1,0 +1,6 @@
+// write tool call
+{"kind":"event","data":{"kind":"ToolUseEvent","data":{"tool_use_id":"tooluse_write_001","name":"write","input":null,"stop":null}}}
+{"kind":"event","data":{"kind":"ToolUseEvent","data":{"tool_use_id":"tooluse_write_001","name":"write","input":"{\"command\": \"create\", \"path\": \"out.txt\", \"content\": \"hello\"}","stop":null}}}
+{"kind":"event","data":{"kind":"ToolUseEvent","data":{"tool_use_id":"tooluse_write_001","name":"write","input":null,"stop":true}}}
+
+{"kind":"event","data":{"kind":"AssistantResponseEvent","data":{"content":"Done writing."}}}

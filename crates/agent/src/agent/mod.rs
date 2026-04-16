@@ -3159,14 +3159,20 @@ where
     if content.is_empty() {
         return vec![];
     }
-    let user_msg = Message::new(Role::User, vec![ContentBlock::Text(content)], None);
-    let assistant_msg = Message::new(
-            Role::Assistant,
-            vec![ContentBlock::Text(
-                "I will fully incorporate this information when generating my responses, and explicitly acknowledge relevant parts of the summary when answering questions.".to_string(),
-            )],
-            None,
-        );
+    let user_msg = Message {
+        id: None,
+        role: Role::User,
+        content: vec![ContentBlock::Text(content)],
+        meta: None,
+    };
+    let assistant_msg = Message {
+        id: None,
+        role: Role::Assistant,
+        content: vec![ContentBlock::Text(
+            "I will fully incorporate this information when generating my responses, and explicitly acknowledge relevant parts of the summary when answering questions.".to_string(),
+        )],
+        meta: None,
+    };
 
     vec![user_msg, assistant_msg]
 }
