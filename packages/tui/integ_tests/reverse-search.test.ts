@@ -500,9 +500,14 @@ describe('Reverse incremental search (Ctrl+R)', () => {
 
     snap = testCase.getSnapshot().join('\n');
     expect(snap).not.toContain('reverse-i-search');
-    // Should NOT contain the matched line or the original input
-    expect(snap).not.toContain('hello world');
-    expect(snap).not.toContain('my current input');
+    // The input area should be empty (no matched line or original input).
+    // Note: 'hello world' remains visible in the message history area above,
+    // so we check the store input state rather than the full screen snapshot.
+    const store = await testCase.getStore();
+    const inputText = store.input.lines.join('\n');
+    expect(inputText).not.toContain('hello world');
+    expect(inputText).not.toContain('my current input');
+    expect(inputText.trim()).toBe('');
 
     await exitCleanly(testCase);
   }, 20000);
