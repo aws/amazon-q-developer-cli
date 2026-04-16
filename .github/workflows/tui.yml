@@ -110,6 +110,34 @@ jobs:
         run: bun run test:run
         working-directory: packages/twinki
 
+  tui-integ:
+    name: Integration Tests
+    needs: check-paths
+    if: needs.check-paths.outputs.tui-changed == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+      - name: Install dependencies
+        run: bun install
+      - name: Build ink package
+        run: bun run build
+        working-directory: packages/ink
+      - name: Build twinki package
+        run: bun run build
+        working-directory: packages/twinki/packages/twinki
+      - name: Run integration tests
+        run: bun run test:integ
+        working-directory: packages/tui
+      - name: Upload test logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: integ-logs
+          path: packages/tui/integ_tests/test-outputs/
+          retention-days: 7
+
   tui-e2e:
     name: E2E Tests (${{ matrix.os }})
     needs: check-paths
