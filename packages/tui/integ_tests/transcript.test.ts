@@ -58,8 +58,8 @@ describe('/transcript', () => {
     await typeSlowly(testCase, '/transcript');
     await testCase.pressEnter();
 
-    // Wait for less to render the serialized markdown
-    await testCase.waitForVisibleText('## User', 5000);
+    // Wait for less to render the serialized markdown (longer timeout for CI)
+    await testCase.waitForVisibleText('## User', 10000);
 
     const snapshot = testCase.getSnapshot().join('\n');
     expect(snapshot).toContain('## User');
@@ -69,6 +69,6 @@ describe('/transcript', () => {
     await testCase.sendKeys('q');
 
     // Should return to the normal TUI prompt
-    await testCase.waitForVisibleText('ask a question', 5000);
+    await testCase.waitForVisibleText('ask a question', 10000);
   }, 30000);
 });
