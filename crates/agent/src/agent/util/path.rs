@@ -45,25 +45,17 @@ pub fn resolve_path_fuzzy_real(path: impl AsRef<str>) -> Result<String, UtilErro
 pub fn canonicalize_path_sys<P: SystemProvider>(path: impl AsRef<str>, provider: &P) -> Result<String, UtilError> {
     let expanded =
         shellexpand::full_with_context(path.as_ref(), shellexpand_home(provider), shellexpand_context(provider))?;
-    #[cfg(windows)]
-    let path_buf = if Path::new(expanded.as_ref() as &str).is_absolute() {
-        PathBuf::from(expanded.as_ref() as &str)
-    } else {
-        let current_dir = provider
-            .cwd()
-            .with_context(|| "could not get current directory".to_string())?;
-        current_dir.join(expanded.as_ref() as &str)
-    };
-    #[cfg(not(windows))]
-    let path_buf = if expanded.starts_with("/") {
+    let expanded_path = Path::new(expanded.as_ref());
+
+    let path_buf = if expanded_path.is_absolute() {
         // Already absolute path
-        PathBuf::from(expanded.as_ref() as &str)
+        expanded_path.to_path_buf()
     } else {
         // Convert relative paths to absolute paths
         let current_dir = provider
             .cwd()
             .with_context(|| "could not get current directory".to_string())?;
-        current_dir.join(expanded.as_ref() as &str)
+        current_dir.join(expanded_path)
     };
 
     // Try canonicalize first, fallback to manual normalization if it fails
