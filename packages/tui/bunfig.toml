@@ -3,5 +3,37 @@ root = "src"
 coverage = true
 coverageReporter = ["text", "lcov"]
 coverageSkipTestFiles = true
-coveragePathIgnorePatterns = ["**/dist/**", "**/node_modules/**", "**/twinki/**", "**/ink/**"]
+
+# Coverage exclusions -- keep in sync with coverage-config.json (source of truth).
+# Vitest covers hooks, selectors, and components separately (see docs/COVERAGE.md).
+coveragePathIgnorePatterns = [
+  # Build output
+  "**/dist/**",
+  # Third-party code
+  "**/node_modules/**",
+  # Separate package with its own coverage
+  "**/twinki/**",
+  # Vendored Ink fork, tested upstream
+  "**/ink/**",
+  # Ink renderer bootstrap, no testable logic
+  "**/renderer.ts",
+  # Test infrastructure, not production code
+  "**/test-utils/**",
+  # E2E test infrastructure
+  "**/e2e_tests/**",
+  # Bun's V8 coverage can't track code inside React's reconciler
+  "**/components/**",
+  # Hooks use React reconciler, covered by vitest
+  "**/hooks/**",
+  # React contexts, covered by vitest
+  "**/contexts/**",
+  # App entry point with side effects
+  "**/kiro.ts",
+  # ACP client, heavy side effects
+  "**/acp-client.ts",
+]
+
+# e2e_tests/preload.ts rebuilds dist/tui.js before E2E test runs.
+# For comprehensive coverage with zero-coverage visibility, run with:
+#   bun test --preload ./src/test-utils/coverage-preload.ts
 preload = ["./e2e_tests/preload.ts"]

@@ -1,0 +1,31 @@
+{
+  "coverageGoal": 90,
+  "excludeDirectories": [
+    { "name": "dist", "reason": "Build output" },
+    { "name": "node_modules", "reason": "Third-party code" },
+    { "name": "twinki", "reason": "Separate package with its own coverage" },
+    { "name": "ink", "reason": "Vendored Ink fork, tested upstream" },
+    { "name": "test-utils", "reason": "Test infrastructure, not production code" },
+    { "name": "e2e_tests", "reason": "E2E test infrastructure" },
+    { "name": "components", "reason": "Bun V8 coverage blind spot inside React reconciler" },
+    { "name": "hooks", "reason": "React hooks, covered by vitest" },
+    { "name": "contexts", "reason": "React contexts, covered by vitest" },
+    { "name": "storybook", "reason": "Storybook stories, not production code" },
+    { "name": "__tests__", "reason": "Test directories" }
+  ],
+  "excludeFiles": [
+    { "name": "renderer.ts", "reason": "Ink renderer bootstrap, no testable logic" },
+    { "name": "kiro.ts", "reason": "App entry point with side effects" },
+    { "name": "acp-client.ts", "reason": "ACP client, heavy side effects" },
+    { "name": "index.tsx", "reason": "App root, has side effects" }
+  ],
+  "excludePatterns": [
+    { "pattern": ".test.", "reason": "Test files" },
+    { "pattern": ".spec.", "reason": "Spec files" }
+  ],
+  "lcovFilters": {
+    "bun": ["hooks/", "selectors", "components/", "contexts/", "kiro\\.ts", "acp-client\\.ts"],
+    "tuiVitest": ["\\.test\\.", "spec\\."],
+    "twinkiVitest": ["wrap-ansi-optimized"]
+  }
+}
