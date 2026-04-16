@@ -265,17 +265,32 @@ impl<'a> Subagent<'a> {
         // used for telemetry/compaction which subagents don't need. Consider unifying if ApiClient
         // is ever consolidated.
         let model = {
-            use crate::cli::chat::cli::model::validate_model;
+            use crate::cli::chat::cli::model::{
+                find_model,
+                get_available_models,
+            };
 
             let state = RtsModelState::new();
             info!(?state.conversation_id, "generated new conversation id");
 
-            let model_id = match snapshot.agent_config.config().model() {
-                Some(requested) => validate_model(os, requested).await.or_else(|| {
-                    warn!(model = requested, "agent config specifies invalid model, using default");
+            let model_id = match get_available_models(os).await {
+                Ok((models, default_model)) => match snapshot.agent_config.config().model() {
+                    Some(requested) => Some(find_model(&models, requested).map_or_else(
+                        || {
+                            warn!(
+                                model = requested,
+                                "agent config specifies invalid model, falling back to default"
+                            );
+                            default_model.model_id.clone()
+                        },
+                        |m| m.model_id.clone(),
+                    )),
+                    None => Some(default_model.model_id),
+                },
+                Err(e) => {
+                    warn!("failed to fetch available models for subagent: {e}");
                     None
-                }),
-                None => None,
+                },
             };
 
             Arc::new(RtsModel::new(os.client.clone(), state.conversation_id, model_id))
