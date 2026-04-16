@@ -54,6 +54,16 @@
     "expected": "Allow"
   },
   {
+    "name": "order_3_dangerous_with_deny_by_default_denies",
+    "commands": ["find . -exec rm {} ;"],
+    "settings": {
+      "deny_by_default": true
+    },
+    "detection": { "danger_level": "High", "is_readonly": false },
+    "expected": "Deny",
+    "expected_reason_contains": ["not in allowed list"]
+  },
+  {
     "name": "order_5_deny_by_default_blocks_unpermitted",
     "commands": ["unknown_cmd"],
     "settings": {

@@ -1,0 +1,4 @@
+{
+  "type": "fixed",
+  "description": "Fix dangerous shell commands prompting for approval instead of respecting denyByDefault"
+}

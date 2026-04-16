@@ -82,8 +82,12 @@ pub fn decide(
         return DeciderResult::allow();
     }
 
-    // 3. Dangerous → Ask (no trustable commands — allowedCommands doesn't override danger)
+    // 3. Dangerous → Deny if deny_by_default, otherwise Ask (allowedCommands doesn't override danger,
+    //    but deny_by_default does — silently)
     if detection.danger_level != DangerLevel::None {
+        if settings.deny_by_default {
+            return DeciderResult::deny("Command not in allowed list".to_string());
+        }
         return DeciderResult::ask(vec![]);
     }
 
