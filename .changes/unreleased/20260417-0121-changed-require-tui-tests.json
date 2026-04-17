@@ -1,0 +1,4 @@
+{
+  "type": "changed",
+  "description": "TUI unit tests and integration tests are now required to merge PRs"
+}

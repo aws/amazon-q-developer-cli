@@ -199,3 +199,41 @@ jobs:
           name: e2e-logs-${{ matrix.os }}
           path: packages/tui/e2e_tests/test-outputs/
           retention-days: 7
+
+  # Gate jobs: always run so they can be set as required status checks.
+  # When TUI files aren't changed the upstream jobs are skipped, but these
+  # still report success — unblocking non-TUI PRs.
+
+  tui-unit-tests-required:
+    name: "TUI: Unit Tests (required)"
+    if: always()
+    needs: [check-paths, tui-test]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check result
+        run: |
+          if [[ "${{ needs.check-paths.outputs.tui-changed }}" != "true" ]]; then
+            echo "TUI files not changed — skipping"
+            exit 0
+          fi
+          if [[ "${{ needs.tui-test.result }}" != "success" ]]; then
+            echo "::error::TUI unit tests failed"
+            exit 1
+          fi
+
+  tui-integ-tests-required:
+    name: "TUI: Integration Tests (required)"
+    if: always()
+    needs: [check-paths, tui-integ]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check result
+        run: |
+          if [[ "${{ needs.check-paths.outputs.tui-changed }}" != "true" ]]; then
+            echo "TUI files not changed — skipping"
+            exit 0
+          fi
+          if [[ "${{ needs.tui-integ.result }}" != "success" ]]; then
+            echo "::error::TUI integration tests failed"
+            exit 1
+          fi
