@@ -62,6 +62,11 @@ chat.log
 !.kiro/skills/knight-rider/
 !.kiro/skills/acp-session-storage/
 !.kiro/skills/gh-issues/
+!.kiro/skills/pragmatic-reviewer/
+!.kiro/skills/semantic-pr-reviewer/
+!.kiro/skills/feedback-digest/
+!.kiro/skills/tcorp-tickets/
+!.kiro/skills/taskei-tasks/
 .kiro/code/
 
 # Generated doc embeddings and indexes
