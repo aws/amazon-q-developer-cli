@@ -24,6 +24,7 @@ use agent::protocol::{
 };
 use agent::{
     ActiveState,
+    DEFERRED_TOOLS_MESSAGE,
     SKILL_FILES_MESSAGE,
 };
 use common::*;
@@ -117,6 +118,123 @@ async fn test_mixed_file_and_skill_resources() {
     assert!(
         !first_msg.contains("This is the full skill content that should NOT appear"),
         "skill body content should NOT be in context"
+    );
+}
+
+/// Tests that when tool_search_enabled=true with MCP tools, the deferred tools list
+/// is injected into context messages on the very first request.
+#[tokio::test]
+async fn test_deferred_tools_message_in_context() {
+    use std::collections::HashMap;
+
+    use agent::agent_config::definitions::{
+        McpServerConfig,
+        RemoteMcpServerConfig,
+    };
+    use mock_mcp_server::{
+        MockMcpServerBuilder,
+        ToolDef,
+        prebuild_bin,
+    };
+
+    let _ = tracing_subscriber::fmt::try_init();
+
+    prebuild_bin().expect("failed to prebuild mock-mcp-server");
+
+    let handle = MockMcpServerBuilder::new()
+        .add_tool(ToolDef {
+            name: "database_query".to_string(),
+            description: "Execute SQL database queries".to_string(),
+            input_schema: serde_json::json!({"type": "object", "properties": {"query": {"type": "string"}}}),
+        })
+        .spawn_http()
+        .expect("failed to spawn mock MCP server");
+
+    handle
+        .wait_ready(std::time::Duration::from_secs(5))
+        .expect("mock MCP server not ready");
+
+    let mcp_config = McpServerConfig::Remote(RemoteMcpServerConfig {
+        url: handle.url(),
+        headers: HashMap::new(),
+        timeout_ms: 30000,
+        oauth_scopes: Vec::new(),
+        oauth: None,
+        disabled: false,
+        disabled_tools: Vec::new(),
+    });
+
+    let settings = agent::types::AgentSettings {
+        tool_search_enabled: true,
+        tool_search_min_pct: None,
+        tool_search_min_tokens: None,
+        ..Default::default()
+    };
+
+    // Use tool_search_flow.jsonl which triggers tool_search → second request.
+    let mut test = TestCase::builder()
+        .test_name("deferred tools message in context")
+        .with_default_agent_config()
+        .with_settings(settings)
+        .with_mcp_server("testdb", mcp_config)
+        .with_trust_all_tools(true)
+        .with_responses(
+            parse_response_streams(include_str!("./mock_responses/tool_search_flow.jsonl"))
+                .await
+                .unwrap(),
+        )
+        .build()
+        .await
+        .unwrap();
+
+    test.wait_until_agent_event(Duration::from_secs(10), |evt| matches!(evt, AgentEvent::Initialized))
+        .await
+        .expect("timed out waiting for agent initialization");
+
+    test.send_prompt("search for database tools".to_string()).await;
+    test.wait_until_agent_stop(Duration::from_secs(10)).await.unwrap();
+
+    let requests = test.requests();
+    assert!(
+        requests.len() >= 2,
+        "expected at least 2 requests, got {}",
+        requests.len()
+    );
+
+    // Check request 0 (first request) — make_tool_spec() runs before format_tool_list(),
+    // so the deferred tools list should be present from the very first request.
+    let context_msg = requests[0]
+        .messages()
+        .first()
+        .expect("first message should exist")
+        .text();
+
+    // DEFERRED_TOOLS_MESSAGE instruction should be present
+    assert!(
+        context_msg.contains(DEFERRED_TOOLS_MESSAGE),
+        "expected DEFERRED_TOOLS_MESSAGE in context"
+    );
+
+    // Tool list XML block with composite key
+    assert!(
+        context_msg.contains("<available-deferred-tools>"),
+        "expected <available-deferred-tools> XML block"
+    );
+    assert!(
+        context_msg.contains("testdb::database_query"),
+        "expected tool listed as testdb::database_query"
+    );
+    assert!(
+        context_msg.contains("Execute SQL database queries"),
+        "expected tool description in deferred tools list"
+    );
+
+    // Verify ordering: DEFERRED_TOOLS_MESSAGE before tool list
+    let msg_pos = context_msg.find(DEFERRED_TOOLS_MESSAGE).unwrap();
+    let list_pos = context_msg.find("<available-deferred-tools>").unwrap();
+    assert!(
+        msg_pos < list_pos,
+        "DEFERRED_TOOLS_MESSAGE should appear before tool list"
     );
 }
 
@@ -1261,4 +1379,149 @@ async fn test_duplicate_agent_spawn_hooks_all_complete() {
         })
         .count();
     assert_eq!(hook_end_count, 2, "both duplicate hooks should have executed");
+}
+
+/// Tests the full MCP tool filtering and activation flow via tool_search:
+/// 1. Agent starts with MCP tools filtered out of tool_specs (low context/token usage)
+/// 2. Model calls tool_search — BM25 finds matching MCP tool — tool gets activated
+/// 3. Activated MCP tool now appears in tool_specs sent to model
+#[tokio::test]
+async fn test_tool_search_enabled_includes_tool_search() {
+    use std::collections::HashMap;
+
+    use agent::agent_config::definitions::{
+        McpServerConfig,
+        RemoteMcpServerConfig,
+    };
+    use mock_mcp_server::{
+        MockMcpServerBuilder,
+        ToolDef,
+        prebuild_bin,
+    };
+
+    let _ = tracing_subscriber::fmt::try_init();
+
+    // Prebuild the mock MCP server binary
+    prebuild_bin().expect("failed to prebuild mock-mcp-server");
+
+    // Spawn mock MCP server with a database tool
+    let handle = MockMcpServerBuilder::new()
+        .add_tool(ToolDef {
+            name: "database_query".to_string(),
+            description: "Execute SQL database queries and return results".to_string(),
+            input_schema: serde_json::json!({"type": "object", "properties": {"query": {"type": "string"}}}),
+        })
+        .spawn_http()
+        .expect("failed to spawn mock MCP server");
+
+    handle
+        .wait_ready(std::time::Duration::from_secs(5))
+        .expect("mock MCP server not ready");
+
+    let mcp_config = McpServerConfig::Remote(RemoteMcpServerConfig {
+        url: handle.url(),
+        headers: HashMap::new(),
+        timeout_ms: 30000,
+        oauth_scopes: Vec::new(),
+        oauth: None,
+        disabled: false,
+        disabled_tools: Vec::new(),
+    });
+
+    let settings = agent::types::AgentSettings {
+        tool_search_enabled: true,
+        tool_search_min_pct: None,
+        tool_search_min_tokens: None,
+        ..Default::default()
+    };
+
+    let mut test = TestCase::builder()
+        .test_name("tool search mcp filtering and activation")
+        .with_default_agent_config()
+        .with_settings(settings)
+        .with_mcp_server("testdb", mcp_config)
+        .with_trust_all_tools(true)
+        .with_responses(
+            parse_response_streams(include_str!("./mock_responses/tool_search_flow.jsonl"))
+                .await
+                .unwrap(),
+        )
+        .build()
+        .await
+        .unwrap();
+
+    // Wait for agent initialization (MCP servers to be ready)
+    test.wait_until_agent_event(Duration::from_secs(10), |evt| matches!(evt, AgentEvent::Initialized))
+        .await
+        .expect("timed out waiting for agent initialization");
+
+    test.send_prompt("search for database tools".to_string()).await;
+    test.wait_until_agent_stop(Duration::from_secs(10)).await.unwrap();
+
+    let requests = test.requests();
+    assert!(
+        requests.len() >= 2,
+        "expected at least 2 requests, got {}",
+        requests.len()
+    );
+
+    // Request 0: MCP tool should be ABSENT (filtered out), tool_search should be present
+    let tool_specs_0 = requests[0].tool_specs().expect("request 0 should have tool specs");
+    let has_tool_search = tool_specs_0.iter().any(|t| t.name == "tool_search");
+    let has_mcp_tool_0 = tool_specs_0.iter().any(|t| t.name.contains("database_query"));
+
+    assert!(has_tool_search, "tool_search should be present in request 0");
+    assert!(
+        !has_mcp_tool_0,
+        "MCP tool database_query should NOT be present in request 0 (filtered out)"
+    );
+
+    // Request 1: MCP tool should be PRESENT (activated after tool_search)
+    let tool_specs_1 = requests[1].tool_specs().expect("request 1 should have tool specs");
+    let has_mcp_tool_1 = tool_specs_1.iter().any(|t| t.name.contains("database_query"));
+
+    assert!(
+        has_mcp_tool_1,
+        "MCP tool database_query should be present in request 1 (activated after tool_search)"
+    );
+}
+
+/// Tests that tool_search_enabled=false excludes tool_search from tool specs.
+#[tokio::test]
+async fn test_tool_search_disabled_excludes_tool_search() {
+    let _ = tracing_subscriber::fmt::try_init();
+
+    let settings = agent::types::AgentSettings {
+        tool_search_enabled: false,
+        ..Default::default()
+    };
+
+    let mut test = TestCase::builder()
+        .test_name("tool search disabled excludes search tool")
+        .with_default_agent_config()
+        .with_settings(settings)
+        .with_responses(
+            parse_response_streams(include_str!("./mock_responses/single_turn.jsonl"))
+                .await
+                .unwrap(),
+        )
+        .build()
+        .await
+        .unwrap();
+
+    test.send_prompt("hello".to_string()).await;
+    test.wait_until_agent_stop(Duration::from_secs(2)).await.unwrap();
+
+    let requests = test.requests();
+    assert!(!requests.is_empty(), "expected at least one request");
+
+    let tool_specs = requests[0].tool_specs();
+    assert!(tool_specs.is_some(), "request should have tool specs");
+
+    let tools = tool_specs.unwrap();
+    let has_tool_search = tools.iter().any(|t| t.name == "tool_search");
+    assert!(
+        !has_tool_search,
+        "tool_search should NOT be present when tool_search_enabled=false"
+    );
 }

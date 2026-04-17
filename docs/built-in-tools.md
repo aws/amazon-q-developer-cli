@@ -10,6 +10,7 @@ KIRO CLI includes several built-in tools that agents can use. This document desc
 - [`knowledge`](#knowledge-tool) — Store and retrieve information in a knowledge base.
 - [`thinking`](#thinking-tool) — Internal reasoning mechanism.
 - [`todo_list`](#todo_list-tool) — Create and manage TODO lists for tracking multi-step tasks.
+- [`tool_search`](#tool_search-tool) — Find and load MCP tools on demand.
 - [`use_aws`](#use_aws-tool) — Make AWS CLI API calls.
 
 ## Execute_bash Tool
@@ -130,6 +131,14 @@ This tool has no configuration options.
 ## TODO List Tool (experimental)
 
 Create and manage TODO lists for tracking multi-step tasks. Lists are stored locally in `.kiro/cli-todo-lists/`.
+
+This tool has no configuration options.
+
+## Tool_search Tool
+
+Find and load MCP tools on demand. Part of the [Tool Search](./tool-search.md) feature that reduces context window usage by deferring MCP tool specs.
+
+Automatically allowed without user permission prompts.
 
 This tool has no configuration options.
 

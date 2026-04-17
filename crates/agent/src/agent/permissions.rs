@@ -440,6 +440,8 @@ pub fn evaluate_tool_permission<P: SystemProvider>(
             } else {
                 PermissionEvalResult::ask()
             }),
+            // Tool discovery tools are read-only, auto-allow
+            BuiltInTool::ToolSearch(_) => Ok(PermissionEvalResult::Allow),
             BuiltInTool::Task(_) => Ok(PermissionEvalResult::Allow),
         },
         ToolKind::Mcp(_) => Ok(if is_allowed {

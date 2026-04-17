@@ -136,6 +136,13 @@ impl LoadedAgentConfig {
         self.config.add_hook(trigger, config);
     }
 
+    pub fn add_mcp_servers(
+        &mut self,
+        servers: impl IntoIterator<Item = (String, definitions::McpServerConfig)>,
+    ) -> Option<Vec<String>> {
+        self.config.add_mcp_servers(servers)
+    }
+
     pub fn add_resource(&mut self, resource: types::ResourcePath) -> bool {
         self.config.add_resource(resource)
     }

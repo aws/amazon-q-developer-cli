@@ -1,0 +1,131 @@
+{
+  "eval_suite": "ToolSearchTool End-to-End Evaluation",
+  "description": "Tests whether LLM correctly identifies and loads the right builder-mcp tool given only tool descriptions (not full specs). Each scenario records the query, tools loaded in order, and the final response.",
+  "timestamp": "2026-04-16T10:43:13.900-07:00",
+  "scenarios": [
+    {
+      "id": "cat1_exact_intent",
+      "category": 1,
+      "category_name": "Exact / Unambiguous Intent",
+      "query": "Can you look up moerben@ from phone tool",
+      "expected_tool": "builder-mcp:ReadInternalWebsites",
+      "tools_loaded": [
+        {
+          "tool": "builder-mcp:ReadInternalWebsites",
+          "params": {
+            "inputs": ["https://phonetool.amazon.com/users/moerben"]
+          }
+        }
+      ],
+      "load_count": 1,
+      "correct_tool_loaded": true,
+      "false_positives": [],
+      "response": {
+        "name": "Erben Mo",
+        "login": "moerben",
+        "job_title": "Principal Software Engineer",
+        "department": "Kiro-Shared",
+        "building": "SEA43-Nitro North (Seattle, WA)",
+        "email": "moerben@amazon.com",
+        "manager": "liguori",
+        "tenure": "13 years, 9 months, 20 days"
+      },
+      "notes": "Clean single-tool path. 'phone tool' in query directly maps to phonetool.amazon.com URL pattern in ReadInternalWebsites description."
+    },
+    {
+      "id": "cat2_chained",
+      "category": 2,
+      "category_name": "Cross-Domain Chaining",
+      "query": "How many tasks are in the current sprint for the Kiro CLI room?",
+      "expected_tool_sequence": [
+        "builder-mcp:TaskeiGetRooms (nameContains='Kiro') -> get room UUID",
+        "builder-mcp:TaskeiListTasks (roomId=..., sprint='currentSprint') -> get sprint tasks"
+      ],
+      "tools_loaded": [
+        {
+          "tool": "builder-mcp:TaskeiGetRooms",
+          "params": { "nameContains": "Kiro" },
+          "reason": "Step 1: Find the Kiro CLI room UUID"
+        },
+        {
+          "tool": "builder-mcp:TaskeiListTasks",
+          "params": {
+            "roomId": "7c221a81-7ca7-436c-8f05-a7278949341b",
+            "sprint": "currentSprint",
+            "pagination": { "maxResults": 3 }
+          },
+          "reason": "Step 2: List tasks in the current sprint (roomId from step 1)"
+        }
+      ],
+      "load_count": 2,
+      "correct_tool_loaded": true,
+      "false_positives": [],
+      "response": {
+        "room": "Kiro CLI",
+        "room_id": "7c221a81-7ca7-436c-8f05-a7278949341b",
+        "total_sprint_tasks_at_time_of_eval": 522
+      },
+      "verification": {
+        "step1_check": "TaskeiGetRooms called and returns room with name containing 'Kiro'",
+        "step2_check": "TaskeiListTasks called with roomId from step 1 and sprint='currentSprint'",
+        "pass_criteria": "LLM returns a number from the 'total' field without paginating. Exact count will vary over time."
+      },
+      "notes": "Two-step chain: TaskeiGetRooms -> TaskeiListTasks. Step 2 depends on step 1's room UUID. Both are stable — room UUID is permanent, sprint tasks always exist. Key test: LLM must recognize 'Kiro CLI room' requires a room lookup first, and that 'current sprint' maps to the sprint='currentSprint' parameter."
+    },
+    {
+      "id": "cat3_negative_trap",
+      "category": 3,
+      "category_name": "Negative / Trap",
+      "query": "Delete my most recent code review",
+      "expected_tool": "none (no CR delete tool exists in builder-mcp)",
+      "competing_tools": [
+        {
+          "tool": "builder-mcp:CRRevisionCreator",
+          "why_tempting": "Creates/updates CRs — sounds like it could manage CR lifecycle",
+          "can_delete": false
+        },
+        {
+          "tool": "builder-mcp:CrCheckout",
+          "why_tempting": "Checks out CRs — interacts with CRs",
+          "can_delete": false
+        },
+        {
+          "tool": "builder-mcp:CRAddComment",
+          "why_tempting": "Writes to CRs — has write access",
+          "can_delete": false
+        },
+        {
+          "tool": "builder-mcp:ReadInternalWebsites",
+          "why_tempting": "Can read code.amazon.com/reviews — might find the CR",
+          "can_delete": false
+        }
+      ],
+      "tools_loaded": [],
+      "load_count": 0,
+      "correct_tool_loaded": true,
+      "false_positives": [],
+      "response": {
+        "error": "No tool available to delete a code review. builder-mcp can create, update, checkout, and comment on CRs, but cannot delete them.",
+        "action_taken": "none"
+      },
+      "verification": {
+        "pass_criteria": "LLM recognizes no delete capability exists and tells the user. Loading CR tools is acceptable as exploration, but attempting to call them for deletion is a failure.",
+        "fail_if": "LLM hallucinates a delete action or calls CRRevisionCreator/CRAddComment pretending it can delete"
+      },
+      "notes": "Strong trap: 3 CR tools exist with write capabilities (create, update, comment), but none support delete. LLM must distinguish 'CR tools exist' from 'CR delete exists'. Harder than a total miss because the tools are close to the requested action."
+    }
+  ],
+  "summary": {
+    "total_scenarios": 3,
+    "scenarios_by_category": {
+      "cat1_exact_intent": "Can you look up moerben@ from phone tool",
+      "cat2_chained": "How many tasks are in the current sprint for the Kiro CLI room?",
+      "cat3_negative_trap": "Delete my most recent code review"
+    },
+    "key_findings": [
+      "Cat 1 (Exact intent): 1 tool load, perfect precision — baseline",
+      "Cat 2 (Chaining): TaskeiGetRooms -> TaskeiListTasks, stable data, tests room lookup + sprint parameter",
+      "Cat 3 (Negative/trap): 3 CR write tools exist but none support delete, tests capability gap recognition"
+    ]
+  }
+}

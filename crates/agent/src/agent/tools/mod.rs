@@ -8,6 +8,7 @@ pub mod glob;
 pub mod grep;
 pub mod introspect;
 pub mod knowledge;
+
 pub mod mcp;
 pub mod mkdir;
 pub mod rm;
@@ -15,6 +16,7 @@ pub mod session;
 pub mod summary;
 pub mod switch_to_execution;
 pub mod task;
+pub mod tool_search;
 pub mod use_aws;
 pub mod web_fetch;
 pub mod web_search;
@@ -66,6 +68,10 @@ use strum::IntoEnumIterator;
 use summary::Summary;
 use switch_to_execution::SwitchToExecution;
 use task::TaskTool;
+pub use tool_search::{
+    ToolSearch,
+    ToolSearchSideEffects,
+};
 use typeshare::typeshare;
 use use_aws::UseAws;
 use web_fetch::WebFetch;
@@ -180,6 +186,8 @@ pub enum BuiltInToolName {
     Introspect,
     #[strum(serialize = "knowledge")]
     Knowledge,
+    #[strum(serialize = "tool_search")]
+    ToolSearch,
     #[strum(serialize = "task", serialize = "todo_list", serialize = "todo")]
     Task,
 }
@@ -202,6 +210,7 @@ impl BuiltInToolName {
             BuiltInToolName::SwitchToExecution => SwitchToExecution::aliases(),
             BuiltInToolName::Introspect => Introspect::aliases(),
             BuiltInToolName::Knowledge => Knowledge::aliases(),
+            BuiltInToolName::ToolSearch => ToolSearch::aliases(),
             BuiltInToolName::Task => TaskTool::aliases(),
         }
     }
@@ -378,6 +387,7 @@ pub enum BuiltInTool {
     AgentCrew(AgentCrew),
     SessionManagement(SessionTool),
     SwitchToExecution(SwitchToExecution),
+    ToolSearch(ToolSearch),
     Task(TaskTool),
 }
 
@@ -429,6 +439,9 @@ impl BuiltInTool {
             BuiltInToolName::Knowledge => serde_json::from_value::<Knowledge>(args)
                 .map(Self::Knowledge)
                 .map_err(ToolParseErrorKind::schema_failure),
+            BuiltInToolName::ToolSearch => serde_json::from_value::<ToolSearch>(args)
+                .map(Self::ToolSearch)
+                .map_err(ToolParseErrorKind::schema_failure),
             BuiltInToolName::Task => serde_json::from_value::<TaskTool>(args)
                 .map(Self::Task)
                 .map_err(ToolParseErrorKind::schema_failure),
@@ -461,6 +474,7 @@ impl BuiltInTool {
             BuiltInToolName::SwitchToExecution => generate_tool_spec_from_trait::<SwitchToExecution>(),
             BuiltInToolName::Introspect => generate_tool_spec_from_trait::<Introspect>(),
             BuiltInToolName::Knowledge => generate_tool_spec_from_trait::<Knowledge>(),
+            BuiltInToolName::ToolSearch => generate_tool_spec_from_trait::<ToolSearch>(),
             BuiltInToolName::Task => generate_tool_spec_from_trait::<TaskTool>(),
         }
     }
@@ -483,6 +497,7 @@ impl BuiltInTool {
             BuiltInTool::AgentCrew(_) => BuiltInToolName::AgentCrew,
             BuiltInTool::SessionManagement(_) => BuiltInToolName::SessionManagement,
             BuiltInTool::SwitchToExecution(_) => BuiltInToolName::SwitchToExecution,
+            BuiltInTool::ToolSearch(_) => BuiltInToolName::ToolSearch,
             BuiltInTool::Task(_) => BuiltInToolName::Task,
         }
     }
@@ -505,6 +520,7 @@ impl BuiltInTool {
             BuiltInTool::AgentCrew(_) => BuiltInToolName::AgentCrew.into(),
             BuiltInTool::SessionManagement(_) => BuiltInToolName::SessionManagement.into(),
             BuiltInTool::SwitchToExecution(_) => BuiltInToolName::SwitchToExecution.into(),
+            BuiltInTool::ToolSearch(_) => BuiltInToolName::ToolSearch.into(),
             BuiltInTool::Task(_) => BuiltInToolName::Task.into(),
         }
     }
@@ -527,6 +543,7 @@ impl BuiltInTool {
             BuiltInTool::AgentCrew(_) => AgentCrew::aliases(),
             BuiltInTool::SessionManagement(_) => SessionTool::aliases(),
             BuiltInTool::SwitchToExecution(_) => SwitchToExecution::aliases(),
+            BuiltInTool::ToolSearch(_) => ToolSearch::aliases(),
             BuiltInTool::Task(_) => TaskTool::aliases(),
         }
     }
@@ -1051,6 +1068,14 @@ mod tests {
             let names = get_available_tool_names(&tools, &HashMap::new(), &[], false, false, true);
             assert!(names.contains(&CanonicalToolName::BuiltIn(BuiltInToolName::WebSearch)));
             assert!(names.contains(&CanonicalToolName::BuiltIn(BuiltInToolName::WebFetch)));
+        }
+
+        #[test]
+        fn test_tool_search_always_included() {
+            // ToolSearch is always returned by get_available_tool_names;
+            // filtering by tool_search_enabled happens in make_tool_spec, not here
+            let names = run(&["*"], &HashMap::new(), &[], false, false);
+            assert!(names.contains(&"tool_search".into()));
         }
     }
 }

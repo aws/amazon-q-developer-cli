@@ -167,6 +167,7 @@ use crate::cli::chat::legacy::model::{
     find_model,
     get_available_models,
 };
+use crate::database::settings::Setting;
 use crate::os::Os;
 use crate::telemetry::observer::{
     AcpClientInfo,
@@ -1093,6 +1094,21 @@ impl AcpSession {
                 }
                 s.agent_config.allowed_tools_mut().extend(tools);
             }
+            s.settings.tool_search_enabled = os
+                .database
+                .settings
+                .get_bool(Setting::ToolSearchEnabled)
+                .unwrap_or(false);
+            s.settings.tool_search_min_pct = os
+                .database
+                .settings
+                .get(Setting::ToolSearchMinPct)
+                .and_then(|v| v.as_f64());
+            s.settings.tool_search_min_tokens = os
+                .database
+                .settings
+                .get(Setting::ToolSearchMinTokens)
+                .and_then(|v| v.as_u64());
             s
         };
 
@@ -1207,11 +1223,12 @@ impl AcpSession {
                     self.emit_initial_context_usage().await;
                     return Ok(());
                 },
-                Ok(AgentEvent::InitializeUpdate(init_event)) => {
-                    let agent::protocol::InitializeUpdateEvent::Mcp(mcp_event) = init_event;
-                    if let Err(e) = self.handle_mcp_event(mcp_event).await {
-                        error!("Failed to handle MCP event during initialization: {}", e);
-                    }
+                Ok(AgentEvent::InitializeUpdate(init_event)) => match init_event {
+                    agent::protocol::InitializeUpdateEvent::Mcp(mcp_event) => {
+                        if let Err(e) = self.handle_mcp_event(mcp_event).await {
+                            error!("Failed to handle MCP event during initialization: {}", e);
+                        }
+                    },
                 },
                 Ok(event) => {
                     warn!("Unexpected event during initialization: {:?}", event);
@@ -1805,11 +1822,12 @@ impl AcpSession {
         match event {
             // MCP events during initialization (e.g., OAuth requests) come through InitializeUpdate,
             // not the regular Mcp variant, since they occur before the agent is fully initialized.
-            AgentEvent::InitializeUpdate(init_event) => {
-                let agent::protocol::InitializeUpdateEvent::Mcp(mcp_event) = init_event;
-                if let Err(e) = self.handle_mcp_event(mcp_event).await {
-                    error!("Failed to handle MCP event during initialization: {}", e);
-                }
+            AgentEvent::InitializeUpdate(init_event) => match init_event {
+                agent::protocol::InitializeUpdateEvent::Mcp(mcp_event) => {
+                    if let Err(e) = self.handle_mcp_event(mcp_event).await {
+                        error!("Failed to handle MCP event during initialization: {}", e);
+                    }
+                },
             },
             AgentEvent::Update(ref update_event) => {
                 // Intercept switch_to_execution before forwarding to TUI
@@ -2668,6 +2686,7 @@ fn get_tool_kind(tool_name: &str) -> ToolKind {
             BuiltInToolName::SwitchToExecution => ToolKind::Other,
             BuiltInToolName::Introspect => ToolKind::Read,
             BuiltInToolName::Knowledge => ToolKind::Other,
+            BuiltInToolName::ToolSearch => ToolKind::Search,
             BuiltInToolName::Task => ToolKind::Other,
         }
     } else {
@@ -2757,6 +2776,10 @@ pub(crate) fn get_tool_title(tool: &Tool) -> String {
             BuiltInTool::SessionManagement(_) => "Managing sessions".to_string(),
             BuiltInTool::SwitchToExecution(_) => "Switching to execution agent".to_string(),
             BuiltInTool::Knowledge(_) => "Querying knowledge base".to_string(),
+            BuiltInTool::ToolSearch(t) => {
+                let desc = t.tool_id.as_deref().or(t.query.as_deref()).unwrap_or("");
+                format!("Loading tool: {}", truncate_str(desc, 40))
+            },
             BuiltInTool::Task(t) => {
                 use agent::tools::task::task_tool::TaskTool;
                 match t {

@@ -149,6 +149,14 @@ pub enum Setting {
         props(scope = "global_only")
     )]
     ChatDisableTrustAllConfirmation,
+    #[strum(message = "Enable tool search for MCP tool discovery (boolean)")]
+    ToolSearchEnabled,
+    #[strum(
+        message = "Minimum context window percentage of MCP tool specs to activate tool search (number, e.g. 5 for 5%)"
+    )]
+    ToolSearchMinPct,
+    #[strum(message = "Minimum MCP tool spec token count to activate tool search (number)")]
+    ToolSearchMinTokens,
 }
 
 impl Setting {
@@ -215,6 +223,9 @@ impl AsRef<str> for Setting {
             Self::DisableAutoupdates => "app.disableAutoupdates",
             Self::ChatAutoExpandToolOutput => "chat.autoExpandToolOutput",
             Self::ChatDisableTrustAllConfirmation => "chat.disableTrustAllConfirmation",
+            Self::ToolSearchEnabled => "toolSearch.enabled",
+            Self::ToolSearchMinPct => "toolSearch.minPct",
+            Self::ToolSearchMinTokens => "toolSearch.minTokens",
         }
     }
 }
@@ -282,6 +293,9 @@ impl TryFrom<&str> for Setting {
             "app.disableAutoupdates" => Ok(Self::DisableAutoupdates),
             "chat.autoExpandToolOutput" => Ok(Self::ChatAutoExpandToolOutput),
             "chat.disableTrustAllConfirmation" => Ok(Self::ChatDisableTrustAllConfirmation),
+            "toolSearch.enabled" => Ok(Self::ToolSearchEnabled),
+            "toolSearch.minPct" => Ok(Self::ToolSearchMinPct),
+            "toolSearch.minTokens" => Ok(Self::ToolSearchMinTokens),
             _ => Err(DatabaseError::InvalidSetting(value.to_string())),
         }
     }

@@ -13,6 +13,7 @@ use agent::agent_config::definitions::{
     AgentConfig,
     HookConfig,
     HookTrigger,
+    McpServerConfig,
 };
 use agent::agent_config::load::{
     build_default_agent,
@@ -42,7 +43,10 @@ use agent::protocol::{
     SendApprovalResultArgs,
     SendPromptArgs,
 };
-use agent::types::AgentSnapshot;
+use agent::types::{
+    AgentSettings,
+    AgentSnapshot,
+};
 use agent::util::providers::CwdProvider;
 use agent::util::test::{
     TestBase,
@@ -70,6 +74,8 @@ pub struct TestCaseBuilder {
     trust_all_tools: bool,
     tool_use_approvals: Vec<SendApprovalResultArgs>,
     cwd_subdir: Option<String>,
+    settings: Option<AgentSettings>,
+    mcp_servers: Vec<(String, McpServerConfig)>,
 }
 
 impl TestCaseBuilder {
@@ -127,6 +133,16 @@ impl TestCaseBuilder {
         self
     }
 
+    pub fn with_settings(mut self, settings: AgentSettings) -> Self {
+        self.settings = Some(settings);
+        self
+    }
+
+    pub fn with_mcp_server(mut self, name: impl Into<String>, config: McpServerConfig) -> Self {
+        self.mcp_servers.push((name.into(), config));
+        self
+    }
+
     pub async fn build(self) -> Result<TestCase> {
         let mut model = MockModel::new();
         for response in self.mock_responses {
@@ -157,7 +173,17 @@ impl TestCaseBuilder {
             agent_config.add_hook(trigger, config);
         }
 
+        // Add MCP server configs after loading
+        if !self.mcp_servers.is_empty() {
+            agent_config.add_mcp_servers(self.mcp_servers);
+        }
+
         let mut snapshot = AgentSnapshot::new_empty(agent_config);
+
+        // Apply custom settings if provided
+        if let Some(settings) = self.settings {
+            snapshot.settings = settings;
+        }
 
         let cwd = match &self.cwd_subdir {
             Some(subdir) => test_base.join(subdir).to_string_lossy().to_string(),

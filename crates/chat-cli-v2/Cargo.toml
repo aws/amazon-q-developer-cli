@@ -8,6 +8,10 @@ version.workspace = true
 license.workspace = true
 default-run = "chat_cli_v2"
 
+[[example]]
+name = "tool_search_eval"
+path = "eval/tool_search_eval.rs"
+
 [lints]
 workspace = true
 

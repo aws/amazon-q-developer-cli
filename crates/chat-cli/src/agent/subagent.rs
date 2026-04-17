@@ -231,6 +231,8 @@ impl<'a> Subagent<'a> {
                 disable_auto_compact: Default::default(),
                 trust_all_tools: false,
                 web_tools_enabled: self.web_tools_enabled,
+                tool_search_enabled: false,
+                ..Default::default()
             },
             permissions: agent::permissions::RuntimePermissions::default().with_cwd(&cwd.to_string_lossy()),
             ..Default::default()

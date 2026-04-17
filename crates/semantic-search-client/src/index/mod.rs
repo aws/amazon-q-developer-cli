@@ -1,3 +1,4 @@
+/// BM25 keyword search index implementation
 mod bm25_index;
 mod vector_index;
 

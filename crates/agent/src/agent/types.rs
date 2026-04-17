@@ -168,6 +168,17 @@ pub struct AgentSettings {
     /// When false, web_search and web_fetch tools are excluded (governance disabled them).
     #[serde(default = "default_true")]
     pub web_tools_enabled: bool,
+    /// When true, MCP tools are hidden until activated via search_tools.
+    #[serde(default)]
+    pub tool_search_enabled: bool,
+    /// Only activate tool search when MCP tool specs exceed this percentage of context window.
+    #[typeshare(skip)]
+    #[serde(default = "default_tool_search_min_pct")]
+    pub tool_search_min_pct: Option<f64>,
+    /// Only activate tool search when MCP tool specs exceed this many tokens.
+    #[typeshare(skip)]
+    #[serde(default = "default_tool_search_min_tokens")]
+    pub tool_search_min_tokens: Option<u64>,
 }
 
 impl AgentSettings {
@@ -178,6 +189,14 @@ fn default_true() -> bool {
     true
 }
 
+fn default_tool_search_min_pct() -> Option<f64> {
+    Some(5.0)
+}
+
+fn default_tool_search_min_tokens() -> Option<u64> {
+    Some(50_000)
+}
+
 impl Default for AgentSettings {
     fn default() -> Self {
         Self {
@@ -185,6 +204,9 @@ impl Default for AgentSettings {
             disable_auto_compact: false,
             trust_all_tools: false,
             web_tools_enabled: true,
+            tool_search_enabled: false,
+            tool_search_min_pct: default_tool_search_min_pct(),
+            tool_search_min_tokens: default_tool_search_min_tokens(),
         }
     }
 }

@@ -7,6 +7,9 @@ publish.workspace = true
 version.workspace = true
 license.workspace = true
 
+[features]
+tst_phase5_tests = []
+
 [dependencies]
 amzn-codewhisperer-client.workspace = true
 amzn-codewhisperer-streaming-client.workspace = true
@@ -24,6 +27,7 @@ aws-smithy-runtime-api.workspace = true
 aws-smithy-types.workspace = true
 aws-types.workspace = true
 base64.workspace = true
+bm25.workspace = true
 bstr.workspace = true
 bytes.workspace = true
 cfg-if.workspace = true
@@ -101,6 +105,7 @@ objc2-foundation.workspace = true
 assert_cmd.workspace = true
 criterion.workspace = true
 insta.workspace = true
+mock-mcp-server = { path = "../mock-mcp-server" }
 mockito.workspace = true
 paste.workspace = true
 predicates.workspace = true

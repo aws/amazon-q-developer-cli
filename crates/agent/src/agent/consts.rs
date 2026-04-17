@@ -39,3 +39,4 @@ pub const TOOL_USE_PURPOSE_FIELD_DESCRIPTION: &str = "A brief explanation why yo
 pub const CONTEXT_ENTRY_START_HEADER: &str = "--- CONTEXT ENTRY BEGIN ---\n";
 pub const CONTEXT_ENTRY_END_HEADER: &str = "--- CONTEXT ENTRY END ---\n\n";
 pub const SKILL_FILES_MESSAGE: &str = "The following file entries contain: name, filepath, and description. You SHOULD decide when to read the full file using the filepath based on its description:\n\n";
+pub const DEFERRED_TOOLS_MESSAGE: &str = "The following tool entries contain: tool_id (server_name::tool_name) and description. You SHOULD call tool_search with the tool_id to load a tool before using it, based on its description:\n\n";

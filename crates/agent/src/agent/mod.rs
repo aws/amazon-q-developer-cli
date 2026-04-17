@@ -10,6 +10,7 @@ pub mod protocol;
 mod resource_budget;
 pub mod shell_permission;
 pub mod task_executor;
+pub mod tool_index;
 pub mod tool_permission;
 mod tool_utils;
 pub mod tools;
@@ -70,6 +71,7 @@ use consts::MAX_RESOURCE_FILE_LENGTH;
 pub use consts::{
     CONTEXT_ENTRY_END_HEADER,
     CONTEXT_ENTRY_START_HEADER,
+    DEFERRED_TOOLS_MESSAGE,
     SKILL_FILES_MESSAGE,
 };
 use event_log::{
@@ -132,6 +134,12 @@ use tokio::sync::{
 use tokio::time::Instant;
 use tokio_stream::StreamExt as _;
 use tokio_util::sync::CancellationToken;
+use tool_index::{
+    ToolIndex,
+    ToolLoadConfig,
+    filter_tool_names,
+    should_activate_tool_search,
+};
 use tool_utils::{
     SanitizedToolSpecs,
     add_tool_use_purpose_arg,
@@ -572,6 +580,15 @@ pub struct Agent {
     session_resource_paths: HashSet<String>,
     /// All available agent configs, used for dynamic tool spec generation (e.g. AgentCrew)
     available_agent_configs: Vec<LoadedAgentConfig>,
+
+    /// BM25 tool index for tool_search (built from MCP tool specs)
+    tool_search_index: ToolIndex,
+    /// Configuration for tool search matching thresholds
+    tool_search_config: ToolLoadConfig,
+    /// Set of MCP tools activated via tool_search auto-load
+    tool_search_activated: HashSet<CanonicalToolName>,
+    /// Whether tool search is effectively active (computed from settings + thresholds)
+    tool_search_active: bool,
 }
 
 impl Agent {
@@ -642,6 +659,10 @@ impl Agent {
             task_store,
             session_resource_paths: HashSet::new(),
             available_agent_configs,
+            tool_search_index: ToolIndex::default(),
+            tool_search_config: ToolLoadConfig::from_env(),
+            tool_search_activated: HashSet::new(),
+            tool_search_active: false,
         })
     }
 
@@ -1954,9 +1975,20 @@ impl Agent {
             None => None,
         };
 
+        // Build tool specs first — this rebuilds tool_index, so the deferred
+        // tools list below reflects the current MCP tools on every request.
+        let tool_specs = self.make_tool_spec().await;
+
+        let deferred_tools_list = if self.tool_search_active {
+            let list = self.tool_search_index.format_tool_list();
+            if list.is_empty() { None } else { Some(list) }
+        } else {
+            None
+        };
+
         format_request(
             messages,
-            self.make_tool_spec().await,
+            tool_specs,
             &self.agent_config,
             self.agent_spawn_hooks.iter().map(|(_, c)| c),
             &self.sys_provider,
@@ -1964,6 +1996,8 @@ impl Agent {
             task_context,
             knowledge_context,
             self.model.context_window_size(),
+            self.tool_search_active,
+            deferred_tools_list,
         )
         .await
     }
@@ -2599,14 +2633,25 @@ impl Agent {
             }
         }
 
-        let tool_names = tools::get_available_tool_names(
-            &self.agent_config.tools(),
-            &mcp_server_tool_specs,
-            &self.cached_mcp_configs.configs,
-            self.is_subagent,
-            self.knowledge_provider.is_some(),
-            self.settings.web_tools_enabled,
-        );
+        // Calculate total MCP tool spec tokens for conditional TST activation
+        let mcp_tool_spec_tokens: usize = mcp_server_tool_specs
+            .values()
+            .flat_map(|specs| specs.iter())
+            .map(|spec| {
+                (spec.name.len()
+                    + spec.description.len()
+                    + serde_json::to_string(&spec.input_schema).map_or(0, |s| s.len()))
+                    / consts::BYTES_PER_TOKEN
+            })
+            .sum();
+        let tool_search_active =
+            should_activate_tool_search(&self.settings, mcp_tool_spec_tokens, self.model.context_window_size());
+        self.tool_search_active = tool_search_active;
+
+        // Only rebuild BM25 tool index when tool search is active
+        if tool_search_active {
+            self.rebuild_tool_search_index(&mcp_server_tool_specs);
+        }
 
         let lsp_initialized = self
             .code_intelligence
@@ -2616,6 +2661,24 @@ impl Agent {
 
         let default_tool_settings = Default::default();
         let tool_settings = self.agent_config.tool_settings().unwrap_or(&default_tool_settings);
+        let mut tool_names = tools::get_available_tool_names(
+            &self.agent_config.tools(),
+            &mcp_server_tool_specs,
+            &self.cached_mcp_configs.configs,
+            self.is_subagent,
+            self.knowledge_provider.is_some(),
+            self.settings.web_tools_enabled,
+        );
+        // ToolSearch is only available when tool search is active
+        if !tool_search_active {
+            tool_names.remove(&CanonicalToolName::BuiltIn(tools::BuiltInToolName::ToolSearch));
+        }
+        // Filter MCP tools based on tool_search_active and tool_search_activated
+        let tool_names = filter_tool_names(
+            tool_search_active,
+            tool_names.into_iter().collect(),
+            &self.tool_search_activated,
+        );
         let sanitized_specs = sanitize_tool_specs(
             tool_names.into_iter().collect(),
             mcp_server_tool_specs,
@@ -2711,6 +2774,7 @@ impl Agent {
                 BuiltInTool::SessionManagement(_) => Ok(()),
                 BuiltInTool::SwitchToExecution(_) => Ok(()),
                 BuiltInTool::Knowledge(_) => Ok(()),
+                BuiltInTool::ToolSearch(_) => Ok(()),
                 BuiltInTool::Task(_) => Ok(()),
             },
             ToolKind::Mcp(_) => Ok(()),
@@ -2875,6 +2939,27 @@ impl Agent {
                         }
                     })
                 },
+                BuiltInTool::ToolSearch(t) => {
+                    let result = tools::ToolSearch::execute(
+                        t.tool_id.as_deref(),
+                        t.query.as_deref(),
+                        t.max_results,
+                        &self.tool_search_index,
+                        &self.tool_search_config,
+                    );
+                    match result {
+                        Ok((output, effects)) => {
+                            if !effects.tools_to_activate.is_empty() {
+                                self.cached_tool_specs = None;
+                            }
+                            for tool_name in effects.tools_to_activate {
+                                self.tool_search_activated.insert(tool_name);
+                            }
+                            Box::pin(async move { Ok(output) })
+                        },
+                        Err(e) => Box::pin(async move { Err(e) }),
+                    }
+                },
                 BuiltInTool::Task(t) => {
                     let store = self.task_store.clone();
                     Box::pin(async move {
@@ -3030,11 +3115,20 @@ impl Agent {
         if matches!(evt, McpServerEvent::ToolListChanged { .. }) {
             self.cached_tool_specs = None;
         }
-        let converted_evt = AgentEvent::Mcp(evt);
+        // Invalidate cached tool specs when a new MCP server initializes
+        if matches!(evt, McpServerEvent::Initialized { .. }) {
+            self.cached_tool_specs = None;
+        }
+        let converted_evt = AgentEvent::Mcp(evt.clone());
         self.agent_event_buf.push(converted_evt);
     }
 
-    /// This prepends the embedded user msg to the global prompt field of the agent
+    /// Rebuild the BM25 tool index from MCP tool specs
+    fn rebuild_tool_search_index(&mut self, mcp_server_tool_specs: &HashMap<String, Vec<ToolSpec>>) {
+        self.tool_search_index = ToolIndex::from_tool_specs(mcp_server_tool_specs);
+    }
+
+    /// This prepends the embedded user msg to the system prompt field of the agent
     pub fn prepend_embedded_user_msg(&mut self, msg: &str) {
         self.agent_config.set_global_prompt_prefix(msg);
     }
@@ -3084,6 +3178,8 @@ async fn format_request<T, U, P>(
     task_context: Option<String>,
     knowledge_context: Option<String>,
     context_window_size: Option<usize>,
+    tool_search_enabled: bool,
+    deferred_tools_list: Option<String>,
 ) -> SendRequestArgs
 where
     T: IntoIterator<Item = U>,
@@ -3100,6 +3196,8 @@ where
         knowledge_context,
         provider,
         context_window_size,
+        tool_search_enabled,
+        deferred_tools_list,
     )
     .await;
     for msg in ctx_messages.into_iter().rev() {
@@ -3128,6 +3226,7 @@ where
 /// * Latest conversation summary from compaction
 ///
 /// We use context messages since the API does not allow any system prompt parameterization.
+#[allow(clippy::too_many_arguments)]
 async fn create_context_messages<T, U, P>(
     agent_config: &LoadedAgentConfig,
     agent_spawn_hooks: T,
@@ -3136,6 +3235,8 @@ async fn create_context_messages<T, U, P>(
     knowledge_context: Option<String>,
     provider: &P,
     context_window_size: Option<usize>,
+    tool_search_enabled: bool,
+    deferred_tools_list: Option<String>,
 ) -> Vec<Message>
 where
     T: IntoIterator<Item = U>,
@@ -3155,6 +3256,8 @@ where
         latest_summary,
         task_context,
         knowledge_context,
+        tool_search_enabled,
+        deferred_tools_list.as_deref(),
     );
     if content.is_empty() {
         return vec![];
@@ -3177,6 +3280,7 @@ where
     vec![user_msg, assistant_msg]
 }
 
+#[allow(clippy::too_many_arguments)]
 fn format_user_context_message<'a, T, U, V, W, X>(
     system_prompt: Option<&str>,
     files: T,
@@ -3185,6 +3289,8 @@ fn format_user_context_message<'a, T, U, V, W, X>(
     latest_summary: Option<String>,
     task_context: Option<String>,
     knowledge_context: Option<String>,
+    tool_search_enabled: bool,
+    deferred_tools_list: Option<&str>,
 ) -> String
 where
     T: IntoIterator<Item = (&'a str, &'a str)>,
@@ -3215,6 +3321,14 @@ where
     if let Some(task_ctx) = task_context {
         context_content.push_str(CONTEXT_ENTRY_START_HEADER);
         context_content.push_str(&task_ctx);
+        context_content.push_str(CONTEXT_ENTRY_END_HEADER);
+    }
+
+    if tool_search_enabled && let Some(tools_list) = deferred_tools_list {
+        context_content.push_str(CONTEXT_ENTRY_START_HEADER);
+        context_content.push_str(DEFERRED_TOOLS_MESSAGE);
+        context_content.push_str(tools_list);
+        context_content.push('\n');
         context_content.push_str(CONTEXT_ENTRY_END_HEADER);
     }
 
