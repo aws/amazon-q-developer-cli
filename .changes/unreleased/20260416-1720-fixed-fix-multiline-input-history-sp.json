@@ -1,0 +1,4 @@
+{
+  "type": "fixed",
+  "description": "Fix multiline input history splitting into separate entries across sessions"
+}

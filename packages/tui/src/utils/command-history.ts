@@ -3,16 +3,18 @@ import { join } from 'path';
 import { readFileSync, writeFileSync, mkdirSync, existsSync } from 'fs';
 import { logger } from './logger.js';
 
-const HISTORY_FILE = join(homedir(), '.kiro', '.cli_bash_history');
+const DEFAULT_HISTORY_FILE = join(homedir(), '.kiro', '.cli_bash_history');
 const MAX_HISTORY_SIZE = 1000;
 
 export class CommandHistory {
   private static instance: CommandHistory;
+  private historyFile: string;
   private history: string[] = [];
   private currentIndex = -1;
   private savedInput: string | null = null;
 
-  private constructor() {
+  private constructor(historyFile?: string) {
+    this.historyFile = historyFile ?? DEFAULT_HISTORY_FILE;
     this.history = this.load();
   }
 
@@ -23,13 +25,19 @@ export class CommandHistory {
     return CommandHistory.instance;
   }
 
+  /** Create a standalone instance with a custom history file path. Useful for testing. */
+  static createWithFile(historyFile: string): CommandHistory {
+    return new CommandHistory(historyFile);
+  }
+
   private load(): string[] {
     try {
-      if (existsSync(HISTORY_FILE)) {
-        const content = readFileSync(HISTORY_FILE, 'utf-8');
+      if (existsSync(this.historyFile)) {
+        const content = readFileSync(this.historyFile, 'utf-8');
         return content
           .split('\n')
           .filter((line) => line.trim())
+          .map((line) => line.replaceAll('\x00', '\n'))
           .slice(-MAX_HISTORY_SIZE);
       }
     } catch (err) {
@@ -40,12 +48,16 @@ export class CommandHistory {
 
   private save(): void {
     try {
-      const dir = join(homedir(), '.kiro');
+      const dir = join(this.historyFile, '..');
       if (!existsSync(dir)) {
         mkdirSync(dir, { recursive: true });
       }
-      const content = this.history.slice(-MAX_HISTORY_SIZE).join('\n') + '\n';
-      writeFileSync(HISTORY_FILE, content, 'utf-8');
+      const content =
+        this.history
+          .slice(-MAX_HISTORY_SIZE)
+          .map((entry) => entry.replaceAll('\n', '\\n'))
+          .join('\n') + '\n';
+      writeFileSync(this.historyFile, content, 'utf-8');
     } catch (err) {
       logger.warn('Failed to save history:', err);
     }
