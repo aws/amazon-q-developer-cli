@@ -250,17 +250,20 @@ export const PromptInput = React.memo(function PromptInput({
     [getUserPromptColor]
   );
   const brandColor = useMemo(() => getColor('brand'), [getColor]);
+  const isShellEscape = useMemo(
+    () => getVisibleText(segments).startsWith('!'),
+    [segments]
+  );
   const styleInputText = useCallback(
     (text: string, isFirstSegment: boolean) => {
-      const fullText = getVisibleText(segments);
-      if (fullText.startsWith('!') && isFirstSegment && text.length > 0) {
+      if (isShellEscape && isFirstSegment && text.length > 0) {
         if (text.startsWith('!')) {
           return brandColor('!') + primaryColor(text.slice(1));
         }
       }
       return primaryColor(text);
     },
-    [segments, brandColor, primaryColor]
+    [isShellEscape, brandColor, primaryColor]
   );
   const placeholderColor = useMemo(() => getColor('muted'), [getColor]);
 
