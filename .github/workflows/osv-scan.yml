@@ -24,7 +24,7 @@ jobs:
 
       - name: Generate custom lockfile for bundled Bun
         run: |
-          BUN_VERSION=$(grep '^BUN_VERSION' scripts/const_v2.py | sed 's/.*"\(.*\)"/\1/')
+          BUN_VERSION=$(grep '^BUN_VERSION' scripts/const.py | sed 's/.*"\(.*\)"/\1/')
           echo "{\"results\":[{\"packages\":[{\"package\":{\"name\":\"bun\",\"version\":\"$BUN_VERSION\",\"ecosystem\":\"npm\"}}]}]}" > osv-scanner-custom.json
 
       # OSV scanner only supports one output format per invocation, so we run it twice:

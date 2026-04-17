@@ -22,7 +22,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          CURRENT=$(grep 'BUN_VERSION' scripts/const_v2.py | sed 's/.*"\(.*\)"/\1/')
+          CURRENT=$(grep 'BUN_VERSION' scripts/const.py | sed 's/.*"\(.*\)"/\1/')
           LATEST=$(gh api repos/oven-sh/bun/releases/latest --jq '.tag_name' | sed 's/bun-v//')
 
           echo "Current: $CURRENT"
@@ -53,7 +53,7 @@ jobs:
           Release notes: https://github.com/oven-sh/bun/releases/tag/bun-v$LATEST
 
           ### Update steps
-          1. Update \`BUN_VERSION\` in \`scripts/const_v2.py\`
+          1. Update \`BUN_VERSION\` in \`scripts/const.py\`
           2. Test the build locally
           3. Verify TUI launches correctly with the new version" \
             --label "dependencies"

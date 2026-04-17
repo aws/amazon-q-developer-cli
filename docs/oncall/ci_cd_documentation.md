@@ -706,7 +706,7 @@ gh run view --repo kiro-team/kiro-cli <run_id>
 
 ### Bundled Bun Runtime
 
-The CLI embeds a Bun binary (version pinned in `scripts/const_v2.py` as `BUN_VERSION`). Since this is a raw binary download and not a package manager dependency, Dependabot cannot track it. Two workflows provide security coverage:
+The CLI embeds a Bun binary (version pinned in `scripts/const.py` as `BUN_VERSION`). Since this is a raw binary download and not a package manager dependency, Dependabot cannot track it. Two workflows provide security coverage:
 
 #### Check Bun Version (`check-bun-version.yml`)
 
@@ -721,7 +721,7 @@ gh workflow run check-bun-version.yml --repo kiro-team/kiro-cli
 
 Runs on PRs, pushes to main, and daily (9 UTC). Scans for known vulnerabilities using [OSV Scanner](https://github.com/google/osv-scanner) across two sources:
 - `bun.lock` — JavaScript dependencies
-- Custom `osv-scanner-custom.json` — Generated at scan time from `BUN_VERSION` in `scripts/const_v2.py`, registers the bundled Bun binary as `npm/bun` so CVEs against the Bun runtime itself are detected
+- Custom `osv-scanner-custom.json` — Generated at scan time from `BUN_VERSION` in `scripts/const.py`, registers the bundled Bun binary as `npm/bun` so CVEs against the Bun runtime itself are detected
 
 The scanner runs twice per invocation (it only supports one output format at a time):
 1. **Table format** — Human-readable output printed to CI logs. This step fails the workflow if vulnerabilities are found.

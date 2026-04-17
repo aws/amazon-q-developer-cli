@@ -73,7 +73,7 @@ jobs:
           SIGNING_ROLE_ARN: ${{ secrets.SIGNING_ROLE_ARN }}
           SIGNING_APPLE_NOTARIZING_SECRET_ARN: ${{ secrets.SIGNING_APPLE_NOTARIZING_SECRET_ARN }}
         run: |
-          python3 ./scripts/main_v2.py sign-bun-per-arch \
+          python3 ./scripts/main.py sign-bun-per-arch \
             --branch-name "${{ inputs.branch_name }}" \
             --commit-sha "${{ inputs.commit_sha }}"
 

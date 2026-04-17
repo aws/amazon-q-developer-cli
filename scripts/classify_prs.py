@@ -43,13 +43,20 @@ from collections import defaultdict
 def fetch_prs(repo: str, limit: int) -> list:
     result = subprocess.run(
         [
-            "gh", "pr", "list",
-            "--repo", repo,
-            "--limit", str(limit),
-            "--state", "open",
-            "--json", "number,title,labels,author,createdAt,additions,deletions,changedFiles,headRefName,baseRefName",
+            "gh",
+            "pr",
+            "list",
+            "--repo",
+            repo,
+            "--limit",
+            str(limit),
+            "--state",
+            "open",
+            "--json",
+            "number,title,labels,author,createdAt,additions,deletions,changedFiles,headRefName,baseRefName",
         ],
-        capture_output=True, text=True
+        capture_output=True,
+        text=True,
     )
     if result.returncode != 0:
         print(f"Error fetching PRs: {result.stderr}", file=sys.stderr)
@@ -70,7 +77,10 @@ def classify(pr: dict) -> tuple[str, str]:
         kind = "bug-fix"
     elif any(x in branch or x in title for x in ["rfc", "proposal", "design", "spec"]):
         kind = "rfc"
-    elif any(x in branch or x in title for x in ["chore", "docs", "refactor", "update", "bump", "cleanup", "clean", "improve", "typo"]):
+    elif any(
+        x in branch or x in title
+        for x in ["chore", "docs", "refactor", "update", "bump", "cleanup", "clean", "improve", "typo"]
+    ):
         kind = "papercut"
     elif any(x in branch or x in title for x in ["feat/", "feat(", "feature", "add ", "support "]):
         kind = "feature"
@@ -100,6 +110,7 @@ def find_duplicates(prs: list) -> dict:
 
 def render_report(prs: list, duplicates: dict, repo: str) -> str:
     from collections import defaultdict
+
     buckets = defaultdict(list)
     for pr in prs:
         kind, prod = classify(pr)
@@ -119,7 +130,9 @@ def render_report(prs: list, duplicates: dict, repo: str) -> str:
             diff = p.get("additions", 0) + p.get("deletions", 0)
             title = p["title"][:65] + ("…" if len(p["title"]) > 65 else "")
             url = f"https://github.com/{repo}/pull/{p['number']}"
-            lines.append(f"| [#{p['number']}]({url}) | {title} | {p['author']['login']} | {diff} | {p.get('changedFiles',0)} | {p['_prod']} |")
+            lines.append(
+                f"| [#{p['number']}]({url}) | {title} | {p['author']['login']} | {diff} | {p.get('changedFiles', 0)} | {p['_prod']} |"
+            )
         lines.append("")
 
     lines.append(f"## POTENTIAL DUPLICATES — {len(duplicates)} clusters\n")
@@ -154,6 +167,7 @@ def main():
 
     # Print summary to stdout
     from collections import defaultdict
+
     buckets = defaultdict(int)
     for pr in prs:
         kind, _ = classify(pr)

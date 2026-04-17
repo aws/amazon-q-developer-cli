@@ -128,13 +128,13 @@ To run the script:
 
 ### Bumping the Bundled Bun Version
 
-The Kiro CLI v2 TUI embeds a Bun runtime binary. The version is pinned in `scripts/const_v2.py`.
+The Kiro CLI TUI embeds a Bun runtime binary. The version is pinned in `scripts/const.py`.
 
 We manually commit expected SHA hashes of the downloaded bun artifacts to guard against the GitHub repo being maliciously taken over.
 
 **Files to update:**
 
-1. `scripts/const_v2.py` — Update `BUN_VERSION` and all entries in `BUN_ZIP_HASHES`
+1. `scripts/const.py` — Update `BUN_VERSION` and all entries in `BUN_ZIP_HASHES`
 
 **Steps:**
 
@@ -143,12 +143,12 @@ We manually commit expected SHA hashes of the downloaded bun artifacts to guard 
    ```bash
    ./scripts/update-bun-hashes.sh <NEW_VERSION>
    ```
-3. Update `BUN_VERSION` and `BUN_ZIP_HASHES` in `scripts/const_v2.py` with the new version and hashes
-4. Run a local build to verify: `python3 scripts/main.py build --skip-lints --skip-tests --not-release --include-v2 --skip-autodocs-embeddings` — the build will fail if hashes don't match.
+3. Update `BUN_VERSION` and `BUN_ZIP_HASHES` in `scripts/const.py` with the new version and hashes
+4. Run a local build to verify: `python3 scripts/main.py build --skip-lints --skip-tests --not-release --skip-autodocs-embeddings` — the build will fail if hashes don't match.
 5. Run the TUI to verify it launches and works: `./build/kiro-cli-chat chat --tui`
 6. Raise a PR
 
-**Security scanning:** The OSV scan workflow (`.github/workflows/osv-scan.yml`) automatically picks up the new version from `const_v2.py` and scans it for known CVEs daily.
+**Security scanning:** The OSV scan workflow (`.github/workflows/osv-scan.yml`) automatically picks up the new version from `const.py` and scans it for known CVEs daily.
 
 ### Regenerating amzn smithy clients
 

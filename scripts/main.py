@@ -1,5 +1,5 @@
 import argparse
-from build import build
+from build import build, sign_bun_per_arch
 
 
 class StoreIfNotEmptyAction(argparse.Action):
@@ -41,6 +41,18 @@ build_subparser.add_argument(
     help="Skip generating documentation embeddings",
 )
 
+sign_bun_per_arch_subparser = subparsers.add_parser(name="sign-bun-per-arch")
+sign_bun_per_arch_subparser.add_argument(
+    "--branch-name",
+    required=True,
+    help="Branch name used to construct the S3 upload path",
+)
+sign_bun_per_arch_subparser.add_argument(
+    "--commit-sha",
+    required=True,
+    help="Commit SHA used to construct the S3 upload path",
+)
+
 args = parser.parse_args()
 
 match args.subparser:
@@ -52,5 +64,7 @@ match args.subparser:
             run_test=not args.skip_tests,
             run_autodocs_embeddings=not args.skip_autodocs_embeddings,
         )
+    case "sign-bun-per-arch":
+        sign_bun_per_arch(branch_name=args.branch_name, commit_sha=args.commit_sha)
     case _:
         raise ValueError(f"Unsupported subparser {args.subparser}")

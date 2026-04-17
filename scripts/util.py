@@ -1,14 +1,11 @@
-from enum import Enum
 from functools import cache
-import json
 import os
 import shlex
 import stat
 import subprocess
 import pathlib
 import platform
-from typing import List, Mapping, Sequence
-from const import DESKTOP_PACKAGE_NAME, TAURI_PRODUCT_NAME
+from typing import Mapping, Sequence
 
 DEBUG = "\033[94;1m"
 INFO = "\033[92;1m"
@@ -45,34 +42,6 @@ def isMusl() -> bool:
 @cache
 def isCrossCompiling() -> bool:
     return bool(os.environ.get("AMAZON_Q_BUILD_TARGET_TRIPLE"))
-
-
-@cache
-def version() -> str:
-    output = run_cmd_output(
-        [
-            "cargo",
-            "metadata",
-            "--format-version",
-            "1",
-            "--no-deps",
-        ]
-    )
-    data = json.loads(output)
-    for pkg in data["packages"]:
-        if pkg["name"] == DESKTOP_PACKAGE_NAME:
-            return pkg["version"]
-    raise ValueError("Version not found")
-
-
-@cache
-def tauri_product_name() -> str:
-    """
-        Derived from the `package.productName` configured in the tauri.conf.json file.
-
-    Tauri build output paths replace underscores with dashes.
-    """
-    return TAURI_PRODUCT_NAME.replace("_", "-")
 
 
 def log(*value: object, title: str, color: str | None):
@@ -132,34 +101,3 @@ def run_cmd_status(
 def set_executable(path: pathlib.Path):
     st = os.stat(path)
     os.chmod(path, st.st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
-
-
-class Variant(Enum):
-    FULL = 1
-    MINIMAL = 2
-
-
-@cache
-def get_variants() -> List[Variant]:
-    match platform.system():
-        case "Darwin":
-            return [Variant.FULL]
-        case "Linux":
-            is_ubuntu = "ubuntu" in platform.version().lower()
-            if is_ubuntu:
-                return [Variant.FULL]
-            else:
-                return [Variant.MINIMAL]
-        case other:
-            raise ValueError(f"Unsupported platform {other}")
-
-
-class Package(Enum):
-    DEB = "deb"
-    APPIMAGE = "appImage"
-
-
-def enum_encoder(obj):
-    if isinstance(obj, Enum):
-        return obj.value
-    return obj.__dict__

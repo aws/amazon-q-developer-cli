@@ -11,8 +11,7 @@ import shutil
 import time
 import zipfile
 from typing import Any, Mapping, Sequence, List, Optional
-from const import APPLE_TEAM_ID, CHAT_BINARY_NAME, CHAT_PACKAGE_NAME
-from const_v2 import BUN_VERSION, BUN_ZIP_HASHES
+from const import APPLE_TEAM_ID, BUN_VERSION, BUN_ZIP_HASHES, CHAT_BINARY_NAME, CHAT_PACKAGE_NAME
 from util import debug, info, isDarwin, isLinux, isWindows, run_cmd, run_cmd_output, warn
 from rust import cargo_cmd_name, rust_env, rust_targets, build_hash, build_datetime
 from importlib import import_module
@@ -48,7 +47,7 @@ class MacOSBuildOutput:
 
 def run_cargo_tests():
     args = [cargo_cmd_name()]
-    args.extend(["test", "--locked", "--package", CHAT_PACKAGE_NAME])
+    args.extend(["test", "--locked", "--workspace"])
     run_cmd(
         args,
         env={
@@ -59,7 +58,7 @@ def run_cargo_tests():
 
 
 def run_clippy():
-    args = [cargo_cmd_name(), "clippy", "--locked", "--package", CHAT_PACKAGE_NAME]
+    args = [cargo_cmd_name(), "clippy", "--locked", "--workspace"]
     run_cmd(
         args,
         env={
@@ -81,6 +80,7 @@ def calculate_sha256(file_path: pathlib.Path) -> str:
 @dataclass
 class BunPaths:
     """Bun executable paths keyed by architecture. On macOS both are set, on Linux only one."""
+
     x86_64: Optional[pathlib.Path] = None
     aarch64: Optional[pathlib.Path] = None
 
@@ -652,6 +652,7 @@ def generate_sha(path: pathlib.Path) -> pathlib.Path:
         shasum_output = run_cmd_output(["sha256sum", path])
     elif isWindows():
         import hashlib
+
         sha = hashlib.sha256(path.read_bytes()).hexdigest()
         sha_path = path.with_name(f"{path.name}.sha256")
         sha_path.write_text(sha)
@@ -722,6 +723,74 @@ def build_linux(chat_path: pathlib.Path, signer: GpgSigner | None):
     # clean up
     if signer:
         signer.clean()
+
+
+def sign_bun_per_arch(branch_name: str, commit_sha: str):
+    """Downloads, notarizes, and uploads per-arch bun binaries to S3.
+
+    Each architecture is signed and notarized separately, then uploaded
+    so the build job can embed them instead of raw binaries."""
+    signing_role_arn = os.environ.get("SIGNING_ROLE_ARN")
+    signing_bucket_name = os.environ.get("SIGNING_BUCKET_NAME")
+    signing_apple_notarizing_secret_arn = os.environ.get("SIGNING_APPLE_NOTARIZING_SECRET_ARN")
+
+    if not all([signing_role_arn, signing_bucket_name, signing_apple_notarizing_secret_arn]):
+        raise ValueError(
+            "Missing signing environment variables: SIGNING_ROLE_ARN, SIGNING_BUCKET_NAME, SIGNING_APPLE_NOTARIZING_SECRET_ARN"
+        )
+
+    signing_data = CdSigningData(
+        bucket_name=signing_bucket_name,
+        apple_notarizing_secret_arn=signing_apple_notarizing_secret_arn,
+        signing_role_arn=signing_role_arn,
+    )
+
+    BUILD_DIR.mkdir(exist_ok=True)
+
+    bun_dir = BUILD_DIR / "bun"
+    shutil.rmtree(bun_dir, ignore_errors=True)
+    bun_dir.mkdir(exist_ok=True)
+
+    for arch in ["x64", "aarch64"]:
+        fname = f"bun-darwin-{arch}.zip"
+        url = f"https://github.com/oven-sh/bun/releases/download/bun-v{BUN_VERSION}/{fname}"
+        zip_path = bun_dir / fname
+
+        info(f"Downloading bun-darwin-{arch} v{BUN_VERSION}")
+        response = requests.get(url, stream=True)
+        response.raise_for_status()
+        with open(zip_path, "wb") as f:
+            for chunk in response.iter_content(chunk_size=8192):
+                f.write(chunk)
+
+        expected_hash = BUN_ZIP_HASHES.get(fname)
+        if expected_hash:
+            actual_hash = calculate_sha256(zip_path)
+            if actual_hash != expected_hash:
+                raise ValueError(f"SHA256 mismatch for {fname}: expected {expected_hash}, got {actual_hash}")
+            info(f"Verified {fname} integrity (SHA256: {actual_hash})")
+
+        with zipfile.ZipFile(zip_path, "r") as zip_ref:
+            zip_ref.extractall(bun_dir)
+
+        extract_dir = fname.replace(".zip", "")
+        bun_exe = None
+        for root, _, files in os.walk(bun_dir / extract_dir):
+            if "bun" in files:
+                bun_exe = pathlib.Path(root) / "bun"
+                os.chmod(bun_exe, 0o755)
+                break
+
+        if not bun_exe:
+            raise FileNotFoundError(f"Bun executable not found in {extract_dir}")
+
+        info(f"Signing and notarizing bun-darwin-{arch}")
+        notarized_bun = sign_and_notarize(signing_data, bun_exe)
+
+        s3_path = f"{branch_name}/notarized-bun/{commit_sha}/bun-{arch}"
+        info(f"Uploading notarized bun-{arch} to s3://{signing_bucket_name}/{s3_path}")
+        run_cmd(["aws", "s3", "cp", str(notarized_bun), f"s3://{signing_bucket_name}/{s3_path}"])
+        info(f"✓ Notarized bun-{arch} uploaded to s3://{signing_bucket_name}/{s3_path}")
 
 
 def build(
@@ -811,6 +880,7 @@ def build(
             shutil.rmtree(doc_search_dir)
         run_cmd(["cargo", "run", "--quiet", "--example", "index_autodocs"])
         import tarfile
+
         tar_path = pathlib.Path("autodocs/meta/doc-search-index.tar.gz")
         with tarfile.open(tar_path, "w:gz") as tar:
             tar.add(str(doc_search_dir), arcname=".")
