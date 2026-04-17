@@ -45,7 +45,7 @@ describe('/transcript', () => {
   it('opens less with conversation markdown and quits with q', async () => {
     testCase = await TestCase.builder()
       .withTestName('transcript-with-messages')
-      .withEnv({ PAGER: 'less' })
+      .withEnv({ PAGER: 'less', TERM: 'xterm' })
       .launch();
     await testCase.waitForVisibleText('ask a question', 15000);
 
