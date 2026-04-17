@@ -2270,3 +2270,103 @@ async fn switch_to_execution_swaps_and_executes_plan() {
         session_updates
     );
 }
+
+/// Verifies that skills discovered from `.kiro/skills/<name>/SKILL.md` are
+/// advertised to the client and invocable as `/skill-name` slash commands.
+///
+/// Exercises the new GetSkills/ResolveSkill agent protocol added in the skill
+/// slash commands feature — plumbing that isn't covered by the unit tests in
+/// `crates/agent/src/agent/prompts/skills.rs` or `crates/chat-cli-v2/src/agent/acp/acp_provider.rs`.
+#[tokio::test]
+#[timeout(30000)]
+#[serial]
+async fn workspace_skill_is_advertised_and_invocable() {
+    let (harness, client) = AcpTestHarnessBuilder::new("workspace_skill_is_advertised_and_invocable")
+        .build()
+        .await;
+
+    // Write a skill in the session's workspace cwd BEFORE creating the session.
+    // The default agent's resources include `skill://.kiro/skills/*/SKILL.md`,
+    // so this path is what GetSkills globs against via AcpProvider's cwd. If
+    // we created the session first, the initial advertise would see no skills
+    // and we'd have no trigger to re-advertise.
+    let skill_dir = harness.paths.cwd.join(".kiro").join("skills").join("greet");
+    std::fs::create_dir_all(&skill_dir).expect("failed to create skill dir");
+    let skill_body = "# Greet\n\nSay hello to $ARGUMENTS.";
+    let skill_content = format!(
+        "---\nname: greet\ndescription: Say hello to someone\n---\n{}",
+        skill_body
+    );
+    std::fs::write(skill_dir.join("SKILL.md"), &skill_content).expect("failed to write skill");
+
+    // Now create the session — this triggers advertise_commands which calls
+    // get_skills() and should discover the skill we just wrote.
+    let cwd = harness.paths.cwd.clone();
+    let resp = client.new_session(cwd).await.expect("new_session failed");
+    let session_id = resp.session_id;
+    let mut harness = harness;
+
+    // Advertisement is fire-and-forget and reaches the TUI via a
+    // `_kiro.dev/commands/available` ExtNotification. Poll for it to avoid a
+    // race with the async send.
+    let available_method = "kiro.dev/commands/available";
+    client.wait_for(|captured| find_skill_prompt(captured, available_method, "greet").is_some()).await;
+
+    let captured = client.captured().await;
+    let skill_prompt = find_skill_prompt(&captured, available_method, "greet").expect("greet skill should be advertised");
+    assert_eq!(skill_prompt.get("description").and_then(|v| v.as_str()), Some("Say hello to someone"));
+    assert_eq!(
+        skill_prompt.get("serverName").and_then(|v| v.as_str()),
+        Some("skill:config"),
+        "skill prompts must use the skill:config source label so the TUI can distinguish them"
+    );
+
+    // Invoke `/greet World` — ACP should resolve the skill via resolve_skill(),
+    // strip the frontmatter, expand $ARGUMENTS, and forward the expanded body
+    // as a user prompt to the agent loop.
+    harness
+        .push_mock_responses_from_file(&session_id.0, "tests/mock_responses/simple_text.jsonl")
+        .await;
+
+    client
+        .prompt_text(session_id.clone(), "/greet World")
+        .await
+        .expect("slash prompt failed");
+
+    let requests = harness.get_captured_requests(&session_id.0).await;
+    assert_eq!(requests.len(), 1, "skill invocation should produce exactly one LLM request");
+    let sent = &requests[0].user_input_message.content;
+    assert!(
+        sent.contains("Say hello to World"),
+        "expanded skill body should be sent as the user prompt, got: {:?}",
+        sent
+    );
+    assert!(
+        !sent.contains("name: greet") && !sent.contains("description: Say hello to someone"),
+        "YAML frontmatter should be stripped before the skill is sent to the model, got: {:?}",
+        sent
+    );
+}
+
+/// Find a prompt advertisement matching `name` in the latest
+/// `commands/available` ExtNotification.
+fn find_skill_prompt(
+    captured: &common::CapturedNotifications,
+    method: &str,
+    name: &str,
+) -> Option<serde_json::Value> {
+    captured
+        .ext_notifications
+        .iter()
+        .rev()
+        .find(|n| n.method.as_ref() == method)
+        .and_then(|n| serde_json::from_str::<serde_json::Value>(n.params.get()).ok())
+        .and_then(|params| {
+            params
+                .get("prompts")?
+                .as_array()?
+                .iter()
+                .find(|p| p.get("name").and_then(|v| v.as_str()) == Some(name))
+                .cloned()
+        })
+}

@@ -1,0 +1,4 @@
+{
+  "type": "added",
+  "description": "Invoke .kiro/skills as /skill-name slash commands"
+}
