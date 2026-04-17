@@ -1,13 +1,13 @@
 ---
 doc_meta:
-  validated: 2026-02-06
-  commit: 7ba9105a
+  validated: 2026-04-14
+  commit: bbda58f2
   status: validated
   testable_headless: true
   category: tool
   title: execute_bash
   description: Execute bash commands on the user's system with output capture and safety checks
-  keywords: [execute_bash, shell, bash, command, terminal, run, working_dir, directory]
+  keywords: [execute_bash, shell, bash, command, terminal, run, working_dir, directory, streaming, live output]
   related: [fs-read, fs-write, use-aws]
 ---
 
@@ -241,12 +241,15 @@ Filesystem      Size  Used Avail Use% Mounted on
 ## Limitations
 
 - Multi-line commands always require approval (safety feature)
-- Output limited by MAX_TOOL_RESPONSE_SIZE
+- Output limited by MAX_TOOL_RESPONSE_SIZE in final result
 - No interactive command support (commands requiring user input will hang, though prompts display immediately)
-- Output streams in real-time to terminal but is truncated in the final result if it exceeds size limits
 - Commands run in user's shell environment
 - No timeout configuration (commands can run indefinitely)
 - Regex patterns don't support look-around assertions
+
+## Live Output Streaming
+
+Command output streams to the terminal in real-time, line by line, as the command executes. This allows you to see progress for long-running commands without waiting for completion. The final result captures the complete output (truncated if exceeding size limits). Hidden Unicode characters are sanitized from streamed output for security.
 
 ## Technical Details
 
@@ -262,4 +265,4 @@ Filesystem      Size  Used Avail Use% Mounted on
 
 **Exit Codes**: Captured and included in output. Non-zero exit codes don't cause tool failure.
 
-**Output Handling**: stdout and stderr captured separately, then combined in output. Output streams to terminal in real-time (including partial lines and prompts). Final result truncated if exceeding size limits. Unicode tags sanitized for safety.
+**Output Handling**: stdout and stderr captured separately, then combined in output. Output streams line-by-line in real-time during execution. Final result truncated if exceeding size limits. Unicode tags sanitized for safety.

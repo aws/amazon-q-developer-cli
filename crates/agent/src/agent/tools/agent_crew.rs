@@ -159,6 +159,7 @@ pub struct PendingStageSpec {
 impl AgentCrew {
     pub async fn execute(
         &self,
+        tool_use_id: String,
         event_tx: broadcast::Sender<AgentEvent>,
         crew_settings: &AgentCrewSettings,
     ) -> ToolExecutionResult {
@@ -237,6 +238,7 @@ impl AgentCrew {
             CrewMode::Blocking => {
                 // Emit live output so LLM knows it's waiting
                 let _ = event_tx.send(AgentEvent::Update(crate::protocol::UpdateEvent::ToolCallUpdate {
+                    id: tool_use_id.clone(),
                     content: crate::protocol::ContentChunk::Text(format!(
                         "⏳ Running crew pipeline ({} stages)... Press ctrl+g to monitor progress.",
                         self.stages.len()

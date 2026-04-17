@@ -1,0 +1,4 @@
+{
+  "type": "added",
+  "description": "Shell command output now streams to the TUI in real-time, line by line, instead of waiting for process completion"
+}

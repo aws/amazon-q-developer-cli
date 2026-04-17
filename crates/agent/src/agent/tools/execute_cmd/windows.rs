@@ -13,8 +13,15 @@ use serde::{
     Deserialize,
     Serialize,
 };
+use tokio::io::AsyncBufReadExt;
 use tokio::process::Command;
+use tokio::sync::broadcast;
 
+use crate::agent::protocol::{
+    AgentEvent,
+    ContentChunk,
+    UpdateEvent,
+};
 use crate::agent::tools::{
     BuiltInToolName,
     BuiltInToolTrait,
@@ -130,7 +137,118 @@ impl ExecuteCmd {
         Ok(())
     }
 
-    pub async fn execute<P: SystemProvider>(&self, provider: &P) -> ToolExecutionResult {
+    /// Execute with optional streaming support. When `event_tx` is `Some`, emits
+    /// `ToolCallUpdate` events for each line of stdout/stderr. When `None`, falls
+    /// back to blocking `wait_with_output()`.
+    pub async fn execute<P: SystemProvider>(
+        &self,
+        provider: &P,
+        event_tx: Option<(String, broadcast::Sender<AgentEvent>)>,
+    ) -> ToolExecutionResult {
+        let Some((tool_use_id, tx)) = event_tx else {
+            return self.execute_blocking(provider).await;
+        };
+
+        let mut child = self.spawn_child(provider)?;
+
+        let stdout = tokio::io::BufReader::new(
+            child
+                .stdout
+                .take()
+                .expect("stdout should be piped since we set Stdio::piped()"),
+        );
+        let stderr = tokio::io::BufReader::new(
+            child
+                .stderr
+                .take()
+                .expect("stderr should be piped since we set Stdio::piped()"),
+        );
+        let mut stdout_lines = stdout.lines();
+        let mut stderr_lines = stderr.lines();
+
+        let mut accumulated_stdout = String::new();
+        let mut accumulated_stderr = String::new();
+        let mut stdout_done = false;
+        let mut stderr_done = false;
+
+        loop {
+            tokio::select! {
+                line = stdout_lines.next_line(), if !stdout_done => {
+                    match line {
+                        Ok(Some(line)) => {
+                            let clean = sanitize_unicode_tags(&line);
+                            let _ = tx.send(AgentEvent::Update(UpdateEvent::ToolCallUpdate {
+                                id: tool_use_id.clone(),
+                                content: ContentChunk::Text(format!("{clean}\n")),
+                            }));
+                            accumulated_stdout.push_str(&clean);
+                            accumulated_stdout.push('\n');
+                        }
+                        Ok(None) => stdout_done = true,
+                        Err(e) => {
+                            tracing::warn!("stdout read error: {e}");
+                            stdout_done = true;
+                        }
+                    }
+                }
+                line = stderr_lines.next_line(), if !stderr_done => {
+                    match line {
+                        Ok(Some(line)) => {
+                            let clean = sanitize_unicode_tags(&line);
+                            let _ = tx.send(AgentEvent::Update(UpdateEvent::ToolCallUpdate {
+                                id: tool_use_id.clone(),
+                                content: ContentChunk::Text(format!("{clean}\n")),
+                            }));
+                            accumulated_stderr.push_str(&clean);
+                            accumulated_stderr.push('\n');
+                        }
+                        Ok(None) => stderr_done = true,
+                        Err(e) => {
+                            tracing::warn!("stderr read error: {e}");
+                            stderr_done = true;
+                        }
+                    }
+                }
+            }
+            if stdout_done && stderr_done {
+                break;
+            }
+        }
+
+        let status = child
+            .wait()
+            .await
+            .map_err(|e| ToolExecutionError::io(format!("No exit status for '{}'", &self.command), e))?;
+
+        Ok(build_output_result(
+            &accumulated_stdout,
+            &accumulated_stderr,
+            &status.to_string(),
+        ))
+    }
+
+    /// Blocking fallback: collects all output at process completion.
+    /// Used when no event channel is provided (tests, V1 context).
+    async fn execute_blocking<P: SystemProvider>(&self, provider: &P) -> ToolExecutionResult {
+        let child = self.spawn_child(provider)?;
+
+        let output = child
+            .wait_with_output()
+            .await
+            .map_err(|e| ToolExecutionError::io(format!("No exit status for '{}'", &self.command), e))?;
+
+        let clean_stdout = sanitize_unicode_tags(output.stdout.to_str_lossy());
+        let clean_stderr = sanitize_unicode_tags(output.stderr.to_str_lossy());
+
+        Ok(build_output_result(
+            &clean_stdout,
+            &clean_stderr,
+            &output.status.to_string(),
+        ))
+    }
+
+    /// Spawn the shell child process with piped stdout/stderr.
+    fn spawn_child<P: SystemProvider>(&self, provider: &P) -> Result<tokio::process::Child, ToolExecutionError> {
         let process_dir = self
             .canonical_working_dir(provider)
             .map_err(ToolExecutionError::Custom)?
@@ -141,10 +259,9 @@ impl ExecuteCmd {
             });
 
         let env_vars = env_vars_with_user_agent();
-
-        // On Windows, use the detected shell (PowerShell or cmd.exe)
         let (shell, flag) = crate::agent::util::shell::shell_command();
-        let child = Command::new(shell)
+
+        Command::new(shell)
             .arg(flag)
             .arg(&self.command)
             .current_dir(&process_dir)
@@ -153,26 +270,19 @@ impl ExecuteCmd {
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
             .spawn()
-            .map_err(|e| ToolExecutionError::io(format!("Failed to spawn command '{}'", &self.command), e))?;
+            .map_err(|e| ToolExecutionError::io(format!("Failed to spawn command '{}'", &self.command), e))
+    }
+}
 
-        let output = child
-            .wait_with_output()
-            .await
-            .map_err(|e| ToolExecutionError::io(format!("No exit status for '{}'", &self.command), e))?;
-
-        let exit_status = output.status;
-        let clean_stdout = sanitize_unicode_tags(output.stdout.to_str_lossy());
-        let clean_stderr = sanitize_unicode_tags(output.stderr.to_str_lossy());
-
-        let result = serde_json::json!({
-            "exit_status": exit_status.to_string(),
-            "stdout": format_output(&clean_stdout, MAX_COMMAND_OUTPUT_SIZE),
-            "stderr": format_output(&clean_stderr, MAX_COMMAND_OUTPUT_SIZE),
-        });
-
-        Ok(ToolExecutionOutput {
-            items: vec![ToolExecutionOutputItem::Json(result)],
-        })
+/// Build the final JSON tool output from accumulated stdout/stderr.
+fn build_output_result(stdout: &str, stderr: &str, exit_status: &str) -> ToolExecutionOutput {
+    let result = serde_json::json!({
+        "exit_status": exit_status,
+        "stdout": format_output(stdout, MAX_COMMAND_OUTPUT_SIZE),
+        "stderr": format_output(stderr, MAX_COMMAND_OUTPUT_SIZE),
+    });
+    ToolExecutionOutput {
+        items: vec![ToolExecutionOutputItem::Json(result)],
     }
 }
 
@@ -313,7 +423,7 @@ mod tests {
             working_dir: Some(canonical_str.clone()),
         };
 
-        let result = cmd.execute(&test_base).await.unwrap();
+        let result = cmd.execute(&test_base, None).await.unwrap();
         let json = match &result.items[0] {
             ToolExecutionOutputItem::Json(v) => v,
             _ => panic!("Expected JSON output"),

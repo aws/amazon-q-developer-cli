@@ -1400,9 +1400,10 @@ export const createAppStore = (props: AppStoreProps) => {
                       name: toolMsg.name,
                       kind: toolMsg.kind,
                       role: MessageRole.ToolUse,
-                      content: toolMsg.content + text,
+                      content: toolMsg.content,
                       locations: toolMsg.locations,
                       agentName: toolMsg.agentName,
+                      liveOutput: (toolMsg.liveOutput ?? '') + text,
                     };
                     return { messages };
                   }
@@ -1431,6 +1432,7 @@ export const createAppStore = (props: AppStoreProps) => {
                     result: event.result,
                     locations: toolMsg.locations,
                     agentName: toolMsg.agentName,
+                    liveOutput: undefined,
                   };
                 }
               }

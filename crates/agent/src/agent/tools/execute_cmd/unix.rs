@@ -13,8 +13,15 @@ use serde::{
     Deserialize,
     Serialize,
 };
+use tokio::io::AsyncBufReadExt;
 use tokio::process::Command;
+use tokio::sync::broadcast;
 
+use crate::agent::protocol::{
+    AgentEvent,
+    ContentChunk,
+    UpdateEvent,
+};
 use crate::agent::tools::{
     BuiltInToolName,
     BuiltInToolTrait,
@@ -131,7 +138,118 @@ impl ExecuteCmd {
         Ok(())
     }
 
-    pub async fn execute<P: SystemProvider>(&self, provider: &P) -> ToolExecutionResult {
+    /// Execute with optional streaming support. When `event_tx` is `Some`, emits
+    /// `ToolCallUpdate` events for each line of stdout/stderr. When `None`, falls
+    /// back to blocking `wait_with_output()`.
+    pub async fn execute<P: SystemProvider>(
+        &self,
+        provider: &P,
+        event_tx: Option<(String, broadcast::Sender<AgentEvent>)>,
+    ) -> ToolExecutionResult {
+        let Some((tool_use_id, tx)) = event_tx else {
+            return self.execute_blocking(provider).await;
+        };
+
+        let mut child = self.spawn_child(provider)?;
+
+        let stdout = tokio::io::BufReader::new(
+            child
+                .stdout
+                .take()
+                .expect("stdout should be piped since we set Stdio::piped()"),
+        );
+        let stderr = tokio::io::BufReader::new(
+            child
+                .stderr
+                .take()
+                .expect("stderr should be piped since we set Stdio::piped()"),
+        );
+        let mut stdout_lines = stdout.lines();
+        let mut stderr_lines = stderr.lines();
+
+        let mut accumulated_stdout = String::new();
+        let mut accumulated_stderr = String::new();
+        let mut stdout_done = false;
+        let mut stderr_done = false;
+
+        loop {
+            tokio::select! {
+                line = stdout_lines.next_line(), if !stdout_done => {
+                    match line {
+                        Ok(Some(line)) => {
+                            let clean = sanitize_unicode_tags(&line);
+                            let _ = tx.send(AgentEvent::Update(UpdateEvent::ToolCallUpdate {
+                                id: tool_use_id.clone(),
+                                content: ContentChunk::Text(format!("{clean}\n")),
+                            }));
+                            accumulated_stdout.push_str(&clean);
+                            accumulated_stdout.push('\n');
+                        }
+                        Ok(None) => stdout_done = true,
+                        Err(e) => {
+                            tracing::warn!("stdout read error: {e}");
+                            stdout_done = true;
+                        }
+                    }
+                }
+                line = stderr_lines.next_line(), if !stderr_done => {
+                    match line {
+                        Ok(Some(line)) => {
+                            let clean = sanitize_unicode_tags(&line);
+                            let _ = tx.send(AgentEvent::Update(UpdateEvent::ToolCallUpdate {
+                                id: tool_use_id.clone(),
+                                content: ContentChunk::Text(format!("{clean}\n")),
+                            }));
+                            accumulated_stderr.push_str(&clean);
+                            accumulated_stderr.push('\n');
+                        }
+                        Ok(None) => stderr_done = true,
+                        Err(e) => {
+                            tracing::warn!("stderr read error: {e}");
+                            stderr_done = true;
+                        }
+                    }
+                }
+            }
+            if stdout_done && stderr_done {
+                break;
+            }
+        }
+
+        let status = child
+            .wait()
+            .await
+            .map_err(|e| ToolExecutionError::io(format!("No exit status for '{}'", &self.command), e))?;
+
+        Ok(build_output_result(
+            &accumulated_stdout,
+            &accumulated_stderr,
+            &status.to_string(),
+        ))
+    }
+
+    /// Blocking fallback: collects all output at process completion.
+    /// Used when no event channel is provided
+    async fn execute_blocking<P: SystemProvider>(&self, provider: &P) -> ToolExecutionResult {
+        let child = self.spawn_child(provider)?;
+
+        let output = child
+            .wait_with_output()
+            .await
+            .map_err(|e| ToolExecutionError::io(format!("No exit status for '{}'", &self.command), e))?;
+
+        let clean_stdout = sanitize_unicode_tags(output.stdout.to_str_lossy());
+        let clean_stderr = sanitize_unicode_tags(output.stderr.to_str_lossy());
+
+        Ok(build_output_result(
+            &clean_stdout,
+            &clean_stderr,
+            &output.status.to_string(),
+        ))
+    }
+
+    /// Spawn the shell child process with piped stdout/stderr.
+    fn spawn_child<P: SystemProvider>(&self, provider: &P) -> Result<tokio::process::Child, ToolExecutionError> {
         let process_dir = self
             .canonical_working_dir(provider)
             .map_err(ToolExecutionError::Custom)?
@@ -147,10 +265,9 @@ impl ExecuteCmd {
             .unwrap_or("bash".to_string());
 
         let env_vars = env_vars_with_user_agent();
-
         let wrapped_command = wrap_cmd_with_fd_limit(&self.command);
 
-        let child = Command::new(shell)
+        Command::new(shell)
             .arg("-c")
             .arg(&wrapped_command)
             .current_dir(&process_dir)
@@ -159,26 +276,19 @@ impl ExecuteCmd {
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
             .spawn()
-            .map_err(|e| ToolExecutionError::io(format!("Failed to spawn command '{}'", &self.command), e))?;
+            .map_err(|e| ToolExecutionError::io(format!("Failed to spawn command '{}'", &self.command), e))
+    }
+}
 
-        let output = child
-            .wait_with_output()
-            .await
-            .map_err(|e| ToolExecutionError::io(format!("No exit status for '{}'", &self.command), e))?;
-
-        let exit_status = output.status;
-        let clean_stdout = sanitize_unicode_tags(output.stdout.to_str_lossy());
-        let clean_stderr = sanitize_unicode_tags(output.stderr.to_str_lossy());
-
-        let result = serde_json::json!({
-            "exit_status": exit_status.to_string(),
-            "stdout": format_output(&clean_stdout, MAX_COMMAND_OUTPUT_SIZE),
-            "stderr": format_output(&clean_stderr, MAX_COMMAND_OUTPUT_SIZE),
-        });
-
-        Ok(ToolExecutionOutput {
-            items: vec![ToolExecutionOutputItem::Json(result)],
-        })
+/// Build the final JSON tool output from accumulated stdout/stderr.
+fn build_output_result(stdout: &str, stderr: &str, exit_status: &str) -> ToolExecutionOutput {
+    let result = serde_json::json!({
+        "exit_status": exit_status,
+        "stdout": format_output(stdout, MAX_COMMAND_OUTPUT_SIZE),
+        "stderr": format_output(stderr, MAX_COMMAND_OUTPUT_SIZE),
+    });
+    ToolExecutionOutput {
+        items: vec![ToolExecutionOutputItem::Json(result)],
     }
 }
 
@@ -265,6 +375,127 @@ fn env_vars_with_user_agent() -> HashMap<String, String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::util::test::TestBase;
+
+    // ── Streamed chunks are sanitized ────────────────────────
+    // Feature: shell-output-streaming
+    // Streamed chunks are sanitized and correspond to source lines
+    //
+    // For any input containing hidden Unicode characters, `sanitize_unicode_tags`
+    // MUST remove every `is_hidden` char and preserve all others in order.
+    //
+    // Validates: Requirements 1.2, 2.1, 4.1
+    // ─────────────────────────────────────────────────────────────────────
+
+    /// Representative hidden chars — one from each `is_hidden` range.
+    const HIDDEN_SAMPLES: &[char] = &[
+        '\u{E0000}',
+        '\u{E0041}',
+        '\u{E007F}', // TAG range
+        '\u{200B}',
+        '\u{200D}',
+        '\u{200F}', // zero-width / directional marks
+        '\u{2028}',
+        '\u{202A}',
+        '\u{202F}', // separators / narrow NB-SP
+        '\u{205F}',
+        '\u{2066}',
+        '\u{206F}', // format controls
+        '\u{FFF0}',
+        '\u{FFFC}', // specials
+        '\u{FFFE}',
+        '\u{FFFF}', // specials (non-characters)
+    ];
+
+    #[test]
+    fn sanitize_removes_all_hidden_ranges() {
+        // Build a string with every hidden sample interleaved with visible text.
+        let visible = "hello";
+        let mut input = String::new();
+        for &h in HIDDEN_SAMPLES {
+            input.push_str(visible);
+            input.push(h);
+        }
+        input.push_str(visible);
+
+        let result = sanitize_unicode_tags(&input);
+
+        // No hidden chars survive.
+        for c in result.chars() {
+            assert!(!is_hidden(c), "hidden char U+{:04X} survived sanitization", c as u32);
+        }
+        // Only the visible segments remain, concatenated.
+        let expected = visible.repeat(HIDDEN_SAMPLES.len() + 1);
+        assert_eq!(result, expected);
+    }
+
+    #[test]
+    fn sanitize_preserves_visible_chars_in_order() {
+        let visible_chars = ['a', 'Z', '0', '🦀', '你', 'Ω', '\n', '\t', ' '];
+        let mut input = String::new();
+        let mut expected = String::new();
+        for &v in &visible_chars {
+            input.push(v);
+            expected.push(v);
+            // Inject a hidden char after each visible char.
+            input.push('\u{200B}');
+        }
+
+        let result = sanitize_unicode_tags(&input);
+        assert_eq!(result, expected, "visible chars not preserved in order");
+    }
+
+    #[test]
+    fn sanitize_is_idempotent() {
+        let inputs = [
+            "",
+            "plain ascii",
+            "emoji 🎉 and CJK 你好",
+            "mixed\u{200B}hidden\u{E0041}chars",
+            "\u{200B}\u{200D}\u{FFFE}", // all hidden
+        ];
+        for input in inputs {
+            let once = sanitize_unicode_tags(input);
+            let twice = sanitize_unicode_tags(&once);
+            assert_eq!(once, twice, "not idempotent for input: {input:?}");
+        }
+    }
+
+    #[test]
+    fn sanitize_returns_empty_for_all_hidden_input() {
+        let input: String = HIDDEN_SAMPLES.iter().collect();
+        assert_eq!(sanitize_unicode_tags(&input), "");
+    }
+
+    #[test]
+    fn sanitize_noop_on_pure_visible_input() {
+        let inputs = [
+            "hello world",
+            "Rust 🦀 > C",
+            "line1\nline2\nline3",
+            "tabs\there\tand\tthere",
+            "",
+        ];
+        for input in inputs {
+            assert_eq!(
+                sanitize_unicode_tags(input),
+                input,
+                "modified pure visible input: {input:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn sanitize_handles_hidden_at_boundaries() {
+        // Hidden at start.
+        assert_eq!(sanitize_unicode_tags("\u{200B}abc"), "abc");
+        // Hidden at end.
+        assert_eq!(sanitize_unicode_tags("abc\u{200B}"), "abc");
+        // Hidden only.
+        assert_eq!(sanitize_unicode_tags("\u{E0000}"), "");
+        // Single visible char surrounded by hidden.
+        assert_eq!(sanitize_unicode_tags("\u{200B}x\u{FFFE}"), "x");
+    }
 
     #[test]
     fn is_hidden_recognises_all_ranges() {
@@ -302,10 +533,201 @@ mod tests {
         assert!(result.chars().all(|c| !is_hidden(c)));
     }
 
+    // ── Blocking fallback when no event channel is provided ──
+    // Feature: shell-output-streaming
+    //
+    // For any command, calling `execute(provider, None)` SHALL produce a
+    // `ToolExecutionOutput` with a JSON object containing exactly
+    // `exit_status`, `stdout`, and `stderr` fields.
+    // ─────────────────────────────────────────────────────────────────────
+
+    /// Helper: assert the output has the correct JSON schema with exactly
+    /// `exit_status`, `stdout`, `stderr` fields, all strings.
+    fn assert_blocking_output_schema(result: &ToolExecutionOutput) {
+        assert_eq!(result.items.len(), 1, "expected exactly one output item");
+        let json = match &result.items[0] {
+            ToolExecutionOutputItem::Json(v) => v,
+            other => panic!("expected Json output item, got: {other:?}"),
+        };
+        let obj = json.as_object().expect("output should be a JSON object");
+
+        // Exactly three fields.
+        assert_eq!(
+            obj.len(),
+            3,
+            "expected exactly 3 fields (exit_status, stdout, stderr), got: {:?}",
+            obj.keys().collect::<Vec<_>>()
+        );
+
+        for field in ["exit_status", "stdout", "stderr"] {
+            assert!(obj.contains_key(field), "missing field: {field}");
+            assert!(
+                obj[field].is_string(),
+                "field '{field}' should be a string, got: {:?}",
+                obj[field]
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn blocking_fallback_simple_echo() {
+        let test_base = TestBase::new().await;
+        let cmd = ExecuteCmd {
+            command: "echo hello".to_string(),
+            working_dir: None,
+        };
+
+        let result = cmd.execute(&test_base, None).await.unwrap();
+        assert_blocking_output_schema(&result);
+
+        let json = match &result.items[0] {
+            ToolExecutionOutputItem::Json(v) => v,
+            _ => unreachable!(),
+        };
+        assert_eq!(json["exit_status"], "exit status: 0");
+        assert!(json["stdout"].as_str().unwrap().contains("hello"));
+    }
+
+    #[tokio::test]
+    async fn blocking_fallback_stderr_output() {
+        let test_base = TestBase::new().await;
+        let cmd = ExecuteCmd {
+            command: "echo err >&2".to_string(),
+            working_dir: None,
+        };
+
+        let result = cmd.execute(&test_base, None).await.unwrap();
+        assert_blocking_output_schema(&result);
+
+        let json = match &result.items[0] {
+            ToolExecutionOutputItem::Json(v) => v,
+            _ => unreachable!(),
+        };
+        assert!(json["stderr"].as_str().unwrap().contains("err"));
+    }
+
+    #[tokio::test]
+    async fn blocking_fallback_mixed_stdout_stderr() {
+        let test_base = TestBase::new().await;
+        let cmd = ExecuteCmd {
+            command: "echo out && echo err >&2".to_string(),
+            working_dir: None,
+        };
+
+        let result = cmd.execute(&test_base, None).await.unwrap();
+        assert_blocking_output_schema(&result);
+
+        let json = match &result.items[0] {
+            ToolExecutionOutputItem::Json(v) => v,
+            _ => unreachable!(),
+        };
+        assert!(json["stdout"].as_str().unwrap().contains("out"));
+        assert!(json["stderr"].as_str().unwrap().contains("err"));
+    }
+
+    #[tokio::test]
+    async fn blocking_fallback_empty_output() {
+        let test_base = TestBase::new().await;
+        let cmd = ExecuteCmd {
+            command: "true".to_string(),
+            working_dir: None,
+        };
+
+        let result = cmd.execute(&test_base, None).await.unwrap();
+        assert_blocking_output_schema(&result);
+
+        let json = match &result.items[0] {
+            ToolExecutionOutputItem::Json(v) => v,
+            _ => unreachable!(),
+        };
+        assert_eq!(json["exit_status"], "exit status: 0");
+    }
+
+    #[tokio::test]
+    async fn blocking_fallback_nonzero_exit() {
+        let test_base = TestBase::new().await;
+        let cmd = ExecuteCmd {
+            command: "exit 42".to_string(),
+            working_dir: None,
+        };
+
+        let result = cmd.execute(&test_base, None).await.unwrap();
+        assert_blocking_output_schema(&result);
+
+        let json = match &result.items[0] {
+            ToolExecutionOutputItem::Json(v) => v,
+            _ => unreachable!(),
+        };
+        assert!(json["exit_status"].as_str().unwrap().contains("42"));
+    }
+
+    #[tokio::test]
+    async fn blocking_fallback_multiline_output() {
+        let test_base = TestBase::new().await;
+        let cmd = ExecuteCmd {
+            command: "printf 'line1\\nline2\\nline3\\n'".to_string(),
+            working_dir: None,
+        };
+
+        let result = cmd.execute(&test_base, None).await.unwrap();
+        assert_blocking_output_schema(&result);
+
+        let json = match &result.items[0] {
+            ToolExecutionOutputItem::Json(v) => v,
+            _ => unreachable!(),
+        };
+        let stdout = json["stdout"].as_str().unwrap();
+        assert!(stdout.contains("line1"));
+        assert!(stdout.contains("line2"));
+        assert!(stdout.contains("line3"));
+    }
+
+    #[tokio::test]
+    async fn blocking_fallback_special_chars() {
+        let test_base = TestBase::new().await;
+        // Test with unicode, emoji, and special shell characters
+        let cmd = ExecuteCmd {
+            command: r#"printf 'hello 🦀 world\n'"#.to_string(),
+            working_dir: None,
+        };
+
+        let result = cmd.execute(&test_base, None).await.unwrap();
+        assert_blocking_output_schema(&result);
+
+        let json = match &result.items[0] {
+            ToolExecutionOutputItem::Json(v) => v,
+            _ => unreachable!(),
+        };
+        assert!(json["stdout"].as_str().unwrap().contains("🦀"));
+    }
+
+    #[tokio::test]
+    async fn blocking_fallback_with_working_dir() {
+        let test_base = TestBase::new().await.with_directory("mydir").await;
+        let dir_path = test_base
+            .join("mydir")
+            .canonicalize()
+            .unwrap()
+            .to_string_lossy()
+            .to_string();
+
+        let cmd = ExecuteCmd {
+            command: "pwd".to_string(),
+            working_dir: Some(dir_path.clone()),
+        };
+
+        let result = cmd.execute(&test_base, None).await.unwrap();
+        assert_blocking_output_schema(&result);
+
+        let json = match &result.items[0] {
+            ToolExecutionOutputItem::Json(v) => v,
+            _ => unreachable!(),
+        };
+        assert!(json["stdout"].as_str().unwrap().trim().ends_with(&dir_path));
+    }
+
     #[tokio::test]
     async fn test_execute_with_working_dir() {
-        use crate::util::test::TestBase;
-
         let test_base = TestBase::new().await.with_directory("subdir").await;
         let canonical_str = test_base
             .join("subdir")
@@ -319,7 +741,7 @@ mod tests {
             working_dir: Some(canonical_str.clone()),
         };
 
-        let result = cmd.execute(&test_base).await.unwrap();
+        let result = cmd.execute(&test_base, None).await.unwrap();
         let json = match &result.items[0] {
             ToolExecutionOutputItem::Json(v) => v,
             _ => panic!("Expected JSON output"),
@@ -327,5 +749,228 @@ mod tests {
 
         assert_eq!(json["exit_status"], "exit status: 0");
         assert!(json["stdout"].as_str().unwrap().trim().ends_with(&canonical_str));
+    }
+
+    // ── Stream error resilience preserves the surviving stream ──
+    // Feature: shell-output-streaming
+    // Stream error resilience preserves the surviving stream
+    //
+    // For any process where one of stdout or stderr encounters a read error
+    // or closes early, the other stream SHALL continue to produce
+    // `ToolCallUpdate` events until EOF, and the final `ToolExecutionOutput`
+    // SHALL include the accumulated content from the surviving stream.
+    // ────────────────────────────────────────────────────────────────────────
+
+    /// Helper: extract the JSON output from a `ToolExecutionResult`.
+    fn extract_json(result: &ToolExecutionOutput) -> &serde_json::Value {
+        assert_eq!(result.items.len(), 1, "expected exactly one output item");
+        match &result.items[0] {
+            ToolExecutionOutputItem::Json(v) => v,
+            other => panic!("expected Json output item, got: {other:?}"),
+        }
+    }
+
+    /// Helper: collect all `ToolCallUpdate` text events from a broadcast receiver.
+    fn drain_updates(mut rx: broadcast::Receiver<AgentEvent>) -> Vec<String> {
+        let mut texts = Vec::new();
+        while let Ok(event) = rx.try_recv() {
+            if let AgentEvent::Update(UpdateEvent::ToolCallUpdate {
+                content: ContentChunk::Text(text),
+                ..
+            }) = event
+            {
+                texts.push(text);
+            }
+        }
+        texts
+    }
+
+    #[tokio::test]
+    async fn stream_resilience_stderr_closed_stdout_survives() {
+        // Close stderr immediately, then write multiple lines to stdout.
+        // The streaming loop should handle the closed stderr gracefully
+        // and fully accumulate stdout.
+        let test_base = TestBase::new().await;
+        let (tx, rx) = broadcast::channel::<AgentEvent>(64);
+
+        let cmd = ExecuteCmd {
+            command: "exec 2>&-; echo line_a; echo line_b; echo line_c".to_string(),
+            working_dir: None,
+        };
+
+        let result = cmd
+            .execute(&test_base, Some(("test-id".to_string(), tx)))
+            .await
+            .unwrap();
+
+        let json = extract_json(&result);
+        let stdout = json["stdout"].as_str().unwrap();
+        assert!(stdout.contains("line_a"), "stdout missing line_a: {stdout}");
+        assert!(stdout.contains("line_b"), "stdout missing line_b: {stdout}");
+        assert!(stdout.contains("line_c"), "stdout missing line_c: {stdout}");
+
+        // Verify ToolCallUpdate events were emitted for stdout lines.
+        let updates = drain_updates(rx);
+        let combined: String = updates.concat();
+        assert!(combined.contains("line_a"), "updates missing line_a");
+        assert!(combined.contains("line_b"), "updates missing line_b");
+        assert!(combined.contains("line_c"), "updates missing line_c");
+    }
+
+    #[tokio::test]
+    async fn stream_resilience_stdout_closed_stderr_survives() {
+        // Close stdout immediately, then write multiple lines to stderr.
+        // The streaming loop should handle the closed stdout gracefully
+        // and fully accumulate stderr.
+        let test_base = TestBase::new().await;
+        let (tx, rx) = broadcast::channel::<AgentEvent>(64);
+
+        let cmd = ExecuteCmd {
+            command: "exec 1>&-; echo err_x >&2; echo err_y >&2; echo err_z >&2".to_string(),
+            working_dir: None,
+        };
+
+        let result = cmd
+            .execute(&test_base, Some(("test-id".to_string(), tx)))
+            .await
+            .unwrap();
+
+        let json = extract_json(&result);
+        let stderr = json["stderr"].as_str().unwrap();
+        assert!(stderr.contains("err_x"), "stderr missing err_x: {stderr}");
+        assert!(stderr.contains("err_y"), "stderr missing err_y: {stderr}");
+        assert!(stderr.contains("err_z"), "stderr missing err_z: {stderr}");
+
+        // Verify ToolCallUpdate events were emitted for stderr lines.
+        let updates = drain_updates(rx);
+        let combined: String = updates.concat();
+        assert!(combined.contains("err_x"), "updates missing err_x");
+        assert!(combined.contains("err_y"), "updates missing err_y");
+        assert!(combined.contains("err_z"), "updates missing err_z");
+    }
+
+    #[tokio::test]
+    async fn stream_resilience_stdout_closes_mid_stream_stderr_continues() {
+        // Stdout produces one line then closes; stderr continues with more lines.
+        // Both streams' content should appear in the final output.
+        let test_base = TestBase::new().await;
+        let (tx, _rx) = broadcast::channel::<AgentEvent>(64);
+
+        let cmd = ExecuteCmd {
+            // Use a subshell: stdout writes one line then closes its fd,
+            // while stderr continues writing.
+            command: "echo early_out; exec 1>&-; echo late_err_1 >&2; echo late_err_2 >&2".to_string(),
+            working_dir: None,
+        };
+
+        let result = cmd
+            .execute(&test_base, Some(("test-id".to_string(), tx)))
+            .await
+            .unwrap();
+
+        let json = extract_json(&result);
+        let stdout = json["stdout"].as_str().unwrap();
+        let stderr = json["stderr"].as_str().unwrap();
+
+        assert!(stdout.contains("early_out"), "stdout missing early_out: {stdout}");
+        assert!(stderr.contains("late_err_1"), "stderr missing late_err_1: {stderr}");
+        assert!(stderr.contains("late_err_2"), "stderr missing late_err_2: {stderr}");
+    }
+
+    #[tokio::test]
+    async fn stream_resilience_stderr_closes_mid_stream_stdout_continues() {
+        // Stderr produces one line then closes; stdout continues with more lines.
+        let test_base = TestBase::new().await;
+        let (tx, _rx) = broadcast::channel::<AgentEvent>(64);
+
+        let cmd = ExecuteCmd {
+            command: "echo early_err >&2; exec 2>&-; echo late_out_1; echo late_out_2".to_string(),
+            working_dir: None,
+        };
+
+        let result = cmd
+            .execute(&test_base, Some(("test-id".to_string(), tx)))
+            .await
+            .unwrap();
+
+        let json = extract_json(&result);
+        let stdout = json["stdout"].as_str().unwrap();
+        let stderr = json["stderr"].as_str().unwrap();
+
+        assert!(stderr.contains("early_err"), "stderr missing early_err: {stderr}");
+        assert!(stdout.contains("late_out_1"), "stdout missing late_out_1: {stdout}");
+        assert!(stdout.contains("late_out_2"), "stdout missing late_out_2: {stdout}");
+    }
+
+    #[tokio::test]
+    async fn stream_resilience_output_schema_preserved_on_stream_close() {
+        // Even when one stream is closed, the final output must have the
+        // correct JSON schema with exit_status, stdout, stderr fields.
+        let test_base = TestBase::new().await;
+        let (tx, _rx) = broadcast::channel::<AgentEvent>(64);
+
+        // Close stderr, write to stdout.
+        let cmd = ExecuteCmd {
+            command: "exec 2>&-; echo ok".to_string(),
+            working_dir: None,
+        };
+
+        let result = cmd
+            .execute(&test_base, Some(("test-id".to_string(), tx)))
+            .await
+            .unwrap();
+
+        assert_blocking_output_schema(&result);
+    }
+
+    #[tokio::test]
+    async fn stream_resilience_both_streams_closed_immediately() {
+        // Both streams closed immediately — the loop should terminate
+        // gracefully and produce a valid output with empty stdout/stderr.
+        let test_base = TestBase::new().await;
+        let (tx, _rx) = broadcast::channel::<AgentEvent>(64);
+
+        let cmd = ExecuteCmd {
+            command: "exec 1>&- 2>&-".to_string(),
+            working_dir: None,
+        };
+
+        let result = cmd
+            .execute(&test_base, Some(("test-id".to_string(), tx)))
+            .await
+            .unwrap();
+
+        assert_blocking_output_schema(&result);
+        let json = extract_json(&result);
+        // Both streams should be empty (or contain only whitespace).
+        assert!(
+            json["stdout"].as_str().unwrap().trim().is_empty(),
+            "stdout should be empty when fd closed immediately"
+        );
+        assert!(
+            json["stderr"].as_str().unwrap().trim().is_empty(),
+            "stderr should be empty when fd closed immediately"
+        );
+    }
+
+    #[tokio::test]
+    async fn stream_resilience_no_event_channel_fallback_with_closed_stream() {
+        // Even in blocking fallback mode (no event_tx), a closed stream
+        // should not prevent the other stream's content from appearing.
+        let test_base = TestBase::new().await;
+
+        let cmd = ExecuteCmd {
+            command: "exec 2>&-; echo fallback_ok".to_string(),
+            working_dir: None,
+        };
+
+        let result = cmd.execute(&test_base, None).await.unwrap();
+        assert_blocking_output_schema(&result);
+
+        let json = extract_json(&result);
+        assert!(
+            json["stdout"].as_str().unwrap().contains("fallback_ok"),
+            "blocking fallback should preserve stdout when stderr is closed"
+        );
     }
 }

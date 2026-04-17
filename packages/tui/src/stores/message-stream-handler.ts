@@ -168,7 +168,12 @@ export function createMessageStreamHandler(
           const msg = msgs[idx]!;
           if (msg.role !== MessageRole.ToolUse) return msgs;
           const next = [...msgs];
-          next[idx] = { ...msg, isFinished: true, result: event.result };
+          next[idx] = {
+            ...msg,
+            isFinished: true,
+            result: event.result,
+            liveOutput: undefined,
+          };
           return next;
         });
         break;

@@ -1026,10 +1026,23 @@ export class AcpClient implements acp.Client, SessionClient {
             },
           };
         }
+        // content is a Vec<ToolCallContent> — a tagged enum where the Content
+        // variant wraps a ContentBlock: { type: "content", content: { type: "text", text: "..." } }
+        const contentArray = toolCallUpdate.content;
+        let firstText = '';
+        if (Array.isArray(contentArray)) {
+          const textItem = contentArray.find(
+            (item: any) =>
+              item.type === 'content' && item.content?.type === 'text'
+          );
+          if (textItem) {
+            firstText = textItem.content.text ?? '';
+          }
+        }
         return {
           type: AgentEventType.ToolCallUpdate,
           id: toolCallUpdate.toolCallId,
-          content: { type: ContentType.Text, text: toolCallUpdate.content },
+          content: { type: ContentType.Text, text: firstText },
         };
       }
 

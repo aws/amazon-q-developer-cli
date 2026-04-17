@@ -157,7 +157,7 @@ pub enum UpdateEvent {
     /// Sent once at the beginning of a tool use.
     ToolCall(ToolCall),
     /// Sent (optionally multiple times) to report the status of a tool execution.
-    ToolCallUpdate { content: ContentChunk },
+    ToolCallUpdate { id: String, content: ContentChunk },
     /// Sent once at the end of a tool execution.
     ToolCallFinished {
         /// The tool that was executed

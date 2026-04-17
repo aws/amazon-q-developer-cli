@@ -2606,6 +2606,16 @@ fn convert_update_event_to_session_update(update_event: UpdateEvent) -> Option<S
                     .kind(Some(kind)),
             )))
         },
+        UpdateEvent::ToolCallUpdate {
+            id,
+            content: ContentChunk::Text(text),
+        } => {
+            let tool_content: ToolCallContent = ContentBlock::Text(TextContent::new(text)).into();
+            Some(SessionUpdate::ToolCallUpdate(ToolCallUpdate::new(
+                ToolCallId::new(id),
+                ToolCallUpdateFields::new().content(Some(vec![tool_content])),
+            )))
+        },
         _ => None,
     }
 }
@@ -3669,5 +3679,97 @@ mod get_tool_content_tests {
         let result = get_tool_content_impl(&tool, &provider);
 
         assert!(result.is_empty(), "Non-FileWrite tool should return empty content");
+    }
+}
+
+#[cfg(test)]
+mod convert_update_event_tests {
+    use agent::protocol::{
+        ContentChunk,
+        UpdateEvent,
+    };
+    use sacp::schema::SessionUpdate;
+
+    use super::convert_update_event_to_session_update;
+
+    #[test]
+    fn test_tool_call_update_text_maps_to_session_update() {
+        let event = UpdateEvent::ToolCallUpdate {
+            id: "test-id".to_string(),
+            content: ContentChunk::Text("hello".to_string()),
+        };
+
+        let result = convert_update_event_to_session_update(event);
+        assert!(
+            result.is_some(),
+            "ToolCallUpdate with Text content should produce a SessionUpdate"
+        );
+
+        let update = result.unwrap();
+
+        // Verify it's a ToolCallUpdate variant with correct tool_call_id and content
+        let json = serde_json::to_value(&update).expect("SessionUpdate should serialize");
+        let json_str = serde_json::to_string_pretty(&json).unwrap();
+
+        // The serialized form must contain the tool_call_id
+        assert!(
+            json_str.contains("test-id"),
+            "serialized update should contain tool_call_id 'test-id', got: {json_str}"
+        );
+
+        // The serialized form must contain the text content
+        assert!(
+            json_str.contains("hello"),
+            "serialized update should contain text 'hello', got: {json_str}"
+        );
+
+        // Verify via pattern matching that it's the right variant with correct fields
+        match update {
+            SessionUpdate::ToolCallUpdate(tool_call_update) => {
+                let re_json = serde_json::to_value(&tool_call_update).expect("ToolCallUpdate should serialize");
+                let pretty = serde_json::to_string_pretty(&re_json).unwrap();
+                assert_eq!(
+                    re_json["toolCallId"], "test-id",
+                    "tool_call_id should be 'test-id', got: {pretty}"
+                );
+
+                // Verify the text "hello" appears in the serialized content
+                assert!(
+                    pretty.contains("hello"),
+                    "serialized ToolCallUpdate should contain 'hello', got: {pretty}"
+                );
+            },
+            other => panic!("expected ToolCallUpdate, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn test_tool_call_update_non_text_returns_none() {
+        let event = UpdateEvent::ToolCallUpdate {
+            id: "test-id".to_string(),
+            content: ContentChunk::ResourceLink("some-link".to_string()),
+        };
+
+        let result = convert_update_event_to_session_update(event);
+        assert!(
+            result.is_none(),
+            "ToolCallUpdate with non-Text content should return None"
+        );
+    }
+
+    #[test]
+    fn test_agent_content_text_maps_to_agent_message_chunk() {
+        let event = UpdateEvent::AgentContent(ContentChunk::Text("agent says hi".to_string()));
+
+        let result = convert_update_event_to_session_update(event);
+        assert!(
+            result.is_some(),
+            "AgentContent with Text should produce a SessionUpdate"
+        );
+
+        match result.unwrap() {
+            SessionUpdate::AgentMessageChunk(_) => {},
+            other => panic!("expected AgentMessageChunk, got {:?}", other),
+        }
     }
 }

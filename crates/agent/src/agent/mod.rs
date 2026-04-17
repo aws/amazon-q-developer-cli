@@ -2888,7 +2888,11 @@ impl Agent {
                         res
                     })
                 },
-                BuiltInTool::ExecuteCmd(t) => Box::pin(async move { t.execute(&provider).await }),
+                BuiltInTool::ExecuteCmd(t) => {
+                    let event_tx = self.agent_event_tx.clone();
+                    let tool_use_id = id.tool_use_id().to_string();
+                    Box::pin(async move { t.execute(&provider, Some((tool_use_id, event_tx))).await })
+                },
                 BuiltInTool::Introspect(t) => Box::pin(async move { t.execute().await }),
                 BuiltInTool::Grep(t) => Box::pin(async move { t.execute(&provider).await }),
                 BuiltInTool::Glob(t) => Box::pin(async move { t.execute(&provider).await }),
@@ -2916,12 +2920,13 @@ impl Agent {
                 },
                 BuiltInTool::AgentCrew(t) => {
                     let event_tx = self.agent_event_tx.clone();
+                    let tool_use_id = id.tool_use_id().to_string();
                     let crew_settings = self
                         .agent_config
                         .tool_settings()
                         .map(|s| s.crew.clone())
                         .unwrap_or_default();
-                    Box::pin(async move { t.execute(event_tx, &crew_settings).await })
+                    Box::pin(async move { t.execute(tool_use_id, event_tx, &crew_settings).await })
                 },
                 BuiltInTool::SessionManagement(t) => {
                     let event_tx = self.agent_event_tx.clone();

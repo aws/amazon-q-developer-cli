@@ -60,6 +60,7 @@ export const ToolUseMessage = React.memo<ToolUseMessageProps>(
   function ToolUseMessage({
     name,
     content,
+    liveOutput,
     isFinished = false,
     status,
     result,
@@ -95,6 +96,7 @@ export const ToolUseMessage = React.memo<ToolUseMessageProps>(
         <ToolUseContent
           name={name}
           content={content}
+          liveOutput={liveOutput}
           isFinished={isFinished}
           status={status}
           result={result}
@@ -111,6 +113,7 @@ export const ToolUseMessage = React.memo<ToolUseMessageProps>(
 const ToolUseContent = React.memo(function ToolUseContent({
   name,
   content,
+  liveOutput,
   isFinished,
   status,
   result,
@@ -119,6 +122,7 @@ const ToolUseContent = React.memo(function ToolUseContent({
 }: {
   name: string;
   content: string;
+  liveOutput?: string;
   isFinished: boolean;
   status?: ToolUseStatus;
   result?: ToolResult;
@@ -186,6 +190,7 @@ const ToolUseContent = React.memo(function ToolUseContent({
       <Shell
         name={title}
         command={command}
+        liveOutput={liveOutput}
         noStatusBar
         isFinished={effectiveFinished}
         isStatic={isStatic}

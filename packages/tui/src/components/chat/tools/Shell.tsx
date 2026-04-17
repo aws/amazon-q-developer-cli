@@ -20,6 +20,9 @@ export interface ShellProps {
   /** The bash command to display */
   command?: string;
 
+  /** Live streaming output while command is running */
+  liveOutput?: string;
+
   /** Tool status type */
   status?: StatusType;
 
@@ -51,6 +54,7 @@ export interface ShellProps {
 export const Shell = React.memo(function Shell({
   name,
   command,
+  liveOutput,
   status,
   noStatusBar = false,
   isFinished = false,
@@ -95,43 +99,53 @@ export const Shell = React.memo(function Shell({
     return null;
   }, [result, isTimeoutError]);
 
-  // Extract output and exit status from result
+  // Unify output source: use result when available, otherwise liveOutput during execution.
+  // This feeds both live and finished output into the same useExpandableOutput hook.
   const { output, exitCode } = useMemo(() => {
-    const { obj, text } = unwrapResultOutput(result);
+    if (result) {
+      const { obj, text } = unwrapResultOutput(result);
 
-    if (text) return { output: text, exitCode: null };
-    if (!obj) return { output: null, exitCode: null };
+      if (text) return { output: text, exitCode: null };
+      if (!obj) return { output: null, exitCode: null };
 
-    let code: number | null = null;
-    if ('exit_status' in obj) {
-      const exitStatus = obj.exit_status;
-      if (typeof exitStatus === 'number') {
-        code = exitStatus;
-      } else if (typeof exitStatus === 'string') {
-        const match = exitStatus.match(/(\d+)/);
-        if (match && match[1]) {
-          code = parseInt(match[1], 10);
+      let code: number | null = null;
+      if ('exit_status' in obj) {
+        const exitStatus = obj.exit_status;
+        if (typeof exitStatus === 'number') {
+          code = exitStatus;
+        } else if (typeof exitStatus === 'string') {
+          const match = exitStatus.match(/(\d+)/);
+          if (match && match[1]) {
+            code = parseInt(match[1], 10);
+          }
         }
       }
+
+      let outputStr: string | null = null;
+      if (
+        'stdout' in obj &&
+        typeof obj.stdout === 'string' &&
+        obj.stdout.trim()
+      ) {
+        outputStr = obj.stdout;
+      } else if (
+        'stderr' in obj &&
+        typeof obj.stderr === 'string' &&
+        obj.stderr.trim()
+      ) {
+        outputStr = obj.stderr;
+      }
+
+      return { output: outputStr, exitCode: code };
     }
 
-    let outputStr: string | null = null;
-    if (
-      'stdout' in obj &&
-      typeof obj.stdout === 'string' &&
-      obj.stdout.trim()
-    ) {
-      outputStr = obj.stdout;
-    } else if (
-      'stderr' in obj &&
-      typeof obj.stderr === 'string' &&
-      obj.stderr.trim()
-    ) {
-      outputStr = obj.stderr;
+    // During execution, use liveOutput as the output source
+    if (liveOutput) {
+      return { output: liveOutput, exitCode: null };
     }
 
-    return { output: outputStr, exitCode: code };
-  }, [result]);
+    return { output: null, exitCode: null };
+  }, [result, liveOutput]);
 
   const hasOutput = output && output.trim().length > 0;
 
@@ -158,8 +172,8 @@ export const Shell = React.memo(function Shell({
     }
   }, [isFinished, exitCode, isTimeoutError, setStatus]);
 
-  // Simple mode: just show command info (no result handling)
-  if (!result) {
+  // Simple mode: just show command info (no output available yet)
+  if (!result && !liveOutput) {
     const simpleContent = (
       <Box flexDirection="column">
         <StatusInfo
