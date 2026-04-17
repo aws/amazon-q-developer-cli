@@ -1,0 +1,4 @@
+{
+  "type": "fixed",
+  "description": "Fix markdown table rendering: word-wrap to terminal width with inline styling support"
+}

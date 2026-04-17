@@ -14,6 +14,13 @@ import { useTheme } from '../../hooks/useThemeContext.js';
 import { hyperlink } from '../../utils/terminal-capabilities.js';
 import chalk from 'chalk';
 import { visibleWidth } from '../../utils/text-width.js';
+import { useTerminalSize } from '../../hooks/useTerminalSize.js';
+import {
+  constrainColumnWidths,
+  wrapCellText,
+  padCell,
+  type Alignment,
+} from '../../utils/table-layout.js';
 
 interface MarkdownRendererProps {
   content: string;
@@ -36,6 +43,7 @@ export const MarkdownRenderer = React.memo(function MarkdownRenderer({
 }: MarkdownRendererProps) {
   const highlightCode = useSyntaxHighlight();
   const { getColor } = useTheme();
+  const { width: termWidth } = useTerminalSize();
   const linkColor = getColor('link');
   const inlineCodeColor = getColor('highlight');
   const secondaryColor = getColor('secondary');
@@ -228,58 +236,77 @@ export const MarkdownRenderer = React.memo(function MarkdownRenderer({
 
         if (block.type === 'table') {
           const { headers, rows, alignments } = block.segment.table!;
+          const measureRendered = (s: string) =>
+            visibleWidth(renderInlineText(s));
+
+          // Measure natural widths based on rendered text (markdown stripped)
           const colWidths = headers.map((h, ci) => {
-            const dataWidths = rows.map((r) => visibleWidth(r[ci] || ''));
-            return Math.max(visibleWidth(h), ...dataWidths, 3);
+            const headerWidth = measureRendered(h);
+            const dataWidths = rows.map((r) => measureRendered(r[ci] || ''));
+            return Math.max(headerWidth, ...dataWidths, 3);
           });
-          const padCell = (text: string, width: number, align: string) => {
-            const stripped = text.trim();
-            const pad = width - visibleWidth(stripped);
-            if (pad <= 0) return stripped;
-            if (align === 'right') return ' '.repeat(pad) + stripped;
-            if (align === 'center') {
-              const left = Math.floor(pad / 2);
-              return ' '.repeat(left) + stripped + ' '.repeat(pad - left);
-            }
-            return stripped + ' '.repeat(pad);
-          };
+
+          constrainColumnWidths(colWidths, termWidth);
+
           const border = (
             left: string,
             mid: string,
             right: string,
-            h: string
-          ) => left + colWidths.map((w) => h.repeat(w + 2)).join(mid) + right;
+            fill: string
+          ) =>
+            left + colWidths.map((w) => fill.repeat(w + 2)).join(mid) + right;
+
+          // Wrap raw cells, render inline markdown per line, then pad
+          const renderWrappedRow = (rawCells: string[], bold?: boolean) => {
+            const wrapped = rawCells.map((c, ci) =>
+              wrapCellText(c, colWidths[ci]!, measureRendered)
+            );
+            const maxLines = Math.max(...wrapped.map((w) => w.length));
+            const lines: string[] = [];
+            for (let li = 0; li < maxLines; li++) {
+              const line = rawCells
+                .map((_, ci) => {
+                  const raw = wrapped[ci]?.[li] || '';
+                  let styled = raw ? renderInlineText(raw) : '';
+                  if (bold && styled) styled = chalk.bold(styled);
+                  return padCell(
+                    styled,
+                    colWidths[ci]!,
+                    (alignments[ci] || 'left') as Alignment,
+                    visibleWidth
+                  );
+                })
+                .join(` ${chalk.dim('│')} `);
+              lines.push(`${chalk.dim('│')} ${line} ${chalk.dim('│')}`);
+            }
+            return lines;
+          };
+
+          const headerLines = renderWrappedRow(headers, true);
+          const rowSeparator =
+            rows.length > 0 ? chalk.dim(border('├', '┼', '┤', '─')) : undefined;
 
           return (
             <Box key={i} flexDirection="column" marginTop={mt}>
               <Text>{chalk.dim(border('┌', '┬', '┐', '─'))}</Text>
-              <Text>
-                {chalk.dim('│')}{' '}
-                {color(
-                  chalk.bold(
-                    headers
-                      .map((h, ci) =>
-                        padCell(h, colWidths[ci] || 3, alignments[ci] || 'left')
-                      )
-                      .join(` ${chalk.dim('│')} `)
-                  )
-                )}{' '}
-                {chalk.dim('│')}
-              </Text>
-              <Text>{chalk.dim(border('├', '┼', '┤', '─'))}</Text>
-              {rows.map((row, ri) => (
-                <Text key={ri}>
-                  {chalk.dim('│')}{' '}
-                  {color(
-                    row
-                      .map((c, ci) =>
-                        padCell(c, colWidths[ci] || 3, alignments[ci] || 'left')
-                      )
-                      .join(` ${chalk.dim('│')} `)
-                  )}{' '}
-                  {chalk.dim('│')}
-                </Text>
+              {headerLines.map((line, li) => (
+                <Text key={`h${li}`}>{line}</Text>
               ))}
+              {rowSeparator && <Text>{rowSeparator}</Text>}
+              {rows.map((row, ri) => {
+                const lines = renderWrappedRow(row);
+                const isLast = ri === rows.length - 1;
+                return (
+                  <React.Fragment key={ri}>
+                    {lines.map((line, li) => (
+                      <Text key={`${ri}-${li}`}>{line}</Text>
+                    ))}
+                    {!isLast && (
+                      <Text>{chalk.dim(border('├', '┼', '┤', '─'))}</Text>
+                    )}
+                  </React.Fragment>
+                );
+              })}
               <Text>{chalk.dim(border('└', '┴', '┘', '─'))}</Text>
             </Box>
           );

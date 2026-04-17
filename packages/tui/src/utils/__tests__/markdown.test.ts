@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'bun:test';
 import {
   isIncrementalMarkdownDeltaSafe,
+  parseInlineMarkdown,
   parseMarkdown,
   tryAppendMarkdownDelta,
 } from '../markdown.js';
@@ -358,6 +359,48 @@ describe('parseMarkdown', () => {
       const secondResult = result[1];
       expect(secondResult).toBeDefined();
       expect(secondResult?.table).toBeDefined();
+    });
+
+    it('should preserve inline markdown in table cells for downstream rendering', () => {
+      const result = parseMarkdown(
+        '| Header | Value |\n|---|---|\n| `code` | **bold** and `more` |'
+      );
+      const table = result[0]?.table;
+      expect(table).toBeDefined();
+      // Raw cell text preserved by parser; renderer is responsible for inline styling
+      expect(table!.rows[0]).toEqual(['`code`', '**bold** and `more`']);
+      // Verify parseInlineMarkdown handles these cells correctly
+      expect(parseInlineMarkdown('`code`')).toEqual([
+        { text: 'code', quote: true },
+      ]);
+      expect(parseInlineMarkdown('**bold** and `more`')).toEqual([
+        { text: 'bold', bold: true },
+        { text: ' and ' },
+        { text: 'more', quote: true },
+      ]);
+    });
+
+    it('should handle escaped pipes in table cells', () => {
+      const result = parseMarkdown(
+        '| Name | Value |\n|---|---|\n| Pipes \\| escaped | normal |'
+      );
+      const table = result[0]?.table;
+      expect(table).toBeDefined();
+      expect(table!.rows[0]).toEqual(['Pipes | escaped', 'normal']);
+    });
+
+    it('should handle pipes inside backtick code in table cells', () => {
+      const result = parseMarkdown('| Col |\n|---|\n| `val = "a|b"` |');
+      const table = result[0]?.table;
+      expect(table).toBeDefined();
+      expect(table!.rows[0]).toEqual(['`val = "a|b"`']);
+    });
+
+    it('should handle pipes inside double-backtick code spans', () => {
+      const result = parseMarkdown('| Col |\n|---|\n| ``a|b`` |');
+      const table = result[0]?.table;
+      expect(table).toBeDefined();
+      expect(table!.rows[0]).toEqual(['``a|b``']);
     });
   });
 

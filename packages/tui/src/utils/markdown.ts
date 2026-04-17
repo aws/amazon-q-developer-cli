@@ -344,10 +344,48 @@ export const parseMarkdown = (text: string): MarkdownSegment[] => {
           flushText();
 
           const parseRow = (line: string): string[] => {
-            return line
-              .split('|')
-              .map((cell) => cell.trim())
-              .filter((_, i, arr) => i > 0 && i < arr.length - 1);
+            // Mini state machine for splitting cells on unescaped pipes.
+            // We need to track backtick code spans here (separate from the
+            // main block-level parser) so that pipes inside inline code
+            // like `a|b` aren't treated as cell delimiters. Backtick runs
+            // use matching delimiters per CommonMark: ` closes `, `` closes ``.
+            const cells: string[] = [];
+            let current = '';
+            let codeDelimLen = 0; // 0 = not in code span
+            for (let ci = 0; ci < line.length; ci++) {
+              if (codeDelimLen > 0) {
+                // Inside a code span - look for matching closing delimiter
+                current += line[ci];
+                if (line[ci] === '`') {
+                  let run = 1;
+                  while (ci + run < line.length && line[ci + run] === '`')
+                    run++;
+                  if (run === codeDelimLen) {
+                    current += line.slice(ci + 1, ci + run);
+                    ci += run - 1;
+                    codeDelimLen = 0;
+                  }
+                }
+              } else if (line[ci] === '`') {
+                // Count opening backtick run length
+                let run = 1;
+                while (ci + run < line.length && line[ci + run] === '`') run++;
+                current += line.slice(ci, ci + run);
+                ci += run - 1;
+                codeDelimLen = run;
+              } else if (line[ci] === '\\' && line[ci + 1] === '|') {
+                current += '|';
+                ci++;
+              } else if (line[ci] === '|') {
+                cells.push(current.trim());
+                current = '';
+              } else {
+                current += line[ci];
+              }
+            }
+            cells.push(current.trim());
+            // Drop leading/trailing empty cells from outer pipes
+            return cells.filter((_, i, arr) => i > 0 && i < arr.length - 1);
           };
 
           const isSeparator = (line: string): boolean =>
