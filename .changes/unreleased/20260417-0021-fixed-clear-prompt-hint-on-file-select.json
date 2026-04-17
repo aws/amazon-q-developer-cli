@@ -1,0 +1,4 @@
+{
+  "type": "fixed",
+  "description": "Clear prompt hint when selecting a file from the @ menu"
+}

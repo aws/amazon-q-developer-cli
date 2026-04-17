@@ -320,6 +320,7 @@ export const CommandMenu: React.FC = () => {
         return;
       }
       if (activeTrigger) {
+        setPromptHint(null);
         setPendingFileAttachment(item.label, activeTrigger.position);
         setActiveTrigger(null);
       }
@@ -330,6 +331,7 @@ export const CommandMenu: React.FC = () => {
       executePromptOrPrefill,
       setPendingFileAttachment,
       setActiveTrigger,
+      setPromptHint,
     ]
   );
 
