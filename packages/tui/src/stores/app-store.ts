@@ -2965,12 +2965,14 @@ export const createAppStore = (props: AppStoreProps) => {
         };
         const handled = await executeCommand(trimmed, ctx);
         if (handled) return;
-        // Not a command (e.g. file path like /Users/...) — send as message
-        // without the leading "/" to match V1 behavior.
-        // Leaving it in the message somehow confuses
-        // the LLM's path extraction for tool calls.
-        // Display the original input (with /) so the user sees what they typed.
-        await state.sendMessage(trimmed.slice(1), undefined, trimmed);
+        // Not a recognized command — could be a file path like /Users/...
+        // Strip the leading "/" only for file paths to match V1 behavior
+        // (leaving it confuses the LLM's path extraction for tool calls).
+        // For other inputs like "// hello world", send as-is.
+        const afterSlash = trimmed.slice(1);
+        const isFilePath = afterSlash.length > 0 && afterSlash[0] !== '/' && afterSlash[0] !== ' ';
+        const messageText = isFilePath ? afterSlash : trimmed;
+        await state.sendMessage(messageText, undefined, trimmed);
         return;
       }
 

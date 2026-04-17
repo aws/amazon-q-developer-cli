@@ -1508,7 +1508,7 @@ impl AcpSession {
                                 error!("Failed to respond to slash command: {e}");
                             }
                         },
-                        slash_router::SlashRoute::Prompt { name, args } => {
+                        slash_router::SlashRoute::Prompt { name, args, original } => {
                             self.pending_prompt_response = Some(tokio::sync::Mutex::new(request_cx));
                             let agent = self.agent.clone();
                             let cwd = self.cwd.clone();
@@ -1555,13 +1555,10 @@ impl AcpSession {
                                             }
                                         },
                                         Err(_) => {
-                                            // Not a known prompt - send as regular message
+                                            // Not a known prompt - send original text verbatim
                                             let _ = agent
                                                 .send_prompt(SendPromptArgs {
-                                                    content: vec![agent::protocol::ContentChunk::Text(format!(
-                                                        "/{}",
-                                                        name
-                                                    ))],
+                                                    content: vec![agent::protocol::ContentChunk::Text(original)],
                                                     should_continue_turn: None,
                                                 })
                                                 .await;

@@ -1,0 +1,4 @@
+{
+  "type": "fixed",
+  "description": "Fix slash-prefixed input being truncated when sent to the LLM"
+}

@@ -6,7 +6,13 @@ pub enum SlashRoute {
     /// Known action command (/model, /help, etc.)
     Action(TuiCommand),
     /// Prompt command (/prompt_name args)
-    Prompt { name: String, args: Vec<String> },
+    Prompt {
+        name: String,
+        args: Vec<String>,
+        /// Original trimmed text (including leading '/'), used to fall back to
+        /// a plain user message when `name` matches no known prompt.
+        original: String,
+    },
 }
 
 /// Parse a slash command from ACP prompt content blocks.
@@ -33,6 +39,7 @@ pub fn parse(prompt: &[ContentBlock]) -> Option<SlashRoute> {
     Some(SlashRoute::Prompt {
         name: name.to_string(),
         args: parse_prompt_args(args_str),
+        original: text.to_string(),
     })
 }
 

@@ -69,4 +69,16 @@ describe('parseCommand', () => {
       expect(result.args).toBe('output.json');
     });
   });
+
+  describe('double-slash and non-path inputs', () => {
+    it('treats "// hello world" as non-command (looksLikeFilePath catches the /)', () => {
+      const result = parseCommand('// hello world');
+      expect(result.isCommand).toBe(false);
+    });
+
+    it('treats "//" as non-command', () => {
+      const result = parseCommand('//');
+      expect(result.isCommand).toBe(false);
+    });
+  });
 });

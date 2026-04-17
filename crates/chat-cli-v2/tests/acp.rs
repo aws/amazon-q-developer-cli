@@ -348,6 +348,39 @@ async fn captured_request_contains_conversation_state() {
     assert!(!tools.unwrap().is_empty(), "tools should not be empty");
 }
 
+/// Regression test: a prompt starting with "/" that doesn't match any known
+/// slash command or prompt should reach the LLM verbatim (previously only
+/// the leading token made it through).
+#[tokio::test]
+#[timeout(30000)]
+#[serial]
+async fn prompt_starting_with_slash_is_not_truncated() {
+    let (mut harness, client, session_id, _) =
+        AcpTestHarnessBuilder::new("prompt_starting_with_slash_is_not_truncated")
+            .build_with_session()
+            .await;
+
+    harness
+        .push_mock_responses_from_file(&session_id.0, "tests/mock_responses/simple_text.jsonl")
+        .await;
+
+    let prompt = "// hello this is a comment";
+    client
+        .prompt_text(session_id.clone(), prompt)
+        .await
+        .expect("prompt failed");
+
+    let captured = harness.get_captured_requests(&session_id.0).await;
+    assert_eq!(captured.len(), 1, "should have captured one request");
+
+    let content = &captured[0].user_input_message.content;
+    assert!(
+        content.contains(prompt),
+        "full prompt should reach the LLM, got: {:?}",
+        content
+    );
+}
+
 #[tokio::test]
 #[timeout(30000)]
 #[serial]
