@@ -1,0 +1,4 @@
+{
+  "type": "fixed",
+  "description": "Cap static items in TUI to bound Yoga node count on terminal resize"
+}

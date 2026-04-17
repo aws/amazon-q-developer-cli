@@ -22,6 +22,7 @@ import { WelcomeMessageBar } from './WelcomeMessageBar.js';
 import { getAgentColor } from '../../utils/agentColors.js';
 import { Settings } from '../../constants/settings.js';
 import { computeFlushSet } from '../../utils/turn-flush-machine.js';
+import { trimStaticItems } from '../../utils/trim-static-items.js';
 import { useTerminalSize } from '../../hooks/useTerminalSize.js';
 import { useTheme } from '../../hooks/useThemeContext.js';
 import { SESSION_TOOL_NAMES } from '../../types/agent-events.js';
@@ -682,6 +683,9 @@ export const ConversationView = React.memo(function ConversationView() {
       mainAgentName: activeAgentName,
     });
   }
+
+  // Cap static items to bound accumulated Yoga nodes.
+  trimStaticItems(staticItemsRef.current, emittedIdsRef.current);
 
   // Only create a new array ref when items were actually added, so <Static>'s
   // useMemo([items]) fires only when needed — not on every render.
