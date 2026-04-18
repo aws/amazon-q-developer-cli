@@ -3,7 +3,7 @@ import { join } from 'path';
 import { tmpdir } from 'os';
 import { spawnSync } from 'child_process';
 import { serializeConversationToMarkdown } from './serialize-conversation.js';
-import { executeShellEscapeTTY } from './shell-escape.js';
+import { executeShellEscapeTTY, restoreTerminalModes } from './shell-escape.js';
 
 export function openTranscriptInPager(
   messages: Array<{ role: string; content: string }>
@@ -28,6 +28,7 @@ export function openTranscriptInPager(
         }
       } else {
         const result = spawnSync('notepad', [tempFile], { stdio: 'inherit' });
+        restoreTerminalModes();
         if (result.error) {
           process.stderr.write(
             `Could not open transcript: ${result.error.message}\n`

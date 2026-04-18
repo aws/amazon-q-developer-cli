@@ -1,5 +1,28 @@
 import { spawn, spawnSync, execFileSync } from 'child_process';
-import { SHOW_CURSOR, HIDE_CURSOR } from './terminal-sequences';
+import {
+  SHOW_CURSOR,
+  HIDE_CURSOR,
+  ENABLE_BRACKETED_PASTE,
+} from './terminal-sequences';
+
+/**
+ * Re-enable terminal modes that a child process (vim, less, etc.) may have
+ * reset. Called after executeShellEscapeTTY restores raw mode and cursor.
+ *
+ * Sequences:
+ * - Bracketed paste (\x1b[?2004h)
+ * - Kitty keyboard protocol (\x1b[>1u) — flag 1 = disambiguateEscapeCodes
+ * - xterm modifyOtherKeys level 1 (\x1b[>4;1m) — fallback for non-Kitty terminals
+ *
+ * Sending both Kitty and modifyOtherKeys is safe: terminals ignore sequences
+ * they don't support, and Kitty-capable terminals already supersede
+ * modifyOtherKeys when the Kitty protocol is active.
+ */
+export function restoreTerminalModes(): void {
+  process.stdout.write(ENABLE_BRACKETED_PASTE);
+  process.stdout.write('\x1b[>1u'); // Kitty keyboard protocol (flags=1)
+  process.stdout.write('\x1b[>4;1m'); // xterm modifyOtherKeys level 1
+}
 
 /**
  * Detect the appropriate shell on Windows.
@@ -123,6 +146,8 @@ export function executeShellEscapeTTY(command: string): ShellEscapeResult {
     // Hide cursor again before returning to Ink
     process.stdout.write(HIDE_CURSOR);
     if (wasRaw) process.stdin.setRawMode(true);
+    // Re-enable terminal modes the child process may have reset
+    restoreTerminalModes();
 
     return { exitCode: result.status ?? 1, error: result.error?.message };
   } catch (err) {
@@ -130,6 +155,7 @@ export function executeShellEscapeTTY(command: string): ShellEscapeResult {
       process.stdout.write('\x1b[?1049l');
       process.stdout.write(HIDE_CURSOR);
       process.stdin.setRawMode(true);
+      restoreTerminalModes();
     } catch {
       // stdin may not be a TTY, ignore
     }

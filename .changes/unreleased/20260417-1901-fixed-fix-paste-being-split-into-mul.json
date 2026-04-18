@@ -1,0 +1,4 @@
+{
+  "type": "fixed",
+  "description": "Fix paste being split into multiple messages after using shell escape commands (!vim, !less) or /editor"
+}
