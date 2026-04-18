@@ -426,6 +426,8 @@ fn embed_bun_and_tui() {
         let _ = std::fs::remove_file(&bun_dest);
         std::fs::copy(&path, &bun_dest).expect("Failed to copy bun executable to OUT_DIR");
     } else {
+        // Remove first in case a previous build copied a read-only bun binary here.
+        let _ = std::fs::remove_file(&bun_dest);
         std::fs::write(&bun_dest, b"").unwrap();
     }
 
@@ -434,6 +436,7 @@ fn embed_bun_and_tui() {
         let _ = std::fs::remove_file(&tui_dest);
         std::fs::copy(&path, &tui_dest).expect("Failed to copy TUI js to OUT_DIR");
     } else {
+        let _ = std::fs::remove_file(&tui_dest);
         std::fs::write(&tui_dest, b"").unwrap();
     }
 }
