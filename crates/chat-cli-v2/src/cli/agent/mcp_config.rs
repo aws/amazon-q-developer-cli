@@ -29,8 +29,10 @@ pub struct McpServerConfig {
 
 impl McpServerConfig {
     pub async fn load_from_file(os: &Os, path: impl AsRef<Path>) -> Result<Self, McpConfigError> {
-        let contents = os.fs.read(path.as_ref()).await?;
-        let value = serde_json::from_slice::<serde_json::Value>(&contents)?;
+        let path = path.as_ref();
+        let contents = os.fs.read(path).await?;
+        let value = serde_json::from_slice::<serde_json::Value>(&contents)
+            .map_err(|e| McpConfigError::Other(format!("failed to parse {}: {e}", path.display())))?;
         // We need to extract mcp_servers field from the value because we have annotated
         // [McpServerConfig] with transparent. Transparent was added because we want to preserve
         // the type in agent.
@@ -38,7 +40,8 @@ impl McpServerConfig {
             .get("mcpServers")
             .cloned()
             .ok_or(McpConfigError::Other("No mcpServers field found in config".to_string()))?;
-        Ok(serde_json::from_value(config)?)
+        serde_json::from_value(config)
+            .map_err(|e| McpConfigError::Other(format!("failed to parse {}: {e}", path.display())))
     }
 
     pub async fn save_to_file(&self, os: &Os, path: impl AsRef<Path>) -> eyre::Result<()> {

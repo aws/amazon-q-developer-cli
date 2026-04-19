@@ -346,7 +346,8 @@ async fn load_mcp_config_from_path(path: impl AsRef<Path>) -> Result<McpServers,
     // Parse the raw JSON first, then deserialize each server entry individually so that
     // unrecognized formats (e.g. `"type": "registry"`) are skipped with a warning instead of
     // causing the entire file to fail.
-    let raw: serde_json::Value = serde_json::from_str(&contents)?;
+    let raw: serde_json::Value =
+        serde_json::from_str(&contents).with_context(|| format!("failed to parse {}", path.display()))?;
     let servers_obj = raw
         .get("mcpServers")
         .and_then(|v| v.as_object())

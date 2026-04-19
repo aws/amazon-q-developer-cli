@@ -48,7 +48,12 @@ impl SemanticContext {
         if data_path.exists() {
             let file = File::open(&data_path)?;
             let reader = BufReader::new(file);
-            context.data_points = serde_json::from_reader(reader)?;
+            context.data_points = serde_json::from_reader(reader).map_err(|e| {
+                crate::error::SemanticSearchError::SerializationError(format!(
+                    "failed to parse {}: {e}",
+                    data_path.display()
+                ))
+            })?;
         }
 
         // If we have data points, try to load persisted index or rebuild

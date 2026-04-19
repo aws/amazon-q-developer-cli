@@ -26,7 +26,10 @@ use crossterm::{
     queue,
     style,
 };
-use eyre::bail;
+use eyre::{
+    Context as _,
+    bail,
+};
 pub use mcp_config::McpServerConfig;
 pub use root_command_args::*;
 use schemars::{
@@ -398,7 +401,8 @@ impl Agent {
         match config_path {
             Ok(config_path) => {
                 let content = os.fs.read(&config_path).await?;
-                let mut agent = serde_json::from_slice::<Agent>(&content)?;
+                let mut agent = serde_json::from_slice::<Agent>(&content)
+                    .with_context(|| format!("failed to parse {}", config_path.display()))?;
                 let mut stderr = std::io::stderr();
                 let legacy_mcp_config = if agent.use_legacy_mcp_json {
                     load_legacy_mcp_config(os, &mut stderr).await.unwrap_or(None)

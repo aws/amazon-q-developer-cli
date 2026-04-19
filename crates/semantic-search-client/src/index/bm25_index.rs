@@ -62,9 +62,12 @@ impl BM25Index {
 
     /// Load BM25 index from disk
     pub fn load_from_disk<P: AsRef<Path>>(path: P, avgdl: f64) -> crate::error::Result<Self> {
+        let path = path.as_ref();
         let file = File::open(path)?;
         let reader = BufReader::new(file);
-        let documents: Vec<SerializableDocument> = serde_json::from_reader(reader)?;
+        let documents: Vec<SerializableDocument> = serde_json::from_reader(reader).map_err(|e| {
+            crate::error::SemanticSearchError::SerializationError(format!("failed to parse {}: {e}", path.display()))
+        })?;
 
         let mut index = Self::new(avgdl);
 

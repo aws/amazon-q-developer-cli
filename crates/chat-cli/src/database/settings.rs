@@ -419,7 +419,8 @@ impl Settings {
                 let mut file = RwLock::new(File::open(&path).await?);
                 let mut buf = Vec::new();
                 file.write()?.read_to_end(&mut buf).await?;
-                serde_json::from_slice(&buf)?
+                serde_json::from_slice(&buf)
+                    .map_err(|e| DatabaseError::JsonParseWithPath(format!("failed to parse {}: {e}", path.display())))?
             },
             false => {
                 let mut file = RwLock::new(File::create(path).await?);

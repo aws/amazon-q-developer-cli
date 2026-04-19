@@ -1,6 +1,9 @@
 use std::collections::HashMap;
 
-use anyhow::Result;
+use anyhow::{
+    Context as _,
+    Result,
+};
 use serde::{
     Deserialize,
     Serialize,
@@ -46,7 +49,7 @@ impl LanguagesConfig {
         // If config file exists, load it, otherwise create default
         if config_path.exists() {
             let content = std::fs::read_to_string(&config_path)?;
-            Ok(serde_json::from_str(&content)?)
+            Ok(serde_json::from_str(&content).with_context(|| format!("failed to parse {}", config_path.display()))?)
         } else {
             let default_config = Self::default_config();
             let config_json = serde_json::to_string_pretty(&default_config)?;
@@ -61,7 +64,7 @@ impl LanguagesConfig {
 
         if config_path.exists() {
             let content = std::fs::read_to_string(&config_path)?;
-            Ok(serde_json::from_str(&content)?)
+            Ok(serde_json::from_str(&content).with_context(|| format!("failed to parse {}", config_path.display()))?)
         } else {
             // Return default config without creating file
             Ok(Self::default_config())
@@ -75,7 +78,7 @@ impl LanguagesConfig {
         // Try to load from file, fallback to embedded config
         if config_path.exists() {
             let content = std::fs::read_to_string(config_path)?;
-            Ok(serde_json::from_str(&content)?)
+            Ok(serde_json::from_str(&content).with_context(|| format!("failed to parse {}", config_path.display()))?)
         } else {
             // Embedded fallback configuration
             Ok(Self::default_config())

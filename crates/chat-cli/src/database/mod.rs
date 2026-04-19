@@ -134,6 +134,8 @@ pub enum DatabaseError {
     IoError(#[from] std::io::Error),
     #[error(transparent)]
     JsonError(#[from] serde_json::Error),
+    #[error("{0}")]
+    JsonParseWithPath(String),
     #[error(transparent)]
     FigUtilError(#[from] crate::util::UtilError),
     #[error(transparent)]
