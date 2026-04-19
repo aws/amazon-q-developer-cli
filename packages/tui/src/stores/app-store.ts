@@ -206,7 +206,7 @@ export type MessageType =
       result?: ToolResult;
       locations?: Array<{ path: string; line?: number }>;
       agentName?: string;
-      liveOutput?: string;
+      liveOutput?: string[];
     }
   | { id: string; role: MessageRole.System; content: string; success: boolean };
 
@@ -1127,6 +1127,55 @@ export const createAppStore = (props: AppStoreProps) => {
       let pendingContentFlush: ReturnType<typeof setTimeout> | null = null;
       let lastContentEventId: string | null = null;
 
+      // Per-tool-call live output buffering. ToolCallUpdate events for
+      // verbose commands (e.g. a Gradle build streaming thousands of lines)
+      // would otherwise trigger a React re-render per line. We batch per
+      // tool_call_id and flush on a timer, mirroring the assistant content
+      // batching above.
+      const toolOutputBuffers = new Map<string, string>();
+      let pendingToolOutputFlush: ReturnType<typeof setTimeout> | null = null;
+
+      const flushToolOutputs = () => {
+        pendingToolOutputFlush = null;
+        if (toolOutputBuffers.size === 0) return;
+        const buffers = Array.from(toolOutputBuffers.entries());
+        toolOutputBuffers.clear();
+        set((state) => {
+          const messages = state.messages.slice();
+          let changed = false;
+          for (const [id, text] of buffers) {
+            const idx = messages.findIndex(
+              (msg) => msg.role === MessageRole.ToolUse && msg.id === id
+            );
+            if (idx === -1) continue;
+            const toolMsg = messages[idx];
+            if (!toolMsg || toolMsg.role !== MessageRole.ToolUse) continue;
+            // Split the batched chunk into lines and append to the existing
+            // array, avoiding any concat of the full accumulated string.
+            // Drop the trailing empty element produced when the chunk ends
+            // with a newline; next batch's first line will start fresh.
+            const newLines = text.split('\n');
+            if (newLines.length > 0 && newLines[newLines.length - 1] === '') {
+              newLines.pop();
+            }
+            if (newLines.length === 0) continue;
+            const prev = toolMsg.liveOutput ?? [];
+            messages[idx] = {
+              id: toolMsg.id,
+              name: toolMsg.name,
+              kind: toolMsg.kind,
+              role: MessageRole.ToolUse,
+              content: toolMsg.content,
+              locations: toolMsg.locations,
+              agentName: toolMsg.agentName,
+              liveOutput: prev.concat(newLines),
+            };
+            changed = true;
+          }
+          return changed ? { messages } : {};
+        });
+      };
+
       const startBuffering = () => {
         isBuffering = true;
       };
@@ -1386,33 +1435,26 @@ export const createAppStore = (props: AppStoreProps) => {
           case AgentEventType.ToolCallUpdate:
             if (event.content.type === 'text') {
               const text = event.content.text;
-              set((state) => {
-                const toolMsgIndex = state.messages.findIndex(
-                  (msg) =>
-                    msg.role === MessageRole.ToolUse && msg.id === event.id
-                );
-                if (toolMsgIndex !== -1) {
-                  const toolMsg = state.messages[toolMsgIndex];
-                  if (toolMsg && toolMsg.role === MessageRole.ToolUse) {
-                    const messages = [...state.messages];
-                    messages[toolMsgIndex] = {
-                      id: toolMsg.id,
-                      name: toolMsg.name,
-                      kind: toolMsg.kind,
-                      role: MessageRole.ToolUse,
-                      content: toolMsg.content,
-                      locations: toolMsg.locations,
-                      agentName: toolMsg.agentName,
-                      liveOutput: (toolMsg.liveOutput ?? '') + text,
-                    };
-                    return { messages };
-                  }
-                }
-                return state;
-              });
+              // Accumulate into per-tool buffer; flush on a short timer to
+              // avoid re-rendering the whole message list for every line of
+              // streamed output.
+              toolOutputBuffers.set(
+                event.id,
+                (toolOutputBuffers.get(event.id) ?? '') + text
+              );
+              if (!pendingToolOutputFlush) {
+                pendingToolOutputFlush = setTimeout(flushToolOutputs, 32);
+              }
             }
             break;
           case AgentEventType.ToolCallFinished:
+            // Flush any buffered live output before we mark the tool finished
+            // and clear liveOutput; otherwise the final lines would be lost.
+            if (pendingToolOutputFlush) {
+              clearTimeout(pendingToolOutputFlush);
+              pendingToolOutputFlush = null;
+            }
+            flushToolOutputs();
             set((state) => {
               const messages = [...state.messages];
               const toolMsgIndex = messages.findIndex(

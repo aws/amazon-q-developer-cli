@@ -21,7 +21,7 @@ export interface ShellProps {
   command?: string;
 
   /** Live streaming output while command is running */
-  liveOutput?: string;
+  liveOutput?: string[];
 
   /** Tool status type */
   status?: StatusType;
@@ -100,13 +100,20 @@ export const Shell = React.memo(function Shell({
   }, [result, isTimeoutError]);
 
   // Unify output source: use result when available, otherwise liveOutput during execution.
-  // This feeds both live and finished output into the same useExpandableOutput hook.
-  const { output, exitCode } = useMemo(() => {
+  // Finished output (from the tool result JSON) comes as a string and is split once;
+  // live output is already a `string[]` maintained in the store, so no split-per-render.
+  const { outputLines, exitCode } = useMemo(() => {
     if (result) {
       const { obj, text } = unwrapResultOutput(result);
 
-      if (text) return { output: text, exitCode: null };
-      if (!obj) return { output: null, exitCode: null };
+      if (text) {
+        return {
+          outputLines: normalizeLineEndings(text).split('\n'),
+          exitCode: null as number | null,
+        };
+      }
+      if (!obj)
+        return { outputLines: [] as string[], exitCode: null as number | null };
 
       let code: number | null = null;
       if ('exit_status' in obj) {
@@ -136,24 +143,23 @@ export const Shell = React.memo(function Shell({
         outputStr = obj.stderr;
       }
 
-      return { output: outputStr, exitCode: code };
+      return {
+        outputLines: outputStr
+          ? normalizeLineEndings(outputStr).split('\n')
+          : [],
+        exitCode: code,
+      };
     }
 
-    // During execution, use liveOutput as the output source
-    if (liveOutput) {
-      return { output: liveOutput, exitCode: null };
+    // During execution, liveOutput is already a string[] — pass through.
+    if (liveOutput && liveOutput.length > 0) {
+      return { outputLines: liveOutput, exitCode: null as number | null };
     }
 
-    return { output: null, exitCode: null };
+    return { outputLines: [] as string[], exitCode: null as number | null };
   }, [result, liveOutput]);
 
-  const hasOutput = output && output.trim().length > 0;
-
-  // Calculate line count
-  const outputLines = useMemo(() => {
-    if (!output) return [];
-    return normalizeLineEndings(output).split('\n');
-  }, [output]);
+  const hasOutput = outputLines.length > 0;
 
   // Use expandable output hook
   const { expanded, expandHint } = useExpandableOutput({

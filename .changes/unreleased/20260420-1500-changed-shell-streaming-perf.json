@@ -1,0 +1,4 @@
+{
+  "type": "changed",
+  "description": "Improved rendering performance for shell commands that stream large amounts of output"
+}

@@ -75,14 +75,14 @@ describe('Shell live output streaming', () => {
 
     // Poll the store while the command is still running to catch liveOutput.
     let sawLiveOutput = false;
-    let capturedLiveOutput = '';
+    let capturedLiveOutput: string[] = [];
     const pollStart = Date.now();
     while (Date.now() - pollStart < 30000) {
       const store = await testCase.getStore();
       const toolMsg = store.messages.find(
         (m) => m.role === 'tool_use' && m.id === 'tool-live-1'
       );
-      if (toolMsg && 'liveOutput' in toolMsg && toolMsg.liveOutput) {
+      if (toolMsg && 'liveOutput' in toolMsg && toolMsg.liveOutput && toolMsg.liveOutput.length > 0) {
         sawLiveOutput = true;
         capturedLiveOutput = toolMsg.liveOutput;
         break;
@@ -95,7 +95,7 @@ describe('Shell live output streaming', () => {
 
     // Core assertion: liveOutput was actually populated during execution
     expect(sawLiveOutput).toBe(true);
-    expect(capturedLiveOutput).toContain('stream-line-');
+    expect(capturedLiveOutput.join('\n')).toContain('stream-line-');
 
     // Wait for completion
     await testCase.waitForText('Streaming complete', 30000);

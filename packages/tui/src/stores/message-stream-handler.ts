@@ -152,8 +152,18 @@ export function createMessageStreamHandler(
             if (idx === -1) return msgs;
             const msg = msgs[idx]!;
             if (msg.role !== MessageRole.ToolUse) return msgs;
+            // Split the chunk and append lines to the array; drop the trailing
+            // empty element produced when the chunk ends with a newline.
+            const newLines = text.split('\n');
+            if (newLines.length > 0 && newLines[newLines.length - 1] === '') {
+              newLines.pop();
+            }
+            if (newLines.length === 0) return msgs;
             const next = [...msgs];
-            next[idx] = { ...msg, liveOutput: (msg.liveOutput ?? '') + text };
+            next[idx] = {
+              ...msg,
+              liveOutput: (msg.liveOutput ?? []).concat(newLines),
+            };
             return next;
           });
         }

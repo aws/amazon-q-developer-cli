@@ -43,7 +43,7 @@ export interface ToolUseMessageProps {
   id: string;
   name: string;
   content: string;
-  liveOutput?: string;
+  liveOutput?: string[];
   isFinished?: boolean;
   status?: ToolUseStatus;
   result?: ToolResult;
@@ -122,7 +122,7 @@ const ToolUseContent = React.memo(function ToolUseContent({
 }: {
   name: string;
   content: string;
-  liveOutput?: string;
+  liveOutput?: string[];
   isFinished: boolean;
   status?: ToolUseStatus;
   result?: ToolResult;
