@@ -1,0 +1,4 @@
+{
+  "type": "added",
+  "description": "Support for Google and GitHub login in remote environments using device flow via auth portal"
+}

@@ -45,7 +45,12 @@ use crate::auth::portal::{
     PortalResult,
     start_unified_auth,
 };
-use crate::auth::social::SocialProvider;
+use crate::auth::social::{
+    DevicePollResult,
+    SocialProvider,
+    initiate_social_device_authorization,
+    poll_device_token,
+};
 use crate::constants::PRODUCT_NAME;
 use crate::database::Database;
 use crate::os::Os;
@@ -135,17 +140,10 @@ impl LoginArgs {
                 },
             }
         } else {
-            // REMOTE ENVIRONMENT: Use existing device flow for BuilderID/IdC only
+            // REMOTE ENVIRONMENT: Use device flow for BuilderID/IdC/Social
             info!("Remote environment detected - using device flow authentication");
 
-            // Social login is not supported in remote environments
-            if self.social.is_some() {
-                bail!(
-                    "Social login is not supported in remote environments. Please use BuilderID or Identity Center authentication."
-                );
-            }
-
-            // Show menu for BuilderID or IdC only
+            // Show menu for BuilderID, Social, or IdC
             let login_method = match self.license {
                 Some(LicenseType::Free) => AuthMethod::BuilderId,
                 Some(LicenseType::Pro) => AuthMethod::IdentityCenter,
@@ -156,13 +154,23 @@ impl LoginArgs {
                         AuthMethod::IdentityCenter
                     } else {
                         // --license is not specified, prompt the user to choose for remote
-                        let options = [AuthMethod::BuilderId, AuthMethod::IdentityCenter];
-                        let prompt = "Select login method (Social login not available in remote environment)";
-                        let i = match choose(prompt, &options)? {
+                        let options = [
+                            "Use with Builder ID",
+                            "Use with Google",
+                            "Use with GitHub",
+                            "Use with Your Organization",
+                        ];
+                        let i = match choose("Select login method", &options)? {
                             Some(i) => i,
                             None => bail!("No login method selected"),
                         };
-                        options[i]
+                        match i {
+                            0 => AuthMethod::BuilderId,
+                            1 => AuthMethod::Social(SocialProvider::Google),
+                            2 => AuthMethod::Social(SocialProvider::Github),
+                            3 => AuthMethod::IdentityCenter,
+                            _ => unreachable!(),
+                        }
                     }
                 },
             };
@@ -200,7 +208,9 @@ impl LoginArgs {
                         select_profile_interactive(os, true, Some(region.as_ref().unwrap())).await?;
                     }
                 },
-                AuthMethod::Social(_) => unreachable!(),
+                AuthMethod::Social(provider) => {
+                    social_device_flow_login(os, provider).await?;
+                },
             }
         }
 
@@ -477,7 +487,7 @@ enum AuthMethod {
     BuilderId,
     /// IdC (enterprise)
     IdentityCenter,
-    /// Social login (not available in remote)
+    /// Social login
     #[allow(dead_code)]
     Social(SocialProvider),
 }
@@ -551,6 +561,61 @@ async fn try_device_authorization(os: &mut Os, start_url: Option<String>, region
         };
     }
     Ok(())
+}
+
+/// Social device flow login – for remote/headless environments
+async fn social_device_flow_login(os: &mut Os, provider: SocialProvider) -> Result<()> {
+    info!("Starting social device flow login for {provider}");
+
+    let auth = initiate_social_device_authorization(&os.database, provider).await?;
+
+    println!();
+    println!("To sign in with {provider}, visit:");
+    println!("  {}", StyledText::emphasis(&auth.verification_uri_complete));
+    println!();
+    println!("And confirm the code: {}", StyledText::emphasis(&auth.user_code));
+    println!();
+
+    let interval = Duration::from_millis(auth.interval_ms.max(1000));
+    let deadline = tokio::time::Instant::now() + Duration::from_millis(auth.expires_in_ms);
+
+    let mut spinner = Spinner::new(vec![
+        SpinnerComponent::Spinner,
+        SpinnerComponent::Text(" Waiting for authorization...".into()),
+    ]);
+
+    loop {
+        if tokio::time::Instant::now() >= deadline {
+            spinner.stop();
+            bail!("Device code expired. Please try again.");
+        }
+
+        let ctrl_c_stream = ctrl_c();
+        tokio::select! {
+            _ = tokio::time::sleep(interval) => {},
+            Ok(_) = ctrl_c_stream => {
+                spinner.stop();
+                #[allow(clippy::exit)]
+                exit(1);
+            }
+        }
+
+        match poll_device_token(&mut os.database, &auth.device_code, provider).await? {
+            DevicePollResult::Pending => {},
+            DevicePollResult::Complete { provider } => {
+                spinner.stop_with_message(format!("Signed in with {provider}"));
+                return Ok(());
+            },
+            DevicePollResult::Expired => {
+                spinner.stop();
+                bail!("Device code expired. Please try again.");
+            },
+            DevicePollResult::Error(msg) => {
+                spinner.stop();
+                bail!("Device flow error: {msg}");
+            },
+        }
+    }
 }
 
 async fn select_profile_interactive(os: &mut Os, whoami: bool, region: Option<&str>) -> Result<()> {

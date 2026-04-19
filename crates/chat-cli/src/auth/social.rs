@@ -22,6 +22,7 @@ use tracing::{
     error,
     info,
     trace,
+    warn,
 };
 
 use crate::auth::AuthError;
@@ -34,13 +35,14 @@ use crate::database::{
 };
 
 const USER_AGENT: &str = "Kiro-CLI";
+const DEFAULT_SOCIAL_PROFILE_ARN: &str = "arn:aws:codewhisperer:us-east-1:699475941385:profile/EHGA3GRVQMUK";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, clap::ValueEnum)]
 pub enum SocialProvider {
-    #[serde(rename = "google")]
+    #[serde(rename = "google", alias = "Google")]
     #[value(name = "google")]
     Google,
-    #[serde(rename = "github")]
+    #[serde(rename = "github", alias = "Github", alias = "GitHub")]
     #[value(name = "github")]
     Github,
 }
@@ -260,12 +262,10 @@ impl SocialToken {
 }
 
 #[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct TokenResponse {
-    #[serde(rename = "accessToken")]
     access_token: String,
-    #[serde(rename = "refreshToken")]
     refresh_token: String,
-    #[serde(rename = "expiresIn")]
     expires_in: u64,
     #[serde(rename = "profileArn")]
     profile_arn: String,
@@ -341,6 +341,140 @@ fn get_kiro_auth_endpoint(database: &Database) -> String {
         .get(Setting::ApiKiroAuthService)
         .and_then(|v| v.as_str())
         .map_or_else(|| SOCIAL_AUTH_SERVICE_ENDPOINT.to_string(), |s| s.to_string())
+}
+
+/// Response from the device authorization endpoint
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DeviceAuthorizationResponse {
+    pub device_code: String,
+    pub user_code: String,
+    pub verification_uri: String,
+    pub verification_uri_complete: String,
+    #[serde(rename = "expiresInMilliseconds")]
+    pub expires_in_ms: u64,
+    #[serde(rename = "intervalInMilliseconds")]
+    pub interval_ms: u64,
+}
+
+/// Possible outcomes when polling for device authorization
+#[derive(Debug)]
+pub enum DevicePollResult {
+    Pending,
+    Complete { provider: SocialProvider },
+    Expired,
+    Error(String),
+}
+
+/// Response from the device poll endpoint
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct DevicePollResponse {
+    access_token: Option<String>,
+    refresh_token: Option<String>,
+    identity_provider: Option<SocialProvider>,
+    expires_in: Option<u64>,
+    profile_arn: Option<String>,
+    status: String,
+}
+
+/// Step 1: Initiate device authorization – returns codes for the user to enter.
+pub async fn initiate_social_device_authorization(
+    database: &Database,
+    provider: SocialProvider,
+) -> Result<DeviceAuthorizationResponse, AuthError> {
+    let client = Client::new();
+    let url = format!("{}/oauth/device/authorization", get_kiro_auth_endpoint(database));
+
+    let resp = client
+        .post(&url)
+        .header("Content-Type", "application/json")
+        .header("User-Agent", USER_AGENT)
+        .json(&serde_json::json!({
+            "clientId": USER_AGENT,
+            // API expects PascalCase enum values; serde uses lowercase for token storage compatibility
+            "loginProvider": match provider {
+                SocialProvider::Google => "Google",
+                SocialProvider::Github => "Github",
+            },
+        }))
+        .send()
+        .await?;
+
+    if !resp.status().is_success() {
+        let status = resp.status();
+        let body = resp.text().await.unwrap_or_default();
+        error!(%status, %body, "Device authorization request failed");
+        return Err(AuthError::SocialAuthProviderFailure(format!(
+            "Device authorization failed: HTTP {status} - {body}"
+        )));
+    }
+
+    let auth: DeviceAuthorizationResponse = resp.json().await?;
+    info!(user_code = %auth.user_code, verification_uri = %auth.verification_uri, "Device authorization initiated");
+    Ok(auth)
+}
+
+/// Step 2: Poll for device token. Returns [`DevicePollResult`].
+pub async fn poll_device_token(
+    database: &mut Database,
+    device_code: &str,
+    provider: SocialProvider,
+) -> Result<DevicePollResult, AuthError> {
+    let client = Client::new();
+    let url = format!("{}/oauth/device/poll", get_kiro_auth_endpoint(database));
+
+    let resp = client
+        .post(&url)
+        .header("Content-Type", "application/json")
+        .header("User-Agent", USER_AGENT)
+        .json(&serde_json::json!({
+            "deviceCode": device_code,
+            "clientId": USER_AGENT,
+        }))
+        .send()
+        .await?;
+
+    if !resp.status().is_success() {
+        let status = resp.status();
+        let body = resp.text().await.unwrap_or_default();
+        warn!(%status, %body, "Device poll returned error status");
+        return Ok(DevicePollResult::Error(format!("HTTP {status}: {body}")));
+    }
+
+    let poll: DevicePollResponse = resp.json().await?;
+
+    match poll.status.as_str() {
+        "authorization_pending" => Ok(DevicePollResult::Pending),
+        "expired_token" => Ok(DevicePollResult::Expired),
+        "invalid_token" => Ok(DevicePollResult::Error("invalid_token".into())),
+        "authorized" => {
+            let access_token = poll
+                .access_token
+                .ok_or_else(|| AuthError::SocialAuthProviderFailure("Missing accessToken in poll response".into()))?;
+            let refresh_token = poll
+                .refresh_token
+                .ok_or_else(|| AuthError::SocialAuthProviderFailure("Missing refreshToken in poll response".into()))?;
+            let provider = poll.identity_provider.unwrap_or(provider);
+
+            let token = SocialToken {
+                access_token: Secret(access_token),
+                expires_at: OffsetDateTime::now_utc() + time::Duration::seconds(poll.expires_in.unwrap_or(3600) as i64),
+                refresh_token: Some(Secret(refresh_token)),
+                provider,
+                profile_arn: Some(
+                    poll.profile_arn
+                        .unwrap_or_else(|| DEFAULT_SOCIAL_PROFILE_ARN.to_string()),
+                ),
+            };
+            token.save(database).await?;
+            token.save_profile_if_any(database).await?;
+            info!("Social device flow login completed successfully");
+
+            Ok(DevicePollResult::Complete { provider })
+        },
+        other => Ok(DevicePollResult::Error(other.to_string())),
+    }
 }
 
 #[cfg(test)]
@@ -432,5 +566,54 @@ mod tests {
                 "test stub profile ARN should not be empty"
             );
         });
+    }
+
+    #[test]
+    fn test_deserialize_device_authorization_response() {
+        let json = r#"{
+            "deviceCode": "abc-123",
+            "userCode": "ABCD-EFGH",
+            "verificationUri": "https://example.com/device",
+            "verificationUriComplete": "https://example.com/device?code=ABCD-EFGH",
+            "expiresInMilliseconds": 600000,
+            "intervalInMilliseconds": 5000
+        }"#;
+        let resp: DeviceAuthorizationResponse = serde_json::from_str(json).unwrap();
+        assert_eq!(resp.device_code, "abc-123");
+        assert_eq!(resp.user_code, "ABCD-EFGH");
+        assert_eq!(resp.verification_uri, "https://example.com/device");
+        assert_eq!(resp.expires_in_ms, 600000);
+        assert_eq!(resp.interval_ms, 5000);
+    }
+
+    #[test]
+    fn test_device_poll_response_deser() {
+        let json = r#"
+        {
+          "accessToken": "at",
+          "refreshToken": "rt",
+          "identityProvider": "google",
+          "expiresIn": 7200,
+          "profileArn": "arn:aws:iam::123456789012:role/Demo",
+          "status": "complete"
+        }
+        "#;
+
+        let resp: DevicePollResponse = serde_json::from_str(json).expect("deser ok");
+        assert_eq!(resp.access_token.as_deref(), Some("at"));
+        assert_eq!(resp.refresh_token.as_deref(), Some("rt"));
+        assert_eq!(resp.identity_provider, Some(SocialProvider::Google));
+        assert_eq!(resp.expires_in, Some(7200));
+        assert_eq!(resp.status, "complete");
+    }
+
+    #[test]
+    fn test_device_poll_response_pending() {
+        let json = r#"{ "status": "authorization_pending" }"#;
+
+        let resp: DevicePollResponse = serde_json::from_str(json).expect("deser ok");
+        assert_eq!(resp.status, "authorization_pending");
+        assert!(resp.access_token.is_none());
+        assert!(resp.identity_provider.is_none());
     }
 }
