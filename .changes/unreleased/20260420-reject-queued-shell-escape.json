@@ -1,0 +1,4 @@
+{
+  "type": "fixed",
+  "description": "Reject queued ! shell-escape commands during processing instead of sending them as literal text"
+}

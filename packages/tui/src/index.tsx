@@ -127,7 +127,7 @@ const wireUpHandlers = () => {
             : `Prompt from ${prompt.serverName}`),
         source: 'backend' as const,
         meta: {
-          type: (isSkill ? 'skill' : 'prompt') as const,
+          type: isSkill ? 'skill' : 'prompt',
           arguments: prompt.arguments,
           serverName: prompt.serverName,
         } as import('./types/commands').CommandMeta,

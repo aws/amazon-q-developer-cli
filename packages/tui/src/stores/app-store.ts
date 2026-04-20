@@ -2849,6 +2849,16 @@ export const createAppStore = (props: AppStoreProps) => {
           state.clearInput();
           return;
         }
+        if (trimmed.startsWith('!')) {
+          state.showTransientAlert({
+            message:
+              "Shell escape commands can't be queued — wait for the current task to finish",
+            status: 'warning',
+            autoHideMs: 4000,
+          });
+          state.clearInput();
+          return;
+        }
         state.queueMessage(trimmed);
         state.clearInput();
         return;
@@ -2970,7 +2980,10 @@ export const createAppStore = (props: AppStoreProps) => {
         // (leaving it confuses the LLM's path extraction for tool calls).
         // For other inputs like "// hello world", send as-is.
         const afterSlash = trimmed.slice(1);
-        const isFilePath = afterSlash.length > 0 && afterSlash[0] !== '/' && afterSlash[0] !== ' ';
+        const isFilePath =
+          afterSlash.length > 0 &&
+          afterSlash[0] !== '/' &&
+          afterSlash[0] !== ' ';
         const messageText = isFilePath ? afterSlash : trimmed;
         await state.sendMessage(messageText, undefined, trimmed);
         return;
