@@ -1160,16 +1160,7 @@ export const createAppStore = (props: AppStoreProps) => {
             }
             if (newLines.length === 0) continue;
             const prev = toolMsg.liveOutput ?? [];
-            messages[idx] = {
-              id: toolMsg.id,
-              name: toolMsg.name,
-              kind: toolMsg.kind,
-              role: MessageRole.ToolUse,
-              content: toolMsg.content,
-              locations: toolMsg.locations,
-              agentName: toolMsg.agentName,
-              liveOutput: prev.concat(newLines),
-            };
+            messages[idx] = { ...toolMsg, liveOutput: prev.concat(newLines) };
             changed = true;
           }
           return changed ? { messages } : {};
