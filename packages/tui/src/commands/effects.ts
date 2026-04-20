@@ -93,6 +93,7 @@ type EffectName =
   | 'openRawView'
   | 'showThemeMenu'
   | 'showTuiPanel'
+  | 'showSessionId'
   | 'switchToGuideAgent';
 
 /**
@@ -124,6 +125,7 @@ const commandEffects: Partial<Record<string, EffectName>> = {
   transcript: 'openRawView',
   theme: 'showThemeMenu',
   tui: 'showTuiPanel',
+  'session-id': 'showSessionId',
   guide: 'switchToGuideAgent',
 };
 
@@ -686,6 +688,18 @@ const effectHandlers: Record<EffectName, EffectHandler> = {
   /** Show theme color selection menu */
   showTuiPanel: (_result, ctx) => {
     ctx.setShowTuiPanel(true);
+  },
+
+  showSessionId: (_result, ctx) => {
+    const sessionId = ctx.kiro.sessionId ?? 'none';
+    ctx.showAlert(
+      sessionId !== 'none'
+        ? `Session ID: ${sessionId}\nResume with: kiro-cli chat --resume-id ${sessionId}`
+        : 'Session ID: none',
+      'success',
+      10000
+    );
+    return true;
   },
 
   showThemeMenu: (_result, ctx, cmd, args) => {

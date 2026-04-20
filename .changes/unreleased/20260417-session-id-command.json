@@ -1,0 +1,4 @@
+{
+  "type": "added",
+  "description": "Add /session-id slash command and resume hint on exit"
+}

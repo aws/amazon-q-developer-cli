@@ -849,6 +849,12 @@ export const createAppStore = (props: AppStoreProps) => {
         source: 'local' as const,
         meta: { local: true, inputType: 'panel' as const },
       },
+      {
+        name: '/session-id',
+        description: 'Print the current session ID',
+        source: 'local' as const,
+        meta: { local: true },
+      },
     ], // Backend sends all commands via CommandsUpdate
     prompts: [],
     kiro: props.kiro,

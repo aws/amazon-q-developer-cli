@@ -1,4 +1,5 @@
 #!/usr/bin/env bun
+import { writeSync } from 'fs';
 import { useEffect, useRef } from 'react';
 import { Text, render } from './renderer.js';
 import { ErrorBoundary } from './components/ui/ErrorBoundary';
@@ -614,6 +615,19 @@ const startApp = async () => {
   appStore.setState({ onExit: () => instance.unmount() });
   process.on('exit', () => {
     instance.unmount();
+    try {
+      if (!cliArgs.noInteractive && process.stdout.isTTY) {
+        const sessionId = appStore.getState().sessionId;
+        if (sessionId) {
+          writeSync(
+            1,
+            `\x1b[2m\nSession ended.\nResume with: kiro-cli chat --resume-id ${sessionId}\n\x1b[0m`
+          );
+        }
+      }
+    } catch {
+      // stdout may be closed (SIGHUP, broken pipe)
+    }
   });
 };
 
