@@ -53,6 +53,9 @@ function startTUI() {
   });
 }
 
+// Ensure dependencies are installed (<50ms when no deps changed)
+spawnSync("bun", ["install"], { cwd: REPO_ROOT, stdio: "inherit" });
+
 if (skipRustBuild) {
   console.log("Skipping Rust build...");
   if (!buildInk()) {

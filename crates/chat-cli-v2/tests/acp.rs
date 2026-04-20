@@ -2309,7 +2309,8 @@ async fn switch_to_execution_swaps_and_executes_plan() {
 ///
 /// Exercises the new GetSkills/ResolveSkill agent protocol added in the skill
 /// slash commands feature — plumbing that isn't covered by the unit tests in
-/// `crates/agent/src/agent/prompts/skills.rs` or `crates/chat-cli-v2/src/agent/acp/acp_provider.rs`.
+/// `crates/agent/src/agent/prompts/skills.rs` or
+/// `crates/chat-cli-v2/src/agent/acp/acp_provider.rs`.
 #[tokio::test]
 #[timeout(30000)]
 #[serial]
@@ -2343,11 +2344,17 @@ async fn workspace_skill_is_advertised_and_invocable() {
     // `_kiro.dev/commands/available` ExtNotification. Poll for it to avoid a
     // race with the async send.
     let available_method = "kiro.dev/commands/available";
-    client.wait_for(|captured| find_skill_prompt(captured, available_method, "greet").is_some()).await;
+    client
+        .wait_for(|captured| find_skill_prompt(captured, available_method, "greet").is_some())
+        .await;
 
     let captured = client.captured().await;
-    let skill_prompt = find_skill_prompt(&captured, available_method, "greet").expect("greet skill should be advertised");
-    assert_eq!(skill_prompt.get("description").and_then(|v| v.as_str()), Some("Say hello to someone"));
+    let skill_prompt =
+        find_skill_prompt(&captured, available_method, "greet").expect("greet skill should be advertised");
+    assert_eq!(
+        skill_prompt.get("description").and_then(|v| v.as_str()),
+        Some("Say hello to someone")
+    );
     assert_eq!(
         skill_prompt.get("serverName").and_then(|v| v.as_str()),
         Some("skill:config"),
@@ -2367,7 +2374,11 @@ async fn workspace_skill_is_advertised_and_invocable() {
         .expect("slash prompt failed");
 
     let requests = harness.get_captured_requests(&session_id.0).await;
-    assert_eq!(requests.len(), 1, "skill invocation should produce exactly one LLM request");
+    assert_eq!(
+        requests.len(),
+        1,
+        "skill invocation should produce exactly one LLM request"
+    );
     let sent = &requests[0].user_input_message.content;
     assert!(
         sent.contains("Say hello to World"),
@@ -2383,11 +2394,7 @@ async fn workspace_skill_is_advertised_and_invocable() {
 
 /// Find a prompt advertisement matching `name` in the latest
 /// `commands/available` ExtNotification.
-fn find_skill_prompt(
-    captured: &common::CapturedNotifications,
-    method: &str,
-    name: &str,
-) -> Option<serde_json::Value> {
+fn find_skill_prompt(captured: &common::CapturedNotifications, method: &str, name: &str) -> Option<serde_json::Value> {
     captured
         .ext_notifications
         .iter()

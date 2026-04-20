@@ -1077,7 +1077,7 @@ impl AcpSession {
             (db, snapshot)
         };
 
-        let rts_state = Arc::new(RtsState::new(session_id_str.clone()));
+        let rts_state = Arc::new(RtsState::new(session_id_str.clone()).with_cwd(cwd.clone()));
 
         // Build API client, using mock registry in test mode
         let (api_client, model): (ApiClient, Arc<dyn Model>) = if let Some(registry) = builder.mock_registry {

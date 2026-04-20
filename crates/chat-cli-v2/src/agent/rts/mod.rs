@@ -225,7 +225,7 @@ impl RtsModel {
                 let content = format_user_content(&m);
                 let (tool_results, images) = extract_tool_results_and_images(&m);
                 let user_input_message_context = Some(UserInputMessageContext {
-                    env_state: None,
+                    env_state: self.state.build_env_state(),
                     git_state: None,
                     tool_results,
                     tools,
@@ -476,6 +476,7 @@ pub struct RtsStateSnapshot {
 /// is simple and sufficient.
 pub struct RtsState {
     inner: std::sync::Mutex<RtsStateSnapshot>,
+    cwd: Option<std::path::PathBuf>,
 }
 
 static_assertions::assert_impl_all!(RtsState: Send, Sync);
@@ -488,7 +489,24 @@ impl RtsState {
                 model_info: None,
                 context_usage_percentage: None,
             }),
+            cwd: None,
         }
+    }
+
+    pub fn with_cwd(mut self, cwd: std::path::PathBuf) -> Self {
+        self.cwd = Some(cwd);
+        self
+    }
+
+    fn build_env_state(&self) -> Option<crate::api_client::model::EnvState> {
+        Some(crate::api_client::model::EnvState {
+            operating_system: Some(std::env::consts::OS.into()),
+            current_working_directory: self
+                .cwd
+                .as_ref()
+                .map(|p| agent::util::truncate_safe(&p.to_string_lossy(), 256).to_string()),
+            ..Default::default()
+        })
     }
 
     pub fn conversation_id(&self) -> String {

@@ -1,0 +1,4 @@
+{
+  "type": "fixed",
+  "description": "Send working directory and OS as context in TUI/ACP by default"
+}
