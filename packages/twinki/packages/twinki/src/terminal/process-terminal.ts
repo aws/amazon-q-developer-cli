@@ -93,6 +93,7 @@ export class ProcessTerminal implements Terminal {
 	private writeLogPath = process.env.TWINKI_WRITE_LOG || "";
 	private _columns = process.stdout.columns || 80;
 	private _rows = process.stdout.rows || 24;
+	private resizeTimer: ReturnType<typeof setTimeout> | null = null;
 
 	/**
 	 * Whether Kitty keyboard protocol is currently active.
@@ -120,9 +121,21 @@ export class ProcessTerminal implements Terminal {
 	start(onInput: (data: string) => void, onResize: () => void): void {
 		this.inputHandler = onInput;
 		this.resizeHandler = () => {
-			this._columns = process.stdout.columns || 80;
-			this._rows = process.stdout.rows || 24;
-			onResize();
+			const newCols = process.stdout.columns || 80;
+			const newRows = process.stdout.rows || 24;
+			if (newCols === this._columns && newRows === this._rows) return;
+			// Debounce: collapse rapid resize events (e.g. scrollbar toggle oscillation)
+			if (this.resizeTimer) clearTimeout(this.resizeTimer);
+			this.resizeTimer = setTimeout(() => {
+				this.resizeTimer = null;
+				// Update dimensions only when debounce settles
+				const cols = process.stdout.columns || 80;
+				const rows = process.stdout.rows || 24;
+				if (cols === this._columns && rows === this._rows) return;
+				this._columns = cols;
+				this._rows = rows;
+				onResize();
+			}, 80);
 		};
 
 		// Save previous state and enable raw mode
@@ -336,6 +349,12 @@ export class ProcessTerminal implements Terminal {
 	stop(): void {
 		// Disable bracketed paste mode
 		process.stdout.write("\x1b[?2004l");
+
+		// Cancel pending resize
+		if (this.resizeTimer) {
+			clearTimeout(this.resizeTimer);
+			this.resizeTimer = null;
+		}
 
 		// Disable Kitty keyboard protocol
 		if (this._kittyProtocolActive) {

@@ -49,6 +49,14 @@ export interface TUIOptions {
    * When exceeded by 10%, the buffer is pruned back to 75% of the cap.
    */
   staticScrollbackCap?: number;
+  /**
+   * Columns to reserve for the terminal scrollbar (default: 0).
+   *
+   * When set, the TUI renders at `terminal.columns - scrollbarWidth` so that
+   * scrollbar appearance/disappearance does not trigger a width-change reflow.
+   * Typical value: 2 (the width most terminals steal for a scrollbar).
+   */
+  scrollbarWidth?: number;
 }
 
 /**
@@ -138,6 +146,7 @@ export class TUI extends Container {
   private frameBudgetMs = 0;
   private lastRenderTime = 0;
   private pacingTimer: ReturnType<typeof setTimeout> | null = null;
+  private scrollbarWidth = 0;
 
   /** ANSI reset sequence used between overlay segments */
   private static readonly SEGMENT_RESET = '\x1b[0m';
@@ -174,6 +183,9 @@ export class TUI extends Container {
     }
     if (opts.staticScrollbackCap != null && opts.staticScrollbackCap > 0) {
       this.staticScrollbackCap = opts.staticScrollbackCap;
+    }
+    if (opts.scrollbarWidth != null && opts.scrollbarWidth > 0) {
+      this.scrollbarWidth = opts.scrollbarWidth;
     }
     if (process.env.TWINKI_DEBUG_REDRAW === '1') {
       try {
@@ -1389,7 +1401,7 @@ export class TUI extends Container {
    * - Line-based diffing for minimal terminal writes
    */
   private _doRenderInner(): void {
-    const width = this.terminal.columns;
+    const width = this.terminal.columns - this.scrollbarWidth;
     const height = this.terminal.rows;
     let viewportTop = Math.max(0, this.maxLinesRendered - height);
     let prevViewportTop = this.previousViewportTop;

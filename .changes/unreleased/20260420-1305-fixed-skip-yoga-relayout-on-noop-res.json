@@ -1,0 +1,4 @@
+{
+  "type": "fixed",
+  "description": "Skip yoga layout recalculation when terminal resize signal fires without actual dimension change (tmux/multiplexer fix)"
+}
