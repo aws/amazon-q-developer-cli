@@ -37,7 +37,7 @@ export class CommandHistory {
         return content
           .split('\n')
           .filter((line) => line.trim())
-          .map((line) => line.replaceAll('\x00', '\n'))
+          .map((line) => line.replaceAll('\\n', '\n'))
           .slice(-MAX_HISTORY_SIZE);
       }
     } catch (err) {
