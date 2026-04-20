@@ -29,28 +29,25 @@ jobs:
           # Fetch latest main
           git fetch origin main
           
+          # Version files that nightly bumps — safe to auto-resolve by taking main's version
+          VERSION_FILES="Cargo.toml|Cargo.lock|packages/tui/package.json"
+          
           # Merge main into nightly, preferring main's version on conflicts
           git merge origin/main -m "Sync: Merge main into nightly" || {
-            # If merge conflict, check if it's only in Cargo.toml/Cargo.lock
             CONFLICTS=$(git diff --name-only --diff-filter=U)
-            if echo "$CONFLICTS" | grep -qE '^(Cargo\.toml|Cargo\.lock)$' && [ $(echo "$CONFLICTS" | wc -l) -le 2 ]; then
-              echo "Conflict in Cargo files detected - taking main's version"
-              git checkout --theirs Cargo.toml Cargo.lock
-              git add Cargo.toml Cargo.lock
-              
-              # Check if there are other conflicts
-              if [ -n "$(git diff --name-only --diff-filter=U)" ]; then
-                echo "❌ Additional conflicts detected beyond Cargo files"
-                git merge --abort
-                exit 1
-              fi
-              
-              git commit -m "Sync: Merge main into nightly (took main version)"
-            else
-              echo "❌ Merge conflict detected"
+            
+            # Check if all conflicts are in version files
+            if echo "$CONFLICTS" | grep -qvE "^($VERSION_FILES)$"; then
+              echo "❌ Merge conflict in non-version files:"
+              echo "$CONFLICTS" | grep -vE "^($VERSION_FILES)$"
               git merge --abort
               exit 1
             fi
+            
+            echo "Version file conflicts detected - taking main's version"
+            echo "$CONFLICTS" | xargs git checkout --theirs
+            echo "$CONFLICTS" | xargs git add
+            git commit -m "Sync: Merge main into nightly (resolved version conflicts)"
           }
           
           # Push to nightly
