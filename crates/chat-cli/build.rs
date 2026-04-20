@@ -419,24 +419,21 @@ fn embed_bun_and_tui() {
         std::env::var("BUN_EXECUTABLE_PATH").ok()
     };
 
+    // Remove existing files first — the bun binary is often installed read-only,
+    // and std::fs::copy preserves permissions, so overwriting fails on subsequent builds.
+    let _ = std::fs::remove_file(&bun_dest);
     if let Some(path) = bun_path {
         println!("cargo:rerun-if-changed={path}");
-        // Remove existing file first — the bun binary is often installed read-only,
-        // and std::fs::copy preserves permissions, so overwriting fails on subsequent builds.
-        let _ = std::fs::remove_file(&bun_dest);
         std::fs::copy(&path, &bun_dest).expect("Failed to copy bun executable to OUT_DIR");
     } else {
-        // Remove first in case a previous build copied a read-only bun binary here.
-        let _ = std::fs::remove_file(&bun_dest);
         std::fs::write(&bun_dest, b"").unwrap();
     }
 
+    let _ = std::fs::remove_file(&tui_dest);
     if let Ok(path) = std::env::var("TUI_JS_PATH") {
         println!("cargo:rerun-if-changed={path}");
-        let _ = std::fs::remove_file(&tui_dest);
         std::fs::copy(&path, &tui_dest).expect("Failed to copy TUI js to OUT_DIR");
     } else {
-        let _ = std::fs::remove_file(&tui_dest);
         std::fs::write(&tui_dest, b"").unwrap();
     }
 }
