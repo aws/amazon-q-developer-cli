@@ -562,11 +562,6 @@ const startApp = async () => {
   const instance = render(<App />, {
     exitOnCtrlC: false,
     patchConsole: false,
-    incrementalRendering: false,
-    kittyKeyboard: {
-      mode: 'auto',
-      flags: ['disambiguateEscapeCodes'],
-    },
   });
 
   // Expose render instance for dev metrics

@@ -106,23 +106,21 @@ export const ScrollableBox: React.FC<ScrollableBoxProps> = ({
       scroll(Math.floor(height / 2));
   });
 
-  const mouseResult = useMouse({
-    onScrollUp: useCallback(() => scroll(-3), [scroll]),
-    onScrollDown: useCallback(() => scroll(3), [scroll]),
-  });
-  const mouseRef = mouseResult?.ref;
+  useMouse(
+    useCallback(
+      (event: { type: string }) => {
+        if (event.type === 'scrollup') scroll(-3);
+        else if (event.type === 'scrolldown') scroll(3);
+      },
+      [scroll]
+    )
+  );
 
   const showScrollbar = maxScroll > 0;
 
   return (
     <Box
-      ref={(node: any) => {
-        (containerRef as any).current = node;
-        if (mouseRef) {
-          if (typeof mouseRef === 'function') mouseRef(node);
-          else (mouseRef as any).current = node;
-        }
-      }}
+      ref={containerRef as any}
       flexDirection="row"
       height={height}
       width={width}

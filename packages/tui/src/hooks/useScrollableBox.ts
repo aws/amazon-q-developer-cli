@@ -55,16 +55,15 @@ export function useScrollableBox({
     [scroll, lineHeight, viewHeight]
   );
 
-  const { ref } = useMouse({
-    onScrollUp: useCallback(
-      () => scroll(-lineHeight * 3),
+  useMouse(
+    useCallback(
+      (event: { type: string }) => {
+        if (event.type === 'scrollup') scroll(-lineHeight * 3);
+        else if (event.type === 'scrolldown') scroll(lineHeight * 3);
+      },
       [scroll, lineHeight]
-    ),
-    onScrollDown: useCallback(
-      () => scroll(lineHeight * 3),
-      [scroll, lineHeight]
-    ),
-  });
+    )
+  );
 
   // Scrollbar: thumb is 5–9% of viewHeight, minimum 1 row
   const thumbSize = Math.max(
@@ -81,7 +80,6 @@ export function useScrollableBox({
     scroll,
     scrollToBottom,
     onKey,
-    ref,
     maxScroll,
     thumbSize,
     thumbTop,

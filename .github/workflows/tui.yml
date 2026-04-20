@@ -25,7 +25,6 @@ jobs:
             tui:
               - 'packages/tui/**'
               - 'packages/twinki/**'
-              - 'packages/ink/**'
               - '.github/workflows/tui.yml'
 
   tui-typecheck:
@@ -39,9 +38,6 @@ jobs:
       - uses: oven-sh/setup-bun@v2
       - name: Install dependencies
         run: bun install
-      - name: Build ink package
-        run: bun run build
-        working-directory: packages/ink
       - name: Build twinki package
         run: bun run build
         working-directory: packages/twinki/packages/twinki
@@ -60,9 +56,6 @@ jobs:
       - uses: oven-sh/setup-bun@v2
       - name: Install dependencies
         run: bun install
-      - name: Build ink package
-        run: bun run build
-        working-directory: packages/ink
       - name: Build twinki package
         run: bun run build
         working-directory: packages/twinki/packages/twinki
@@ -81,9 +74,6 @@ jobs:
       - uses: oven-sh/setup-bun@v2
       - name: Install dependencies
         run: bun install
-      - name: Build ink package
-        run: bun run build
-        working-directory: packages/ink
       - name: Build twinki package
         run: bun run build
         working-directory: packages/twinki/packages/twinki
@@ -121,9 +111,6 @@ jobs:
       - uses: oven-sh/setup-bun@v2
       - name: Install dependencies
         run: bun install
-      - name: Build ink package
-        run: bun run build
-        working-directory: packages/ink
       - name: Build twinki package
         run: bun run build
         working-directory: packages/twinki/packages/twinki
@@ -177,9 +164,6 @@ jobs:
       - name: Install dependencies
         run: bun install
 
-      - name: Build ink package
-        run: bun run build
-        working-directory: packages/ink
       - name: Build twinki package
         run: bun run build
         working-directory: packages/twinki/packages/twinki

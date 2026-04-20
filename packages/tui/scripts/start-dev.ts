@@ -4,7 +4,6 @@ import { resolve } from "node:path";
 
 const REPO_ROOT = resolve(import.meta.dir, "../../..");
 const CARGO_BIN = resolve(REPO_ROOT, "target/debug/chat_cli");
-const INK_DIR = resolve(REPO_ROOT, "packages/ink");
 const TWINKI_DIR = resolve(REPO_ROOT, "packages/twinki/packages/twinki");
 
 // Separate dev-script flags from flags to forward to the TUI
@@ -13,15 +12,6 @@ const skipRustBuild = process.argv.includes("--skip-rust-build");
 
 // Everything after "dev" that isn't a dev-script flag gets forwarded to the TUI
 const tuiArgs = process.argv.slice(2).filter((arg) => !devFlags.has(arg));
-
-function buildInk(): boolean {
-  console.log("Building ink...");
-  const result = spawnSync("bunx", ["tsc", "--project", "tsconfig.json"], {
-    cwd: INK_DIR,
-    stdio: "inherit"
-  });
-  return result.status === 0;
-}
 
 function buildTwinki(): boolean {
   console.log("Building twinki...");
@@ -58,10 +48,6 @@ spawnSync("bun", ["install"], { cwd: REPO_ROOT, stdio: "inherit" });
 
 if (skipRustBuild) {
   console.log("Skipping Rust build...");
-  if (!buildInk()) {
-    console.error("Ink build failed");
-    process.exit(1);
-  }
   if (!buildTwinki()) {
     console.error("Twinki build failed");
     process.exit(1);
@@ -94,11 +80,6 @@ if (skipRustBuild) {
       if (code !== 0) {
         console.error("Type generation failed");
         process.exit(code ?? 1);
-      }
-
-      if (!buildInk()) {
-        console.error("Ink build failed");
-        process.exit(1);
       }
 
       if (!buildTwinki()) {

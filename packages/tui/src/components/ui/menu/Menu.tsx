@@ -175,14 +175,20 @@ export const Menu = React.memo(function Menu({
   const endIndex = Math.min(startIndex + visibleItems, displayItems.length);
   const visibleItemsSlice = displayItems.slice(startIndex, endIndex);
 
-  useMouse({
-    onScrollUp: useCallback(() => {
-      setSelectedIndex((prev) => Math.max(0, prev - 1));
-    }, []),
-    onScrollDown: useCallback(() => {
-      setSelectedIndex((prev) => Math.min(displayItems.length - 1, prev + 1));
-    }, [displayItems.length]),
-  });
+  useMouse(
+    useCallback(
+      (event: { type: string }) => {
+        if (event.type === 'scrollup') {
+          setSelectedIndex((prev) => Math.max(0, prev - 1));
+        } else if (event.type === 'scrolldown') {
+          setSelectedIndex((prev) =>
+            Math.min(displayItems.length - 1, prev + 1)
+          );
+        }
+      },
+      [displayItems.length]
+    )
+  );
 
   return (
     <Box flexDirection="column">
