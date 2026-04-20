@@ -5,16 +5,16 @@ CLI_PACKAGE_NAME = "kiro-cli"
 CHAT_PACKAGE_NAME = "chat_cli"
 
 # version of bun to bundle
-BUN_VERSION = "1.3.10"
+BUN_VERSION = "1.3.12"
 
 # Expected SHA256 hashes of Bun release zip archives per platform/arch.
 # Update these when bumping BUN_VERSION.
 BUN_ZIP_HASHES = {
-    "bun-darwin-x64.zip": "c1d90bf6140f20e572c473065dc6b37a4b036349b5e9e4133779cc642ad94323",
-    "bun-darwin-aarch64.zip": "82034e87c9d9b4398ea619aee2eed5d2a68c8157e9a6ae2d1052d84d533ccd8d",
-    "bun-linux-x64.zip": "f57bc0187e39623de716ba3a389fda5486b2d7be7131a980ba54dc7b733d2e08",
-    "bun-linux-aarch64.zip": "fa5ecb25cafa8e8f5c87a0f833719d46dd0af0a86c7837d806531212d55636d3",
-    "bun-windows-x64.zip": "7a77b3e245e2e26965c93089a4a1332e8a326d3364c89fae1d1fd99cdd3cd73d",
+    "bun-darwin-x64.zip": "0f58c53a3e7947f1e626d2f8d285f97c14b7cadcca9c09ebafc0ae9d35b58c3d",
+    "bun-darwin-aarch64.zip": "6c4bb87dd013ed1a8d6a16e357a3d094959fd5530b4d7061f7f3680c3c7cea1c",
+    "bun-linux-x64.zip": "11dc3ee11bc1695e149737c6ca3d5619302cf4346e6b8a6ec7988967ef01ddc5",
+    "bun-linux-aarch64.zip": "c40bc0ebca11bde7d75af497a654a874d0c7fd8d6a8d6031c173c10c9064297b",
+    "bun-windows-x64.zip": "841ff9c5dffcaa3a2620d1e3f87ee500f32a4ca830b001cade7a3479609d4a89",
 }
 
 # AMZN Mobile LLC
