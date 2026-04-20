@@ -28,6 +28,12 @@ export interface BoxProps {
 	flexBasis?: number;
 	/** Whether flex items should wrap */
 	flexWrap?: 'nowrap' | 'wrap' | 'wrap-reverse';
+	/** Gap between child items */
+	gap?: number;
+	/** Row gap between child items */
+	rowGap?: number;
+	/** Column gap between child items */
+	columnGap?: number;
 	
 	// Alignment
 	/** How to align child items */
@@ -80,6 +86,8 @@ export interface BoxProps {
 	backgroundColor?: string;
 	/** How to handle content that exceeds the box size */
 	overflow?: 'visible' | 'hidden';
+	/** Scroll offset from top (used with overflow: hidden) */
+	scrollTop?: number;
 	/** Display mode */
 	display?: 'flex' | 'none';
 

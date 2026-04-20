@@ -10,7 +10,7 @@
 
 Kiro CLI V2 uses a multi-process architecture with Agent Client Protocol (ACP) for communication between the TypeScript frontend and Rust backend:
 
-- **Frontend**: React/Ink-based terminal UI (`packages/tui`) bundled with the main `kiro-cli` Rust binary
+- **Frontend**: React/Twinki terminal UI (`packages/tui`) bundled with the main `kiro-cli` Rust binary
 - **Backend**: Rust ACP agent implementation spawned with `kiro-cli chat acp` (`crates/chat-cli-v2`)
 - **Shared Types**: Type definitions using `typeshare` for Rust → TypeScript generation
 
@@ -119,8 +119,8 @@ The `agent` crate is a reusable agent execution engine extracted from `chat_cli`
 
 ### Core Packages
 
-**tui** (`packages/tui`) - React/Ink Terminal UI (V2)
-- React-based terminal interface using Ink framework
+**tui** (`packages/tui`) - React/Twinki Terminal UI (V2)
+- React-based terminal interface using Twinki renderer
 - Communicates with Rust backend via ACP over stdio
 - Zustand for state management (messages, approvals, context tracking)
 - Key files:
@@ -157,7 +157,7 @@ The `agent` crate is a reusable agent execution engine extracted from `chat_cli`
 - **Authentication**: `chat_cli/src/auth/`
 - **Checkpoints**: `chat_cli/src/cli/chat/checkpoint.rs`
 
-## TUI Development (TypeScript/React/Ink/ACP)
+## TUI Development (TypeScript/React/Twinki/ACP)
 
 ### Development Commands
 
@@ -217,24 +217,11 @@ Add `#[typeshare]` attribute to Rust types (requires `use typeshare::typeshare;`
 - **TypeScript**: `KIRO_TUI_LOG_LEVEL` (`debug`/`info`/`warn`/`error`), writes to `KIRO_TUI_LOG_FILE`
 - **Rust**: `KIRO_LOG_LEVEL` (e.g. `chat_cli::api_client=trace,agent=debug`), writes to `KIRO_CHAT_LOG_FILE`
 
-### Renderer Selection
+### Renderer
 
-The TUI supports two rendering backends, selectable via `KIRO_RENDERER`:
+The TUI uses the **Twinki** rendering backend — a high-performance terminal renderer with native input handling.
 
-| Value | Backend | Description |
-|-------|---------|-------------|
-| *(unset)* | **ink** (default) | Stable React/Ink renderer |
-| `twinki` | **twinki** | Experimental high-performance renderer with native input handling |
-
-```bash
-# Run with twinki renderer
-KIRO_RENDERER=twinki bun run dev --skip-rust-build
-
-# Run with ink (default)
-bun run dev --skip-rust-build
-```
-
-All TUI components import from `src/renderer.ts` (not `'ink'` directly), which proxies to the active backend at runtime. When adding new components, always import `Box`, `Text`, `useInput`, etc. from `renderer.js`.
+All TUI components import from `src/renderer.ts` (not `'twinki'` directly). When adding new components, always import `Box`, `Text`, `useInput`, etc. from `renderer.js`.
 
 **Kitty keyboard protocol**: twinki force-enables the Kitty protocol for known terminals (iTerm2, Kitty, WezTerm, Ghostty) to support Shift+Enter, Home/End, and other enhanced key detection. The known terminal list is in `packages/twinki/packages/twinki/src/terminal/process-terminal.ts`.
 
@@ -252,12 +239,8 @@ Render metrics and input latency tracking are available via environment variable
 # Dev mode with metrics chip (shows render time, yoga nodes, heap, render count)
 KIRO_DEV=1 bun run dev --skip-rust-build
 
-# Dev mode with twinki + metrics
-KIRO_DEV=1 KIRO_RENDERER=twinki bun run dev --skip-rust-build
-
 # Full profiling (CPU profile + all metrics + log file)
-bun run dev:profile          # ink renderer
-bun run dev:profiletui       # twinki renderer
+bun run dev:profile
 
 # Enable metrics in production builds
 KIRO_DEV=1 kiro-cli chat
@@ -300,7 +283,7 @@ The render metrics chip displays in the prompt bar when `KIRO_DEV=1` or `NODE_EN
 - Color paths use dot notation (e.g. `'components.snackbar.background'`)
 
 **Text Components:**
-- Use custom `<Text>` from `components/ui/text/Text.js`, NOT Ink's `<Text>` directly
+- Use custom `<Text>` from `components/ui/text/Text.js`, NOT twinki's `<Text>` directly
 - All styling via chalk functions as children: `<Text>{colorFn.bold('bold')}</Text>`
 - Do NOT use `<InkText color="red">` — use `<Text>{getColor('error')('text')}</Text>`
 

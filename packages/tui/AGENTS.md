@@ -6,11 +6,11 @@ This document describes the architecture, patterns, and conventions used in the 
 
 ## Project Overview
 
-This is a terminal-based UI (TUI) built with [Ink](https://github.com/vadimdemedes/ink) (React for CLIs) and [Zustand](https://github.com/pmndrs/zustand) for state management. It renders a chat interface for interacting with an AI agent over an ACP (Agent Communication Protocol) connection.
+This is a terminal-based UI (TUI) built with [Twinki](../twinki/) (React for CLIs) and [Zustand](https://github.com/pmndrs/zustand) for state management. It renders a chat interface for interacting with an AI agent over an ACP (Agent Communication Protocol) connection.
 
 ### Key Technologies
 
-- **Ink** — React renderer for terminal UIs (`<Box>`, `<Text>`, `useInput`)
+- **Twinki** — React renderer for terminal UIs (`<Box>`, `<Text>`, `useInput`)
 - **Zustand** — Lightweight state management (`app-store.ts` + `session-conversations.ts`)
 - **Chalk** — Terminal string styling (colors, bold, dim, etc.)
 - **TypeScript** — Strict typing throughout
@@ -79,7 +79,7 @@ src/components/ui/<component-name>/
 ```tsx
 // src/components/ui/badge/Badge.tsx
 import React from 'react';
-import { Box } from 'ink';
+import { Box } from '../../renderer.js';
 import { Text } from '../text/Text.js';
 import { useTheme } from '../../../hooks/useThemeContext.js';
 

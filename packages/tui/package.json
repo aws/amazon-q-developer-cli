@@ -22,7 +22,6 @@
     "test:e2e": "bun run scripts/run-e2e.ts",
     "bench:markdown": "bun run scripts/benchmark-markdown.ts",
     "dev:profile": "KIRO_AGENT_PATH=../../target/debug/chat_cli KIRO_INPUT_METRICS=true KIRO_PERF_METRICS=true KIRO_TUI_LOG_FILE=/tmp/kiro-tui-perf.log bun --cpu-prof --cpu-prof-dir=./profiles ./src/index.tsx",
-    "dev:profiletui": "KIRO_RENDERER=twinki KIRO_AGENT_PATH=../../target/debug/chat_cli KIRO_INPUT_METRICS=true KIRO_PERF_METRICS=true KIRO_TUI_LOG_FILE=/tmp/kiro-tui-perf.log bun --cpu-prof --cpu-prof-dir=./profiles ./src/index.tsx",
     "analyze:profile": "bun run scripts/analyze-profile.ts --html",
     "knight-rider": "bun run e2e_tests/knight-rider.ts"
   },
@@ -34,7 +33,6 @@
     "cli-highlight": "^2.1.11",
     "diff": "^8.0.3",
     "ignore": "^7.0.5",
-    "ink": "workspace:*",
     "meow": "^13.2.0",
     "react": "^19.2.4",
     "react-reconciler": "~0.33.0",
@@ -49,7 +47,6 @@
     "@types/react": "^19.2.14",
     "@xterm/headless": "^6.0.0",
     "bun-pty": "^0.4.8",
-    "ink-testing-library": "^4.0.0",
     "react-devtools-core": "^7.0.1",
     "strip-ansi": "^7.2.0",
     "typescript": "^5.9.3",

@@ -1,9 +1,9 @@
 import { type ReactNode } from 'react';
 import { Text as InkText } from './../../../renderer.js';
-import type { TextProps } from 'ink';
+import type { TextProps } from './../../../renderer.js';
 
 /**
- * Text component - A wrapper around Ink's Text component that enforces consistent styling practices.
+ * Text component - A wrapper around the renderer's Text component that enforces consistent styling practices.
  *
  * This wrapper:
  * - Removes styling props (color, bold, italic, etc.) to prevent inconsistent usage

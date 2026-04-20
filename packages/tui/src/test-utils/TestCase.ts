@@ -108,9 +108,9 @@ export class TestCase {
   /**
    * Launches the TUI process without waiting for IPC connection.
    *
-   * Use this when the TUI shows a pre-Ink UI (e.g. --resume-picker) that
+   * Use this when the TUI shows a pre-render UI (e.g. --resume-picker) that
    * blocks before the React app renders and IPC connects. After interacting
-   * with the pre-Ink UI, call {@link waitForReady} to wait for IPC.
+   * with the pre-render UI, call {@link waitForReady} to wait for IPC.
    */
   async launchWithoutWaiting(): Promise<TestCase> {
     await this.startIpcServer();
@@ -120,7 +120,7 @@ export class TestCase {
 
   /**
    * Waits for the IPC connection to be established.
-   * Call after {@link launchWithoutWaiting} once any pre-Ink UI interaction is done.
+   * Call after {@link launchWithoutWaiting} once any pre-render UI interaction is done.
    */
   async waitForReady(): Promise<void> {
     await this.waitForConnection();
@@ -455,7 +455,7 @@ export class TestCaseBuilder {
 
   /**
    * Creates and launches the configured TestCase without waiting for IPC.
-   * Use for tests that need to interact with pre-Ink UI (e.g. --resume-picker).
+   * Use for tests that need to interact with pre-render UI (e.g. --resume-picker).
    */
   async launchWithoutWaiting(): Promise<TestCase> {
     const testCase = new TestCase(this.options);

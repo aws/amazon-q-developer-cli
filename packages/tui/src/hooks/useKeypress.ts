@@ -1,9 +1,6 @@
-import { useEffect, useRef } from 'react';
-import { useInput, useStdin, usePaste } from './../renderer.js';
-import { logger } from '../utils/logger.js';
+import { useRef } from 'react';
+import { useInput, usePaste } from './../renderer.js';
 import { inputMetrics } from '../utils/inputMetrics.js';
-
-const useTwinki = process.env.KIRO_RENDERER !== 'ink';
 
 export interface Key {
   upArrow: boolean;
@@ -45,40 +42,11 @@ export function keyToRawBytes(key: Key, userInput: string): string {
   if (key.pageDown) return '\x1b[6~';
   return userInput;
 }
-
-// Bracketed paste escape sequences
-const PASTE_START = '\x1b[200~';
-const PASTE_END = '\x1b[201~';
-
-// Ctrl+C byte
-const CTRL_C = '\x03';
-
-// xterm modifyOtherKeys level 1: causes terminals to send distinct escape
-// sequences for modified keys that would otherwise be ambiguous (e.g.
-// Shift+Enter sends \x1b[27;2;13~ instead of plain \r).
-const MODIFY_OTHER_KEYS_ENABLE = '\x1b[>4;1m';
-const MODIFY_OTHER_KEYS_DISABLE = '\x1b[>4;0m';
-
-// Shift+Enter escape sequences from various terminals
-const SHIFT_ENTER_SEQUENCES = [
-  '\x1b[27;2;13~', // Ghostty, modern terminals
-  '\x1b[13;2~', // Alternative format
-  '\x1bOM', // Some terminals
-];
-
 /**
  * Hook for handling keyboard input.
  *
- * Uses Ink's useInput for regular keys (proper React state batching via reconciler.batchedUpdates)
- * and listens to the internal event emitter for:
- * - Bracketed paste detection (useInput doesn't preserve paste sequences)
- * - Multiple Ctrl+C handling (when sent as a single chunk like \x03\x03)
- *
- * Why this hybrid approach:
- * - useInput wraps handlers in batchedUpdates(), preventing stale closure issues when
- *   multiple keys arrive in a single chunk (e.g., fast typing or test automation)
- * - Direct event listening is needed for paste detection and handling multiple
- *   Ctrl+C bytes in a single chunk (common in test automation)
+ * Uses twinki's useInput for regular keys (proper React state batching)
+ * and usePaste for bracketed paste detection.
  */
 export const useKeypress = (
   handler: KeyHandler,
@@ -86,41 +54,18 @@ export const useKeypress = (
 ) => {
   const { isActive = true, onEmptyPaste } = options;
 
-  // Store handler in ref to always call latest version
   const handlerRef = useRef(handler);
   handlerRef.current = handler;
 
-  // Store onEmptyPaste in ref for stable access
   const onEmptyPasteRef = useRef(onEmptyPaste);
   onEmptyPasteRef.current = onEmptyPaste;
 
-  // Access internal event emitter for paste detection and multi-Ctrl+C handling
-  const { internal_eventEmitter } = useStdin() as {
-    internal_eventEmitter: import('events').EventEmitter;
-  };
-
-  // Track whether we're currently in a paste operation to prevent useInput from processing paste content
   const isPastingRef = useRef(false);
 
-  // Ink strips the leading \x1b from escape sequences, so we match the remainder
-  const SHIFT_ENTER_STRIPPED = ['[27;2;13~', '[13;2~', 'OM'];
-
-  // Use Ink's useInput for regular keys - it handles batching properly
-  // Skip processing when we're in the middle of a bracketed paste
   useInput(
     (input, key) => {
       if (isPastingRef.current) {
         return;
-      }
-
-      // Filter out Shift+Enter sequences (Ink strips leading \x1b)
-      // Twinki parses these natively so skip the filter
-      if (!useTwinki) {
-        for (const seq of SHIFT_ENTER_STRIPPED) {
-          if (input === seq || input.includes(seq)) {
-            return;
-          }
-        }
       }
 
       inputMetrics.markKeypress(input);
@@ -128,7 +73,6 @@ export const useKeypress = (
 
       handlerRef.current(input, {
         ...key,
-        // Twinki uses 'alt' where ink uses 'meta' — normalize
         meta: (key as any).meta ?? (key as any).alt ?? false,
         home: key.home ?? false,
         end: key.end ?? false,
@@ -138,7 +82,6 @@ export const useKeypress = (
     { isActive }
   );
 
-  // Twinki paste path: usePaste hook handles bracketed paste (no-op under ink)
   usePaste(
     (content: string) => {
       isPastingRef.current = false;
@@ -168,219 +111,4 @@ export const useKeypress = (
     },
     { isActive }
   );
-
-  // Listen for special sequences on the internal event emitter
-  // Twinki handles shift+enter, shift+tab, paste, and ctrl combos natively — skip
-  useEffect(() => {
-    if (useTwinki) return;
-    if (!isActive || !internal_eventEmitter) return;
-
-    // Enable xterm modifyOtherKeys level 1 so terminals that don't support
-    // the Kitty keyboard protocol (e.g. GNOME Terminal) send distinct
-    // sequences for Shift+Enter.
-    process.stdout.write(MODIFY_OTHER_KEYS_ENABLE);
-
-    let pasteBuffer = '';
-    let isPasting = false;
-
-    const handleInput = (data: string) => {
-      // Check for Shift+Enter escape sequences
-      for (const seq of SHIFT_ENTER_SEQUENCES) {
-        if (data === seq || data.includes(seq)) {
-          isPastingRef.current = true;
-          handlerRef.current('\n', {
-            upArrow: false,
-            downArrow: false,
-            leftArrow: false,
-            rightArrow: false,
-            pageUp: false,
-            pageDown: false,
-            home: false,
-            end: false,
-            return: true,
-            escape: false,
-            ctrl: false,
-            shift: true,
-            meta: false,
-            tab: false,
-            backspace: false,
-            delete: false,
-            paste: false,
-          });
-          isPastingRef.current = false;
-          return;
-        }
-      }
-
-      // Handle Shift+Tab
-      if (data.includes('\u001B[Z')) {
-        isPastingRef.current = false;
-        handlerRef.current('', {
-          upArrow: false,
-          downArrow: false,
-          leftArrow: false,
-          rightArrow: false,
-          pageUp: false,
-          pageDown: false,
-          home: false,
-          end: false,
-          return: false,
-          escape: false,
-          ctrl: false,
-          shift: true,
-          meta: false,
-          tab: true,
-          backspace: false,
-          delete: false,
-          paste: false,
-        });
-        return;
-      }
-
-      // Check for paste start
-      if (data.includes(PASTE_START)) {
-        isPasting = true;
-        isPastingRef.current = true;
-        pasteBuffer = '';
-
-        // Extract content after paste start marker
-        const startIdx = data.indexOf(PASTE_START) + PASTE_START.length;
-        const remaining = data.slice(startIdx);
-
-        // Check if paste end is in the same chunk
-        if (remaining.includes(PASTE_END)) {
-          const endIdx = remaining.indexOf(PASTE_END);
-          const pastedContent = remaining.slice(0, endIdx);
-          isPasting = false;
-
-          // Keep isPastingRef true until after this event loop tick.
-          // Ink's useInput handler also listens on the same 'input' event
-          // and fires for the same chunk. If we clear isPastingRef
-          // synchronously, useInput sees isPastingRef=false and lets
-          // the paste-end sequence (e.g. "[201~") leak through as
-          // printable text. Deferring the reset ensures useInput still
-          // skips this chunk.
-          queueMicrotask(() => {
-            isPastingRef.current = false;
-          });
-
-          if (pastedContent) {
-            handlerRef.current(pastedContent, {
-              upArrow: false,
-              downArrow: false,
-              leftArrow: false,
-              rightArrow: false,
-              pageUp: false,
-              pageDown: false,
-              home: false,
-              end: false,
-              return: false,
-              escape: false,
-              ctrl: false,
-              shift: false,
-              meta: false,
-              tab: false,
-              backspace: false,
-              delete: false,
-              paste: true,
-            });
-          } else if (onEmptyPasteRef.current) {
-            // Empty bracketed paste — clipboard has no text (likely image data).
-            // Notify the caller so it can attempt an image paste.
-            onEmptyPasteRef.current();
-          }
-        } else {
-          pasteBuffer = remaining;
-        }
-        return;
-      }
-
-      // Continue collecting paste content
-      if (isPasting) {
-        if (data.includes(PASTE_END)) {
-          const endIdx = data.indexOf(PASTE_END);
-          pasteBuffer += data.slice(0, endIdx);
-          isPasting = false;
-
-          // Defer clearing isPastingRef so Ink's useInput handler
-          // (which fires for the same 'input' event) still sees the
-          // pasting flag and skips this chunk. See comment above.
-          queueMicrotask(() => {
-            isPastingRef.current = false;
-          });
-
-          if (pasteBuffer) {
-            handlerRef.current(pasteBuffer, {
-              upArrow: false,
-              downArrow: false,
-              leftArrow: false,
-              rightArrow: false,
-              pageUp: false,
-              pageDown: false,
-              home: false,
-              end: false,
-              return: false,
-              escape: false,
-              ctrl: false,
-              shift: false,
-              meta: false,
-              tab: false,
-              backspace: false,
-              delete: false,
-              paste: true,
-            });
-          } else if (onEmptyPasteRef.current) {
-            // Empty bracketed paste (multi-chunk) — try image paste
-            onEmptyPasteRef.current();
-          }
-          pasteBuffer = '';
-        } else {
-          pasteBuffer += data;
-        }
-        return;
-      }
-
-      // Handle multiple Ctrl+C bytes in a single chunk
-      // useInput's parseKeypress only handles single-character input, so when multiple
-      // Ctrl+C bytes arrive together (e.g., [0x03, 0x03]), none get processed by useInput.
-      // We need to handle ALL of them here.
-      if (data.length > 1 && data.includes(CTRL_C)) {
-        // eslint-disable-next-line no-control-regex
-        const ctrlCCount = (data.match(/\x03/g) || []).length;
-        // Debug log
-        logger.debug(
-          `[useKeypress] Multiple Ctrl+C detected: ${ctrlCCount} in chunk of length ${data.length}`
-        );
-        // Fire all Ctrl+C events since useInput won't handle any of them
-        for (let i = 0; i < ctrlCCount; i++) {
-          handlerRef.current('c', {
-            upArrow: false,
-            downArrow: false,
-            leftArrow: false,
-            rightArrow: false,
-            pageUp: false,
-            pageDown: false,
-            home: false,
-            end: false,
-            return: false,
-            escape: false,
-            ctrl: true,
-            shift: false,
-            meta: false,
-            tab: false,
-            backspace: false,
-            delete: false,
-            paste: false,
-          });
-        }
-      }
-    };
-
-    internal_eventEmitter.on('input', handleInput);
-    return () => {
-      process.stdout.write(MODIFY_OTHER_KEYS_DISABLE);
-      internal_eventEmitter.removeListener('input', handleInput);
-      isPastingRef.current = false;
-    };
-  }, [isActive, internal_eventEmitter]);
 };

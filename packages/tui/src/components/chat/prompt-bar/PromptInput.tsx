@@ -1172,8 +1172,8 @@ export const PromptInput = React.memo(function PromptInput({
       );
     }
 
-    // Build flat array of <Text> children. Ink's squashTextNodes flattens
-    // nested <Text>/<ink-virtual-text> into one ANSI string, then wrap-ansi
+    // Build flat array of <Text> children. Twinki's text rendering flattens
+    // nested <Text> nodes into one ANSI string, then wrap-ansi
     // wraps it at the container width using string-width (Unicode-correct).
     const parts: React.ReactNode[] = [];
     let pos = 0;

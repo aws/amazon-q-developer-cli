@@ -23,10 +23,7 @@ export const WelcomeScreen = React.memo(function WelcomeScreen({
     <Box flexDirection="column" width="100%" alignItems="center">
       <Wordmark animate={animate} />
       {process.env.NODE_ENV !== 'production' && (
-        <InkText dimColor>
-          {'Development Mode · '}
-          {process.env.KIRO_RENDERER === 'ink' ? 'Ink' : 'Twinki'}
-        </InkText>
+        <InkText dimColor>{'Development Mode · Twinki'}</InkText>
       )}
 
       <Box

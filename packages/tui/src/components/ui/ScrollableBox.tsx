@@ -7,8 +7,6 @@ import React, {
 } from 'react';
 import { Box, measureElement, Scrollbar, useMouse } from '../../renderer.js';
 import { useKeypress } from '../../hooks/useKeypress.js';
-import type { DOMElement } from 'ink';
-
 export interface ScrollableBoxProps {
   height: number;
   width?: number;
@@ -24,8 +22,8 @@ export const ScrollableBox: React.FC<ScrollableBoxProps> = ({
 }) => {
   const [scrollTop, setScrollTop] = useState(0);
   const [contentHeight, setContentHeight] = useState(0);
-  const contentRef = useRef<DOMElement>(null);
-  const containerRef = useRef<DOMElement>(null);
+  const contentRef = useRef<any>(null);
+  const containerRef = useRef<any>(null);
   const [containerWidth, setContainerWidth] = useState(0);
 
   // Measure content after layout, throttled to avoid blocking the main thread

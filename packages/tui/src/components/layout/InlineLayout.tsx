@@ -3,12 +3,9 @@ import { Box, Text } from './../../renderer.js';
 import { useRenderMetrics, isDevMode } from '../../hooks/useRenderMetrics.js';
 import { truncateToWidth } from '../../utils/text-width.js';
 
-// Region is twinki-only — lazy import to avoid errors when using ink
-// Use variable to prevent TS from resolving the module at typecheck time
-const _twinki = 'twinki';
+// Region is twinki-only — lazy import for dev mode metrics
 const Region = isDevMode()
-  ? (await import(/* @vite-ignore */ _twinki).catch(() => ({ Region: null })))
-      .Region
+  ? (await import('twinki').catch(() => ({ Region: null }))).Region
   : null;
 import { AnimationPausedContext } from '../../contexts/AnimationPausedContext.js';
 import { ConversationView } from '../ui/ConversationView';
