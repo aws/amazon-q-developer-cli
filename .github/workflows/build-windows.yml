@@ -98,7 +98,7 @@ jobs:
           AMAZON_Q_BUILD_TARGET_TRIPLE: ${{ matrix.target }}
         run: |
           python3 ./scripts/main.py build \
-            --skip-lints --skip-tests \
+            --skip-lints --skip-tests --skip-autodocs-embeddings \
             --stage-name "${{ env.STAGE_NAME }}"
 
       - name: Re-authenticate AWS credentials for signing

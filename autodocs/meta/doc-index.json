@@ -1,6 +1,6 @@
 {
-  "generated_at": "2026-02-12T15:19:52.740994",
-  "total_docs": 95,
+  "generated_at": "2026-04-16T15:32:37.090056",
+  "total_docs": 100,
   "by_category": {
     "command": [
       "commands/acp.md",
@@ -26,7 +26,8 @@
       "features/mcp-registry.md",
       "features/planning-agent.md",
       "features/session-management.md",
-      "features/tangent-mode.md"
+      "features/tangent-mode.md",
+      "features/terminal-progress-indicator.md"
     ],
     "settings-group": [
       "settings/api-service-settings.md",
@@ -37,6 +38,7 @@
       "settings/telemetry-privacy-settings.md"
     ],
     "setting": [
+      "settings/cleanup-period-days.md",
       "settings/context-usage-indicator.md",
       "settings/default-agent.md",
       "settings/default-model.md",
@@ -49,6 +51,7 @@
       "settings/enable-thinking.md",
       "settings/enable-todo-list.md",
       "settings/greeting-enabled.md",
+      "settings/hooks-show-status.md",
       "settings/introspect-progressive-mode.md",
       "settings/introspect-tangent-mode.md",
       "settings/tangent-mode-key.md"
@@ -63,6 +66,7 @@
       "slash-commands/agent-swap.md",
       "slash-commands/changelog.md",
       "slash-commands/chat-load.md",
+      "slash-commands/chat-new.md",
       "slash-commands/chat-save-via-script.md",
       "slash-commands/chat-save.md",
       "slash-commands/checkpoint.md",
@@ -130,7 +134,7 @@
         "chat",
         "mcp"
       ],
-      "validated": "2026-02-03",
+      "validated": "2026-04-02",
       "status": "validated"
     },
     {
@@ -152,7 +156,7 @@
         "slash-agent",
         "agent-config"
       ],
-      "validated": "2026-02-05",
+      "validated": "2026-02-11",
       "status": "validated"
     },
     {
@@ -181,7 +185,7 @@
         "slash-agent",
         "exit-codes"
       ],
-      "validated": "2026-02-05",
+      "validated": "2026-03-24",
       "status": "validated"
     },
     {
@@ -327,7 +331,7 @@
         "slash-agent",
         "slash-agent-generate"
       ],
-      "validated": "2026-01-27",
+      "validated": "2026-02-10",
       "status": "validated"
     },
     {
@@ -461,7 +465,7 @@
         "introspect",
         "planning-agent"
       ],
-      "validated": "2026-01-30",
+      "validated": "2026-03-27",
       "status": "validated"
     },
     {
@@ -478,13 +482,15 @@
         "dynamic",
         "exit",
         "stdin",
-        "stop"
+        "stop",
+        "assistant_response"
       ],
       "related": [
         "agent-configuration",
-        "slash-hooks"
+        "slash-hooks",
+        "hooks-show-status"
       ],
-      "validated": "2026-02-02",
+      "validated": "2026-03-10",
       "status": "validated"
     },
     {
@@ -572,7 +578,7 @@
         "chat-load",
         "cmd-chat"
       ],
-      "validated": "2025-12-22",
+      "validated": "2026-03-24",
       "status": "validated"
     },
     {
@@ -593,6 +599,26 @@
         "enable-tangent-mode"
       ],
       "validated": "2025-12-19",
+      "status": "validated"
+    },
+    {
+      "path": "features/terminal-progress-indicator.md",
+      "file": "terminal-progress-indicator.md",
+      "title": "Terminal progress indicator",
+      "description": "OSC 9;4 progress indicator in the terminal tab/title bar",
+      "category": "feature",
+      "keywords": [
+        "terminal",
+        "progress",
+        "osc",
+        "iterm2",
+        "wezterm",
+        "indicator"
+      ],
+      "related": [
+        "terminal-hyperlinks"
+      ],
+      "validated": "2026-03-13",
       "status": "validated"
     },
     {
@@ -623,10 +649,35 @@
         "chat",
         "interface",
         "ui",
-        "notifications"
+        "notifications",
+        "bell",
+        "osc9"
       ],
       "related": [],
-      "validated": "2026-01-05",
+      "validated": "2026-03-25",
+      "status": "validated"
+    },
+    {
+      "path": "settings/cleanup-period-days.md",
+      "file": "cleanup-period-days.md",
+      "title": "cleanup.periodDays",
+      "description": "Days after which old conversations, sessions, and knowledge bases are deleted",
+      "category": "setting",
+      "keywords": [
+        "setting",
+        "cleanup",
+        "retention",
+        "delete",
+        "conversations",
+        "sessions",
+        "knowledge",
+        "storage"
+      ],
+      "related": [
+        "session-management",
+        "knowledge-management"
+      ],
+      "validated": "2026-02-28",
       "status": "validated"
     },
     {
@@ -852,6 +903,27 @@
       "status": "validated"
     },
     {
+      "path": "settings/hooks-show-status.md",
+      "file": "hooks-show-status.md",
+      "title": "hooks.showStatus",
+      "description": "Show or hide hook execution status messages (spinner and summary)",
+      "category": "setting",
+      "keywords": [
+        "setting",
+        "hooks",
+        "status",
+        "spinner",
+        "quiet",
+        "silent"
+      ],
+      "related": [
+        "hooks",
+        "slash-hooks"
+      ],
+      "validated": "2026-03-08",
+      "status": "validated"
+    },
+    {
       "path": "settings/introspect-progressive-mode.md",
       "file": "introspect-progressive-mode.md",
       "title": "introspect.progressiveMode",
@@ -984,22 +1056,24 @@
       "path": "slash-commands/agent-create.md",
       "file": "agent-create.md",
       "title": "/agent create",
-      "description": "Create a new agent with the specified name",
+      "description": "Create a new agent with AI assistance or manual mode",
       "category": "slash_command",
       "keywords": [
         "agent",
         "create",
         "new",
-        "configuration"
+        "configuration",
+        "generate",
+        "ai"
       ],
       "related": [
         "agent-swap",
         "agent-list",
-        "agent-generate",
+        "agent-edit",
         "cmd-agent",
         "agent-config"
       ],
-      "validated": "2026-01-05",
+      "validated": "2026-02-18",
       "status": "validated"
     },
     {
@@ -1021,29 +1095,28 @@
         "cmd-agent",
         "agent-config"
       ],
-      "validated": "2026-02-05",
+      "validated": "2026-02-17",
       "status": "validated"
     },
     {
       "path": "slash-commands/agent-generate.md",
       "file": "agent-generate.md",
       "title": "/agent generate",
-      "description": "Create new agent configuration interactively with AI assistance",
+      "description": "Alias for /agent create - Create agent with AI assistance",
       "category": "slash_command",
       "keywords": [
         "agent",
         "generate",
         "create",
-        "ai",
-        "interactive"
+        "ai"
       ],
       "related": [
+        "agent-create",
         "agent-swap",
-        "cmd-agent",
-        "agent-config"
+        "cmd-agent"
       ],
-      "validated": "2025-12-23",
-      "status": "validated"
+      "validated": "2026-02-16",
+      "status": "redirect"
     },
     {
       "path": "slash-commands/agent-schema.md",
@@ -1087,7 +1160,7 @@
         "cmd-agent",
         "agent-config"
       ],
-      "validated": "2026-01-05",
+      "validated": "2026-02-11",
       "status": "validated"
     },
     {
@@ -1167,6 +1240,28 @@
         "cmd-chat"
       ],
       "validated": "2026-01-27",
+      "status": "validated"
+    },
+    {
+      "path": "slash-commands/chat-new.md",
+      "file": "chat-new.md",
+      "title": "/chat new",
+      "description": "Start a fresh conversation without restarting the CLI",
+      "category": "slash_command",
+      "keywords": [
+        "chat",
+        "new",
+        "fresh",
+        "conversation",
+        "reset",
+        "start over"
+      ],
+      "related": [
+        "chat-load",
+        "chat-save",
+        "clear"
+      ],
+      "validated": "2026-03-22",
       "status": "validated"
     },
     {
@@ -1376,7 +1471,7 @@
         "introspect",
         "tools"
       ],
-      "validated": "2026-01-30",
+      "validated": "2026-03-27",
       "status": "validated"
     },
     {
@@ -2025,7 +2120,7 @@
         "delegate",
         "slash-agent"
       ],
-      "validated": "2026-01-27",
+      "validated": "2026-02-19",
       "status": "validated"
     },
     {
