@@ -104,7 +104,7 @@ lsp-types = "0.95.0"
 mimalloc = "0.1.46"
 mockito = "1.7.0"
 moka = { version = "0.12", features = ["sync"] }
-nix = { version = "0.29.0", features = ["feature", "fs", "ioctl", "process", "signal", "term", "user"] }
+nix = { version = "0.31.0", features = ["feature", "fs", "ioctl", "process", "signal", "term", "user"] }
 notify = "7.0.0"
 objc2 = "0.5.2"
 objc2-app-kit = { version = "0.2.2", features = ["NSWorkspace"] }

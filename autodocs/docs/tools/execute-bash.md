@@ -251,6 +251,53 @@ Filesystem      Size  Used Avail Use% Mounted on
 
 Command output streams to the terminal in real-time, line by line, as the command executes. This allows you to see progress for long-running commands without waiting for completion. The final result captures the complete output (truncated if exceeding size limits). Hidden Unicode characters are sanitized from streamed output for security.
 
+## Side Channels for Wrapper Scripts (Unix only)
+
+When a command runs in streaming mode, two named pipes (FIFOs) are created and exported as environment variables. These let wrapper scripts control what the user sees versus what the agent receives, without relying on stdout (which user pipelines like `| grep` or `| tail` can filter).
+
+### Environment Variables
+
+| Variable | Streams to TUI | Sent to agent | Use case |
+|----------|:-:|:-:|-----------|
+| `$AGENT_DISPLAY_OUT` | ✓ | ✗ | Verbose output the user should watch but that the agent never sees — guaranteed not to consume context window space (build logs, test runner output) |
+| `$AGENT_CONTEXT_OUT` | ✓ | ✓ | Information the agent needs regardless of what the user's pipeline does to stdout: summaries, log file paths, status messages, steering hints, `--help` output, or other guidance for the model |
+
+Both variables point to temporary FIFO paths that are cleaned up automatically when the command finishes or is cancelled. If FIFO creation fails (e.g., on a read-only filesystem), the variables are simply not set and the command runs normally.
+
+### Example: Build Wrapper Script
+
+A wrapper that shows the user the full build log while giving the agent only a summary:
+
+```bash
+#!/bin/bash
+set -eu
+TEE=$(mktemp ./.build-logs/build-XXXXXXXX)
+brazil-build "$@" 2>&1 | tee "$TEE" > "$AGENT_DISPLAY_OUT"
+CODE=$?
+echo "Build exited with $CODE. Log: $TEE ($(wc -l < "$TEE") lines)." \
+     > "$AGENT_CONTEXT_OUT"
+exit $CODE
+```
+
+With this wrapper:
+- The user sees the full build output streaming in real-time
+- The agent receives only the summary line (exit code + log path)
+- `brazil-build | grep error` still works — the summary reaches the agent via the independent `$AGENT_CONTEXT_OUT` channel
+- The build log doesn't consume the agent's context window at all
+
+### Availability
+
+- **Streaming mode** (the default production path): Both variables are set.
+- **Blocking mode** (no event channel, e.g., subagent calls): Variables are not set. Commands that check for them should fall back gracefully:
+  ```bash
+  if [ -n "${AGENT_CONTEXT_OUT:-}" ]; then
+      echo "summary" > "$AGENT_CONTEXT_OUT"
+  else
+      echo "summary"  # falls back to stdout
+  fi
+  ```
+- **Windows**: Not yet supported. The variables are not set on Windows.
+
 ## Technical Details
 
 **Aliases**: `execute_bash`, `execute_cmd`, `shell`

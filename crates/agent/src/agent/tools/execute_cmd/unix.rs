@@ -69,6 +69,15 @@ LIMITATIONS:
 TIPS:
 - Use the fileRead and fileWrite tools for reading and modifying files
 - NEVER prefix commands with cd to execute a command in another directory. Use the `working_dir` argument instead
+
+RESULT FIELDS:
+- `stdout`, `stderr`, `exit_status` — standard command output fields.
+- `agent_notes` (optional) — messages the command (or a wrapper around it) sent specifically to you
+  via a reserved side channel that bypasses stdout. If present, read it BEFORE concluding anything
+  from stdout/stderr: the user's pipeline may have filtered stdout. If `agent_notes` contains a file
+  path (e.g. a log location), use that path directly in subsequent commands — do not re-run the
+  original command to re-derive it. An empty stdout with a non-zero exit_status is NOT automatically
+  a failure when `agent_notes` is populated.
 "#;
 
 const EXECUTE_CMD_SCHEMA: &str = r#"
@@ -150,7 +159,20 @@ impl ExecuteCmd {
     /// batched `ToolCallUpdate` events for stdout/stderr. Lines are accumulated
     /// and flushed on a timer to avoid overwhelming the broadcast channel when a
     /// command produces tens of thousands of lines (e.g. `brazil-build`).
-    /// When `None`, falls back to blocking `wait_with_output()`.
+    /// When `None`, falls back to blocking execution.
+    ///
+    /// While streaming, also creates two per-tool-call FIFOs at
+    /// `${TMPDIR:-/tmp}/agent-display-out-{...}.fifo` and
+    /// `${TMPDIR:-/tmp}/agent-context-out-{...}.fifo`, exporting their paths as
+    /// `$AGENT_DISPLAY_OUT` and `$AGENT_CONTEXT_OUT` respectively.
+    ///
+    /// - Lines written to `$AGENT_DISPLAY_OUT` stream to the TUI via `ToolCallUpdate` events but are
+    ///   NOT captured into the agent's tool result. Use this for output the user should see but the
+    ///   agent should not (e.g. a verbose build log whose summary is already on stdout).
+    /// - Lines written to `$AGENT_CONTEXT_OUT` both stream to the TUI AND are surfaced to the agent
+    ///   in the tool result's `agent_notes` field. Use this for messages the agent needs to see but
+    ///   that wouldn't reliably reach it through direct stdout (e.g. because the user pipes stdout
+    ///   to `grep` or `tail`). The env var name is user-facing; the field name is agent-facing.
     pub async fn execute<P: SystemProvider>(
         &self,
         provider: &P,
@@ -160,7 +182,55 @@ impl ExecuteCmd {
             return self.execute_blocking(provider).await;
         };
 
-        let mut child = self.spawn_child(provider)?;
+        // Create per-tool-call FIFOs (Unix only; Windows execute_cmd is a
+        // separate impl):
+        // - display: lines go only to the TUI
+        // - context: lines go to both the TUI and the agent tool result
+        //
+        // The returned `FifoGuard`s tie the on-disk FIFO lifetime to this
+        // function's stack frame — if execute() returns normally OR its future
+        // is dropped (e.g. on user cancel), the guards drop and remove the
+        // filesystem entries. The open fds live separately in
+        // `display_lines`/`context_lines` and are cleaned up by their own Drop.
+        let display_fifo = make_display_fifo(&tool_use_id);
+        let context_fifo = make_context_fifo(&tool_use_id);
+        let mut fifo_env: Vec<(&str, &str)> = Vec::new();
+        if let Some(g) = display_fifo.as_ref() {
+            fifo_env.push(("AGENT_DISPLAY_OUT", g.as_str()));
+        }
+        if let Some(g) = context_fifo.as_ref() {
+            fifo_env.push(("AGENT_CONTEXT_OUT", g.as_str()));
+        }
+
+        let mut child = self.spawn_child(provider, &fifo_env)?;
+
+        // Open each FIFO via tokio's async pipe support. We open with
+        // O_RDWR | O_NONBLOCK so (a) the open doesn't block waiting for a writer
+        // and (b) reads return Pending via epoll/kqueue rather than blocking a
+        // thread. We can't use `tokio::fs::File` here — tokio::fs dispatches to
+        // a blocking thread pool, which would leak blocked threads for every
+        // execute_cmd call whose child doesn't write to the FIFO (the common
+        // case).
+        let display_lines = match display_fifo.as_ref() {
+            Some(g) => match open_fifo_async(g.as_str()) {
+                Ok(reader) => Some(tokio::io::BufReader::new(reader).lines()),
+                Err(e) => {
+                    tracing::warn!("Failed to open display FIFO {}: {}", g.as_str(), e);
+                    None
+                },
+            },
+            None => None,
+        };
+        let context_lines = match context_fifo.as_ref() {
+            Some(g) => match open_fifo_async(g.as_str()) {
+                Ok(reader) => Some(tokio::io::BufReader::new(reader).lines()),
+                Err(e) => {
+                    tracing::warn!("Failed to open context FIFO {}: {}", g.as_str(), e);
+                    None
+                },
+            },
+            None => None,
+        };
 
         let stdout = tokio::io::BufReader::new(
             child
@@ -176,9 +246,14 @@ impl ExecuteCmd {
         );
         let mut stdout_lines = stdout.lines();
         let mut stderr_lines = stderr.lines();
+        let mut display_lines: Option<tokio::io::Lines<tokio::io::BufReader<tokio::net::unix::pipe::Receiver>>> =
+            display_lines;
+        let mut context_lines: Option<tokio::io::Lines<tokio::io::BufReader<tokio::net::unix::pipe::Receiver>>> =
+            context_lines;
 
         let mut accumulated_stdout = String::new();
         let mut accumulated_stderr = String::new();
+        let mut accumulated_context = String::new();
         let mut stdout_done = false;
         let mut stderr_done = false;
 
@@ -189,6 +264,27 @@ impl ExecuteCmd {
         flush_interval.tick().await;
 
         let status = loop {
+            // Build the FIFO next-line futures separately so they can be disabled
+            // in the select when the corresponding Option is None. The `if` guards
+            // prevent those branches from being considered; the `future::pending()`
+            // fallback is just for type unification. On any error or EOF we clear
+            // the Option to disable the branch permanently (avoids a busy-poll
+            // if the FIFO fd starts returning errors).
+            let has_display = display_lines.is_some();
+            let has_context = context_lines.is_some();
+            let display_next = async {
+                match display_lines.as_mut() {
+                    Some(f) => f.next_line().await,
+                    None => std::future::pending().await,
+                }
+            };
+            let context_next = async {
+                match context_lines.as_mut() {
+                    Some(f) => f.next_line().await,
+                    None => std::future::pending().await,
+                }
+            };
+
             tokio::select! {
                 biased;
 
@@ -234,36 +330,93 @@ impl ExecuteCmd {
                         }
                     }
                 }
+                // Display FIFO: stream to TUI, do NOT accumulate.
+                line = display_next, if has_display => {
+                    match line {
+                        Ok(Some(line)) => {
+                            let clean = sanitize_unicode_tags(&line);
+                            pending_output.push_str(&clean);
+                            pending_output.push('\n');
+                        }
+                        Ok(None) | Err(_) => {
+                            // Disable this branch for the rest of the loop.
+                            display_lines = None;
+                        }
+                    }
+                }
+                // Context FIFO: stream to TUI AND accumulate into the agent's tool result.
+                line = context_next, if has_context => {
+                    match line {
+                        Ok(Some(line)) => {
+                            let clean = sanitize_unicode_tags(&line);
+                            pending_output.push_str(&clean);
+                            pending_output.push('\n');
+                            accumulated_context.push_str(&clean);
+                            accumulated_context.push('\n');
+                        }
+                        Ok(None) | Err(_) => {
+                            context_lines = None;
+                        }
+                    }
+                }
                 status = child.wait() => {
                     // Child exited. Drain remaining pipe data with a timeout —
                     // a grandchild daemon may still hold the FDs open.
                     const DRAIN_TIMEOUT: Duration = Duration::from_millis(100);
+
+                    // Drain a single line from `lines`, appending to `pending`
+                    // and optionally to `accum`. Returns `true` if a line was
+                    // read, `false` if the source is exhausted/timed-out.
+                    async fn drain_line(
+                        lines: &mut tokio::io::Lines<impl tokio::io::AsyncBufRead + Unpin>,
+                        pending: &mut String,
+                        accum: Option<&mut String>,
+                    ) -> bool {
+                        match tokio::time::timeout(DRAIN_TIMEOUT, lines.next_line()).await {
+                            Ok(Ok(Some(line))) => {
+                                let clean = sanitize_unicode_tags(&line);
+                                pending.push_str(&clean);
+                                pending.push('\n');
+                                if let Some(a) = accum {
+                                    a.push_str(&clean);
+                                    a.push('\n');
+                                }
+                                true
+                            },
+                            _ => false,
+                        }
+                    }
+
                     loop {
                         let mut drained = false;
                         if !stdout_done {
-                            match tokio::time::timeout(DRAIN_TIMEOUT, stdout_lines.next_line()).await {
-                                Ok(Ok(Some(line))) => {
-                                    let clean = sanitize_unicode_tags(&line);
-                                    pending_output.push_str(&clean);
-                                    pending_output.push('\n');
-                                    accumulated_stdout.push_str(&clean);
-                                    accumulated_stdout.push('\n');
-                                    drained = true;
-                                },
-                                _ => stdout_done = true,
+                            if drain_line(&mut stdout_lines, &mut pending_output, Some(&mut accumulated_stdout)).await {
+                                drained = true;
+                            } else {
+                                stdout_done = true;
                             }
                         }
                         if !stderr_done {
-                            match tokio::time::timeout(DRAIN_TIMEOUT, stderr_lines.next_line()).await {
-                                Ok(Ok(Some(line))) => {
-                                    let clean = sanitize_unicode_tags(&line);
-                                    pending_output.push_str(&clean);
-                                    pending_output.push('\n');
-                                    accumulated_stderr.push_str(&clean);
-                                    accumulated_stderr.push('\n');
-                                    drained = true;
-                                },
-                                _ => stderr_done = true,
+                            if drain_line(&mut stderr_lines, &mut pending_output, Some(&mut accumulated_stderr)).await {
+                                drained = true;
+                            } else {
+                                stderr_done = true;
+                            }
+                        }
+                        // Drain FIFOs too — the child may have written final
+                        // data just before exiting.
+                        if let Some(ref mut dl) = display_lines {
+                            if !drain_line(dl, &mut pending_output, None).await {
+                                display_lines = None;
+                            } else {
+                                drained = true;
+                            }
+                        }
+                        if let Some(ref mut cl) = context_lines {
+                            if !drain_line(cl, &mut pending_output, Some(&mut accumulated_context)).await {
+                                context_lines = None;
+                            } else {
+                                drained = true;
                             }
                         }
                         if !drained || (stdout_done && stderr_done) { break; }
@@ -289,9 +442,14 @@ impl ExecuteCmd {
             }));
         }
 
+        // FIFOs are cleaned up by `display_fifo` / `context_fifo` Drop impls
+        // when they go out of scope at the end of this function (or if the
+        // future is dropped early due to cancellation).
+
         Ok(build_output_result(
             &accumulated_stdout,
             &accumulated_stderr,
+            &accumulated_context,
             &status.to_string(),
         ))
     }
@@ -303,7 +461,7 @@ impl ExecuteCmd {
     /// `wait_with_output()`, which blocks until all pipe FDs are closed.
     /// A grandchild daemon that inherits the piped FDs would cause a hang.
     async fn execute_blocking<P: SystemProvider>(&self, provider: &P) -> ToolExecutionResult {
-        let mut child = self.spawn_child(provider)?;
+        let mut child = self.spawn_child(provider, &[])?;
 
         let mut stdout = child.stdout.take().expect("stdout should be piped");
         let mut stderr = child.stderr.take().expect("stderr should be piped");
@@ -362,12 +520,17 @@ impl ExecuteCmd {
         Ok(build_output_result(
             &clean_stdout,
             &clean_stderr,
+            "",
             &exit_status.to_string(),
         ))
     }
 
     /// Spawn the shell child process with piped stdout/stderr.
-    fn spawn_child<P: SystemProvider>(&self, provider: &P) -> Result<tokio::process::Child, ToolExecutionError> {
+    fn spawn_child<P: SystemProvider>(
+        &self,
+        provider: &P,
+        extra_env: &[(&str, &str)],
+    ) -> Result<tokio::process::Child, ToolExecutionError> {
         let process_dir = self
             .canonical_working_dir(provider)
             .map_err(ToolExecutionError::Custom)?
@@ -382,7 +545,10 @@ impl ExecuteCmd {
             .or_else(|_| provider.var("AMAZON_Q_CHAT_SHELL"))
             .unwrap_or("bash".to_string());
 
-        let env_vars = env_vars_with_user_agent();
+        let mut env_vars = env_vars_with_user_agent();
+        for (k, v) in extra_env {
+            env_vars.insert((*k).to_string(), (*v).to_string());
+        }
         let wrapped_command = wrap_cmd_with_fd_limit(&self.command);
 
         Command::new(shell)
@@ -398,13 +564,22 @@ impl ExecuteCmd {
     }
 }
 
-/// Build the final JSON tool output from accumulated stdout/stderr.
-fn build_output_result(stdout: &str, stderr: &str, exit_status: &str) -> ToolExecutionOutput {
-    let result = serde_json::json!({
+/// Build the final JSON tool output from accumulated stdout/stderr/agent_notes.
+///
+/// `agent_notes` is content the child wrote to `$AGENT_CONTEXT_OUT` — a side
+/// channel that surfaces information to the agent without going through stdout,
+/// so user-authored pipelines (`cmd | grep ...`) cannot filter it out. The key
+/// is omitted when empty to keep tool results clean for commands that don't
+/// use the channel.
+fn build_output_result(stdout: &str, stderr: &str, agent_notes: &str, exit_status: &str) -> ToolExecutionOutput {
+    let mut result = serde_json::json!({
         "exit_status": exit_status,
         "stdout": format_output(stdout, MAX_COMMAND_OUTPUT_SIZE),
         "stderr": format_output(stderr, MAX_COMMAND_OUTPUT_SIZE),
     });
+    if !agent_notes.is_empty() {
+        result["agent_notes"] = serde_json::Value::String(format_output(agent_notes, MAX_COMMAND_OUTPUT_SIZE));
+    }
     ToolExecutionOutput {
         items: vec![ToolExecutionOutputItem::Json(result)],
     }
@@ -434,6 +609,87 @@ fn is_hidden(c: char) -> bool {
         => true,
         _ => false,
     }
+}
+
+/// RAII guard that removes a FIFO file on disk when dropped.
+///
+/// Holding the path in a guard ensures the filesystem entry is cleaned up even
+/// when the `execute()` future is dropped mid-flight (e.g. on user cancel),
+/// where explicit cleanup at the end of the function would otherwise be skipped.
+/// The open fd is not held here — that lives in the `pipe::Receiver` and is
+/// cleaned up via its own Drop — this guard is just for the on-disk entry.
+struct FifoGuard {
+    path: String,
+}
+
+impl FifoGuard {
+    fn as_str(&self) -> &str {
+        &self.path
+    }
+}
+
+impl Drop for FifoGuard {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_file(&self.path);
+    }
+}
+
+/// Create a per-tool-call FIFO for streaming output from the child.
+///
+/// `kind` selects the file-name prefix and appears in log messages; it should
+/// describe which channel the FIFO serves (e.g. "display" or "context").
+/// Returns a `FifoGuard` on success whose Drop impl removes the filesystem
+/// entry, or `None` if creation failed.
+fn make_fifo(kind: &str, tool_use_id: &str) -> Option<FifoGuard> {
+    let tmp = std::env::var("TMPDIR").unwrap_or_else(|_| "/tmp".to_string());
+    // Include pid + monotonic nanoseconds to defensively avoid collisions when the
+    // same tool_use_id is reused (e.g. in tests). Real tool_use_ids are UUIDs, so
+    // collisions are unlikely, but this costs nothing.
+    let nonce = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_nanos())
+        .unwrap_or(0);
+    let path = format!(
+        "{}/agent-{}-out-{}-{}-{}.fifo",
+        tmp.trim_end_matches('/'),
+        kind,
+        std::process::id(),
+        nonce,
+        tool_use_id
+    );
+
+    // nix::unistd::mkfifo wraps the POSIX mkfifo(2) call safely.
+    let mode = nix::sys::stat::Mode::from_bits_truncate(0o622);
+    if let Err(e) = nix::unistd::mkfifo(path.as_str(), mode) {
+        tracing::warn!("Failed to create {} FIFO at {}: {}", kind, path, e);
+        return None;
+    }
+    Some(FifoGuard { path })
+}
+
+fn make_display_fifo(tool_use_id: &str) -> Option<FifoGuard> {
+    make_fifo("display", tool_use_id)
+}
+
+fn make_context_fifo(tool_use_id: &str) -> Option<FifoGuard> {
+    make_fifo("context", tool_use_id)
+}
+
+/// Open a FIFO for asynchronous reading using `O_RDWR | O_NONBLOCK`.
+///
+/// `O_NONBLOCK` makes reads return immediately when no data is available,
+/// letting tokio's reactor drive them via epoll/kqueue. `O_RDWR` prevents the
+/// open from blocking waiting for a writer and keeps the FIFO's "has writer"
+/// count > 0 so reads don't hit EOF when all external writers close.
+fn open_fifo_async(path: &str) -> std::io::Result<tokio::net::unix::pipe::Receiver> {
+    use nix::fcntl::{
+        OFlag,
+        open,
+    };
+    use nix::sys::stat::Mode;
+
+    let owned = open(path, OFlag::O_RDWR | OFlag::O_NONBLOCK, Mode::empty()).map_err(std::io::Error::from)?;
+    tokio::net::unix::pipe::Receiver::from_owned_fd(owned)
 }
 
 /// Remove hidden / control characters from `text`.
@@ -1213,6 +1469,212 @@ mod tests {
         assert!(
             total_bytes > 200_000,
             "Expected >200KB of output, got {total_bytes} — lines may have been dropped"
+        );
+    }
+
+    // ── FIFO side-channel tests ─────────────────────────────────────────
+    // Feature: kiro-bypass-stream
+    //
+    // Wrapper scripts write to $AGENT_CONTEXT_OUT and $AGENT_DISPLAY_OUT to
+    // route output to the agent tool result or TUI respectively, without
+    // going through stdout where user pipelines can filter it out.
+    // ────────────────────────────────────────────────────────────────────
+
+    #[tokio::test]
+    async fn context_fifo_surfaces_agent_notes_in_tool_result() {
+        // A wrapper writes a summary to $AGENT_CONTEXT_OUT.
+        // The tool result must contain it in `agent_notes`.
+        let test_base = TestBase::new().await;
+        let (tx, _rx) = broadcast::channel::<AgentEvent>(64);
+
+        let cmd = ExecuteCmd {
+            command: r#"echo "verbose build output"; echo "Build OK. Log: /tmp/build.log" > "$AGENT_CONTEXT_OUT""#
+                .to_string(),
+            working_dir: None,
+        };
+
+        let result = cmd
+            .execute(&test_base, Some(("fifo-test".to_string(), tx)))
+            .await
+            .unwrap();
+
+        let json = extract_json(&result);
+        assert_eq!(json["exit_status"], "exit status: 0");
+        assert!(
+            json["stdout"].as_str().unwrap().contains("verbose build output"),
+            "stdout should contain the normal output"
+        );
+        let notes = json["agent_notes"]
+            .as_str()
+            .expect("agent_notes should be present when $AGENT_CONTEXT_OUT is written to");
+        assert!(
+            notes.contains("Build OK. Log: /tmp/build.log"),
+            "agent_notes should contain the context message, got: {notes}"
+        );
+    }
+
+    #[tokio::test]
+    async fn display_fifo_streams_to_tui_but_not_tool_result() {
+        // A wrapper writes verbose output to $AGENT_DISPLAY_OUT.
+        // It must appear in ToolCallUpdate events but NOT in stdout/agent_notes.
+        let test_base = TestBase::new().await;
+        let (tx, rx) = broadcast::channel::<AgentEvent>(64);
+
+        let cmd = ExecuteCmd {
+            command: r#"echo "summary for agent"; echo "verbose line 1" > "$AGENT_DISPLAY_OUT"; echo "verbose line 2" >> "$AGENT_DISPLAY_OUT""#
+                .to_string(),
+            working_dir: None,
+        };
+
+        let result = cmd
+            .execute(&test_base, Some(("fifo-test".to_string(), tx)))
+            .await
+            .unwrap();
+
+        let json = extract_json(&result);
+        // stdout captures only the direct echo.
+        assert!(json["stdout"].as_str().unwrap().contains("summary for agent"));
+        // Display-only lines must NOT appear in stdout or agent_notes.
+        assert!(
+            !json["stdout"].as_str().unwrap().contains("verbose line"),
+            "display-only output leaked into stdout"
+        );
+        assert!(
+            json.get("agent_notes").is_none(),
+            "agent_notes should be absent when only $AGENT_DISPLAY_OUT is used"
+        );
+
+        // But the display lines MUST have been streamed to the TUI.
+        let updates = drain_updates(rx);
+        let combined: String = updates.concat();
+        assert!(
+            combined.contains("verbose line 1"),
+            "display FIFO line 1 missing from TUI updates"
+        );
+        assert!(
+            combined.contains("verbose line 2"),
+            "display FIFO line 2 missing from TUI updates"
+        );
+    }
+
+    #[tokio::test]
+    async fn context_and_display_fifos_work_together() {
+        // Realistic wrapper: verbose build to display, summary to context,
+        // and a short message on stdout.
+        let test_base = TestBase::new().await;
+        let (tx, rx) = broadcast::channel::<AgentEvent>(64);
+
+        let cmd = ExecuteCmd {
+            command: concat!(
+                r#"echo "compiling..." > "$AGENT_DISPLAY_OUT"; "#,
+                r#"echo "linking..." >> "$AGENT_DISPLAY_OUT"; "#,
+                r#"echo "Build succeeded. Artifacts: /out" > "$AGENT_CONTEXT_OUT"; "#,
+                r#"echo "done""#,
+            )
+            .to_string(),
+            working_dir: None,
+        };
+
+        let result = cmd
+            .execute(&test_base, Some(("fifo-test".to_string(), tx)))
+            .await
+            .unwrap();
+
+        let json = extract_json(&result);
+        assert_eq!(json["exit_status"], "exit status: 0");
+
+        // stdout: only the direct echo
+        let stdout = json["stdout"].as_str().unwrap();
+        assert!(stdout.contains("done"), "stdout should have 'done'");
+        assert!(!stdout.contains("compiling"), "display output leaked into stdout");
+
+        // agent_notes: the context summary
+        let notes = json["agent_notes"].as_str().expect("agent_notes should be present");
+        assert!(notes.contains("Build succeeded. Artifacts: /out"));
+
+        // TUI updates: should contain ALL streamed content (stdout + display + context)
+        let updates = drain_updates(rx);
+        let combined: String = updates.concat();
+        assert!(combined.contains("compiling"), "display line missing from TUI");
+        assert!(combined.contains("linking"), "display line missing from TUI");
+        assert!(combined.contains("Build succeeded"), "context line missing from TUI");
+        assert!(combined.contains("done"), "stdout line missing from TUI");
+    }
+
+    #[tokio::test]
+    async fn no_agent_notes_when_fifos_unused() {
+        // When the command doesn't write to either FIFO, agent_notes must
+        // be absent from the tool result (not an empty string).
+        let test_base = TestBase::new().await;
+        let (tx, _rx) = broadcast::channel::<AgentEvent>(64);
+
+        let cmd = ExecuteCmd {
+            command: "echo hello".to_string(),
+            working_dir: None,
+        };
+
+        let result = cmd
+            .execute(&test_base, Some(("fifo-test".to_string(), tx)))
+            .await
+            .unwrap();
+
+        let json = extract_json(&result);
+        assert!(json["stdout"].as_str().unwrap().contains("hello"));
+        assert!(
+            json.get("agent_notes").is_none(),
+            "agent_notes should be absent when FIFOs are unused, got: {:?}",
+            json.get("agent_notes")
+        );
+    }
+
+    #[tokio::test]
+    async fn context_fifo_multiline_all_lines_captured() {
+        // Multiple lines written to $AGENT_CONTEXT_OUT must all appear in agent_notes.
+        let test_base = TestBase::new().await;
+        let (tx, _rx) = broadcast::channel::<AgentEvent>(64);
+
+        let cmd = ExecuteCmd {
+            command: concat!(
+                r#"printf "line1\nline2\nline3\n" > "$AGENT_CONTEXT_OUT"; "#,
+                r#"echo "ok""#,
+            )
+            .to_string(),
+            working_dir: None,
+        };
+
+        let result = cmd
+            .execute(&test_base, Some(("fifo-test".to_string(), tx)))
+            .await
+            .unwrap();
+
+        let json = extract_json(&result);
+        let notes = json["agent_notes"].as_str().expect("agent_notes should be present");
+        assert!(notes.contains("line1"), "missing line1 in agent_notes: {notes}");
+        assert!(notes.contains("line2"), "missing line2 in agent_notes: {notes}");
+        assert!(notes.contains("line3"), "missing line3 in agent_notes: {notes}");
+    }
+
+    #[tokio::test]
+    async fn fifo_env_vars_not_exported_in_blocking_mode() {
+        // In blocking mode (no event_tx), FIFOs are not created.
+        // $AGENT_CONTEXT_OUT and $AGENT_DISPLAY_OUT should be unset.
+        let test_base = TestBase::new().await;
+
+        let cmd = ExecuteCmd {
+            command: r#"echo "ctx=${AGENT_CONTEXT_OUT:-unset} disp=${AGENT_DISPLAY_OUT:-unset}""#.to_string(),
+            working_dir: None,
+        };
+
+        let result = cmd.execute(&test_base, None).await.unwrap();
+        let json = extract_json(&result);
+        let stdout = json["stdout"].as_str().unwrap();
+        assert!(
+            stdout.contains("ctx=unset"),
+            "AGENT_CONTEXT_OUT should be unset in blocking mode, got: {stdout}"
+        );
+        assert!(
+            stdout.contains("disp=unset"),
+            "AGENT_DISPLAY_OUT should be unset in blocking mode, got: {stdout}"
         );
     }
 }
