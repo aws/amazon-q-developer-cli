@@ -1,5 +1,12 @@
 import { describe, it, expect } from 'bun:test';
-import { expandTabs, normalizeLineEndings, unescapeShellPath } from '../string';
+import {
+  expandTabs,
+  normalizeLineEndings,
+  unescapeShellPath,
+  isPrintable,
+  shortenPath,
+  stripNonPrintable,
+} from '../string';
 
 describe('expandTabs', () => {
   it('returns string unchanged when no tabs', () => {
@@ -110,5 +117,122 @@ describe('unescapeShellPath', () => {
     // Multiple paths separated by unescaped space
     const multi = '/path/to/file\\ one.txt /path/to/file\\ two.txt';
     expect(unescapeShellPath(multi)).toBe(multi);
+  });
+});
+
+describe('isPrintable', () => {
+  it('returns true for printable ASCII', () => {
+    expect(isPrintable('hello world')).toBe(true);
+    expect(isPrintable('ABC 123 !@#')).toBe(true);
+  });
+
+  it('returns true for empty string', () => {
+    expect(isPrintable('')).toBe(true);
+  });
+
+  it('allows tab, newline, and CR', () => {
+    expect(isPrintable('\t')).toBe(true);
+    expect(isPrintable('\n')).toBe(true);
+    expect(isPrintable('\r')).toBe(true);
+    expect(isPrintable('hello\tworld\n')).toBe(true);
+  });
+
+  it('returns false for NUL char (0x00)', () => {
+    expect(isPrintable('\x00')).toBe(false);
+  });
+
+  it('returns false for DEL (0x7F)', () => {
+    expect(isPrintable('\x7F')).toBe(false);
+  });
+
+  it('returns false for C1 control chars (0x80-0x9F)', () => {
+    expect(isPrintable('\x80')).toBe(false);
+    expect(isPrintable('\x9F')).toBe(false);
+    expect(isPrintable('\x85')).toBe(false);
+  });
+
+  it('returns true for chars >= 0xA0', () => {
+    expect(isPrintable('\u00A0')).toBe(true); // non-breaking space
+    expect(isPrintable('\u00FF')).toBe(true);
+  });
+
+  it('returns true for emoji', () => {
+    expect(isPrintable('\u{1F600}')).toBe(true);
+  });
+});
+
+describe('shortenPath', () => {
+  const originalHome = process.env.HOME;
+
+  it('replaces HOME prefix with ~', () => {
+    process.env.HOME = '/Users/testuser';
+    expect(shortenPath('/Users/testuser/documents/file.txt')).toBe(
+      '~/documents/file.txt'
+    );
+    process.env.HOME = originalHome;
+  });
+
+  it('returns path unchanged if not starting with HOME', () => {
+    process.env.HOME = '/Users/testuser';
+    expect(shortenPath('/var/log/syslog')).toBe('/var/log/syslog');
+    process.env.HOME = originalHome;
+  });
+
+  it('returns path unchanged if HOME is not set', () => {
+    const origUserProfile = process.env.USERPROFILE;
+    delete process.env.HOME;
+    delete process.env.USERPROFILE;
+    expect(shortenPath('/some/path/file.txt')).toBe('/some/path/file.txt');
+    process.env.HOME = originalHome;
+    if (origUserProfile !== undefined) {
+      process.env.USERPROFILE = origUserProfile;
+    }
+  });
+
+  it('returns ~ for exact HOME path', () => {
+    process.env.HOME = '/Users/testuser';
+    expect(shortenPath('/Users/testuser')).toBe('~');
+    process.env.HOME = originalHome;
+  });
+});
+
+describe('stripNonPrintable', () => {
+  it('strips zero-width chars', () => {
+    expect(stripNonPrintable('hello\u200Bworld')).toBe('helloworld');
+    expect(stripNonPrintable('test\uFEFFvalue')).toBe('testvalue');
+  });
+
+  it('keeps normal text, tab, and newline', () => {
+    expect(stripNonPrintable('hello\tworld\n')).toBe('hello\tworld\n');
+  });
+
+  it('strips C0 controls except tab and newline', () => {
+    expect(stripNonPrintable('a\x01b\x02c')).toBe('abc');
+    expect(stripNonPrintable('a\x0Bb')).toBe('ab'); // vertical tab
+    expect(stripNonPrintable('a\x1Fb')).toBe('ab'); // unit separator
+  });
+
+  it('strips C1 control chars', () => {
+    expect(stripNonPrintable('a\x7Fb')).toBe('ab'); // DEL
+    expect(stripNonPrintable('a\x80b')).toBe('ab');
+    expect(stripNonPrintable('a\x9Fb')).toBe('ab');
+  });
+});
+
+describe('normalizeLineEndings (CRLF/CR conversion)', () => {
+  it('converts CRLF to LF', () => {
+    expect(normalizeLineEndings('hello\r\nworld')).toBe('hello\nworld');
+  });
+
+  it('converts lone CR to LF', () => {
+    expect(normalizeLineEndings('hello\rworld')).toBe('hello\nworld');
+  });
+
+  it('handles mixed CRLF and CR', () => {
+    expect(normalizeLineEndings('a\r\nb\rc')).toBe('a\nb\nc');
+  });
+
+  it('also expands tabs', () => {
+    expect(normalizeLineEndings('a\r\n\tb')).toBe('a\n  b');
   });
 });

@@ -954,4 +954,77 @@ describe('isIncrementalMarkdownDeltaSafe', () => {
     expect(isIncrementalMarkdownDeltaSafe('\n1. item')).toBe(false);
     expect(isIncrementalMarkdownDeltaSafe('\n| a | b |')).toBe(false);
   });
+
+  it('returns true for empty string', () => {
+    expect(isIncrementalMarkdownDeltaSafe('')).toBe(true);
+  });
+
+  it('marks tilde ~ as unsafe (strikethrough marker)', () => {
+    expect(isIncrementalMarkdownDeltaSafe('~~strikethrough~~')).toBe(false);
+    expect(isIncrementalMarkdownDeltaSafe('text with ~')).toBe(false);
+  });
+});
+
+describe('parseMarkdown (additional branch coverage)', () => {
+  it('parses unordered list with * marker (when line-by-line mode triggered)', () => {
+    // * marker only works in line-by-line mode, which requires # or - etc in text
+    const result = parseMarkdown('# Title\n* item one\n* item two');
+    const listItems = result.filter((s) => s.listItem);
+    expect(listItems.length).toBe(2);
+    expect(listItems[0]!.text).toBe('item one');
+    expect(listItems[0]!.listItem!.ordered).toBe(false);
+  });
+
+  it('parses unordered list with + marker (when line-by-line mode triggered)', () => {
+    const result = parseMarkdown('# Title\n+ first\n+ second');
+    const listItems = result.filter((s) => s.listItem);
+    expect(listItems.length).toBe(2);
+    expect(listItems[0]!.text).toBe('first');
+    expect(listItems[0]!.listItem!.ordered).toBe(false);
+  });
+
+  it('parses horizontal rule with *** (when line-by-line mode triggered)', () => {
+    const result = parseMarkdown('# Title\n***');
+    const hr = result.find((s) => s.horizontalRule);
+    expect(hr).toBeTruthy();
+  });
+
+  it('parses horizontal rule with ___ (when line-by-line mode triggered)', () => {
+    const result = parseMarkdown('# Title\n___');
+    const hr = result.find((s) => s.horizontalRule);
+    expect(hr).toBeTruthy();
+  });
+
+  it('parses empty blockquote (> with no text)', () => {
+    const result = parseMarkdown('>');
+    const bq = result.find((s) => s.blockquote);
+    expect(bq).toBeTruthy();
+    expect(bq!.text).toBe('');
+  });
+});
+
+describe('tryAppendMarkdownDelta (additional)', () => {
+  it('empty delta returns previousSegments unchanged', () => {
+    const segs = [{ text: 'hello' }];
+    const result = tryAppendMarkdownDelta(segs, '');
+    expect(result).toEqual(segs);
+  });
+});
+
+describe('parseInlineMarkdown (additional)', () => {
+  it('detects bare URL', () => {
+    const result = parseInlineMarkdown('visit https://example.com today');
+    const linkSeg = result.find((s) => s.link);
+    expect(linkSeg).toBeTruthy();
+    expect(linkSeg!.link!.url).toBe('https://example.com');
+  });
+
+  it('text with no markdown returns single plain text segment', () => {
+    const result = parseInlineMarkdown('just plain text here');
+    expect(result.length).toBe(1);
+    expect(result[0]!.text).toBe('just plain text here');
+    expect(result[0]!.bold).toBeUndefined();
+    expect(result[0]!.italic).toBeUndefined();
+    expect(result[0]!.link).toBeUndefined();
+  });
 });

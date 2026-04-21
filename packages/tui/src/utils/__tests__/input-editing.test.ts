@@ -35,6 +35,11 @@ import {
   lowercaseWord,
   capitalizeWord,
   transposeWords,
+  moveToLogicalLineStart,
+  moveToLogicalLineEnd,
+  killToLogicalLineEnd,
+  killToLogicalLineBeginning,
+  getVisualCursorLineInfo,
 } from '../input-editing.js';
 
 // Helper to create segments
@@ -1217,5 +1222,147 @@ describe('input-editing', () => {
       expect(getVisibleText(result.segments)).toBe('hello');
       expect(result.cursor).toBe(5);
     });
+  });
+});
+
+describe('moveToLogicalLineStart', () => {
+  it('cursor in middle of single line goes to 0', () => {
+    expect(moveToLogicalLineStart([text('hello')], 3)).toBe(0);
+  });
+
+  it('cursor in middle of second line goes to after newline', () => {
+    expect(moveToLogicalLineStart([text('hello\nworld')], 8)).toBe(6);
+  });
+
+  it('cursor at start of line stays same', () => {
+    expect(moveToLogicalLineStart([text('hello\nworld')], 6)).toBe(6);
+  });
+
+  it('cursor at position 0 stays 0', () => {
+    expect(moveToLogicalLineStart([text('hello')], 0)).toBe(0);
+  });
+});
+
+describe('moveToLogicalLineEnd', () => {
+  it('cursor in middle of first line goes to before newline', () => {
+    expect(moveToLogicalLineEnd([text('hello\nworld')], 2)).toBe(5);
+  });
+
+  it('cursor in middle of last line goes to text.length', () => {
+    expect(moveToLogicalLineEnd([text('hello\nworld')], 8)).toBe(11);
+  });
+
+  it('cursor already at end of line stays same', () => {
+    expect(moveToLogicalLineEnd([text('hello\nworld')], 5)).toBe(5);
+  });
+
+  it('cursor at end of single line text returns text.length', () => {
+    expect(moveToLogicalLineEnd([text('hello')], 5)).toBe(5);
+  });
+});
+
+describe('killToLogicalLineEnd', () => {
+  it('kills from middle of first line to newline', () => {
+    const result = killToLogicalLineEnd([text('hello\nworld')], 2);
+    expect(getVisibleText(result.segments)).toBe('he\nworld');
+    expect(result.cursor).toBe(2);
+  });
+
+  it('cursor at end of first line deletes newline joining lines', () => {
+    const result = killToLogicalLineEnd([text('hello\nworld')], 5);
+    expect(getVisibleText(result.segments)).toBe('helloworld');
+    expect(result.cursor).toBe(5);
+  });
+
+  it('cursor at very end of text is no-op', () => {
+    const result = killToLogicalLineEnd([text('hello\nworld')], 11);
+    expect(getVisibleText(result.segments)).toBe('hello\nworld');
+    expect(result.cursor).toBe(11);
+  });
+
+  it('kills from middle of only line to end', () => {
+    const result = killToLogicalLineEnd([text('hello')], 2);
+    expect(getVisibleText(result.segments)).toBe('he');
+    expect(result.cursor).toBe(2);
+  });
+});
+
+describe('killToLogicalLineBeginning', () => {
+  it('kills from middle of second line to after newline', () => {
+    const result = killToLogicalLineBeginning([text('hello\nworld')], 8);
+    expect(getVisibleText(result.segments)).toBe('hello\nrld');
+    expect(result.cursor).toBe(6);
+  });
+
+  it('kills from middle of first line to start', () => {
+    const result = killToLogicalLineBeginning([text('hello\nworld')], 3);
+    expect(getVisibleText(result.segments)).toBe('lo\nworld');
+    expect(result.cursor).toBe(0);
+  });
+
+  it('cursor at line start is no-op', () => {
+    const result = killToLogicalLineBeginning([text('hello\nworld')], 6);
+    expect(getVisibleText(result.segments)).toBe('hello\nworld');
+    expect(result.cursor).toBe(6);
+  });
+
+  it('cursor at position 0 is no-op', () => {
+    const result = killToLogicalLineBeginning([text('hello')], 0);
+    expect(getVisibleText(result.segments)).toBe('hello');
+    expect(result.cursor).toBe(0);
+  });
+});
+
+describe('getVisualCursorLineInfo', () => {
+  it('single line returns lineIndex 0', () => {
+    const info = getVisualCursorLineInfo([text('hello')], 3, 80);
+    expect(info.lineIndex).toBe(0);
+    expect(info.col).toBe(3);
+    expect(info.lineCount).toBe(1);
+  });
+
+  it('wrapped text returns correct lineIndex/col', () => {
+    // "abcdefghij" at width 5 wraps to ["abcde", "fghij"]
+    const info = getVisualCursorLineInfo([text('abcdefghij')], 7, 5);
+    expect(info.lineIndex).toBe(1);
+    expect(info.col).toBe(2);
+    expect(info.lineCount).toBe(2);
+  });
+
+  it('cursor at wrap boundary goes to next line', () => {
+    // "abcdefghij" at width 5: cursor at 5 is first char of second visual line
+    const info = getVisualCursorLineInfo([text('abcdefghij')], 5, 5);
+    expect(info.lineIndex).toBe(1);
+    expect(info.col).toBe(0);
+    expect(info.lineCount).toBe(2);
+  });
+
+  it('cursor at end of text', () => {
+    const info = getVisualCursorLineInfo([text('hello')], 5, 80);
+    expect(info.lineIndex).toBe(0);
+    expect(info.col).toBe(5);
+    expect(info.lineCount).toBe(1);
+  });
+});
+
+describe('visual line functions (edge cases)', () => {
+  it('moveToVisualLineStart with cursor at 0 returns 0', () => {
+    expect(moveToVisualLineStart([text('hello')], 0, 80)).toBe(0);
+  });
+
+  it('moveToVisualLineEnd with single char returns 1', () => {
+    expect(moveToVisualLineEnd([text('a')], 0, 80)).toBe(1);
+  });
+
+  it('killToVisualLineEnd at very end of all text is no-op', () => {
+    const result = killToVisualLineEnd([text('hello')], 5, 80);
+    expect(getVisibleText(result.segments)).toBe('hello');
+    expect(result.cursor).toBe(5);
+  });
+
+  it('killToVisualLineBeginning at position 0 is no-op', () => {
+    const result = killToVisualLineBeginning([text('hello')], 0, 80);
+    expect(getVisibleText(result.segments)).toBe('hello');
+    expect(result.cursor).toBe(0);
   });
 });

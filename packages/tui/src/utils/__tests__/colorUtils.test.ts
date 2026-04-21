@@ -1,5 +1,9 @@
 import { describe, it, expect } from 'bun:test';
-import { getTerminalChalkColor, getStatusColor } from '../colorUtils';
+import {
+  getTerminalChalkColor,
+  getStatusColor,
+  getColorHex,
+} from '../colorUtils';
 
 describe('getTerminalChalkColor', () => {
   it('named "default" returns chalk.reset with hex "inherit"', () => {
@@ -78,5 +82,61 @@ describe('getStatusColor', () => {
 
   it('maps loading to secondary', () => {
     expect(getStatusColor('loading', mockGetColor).hex).toBe('#808080');
+  });
+
+  it('maps info to info', () => {
+    expect(getStatusColor('info', mockGetColor).hex).toBe('#00FFFF');
+  });
+
+  it('maps warning to warning', () => {
+    expect(getStatusColor('warning', mockGetColor).hex).toBe('#FFFF00');
+  });
+
+  it('maps executing to brand', () => {
+    expect(getStatusColor('executing', mockGetColor).hex).toBe('#8700FF');
+  });
+
+  it('maps paused to secondary', () => {
+    expect(getStatusColor('paused', mockGetColor).hex).toBe('#808080');
+  });
+
+  it('maps unknown status to brand (default case)', () => {
+    expect(getStatusColor('unknown' as any, mockGetColor).hex).toBe('#8700FF');
+  });
+});
+
+describe('getColorHex', () => {
+  it('returns .hex from color function', () => {
+    const colorFunc = Object.assign(() => '', { hex: '#ff0000' });
+    expect(getColorHex(colorFunc)).toBe('#ff0000');
+  });
+
+  it('returns default fallback #ffffff when no .hex', () => {
+    expect(getColorHex({})).toBe('#ffffff');
+  });
+
+  it('returns default fallback for null', () => {
+    expect(getColorHex(null)).toBe('#ffffff');
+  });
+
+  it('returns default fallback for undefined', () => {
+    expect(getColorHex(undefined)).toBe('#ffffff');
+  });
+
+  it('returns custom fallback', () => {
+    expect(getColorHex(null, '#000000')).toBe('#000000');
+  });
+});
+
+describe('getTerminalChalkColor (additional)', () => {
+  it('named magenta produces hex #ff00ff', () => {
+    const color = getTerminalChalkColor(undefined, undefined, 'magenta');
+    expect(color.hex).toBe('#ff00ff');
+  });
+
+  it('named cyan produces a callable function', () => {
+    const color = getTerminalChalkColor(undefined, undefined, 'cyan');
+    expect(typeof color).toBe('function');
+    expect(typeof color('test')).toBe('string');
   });
 });
