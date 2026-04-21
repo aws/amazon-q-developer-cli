@@ -2678,23 +2678,12 @@ impl Agent {
                     / consts::BYTES_PER_TOKEN
             })
             .sum();
-        let tool_search_active =
-            should_activate_tool_search(&self.settings, mcp_tool_spec_tokens, self.model.context_window_size());
-        self.tool_search_active = tool_search_active;
-
-        // Only rebuild BM25 tool index when tool search is active
-        if tool_search_active {
-            self.rebuild_tool_search_index(&mcp_server_tool_specs);
-        }
-
         let lsp_initialized = self
             .code_intelligence
             .as_ref()
             .and_then(|c| c.try_read().ok())
             .is_some_and(|c| c.is_code_intelligence_initialized());
 
-        let default_tool_settings = Default::default();
-        let tool_settings = self.agent_config.tool_settings().unwrap_or(&default_tool_settings);
         let mut tool_names = tools::get_available_tool_names(
             &self.agent_config.tools(),
             &mcp_server_tool_specs,
@@ -2703,10 +2692,22 @@ impl Agent {
             self.knowledge_provider.is_some(),
             self.settings.web_tools_enabled,
         );
-        // ToolSearch is only available when tool search is active
-        if !tool_search_active {
+
+        // Determine tool_search_active only after we know the agent's available tools.
+        // If ToolSearch isn't in the agent's tool list, skip all tool search logic
+        // (index rebuild, MCP filtering, deferred tools list injection).
+        let tool_search_active = tool_names.contains(&CanonicalToolName::BuiltIn(tools::BuiltInToolName::ToolSearch))
+            && should_activate_tool_search(&self.settings, mcp_tool_spec_tokens, self.model.context_window_size());
+        self.tool_search_active = tool_search_active;
+
+        if tool_search_active {
+            self.rebuild_tool_search_index(&mcp_server_tool_specs);
+        } else {
             tool_names.remove(&CanonicalToolName::BuiltIn(tools::BuiltInToolName::ToolSearch));
         }
+
+        let default_tool_settings = Default::default();
+        let tool_settings = self.agent_config.tool_settings().unwrap_or(&default_tool_settings);
         // Filter MCP tools based on tool_search_active and tool_search_activated
         let tool_names = filter_tool_names(
             tool_search_active,

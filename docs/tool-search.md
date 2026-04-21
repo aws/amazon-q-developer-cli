@@ -4,17 +4,17 @@ Tool Search is a feature that reduces context window usage by deferring MCP tool
 
 ## Enabling Tool Search
 
-Tool Search is disabled by default. Enable it via the `/settings` command:
+Tool Search is disabled by default. Enable it via the `kiro-cli settings` command from your terminal:
 
 ```
-/settings toolSearch.enabled true
+kiro-cli settings toolSearch.enabled true
 ```
 
 Once enabled, Tool Search activates automatically when MCP tool specs are large enough to benefit from deferral. The default thresholds (5% of context window or 50k tokens) cover most cases. To force activation whenever any MCP tools are present, set a threshold to `0`:
 
 ```
-/settings toolSearch.minPct 0
-/settings toolSearch.minTokens 0
+kiro-cli settings toolSearch.minPct 0
+kiro-cli settings toolSearch.minTokens 0
 ```
 
 ### Settings

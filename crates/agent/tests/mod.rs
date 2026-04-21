@@ -1576,3 +1576,121 @@ async fn test_tool_search_disabled_excludes_tool_search() {
         "tool_search should NOT be present when tool_search_enabled=false"
     );
 }
+
+/// Tests that a custom agent without ToolSearch in its tools list still gets full MCP tool specs
+/// even when tool_search_enabled=true in settings. The ToolSearch deferred-tool logic should
+/// only activate when the ToolSearch tool is actually available to the agent.
+#[tokio::test]
+async fn test_custom_agent_without_tool_search_gets_full_mcp_tools() {
+    use std::collections::HashMap;
+
+    use agent::agent_config::definitions::{
+        McpServerConfig,
+        RemoteMcpServerConfig,
+    };
+    use mock_mcp_server::{
+        MockMcpServerBuilder,
+        ToolDef,
+        prebuild_bin,
+    };
+
+    let _ = tracing_subscriber::fmt::try_init();
+
+    prebuild_bin().expect("failed to prebuild mock-mcp-server");
+
+    let handle = MockMcpServerBuilder::new()
+        .add_tool(ToolDef {
+            name: "database_query".to_string(),
+            description: "Execute SQL database queries".to_string(),
+            input_schema: serde_json::json!({"type": "object", "properties": {"query": {"type": "string"}}}),
+        })
+        .spawn_http()
+        .expect("failed to spawn mock MCP server");
+
+    handle
+        .wait_ready(std::time::Duration::from_secs(5))
+        .expect("mock MCP server not ready");
+
+    let mcp_config = McpServerConfig::Remote(RemoteMcpServerConfig {
+        url: handle.url(),
+        headers: HashMap::new(),
+        timeout_ms: 30000,
+        oauth_scopes: Vec::new(),
+        oauth: None,
+        disabled: false,
+        disabled_tools: Vec::new(),
+    });
+
+    // Custom agent with specific tools — no ToolSearch, no wildcard "*"
+    let agent_config = AgentConfig::V2025_08_22(AgentConfigV2025_08_22 {
+        name: "custom_restricted".to_string(),
+        tools: vec![
+            "read".to_string(),
+            "write".to_string(),
+            "shell".to_string(),
+            "@testdb".to_string(),
+        ],
+        ..Default::default()
+    });
+
+    // Enable tool_search in settings with no thresholds (always activate)
+    let settings = agent::types::AgentSettings {
+        tool_search_enabled: true,
+        tool_search_min_pct: None,
+        tool_search_min_tokens: None,
+        ..Default::default()
+    };
+
+    let mut test = TestCase::builder()
+        .test_name("custom agent without tool_search gets full mcp tools")
+        .with_agent_config(agent_config)
+        .with_settings(settings)
+        .with_mcp_server("testdb", mcp_config)
+        .with_trust_all_tools(true)
+        .with_responses(
+            parse_response_streams(include_str!("./mock_responses/single_turn.jsonl"))
+                .await
+                .unwrap(),
+        )
+        .build()
+        .await
+        .unwrap();
+
+    test.wait_until_agent_event(Duration::from_secs(10), |evt| matches!(evt, AgentEvent::Initialized))
+        .await
+        .expect("timed out waiting for agent initialization");
+
+    test.send_prompt("hello".to_string()).await;
+    test.wait_until_agent_stop(Duration::from_secs(10)).await.unwrap();
+
+    let requests = test.requests();
+    assert!(!requests.is_empty(), "expected at least one request");
+
+    let tool_specs = requests[0].tool_specs().expect("request 0 should have tool specs");
+
+    // ToolSearch should NOT be in tool specs (not in agent's tools list)
+    let has_tool_search = tool_specs.iter().any(|t| t.name == "tool_search");
+    assert!(
+        !has_tool_search,
+        "tool_search should NOT be present (not in agent's tools list)"
+    );
+
+    // MCP tool SHOULD still be present — since ToolSearch is not available,
+    // the deferred tool logic should not filter out MCP tools
+    let has_mcp_tool = tool_specs.iter().any(|t| t.name.contains("database_query"));
+    assert!(
+        has_mcp_tool,
+        "MCP tool database_query SHOULD be present when ToolSearch is not in agent's tools"
+    );
+
+    // Deferred tools list should NOT be in context messages
+    let context_msg = requests[0]
+        .messages()
+        .first()
+        .expect("first message should exist")
+        .text();
+    assert!(
+        !context_msg.contains(DEFERRED_TOOLS_MESSAGE),
+        "DEFERRED_TOOLS_MESSAGE should NOT be in context when ToolSearch is unavailable"
+    );
+}
