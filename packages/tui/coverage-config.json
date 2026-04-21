@@ -1,31 +1,19 @@
 {
   "coverageGoal": 90,
-  "excludeDirectories": [
-    { "name": "dist", "reason": "Build output" },
-    { "name": "node_modules", "reason": "Third-party code" },
-    { "name": "twinki", "reason": "Separate package with its own coverage" },
-    { "name": "ink", "reason": "Vendored Ink fork, tested upstream" },
-    { "name": "test-utils", "reason": "Test infrastructure, not production code" },
-    { "name": "e2e_tests", "reason": "E2E test infrastructure" },
-    { "name": "components", "reason": "Bun V8 coverage blind spot inside React reconciler" },
-    { "name": "hooks", "reason": "React hooks, covered by vitest" },
-    { "name": "contexts", "reason": "React contexts, covered by vitest" },
-    { "name": "storybook", "reason": "Storybook stories, not production code" },
-    { "name": "__tests__", "reason": "Test directories" }
-  ],
-  "excludeFiles": [
-    { "name": "renderer.ts", "reason": "Ink renderer bootstrap, no testable logic" },
-    { "name": "kiro.ts", "reason": "App entry point with side effects" },
-    { "name": "acp-client.ts", "reason": "ACP client, heavy side effects" },
-    { "name": "index.tsx", "reason": "App root, has side effects" }
-  ],
+  "_comment": "Single source of truth for coverage exclusions. Only exclude test files, ink/deprecated code, and build artifacts. All production code stays in the denominator.",
+
   "excludePatterns": [
-    { "pattern": ".test.", "reason": "Test files" },
-    { "pattern": ".spec.", "reason": "Spec files" }
-  ],
-  "lcovFilters": {
-    "bun": ["hooks/", "selectors", "components/", "contexts/", "kiro\\.ts", "acp-client\\.ts"],
-    "tuiVitest": ["\\.test\\.", "spec\\."],
-    "twinkiVitest": ["wrap-ansi-optimized"]
-  }
+    { "pattern": "\\.test\\.", "reason": "Test files" },
+    { "pattern": "\\.spec\\.", "reason": "Spec files" },
+    { "pattern": "\\.vitest\\.", "reason": "Vitest test files" },
+    { "pattern": "__tests__", "reason": "Test directories" },
+    { "pattern": "test-utils/", "reason": "Test infrastructure" },
+    { "pattern": "e2e_tests/", "reason": "E2E test infrastructure" },
+    { "pattern": "storybook/", "reason": "Storybook dev tooling, not production code" },
+    { "pattern": "coverage-preload", "reason": "Test infrastructure" },
+    { "pattern": "ink/", "reason": "Vendored Ink fork, being replaced by twinki" },
+    { "pattern": "dist/", "reason": "Build output" },
+    { "pattern": "node_modules/", "reason": "Third-party dependencies" },
+    { "pattern": "(^|/)renderer\\.ts$", "reason": "Ink/twinki switching proxy, deprecated" }
+  ]
 }

@@ -1,73 +1,117 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Merge three lcov coverage sources into a single combined report.
-# Exclusion patterns are defined in coverage-config.json (single source of truth).
+# Combined coverage: merge bun (tui) + vitest (twinki) lcov reports.
+# Exclusion patterns come from coverage-config.json (single source of truth).
+# When tui vitest tests are added later, their lcov merges in automatically.
 
-cd "$(dirname "$0")/.."
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+TUI_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
+REPO_ROOT="$(cd "$TUI_DIR/../.." && pwd)"
+TWINKI_DIR="$REPO_ROOT/packages/twinki"
+CONFIG="$TUI_DIR/coverage-config.json"
+OUT_DIR="$TUI_DIR/coverage/combined"
 
-CONFIG="coverage-config.json"
-GOAL=$(jq -r '.coverageGoal' "$CONFIG")
+mkdir -p "$OUT_DIR"
 
-BUN_LCOV="coverage/lcov.info"
-TUI_VITEST_LCOV="coverage/vitest-lcov.info"
-TWINKI_VITEST_LCOV="../../packages/twinki/coverage/lcov.info"
+# --- Build exclude regex from config ---
+EXCLUDE_RE=$(jq -r '[.excludePatterns[].pattern] | join("|")' "$CONFIG")
 
-COMBINED="coverage/combined-lcov.info"
+# --- Run test suites ---
+echo "=== Running bun tests (tui) ==="
+cd "$TUI_DIR"
+bun test --coverage 2>&1 | tail -5 || true
 
-mkdir -p coverage
+echo ""
+echo "=== Running vitest (twinki) ==="
+cd "$TWINKI_DIR"
+npx vitest run --coverage --coverage.enabled \
+  --coverage.reporter=lcov \
+  --coverage.reportsDirectory="$TWINKI_DIR/coverage" 2>&1 | tail -5 || true
 
-# filter_lcov FILE EXCLUDE_PATTERN
-# Outputs all lcov records whose SF: line does NOT match EXCLUDE_PATTERN.
-filter_lcov() {
-  local file="$1"
-  local exclude="$2"
+# If tui vitest config exists, run it too
+if [[ -f "$TUI_DIR/vitest.config.ts" ]]; then
+  echo ""
+  echo "=== Running vitest (tui) ==="
+  cd "$TUI_DIR"
+  npx vitest run --config vitest.config.ts --coverage 2>&1 | tail -5 || true
+fi
 
-  if [[ ! -f "$file" ]]; then
-    echo "Warning: $file not found, skipping" >&2
-    return
+# --- Collect lcov sources ---
+LCOV_FILES=()
+for f in \
+  "$TUI_DIR/coverage/lcov.info" \
+  "$TWINKI_DIR/coverage/lcov.info" \
+  "$TUI_DIR/coverage/vitest/lcov.info" \
+; do
+  if [[ -f "$f" ]]; then
+    LCOV_FILES+=("$f")
+    echo "Found: $f"
   fi
+done
 
-  awk -v pat="$exclude" '
-    /^TN:/ || /^SF:/ { buf = $0 "\n"; sf = $0; in_record = 1; next }
-    in_record {
-      buf = buf $0 "\n"
-      if ($0 == "end_of_record") {
-        in_record = 0
-        if (sf !~ pat) {
-          printf "%s", buf
-        }
-        buf = ""
-        sf = ""
-      }
+if [[ ${#LCOV_FILES[@]} -eq 0 ]]; then
+  echo "ERROR: No lcov files found" >&2
+  exit 1
+fi
+
+# --- Filter and merge ---
+# 1. Filter each lcov source with the shared exclude patterns
+# 2. Merge overlapping files by taking max hit count per line (DA dedup)
+# 3. Recompute LF/LH per file from merged DA lines
+
+awk -v exclude="$EXCLUDE_RE" '
+  /^SF:/ {
+    sf = substr($0, 4)
+    skip = (sf ~ exclude)
+    next
+  }
+  skip { next }
+  /^DA:/ {
+    line = substr($0, 4)
+    comma = index(line, ",")
+    lnum = substr(line, 1, comma - 1) + 0
+    hits = substr(line, comma + 1) + 0
+    key = sf SUBSEP lnum
+    if (!(key in data) || hits > data[key]) data[key] = hits
+    files[sf] = 1
+    next
+  }
+  /^end_of_record/ { next }
+
+  END {
+    for (key in data) {
+      split(key, parts, SUBSEP)
+      printf "%s\t%d\t%d\n", parts[1], parts[2], data[key]
     }
-  ' "$file"
-}
+  }
+' "${LCOV_FILES[@]}" | sort -t$'\t' -k1,1 -k2,2n | awk -F'\t' '
+  function flush() {
+    if (cur == "") return
+    printf "SF:%s\n", cur
+    for (i = 1; i <= n; i++) {
+      printf "DA:%d,%d\n", lnums[i], hits[i]
+      lf++
+      if (hits[i] > 0) lh++
+    }
+    printf "LF:%d\nLH:%d\nend_of_record\n", lf, lh
+  }
+  $1 != cur { flush(); cur = $1; n = 0; lf = 0; lh = 0 }
+  { n++; lnums[n] = $2; hits[n] = $3 }
+  END { flush() }
+' > "$OUT_DIR/lcov.info"
 
-# Build awk-compatible regex patterns from JSON config
-BUN_EXCLUDE=$(jq -r '.lcovFilters.bun | join("|")' "$CONFIG")
-TUI_VITEST_EXCLUDE=$(jq -r '.lcovFilters.tuiVitest | join("|")' "$CONFIG")
-TWINKI_VITEST_EXCLUDE=$(jq -r '.lcovFilters.twinkiVitest | join("|")' "$CONFIG")
-
-# Clear the combined file
-: > "$COMBINED"
-
-filter_lcov "$BUN_LCOV" "$BUN_EXCLUDE" >> "$COMBINED"
-filter_lcov "$TUI_VITEST_LCOV" "$TUI_VITEST_EXCLUDE" >> "$COMBINED"
-filter_lcov "$TWINKI_VITEST_LCOV" "$TWINKI_VITEST_EXCLUDE" >> "$COMBINED"
-
-# Compute summary from the combined lcov
+# --- Summary ---
+GOAL=$(jq -r '.coverageGoal' "$CONFIG")
 awk -v goal="$GOAL" '
   /^LF:/ { total += substr($0, 4) }
   /^LH:/ { hit   += substr($0, 4) }
   END {
-    if (total > 0) {
-      pct = hit / total * 100
-      gap = goal - pct
-      if (gap < 0) gap = 0
-      printf "Combined coverage: %d/%d lines (%.1f%%) -- gap to %d%%: %.1f pp\n", hit, total, pct, goal, gap
-    } else {
-      print "No coverage data found in " FILENAME
-    }
+    pct = (total > 0) ? hit / total * 100 : 0
+    gap = goal - pct
+    if (gap < 0) gap = 0
+    printf "\n=== Combined Coverage ===\n"
+    printf "Lines: %d / %d (%.1f%%)\n", hit, total, pct
+    printf "Gap to %d%%: %.1f pp\n", goal, gap
   }
-' "$COMBINED"
+' "$OUT_DIR/lcov.info"
