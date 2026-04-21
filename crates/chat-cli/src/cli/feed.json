@@ -12,6 +12,78 @@
     },
     {
       "type": "release",
+      "date": "2026-04-21",
+      "version": "2.1.0",
+      "title": "Version 2.1.0",
+      "changes": [
+        {
+          "type": "added",
+          "description": "Support for Google and GitHub login in remote environments using device flow via auth portal"
+        },
+        {
+          "type": "fixed",
+          "description": "Fix markdown table rendering: word-wrap to terminal width with inline styling support"
+        },
+        {
+          "type": "fixed",
+          "description": "Fix dangerous shell commands prompting for approval instead of respecting denyByDefault"
+        },
+        {
+          "type": "fixed",
+          "description": "Fix resume picker over-truncating session titles to 30 characters"
+        },
+        {
+          "type": "fixed",
+          "description": "Fix multiline input history splitting into separate entries across sessions"
+        },
+        {
+          "type": "fixed",
+          "description": "TUI colors no longer render as black on terminals with remapped ANSI palettes. Themes now use named ANSI colors instead of hardcoded hex values, `/theme` now supports base theme switching, and the NO_COLOR environment variable is respected."
+        },
+        {
+          "type": "added",
+          "description": "Shell command output now streams to the TUI in real-time, line by line, instead of waiting for process completion"
+        },
+        {
+          "type": "fixed",
+          "description": "Clear prompt hint when selecting a file from the @ menu"
+        },
+        {
+          "type": "fixed",
+          "description": "Fix slash-prefixed input being truncated when sent to the LLM"
+        },
+        {
+          "type": "added",
+          "description": "Add Tool Search feature for on-demand MCP tool discovery to reduce context window usage"
+        },
+        {
+          "type": "added",
+          "description": "Invoke .kiro/skills as /skill-name slash commands"
+        },
+        {
+          "type": "fixed",
+          "description": "Fix paste being split into multiple messages after using shell escape commands (!vim, !less) or /editor"
+        },
+        {
+          "type": "fixed",
+          "description": "Send working directory and OS as context in TUI/ACP by default"
+        },
+        {
+          "type": "changed",
+          "description": "Improved rendering performance for shell commands that stream large amounts of output"
+        },
+        {
+          "type": "added",
+          "description": "Add TUI support for Red Hat Enterprise Linux (RHEL)"
+        },
+        {
+          "type": "fixed",
+          "description": "Reject queued ! shell-escape commands during processing instead of sending them as literal text"
+        }
+      ]
+    },
+    {
+      "type": "release",
       "date": "2026-04-16",
       "version": "2.0.1",
       "title": "Version 2.0.1",

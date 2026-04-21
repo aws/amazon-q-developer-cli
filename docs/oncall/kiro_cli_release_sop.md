@@ -61,7 +61,9 @@ The current approach is to bug bash the nightly build.
    cargo check
    ```
 
-3. Create PR and merge after approval.
+3. Sync `feed.json` from the kiro-cli repo to the repo root.
+
+4. Create PR and merge after approval.
 
 ## Step 4: Sync Changes to Prod Branch
 
