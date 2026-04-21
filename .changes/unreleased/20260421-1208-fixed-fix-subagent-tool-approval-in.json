@@ -1,0 +1,4 @@
+{
+  "type": "fixed",
+  "description": "Fix subagent tool approval index mismatch by keying ApprovalRequest and ApprovalPanel on toolCallId"
+}
