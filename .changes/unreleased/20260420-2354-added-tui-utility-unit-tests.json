@@ -1,4 +1,0 @@
-{
-  "type": "added",
-  "description": "Unit tests for 8 TUI utility modules (string, markdown, text-width, input-editing, colorUtils, agentColors, highlight-languages, message-parser)"
-}
