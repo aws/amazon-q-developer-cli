@@ -8,11 +8,14 @@ const meta = {
   component: Shell,
   parameters: {
     layout: 'fullscreen',
+    storyOrder: ['ListDirectory', 'RunningShowsTail', 'FinishedShowsHead'],
   },
   tags: ['autodocs'],
 };
 
 export default meta;
+
+const manyLines = Array.from({ length: 12 }, (_, i) => `line ${i + 1}: output`);
 
 export const ListDirectory = {
   render: () => (
@@ -33,6 +36,45 @@ export const ListDirectory = {
         <Box flexDirection="column" marginTop={1}>
           <Text>Could not list any files or folders in this directory</Text>
         </Box>
+      </Card>
+    </Box>
+  ),
+};
+
+export const RunningShowsTail = {
+  render: () => (
+    <Box flexDirection="column" gap={1}>
+      <Text>
+        During execution: last 5 lines shown, "...+N lines above" hint
+      </Text>
+      <Card active={true}>
+        <Shell
+          name="Bash"
+          command="npm install"
+          status="loading"
+          isFinished={false}
+          liveOutput={manyLines}
+        />
+      </Card>
+    </Box>
+  ),
+};
+
+export const FinishedShowsHead = {
+  render: () => (
+    <Box flexDirection="column" gap={1}>
+      <Text>After completion: first 5 lines shown, expand hint at bottom</Text>
+      <Card active={true}>
+        <Shell
+          name="Bash"
+          command="npm install"
+          status="success"
+          isFinished={true}
+          result={{
+            status: 'success',
+            output: manyLines.join('\n'),
+          }}
+        />
       </Card>
     </Box>
   ),

@@ -2,12 +2,9 @@
  * E2E test for shell output streaming (live output).
  *
  * Feature: shell-output-streaming
- * Property 4: Live and finished output use the same expand/collapse behavior
  *
  * Verifies the full pipeline: Rust ExecuteCmd streaming → ACP bridge →
  * TUI store (liveOutput) → rendered output → final result replaces liveOutput.
- *
- * Validates: Requirements 6.1, 6.2, 6.3
  */
 
 import { afterEach, describe, expect, it } from 'bun:test';
@@ -23,7 +20,7 @@ describe('Shell live output streaming', () => {
     }
   });
 
-  it('liveOutput is populated during execution and cleared on completion', async () => {
+  it('live output tails during execution, heads after completion', async () => {
     testCase = await E2ETestCase.builder()
       .withTestName('shell-live-output')
       .withTerminal({ width: 120, height: 40 })
@@ -73,7 +70,7 @@ describe('Shell live output streaming', () => {
 
     await testCase.waitForText('Shell', 15000);
 
-    // Poll the store while the command is still running to catch liveOutput.
+    // Poll the store until >5 lines have streamed so tailing behavior is observable.
     let sawLiveOutput = false;
     let capturedLiveOutput: string[] = [];
     const pollStart = Date.now();
@@ -82,7 +79,12 @@ describe('Shell live output streaming', () => {
       const toolMsg = store.messages.find(
         (m) => m.role === 'tool_use' && m.id === 'tool-live-1'
       );
-      if (toolMsg && 'liveOutput' in toolMsg && toolMsg.liveOutput && toolMsg.liveOutput.length > 0) {
+      if (
+        toolMsg &&
+        'liveOutput' in toolMsg &&
+        toolMsg.liveOutput &&
+        toolMsg.liveOutput.length > 5
+      ) {
         sawLiveOutput = true;
         capturedLiveOutput = toolMsg.liveOutput;
         break;
@@ -96,6 +98,12 @@ describe('Shell live output streaming', () => {
     // Core assertion: liveOutput was actually populated during execution
     expect(sawLiveOutput).toBe(true);
     expect(capturedLiveOutput.join('\n')).toContain('stream-line-');
+
+    // During execution: wait for the tailing hint to appear on screen,
+    // then verify stream-line-1 has scrolled off (proving tail, not head).
+    await testCase.waitForText('lines above', 30000);
+    const liveSnapshot = testCase.getSnapshot().join('\n');
+    expect(liveSnapshot).not.toContain('stream-line-1');
 
     // Wait for completion
     await testCase.waitForText('Streaming complete', 30000);
@@ -116,10 +124,13 @@ describe('Shell live output streaming', () => {
       expect(finalToolMsg.result?.status).toBe('success');
     }
 
-    // 7 lines > PREVIEW_LINES(5), so expand hint should be visible
+    // After completion: screen shows the head (first 5 lines).
     const snapshot = testCase.getSnapshot();
     expect(snapshot.join('\n')).toContain('stream-line-1');
-    expect(snapshot.some((line) => line.includes('+') && line.includes('lines'))).toBe(true);
+    expect(snapshot.join('\n')).not.toContain('stream-line-7');
+    expect(
+      snapshot.some((line) => line.includes('+') && line.includes('lines'))
+    ).toBe(true);
   }, 60000);
 
   it('short output (≤ PREVIEW_LINES) shows all lines without expand hint', async () => {
@@ -197,7 +208,12 @@ describe('Shell live output streaming', () => {
 
     // No expand hint since 3 lines ≤ PREVIEW_LINES(5)
     expect(
-      snapshot.some((line) => line.includes('+') && line.includes('lines') && line.includes('ctrl+o'))
+      snapshot.some(
+        (line) =>
+          line.includes('+') &&
+          line.includes('lines') &&
+          line.includes('ctrl+o')
+      )
     ).toBe(false);
   }, 60000);
 });

@@ -162,7 +162,7 @@ export const Shell = React.memo(function Shell({
   const hasOutput = outputLines.length > 0;
 
   // Use expandable output hook
-  const { expanded, expandHint } = useExpandableOutput({
+  const { expanded, expandHint, hiddenCount } = useExpandableOutput({
     totalItems: outputLines.length,
     previewCount: PREVIEW_LINES,
     isStatic,
@@ -244,16 +244,29 @@ export const Shell = React.memo(function Shell({
     );
   }
 
-  // Collapsed view: show first N lines + hint
+  // Collapsed view: tail during execution, head after completion
+  const previewLines = isFinished
+    ? outputLines.slice(0, PREVIEW_LINES)
+    : outputLines.slice(-PREVIEW_LINES);
+
   return (
     <Box flexDirection="column">
       <StatusInfo title={name} target={displayCommand} shimmer={!isFinished} />
       <ToolMeta params={params} />
       <Box marginLeft={2} flexDirection="column">
-        {outputLines.slice(0, PREVIEW_LINES).map((line, i) => (
+        {!isFinished && hiddenCount > 0 && (
+          <Text>
+            {getColor('secondary')(
+              `...+${hiddenCount} lines above (ctrl+o to toggle)`
+            )}
+          </Text>
+        )}
+        {previewLines.map((line, i) => (
           <Text key={i}>{getColor('primary')(line)}</Text>
         ))}
-        {expandHint && <Text>{getColor('secondary')(expandHint)}</Text>}
+        {isFinished && expandHint && (
+          <Text>{getColor('secondary')(expandHint)}</Text>
+        )}
       </Box>
     </Box>
   );
