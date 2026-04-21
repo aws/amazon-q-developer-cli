@@ -1,0 +1,4 @@
+{
+  "type": "fixed",
+  "description": "Preserve user's model selection when switching between agents"
+}

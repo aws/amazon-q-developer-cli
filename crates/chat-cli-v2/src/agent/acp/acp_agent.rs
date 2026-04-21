@@ -1609,13 +1609,11 @@ impl AcpSession {
                 // Re-merge session-injected MCP servers into the new agent config
                 self.merge_session_mcp_servers(&mut agent_config);
 
-                if let Err(e) = update_model_info(
-                    &self.api_client,
-                    &self.os.database,
-                    &self.rts_state,
-                    agent_config.model(),
-                )
-                .await
+                // Only update model when the new agent explicitly specifies one;
+                // otherwise preserve the user's current model selection.
+                if let Some(model) = agent_config.model()
+                    && let Err(e) =
+                        update_model_info(&self.api_client, &self.os.database, &self.rts_state, Some(model)).await
                 {
                     warn!("Failed to update model during swap: {}", e);
                 }
@@ -1695,19 +1693,16 @@ impl AcpSession {
                     && let Some(name) = data.get("agent").and_then(|a| a.get("name")).and_then(|n| n.as_str())
                     && name != self.current_agent_name
                 {
-                    // Update model info from the new agent's config
+                    // Only update model when the new agent explicitly specifies one;
+                    // otherwise preserve the user's current model selection.
                     let new_model = self
                         .agent_configs
                         .iter()
                         .find(|c| c.name() == name)
                         .and_then(|c| c.model().map(String::from));
-                    if let Err(e) = update_model_info(
-                        &self.api_client,
-                        &self.os.database,
-                        &self.rts_state,
-                        new_model.as_deref(),
-                    )
-                    .await
+                    if let Some(ref model) = new_model
+                        && let Err(e) =
+                            update_model_info(&self.api_client, &self.os.database, &self.rts_state, Some(model)).await
                     {
                         warn!("Failed to update model during agent switch: {}", e);
                     }
