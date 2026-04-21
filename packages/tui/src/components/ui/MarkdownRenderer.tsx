@@ -56,9 +56,17 @@ export const MarkdownRenderer = React.memo(function MarkdownRenderer({
     new WeakMap()
   );
 
+  // Derive a stable cache key from actual color output, not function references.
+  // getColor() returns new chalk chain objects on every render, so using them
+  // directly as deps would clear the cache every frame during streaming.
+  const colorCacheKey = `${color('_')}|${inlineCodeColor('_')}|${linkColor('_')}|${secondaryColor('_')}`;
+  const prevColorKeyRef = React.useRef(colorCacheKey);
   React.useEffect(() => {
-    styledSegmentCacheRef.current = new WeakMap();
-  }, [color, inlineCodeColor, linkColor, secondaryColor]);
+    if (prevColorKeyRef.current !== colorCacheKey) {
+      prevColorKeyRef.current = colorCacheKey;
+      styledSegmentCacheRef.current = new WeakMap();
+    }
+  }, [colorCacheKey]);
 
   const segments = React.useMemo(() => {
     const cached = parseCacheRef.current;
