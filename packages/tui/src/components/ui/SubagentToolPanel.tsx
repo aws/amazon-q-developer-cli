@@ -150,12 +150,16 @@ export const SubagentToolPanel = React.memo<SubagentToolPanelProps>(
 
     return (
       <Box flexDirection="column">
-        {!isStatic && rows.length > 1 && (
+        {!isStatic && rows.length > 0 && (
           <Box flexDirection="row">
             <Text backgroundColor={barColor}> </Text>
             <Text>
               {' '}
-              {getColor('secondary')('ctrl+d/u navigate · ctrl+g monitor')}
+              {getColor('secondary')(
+                rows.length > 1
+                  ? 'ctrl+d/u navigate · ctrl+g open agent monitor'
+                  : 'ctrl+g open agent monitor'
+              )}
             </Text>
           </Box>
         )}
