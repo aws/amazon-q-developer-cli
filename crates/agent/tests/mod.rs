@@ -1381,6 +1381,57 @@ async fn test_duplicate_agent_spawn_hooks_all_complete() {
     assert_eq!(hook_end_count, 2, "both duplicate hooks should have executed");
 }
 
+/// Verifies that agentSpawn hook stdout is injected into the first context
+/// message of every LLM request for the entire conversation.
+#[tokio::test]
+async fn test_agent_spawn_hook_output_in_context() {
+    let _ = tracing_subscriber::fmt::try_init();
+
+    let mut test = TestCase::builder()
+        .test_name("agent spawn hook output in context")
+        .with_default_agent_config()
+        .with_hook(
+            HookTrigger::AgentSpawn,
+            HookConfig::ShellCommand(CommandHook {
+                command: "echo SPAWN_HOOK_CONTEXT_MARKER_789".to_string(),
+                opts: Default::default(),
+            }),
+        )
+        .with_responses(
+            parse_response_streams(include_str!("./mock_responses/single_turn.jsonl"))
+                .await
+                .unwrap(),
+        )
+        .build()
+        .await
+        .unwrap();
+
+    // Wait for hooks to complete during initialization
+    test.wait_until_agent_event(Duration::from_secs(5), |evt| matches!(evt, AgentEvent::Initialized))
+        .await
+        .expect("agent should initialize after spawn hook completes");
+
+    test.send_prompt("hello".to_string()).await;
+    test.wait_until_agent_stop(Duration::from_secs(5))
+        .await
+        .expect("agent should stop");
+
+    let requests = test.requests();
+    assert!(!requests.is_empty(), "expected at least one request");
+
+    let context_msg = requests[0]
+        .messages()
+        .first()
+        .expect("first message should exist")
+        .text();
+
+    assert!(
+        context_msg.contains("SPAWN_HOOK_CONTEXT_MARKER_789"),
+        "agentSpawn hook stdout should be injected into the first context message, got: {}",
+        context_msg
+    );
+}
+
 /// Tests the full MCP tool filtering and activation flow via tool_search:
 /// 1. Agent starts with MCP tools filtered out of tool_specs (low context/token usage)
 /// 2. Model calls tool_search — BM25 finds matching MCP tool — tool gets activated
