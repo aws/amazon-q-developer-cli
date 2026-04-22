@@ -148,7 +148,10 @@ pub(crate) async fn handle_internal_prompt(
                 },
                 _ => {},
             },
-            Err(_) => {
+            Err(tokio::sync::broadcast::error::RecvError::Lagged(skipped)) => {
+                tracing::warn!(%skipped, "Subagent broadcast receiver lagged; skipped events");
+            },
+            Err(tokio::sync::broadcast::error::RecvError::Closed) => {
                 return Err(InternalPromptError::Cancelled);
             },
         }

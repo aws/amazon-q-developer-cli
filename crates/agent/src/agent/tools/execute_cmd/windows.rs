@@ -110,6 +110,10 @@ pub struct ExecuteCmd {
 }
 
 impl ExecuteCmd {
+    /// How often batched output lines are flushed to the broadcast channel.
+    /// Matches the TUI-side batch interval (see app-store.ts pendingToolOutputFlush).
+    const STREAM_FLUSH_INTERVAL: std::time::Duration = std::time::Duration::from_millis(32);
+
     pub fn tool_schema() -> serde_json::Value {
         let schema = schema_for!(Self);
         serde_json::to_value(schema).expect("creating tool schema should not fail")
@@ -138,8 +142,10 @@ impl ExecuteCmd {
     }
 
     /// Execute with optional streaming support. When `event_tx` is `Some`, emits
-    /// `ToolCallUpdate` events for each line of stdout/stderr. When `None`, falls
-    /// back to blocking `wait_with_output()`.
+    /// batched `ToolCallUpdate` events for stdout/stderr. Lines are accumulated
+    /// and flushed on a timer to avoid overwhelming the broadcast channel when a
+    /// command produces tens of thousands of lines.
+    /// When `None`, falls back to blocking `wait_with_output()`.
     pub async fn execute<P: SystemProvider>(
         &self,
         provider: &P,
@@ -171,16 +177,32 @@ impl ExecuteCmd {
         let mut stdout_done = false;
         let mut stderr_done = false;
 
+        // Buffer for batching lines before sending to the broadcast channel.
+        let mut pending_output = String::new();
+        let mut flush_interval = tokio::time::interval(Self::STREAM_FLUSH_INTERVAL);
+        // Consume the first immediate tick so the loop starts clean.
+        flush_interval.tick().await;
+
         loop {
             tokio::select! {
+                biased;
+
+                // Flush buffered output on timer tick.
+                _ = flush_interval.tick() => {
+                    if !pending_output.is_empty() {
+                        let _ = tx.send(AgentEvent::Update(UpdateEvent::ToolCallUpdate {
+                            id: tool_use_id.clone(),
+                            content: ContentChunk::Text(std::mem::take(&mut pending_output)),
+                        }));
+                    }
+                }
+
                 line = stdout_lines.next_line(), if !stdout_done => {
                     match line {
                         Ok(Some(line)) => {
                             let clean = sanitize_unicode_tags(&line);
-                            let _ = tx.send(AgentEvent::Update(UpdateEvent::ToolCallUpdate {
-                                id: tool_use_id.clone(),
-                                content: ContentChunk::Text(format!("{clean}\n")),
-                            }));
+                            pending_output.push_str(&clean);
+                            pending_output.push('\n');
                             accumulated_stdout.push_str(&clean);
                             accumulated_stdout.push('\n');
                         }
@@ -195,10 +217,8 @@ impl ExecuteCmd {
                     match line {
                         Ok(Some(line)) => {
                             let clean = sanitize_unicode_tags(&line);
-                            let _ = tx.send(AgentEvent::Update(UpdateEvent::ToolCallUpdate {
-                                id: tool_use_id.clone(),
-                                content: ContentChunk::Text(format!("{clean}\n")),
-                            }));
+                            pending_output.push_str(&clean);
+                            pending_output.push('\n');
                             accumulated_stderr.push_str(&clean);
                             accumulated_stderr.push('\n');
                         }
@@ -213,6 +233,14 @@ impl ExecuteCmd {
             if stdout_done && stderr_done {
                 break;
             }
+        }
+
+        // Flush any remaining buffered output.
+        if !pending_output.is_empty() {
+            let _ = tx.send(AgentEvent::Update(UpdateEvent::ToolCallUpdate {
+                id: tool_use_id.clone(),
+                content: ContentChunk::Text(pending_output),
+            }));
         }
 
         let status = child

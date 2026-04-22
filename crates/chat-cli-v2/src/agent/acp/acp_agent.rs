@@ -1267,7 +1267,10 @@ impl AcpSession {
                 Ok(event) => {
                     warn!("Unexpected event during initialization: {:?}", event);
                 },
-                Err(_) => {
+                Err(tokio::sync::broadcast::error::RecvError::Lagged(skipped)) => {
+                    warn!(%skipped, "Agent event channel lagged during initialization; skipped events");
+                },
+                Err(tokio::sync::broadcast::error::RecvError::Closed) => {
                     return Err(eyre::eyre!("Agent channel closed during initialization"));
                 },
             }
@@ -1319,7 +1322,13 @@ impl AcpSession {
                             debug!("Received agent event: {:?}", &event);
                             self.handle_agent_event(event).await;
                         }
-                        Err(_) => {
+                        Err(tokio::sync::broadcast::error::RecvError::Lagged(skipped)) => {
+                            // The receiver couldn't keep up (e.g. a verbose shell command
+                            // streaming tens of thousands of lines). Log and continue —
+                            // killing the session would be much worse than dropping UI updates.
+                            warn!(%skipped, "Agent event channel lagged; skipped events");
+                        }
+                        Err(tokio::sync::broadcast::error::RecvError::Closed) => {
                             warn!("Agent event channel closed, exiting");
                             break;
                         }

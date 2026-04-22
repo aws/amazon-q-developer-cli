@@ -647,7 +647,7 @@ impl Agent {
     ) -> eyre::Result<Agent> {
         debug!(?snapshot, "initializing agent from snapshot");
 
-        let (agent_event_tx, agent_event_rx) = broadcast::channel(1024);
+        let (agent_event_tx, agent_event_rx) = broadcast::channel(8192);
 
         let agent_config = snapshot.agent_config;
 

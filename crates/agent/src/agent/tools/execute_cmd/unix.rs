@@ -111,6 +111,10 @@ pub struct ExecuteCmd {
 }
 
 impl ExecuteCmd {
+    /// How often batched output lines are flushed to the broadcast channel.
+    /// Matches the TUI-side batch interval (see app-store.ts pendingToolOutputFlush).
+    const STREAM_FLUSH_INTERVAL: std::time::Duration = std::time::Duration::from_millis(32);
+
     pub fn tool_schema() -> serde_json::Value {
         let schema = schema_for!(Self);
         serde_json::to_value(schema).expect("creating tool schema should not fail")
@@ -139,8 +143,10 @@ impl ExecuteCmd {
     }
 
     /// Execute with optional streaming support. When `event_tx` is `Some`, emits
-    /// `ToolCallUpdate` events for each line of stdout/stderr. When `None`, falls
-    /// back to blocking `wait_with_output()`.
+    /// batched `ToolCallUpdate` events for stdout/stderr. Lines are accumulated
+    /// and flushed on a timer to avoid overwhelming the broadcast channel when a
+    /// command produces tens of thousands of lines (e.g. `brazil-build`).
+    /// When `None`, falls back to blocking `wait_with_output()`.
     pub async fn execute<P: SystemProvider>(
         &self,
         provider: &P,
@@ -172,16 +178,32 @@ impl ExecuteCmd {
         let mut stdout_done = false;
         let mut stderr_done = false;
 
+        // Buffer for batching lines before sending to the broadcast channel.
+        let mut pending_output = String::new();
+        let mut flush_interval = tokio::time::interval(Self::STREAM_FLUSH_INTERVAL);
+        // Consume the first immediate tick so the loop starts clean.
+        flush_interval.tick().await;
+
         loop {
             tokio::select! {
+                biased;
+
+                // Flush buffered output on timer tick.
+                _ = flush_interval.tick() => {
+                    if !pending_output.is_empty() {
+                        let _ = tx.send(AgentEvent::Update(UpdateEvent::ToolCallUpdate {
+                            id: tool_use_id.clone(),
+                            content: ContentChunk::Text(std::mem::take(&mut pending_output)),
+                        }));
+                    }
+                }
+
                 line = stdout_lines.next_line(), if !stdout_done => {
                     match line {
                         Ok(Some(line)) => {
                             let clean = sanitize_unicode_tags(&line);
-                            let _ = tx.send(AgentEvent::Update(UpdateEvent::ToolCallUpdate {
-                                id: tool_use_id.clone(),
-                                content: ContentChunk::Text(format!("{clean}\n")),
-                            }));
+                            pending_output.push_str(&clean);
+                            pending_output.push('\n');
                             accumulated_stdout.push_str(&clean);
                             accumulated_stdout.push('\n');
                         }
@@ -196,10 +218,8 @@ impl ExecuteCmd {
                     match line {
                         Ok(Some(line)) => {
                             let clean = sanitize_unicode_tags(&line);
-                            let _ = tx.send(AgentEvent::Update(UpdateEvent::ToolCallUpdate {
-                                id: tool_use_id.clone(),
-                                content: ContentChunk::Text(format!("{clean}\n")),
-                            }));
+                            pending_output.push_str(&clean);
+                            pending_output.push('\n');
                             accumulated_stderr.push_str(&clean);
                             accumulated_stderr.push('\n');
                         }
@@ -214,6 +234,14 @@ impl ExecuteCmd {
             if stdout_done && stderr_done {
                 break;
             }
+        }
+
+        // Flush any remaining buffered output.
+        if !pending_output.is_empty() {
+            let _ = tx.send(AgentEvent::Update(UpdateEvent::ToolCallUpdate {
+                id: tool_use_id.clone(),
+                content: ContentChunk::Text(pending_output),
+            }));
         }
 
         let status = child
@@ -976,6 +1004,71 @@ mod tests {
         assert!(
             json["stdout"].as_str().unwrap().contains("fallback_ok"),
             "blocking fallback should preserve stdout when stderr is closed"
+        );
+    }
+
+    /// Red-to-green: 50 000 lines of output must NOT cause the broadcast
+    /// receiver to lag.  Before the batching fix the per-line send pattern
+    /// would overflow the 1 024-slot broadcast channel, returning
+    /// `RecvError::Lagged` and dropping events.  With batching the lines
+    /// are coalesced on a timer so the channel stays well within capacity.
+    #[tokio::test]
+    async fn stream_50k_lines_no_broadcast_lag() {
+        let test_base = TestBase::new().await;
+        // Use a realistic channel size matching production (agent/mod.rs).
+        let (tx, mut rx) = broadcast::channel::<AgentEvent>(1024);
+
+        let cmd = ExecuteCmd {
+            command: "seq 1 50000".to_string(),
+            working_dir: None,
+        };
+
+        // Spawn a consumer that drains events and detects Lagged errors.
+        let consumer = tokio::spawn(async move {
+            let mut event_count: u64 = 0;
+            let mut total_bytes: usize = 0;
+            loop {
+                match rx.recv().await {
+                    Ok(AgentEvent::Update(UpdateEvent::ToolCallUpdate {
+                        content: ContentChunk::Text(text),
+                        ..
+                    })) => {
+                        event_count += 1;
+                        total_bytes += text.len();
+                    },
+                    Ok(_) => {},
+                    Err(broadcast::error::RecvError::Lagged(n)) => {
+                        panic!("Broadcast receiver lagged by {n} events — batching is broken");
+                    },
+                    Err(broadcast::error::RecvError::Closed) => break,
+                }
+            }
+            (event_count, total_bytes)
+        });
+
+        let result = cmd
+            .execute(&test_base, Some(("test-id".to_string(), tx)))
+            .await
+            .unwrap();
+
+        // Drop the sender so the consumer sees Closed.
+        drop(result);
+
+        let (event_count, total_bytes) = consumer.await.unwrap();
+
+        // With batching, 50k lines should be coalesced into far fewer events
+        // than the 1024-slot channel capacity.  Without batching this would
+        // be 50 000 events and the receiver would lag.
+        assert!(
+            event_count < 1024,
+            "Expected fewer than 1024 batched events, got {event_count} — batching may not be working"
+        );
+
+        // All 50 000 lines must still arrive (each line is "N\n").
+        // "seq 1 50000" produces 288 894 bytes (sum of digit lengths + newlines).
+        assert!(
+            total_bytes > 200_000,
+            "Expected >200KB of output, got {total_bytes} — lines may have been dropped"
         );
     }
 }
