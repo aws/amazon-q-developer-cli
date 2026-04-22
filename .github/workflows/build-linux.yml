@@ -44,15 +44,15 @@ jobs:
       matrix:
         include:
           - target: x86_64-unknown-linux-gnu
-            runner: ubuntu-22.04
+            runner: ubuntu-latest-8-cores
           - target: x86_64-unknown-linux-musl
-            runner: ubuntu-22.04
+            runner: ubuntu-latest-8-cores
             musl: "1"
           - target: aarch64-unknown-linux-gnu
-            runner: ubuntu-22.04
+            runner: ubuntu-latest-8-cores
             cross_target: aarch64-unknown-linux-gnu
           - target: aarch64-unknown-linux-musl
-            runner: ubuntu-22.04
+            runner: ubuntu-latest-8-cores
             musl: "1"
             cross_target: aarch64-unknown-linux-musl
     steps:

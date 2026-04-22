@@ -44,7 +44,7 @@ jobs:
       matrix:
         include:
           - target: x86_64-pc-windows-msvc
-            runner: windows-2022
+            runner: windows-x64-latest-16-cores
             arch: x64
             build_installers: true
     steps:
