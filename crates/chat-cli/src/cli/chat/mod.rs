@@ -3478,9 +3478,17 @@ impl ChatSession {
             let tool = &mut self.tool_uses[i];
 
             // Manually accepted by the user or otherwise verified already.
-            // trust_all_tools bypasses all permission evaluation (consistent with V2).
-            if tool.accepted || self.conversation.agents.trust_all_tools {
+            if tool.accepted {
+                continue;
+            }
+
+            // trust_all_tools bypasses all permission evaluation (consistent with V2),
+            // but we still need to show the tool description (diff output, etc.).
+            if self.conversation.agents.trust_all_tools {
                 tool.accepted = true;
+                let _ = tool;
+                self.print_tool_description(os, i, true).await?;
+                self.stdout.flush()?;
                 continue;
             }
 

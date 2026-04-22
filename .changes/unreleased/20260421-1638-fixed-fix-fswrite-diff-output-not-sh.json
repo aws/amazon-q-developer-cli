@@ -1,0 +1,4 @@
+{
+  "type": "fixed",
+  "description": "Fix fs_write diff output not showing when trust-all-tools is active"
+}
