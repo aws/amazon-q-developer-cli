@@ -1,5 +1,6 @@
 import argparse
-from build import build, sign_bun_per_arch
+import pathlib
+from build import build, sign_bun_per_arch, merge_darwin_universal
 
 
 class StoreIfNotEmptyAction(argparse.Action):
@@ -53,6 +54,20 @@ sign_bun_per_arch_subparser.add_argument(
     help="Commit SHA used to construct the S3 upload path",
 )
 
+merge_darwin_subparser = subparsers.add_parser(name="merge-darwin")
+merge_darwin_subparser.add_argument(
+    "--x86_64-binary",
+    required=True,
+    type=pathlib.Path,
+    help="Path to the pre-built x86_64-apple-darwin binary",
+)
+merge_darwin_subparser.add_argument(
+    "--aarch64-binary",
+    required=True,
+    type=pathlib.Path,
+    help="Path to the pre-built aarch64-apple-darwin binary",
+)
+
 args = parser.parse_args()
 
 match args.subparser:
@@ -66,5 +81,9 @@ match args.subparser:
         )
     case "sign-bun-per-arch":
         sign_bun_per_arch(branch_name=args.branch_name, commit_sha=args.commit_sha)
+    case "merge-darwin":
+        x86_64_bin = getattr(args, "x86_64_binary")
+        aarch64_bin = getattr(args, "aarch64_binary")
+        merge_darwin_universal(x86_64_binary=x86_64_bin, aarch64_binary=aarch64_bin)
     case _:
         raise ValueError(f"Unsupported subparser {args.subparser}")

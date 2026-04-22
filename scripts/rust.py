@@ -38,8 +38,8 @@ def skip_fish_tests() -> bool:
 
 @cache
 def cargo_cmd_name() -> str:
-    # On Windows, always use cargo directly (cross is not needed/available)
-    if isWindows():
+    # On Windows and macOS, always use cargo directly (cross is for Linux cross-compilation)
+    if isWindows() or isDarwin():
         return "cargo"
     if isMusl() or isCrossCompiling():
         return "cross"
@@ -85,6 +85,9 @@ def rust_targets() -> List[str]:
     """
     match platform.system():
         case "Darwin":
+            env = environ.get("AMAZON_Q_BUILD_TARGET_TRIPLE")
+            if env:
+                return [env]
             return ["x86_64-apple-darwin", "aarch64-apple-darwin"]
         case "Linux":
             return [get_target_triple()]

@@ -237,8 +237,8 @@ def build_chat_bin(
 
     run_cmd(args, env=build_env)
 
-    # create "universal" binary for macos
-    if isDarwin():
+    # create "universal" binary for macos (only when building both arches)
+    if isDarwin() and len(targets) == 2:
         out_path = BUILD_DIR / f"{output_name or package}-universal-apple-darwin"
         args = [
             "lipo",
@@ -251,7 +251,7 @@ def build_chat_bin(
         run_cmd(args)
         return out_path
     else:
-        # linux/windows does not cross compile arch
+        # single-arch darwin, linux, or windows
         target = targets[0]
         exe_suffix = ".exe" if isWindows() else ""
         target_path = pathlib.Path("target") / target / target_subdir / f"{package}{exe_suffix}"
@@ -546,6 +546,41 @@ def build_macos(chat_path: pathlib.Path, signing_data: CdSigningData | None):
     info(f"Creating zip output to {zip_path}")
     run_cmd(["zip", "-j", zip_path, chat_dst, build_info_path], cwd=BUILD_DIR)
     generate_sha(zip_path)
+
+
+def merge_darwin_universal(x86_64_binary: pathlib.Path, aarch64_binary: pathlib.Path):
+    """
+    Merges two pre-built per-arch Darwin binaries into a universal binary,
+    then signs, notarizes, and packages it.
+    """
+    BUILD_DIR.mkdir(exist_ok=True)
+
+    universal_path = BUILD_DIR / f"{CHAT_BINARY_NAME}-universal-apple-darwin"
+    universal_path.unlink(missing_ok=True)
+
+    info(f"Creating universal binary from {x86_64_binary} and {aarch64_binary}")
+    run_cmd(["lipo", "-create", "-output", universal_path, x86_64_binary, aarch64_binary])
+
+    disable_signing = os.environ.get("DISABLE_SIGNING")
+    signing_role_arn = os.environ.get("SIGNING_ROLE_ARN")
+    signing_bucket_name = os.environ.get("SIGNING_BUCKET_NAME")
+    signing_apple_notarizing_secret_arn = os.environ.get("SIGNING_APPLE_NOTARIZING_SECRET_ARN")
+
+    if (
+        not disable_signing
+        and signing_role_arn
+        and signing_bucket_name
+        and signing_apple_notarizing_secret_arn
+    ):
+        signing_data = CdSigningData(
+            bucket_name=signing_bucket_name,
+            apple_notarizing_secret_arn=signing_apple_notarizing_secret_arn,
+            signing_role_arn=signing_role_arn,
+        )
+    else:
+        signing_data = None
+
+    build_macos(universal_path, signing_data)
 
 
 class GpgSigner:
@@ -907,7 +942,11 @@ def build(
     )
 
     if isDarwin():
-        build_macos(chat_path, signing_data)
+        # Single-arch builds skip signing — signing happens in the merge step
+        if len(targets) == 1:
+            info(f"Single-arch Darwin build ({targets[0]}), skipping sign/notarize/package")
+        else:
+            build_macos(chat_path, signing_data)
     elif isWindows():
         build_windows(chat_path)
     else:
