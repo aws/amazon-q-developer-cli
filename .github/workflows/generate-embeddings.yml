@@ -1,0 +1,68 @@
+name: 1.0.1 Generate Autodocs Embeddings
+
+on:
+  workflow_call:
+    inputs:
+      commit_sha:
+        type: string
+        required: true
+
+permissions:
+  contents: read
+
+jobs:
+  generate-v1:
+    name: Generate V1 Embeddings
+    runs-on: ubuntu-latest-8-cores
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.commit_sha }}
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Setup Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: '3.11'
+
+      - name: Generate V1 embeddings
+        run: ./scripts/generate-embeddings.sh
+
+      - name: Upload V1 artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: autodocs-embeddings-v1
+          retention-days: 1
+          path: |
+            autodocs/meta/doc-search-index.tar.gz
+            autodocs/meta/doc-index.json
+
+  generate-v2:
+    name: Generate V2 Embeddings
+    runs-on: ubuntu-latest-8-cores
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.commit_sha }}
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Setup Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: '3.11'
+
+      - name: Generate V2 embeddings
+        run: ./scripts/generate-embeddings-v2.sh
+
+      - name: Upload V2 artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: autodocs-embeddings-v2
+          retention-days: 1
+          path: |
+            autodocs-v2/meta/doc-search-index.tar.gz
+            autodocs-v2/meta/doc-index.json

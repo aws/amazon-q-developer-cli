@@ -107,6 +107,12 @@ jobs:
           aws-region: ${{ env.AWS_REGION }}
           role-duration-seconds: 7200
 
+      - name: Download autodocs embeddings
+        uses: actions/download-artifact@v4
+        with:
+          pattern: autodocs-embeddings-*
+          merge-multiple: true
+
       - name: Build Linux Binary
         env:
           AMAZON_Q_BUILD_MUSL: ${{ matrix.musl }}

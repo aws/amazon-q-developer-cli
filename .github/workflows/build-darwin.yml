@@ -135,6 +135,12 @@ jobs:
           echo "BUN_EXECUTABLE_PATH_AARCH64=$(pwd)/build/bun/bun-aarch64-notarized" >> "$GITHUB_ENV"
           echo "✓ Downloaded notarized bun binaries (x64 + aarch64)"
 
+      - name: Download autodocs embeddings
+        uses: actions/download-artifact@v4
+        with:
+          pattern: autodocs-embeddings-*
+          merge-multiple: true
+
       - name: Build macOS Universal Binary
         run: |
           python3 ./scripts/main.py build \
