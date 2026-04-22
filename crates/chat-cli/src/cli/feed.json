@@ -79,6 +79,18 @@
         {
           "type": "fixed",
           "description": "Reject queued ! shell-escape commands during processing instead of sending them as literal text"
+        },
+        {
+          "type": "fixed",
+          "description": "Fix subagent tool approvals being mismatched"
+        },
+        {
+          "type": "fixed",
+          "description": "Preserve user's model selection when switching between agents"
+        },
+        {
+          "type": "fixed",
+          "description": "Fix fs_write diff output not showing when trust-all-tools is active"
         }
       ]
     },
