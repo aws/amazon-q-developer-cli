@@ -786,7 +786,10 @@ export const InlineLayout: React.FC = () => {
               (isCrewApproval ? (
                 <CrewApprovalRequest onConfigure={handleCrewConfigure} />
               ) : (
-                <ApprovalRequest key={pendingApproval?.toolCall.toolCallId} onDrillInSubmit={handleSubmit} />
+                <ApprovalRequest
+                  key={pendingApproval?.toolCall.toolCallId}
+                  onDrillInSubmit={handleSubmit}
+                />
               ))}
             {showContextBreakdown && (
               <ContextBreakdown

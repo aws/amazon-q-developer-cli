@@ -6,7 +6,7 @@
  * silently disappear from the context breakdown.
  */
 
-import { afterEach, describe, expect, it } from 'bun:test';
+import { afterEach, describe, it } from 'bun:test';
 import fs from 'fs';
 import path from 'path';
 import { E2ETestCase } from './E2ETestCase';

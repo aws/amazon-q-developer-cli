@@ -3,6 +3,7 @@ import {
   SHOW_CURSOR,
   HIDE_CURSOR,
   ENABLE_BRACKETED_PASTE,
+  DISABLE_BRACKETED_PASTE,
 } from './terminal-sequences';
 
 /**
@@ -55,7 +56,7 @@ function getShellAndFlag(): { shell: string; flag: string } {
   return _windowsShell;
 }
 
-/** Commands that require direct terminal access (TTY) */
+/** Commands that need full-screen direct terminal access (TTY). */
 const TTY_COMMANDS = new Set([
   'vim',
   'vi',
@@ -82,7 +83,7 @@ export interface ShellEscapeResult {
 }
 
 /**
- * Check if a command needs direct TTY access.
+ * Check if a command needs full-screen direct TTY access.
  */
 function needsTTY(command: string): boolean {
   const firstWord = command.trim().split(/\s/)[0] || '';
@@ -119,17 +120,26 @@ function wrapWithFdLimit(command: string): string {
 }
 
 /**
- * Execute a TTY command with inherited stdio.
- * Used for interactive programs like vim, top, ssh.
+ * Execute a shell command with inherited stdio.
+ * Used for all ! shell escape commands so interactive programs
+ * can read user input.
+ *
+ * Temporarily restores the terminal to a clean state:
+ * - Disables raw mode, bracketed paste, and Kitty keyboard protocol
+ * - Enters alternate screen buffer to keep the TUI output clean
+ * - Restores everything after the command exits
  */
 export function executeShellEscapeTTY(command: string): ShellEscapeResult {
   try {
     const wasRaw = process.stdin.isRaw;
     if (wasRaw) process.stdin.setRawMode(false);
-    // Show cursor for the editor (Ink hides it)
+
+    // Disable TUI terminal modes so the child gets a clean terminal
+    process.stdout.write(DISABLE_BRACKETED_PASTE);
+    process.stdout.write('\x1b[<u'); // pop Kitty keyboard protocol
     process.stdout.write(SHOW_CURSOR);
 
-    // Enter alternate screen buffer so the editor doesn't pollute Ink's output
+    // Enter alternate screen buffer so the command doesn't pollute the TUI
     process.stdout.write('\x1b[?1049h');
 
     const { shell, flag } = getShellAndFlag();
@@ -141,10 +151,12 @@ export function executeShellEscapeTTY(command: string): ShellEscapeResult {
       env: process.env,
     });
 
-    // Leave alternate screen buffer to restore Ink's output
+    // Leave alternate screen buffer to restore the TUI
     process.stdout.write('\x1b[?1049l');
-    // Hide cursor again before returning to Ink
+
+    // Re-enable TUI terminal modes
     process.stdout.write(HIDE_CURSOR);
+    process.stdout.write(ENABLE_BRACKETED_PASTE);
     if (wasRaw) process.stdin.setRawMode(true);
     // Re-enable terminal modes the child process may have reset
     restoreTerminalModes();
@@ -154,6 +166,7 @@ export function executeShellEscapeTTY(command: string): ShellEscapeResult {
     try {
       process.stdout.write('\x1b[?1049l');
       process.stdout.write(HIDE_CURSOR);
+      process.stdout.write(ENABLE_BRACKETED_PASTE);
       process.stdin.setRawMode(true);
       restoreTerminalModes();
     } catch {
@@ -167,46 +180,114 @@ export function executeShellEscapeTTY(command: string): ShellEscapeResult {
 }
 
 /**
- * Execute a shell command with piped stdio, streaming output via callback.
- * Returns a promise that resolves when the command completes.
+ * Execute a shell command inside a pseudo-terminal (PTY) using Bun's built-in
+ * Terminal API. The TUI stays in raw mode so Ctrl+C never generates SIGINT
+ * for Kiro's process group. Instead, keystrokes are forwarded to the PTY
+ * where the PTY's terminal driver handles them (Ctrl+C → SIGINT to child only).
+ *
+ * The child sees a real TTY, so interactive programs (mwinit -s, passwd, ssh)
+ * can use tcsetattr/getpass/isatty normally.
+ *
+ * On Windows, falls back to piped stdio (no PTY support in Bun on Windows).
+ *
+ * Returns a promise, a kill function, and a write function for forwarding input.
  */
 export function executeShellEscapeStreaming(
   command: string,
   onData: (chunk: string) => void
-): { promise: Promise<ShellEscapeResult>; kill: () => void } {
+): {
+  promise: Promise<ShellEscapeResult>;
+  kill: () => void;
+  write: (data: string) => void;
+} {
   const { shell, flag } = getShellAndFlag();
   const cmd = process.platform === 'win32' ? command : wrapWithFdLimit(command);
 
-  const child = spawn(shell, [flag, cmd], {
-    stdio: ['ignore', 'pipe', 'pipe'],
+  // Windows: fall back to piped stdio (no PTY support)
+  if (process.platform === 'win32') {
+    const child = spawn(shell, [flag, cmd], {
+      stdio: ['pipe', 'pipe', 'pipe'],
+      cwd: process.cwd(),
+      env: process.env,
+    });
+
+    child.stdout?.on('data', (data: Buffer) => onData(data.toString()));
+    child.stderr?.on('data', (data: Buffer) => onData(data.toString()));
+
+    const promise = new Promise<ShellEscapeResult>((resolve) => {
+      child.on('error', (err) => resolve({ exitCode: 1, error: err.message }));
+      child.on('close', (code) => resolve({ exitCode: code ?? 0 }));
+    });
+
+    const kill = () => {
+      try {
+        child.kill();
+      } catch {
+        /* already dead */
+      }
+    };
+    const write = (data: string) => {
+      try {
+        child.stdin?.write(data);
+      } catch {
+        /* closed */
+      }
+    };
+
+    return { promise, kill, write };
+  }
+
+  // Unix: use Bun's built-in Terminal (PTY) API
+  const cols = process.stdout.columns || 80;
+  const rows = process.stdout.rows || 24;
+
+  const terminal = new Bun.Terminal({
+    cols,
+    rows,
+    data(_term, data) {
+      onData(new TextDecoder().decode(data));
+    },
+  });
+
+  const proc = Bun.spawn([shell, flag, cmd], {
+    terminal,
     cwd: process.cwd(),
     env: process.env,
   });
 
-  child.stdout?.on('data', (data: Buffer) => onData(data.toString()));
-  child.stderr?.on('data', (data: Buffer) => onData(data.toString()));
-
-  const promise = new Promise<ShellEscapeResult>((resolve) => {
-    child.on('error', (err) => resolve({ exitCode: 1, error: err.message }));
-    child.on('close', (code) => resolve({ exitCode: code ?? 0 }));
-  });
+  const promise = proc.exited
+    .then(
+      (exitCode) => ({ exitCode }) as ShellEscapeResult,
+      (err) => ({ exitCode: 1, error: String(err) }) as ShellEscapeResult
+    )
+    .finally(() => {
+      terminal.close();
+    });
 
   const kill = () => {
     try {
-      child.kill('SIGTERM');
+      proc.kill();
     } catch {
-      // process may have already exited, ignore
+      /* already exited */
     }
     setTimeout(() => {
       try {
-        child.kill('SIGKILL');
+        proc.kill(9);
       } catch {
-        // already dead, ignore
+        /* already dead */
       }
     }, 2000);
   };
 
-  return { promise, kill };
+  const write = (data: string) => {
+    try {
+      terminal.write(data);
+    } catch {
+      /* closed */
+    }
+  };
+
+  return { promise, kill, write };
 }
 
 export { needsTTY, isClearCommand, executeClearCommand };

@@ -206,6 +206,7 @@ export const PromptInput = React.memo(function PromptInput({
   // read the old segments/cursor and overwrite each other's edits.
   const segmentsRef = useRef(segments);
   const cursorRef = useRef(cursor);
+  const shellEscapeActive = useAppStore((state) => state.isShellEscape);
   const setSegments = useCallback(
     (s: Segment[] | ((prev: Segment[]) => Segment[])) => {
       if (typeof s === 'function') {
@@ -643,6 +644,9 @@ export const PromptInput = React.memo(function PromptInput({
       // arrive faster than React can re-render.
       let segments = segmentsRef.current;
       let cursor = cursorRef.current;
+
+      // Don't process input during shell escape — AppContainer forwards it to the PTY
+      if (shellEscapeActive) return;
 
       // Don't process input when selection menu is open (Menu handles its own input)
       if (activeCommand) return;

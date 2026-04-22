@@ -645,6 +645,7 @@ export interface AppState {
   currentAbortController: AbortController | null;
   cancelInProgress: Promise<void> | null;
   isShellEscape: boolean;
+  _shellEscapeWriter: ((data: string) => void) | null;
 
   // Initialization state — true once the ACP session is ready
   isInitialized: boolean;
@@ -913,6 +914,7 @@ export const createAppStore = (props: AppStoreProps) => {
     currentAbortController: null,
     cancelInProgress: null,
     isShellEscape: false,
+    _shellEscapeWriter: null,
     streamingBuffer: { startBuffering: null, stopBuffering: null },
 
     // Task management
@@ -3057,7 +3059,7 @@ export const createAppStore = (props: AppStoreProps) => {
         }));
 
         if (needsTTY(command)) {
-          // TTY mode: direct terminal access
+          // Full-screen TTY mode: alternate screen + direct terminal access
           const result = executeShellEscapeTTY(command);
           if (result.exitCode !== 0) {
             const msg = result.error || `Exited with status ${result.exitCode}`;
@@ -3074,7 +3076,9 @@ export const createAppStore = (props: AppStoreProps) => {
             }));
           }
         } else {
-          // Streaming mode: pipe output into conversation
+          // Streaming mode: pipe output into conversation.
+          // Stdin is inherited so interactive commands
+          // can prompt the user for input.
           const outputMsgId = generateMessageId();
           let accumulated = '';
 
@@ -3094,7 +3098,7 @@ export const createAppStore = (props: AppStoreProps) => {
             ],
           }));
 
-          const { promise, kill } = executeShellEscapeStreaming(
+          const { promise, kill, write } = executeShellEscapeStreaming(
             command,
             (chunk) => {
               accumulated += chunk;
@@ -3113,24 +3117,35 @@ export const createAppStore = (props: AppStoreProps) => {
           const abortController = new AbortController();
           const origKill = kill;
           abortController.signal.addEventListener('abort', () => origKill());
-          set({ currentAbortController: abortController });
+          set({
+            currentAbortController: abortController,
+            _shellEscapeWriter: write,
+          });
 
-          const result = await promise;
+          try {
+            const result = await promise;
 
-          // Finalize
-          const finalContent = accumulated || '(no output)';
-          const exitSuffix =
-            result.exitCode !== 0 ? `\n\n[exit code: ${result.exitCode}]` : '';
-          set((state) => ({
-            isProcessing: false,
-            isShellEscape: false,
-            currentAbortController: null,
-            messages: state.messages.map((msg) =>
-              msg.id === outputMsgId
-                ? { ...msg, content: finalContent + exitSuffix }
-                : msg
-            ),
-          }));
+            // Finalize
+            const finalContent = accumulated || '(no output)';
+            const exitSuffix =
+              result.exitCode !== 0
+                ? `\n\n[exit code: ${result.exitCode}]`
+                : '';
+            set((state) => ({
+              messages: state.messages.map((msg) =>
+                msg.id === outputMsgId
+                  ? { ...msg, content: finalContent + exitSuffix }
+                  : msg
+              ),
+            }));
+          } finally {
+            set({
+              isProcessing: false,
+              isShellEscape: false,
+              _shellEscapeWriter: null,
+              currentAbortController: null,
+            });
+          }
           await get().processQueue();
         }
         return;

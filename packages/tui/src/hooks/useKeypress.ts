@@ -28,6 +28,24 @@ export interface Key {
 export type KeyHandler = (input: string, key: Key) => void;
 export type EmptyPasteHandler = () => void;
 
+/** Map a parsed Key event back to the raw bytes a terminal/PTY expects. */
+export function keyToRawBytes(key: Key, userInput: string): string {
+  if (key.return) return '\r';
+  if (key.backspace) return '\x7f';
+  if (key.tab) return '\t';
+  if (key.escape) return '\x1b';
+  if (key.upArrow) return '\x1b[A';
+  if (key.downArrow) return '\x1b[B';
+  if (key.rightArrow) return '\x1b[C';
+  if (key.leftArrow) return '\x1b[D';
+  if (key.delete) return '\x1b[3~';
+  if (key.home) return '\x1b[H';
+  if (key.end) return '\x1b[F';
+  if (key.pageUp) return '\x1b[5~';
+  if (key.pageDown) return '\x1b[6~';
+  return userInput;
+}
+
 // Bracketed paste escape sequences
 const PASTE_START = '\x1b[200~';
 const PASTE_END = '\x1b[201~';

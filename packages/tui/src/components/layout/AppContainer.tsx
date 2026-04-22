@@ -15,6 +15,7 @@ import {
 } from '../../utils/terminal-sequences';
 import { copyToSystemClipboard } from '../../commands/effects.js';
 import { saveTrustGateAccepted } from '../../utils/trust-gate-state.js';
+import { keyToRawBytes } from '../../hooks/useKeypress.js';
 
 /**
  * Suspends the process by restoring terminal state and sending SIGTSTP
@@ -91,7 +92,20 @@ export const AppContainer: React.FC = () => {
     };
   }, []);
 
+  const shellEscapeWriter = useAppStore((state) => state._shellEscapeWriter);
+
   useKeypress((userInput, key) => {
+    // During shell escape, forward all input to the PTY.
+    if (isShellEscape && shellEscapeWriter) {
+      if (key.ctrl && userInput === 'c') {
+        shellEscapeWriter('\x03');
+        cancelMessage();
+        return;
+      }
+      shellEscapeWriter(keyToRawBytes(key, userInput));
+      return;
+    }
+
     // Suspend process on Ctrl+Z
     if (key.ctrl && userInput === 'z') {
       suspendProcess();

@@ -172,7 +172,12 @@ export const CrewMonitorLayout = React.memo(function CrewMonitorLayout({
         width={width}
       />
 
-      {selectedApproval && <ApprovalPanel key={selectedApproval.toolCall.toolCallId} approval={selectedApproval} />}
+      {selectedApproval && (
+        <ApprovalPanel
+          key={selectedApproval.toolCall.toolCallId}
+          approval={selectedApproval}
+        />
+      )}
 
       {killTarget && (
         <Box paddingX={1}>

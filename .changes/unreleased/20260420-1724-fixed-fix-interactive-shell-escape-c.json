@@ -1,0 +1,4 @@
+{
+  "type": "fixed",
+  "description": "Fixed interactive shell escape (!command) not receiving user input by using a PTY, enabling programs like mwinit to work correctly"
+}

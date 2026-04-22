@@ -114,4 +114,84 @@ describe('Shell Escape (!command)', () => {
     // Should return to prompt
     await testCase.waitForText('ask a question', 10000);
   }, 30000);
+
+  it('accepts interactive input via read', async () => {
+    testCase = await E2ETestCase.builder()
+      .withTestName('shell-escape-interactive')
+      .withTerminal({ width: 80, height: 24 })
+      .launch();
+    await testCase.waitForText('ask a question', 10000);
+
+    // Use bash read to prompt for input and echo it back
+    await testCase.sendKeys('!read -p "Name: " name && echo "Hello $name"');
+    await testCase.sleepMs(100);
+    await testCase.pressEnter();
+
+    // Should see the prompt from read
+    await testCase.waitForText('Name:', 15000);
+
+    // Type the response
+    await testCase.sendKeys('Kiro');
+    await testCase.sleepMs(100);
+    await testCase.pressEnter();
+
+    // Should see the echoed greeting
+    await testCase.waitForText('Hello Kiro', 15000);
+
+    // Should return to prompt
+    await testCase.waitForText('ask a question', 10000);
+  }, 45000);
+
+  it('Ctrl-C cancels a running shell escape command', async () => {
+    testCase = await E2ETestCase.builder()
+      .withTestName('shell-escape-ctrlc')
+      .withTerminal({ width: 80, height: 24 })
+      .launch();
+    await testCase.waitForText('ask a question', 10000);
+
+    // Start a long-running command
+    await testCase.sendKeys('!sleep 30');
+    await testCase.sleepMs(100);
+    await testCase.pressEnter();
+
+    // Wait a moment for the command to start
+    await testCase.sleepMs(1000);
+
+    // Press Ctrl+C to cancel
+    await testCase.pressCtrlC();
+
+    // Should return to prompt (not exit Kiro)
+    await testCase.waitForText('ask a question', 15000);
+  }, 45000);
+
+  it('accepts multiple lines of interactive input', async () => {
+    testCase = await E2ETestCase.builder()
+      .withTestName('shell-escape-multi-input')
+      .withTerminal({ width: 80, height: 24 })
+      .launch();
+    await testCase.waitForText('ask a question', 10000);
+
+    // Use a script that reads two inputs
+    await testCase.sendKeys('!read -p "First: " a && read -p "Second: " b && echo "$a and $b"');
+    await testCase.sleepMs(100);
+    await testCase.pressEnter();
+
+    // First prompt
+    await testCase.waitForText('First:', 15000);
+    await testCase.sendKeys('foo');
+    await testCase.sleepMs(100);
+    await testCase.pressEnter();
+
+    // Second prompt
+    await testCase.waitForText('Second:', 15000);
+    await testCase.sendKeys('bar');
+    await testCase.sleepMs(100);
+    await testCase.pressEnter();
+
+    // Should see combined output
+    await testCase.waitForText('foo and bar', 15000);
+
+    // Should return to prompt
+    await testCase.waitForText('ask a question', 10000);
+  }, 45000);
 });
