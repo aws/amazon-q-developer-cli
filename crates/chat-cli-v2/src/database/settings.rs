@@ -1,5 +1,4 @@
 use std::fmt::Display;
-use std::io::SeekFrom;
 
 use fd_lock::RwLock;
 use serde_json::{
@@ -9,7 +8,6 @@ use serde_json::{
 use tokio::fs::File;
 use tokio::io::{
     AsyncReadExt,
-    AsyncSeekExt,
     AsyncWriteExt,
 };
 
@@ -504,23 +502,25 @@ impl Settings {
             tokio::fs::create_dir_all(parent).await?;
         }
 
+        let json = serde_json::to_string_pretty(map).unwrap_or_else(|_| "{}".to_string());
+
+        // Write to a temp file then atomically rename to avoid truncating the
+        // original if the process is interrupted mid-write.
+        let tmp_path = path.with_extension(format!("tmp.{}", uuid::Uuid::new_v4()));
+
         let mut file_opts = File::options();
         file_opts.create(true).write(true).truncate(true);
-
         #[cfg(unix)]
         file_opts.mode(0o600);
-        let mut file = RwLock::new(file_opts.open(&path).await?);
-        let mut lock = file.write()?;
 
-        match serde_json::to_string_pretty(map) {
-            Ok(json) => lock.write_all(json.as_bytes()).await?,
-            Err(_err) => {
-                lock.seek(SeekFrom::Start(0)).await?;
-                lock.set_len(0).await?;
-                lock.write_all(b"{}").await?;
-            },
-        }
+        let mut file = RwLock::new(file_opts.open(&tmp_path).await?);
+        let mut lock = file.write()?;
+        lock.write_all(json.as_bytes()).await?;
         lock.flush().await?;
+        drop(lock);
+        drop(file);
+
+        tokio::fs::rename(&tmp_path, path).await?;
 
         Ok(())
     }
@@ -545,6 +545,37 @@ impl Settings {
 #[cfg(test)]
 mod test {
     use super::*;
+
+    /// Verify save_settings_file writes correctly and leaves no temp file.
+    #[tokio::test]
+    async fn test_save_settings_file_atomic() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("cli.json");
+
+        let mut map = Map::new();
+        map.insert("chat.defaultModel".to_string(), Value::String("claude".to_string()));
+        map.insert("telemetry.enabled".to_string(), Value::Bool(true));
+        Settings::save_settings_file(&path, &map).await.unwrap();
+
+        let saved: Map<String, Value> = serde_json::from_str(&tokio::fs::read_to_string(&path).await.unwrap()).unwrap();
+        assert_eq!(saved.get("chat.defaultModel").unwrap(), "claude");
+        assert_eq!(saved.get("telemetry.enabled").unwrap(), true);
+
+        // Overwrite
+        map.insert("chat.defaultModel".to_string(), Value::String("sonnet".to_string()));
+        Settings::save_settings_file(&path, &map).await.unwrap();
+
+        let saved: Map<String, Value> = serde_json::from_str(&tokio::fs::read_to_string(&path).await.unwrap()).unwrap();
+        assert_eq!(saved.get("chat.defaultModel").unwrap(), "sonnet");
+
+        // No leftover temp file
+        let entries: Vec<_> = std::fs::read_dir(dir.path())
+            .unwrap()
+            .filter_map(|e| e.ok())
+            .filter(|e| e.path().to_string_lossy().contains(".tmp."))
+            .collect();
+        assert!(entries.is_empty(), "temp file should be cleaned up after rename");
+    }
 
     /// General read/write settings test
     #[tokio::test]
