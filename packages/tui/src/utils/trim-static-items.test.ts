@@ -16,7 +16,6 @@ describe('trimStaticItems', () => {
     const removed = trimStaticItems(items, ids);
     expect(removed).toBe(0);
     expect(items).toHaveLength(199);
-    expect(ids.size).toBe(199);
   });
 
   it('keeps all items at exactly the cap', () => {
@@ -43,7 +42,6 @@ describe('trimStaticItems', () => {
     const removed = trimStaticItems(items, ids);
     expect(removed).toBe(count - MAX_STATIC_ITEMS);
     expect(items).toHaveLength(MAX_STATIC_ITEMS);
-    expect(ids.size).toBe(MAX_STATIC_ITEMS);
   });
 
   it('removes oldest items and keeps newest', () => {
@@ -54,12 +52,14 @@ describe('trimStaticItems', () => {
     expect(items[items.length - 1]!.id).toBe('turn-249');
   });
 
-  it('cleans up emittedIds for removed items only', () => {
+  it('does not delete from emittedIds — prevents re-emission', () => {
     const items = makeItems(250);
     const ids = new Set(items.map((i) => i.id));
     trimStaticItems(items, ids);
-    expect(ids.has('turn-0')).toBe(false);
-    expect(ids.has('turn-49')).toBe(false);
+    // All 250 IDs still in the set — trimmed items must not be re-appended
+    expect(ids.size).toBe(250);
+    expect(ids.has('turn-0')).toBe(true);
+    expect(ids.has('turn-49')).toBe(true);
     expect(ids.has('turn-50')).toBe(true);
     expect(ids.has('turn-249')).toBe(true);
   });

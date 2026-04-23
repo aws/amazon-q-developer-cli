@@ -9,6 +9,8 @@ export interface TwinkiContext {
 	tui: TUI;
 	/** Function to exit the application */
 	exit: (error?: Error) => void;
+	/** Adjust the static write cursor after splicing items from the front of a Static array */
+	adjustStaticCursor?: (removedCount: number) => void;
 }
 
 /**

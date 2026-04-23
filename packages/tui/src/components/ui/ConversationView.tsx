@@ -25,6 +25,7 @@ import { computeFlushSet } from '../../utils/turn-flush-machine.js';
 import { trimStaticItems } from '../../utils/trim-static-items.js';
 import { useTerminalSize } from '../../hooks/useTerminalSize.js';
 import { useTheme } from '../../hooks/useThemeContext.js';
+import { useTwinkiContext } from 'twinki';
 import { SESSION_TOOL_NAMES } from '../../types/agent-events.js';
 
 interface ConversationTurn {
@@ -491,6 +492,7 @@ function appendMessagesToStatic(
 export const ConversationView = React.memo(function ConversationView() {
   const { messages, isProcessing, settings } = useConversationState();
   const { getColor } = useTheme();
+  const { adjustStaticCursor } = useTwinkiContext();
   const greetingEnabled =
     settings !== null && settings[Settings.CHAT_GREETING_ENABLED] !== false;
 
@@ -687,7 +689,16 @@ export const ConversationView = React.memo(function ConversationView() {
   }
 
   // Cap static items to bound accumulated Yoga nodes.
-  trimStaticItems(staticItemsRef.current, emittedIdsRef.current);
+  // When items are spliced from the front, the renderer's monotonic write
+  // cursor must be adjusted down by the same amount — otherwise new items
+  // are silently skipped because slice(cursor) on a shorter array is empty.
+  const trimmed = trimStaticItems(
+    staticItemsRef.current,
+    emittedIdsRef.current
+  );
+  if (trimmed > 0) {
+    adjustStaticCursor?.(trimmed);
+  }
 
   // Only create a new array ref when items were actually added, so <Static>'s
   // useMemo([items]) fires only when needed — not on every render.

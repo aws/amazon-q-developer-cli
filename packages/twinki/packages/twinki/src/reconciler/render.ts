@@ -72,6 +72,8 @@ export interface Instance {
 	clear(): void;
 	/** Re-renders the application with a new React element */
 	rerender(element: React.ReactElement): void;
+	/** Adjusts the static write cursor after items are trimmed from the front of the Static array */
+	adjustStaticCursor(removedCount: number): void;
 	/** Returns current render performance metrics */
 	getMetrics(): RenderMetrics;
 }
@@ -189,6 +191,16 @@ class ReactBridge implements Component {
 	}
 
 	/**
+	 * Adjusts the static write cursor after the app trims items from the
+	 * front of the `<Static>` items array.  Without this, the monotonic
+	 * cursor would be ahead of the new array length and new items would
+	 * be silently skipped until the array grows back past the old cursor.
+	 */
+	adjustStaticCursor(removedCount: number): void {
+		this.totalStaticWritten = Math.max(0, this.totalStaticWritten - removedCount);
+	}
+
+	/**
 	 * Called on resize. Resets the static write cursor so all static items
 	 * are re-rendered at the new width on the next frame. The staticReset
 	 * flag tells render() to call replaceStaticOutput instead of append.
@@ -274,7 +286,7 @@ export function render(element: React.ReactElement, options: TwinkiRenderOptions
 		else if (exitResolve) exitResolve();
 	};
 
-	const ctxValue = { tui, exit: exitFn };
+	const ctxValue = { tui, exit: exitFn, adjustStaticCursor: (n: number) => bridge.adjustStaticCursor(n) };
 
 	function wrap(el: React.ReactElement): React.ReactElement {
 		return React.createElement(TwinkiCtx.Provider, { value: ctxValue }, el);
@@ -378,6 +390,9 @@ export function render(element: React.ReactElement, options: TwinkiRenderOptions
 		},
 		rerender(newElement: React.ReactElement) {
 			reconciler.updateContainer(wrap(newElement), container, null, noop);
+		},
+		adjustStaticCursor(removedCount: number) {
+			bridge.adjustStaticCursor(removedCount);
 		},
 	};
 
