@@ -1,5 +1,8 @@
+import { Lexer, type Token, type Tokens } from 'marked';
+
 export interface MarkdownSegment {
   text: string;
+  children?: MarkdownSegment[];
   bold?: boolean;
   italic?: boolean;
   strikethrough?: boolean;
@@ -103,6 +106,7 @@ const isIncrementalCodeBlockDeltaSafe = (delta: string): boolean =>
 
 const isPlainTextSegment = (segment: MarkdownSegment): boolean =>
   !!segment.text &&
+  !segment.children &&
   !segment.bold &&
   !segment.italic &&
   !segment.strikethrough &&
@@ -617,6 +621,7 @@ export const parseMarkdown = (text: string): MarkdownSegment[] => {
   return segments.filter(
     (seg) =>
       seg.text ||
+      seg.children ||
       seg.codeBlock ||
       seg.header ||
       seg.boldHeading ||
@@ -628,97 +633,69 @@ export const parseMarkdown = (text: string): MarkdownSegment[] => {
 };
 
 /**
- * Parse inline markdown (bold, italic, code) in regular text
+ * Convert marked inline tokens to recursive MarkdownSegments.
  */
-export function parseInlineMarkdown(text: string): MarkdownSegment[] {
+function tokensToSegments(tokens: Token[]): MarkdownSegment[] {
   const segments: MarkdownSegment[] = [];
-  let remaining = text;
-
-  const patterns = [
-    {
-      regex: /\[([^\]]+)\]\(([^)]+)\)/g,
-      handler: (match: RegExpExecArray) => ({
-        text: match[1] || '',
-        link: { url: match[2] || '' },
-      }),
-    },
-    {
-      regex: /(https?:\/\/[^\s)>\]]+[^\s)>\].,:;!?'"'])/g,
-      handler: (match: RegExpExecArray) => ({
-        text: match[1] || '',
-        link: { url: match[1] || '' },
-      }),
-    },
-    {
-      regex: /__(.*?)__/g,
-      handler: (match: RegExpExecArray) => ({
-        text: match[1] || '',
-        bold: true,
-      }),
-    },
-    {
-      regex: /\*\*(.*?)\*\*/g,
-      handler: (match: RegExpExecArray) => ({
-        text: match[1] || '',
-        bold: true,
-      }),
-    },
-    {
-      regex: /~~(.*?)~~/g,
-      handler: (match: RegExpExecArray) => ({
-        text: match[1] || '',
-        strikethrough: true,
-      }),
-    },
-    {
-      regex: /_(.*?)_/g,
-      handler: (match: RegExpExecArray) => ({
-        text: match[1] || '',
-        italic: true,
-      }),
-    },
-    {
-      regex: /\*(.*?)\*/g,
-      handler: (match: RegExpExecArray) => ({
-        text: match[1] || '',
-        italic: true,
-      }),
-    },
-    {
-      regex: /`(.*?)`/g,
-      handler: (match: RegExpExecArray) => ({
-        text: match[1] || '',
-        quote: true,
-      }),
-    },
-  ];
-
-  while (remaining.length > 0) {
-    let earliestMatch = null;
-    let earliestIndex = remaining.length;
-
-    for (const pattern of patterns) {
-      pattern.regex.lastIndex = 0;
-      const match = pattern.regex.exec(remaining);
-      if (match && match.index !== undefined && match.index < earliestIndex) {
-        earliestMatch = { match, handler: pattern.handler };
-        earliestIndex = match.index;
+  for (const token of tokens) {
+    switch (token.type) {
+      case 'strong':
+        segments.push({
+          text: '',
+          bold: true,
+          children: tokensToSegments((token as Tokens.Strong).tokens),
+        });
+        break;
+      case 'em':
+        segments.push({
+          text: '',
+          italic: true,
+          children: tokensToSegments((token as Tokens.Em).tokens),
+        });
+        break;
+      case 'del':
+        segments.push({
+          text: '',
+          strikethrough: true,
+          children: tokensToSegments((token as Tokens.Del).tokens),
+        });
+        break;
+      case 'codespan':
+        segments.push({ text: (token as Tokens.Codespan).text, quote: true });
+        break;
+      case 'link': {
+        const link = token as Tokens.Link;
+        segments.push({
+          text: '',
+          link: { url: link.href },
+          children: tokensToSegments(link.tokens),
+        });
+        break;
       }
-    }
-
-    if (earliestMatch) {
-      if (earliestIndex > 0) {
-        segments.push({ text: remaining.slice(0, earliestIndex) });
-      }
-      segments.push(earliestMatch.handler(earliestMatch.match));
-      remaining = remaining.slice(
-        earliestIndex + earliestMatch.match[0].length
-      );
-    } else {
-      segments.push({ text: remaining });
-      break;
+      case 'escape':
+        segments.push({ text: (token as Tokens.Escape).text });
+        break;
+      case 'br':
+        segments.push({ text: '\n' });
+        break;
+      default:
+        // text tokens may have nested tokens (e.g. from autolinks)
+        if ('tokens' in token && token.tokens && token.tokens.length > 0) {
+          segments.push(...tokensToSegments(token.tokens));
+        } else {
+          segments.push({ text: (token as Tokens.Text).text ?? token.raw });
+        }
+        break;
     }
   }
-
   return segments;
+}
+
+/**
+ * Parse inline markdown using marked's lexer for correct recursive nesting.
+ * Supports: **bold**, *italic*, ~~strikethrough~~, `code`, [links](url), and all combinations.
+ */
+export function parseInlineMarkdown(text: string): MarkdownSegment[] {
+  const tokens = Lexer.lexInline(text);
+  return tokensToSegments(tokens);
 }

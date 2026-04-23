@@ -1,4 +1,5 @@
 import chalk from 'chalk';
+import { Chalk } from 'chalk';
 import supportsColor from 'supports-color';
 import type { ChalkColorName } from '../types/themeTypes.js';
 import type { StatusType } from '../types/componentTypes.js';
@@ -88,11 +89,14 @@ export const getTerminalChalkColor = (
   let chalkFunction: any;
   let resolvedHex: string = '#000000'; // Default fallback
 
-  // Special case: 'default' means use terminal's default foreground color
-  // Return chalk.reset which applies no color but supports chaining (.bold, etc.)
+  // Special case: 'default' means use terminal's default foreground color.
+  // We avoid chalk.reset here because it emits \x1b[0m which resets ALL
+  // formatting (bold, italic, etc.). Instead, use a plain chalk instance
+  // with no color applied — it supports .bold/.italic chaining without
+  // emitting color reset codes.
   if (named === 'default') {
-    const baseChalk = chalk.reset;
-    const colorWrapper = (text: string) => baseChalk(text);
+    const baseChalk = new Chalk();
+    const colorWrapper = (text: string) => text;
     colorWrapper.hex = 'inherit';
     Object.setPrototypeOf(colorWrapper, baseChalk);
     return colorWrapper;

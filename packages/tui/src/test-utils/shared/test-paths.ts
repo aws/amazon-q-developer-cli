@@ -65,9 +65,11 @@ export function createTestDir(
     agentIpcSocket = `${pipePrefix}-agent`;
   } else {
     const socketDir = path.join(os.tmpdir(), 'kiro-cli-tests', testName);
-    if (!fs.existsSync(socketDir)) {
-      fs.mkdirSync(socketDir, { recursive: true });
+    // Clean and recreate socket directory to remove stale sockets from previous runs
+    if (fs.existsSync(socketDir)) {
+      fs.rmSync(socketDir, { recursive: true });
     }
+    fs.mkdirSync(socketDir, { recursive: true });
     tuiIpcSocket = path.join(socketDir, 'tui.sock');
     agentIpcSocket = path.join(socketDir, 'agent.sock');
   }

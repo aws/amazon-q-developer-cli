@@ -11,6 +11,7 @@ import * as os from 'os';
 import * as path from 'path';
 import type { AppState } from '../src/stores/app-store';
 import { PtyManager, TerminalSnapshot } from '../src/test-utils/shared/pty-manager';
+import type { CellAttributes } from '../src/test-utils/shared/pty-manager';
 import { createTestDir, type TestPaths } from '../src/test-utils/shared/test-paths';
 import { TuiIpcConnection } from '../src/test-utils/shared/tui-ipc-connection';
 import type { MockStreamItem } from './types/chat-cli';
@@ -404,6 +405,15 @@ export class E2ETestCase {
    */
   waitForText(text: string, timeout?: number): Promise<void> {
     return this.ptyManager.waitForVisibleText(text, timeout ?? this.options.timeout);
+  }
+
+  /**
+   * Finds the first occurrence of text on the terminal screen and returns
+   * per-character formatting attributes (bold, italic, underline, etc.).
+   * Returns null if text is not found.
+   */
+  findTextCells(text: string): CellAttributes[] | null {
+    return this.ptyManager.findTextCells(text);
   }
 
   /**

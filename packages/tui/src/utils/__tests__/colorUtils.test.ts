@@ -13,10 +13,15 @@ describe('getTerminalChalkColor', () => {
     expect(typeof color('test')).toBe('string');
   });
 
-  it('named "default" supports chaining (.bold)', () => {
+  it('named "default" returns text unchanged and supports chaining', () => {
     const color = getTerminalChalkColor(undefined, undefined, 'default');
+    expect(color('test')).toBe('test');
+    expect(color.hex).toBe('inherit');
+    // Chaining must work (used by UsagePanel, McpPanel, StatusInfo)
     expect(typeof color.bold).toBe('function');
     expect(typeof color.bold('test')).toBe('string');
+    // .bold must not emit \x1b[0m reset
+    expect(color.bold('test')).not.toContain('\x1b[0m');
   });
 
   it('truecolor value produces correct hex', () => {

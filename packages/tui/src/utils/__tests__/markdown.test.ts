@@ -34,7 +34,7 @@ describe('parseMarkdown', () => {
 
     it('should parse italic text', () => {
       expect(parseMarkdown('*italic*')).toEqual([
-        { text: 'italic', italic: true },
+        { text: '', italic: true, children: [{ text: 'italic' }] },
       ]);
     });
 
@@ -45,9 +45,9 @@ describe('parseMarkdown', () => {
     it('should parse mixed inline markdown', () => {
       expect(parseMarkdown('Hello **bold** and *italic* text')).toEqual([
         { text: 'Hello ' },
-        { text: 'bold', bold: true },
+        { text: '', bold: true, children: [{ text: 'bold' }] },
         { text: ' and ' },
-        { text: 'italic', italic: true },
+        { text: '', italic: true, children: [{ text: 'italic' }] },
         { text: ' text' },
       ]);
     });
@@ -123,13 +123,13 @@ describe('parseMarkdown', () => {
       expect(
         parseMarkdown('**Bold** text\n```rust\ncode\n```\n*italic*')
       ).toEqual([
-        { text: 'Bold', bold: true },
+        { text: '', bold: true, children: [{ text: 'Bold' }] },
         { text: ' text' },
         {
           text: '',
           codeBlock: { code: 'code', language: 'rust', isComplete: true },
         },
-        { text: 'italic', italic: true },
+        { text: '', italic: true, children: [{ text: 'italic' }] },
       ]);
     });
   });
@@ -214,7 +214,7 @@ describe('parseMarkdown', () => {
           text: '',
           codeBlock: { code: 'code', language: 'rust', isComplete: true },
         },
-        { text: '   \nmore text' },
+        { text: 'more text' },
       ]);
     });
   });
@@ -236,18 +236,20 @@ describe('parseMarkdown', () => {
 
   describe('Underscore Emphasis', () => {
     it('should parse underscore bold', () => {
-      expect(parseMarkdown('__bold__')).toEqual([{ text: 'bold', bold: true }]);
+      expect(parseMarkdown('__bold__')).toEqual([
+        { text: '', bold: true, children: [{ text: 'bold' }] },
+      ]);
     });
     it('should parse underscore italic', () => {
       expect(parseMarkdown('_italic_')).toEqual([
-        { text: 'italic', italic: true },
+        { text: '', italic: true, children: [{ text: 'italic' }] },
       ]);
     });
     it('should parse mixed bold styles', () => {
       expect(parseMarkdown('**bold** and __also bold__')).toEqual([
-        { text: 'bold', bold: true },
+        { text: '', bold: true, children: [{ text: 'bold' }] },
         { text: ' and ' },
-        { text: 'also bold', bold: true },
+        { text: '', bold: true, children: [{ text: 'also bold' }] },
       ]);
     });
   });
@@ -255,13 +257,13 @@ describe('parseMarkdown', () => {
   describe('Strikethrough', () => {
     it('should parse strikethrough', () => {
       expect(parseMarkdown('~~deleted~~')).toEqual([
-        { text: 'deleted', strikethrough: true },
+        { text: '', strikethrough: true, children: [{ text: 'deleted' }] },
       ]);
     });
     it('should parse strikethrough with surrounding text', () => {
       expect(parseMarkdown('keep ~~remove~~ keep')).toEqual([
         { text: 'keep ' },
-        { text: 'remove', strikethrough: true },
+        { text: '', strikethrough: true, children: [{ text: 'remove' }] },
         { text: ' keep' },
       ]);
     });
@@ -270,13 +272,21 @@ describe('parseMarkdown', () => {
   describe('Links', () => {
     it('should parse link', () => {
       expect(parseMarkdown('[Example](https://example.com)')).toEqual([
-        { text: 'Example', link: { url: 'https://example.com' } },
+        {
+          text: '',
+          link: { url: 'https://example.com' },
+          children: [{ text: 'Example' }],
+        },
       ]);
     });
     it('should parse link with surrounding text', () => {
       expect(parseMarkdown('Visit [here](https://x.com) now')).toEqual([
         { text: 'Visit ' },
-        { text: 'here', link: { url: 'https://x.com' } },
+        {
+          text: '',
+          link: { url: 'https://x.com' },
+          children: [{ text: 'here' }],
+        },
         { text: ' now' },
       ]);
     });
@@ -374,7 +384,7 @@ describe('parseMarkdown', () => {
         { text: 'code', quote: true },
       ]);
       expect(parseInlineMarkdown('**bold** and `more`')).toEqual([
-        { text: 'bold', bold: true },
+        { text: '', bold: true, children: [{ text: 'bold' }] },
         { text: ' and ' },
         { text: 'more', quote: true },
       ]);
@@ -936,7 +946,7 @@ describe('tryAppendMarkdownDelta', () => {
     const segments = parseMarkdown(full);
     const linkSeg = segments.find((s) => s.link);
     expect(linkSeg).toBeDefined();
-    expect(linkSeg!.text).toBe('AWS Calculator');
+    expect(linkSeg!.children).toEqual([{ text: 'AWS Calculator' }]);
     expect(linkSeg!.link!.url).toBe('https://calc.aws/');
   });
 });

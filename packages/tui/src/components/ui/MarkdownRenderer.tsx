@@ -103,27 +103,31 @@ export const MarkdownRenderer = React.memo(function MarkdownRenderer({
       return cached;
     }
 
+    // Resolve inner content: recurse into children or use leaf text with color
+    const inner = seg.children
+      ? seg.children.map((child) => styleSegment(child)).join('')
+      : color(seg.text);
+
     let styled: string;
     if (seg.quote) {
-      styled = inlineCodeColor(seg.text);
+      styled = inlineCodeColor(seg.children ? inner : seg.text);
       styledSegmentCacheRef.current.set(seg, styled);
       return styled;
     }
     if (seg.link) {
       styled =
-        hyperlink(seg.link.url, linkColor(seg.text)) +
+        hyperlink(seg.link.url, linkColor(inner)) +
         secondaryColor(` (${seg.link.url})`);
       styledSegmentCacheRef.current.set(seg, styled);
       return styled;
     }
-    styled = seg.text;
+    styled = inner;
     if (seg.bold) styled = chalk.bold(styled);
     if (seg.italic) styled = chalk.italic(styled);
     if (seg.strikethrough) styled = chalk.strikethrough(styled);
 
-    const colored = color(styled);
-    styledSegmentCacheRef.current.set(seg, colored);
-    return colored;
+    styledSegmentCacheRef.current.set(seg, styled);
+    return styled;
   };
 
   const renderInlineText = (text: string): string => {
@@ -204,7 +208,9 @@ export const MarkdownRenderer = React.memo(function MarkdownRenderer({
         if (block.type === 'header') {
           return (
             <Box key={i} marginTop={mt}>
-              <Text wrap="wrap">{color(chalk.bold(block.segment.text))}</Text>
+              <Text wrap="wrap">
+                {chalk.bold(renderInlineText(block.segment.text))}
+              </Text>
             </Box>
           );
         }
@@ -264,19 +270,22 @@ export const MarkdownRenderer = React.memo(function MarkdownRenderer({
           ) =>
             left + colWidths.map((w) => fill.repeat(w + 2)).join(mid) + right;
 
-          // Wrap raw cells, render inline markdown per line, then pad
+          // Render inline markdown first, then wrap styled text, then pad
           const renderWrappedRow = (rawCells: string[], bold?: boolean) => {
-            const wrapped = rawCells.map((c, ci) =>
-              wrapCellText(c, colWidths[ci]!, measureRendered)
+            const styledCells = rawCells.map((c) => {
+              let s = renderInlineText(c);
+              if (bold && s) s = chalk.bold(s);
+              return s;
+            });
+            const wrapped = styledCells.map((c, ci) =>
+              wrapCellText(c, colWidths[ci]!, visibleWidth)
             );
             const maxLines = Math.max(...wrapped.map((w) => w.length));
             const lines: string[] = [];
             for (let li = 0; li < maxLines; li++) {
               const line = rawCells
                 .map((_, ci) => {
-                  const raw = wrapped[ci]?.[li] || '';
-                  let styled = raw ? renderInlineText(raw) : '';
-                  if (bold && styled) styled = chalk.bold(styled);
+                  const styled = wrapped[ci]?.[li] || '';
                   return padCell(
                     styled,
                     colWidths[ci]!,

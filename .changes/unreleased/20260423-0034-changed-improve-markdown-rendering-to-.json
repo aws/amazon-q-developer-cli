@@ -1,0 +1,4 @@
+{
+  "type": "changed",
+  "description": "Improve markdown rendering to correctly handle nested formatting (bold+italic, strikethrough+bold, bold links, code in links)"
+}

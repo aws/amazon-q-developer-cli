@@ -21,6 +21,18 @@ export interface PtyOptions {
   env?: Record<string, string>;
 }
 
+export interface CellAttributes {
+  char: string;
+  bold: boolean;
+  italic: boolean;
+  underline: boolean;
+  dim: boolean;
+  strikethrough: boolean;
+  inverse: boolean;
+  fgColor: number | null;
+  fgIsRgb: boolean;
+}
+
 export class PtyManager {
   private pty?: pty.IPty;
   private output: string = '';
@@ -322,6 +334,49 @@ export class PtyManager {
     }
 
     return `<pre style="font-family:monospace;background:#0d1117;color:#c9d1d9;padding:10px;margin:0">${lines.join('\n')}</pre>`;
+  }
+
+  /**
+   * Finds all cells matching the given text on the terminal screen and returns
+   * their per-character formatting attributes.
+   *
+   * @param text - The text to search for (first occurrence)
+   * @returns Array of per-character attribute objects, or null if text not found
+   */
+  findTextCells(text: string): CellAttributes[] | null {
+    const buffer = this.terminal.buffer.active;
+    const totalLines = buffer.baseY + this.terminal.rows;
+
+    for (let y = 0; y < totalLines; y++) {
+      const line = buffer.getLine(y);
+      if (!line) continue;
+      const lineStr = line.translateToString();
+      const col = lineStr.indexOf(text);
+      if (col === -1) continue;
+
+      const attrs: CellAttributes[] = [];
+      for (let x = col; x < col + text.length; x++) {
+        const cell = line.getCell(x);
+        if (!cell) continue;
+        attrs.push({
+          char: cell.getChars() || ' ',
+          bold: cell.isBold() !== 0,
+          italic: cell.isItalic() !== 0,
+          underline: cell.isUnderline() !== 0,
+          dim: cell.isDim() !== 0,
+          strikethrough: cell.isStrikethrough() !== 0,
+          inverse: cell.isInverse() !== 0,
+          fgColor: cell.isFgRGB()
+            ? cell.getFgColor()
+            : cell.isFgPalette()
+              ? cell.getFgColor()
+              : null,
+          fgIsRgb: cell.isFgRGB(),
+        });
+      }
+      return attrs;
+    }
+    return null;
   }
 
   /**
