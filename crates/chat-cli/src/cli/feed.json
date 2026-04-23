@@ -91,6 +91,18 @@
         {
           "type": "fixed",
           "description": "Fix fs_write diff output not showing when trust-all-tools is active"
+        },
+        {
+          "type": "fixed",
+          "description": "Fixed interactive shell escape (!command) not receiving user input by using a PTY, enabling programs like mwinit to work correctly"
+        },
+        {
+          "type": "fixed",
+          "description": "Sync knowledgeBase resources on session init and agent swap so agent-defined knowledge bases are indexed automatically"
+        },
+        {
+          "type": "changed",
+          "description": "Improve markdown rendering to correctly handle nested formatting (bold+italic, strikethrough+bold, bold links, code in links)"
         }
       ]
     },

@@ -1,4 +1,0 @@
-{
-  "type": "removed",
-  "description": "Remove vendored Ink rendering backend; Twinki is now the sole TUI renderer"
-}
