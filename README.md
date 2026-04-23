@@ -1,7 +1,7 @@
 # Amazon Q CLI
 
 > [!IMPORTANT]
-> This open source project is no longer being actively maintained and will only receive critical security fixes. Amazon Q Developer CLI is now available as [Kiro CLI](https://kiro.dev/cli/), a closed-source product. For the latest features and updates, please use Kiro CLI.
+> This open source project is no longer being actively maintained and will only receive critical security fixes. Amazon Q Developer CLI is now available as [Kiro CLI](https://kiro.dev/cli/), a closed-source product. For the latest features and updates, please use Kiro CLI. For issues with Kiro CLI, please report it [here](https://github.com/kirodotdev/Kiro/issues) instead.
 
 ## Installation
 
