@@ -37,7 +37,7 @@ permissions:
 jobs:
   notarize-bun:
     name: Notarize Bun (${{ inputs.environment }})
-    runs-on: macos-latest
+    runs-on: macos-latest-xlarge
     environment: ${{ inputs.environment }}
     steps:
       - uses: actions/checkout@v4
@@ -80,7 +80,7 @@ jobs:
   build-darwin-arch:
     name: Build Darwin ${{ matrix.arch }} (${{ inputs.environment }})
     needs: notarize-bun
-    runs-on: macos-latest
+    runs-on: macos-latest-xlarge
     environment: ${{ inputs.environment }}
     strategy:
       fail-fast: true
@@ -174,7 +174,7 @@ jobs:
   merge-darwin:
     name: Merge Darwin Universal Binary (${{ inputs.environment }})
     needs: build-darwin-arch
-    runs-on: macos-latest
+    runs-on: macos-latest-xlarge
     environment: ${{ inputs.environment }}
     steps:
       - uses: actions/checkout@v4
