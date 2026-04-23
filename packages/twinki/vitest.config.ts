@@ -6,10 +6,10 @@ export default defineConfig({
     coverage: {
       enabled: true,
       thresholds: {
-        lines: 68,
-        functions: 68,
-        statements: 68,
-        branches: 68,
+        lines: 68.46,
+        functions: 69.88,
+        statements: 68.46,
+        branches: 76.18,
         autoUpdate: true,
       },
       exclude: [
