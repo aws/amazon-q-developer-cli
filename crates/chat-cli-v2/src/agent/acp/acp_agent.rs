@@ -1159,6 +1159,18 @@ impl AcpSession {
                     | agent::agent_config::ConfigSource::Global { path } => Some(path.clone()),
                     _ => None,
                 });
+
+                // Sync agent-defined KB resources before creating the store
+                if let Some(cfg) = agent_config {
+                    let _ = crate::util::knowledge_store::KnowledgeStore::sync_agent_resources(
+                        name,
+                        agent_path.as_deref(),
+                        cfg.resource_paths(),
+                        &os,
+                    )
+                    .await;
+                }
+
                 match crate::util::knowledge_store::KnowledgeStore::get_async_instance(
                     &os,
                     Some(name),
@@ -1634,6 +1646,13 @@ impl AcpSession {
                 let global_mcp_path = resolver.global().mcp_config().ok();
 
                 let new_name = agent_config.name().to_string();
+                let new_agent_path = match agent_config.source() {
+                    agent::agent_config::ConfigSource::Workspace { path }
+                    | agent::agent_config::ConfigSource::Global { path } => Some(path.clone()),
+                    _ => None,
+                };
+                let new_resources = agent_config.resource_paths().to_vec();
+
                 let result = self
                     .agent
                     .swap_agent(agent::protocol::SwapAgentArgs {
@@ -1645,6 +1664,15 @@ impl AcpSession {
                     .await;
 
                 if result.is_ok() {
+                    // Sync KB resources for the new agent
+                    let _ = crate::util::knowledge_store::KnowledgeStore::sync_agent_resources(
+                        &new_name,
+                        new_agent_path.as_deref(),
+                        &new_resources,
+                        &self.os,
+                    )
+                    .await;
+
                     self.previous_agent_name = Some(std::mem::replace(&mut self.current_agent_name, new_name));
                     self.persist_session_state().await;
                 }

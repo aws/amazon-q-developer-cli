@@ -120,6 +120,11 @@ impl LoadedAgentConfig {
         self.config.resources()
     }
 
+    /// Returns typed resource paths (needed by `sync_agent_resources`).
+    pub fn resource_paths(&self) -> &[types::ResourcePath] {
+        self.config.resource_paths()
+    }
+
     pub fn model(&self) -> Option<&str> {
         self.config.model()
     }

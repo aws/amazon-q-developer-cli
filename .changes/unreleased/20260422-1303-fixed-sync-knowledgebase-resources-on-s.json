@@ -1,0 +1,4 @@
+{
+  "type": "fixed",
+  "description": "Sync knowledgeBase resources on session init and agent swap so agent-defined knowledge bases are indexed automatically"
+}

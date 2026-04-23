@@ -161,7 +161,7 @@ async fn do_switch_agent(index: usize, agent_info: &AgentInfo, ctx: &CommandCont
     if let Err(e) = ctx
         .agent
         .swap_agent(SwapAgentArgs {
-            agent_config: config,
+            agent_config: config.clone(),
             local_mcp_path: ctx.local_mcp_path.cloned(),
             global_mcp_path: ctx.global_mcp_path.cloned(),
             force: false,
@@ -169,6 +169,22 @@ async fn do_switch_agent(index: usize, agent_info: &AgentInfo, ctx: &CommandCont
         .await
     {
         return CommandResult::error(format!("Failed to switch agent: {}", e));
+    }
+
+    // Sync KB resources for the new agent
+    {
+        let agent_path = match config.source() {
+            agent::agent_config::ConfigSource::Workspace { path }
+            | agent::agent_config::ConfigSource::Global { path } => Some(path.clone()),
+            _ => None,
+        };
+        let _ = crate::util::knowledge_store::KnowledgeStore::sync_agent_resources(
+            &agent_info.name,
+            agent_path.as_deref(),
+            config.resource_paths(),
+            ctx.os,
+        )
+        .await;
     }
 
     CommandResult::success_with_data(

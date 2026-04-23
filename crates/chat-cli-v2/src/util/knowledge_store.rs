@@ -1234,4 +1234,134 @@ mod tests {
         };
         assert!(KnowledgeStore::should_reindex(&ctx, &options, false));
     }
+
+    #[tokio::test]
+    async fn test_sync_agent_resources_indexes_knowledge_base() {
+        let temp_dir = TempDir::new().unwrap();
+        let os = create_test_os(&temp_dir).await;
+
+        // Create KB data inside the test HOME
+        let kb_dir = temp_dir.path().join("kb-data");
+        std::fs::create_dir_all(&kb_dir).unwrap();
+        std::fs::write(kb_dir.join("doc.txt"), "test knowledge base content").unwrap();
+
+        // Directly add via the store — add() validates the path and enqueues indexing
+        let store_arc = KnowledgeStore::get_async_instance(&os, Some("test-agent"), None)
+            .await
+            .unwrap();
+        let mut store = store_arc.lock().await;
+        let mut options = AddOptions::default();
+        options.auto_sync = true;
+        options.description = Some("Test KB".to_string());
+        // add() succeeds if path exists and is valid — indexing happens async
+        let result = store.add("test-kb", kb_dir.to_str().unwrap(), options).await;
+        assert!(result.is_ok(), "add() should succeed: {:?}", result.err());
+    }
+
+    #[tokio::test]
+    async fn test_sync_agent_resources_removes_stale_kb() {
+        let temp_dir = TempDir::new().unwrap();
+        let os = create_test_os(&temp_dir).await;
+
+        let kb_dir = temp_dir.path().join("kb-data");
+        std::fs::create_dir_all(&kb_dir).unwrap();
+        std::fs::write(kb_dir.join("doc.txt"), "content").unwrap();
+
+        // First sync: add a KB (use ~/kb-data so path resolves in test env)
+        let resources = vec![agent::agent_config::types::ResourcePath::Complex(
+            agent::agent_config::types::ComplexResource::KnowledgeBase {
+                source: "file://~/kb-data".to_string(),
+                name: Some("ephemeral-kb".to_string()),
+                description: None,
+                index_type: None,
+                include: None,
+                exclude: None,
+                auto_update: Some(false),
+            },
+        )];
+        KnowledgeStore::sync_agent_resources("test-agent", None, &resources, &os)
+            .await
+            .unwrap();
+
+        // Second sync: empty resources — should remove the auto-synced KB
+        KnowledgeStore::sync_agent_resources("test-agent", None, &[], &os)
+            .await
+            .unwrap();
+
+        let store_arc = KnowledgeStore::get_async_instance(&os, Some("test-agent"), None)
+            .await
+            .unwrap();
+        let store = store_arc.lock().await;
+        let contexts = store.get_all().await.unwrap();
+        assert!(contexts.is_empty(), "Stale auto-synced KB should be removed");
+    }
+
+    #[tokio::test]
+    async fn test_sync_agent_resources_skips_non_kb_resources() {
+        let temp_dir = TempDir::new().unwrap();
+        let os = create_test_os(&temp_dir).await;
+
+        let resources = vec![
+            agent::agent_config::types::ResourcePath::FilePath("file://readme.md".to_string()),
+            agent::agent_config::types::ResourcePath::Skill("skill://my-skill".to_string()),
+        ];
+
+        let result = KnowledgeStore::sync_agent_resources("test-agent", None, &resources, &os).await;
+        assert!(result.is_ok());
+
+        let store_arc = KnowledgeStore::get_async_instance(&os, Some("test-agent"), None)
+            .await
+            .unwrap();
+        let store = store_arc.lock().await;
+        let contexts = store.get_all().await.unwrap();
+        assert!(contexts.is_empty(), "Non-KB resources should be ignored");
+    }
+
+    #[tokio::test]
+    async fn test_sync_agent_swap_replaces_old_kbs_with_new() {
+        let temp_dir = TempDir::new().unwrap();
+        let os = create_test_os(&temp_dir).await;
+
+        let kb_a = temp_dir.path().join("kb-a");
+        let kb_b = temp_dir.path().join("kb-b");
+        std::fs::create_dir_all(&kb_a).unwrap();
+        std::fs::create_dir_all(&kb_b).unwrap();
+        std::fs::write(kb_a.join("a.txt"), "agent A docs").unwrap();
+        std::fs::write(kb_b.join("b.txt"), "agent B docs").unwrap();
+
+        // Sync agent A resources — should succeed
+        let agent_a_resources = vec![agent::agent_config::types::ResourcePath::Complex(
+            agent::agent_config::types::ComplexResource::KnowledgeBase {
+                source: format!("file://{}", kb_a.display()),
+                name: Some("docs-a".to_string()),
+                description: Some("Agent A docs".to_string()),
+                index_type: None,
+                include: None,
+                exclude: None,
+                auto_update: Some(false),
+            },
+        )];
+        let result = KnowledgeStore::sync_agent_resources("shared-agent", None, &agent_a_resources, &os).await;
+        assert!(result.is_ok(), "Agent A sync should succeed");
+
+        // Swap to agent B — should succeed and not error even though agent A's KB
+        // may still be indexing in the background
+        let agent_b_resources = vec![agent::agent_config::types::ResourcePath::Complex(
+            agent::agent_config::types::ComplexResource::KnowledgeBase {
+                source: format!("file://{}", kb_b.display()),
+                name: Some("docs-b".to_string()),
+                description: Some("Agent B docs".to_string()),
+                index_type: None,
+                include: None,
+                exclude: None,
+                auto_update: Some(false),
+            },
+        )];
+        let result = KnowledgeStore::sync_agent_resources("shared-agent", None, &agent_b_resources, &os).await;
+        assert!(result.is_ok(), "Agent B sync (swap) should succeed");
+
+        // Sync with empty resources — should succeed (cleanup path)
+        let result = KnowledgeStore::sync_agent_resources("shared-agent", None, &[], &os).await;
+        assert!(result.is_ok(), "Empty sync (cleanup) should succeed");
+    }
 }

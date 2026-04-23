@@ -102,6 +102,13 @@ impl AgentConfig {
         }
     }
 
+    /// Returns typed resource paths (needed by `sync_agent_resources`).
+    pub fn resource_paths(&self) -> &[ResourcePath] {
+        match self {
+            AgentConfig::V2025_08_22(a) => &a.resources,
+        }
+    }
+
     pub fn mcp_servers(&self) -> &HashMap<String, McpServerConfig> {
         match self {
             AgentConfig::V2025_08_22(a) => &a.mcp_servers,
@@ -1281,5 +1288,34 @@ mod tests {
         };
         let json = serde_json::to_value(&config).unwrap();
         assert_eq!(json["disabledTools"], serde_json::json!(["tool_a"]));
+    }
+
+    #[test]
+    fn test_resource_paths_returns_typed_resources() {
+        use crate::agent_config::types::ComplexResource;
+        let agent: AgentConfig = serde_json::from_value(serde_json::json!({
+            "name": "test",
+            "resources": [
+                "file://readme.md",
+                {
+                    "type": "knowledgeBase",
+                    "source": "file://~/docs",
+                    "name": "my-docs",
+                    "description": "My documentation",
+                    "autoUpdate": true,
+                    "include": ["**/*.md"],
+                    "exclude": ["drafts/**"]
+                }
+            ]
+        }))
+        .unwrap();
+
+        let paths = agent.resource_paths();
+        assert_eq!(paths.len(), 2);
+        assert!(matches!(&paths[0], ResourcePath::FilePath(_)));
+        assert!(matches!(
+            &paths[1],
+            ResourcePath::Complex(ComplexResource::KnowledgeBase { name: Some(n), auto_update: Some(true), .. }) if n == "my-docs"
+        ));
     }
 }
