@@ -209,7 +209,8 @@ describe('--resume-picker', () => {
       .launchWithoutWaiting();
 
     // The picker runs before Ink — interact with it in the PTY
-    await testCase.waitForVisibleText('Select a chat session', 10000);
+    // Wait for session items to render (not just the header) to avoid race condition
+    await testCase.waitForVisibleText('second conversation', 10000);
 
     // Verify both sessions appear in the picker
     const snapshot = testCase.getSnapshot().join('\n');

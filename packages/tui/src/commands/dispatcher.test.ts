@@ -275,4 +275,247 @@ describe('dispatch', () => {
       expect(ctx._spies.setSessionId!.mock.calls[0]?.[0]).toBe('abc-123');
     });
   });
+
+  describe('prompt type commands', () => {
+    it('sends message with /{cmdName} {args} and returns without calling executeCommand', async () => {
+      const ctx = createMockCommandContext();
+      const cmd = makeCmd({
+        name: '/myPrompt',
+        source: 'backend',
+        meta: { type: 'prompt' },
+      });
+
+      await dispatch(cmd, 'some arguments', ctx);
+
+      expect(ctx._spies.sendMessage!).toHaveBeenCalledTimes(1);
+      expect(ctx._spies.sendMessage!.mock.calls[0]![0]).toBe(
+        '/myPrompt some arguments'
+      );
+      // executeCommand should NOT have been called
+      expect((ctx.kiro.executeCommand as any).mock.calls.length).toBe(0);
+    });
+
+    it('sends message without args when args is empty', async () => {
+      const ctx = createMockCommandContext();
+      const cmd = makeCmd({
+        name: '/myPrompt',
+        source: 'backend',
+        meta: { type: 'prompt' },
+      });
+
+      await dispatch(cmd, '', ctx);
+
+      expect(ctx._spies.sendMessage!).toHaveBeenCalledTimes(1);
+      expect(ctx._spies.sendMessage!.mock.calls[0]![0]).toBe('/myPrompt');
+      expect((ctx.kiro.executeCommand as any).mock.calls.length).toBe(0);
+    });
+  });
+
+  describe('skill type commands', () => {
+    it('sends message with /{cmdName} {args} and returns without calling executeCommand', async () => {
+      const ctx = createMockCommandContext();
+      const cmd = makeCmd({
+        name: '/mySkill',
+        source: 'backend',
+        meta: { type: 'skill' },
+      });
+
+      await dispatch(cmd, 'skill args', ctx);
+
+      expect(ctx._spies.sendMessage!).toHaveBeenCalledTimes(1);
+      expect(ctx._spies.sendMessage!.mock.calls[0]![0]).toBe(
+        '/mySkill skill args'
+      );
+      expect((ctx.kiro.executeCommand as any).mock.calls.length).toBe(0);
+    });
+
+    it('sends message without args when args is empty', async () => {
+      const ctx = createMockCommandContext();
+      const cmd = makeCmd({
+        name: '/mySkill',
+        source: 'backend',
+        meta: { type: 'skill' },
+      });
+
+      await dispatch(cmd, '', ctx);
+
+      expect(ctx._spies.sendMessage!).toHaveBeenCalledTimes(1);
+      expect(ctx._spies.sendMessage!.mock.calls[0]![0]).toBe('/mySkill');
+    });
+  });
+
+  describe('backend command error handling', () => {
+    it('shows alert with error.message when executeCommand throws an Error', async () => {
+      const ctx = createMockCommandContext();
+      (ctx.kiro.executeCommand as any).mockRejectedValue(
+        new Error('Connection timeout')
+      );
+
+      const cmd = makeCmd({ name: '/deploy', source: 'backend' });
+      await dispatch(cmd, 'prod', ctx);
+
+      expect(ctx._spies.setLoadingMessage!).toHaveBeenCalledWith(null);
+      expect(ctx._spies.showAlert!).toHaveBeenCalledTimes(1);
+      expect(ctx._spies.showAlert!.mock.calls[0]![0]).toBe(
+        'Connection timeout'
+      );
+      expect(ctx._spies.showAlert!.mock.calls[0]![1]).toBe('error');
+    });
+
+    it('shows "Command failed" when executeCommand throws a non-Error', async () => {
+      const ctx = createMockCommandContext();
+      (ctx.kiro.executeCommand as any).mockRejectedValue('string error');
+
+      const cmd = makeCmd({ name: '/deploy', source: 'backend' });
+      await dispatch(cmd, 'prod', ctx);
+
+      expect(ctx._spies.showAlert!.mock.calls[0]![0]).toBe('Command failed');
+      expect(ctx._spies.showAlert!.mock.calls[0]![1]).toBe('error');
+    });
+  });
+
+  describe('agent swap loading message', () => {
+    it('shows loading message when cmdName is "agent" with non-create/edit args', async () => {
+      const ctx = createMockCommandContext();
+      (ctx.kiro.executeCommand as any).mockResolvedValue({
+        success: true,
+        message: 'Agent switched',
+        data: { agent: { name: 'coder' } },
+      });
+
+      const cmd = makeCmd({ name: '/agent', source: 'backend' });
+      await dispatch(cmd, 'coder', ctx);
+
+      // Should have called setLoadingMessage with agent name
+      const loadingCalls = ctx._spies.setLoadingMessage!.mock.calls;
+      expect(loadingCalls[0]![0]).toBe('Agent changing to coder');
+      // Should clear loading after execution
+      expect(loadingCalls[1]![0]).toBe(null);
+    });
+
+    it('strips "swap " prefix for display name', async () => {
+      const ctx = createMockCommandContext();
+      (ctx.kiro.executeCommand as any).mockResolvedValue({
+        success: true,
+        message: 'Agent switched',
+        data: { agent: { name: 'coder' } },
+      });
+
+      const cmd = makeCmd({ name: '/agent', source: 'backend' });
+      await dispatch(cmd, 'swap coder', ctx);
+
+      const loadingCalls = ctx._spies.setLoadingMessage!.mock.calls;
+      expect(loadingCalls[0]![0]).toBe('Agent changing to coder');
+    });
+
+    it('does NOT show loading for "agent create" subcommand', async () => {
+      const ctx = createMockCommandContext();
+      (ctx.kiro.executeCommand as any).mockResolvedValue({
+        success: true,
+        message: '',
+        data: undefined,
+      });
+
+      const cmd = makeCmd({ name: '/agent', source: 'backend' });
+      await dispatch(cmd, 'create myAgent', ctx);
+
+      const loadingCalls = ctx._spies.setLoadingMessage!.mock.calls;
+      // Should not have the "Agent changing to" loading message
+      const agentLoadingCalls = loadingCalls.filter(
+        (c: unknown[]) =>
+          typeof c[0] === 'string' && c[0].startsWith('Agent changing')
+      );
+      expect(agentLoadingCalls.length).toBe(0);
+    });
+
+    it('does NOT show loading for "agent edit" subcommand', async () => {
+      const ctx = createMockCommandContext();
+      (ctx.kiro.executeCommand as any).mockResolvedValue({
+        success: true,
+        message: '',
+        data: undefined,
+      });
+
+      const cmd = makeCmd({ name: '/agent', source: 'backend' });
+      await dispatch(cmd, 'edit myAgent', ctx);
+
+      const loadingCalls = ctx._spies.setLoadingMessage!.mock.calls;
+      const agentLoadingCalls = loadingCalls.filter(
+        (c: unknown[]) =>
+          typeof c[0] === 'string' && c[0].startsWith('Agent changing')
+      );
+      expect(agentLoadingCalls.length).toBe(0);
+    });
+  });
+
+  describe('guide loading message', () => {
+    it('shows "Switching agent..." loading message for /guide command', async () => {
+      const ctx = createMockCommandContext();
+      (ctx.kiro.executeCommand as any).mockResolvedValue({
+        success: true,
+        message: 'Guide activated',
+        data: undefined,
+      });
+
+      const cmd = makeCmd({ name: '/guide', source: 'backend' });
+      await dispatch(cmd, 'some-guide', ctx);
+
+      const loadingCalls = ctx._spies.setLoadingMessage!.mock.calls;
+      expect(loadingCalls[0]![0]).toBe('Switching agent...');
+      // Should clear loading after execution
+      expect(loadingCalls[1]![0]).toBe(null);
+    });
+  });
+
+  describe('result message display', () => {
+    it('shows alert when result has a message and effect did not handle it', async () => {
+      const ctx = createMockCommandContext();
+      (ctx.kiro.executeCommand as any).mockResolvedValue({
+        success: true,
+        message: 'Operation completed successfully',
+        data: undefined,
+      });
+
+      // Use a command that has no special effect handler
+      const cmd = makeCmd({ name: '/someCmd', source: 'backend' });
+      await dispatch(cmd, 'arg', ctx);
+
+      expect(ctx._spies.showAlert!).toHaveBeenCalledTimes(1);
+      expect(ctx._spies.showAlert!.mock.calls[0]![0]).toBe(
+        'Operation completed successfully'
+      );
+      expect(ctx._spies.showAlert!.mock.calls[0]![1]).toBe('success');
+      expect(ctx._spies.showAlert!.mock.calls[0]![2]).toBe(5000);
+    });
+
+    it('shows error alert when result is not successful', async () => {
+      const ctx = createMockCommandContext();
+      (ctx.kiro.executeCommand as any).mockResolvedValue({
+        success: false,
+        message: 'Something went wrong',
+        data: undefined,
+      });
+
+      const cmd = makeCmd({ name: '/someCmd', source: 'backend' });
+      await dispatch(cmd, 'arg', ctx);
+
+      expect(ctx._spies.showAlert!).toHaveBeenCalledTimes(1);
+      expect(ctx._spies.showAlert!.mock.calls[0]![1]).toBe('error');
+    });
+
+    it('does not show alert when result has no message', async () => {
+      const ctx = createMockCommandContext();
+      (ctx.kiro.executeCommand as any).mockResolvedValue({
+        success: true,
+        message: '',
+        data: undefined,
+      });
+
+      const cmd = makeCmd({ name: '/someCmd', source: 'backend' });
+      await dispatch(cmd, 'arg', ctx);
+
+      // showAlert should not be called (empty message is falsy)
+      expect(ctx._spies.showAlert!.mock.calls.length).toBe(0);
+    });
+  });
 });

@@ -1,5 +1,10 @@
 import { describe, it, expect, mock } from 'bun:test';
-import { createAppStore, MessageRole } from './app-store';
+import {
+  createAppStore,
+  MessageRole,
+  ToolUseStatus,
+  NOT_READY_TOOLS,
+} from './app-store';
 import { AgentEventType, ContentType } from '../types/agent-events';
 import { Kiro } from '../kiro';
 
@@ -163,5 +168,278 @@ describe('Streaming content flush', () => {
     // Messages should not have been unnecessarily replaced
     const msgsAfter = store.getState().messages;
     expect(msgsAfter).toHaveLength(1);
+  });
+});
+
+describe('Enum and constant exports', () => {
+  it('MessageRole has the expected values', () => {
+    expect(MessageRole.User as string).toBe('user');
+    expect(MessageRole.Model as string).toBe('model');
+    expect(MessageRole.ToolUse as string).toBe('tool_use');
+    expect(MessageRole.System as string).toBe('system');
+  });
+
+  it('ToolUseStatus has the expected values', () => {
+    expect(ToolUseStatus.Pending as string).toBe('pending');
+    expect(ToolUseStatus.Approved as string).toBe('approved');
+    expect(ToolUseStatus.Rejected as string).toBe('rejected');
+  });
+
+  it('NOT_READY_TOOLS is a Set', () => {
+    expect(NOT_READY_TOOLS).toBeInstanceOf(Set);
+  });
+});
+
+describe('Simple state setters', () => {
+  function makeStore() {
+    return createAppStore({ kiro: new Kiro() });
+  }
+
+  it('setProcessing(true) sets isProcessing', () => {
+    const store = makeStore();
+    expect(store.getState().isProcessing).toBe(false);
+    store.getState().setProcessing(true);
+    expect(store.getState().isProcessing).toBe(true);
+  });
+
+  it('setProcessing(false) clears isProcessing', () => {
+    const store = makeStore();
+    store.getState().setProcessing(true);
+    store.getState().setProcessing(false);
+    expect(store.getState().isProcessing).toBe(false);
+  });
+
+  it('setAgentError sets error and guidance', () => {
+    const store = makeStore();
+    store.getState().setAgentError('something broke', 'try again');
+    expect(store.getState().agentError).toBe('something broke');
+    expect(store.getState().agentErrorGuidance).toBe('try again');
+  });
+
+  it('setAgentError with null clears error and guidance', () => {
+    const store = makeStore();
+    store.getState().setAgentError('err', 'guide');
+    store.getState().setAgentError(null);
+    expect(store.getState().agentError).toBeNull();
+    expect(store.getState().agentErrorGuidance).toBeNull();
+  });
+
+  it('setCurrentModel sets the model', () => {
+    const store = makeStore();
+    expect(store.getState().currentModel).toBeNull();
+    const model = { id: 'model-1', name: 'Claude' };
+    store.getState().setCurrentModel(model);
+    expect(store.getState().currentModel).toEqual(model);
+  });
+
+  it('setCurrentModel(null) clears the model', () => {
+    const store = makeStore();
+    store.getState().setCurrentModel({ id: 'x', name: 'y' });
+    store.getState().setCurrentModel(null);
+    expect(store.getState().currentModel).toBeNull();
+  });
+
+  it('clearMessages keeps only the last turn', () => {
+    const store = makeStore();
+    store.setState({
+      messages: [
+        { id: 'u1', role: MessageRole.User, content: 'first' },
+        { id: 'm1', role: MessageRole.Model, content: 'reply1' },
+        { id: 'u2', role: MessageRole.User, content: 'second' },
+        { id: 'm2', role: MessageRole.Model, content: 'reply2' },
+      ],
+    });
+    store.getState().clearMessages();
+    const msgs = store.getState().messages;
+    expect(msgs).toHaveLength(2);
+    expect(msgs[0]!.id).toBe('u2');
+    expect(msgs[1]!.id).toBe('m2');
+  });
+
+  it('clearMessages does nothing when fewer than 2 messages', () => {
+    const store = makeStore();
+    store.setState({
+      messages: [{ id: 'u1', role: MessageRole.User, content: 'only' }],
+    });
+    store.getState().clearMessages();
+    expect(store.getState().messages).toHaveLength(1);
+  });
+
+  it('clearMessages does nothing when no user messages exist', () => {
+    const store = makeStore();
+    store.setState({
+      messages: [
+        { id: 'm1', role: MessageRole.Model, content: 'a' },
+        { id: 'm2', role: MessageRole.Model, content: 'b' },
+      ],
+    });
+    store.getState().clearMessages();
+    expect(store.getState().messages).toHaveLength(2);
+  });
+
+  it('showTransientAlert sets the alert', () => {
+    const store = makeStore();
+    expect(store.getState().transientAlert).toBeNull();
+    const alert = { message: 'Done!', status: 'success' as const };
+    store.getState().showTransientAlert(alert);
+    expect(store.getState().transientAlert).toEqual(alert);
+  });
+
+  it('dismissTransientAlert clears the alert', () => {
+    const store = makeStore();
+    store
+      .getState()
+      .showTransientAlert({ message: 'hi', status: 'info' as const });
+    store.getState().dismissTransientAlert();
+    expect(store.getState().transientAlert).toBeNull();
+  });
+
+  it('setShowHelpPanel toggles panel and sets commands', () => {
+    const store = makeStore();
+    expect(store.getState().showHelpPanel).toBe(false);
+    const cmds = [{ name: '/help', description: 'Show help' }];
+    store.getState().setShowHelpPanel(true, cmds as any);
+    expect(store.getState().showHelpPanel).toBe(true);
+    expect(store.getState().helpCommands).toEqual(cmds as any);
+  });
+
+  it('setShowHelpPanel defaults commands to empty array', () => {
+    const store = makeStore();
+    store.getState().setShowHelpPanel(true);
+    expect(store.getState().showHelpPanel).toBe(true);
+    expect(store.getState().helpCommands).toEqual([]);
+  });
+
+  it('setShowUsagePanel toggles panel and sets data', () => {
+    const store = makeStore();
+    const usageData = { total: 100 } as any;
+    store.getState().setShowUsagePanel(true, usageData);
+    expect(store.getState().showUsagePanel).toBe(true);
+    expect(store.getState().usageData).toEqual(usageData);
+  });
+
+  it('setShowUsagePanel with no data sets usageData to null', () => {
+    const store = makeStore();
+    store.getState().setShowUsagePanel(true);
+    expect(store.getState().showUsagePanel).toBe(true);
+    expect(store.getState().usageData).toBeNull();
+  });
+
+  it('setShowMcpPanel sets panel state with defaults', () => {
+    const store = makeStore();
+    store.getState().setShowMcpPanel(true);
+    expect(store.getState().showMcpPanel).toBe(true);
+    expect(store.getState().mcpServers).toEqual([]);
+    expect(store.getState().mcpMode).toBe('list');
+    expect(store.getState().mcpRegistryServers).toEqual([]);
+  });
+
+  it('setShowMcpPanel sets panel state with all arguments', () => {
+    const store = makeStore();
+    const servers = [{ name: 'srv1' }] as any;
+    const registry = [{ name: 'reg1' }] as any;
+    store.getState().setShowMcpPanel(true, servers, 'add', registry);
+    expect(store.getState().showMcpPanel).toBe(true);
+    expect(store.getState().mcpServers).toEqual(servers);
+    expect(store.getState().mcpMode).toBe('add');
+    expect(store.getState().mcpRegistryServers).toEqual(registry);
+  });
+
+  it('setContextUsage sets contextUsagePercent', () => {
+    const store = makeStore();
+    expect(store.getState().contextUsagePercent).toBeNull();
+    store.getState().setContextUsage(75);
+    expect(store.getState().contextUsagePercent).toBe(75);
+  });
+
+  it('clearInput resets input buffer to initial state', () => {
+    const store = makeStore();
+    store.getState().insert('hello');
+    expect(store.getState().input.lines[0]).toBe('hello');
+    store.getState().clearInput();
+    expect(store.getState().input.lines).toEqual(['']);
+    expect(store.getState().input.cursorRow).toBe(0);
+    expect(store.getState().input.cursorCol).toBe(0);
+  });
+
+  it('setHasExpandableToolOutputs sets the flag', () => {
+    const store = makeStore();
+    expect(store.getState().hasExpandableToolOutputs).toBe(false);
+    store.getState().setHasExpandableToolOutputs(true);
+    expect(store.getState().hasExpandableToolOutputs).toBe(true);
+    store.getState().setHasExpandableToolOutputs(false);
+    expect(store.getState().hasExpandableToolOutputs).toBe(false);
+  });
+
+  it('confirmTrustAllTools sets the confirmed flag', () => {
+    const store = makeStore();
+    expect(store.getState().trustAllToolsConfirmed).toBe(false);
+    store.getState().confirmTrustAllTools();
+    expect(store.getState().trustAllToolsConfirmed).toBe(true);
+  });
+
+  it('addPendingImage appends to pendingImages', () => {
+    const store = makeStore();
+    expect(store.getState().pendingImages).toEqual([]);
+    const img1 = {
+      base64: 'abc',
+      mimeType: 'image/png',
+      width: 100,
+      height: 100,
+      sizeBytes: 1024,
+    };
+    const img2 = {
+      base64: 'def',
+      mimeType: 'image/jpeg',
+      width: 200,
+      height: 200,
+      sizeBytes: 2048,
+    };
+    store.getState().addPendingImage(img1);
+    store.getState().addPendingImage(img2);
+    expect(store.getState().pendingImages).toEqual([img1, img2]);
+  });
+
+  it('removePendingImage removes by index', () => {
+    const store = makeStore();
+    const img1 = {
+      base64: 'a',
+      mimeType: 'image/png',
+      width: 10,
+      height: 10,
+      sizeBytes: 100,
+    };
+    const img2 = {
+      base64: 'b',
+      mimeType: 'image/jpeg',
+      width: 20,
+      height: 20,
+      sizeBytes: 200,
+    };
+    const img3 = {
+      base64: 'c',
+      mimeType: 'image/gif',
+      width: 30,
+      height: 30,
+      sizeBytes: 300,
+    };
+    store.getState().addPendingImage(img1);
+    store.getState().addPendingImage(img2);
+    store.getState().addPendingImage(img3);
+    store.getState().removePendingImage(1);
+    expect(store.getState().pendingImages).toEqual([img1, img3]);
+  });
+
+  it('clearPendingImages empties the array', () => {
+    const store = makeStore();
+    store.getState().addPendingImage({
+      base64: 'x',
+      mimeType: 'image/png',
+      width: 50,
+      height: 50,
+      sizeBytes: 500,
+    });
+    store.getState().clearPendingImages();
+    expect(store.getState().pendingImages).toEqual([]);
   });
 });
