@@ -3305,6 +3305,26 @@ pub async fn execute(
             },
             sacp::on_receive_request!(),
         )
+        // Handle settings/set — performs a locked read-modify-write on the
+        // global settings file so the TUI can safely write settings without
+        // racing with the Rust backend.
+        .on_receive_request(
+            {
+                async move |request: super::schema::SettingsSetRequest, request_cx, _cx| {
+                    use crate::database::settings::Setting;
+                    let key = Setting::try_from(request.key.as_str())
+                        .map_err(|e| sacp::util::internal_error(format!("{e}")))?;
+                    // Perform an atomic read-modify-write directly on the global
+                    // settings file with fd_lock, independent of the in-memory
+                    // Settings snapshot (which is a clone and may be stale).
+                    crate::database::settings::Settings::update_global_setting(key, request.value)
+                        .await
+                        .map_err(|e| sacp::util::internal_error(format!("{e}")))?;
+                    request_cx.respond(super::schema::SettingsSetResponse {})
+                }
+            },
+            sacp::on_receive_request!(),
+        )
         .on_receive_message(
             {
                 let session_tx = session_manager_handle.clone();

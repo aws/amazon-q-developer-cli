@@ -18,6 +18,8 @@ import { parseCliArgs, buildAcpArgs } from './utils/cli-args';
 import { sessionConversationsStore } from './stores/session-conversations.js';
 import { pickSessionFromEntries } from './utils/session-picker';
 import type { AgentStreamEvent } from './types/agent-events';
+import { readBoolSetting } from './utils/cli-settings';
+import { Settings } from './constants/settings';
 import { getAnnouncements } from './constants/feed.js';
 import {
   getActiveAnnouncement,
@@ -525,6 +527,14 @@ const startApp = async () => {
   // This doesn't override manual pane renames — only affects automatic-rename.
   process.title = 'kiro';
 
+  // Resolve wrap-disabled once at startup so the renderer option and theme
+  // context see the same value for the whole session. The setting lives at
+  // ~/.kiro/settings/cli.json (key: chat.disableWrap).
+  // KIRO_DISABLE_WRAP=1 stays supported as a dev/override escape hatch.
+  const wrapDisabled =
+    process.env.KIRO_DISABLE_WRAP === '1' ||
+    readBoolSetting(Settings.CHAT_DISABLE_WRAP, false);
+
   function App() {
     const appStoreRef = useRef<AppStoreApi>(appStore);
 
@@ -547,7 +557,7 @@ const startApp = async () => {
 
     return (
       <ErrorBoundary>
-        <ThemeProvider>
+        <ThemeProvider wrapDisabled={wrapDisabled}>
           <AppStoreContext.Provider value={appStoreRef.current}>
             <UserThemeBridge />
             <TestModeProvider>
@@ -559,10 +569,19 @@ const startApp = async () => {
     );
   }
 
-  const instance = render(<App />, {
-    exitOnCtrlC: false,
-    patchConsole: false,
-  });
+  // `wideLines` is a twinki-specific render option. We type the options
+  // object explicitly so the compiler doesn't require a cast.
+  const renderOptions: Parameters<typeof render>[1] & { wideLines?: boolean } =
+    {
+      exitOnCtrlC: false,
+      patchConsole: false,
+      // Enable physical-row tracking when the user opts into disabled wrap
+      // (setting `chat.disableWrap` or env `KIRO_DISABLE_WRAP=1`). Required
+      // so the differential renderer places the cursor correctly for
+      // soft-wrapped lines. Small per-render cost.
+      wideLines: wrapDisabled,
+    };
+  const instance = render(<App />, renderOptions);
 
   // Expose render instance for dev metrics
   if (instance && typeof instance === 'object' && 'getMetrics' in instance) {

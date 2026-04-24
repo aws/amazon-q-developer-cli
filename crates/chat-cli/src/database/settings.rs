@@ -164,6 +164,10 @@ pub enum Setting {
     ToolSearchMinPct,
     #[strum(message = "Minimum MCP tool spec token count to activate tool search (number)")]
     ToolSearchMinTokens,
+    #[strum(
+        message = "Disable line wrapping in chat output; long lines soft-wrap visually but remain single logical lines for copy-paste (boolean)"
+    )]
+    ChatDisableWrap,
 }
 
 impl Setting {
@@ -282,6 +286,7 @@ impl AsRef<str> for Setting {
             Self::ToolSearchEnabled => "toolSearch.enabled",
             Self::ToolSearchMinPct => "toolSearch.minPct",
             Self::ToolSearchMinTokens => "toolSearch.minTokens",
+            Self::ChatDisableWrap => "chat.disableWrap",
         }
     }
 }
@@ -352,6 +357,7 @@ impl TryFrom<&str> for Setting {
             "toolSearch.enabled" => Ok(Self::ToolSearchEnabled),
             "toolSearch.minPct" => Ok(Self::ToolSearchMinPct),
             "toolSearch.minTokens" => Ok(Self::ToolSearchMinTokens),
+            "chat.disableWrap" => Ok(Self::ChatDisableWrap),
             _ => Err(DatabaseError::InvalidSetting(value.to_string())),
         }
     }

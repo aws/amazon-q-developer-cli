@@ -9,6 +9,7 @@ import {
 } from '../../utils/markdown.js';
 import { expandTabs } from '../../utils/string.js';
 import { Text } from './text/Text.js';
+import type { TextProps } from '../../renderer.js';
 import { Divider } from './divider/Divider.js';
 import { useTheme } from '../../hooks/useThemeContext.js';
 import { hyperlink } from '../../utils/terminal-capabilities.js';
@@ -26,6 +27,12 @@ interface MarkdownRendererProps {
   content: string;
   /** Chalk chain for text color (e.g. messageColor from useTheme) */
   color: any;
+  /**
+   * When true, use `wrap="overflow"` on inner Text components instead of
+   * `wrap="wrap"`. Used by wrapDisabled scrollback rendering so the terminal
+   * soft-wraps visually but copy-paste keeps logical lines intact.
+   */
+  useOverflow?: boolean;
 }
 
 type RenderBlock =
@@ -40,7 +47,9 @@ type RenderBlock =
 export const MarkdownRenderer = React.memo(function MarkdownRenderer({
   content,
   color,
+  useOverflow = false,
 }: MarkdownRendererProps) {
+  const wrapMode: TextProps['wrap'] = useOverflow ? 'overflow' : 'wrap';
   const highlightCode = useSyntaxHighlight();
   const { getColor } = useTheme();
   const { width: termWidth } = useTerminalSize();
@@ -208,7 +217,7 @@ export const MarkdownRenderer = React.memo(function MarkdownRenderer({
         if (block.type === 'header') {
           return (
             <Box key={i} marginTop={mt}>
-              <Text wrap="wrap">
+              <Text wrap={wrapMode}>
                 {chalk.bold(renderInlineText(block.segment.text))}
               </Text>
             </Box>
@@ -221,7 +230,7 @@ export const MarkdownRenderer = React.memo(function MarkdownRenderer({
           const indentStr = '  '.repeat(indent);
           return (
             <Box key={i} marginTop={mt}>
-              <Text wrap="wrap">
+              <Text wrap={wrapMode}>
                 {color(indentStr + prefix)}
                 {renderInlineText(block.segment.text)}
               </Text>
@@ -336,7 +345,7 @@ export const MarkdownRenderer = React.memo(function MarkdownRenderer({
 
         return (
           <Box key={i} marginTop={mt}>
-            <Text wrap="wrap">{styledText}</Text>
+            <Text wrap={wrapMode}>{styledText}</Text>
           </Box>
         );
       })}

@@ -215,6 +215,21 @@ pub struct SettingsListRequest {}
 #[serde(transparent)]
 pub struct SettingsListResponse(pub serde_json::Map<String, serde_json::Value>);
 
+/// Request to set a single user setting.
+/// The key uses the same dotted names as the settings file (e.g.
+/// "chat.disableTrustAllConfirmation"). The write is performed with file-level locking so it is
+/// safe to call from the TUI process while the Rust backend may also be writing settings.
+#[derive(Debug, Clone, Serialize, Deserialize, JrRequest)]
+#[request(method = "_kiro.dev/settings/set", response = SettingsSetResponse)]
+pub struct SettingsSetRequest {
+    pub key: String,
+    pub value: serde_json::Value,
+}
+
+/// Response for settings/set — empty on success.
+#[derive(Debug, Clone, Serialize, Deserialize, JrResponsePayload)]
+pub struct SettingsSetResponse {}
+
 /// Request to terminate a session
 #[derive(Debug, Clone, Serialize, Deserialize, JrRequest)]
 #[request(method = "_kiro.dev/session/terminate", response = TerminateSessionResponse)]

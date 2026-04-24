@@ -129,6 +129,16 @@ export interface SessionClient {
   listSettings(): Promise<Record<string, unknown>>;
 
   /**
+   * Sets a single user setting via the backend, which performs a locked
+   * read-modify-write on the settings file.  This avoids race conditions
+   * when both the TUI and Rust backend write settings concurrently.
+   *
+   * @param key - Dotted setting key (e.g. "chat.disableTrustAllConfirmation")
+   * @param value - The value to set
+   */
+  setSetting(key: string, value: unknown): Promise<void>;
+
+  /**
    * Spawns a new session.
    *
    * @param task - The task for the session

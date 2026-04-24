@@ -1,4 +1,5 @@
 use std::fmt::Display;
+use std::io::SeekFrom;
 
 use fd_lock::RwLock;
 use serde_json::{
@@ -8,6 +9,7 @@ use serde_json::{
 use tokio::fs::File;
 use tokio::io::{
     AsyncReadExt,
+    AsyncSeekExt,
     AsyncWriteExt,
 };
 
@@ -155,6 +157,10 @@ pub enum Setting {
     ToolSearchMinPct,
     #[strum(message = "Minimum MCP tool spec token count to activate tool search (number)")]
     ToolSearchMinTokens,
+    #[strum(
+        message = "Disable line wrapping in chat output; long lines soft-wrap visually but remain single logical lines for copy-paste (boolean)"
+    )]
+    ChatDisableWrap,
 }
 
 impl Setting {
@@ -224,6 +230,7 @@ impl AsRef<str> for Setting {
             Self::ToolSearchEnabled => "toolSearch.enabled",
             Self::ToolSearchMinPct => "toolSearch.minPct",
             Self::ToolSearchMinTokens => "toolSearch.minTokens",
+            Self::ChatDisableWrap => "chat.disableWrap",
         }
     }
 }
@@ -294,6 +301,7 @@ impl TryFrom<&str> for Setting {
             "toolSearch.enabled" => Ok(Self::ToolSearchEnabled),
             "toolSearch.minPct" => Ok(Self::ToolSearchMinPct),
             "toolSearch.minTokens" => Ok(Self::ToolSearchMinTokens),
+            "chat.disableWrap" => Ok(Self::ChatDisableWrap),
             _ => Err(DatabaseError::InvalidSetting(value.to_string())),
         }
     }
@@ -479,6 +487,63 @@ impl Settings {
 
     pub fn clear_session(&mut self) {
         self.session.clear();
+    }
+
+    /// Atomically update a single key in the global settings file.
+    ///
+    /// This performs a locked read → merge → write cycle directly on disk,
+    /// independent of any in-memory `Settings` snapshot.  It is designed to
+    /// be called from the ACP handler where the `Os` (and therefore the
+    /// `Settings` struct) is a clone and mutations to the in-memory map
+    /// would not propagate back to the original.
+    ///
+    /// The file-level `fd_lock` ensures this is safe even when the TUI
+    /// process and the Rust backend write concurrently.
+    pub async fn update_global_setting(key: Setting, value: Value) -> Result<(), DatabaseError> {
+        let path = GlobalPaths::settings_path()?;
+
+        if let Some(parent) = path.parent()
+            && !parent.exists()
+        {
+            tokio::fs::create_dir_all(parent).await?;
+        }
+
+        // Open (or create) the file with read+write and acquire an exclusive lock.
+        let mut file_opts = File::options();
+        file_opts.create(true).read(true).write(true);
+
+        #[cfg(unix)]
+        file_opts.mode(0o600);
+
+        let mut file = RwLock::new(file_opts.open(&path).await?);
+        let mut lock = file.write()?;
+
+        // Read current contents under the lock.
+        let mut buf = Vec::new();
+        lock.read_to_end(&mut buf).await?;
+
+        let mut map: Map<String, Value> = if buf.is_empty() {
+            Map::new()
+        } else {
+            serde_json::from_slice(&buf).unwrap_or_default()
+        };
+
+        // Merge the new value.
+        map.insert(key.to_string(), value);
+
+        // Truncate and rewrite.
+        lock.seek(SeekFrom::Start(0)).await?;
+        lock.set_len(0).await?;
+
+        match serde_json::to_string_pretty(&map) {
+            Ok(json) => lock.write_all(json.as_bytes()).await?,
+            Err(_err) => {
+                lock.write_all(b"{}").await?;
+            },
+        }
+        lock.flush().await?;
+
+        Ok(())
     }
 
     async fn save_global(&self) -> Result<(), DatabaseError> {

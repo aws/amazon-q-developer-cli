@@ -57,6 +57,18 @@ export interface TUIOptions {
    * Typical value: 2 (the width most terminals steal for a scrollbar).
    */
   scrollbarWidth?: number;
+  /**
+   * Enable support for lines wider than terminal width that the terminal
+   * soft-wraps into multiple physical rows (e.g. components using
+   * `wrap="overflow"`). When true, the renderer tracks physical rows
+   * for cursor positioning, viewport math, and differential clearing.
+   *
+   * Default: false (faster path — assumes every logical line is exactly
+   * one physical row). When overflow components are present and this is
+   * false, cursor positioning and diff math go wrong for soft-wrapped
+   * rows, leaving ghost copies in scrollback during streaming.
+   */
+  wideLines?: boolean;
 }
 
 /**
@@ -107,6 +119,20 @@ export class TUI extends Container {
   }
 
   private previousLines: string[] = [];
+  /**
+   * Whether `previousLines` contains any line wider than the current
+   * terminal width. Cached because checking is O(n) over all lines and
+   * `previousLines` can be very large (stress tests: 50k+ lines). Set
+   * whenever `previousLines` is assigned a new value.
+   */
+  private previousHasWide = false;
+  /**
+   * Cached sum of physical rows in `previousLines`. Updated whenever
+   * `previousLines` is assigned (we always know the new value). `-1` means
+   * stale — recompute on next access. Avoids O(n) scan every render when
+   * `previousLines` can be 50k+ lines.
+   */
+  private previousPhysRowsCache = 0;
   private previousWidth = 0;
   private focusedComponent: Component | null = null;
   private inputListeners = new Set<InputListener>();
@@ -126,7 +152,31 @@ export class TUI extends Container {
   private stopped = false;
   private overlayStack: OverlayEntry[] = [];
   private accumulatedStaticOutput: string[] = [];
+  /**
+   * Cached flag: does `accumulatedStaticOutput` contain any line wider than
+   * the last terminal width we saw? Recomputed lazily in
+   * {@link _doRenderInner} when width changes or on explicit reset; updated
+   * incrementally when new static lines are pushed. Lets the hot path avoid
+   * re-scanning the full accumulated buffer every frame.
+   */
+  private staticHasWide = false;
+  /** Width at which `staticHasWide` was last computed. -1 means stale. */
+  private staticHasWideWidth = -1;
+  /**
+   * Cached sum of physical rows across `accumulatedStaticOutput` at
+   * {@link staticHasWideWidth}. `-1` means stale (not yet computed or
+   * invalidated). Lets the hot path compute total physical rows as
+   * `staticPhysRowsCache + physRows(liveLines)` instead of walking the
+   * full accumulated buffer.
+   */
+  private staticPhysRowsCache = -1;
   private staticScrollbackCap = 10_000;
+  /**
+   * When true, this renderer supports lines wider than terminal width
+   * (soft-wrapped into multiple physical rows). Set via {@link TUIOptions.wideLines}.
+   * When false, physical row math is skipped for performance.
+   */
+  private wideLinesEnabled = false;
   private onResizeCallbacks: (() => void)[] = [];
   /** Original stdout.write before interception; null when not intercepted. */
   private originalStdoutWrite: typeof process.stdout.write | null = null;
@@ -186,6 +236,9 @@ export class TUI extends Container {
     }
     if (opts.scrollbarWidth != null && opts.scrollbarWidth > 0) {
       this.scrollbarWidth = opts.scrollbarWidth;
+    }
+    if (opts.wideLines) {
+      this.wideLinesEnabled = true;
     }
     if (process.env.TWINKI_DEBUG_REDRAW === '1') {
       try {
@@ -691,6 +744,8 @@ export class TUI extends Container {
    */
   clearRenderState(): void {
     this.previousLines = [];
+    this.previousHasWide = false;
+    this.previousPhysRowsCache = 0;
     this.previousWidth = -1;
     this.cursorRow = 0;
     this.hardwareCursorRow = 0;
@@ -732,7 +787,21 @@ export class TUI extends Container {
     if (this.altScreen) {
       this.exitAltScreen();
     } else if (this.previousLines.length > 0) {
-      const targetRow = this.previousLines.length;
+      // Move cursor past the rendered content. Use physical row count when
+      // wide lines are enabled (wrap="overflow" soft-wraps into multiple
+      // terminal rows); otherwise logical === physical.
+      let targetRow: number;
+      if (this.wideLinesEnabled) {
+        const width = this.terminal.columns || 80;
+        let physRows = 0;
+        for (const line of this.previousLines) {
+          const vw = visibleWidth(line);
+          physRows += vw <= width ? 1 : Math.ceil(vw / width);
+        }
+        targetRow = physRows;
+      } else {
+        targetRow = this.previousLines.length;
+      }
       const diff = targetRow - this.hardwareCursorRow;
       if (diff > 0) this.terminal.write(`\x1b[${diff}B`);
       else if (diff < 0) this.terminal.write(`\x1b[${-diff}A`);
@@ -740,7 +809,12 @@ export class TUI extends Container {
     }
     // Clear internal collections to prevent memory retention after stop
     this.previousLines = [];
+    this.previousHasWide = false;
+    this.previousPhysRowsCache = 0;
     this.accumulatedStaticOutput = [];
+    this.staticHasWide = false;
+    this.staticHasWideWidth = -1;
+    this.staticPhysRowsCache = -1;
     this.overlayStack = [];
     this.onResizeCallbacks.length = 0;
     this.inputListeners.clear();
@@ -764,6 +838,8 @@ export class TUI extends Container {
     if (this.stopped) return;
     if (force) {
       this.previousLines = [];
+      this.previousHasWide = false;
+      this.previousPhysRowsCache = 0;
       this.previousWidth = -1;
       this.cursorRow = 0;
       this.hardwareCursorRow = 0;
@@ -1183,26 +1259,55 @@ export class TUI extends Container {
   writeStaticLines(lines: string[]): void {
     if (lines.length > 0 && !this.altScreen) {
       this.accumulatedStaticOutput.push(...lines);
+      // Update cached staticHasWide/staticPhysRowsCache incrementally — only
+      // scan the NEW lines, not the whole accumulated buffer. If wide mode
+      // is off or our cached width is stale, skip (will be rebuilt next render).
+      if (this.wideLinesEnabled && this.staticHasWideWidth > 0) {
+        const width = this.staticHasWideWidth;
+        for (const l of lines) {
+          const vw = visibleWidth(l);
+          const rows = vw <= width ? 1 : Math.ceil(vw / width);
+          if (rows > 1) this.staticHasWide = true;
+          if (this.staticPhysRowsCache >= 0) {
+            this.staticPhysRowsCache += rows;
+          }
+        }
+      }
       this.trimStaticOutput();
-      // When content overflowed the viewport, old active content is stuck
-      // in scrollback where cursor-up can't reach. Clear everything and
-      // let the next render do a clean full redraw.
       // When live content (excluding static) overflowed the viewport, the old
-      // active lines are stuck in scrollback. Erase them now before the static
+      // active rows are stuck in scrollback. Erase them now before the static
       // flush pushes more content in, then reset for a clean full redraw.
-      const liveLineCount =
-        this.previousLines.length -
-        (this.accumulatedStaticOutput.length - lines.length);
-      if (liveLineCount > this.terminal.rows && !this.altScreen) {
+      // "Live rows" = physical rows of the active tail (all lines in
+      // `previousLines` after the accumulated static prefix). When wide
+      // lines aren't enabled, physical === logical (one row per line).
+      const staticLogicalCount =
+        this.accumulatedStaticOutput.length - lines.length;
+      let liveRows: number;
+      if (this.wideLinesEnabled) {
+        const width = this.terminal.columns || 80;
+        const rowOf = (line: string) => {
+          const vw = visibleWidth(line);
+          return vw <= width ? 1 : Math.ceil(vw / width);
+        };
+        liveRows = 0;
+        for (let i = staticLogicalCount; i < this.previousLines.length; i++) {
+          liveRows += rowOf(this.previousLines[i] ?? '');
+        }
+      } else {
+        liveRows = this.previousLines.length - staticLogicalCount;
+      }
+      if (liveRows > this.terminal.rows && !this.altScreen) {
         const screenRow = this.hardwareCursorRow - this.previousViewportTop;
-        const linesToErase = Math.min(screenRow + 1, this.terminal.rows);
+        const rowsToErase = Math.min(screenRow + 1, this.terminal.rows);
         let buf = '\x1b[3J';
-        for (let i = 0; i < linesToErase; i++) {
-          buf += '\x1b[2K' + (i < linesToErase - 1 ? '\x1b[1A' : '');
+        for (let i = 0; i < rowsToErase; i++) {
+          buf += '\x1b[2K' + (i < rowsToErase - 1 ? '\x1b[1A' : '');
         }
         buf += '\r\x1b[J';
         this.terminal.write(buf);
         this.previousLines = [];
+        this.previousHasWide = false;
+        this.previousPhysRowsCache = 0;
         this.hardwareCursorRow = 0;
         this.cursorRow = 0;
         this.maxLinesRendered = 0;
@@ -1245,6 +1350,10 @@ export class TUI extends Container {
       this.accumulatedStaticOutput = this.accumulatedStaticOutput.slice(
         -Math.floor(cap * 0.75)
       );
+      // Invalidate — we may have dropped the only wide lines, and the
+      // cached physical-row sum no longer matches the buffer.
+      this.staticHasWideWidth = -1;
+      this.staticPhysRowsCache = -1;
     }
   }
 
@@ -1254,6 +1363,8 @@ export class TUI extends Container {
    */
   replaceStaticOutput(lines: string[]): void {
     this.accumulatedStaticOutput = lines;
+    this.staticHasWideWidth = -1;
+    this.staticPhysRowsCache = -1;
     this.trimStaticOutput();
   }
 
@@ -1263,6 +1374,9 @@ export class TUI extends Container {
    */
   resetStaticOutput(): void {
     this.accumulatedStaticOutput = [];
+    this.staticHasWide = false;
+    this.staticHasWideWidth = -1;
+    this.staticPhysRowsCache = -1;
   }
 
   /**
@@ -1325,11 +1439,16 @@ export class TUI extends Container {
    */
   private handleExternalClear(): void {
     this.previousLines = [];
+    this.previousHasWide = false;
+    this.previousPhysRowsCache = 0;
     this.maxLinesRendered = 0;
     this.hardwareCursorRow = 0;
     this.cursorRow = 0;
     this.previousViewportTop = 0;
     this.accumulatedStaticOutput = [];
+    this.staticHasWide = false;
+    this.staticHasWideWidth = -1;
+    this.staticPhysRowsCache = -1;
     this.requestRender(true);
   }
 
@@ -1403,17 +1522,87 @@ export class TUI extends Container {
   private _doRenderInner(): void {
     const width = this.terminal.columns - this.scrollbarWidth;
     const height = this.terminal.rows;
+
+    /**
+     * Row math helpers.
+     *
+     * Logical lines (stored in `previousLines`, `newLines`,
+     * `accumulatedStaticOutput`) may exceed `width` when a component uses
+     * `wrap="overflow"`. The terminal soft-wraps such lines visually into
+     * multiple physical rows. Cursor positioning, viewport math, and row
+     * counting MUST operate on physical rows to stay aligned with the
+     * terminal. These helpers convert between logical indices and physical
+     * row counts.
+     *
+     * Writing to the terminal uses the ORIGINAL logical content (single
+     * write per logical line) so the terminal's native soft-wrap preserves
+     * the line as one logical unit for copy-paste.
+     */
+    /**
+     * Per-render memoization of `rowOf`. The diff loop, physRowOf helpers,
+     * and anyWideChange scan all call `rowOf` on the same line multiple
+     * times per render; caching avoids redundant `visibleWidth` work.
+     * Scoped to a single _doRenderInner call.
+     */
+    const rowOfCache = new Map<string, number>();
+    const rowOf = (line: string): number => {
+      const cached = rowOfCache.get(line);
+      if (cached !== undefined) return cached;
+      const vw = visibleWidth(line);
+      const r = vw <= width ? 1 : Math.ceil(vw / width);
+      rowOfCache.set(line, r);
+      return r;
+    };
+    /**
+     * Fast check: does any line in `lines` soft-wrap at the current width?
+     * Quick byte-length check short-circuits lines that clearly fit.
+     * Uses `rowOf` (memoized) for the precise check so later helpers see
+     * the cached width.
+     */
+    const hasAnyWideLine = (lines: string[]): boolean => {
+      for (const l of lines) {
+        if (l.length > width && rowOf(l) > 1) return true;
+      }
+      return false;
+    };
+    /** Total physical rows across a logical line array. */
+    const physRows = (lines: string[], knownWide?: boolean): number => {
+      if (knownWide === false) return lines.length;
+      let total = 0;
+      for (const l of lines) total += rowOf(l);
+      return total;
+    };
+    /** Physical row where logical line at index `i` starts. */
+    const physRowOf = (
+      lines: string[],
+      i: number,
+      knownWide?: boolean
+    ): number => {
+      if (knownWide === false) return Math.min(i, lines.length);
+      let row = 0;
+      for (let k = 0; k < i && k < lines.length; k++) row += rowOf(lines[k]!);
+      return row;
+    };
+
     let viewportTop = Math.max(0, this.maxLinesRendered - height);
     let prevViewportTop = this.previousViewportTop;
     let hardwareCursorRow = this.hardwareCursorRow;
 
-    const computeLineDiff = (targetRow: number): number => {
+    const computeLineDiff = (targetPhysRow: number): number => {
       const currentScreenRow = hardwareCursorRow - prevViewportTop;
-      const targetScreenRow = targetRow - viewportTop;
+      const targetScreenRow = targetPhysRow - viewportTop;
       return targetScreenRow - currentScreenRow;
     };
 
     let newLines = this.render(width);
+
+    // Track live portion separately — used to compute `newHasWide` cheaply
+    // when the static prefix has a cached wide flag.
+    const liveLines = newLines;
+    const staticPrefixLen =
+      this.accumulatedStaticOutput.length > 0 && !this.altScreen
+        ? this.accumulatedStaticOutput.length
+        : 0;
 
     // OPTIMIZED: Combine accumulated static output with live content
     // Use concat instead of spread operator for better performance with large arrays
@@ -1426,36 +1615,115 @@ export class TUI extends Container {
       newLines = this.compositeOverlays(newLines, width, height);
     }
 
+    // Refresh the static-prefix physical-row caches if stale. Done BEFORE
+    // cursor physicalization so the cursor fast-path can use them.
+    if (
+      this.wideLinesEnabled &&
+      (this.staticHasWideWidth !== width ||
+        this.staticPhysRowsCache < 0)
+    ) {
+      let total = 0;
+      let anyWide = false;
+      for (const l of this.accumulatedStaticOutput) {
+        const vw = visibleWidth(l);
+        const r = vw <= width ? 1 : Math.ceil(vw / width);
+        total += r;
+        if (r > 1) anyWide = true;
+      }
+      this.staticPhysRowsCache = total;
+      this.staticHasWide = anyWide;
+      this.staticHasWideWidth = width;
+    }
+
     const cursorPos = this.extractCursorPosition(newLines, height);
+    // `cursorPos.row` is a LOGICAL line index into `newLines`. When lines
+    // may soft-wrap (`wideLinesEnabled`), convert it to a physical row so
+    // `positionHardwareCursor` — which operates on physical rows — lands
+    // the cursor at the correct terminal row. Before this conversion,
+    // wide (soft-wrapped) lines caused the hardware cursor to be placed
+    // at a row ABOVE where twinki expected, which in turn made subsequent
+    // differential writes (`\x1b[{n}A`/`B` + `\r` + `\x1b[2K`) overwrite
+    // visible viewport rows belonging to OTHER logical lines — leaving
+    // stale streaming content in terminal scrollback.
+    //
+    // When `wideLinesEnabled=false`, logical and physical rows are
+    // always equal so no conversion is needed and this scan is skipped.
+    if (cursorPos && this.wideLinesEnabled) {
+      // Fast path: if cursor is in the LIVE portion (cursorPos.row >=
+      // staticPrefixLen), we compute using the cached static phys rows
+      // plus only a walk of the small live suffix up to cursor.row.
+      // Otherwise fall back to the full O(n) scan.
+      if (
+        cursorPos.row >= staticPrefixLen &&
+        this.staticPhysRowsCache >= 0 &&
+        this.staticHasWideWidth === width
+      ) {
+        let row = this.staticPhysRowsCache;
+        for (
+          let k = 0;
+          k < cursorPos.row - staticPrefixLen && k < liveLines.length;
+          k++
+        ) {
+          row += rowOf(liveLines[k]!);
+        }
+        cursorPos.row = row;
+      } else {
+        cursorPos.row = physRowOf(newLines, cursorPos.row);
+      }
+    }
     newLines = this.applyLineResets(newLines);
 
     const widthChanged =
       this.previousWidth !== 0 && this.previousWidth !== width;
 
-    // Crash guard: detect lines exceeding terminal width (only when debug enabled)
-    if (this.debugLogFd != null) {
-      for (let i = 0; i < newLines.length; i++) {
-        const vw = visibleWidth(newLines[i]);
-        if (vw > width) {
-          const msg = `Line ${i} visible width (${vw}) exceeds terminal width (${width}). Content: ${newLines[i].slice(0, 120)}...`;
-          this.debugLog(`CRASH GUARD: ${msg}`);
-          try {
-            const fs = require('fs'),
-              os = require('os'),
-              path = require('path');
-            const dir = path.join(os.homedir(), '.twinki');
-            fs.mkdirSync(dir, { recursive: true });
-            fs.writeFileSync(
-              path.join(dir, 'crash.log'),
-              `[${new Date().toISOString()}] ${msg}\n`,
-              { flag: 'a' }
-            );
-          } catch {
-            /* ignore */
-          }
-        }
+    // Physical row totals — these represent what the terminal actually
+    // displays once soft-wrap is taken into account. When no lines are
+    // wider than `width`, physical == logical and we can avoid O(n) work
+    // per render. We only scan for wide lines if the user explicitly
+    // enabled `wideLines` — otherwise every line is assumed one physical
+    // row (matches baseline semantics and zero perf overhead).
+    //
+    // The static-prefix caches (`staticHasWide`, `staticPhysRowsCache`)
+    // were refreshed above if stale — here we only scan the small LIVE
+    // portion.
+    let newHasWide = false;
+    let newPhysRows: number;
+    if (this.wideLinesEnabled) {
+      const liveHasWide = hasAnyWideLine(liveLines);
+      newHasWide = this.staticHasWide || liveHasWide;
+      // Compute live physical rows inline (usually a small array).
+      let livePhys = 0;
+      if (liveHasWide) {
+        for (const l of liveLines) livePhys += rowOf(l);
+      } else {
+        livePhys = liveLines.length;
       }
+      newPhysRows = this.staticPhysRowsCache + livePhys;
+    } else {
+      newPhysRows = newLines.length;
     }
+    const prevHasWide = this.previousHasWide;
+    const prevPhysRows = this.previousPhysRowsCache;
+
+    /**
+     * Physical row where logical line at index `i` starts, for the
+     * `newLines` array specifically. Uses the cached static-prefix
+     * physical-row sum when `i` lies past the static prefix, so each
+     * query only walks the (small) live suffix instead of the whole
+     * accumulated buffer.
+     *
+     * Only valid for `newLines` — use {@link physRowOf} for other arrays.
+     */
+    const physRowOfNew = (i: number): number => {
+      if (!newHasWide) return Math.min(i, newLines.length);
+      if (i >= staticPrefixLen) {
+        let row = this.staticPhysRowsCache;
+        const liveIdx = Math.min(i - staticPrefixLen, liveLines.length);
+        for (let k = 0; k < liveIdx; k++) row += rowOf(liveLines[k]!);
+        return row;
+      }
+      return physRowOf(newLines, i, newHasWide);
+    };
 
     // Debug logging
     this.debugLog(
@@ -1474,20 +1742,26 @@ export class TUI extends Container {
       this.fullRedrawCount++;
       const sync = !process.env['TWINKI_NO_SYNC'];
       let buffer = (sync ? '\x1b[?2026h' : '') + clearSeq;
+      // Write each logical line, separated by \r\n. Lines wider than `width`
+      // are written as-is — the terminal soft-wraps them into multiple rows
+      // visually, preserving single-line semantics for copy-paste.
       for (let i = 0; i < newLines.length; i++) {
         if (i > 0) buffer += '\r\n';
         buffer += newLines[i];
       }
       if (sync) buffer += '\x1b[?2026l';
       this.terminal.write(buffer);
-      this.cursorRow = Math.max(0, newLines.length - 1);
+      // cursorRow/hardwareCursorRow track PHYSICAL rows on the terminal.
+      this.cursorRow = Math.max(0, newPhysRows - 1);
       this.hardwareCursorRow = this.cursorRow;
       this.maxLinesRendered = clearSeq
-        ? newLines.length
-        : Math.max(this.maxLinesRendered, newLines.length);
+        ? newPhysRows
+        : Math.max(this.maxLinesRendered, newPhysRows);
       this.previousViewportTop = Math.max(0, this.maxLinesRendered - height);
-      this.positionHardwareCursor(cursorPos, newLines.length);
+      this.positionHardwareCursor(cursorPos, newPhysRows);
       this.previousLines = newLines;
+      this.previousHasWide = newHasWide;
+      this.previousPhysRowsCache = newPhysRows;
       this.previousWidth = width;
     };
 
@@ -1500,8 +1774,13 @@ export class TUI extends Container {
     // If live content alone exceeds the viewport, use CLEAR_ALL to also wipe
     // stale active lines that may be stuck in scrollback.
     if (this.previousLines.length === 0 && !widthChanged) {
-      const liveLines = newLines.length - this.accumulatedStaticOutput.length;
-      const needsScrollbackClear = liveLines > height;
+      // Match accumulatedStaticOutput to newLines wrt wide-line state:
+      // when nothing is wide at all, logical === physical.
+      const staticPhysRows = this.wideLinesEnabled
+        ? physRows(this.accumulatedStaticOutput)
+        : this.accumulatedStaticOutput.length;
+      const liveRows = newPhysRows - staticPhysRows;
+      const needsScrollbackClear = liveRows > height;
       fullRender(
         this.altScreen
           ? CLEAR_SCREEN
@@ -1522,7 +1801,7 @@ export class TUI extends Container {
     // Strategy 3: Shrink clear
     if (
       this.clearOnShrink &&
-      newLines.length < this.maxLinesRendered &&
+      newPhysRows < this.maxLinesRendered &&
       this.overlayStack.length === 0
     ) {
       fullRender(this.altScreen ? CLEAR_SCREEN : CLEAR_ALL, 'shrink');
@@ -1530,6 +1809,11 @@ export class TUI extends Container {
     }
 
     // Strategy 4: Differential
+    //
+    // Indexing into `previousLines`/`newLines` uses LOGICAL indices (position
+    // of a logical line in the source array). Cursor positioning, viewport
+    // math, and row counts use PHYSICAL rows (terminal rows after soft-wrap).
+    // Conversions between the two use `physRowOf(...)` / `rowOf(...)`.
     let firstChanged = -1;
     let lastChanged = -1;
     const maxLen = Math.max(newLines.length, this.previousLines.length);
@@ -1554,64 +1838,79 @@ export class TUI extends Container {
 
     // No changes
     if (firstChanged === -1) {
-      this.positionHardwareCursor(cursorPos, newLines.length);
+      this.positionHardwareCursor(cursorPos, newPhysRows);
       this.previousViewportTop = Math.max(0, this.maxLinesRendered - height);
       return;
     }
 
-    // All changes in deleted lines
+    // All changes are tail deletions (new ends before any new content at firstChanged).
     if (firstChanged >= newLines.length) {
       if (this.previousLines.length > newLines.length) {
         const sync = !process.env['TWINKI_NO_SYNC'];
         let buffer = sync ? '\x1b[?2026h' : '';
-        const targetRow = Math.max(0, newLines.length - 1);
-        const lineDiff = computeLineDiff(targetRow);
+        // The logical row where the new content ends, expressed as a
+        // physical row (cursor will land on the last physical row of the
+        // last surviving logical line).
+        const lastLogicalIdx = Math.max(0, newLines.length - 1);
+        const targetPhysRow = Math.max(
+          0,
+          physRowOfNew(lastLogicalIdx) +
+            rowOf(newLines[lastLogicalIdx] ?? '') -
+            1
+        );
+        const lineDiff = computeLineDiff(targetPhysRow);
         if (lineDiff > 0) buffer += `\x1b[${lineDiff}B`;
         else if (lineDiff < 0) buffer += `\x1b[${-lineDiff}A`;
         buffer += '\r';
-        const extra = this.previousLines.length - newLines.length;
-        if (extra > height) {
+        // Count the number of PHYSICAL rows that used to exist past the
+        // new end — those need to be erased one terminal row at a time.
+        const extraPhys = prevPhysRows - newPhysRows;
+        if (extraPhys > height) {
           fullRender(this.altScreen ? CLEAR_SCREEN : CLEAR_ALL, 'extra>height');
           return;
         }
-        if (extra > 0) buffer += '\x1b[1B';
-        for (let i = 0; i < extra; i++) {
+        if (extraPhys > 0) buffer += '\x1b[1B';
+        for (let i = 0; i < extraPhys; i++) {
           buffer += '\r\x1b[2K';
-          if (i < extra - 1) buffer += '\x1b[1B';
+          if (i < extraPhys - 1) buffer += '\x1b[1B';
         }
-        if (extra > 0) buffer += `\x1b[${extra}A`;
+        if (extraPhys > 0) buffer += `\x1b[${extraPhys}A`;
         if (sync) buffer += '\x1b[?2026l';
         this.terminal.write(buffer);
-        this.cursorRow = targetRow;
-        this.hardwareCursorRow = targetRow;
+        this.cursorRow = targetPhysRow;
+        this.hardwareCursorRow = targetPhysRow;
       }
-      this.positionHardwareCursor(cursorPos, newLines.length);
+      this.positionHardwareCursor(cursorPos, newPhysRows);
       this.previousLines = newLines;
+      this.previousHasWide = newHasWide;
+      this.previousPhysRowsCache = newPhysRows;
       this.previousWidth = width;
       this.previousViewportTop = Math.max(0, this.maxLinesRendered - height);
       return;
     }
 
     // Change above previous viewport.
-    // When content didn't shrink, re-scan only the visible viewport instead
-    // of a full redraw. This avoids flashing from off-screen animation ticks
-    // (spinners, thinking indicators) that would otherwise trigger CLEAR_ALL.
-    const previousContentViewportTop = Math.max(
-      0,
-      this.previousLines.length - height
-    );
+    // `previousContentViewportTop` is the PHYSICAL row where the previous
+    // viewport begins. Compare the physical row of `firstChanged` (logical
+    // index) against it.
+    const previousContentViewportTop = Math.max(0, prevPhysRows - height);
+    const firstChangedPhysRow = physRowOfNew(firstChanged);
     if (
-      firstChanged < previousContentViewportTop &&
-      newLines.length >= this.previousLines.length
+      firstChangedPhysRow < previousContentViewportTop &&
+      newPhysRows >= prevPhysRows
     ) {
-      // Re-scan for first change within the visible viewport
+      // Re-scan for first change within the visible viewport.
+      // We walk logical indices but skip until the logical line starts at
+      // or past the viewport's physical top.
       firstChanged = -1;
       lastChanged = -1;
       for (
-        let i = previousContentViewportTop;
+        let i = 0;
         i < Math.max(newLines.length, this.previousLines.length);
         i++
       ) {
+        const physStartInNew = physRowOfNew(Math.min(i, newLines.length));
+        if (physStartInNew < previousContentViewportTop) continue;
         const oldLine = this.previousLines[i] ?? '';
         const newLine = newLines[i] ?? '';
         if (oldLine !== newLine) {
@@ -1622,11 +1921,13 @@ export class TUI extends Container {
       if (firstChanged === -1) {
         // Only off-screen changes — nothing to render
         this.previousLines = newLines;
+        this.previousHasWide = newHasWide;
+        this.previousPhysRowsCache = newPhysRows;
         this.previousWidth = width;
         this.previousViewportTop = Math.max(0, this.maxLinesRendered - height);
         return;
       }
-    } else if (firstChanged < previousContentViewportTop) {
+    } else if (firstChangedPhysRow < previousContentViewportTop) {
       fullRender(
         this.altScreen ? CLEAR_SCREEN : CLEAR_ALL,
         'off-screen-change'
@@ -1638,58 +1939,126 @@ export class TUI extends Container {
     const sync = !process.env['TWINKI_NO_SYNC'];
     let buffer = sync ? '\x1b[?2026h' : '';
     const prevViewportBottom = prevViewportTop + height - 1;
-    const moveTargetRow = appendStart ? firstChanged - 1 : firstChanged;
+    // `moveTargetPhysRow` is the PHYSICAL row we position the cursor at
+    // BEFORE emitting `\r\n` (appendStart) or `\r` (not appendStart).
+    // - Not appendStart: cursor lands at the physical row of `firstChanged`,
+    //   then `\r` goes to col 0 of that row. We then write `firstChanged`
+    //   in place.
+    // - appendStart: we're appending NEW lines past the end of previousLines.
+    //   We want to land at the LAST physical row of line (firstChanged - 1),
+    //   so that `\r\n` advances to a fresh row for the new content. Using
+    //   `physRowOf(newLines, firstChanged - 1) + rowOf(...) - 1` gives the
+    //   last physical row of that line (handles wide lines correctly).
+    const moveTargetPhysRow = appendStart
+      ? physRowOfNew(firstChanged - 1) +
+        rowOf(newLines[firstChanged - 1] ?? '') -
+        1
+      : physRowOfNew(firstChanged);
 
-    if (moveTargetRow > prevViewportBottom) {
+    if (moveTargetPhysRow > prevViewportBottom) {
       const currentScreenRow = Math.max(
         0,
         Math.min(height - 1, hardwareCursorRow - prevViewportTop)
       );
       const moveToBottom = height - 1 - currentScreenRow;
       if (moveToBottom > 0) buffer += `\x1b[${moveToBottom}B`;
-      const scroll = moveTargetRow - prevViewportBottom;
+      const scroll = moveTargetPhysRow - prevViewportBottom;
       buffer += '\r\n'.repeat(scroll);
       prevViewportTop += scroll;
       viewportTop += scroll;
-      hardwareCursorRow = moveTargetRow;
+      hardwareCursorRow = moveTargetPhysRow;
     }
 
-    const lineDiff = computeLineDiff(moveTargetRow);
+    const lineDiff = computeLineDiff(moveTargetPhysRow);
     if (lineDiff > 0) buffer += `\x1b[${lineDiff}B`;
     else if (lineDiff < 0) buffer += `\x1b[${-lineDiff}A`;
     buffer += appendStart ? '\r\n' : '\r';
 
-    const renderEnd = Math.min(lastChanged, newLines.length - 1);
-    for (let i = firstChanged; i <= renderEnd; i++) {
-      if (i > firstChanged) buffer += '\r\n';
-      buffer += '\x1b[2K';
-      buffer += newLines[i];
-    }
-
-    let finalCursorRow = renderEnd;
-
-    if (this.previousLines.length > newLines.length) {
-      if (renderEnd < newLines.length - 1) {
-        const moveDown = newLines.length - 1 - renderEnd;
-        buffer += `\x1b[${moveDown}B`;
-        finalCursorRow = newLines.length - 1;
+    // When any changed logical line has rowOf > 1 (i.e. will soft-wrap),
+    // the previous line at that position may have occupied MORE physical
+    // rows than the new one, or vice versa. Per-row `\x1b[2K` won't clear
+    // stale rows below. Use `\x1b[J` to clear from cursor to end of screen
+    // and rewrite the region from firstChanged to end, which guarantees
+    // correct output at the cost of re-writing more.
+    //
+    // Optimization: skip scanning the side (previous or new) that is known
+    // to contain no wide lines (via cached `prevHasWide` / `newHasWide`
+    // flags). Identical lines that weren't part of the diff also don't
+    // need checking — the precomputed firstChanged..lastChanged window
+    // already excludes most of those.
+    const anyWideChange = (() => {
+      if (!newHasWide && !prevHasWide) return false;
+      const scanStart = firstChanged;
+      const scanEnd = Math.max(lastChanged, this.previousLines.length - 1);
+      for (let i = scanStart; i <= scanEnd; i++) {
+        if (prevHasWide) {
+          const prevLine = this.previousLines[i];
+          if (prevLine !== undefined && rowOf(prevLine) > 1) return true;
+        }
+        if (newHasWide) {
+          const newLine = newLines[i];
+          if (newLine !== undefined && rowOf(newLine) > 1) return true;
+        }
       }
-      const extra = this.previousLines.length - newLines.length;
-      for (let i = 0; i < extra; i++) {
-        buffer += '\r\n\x1b[2K';
+      return false;
+    })();
+
+    let renderEnd: number;
+    let finalCursorRow: number;
+
+    if (anyWideChange) {
+      // Clear to end of screen, then re-write newLines from firstChanged.
+      buffer += '\x1b[J';
+      renderEnd = newLines.length - 1;
+      for (let i = firstChanged; i <= renderEnd; i++) {
+        if (i > firstChanged) buffer += '\r\n';
+        buffer += newLines[i];
       }
-      buffer += `\x1b[${extra}A`;
+      // Final cursor lands on the last physical row of the last logical
+      // line written.
+      const lastIdx = renderEnd;
+      finalCursorRow =
+        lastIdx >= 0
+          ? physRowOfNew(lastIdx) +
+            rowOf(newLines[lastIdx] ?? '') -
+            1
+          : 0;
+    } else {
+      // Narrow-only path: per-row clear + write. Equivalent to pre-existing
+      // behavior when all lines fit within terminal width.
+      renderEnd = Math.min(lastChanged, newLines.length - 1);
+      for (let i = firstChanged; i <= renderEnd; i++) {
+        if (i > firstChanged) buffer += '\r\n';
+        buffer += '\x1b[2K';
+        buffer += newLines[i];
+      }
+      finalCursorRow = physRowOfNew(renderEnd);
+
+      if (this.previousLines.length > newLines.length) {
+        if (renderEnd < newLines.length - 1) {
+          const moveDown = newLines.length - 1 - renderEnd;
+          buffer += `\x1b[${moveDown}B`;
+          finalCursorRow = physRowOfNew(newLines.length - 1);
+        }
+        const extraPhys = prevPhysRows - newPhysRows;
+        for (let i = 0; i < extraPhys; i++) {
+          buffer += '\r\n\x1b[2K';
+        }
+        if (extraPhys > 0) buffer += `\x1b[${extraPhys}A`;
+      }
     }
 
     if (sync) buffer += '\x1b[?2026l';
     this.terminal.write(buffer);
 
-    this.cursorRow = Math.max(0, newLines.length - 1);
+    this.cursorRow = Math.max(0, newPhysRows - 1);
     this.hardwareCursorRow = finalCursorRow;
-    this.maxLinesRendered = Math.max(this.maxLinesRendered, newLines.length);
+    this.maxLinesRendered = Math.max(this.maxLinesRendered, newPhysRows);
     this.previousViewportTop = Math.max(0, this.maxLinesRendered - height);
-    this.positionHardwareCursor(cursorPos, newLines.length);
+    this.positionHardwareCursor(cursorPos, newPhysRows);
     this.previousLines = newLines;
+    this.previousHasWide = newHasWide;
+    this.previousPhysRowsCache = newPhysRows;
     this.previousWidth = width;
   }
 

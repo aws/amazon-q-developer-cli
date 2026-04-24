@@ -528,6 +528,13 @@ export class Kiro {
     return this.sessionClient.listSessions(cwd);
   }
 
+  async setSetting(key: string, value: unknown): Promise<void> {
+    if (!this.sessionClient) {
+      throw new Error('Kiro not initialized');
+    }
+    return this.sessionClient.setSetting(key, value);
+  }
+
   async newSession(): Promise<{
     sessionId: string;
     currentModel?: { id: string; name: string };

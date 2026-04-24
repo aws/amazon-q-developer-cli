@@ -43,6 +43,13 @@ export interface ThemeContextValue extends Theme {
   setBaseTheme: (theme: Theme | null) => void;
   /** The raw base theme before user overrides (for Auto preview) */
   baseTheme: Theme;
+  /**
+   * When true, content in scrollback and live area renders with overflow
+   * wrapping (no soft newlines in copy-paste) and without the StatusBar
+   * left-bar chrome. Controlled by the `chat.disableWrap` setting (or the
+   * `KIRO_DISABLE_WRAP=1` env var for dev).
+   */
+  wrapDisabled: boolean;
 }
 
 /**
@@ -53,6 +60,7 @@ export interface ThemeContextValue extends Theme {
  * @param userPromptColor - Optional user override for prompt text color
  * @param userResponseColor - Optional user override for response text color
  * @param setUserColors - Callback to update user colors at runtime
+ * @param wrapDisabled - Whether the TUI is rendering with soft-wrap overflow instead of word-wrap
  * @returns Enhanced theme context with color getter functionality
  */
 const createThemeContext = (
@@ -66,7 +74,8 @@ const createThemeContext = (
     response?: TerminalColor | null,
     diff?: DiffPreset | null
   ) => void,
-  setBaseTheme: (theme: Theme | null) => void
+  setBaseTheme: (theme: Theme | null) => void,
+  wrapDisabled: boolean
 ): ThemeContextValue => {
   // Merge user diff overrides into theme colors so getColor('diff.*') picks them up
   const effectiveColors =
@@ -150,6 +159,7 @@ const createThemeContext = (
     setUserColors,
     setBaseTheme,
     baseTheme: theme,
+    wrapDisabled,
   };
 };
 
@@ -181,7 +191,8 @@ export const ThemeContext = createContext<ThemeContextValue>(
     undefined,
     undefined,
     () => {},
-    () => {}
+    () => {},
+    false
   )
 );
 
@@ -190,6 +201,12 @@ export const ThemeContext = createContext<ThemeContextValue>(
  */
 interface ThemeProviderProps {
   theme?: Theme | 'auto'; // Optional theme override, 'auto' for detection, defaults to auto-detection
+  /**
+   * When true, the TUI renders with `wrap="overflow"` (long lines soft-wrap
+   * visually but stay as single logical lines) and the StatusBar chrome is
+   * dropped. Controlled by the `chat.disableWrap` setting at startup.
+   */
+  wrapDisabled?: boolean;
   children: ReactNode;
 }
 
@@ -203,6 +220,7 @@ interface ThemeProviderProps {
  */
 export const ThemeProvider = ({
   theme = 'auto',
+  wrapDisabled = false,
   children,
 }: ThemeProviderProps) => {
   // Detect theme once on mount — avoid re-running OSC 11 queries on every render
@@ -280,7 +298,8 @@ export const ThemeProvider = ({
         userResponseColor,
         userDiffPreset,
         setUserColors,
-        setBaseTheme
+        setBaseTheme,
+        wrapDisabled
       ),
     [
       resolvedTheme,
@@ -290,6 +309,7 @@ export const ThemeProvider = ({
       userDiffPreset,
       setUserColors,
       setBaseTheme,
+      wrapDisabled,
     ]
   );
   return (

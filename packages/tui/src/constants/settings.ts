@@ -9,4 +9,6 @@ export const Settings = {
   CHAT_ENABLE_NOTIFICATIONS: 'chat.enableNotifications',
   CHAT_NOTIFICATION_METHOD: 'chat.notificationMethod',
   CHAT_AUTO_EXPAND_TOOL_OUTPUT: 'chat.autoExpandToolOutput',
+  CHAT_DISABLE_WRAP: 'chat.disableWrap',
+  CHAT_DISABLE_TRUST_ALL_CONFIRMATION: 'chat.disableTrustAllConfirmation',
 } as const;

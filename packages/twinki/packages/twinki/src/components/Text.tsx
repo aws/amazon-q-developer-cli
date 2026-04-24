@@ -23,7 +23,7 @@ export interface TextProps {
 	/** Whether to invert foreground and background colors */
 	inverse?: boolean;
 	/** How to handle text that exceeds available width */
-	wrap?: 'wrap' | 'truncate' | 'truncate-end' | 'truncate-start' | 'truncate-middle';
+	wrap?: 'wrap' | 'overflow' | 'truncate' | 'truncate-end' | 'truncate-start' | 'truncate-middle';
 
 	// Mouse events
 	/** Called on mouse click */

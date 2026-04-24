@@ -34,7 +34,21 @@ const StatusBarContext = createContext<StatusBarContextType | null>(null);
 export const useStatusBar = () => {
   const context = useContext(StatusBarContext);
   if (!context) {
-    throw new Error('useStatusBar must be used within a StatusBar');
+    // No-op fallback when rendered outside a StatusBar (e.g. wrapDisabled
+    // mode that skips the chrome for scrollback content). Consumers that
+    // observe measurement changes (`requestRemeasure`) get a silent no-op;
+    // there's nothing to remeasure when there's no StatusBar wrapper.
+    return {
+      setLineColor: () => {},
+      setLineColors: () => {},
+      getNextLineIndex: (count: number = 1) => {
+        void count;
+        return 0;
+      },
+      requestRemeasure: () => {},
+      setStatus: () => {},
+      status: undefined,
+    } as StatusBarContextType;
   }
   return context;
 };

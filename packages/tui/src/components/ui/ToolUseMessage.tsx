@@ -70,7 +70,7 @@ export const ToolUseMessage = React.memo<ToolUseMessageProps>(
     agentLabel,
     agentLabelColor,
   }) {
-    const { getColor } = useTheme();
+    const { getColor, wrapDisabled } = useTheme();
     // Map tool status to StatusBar status icon
     const statusIcon: StatusType | undefined = useMemo(() => {
       if (status === ToolUseStatus.Rejected) return 'error';
@@ -84,8 +84,14 @@ export const ToolUseMessage = React.memo<ToolUseMessageProps>(
 
     const showEscHint = statusIcon === 'executing' && !isStatic;
 
-    return (
-      <StatusBar status={statusIcon} barColor={barColor}>
+    // Under wrapDisabled, drop the StatusBar chrome (vertical colored bar +
+    // margin) entirely, both in live and static contexts. This keeps layout
+    // identical across live/static transitions and produces clean copy-paste
+    // output with no leading whitespace.
+    const skipStatusBar = wrapDisabled;
+
+    const inner = (
+      <>
         {agentLabel && (
           <Box>
             <InkText color={agentLabelColor ?? 'gray'} dimColor>
@@ -104,6 +110,14 @@ export const ToolUseMessage = React.memo<ToolUseMessageProps>(
           locations={locations}
         />
         {showEscHint && <Text>{getColor('muted')('esc to cancel')}</Text>}
+      </>
+    );
+
+    if (skipStatusBar) return inner;
+
+    return (
+      <StatusBar status={statusIcon} barColor={barColor}>
+        {inner}
       </StatusBar>
     );
   }

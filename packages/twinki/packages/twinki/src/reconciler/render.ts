@@ -37,6 +37,13 @@ export interface TwinkiRenderOptions {
 	mouse?: boolean;
 	/** Max lines to keep in static scrollback buffer (default: 10_000). */
 	staticScrollbackCap?: number;
+	/**
+	 * Enable support for lines wider than terminal width (soft-wrapped by
+	 * the terminal). Required when any component uses `wrap="overflow"`.
+	 * Adds a small per-render cost (O(n) width check) and tracks physical
+	 * rows for cursor/viewport math. Default: false.
+	 */
+	wideLines?: boolean;
 }
 
 /**
@@ -253,7 +260,7 @@ export function render(element: React.ReactElement, options: TwinkiRenderOptions
 		terminal = new ProcessTerminal();
 	}
 
-	const tui = new TUI(terminal, { targetFps: options.targetFps, fullscreen: options.fullscreen, mouse: options.mouse, staticScrollbackCap: options.staticScrollbackCap });
+	const tui = new TUI(terminal, { targetFps: options.targetFps, fullscreen: options.fullscreen, mouse: options.mouse, staticScrollbackCap: options.staticScrollbackCap, wideLines: options.wideLines });
 
 	const bridge = new ReactBridge(() => tui.requestRender());
 	bridge.setTUI(tui);

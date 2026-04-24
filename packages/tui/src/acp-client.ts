@@ -444,6 +444,10 @@ export class AcpClient implements acp.Client, SessionClient {
     return result as unknown as Record<string, unknown>;
   }
 
+  async setSetting(key: string, value: unknown): Promise<void> {
+    await this.connection.extMethod('kiro.dev/settings/set', { key, value });
+  }
+
   // ===========
   // acp.Client interface methods
   // ===========

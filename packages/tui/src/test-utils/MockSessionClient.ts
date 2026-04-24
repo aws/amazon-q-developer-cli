@@ -118,6 +118,10 @@ export class MockSessionClient implements SessionClient {
     return {};
   }
 
+  async setSetting(_key: string, _value: unknown): Promise<void> {
+    // No-op for mock
+  }
+
   async listSessions(cwd: string): Promise<ListSessionsResponse> {
     if (process.env.KIRO_TEST_SESSIONS_DIR) {
       const entries = listSessionsForCwd(cwd);

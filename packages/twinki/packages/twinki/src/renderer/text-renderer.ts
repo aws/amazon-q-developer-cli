@@ -29,6 +29,13 @@ export function renderText(node: TwinkiNode, width: number): string[] {
 	if (wrap === WrapMode.WRAP) {
 		return wrapTextWithAnsi(text, width);
 	}
+	if (wrap === WrapMode.OVERFLOW) {
+		// Return each logical line as-is. Lines wider than `width` stay long;
+		// the terminal will soft-wrap them visually. This preserves clean
+		// copy-paste (no injected newlines). Twinki's state machine must
+		// physicalize these for row-accurate diffing/scroll/cursor math.
+		return text.split('\n');
+	}
 	if (wrap === WrapMode.TRUNCATE || wrap === WrapMode.TRUNCATE_END) {
 		const lines = text.split('\n');
 		return lines.map((line) => {

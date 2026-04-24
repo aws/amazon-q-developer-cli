@@ -112,6 +112,7 @@ Some settings are global-only and cannot be overridden at workspace level (e.g.,
 | `chat.disableAutoCompaction` | boolean | Disable automatic summarization |
 | `chat.disableGranularTrust` | boolean | Disable granular trust options |
 | `chat.autoExpandToolOutput` | boolean | Always show full tool output |
+| `chat.disableWrap` | boolean | Disable word-wrapping in chat output; long lines soft-wrap visually but stay as a single logical line for clean copy-paste |
 | `telemetry.enabled` | boolean | Enable/disable telemetry |
 | `knowledge.defaultIncludePatterns` | array | File patterns to include |
 | `knowledge.defaultExcludePatterns` | array | File patterns to exclude |

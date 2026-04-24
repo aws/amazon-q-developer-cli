@@ -376,4 +376,130 @@ describe('Stress Test', () => {
 			flicker: { clean: flicker.clean, events: flicker.events.length },
 		});
 	}, 15_000);
+
+	it('wide lines (wrap="overflow" equivalent): 500-message conversation with long lines', async () => {
+		// Mirrors the 1000-message test but with logical lines that exceed the
+		// terminal width so every one soft-wraps into 2-3 physical rows. This
+		// exercises the `wideLines: true` code path (physicalize cursor/row math).
+		//
+		// Reduced message count (500 vs 1000) to keep the test under the 30s
+		// vitest default while still covering the hot path meaningfully.
+		const term = new TestTerminal(80, 24);
+		const tui = new TUI(term, { wideLines: true });
+		const app = new StressChatApp();
+		tui.addChild(app);
+		tui.start();
+
+		await wait(); await term.flush();
+
+		const memBefore = process.memoryUsage();
+		const wallStart = performance.now();
+		tui.perfTotalRenderMs = 0;
+		tui.perfMaxRenderMs = 0;
+		tui.perfRenderCount = 0;
+
+		const messageCount = 500;
+		const linesPerResponse = 20;
+		let totalFullFrames = 0;
+		let totalDiffFrames = 0;
+		let totalWriteBytes = 0;
+		const frameTimes: { i: number; ms: number; lines: number }[] = [];
+
+		// Generate a line that's roughly 2× the terminal width (≈160 cols) so
+		// the terminal always soft-wraps it into 2 physical rows.
+		const longLine =
+			'  const result = await service.processRequestWithValidation(req.body, { timeout: 30000, retries: 3, fallbackEnabled: true, metricsTag: ';
+
+		for (let i = 0; i < messageCount; i++) {
+			const responseLines: string[] = [];
+			for (let j = 0; j < linesPerResponse; j++) {
+				// Use a fixed-length suffix so token variation doesn't create
+				// false-positive flicker events (analyzeFlicker checks column-
+				// by-column and random-length tokens can look like blanks).
+				const suffix = `msg${String(i).padStart(4, '0')}_line${String(j).padStart(2, '0')}_tokenXYZ01234567`;
+				responseLines.push(`${longLine}'${suffix}' });`);
+			}
+			app.messages.push({ role: 'user', content: `Question ${i + 1}: explain handler pattern ${i}` });
+			app.messages.push({ role: 'assistant', content: responseLines.join('\n') });
+			app.statusText = `Ready (${i + 1}/${messageCount})`;
+			tui.requestRender();
+			await wait(1);
+			await term.flush();
+
+			frameTimes.push({ i, ms: tui.perfLastRenderMs, lines: app.messages.length * (linesPerResponse + 2) });
+
+			const frame = term.getLastFrame()!;
+			if (frame.isFull) totalFullFrames++;
+			else totalDiffFrames++;
+			totalWriteBytes += frame.writeBytes;
+		}
+
+		const wallMs = performance.now() - wallStart;
+		const memAfter = process.memoryUsage();
+
+		tui.stop();
+
+		const frames = term.getFrames();
+		const flicker = analyzeFlicker(frames);
+
+		// --- Metrics gathered first so we can write the report even when assertions fail ---
+		const diffRatio = totalDiffFrames / (totalFullFrames + totalDiffFrames);
+		const avgRenderMs = tui.perfTotalRenderMs / tui.perfRenderCount;
+
+		// --- Report ---
+		const dir = testDir('Stress_Test', 'wide_lines_500_messages');
+		const heapGrowthMB = (memAfter.heapUsed - memBefore.heapUsed) / 1024 / 1024;
+		const sorted = [...frameTimes].sort((a, b) => b.ms - a.ms);
+		const sortedMs = frameTimes.map(f => f.ms).sort((a, b) => a - b);
+		const p50 = sortedMs[Math.floor(sortedMs.length * 0.5)]!;
+		const p95 = sortedMs[Math.floor(sortedMs.length * 0.95)]!;
+		const p99 = sortedMs[Math.floor(sortedMs.length * 0.99)]!;
+		const slowFrameLines: string[] = [];
+		for (const f of sorted.slice(0, 10)) {
+			slowFrameLines.push(`  frame ${f.i}: ${f.ms.toFixed(2)}ms (~${f.lines} content lines)`);
+		}
+
+		writeReport(dir, {
+			scenario: 'wide-lines: 500 messages × 20 long lines each (≈160 cols / 2 physical rows)',
+			'total messages': messageCount * 2,
+			'total content lines': `~${messageCount * (linesPerResponse + 2)}`,
+			'wall time': `${wallMs.toFixed(0)}ms`,
+			'full pipeline (TUI.doRender)': {
+				'total renders': tui.perfRenderCount,
+				'avg render time': `${avgRenderMs.toFixed(2)}ms`,
+				'max render time': `${tui.perfMaxRenderMs.toFixed(2)}ms`,
+				'total render time': `${tui.perfTotalRenderMs.toFixed(0)}ms`,
+				'p50': `${p50.toFixed(2)}ms`,
+				'p95': `${p95.toFixed(2)}ms`,
+				'p99': `${p99.toFixed(2)}ms`,
+			},
+			'slowest frames': slowFrameLines.join('\n'),
+			'diff ratio': `${(diffRatio * 100).toFixed(1)}%`,
+			'total write bytes': totalWriteBytes,
+			flicker: { clean: flicker.clean, events: flicker.events.length },
+			'heap growth': `${heapGrowthMB.toFixed(2)}MB`,
+		});
+
+		// --- Assertions (report is already written so we can see the numbers on failure) ---
+		if (!flicker.clean) {
+			console.log(`wide-lines flicker events: ${flicker.events.length}`);
+			flicker.events.slice(0, 10).forEach(e => {
+				const p = frames[e.frameIndex - 1]?.viewport[e.row] ?? '';
+				const c = frames[e.frameIndex]?.viewport[e.row] ?? '';
+				const n = frames[e.frameIndex + 1]?.viewport[e.row] ?? '';
+				console.log(`  f=${e.frameIndex} r=${e.row} c=${e.col}`);
+				console.log(`    prev: ${JSON.stringify(p.slice(0, 60))}`);
+				console.log(`    curr: ${JSON.stringify(c.slice(0, 60))}`);
+				console.log(`    next: ${JSON.stringify(n.slice(0, 60))}`);
+			});
+		}
+		expect(flicker.clean).toBe(true);
+		expect(diffRatio).toBeGreaterThan(0.9);
+		// Wide-line path is allowed more budget than narrow (per-line
+		// visibleWidth + physical row math). Kept generous so CI variance
+		// doesn't cause flakes — the goal is to catch regressions like
+		// unbounded O(n) work per render, not to tune a specific number.
+		expect(avgRenderMs).toBeLessThan(30);
+		expect(tui.perfMaxRenderMs).toBeLessThan(300);
+	}, 60_000);
 });

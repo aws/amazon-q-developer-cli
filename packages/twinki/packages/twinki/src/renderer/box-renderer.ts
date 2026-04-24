@@ -87,6 +87,13 @@ export function renderBoxChildren(
     const childAvailableWidth = Math.max(0, innerWidth - Math.max(0, childLeft));
     const childLines = renderNodeFn(child, childAvailableWidth);
 
+    // Detect whether this child (or any descendant text) uses `wrap="overflow"`.
+    // Lines from overflow-wrapped text are allowed to exceed the container
+    // width — the terminal will soft-wrap them visually. For any other wrap
+    // mode, content that exceeds innerWidth is truncated to prevent broken
+    // layouts.
+    const childAllowsOverflow = hasOverflowDescendant(child);
+
     for (let i = 0; i < childLines.length; i++) {
       const row = childTop + i;
       if (row < 0) continue;
@@ -113,8 +120,11 @@ export function renderBoxChildren(
       }
       result += line;
       resultWidth += lineWidth;
-      // Truncate to innerWidth only when overflow is possible (Fix 2)
-      if (resultWidth > innerWidth) {
+      // Truncate to innerWidth unless this child explicitly opted into
+      // overflow wrapping via `wrap="overflow"`. That keeps standard-mode
+      // layouts intact while allowing wrapDisabled content to extend past
+      // the container width for terminal-native soft-wrap.
+      if (resultWidth > innerWidth && !childAllowsOverflow) {
         const sliced = sliceWithWidth(result, 0, innerWidth);
         result = sliced.text;
         resultWidth = sliced.width;
@@ -124,6 +134,21 @@ export function renderBoxChildren(
   }
 
   return grid;
+}
+
+/**
+ * Returns true if any descendant text node (or a Box's overflow prop) opts
+ * into overflow wrapping. Used by the box compositor to decide whether to
+ * let content extend past the container width.
+ */
+function hasOverflowDescendant(node: TwinkiNode): boolean {
+  if (node.props?.wrap === 'overflow') return true;
+  // A Box can explicitly opt in via `overflow="visible"` on its own props
+  // in the future — we currently only recognise Text's `wrap="overflow"`.
+  for (const child of node.children ?? []) {
+    if (hasOverflowDescendant(child)) return true;
+  }
+  return false;
 }
 
 /**

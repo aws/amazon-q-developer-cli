@@ -43,6 +43,12 @@ export const NODE_TYPES = {
  */
 export enum WrapMode {
 	WRAP = 'wrap',
+	/**
+	 * Don't insert newlines into the output. Lines are emitted as-is, even
+	 * when wider than the terminal. The terminal soft-wraps the content
+	 * visually. Copy-paste from scrollback preserves the single logical line.
+	 */
+	OVERFLOW = 'overflow',
 	TRUNCATE = 'truncate',
 	TRUNCATE_END = 'truncate-end',
 	TRUNCATE_START = 'truncate-start',

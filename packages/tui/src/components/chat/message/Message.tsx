@@ -27,11 +27,26 @@ export const Message = React.memo(function Message({
   status,
   barColor,
 }: MessageProps) {
+  const { wrapDisabled } = useTheme();
   const messageStatus: StatusType = status || 'active';
+
+  // Under wrapDisabled:
+  //   - Always use wrap="overflow" in both live and static. Terminal soft-wraps
+  //     wide lines visually; copy-paste preserves the logical line.
+  //   - Drop the StatusBar left-bar chrome entirely (live and static) so
+  //     there is no leading whitespace or colored bar column. Keeps the
+  //     output clean in scrollback AND avoids layout-shift between live and
+  //     static forms.
+  const useOverflow = wrapDisabled;
+  const skipStatusBar = wrapDisabled;
+
+  if (skipStatusBar) {
+    return <MessageContent content={content} type={type} useOverflow={true} />;
+  }
 
   return (
     <StatusBar status={messageStatus} barColor={barColor}>
-      <MessageContent content={content} type={type} />
+      <MessageContent content={content} type={type} useOverflow={useOverflow} />
       {type === MessageType.DEVELOPER && <Text> </Text>}
     </StatusBar>
   );
@@ -40,9 +55,11 @@ export const Message = React.memo(function Message({
 const MessageContent = React.memo(function MessageContent({
   content,
   type,
+  useOverflow,
 }: {
   content: string;
   type: MessageType;
+  useOverflow: boolean;
 }) {
   const { getUserPromptColor, getUserPromptBgHex, getUserResponseColor } =
     useTheme();
@@ -63,15 +80,23 @@ const MessageContent = React.memo(function MessageContent({
   }, [lineCount, requestRemeasure]);
 
   if (type === MessageType.AGENT) {
-    return <MarkdownRenderer content={content} color={messageColor} />;
+    return (
+      <MarkdownRenderer
+        content={content}
+        color={messageColor}
+        useOverflow={useOverflow}
+      />
+    );
   }
 
   const backgroundColor = getUserPromptBgHex();
   const displayContent = expandTabs(normalizeLineEndings(content));
+  // Cast to any: twinki's Text supports "overflow" but ink's type signature doesn't list it.
+  const wrapMode: any = useOverflow ? 'overflow' : 'wrap';
   return (
     <Box>
       <Box backgroundColor={backgroundColor}>
-        <Text wrap="wrap">{messageColor(displayContent)}</Text>
+        <Text wrap={wrapMode}>{messageColor(displayContent)}</Text>
       </Box>
     </Box>
   );

@@ -198,7 +198,7 @@ export const AppContainer: React.FC = () => {
       <TrustAllToolsGate
         onAccept={confirmTrustAllTools}
         onAcceptAlways={() => {
-          saveTrustGateAccepted();
+          saveTrustGateAccepted(kiro);
           confirmTrustAllTools();
         }}
         onExit={() => {
