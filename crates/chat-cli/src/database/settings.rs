@@ -168,6 +168,21 @@ pub enum Setting {
         message = "Disable line wrapping in chat output; long lines soft-wrap visually but remain single logical lines for copy-paste (boolean)"
     )]
     ChatDisableWrap,
+    #[strum(
+        message = "V2 TUI keybinding to cancel streaming response. Syntax: 'esc', 'ctrl+c', 'ctrl+shift+q' (string, default: 'esc')",
+        props(scope = "global_only")
+    )]
+    ChatKeybindingsCancelStream,
+    #[strum(
+        message = "V2 TUI keybinding to close slash command menus and panels. Syntax: 'esc', 'ctrl+c', 'ctrl+shift+q' (string, default: 'esc')",
+        props(scope = "global_only")
+    )]
+    ChatKeybindingsCloseMenu,
+    #[strum(
+        message = "V2 TUI keybinding to quit CLI. Double-press still required. Syntax: 'ctrl+c', 'ctrl+q' (string, default: 'ctrl+c')",
+        props(scope = "global_only")
+    )]
+    ChatKeybindingsQuit,
 }
 
 impl Setting {
@@ -287,6 +302,9 @@ impl AsRef<str> for Setting {
             Self::ToolSearchMinPct => "toolSearch.minPct",
             Self::ToolSearchMinTokens => "toolSearch.minTokens",
             Self::ChatDisableWrap => "chat.disableWrap",
+            Self::ChatKeybindingsCancelStream => "chat.keybindings.cancelStream",
+            Self::ChatKeybindingsCloseMenu => "chat.keybindings.closeMenu",
+            Self::ChatKeybindingsQuit => "chat.keybindings.quit",
         }
     }
 }
@@ -358,6 +376,9 @@ impl TryFrom<&str> for Setting {
             "toolSearch.minPct" => Ok(Self::ToolSearchMinPct),
             "toolSearch.minTokens" => Ok(Self::ToolSearchMinTokens),
             "chat.disableWrap" => Ok(Self::ChatDisableWrap),
+            "chat.keybindings.cancelStream" => Ok(Self::ChatKeybindingsCancelStream),
+            "chat.keybindings.closeMenu" => Ok(Self::ChatKeybindingsCloseMenu),
+            "chat.keybindings.quit" => Ok(Self::ChatKeybindingsQuit),
             _ => Err(DatabaseError::InvalidSetting(value.to_string())),
         }
     }

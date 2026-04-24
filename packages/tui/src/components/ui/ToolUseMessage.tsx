@@ -38,6 +38,7 @@ import {
   type ToolCallLocation,
 } from '../../types/agent-events.js';
 import { getToolLabel } from '../../types/tool-status.js';
+import { useKeybindings } from '../../hooks/useKeybindings.js';
 
 export interface ToolUseMessageProps {
   id: string;
@@ -71,6 +72,7 @@ export const ToolUseMessage = React.memo<ToolUseMessageProps>(
     agentLabelColor,
   }) {
     const { getColor, wrapDisabled } = useTheme();
+    const keybindings = useKeybindings();
     // Map tool status to StatusBar status icon
     const statusIcon: StatusType | undefined = useMemo(() => {
       if (status === ToolUseStatus.Rejected) return 'error';
@@ -109,7 +111,13 @@ export const ToolUseMessage = React.memo<ToolUseMessageProps>(
           isStatic={isStatic}
           locations={locations}
         />
-        {showEscHint && <Text>{getColor('muted')('esc to cancel')}</Text>}
+        {showEscHint && (
+          <Text>
+            {getColor('muted')(
+              `${keybindings.label('cancelStream')} to cancel`
+            )}
+          </Text>
+        )}
       </>
     );
 

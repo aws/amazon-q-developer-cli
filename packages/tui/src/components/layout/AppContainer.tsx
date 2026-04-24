@@ -16,6 +16,12 @@ import {
 import { copyToSystemClipboard } from '../../commands/effects.js';
 import { saveTrustGateAccepted } from '../../utils/trust-gate-state.js';
 import { keyToRawBytes } from '../../hooks/useKeypress.js';
+import { useKeybindings } from '../../hooks/useKeybindings.js';
+import {
+  dispatchAppKeypress,
+  type AppKeypressState,
+  type AppKeypressActions,
+} from './app-keypress-dispatch.js';
 
 /**
  * Suspends the process by restoring terminal state and sending SIGTSTP
@@ -94,102 +100,66 @@ export const AppContainer: React.FC = () => {
 
   const shellEscapeWriter = useAppStore((state) => state._shellEscapeWriter);
 
+  const keybindings = useKeybindings();
+
   useKeypress((userInput, key) => {
-    // During shell escape, forward all input to the PTY.
-    if (isShellEscape && shellEscapeWriter) {
-      if (key.ctrl && userInput === 'c') {
-        shellEscapeWriter('\x03');
-        cancelMessage();
-        return;
-      }
+    // Shell-escape forwarding needs keyToRawBytes, which is TUI-specific.
+    // Handle the "not Ctrl+C" case here; dispatchAppKeypress handles Ctrl+C.
+    if (
+      isShellEscape &&
+      shellEscapeWriter &&
+      !(key.ctrl && userInput === 'c')
+    ) {
       shellEscapeWriter(keyToRawBytes(key, userInput));
       return;
     }
 
-    // Suspend process on Ctrl+Z
-    if (key.ctrl && userInput === 'z') {
-      suspendProcess();
-      return;
-    }
-    // Fire transient alert action on Ctrl+y
-    if (key.ctrl && userInput === 'y' && transientAlert?.action) {
-      transientAlert.action.onAction();
-      dismissTransientAlert();
-      return;
-    }
-    // Copy OAuth URL on Ctrl+y when a server is pending auth
-    if (key.ctrl && userInput === 'y' && pendingOAuthServers.size > 0) {
-      const [, url] = pendingOAuthServers.entries().next().value as [
-        string,
-        string,
-      ];
-      if (copyToSystemClipboard(url)) {
-        showTransientAlert({
-          message: 'OAuth URL copied to clipboard',
-          status: 'info',
-          autoHideMs: 3000,
-        });
-      }
-      return;
-    }
-    if (key.ctrl && userInput === 'c') {
-      if (mode === 'crew-monitor' || mode === 'session-view') {
-        return;
-      }
-      if (reverseSearchActive) {
-        // PromptInput handles Ctrl+C during reverse search
-        return;
-      }
-      if (isProcessing) {
-        cancelMessage();
-      } else if (hasCommandInput) {
-        clearCommandInput();
-        resetExitSequence();
-      } else {
-        incrementExitSequence();
-      }
-    } else if (key.ctrl && userInput === 'd') {
-      // Don't trigger exit sequence on non-chat screens
-      if (mode === 'crew-monitor' || mode === 'session-view') {
-        return;
-      }
-      // Ctrl+D only starts exit sequence when idle with empty input;
-      // when there's text, PromptInput handles it as forward-delete.
-      // During shell escapes, allow Ctrl+D to cancel and exit.
-      if (isShellEscape) {
-        cancelMessage();
-        incrementExitSequence();
-      } else if (!isProcessing && !hasCommandInput) {
-        incrementExitSequence();
-      }
-    } else if (key.escape) {
-      if (isProcessing && !pendingApproval && editingQueueIndex == null) {
-        cancelMessage();
-      }
-    } else if (
-      !key.ctrl &&
-      !key.meta &&
-      userInput === 'q' &&
-      (mode === 'crew-monitor' || mode === 'session-view')
-    ) {
-      // Don't manually write \x1b[?1049l here — CrewMonitorScreen's
-      // useFullscreen() hook handles alt screen exit on unmount.
-      // Writing it manually causes a double exit which resets keyboard
-      // mode state in terminals with Kitty protocol, breaking Option key.
-      setMode('inline');
-    } else if (key.ctrl && userInput === 'g') {
-      if (mode === 'crew-monitor') {
-        setMode('inline');
-      } else {
+    const firstOAuthUrl =
+      pendingOAuthServers.size > 0
+        ? (pendingOAuthServers.entries().next().value as [string, string])[1]
+        : null;
+
+    const state: AppKeypressState = {
+      mode,
+      isProcessing,
+      isShellEscape,
+      hasCommandInput,
+      reverseSearchActive,
+      pendingApproval: !!pendingApproval,
+      editingQueueIndex: editingQueueIndex ?? null,
+      transientAlertHasAction: !!transientAlert?.action,
+      pendingOAuthUrl: firstOAuthUrl,
+    };
+
+    const actions: AppKeypressActions = {
+      cancelMessage,
+      clearCommandInput,
+      resetExitSequence,
+      incrementExitSequence,
+      setMode,
+      enterCrewMonitor: () => {
         // Enter alt screen immediately (before React re-renders) to prevent
         // CrewMonitorScreen content from polluting main screen scrollback.
         // useFullscreen() will sync twinki's internal altScreen flag on mount.
         process.stdout.write('\x1b[?1049h');
         setMode('crew-monitor');
-      }
-    } else if (!key.ctrl && !key.meta) {
-      resetExitSequence();
-    }
+      },
+      fireTransientAlertAction: () => transientAlert?.action?.onAction(),
+      dismissTransientAlert,
+      copyOAuthUrl: (url) => {
+        if (copyToSystemClipboard(url)) {
+          showTransientAlert({
+            message: 'OAuth URL copied to clipboard',
+            status: 'info',
+            autoHideMs: 3000,
+          });
+        }
+      },
+      suspendProcess,
+      shellEscapeWrite: shellEscapeWriter ?? null,
+    };
+
+    dispatchAppKeypress(userInput, key, state, actions, keybindings);
   });
 
   // Show trust-all-tools confirmation gate before allowing session to proceed
