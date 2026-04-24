@@ -121,13 +121,14 @@ async fn test_mixed_file_and_skill_resources() {
     );
 }
 
-/// Tests that when tool_search_enabled=true with MCP tools, the deferred tools list
-/// is injected into context messages on the very first request.
+/// Tests that the deferred tools list is injected into context on the first request,
+/// and only contains MCP tools allowed by the agent's `tools` config.
 #[tokio::test]
-async fn test_deferred_tools_message_in_context() {
+async fn test_deferred_tools_filtered_by_agent_tools_config() {
     use std::collections::HashMap;
 
     use agent::agent_config::definitions::{
+        AgentConfigV2025_08_22,
         McpServerConfig,
         RemoteMcpServerConfig,
     };
@@ -141,11 +142,22 @@ async fn test_deferred_tools_message_in_context() {
 
     prebuild_bin().expect("failed to prebuild mock-mcp-server");
 
+    // MCP server exposes 3 tools, but agent config only allows 1
     let handle = MockMcpServerBuilder::new()
         .add_tool(ToolDef {
-            name: "database_query".to_string(),
-            description: "Execute SQL database queries".to_string(),
-            input_schema: serde_json::json!({"type": "object", "properties": {"query": {"type": "string"}}}),
+            name: "allowed_tool".to_string(),
+            description: "This tool is allowed by agent config".to_string(),
+            input_schema: serde_json::json!({"type": "object"}),
+        })
+        .add_tool(ToolDef {
+            name: "blocked_tool_1".to_string(),
+            description: "This tool should NOT appear in deferred list".to_string(),
+            input_schema: serde_json::json!({"type": "object"}),
+        })
+        .add_tool(ToolDef {
+            name: "blocked_tool_2".to_string(),
+            description: "This tool should also NOT appear in deferred list".to_string(),
+            input_schema: serde_json::json!({"type": "object"}),
         })
         .spawn_http()
         .expect("failed to spawn mock MCP server");
@@ -164,6 +176,13 @@ async fn test_deferred_tools_message_in_context() {
         disabled_tools: Vec::new(),
     });
 
+    // Custom agent config: only tool_search + one specific MCP tool
+    let agent_config = AgentConfig::V2025_08_22(AgentConfigV2025_08_22 {
+        tools: vec!["tool_search".to_string(), "@testdb/allowed_tool".to_string()],
+        mcp_servers: HashMap::from([("testdb".to_string(), mcp_config)]),
+        ..Default::default()
+    });
+
     let settings = agent::types::AgentSettings {
         tool_search_enabled: true,
         tool_search_min_pct: None,
@@ -171,15 +190,13 @@ async fn test_deferred_tools_message_in_context() {
         ..Default::default()
     };
 
-    // Use tool_search_flow.jsonl which triggers tool_search → second request.
     let mut test = TestCase::builder()
-        .test_name("deferred tools message in context")
-        .with_default_agent_config()
+        .test_name("deferred tools filtered by agent tools config")
+        .with_agent_config(agent_config)
         .with_settings(settings)
-        .with_mcp_server("testdb", mcp_config)
         .with_trust_all_tools(true)
         .with_responses(
-            parse_response_streams(include_str!("./mock_responses/tool_search_flow.jsonl"))
+            parse_response_streams(include_str!("./mock_responses/single_turn.jsonl"))
                 .await
                 .unwrap(),
         )
@@ -191,50 +208,54 @@ async fn test_deferred_tools_message_in_context() {
         .await
         .expect("timed out waiting for agent initialization");
 
-    test.send_prompt("search for database tools".to_string()).await;
+    test.send_prompt("test prompt".to_string()).await;
     test.wait_until_agent_stop(Duration::from_secs(10)).await.unwrap();
 
     let requests = test.requests();
-    assert!(
-        requests.len() >= 2,
-        "expected at least 2 requests, got {}",
-        requests.len()
-    );
+    assert!(!requests.is_empty(), "expected at least one request");
 
-    // Check request 0 (first request) — make_tool_spec() runs before format_tool_list(),
-    // so the deferred tools list should be present from the very first request.
     let context_msg = requests[0]
         .messages()
         .first()
         .expect("first message should exist")
         .text();
 
-    // DEFERRED_TOOLS_MESSAGE instruction should be present
+    // Deferred tools list structure should be present
     assert!(
         context_msg.contains(DEFERRED_TOOLS_MESSAGE),
         "expected DEFERRED_TOOLS_MESSAGE in context"
     );
-
-    // Tool list XML block with composite key
     assert!(
         context_msg.contains("<available-deferred-tools>"),
         "expected <available-deferred-tools> XML block"
     );
-    assert!(
-        context_msg.contains("testdb::database_query"),
-        "expected tool listed as testdb::database_query"
-    );
-    assert!(
-        context_msg.contains("Execute SQL database queries"),
-        "expected tool description in deferred tools list"
-    );
 
-    // Verify ordering: DEFERRED_TOOLS_MESSAGE before tool list
+    // DEFERRED_TOOLS_MESSAGE should appear before tool list
     let msg_pos = context_msg.find(DEFERRED_TOOLS_MESSAGE).unwrap();
     let list_pos = context_msg.find("<available-deferred-tools>").unwrap();
     assert!(
         msg_pos < list_pos,
         "DEFERRED_TOOLS_MESSAGE should appear before tool list"
+    );
+
+    // The allowed tool should be in the deferred list
+    assert!(
+        context_msg.contains("testdb::allowed_tool"),
+        "expected allowed_tool in deferred tools list"
+    );
+    assert!(
+        context_msg.contains("This tool is allowed by agent config"),
+        "expected tool description in deferred tools list"
+    );
+
+    // Blocked tools should NOT be in the deferred list
+    assert!(
+        !context_msg.contains("testdb::blocked_tool_1"),
+        "blocked_tool_1 should NOT appear in deferred tools list"
+    );
+    assert!(
+        !context_msg.contains("testdb::blocked_tool_2"),
+        "blocked_tool_2 should NOT appear in deferred tools list"
     );
 }
 

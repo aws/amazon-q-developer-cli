@@ -137,6 +137,7 @@ use tokio_util::sync::CancellationToken;
 use tool_index::{
     ToolIndex,
     ToolLoadConfig,
+    filter_specs_by_allowed_tools,
     filter_tool_names,
     should_activate_tool_search,
 };
@@ -2701,7 +2702,8 @@ impl Agent {
         self.tool_search_active = tool_search_active;
 
         if tool_search_active {
-            self.rebuild_tool_search_index(&mcp_server_tool_specs);
+            let filtered_specs = filter_specs_by_allowed_tools(&mcp_server_tool_specs, &tool_names);
+            self.rebuild_tool_search_index(&filtered_specs);
         } else {
             tool_names.remove(&CanonicalToolName::BuiltIn(tools::BuiltInToolName::ToolSearch));
         }

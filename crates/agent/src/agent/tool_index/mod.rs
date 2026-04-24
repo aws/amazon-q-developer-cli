@@ -213,6 +213,32 @@ impl ToolLoadConfig {
     }
 }
 
+/// Filter MCP tool specs to only include tools present in the allowed set.
+/// This ensures the tool search index and deferred tools list only contain
+/// tools the agent is actually permitted to use per its `tools` config.
+pub fn filter_specs_by_allowed_tools(
+    mcp_server_tool_specs: &std::collections::HashMap<String, Vec<ToolSpec>>,
+    agent_tool_names: &HashSet<CanonicalToolName>,
+) -> std::collections::HashMap<String, Vec<ToolSpec>> {
+    mcp_server_tool_specs
+        .iter()
+        .filter_map(|(server, specs)| {
+            let filtered: Vec<ToolSpec> = specs
+                .iter()
+                .filter(|s| {
+                    agent_tool_names.contains(&CanonicalToolName::from_mcp_parts(server.clone(), s.name.clone()))
+                })
+                .cloned()
+                .collect();
+            if filtered.is_empty() {
+                None
+            } else {
+                Some((server.clone(), filtered))
+            }
+        })
+        .collect()
+}
+
 /// Determine whether tool search should be active for this turn.
 ///
 /// Returns `false` if `tool_search_enabled` is off.
@@ -490,5 +516,30 @@ mod tests {
         // pct threshold set but no context window — pct check skipped, tokens not set
         let s = make_settings(true, Some(5.0), None);
         assert!(!should_activate_tool_search(&s, 60_000, None));
+    }
+
+    #[test]
+    fn filter_specs_excludes_tools_not_in_allowed_set() {
+        // Server has 3 tools, but agent config only allows 1
+        let mut specs: HashMap<String, Vec<ToolSpec>> = HashMap::new();
+        specs.insert("myserver".to_string(), vec![
+            make_tool_spec("allowed_tool", "An allowed tool"),
+            make_tool_spec("blocked_tool", "A blocked tool"),
+            make_tool_spec("another_blocked", "Another blocked tool"),
+        ]);
+
+        let mut allowed = HashSet::new();
+        allowed.insert(CanonicalToolName::from_mcp_parts(
+            "myserver".into(),
+            "allowed_tool".into(),
+        ));
+
+        let filtered = filter_specs_by_allowed_tools(&specs, &allowed);
+        let index = ToolIndex::from_tool_specs(&filtered);
+
+        assert_eq!(index.len(), 1);
+        assert!(index.get_entry("myserver", "allowed_tool").is_some());
+        assert!(index.get_entry("myserver", "blocked_tool").is_none());
+        assert!(index.get_entry("myserver", "another_blocked").is_none());
     }
 }
