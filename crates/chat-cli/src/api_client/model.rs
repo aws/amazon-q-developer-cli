@@ -574,7 +574,7 @@ pub struct AssistantResponseMessage {
 }
 
 /// Reasoning content to include in conversation history for multi-turn continuity.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ReasoningContentForHistory {
     pub text: String,
     pub signature: Option<String>,

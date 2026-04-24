@@ -39,6 +39,7 @@ use crate::api_client::model::{
     AssistantResponseMessage,
     EnvState,
     ImageBlock,
+    ReasoningContentForHistory,
     Tool,
     ToolResult,
     ToolResultContentBlock,
@@ -454,18 +455,26 @@ pub enum AssistantMessage {
     Response {
         message_id: Option<String>,
         content: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        thinking: Option<ReasoningContentForHistory>,
     },
     /// An assistant message containing tool uses.
     ToolUse {
         message_id: Option<String>,
         content: String,
         tool_uses: Vec<AssistantToolUse>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        thinking: Option<ReasoningContentForHistory>,
     },
 }
 
 impl AssistantMessage {
     pub fn new_response(message_id: Option<String>, content: String) -> Self {
-        Self::Response { message_id, content }
+        Self::Response {
+            message_id,
+            content,
+            thinking: None,
+        }
     }
 
     pub fn new_tool_use(message_id: Option<String>, content: String, tool_uses: Vec<AssistantToolUse>) -> Self {
@@ -473,6 +482,7 @@ impl AssistantMessage {
             message_id,
             content,
             tool_uses,
+            thinking: None,
         }
     }
 
@@ -497,6 +507,14 @@ impl AssistantMessage {
         }
     }
 
+    pub fn set_thinking(&mut self, reasoning: ReasoningContentForHistory) {
+        match self {
+            AssistantMessage::Response { thinking, .. } | AssistantMessage::ToolUse { thinking, .. } => {
+                *thinking = Some(reasoning);
+            },
+        }
+    }
+
     pub fn truncate_safe(&mut self, max_bytes: usize) {
         match self {
             AssistantMessage::Response { content, .. } => {
@@ -511,25 +529,29 @@ impl AssistantMessage {
 
 impl From<AssistantMessage> for AssistantResponseMessage {
     fn from(value: AssistantMessage) -> Self {
-        let (message_id, content, tool_uses) = match value {
-            AssistantMessage::Response { message_id, content } => (message_id, content, None),
+        let (message_id, content, tool_uses, thinking) = match value {
+            AssistantMessage::Response {
+                message_id,
+                content,
+                thinking,
+            } => (message_id, content, None, thinking),
             AssistantMessage::ToolUse {
                 message_id,
                 content,
                 tool_uses,
+                thinking,
             } => (
                 message_id,
                 content,
                 Some(tool_uses.into_iter().map(Into::into).collect()),
+                thinking,
             ),
         };
         Self {
             message_id,
             content,
             tool_uses,
-            // V1 main agent: thinking is display-only. Multi-turn thinking continuity
-            // is handled by V2 (agent crate) and V1 subagents (via RTS model).
-            reasoning_content: None,
+            reasoning_content: thinking,
         }
     }
 }

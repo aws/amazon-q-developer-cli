@@ -360,7 +360,7 @@ fn convert_user_message(msg: &UserMessage, compaction_summary: Option<&str>) -> 
 /// Convert a V1 AssistantMessage into a V2 log entry.
 fn convert_assistant_message(msg: &AssistantMessage) -> LogEntry {
     let (msg_id, content) = match msg {
-        AssistantMessage::Response { message_id, content } => {
+        AssistantMessage::Response { message_id, content, .. } => {
             let id = message_id.clone().unwrap_or_else(|| Uuid::new_v4().to_string());
             (id, vec![ContentBlock::Text(content.clone())])
         },
@@ -368,6 +368,7 @@ fn convert_assistant_message(msg: &AssistantMessage) -> LogEntry {
             message_id,
             content,
             tool_uses,
+            ..
         } => {
             let id = message_id.clone().unwrap_or_else(|| Uuid::new_v4().to_string());
             let mut blocks = Vec::new();

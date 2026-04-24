@@ -4126,7 +4126,6 @@ impl ChatSession {
             os.database.settings.get_bool(Setting::ChatDisableMarkdownRendering),
         );
         let mut response_prefix_printed = false;
-        let mut was_showing_thinking = false;
 
         let mut tool_uses: Vec<AssistantToolUse> = Vec::new();
         let mut tool_name_being_recvd: Option<String> = None;
@@ -4146,16 +4145,7 @@ impl ChatSession {
                     trace!("Consumed: {:?}", msg_event);
 
                     match msg_event {
-                        parser::ResponseEvent::ThinkingText(text) => {
-                            if !self.stdout.should_send_structured_event {
-                                if !was_showing_thinking {
-                                    was_showing_thinking = true;
-                                    queue!(self.stdout, StyledText::info_fg(), style::Print("💭 "),)?;
-                                }
-                                queue!(self.stdout, StyledText::info_fg(), style::Print(&text),)?;
-                                self.stdout.flush()?;
-                            }
-                        },
+                        parser::ResponseEvent::ThinkingText => {},
                         parser::ResponseEvent::MeteringUsage {
                             value,
                             unit,
@@ -4180,13 +4170,6 @@ impl ChatSession {
                             tool_name_being_recvd = Some(name);
                         },
                         parser::ResponseEvent::AssistantText(text) => {
-                            // If we were showing thinking text, print a newline to separate.
-                            if was_showing_thinking {
-                                was_showing_thinking = false;
-                                if !self.stdout.should_send_structured_event {
-                                    queue!(self.stdout, StyledText::reset(), style::Print("\n"))?;
-                                }
-                            }
                             if self.stdout.should_send_structured_event {
                                 if !response_prefix_printed && !text.trim().is_empty() {
                                     let msg_start = TextMessageStart {

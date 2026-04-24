@@ -34,6 +34,7 @@ use crate::api_client::error::ConverseStreamError;
 use crate::api_client::model::{
     ChatResponseStream,
     ConversationState,
+    ReasoningContentForHistory,
 };
 use crate::api_client::send_message_output::SendMessageOutput;
 use crate::telemetry::ReasonCode;
@@ -311,6 +312,12 @@ struct ResponseParser {
     tool_uses: Vec<AssistantToolUse>,
     /// Whether or not we are currently receiving tool use delta events.
     parsing_tool_use: Option<PendingToolUse>,
+    /// Accumulated thinking text for this turn.
+    thinking_text: String,
+    /// Signature from the last reasoning event.
+    thinking_signature: Option<String>,
+    /// Redacted content from the last reasoning event.
+    thinking_redacted_content: Option<Vec<u8>>,
 
     request_metadata: Arc<Mutex<Option<RequestMetadata>>>,
     cancel_token: CancellationToken,
@@ -359,6 +366,9 @@ impl ResponseParser {
             assistant_text: String::new(),
             tool_uses: Vec::new(),
             parsing_tool_use: None,
+            thinking_text: String::new(),
+            thinking_signature: None,
+            thinking_redacted_content: None,
             request_start_time,
             request_start_time_sys,
             received_response_size: 0,
@@ -443,9 +453,20 @@ impl ResponseParser {
                         });
                         return Ok(ResponseEvent::ToolUseStart { name });
                     },
-                    ChatResponseStream::ReasoningEvent { text, .. } => {
+                    ChatResponseStream::ReasoningEvent {
+                        text,
+                        signature,
+                        redacted_content,
+                    } => {
                         if let Some(text) = text {
-                            return Ok(ResponseEvent::ThinkingText(text));
+                            self.thinking_text.push_str(&text);
+                            return Ok(ResponseEvent::ThinkingText);
+                        }
+                        if signature.is_some() {
+                            self.thinking_signature = signature;
+                        }
+                        if redacted_content.is_some() {
+                            self.thinking_redacted_content = redacted_content;
                         }
                     },
                     ref event if event.is_skippable_metadata() => {},
@@ -456,7 +477,8 @@ impl ResponseParser {
                 Ok(None) => {
                     let message_id = Some(self.message_id.clone());
                     let content = std::mem::take(&mut self.assistant_text);
-                    let (message, conv_type) = if self.tool_uses.is_empty() {
+                    let thinking = self.take_thinking();
+                    let (mut message, conv_type) = if self.tool_uses.is_empty() {
                         (
                             AssistantMessage::new_response(message_id, content),
                             ChatConversationType::NotToolUse,
@@ -471,6 +493,9 @@ impl ResponseParser {
                             ChatConversationType::ToolUse,
                         )
                     };
+                    if let Some(t) = thinking {
+                        message.set_thinking(t);
+                    }
                     let request_metadata = self.make_metadata(Some(conv_type));
                     *self.request_metadata.lock().await = Some(request_metadata.clone());
                     self.ended = true;
@@ -702,6 +727,17 @@ impl ResponseParser {
         }
     }
 
+    fn take_thinking(&mut self) -> Option<ReasoningContentForHistory> {
+        if self.thinking_text.is_empty() && self.thinking_redacted_content.is_none() {
+            return None;
+        }
+        Some(ReasoningContentForHistory {
+            text: std::mem::take(&mut self.thinking_text),
+            signature: self.thinking_signature.take(),
+            redacted_content: self.thinking_redacted_content.take().unwrap_or_default(),
+        })
+    }
+
     fn make_metadata(&self, chat_conversation_type: Option<ChatConversationType>) -> RequestMetadata {
         RequestMetadata {
             request_id: self.response.request_id().map(String::from),
@@ -752,7 +788,7 @@ pub enum ResponseEvent {
         unit_plural: String,
     },
     /// Thinking/reasoning text from extended thinking models.
-    ThinkingText(String),
+    ThinkingText,
 }
 
 /// Metadata about the sent request and associated response stream.
