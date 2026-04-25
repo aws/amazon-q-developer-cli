@@ -458,15 +458,21 @@ impl ResponseParser {
                         signature,
                         redacted_content,
                     } => {
-                        if let Some(text) = text {
+                        // Only accumulate the first thinking block. Once a signature
+                        // arrives the block is sealed — ignore subsequent blocks so
+                        // the text and signature stay paired.
+                        if self.thinking_signature.is_some() || self.thinking_redacted_content.is_some() {
+                            // Already captured a complete thinking block; skip.
+                        } else if let Some(text) = text {
                             self.thinking_text.push_str(&text);
                             return Ok(ResponseEvent::ThinkingText);
-                        }
-                        if signature.is_some() {
-                            self.thinking_signature = signature;
-                        }
-                        if redacted_content.is_some() {
-                            self.thinking_redacted_content = redacted_content;
+                        } else {
+                            if signature.is_some() {
+                                self.thinking_signature = signature;
+                            }
+                            if redacted_content.is_some() {
+                                self.thinking_redacted_content = redacted_content;
+                            }
                         }
                     },
                     ref event if event.is_skippable_metadata() => {},
