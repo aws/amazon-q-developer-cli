@@ -734,7 +734,10 @@ impl ResponseParser {
     }
 
     fn take_thinking(&mut self) -> Option<ReasoningContentForHistory> {
-        if self.thinking_text.is_empty() && self.thinking_redacted_content.is_none() {
+        if self.thinking_text.is_empty()
+            && self.thinking_signature.is_none()
+            && self.thinking_redacted_content.is_none()
+        {
             return None;
         }
         Some(ReasoningContentForHistory {
