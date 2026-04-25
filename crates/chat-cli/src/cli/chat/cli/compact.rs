@@ -788,6 +788,7 @@ mod tests {
                     args: args.clone(),
                     orig_args: args,
                 }],
+                thinking: None,
             },
             request_metadata: None,
         }
@@ -814,6 +815,7 @@ mod tests {
                     args: args.clone(),
                     orig_args: args,
                 }],
+                thinking: None,
             },
             request_metadata: None,
         }
@@ -1034,6 +1036,7 @@ mod tests {
             assistant: AssistantMessage::Response {
                 message_id: None,
                 content: "y".repeat(assistant_chars),
+                thinking: None,
             },
             request_metadata: None,
         }

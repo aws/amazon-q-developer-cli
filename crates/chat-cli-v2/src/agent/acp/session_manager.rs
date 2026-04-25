@@ -1583,6 +1583,7 @@ impl SessionManager {
                         activity_parts.push(format!("[tool_result] {}", result_preview));
                     },
                     agent::agent_loop::types::ContentBlock::Image(_) => {},
+                    agent::agent_loop::types::ContentBlock::Thinking(_) => {},
                 }
             }
         }
