@@ -1,0 +1,3 @@
+// Signature-only reasoning (no visible thinking text) followed by text response
+{"kind":"event","data":{"kind":"ReasoningEvent","data":{"text":null,"signature":"sig-encrypted-456","redacted_content":null}}}
+{"kind":"event","data":{"kind":"AssistantResponseEvent","data":{"content":"Response after encrypted thinking."}}}

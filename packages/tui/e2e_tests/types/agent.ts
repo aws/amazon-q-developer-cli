@@ -139,7 +139,11 @@ export interface CompactArgs {
 export type ContentBlockDelta = 
 	| { kind: "text", data: string }
 	| { kind: "toolUse", data: ToolUseBlockDelta }
-	| { kind: "reasoning", data?: undefined }
+	| { kind: "reasoning", data: string }
+	| { kind: "reasoningSignature", data: {
+	signature?: string;
+	redacted_content?: number[];
+}}
 	| { kind: "document", data?: undefined };
 
 export interface ContentBlockDeltaEvent {
@@ -152,7 +156,8 @@ export interface ContentBlockDeltaEvent {
 }
 
 export type ContentBlockStart = 
-	| { kind: "toolUse", data: ToolUseBlockStart };
+	| { kind: "toolUse", data: ToolUseBlockStart }
+	| { kind: "thinking", data?: undefined };
 
 export interface ContentBlockStartEvent {
 	contentBlockStart?: ContentBlockStart;
@@ -257,7 +262,9 @@ export type ContentBlock =
 	| { kind: "text", data: string }
 	| { kind: "toolUse", data: ToolUseBlock }
 	| { kind: "toolResult", data: ToolResultBlock }
-	| { kind: "image", data: ImageBlock };
+	| { kind: "image", data: ImageBlock }
+	/** Reasoning/thinking content from extended thinking models. */
+	| { kind: "thinking", data: ThinkingBlock };
 
 /** Structured metadata optionally attached to messages. */
 export interface MessageMetadata {
@@ -425,6 +432,16 @@ export interface StreamError {
 	/** Exact error message returned by the model provider, if available */
 	original_message?: string;
 	kind: StreamErrorKind;
+}
+
+/** Reasoning/thinking content from extended thinking models. */
+export interface ThinkingBlock {
+	/** The reasoning text (may be summarized or empty if display is omitted). */
+	text: string;
+	/** Encrypted signature for verifying and passing back thinking blocks. */
+	signature?: string;
+	/** Encrypted full thinking content (opaque, pass back unmodified). */
+	redactedContent?: number[];
 }
 
 export type ToolResultContentBlock = 

@@ -62,6 +62,12 @@ export type ChatResponseStream =
 	input?: string;
 	stop?: boolean;
 }}
+	/** Reasoning/thinking content from extended thinking models. */
+	| { kind: "ReasoningEvent", data: {
+	text?: string;
+	signature?: string;
+	redacted_content?: number[];
+}}
 	| { kind: "Unknown", data: {
 }};
 

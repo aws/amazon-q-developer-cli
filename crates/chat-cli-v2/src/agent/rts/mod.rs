@@ -820,8 +820,18 @@ impl ResponseParser {
                         }
                         // Signature/redacted_content events: store for the agent loop to pick up.
                         // These arrive at the end of a thinking block, before the block closes.
+                        // When the model uses encrypted thinking, only a signature is sent
+                        // (no text), so we must open the thinking block here if needed.
                         if signature.is_some() || redacted_content.is_some() {
-                            // Emit as a special reasoning event so the agent loop can capture it.
+                            if !self.in_thinking {
+                                self.in_thinking = true;
+                                self.buf.push(StreamResult::Ok(StreamEvent::ContentBlockStart(
+                                    ContentBlockStartEvent {
+                                        content_block_start: Some(ContentBlockStart::Thinking),
+                                        content_block_index: None,
+                                    },
+                                )));
+                            }
                             self.buf.push(StreamResult::Ok(StreamEvent::ContentBlockDelta(
                                 ContentBlockDeltaEvent {
                                     delta: ContentBlockDelta::ReasoningSignature {

@@ -2473,3 +2473,58 @@ async fn thinking_block_preserved_in_next_request() {
     assert_eq!(reasoning.signature.as_deref(), Some("sig-abc-123"));
     assert!(reasoning.redacted_content.is_empty());
 }
+
+#[tokio::test]
+async fn signature_only_thinking_preserved_in_next_request() {
+    let (mut harness, client, session_id, _) =
+        AcpTestHarnessBuilder::new("signature_only_thinking_preserved_in_next_request")
+            .build_with_session()
+            .await;
+
+    // Turn 1: model responds with signature-only reasoning (no visible text) + text
+    harness
+        .push_mock_responses_from_file(&session_id.0, "tests/mock_responses/signature_only_thinking.jsonl")
+        .await;
+
+    client
+        .prompt_text(session_id.clone(), "do something")
+        .await
+        .expect("first prompt failed");
+
+    // Turn 2: simple text
+    harness
+        .push_mock_responses_from_file(&session_id.0, "tests/mock_responses/simple_text.jsonl")
+        .await;
+
+    client
+        .prompt_text(session_id.clone(), "follow up")
+        .await
+        .expect("second prompt failed");
+
+    // Verify the second request preserves the signature from turn 1
+    let captured = harness.get_captured_requests(&session_id.0).await;
+    assert_eq!(captured.len(), 2);
+
+    let second_request = &captured[1];
+    let history = second_request.history.as_ref().expect("should have history");
+
+    let assistant_msg = history
+        .iter()
+        .filter_map(|msg| {
+            if let chat_cli_v2::api_client::model::ChatMessage::AssistantResponseMessage(m) = msg {
+                Some(m)
+            } else {
+                None
+            }
+        })
+        .find(|m| m.content.contains("Response after encrypted thinking"))
+        .expect("history should contain the assistant message");
+
+    let reasoning = assistant_msg
+        .reasoning_content
+        .as_ref()
+        .expect("assistant message should have reasoning_content for signature-only thinking");
+
+    assert_eq!(reasoning.text, "");
+    assert_eq!(reasoning.signature.as_deref(), Some("sig-encrypted-456"));
+}
