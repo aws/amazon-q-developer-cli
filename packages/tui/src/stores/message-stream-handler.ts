@@ -143,30 +143,7 @@ export function createMessageStreamHandler(
       }
 
       case AgentEventType.ToolCallUpdate:
-        if (event.content.type === 'text') {
-          const text = event.content.text;
-          setMessages((msgs) => {
-            const idx = msgs.findIndex(
-              (m) => m.role === MessageRole.ToolUse && m.id === event.id
-            );
-            if (idx === -1) return msgs;
-            const msg = msgs[idx]!;
-            if (msg.role !== MessageRole.ToolUse) return msgs;
-            // Split the chunk and append lines to the array; drop the trailing
-            // empty element produced when the chunk ends with a newline.
-            const newLines = text.split('\n');
-            if (newLines.length > 0 && newLines[newLines.length - 1] === '') {
-              newLines.pop();
-            }
-            if (newLines.length === 0) return msgs;
-            const next = [...msgs];
-            next[idx] = {
-              ...msg,
-              liveOutput: (msg.liveOutput ?? []).concat(newLines),
-            };
-            return next;
-          });
-        }
+        // Live output is handled by the liveOutputs Map in the main store.
         break;
 
       case AgentEventType.ToolCallFinished:
@@ -182,7 +159,6 @@ export function createMessageStreamHandler(
             ...msg,
             isFinished: true,
             result: event.result,
-            liveOutput: undefined,
           };
           return next;
         });

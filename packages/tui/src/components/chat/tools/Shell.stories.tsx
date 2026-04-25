@@ -53,7 +53,6 @@ export const RunningShowsTail = {
           command="npm install"
           status="loading"
           isFinished={false}
-          liveOutput={manyLines}
         />
       </Card>
     </Box>

@@ -43,7 +43,6 @@ export interface ToolUseMessageProps {
   id: string;
   name: string;
   content: string;
-  liveOutput?: string[];
   isFinished?: boolean;
   status?: ToolUseStatus;
   result?: ToolResult;
@@ -58,9 +57,9 @@ export interface ToolUseMessageProps {
 
 export const ToolUseMessage = React.memo<ToolUseMessageProps>(
   function ToolUseMessage({
+    id,
     name,
     content,
-    liveOutput,
     isFinished = false,
     status,
     result,
@@ -100,9 +99,9 @@ export const ToolUseMessage = React.memo<ToolUseMessageProps>(
           </Box>
         )}
         <ToolUseContent
+          id={id}
           name={name}
           content={content}
-          liveOutput={liveOutput}
           isFinished={isFinished}
           status={status}
           result={result}
@@ -125,18 +124,18 @@ export const ToolUseMessage = React.memo<ToolUseMessageProps>(
 
 /** Inner component — lives inside StatusBar to access requestRemeasure */
 const ToolUseContent = React.memo(function ToolUseContent({
+  id,
   name,
   content,
-  liveOutput,
   isFinished,
   status,
   result,
   isStatic,
   locations,
 }: {
+  id: string;
   name: string;
   content: string;
-  liveOutput?: string[];
   isFinished: boolean;
   status?: ToolUseStatus;
   result?: ToolResult;
@@ -204,7 +203,7 @@ const ToolUseContent = React.memo(function ToolUseContent({
       <Shell
         name={title}
         command={command}
-        liveOutput={liveOutput}
+        toolCallId={id}
         noStatusBar
         isFinished={effectiveFinished}
         isStatic={isStatic}

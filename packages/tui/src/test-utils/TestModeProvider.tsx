@@ -58,9 +58,15 @@ export const TestModeProvider: React.FC<TestModeProviderProps> = ({
     const handleCommand = (command: TestCommand): TestResponse => {
       switch (command.kind) {
         case 'GET_STORE':
+          // eslint-disable-next-line no-case-declarations
+          const state = appStore.getState();
           return {
             kind: 'GET_STORE',
-            data: appStore.getState(),
+            // Map doesn't survive JSON serialization — convert to plain object
+            data: {
+              ...state,
+              liveOutputs: Object.fromEntries(state.liveOutputs),
+            } as any,
           };
 
         case 'MOCK_ERROR':

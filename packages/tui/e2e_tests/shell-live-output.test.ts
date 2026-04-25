@@ -72,23 +72,19 @@ describe('Shell live output streaming', () => {
 
     // Poll the store until >5 lines have streamed so tailing behavior is observable.
     let sawLiveOutput = false;
-    let capturedLiveOutput: string[] = [];
+    let capturedLines: string[] = [];
     const pollStart = Date.now();
     while (Date.now() - pollStart < 30000) {
       const store = await testCase.getStore();
+      const lo = (store.liveOutputs as any)?.['tool-live-1'] as string[] | undefined;
+      if (lo && lo.length > 5) {
+        sawLiveOutput = true;
+        capturedLines = lo;
+        break;
+      }
       const toolMsg = store.messages.find(
         (m) => m.role === 'tool_use' && m.id === 'tool-live-1'
       );
-      if (
-        toolMsg &&
-        'liveOutput' in toolMsg &&
-        toolMsg.liveOutput &&
-        toolMsg.liveOutput.length > 5
-      ) {
-        sawLiveOutput = true;
-        capturedLiveOutput = toolMsg.liveOutput;
-        break;
-      }
       if (toolMsg && 'result' in toolMsg && toolMsg.result) {
         break;
       }
@@ -97,7 +93,7 @@ describe('Shell live output streaming', () => {
 
     // Core assertion: liveOutput was actually populated during execution
     expect(sawLiveOutput).toBe(true);
-    expect(capturedLiveOutput.join('\n')).toContain('stream-line-');
+    expect(capturedLines.join('\n')).toContain('stream-line-');
 
     // During execution: wait for the tailing hint to appear on screen,
     // then verify stream-line-1 has scrolled off (proving tail, not head).
@@ -108,16 +104,15 @@ describe('Shell live output streaming', () => {
     // Wait for completion
     await testCase.waitForText('Streaming complete', 30000);
 
-    // Verify final state: liveOutput cleared, result set
+    // Verify final state: liveOutput cleared from map, result set
     const finalStore = await testCase.getStore();
     const finalToolMsg = finalStore.messages.find(
       (m) => m.role === 'tool_use' && m.id === 'tool-live-1'
     );
     expect(finalToolMsg).toBeDefined();
 
-    if (finalToolMsg && 'liveOutput' in finalToolMsg) {
-      expect(finalToolMsg.liveOutput).toBeUndefined();
-    }
+    const finalLo = (finalStore.liveOutputs as any)?.['tool-live-1'];
+    expect(finalLo).toBeUndefined();
 
     if (finalToolMsg && 'result' in finalToolMsg) {
       expect(finalToolMsg.result).toBeDefined();
@@ -183,13 +178,14 @@ describe('Shell live output streaming', () => {
     const pollStart = Date.now();
     while (Date.now() - pollStart < 30000) {
       const store = await testCase.getStore();
-      const toolMsg = store.messages.find(
-        (m) => m.role === 'tool_use' && m.id === 'tool-live-2'
-      );
-      if (toolMsg && 'liveOutput' in toolMsg && toolMsg.liveOutput) {
+      const lo = (store.liveOutputs as any)?.['tool-live-2'] as string[] | undefined;
+      if (lo && lo.length > 0) {
         sawLiveOutput = true;
         break;
       }
+      const toolMsg = store.messages.find(
+        (m) => m.role === 'tool_use' && m.id === 'tool-live-2'
+      );
       if (toolMsg && 'result' in toolMsg && toolMsg.result) {
         break;
       }

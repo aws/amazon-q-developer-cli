@@ -8,7 +8,7 @@ import { unwrapResultOutput } from '../../../utils/tool-result.js';
 import { formatToolParams } from '../../../utils/tool-params.js';
 import { ToolMeta } from './ToolMeta.js';
 import { normalizeLineEndings } from '../../../utils/string.js';
-import type { ToolResult } from '../../../stores/app-store.js';
+import { useAppStore, type ToolResult } from '../../../stores/app-store.js';
 import type { StatusType } from '../../../types/componentTypes.js';
 
 const PREVIEW_LINES = 5;
@@ -16,45 +16,31 @@ const PREVIEW_LINES = 5;
 export interface ShellProps {
   /** The tool name/action */
   name: string;
-
   /** The bash command to display */
   command?: string;
-
-  /** Live streaming output while command is running */
-  liveOutput?: string[];
-
+  /** Tool call ID — used to subscribe to live output from the store */
+  toolCallId?: string;
   /** Tool status type */
   status?: StatusType;
-
   /** Skip the StatusBar wrapper (use when already inside a StatusBar) */
   noStatusBar?: boolean;
-
   /** Whether the command has finished executing */
   isFinished?: boolean;
-
   /** Whether this is a static/past turn (no expandable output) */
   isStatic?: boolean;
-
   /** Tool execution result containing output/error */
   result?: ToolResult;
-
   /** Raw JSON content from tool call args */
   content?: string;
 }
 
 /**
  * Shell tool component for displaying bash command execution.
- *
- * Features:
- * - Shows command with status indicator
- * - Collapsible output with Ctrl+O expansion
- * - Error display for failed commands or timeouts
- * - Static mode for past turns (no output shown)
  */
 export const Shell = React.memo(function Shell({
   name,
   command,
-  liveOutput,
+  toolCallId,
   status,
   noStatusBar = false,
   isFinished = false,
@@ -63,6 +49,12 @@ export const Shell = React.memo(function Shell({
   content,
 }: ShellProps) {
   const { getColor } = useTheme();
+
+  // Subscribe to live output directly from the store — only this Shell
+  // re-renders when new output arrives, not the entire ConversationView.
+  const liveOutput = useAppStore((s) =>
+    toolCallId ? s.liveOutputs.get(toolCallId) : undefined
+  );
 
   const params = useMemo(
     () => formatToolParams(content, ['command']),
@@ -82,7 +74,6 @@ export const Shell = React.memo(function Shell({
 
   const displayCommand = command || undefined;
 
-  // Check for timeout error in result
   const isTimeoutError = useMemo(() => {
     if (result?.status === 'error') {
       const errorMsg = result.error.toLowerCase();
@@ -91,7 +82,6 @@ export const Shell = React.memo(function Shell({
     return false;
   }, [result]);
 
-  // Get error message from result if present
   const errorMessage = useMemo(() => {
     if (result?.status === 'error') {
       return isTimeoutError ? 'Command timed out' : result.error;
@@ -99,9 +89,7 @@ export const Shell = React.memo(function Shell({
     return null;
   }, [result, isTimeoutError]);
 
-  // Unify output source: use result when available, otherwise liveOutput during execution.
-  // Finished output (from the tool result JSON) comes as a string and is split once;
-  // live output is already a `string[]` maintained in the store, so no split-per-render.
+  // Unify output: result lines when finished, live output during execution.
   const { outputLines, exitCode } = useMemo(() => {
     if (result) {
       const { obj, text } = unwrapResultOutput(result);
@@ -151,7 +139,6 @@ export const Shell = React.memo(function Shell({
       };
     }
 
-    // During execution, liveOutput is already a string[] — pass through.
     if (liveOutput && liveOutput.length > 0) {
       return { outputLines: liveOutput, exitCode: null as number | null };
     }
@@ -161,7 +148,6 @@ export const Shell = React.memo(function Shell({
 
   const hasOutput = outputLines.length > 0;
 
-  // Use expandable output hook
   const { expanded, expandHint, hiddenCount } = useExpandableOutput({
     totalItems: outputLines.length,
     previewCount: PREVIEW_LINES,
@@ -169,7 +155,6 @@ export const Shell = React.memo(function Shell({
     unit: 'lines',
   });
 
-  // Set error status if command failed (non-zero exit code) or timeout error
   useEffect(() => {
     if (isFinished && exitCode !== null && exitCode !== 0) {
       setStatus('error');
@@ -178,7 +163,7 @@ export const Shell = React.memo(function Shell({
     }
   }, [isFinished, exitCode, isTimeoutError, setStatus]);
 
-  // Simple mode: just show command info (no output available yet)
+  // Simple mode: no output yet
   if (!result && !liveOutput) {
     const simpleContent = (
       <Box flexDirection="column">
@@ -194,7 +179,7 @@ export const Shell = React.memo(function Shell({
     return <StatusBar status={status}>{simpleContent}</StatusBar>;
   }
 
-  // Static: show only command, no output
+  // Static or empty
   if (isStatic || (!hasOutput && !errorMessage)) {
     return (
       <Box flexDirection="column">
@@ -208,7 +193,7 @@ export const Shell = React.memo(function Shell({
     );
   }
 
-  // Show error message if present
+  // Error
   if (errorMessage) {
     return (
       <Box flexDirection="column">
@@ -225,7 +210,7 @@ export const Shell = React.memo(function Shell({
     );
   }
 
-  // Expanded view: show all output
+  // Expanded: single <Text> with all output lines.
   if (expanded) {
     return (
       <Box flexDirection="column">
@@ -236,15 +221,13 @@ export const Shell = React.memo(function Shell({
         />
         <ToolMeta params={params} />
         <Box marginLeft={2} flexDirection="column">
-          {outputLines.map((line, i) => (
-            <Text key={i}>{getColor('primary')(line)}</Text>
-          ))}
+          <Text>{getColor('primary')(outputLines.join('\n'))}</Text>
         </Box>
       </Box>
     );
   }
 
-  // Collapsed view: tail during execution, head after completion
+  // Collapsed: single <Text>, tail during execution, head after completion.
   const previewLines = isFinished
     ? outputLines.slice(0, PREVIEW_LINES)
     : outputLines.slice(-PREVIEW_LINES);
@@ -261,9 +244,7 @@ export const Shell = React.memo(function Shell({
             )}
           </Text>
         )}
-        {previewLines.map((line, i) => (
-          <Text key={i}>{getColor('primary')(line)}</Text>
-        ))}
+        <Text>{getColor('primary')(previewLines.join('\n'))}</Text>
         {isFinished && expandHint && (
           <Text>{getColor('secondary')(expandHint)}</Text>
         )}

@@ -206,7 +206,6 @@ export type MessageType =
       result?: ToolResult;
       locations?: Array<{ path: string; line?: number }>;
       agentName?: string;
-      liveOutput?: string[];
     }
   | { id: string; role: MessageRole.System; content: string; success: boolean };
 
@@ -522,6 +521,7 @@ export type AppStoreApi = ReturnType<typeof createAppStore>;
 export interface AppState {
   // Chat state
   messages: MessageType[];
+  liveOutputs: Map<string, string[]>;
   queuedMessages: string[];
   editingQueueIndex: number | null;
   slashCommands: SlashCommand[];
@@ -783,6 +783,7 @@ export const createAppStore = (props: AppStoreProps) => {
   const store = createStore<AppState & AppActions>((set, get) => ({
     // Initial state
     messages: [],
+    liveOutputs: new Map(),
     queuedMessages: [],
     editingQueueIndex: null,
     slashCommands: [
@@ -1143,29 +1144,17 @@ export const createAppStore = (props: AppStoreProps) => {
         const buffers = Array.from(toolOutputBuffers.entries());
         toolOutputBuffers.clear();
         set((state) => {
-          const messages = state.messages.slice();
-          let changed = false;
+          const newLiveOutputs = new Map(state.liveOutputs);
           for (const [id, text] of buffers) {
-            const idx = messages.findIndex(
-              (msg) => msg.role === MessageRole.ToolUse && msg.id === id
-            );
-            if (idx === -1) continue;
-            const toolMsg = messages[idx];
-            if (!toolMsg || toolMsg.role !== MessageRole.ToolUse) continue;
-            // Split the batched chunk into lines and append to the existing
-            // array, avoiding any concat of the full accumulated string.
-            // Drop the trailing empty element produced when the chunk ends
-            // with a newline; next batch's first line will start fresh.
+            if (!text) continue;
             const newLines = text.split('\n');
-            if (newLines.length > 0 && newLines[newLines.length - 1] === '') {
+            if (newLines.length > 0 && newLines[newLines.length - 1] === '')
               newLines.pop();
-            }
             if (newLines.length === 0) continue;
-            const prev = toolMsg.liveOutput ?? [];
-            messages[idx] = { ...toolMsg, liveOutput: prev.concat(newLines) };
-            changed = true;
+            const prev = newLiveOutputs.get(id) ?? [];
+            newLiveOutputs.set(id, prev.concat(newLines));
           }
-          return changed ? { messages } : {};
+          return { liveOutputs: newLiveOutputs };
         });
       };
 
@@ -1442,7 +1431,6 @@ export const createAppStore = (props: AppStoreProps) => {
             break;
           case AgentEventType.ToolCallFinished:
             // Flush any buffered live output before we mark the tool finished
-            // and clear liveOutput; otherwise the final lines would be lost.
             if (pendingToolOutputFlush) {
               clearTimeout(pendingToolOutputFlush);
               pendingToolOutputFlush = null;
@@ -1453,6 +1441,8 @@ export const createAppStore = (props: AppStoreProps) => {
               const toolMsgIndex = messages.findIndex(
                 (msg) => msg.role === MessageRole.ToolUse && msg.id === event.id
               );
+              const newLiveOutputs = new Map(state.liveOutputs);
+              newLiveOutputs.delete(event.id);
               if (toolMsgIndex !== -1) {
                 const toolMsg = messages[toolMsgIndex];
                 if (toolMsg && toolMsg.role === MessageRole.ToolUse) {
@@ -1467,11 +1457,10 @@ export const createAppStore = (props: AppStoreProps) => {
                     result: event.result,
                     locations: toolMsg.locations,
                     agentName: toolMsg.agentName,
-                    liveOutput: undefined,
                   };
                 }
               }
-              return { messages };
+              return { messages, liveOutputs: newLiveOutputs };
             });
 
             // Extract task state from task tool results
