@@ -1,0 +1,4 @@
+// Thinking block followed by text response
+{"kind":"event","data":{"kind":"ReasoningEvent","data":{"text":"Let me think about this carefully.","signature":null,"redacted_content":null}}}
+{"kind":"event","data":{"kind":"ReasoningEvent","data":{"text":null,"signature":"sig-abc-123","redacted_content":null}}}
+{"kind":"event","data":{"kind":"AssistantResponseEvent","data":{"content":"Here is my answer."}}}

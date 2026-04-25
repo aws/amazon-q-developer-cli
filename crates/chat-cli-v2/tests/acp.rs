@@ -2290,10 +2290,10 @@ async fn switch_to_execution_swaps_and_executes_plan() {
     // Verify the plan execution happened — the second mock response should have been consumed
     let session_updates = &captured.session_updates;
     let has_plan_response = session_updates.iter().any(|u| {
-        if let SessionUpdate::AgentMessageChunk(chunk) = u {
-            if let agent_client_protocol::ContentBlock::Text(text) = &chunk.content {
-                return text.text.contains("implement the plan");
-            }
+        if let SessionUpdate::AgentMessageChunk(chunk) = u
+            && let agent_client_protocol::ContentBlock::Text(text) = &chunk.content
+        {
+            return text.text.contains("implement the plan");
         }
         false
     });
@@ -2409,4 +2409,67 @@ fn find_skill_prompt(captured: &common::CapturedNotifications, method: &str, nam
                 .find(|p| p.get("name").and_then(|v| v.as_str()) == Some(name))
                 .cloned()
         })
+}
+
+/// Verifies that thinking/reasoning content from the model is preserved in conversation
+/// history and sent back in the next request's AssistantResponseMessage.
+#[tokio::test]
+#[timeout(30000)]
+#[serial]
+async fn thinking_block_preserved_in_next_request() {
+    let (mut harness, client, session_id, _) = AcpTestHarnessBuilder::new("thinking_block_preserved_in_next_request")
+        .build_with_session()
+        .await;
+
+    // Turn 1: model responds with thinking + text
+    harness
+        .push_mock_responses_from_file(&session_id.0, "tests/mock_responses/thinking_then_text.jsonl")
+        .await;
+
+    client
+        .prompt_text(session_id.clone(), "think about this")
+        .await
+        .expect("first prompt failed");
+
+    // Turn 2: model responds with simple text
+    harness
+        .push_mock_responses_from_file(&session_id.0, "tests/mock_responses/simple_text.jsonl")
+        .await;
+
+    client
+        .prompt_text(session_id.clone(), "follow up question")
+        .await
+        .expect("second prompt failed");
+
+    // Verify the second request's history contains reasoning_content from turn 1
+    let captured = harness.get_captured_requests(&session_id.0).await;
+    assert_eq!(captured.len(), 2, "should have captured two requests");
+
+    let second_request = &captured[1];
+    let history = second_request
+        .history
+        .as_ref()
+        .expect("second request should have history");
+
+    // Find the assistant message from turn 1 in the history (skip canned context messages)
+    let assistant_msg = history
+        .iter()
+        .filter_map(|msg| {
+            if let chat_cli_v2::api_client::model::ChatMessage::AssistantResponseMessage(m) = msg {
+                Some(m)
+            } else {
+                None
+            }
+        })
+        .find(|m| m.content.contains("Here is my answer"))
+        .expect("history should contain the model's assistant message");
+
+    let reasoning = assistant_msg
+        .reasoning_content
+        .as_ref()
+        .expect("assistant message should have reasoning_content");
+
+    assert_eq!(reasoning.text, "Let me think about this carefully.");
+    assert_eq!(reasoning.signature.as_deref(), Some("sig-abc-123"));
+    assert!(reasoning.redacted_content.is_empty());
 }
