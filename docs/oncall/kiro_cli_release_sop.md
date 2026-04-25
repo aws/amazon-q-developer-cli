@@ -236,6 +236,87 @@ Document each deployment step (toolbox beta, prod, CloudFront) as comments on th
    kiro-cli diagnostic
    ```
 
+## Recalling a Toolbox Version
+
+Use this when a released version has a critical issue and needs to be pulled from toolbox.
+
+### Prerequisites
+
+Install `toolbox-vendor-ops` if not already available:
+
+```bash
+toolbox registry add s3://buildertoolbox-registry-toolbox-ops-us-west-2/tools.json \
+  && toolbox install toolbox-ops
+```
+
+### Account & Credentials
+
+The toolbox bucket lives in account **`211125606403`** (separate from the Gamma/Prod deploy accounts). You need credentials for this account.
+
+```bash
+ada credentials update --account 211125606403 --provider isengard --role Admin --profile kiro-toolbox --once
+```
+
+### Recall Steps
+
+1. **Dry run first** to verify what will change:
+   ```bash
+   toolbox-vendor-ops \
+     --credentials-file ~/.aws/credentials \
+     --profile kiro-toolbox \
+     --repo s3://buildertoolbox-kiro-cli-us-west-2 \
+     --dryrun \
+     recall \
+     --version <VERSION_TO_RECALL> \
+     --channel stable \
+     --recommended <SAFE_VERSION>
+   ```
+
+2. **Execute the recall** (remove `--dryrun`):
+   ```bash
+   toolbox-vendor-ops \
+     --credentials-file ~/.aws/credentials \
+     --profile kiro-toolbox \
+     --repo s3://buildertoolbox-kiro-cli-us-west-2 \
+     recall \
+     --version <VERSION_TO_RECALL> \
+     --channel stable \
+     --recommended <SAFE_VERSION>
+   ```
+
+3. **Verify** the recalled version is no longer installable:
+   ```bash
+   toolbox install kiro-cli --channel stable --force
+   kiro-cli diagnostic
+   ```
+
+### Key Flags
+
+| Flag | Description |
+|------|-------------|
+| `--version` | Version to recall (required) |
+| `--channel` | `stable`, `beta`, or `nightly` (omit to recall from all channels) |
+| `--os` | `osx`, `ubuntu`, `alinux`, `windows` (omit to recall on all OSes) |
+| `--recommended` | Version customers should auto-update to |
+| `--dryrun` | Preview changes without applying |
+
+### Undoing a Recall
+
+```bash
+toolbox-vendor-ops \
+  --repo s3://buildertoolbox-kiro-cli-us-west-2 \
+  unrecall \
+  --version <VERSION> \
+  --make-current
+```
+
+> **Note:** Customers on a recalled version stay on it until `toolbox update` runs — there is no way to push an update. The recall only affects new installs and auto-updates.
+
+### References
+
+- [Builder Toolbox: Vending & Registry Management](https://docs.hub.amazon.dev/builder-toolbox/user-guide/vending-registry-management/) — full docs for publishing, recalling, and managing tool registries
+- [BuilderToolboxOpsTools package](https://code.amazon.com/packages/BuilderToolboxOpsTools) — source for `toolbox-vendor-ops` and `toolbox-registry` commands
+
 ## Release Tracker
 
 Create a release tracker at `docs/oncall/releases/vX.Y.Z.md` using the [template](releases/TEMPLATE.md) to document progress through each step.
