@@ -206,6 +206,7 @@ export type MessageType =
       result?: ToolResult;
       locations?: Array<{ path: string; line?: number }>;
       agentName?: string;
+      liveOutput?: string[];
     }
   | { id: string; role: MessageRole.System; content: string; success: boolean };
 
