@@ -243,7 +243,7 @@ export const MarkdownRenderer = React.memo(function MarkdownRenderer({
             <Box key={i} marginTop={mt}>
               <Text>
                 {chalk.dim('│ ')}
-                {color(chalk.italic(block.segment.text))}
+                {chalk.italic(renderInlineText(block.segment.text))}
               </Text>
             </Box>
           );

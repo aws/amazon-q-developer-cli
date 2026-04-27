@@ -489,6 +489,26 @@ describe('parseMarkdown', () => {
       expect(result[0]?.blockquote).toBe(true);
       expect(result[0]?.text).toBe('no space');
     });
+    it('should preserve inline markdown in blockquote text for downstream rendering', () => {
+      const result = parseMarkdown(
+        '> When `display: "omitted"` is set, the block closes **without events**.'
+      );
+      expect(result[0]?.blockquote).toBe(true);
+      // Raw text preserved by parser; renderer is responsible for inline styling
+      expect(result[0]?.text).toBe(
+        'When `display: "omitted"` is set, the block closes **without events**.'
+      );
+      // Verify parseInlineMarkdown correctly handles the blockquote text
+      const inlineSegments = parseInlineMarkdown(result[0]!.text);
+      const codeSegment = inlineSegments.find((s) => s.quote);
+      expect(codeSegment).toBeDefined();
+      expect(codeSegment!.text).toBe('display: "omitted"');
+      const boldSegment = inlineSegments.find((s) => s.bold);
+      expect(boldSegment).toBeDefined();
+      expect(boldSegment!.children).toEqual([
+        { text: 'without events' },
+      ]);
+    });
   });
 
   describe('Horizontal Rules', () => {
