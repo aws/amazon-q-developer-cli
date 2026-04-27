@@ -543,6 +543,7 @@ export interface AppState {
   sessionId: string | null;
   isProcessing: boolean;
   isCompacting: boolean;
+  wasCancelled: boolean;
   agentError: string | null;
   agentErrorGuidance: string | null;
   pendingApproval: ApprovalRequestInfo | null;
@@ -837,6 +838,7 @@ export const createAppStore = (props: AppStoreProps) => {
     sessionId: null,
     isProcessing: false,
     isCompacting: false,
+    wasCancelled: false,
     agentError: null,
     agentErrorGuidance: null,
     pendingApproval: null,
@@ -995,6 +997,7 @@ export const createAppStore = (props: AppStoreProps) => {
           isProcessing: true,
           agentError: null,
           agentErrorGuidance: null,
+          wasCancelled: false,
           autoApproveCrewTools: false,
           messages: [...state.messages, userMessage],
           attachedFiles: [], // Clear attachments after sending
@@ -1745,7 +1748,7 @@ export const createAppStore = (props: AppStoreProps) => {
       const cancelPromise = new Promise<void>((resolve) => {
         resolveCancelPromise = resolve;
       });
-      set({ cancelInProgress: cancelPromise });
+      set({ cancelInProgress: cancelPromise, wasCancelled: true });
 
       try {
         // Abort local stream first
@@ -3188,8 +3191,8 @@ export const createAppStore = (props: AppStoreProps) => {
     );
     if (!method) return;
 
-    // Turn completed cleanly (no error)
-    if (wasProcessing && !state.isProcessing && !state.agentError) {
+    // Turn completed cleanly (no error, no cancellation)
+    if (wasProcessing && !state.isProcessing && !state.agentError && !state.wasCancelled) {
       playNotification(method, 'Response complete');
     }
 
