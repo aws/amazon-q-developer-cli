@@ -1,23 +1,23 @@
 ---
 doc_meta:
-  validated: 2026-01-27
-  commit: 85403a86
+  validated: 2026-04-16
+  commit: 7404fa72c
   status: validated
   testable_headless: false
   category: command
   title: kiro-cli login
-  description: Authenticate with Kiro CLI service using Builder ID or Identity Center
-  keywords: [login, auth, authentication, builder-id, identity-center, govcloud]
+  description: Authenticate with Kiro CLI service using Builder ID, Social (Google/GitHub), or Identity Center
+  keywords: [login, auth, authentication, builder-id, identity-center, govcloud, social, google, github, device-flow, remote, headless]
   related: [logout, whoami]
 ---
 
 # kiro-cli login
 
-Authenticate with Kiro CLI service using Builder ID or Identity Center.
+Authenticate with Kiro CLI service using Builder ID, Social (Google/GitHub), or Identity Center.
 
 ## Overview
 
-The login command authenticates with Kiro CLI service. Supports Builder ID (free) and Identity Center (pro), including GovCloud regions. Local environments use unified auth portal. Remote environments support device flow for SSH/terminal-only access.
+The login command authenticates with Kiro CLI service. Supports Builder ID, Social login via Google or GitHub, and Organization Identity, including GovCloud regions. Local environments use unified auth portal and ignores flags. Remote environments support device flow for all authentication methods except some Identity Provider, including social login via Google and GitHub.
 
 ## Usage
 
@@ -33,7 +33,6 @@ Opens browser for authentication (local) or shows device code (remote).
 
 ```bash
 kiro-cli login --license pro --identity-provider <url> --region us-east-1
-kiro-cli login --social google
 kiro-cli login --use-device-flow
 ```
 
@@ -61,12 +60,19 @@ Unified auth portal (ignores CLI flags):
 
 ### Remote Environment (SSH/Terminal)
 
-Device flow:
-1. Shows device code and URL
-2. Open URL in browser on another device
-3. Enter device code
-4. Complete authentication
-5. CLI polls for completion
+Device flow for all authentication methods (Builder ID, Google, GitHub, Identity Center):
+
+1. CLI presents a menu to select login method:
+   - Use with Builder ID
+   - Use with Google
+   - Use with GitHub
+   - Use with Your Organization
+2. Shows a verification URL and user code
+3. Open URL in browser on another device
+4. Confirm user code and authorize
+5. CLI polls for completion and signs in automatically
+
+For social providers (Google/GitHub), the device flow uses the auth portal's endpoints. The CLI displays a verification URL with the code pre-filled for convenience.
 
 ## Examples
 
@@ -77,7 +83,7 @@ kiro-cli login
 ```
 
 **Local**: Opens browser  
-**Remote**: Shows device code
+**Remote**: Shows login method menu, then device code
 
 ### Example 2: Identity Center
 
@@ -85,13 +91,30 @@ kiro-cli login
 kiro-cli login --license pro --identity-provider https://my-org.awsapps.com/start --region us-east-1
 ```
 
-### Example 3: Social Login
+### Example 3: Social Login (Local)
 
 ```bash
-kiro-cli login --social google
+kiro-cli login
 ```
 
-### Example 4: Force Device Flow
+CLI opens the unified auth portal and select a social provider.
+
+### Example 4: Social Login (Remote)
+
+In a remote/SSH environment, run `kiro-cli login` and select "Use with Google" or "Use with GitHub" from the menu. The CLI will display:
+
+```
+To sign in with Google, visit:
+  https://auth.example.com/device?code=ABCD-EFGH
+
+And confirm the code: ABCD-EFGH
+
+⠋ Waiting for authorization...
+```
+
+Complete authorization on any browser-enabled device. The CLI signs in automatically once approved.
+
+### Example 5: Force Device Flow
 
 ```bash
 kiro-cli login --use-device-flow
@@ -119,6 +142,12 @@ Useful for SSH sessions or when browser redirect doesn't work.
 **Cause**: Didn't complete authentication in time  
 **Solution**: Restart login process
 
+### Issue: Device Code Expired
+
+**Symptom**: "Device code expired. Please try again."  
+**Cause**: Authorization was not completed before the code expired  
+**Solution**: Run `kiro-cli login` again to get a new device code
+
 ### Issue: Identity Center Not Working
 
 **Symptom**: Identity Center login fails  
@@ -134,7 +163,7 @@ Useful for SSH sessions or when browser redirect doesn't work.
 ## Limitations
 
 - Local environment always uses unified portal (ignores flags)
-- Remote environment requires device flow
+- Remote environment uses device flow for all methods except some Identity Provider
 - One active session at a time
 - Session expires after period of inactivity
 
@@ -144,9 +173,9 @@ Useful for SSH sessions or when browser redirect doesn't work.
 - `free`: Builder ID (AWS Builder ID)
 - `pro`: Identity Center (AWS IAM Identity Center)
 
-**Social Providers**: Google, GitHub
+**Social Providers**: Google, GitHub (supported in both local and remote environments)
 
-**Device Flow**: OAuth device authorization flow for remote environments
+**Device Flow**: OAuth device authorization flow for remote environments. Social providers use a dedicated device authorization endpoint that returns a user code and verification URL. The CLI polls a device poll endpoint until the user completes authorization.
 
 **Remote Detection**: Automatically detects SSH sessions and remote environments
 
