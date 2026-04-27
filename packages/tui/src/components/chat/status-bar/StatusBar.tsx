@@ -278,6 +278,7 @@ export const StatusBar = React.memo(function StatusBar({
         <Box
           flexDirection="column"
           flexGrow={1}
+          flexShrink={1}
           alignSelf="flex-start"
           marginLeft={1}
           ref={contentRef}
