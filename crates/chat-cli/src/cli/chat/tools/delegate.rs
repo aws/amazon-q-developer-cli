@@ -23,6 +23,8 @@ use strum::{
     EnumString,
 };
 
+use tokio::sync::mpsc;
+
 use crate::cli::agent::Agents;
 use crate::cli::chat::tools::{
     InvokeOutput,
@@ -41,6 +43,12 @@ use crate::theme::StyledText;
 use crate::util::env_var::get_all_env_vars;
 use crate::util::paths::PathResolver;
 
+/// Creates a channel pair for subagent completion notifications.
+/// The sender is passed to `spawn_agent_process`; the receiver is held by `ChatSession`.
+pub fn completion_channel() -> (mpsc::UnboundedSender<AgentExecution>, mpsc::UnboundedReceiver<AgentExecution>) {
+    mpsc::unbounded_channel()
+}
+
 /// Launch and manage async agent processes. Delegate tasks to agents that run independently in
 /// background.
 ///
@@ -49,7 +57,8 @@ use crate::util::paths::PathResolver;
 /// - status: Check agent status (agent optional - defaults to 'all')
 /// - list: Show available agents
 ///
-/// Only one task per agent. Files stored in the workspace subagents directory
+/// Multiple concurrent tasks per agent are supported. Files stored in the workspace subagents
+/// directory.
 ///
 /// Examples:
 /// - Launch: {"operation": "launch", "agent": "rust-agent", "task": "Create snake game"}
@@ -83,7 +92,13 @@ impl Delegate {
         ExperimentManager::is_enabled(os, ExperimentName::Delegate)
     }
 
-    pub async fn invoke(&self, os: &Os, _output: &mut impl Write, agents: &Agents) -> Result<InvokeOutput> {
+    pub async fn invoke(
+        &self,
+        os: &Os,
+        _output: &mut impl Write,
+        agents: &Agents,
+        completion_tx: Option<mpsc::UnboundedSender<AgentExecution>>,
+    ) -> Result<InvokeOutput> {
         if !Self::is_enabled(os) {
             return Ok(InvokeOutput {
                 output: OutputKind::Text(
@@ -101,7 +116,7 @@ impl Delegate {
 
                 let agent_name = self.agent.as_deref().unwrap_or(DEFAULT_AGENT_NAME);
 
-                launch_agent(os, agent_name, agents, task).await?
+                launch_agent(os, agent_name, agents, task, completion_tx).await?
             },
             Operation::Status => match &self.agent {
                 Some(agent_name) => status_agent(os, agent_name).await?,
@@ -142,18 +157,14 @@ impl Delegate {
     }
 }
 
-pub async fn launch_agent(os: &Os, agent: &str, agents: &Agents, task: &str) -> Result<String> {
+pub async fn launch_agent(
+    os: &Os,
+    agent: &str,
+    agents: &Agents,
+    task: &str,
+    completion_tx: Option<mpsc::UnboundedSender<AgentExecution>>,
+) -> Result<String> {
     validate_agent_availability(os, agent).await?;
-
-    // Check if agent is already running
-    if let Some((execution, _)) = load_agent_execution(os, agent).await? {
-        if execution.status == AgentStatus::Running {
-            return Err(eyre::eyre!(
-                "Agent '{}' is already running. Use status operation to check progress or wait for completion.",
-                agent
-            ));
-        }
-    }
 
     if agent == DEFAULT_AGENT_NAME {
         // Show warning for default agent but no approval needed
@@ -163,7 +174,7 @@ pub async fn launch_agent(os: &Os, agent: &str, agents: &Agents, task: &str) -> 
         request_user_approval(agent, agents, task).await?;
     }
 
-    spawn_agent_process(os, agent, task).await?;
+    spawn_agent_process(os, agent, task, completion_tx).await?;
 
     Ok(format_launch_success(agent, task))
 }
@@ -268,6 +279,9 @@ impl AgentStatus {
 pub struct AgentExecution {
     #[serde(default)]
     pub agent: String,
+    /// Unique identifier for this task execution, enabling multiple concurrent tasks per agent.
+    #[serde(default)]
+    pub task_id: String,
     #[serde(default)]
     pub task: String,
     #[serde(default)]
@@ -334,7 +348,12 @@ impl From<&Agent> for AgentConfig {
     }
 }
 
-pub async fn spawn_agent_process(os: &Os, agent: &str, task: &str) -> Result<AgentExecution> {
+pub async fn spawn_agent_process(
+    os: &Os,
+    agent: &str,
+    task: &str,
+    completion_tx: Option<mpsc::UnboundedSender<AgentExecution>>,
+) -> Result<AgentExecution> {
     let now = Utc::now();
 
     // Run Q chat with specific agent in background, non-interactive
@@ -357,8 +376,11 @@ pub async fn spawn_agent_process(os: &Os, agent: &str, task: &str) -> Result<Age
     let child = cmd.spawn()?;
     let pid = child.id().ok_or(eyre::eyre!("Process spawned had already exited"))?;
 
+    let task_id = format!("{}_{}", now.timestamp_millis(), pid);
+
     let execution = AgentExecution {
         agent: agent.to_string(),
+        task_id,
         task: task.to_string(),
         status: AgentStatus::Running,
         launched_at: now,
@@ -374,7 +396,7 @@ pub async fn spawn_agent_process(os: &Os, agent: &str, task: &str) -> Result<Age
     save_agent_execution(os, &execution).await?;
 
     // Start monitoring with the actual child process
-    tokio::spawn(monitor_child_process(child, execution.clone(), os.clone()));
+    tokio::spawn(monitor_child_process(child, execution.clone(), os.clone(), completion_tx));
 
     Ok(execution)
 }
@@ -415,7 +437,12 @@ async fn generate_summary(task: &str, output: &str) -> Result<String> {
     }
 }
 
-async fn monitor_child_process(child: tokio::process::Child, mut execution: AgentExecution, os: Os) {
+async fn monitor_child_process(
+    child: tokio::process::Child,
+    mut execution: AgentExecution,
+    os: Os,
+    completion_tx: Option<mpsc::UnboundedSender<AgentExecution>>,
+) {
     match child.wait_with_output().await {
         Ok(output) => {
             execution.status = if output.status.success() {
@@ -452,6 +479,11 @@ async fn monitor_child_process(child: tokio::process::Child, mut execution: Agen
             if let Err(e) = save_agent_execution(&os, &execution).await {
                 eprintln!("Failed to save agent execution: {}", e);
             }
+
+            // Notify via channel
+            if let Some(tx) = completion_tx {
+                let _ = tx.send(execution);
+            }
         },
         Err(e) => {
             execution.status = AgentStatus::Failed;
@@ -464,29 +496,33 @@ async fn monitor_child_process(child: tokio::process::Child, mut execution: Agen
             if let Err(e) = save_agent_execution(&os, &execution).await {
                 eprintln!("Failed to save agent execution: {}", e);
             }
+
+            // Notify via channel
+            if let Some(tx) = completion_tx {
+                let _ = tx.send(execution);
+            }
         },
     }
 }
 
 pub async fn status_agent(os: &Os, agent: &str) -> Result<String> {
-    match load_agent_execution(os, agent).await? {
-        Some((mut execution, _path)) => {
-            // If status is running, check if PID is still alive
-            if execution.status == AgentStatus::Running && execution.pid != 0 && !is_process_alive(execution.pid) {
-                // Process died, mark as failed
-                execution.status = AgentStatus::Failed;
-                execution.completed_at = Some(chrono::Utc::now());
-                execution.exit_code = Some(-1);
-                execution.output = "Process terminated unexpectedly (PID not found)".to_string();
-
-                // Save the updated status
-                save_agent_execution(os, &execution).await?;
-            }
-
-            Ok(execution.format_status())
-        },
-        None => Ok(format!("No execution found for agent '{}'", agent)),
+    let mut executions = load_all_agent_executions(os, agent).await?;
+    if executions.is_empty() {
+        return Ok(format!("No execution found for agent '{}'", agent));
     }
+
+    // Check PIDs and update dead processes
+    for execution in &mut executions {
+        if execution.status == AgentStatus::Running && execution.pid != 0 && !is_process_alive(execution.pid) {
+            execution.status = AgentStatus::Failed;
+            execution.completed_at = Some(chrono::Utc::now());
+            execution.exit_code = Some(-1);
+            execution.output = "Process terminated unexpectedly (PID not found)".to_string();
+            let _ = save_agent_execution(os, execution).await;
+        }
+    }
+
+    Ok(executions.iter().map(|e| e.format_status()).collect::<Vec<_>>().join("\n---\n"))
 }
 
 pub async fn status_all_agents(os: &Os) -> Result<Vec<AgentExecution>> {
@@ -562,20 +598,42 @@ pub async fn request_user_approval(agent: &str, agents: &Agents, task: &str) -> 
     Ok(())
 }
 
-pub async fn load_agent_execution(os: &Os, agent: &str) -> Result<Option<(AgentExecution, PathBuf)>> {
-    let file_path = agent_file_path(os, agent).await?;
+/// Load all executions for a given agent (for concurrent task support).
+pub async fn load_all_agent_executions(os: &Os, agent: &str) -> Result<Vec<AgentExecution>> {
+    let dir = subagents_dir(os).await?;
+    let prefix = format!("{}_", agent);
+    let mut executions = Vec::new();
 
-    if file_path.exists() {
-        let content = os.fs.read_to_string(&file_path).await?;
-        let execution: AgentExecution = serde_json::from_str(&content)?;
-        Ok(Some((execution, file_path)))
-    } else {
-        Ok(None)
+    if let Ok(mut dir_walker) = os.fs.read_dir(&dir).await {
+        while let Ok(Some(file)) = dir_walker.next_entry().await {
+            let name = file.file_name().to_string_lossy().to_string();
+            if name.starts_with(&prefix) && name.ends_with(".json") {
+                if let Ok(bytes) = os.fs.read(file.path()).await {
+                    if let Ok(exec) = serde_json::from_slice::<AgentExecution>(&bytes) {
+                        executions.push(exec);
+                    }
+                }
+            }
+        }
     }
+
+    // Also check legacy path
+    let file_path = agent_file_path(os, agent).await?;
+    if file_path.exists() {
+        if let Ok(content) = os.fs.read_to_string(&file_path).await {
+            if let Ok(exec) = serde_json::from_str::<AgentExecution>(&content) {
+                if !executions.iter().any(|e| e.task_id == exec.task_id) {
+                    executions.push(exec);
+                }
+            }
+        }
+    }
+
+    Ok(executions)
 }
 
 pub async fn save_agent_execution(os: &Os, execution: &AgentExecution) -> Result<()> {
-    let file_path = agent_file_path(os, &execution.agent).await?;
+    let file_path = execution_file_path(os, &execution.agent, &execution.task_id).await?;
     let content = serde_json::to_string_pretty(execution)?;
     os.fs.write(&file_path, content).await?;
     Ok(())
@@ -584,6 +642,12 @@ pub async fn save_agent_execution(os: &Os, execution: &AgentExecution) -> Result
 pub async fn agent_file_path(os: &Os, agent: &str) -> Result<PathBuf> {
     let subagents_dir = subagents_dir(os).await?;
     Ok(subagents_dir.join(format!("{}.json", agent)))
+}
+
+/// File path for a specific task execution (concurrent-safe).
+pub async fn execution_file_path(os: &Os, agent: &str, task_id: &str) -> Result<PathBuf> {
+    let subagents_dir = subagents_dir(os).await?;
+    Ok(subagents_dir.join(format!("{}_{}.json", agent, task_id)))
 }
 
 pub async fn subagents_dir(os: &Os) -> Result<PathBuf> {
