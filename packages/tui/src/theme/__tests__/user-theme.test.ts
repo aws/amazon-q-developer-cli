@@ -5,12 +5,22 @@ import { tmpdir } from 'os';
 import {
   promptPresets,
   responsePresets,
+  diffPresets,
+  bundledThemes,
   buildPromptPreview,
   buildResponsePreview,
+  buildDiffPreview,
+  buildBundledPreview,
+  buildCurrentPreview,
+  buildFallbackDiff,
   loadUserThemePrefs,
   saveUserThemePrefs,
   getPromptPreset,
   getResponsePreset,
+  getDiffPreset,
+  getBundledTheme,
+  PROMPT_PREVIEW,
+  RESPONSE_PREVIEW,
   type UserThemePrefs,
 } from '../user-theme';
 
@@ -187,6 +197,170 @@ describe('user-theme', () => {
       const parsed = JSON.parse(raw);
       expect(parsed.responsePreset).toBe('dark');
       expect('promptPreset' in parsed).toBe(false);
+    });
+  });
+
+  describe('diffPresets', () => {
+    it('all have id, label, added, and removed', () => {
+      for (const p of diffPresets) {
+        expect(p.id).toBeTruthy();
+        expect(p.label).toBeTruthy();
+        expect(p.added).toBeDefined();
+        expect(p.removed).toBeDefined();
+      }
+    });
+
+    it('ids are unique', () => {
+      const ids = diffPresets.map((p) => p.id);
+      expect(new Set(ids).size).toBe(ids.length);
+    });
+
+    it('includes default, dark, light, colorblind-dark, colorblind-light', () => {
+      const ids = diffPresets.map((p) => p.id);
+      expect(ids).toContain('default');
+      expect(ids).toContain('dark');
+      expect(ids).toContain('light');
+      expect(ids).toContain('colorblind-dark');
+      expect(ids).toContain('colorblind-light');
+    });
+  });
+
+  describe('bundledThemes', () => {
+    it('has dark and light entries', () => {
+      const ids = bundledThemes.map((t) => t.id);
+      expect(ids).toContain('dark');
+      expect(ids).toContain('light');
+    });
+
+    it('each has prompt, response, and diff with valid structure', () => {
+      for (const t of bundledThemes) {
+        expect(t.prompt).toBeDefined();
+        expect(t.prompt.id).toBeTruthy();
+        expect(t.prompt.textColor).toBeDefined();
+        expect(t.prompt.bgColor).toBeDefined();
+        expect(t.response).toBeDefined();
+        expect(t.response.id).toBeTruthy();
+        expect(t.response.textColor).toBeDefined();
+        expect(t.diff).toBeDefined();
+        expect(t.diff.added).toBeDefined();
+        expect(t.diff.removed).toBeDefined();
+      }
+    });
+  });
+
+  describe('getDiffPreset', () => {
+    it('returns preset by id', () => {
+      const preset = getDiffPreset('dark');
+      expect(preset).toBeDefined();
+      expect(preset!.id).toBe('dark');
+    });
+
+    it('returns undefined for unknown id', () => {
+      expect(getDiffPreset('nonexistent')).toBeUndefined();
+    });
+
+    it('returns undefined for undefined input', () => {
+      expect(getDiffPreset(undefined)).toBeUndefined();
+    });
+  });
+
+  describe('buildDiffPreview', () => {
+    it('returns non-empty string for each diffPreset', () => {
+      for (const p of diffPresets) {
+        const preview = buildDiffPreview(p);
+        expect(preview.length).toBeGreaterThan(0);
+      }
+    });
+
+    it('includes checkmark for current id', () => {
+      const dark = diffPresets.find((p) => p.id === 'dark')!;
+      const preview = buildDiffPreview(dark, 'dark');
+      expect(preview).toContain('\u2713');
+    });
+
+    it('works with fallbackDiff parameter', () => {
+      const defaultPreset = diffPresets.find((p) => p.id === 'default')!;
+      const darkPreset = diffPresets.find((p) => p.id === 'dark')!;
+      const preview = buildDiffPreview(defaultPreset, undefined, darkPreset);
+      expect(preview.length).toBeGreaterThan(0);
+    });
+  });
+
+  describe('buildBundledPreview', () => {
+    it('returns non-empty string for each bundledTheme', () => {
+      for (const t of bundledThemes) {
+        const preview = buildBundledPreview(t);
+        expect(preview.length).toBeGreaterThan(0);
+      }
+    });
+
+    it('contains prompt and response text', () => {
+      for (const t of bundledThemes) {
+        const preview = buildBundledPreview(t);
+        expect(preview).toContain(PROMPT_PREVIEW);
+        expect(preview).toContain(RESPONSE_PREVIEW);
+      }
+    });
+  });
+
+  describe('getBundledTheme', () => {
+    it('returns theme by id', () => {
+      const theme = getBundledTheme('dark');
+      expect(theme).toBeDefined();
+      expect(theme!.id).toBe('dark');
+    });
+
+    it('returns undefined for unknown id', () => {
+      expect(getBundledTheme('nonexistent')).toBeUndefined();
+    });
+
+    it('returns undefined for undefined input', () => {
+      expect(getBundledTheme(undefined)).toBeUndefined();
+    });
+  });
+
+  describe('buildCurrentPreview', () => {
+    it('returns non-empty string with default prefs {}', () => {
+      const preview = buildCurrentPreview({});
+      expect(preview.length).toBeGreaterThan(0);
+    });
+
+    it('returns non-empty string with specific prefs', () => {
+      const preview = buildCurrentPreview({
+        promptPreset: 'purple',
+        responsePreset: 'light',
+        diffPreset: 'dark',
+      });
+      expect(preview.length).toBeGreaterThan(0);
+    });
+  });
+
+  describe('buildFallbackDiff', () => {
+    it('returns valid DiffPreset from hex inputs', () => {
+      const result = buildFallbackDiff({
+        added: { background: '#112233', bar: '#aabbcc', highlight: '#223344' },
+        removed: {
+          background: '#443322',
+          bar: '#ff0000',
+          highlight: '#332211',
+        },
+      });
+      expect(result.id).toBe('_fallback');
+      expect(result.label).toBeTruthy();
+      expect(result.added.bar.truecolor).toBe('#aabbcc');
+      expect(result.removed.bar.truecolor).toBe('#ff0000');
+    });
+
+    it('has id "_fallback"', () => {
+      const result = buildFallbackDiff({
+        added: { background: '#000000', bar: '#000000', highlight: '#000000' },
+        removed: {
+          background: '#000000',
+          bar: '#000000',
+          highlight: '#000000',
+        },
+      });
+      expect(result.id).toBe('_fallback');
     });
   });
 });

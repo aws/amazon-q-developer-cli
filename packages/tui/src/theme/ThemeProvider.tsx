@@ -63,7 +63,8 @@ export interface ThemeContextValue extends Theme {
  * @param wrapDisabled - Whether the TUI is rendering with soft-wrap overflow instead of word-wrap
  * @returns Enhanced theme context with color getter functionality
  */
-const createThemeContext = (
+/** @internal Exported for testing */
+export const createThemeContext = (
   theme: Theme,
   userPromptColor: TerminalColor | undefined,
   userPromptBgColor: TerminalColor | undefined,
@@ -168,7 +169,8 @@ const createThemeContext = (
  * Falls back to kiroSafe (ANSI named colors) when detection confidence is low
  * and no definitive light/dark signal is available — e.g., SSH into headless Linux.
  */
-const getAutoTheme = (): Theme => {
+/** @internal Exported for testing */
+export const getAutoTheme = (): Theme => {
   const result = detectTerminalThemeWithDetails();
 
   // High/medium confidence: we know the actual background, pick accordingly
