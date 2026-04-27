@@ -314,7 +314,7 @@ export const parseMarkdown = (text: string): MarkdownSegment[] => {
 
   const flushSegment = (isComplete = false) => {
     if (state === State.TEXT && currentText) {
-      // Process line-by-line if there are headers, lists, bold headings, or blockquotes
+      // Process line-by-line if there are headers, lists, bold headings, blockquotes, or HRs
       if (
         currentText.includes('#') ||
         currentText.includes('-') ||
@@ -322,7 +322,9 @@ export const parseMarkdown = (text: string): MarkdownSegment[] => {
         currentText.includes('>') ||
         (currentText.includes('|') &&
           /^\s*\||\n[^\n]*\|[^\n]*\|/m.test(currentText)) ||
-        /(?:^|\n)\*\*[^*]+\*\*\s*$/m.test(currentText)
+        /(?:^|\n)\*\*[^*]+\*\*\s*$/m.test(currentText) ||
+        /(?:^|\n)\s*[*+]\s/m.test(currentText) ||
+        /(?:^|\n)\s*(\*{3,}|_{3,})\s*$/m.test(currentText)
       ) {
         const lines = currentText.split('\n');
         let textAccumulator = '';

@@ -505,9 +505,7 @@ describe('parseMarkdown', () => {
       expect(codeSegment!.text).toBe('display: "omitted"');
       const boldSegment = inlineSegments.find((s) => s.bold);
       expect(boldSegment).toBeDefined();
-      expect(boldSegment!.children).toEqual([
-        { text: 'without events' },
-      ]);
+      expect(boldSegment!.children).toEqual([{ text: 'without events' }]);
     });
   });
 
@@ -1056,5 +1054,324 @@ describe('parseInlineMarkdown (additional)', () => {
     expect(result[0]!.bold).toBeUndefined();
     expect(result[0]!.italic).toBeUndefined();
     expect(result[0]!.link).toBeUndefined();
+  });
+});
+
+describe('parseMarkdown edge cases', () => {
+  describe('line-by-line triggers for *, +, _ markers', () => {
+    it('*** horizontal rule without other block markers', () => {
+      const result = parseMarkdown('text\n***\nmore');
+      const hr = result.find((s) => s.horizontalRule);
+      expect(hr).toBeDefined();
+    });
+
+    it('___ horizontal rule without other block markers', () => {
+      const result = parseMarkdown('text\n___\nmore');
+      const hr = result.find((s) => s.horizontalRule);
+      expect(hr).toBeDefined();
+    });
+
+    it('standalone *** is parsed as HR', () => {
+      const result = parseMarkdown('***');
+      expect(result[0]?.horizontalRule).toBe(true);
+    });
+
+    it('standalone ___ is parsed as HR', () => {
+      const result = parseMarkdown('___');
+      expect(result[0]?.horizontalRule).toBe(true);
+    });
+
+    it('* list items without other triggers', () => {
+      const result = parseMarkdown('* item one\n* item two');
+      expect(result[0]?.listItem).toBeDefined();
+      expect(result[0]?.text).toBe('item one');
+      expect(result[1]?.listItem).toBeDefined();
+    });
+
+    it('+ list items without other triggers', () => {
+      const result = parseMarkdown('+ item one\n+ item two');
+      expect(result[0]?.listItem).toBeDefined();
+      expect(result[0]?.text).toBe('item one');
+      expect(result[1]?.listItem).toBeDefined();
+    });
+
+    it('mixed * and + list items', () => {
+      const result = parseMarkdown('* first\n+ second');
+      expect(result[0]?.listItem).toBeDefined();
+      expect(result[1]?.listItem).toBeDefined();
+    });
+  });
+
+  describe('bold heading vs list item disambiguation', () => {
+    it('**text** on its own line is a boldHeading', () => {
+      expect(parseMarkdown('**My Heading**')).toEqual([
+        { text: 'My Heading', boldHeading: true },
+      ]);
+    });
+
+    it('**text** with trailing text is NOT a boldHeading', () => {
+      const result = parseMarkdown('**bold** followed by text');
+      expect(result.find((s) => s.boldHeading)).toBeUndefined();
+      expect(result.find((s) => s.bold)).toBeDefined();
+    });
+
+    it('- **bold** text is a list item, not a boldHeading', () => {
+      const result = parseMarkdown('- **bold** text');
+      expect(result[0]?.listItem).toBeDefined();
+      expect(result[0]?.text).toBe('**bold** text');
+      expect(result[0]?.boldHeading).toBeUndefined();
+    });
+
+    it('**heading** followed by list items', () => {
+      const result = parseMarkdown('**Section**\n- item one\n- item two');
+      expect(result[0]?.boldHeading).toBe(true);
+      expect(result[1]?.listItem).toBeDefined();
+      expect(result[2]?.listItem).toBeDefined();
+    });
+
+    it('**heading with `code` inside** on its own line', () => {
+      const result = parseMarkdown('**heading with `code` inside**');
+      expect(result[0]?.boldHeading).toBe(true);
+      expect(result[0]?.text).toBe('heading with `code` inside');
+    });
+
+    it('**heading** with trailing whitespace', () => {
+      expect(parseMarkdown('**heading**   ')[0]?.boldHeading).toBe(true);
+    });
+  });
+
+  describe('blockquote edge cases', () => {
+    it('blockquote followed by list without blank line', () => {
+      const result = parseMarkdown('> quote\n- item');
+      expect(result[0]?.blockquote).toBe(true);
+      expect(result[1]?.listItem).toBeDefined();
+    });
+
+    it('blockquote followed by header without blank line', () => {
+      const result = parseMarkdown('> quote\n## Header');
+      expect(result[0]?.blockquote).toBe(true);
+      expect(result[1]?.header).toBe(2);
+    });
+
+    it('blockquote followed by bold heading without blank line', () => {
+      const result = parseMarkdown('> quote\n**Bold Heading**');
+      expect(result[0]?.blockquote).toBe(true);
+      expect(result[1]?.boldHeading).toBe(true);
+    });
+
+    it('multiple consecutive blockquotes', () => {
+      const result = parseMarkdown('> line 1\n> line 2\n> line 3');
+      expect(result.filter((s) => s.blockquote).length).toBe(3);
+    });
+
+    it('nested blockquote (>> text) is treated as single blockquote', () => {
+      const result = parseMarkdown('>> nested quote');
+      expect(result[0]?.blockquote).toBe(true);
+      expect(result[0]?.text).toBe('> nested quote');
+    });
+  });
+
+  describe('table detection edge cases', () => {
+    it('text with single pipe should not be misdetected as table', () => {
+      const result = parseMarkdown('Use cmd1 | cmd2 to pipe output');
+      expect(result[0]?.table).toBeUndefined();
+    });
+
+    it('table immediately after text (no blank line)', () => {
+      const result = parseMarkdown('Results:\n| A | B |\n|---|---|\n| 1 | 2 |');
+      expect(result.find((s) => s.text === 'Results:')).toBeDefined();
+      expect(result.find((s) => s.table)).toBeDefined();
+    });
+
+    it('table with empty cells', () => {
+      const result = parseMarkdown('| A | B |\n|---|---|\n|   |   |');
+      expect(result[0]?.table?.rows[0]).toEqual(['', '']);
+    });
+  });
+
+  describe('list edge cases', () => {
+    it('list item with em dash (—) character', () => {
+      const result = parseMarkdown('- item — with em dash');
+      expect(result[0]?.listItem).toBeDefined();
+      expect(result[0]?.text).toBe('item — with em dash');
+    });
+
+    it('list item with backtick code containing special chars', () => {
+      const result = parseMarkdown(
+        '- `redacted_thinking` block — a **separate block type**'
+      );
+      expect(result[0]?.listItem).toBeDefined();
+      expect(result[0]?.text).toBe(
+        '`redacted_thinking` block — a **separate block type**'
+      );
+    });
+
+    it('deeply nested list (4 levels)', () => {
+      const result = parseMarkdown(
+        '- level 0\n  - level 1\n    - level 2\n      - level 3'
+      );
+      expect(result[0]?.listItem?.indent).toBe(0);
+      expect(result[1]?.listItem?.indent).toBe(1);
+      expect(result[2]?.listItem?.indent).toBe(2);
+      expect(result[3]?.listItem?.indent).toBe(3);
+    });
+
+    it('ordered list starting from non-1 number', () => {
+      const result = parseMarkdown('5. fifth\n6. sixth');
+      expect(result[0]?.listItem?.number).toBe(5);
+      expect(result[1]?.listItem?.number).toBe(6);
+    });
+  });
+
+  describe('block transitions without blank lines', () => {
+    it('header immediately followed by code block', () => {
+      const result = parseMarkdown('## Title\n```js\ncode\n```');
+      expect(result[0]?.header).toBe(2);
+      expect(result[1]?.codeBlock).toBeDefined();
+    });
+
+    it('code block immediately followed by header', () => {
+      const result = parseMarkdown('```js\ncode\n```\n## Title');
+      expect(result[0]?.codeBlock).toBeDefined();
+      expect(result[1]?.header).toBe(2);
+    });
+
+    it('list immediately followed by code block', () => {
+      const result = parseMarkdown('- item\n```js\ncode\n```');
+      expect(result[0]?.listItem).toBeDefined();
+      expect(result[1]?.codeBlock).toBeDefined();
+    });
+
+    it('bold heading immediately followed by list', () => {
+      const result = parseMarkdown('**Heading**\n- item');
+      expect(result[0]?.boldHeading).toBe(true);
+      expect(result[1]?.listItem).toBeDefined();
+    });
+
+    it('list immediately followed by bold heading', () => {
+      const result = parseMarkdown('- item\n**Heading**');
+      expect(result[0]?.listItem).toBeDefined();
+      expect(result[1]?.boldHeading).toBe(true);
+    });
+  });
+
+  describe('multiple blank lines between blocks', () => {
+    it('three blank lines between text and header', () => {
+      const result = parseMarkdown('text\n\n\n\n## Header');
+      expect(result[0]?.text).toBe('text');
+      expect(result[1]?.header).toBe(2);
+    });
+
+    it('three blank lines between list items', () => {
+      const items = parseMarkdown('- item1\n\n\n\n- item2').filter(
+        (s) => s.listItem
+      );
+      expect(items.length).toBe(2);
+    });
+
+    it('three blank lines between bold headings', () => {
+      const headings = parseMarkdown(
+        '**Heading 1**\n\n\n\n**Heading 2**'
+      ).filter((s) => s.boldHeading);
+      expect(headings.length).toBe(2);
+    });
+  });
+
+  describe('inline markdown edge cases', () => {
+    it('***text*** produces bold+italic (italic wrapping bold)', () => {
+      const result = parseInlineMarkdown('***text***');
+      expect(result[0]?.italic).toBe(true);
+      expect(result[0]?.children?.[0]?.bold).toBe(true);
+      expect(result[0]?.children?.[0]?.children?.[0]?.text).toBe('text');
+    });
+
+    it('code span with backticks inside: ``code with ` backtick``', () => {
+      const code = parseInlineMarkdown('``code with ` backtick``').find(
+        (s) => s.quote
+      );
+      expect(code).toBeDefined();
+      expect(code?.text).toContain('`');
+    });
+
+    it('unclosed bold marker does not crash', () => {
+      expect(parseInlineMarkdown('**not closed').length).toBeGreaterThan(0);
+    });
+
+    it('unclosed italic marker does not crash', () => {
+      expect(parseInlineMarkdown('*not closed').length).toBeGreaterThan(0);
+    });
+
+    it('unclosed code span does not crash', () => {
+      expect(parseInlineMarkdown('`not closed').length).toBeGreaterThan(0);
+    });
+
+    it('link with special chars in URL', () => {
+      const link = parseInlineMarkdown(
+        '[text](https://example.com/path?q=1&b=2#hash)'
+      ).find((s) => s.link);
+      expect(link?.link?.url).toBe('https://example.com/path?q=1&b=2#hash');
+    });
+  });
+
+  describe('real-world LLM output patterns', () => {
+    it('API comparison with bold headings and list items', () => {
+      const result = parseMarkdown(
+        [
+          '**Anthropic Messages API**',
+          '- `redacted_thinking` block — a **separate block type** with just a `data` field (the encrypted blob)',
+          '',
+          '**Bedrock Converse API**',
+          '- `thinking` block with `type: "redacted"` — same block type as regular thinking',
+        ].join('\n')
+      );
+      expect(result[0]?.boldHeading).toBe(true);
+      expect(result[0]?.text).toBe('Anthropic Messages API');
+      expect(result[1]?.listItem).toBeDefined();
+      expect(result[2]?.boldHeading).toBe(true);
+      expect(result[2]?.text).toBe('Bedrock Converse API');
+      expect(result[3]?.listItem).toBeDefined();
+    });
+
+    it('step-by-step instructions with code blocks', () => {
+      const result = parseMarkdown(
+        [
+          '## Step 1: Install',
+          '',
+          '```bash',
+          'npm install package',
+          '```',
+          '',
+          '## Step 2: Configure',
+          '',
+          'Add to your `config.json`:',
+          '',
+          '```json',
+          '{ "key": "value" }',
+          '```',
+        ].join('\n')
+      );
+      expect(result[0]?.header).toBe(2);
+      expect(result[1]?.codeBlock?.language).toBe('bash');
+      expect(result[2]?.header).toBe(2);
+      expect(result.find((s) => s.text?.includes('Add to your'))).toBeDefined();
+      expect(
+        result.find((s) => s.quote && s.text === 'config.json')
+      ).toBeDefined();
+    });
+
+    it('comparison table followed by notes', () => {
+      const result = parseMarkdown(
+        [
+          '| Feature | Supported |',
+          '|---------|-----------|',
+          '| Bold    | ✓         |',
+          '| Italic  | ✓         |',
+          '',
+          '> Note: All features require version 2.0+',
+        ].join('\n')
+      );
+      expect(result[0]?.table?.rows.length).toBe(2);
+      expect(result[1]?.blockquote).toBe(true);
+    });
   });
 });
