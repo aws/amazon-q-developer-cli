@@ -171,19 +171,21 @@ describe('Shell Escape (!command)', () => {
       .launch();
     await testCase.waitForText('ask a question', 10000);
 
-    // Use a script that reads two inputs
-    await testCase.sendKeys('!read -p "First: " a && read -p "Second: " b && echo "$a and $b"');
+    // Use variables for prompt strings so the literal prompt text we wait for
+    // doesn't appear in the typed command (which stays visible on screen and
+    // would cause waitForText to match prematurely in slow CI environments).
+    await testCase.sendKeys('!P=Prompt; read -p "${P}1: " a && read -p "${P}2: " b && echo "$a and $b"');
     await testCase.sleepMs(100);
     await testCase.pressEnter();
 
-    // First prompt
-    await testCase.waitForText('First:', 15000);
+    // First prompt — "Prompt1:" only appears when the first read actually runs
+    await testCase.waitForText('Prompt1:', 15000);
     await testCase.sendKeys('foo');
     await testCase.sleepMs(100);
     await testCase.pressEnter();
 
-    // Second prompt
-    await testCase.waitForText('Second:', 15000);
+    // Second prompt — "Prompt2:" only appears when the second read runs
+    await testCase.waitForText('Prompt2:', 15000);
     await testCase.sendKeys('bar');
     await testCase.sleepMs(100);
     await testCase.pressEnter();
