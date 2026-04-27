@@ -1,14 +1,14 @@
 ---
 doc_meta:
-  validated: 2026-04-09
-  commit: 4ae084db
+  validated: 2026-04-24
+  commit: ddff51f6
   status: validated
   testable_headless: false
   category: slash_command
   title: /agent
   description: Switch to different agent configuration during chat session
-  keywords: [agent, switch, swap, profile, description]
-  related: [agent-create, agent-edit, agent-configuration]
+  keywords: [agent, switch, swap, profile, description, model]
+  related: [agent-create, agent-edit, agent-configuration, model]
 ---
 
 # /agent swap
@@ -154,6 +154,15 @@ Local agents take precedence over global.
 - [kiro-cli agent](../commands/agent.md) - Manage agents from CLI
 - [Agent Configuration](../features/agent-configuration.md) - Agent format guide
 - [kiro-cli chat --agent](../commands/chat.md) - Start with specific agent
+
+## Model Behavior
+
+When switching agents, your model selection is preserved unless the new agent explicitly specifies a model in its configuration:
+
+- **New agent has no model configured**: Your current model selection stays active
+- **New agent specifies a model**: Switches to the agent's configured model
+
+This lets you use `/model` to pick a model and keep it across agent switches.
 
 ## Limitations
 

@@ -1,7 +1,7 @@
 ---
 doc_meta:
-  validated: 2026-02-02
-  commit: 2cfa80d8
+  validated: 2026-04-24
+  commit: ddff51f6
   status: validated
   testable_headless: false
   category: slash_command
@@ -170,12 +170,13 @@ Local agents take precedence over global.
 - Context files from previous agent remain as temporary context
 - Tool permissions reset to new agent's configuration
 - MCP servers reconnect with new agent's configuration
+- If the new agent specifies a model, it overrides your current model selection
 
 ## Technical Details
 
 **Agent Loading**: Local (`.kiro/agents/`) checked first, then global (`~/.kiro/agents/`), then built-in.
 
-**State Preservation**: Message history and conversation state preserved when switching agents.
+**State Preservation**: Message history and conversation state preserved when switching agents. Your current model selection is also preserved unless the new agent explicitly specifies a model.
 
 **Context Handling**: Previous agent's context files added as temporary context. New agent's permanent context also loaded.
 
