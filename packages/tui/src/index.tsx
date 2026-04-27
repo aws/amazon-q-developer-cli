@@ -32,6 +32,13 @@ import {
 import { normalizeAtPrompt } from './utils/normalize-at-prompt';
 import { isTrustGateAccepted } from './utils/trust-gate-state';
 
+// Circuit breaker: if stdout dies (e.g. PTY closed), exit immediately.
+// stdout.write() on a dead fd doesn't throw — it emits an async 'error' event.
+// Without this listener, the error escalates to uncaughtException, whose handler
+// writes to stdout, creating an infinite loop that leaks ~200 MB/s until OOM.
+// Ref: https://nodejs.org/api/stream.html#writablewritechunk-encoding-callback
+process.stdout.on('error', () => process.exit(1));
+
 const cleanup = () => {
   try {
     process.stdout.write(DISABLE_BRACKETED_PASTE);
