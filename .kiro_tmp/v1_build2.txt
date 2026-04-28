@@ -1,0 +1,2 @@
+   Compiling chat_cli v2.1.0 (/Users/abhraina/work/github/kiro-cli/autoapprove/crates/chat-cli)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 50.49s

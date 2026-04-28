@@ -255,6 +255,30 @@ impl Code {
         matches!(self, Code::RenameSymbol(_) | Code::Format(_) | Code::PatternRewrite(_))
     }
 
+    /// Return the filesystem paths this operation will read from.
+    ///
+    /// When empty, the operation applies to the workspace/CWD (which is auto-allowed
+    /// by the default CWD read permission). When non-empty, each path must pass the
+    /// fs_read permission check before the operation is allowed.
+    pub fn read_paths(&self) -> Vec<String> {
+        match self {
+            Code::SearchSymbols(p) => p.path.iter().cloned().collect(),
+            Code::FindReferences(p) => vec![p.file_path.clone()],
+            Code::GotoDefinition(p) => vec![p.file_path.clone()],
+            Code::GetDocumentSymbols(p) => vec![p.file_path.clone()],
+            Code::LookupSymbols(p) => p.file_path.iter().cloned().collect(),
+            Code::GetDiagnostics(p) => vec![p.file_path.clone()],
+            Code::GetHover(p) => vec![p.file_path.clone()],
+            Code::GetCompletions(p) => vec![p.file_path.clone()],
+            Code::PatternSearch(p) => p.file_path.iter().cloned().collect(),
+            Code::GenerateCodebaseOverview(p) => p.path.iter().cloned().collect(),
+            Code::SearchCodebaseMap(p) => p.path.iter().chain(p.file_path.iter()).cloned().collect(),
+            Code::InitializeWorkspace => vec![],
+            // Write operations are handled separately
+            Code::RenameSymbol(_) | Code::Format(_) | Code::PatternRewrite(_) => vec![],
+        }
+    }
+
     /// Validate code operation parameters
     pub async fn validate<P: SystemProvider>(&self, provider: &P) -> Result<(), String> {
         match self {

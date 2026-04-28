@@ -1,0 +1,59 @@
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 7.19s
+     Running tests/acp.rs (target/debug/deps/acp-8a651e4cf8b328cb)
+
+running 39 tests
+test agent_swap_reloads_mcp_servers ... ignored, TODO: MCP tool execution fails - ToolCallUpdate with Completed status not received, possibly MCP server initialization or tool result handling issue
+test cancel_during_tool_approval_allows_new_prompt ... ignored, TODO: Test times out waiting for tool approval flow - likely issue with how cancellation interacts with pending tool approval state
+test cancel_mid_stream_partial_response ... ignored, still running into hangs. will need to investigate
+test context_usage_flows_to_user_turn_metadata ... ignored, broken, needs to be fixed
+test auto_compaction_on_context_overflow ... ok
+test http_mcp_server_oauth_request_triggers_ext_notification ... FAILED
+test load_session_emits_failed_for_orphaned_tool_calls ... ok
+test load_session_emits_history ... ok
+test mcp_stdio_server_tool_call ... ok
+test exits_when_stdin_closes ... ok
+test new_session_waits_for_mcp_server_initialization ... ok
+test http_mcp_server_tool_call_triggers_permission_request ... ok
+test prompt_starting_with_slash_is_not_truncated ... ok
+test new_session_creates_files ... ok
+test prompt_with_image ... ok
+test permissions_are_applied_and_loaded ... ok
+test initialize ... ok
+test prompt_with_send_error ... ok
+test session_list_returns_sessions_with_title ... ok
+test set_model_changes_model_id ... ignored, TODO: times out in CI but passes locally, needs investigation
+test set_mode_switches_agent ... ok
+test prompt_with_resource_link ... ok
+test fs_read_in_cwd_does_not_require_permission ... ok
+test set_mode_preserves_session_injected_mcp_servers ... ok
+test code_pattern_search_outside_cwd_triggers_permission_request ... ok
+test sigterm_cleans_up_mcp_child_processes ... ok
+test captured_request_contains_conversation_state ... ok
+test switch_to_execution_swaps_and_executes_plan ... ok
+test chat_new_creates_fresh_session ... ok
+test tool_call_has_descriptive_title_fs_read ... ok
+test default_agent_setting_used_as_initial_mode ... ok
+test tool_call_has_descriptive_title_grep ... ok
+test str_replace_tool_call_includes_location_with_line_number ... ok
+test tool_call_has_locations_fs_read_with_line ... ok
+test tool_call_has_descriptive_title_execute_bash ... ok
+test session_cancel_notification ... ok
+test tool_call_has_descriptive_title_fs_write_create ... ok
+test tool_call_has_locations_fs_read_multiple ... ok
+test workspace_skill_is_advertised_and_invocable ... ok
+
+failures:
+
+---- http_mcp_server_oauth_request_triggers_ext_notification stdout ----
+
+thread 'http_mcp_server_oauth_request_triggers_ext_notification' (59860039) panicked at crates/chat-cli-v2/tests/acp.rs:940:1:
+timeout: the function call took 30002 ms. Max time 30000 ms
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+failures:
+    http_mcp_server_oauth_request_triggers_ext_notification
+
+test result: FAILED. 33 passed; 1 failed; 5 ignored; 0 measured; 0 filtered out; finished in 58.83s
+
+error: test failed, to rerun pass `-p chat_cli_v2 --test acp`

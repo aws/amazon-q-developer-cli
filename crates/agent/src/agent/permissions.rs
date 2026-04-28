@@ -394,14 +394,31 @@ pub fn evaluate_tool_permission<P: SystemProvider>(
             } else {
                 PermissionEvalResult::ask()
             }),
-            BuiltInTool::Code(code) => Ok(if !code.is_write_operation() {
-                // Read operations always allowed
-                PermissionEvalResult::Allow
-            } else if is_allowed {
-                PermissionEvalResult::Allow
-            } else {
-                PermissionEvalResult::ask()
-            }),
+            BuiltInTool::Code(code) => {
+                if code.is_write_operation() {
+                    // Write operations: fall back to tool-level allowlist/ask
+                    return Ok(if is_allowed {
+                        PermissionEvalResult::Allow
+                    } else {
+                        PermissionEvalResult::ask()
+                    });
+                }
+                // Read operations: auto-allow within CWD, ask for anything outside.
+                // No fs_read settings inheritance — just the CWD boundary.
+                let paths = code.read_paths();
+                if paths.is_empty() {
+                    Ok(PermissionEvalResult::Allow)
+                } else {
+                    evaluate_permission_for_paths(
+                        permissions.filesystem.allowed_read_paths.iter(),
+                        permissions.filesystem.denied_read_paths.iter(),
+                        paths.iter(),
+                        is_allowed,
+                        PathAccessType::Read,
+                        provider,
+                    )
+                }
+            },
             BuiltInTool::AgentCrew(crew) => {
                 let crew_settings = &settings.crew;
                 // Check availableAgents: deny if any stage role is not in the list
@@ -689,6 +706,7 @@ fn extract_paths_from_tool<P: SystemProvider>(tool: &ToolKind, provider: &P) -> 
                 Ok(p) => (vec![p], PathAccessType::Read),
                 Err(_) => (vec![], PathAccessType::Read),
             },
+            BuiltInTool::Code(c) if !c.is_write_operation() => (c.read_paths(), PathAccessType::Read),
             _ => (vec![], PathAccessType::Read),
         },
         ToolKind::Mcp(_) => (vec![], PathAccessType::Read),
@@ -1383,5 +1401,146 @@ mod tests {
         assert!(permissions.filesystem.denied_write_paths.is_empty());
         assert!(permissions.filesystem.allowed_read_paths.contains(cwd));
         assert_eq!(permissions.filesystem.allowed_read_paths.len(), 1);
+    }
+
+    /// Regression tests for V2184286366: code tool's pattern_search was auto-approved
+    /// for arbitrary file paths, allowing reads of sensitive files outside CWD.
+    mod code_tool_path_permission {
+        use super::*;
+        use crate::tools::code::{
+            Code,
+            GetDocumentSymbolsParams,
+            PatternSearchParams,
+        };
+        use crate::util::providers::CwdProvider;
+
+        fn pattern_search(file_path: Option<&str>) -> ToolKind {
+            ToolKind::BuiltIn(BuiltInTool::Code(Code::PatternSearch(PatternSearchParams {
+                pattern: "[$$$]".to_string(),
+                language: "javascript".to_string(),
+                file_path: file_path.map(String::from),
+                limit: None,
+                offset: None,
+            })))
+        }
+
+        fn get_document_symbols(file_path: &str) -> ToolKind {
+            ToolKind::BuiltIn(BuiltInTool::Code(Code::GetDocumentSymbols(GetDocumentSymbolsParams {
+                file_path: file_path.to_string(),
+                top_level_only: None,
+            })))
+        }
+
+        #[test]
+        fn pattern_search_outside_cwd_asks() {
+            let provider = TestProvider::new();
+            let cwd = provider.cwd().unwrap();
+            let cwd_str = cwd.to_string_lossy();
+            let allowed_tools = HashSet::new();
+            let settings = ToolsSettings::default();
+            let permissions = RuntimePermissions::default().with_cwd(&cwd_str);
+
+            // pattern_search against a sensitive file outside CWD must no longer be auto-allowed
+            let tool = pattern_search(Some("/Users/akl/.ees-interactive-repl/cookie-jar.json"));
+            let result = evaluate_tool_permission(&permissions, &allowed_tools, &settings, &tool, &provider);
+            assert!(
+                matches!(result, Ok(PermissionEvalResult::Ask { .. })),
+                "pattern_search outside CWD should ask, got: {result:?}"
+            );
+        }
+
+        #[test]
+        fn pattern_search_inside_cwd_is_allowed() {
+            let provider = TestProvider::new();
+            let cwd = provider.cwd().unwrap();
+            let cwd_str = cwd.to_string_lossy();
+            let allowed_tools = HashSet::new();
+            let settings = ToolsSettings::default();
+            let permissions = RuntimePermissions::default().with_cwd(&cwd_str);
+
+            let tool = pattern_search(Some(&format!("{}/src/main.rs", cwd_str)));
+            let result = evaluate_tool_permission(&permissions, &allowed_tools, &settings, &tool, &provider);
+            assert!(
+                matches!(result, Ok(PermissionEvalResult::Allow)),
+                "pattern_search inside CWD should allow, got: {result:?}"
+            );
+        }
+
+        #[test]
+        fn pattern_search_without_path_is_allowed() {
+            // No file_path → operation scoped to workspace/CWD, which is auto-allowed
+            let provider = TestProvider::new();
+            let cwd = provider.cwd().unwrap();
+            let cwd_str = cwd.to_string_lossy();
+            let allowed_tools = HashSet::new();
+            let settings = ToolsSettings::default();
+            let permissions = RuntimePermissions::default().with_cwd(&cwd_str);
+
+            let tool = pattern_search(None);
+            let result = evaluate_tool_permission(&permissions, &allowed_tools, &settings, &tool, &provider);
+            assert!(matches!(result, Ok(PermissionEvalResult::Allow)), "got: {result:?}");
+        }
+
+        #[test]
+        fn code_read_outside_cwd_ignores_fs_read_settings() {
+            // fs_read.allowReadOnly should NOT affect the code tool
+            let provider = TestProvider::new();
+            let cwd = provider.cwd().unwrap();
+            let cwd_str = cwd.to_string_lossy();
+            let allowed_tools = HashSet::new();
+            let settings = ToolsSettings {
+                fs_read: crate::agent::agent_config::definitions::FsReadSettings {
+                    allow_read_only: true,
+                    ..Default::default()
+                },
+                ..Default::default()
+            };
+            let permissions = RuntimePermissions::default().with_cwd(&cwd_str);
+
+            let tool = pattern_search(Some("/tmp/somewhere/else.json"));
+            let result = evaluate_tool_permission(&permissions, &allowed_tools, &settings, &tool, &provider);
+            assert!(
+                matches!(result, Ok(PermissionEvalResult::Ask { .. })),
+                "fs_read.allowReadOnly should not affect code tool, got: {result:?}"
+            );
+        }
+
+        #[test]
+        fn code_read_respects_runtime_granted_paths() {
+            let provider = TestProvider::new();
+            let cwd = provider.cwd().unwrap();
+            let cwd_str = cwd.to_string_lossy();
+            let allowed_tools = HashSet::new();
+            let settings = ToolsSettings::default();
+            let mut permissions = RuntimePermissions::default().with_cwd(&cwd_str);
+            permissions.grant_path("/etc/allowed", PathAccessType::Read, &provider);
+
+            let tool = get_document_symbols("/etc/allowed/config.rs");
+            let result = evaluate_tool_permission(&permissions, &allowed_tools, &settings, &tool, &provider);
+            assert!(matches!(result, Ok(PermissionEvalResult::Allow)), "got: {result:?}");
+        }
+
+        #[test]
+        fn code_write_still_asks() {
+            use crate::tools::code::PatternRewriteParams;
+            let provider = TestProvider::new();
+            let allowed_tools = HashSet::new();
+            let settings = ToolsSettings::default();
+            let permissions = RuntimePermissions::default();
+
+            let tool = ToolKind::BuiltIn(BuiltInTool::Code(Code::PatternRewrite(PatternRewriteParams {
+                pattern: "$X.unwrap()".to_string(),
+                replacement: "$X.expect(\"\")".to_string(),
+                language: "rust".to_string(),
+                file_path: None,
+                dry_run: true,
+                limit: None,
+            })));
+            let result = evaluate_tool_permission(&permissions, &allowed_tools, &settings, &tool, &provider);
+            assert!(
+                matches!(result, Ok(PermissionEvalResult::Ask { .. })),
+                "got: {result:?}"
+            );
+        }
     }
 }

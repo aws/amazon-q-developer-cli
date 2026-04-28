@@ -1,0 +1,40 @@
+   Compiling chat_cli_v2 v2.1.0 (/Users/abhraina/work/github/kiro-cli/autoapprove/crates/chat-cli-v2)
+error[E0599]: no method named `contains` found for reference `&std::option::Option<std::string::String>` in the current scope
+    --> crates/chat-cli-v2/tests/acp.rs:2457:19
+     |
+2457 |             title.contains("code") || title.contains("Code") || title.contains("pattern")
+     |                   ^^^^^^^^ method not found in `&std::option::Option<std::string::String>`
+     |
+     = help: items from traits can only be used if the trait is in scope
+help: trait `OptionExt` which provides `contains` is implemented but not in scope; perhaps you want to import it
+     |
+   1 + use option_ext::OptionExt;
+     |
+
+error[E0599]: no method named `contains` found for reference `&std::option::Option<std::string::String>` in the current scope
+    --> crates/chat-cli-v2/tests/acp.rs:2457:45
+     |
+2457 |             title.contains("code") || title.contains("Code") || title.contains("pattern")
+     |                                             ^^^^^^^^ method not found in `&std::option::Option<std::string::String>`
+     |
+     = help: items from traits can only be used if the trait is in scope
+help: trait `OptionExt` which provides `contains` is implemented but not in scope; perhaps you want to import it
+     |
+   1 + use option_ext::OptionExt;
+     |
+
+error[E0599]: no method named `contains` found for reference `&std::option::Option<std::string::String>` in the current scope
+    --> crates/chat-cli-v2/tests/acp.rs:2457:71
+     |
+2457 |             title.contains("code") || title.contains("Code") || title.contains("pattern")
+     |                                                                       ^^^^^^^^ method not found in `&std::option::Option<std::string::String>`
+     |
+     = help: items from traits can only be used if the trait is in scope
+help: trait `OptionExt` which provides `contains` is implemented but not in scope; perhaps you want to import it
+     |
+   1 + use option_ext::OptionExt;
+     |
+
+For more information about this error, try `rustc --explain E0599`.
+error: could not compile `chat_cli_v2` (test "acp") due to 3 previous errors
+warning: build failed, waiting for other jobs to finish...

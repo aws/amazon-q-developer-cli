@@ -1,0 +1,20 @@
+   Compiling chat_cli_v2 v2.1.0 (/Users/abhraina/work/github/kiro-cli/autoapprove/crates/chat-cli-v2)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 22.80s
+     Running tests/acp.rs (target/debug/deps/acp-8a651e4cf8b328cb)
+
+running 1 test
+Agent log file: "/Users/abhraina/work/github/kiro-cli/autoapprove/crates/chat-cli-v2/test_output/code_pattern_search_outside_cwd/agent.log"
+
+thread '<unnamed>' (59854103) panicked at crates/chat-cli-v2/tests/acp.rs:2460:5:
+expected a permission request for the code tool, got: [Some("Pattern search: [$$$]")]
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+test code_pattern_search_outside_cwd_triggers_permission_request ... FAILED
+
+failures:
+
+failures:
+    code_pattern_search_outside_cwd_triggers_permission_request
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 38 filtered out; finished in 3.31s
+
+error: test failed, to rerun pass `-p chat_cli_v2 --test acp`

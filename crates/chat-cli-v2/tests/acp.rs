@@ -2411,6 +2411,63 @@ fn find_skill_prompt(captured: &common::CapturedNotifications, method: &str, nam
         })
 }
 
+/// Regression test for V2184286366: code tool's pattern_search on a file outside CWD
+/// must trigger a permission request instead of being auto-approved.
+#[tokio::test]
+#[timeout(30000)]
+#[serial]
+async fn code_pattern_search_outside_cwd_triggers_permission_request() {
+    // trust_all: false — we want to verify the permission request is generated
+    let (mut harness, client, session_id, _cwd) = AcpTestHarnessBuilder::new("code_pattern_search_outside_cwd")
+        .build_with_session()
+        .await;
+
+    harness
+        .push_mock_responses_from_file(
+            &session_id.0,
+            "tests/mock_responses/code_pattern_search_outside_cwd.jsonl",
+        )
+        .await;
+
+    // Queue a permission response so the test doesn't hang waiting for approval
+    client
+        .queue_permission_response(PermissionResponse::Select("allow_once".to_string()))
+        .await;
+
+    client
+        .prompt_text(
+            session_id.clone(),
+            "use code tool pattern_search on /etc/sensitive/cookie-jar.json",
+        )
+        .await
+        .expect("prompt failed");
+
+    let captured = client.captured().await;
+
+    // The code tool targeting a file outside CWD should have triggered a permission request
+    assert!(
+        !captured.permission_requests.is_empty(),
+        "code pattern_search outside CWD should trigger a permission request, but none were captured"
+    );
+
+    // Verify the permission request is for the code tool
+    let code_perm = captured.permission_requests.iter().find(|r| {
+        r.tool_call.fields.title.as_deref().is_some_and(|t| {
+            let t_lower = t.to_lowercase();
+            t_lower.contains("code") || t_lower.contains("pattern")
+        })
+    });
+    assert!(
+        code_perm.is_some(),
+        "expected a permission request for the code tool, got: {:?}",
+        captured
+            .permission_requests
+            .iter()
+            .map(|r| &r.tool_call.fields.title)
+            .collect::<Vec<_>>()
+    );
+}
+
 /// Verifies that thinking/reasoning content from the model is preserved in conversation
 /// history and sent back in the next request's AssistantResponseMessage.
 #[tokio::test]

@@ -1,0 +1,94 @@
+   Compiling hyper-rustls v0.27.9
+   Compiling tower-http v0.6.8
+   Compiling syn v1.0.109
+   Compiling strum v0.26.3
+   Compiling winnow v1.0.1
+   Compiling toml_datetime v1.1.1+spec-1.1.0
+   Compiling chat_cli_v2 v2.1.0 (/Users/abhraina/work/github/kiro-cli/autoapprove/crates/chat-cli-v2)
+   Compiling sdd v3.0.10
+   Compiling serial_test_derive v3.4.0
+   Compiling nu-protocol v0.104.1
+   Compiling scc v2.4.0
+   Compiling aws-smithy-http-client v1.1.12
+   Compiling reqwest v0.13.2
+   Compiling reqwest v0.12.28
+   Compiling toml_parser v1.1.2+spec-1.1.0
+   Compiling toml_edit v0.25.11+spec-1.1.0
+   Compiling serial_test v3.4.0
+   Compiling proc-macro-crate v3.5.0
+   Compiling jsonschema v0.30.0
+   Compiling rmcp v0.17.0
+   Compiling semantic_search_client v2.1.0 (/Users/abhraina/work/github/kiro-cli/autoapprove/crates/semantic-search-client)
+   Compiling aws-smithy-runtime v1.10.3
+   Compiling aws-smithy-mocks v0.2.6
+   Compiling strum_macros v0.24.3
+   Compiling ntest_timeout v0.9.5
+   Compiling ntest_test_cases v0.9.5
+   Compiling ntest v0.9.5
+   Compiling strum v0.24.1
+   Compiling spinners v4.2.0
+   Compiling aws-runtime v1.7.2
+   Compiling nu-engine v0.104.1
+   Compiling aws-sdk-ssooidc v1.99.0
+   Compiling aws-sdk-sso v1.97.0
+   Compiling aws-sdk-sts v1.101.0
+   Compiling amzn-qdeveloper-streaming-client v0.1.14474 (/Users/abhraina/work/github/kiro-cli/autoapprove/crates/amzn-qdeveloper-streaming-client)
+   Compiling amzn-codewhisperer-client v0.1.14474 (/Users/abhraina/work/github/kiro-cli/autoapprove/crates/amzn-codewhisperer-client)
+   Compiling amzn-codewhisperer-streaming-client v0.1.14474 (/Users/abhraina/work/github/kiro-cli/autoapprove/crates/amzn-codewhisperer-streaming-client)
+   Compiling nu-color-config v0.104.1
+   Compiling amzn-consolas-client v0.1.14474 (/Users/abhraina/work/github/kiro-cli/autoapprove/crates/amzn-consolas-client)
+   Compiling aws-http v0.60.6
+   Compiling aws-config v1.8.15
+   Compiling aws-sdk-cognitoidentity v1.98.0
+   Compiling code-agent-sdk v2.1.0 (/Users/abhraina/work/github/kiro-cli/autoapprove/crates/code-agent-sdk)
+   Compiling amzn-toolkit-telemetry-client v1.0.0 (/Users/abhraina/work/github/kiro-cli/autoapprove/crates/amzn-toolkit-telemetry-client)
+   Compiling shell-color v1.0.1
+   Compiling mock-mcp-server v0.1.0 (/Users/abhraina/work/github/kiro-cli/autoapprove/crates/mock-mcp-server)
+   Compiling agent v2.1.0 (/Users/abhraina/work/github/kiro-cli/autoapprove/crates/agent)
+error[E0609]: no field `title` on type `&&agent_client_protocol::RequestPermissionRequest`
+    --> crates/chat-cli-v2/tests/acp.rs:2455:21
+     |
+2455 |         .find(|r| r.title.contains("code") || r.title.contains("Code") || r.title.contains("pattern"));
+     |                     ^^^^^ unknown field
+     |
+help: one of the expressions' fields has a field of the same name
+     |
+2455 |         .find(|r| r.tool_call.fields.title.contains("code") || r.title.contains("Code") || r.title.contains("pattern"));
+     |                     +++++++++++++++++
+
+error[E0609]: no field `title` on type `&&agent_client_protocol::RequestPermissionRequest`
+    --> crates/chat-cli-v2/tests/acp.rs:2455:49
+     |
+2455 |         .find(|r| r.title.contains("code") || r.title.contains("Code") || r.title.contains("pattern"));
+     |                                                 ^^^^^ unknown field
+     |
+help: one of the expressions' fields has a field of the same name
+     |
+2455 |         .find(|r| r.title.contains("code") || r.tool_call.fields.title.contains("Code") || r.title.contains("pattern"));
+     |                                                 +++++++++++++++++
+
+error[E0609]: no field `title` on type `&&agent_client_protocol::RequestPermissionRequest`
+    --> crates/chat-cli-v2/tests/acp.rs:2455:77
+     |
+2455 |         .find(|r| r.title.contains("code") || r.title.contains("Code") || r.title.contains("pattern"));
+     |                                                                             ^^^^^ unknown field
+     |
+help: one of the expressions' fields has a field of the same name
+     |
+2455 |         .find(|r| r.title.contains("code") || r.title.contains("Code") || r.tool_call.fields.title.contains("pattern"));
+     |                                                                             +++++++++++++++++
+
+error[E0609]: no field `title` on type `&agent_client_protocol::RequestPermissionRequest`
+    --> crates/chat-cli-v2/tests/acp.rs:2459:56
+     |
+2459 |         captured.permission_requests.iter().map(|r| &r.title).collect::<Vec<_>>()
+     |                                                        ^^^^^ unknown field
+     |
+help: one of the expressions' fields has a field of the same name
+     |
+2459 |         captured.permission_requests.iter().map(|r| &r.tool_call.fields.title).collect::<Vec<_>>()
+     |                                                        +++++++++++++++++
+
+For more information about this error, try `rustc --explain E0609`.
+error: could not compile `chat_cli_v2` (test "acp") due to 4 previous errors
+warning: build failed, waiting for other jobs to finish...

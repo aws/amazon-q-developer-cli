@@ -1,0 +1,12 @@
+// Prompt: use code tool pattern_search on a file outside CWD
+// The LLM calls the code tool with pattern_search targeting /etc/sensitive/cookie-jar.json
+
+{"kind":"event","data":{"kind":"ToolUseEvent","data":{"tool_use_id":"tooluse_code_pattern_search_01","name":"code","input":null,"stop":null}}}
+{"kind":"event","data":{"kind":"ToolUseEvent","data":{"tool_use_id":"tooluse_code_pattern_search_01","name":"code","input":"{\"operation\":","stop":null}}}
+{"kind":"event","data":{"kind":"ToolUseEvent","data":{"tool_use_id":"tooluse_code_pattern_search_01","name":"code","input":" \"pattern_search\",","stop":null}}}
+{"kind":"event","data":{"kind":"ToolUseEvent","data":{"tool_use_id":"tooluse_code_pattern_search_01","name":"code","input":" \"pattern\": \"[$$$]\",","stop":null}}}
+{"kind":"event","data":{"kind":"ToolUseEvent","data":{"tool_use_id":"tooluse_code_pattern_search_01","name":"code","input":" \"language\": \"javascript\",","stop":null}}}
+{"kind":"event","data":{"kind":"ToolUseEvent","data":{"tool_use_id":"tooluse_code_pattern_search_01","name":"code","input":" \"file_path\": \"/etc/sensitive/cookie-jar.json\"}","stop":null}}}
+{"kind":"event","data":{"kind":"ToolUseEvent","data":{"tool_use_id":"tooluse_code_pattern_search_01","name":"code","input":null,"stop":true}}}
+
+{"kind":"event","data":{"kind":"AssistantResponseEvent","data":{"content":"Here are the results."}}}

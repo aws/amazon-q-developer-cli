@@ -1,0 +1,362 @@
+ Downloading crates ...
+  Downloaded clap_complete v4.6.2
+    Checking bytemuck v1.25.0
+   Compiling memchr v2.8.0
+   Compiling zeroize_derive v1.4.3
+    Checking pure-rust-locales v0.8.2
+    Checking num-rational v0.4.2
+    Checking simd-adler32 v0.3.9
+   Compiling serde_core v1.0.228
+    Checking hyper-util v0.1.20
+   Compiling serde_json v1.0.149
+    Checking tower v0.5.3
+    Checking miniz_oxide v0.8.9
+    Checking half v2.7.1
+    Checking data-encoding v2.10.0
+   Compiling bitflags v2.11.1
+    Checking hmac v0.12.1
+    Checking num-complex v0.4.6
+    Checking arrayvec v0.7.6
+    Checking flate2 v1.1.9
+   Compiling nom v7.1.3
+    Checking ciborium-ll v0.2.2
+   Compiling glob v0.3.3
+    Checking zeroize v1.8.2
+    Checking ciborium v0.2.2
+    Checking pulp v0.22.2
+    Checking dyn-stack v0.13.2
+   Compiling nix v0.29.0
+   Compiling unicode-segmentation v1.13.2
+   Compiling clang-sys v1.8.1
+   Compiling objc2 v0.6.4
+   Compiling regex-syntax v0.8.10
+   Compiling cfg-if v1.0.4
+   Compiling pulldown-cmark v0.13.3
+    Checking rustls-pki-types v1.14.0
+    Checking aws-lc-rs v1.16.3
+    Checking aws-smithy-runtime-api v1.11.6
+    Checking chrono v0.4.44
+    Checking rustls-native-certs v0.8.3
+   Compiling libloading v0.8.9
+   Compiling regex-automata v0.4.14
+   Compiling equator-macro v0.4.2
+    Checking rustls-webpki v0.103.12
+    Checking aws-credential-types v1.2.14
+    Checking cbor-diag v0.1.12
+    Checking aws-smithy-http v0.63.6
+    Checking aws-smithy-observability v0.2.6
+    Checking rustls v0.23.38
+   Compiling either v1.15.0
+    Checking aws-types v1.3.14
+   Compiling unicase v2.9.0
+    Checking aws-sigv4 v1.4.2
+   Compiling bindgen v0.72.1
+    Checking equator v0.4.2
+    Checking aws-smithy-protocol-test v0.63.14
+   Compiling itertools v0.13.0
+    Checking gemm-common v0.19.0
+   Compiling regex v1.12.3
+    Checking compression-codecs v0.4.37
+   Compiling cexpr v0.6.0
+   Compiling rustc-hash v2.1.2
+   Compiling anstyle v1.0.14
+    Checking async-compression v0.4.41
+    Checking clap_builder v4.5.60
+    Checking schemars v1.2.1
+    Checking aligned-vec v0.6.4
+   Compiling zstd-sys v2.0.16+zstd.1.5.7
+   Compiling typeid v1.0.3
+    Checking unicode-width v0.1.14
+    Checking v_frame v0.3.9
+    Checking tower-http v0.6.8
+   Compiling clap_derive v4.5.55
+    Checking gemm-f32 v0.19.0
+   Compiling strum_macros v0.26.4
+    Checking as-slice v0.2.1
+   Compiling built v0.8.0
+   Compiling erased-serde v0.4.10
+   Compiling av-scenechange v0.14.1
+    Checking parking v2.2.1
+    Checking gemm-f16 v0.19.0
+   Compiling rav1e v0.8.1
+    Checking tokio-rustls v0.26.4
+    Checking aligned v0.4.3
+    Checking hyper-rustls v0.27.9
+    Checking gemm-c32 v0.19.0
+    Checking gemm-f64 v0.19.0
+    Checking gemm-c64 v0.19.0
+   Compiling tree-sitter v0.26.8
+    Checking aws-smithy-http-client v1.1.12
+    Checking clap v4.5.60
+    Checking strum v0.26.3
+    Checking aws-smithy-http v0.62.6
+   Compiling convert_case v0.10.0
+    Checking lru v0.12.5
+    Checking fancy-regex v0.14.0
+   Compiling liblzma-sys v0.4.6
+    Checking linked-hash-map v0.5.6
+   Compiling arg_enum_proc_macro v0.3.4
+   Compiling profiling-procmacros v1.0.17
+   Compiling proc-macro-error-attr2 v2.0.0
+    Checking no_std_io2 v0.9.3
+    Checking vte v0.14.1
+   Compiling unicode-xid v0.2.6
+    Checking is_ci v1.2.0
+    Checking unicode-linebreak v0.1.5
+   Compiling zstd-safe v7.2.4
+    Checking bytecount v0.6.9
+    Checking aws-smithy-runtime v1.10.3
+   Compiling prettyplease v0.2.37
+    Checking y4m v0.8.0
+   Compiling pastey v0.1.1
+    Checking quick-error v2.0.1
+   Compiling typetag v0.2.21
+   Compiling proc-macro-error2 v2.0.1
+    Checking profiling v1.0.17
+    Checking textwrap v0.16.2
+   Compiling derive_more-impl v2.1.1
+    Checking supports-color v3.0.2
+    Checking strip-ansi-escapes v0.2.1
+    Checking bitstream-io v4.10.0
+    Checking gemm v0.19.0
+    Checking rustls-platform-verifier v0.6.2
+    Checking objc2-core-foundation v0.3.2
+    Checking av1-grain v0.2.5
+    Checking aws-runtime v1.7.2
+   Compiling stop-words v0.9.0
+   Compiling serde v1.0.228
+    Checking num-format v0.4.4
+   Compiling libproc v0.14.11
+    Checking float8 v0.6.1
+   Compiling ref-cast v1.0.25
+    Checking lscolors v0.17.0
+    Checking maybe-rayon v0.1.1
+    Checking sysinfo v0.33.1
+   Compiling num-derive v0.4.2
+   Compiling fax_derive v0.2.0
+   Compiling miette-derive v7.6.0
+   Compiling typetag-impl v0.2.21
+   Compiling simd_helpers v0.1.0
+    Checking dirs-sys-next v0.1.2
+   Compiling syn v1.0.109
+    Checking inventory v0.3.24
+    Checking supports-unicode v3.0.0
+   Compiling dyn-clone v1.0.20
+    Checking supports-hyperlinks v3.2.0
+    Checking sys-locale v0.3.2
+    Checking imgref v1.12.0
+   Compiling noop_proc_macro v0.3.0
+    Checking zune-core v0.5.1
+    Checking nu-utils v0.104.1
+    Checking loop9 v0.1.5
+    Checking miette v7.6.0
+    Checking reqwest v0.13.2
+    Checking zune-jpeg v0.5.15
+    Checking fax v0.2.6
+    Checking dirs-next v2.0.0
+    Checking candle-core v0.9.2
+    Checking derive_more v2.1.1
+   Compiling nu-derive-value v0.104.1
+    Checking nom_locate v5.0.0
+    Checking nu-path v0.104.1
+    Checking chrono-humanize v0.2.3
+    Checking nu-system v0.104.1
+   Compiling convert_case v0.11.0
+    Checking avif-serialize v0.8.8
+    Checking fdeflate v0.3.7
+    Checking zune-inflate v0.2.54
+    Checking concurrent-queue v2.5.0
+    Checking nu-glob v0.104.1
+    Checking pxfm v0.1.28
+    Checking heck v0.5.0
+    Checking color_quant v1.1.0
+    Checking libbz2-rs-sys v0.2.2
+    Checking rgb v0.8.53
+    Checking byteorder-lite v0.1.0
+    Checking bit_field v0.10.3
+    Checking lebe v0.5.3
+   Compiling rmcp v0.17.0
+    Checking image-webp v0.2.4
+    Checking nu-protocol v0.104.1
+    Checking exr v1.74.0
+    Checking bzip2 v0.6.1
+    Checking candle-nn v0.9.2
+    Checking lopdf v0.38.0
+    Checking gif v0.14.2
+    Checking zopfli v0.8.3
+    Checking event-listener v5.4.1
+    Checking moxcms v0.8.1
+    Checking png v0.18.1
+    Checking oauth2 v5.0.0
+    Checking ast-grep-core v0.40.5
+    Checking tiff v0.11.3
+    Checking term v0.7.0
+    Checking ravif v0.13.0
+    Checking objc2-core-graphics v0.3.2
+    Checking objc2-foundation v0.3.2
+    Checking clap_complete v4.6.2
+   Compiling rmcp-macros v0.17.0
+    Checking pbkdf2 v0.12.2
+    Checking qoi v0.4.1
+    Checking num-iter v0.1.45
+    Checking crossbeam-queue v0.3.12
+   Compiling libmimalloc-sys v0.1.44
+   Compiling pin-project-internal v1.1.11
+    Checking constant_time_eq v0.3.1
+    Checking skim-common v0.1.2
+   Compiling heck v0.4.1
+    Checking deflate64 v0.1.12
+   Compiling indoc v2.0.7
+    Checking ppmd-rust v1.4.0
+   Compiling instability v0.3.12
+    Checking borrow-or-share v0.2.4
+    Checking env_home v0.1.0
+    Checking image v0.25.10
+    Checking fluent-uri v0.3.2
+    Checking pin-project v1.1.11
+    Checking objc2-app-kit v0.3.2
+    Checking which v7.0.3
+    Checking pdf-extract v0.10.0
+    Checking bm25 v2.3.2
+    Checking backtrace v0.3.76
+   Compiling strum_macros v0.24.3
+    Checking skim-tuikit v0.6.2
+    Checking crossbeam v0.8.4
+    Checking candle-transformers v0.9.2
+    Checking num v0.4.3
+    Checking aws-sdk-sts v1.101.0
+    Checking ast-grep-language v0.40.5
+    Checking event-listener-strategy v0.5.4
+    Checking aws-sdk-sso v1.97.0
+    Checking aws-sdk-ssooidc v1.99.0
+    Checking nu-json v0.104.1
+    Checking yaml-rust v0.4.5
+    Checking futures-lite v2.6.1
+    Checking nu-engine v0.104.1
+    Checking zstd v0.13.3
+    Checking block2 v0.6.2
+    Checking defer-drop v1.3.0
+   Compiling rmcp-macros v0.12.0
+    Checking timer v0.2.0
+   Compiling color-print-proc-macro v0.3.7
+    Checking shell-quote v0.7.2
+    Checking vte v0.15.0
+    Checking serde_spanned v0.6.9
+    Checking toml_datetime v0.6.11
+    Checking nibble_vec v0.1.0
+    Checking beef v0.5.2
+    Checking toml_write v0.1.2
+    Checking endian-type v0.1.2
+   Compiling camino v1.2.2
+    Checking fixedbitset v0.5.7
+    Checking winnow v0.7.15
+    Checking shlex v1.3.0
+    Checking radix_trie v0.2.1
+    Checking futures-concurrency v7.7.1
+    Checking skim v0.18.0
+    Checking dialoguer v0.11.0
+    Checking rmcp v0.12.0
+    Checking color-print v0.3.7
+    Checking nu-color-config v0.104.1
+    Checking aws-config v1.8.15
+    Checking typeshare v1.0.5
+    Checking dispatch2 v0.3.1
+    Checking syntect v5.3.0
+    Checking toml_edit v0.22.27
+    Checking arboard v3.6.1
+    Checking strum v0.24.1
+    Checking async-broadcast v0.7.2
+    Checking fraction v0.15.3
+    Checking color-eyre v0.6.5
+    Checking referencing v0.30.0
+    Checking agent-client-protocol-schema v0.10.8
+   Compiling chat_cli_v2 v2.1.0 (/Users/abhraina/work/github/kiro-cli/autoapprove/crates/chat-cli-v2)
+    Checking agent-client-protocol-schema v0.6.3
+    Checking aws-http v0.60.6
+    Checking amzn-consolas-client v0.1.14474 (/Users/abhraina/work/github/kiro-cli/autoapprove/crates/amzn-consolas-client)
+    Checking aws-sdk-cognitoidentity v1.98.0
+    Checking code-agent-sdk v2.1.0 (/Users/abhraina/work/github/kiro-cli/autoapprove/crates/code-agent-sdk)
+    Checking amzn-qdeveloper-streaming-client v0.1.14474 (/Users/abhraina/work/github/kiro-cli/autoapprove/crates/amzn-qdeveloper-streaming-client)
+    Checking amzn-codewhisperer-streaming-client v0.1.14474 (/Users/abhraina/work/github/kiro-cli/autoapprove/crates/amzn-codewhisperer-streaming-client)
+    Checking amzn-codewhisperer-client v0.1.14474 (/Users/abhraina/work/github/kiro-cli/autoapprove/crates/amzn-codewhisperer-client)
+    Checking tungstenite v0.26.2
+    Checking compact_str v0.8.1
+    Checking reqwest v0.12.28
+    Checking unicode-truncate v1.1.0
+    Checking webpki-roots v0.26.8
+    Checking uuid-simd v0.8.0
+    Checking jsonrpcmsg v0.1.2
+    Checking email_address v0.2.9
+   Compiling rustyline-derive v0.11.1
+   Compiling sacp-derive v10.0.0
+   Compiling async-stream-impl v0.3.6
+    Checking cassowary v0.3.0
+    Checking maplit v1.0.2
+    Checking boxfnonce v0.1.1
+    Checking num-cmp v0.1.0
+    Checking sacp v10.1.0
+    Checking spinners v4.2.0
+    Checking rustyline v15.0.0
+    Checking ratatui v0.29.0
+    Checking async-stream v0.3.6
+    Checking jsonschema v0.30.0
+    Checking tokio-tungstenite v0.26.2
+    Checking agent-client-protocol v0.7.0
+    Checking amzn-toolkit-telemetry-client v1.0.0 (/Users/abhraina/work/github/kiro-cli/autoapprove/crates/amzn-toolkit-telemetry-client)
+    Checking toml v0.8.23
+    Checking ctrlc v3.5.2
+    Checking mimalloc v0.1.48
+    Checking shell-color v1.0.1
+    Checking clap_complete_fig v4.5.2
+   Compiling chat_cli v2.1.0 (/Users/abhraina/work/github/kiro-cli/autoapprove/crates/chat-cli)
+    Checking rustls-pemfile v2.2.0
+    Checking winnow v0.6.2
+    Checking mockito v1.7.2
+    Checking criterion v0.8.2
+    Checking aws-smithy-mocks v0.2.6
+    Checking chat-cli-ui v2.1.0 (/Users/abhraina/work/github/kiro-cli/autoapprove/crates/chat-cli-ui)
+    Checking liblzma v0.4.6
+    Checking zip v4.6.1
+    Checking semantic_search_client v2.1.0 (/Users/abhraina/work/github/kiro-cli/autoapprove/crates/semantic-search-client)
+    Checking agent v2.1.0 (/Users/abhraina/work/github/kiro-cli/autoapprove/crates/agent)
+error[E0308]: mismatched types
+    --> crates/chat-cli/src/cli/chat/tools/code.rs:438:32
+     |
+ 424 |                 ask_paths.push(std::path::PathBuf::from(path));
+     |                 ---------      ------------------------------ this argument has type `PathBuf`...
+     |                 |
+     |                 ... which causes `ask_paths` to have type `Vec<PathBuf>`
+...
+ 438 |                 ask_paths.push(canonical);
+     |                           ---- ^^^^^^^^^ expected `PathBuf`, found `String`
+     |                           |
+     |                           arguments to this method are incorrect
+     |
+note: method defined here
+    --> /Users/abhraina/.rustup/toolchains/1.92.0-aarch64-apple-darwin/lib/rustlib/src/rust/library/alloc/src/vec/mod.rs:2563:12
+     |
+2563 |     pub fn push(&mut self, value: T) {
+     |            ^^^^
+help: call `Into::into` on this expression to convert `std::string::String` into `PathBuf`
+     |
+ 438 |                 ask_paths.push(canonical.into());
+     |                                         +++++++
+
+error[E0308]: mismatched types
+   --> crates/chat-cli/src/cli/chat/tools/code.rs:446:56
+    |
+446 |                 Ok(cwd) => generate_file_trust_options(&ask_paths, PathAccessType::Read, &cwd),
+    |                            --------------------------- ^^^^^^^^^^ expected `&[String]`, found `&Vec<PathBuf>`
+    |                            |
+    |                            arguments to this function are incorrect
+    |
+    = note: expected reference `&[std::string::String]`
+               found reference `&Vec<PathBuf>`
+note: function defined here
+   --> /Users/abhraina/work/github/kiro-cli/autoapprove/crates/agent/src/agent/tool_permission/file_trust.rs:13:8
+    |
+ 13 | pub fn generate_file_trust_options(
+    |        ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+For more information about this error, try `rustc --explain E0308`.
+error: could not compile `chat_cli` (lib) due to 2 previous errors

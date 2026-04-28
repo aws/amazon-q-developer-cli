@@ -88,6 +88,30 @@ impl Code {
             .iter()
             .any(|alias| matches_any_pattern(&patterns, alias))
     }
+
+    /// Return the filesystem paths this operation will read from.
+    ///
+    /// When empty, the operation applies to the workspace/CWD (which is auto-allowed
+    /// by the default CWD read permission). When non-empty, each path must pass the
+    /// fs_read permission check before the operation is allowed.
+    pub fn read_paths(&self) -> Vec<String> {
+        match self {
+            Code::SearchSymbols(p) => p.path.iter().cloned().collect(),
+            Code::FindReferences(p) => vec![p.file_path.clone()],
+            Code::GotoDefinition(p) => vec![p.file_path.clone()],
+            Code::GetDocumentSymbols(p) => vec![p.file_path.clone()],
+            Code::LookupSymbols(p) => p.file_path.iter().cloned().collect(),
+            Code::GetDiagnostics(p) => vec![p.file_path.clone()],
+            Code::GetHover(p) => vec![p.file_path.clone()],
+            Code::GetCompletions(p) => vec![p.file_path.clone()],
+            Code::PatternSearch(p) => p.file_path.iter().cloned().collect(),
+            Code::GenerateCodebaseOverview(p) => p.path.iter().cloned().collect(),
+            Code::SearchCodebaseMap(p) => p.path.iter().chain(p.file_path.iter()).cloned().collect(),
+            Code::InitializeWorkspace => vec![],
+            // Write operations are handled separately
+            Code::RenameSymbol(_) | Code::Format(_) | Code::PatternRewrite(_) => vec![],
+        }
+    }
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -287,32 +311,85 @@ pub(super) fn validate_position(row: i32, column: i32) -> Result<()> {
 impl Code {
     /// Evaluate permission for code intelligence operation
     pub fn eval_perm(
-        _os: &Os,
+        os: &Os,
         agent: &crate::cli::agent::Agent,
         code: &Code,
     ) -> crate::cli::agent::PermissionEvalResult {
+        use agent::permissions::PathAccessType;
+        use agent::tool_permission::file_trust::generate_file_trust_options;
+        use globset::GlobSetBuilder;
+
         use crate::cli::agent::PermissionEvalResult;
+        use crate::util::paths;
         use crate::util::tool_permission_checker::is_tool_in_allowlist;
 
         if !crate::feature_flags::FeatureFlags::CODE_INTELLIGENCE_ENABLED {
             return PermissionEvalResult::Deny(vec!["Code intelligence feature is not available".to_string()]);
         }
 
-        // Read operations are always allowed
-        if !is_write_operation(code) {
-            return PermissionEvalResult::Allow;
-        }
-
-        // Write operations: check if code tool is trusted
         let is_trusted = Self::INFO
             .aliases
             .iter()
             .any(|alias| is_tool_in_allowlist(&agent.allowed_tools, alias, None));
 
-        if is_trusted {
-            PermissionEvalResult::Allow
+        if is_write_operation(code) {
+            return if is_trusted {
+                PermissionEvalResult::Allow
+            } else {
+                PermissionEvalResult::ask()
+            };
+        }
+
+        // Read operations: auto-allow within CWD, ask for anything outside.
+        // No fs_read settings inheritance — just the CWD boundary.
+        let read_paths = code.read_paths();
+        if read_paths.is_empty() {
+            return PermissionEvalResult::Allow;
+        }
+
+        // Build allowed set from CWD + runtime-granted read paths only
+        let mut allowed_paths = Vec::new();
+        if let Ok(cwd) = os.env.current_dir() {
+            allowed_paths.push(cwd.to_string_lossy().to_string());
+        }
+        for path in agent.runtime_permissions.allowed_read_paths() {
+            allowed_paths.push(path.clone());
+        }
+
+        let allow_set = {
+            let mut builder = GlobSetBuilder::new();
+            for path in &allowed_paths {
+                let Ok(p) = paths::canonicalizes_path(os, path) else {
+                    continue;
+                };
+                let _ = paths::add_gitignore_globs(&mut builder, p.as_str());
+            }
+            builder.build()
+        };
+
+        let Ok(allow_set) = allow_set else {
+            return PermissionEvalResult::ask();
+        };
+
+        let mut ask_paths: Vec<String> = Vec::new();
+        for path in &read_paths {
+            let Ok(canonical) = paths::canonicalizes_path(os, path) else {
+                ask_paths.push(path.clone());
+                continue;
+            };
+            if !is_trusted && !allow_set.is_match(canonical.as_ref() as &str) {
+                ask_paths.push(canonical);
+            }
+        }
+
+        if !ask_paths.is_empty() {
+            let trust_options = match os.env.current_dir() {
+                Ok(cwd) => generate_file_trust_options(&ask_paths, PathAccessType::Read, &cwd),
+                Err(_) => vec![],
+            };
+            PermissionEvalResult::Ask { trust_options }
         } else {
-            PermissionEvalResult::ask()
+            PermissionEvalResult::Allow
         }
     }
 
@@ -1986,5 +2063,136 @@ impl Code {
         }
         super::display_tool_use(tool, output)?;
         Ok(())
+    }
+}
+
+/// Regression tests for V2184286366: code tool's pattern_search was auto-approved
+/// for arbitrary file paths, allowing reads of sensitive files outside CWD.
+#[cfg(test)]
+mod code_perm_tests {
+    use std::collections::HashMap;
+    use std::path::PathBuf;
+
+    use super::*;
+    use crate::cli::agent::{
+        Agent,
+        PermissionEvalResult,
+        ToolSettingTarget,
+    };
+
+    fn pattern_search(file_path: Option<&str>) -> Code {
+        Code::PatternSearch(PatternSearchParams {
+            pattern: "[$$$]".to_string(),
+            language: "javascript".to_string(),
+            file_path: file_path.map(String::from),
+            limit: None,
+            offset: None,
+        })
+    }
+
+    async fn test_os_with_cwd(cwd: &str) -> Os {
+        let os = Os::new().await.unwrap();
+        os.env.set_current_dir_for_test(PathBuf::from(cwd));
+        os
+    }
+
+    #[tokio::test]
+    async fn pattern_search_outside_cwd_asks() {
+        let os = test_os_with_cwd("/home/user/project").await;
+        let agent = Agent {
+            name: "test_agent".to_string(),
+            ..Default::default()
+        };
+        let code = pattern_search(Some("/Users/akl/.ees-interactive-repl/cookie-jar.json"));
+        let res = Code::eval_perm(&os, &agent, &code);
+        assert!(
+            matches!(res, PermissionEvalResult::Ask { .. }),
+            "pattern_search outside CWD should ask, got: {res:?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn pattern_search_inside_cwd_is_allowed() {
+        let os = test_os_with_cwd("/home/user/project").await;
+        let agent = Agent {
+            name: "test_agent".to_string(),
+            ..Default::default()
+        };
+        let code = pattern_search(Some("/home/user/project/src/main.rs"));
+        let res = Code::eval_perm(&os, &agent, &code);
+        assert!(matches!(res, PermissionEvalResult::Allow), "got: {res:?}");
+    }
+
+    #[tokio::test]
+    async fn pattern_search_without_path_is_allowed() {
+        let os = test_os_with_cwd("/home/user/project").await;
+        let agent = Agent {
+            name: "test_agent".to_string(),
+            ..Default::default()
+        };
+        let code = pattern_search(None);
+        let res = Code::eval_perm(&os, &agent, &code);
+        assert!(matches!(res, PermissionEvalResult::Allow), "got: {res:?}");
+    }
+
+    #[tokio::test]
+    async fn code_read_outside_cwd_ignores_fs_read_settings() {
+        // fs_read.allowReadOnly should NOT affect the code tool
+        let os = test_os_with_cwd("/home/user/project").await;
+        let mut settings = HashMap::<ToolSettingTarget, serde_json::Value>::new();
+        settings.insert(
+            ToolSettingTarget("fs_read".to_string()),
+            serde_json::json!({ "allowReadOnly": true }),
+        );
+        let agent = Agent {
+            name: "test_agent".to_string(),
+            tools_settings: settings,
+            ..Default::default()
+        };
+        let code = pattern_search(Some("/tmp/somewhere/else.json"));
+        let res = Code::eval_perm(&os, &agent, &code);
+        assert!(
+            matches!(res, PermissionEvalResult::Ask { .. }),
+            "fs_read.allowReadOnly should not affect code tool, got: {res:?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn code_write_still_asks() {
+        let os = test_os_with_cwd("/home/user/project").await;
+        let agent = Agent {
+            name: "test_agent".to_string(),
+            ..Default::default()
+        };
+        let code = Code::PatternRewrite(PatternRewriteParams {
+            pattern: "$X.unwrap()".to_string(),
+            replacement: "$X.expect(\"\")".to_string(),
+            language: "rust".to_string(),
+            file_path: None,
+            dry_run: true,
+            limit: None,
+        });
+        let res = Code::eval_perm(&os, &agent, &code);
+        assert!(matches!(res, PermissionEvalResult::Ask { .. }), "got: {res:?}");
+    }
+
+    #[tokio::test]
+    async fn code_write_when_trusted_is_allowed() {
+        let os = test_os_with_cwd("/home/user/project").await;
+        let mut agent = Agent {
+            name: "test_agent".to_string(),
+            ..Default::default()
+        };
+        agent.allowed_tools.insert("code".to_string());
+        let code = Code::PatternRewrite(PatternRewriteParams {
+            pattern: "$X.unwrap()".to_string(),
+            replacement: "$X.expect(\"\")".to_string(),
+            language: "rust".to_string(),
+            file_path: None,
+            dry_run: true,
+            limit: None,
+        });
+        let res = Code::eval_perm(&os, &agent, &code);
+        assert!(matches!(res, PermissionEvalResult::Allow), "got: {res:?}");
     }
 }
