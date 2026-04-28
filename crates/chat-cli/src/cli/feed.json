@@ -12,6 +12,18 @@
     },
     {
       "type": "release",
+      "date": "2026-04-27",
+      "version": "2.2.0",
+      "title": "Version 2.2.0",
+      "changes": [
+        {
+          "type": "added",
+          "description": "Support adaptive thinking: Preserve model reasoning across multi-turn conversations for improved response quality"
+        }
+      ]
+    },
+    {
+      "type": "release",
       "date": "2026-04-26",
       "version": "2.1.2",
       "title": "Version 2.1.2",
