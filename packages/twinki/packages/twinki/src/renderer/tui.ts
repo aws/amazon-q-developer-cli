@@ -707,13 +707,12 @@ export class TUI extends Container {
     this.terminal.start(
       (data) => this.handleInput(data),
       () => {
-        // Resize handler: synchronous clear to prevent reflowed content flash.
+        // Resize handler: clear synchronously to prevent reflowed content.
+        // Resize handler: clear synchronously to prevent reflowed content.
         this.internalWrite = true;
         this.terminal.write(TUI.CLEAR_ALL);
         this.internalWrite = false;
         this.terminal.hideCursor();
-        // Do NOT clear accumulatedStaticOutput — it is prepended to every frame
-        // so static content survives resize automatically.
         if (!this.altScreen) {
           this.contentStartRow = 0;
         }
@@ -1470,7 +1469,11 @@ export class TUI extends Container {
   private doRender(): void {
     if (this.stopped) return;
 
-    // Write pressure: defer if stdout buffer is saturated
+    // Write pressure: defer if stdout buffer is saturated.
+    // NOTE: Only active when frame pacing is enabled (frameBudgetMs > 0).
+    // Cannot be unconditional because the drain event keeps the event loop
+    // alive — if stdout dies, drain never fires and the process hangs
+    // instead of exiting via the circuit breaker.
     if (this.frameBudgetMs > 0) {
       const stdout = (process as any).stdout;
       if (stdout?.writableNeedDrain) {

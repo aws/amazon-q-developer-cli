@@ -3192,7 +3192,12 @@ export const createAppStore = (props: AppStoreProps) => {
     if (!method) return;
 
     // Turn completed cleanly (no error, no cancellation)
-    if (wasProcessing && !state.isProcessing && !state.agentError && !state.wasCancelled) {
+    if (
+      wasProcessing &&
+      !state.isProcessing &&
+      !state.agentError &&
+      !state.wasCancelled
+    ) {
       playNotification(method, 'Response complete');
     }
 

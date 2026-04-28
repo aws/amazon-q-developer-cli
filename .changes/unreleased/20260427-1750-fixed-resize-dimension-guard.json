@@ -1,0 +1,4 @@
+{
+  "type": "fixed",
+  "description": "Add dimension guard to prevent unnecessary re-renders on no-op terminal resize signals (tmux pane focus, attach/detach)"
+}

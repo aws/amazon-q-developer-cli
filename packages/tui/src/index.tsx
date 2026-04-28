@@ -36,8 +36,14 @@ import { isTrustGateAccepted } from './utils/trust-gate-state';
 // stdout.write() on a dead fd doesn't throw — it emits an async 'error' event.
 // Without this listener, the error escalates to uncaughtException, whose handler
 // writes to stdout, creating an infinite loop that leaks ~200 MB/s until OOM.
-// Ref: https://nodejs.org/api/stream.html#writablewritechunk-encoding-callback
-process.stdout.on('error', () => process.exit(1));
+process.stdout.on('error', (err) => {
+  logger.error('[tui] stdout error, exiting:', String(err));
+  process.exit(1);
+});
+
+process.on('exit', (code) => {
+  logger.info('[tui] exit', { code });
+});
 
 const cleanup = () => {
   try {
@@ -64,17 +70,20 @@ const getAgentPath = (): string => {
 };
 
 process.on('SIGHUP', () => {
+  logger.error('[tui] SIGHUP received');
   kiro.close();
   cleanup();
 });
 
-process.on('uncaughtException', () => {
+process.on('uncaughtException', (err) => {
+  logger.error('[tui] uncaughtException:', err?.message || String(err));
   kiro.close();
   cleanup();
 });
 
 // Defense-in-depth: detect parent death via stdin EOF (works when stdin is piped)
 process.stdin.on('end', () => {
+  logger.error('[tui] stdin EOF — parent process died');
   kiro.close();
   cleanup();
 });
