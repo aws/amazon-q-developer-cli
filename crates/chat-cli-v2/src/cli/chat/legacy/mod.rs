@@ -116,6 +116,8 @@ pub fn parse_shortcut(shortcut: &str) -> Result<KeyEvent, String> {
             return Err(format!("Invalid key: '{key_str}'"));
         }
     } else if key_str.starts_with('f') && key_str.len() >= 2 {
+        // SAFETY: starts_with('f') guarantees byte 0 is ASCII
+        #[allow(clippy::string_slice)]
         let num_str = &key_str[1..];
         match num_str.parse::<u8>() {
             Ok(n) if (1..=12).contains(&n) => KeyCode::F(n),

@@ -696,7 +696,11 @@ async fn run_command_hook(
 /// Sanitizes a string value to be used as an environment variable
 fn sanitize_user_prompt(input: &str) -> String {
     // Limit the size of input to first 4096 characters
-    let truncated = if input.len() > 4096 { &input[0..4096] } else { input };
+    let truncated = if input.len() > 4096 {
+        crate::agent::util::truncate_safe(input, 4096)
+    } else {
+        input
+    };
 
     // Remove any potentially problematic characters
     truncated.replace(|c: char| c.is_control() && c != '\n' && c != '\r' && c != '\t', "")

@@ -185,6 +185,7 @@ nonstandard_style = "warn"
 rust_2018_idioms = "warn"
 
 [workspace.lints.clippy]
+string_slice = "deny"
 await_holding_lock = "warn"
 char_lit_as_u8 = "warn"
 checked_conversions = "warn"

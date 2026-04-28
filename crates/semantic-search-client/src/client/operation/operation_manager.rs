@@ -66,6 +66,7 @@ impl OperationManager {
     }
 
     /// Cancel operation
+    #[allow(clippy::string_slice)] // UUID.to_string() is always ASCII hex ≥32 chars
     pub async fn cancel_operation(&self, operation_id: Uuid) -> Result<String> {
         let mut operations = self.active_operations.write().await;
 
@@ -153,6 +154,7 @@ impl OperationManager {
     }
 
     /// List operation IDs
+    #[allow(clippy::string_slice)] // UUID.to_string() is always ASCII hex ≥32 chars
     pub async fn list_operation_ids(&self) -> Vec<String> {
         let operations = self.active_operations.read().await;
         operations
@@ -162,6 +164,7 @@ impl OperationManager {
     }
 
     /// Get status data
+    #[allow(clippy::string_slice)] // UUID.to_string() is always ASCII hex ≥32 chars
     pub async fn get_status_data(&self, context_manager: &ContextManager) -> Result<SystemStatus> {
         let mut operations = self.active_operations.write().await;
         let contexts = context_manager.get_contexts_ref().read().await;

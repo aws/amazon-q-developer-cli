@@ -1,3 +1,6 @@
+// TODO: fix all string_slice violations in V1 and remove this allow
+#![allow(clippy::string_slice)]
+
 mod agent;
 mod api_client;
 mod auth;

@@ -252,7 +252,11 @@ fn parse_log_line(line: &str) -> Option<(String, String, String)> {
                 j += 1;
             }
             if j > i + 2 && j + 1 < bytes.len() && bytes[j] == b':' && bytes[j + 1] == b' ' {
-                message = rest[j + 2..].to_string();
+                // SAFETY: j+2 verified as ASCII byte positions via as_bytes() checks
+                #[allow(clippy::string_slice)]
+                {
+                    message = rest[j + 2..].to_string();
+                }
                 break;
             }
         }

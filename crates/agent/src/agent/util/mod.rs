@@ -66,6 +66,7 @@ where
     }
 }
 
+#[allow(clippy::string_slice)] // byte_count is from char_indices(), always a valid char boundary
 pub fn truncate_safe(s: &str, max_bytes: usize) -> &str {
     if s.len() <= max_bytes {
         return s;

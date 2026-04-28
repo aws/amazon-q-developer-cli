@@ -1,4 +1,6 @@
 #![cfg(not(test))]
+// TODO: fix all string_slice violations in V1 and remove this allow
+#![allow(clippy::string_slice)]
 //! This lib.rs is only here for testing purposes.
 //! `test_mcp_server/test_server.rs` is declared as a separate binary and would need a way to
 //! reference types defined inside of this crate, hence the export.

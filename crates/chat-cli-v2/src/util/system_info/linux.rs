@@ -58,6 +58,8 @@ impl OsRelease {
         // Remove the starting and ending quotes from a string if they match
         let strip_quotes = |s: &str| -> Option<String> {
             if s.starts_with('"') && s.ends_with('"') {
+                // SAFETY: starts_with/ends_with verify ASCII quote chars at boundaries
+                #[allow(clippy::string_slice)]
                 Some(s[1..s.len() - 1].into())
             } else {
                 Some(s.into())

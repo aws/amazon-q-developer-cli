@@ -102,7 +102,11 @@ fn matches_glob(value: &str, pattern: &str) -> bool {
 }
 
 fn matches_prefix(value: &str, prefix: &str) -> bool {
-    value == prefix || (value.starts_with(prefix) && value[prefix.len()..].starts_with(char::is_whitespace))
+    // SAFETY: starts_with(prefix) guarantees prefix.len() is a valid char boundary
+    #[allow(clippy::string_slice)]
+    {
+        value == prefix || (value.starts_with(prefix) && value[prefix.len()..].starts_with(char::is_whitespace))
+    }
 }
 
 #[cfg(test)]

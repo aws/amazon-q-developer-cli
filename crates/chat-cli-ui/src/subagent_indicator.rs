@@ -69,6 +69,7 @@ const META_TYPE_END_TURN: &str = "EndTurn";
 const META_TYPE_INITIALIZED: &str = "Initialized";
 
 #[inline]
+#[allow(clippy::string_slice)] // indices from char_indices() are always valid char boundaries
 fn wrap_text(input: &str, max_text_width: u16) -> Vec<&str> {
     let mut res = Vec::<&str>::new();
     let mut start = 0_usize;

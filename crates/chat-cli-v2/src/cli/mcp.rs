@@ -48,6 +48,8 @@ fn truncate_server_description(description: &str) -> String {
     } else {
         // Find a good break point (word boundary) within the limit
         let truncated = agent::util::truncate_safe(description, 50);
+        // SAFETY: `last_space` is from `rfind` on an ASCII char within `truncated`
+        #[allow(clippy::string_slice)]
         if let Some(last_space) = truncated.rfind(' ') {
             format!("{}...", &truncated[..last_space])
         } else {

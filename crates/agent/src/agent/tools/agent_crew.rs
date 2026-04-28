@@ -179,7 +179,7 @@ impl AgentCrew {
             }
         }
 
-        let group = format!("crew-{}", &self.task[..self.task.len().min(20)]);
+        let group = format!("crew-{}", crate::agent::util::truncate_safe(&self.task, 20));
 
         // Spawn all stages with no dependencies immediately (parallel)
         let ready: Vec<&PipelineStage> = self.stages.iter().filter(|s| s.depends_on.is_empty()).collect();

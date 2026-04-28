@@ -93,6 +93,7 @@ pub async fn execute(args: &agent::tui_commands::KnowledgeArgs, ctx: &CommandCon
     }
 }
 
+#[allow(clippy::string_slice)] // knowledge store IDs are hex hashes, always ASCII ≥8 chars
 async fn format_show(store: &KnowledgeStore) -> CommandResult {
     let contexts = store.get_all().await.unwrap_or_default();
     let status = store.get_status_data().await;

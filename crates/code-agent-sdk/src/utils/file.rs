@@ -234,6 +234,8 @@ pub fn apply_text_edits(file_path: &Path, edits: &[TextEdit]) -> Result<()> {
                 // Single line edit
                 let line = &mut lines[start_line];
                 if start_char <= line.len() && end_char <= line.len() {
+                    // TODO: LSP positions use UTF-16 offsets; byte-index only correct for ASCII
+                    #[allow(clippy::string_slice)]
                     line.replace_range(start_char..end_char, &edit.new_text);
                 }
             } else {
@@ -242,6 +244,9 @@ pub fn apply_text_edits(file_path: &Path, edits: &[TextEdit]) -> Result<()> {
 
                 // Keep beginning of start line
                 if start_char < lines[start_line].len() {
+                    // TODO: LSP positions use UTF-16 offsets; this byte-index is only
+                    // correct for ASCII content. Needs proper UTF-16→byte conversion.
+                    #[allow(clippy::string_slice)]
                     new_content.push_str(&lines[start_line][..start_char]);
                 }
 
@@ -250,6 +255,8 @@ pub fn apply_text_edits(file_path: &Path, edits: &[TextEdit]) -> Result<()> {
 
                 // Keep end of end line
                 if end_char < lines[end_line].len() {
+                    // TODO: same UTF-16 offset issue as above
+                    #[allow(clippy::string_slice)]
                     new_content.push_str(&lines[end_line][end_char..]);
                 }
 

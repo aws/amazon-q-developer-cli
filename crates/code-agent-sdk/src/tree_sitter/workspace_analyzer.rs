@@ -588,6 +588,8 @@ fn generate_repomap(path: &Path, symbols: &[SymbolInfo], score: f64) -> Result<S
         if let Some(line) = lines.get(row) {
             let trimmed = line.trim();
             if let Some(pos) = trimmed.find('{') {
+                // SAFETY: `pos` is from `find` on an ASCII char, always a valid char boundary
+                #[allow(clippy::string_slice)]
                 repomap.push_str(&trimmed[..pos]);
                 repomap.push_str("{}\n");
             } else {

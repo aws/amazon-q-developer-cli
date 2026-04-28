@@ -336,6 +336,7 @@ impl KnowledgeStore {
     }
 
     /// Add context with flexible options
+    #[allow(clippy::string_slice)] // operation IDs are hex hashes, always ASCII ≥8 chars
     pub async fn add(&mut self, name: &str, path_str: &str, options: AddOptions) -> Result<String, String> {
         let path_buf = std::path::PathBuf::from(path_str);
 
@@ -467,6 +468,7 @@ impl KnowledgeStore {
 
     /// Cancel active operation.
     /// last operation if no operation id is provided.
+    #[allow(clippy::string_slice)] // operation IDs are hex hashes, always ASCII ≥8 chars
     pub async fn cancel_operation(&mut self, operation_id: Option<&str>) -> Result<String, String> {
         if let Some(short_id) = operation_id {
             let available_ops = self.agent_client.list_operation_ids().await;
@@ -507,6 +509,7 @@ impl KnowledgeStore {
     }
 
     /// Clear all contexts (background operation)
+    #[allow(clippy::string_slice)] // operation IDs are hex hashes, always ASCII ≥8 chars
     pub async fn clear(&mut self) -> Result<String, String> {
         match self.agent_client.clear_all().await {
             Ok((operation_id, _cancel_token)) => Ok(format!(

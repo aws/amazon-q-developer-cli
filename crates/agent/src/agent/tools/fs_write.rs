@@ -169,15 +169,23 @@ impl FsWrite {
                     if matches.is_empty() {
                         errors.push("The provided old_str was not found in the file".to_string());
                     } else if v.replace_all {
-                        v.start_lines = matches
-                            .iter()
-                            .map(|(byte_offset, _)| {
-                                (normalized[..*byte_offset].lines().count() as u32).saturating_add(1)
-                            })
-                            .collect();
+                        // SAFETY: byte_offset from match_indices() is always a valid char boundary
+                        #[allow(clippy::string_slice)]
+                        {
+                            v.start_lines = matches
+                                .iter()
+                                .map(|(byte_offset, _)| {
+                                    (normalized[..*byte_offset].lines().count() as u32).saturating_add(1)
+                                })
+                                .collect();
+                        }
                     } else {
                         let byte_offset = matches[0].0;
-                        v.start_lines = vec![(normalized[..byte_offset].lines().count() as u32).saturating_add(1)];
+                        // SAFETY: byte_offset from match_indices() is always a valid char boundary
+                        #[allow(clippy::string_slice)]
+                        {
+                            v.start_lines = vec![(normalized[..byte_offset].lines().count() as u32).saturating_add(1)];
+                        }
                     }
                 }
             },

@@ -26,6 +26,8 @@ pub fn parse(prompt: &[ContentBlock]) -> Option<SlashRoute> {
         }
     })?;
 
+    // SAFETY: starts_with('/') guarantees byte 0 is ASCII, so [1..] is valid
+    #[allow(clippy::string_slice)]
     let without_slash = &text[1..];
     let (name, args_str) = match without_slash.split_once(char::is_whitespace) {
         Some((n, a)) => (n, a.trim()),

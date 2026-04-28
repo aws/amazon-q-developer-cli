@@ -14,10 +14,14 @@ pub async fn execute(args: &ToolsArgs, ctx: &CommandContext<'_>) -> CommandResul
         Some("trust-all") => trust_all(ctx).await,
         Some("reset") => reset(ctx).await,
         Some(sub) if sub.starts_with("trust ") => {
+            // SAFETY: starts_with("trust ") guarantees "trust ".len() is a valid char boundary
+            #[allow(clippy::string_slice)]
             let names = parse_tool_names(&sub["trust ".len()..]);
             trust(ctx, names).await
         },
         Some(sub) if sub.starts_with("untrust ") => {
+            // SAFETY: starts_with("untrust ") guarantees "untrust ".len() is a valid char boundary
+            #[allow(clippy::string_slice)]
             let names = parse_tool_names(&sub["untrust ".len()..]);
             untrust(ctx, names).await
         },

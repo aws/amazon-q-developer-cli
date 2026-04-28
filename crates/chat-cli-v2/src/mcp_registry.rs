@@ -484,6 +484,8 @@ fn format_package_identifier(identifier: &str, version: &str) -> String {
     // For scoped packages (@scope/pkg), check for a version tag after the slash
     let has_version = if let Some(slash_pos) = identifier.find('/') {
         // Scoped package: check if there's an @ after the slash (e.g., @scope/pkg@version)
+        // SAFETY: slash_pos from find('/') on ASCII '/' is always a valid char boundary
+        #[allow(clippy::string_slice)]
         identifier[slash_pos + 1..].contains('@')
     } else {
         // Unscoped package: check if there's an @ anywhere (e.g., pkg@version)
@@ -817,6 +819,8 @@ pub fn filter_tools_by_registry(tools: &[String], valid_server_names: &std::coll
             if let Some(stripped) = tool.strip_prefix('@')
                 && let Some(slash_pos) = stripped.find('/')
             {
+                // SAFETY: slash_pos from find('/'), ASCII char, always valid boundary
+                #[allow(clippy::string_slice)]
                 let server_name = &stripped[..slash_pos];
                 if valid_server_names.contains(server_name) {
                     return true;

@@ -22,8 +22,11 @@ impl PromptTemplateArgs {
         let has_all_args = content.contains("$ARGUMENTS") || content.contains("${@}");
 
         for (i, _) in content.match_indices("${") {
+            // SAFETY: i+2 is past ASCII "${", and `end` is from find('}') on the remainder
+            #[allow(clippy::string_slice)]
             let rest = &content[i + 2..];
             let Some(end) = rest.find('}') else { continue };
+            #[allow(clippy::string_slice)]
             let inner = &rest[..end];
 
             if let Ok(n) = inner.parse::<u8>()

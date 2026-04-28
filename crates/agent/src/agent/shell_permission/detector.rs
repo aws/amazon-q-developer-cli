@@ -162,6 +162,8 @@ fn is_dangerous_env_manipulation(cmd: &ParsedCommand, config: &DetectorConfig) -
 
 /// Check if a value is in the safe list, stripping one layer of matching quotes.
 fn is_safe_env_value(value: &str, safe_values: &[String]) -> bool {
+    // SAFETY: first/last bytes are verified as ASCII quote chars before slicing
+    #[allow(clippy::string_slice)]
     let stripped = match value.as_bytes() {
         [b'"', .., b'"'] | [b'\'', .., b'\''] => &value[1..value.len() - 1],
         _ => value,

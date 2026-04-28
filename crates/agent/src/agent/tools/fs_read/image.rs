@@ -162,10 +162,14 @@ pub fn pre_process_image_path(path: impl AsRef<Path>) -> String {
         if mac_screenshot_regex.is_match(&path)
             && let Some(pos) = path.find(" at ")
         {
-            let mut new_path = String::new();
-            new_path.push_str(&path[..pos + 4]);
-            new_path.push_str(&path[pos + 4..].replace(" ", "\u{202F}"));
-            return new_path;
+            // SAFETY: `pos` from find(" at ") is ASCII, pos+4 is end of " at " (all ASCII)
+            #[allow(clippy::string_slice)]
+            {
+                let mut new_path = String::new();
+                new_path.push_str(&path[..pos + 4]);
+                new_path.push_str(&path[pos + 4..].replace(" ", "\u{202F}"));
+                return new_path;
+            }
         }
     }
     path
