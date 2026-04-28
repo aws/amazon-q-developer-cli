@@ -260,6 +260,14 @@ impl TestCase {
             .expect("failed to send prompt");
     }
 
+    /// Invalidate cached tool specs to simulate MCP ToolListChanged race condition.
+    pub async fn invalidate_cached_tool_specs(&self) {
+        self.agent
+            .invalidate_cached_tool_specs()
+            .await
+            .expect("failed to invalidate cached tool specs");
+    }
+
     pub async fn swap_agent(&self, args: agent::protocol::SwapAgentArgs) -> Result<()> {
         self.agent.swap_agent(args).await?;
         Ok(())

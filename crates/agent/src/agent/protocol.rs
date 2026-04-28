@@ -265,6 +265,7 @@ pub enum AgentRequest {
     ResetToolPermissions,
     /// Set trust_all_tools on this agent (used for "allow all for session")
     SetTrustAllTools(bool),
+    InvalidateCachedToolSpecs,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

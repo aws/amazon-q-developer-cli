@@ -531,6 +531,16 @@ impl AgentHandle {
             .unwrap_or(Err(AgentError::Channel))?;
         Ok(())
     }
+
+    /// Invalidate cached tool specs to simulate MCP ToolListChanged race condition.
+    /// Exposed for integration testing.
+    pub async fn invalidate_cached_tool_specs(&self) -> Result<(), AgentError> {
+        self.sender
+            .send_recv(AgentRequest::InvalidateCachedToolSpecs)
+            .await
+            .unwrap_or(Err(AgentError::Channel))?;
+        Ok(())
+    }
 }
 
 /// Core LLM agent that implements an [`AgentConfig`].
@@ -1369,6 +1379,10 @@ impl Agent {
             },
             AgentRequest::SetTrustAllTools(trust) => {
                 self.settings.trust_all_tools = trust;
+                Ok(AgentResponse::Success)
+            },
+            AgentRequest::InvalidateCachedToolSpecs => {
+                self.cached_tool_specs = None;
                 Ok(AgentResponse::Success)
             },
         }
@@ -2745,6 +2759,14 @@ impl Agent {
         let mut parse_errors: Vec<ToolParseError> = Vec::new();
 
         for tool_use in tool_uses {
+            // If cached_tool_specs was invalidated (e.g. by a late MCP Initialized or
+            // ToolListChanged event arriving between format_request and parse_tools),
+            // rebuild them so we don't silently drop the tool the model just requested.
+            if self.cached_tool_specs.is_none() {
+                warn!("cached_tool_specs invalidated before parse_tools, rebuilding");
+                self.make_tool_spec().await;
+            }
+
             let canonical_tool_name = match &self.cached_tool_specs {
                 Some(specs) => match specs.tool_map().get(&tool_use.name) {
                     Some(spec) => spec.canonical_name().clone(),
@@ -2757,8 +2779,15 @@ impl Agent {
                     },
                 },
                 None => {
-                    // should never happen
-                    debug_assert!(false, "parsing tools without having cached tool specs");
+                    // Rebuild failed — return a proper error instead of silently dropping.
+                    warn!(
+                        "cached_tool_specs is None even after rebuild; cannot parse tool '{}'",
+                        tool_use.name
+                    );
+                    parse_errors.push(ToolParseError::new(
+                        tool_use.clone(),
+                        ToolParseErrorKind::NameDoesNotExist(tool_use.name),
+                    ));
                     continue;
                 },
             };

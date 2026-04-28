@@ -1715,3 +1715,69 @@ async fn test_custom_agent_without_tool_search_gets_full_mcp_tools() {
         "DEFERRED_TOOLS_MESSAGE should NOT be in context when ToolSearch is unavailable"
     );
 }
+
+/// Tests that tool dispatch recovers when cached_tool_specs is invalidated
+/// between format_request and parse_tools (e.g., by a late MCP ToolListChanged event).
+///
+/// This reproduces a bug where subagent tool calls silently failed because:
+/// 1. Agent sends request to model (caches tool specs)
+/// 2. MCP server fires Initialized/ToolListChanged → cached_tool_specs = None
+/// 3. Model responds with tool use → parse_tools finds cached_tool_specs = None
+/// 4. Old behavior: tool silently dropped. Fixed behavior: specs rebuilt lazily.
+#[tokio::test]
+async fn test_tool_dispatch_recovers_after_cached_specs_invalidated() {
+    let _ = tracing_subscriber::fmt::try_init();
+
+    let response_streams = parse_response_streams(include_str!("./mock_responses/fs_read_only.jsonl"))
+        .await
+        .unwrap();
+
+    // Use a delay on the first response so we can invalidate specs before the tool use arrives
+    let delayed_first_response =
+        agent::agent_loop::model::MockResponse::with_delay(response_streams[0].clone(), Duration::from_millis(200));
+
+    let mut test = TestCase::builder()
+        .test_name("tool dispatch recovers after cached specs invalidated")
+        .with_default_agent_config()
+        .with_trust_all_tools(true)
+        .with_file(("test.txt", "hello world"))
+        .with_mock_response(delayed_first_response)
+        .with_mock_response(response_streams[1].clone().into())
+        .build()
+        .await
+        .unwrap();
+
+    // Send prompt — model will respond with a read tool use after 200ms delay
+    test.send_prompt("read test.txt".to_string()).await;
+
+    // Invalidate cached tool specs while the model response is delayed.
+    // This simulates an MCP ToolListChanged/Initialized event arriving
+    // between format_request (which caches specs) and parse_tools.
+    test.invalidate_cached_tool_specs().await;
+
+    // The agent should recover: rebuild specs in parse_tools and execute the tool.
+    // Without the fix, the tool would be silently dropped and the agent would hang.
+    test.wait_until_agent_stop(Duration::from_secs(5))
+        .await
+        .expect("agent should complete — tool specs should be rebuilt lazily in parse_tools");
+
+    // Verify the tool was actually executed (there should be a tool result in the second request)
+    let requests = test.requests();
+    assert!(
+        requests.len() >= 2,
+        "expected at least 2 requests (initial + tool result), got {}",
+        requests.len()
+    );
+
+    // The second request should contain a successful tool result
+    let has_tool_result = requests[1].has_tool_result(|result| {
+        result
+            .content
+            .iter()
+            .any(|c| matches!(c, ToolResultContentBlock::Text(t) if t.contains("hello world")))
+    });
+    assert!(
+        has_tool_result,
+        "expected successful tool result containing file content 'hello world'"
+    );
+}
