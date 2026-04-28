@@ -39,8 +39,9 @@ export async function executeCommand(
 
   const cmd = findCommand(ctx.slashCommands, name);
   if (!cmd) {
-    ctx.showAlert(`Unknown command: /${name}`, 'error', 3000);
-    return true;
+    // Not a known command — let the caller handle it as a regular message
+    // (e.g. pasted file paths like "/Users/me/file.txt")
+    return false;
   }
 
   await dispatch(cmd, args, ctx);
