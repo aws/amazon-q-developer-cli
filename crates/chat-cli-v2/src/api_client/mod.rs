@@ -898,6 +898,17 @@ impl RealApiClient {
         tracing::info!("Model cache invalidated");
     }
 
+    /// Call GetProfile with no profile ARN to validate that this endpoint accepts the API key.
+    pub async fn get_profile_for_api_key(
+        &self,
+    ) -> Result<amzn_codewhisperer_client::operation::get_profile::GetProfileOutput, ApiClientError> {
+        self.client
+            .get_profile()
+            .send()
+            .await
+            .map_err(ApiClientError::GetProfileError)
+    }
+
     pub async fn get_available_models(&self, _region: &str) -> Result<ModelListResult, ApiClientError> {
         let res = self.list_available_models_cached().await?;
         // TODO: Once we have access to gpt-oss, add back.
@@ -1339,6 +1350,17 @@ impl ApiClient {
         match &self.inner {
             ApiClientInner::Real(c) => c.get_available_models(region).await,
             ApiClientInner::IpcMock(c) => c.get_available_models(region).await,
+        }
+    }
+
+    pub async fn get_profile_for_api_key(
+        &self,
+    ) -> Result<amzn_codewhisperer_client::operation::get_profile::GetProfileOutput, ApiClientError> {
+        match &self.inner {
+            ApiClientInner::Real(c) => c.get_profile_for_api_key().await,
+            ApiClientInner::IpcMock(_) => Err(ApiClientError::Other(
+                "get_profile_for_api_key not supported for IPC mock".into(),
+            )),
         }
     }
 

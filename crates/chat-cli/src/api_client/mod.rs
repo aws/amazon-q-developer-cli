@@ -555,6 +555,17 @@ impl ApiClient {
         Ok(enabled)
     }
 
+    /// Call GetProfile with no profile ARN to validate that this endpoint accepts the API key.
+    pub async fn get_profile_for_api_key(
+        &self,
+    ) -> Result<amzn_codewhisperer_client::operation::get_profile::GetProfileOutput, ApiClientError> {
+        self.client
+            .get_profile()
+            .send()
+            .await
+            .map_err(ApiClientError::GetProfileError)
+    }
+
     /// Get MCP configuration including enabled status and registry URL
     pub async fn get_mcp_config(&self, database: &Database) -> Result<(bool, Option<String>), ApiClientError> {
         // Skip MCP governance check for custom endpoints (e.g., dev desktop)

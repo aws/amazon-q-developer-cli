@@ -1,0 +1,4 @@
+{
+  "type": "fixed",
+  "description": "Fix API key authentication failing for non-us-east-1 users"
+}

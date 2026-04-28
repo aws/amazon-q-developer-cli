@@ -50,7 +50,15 @@ impl Os {
         let fs = Fs::new();
         let mut database =
             Database::new_with_workspace(crate::util::paths::WorkspacePaths::settings_path_for_env(&env).ok()).await?;
-        let client = ApiClient::new(&env, &fs, &mut database, None).await?;
+
+        // For API key users, discover the correct regional endpoint before creating the client.
+        let endpoint = if crate::util::env_var::get_api_key().is_some() {
+            crate::api_client::profile::discover_endpoint_for_api_key(&env, &fs, &mut database).await
+        } else {
+            None
+        };
+
+        let client = ApiClient::new(&env, &fs, &mut database, endpoint).await?;
         let token = BuilderIdToken::load(&database, None).await?;
         let region = token.as_ref().and_then(|t| t.region.as_deref());
         let telemetry = TelemetryThread::new(&env, &fs, &mut database, region).await?;
