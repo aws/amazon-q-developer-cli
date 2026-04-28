@@ -29,11 +29,11 @@ fn truncate_server_description(description: &str) -> String {
         "(no description)".to_string()
     } else if description.len() > 50 {
         // Try to break at word boundary near the limit
-        let truncated = &description[..47];
+        let truncated = crate::cli::chat::util::truncate_safe(description, 47);
         if let Some(last_space) = truncated.rfind(' ') {
             if last_space > 30 {
                 // Don't break too early
-                format!("{}...", &description[..last_space])
+                format!("{}...", &truncated[..last_space])
             } else {
                 format!("{truncated}...")
             }

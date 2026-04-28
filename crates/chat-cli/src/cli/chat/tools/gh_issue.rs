@@ -106,7 +106,7 @@ impl GhIssue {
                 }
                 let remaining_chars = MAX_TRANSCRIPT_CHAR_LEN - *user_msg_char_count;
                 let trimmed_line = if line.len() > remaining_chars {
-                    &line[..remaining_chars]
+                    crate::cli::chat::util::truncate_safe(line, remaining_chars)
                 } else {
                     line
                 };

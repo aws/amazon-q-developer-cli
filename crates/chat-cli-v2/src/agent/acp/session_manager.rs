@@ -1556,7 +1556,7 @@ impl SessionManager {
                 match block {
                     agent::agent_loop::types::ContentBlock::Text(text) => {
                         let truncated = if text.len() > 300 {
-                            format!("{}...", &text[..300])
+                            format!("{}...", agent::util::truncate_safe(text, 300))
                         } else {
                             text.clone()
                         };
@@ -1572,7 +1572,7 @@ impl SessionManager {
                             .map(|c| match c {
                                 agent::agent_loop::types::ToolResultContentBlock::Text(t) => {
                                     if t.len() > 200 {
-                                        format!("{}...", &t[..200])
+                                        format!("{}...", agent::util::truncate_safe(t, 200))
                                     } else {
                                         t.clone()
                                     }
@@ -2727,5 +2727,29 @@ impl SessionManagerHandle {
             .await
             .ok()?;
         rx.await.ok()?
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use agent::util::truncate_safe;
+
+    /// Verifies that truncating multi-byte UTF-8 text does not panic.
+    /// Reproduces the byte-slicing bug in handle_get_live_activity where
+    /// `&text[..300]` panics when byte 300 is mid-character.
+    #[test]
+    fn test_live_activity_truncation_handles_multibyte() {
+        // "x" + "あ"×200 = 1 + 600 = 601 bytes. Byte 300 falls mid-character.
+        let text = format!("x{}", "あ".repeat(200));
+        assert!(text.len() > 300);
+
+        // This is what the buggy code does — it panics:
+        let result = std::panic::catch_unwind(|| format!("{}...", &text[..300]));
+        assert!(result.is_err(), "byte slicing should panic on multi-byte boundary");
+
+        // This is the safe alternative:
+        let safe = truncate_safe(&text, 300);
+        assert!(safe.len() <= 300);
+        assert!(!safe.is_empty());
     }
 }

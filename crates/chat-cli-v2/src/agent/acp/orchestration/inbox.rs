@@ -240,7 +240,11 @@ impl InboxStore {
 }
 
 fn truncate_msg(s: &str, max: usize) -> &str {
-    if s.len() <= max { s } else { &s[..max] }
+    if s.len() <= max {
+        s
+    } else {
+        agent::util::truncate_safe(s, max)
+    }
 }
 
 #[cfg(test)]

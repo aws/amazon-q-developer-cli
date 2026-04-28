@@ -669,9 +669,13 @@ fn extract_reason(stream_err: &StreamError) -> (String, String) {
         StreamErrorKind::ServiceFailure => REASON_SERVICE_FAILURE,
         StreamErrorKind::StreamTimeout { .. } => REASON_STREAM_TIMEOUT,
         StreamErrorKind::Validation { .. } => REASON_VALIDATION_ERROR,
-        StreamErrorKind::Other { reason_code, message } => reason_code
-            .as_deref()
-            .unwrap_or_else(|| if message.len() > 256 { &message[..256] } else { message }),
+        StreamErrorKind::Other { reason_code, message } => reason_code.as_deref().unwrap_or_else(|| {
+            if message.len() > 256 {
+                agent::util::truncate_safe(message, 256)
+            } else {
+                message
+            }
+        }),
     };
     (reason.to_string(), stream_err.to_string())
 }
