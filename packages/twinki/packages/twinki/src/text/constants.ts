@@ -83,6 +83,8 @@ export const CONSTANTS = {
 	BORDER_WIDTH: 1,
 	/** Minimum valid width */
 	MIN_WIDTH: 1,
+	/** Minimum width for yoga layout — below this, calculateLayout enters deep recursion */
+	MIN_LAYOUT_WIDTH: 10,
 	/** No timeout value */
 	NO_TIMEOUT: -1,
 	/** Invalid timestamp */

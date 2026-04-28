@@ -13,16 +13,14 @@ function installResizeListener() {
   resizeListenerInstalled = true;
 
   process.stdout.on('resize', () => {
-    const width = process.stdout.columns || 60;
-    const height = process.stdout.rows || 20;
+    const newWidth = process.stdout.columns || 60;
+    const newHeight = process.stdout.rows || 20;
     // Skip invalid dimensions (iTerm can report 0 during transitions)
-    if (width < 1 || height < 1) return;
-    // Skip extremely small dimensions — yoga layout can spiral
-    if (width < 10) return;
-    // Skip if dimensions haven't changed — avoids re-rendering 21 components
-    // on no-op SIGWINCH (tmux pane focus, attach/detach, scrollbar oscillation).
-    if (width === currentSize.width && height === currentSize.height) return;
-    currentSize = { width, height };
+    if (newWidth < 1 || newHeight < 1) return;
+    // Skip if dimensions haven't changed (e.g. tmux pane focus, attach/detach)
+    if (newWidth === currentSize.width && newHeight === currentSize.height)
+      return;
+    currentSize = { width: newWidth, height: newHeight };
     // Notify all subscribers so React re-renders with new dimensions
     for (const listener of listeners) {
       listener();

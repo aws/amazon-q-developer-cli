@@ -22,6 +22,7 @@ const TRUNCATE_ELLIPSIS = '…';
  * @returns Array of terminal lines
  */
 export function renderText(node: TwinkiNode, width: number): string[] {
+	if (width < 1) return [];
 	const text = stylize(collectText(node, stylize), node.props);
 	if (!text) return [];
 

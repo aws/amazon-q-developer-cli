@@ -77,6 +77,14 @@ export function setTextMeasureFunc(node: TwinkiNode): void {
 			lines = text.split('\n');
 		}
 		const measuredWidth = lines.reduce((max, l) => Math.max(max, visibleWidth(l)), 0);
-		return { width: measuredWidth, height: lines.length };
+		// In overflow mode, clamp measured width to the available width.
+		// Without this, yoga sees child wider than parent and re-layouts
+		// indefinitely at small widths — the measure func returns e.g. 100
+		// but the container is 6, so yoga calls measure again, gets 100
+		// again, and never converges.
+		const clampedWidth = wrap === WrapMode.OVERFLOW && maxW !== Infinity
+			? Math.min(measuredWidth, Math.floor(maxW))
+			: measuredWidth;
+		return { width: clampedWidth, height: lines.length };
 	});
 }

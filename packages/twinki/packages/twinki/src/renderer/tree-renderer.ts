@@ -29,13 +29,8 @@ export function renderNode(node: TwinkiNode, maxWidth: number): string[] {
 
 	if (width <= CONSTANTS.ZERO_INDEX && node.type !== NODE_TYPES.TWINKI_TEXT) return [];
 
-	// Clamp width to maxWidth to prevent overflow when Yoga's measure-func
-	// over-reports width (e.g. when parent margin isn't fully reflected in
-	// the flex algorithm). Without this, text wraps one column too late and
-	// the last character is lost during compositing.
 	const effectiveWidth = Math.min(width, maxWidth);
 
-	// Region caching: return cached lines if region is clean
 	if (node.type === NODE_TYPES.TWINKI_REGION && node.region) {
 		if (!node.region.dirty && node.region.cachedLines && node.region.lastWidth === width) {
 			return node.region.cachedLines;
@@ -48,11 +43,6 @@ export function renderNode(node: TwinkiNode, maxWidth: number): string[] {
 	}
 
 	if (node.type === NODE_TYPES.TWINKI_TEXT) {
-		// Use the node's own Yoga width when available, but never exceed maxWidth.
-		// Yoga's measure-func can over-report width when the parent has margin
-		// that isn't fully reflected in the flex algorithm, so clamping prevents
-		// text from wrapping one column too late and losing the last character
-		// during compositing.
 		const textWidth = width > CONSTANTS.ZERO_INDEX ? Math.min(width, maxWidth) : maxWidth;
 		return renderText(node, textWidth);
 	}
@@ -120,7 +110,7 @@ export function renderTree(
 	width: number, 
 	skipStaticItems = 0
 ): { staticLines: string[]; liveLines: string[] } {
-	const validWidth = typeof width === "number" && !isNaN(width) && width > 0 ? width : 80; 
+	const validWidth = typeof width === "number" && !isNaN(width) && width > 0 ? width : 80;
 	root.yogaNode.setWidth(validWidth);
 	root.yogaNode.calculateLayout(validWidth, undefined, Yoga.DIRECTION_LTR);
 	const staticLines: string[] = [];
@@ -143,16 +133,12 @@ export function renderTree(
 	if (staticNode) {
 		const toRender = skipStaticItems > 0 ? staticNode.children.slice(skipStaticItems) : staticNode.children;
 		for (const sc of toRender) {
-			// Force layout calculation for static children with full width
 			if (sc.yogaNode) {
 				sc.yogaNode.setWidth(validWidth);
 				sc.yogaNode.calculateLayout(validWidth, undefined, Yoga.DIRECTION_LTR);
 			}
 			staticLines.push(...renderNode(sc, validWidth));
 		}
-
-		// Static children keep their Yoga nodes alive so they can be
-		// re-rendered at a new width on terminal resize (see resetStatic).
 	}
 
 	// Render live content

@@ -1,0 +1,4 @@
+{
+  "type": "fixed",
+  "description": "Prevent OOM crash when terminal is resized to very small widths — text rendering at width=0 produced millions of string allocations causing 6GB+ memory growth"
+}

@@ -124,17 +124,10 @@ export class ProcessTerminal implements Terminal {
 			const newRows = process.stdout.rows || 24;
 			// Skip invalid dimensions (iTerm can report 0 during transitions)
 			if (newCols < 1 || newRows < 1) return;
-			// Skip extremely small dimensions — yoga layout with width < 10
-			// can produce thousands of wrapped lines, causing unbounded CPU/memory.
-			if (newCols < 10) return;
 			// Skip if dimensions haven't changed (e.g. tmux pane focus, attach/detach)
 			if (newCols === this._columns && newRows === this._rows) return;
 			this._columns = newCols;
 			this._rows = newRows;
-			// Fire synchronously — do NOT use setTimeout here.
-			// A debounced (async) resize interacts with backed-up stdout writes
-			// in detached PTY buffers, creating an unbounded re-render cascade
-			// when the terminal is re-attached. See PR #2137.
 			onResize();
 		};
 

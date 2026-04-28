@@ -69,6 +69,12 @@ export interface TUIOptions {
    * rows, leaving ghost copies in scrollback during streaming.
    */
   wideLines?: boolean;
+  /**
+   * Minimum layout width in columns (default: 10).
+   * Prevents yoga calculateLayout from entering deep recursion at tiny
+   * terminal widths. The render width is clamped to this floor.
+   */
+  minWidth?: number;
 }
 
 /**
@@ -197,6 +203,7 @@ export class TUI extends Container {
   private lastRenderTime = 0;
   private pacingTimer: ReturnType<typeof setTimeout> | null = null;
   private scrollbarWidth = 0;
+  private minWidth = 10;
 
   /** ANSI reset sequence used between overlay segments */
   private static readonly SEGMENT_RESET = '\x1b[0m';
@@ -240,6 +247,7 @@ export class TUI extends Container {
     if (opts.wideLines) {
       this.wideLinesEnabled = true;
     }
+    this.minWidth = Math.max(opts.minWidth ?? 10, 1);
     if (process.env.TWINKI_DEBUG_REDRAW === '1') {
       try {
         const fs = require('fs');
@@ -707,12 +715,13 @@ export class TUI extends Container {
     this.terminal.start(
       (data) => this.handleInput(data),
       () => {
-        // Resize handler: clear synchronously to prevent reflowed content.
-        // Resize handler: clear synchronously to prevent reflowed content.
+        // Resize handler: synchronous clear to prevent reflowed content flash.
         this.internalWrite = true;
         this.terminal.write(TUI.CLEAR_ALL);
         this.internalWrite = false;
         this.terminal.hideCursor();
+        // Do NOT clear accumulatedStaticOutput — it is prepended to every frame
+        // so static content survives resize automatically.
         if (!this.altScreen) {
           this.contentStartRow = 0;
         }
@@ -791,7 +800,7 @@ export class TUI extends Container {
       // terminal rows); otherwise logical === physical.
       let targetRow: number;
       if (this.wideLinesEnabled) {
-        const width = this.terminal.columns || 80;
+        const width = Math.max(this.terminal.columns || 80, this.minWidth);
         let physRows = 0;
         for (const line of this.previousLines) {
           const vw = visibleWidth(line);
@@ -1283,7 +1292,7 @@ export class TUI extends Container {
         this.accumulatedStaticOutput.length - lines.length;
       let liveRows: number;
       if (this.wideLinesEnabled) {
-        const width = this.terminal.columns || 80;
+        const width = Math.max(this.terminal.columns || 80, this.minWidth);
         const rowOf = (line: string) => {
           const vw = visibleWidth(line);
           return vw <= width ? 1 : Math.ceil(vw / width);
@@ -1469,11 +1478,7 @@ export class TUI extends Container {
   private doRender(): void {
     if (this.stopped) return;
 
-    // Write pressure: defer if stdout buffer is saturated.
-    // NOTE: Only active when frame pacing is enabled (frameBudgetMs > 0).
-    // Cannot be unconditional because the drain event keeps the event loop
-    // alive — if stdout dies, drain never fires and the process hangs
-    // instead of exiting via the circuit breaker.
+    // Write pressure: defer if stdout buffer is saturated
     if (this.frameBudgetMs > 0) {
       const stdout = (process as any).stdout;
       if (stdout?.writableNeedDrain) {
@@ -1523,7 +1528,7 @@ export class TUI extends Container {
    * - Line-based diffing for minimal terminal writes
    */
   private _doRenderInner(): void {
-    const width = this.terminal.columns - this.scrollbarWidth;
+    const width = Math.max(this.terminal.columns - this.scrollbarWidth, this.minWidth);
     const height = this.terminal.rows;
 
     /**

@@ -156,7 +156,7 @@ export function measureElement(node: any): { width: number; height: number } {
     // redundant and was responsible for ~79% of yoga WASM overhead.
     const rc = node.rootContainer;
     if (rc?.yogaNode?.isDirty()) {
-      const width = process.stdout.columns || 80;
+      const width = Math.max(process.stdout.columns || 80, 10);
       rc.yogaNode.setWidth(width);
       rc.yogaNode.calculateLayout(width, undefined, 1 /* LTR */);
     }
