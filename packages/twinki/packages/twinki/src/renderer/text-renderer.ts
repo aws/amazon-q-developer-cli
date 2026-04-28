@@ -7,6 +7,8 @@ import { WrapMode } from '../text/constants.js';
 import type { TwinkiNode } from '../reconciler/types.js';
 
 const TRUNCATE_ELLIPSIS = '…';
+/** Frozen singleton — avoids allocating `[]` on every width<1 or empty-text call. */
+const EMPTY: readonly string[] = Object.freeze([]);
 
 /**
  * Renders a text node to an array of terminal lines.
@@ -22,9 +24,9 @@ const TRUNCATE_ELLIPSIS = '…';
  * @returns Array of terminal lines
  */
 export function renderText(node: TwinkiNode, width: number): string[] {
-	if (width < 1) return [];
+	if (width < 1) return EMPTY as string[];
 	const text = stylize(collectText(node, stylize), node.props);
-	if (!text) return [];
+	if (!text) return EMPTY as string[];
 
 	const wrap = (node.props as any).wrap ?? WrapMode.WRAP;
 	if (wrap === WrapMode.WRAP) {

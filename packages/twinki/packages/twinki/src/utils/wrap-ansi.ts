@@ -1,6 +1,9 @@
 import { visibleWidth, getSegmenter } from './visible-width.js';
 import { extractAnsiCode, AnsiCodeTracker } from './ansi.js';
 
+/** Frozen singleton — avoids allocating `[""]` on every empty-result path. */
+const EMPTY_LINES: readonly string[] = Object.freeze([""]);
+
 /**
  * Updates tracker state from text containing ANSI codes.
  * 
@@ -148,7 +151,7 @@ function breakLongWord(word: string, width: number, tracker: AnsiCodeTracker): s
 		lines.push(currentLine);
 	}
 
-	return lines.length > 0 ? lines : [""];
+	return lines.length > 0 ? lines : EMPTY_LINES as string[];
 }
 
 /**
@@ -166,7 +169,7 @@ function breakLongWord(word: string, width: number, tracker: AnsiCodeTracker): s
  */
 function wrapSingleLine(line: string, width: number): string[] {
 	if (!line) {
-		return [""];
+		return EMPTY_LINES as string[];
 	}
 
 	const visibleLength = visibleWidth(line);
@@ -232,7 +235,7 @@ function wrapSingleLine(line: string, width: number): string[] {
 		wrapped.push(currentLine);
 	}
 
-	return wrapped.length > 0 ? wrapped.map((line) => line.trimEnd()) : [""];
+	return wrapped.length > 0 ? wrapped.map((line) => line.trimEnd()) : EMPTY_LINES as string[];
 }
 
 /**
@@ -243,7 +246,7 @@ function wrapSingleLine(line: string, width: number): string[] {
  * @returns Array of wrapped lines
  */
 function wrapAsciiText(text: string, width: number): string[] {
-	if (!text) return [""];
+	if (!text) return EMPTY_LINES as string[];
 	
 	const inputLines = text.split("\n");
 	const result: string[] = [];
@@ -283,7 +286,7 @@ function wrapAsciiText(text: string, width: number): string[] {
 		}
 	}
 	
-	return result.length > 0 ? result : [""];
+	return result.length > 0 ? result : EMPTY_LINES as string[];
 }
 
 /**
@@ -331,7 +334,7 @@ const wrapCache = new Map<string, string[]>();
 
 export function wrapTextWithAnsi(text: string, width: number): string[] {
 	if (!text) {
-		return [""];
+		return EMPTY_LINES as string[];
 	}
 
 	// Fast path: ASCII-only text without ANSI codes
@@ -353,7 +356,7 @@ export function wrapTextWithAnsi(text: string, width: number): string[] {
 		updateTrackerFromText(inputLine, tracker);
 	}
 
-	const output = result.length > 0 ? result : [""];
+	const output = result.length > 0 ? result : EMPTY_LINES as string[];
 
 	if (wrapCache.size >= WRAP_CACHE_SIZE) wrapCache.clear();
 	wrapCache.set(key, output);
