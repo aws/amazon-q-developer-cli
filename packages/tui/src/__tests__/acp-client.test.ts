@@ -1,4 +1,4 @@
-import { describe, it, expect, mock, beforeEach } from 'bun:test';
+import { describe, it, expect, mock, beforeEach, afterAll } from 'bun:test';
 import { EventEmitter } from 'events';
 import { AgentEventType, ContentType } from '../types/agent-events';
 import type { SessionNotification } from '@agentclientprotocol/sdk';
@@ -101,6 +101,10 @@ mock.module('../utils/logger', () => ({
     info: () => {},
   },
 }));
+
+afterAll(() => {
+  mock.restore();
+});
 
 // Dynamic import after mocks
 const { AcpClient } = await import('../acp-client');

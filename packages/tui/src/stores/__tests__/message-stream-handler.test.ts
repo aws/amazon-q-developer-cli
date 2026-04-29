@@ -195,7 +195,7 @@ describe('createMessageStreamHandler', () => {
       const toolMsg = msgs.find((m) => m.id === 'tool1');
       expect(toolMsg!.role).toBe(MessageRole.ToolUse);
       if (toolMsg!.role === MessageRole.ToolUse) {
-        expect(toolMsg!.liveOutput).toEqual(['line1', 'line2']);
+        expect(toolMsg!.liveOutput).toBeUndefined();
       }
     });
 
@@ -237,7 +237,7 @@ describe('createMessageStreamHandler', () => {
       if (toolMsg!.role === MessageRole.ToolUse) {
         expect(toolMsg!.isFinished).toBe(true);
         expect(toolMsg!.result).toEqual({ status: 'success', output: 'done' });
-        expect(toolMsg!.liveOutput).toBeUndefined();
+        expect(toolMsg!.liveOutput).toEqual(['line1', 'line2']);
       }
     });
 

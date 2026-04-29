@@ -1,4 +1,4 @@
-import { describe, it, expect, mock, beforeEach } from 'bun:test';
+import { describe, it, expect, mock, beforeEach, afterAll } from 'bun:test';
 import { AgentEventType } from '../types/agent-events';
 import type { AgentStreamEvent } from '../types/agent-events';
 
@@ -77,6 +77,10 @@ mock.module('../acp-client', () => ({
     constructor() {}
   },
 }));
+
+afterAll(() => {
+  mock.restore();
+});
 
 const { Kiro } = await import('../kiro');
 

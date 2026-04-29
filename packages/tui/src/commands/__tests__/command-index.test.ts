@@ -26,14 +26,10 @@ describe('executeCommand', () => {
     expect(result).toBe(true);
   });
 
-  it('shows alert for unknown commands', async () => {
+  it('returns false for unknown slash commands', async () => {
     const ctx = createMockCommandContext({ slashCommands: [] });
     const result = await executeCommand('/nonexistent', ctx);
-    expect(result).toBe(true);
-    expect(ctx._spies.showAlert!).toHaveBeenCalled();
-    const call = ctx._spies.showAlert!.mock.calls[0]!;
-    expect(call[0]).toContain('Unknown command');
-    expect(call[1]).toBe('error');
+    expect(result).toBe(false);
   });
 
   it('matches by prefix (e.g. /cl matches /clear)', async () => {
