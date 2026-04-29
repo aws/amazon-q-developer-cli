@@ -79,6 +79,7 @@ jobs:
         working-directory: packages/twinki/packages/twinki
       - name: Run tui tests
         run: |
+          set -o pipefail
           bun test 2>&1 | tee /tmp/tui-coverage.txt
           # Extract coverage from "All files" line: "All files | %Funcs | %Lines |"
           FUNCS=$(grep "All files" /tmp/tui-coverage.txt | awk -F'|' '{gsub(/ /,"",$2); print $2}')
