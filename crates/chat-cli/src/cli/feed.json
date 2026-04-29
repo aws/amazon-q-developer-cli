@@ -12,6 +12,43 @@
     },
     {
       "type": "release",
+      "date": "2026-04-29",
+      "version": "2.2.1",
+      "title": "Version 2.2.1",
+      "changes": [
+        {
+          "type": "added",
+          "description": "Added `chat.disableWrap` setting to disable word-wrapping in chat output — long lines soft-wrap visually but stay as a single logical line for clean copy-paste."
+        },
+        {
+          "type": "fixed",
+          "description": "Fix API key authentication failing for non-us-east-1 users"
+        },
+        {
+          "type": "security",
+          "description": "Code tool now requires approval to read files outside the workspace"
+        },
+        {
+          "type": "fixed",
+          "description": "Fixed screen freeze and unbounded memory growth when attaching to detached tmux sessions",
+          "date": "2026-04-26T06:00:00Z"
+        },
+        {
+          "type": "changed",
+          "description": "Export internal theme functions for testability (ThemeProvider, UserThemeBridge)"
+        },
+        {
+          "type": "fixed",
+          "description": "Add dimension guard to prevent unnecessary re-renders on no-op terminal resize signals (tmux pane focus, attach/detach)"
+        },
+        {
+          "type": "fixed",
+          "description": "Prevent OOM crash when terminal is resized to very small widths — text rendering at width=0 produced millions of string allocations causing 6GB+ memory growth"
+        }
+      ]
+    },
+    {
+      "type": "release",
       "date": "2026-04-27",
       "version": "2.2.0",
       "title": "Version 2.2.0",
@@ -19,6 +56,10 @@
         {
           "type": "added",
           "description": "Support adaptive thinking: Preserve model reasoning across multi-turn conversations for improved response quality"
+        },
+        {
+          "type": "fixed",
+          "description": "Fix subagent tool dispatch silently failing when MCP server events invalidate cached tool specs during execution"
         }
       ]
     },
