@@ -82,7 +82,11 @@ afterAll(() => {
   mock.restore();
 });
 
-const { Kiro } = await import('../kiro');
+// Use a query-string import so the specifier doesn't match the bare
+// '../kiro' that other test files mock via mock.module.  This gives us
+// the real Kiro class (which will pick up our '../acp-client' mock above).
+// @ts-expect-error — query-string specifier bypasses bun's mock registry
+const { Kiro } = await import('../kiro?real');
 
 describe('Kiro', () => {
   beforeEach(() => {

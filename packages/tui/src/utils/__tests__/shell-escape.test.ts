@@ -1,4 +1,12 @@
-import { describe, it, expect, beforeEach, afterEach, mock } from 'bun:test';
+import {
+  describe,
+  it,
+  expect,
+  beforeEach,
+  afterEach,
+  mock,
+  afterAll,
+} from 'bun:test';
 import { EventEmitter } from 'events';
 
 // --- Mock child_process before importing the module under test ---
@@ -39,6 +47,10 @@ mock.module('child_process', () => ({
   spawnSync: mockSpawnSync,
   execFileSync: mock(() => ''),
 }));
+
+afterAll(() => {
+  mock.restore();
+});
 
 const {
   needsTTY,

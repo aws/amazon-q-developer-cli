@@ -1,8 +1,12 @@
-import { describe, it, expect, mock } from 'bun:test';
+import { describe, it, expect, mock, afterAll } from 'bun:test';
 
 mock.module('../../kiro', () => ({
   Kiro: mock(() => ({})),
 }));
+
+afterAll(() => {
+  mock.restore();
+});
 
 import { createMessageStreamHandler } from '../message-stream-handler';
 import { AgentEventType, ContentType } from '../../types/agent-events';

@@ -106,8 +106,10 @@ afterAll(() => {
   mock.restore();
 });
 
-// Dynamic import after mocks
-const { AcpClient } = await import('../acp-client');
+// Dynamic import after mocks — query-string specifier bypasses stale
+// mock.module('../acp-client') that other test files may have registered.
+// @ts-expect-error — bun-specific query-string import
+const { AcpClient } = await import('../acp-client?real');
 
 describe('AcpClient', () => {
   beforeEach(() => {

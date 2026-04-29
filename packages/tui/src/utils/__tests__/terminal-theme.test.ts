@@ -1,4 +1,12 @@
-import { describe, it, expect, beforeEach, afterEach, mock } from 'bun:test';
+import {
+  describe,
+  it,
+  expect,
+  beforeEach,
+  afterEach,
+  mock,
+  afterAll,
+} from 'bun:test';
 
 const mockExecSync = mock((_cmd?: unknown, _opts?: unknown): string => {
   throw new Error('not available');
@@ -7,6 +15,10 @@ const mockExecSync = mock((_cmd?: unknown, _opts?: unknown): string => {
 mock.module('child_process', () => ({
   execSync: mockExecSync,
 }));
+
+afterAll(() => {
+  mock.restore();
+});
 
 // Import AFTER mock.module so child_process is mocked throughout the dependency tree
 const { detectTerminalTheme, detectTerminalThemeWithDetails } =

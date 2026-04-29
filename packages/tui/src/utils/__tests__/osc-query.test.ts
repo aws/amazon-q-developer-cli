@@ -1,7 +1,19 @@
-import { describe, it, expect, beforeEach, afterEach, mock } from 'bun:test';
+import {
+  describe,
+  it,
+  expect,
+  beforeEach,
+  afterEach,
+  mock,
+  afterAll,
+} from 'bun:test';
 
 const mockExecSync = mock((): string => '');
 mock.module('child_process', () => ({ execSync: mockExecSync }));
+
+afterAll(() => {
+  mock.restore();
+});
 
 const { queryTerminalBackground, parseOsc11Response } =
   await import('../osc-query');

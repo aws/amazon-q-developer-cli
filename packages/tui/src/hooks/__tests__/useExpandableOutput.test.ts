@@ -1,4 +1,4 @@
-import { describe, it, expect, mock } from 'bun:test';
+import { describe, it, expect, mock, afterAll } from 'bun:test';
 import { createAppStore } from '../../stores/app-store';
 import { Kiro } from '../../kiro';
 import { Settings } from '../../constants/settings';
@@ -10,6 +10,10 @@ mock.module('../../kiro', () => ({
     close: mock(),
   })),
 }));
+
+afterAll(() => {
+  mock.restore();
+});
 
 function createTestStore() {
   const mockKiro = new Kiro();

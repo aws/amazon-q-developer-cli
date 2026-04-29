@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, mock } from 'bun:test';
+import { describe, it, expect, beforeEach, mock, afterAll } from 'bun:test';
 
 // Mock logger BEFORE importing inputMetrics to suppress file I/O
 mock.module('../logger.js', () => ({
@@ -10,6 +10,10 @@ mock.module('../logger.js', () => ({
     trace: () => {},
   },
 }));
+
+afterAll(() => {
+  mock.restore();
+});
 
 const { inputMetrics } = await import('../inputMetrics');
 

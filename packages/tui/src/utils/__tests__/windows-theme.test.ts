@@ -1,4 +1,12 @@
-import { describe, it, expect, beforeEach, afterEach, mock } from 'bun:test';
+import {
+  describe,
+  it,
+  expect,
+  beforeEach,
+  afterEach,
+  mock,
+  afterAll,
+} from 'bun:test';
 import { mkdirSync, writeFileSync, rmSync } from 'fs';
 import { join } from 'path';
 import { tmpdir } from 'os';
@@ -9,6 +17,10 @@ const mockExecSync = mock((): string => '');
 mock.module('child_process', () => ({
   execSync: mockExecSync,
 }));
+
+afterAll(() => {
+  mock.restore();
+});
 
 const { detectWindowsTerminalTheme, detectWindowsConsoleBackground } =
   await import('../windows-theme');

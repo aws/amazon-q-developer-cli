@@ -6,7 +6,7 @@
  * signal failure.
  */
 
-import { describe, it, expect, mock, beforeEach } from 'bun:test';
+import { describe, it, expect, mock, beforeEach, afterAll } from 'bun:test';
 import { createAppStore } from '../app-store';
 import { Kiro } from '../../kiro';
 
@@ -17,6 +17,10 @@ mock.module('../../kiro', () => ({
     close: mock(),
   })),
 }));
+
+afterAll(() => {
+  mock.restore();
+});
 
 describe('cancelMessage clears isProcessing (P409238957)', () => {
   let mockKiro: any;
