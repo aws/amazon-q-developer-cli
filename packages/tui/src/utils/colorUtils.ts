@@ -28,50 +28,6 @@ const namedColorToHex: { [key in ChalkColorName]: string } = {
   grey: '#808080',
 };
 
-// Convert ANSI 256 color to hex
-const color256ToHex = (color: number): string => {
-  if (color < 16) {
-    // Standard colors (0-15)
-    const standardColors = [
-      '#000000',
-      '#800000',
-      '#008000',
-      '#808000',
-      '#000080',
-      '#800080',
-      '#008080',
-      '#c0c0c0',
-      '#808080',
-      '#ff0000',
-      '#00ff00',
-      '#ffff00',
-      '#0000ff',
-      '#ff00ff',
-      '#00ffff',
-      '#ffffff',
-    ];
-    return standardColors[color] || '#000000';
-  } else if (color < 232) {
-    // 216 color cube (16-231)
-    const index = color - 16;
-    const r = Math.floor(index / 36);
-    const g = Math.floor((index % 36) / 6);
-    const b = index % 6;
-
-    const toHex = (val: number) => {
-      const intensity = val === 0 ? 0 : 55 + val * 40;
-      return intensity.toString(16).padStart(2, '0');
-    };
-
-    return `#${toHex(r)}${toHex(g)}${toHex(b)}`;
-  } else {
-    // Grayscale (232-255)
-    const gray = 8 + (color - 232) * 10;
-    const hex = gray.toString(16).padStart(2, '0');
-    return `#${hex}${hex}${hex}`;
-  }
-};
-
 /**
  * Creates a chalk chain instance based on terminal color support capabilities.
  * Returns the chalk chain with an added .hex property containing the resolved color value.
@@ -126,9 +82,10 @@ export const getTerminalChalkColor = (
     'has256' in stdout &&
     stdout.has256
   ) {
-    // 256-color terminal - use color256 hex equivalent
+    // 256-color terminal - pass ansi256(N) format to preserve the original
+    // color index and avoid double-conversion through hex approximation
     resolvedHex =
-      (color256 !== undefined && color256ToHex(color256)) ||
+      (color256 !== undefined && `ansi256(${color256})`) ||
       truecolor ||
       (named && namedColorToHex[named]) ||
       '#000000';
