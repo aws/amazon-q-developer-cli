@@ -87,11 +87,15 @@ export interface Theme {
         background: TerminalColor;
         bar: TerminalColor;
         highlight: TerminalColor;
+        /** When set, all added-line text uses this color and syntax highlighting is skipped */
+        foreground?: TerminalColor;
       };
       removed: {
         background: TerminalColor;
         bar: TerminalColor;
         highlight: TerminalColor;
+        /** When set, all removed-line text uses this color and syntax highlighting is skipped */
+        foreground?: TerminalColor;
       };
       unchanged: {
         bar: TerminalColor;

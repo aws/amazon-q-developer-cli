@@ -57,8 +57,16 @@ export const Write = React.memo<WriteProps>(function Write({
   isStatic = false,
   content,
 }) {
-  const { getColor } = useTheme();
+  const { getColor, colors: themeColors } = useTheme();
   const highlightCode = useSyntaxHighlight();
+
+  // When foreground is set on diff colors, skip syntax highlighting and use flat color
+  const addedFg = themeColors.diff.added.foreground
+    ? getColor('diff.added.foreground')
+    : undefined;
+  const removedFg = themeColors.diff.removed.foreground
+    ? getColor('diff.removed.foreground')
+    : undefined;
   const contentRef = useRef<any>(null);
 
   // Parse content if provided to extract operation details
@@ -186,6 +194,8 @@ export const Write = React.memo<WriteProps>(function Write({
               highlightCode={highlightCode}
               language={language}
               getColor={getColor}
+              addedFg={addedFg}
+              removedFg={removedFg}
               maxLines={expanded ? undefined : PREVIEW_DIFF_LINES}
               diffStartLine={diffStartLine}
             />
@@ -216,9 +226,12 @@ export const Write = React.memo<WriteProps>(function Write({
         }
 
         return lines.map((line: string, lineIdx: number) => {
-          const highlightedLine = highlightCode(expandTabs(line), language);
+          const expanded = expandTabs(line);
 
           if (change.removed) {
+            const styledLine = removedFg
+              ? removedFg(expanded)
+              : highlightCode(expanded, language);
             const currentOldLine = oldLineNum++;
             const lineNumber = String(currentOldLine).padStart(4);
             return (
@@ -229,11 +242,14 @@ export const Write = React.memo<WriteProps>(function Write({
                 <Text>{getColor('primary')(lineNumber)}</Text>
                 <Text>
                   {getColor('diff.removed.bar')('-')}
-                  {`  ${highlightedLine}`}
+                  {`  ${styledLine}`}
                 </Text>
               </Box>
             );
           } else if (change.added) {
+            const styledLine = addedFg
+              ? addedFg(expanded)
+              : highlightCode(expanded, language);
             const currentNewLine = newLineNum++;
             const lineNumber = String(currentNewLine).padStart(4);
             return (
@@ -244,7 +260,7 @@ export const Write = React.memo<WriteProps>(function Write({
                 <Text>{getColor('primary')(lineNumber)}</Text>
                 <Text>
                   {getColor('diff.added.bar')('+')}
-                  {`  ${highlightedLine}`}
+                  {`  ${styledLine}`}
                 </Text>
               </Box>
             );
@@ -252,7 +268,7 @@ export const Write = React.memo<WriteProps>(function Write({
             const currentLine = oldLineNum++;
             newLineNum++;
             const lineNumber = String(currentLine).padStart(4);
-            const lineContent = `   ${highlightedLine}`;
+            const lineContent = `   ${highlightCode(expanded, language)}`;
             return (
               <Text key={`${index}-${lineIdx}`}>
                 <Text>{getColor('secondary')(lineNumber)}</Text>
@@ -272,6 +288,10 @@ interface WriteContentProps {
   highlightCode: (code: string, language?: string) => string;
   language?: string;
   getColor: (path: string) => any;
+  /** Flat foreground color for added lines — when set, skips syntax highlighting */
+  addedFg?: ((text: string) => string) | undefined;
+  /** Flat foreground color for removed lines — when set, skips syntax highlighting */
+  removedFg?: ((text: string) => string) | undefined;
   maxLines?: number;
   /** 1-based start line for the diff (defaults to 1) */
   diffStartLine?: number;
@@ -290,6 +310,8 @@ const WriteContent: React.FC<WriteContentProps> = ({
   highlightCode,
   language,
   getColor,
+  addedFg,
+  removedFg,
   maxLines,
   diffStartLine = 1,
 }) => {
@@ -337,10 +359,13 @@ const WriteContent: React.FC<WriteContentProps> = ({
   return (
     <Box flexDirection="column" flexGrow={1}>
       {visibleLines.map((dl) => {
-        const highlighted = highlightCode(expandTabs(dl.line), language);
+        const expanded = expandTabs(dl.line);
         const lineNumber = String(dl.lineNum).padStart(4);
 
         if (dl.type === 'removed') {
+          const styled = removedFg
+            ? removedFg(expanded)
+            : highlightCode(expanded, language);
           return (
             <Box
               key={dl.key}
@@ -349,11 +374,14 @@ const WriteContent: React.FC<WriteContentProps> = ({
               <Text>{getColor('primary')(lineNumber)}</Text>
               <Text>
                 {getColor('diff.removed.bar')('-')}
-                {`  ${highlighted}`}
+                {`  ${styled}`}
               </Text>
             </Box>
           );
         } else if (dl.type === 'added') {
+          const styled = addedFg
+            ? addedFg(expanded)
+            : highlightCode(expanded, language);
           return (
             <Box
               key={dl.key}
@@ -362,11 +390,12 @@ const WriteContent: React.FC<WriteContentProps> = ({
               <Text>{getColor('primary')(lineNumber)}</Text>
               <Text>
                 {getColor('diff.added.bar')('+')}
-                {`  ${highlighted}`}
+                {`  ${styled}`}
               </Text>
             </Box>
           );
         } else {
+          const highlighted = highlightCode(expanded, language);
           return (
             <Text key={dl.key}>
               <Text>{getColor('secondary')(lineNumber)}</Text>

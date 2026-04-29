@@ -88,11 +88,13 @@ export const createThemeContext = (
               background: userDiffPreset.added.background,
               bar: userDiffPreset.added.bar,
               highlight: userDiffPreset.added.highlight,
+              foreground: theme.colors.diff.added.foreground,
             },
             removed: {
               background: userDiffPreset.removed.background,
               bar: userDiffPreset.removed.bar,
               highlight: userDiffPreset.removed.highlight,
+              foreground: theme.colors.diff.removed.foreground,
             },
             unchanged: theme.colors.diff.unchanged,
           },

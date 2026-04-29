@@ -52,14 +52,16 @@ export const kiroSafe: Theme = {
     },
     diff: {
       added: {
-        background: { named: 'green' },
+        background: { named: 'default' },
         bar: { named: 'green' },
-        highlight: { named: 'green' },
+        highlight: { named: 'default' },
+        foreground: { named: 'green' },
       },
       removed: {
-        background: { named: 'red' },
+        background: { named: 'default' },
         bar: { named: 'red' },
-        highlight: { named: 'red' },
+        highlight: { named: 'default' },
+        foreground: { named: 'red' },
       },
       unchanged: {
         bar: { named: 'gray' },
