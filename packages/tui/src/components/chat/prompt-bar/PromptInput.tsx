@@ -764,23 +764,31 @@ export const PromptInput = React.memo(function PromptInput({
           return;
         }
         // Tab on "/command " shows sub-command dropdown (e.g. /agent → create, edit, swap)
+        // Skip if user already typed past a subcommand (e.g. /agent swap ro)
         {
           const text = getVisibleText(segments);
           if (text.startsWith('/') && text.includes(' ')) {
             const spaceIdx = text.indexOf(' ');
             const cmdName = text.slice(0, spaceIdx);
+            const afterCmd = text.slice(spaceIdx + 1);
             const cmd = slashCommands.find((c) => c.name === cmdName);
             const subs = cmd?.meta?.subcommands;
             if (cmd && subs && subs.length > 0) {
-              const subHints = cmd.meta?.subcommandHints ?? {};
-              const subOptions = subs.map((sub) => ({
-                value: sub,
-                label: sub,
-                description: `${cmdName} ${sub}`,
-                hint: subHints[sub] ?? undefined,
-              }));
-              setActiveCommand({ command: cmd, options: subOptions });
-              return;
+              // Don't show subcommand menu if user already typed a subcommand + space
+              const alreadyInSub = subs.some((s) =>
+                afterCmd.startsWith(`${s} `)
+              );
+              if (!alreadyInSub) {
+                const subHints = cmd.meta?.subcommandHints ?? {};
+                const subOptions = subs.map((sub) => ({
+                  value: sub,
+                  label: sub,
+                  description: `${cmdName} ${sub}`,
+                  hint: subHints[sub] ?? undefined,
+                }));
+                setActiveCommand({ command: cmd, options: subOptions });
+                return;
+              }
             }
           }
         }

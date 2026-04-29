@@ -1,0 +1,4 @@
+{
+  "type": "added",
+  "description": "TUI: autocomplete (shadow text) now works for /agent swap <name>, matching the existing /agent <name> behavior"
+}

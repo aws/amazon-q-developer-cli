@@ -175,16 +175,33 @@ export const CommandMenu: React.FC = () => {
   }>({ cmdName: '', options: [] });
 
   // Argument shadow text for selection commands (e.g. /agent <name>, /model <name>)
+  // Also handles subcommand prefixes (e.g. /agent swap <name>)
   useEffect(() => {
     if (!commandInputValue.startsWith('/') || !commandInputValue.includes(' '))
       return;
 
     const spaceIdx = commandInputValue.indexOf(' ');
     const cmdName = commandInputValue.slice(0, spaceIdx);
-    const partial = commandInputValue.slice(spaceIdx + 1);
+    let partial = commandInputValue.slice(spaceIdx + 1);
 
     const cmd = slashCommands.find((c) => c.name === cmdName);
     if (!cmd || cmd.meta?.inputType !== 'selection' || !partial) {
+      setCommandShadowText(null);
+      return;
+    }
+
+    // Strip subcommand prefix (e.g. "swap ro" → "ro") so shadow text matches agent names
+    const subs = cmd.meta?.subcommands;
+    if (subs) {
+      for (const sub of subs) {
+        if (partial.startsWith(`${sub} `)) {
+          partial = partial.slice(sub.length + 1);
+          break;
+        }
+      }
+    }
+
+    if (!partial) {
       setCommandShadowText(null);
       return;
     }
