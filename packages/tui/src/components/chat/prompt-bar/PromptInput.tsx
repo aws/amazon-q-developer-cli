@@ -121,8 +121,12 @@ type ImageSegment = {
   sizeBytes: number;
 };
 
-// Build content for submission - use @file: markers for later expansion
-const buildContent = (segments: Segment[]): string => {
+// buildContent is defined and exported here in PromptInput.tsx so tests
+// can import it directly. Keep the implementation tiny: join the segments
+// verbatim; no whitespace collapse or trim. Collapsing runs of spaces or
+// trimming leading whitespace would destroy indentation in pasted code.
+// Empty-submit is guarded at the call sites via `content.trim()`.
+export const buildContent = (segments: Segment[]): string => {
   const parts = segments.map((s) => {
     if (s.type === 'text') return s.value;
     if (s.type === 'file') return ` @file:${s.filePath} `;
@@ -130,7 +134,7 @@ const buildContent = (segments: Segment[]): string => {
     // Images are handled separately via extractImages
     return '';
   });
-  return parts.join('').replace(/  +/g, ' ').trim();
+  return parts.join('');
 };
 
 // Detect trigger patterns
@@ -733,7 +737,9 @@ export const PromptInput = React.memo(function PromptInput({
           // or slash command rejection — the menus aren't useful here).
           if (isProcessing) {
             const content = buildContent(segments);
-            if (content) {
+            // Don't submit whitespace-only prompts, but preserve indentation
+            // (e.g. pasted code) in the submitted content.
+            if (content.trim()) {
               clearAll();
               onSubmit(content);
             }
@@ -745,7 +751,7 @@ export const PromptInput = React.memo(function PromptInput({
           if (slashMenuVisible) return;
           const content = buildContent(segments);
           const hasImages = segments.some((s) => s.type === 'image');
-          if (content || hasImages) {
+          if (content.trim() || hasImages) {
             clearAll();
             onSubmit(content);
           }
