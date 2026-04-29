@@ -1,0 +1,4 @@
+{
+  "type": "fixed",
+  "description": "Fix fs_write str_replace failing on files with CRLF (Windows) line endings"
+}
