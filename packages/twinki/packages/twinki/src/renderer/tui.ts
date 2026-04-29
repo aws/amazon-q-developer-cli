@@ -13,6 +13,7 @@ import type {
 } from './component.js';
 import type { Terminal } from '../terminal/terminal.js';
 import { isKeyRelease, isKeyRepeat, matchesKey } from '../input/keys.js';
+import { throttle } from 'es-toolkit/compat';
 import { parseSGRMouse, isSGRMouse } from '../input/mouse.js';
 import type { MouseEvent } from '../input/mouse.js';
 import { visibleWidth } from '../utils/visible-width.js';
@@ -712,22 +713,33 @@ export class TUI extends Container {
   start(): void {
     this.stopped = false;
     this.installStdoutInterceptor();
+
+    const doResize = () => {
+      // Resize handler: synchronous clear to prevent reflowed content flash.
+      this.internalWrite = true;
+      this.terminal.write(TUI.CLEAR_ALL);
+      this.internalWrite = false;
+      this.terminal.hideCursor();
+      // Do NOT clear accumulatedStaticOutput — it is prepended to every frame
+      // so static content survives resize automatically.
+      if (!this.altScreen) {
+        this.contentStartRow = 0;
+      }
+      for (const cb of this.onResizeCallbacks) cb();
+      this.requestRender(true);
+    };
+
+    // Throttle resize to at most once per 100ms (leading + trailing).
+    // Leading fires immediately so the screen clears without flash.
+    // Trailing fires after drag stops to lock in final dimensions.
+    const throttledResize = throttle(doResize, 100, {
+      leading: true,
+      trailing: true,
+    });
+
     this.terminal.start(
       (data) => this.handleInput(data),
-      () => {
-        // Resize handler: synchronous clear to prevent reflowed content flash.
-        this.internalWrite = true;
-        this.terminal.write(TUI.CLEAR_ALL);
-        this.internalWrite = false;
-        this.terminal.hideCursor();
-        // Do NOT clear accumulatedStaticOutput — it is prepended to every frame
-        // so static content survives resize automatically.
-        if (!this.altScreen) {
-          this.contentStartRow = 0;
-        }
-        for (const cb of this.onResizeCallbacks) cb();
-        this.requestRender(true);
-      }
+      throttledResize
     );
     if (this.altScreen) {
       this.terminal.write('\x1b[?1049h');
@@ -1505,6 +1517,9 @@ export class TUI extends Container {
       this.perfTotalRenderMs += elapsed;
       this.perfRenderCount++;
       if (elapsed > this.perfMaxRenderMs) this.perfMaxRenderMs = elapsed;
+      this.debugLog(
+        `perf: ${elapsed.toFixed(2)}ms render=#${this.perfRenderCount} fullRedraw=${this.fullRedrawCount} max=${this.perfMaxRenderMs.toFixed(2)}ms`
+      );
     }
   }
 
@@ -1748,6 +1763,7 @@ export class TUI extends Container {
      */
     const fullRender = (clearSeq: string, reason?: string): void => {
       this.fullRedrawCount++;
+      this.debugLog(`fullRedraw #${this.fullRedrawCount}: reason=${reason ?? 'unknown'} lines=${newLines.length}`);
       const sync = !process.env['TWINKI_NO_SYNC'];
       let buffer = (sync ? '\x1b[?2026h' : '') + clearSeq;
       // Write each logical line, separated by \r\n. Lines wider than `width`

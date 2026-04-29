@@ -11,6 +11,7 @@ import {
   type AppStoreApi,
 } from './stores/app-store';
 import { logger } from './utils/logger';
+import { connectResizeSource } from './hooks/useTerminalSize';
 import { clearTerminalProgress } from './utils/terminal-capabilities.js';
 import { Kiro } from './kiro';
 import { TestModeProvider } from './test-utils/TestModeProvider';
@@ -598,6 +599,10 @@ const startApp = async () => {
       wideLines: wrapDisabled,
     };
   const instance = render(<App />, renderOptions);
+
+  // Wire useTerminalSize to Twinki's throttled resize callback —
+  // single resize path, no duplicate process.stdout listener.
+  connectResizeSource(instance);
 
   // Expose render instance for dev metrics
   if (instance && typeof instance === 'object' && 'getMetrics' in instance) {

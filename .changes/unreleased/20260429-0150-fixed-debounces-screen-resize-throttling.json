@@ -1,0 +1,4 @@
+{
+  "type": "fixed",
+  "description": "Debounces screen resize throttling — moves resize throttle into Twinki renderer, eliminating duplicate resize listeners and reducing renders per resize from 2 full redraws to 1"
+}
