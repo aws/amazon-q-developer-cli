@@ -10,6 +10,7 @@ use agent::tui_commands::{
 use strsim::jaro_winkler;
 
 use super::CommandContext;
+use crate::database::settings::Setting;
 
 /// Minimum similarity score (0.0-1.0) for suggesting a model name
 const MODEL_SIMILARITY_THRESHOLD: f64 = 0.6;
@@ -17,8 +18,36 @@ const MODEL_SIMILARITY_THRESHOLD: f64 = 0.6;
 pub async fn execute(args: &ModelArgs, ctx: &CommandContext<'_>) -> CommandResult {
     match &args.model_name {
         None => list_models(ctx).await,
+        Some(name) if name == "set-current-as-default" => set_current_as_default(ctx).await,
         Some(name) => switch_model(name, ctx).await,
     }
+}
+
+async fn set_current_as_default(ctx: &CommandContext<'_>) -> CommandResult {
+    let Some(model_id) = ctx.rts_state.model_id() else {
+        return CommandResult::error("No model currently selected".to_string());
+    };
+
+    let display_name = match fetch_models(ctx).await {
+        Ok(models) => models
+            .iter()
+            .find(|m| m.id == model_id)
+            .map_or_else(|| model_id.clone(), |m| m.display_name.clone()),
+        Err(_) => model_id.clone(),
+    };
+
+    // Persist via the session manager — this updates its in-memory settings (so new sessions
+    // within this process pick up the change) and writes to disk (so future process starts
+    // pick it up too).
+    if let Err(e) = ctx
+        .session_tx
+        .update_setting(Setting::ChatDefaultModel, serde_json::Value::String(model_id))
+        .await
+    {
+        return CommandResult::error(format!("Failed to set default model: {e}"));
+    }
+
+    CommandResult::success(format!("Set {} as default model", display_name))
 }
 
 pub async fn get_options(_partial: &str, ctx: &CommandContext<'_>) -> CommandOptionsResponse {
@@ -145,4 +174,92 @@ async fn fetch_models(ctx: &CommandContext<'_>) -> Result<Vec<ModelInfo>, String
             rate_multiplier: m.rate_multiplier(),
         })
         .collect())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_find_similar_model_exact_id() {
+        let models = vec![
+            ModelInfo {
+                id: "claude-sonnet-4".into(),
+                display_name: "Claude Sonnet 4".into(),
+                provider: None,
+                context_window: None,
+                description: None,
+                rate_multiplier: None,
+            },
+            ModelInfo {
+                id: "claude-opus-4".into(),
+                display_name: "Claude Opus 4".into(),
+                provider: None,
+                context_window: None,
+                description: None,
+                rate_multiplier: None,
+            },
+        ];
+        let result = find_similar_model(&models, "claude-sonnet-4");
+        assert_eq!(result.unwrap().id, "claude-sonnet-4");
+    }
+
+    #[test]
+    fn test_find_similar_model_fuzzy() {
+        let models = vec![ModelInfo {
+            id: "claude-sonnet-4".into(),
+            display_name: "Claude Sonnet 4".into(),
+            provider: None,
+            context_window: None,
+            description: None,
+            rate_multiplier: None,
+        }];
+        let result = find_similar_model(&models, "claude-sonet-4");
+        assert!(result.is_some(), "should fuzzy-match a close typo");
+    }
+
+    #[test]
+    fn test_find_similar_model_no_match() {
+        let models = vec![ModelInfo {
+            id: "claude-sonnet-4".into(),
+            display_name: "Claude Sonnet 4".into(),
+            provider: None,
+            context_window: None,
+            description: None,
+            rate_multiplier: None,
+        }];
+        let result = find_similar_model(&models, "totally-different");
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn test_to_command_option_with_rate_multiplier() {
+        let model = ModelInfo {
+            id: "claude-sonnet-4".into(),
+            display_name: "Claude Sonnet 4".into(),
+            provider: None,
+            context_window: Some(200000),
+            description: Some("Fast and capable".into()),
+            rate_multiplier: Some(1.0),
+        };
+        let option = to_command_option(model);
+        assert_eq!(option.value, "claude-sonnet-4");
+        assert_eq!(option.label, "Claude Sonnet 4");
+        assert_eq!(option.description, Some("Fast and capable".into()));
+        assert_eq!(option.group, Some("1.00x credits".into()));
+    }
+
+    #[test]
+    fn test_to_command_option_without_rate_multiplier() {
+        let model = ModelInfo {
+            id: "custom-model".into(),
+            display_name: "Custom Model".into(),
+            provider: None,
+            context_window: None,
+            description: None,
+            rate_multiplier: None,
+        };
+        let option = to_command_option(model);
+        assert_eq!(option.group, Some("----- credits".into()));
+    }
 }

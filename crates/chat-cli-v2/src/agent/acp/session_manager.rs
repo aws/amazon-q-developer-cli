@@ -871,6 +871,20 @@ impl SessionManager {
                 self.next_model_id = Some(next_model_id);
                 _ = resp_sender.send(Ok(()));
             },
+            SessionManagerRequestData::UpdateSetting {
+                key,
+                value,
+                resp_sender,
+            } => {
+                let result = self
+                    .os
+                    .database
+                    .settings
+                    .set(key, value, None)
+                    .await
+                    .map_err(|e| sacp::util::internal_error(format!("Failed to update setting: {e}")));
+                _ = resp_sender.send(result);
+            },
             SessionManagerRequestData::Initialize {
                 name,
                 version,
@@ -2029,6 +2043,11 @@ pub(crate) enum SessionManagerRequestData {
         next_model_id: String,
         resp_sender: oneshot::Sender<Result<(), sacp::Error>>,
     },
+    UpdateSetting {
+        key: Setting,
+        value: serde_json::Value,
+        resp_sender: oneshot::Sender<Result<(), sacp::Error>>,
+    },
     Initialize {
         name: String,
         version: String,
@@ -2260,6 +2279,23 @@ impl SessionManagerHandle {
             .map_err(|_e| sacp::util::internal_error("Failed to send set_next_model_id request"))?;
         rx.await
             .map_err(|_e| sacp::util::internal_error("Failed to receive set_next_model_id response"))?
+    }
+
+    pub async fn update_setting(&self, key: Setting, value: serde_json::Value) -> Result<(), sacp::Error> {
+        let (resp_sender, rx) = oneshot::channel();
+        self.tx
+            .send(SessionManagerRequest {
+                session_id: SessionId::new(String::new()),
+                data: SessionManagerRequestData::UpdateSetting {
+                    key,
+                    value,
+                    resp_sender,
+                },
+            })
+            .await
+            .map_err(|_e| sacp::util::internal_error("Failed to send update_setting request"))?;
+        rx.await
+            .map_err(|_e| sacp::util::internal_error("Failed to receive update_setting response"))?
     }
 
     pub async fn initialize(&self, name: String, version: String) -> Result<(), sacp::Error> {

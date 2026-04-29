@@ -295,7 +295,7 @@ impl TuiCommand {
     pub fn usage(&self) -> &'static str {
         match self {
             TuiCommand::Help(_) => "/help",
-            TuiCommand::Model(_) => "/model [model-name]",
+            TuiCommand::Model(_) => "/model [model-name|set-current-as-default]",
             TuiCommand::Agent(_) => "/agent [agent-name|create <name>|edit [name]|swap <name>]",
             TuiCommand::Context(_) => "/context [show|add [--force] <path>...|remove <path>...|clear]",
             TuiCommand::Compact(_) => "/compact",
@@ -323,6 +323,7 @@ impl TuiCommand {
     pub fn subcommands(&self) -> Vec<&'static str> {
         match self {
             TuiCommand::Agent(_) => vec!["create", "edit", "swap"],
+            TuiCommand::Model(_) => vec!["set-current-as-default"],
             TuiCommand::Context(_) => vec!["show", "add", "remove", "clear"],
             TuiCommand::Knowledge(_) => vec!["show", "add", "remove", "update", "clear", "cancel"],
             TuiCommand::Tools(_) => vec!["trust-all", "trust", "untrust", "reset"],
@@ -834,10 +835,10 @@ mod tests {
     }
 
     #[test]
-    fn test_model_subcommands_empty() {
+    fn test_model_subcommands_listed() {
         let cmd = TuiCommand::Model(ModelArgs::default());
         let subs = cmd.subcommands();
-        assert!(subs.is_empty(), "model should have no subcommands");
+        assert!(subs.contains(&"set-current-as-default"));
     }
 
     #[test]
