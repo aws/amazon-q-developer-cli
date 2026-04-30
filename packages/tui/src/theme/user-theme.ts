@@ -13,6 +13,29 @@ import chalk from 'chalk';
 import type { TerminalColor } from '../types/themeTypes.js';
 import { logger } from '../utils/logger.js';
 
+/**
+ * Convert a TerminalColor to a chalk function, handling truecolor, color256, and named ANSI colors.
+ * Returns identity when the color is 'default' or unresolvable.
+ */
+export function chalkFromTerminalColor(
+  color: TerminalColor,
+  mode: 'fg' | 'bg'
+): (s: string) => string {
+  if (color.truecolor) {
+    return mode === 'bg'
+      ? chalk.bgHex(color.truecolor)
+      : chalk.hex(color.truecolor);
+  }
+  if (color.named && color.named !== 'default') {
+    const name =
+      mode === 'bg'
+        ? `bg${color.named[0]!.toUpperCase()}${color.named.slice(1)}`
+        : color.named;
+    return (chalk as any)[name] ?? ((s: string) => s);
+  }
+  return (s: string) => s;
+}
+
 /** A prompt preset pairs a text color with a background color */
 export interface PromptPreset {
   id: string;
@@ -254,22 +277,11 @@ export function buildDiffPreview(
     preset.added.bar.named === 'default' && fallbackDiff
       ? fallbackDiff
       : preset;
-  // If still no truecolor values, render plain
-  if (!effective.added.bar.truecolor) {
-    return `\n${DIFF_HEADER}\n${DIFF_ADDED_PREVIEW}\n${DIFF_REMOVED_PREVIEW}${marker}`;
-  }
-  const addedBg = effective.added.background.truecolor
-    ? chalk.bgHex(effective.added.background.truecolor)
-    : (s: string) => s;
-  const addedBar = effective.added.bar.truecolor
-    ? chalk.hex(effective.added.bar.truecolor)
-    : (s: string) => s;
-  const removedBg = effective.removed.background.truecolor
-    ? chalk.bgHex(effective.removed.background.truecolor)
-    : (s: string) => s;
-  const removedBar = effective.removed.bar.truecolor
-    ? chalk.hex(effective.removed.bar.truecolor)
-    : (s: string) => s;
+
+  const addedBg = chalkFromTerminalColor(effective.added.background, 'bg');
+  const addedBar = chalkFromTerminalColor(effective.added.bar, 'fg');
+  const removedBg = chalkFromTerminalColor(effective.removed.background, 'bg');
+  const removedBar = chalkFromTerminalColor(effective.removed.bar, 'fg');
 
   const addedLine = addedBg(`${addedBar(DIFF_ADDED_PREVIEW)}`);
   const removedLine = removedBg(`${removedBar(DIFF_REMOVED_PREVIEW)}`);

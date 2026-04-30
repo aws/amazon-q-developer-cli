@@ -7,7 +7,6 @@
 import { useEffect, useCallback } from 'react';
 import { useTheme } from '../hooks/useThemeContext.js';
 import { useAppStore } from '../stores/app-store.js';
-import chalk from 'chalk';
 import type { Theme } from './types.js';
 import {
   PROMPT_PREVIEW,
@@ -15,6 +14,7 @@ import {
   DIFF_ADDED_PREVIEW,
   DIFF_REMOVED_PREVIEW,
   DIFF_HEADER,
+  chalkFromTerminalColor,
 } from './user-theme.js';
 
 /** @internal Exported for testing */
@@ -38,29 +38,36 @@ export function extractThemeDiffHex(getColor: (path: string) => any): {
 
 /** @internal Exported for testing */
 export function buildAutoPreview(colors: Theme['colors']): string {
-  const surfaceHex = colors.surface.truecolor;
-  const addedBgHex = colors.diff.added.background.truecolor;
-  const addedBarHex = colors.diff.added.bar.truecolor;
-  const removedBgHex = colors.diff.removed.background.truecolor;
-  const removedBarHex = colors.diff.removed.bar.truecolor;
-
   // Prompt: terminal default text on surface background
-  const bg = surfaceHex ? chalk.bgHex(surfaceHex) : (s: string) => s;
+  const bg = chalkFromTerminalColor(colors.surface, 'bg');
   const promptPart = bg(` ${PROMPT_PREVIEW} `);
 
   // Response: terminal default text
   const responsePart = RESPONSE_PREVIEW;
 
   // Diff
-  const addedBg = addedBgHex ? chalk.bgHex(addedBgHex) : (s: string) => s;
-  const removedBg = removedBgHex ? chalk.bgHex(removedBgHex) : (s: string) => s;
-  const addedBar = addedBarHex ? chalk.hex(addedBarHex) : (s: string) => s;
-  const removedBar = removedBarHex
-    ? chalk.hex(removedBarHex)
-    : (s: string) => s;
+  const addedBg = chalkFromTerminalColor(colors.diff.added.background, 'bg');
+  const removedBg = chalkFromTerminalColor(
+    colors.diff.removed.background,
+    'bg'
+  );
+  const addedBar = chalkFromTerminalColor(colors.diff.added.bar, 'fg');
+  const removedBar = chalkFromTerminalColor(colors.diff.removed.bar, 'fg');
 
-  const addedLine = addedBg(addedBar(DIFF_ADDED_PREVIEW));
-  const removedLine = removedBg(removedBar(DIFF_REMOVED_PREVIEW));
+  // Use foreground color for the whole line when set (kiroSafe style), otherwise just color the bar
+  const addedFg = colors.diff.added.foreground
+    ? chalkFromTerminalColor(colors.diff.added.foreground, 'fg')
+    : undefined;
+  const removedFg = colors.diff.removed.foreground
+    ? chalkFromTerminalColor(colors.diff.removed.foreground, 'fg')
+    : undefined;
+
+  const addedLine = addedFg
+    ? addedBg(addedFg(DIFF_ADDED_PREVIEW))
+    : addedBg(addedBar(DIFF_ADDED_PREVIEW));
+  const removedLine = removedFg
+    ? removedBg(removedFg(DIFF_REMOVED_PREVIEW))
+    : removedBg(removedBar(DIFF_REMOVED_PREVIEW));
 
   return `${promptPart}\n${responsePart}\n\n${DIFF_HEADER}\n${addedLine}\n${removedLine}`;
 }
