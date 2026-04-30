@@ -24,7 +24,7 @@
     { "pattern": ".spec.", "reason": "Spec files" }
   ],
   "lcovFilters": {
-    "bun": ["hooks/", "selectors", "components/", "contexts/", "kiro\\.ts", "acp-client\\.ts"],
+    "bun": ["hooks/", "selectors\\.ts", "components/", "contexts/", "kiro\\.ts", "acp-client\\.ts", "twinki/", "dist/"],
     "tuiVitest": ["\\.test\\.", "spec\\."],
     "twinkiVitest": ["wrap-ansi-optimized"]
   }

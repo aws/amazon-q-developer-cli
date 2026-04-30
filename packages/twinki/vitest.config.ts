@@ -5,6 +5,8 @@ export default defineConfig({
     environment: 'node',
     coverage: {
       enabled: true,
+      reporter: ['text', 'lcov'],
+      reportsDirectory: './coverage',
       thresholds: {
         lines: 68.46,
         functions: 69.88,
