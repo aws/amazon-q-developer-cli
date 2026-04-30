@@ -1,10 +1,36 @@
 #!/usr/bin/env bun
 import { spawn, spawnSync } from "node:child_process";
 import { resolve } from "node:path";
+import { readFileSync, existsSync } from "node:fs";
 
 const REPO_ROOT = resolve(import.meta.dir, "../../..");
 const CARGO_BIN = resolve(REPO_ROOT, "target/debug/chat_cli");
 const TWINKI_DIR = resolve(REPO_ROOT, "packages/twinki/packages/twinki");
+
+// Resolve the pinned bun binary (matches the version shipped in the release binary)
+function getPinnedBun(): string {
+  // Read pinned version from const.py
+  const constPy = resolve(REPO_ROOT, "scripts/const.py");
+  const versionMatch = readFileSync(constPy, "utf8").match(/^BUN_VERSION\s*=\s*"(.+)"/m);
+  const pinnedVersion = versionMatch?.[1] ?? "unknown";
+  console.log(`Pinned bun version: ${pinnedVersion}`);
+
+  // Check if already cached
+  const cachedBin = resolve(REPO_ROOT, `.bun-pinned/${pinnedVersion}/bun`);
+  const isCached = existsSync(cachedBin);
+  console.log(isCached ? `Using cached bun at ${cachedBin}` : `Downloading bun v${pinnedVersion}...`);
+
+  const result = spawnSync("bash", [resolve(REPO_ROOT, "scripts/ensure-pinned-bun.sh")], {
+    stdio: ["inherit", "pipe", "inherit"],
+  });
+  if (result.status !== 0) {
+    console.error("Failed to resolve pinned bun. Falling back to system bun.");
+    return "bun";
+  }
+  return result.stdout.toString().trim();
+}
+
+const PINNED_BUN = getPinnedBun();
 
 // Separate dev-script flags from flags to forward to the TUI
 const devFlags = new Set(["--skip-rust-build"]);
@@ -23,13 +49,21 @@ function buildTwinki(): boolean {
 }
 
 function startTUI() {
+  if (!existsSync(CARGO_BIN)) {
+    console.error(`\nError: Rust binary not found at ${CARGO_BIN}`);
+    console.error(`Run one of:`);
+    console.error(`  cargo build -p chat_cli --bin chat_cli`);
+    console.error(`  bun run dev  (without --skip-rust-build)\n`);
+    process.exit(1);
+  }
+
   console.log("Starting TUI...");
 
   // Start bun with watch mode and KIRO_AGENT_PATH set
   // Forward any extra CLI args (e.g. --agent <name>) to the TUI process
   // Use absolute path to entry file so the caller's cwd is preserved
   const entryFile = resolve(import.meta.dir, "../src/index.tsx");
-  const bunProcess = spawn("bun", ["--watch", entryFile, ...tuiArgs], {
+  const bunProcess = spawn(PINNED_BUN, ["--watch", entryFile, ...tuiArgs], {
     stdio: "inherit",
     env: {
       ...process.env,

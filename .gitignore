@@ -92,3 +92,4 @@ packages/tui/.kiro/
 .claude/settings.local.json
 target
 scripts/.es-cookie
+.bun-pinned/
