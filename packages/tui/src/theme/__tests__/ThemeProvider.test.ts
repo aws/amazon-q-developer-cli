@@ -1,4 +1,4 @@
-import { describe, it, expect, mock } from 'bun:test';
+import { describe, it, expect, mock, afterAll } from 'bun:test';
 import { kiroDark } from '../kiroDark';
 import { kiroLight } from '../kiroLight';
 import { kiroSafe } from '../kiroSafe';
@@ -15,6 +15,10 @@ mock.module('../../utils/terminal-theme', () => ({
   detectTerminalThemeWithDetails: mockDetect,
   detectTerminalTheme: () => mockDetect().theme,
 }));
+
+afterAll(() => {
+  mock.restore();
+});
 
 // Dynamic import after mock so getAutoTheme uses the mocked module
 const { getAutoTheme } = await import('../ThemeProvider');

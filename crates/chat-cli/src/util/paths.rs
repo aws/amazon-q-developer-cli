@@ -544,12 +544,24 @@ impl<'a> GlobalPaths<'a> {
         Ok(dir)
     }
 
+    /// Path to the global CLI settings file (`~/.kiro/settings/cli.json`).
+    ///
+    /// Under `cfg!(test)`, this redirects to a per-process tempfile so unit tests
+    /// never clobber the developer's real settings. This is unconditional — no
+    /// opt-in or env var required.
     pub fn settings_path() -> Result<PathBuf> {
-        Ok(dirs::home_dir()
-            .ok_or(DirectoryError::NoHomeDirectory)?
-            .join(".kiro")
-            .join("settings")
-            .join("cli.json"))
+        #[cfg(test)]
+        {
+            Ok(test_settings_path())
+        }
+        #[cfg(not(test))]
+        {
+            Ok(dirs::home_dir()
+                .ok_or(DirectoryError::NoHomeDirectory)?
+                .join(".kiro")
+                .join("settings")
+                .join("cli.json"))
+        }
     }
 
     pub fn mcp_auth_dir(&self) -> Result<PathBuf> {
@@ -572,6 +584,28 @@ impl<'a> GlobalPaths<'a> {
             .join("kiro-cli")
             .join("data.sqlite3"))
     }
+}
+
+/// Returns a per-process tempfile path for settings when running under `cfg!(test)`.
+///
+/// This exists because several unit tests call `settings.set(..., SettingScope::Global)`,
+/// which persists via `GlobalPaths::settings_path()`. Without this redirect those tests
+/// would overwrite the developer's real `~/.kiro/settings/cli.json` on every `cargo test`.
+///
+/// One path per process (lazy-initialized) keeps parallel tests isolated from the real file
+/// while still letting them share a tempfile — tests don't depend on each other's state
+/// because `Settings::new()` already short-circuits to `Settings::default()` under `cfg!(test)`.
+#[cfg(test)]
+fn test_settings_path() -> PathBuf {
+    use std::sync::OnceLock;
+    static TEST_SETTINGS_PATH: OnceLock<PathBuf> = OnceLock::new();
+    TEST_SETTINGS_PATH
+        .get_or_init(|| {
+            let dir = std::env::temp_dir().join(format!("kiro-cli-test-settings-{}", std::process::id()));
+            std::fs::create_dir_all(&dir).expect("failed to create test settings dir");
+            dir.join("cli.json")
+        })
+        .clone()
 }
 
 #[cfg(test)]

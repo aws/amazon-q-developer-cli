@@ -17,7 +17,6 @@ pub mod mcp_client;
 pub mod mcp_registry;
 pub mod os;
 pub mod request;
-#[allow(dead_code)]
 pub mod rollout;
 pub mod telemetry;
 pub mod theme;

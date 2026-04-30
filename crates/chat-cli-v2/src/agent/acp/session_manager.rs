@@ -871,6 +871,20 @@ impl SessionManager {
                 self.next_model_id = Some(next_model_id);
                 _ = resp_sender.send(Ok(()));
             },
+            SessionManagerRequestData::UpdateSetting {
+                key,
+                value,
+                resp_sender,
+            } => {
+                let result = self
+                    .os
+                    .database
+                    .settings
+                    .set(key, value, None)
+                    .await
+                    .map_err(|e| sacp::util::internal_error(format!("Failed to update setting: {e}")));
+                _ = resp_sender.send(result);
+            },
             SessionManagerRequestData::Initialize {
                 name,
                 version,
@@ -1556,7 +1570,7 @@ impl SessionManager {
                 match block {
                     agent::agent_loop::types::ContentBlock::Text(text) => {
                         let truncated = if text.len() > 300 {
-                            format!("{}...", &text[..300])
+                            format!("{}...", agent::util::truncate_safe(text, 300))
                         } else {
                             text.clone()
                         };
@@ -1572,7 +1586,7 @@ impl SessionManager {
                             .map(|c| match c {
                                 agent::agent_loop::types::ToolResultContentBlock::Text(t) => {
                                     if t.len() > 200 {
-                                        format!("{}...", &t[..200])
+                                        format!("{}...", agent::util::truncate_safe(t, 200))
                                     } else {
                                         t.clone()
                                     }
@@ -2029,6 +2043,11 @@ pub(crate) enum SessionManagerRequestData {
         next_model_id: String,
         resp_sender: oneshot::Sender<Result<(), sacp::Error>>,
     },
+    UpdateSetting {
+        key: Setting,
+        value: serde_json::Value,
+        resp_sender: oneshot::Sender<Result<(), sacp::Error>>,
+    },
     Initialize {
         name: String,
         version: String,
@@ -2260,6 +2279,23 @@ impl SessionManagerHandle {
             .map_err(|_e| sacp::util::internal_error("Failed to send set_next_model_id request"))?;
         rx.await
             .map_err(|_e| sacp::util::internal_error("Failed to receive set_next_model_id response"))?
+    }
+
+    pub async fn update_setting(&self, key: Setting, value: serde_json::Value) -> Result<(), sacp::Error> {
+        let (resp_sender, rx) = oneshot::channel();
+        self.tx
+            .send(SessionManagerRequest {
+                session_id: SessionId::new(String::new()),
+                data: SessionManagerRequestData::UpdateSetting {
+                    key,
+                    value,
+                    resp_sender,
+                },
+            })
+            .await
+            .map_err(|_e| sacp::util::internal_error("Failed to send update_setting request"))?;
+        rx.await
+            .map_err(|_e| sacp::util::internal_error("Failed to receive update_setting response"))?
     }
 
     pub async fn initialize(&self, name: String, version: String) -> Result<(), sacp::Error> {
@@ -2727,5 +2763,29 @@ impl SessionManagerHandle {
             .await
             .ok()?;
         rx.await.ok()?
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use agent::util::truncate_safe;
+
+    /// Verifies that truncating multi-byte UTF-8 text does not panic.
+    /// Reproduces the byte-slicing bug in handle_get_live_activity where
+    /// `&text[..300]` panics when byte 300 is mid-character.
+    #[test]
+    fn test_live_activity_truncation_handles_multibyte() {
+        // "x" + "あ"×200 = 1 + 600 = 601 bytes. Byte 300 falls mid-character.
+        let text = format!("x{}", "あ".repeat(200));
+        assert!(text.len() > 300);
+
+        // This is what the buggy code does — it panics:
+        let result = std::panic::catch_unwind(|| format!("{}...", &text[..300]));
+        assert!(result.is_err(), "byte slicing should panic on multi-byte boundary");
+
+        // This is the safe alternative:
+        let safe = truncate_safe(&text, 300);
+        assert!(safe.len() <= 300);
+        assert!(!safe.is_empty());
     }
 }

@@ -1,4 +1,4 @@
-import { describe, it, expect, mock } from 'bun:test';
+import { describe, it, expect, mock, afterAll } from 'bun:test';
 import { createAppStore, MessageRole, type MessageType } from '../app-store';
 import { AgentEventType, ContentType } from '../../types/agent-events';
 import { Kiro } from '../../kiro';
@@ -10,6 +10,10 @@ mock.module('../../kiro', () => ({
     close: mock(),
   })),
 }));
+
+afterAll(() => {
+  mock.restore();
+});
 
 describe('Streaming flush performance', () => {
   function createStoreWithHistory(turnCount: number) {

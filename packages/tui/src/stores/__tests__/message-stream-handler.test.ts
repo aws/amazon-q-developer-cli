@@ -1,8 +1,12 @@
-import { describe, it, expect, mock } from 'bun:test';
+import { describe, it, expect, mock, afterAll } from 'bun:test';
 
 mock.module('../../kiro', () => ({
   Kiro: mock(() => ({})),
 }));
+
+afterAll(() => {
+  mock.restore();
+});
 
 import { createMessageStreamHandler } from '../message-stream-handler';
 import { AgentEventType, ContentType } from '../../types/agent-events';
@@ -195,7 +199,7 @@ describe('createMessageStreamHandler', () => {
       const toolMsg = msgs.find((m) => m.id === 'tool1');
       expect(toolMsg!.role).toBe(MessageRole.ToolUse);
       if (toolMsg!.role === MessageRole.ToolUse) {
-        expect(toolMsg!.liveOutput).toEqual(['line1', 'line2']);
+        expect(toolMsg!.liveOutput).toBeUndefined();
       }
     });
 
@@ -237,7 +241,7 @@ describe('createMessageStreamHandler', () => {
       if (toolMsg!.role === MessageRole.ToolUse) {
         expect(toolMsg!.isFinished).toBe(true);
         expect(toolMsg!.result).toEqual({ status: 'success', output: 'done' });
-        expect(toolMsg!.liveOutput).toBeUndefined();
+        expect(toolMsg!.liveOutput).toEqual(['line1', 'line2']);
       }
     });
 

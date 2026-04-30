@@ -13,9 +13,13 @@ use serde::{
     Deserialize,
     Serialize,
 };
-use tokio::io::AsyncBufReadExt;
+use tokio::io::{
+    AsyncBufReadExt,
+    AsyncReadExt,
+};
 use tokio::process::Command;
 use tokio::sync::broadcast;
+use tokio::time::Duration;
 
 use crate::agent::protocol::{
     AgentEvent,
@@ -184,7 +188,7 @@ impl ExecuteCmd {
         // Consume the first immediate tick so the loop starts clean.
         flush_interval.tick().await;
 
-        loop {
+        let status = loop {
             tokio::select! {
                 biased;
 
@@ -230,11 +234,52 @@ impl ExecuteCmd {
                         }
                     }
                 }
+                status = child.wait() => {
+                    // Child exited. Drain remaining pipe data with a timeout —
+                    // a grandchild daemon may still hold the FDs open.
+                    const DRAIN_TIMEOUT: Duration = Duration::from_millis(100);
+                    loop {
+                        let mut drained = false;
+                        if !stdout_done {
+                            match tokio::time::timeout(DRAIN_TIMEOUT, stdout_lines.next_line()).await {
+                                Ok(Ok(Some(line))) => {
+                                    let clean = sanitize_unicode_tags(&line);
+                                    pending_output.push_str(&clean);
+                                    pending_output.push('\n');
+                                    accumulated_stdout.push_str(&clean);
+                                    accumulated_stdout.push('\n');
+                                    drained = true;
+                                },
+                                _ => stdout_done = true,
+                            }
+                        }
+                        if !stderr_done {
+                            match tokio::time::timeout(DRAIN_TIMEOUT, stderr_lines.next_line()).await {
+                                Ok(Ok(Some(line))) => {
+                                    let clean = sanitize_unicode_tags(&line);
+                                    pending_output.push_str(&clean);
+                                    pending_output.push('\n');
+                                    accumulated_stderr.push_str(&clean);
+                                    accumulated_stderr.push('\n');
+                                    drained = true;
+                                },
+                                _ => stderr_done = true,
+                            }
+                        }
+                        if !drained || (stdout_done && stderr_done) { break; }
+                    }
+                    break status.map_err(|e| ToolExecutionError::io(
+                        format!("No exit status for '{}'", &self.command), e))?;
+                }
             }
             if stdout_done && stderr_done {
-                break;
+                // Pipes closed naturally (no daemon). Still need to wait for exit.
+                break child
+                    .wait()
+                    .await
+                    .map_err(|e| ToolExecutionError::io(format!("No exit status for '{}'", &self.command), e))?;
             }
-        }
+        };
 
         // Flush any remaining buffered output.
         if !pending_output.is_empty() {
@@ -244,11 +289,6 @@ impl ExecuteCmd {
             }));
         }
 
-        let status = child
-            .wait()
-            .await
-            .map_err(|e| ToolExecutionError::io(format!("No exit status for '{}'", &self.command), e))?;
-
         Ok(build_output_result(
             &accumulated_stdout,
             &accumulated_stderr,
@@ -257,22 +297,72 @@ impl ExecuteCmd {
     }
 
     /// Blocking fallback: collects all output at process completion.
-    /// Used when no event channel is provided
+    /// Used when no event channel is provided.
+    ///
+    /// Uses a concurrent read loop with timeout-bounded drain instead of
+    /// `wait_with_output()`, which blocks until all pipe FDs are closed.
+    /// A grandchild daemon that inherits the piped FDs would cause a hang.
     async fn execute_blocking<P: SystemProvider>(&self, provider: &P) -> ToolExecutionResult {
-        let child = self.spawn_child(provider)?;
+        let mut child = self.spawn_child(provider)?;
 
-        let output = child
-            .wait_with_output()
-            .await
-            .map_err(|e| ToolExecutionError::io(format!("No exit status for '{}'", &self.command), e))?;
+        let mut stdout = child.stdout.take().expect("stdout should be piped");
+        let mut stderr = child.stderr.take().expect("stderr should be piped");
 
-        let clean_stdout = sanitize_unicode_tags(output.stdout.to_str_lossy());
-        let clean_stderr = sanitize_unicode_tags(output.stderr.to_str_lossy());
+        let mut stdout_buf = Vec::new();
+        let mut stderr_buf = Vec::new();
+        let mut stdout_done = false;
+        let mut stderr_done = false;
+        let mut stdout_chunk = [0u8; 4096];
+        let mut stderr_chunk = [0u8; 4096];
+
+        let exit_status = loop {
+            tokio::select! {
+                n = stdout.read(&mut stdout_chunk), if !stdout_done => match n {
+                    Ok(0) => stdout_done = true,
+                    Ok(n) => stdout_buf.extend_from_slice(&stdout_chunk[..n]),
+                    Err(_) => stdout_done = true,
+                },
+                n = stderr.read(&mut stderr_chunk), if !stderr_done => match n {
+                    Ok(0) => stderr_done = true,
+                    Ok(n) => stderr_buf.extend_from_slice(&stderr_chunk[..n]),
+                    Err(_) => stderr_done = true,
+                },
+                status = child.wait() => {
+                    // Drain remaining buffered output with a timeout. Child exit
+                    // does not imply pipe EOF — a grandchild daemon may still
+                    // hold the FDs open.
+                    const DRAIN_TIMEOUT: Duration = Duration::from_millis(100);
+                    loop {
+                        let mut drained = false;
+                        if !stdout_done {
+                            match tokio::time::timeout(DRAIN_TIMEOUT, stdout.read(&mut stdout_chunk)).await {
+                                Ok(Ok(0)) => stdout_done = true,
+                                Ok(Ok(n)) => { stdout_buf.extend_from_slice(&stdout_chunk[..n]); drained = true; },
+                                _ => stdout_done = true,
+                            }
+                        }
+                        if !stderr_done {
+                            match tokio::time::timeout(DRAIN_TIMEOUT, stderr.read(&mut stderr_chunk)).await {
+                                Ok(Ok(0)) => stderr_done = true,
+                                Ok(Ok(n)) => { stderr_buf.extend_from_slice(&stderr_chunk[..n]); drained = true; },
+                                _ => stderr_done = true,
+                            }
+                        }
+                        if !drained || (stdout_done && stderr_done) { break; }
+                    }
+                    break status.map_err(|e| ToolExecutionError::io(
+                        format!("No exit status for '{}'", &self.command), e))?;
+                },
+            };
+        };
+
+        let clean_stdout = sanitize_unicode_tags(stdout_buf.to_str_lossy());
+        let clean_stderr = sanitize_unicode_tags(stderr_buf.to_str_lossy());
 
         Ok(build_output_result(
             &clean_stdout,
             &clean_stderr,
-            &output.status.to_string(),
+            &exit_status.to_string(),
         ))
     }
 
@@ -335,12 +425,12 @@ fn format_output(output: &str, max_size: usize) -> String {
 /// The replacement character U+FFFD (�) is preserved to indicate invalid bytes.
 fn is_hidden(c: char) -> bool {
     match c {
-        '\u{E0000}'..='\u{E007F}' |     // TAG characters (used for hidden prompts)  
-        '\u{200B}'..='\u{200F}'  |      // zero-width space, ZWJ, ZWNJ, RTL/LTR marks  
-        '\u{2028}'..='\u{202F}'  |      // line / paragraph separators, narrow NB-SP  
-        '\u{205F}'..='\u{206F}'  |      // format control characters  
+        '\u{E0000}'..='\u{E007F}' |     // TAG characters (used for hidden prompts)
+        '\u{200B}'..='\u{200F}'  |      // zero-width space, ZWJ, ZWNJ, RTL/LTR marks
+        '\u{2028}'..='\u{202F}'  |      // line / paragraph separators, narrow NB-SP
+        '\u{205F}'..='\u{206F}'  |      // format control characters
         '\u{FFF0}'..='\u{FFFC}'  |
-        '\u{FFFE}'..='\u{FFFF}'   // Specials block (non-characters) 
+        '\u{FFFE}'..='\u{FFFF}'   // Specials block (non-characters)
         => true,
         _ => false,
     }
@@ -757,6 +847,60 @@ mod tests {
             _ => unreachable!(),
         };
         assert!(json["stdout"].as_str().unwrap().trim().ends_with(&dir_path));
+    }
+
+    #[tokio::test]
+    /// Verify that execute doesn't hang when the command spawns a background
+    /// daemon that inherits the piped stdout/stderr FDs. wait_with_output()
+    /// blocks until all pipe FDs are closed — child exit does not imply EOF.
+    async fn test_execute_does_not_hang_when_daemon_holds_pipe_fds() {
+        use crate::util::test::TestBase;
+
+        let test_base = TestBase::new().await;
+        let cmd = ExecuteCmd {
+            command: r#"echo "before"; perl -e 'exit 0 if fork; sleep 300'; echo "after""#.to_string(),
+            working_dir: None,
+        };
+
+        let result = tokio::time::timeout(std::time::Duration::from_secs(5), cmd.execute(&test_base, None))
+            .await
+            .expect("execute hung — wait_with_output blocked on daemon-held pipe FDs")
+            .unwrap();
+
+        let json = match &result.items[0] {
+            ToolExecutionOutputItem::Json(v) => v,
+            _ => panic!("Expected JSON output"),
+        };
+
+        assert_eq!(json["exit_status"], "exit status: 0");
+        assert!(json["stdout"].as_str().unwrap().contains("before"));
+        assert!(json["stdout"].as_str().unwrap().contains("after"));
+    }
+
+    #[tokio::test]
+    /// Same as above but exercises the streaming path (event_tx = Some),
+    /// which is the only production codepath.
+    async fn test_streaming_does_not_hang_when_daemon_holds_pipe_fds() {
+        let test_base = TestBase::new().await;
+        let (tx, _rx) = broadcast::channel::<AgentEvent>(64);
+
+        let cmd = ExecuteCmd {
+            command: r#"echo "before"; perl -e 'exit 0 if fork; sleep 300'; echo "after""#.to_string(),
+            working_dir: None,
+        };
+
+        let result = tokio::time::timeout(
+            std::time::Duration::from_secs(5),
+            cmd.execute(&test_base, Some(("test-id".to_string(), tx))),
+        )
+        .await
+        .expect("streaming execute hung — daemon holding pipe FDs blocked next_line()")
+        .unwrap();
+
+        let json = extract_json(&result);
+        assert_eq!(json["exit_status"], "exit status: 0");
+        assert!(json["stdout"].as_str().unwrap().contains("before"));
+        assert!(json["stdout"].as_str().unwrap().contains("after"));
     }
 
     #[tokio::test]

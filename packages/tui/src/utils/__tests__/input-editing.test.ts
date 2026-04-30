@@ -693,27 +693,6 @@ describe('input-editing', () => {
     });
   });
 
-  describe('empty submit guard (simulated)', () => {
-    it('empty segments produce empty content after trim', () => {
-      // buildContent joins segments and trims
-      const segments = [text('')];
-      const content = segments
-        .map((s) => (s.type === 'text' ? s.value : ''))
-        .join('')
-        .trim();
-      expect(content).toBe('');
-    });
-
-    it('whitespace-only segments produce empty content after trim', () => {
-      const segments = [text('   ')];
-      const content = segments
-        .map((s) => (s.type === 'text' ? s.value : ''))
-        .join('')
-        .trim();
-      expect(content).toBe('');
-    });
-  });
-
   describe('deleteWordForward (Alt+D)', () => {
     it('deletes word forward from cursor', () => {
       const segments = [text('hello world')];

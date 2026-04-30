@@ -963,7 +963,7 @@ async fn execute_search(store: &KnowledgeStore, query: &str, params: SearchParam
         ));
         if let Some(text) = r.text() {
             let display = match params.snippet_length {
-                Some(max) if text.len() > max => format!("{}...", &text[..max]),
+                Some(max) if text.len() > max => format!("{}...", agent::util::truncate_safe(text, max)),
                 _ => text.to_string(),
             };
             out.push_str(&format!("---\n{display}\n---\n\n"));

@@ -1,7 +1,7 @@
 ---
 doc_meta:
-  validated: 2026-01-27
-  commit: 85403a86
+  validated: 2026-04-29
+  commit: 624cfc69
   status: validated
   testable_headless: true
   category: tool
@@ -124,7 +124,16 @@ Tree-sitter operations work immediately - no setup required. For LSP features, r
 
 ## Configuration
 
-No agent configuration - code tool is trusted by default. For LSP features, initialize workspace with `/code init`.
+No agent configuration needed - code tool is trusted by default. For LSP features, initialize workspace with `/code init`.
+
+### Path Permissions
+
+The code tool requires approval to read files outside the current workspace directory. When an operation references a path outside the workspace:
+
+- **Inside workspace**: Automatically allowed
+- **Outside workspace**: Prompts for user approval
+
+This security measure prevents unintended access to files outside your project. Once approved, the path is remembered for the session.
 
 ## Operations
 
@@ -313,6 +322,12 @@ Initialize LSP servers for workspace.
 
 ## Troubleshooting
 
+### Issue: Permission Prompt for External Files
+
+**Symptom**: Tool asks for approval when reading files  
+**Cause**: File is outside the current workspace directory  
+**Solution**: Approve the access if the file is safe to read. The approval is remembered for the session.
+
 ### Issue: "Workspace is still initializing"
 
 **Symptom**: Operations fail with initialization message  
@@ -381,7 +396,7 @@ Initialize LSP servers for workspace.
 
 **Initialization**: Run `/code init` in project root. Creates `lsp.json` config. Auto-initializes on subsequent startups.
 
-**Permissions**: Trusted by default, no configuration needed.
+**Permissions**: Trusted by default within workspace. Requires user approval for paths outside the current working directory.
 
 **Position Format**: Row and column are 1-based (first line is 1, first column is 1).
 

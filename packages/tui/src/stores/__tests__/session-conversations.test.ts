@@ -1,8 +1,12 @@
-import { describe, it, expect, mock, beforeEach } from 'bun:test';
+import { describe, it, expect, mock, beforeEach, afterAll } from 'bun:test';
 
 mock.module('../../kiro', () => ({
   Kiro: mock(() => ({})),
 }));
+
+afterAll(() => {
+  mock.restore();
+});
 
 import { sessionConversationsStore } from '../session-conversations';
 import { AgentEventType, ContentType } from '../../types/agent-events';

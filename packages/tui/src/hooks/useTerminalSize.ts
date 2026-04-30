@@ -1,35 +1,43 @@
 import { useSyncExternalStore } from 'react';
+import { logger } from '../utils/logger.js';
+import type { Instance } from 'twinki';
 
-// Shared terminal size state — a single resize listener updates all subscribers.
+// Current terminal dimensions. Updated synchronously from Twinki's
+// onResize callback, before Twinki's requestRender(force) fires.
 let currentSize = {
   width: process.stdout.columns || 60,
   height: process.stdout.rows || 20,
 };
+
 const listeners = new Set<() => void>();
-let resizeListenerInstalled = false;
+let registered = false;
 
-function installResizeListener() {
-  if (resizeListenerInstalled) return;
-  resizeListenerInstalled = true;
+function updateSize() {
+  const newWidth = process.stdout.columns || 60;
+  const newHeight = process.stdout.rows || 20;
+  if (newWidth < 1 || newHeight < 1) return;
+  if (newWidth === currentSize.width && newHeight === currentSize.height)
+    return;
+  currentSize = { width: newWidth, height: newHeight };
+  logger.debug(`[resize] ${newWidth}x${newHeight}`);
+  for (const listener of listeners) {
+    listener();
+  }
+}
 
-  process.stdout.on('resize', () => {
-    const newWidth = process.stdout.columns || 60;
-    const newHeight = process.stdout.rows || 20;
-    // Skip invalid dimensions (iTerm can report 0 during transitions)
-    if (newWidth < 1 || newHeight < 1) return;
-    // Skip if dimensions haven't changed (e.g. tmux pane focus, attach/detach)
-    if (newWidth === currentSize.width && newHeight === currentSize.height)
-      return;
-    currentSize = { width: newWidth, height: newHeight };
-    // Notify all subscribers so React re-renders with new dimensions
-    for (const listener of listeners) {
-      listener();
-    }
-  });
+/**
+ * Connect useTerminalSize to Twinki's resize callback.
+ * Call once after render() returns. The onResize callback fires
+ * synchronously before requestRender(force), so React sees the
+ * correct dimensions in a single render pass.
+ */
+export function connectResizeSource(instance: Instance): void {
+  if (registered) return;
+  registered = true;
+  instance.onResize(updateSize);
 }
 
 function subscribe(callback: () => void): () => void {
-  installResizeListener();
   listeners.add(callback);
   return () => {
     listeners.delete(callback);

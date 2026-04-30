@@ -744,6 +744,100 @@ async fn set_model_changes_model_id() {
 #[tokio::test]
 #[timeout(30000)]
 #[serial]
+async fn set_current_as_default_persists_model_to_settings() {
+    // 1. Create a session and switch to a non-default model
+    let (harness, client, session_id, _cwd) = AcpTestHarnessBuilder::new("set_current_as_default_persists")
+        .build_with_session()
+        .await;
+
+    // Switch model in the current session
+    client
+        .set_session_model(session_id.clone(), "claude-opus-4.5".to_string())
+        .await
+        .expect("set_session_model failed");
+
+    // 2. Send /model set-current-as-default as a slash command
+    client
+        .prompt_text(session_id.clone(), "/model set-current-as-default")
+        .await
+        .expect("set-current-as-default prompt failed");
+
+    // 3. Verify the command response contains a success message
+    let captured = client.captured().await;
+    let has_success_message = captured.session_updates.iter().any(|update| {
+        if let SessionUpdate::AgentMessageChunk(chunk) = update {
+            let text = format!("{:?}", chunk);
+            text.contains("default model")
+        } else {
+            false
+        }
+    });
+    assert!(
+        has_success_message,
+        "Should have received a success message about setting default model"
+    );
+
+    // 4. Verify the setting was persisted to disk
+    let settings_content = std::fs::read_to_string(&harness.paths.settings_path).expect("failed to read settings file");
+    let settings: serde_json::Value = serde_json::from_str(&settings_content).expect("failed to parse settings");
+    assert_eq!(
+        settings.get("chat.defaultModel").and_then(|v| v.as_str()),
+        Some("claude-opus-4.5"),
+        "chat.defaultModel should be persisted to settings file"
+    );
+}
+
+#[tokio::test]
+#[timeout(30000)]
+#[serial]
+async fn set_current_as_default_picked_up_by_new_session() {
+    // Verify the full in-process flow: set default in session 1, create session 2,
+    // confirm session 2 uses the persisted default without a process restart.
+    let (mut harness, client, session_id, cwd) = AcpTestHarnessBuilder::new("set_default_new_session")
+        .build_with_session()
+        .await;
+
+    // Switch model and persist as default
+    client
+        .set_session_model(session_id.clone(), "claude-opus-4.5".to_string())
+        .await
+        .expect("set_session_model failed");
+    client
+        .prompt_text(session_id.clone(), "/model set-current-as-default")
+        .await
+        .expect("set-current-as-default prompt failed");
+
+    // Create a new session — it should pick up the persisted default model
+    let second_resp = client.new_session(cwd).await.expect("second new_session failed");
+    let second_session_id = second_resp.session_id;
+
+    harness
+        .push_mock_responses_from_file(&second_session_id.0, "tests/mock_responses/simple_text.jsonl")
+        .await;
+
+    // Send a prompt in the new session to trigger a request
+    client
+        .prompt_text(second_session_id.clone(), "hello")
+        .await
+        .expect("prompt in second session failed");
+
+    // Verify the new session used the persisted default model
+    let captured_requests = harness.get_captured_requests(&second_session_id.0).await;
+    assert_eq!(
+        captured_requests.len(),
+        1,
+        "should have one captured request in new session"
+    );
+    assert_eq!(
+        captured_requests[0].user_input_message.model_id.as_deref(),
+        Some("claude-opus-4.5"),
+        "new session should use the persisted default model"
+    );
+}
+
+#[tokio::test]
+#[timeout(30000)]
+#[serial]
 async fn prompt_with_image() {
     use agent_client_protocol as acp;
     use base64::Engine;

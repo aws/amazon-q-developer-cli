@@ -41,7 +41,12 @@ export const Message = React.memo(function Message({
   const skipStatusBar = wrapDisabled;
 
   if (skipStatusBar) {
-    return <MessageContent content={content} type={type} useOverflow={true} />;
+    return (
+      <>
+        <MessageContent content={content} type={type} useOverflow={true} />
+        {type === MessageType.DEVELOPER && <Text> </Text>}
+      </>
+    );
   }
 
   return (

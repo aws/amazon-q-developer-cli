@@ -89,6 +89,11 @@ const NEWLINE: &str = "\n";
 #[cfg(windows)]
 const NEWLINE: &str = "\r\n";
 
+/// Normalize CRLF line endings to LF for consistent string matching.
+fn normalize_line_endings(s: &str) -> String {
+    s.replace("\r\n", "\n")
+}
+
 impl BuiltInToolTrait for FsWrite {
     fn name() -> BuiltInToolName {
         BuiltInToolName::FsWrite
@@ -158,17 +163,21 @@ impl FsWrite {
                         "The provided path must exist in order to replace or insert contents into it".to_string(),
                     );
                 } else if let Ok(content) = tokio::fs::read_to_string(&path).await {
-                    let matches: Vec<_> = content.match_indices(&v.old_str).collect();
+                    let normalized = normalize_line_endings(&content);
+                    let old_str_normalized = normalize_line_endings(&v.old_str);
+                    let matches: Vec<_> = normalized.match_indices(&old_str_normalized).collect();
                     if matches.is_empty() {
                         errors.push("The provided old_str was not found in the file".to_string());
                     } else if v.replace_all {
                         v.start_lines = matches
                             .iter()
-                            .map(|(byte_offset, _)| (content[..*byte_offset].lines().count() as u32).saturating_add(1))
+                            .map(|(byte_offset, _)| {
+                                (normalized[..*byte_offset].lines().count() as u32).saturating_add(1)
+                            })
                             .collect();
                     } else {
                         let byte_offset = matches[0].0;
-                        v.start_lines = vec![(content[..byte_offset].lines().count() as u32).saturating_add(1)];
+                        v.start_lines = vec![(normalized[..byte_offset].lines().count() as u32).saturating_add(1)];
                     }
                 }
             },
@@ -271,33 +280,36 @@ impl StrReplace {
             .await
             .map_err(|e| ToolExecutionError::io(format!("failed to read {}", path.to_string_lossy()), e))?;
 
-        let matches = file.match_indices(&self.old_str).collect::<Vec<_>>();
+        let has_crlf = file.contains("\r\n");
+        let normalized = normalize_line_endings(&file);
+        let old_str_normalized = normalize_line_endings(&self.old_str);
+        let new_str_normalized = normalize_line_endings(&self.new_str);
+
+        let matches = normalized.match_indices(&old_str_normalized).collect::<Vec<_>>();
         let count = matches.len();
-        match count {
+        let result = match count {
             0 => {
                 return Err(ToolExecutionError::Custom(format!(
                     "no occurrences of \"{}\" were found",
                     &self.old_str
                 )));
             },
-            1 => {
-                let file = file.replacen(&self.old_str, &self.new_str, 1);
-                tokio::fs::write(path, file)
-                    .await
-                    .map_err(|e| ToolExecutionError::io(format!("failed to write {}", path.to_string_lossy()), e))?;
-            },
+            1 => normalized.replacen(&old_str_normalized, &new_str_normalized, 1),
             x => {
                 if !self.replace_all {
                     return Err(ToolExecutionError::Custom(format!(
                         "{x} occurrences of old_str were found when only 1 is expected"
                     )));
                 }
-                let file = file.replace(&self.old_str, &self.new_str);
-                tokio::fs::write(path, file)
-                    .await
-                    .map_err(|e| ToolExecutionError::io(format!("failed to write {}", path.to_string_lossy()), e))?;
+                normalized.replace(&old_str_normalized, &new_str_normalized)
             },
-        }
+        };
+
+        let output = if has_crlf { result.replace('\n', "\r\n") } else { result };
+
+        tokio::fs::write(path, output)
+            .await
+            .map_err(|e| ToolExecutionError::io(format!("failed to write {}", path.to_string_lossy()), e))?;
 
         Ok(format!(
             "Successfully replaced {} occurrence(s) in {}.",
@@ -650,5 +662,95 @@ mod tests {
         });
 
         assert!(tool.validate(&test_base).await.is_err());
+    }
+
+    #[tokio::test]
+    async fn test_str_replace_crlf_file_with_lf_old_str() {
+        let test_base = TestBase::new().await;
+        let path = test_base.join("crlf.txt");
+        tokio::fs::write(&path, "hello\r\nworld\r\nfoo").await.unwrap();
+
+        let tool = FsWrite::StrReplace(StrReplace {
+            path: path.to_string_lossy().to_string(),
+            old_str: "world".to_string(),
+            new_str: "rust".to_string(),
+            ..Default::default()
+        });
+
+        assert!(tool.execute(None, &test_base).await.is_ok());
+        let content = tokio::fs::read_to_string(&path).await.unwrap();
+        assert_eq!(content, "hello\r\nrust\r\nfoo");
+    }
+
+    #[tokio::test]
+    async fn test_str_replace_crlf_file_preserves_crlf() {
+        let test_base = TestBase::new().await;
+        let path = test_base.join("crlf.txt");
+        tokio::fs::write(&path, "line1\r\nline2\r\nline3\r\n").await.unwrap();
+
+        let tool = FsWrite::StrReplace(StrReplace {
+            path: path.to_string_lossy().to_string(),
+            old_str: "line2".to_string(),
+            new_str: "replaced".to_string(),
+            ..Default::default()
+        });
+
+        assert!(tool.execute(None, &test_base).await.is_ok());
+        let content = tokio::fs::read_to_string(&path).await.unwrap();
+        assert_eq!(content, "line1\r\nreplaced\r\nline3\r\n");
+    }
+
+    #[tokio::test]
+    async fn test_str_replace_crlf_multiline_old_str() {
+        let test_base = TestBase::new().await;
+        let path = test_base.join("crlf.txt");
+        tokio::fs::write(&path, "aaa\r\nbbb\r\nccc\r\n").await.unwrap();
+
+        let tool = FsWrite::StrReplace(StrReplace {
+            path: path.to_string_lossy().to_string(),
+            old_str: "aaa\nbbb".to_string(),
+            new_str: "xxx\nyyy".to_string(),
+            ..Default::default()
+        });
+
+        assert!(tool.execute(None, &test_base).await.is_ok());
+        let content = tokio::fs::read_to_string(&path).await.unwrap();
+        assert_eq!(content, "xxx\r\nyyy\r\nccc\r\n");
+    }
+
+    #[tokio::test]
+    async fn test_validate_crlf_file_with_lf_old_str() {
+        let test_base = TestBase::new().await;
+        let path = test_base.join("crlf.txt");
+        tokio::fs::write(&path, "first\r\nsecond\r\nthird").await.unwrap();
+
+        let mut tool = FsWrite::StrReplace(StrReplace {
+            path: path.to_string_lossy().to_string(),
+            old_str: "second".to_string(),
+            new_str: "replaced".to_string(),
+            ..Default::default()
+        });
+
+        assert!(tool.validate(&test_base).await.is_ok());
+        assert_eq!(tool.start_lines(), vec![2]);
+    }
+
+    #[tokio::test]
+    async fn test_str_replace_crlf_replace_all() {
+        let test_base = TestBase::new().await;
+        let path = test_base.join("crlf.txt");
+        tokio::fs::write(&path, "foo\r\nbar\r\nfoo\r\n").await.unwrap();
+
+        let tool = FsWrite::StrReplace(StrReplace {
+            path: path.to_string_lossy().to_string(),
+            old_str: "foo".to_string(),
+            new_str: "baz".to_string(),
+            replace_all: true,
+            ..Default::default()
+        });
+
+        assert!(tool.execute(None, &test_base).await.is_ok());
+        let content = tokio::fs::read_to_string(&path).await.unwrap();
+        assert_eq!(content, "baz\r\nbar\r\nbaz\r\n");
     }
 }

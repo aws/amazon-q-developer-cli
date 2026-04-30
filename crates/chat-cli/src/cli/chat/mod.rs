@@ -3552,7 +3552,7 @@ impl ChatSession {
                         .and_then(|v| v.as_str())
                         .map(|url| {
                             if url.len() > 80 {
-                                format!(" (URL: {}...)", &url[..77])
+                                format!(" (URL: {}...)", crate::cli::chat::util::truncate_safe(url, 77))
                             } else {
                                 format!(" (URL: {url})")
                             }

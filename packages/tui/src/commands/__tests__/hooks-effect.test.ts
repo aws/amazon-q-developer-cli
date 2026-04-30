@@ -1,4 +1,4 @@
-import { describe, it, expect, mock } from 'bun:test';
+import { describe, it, expect, mock, afterAll } from 'bun:test';
 
 // Mock child_process and fs to prevent side effects from other effects
 // that import these modules (e.g. /copy, /hooks edit).
@@ -6,6 +6,10 @@ import { describe, it, expect, mock } from 'bun:test';
 mock.module('child_process', () => ({
   spawnSync: mock(() => ({ status: 1 })),
 }));
+
+afterAll(() => {
+  mock.restore();
+});
 
 import { runEffect } from '../effects.js';
 import type { SlashCommand } from '../../stores/app-store.js';

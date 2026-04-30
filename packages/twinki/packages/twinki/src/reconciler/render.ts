@@ -83,6 +83,8 @@ export interface Instance {
 	adjustStaticCursor(removedCount: number): void;
 	/** Returns current render performance metrics */
 	getMetrics(): RenderMetrics;
+	/** Register a callback invoked after each throttled resize (dimensions already updated). */
+	onResize(cb: () => void): void;
 }
 
 /**
@@ -400,6 +402,9 @@ export function render(element: React.ReactElement, options: TwinkiRenderOptions
 		},
 		adjustStaticCursor(removedCount: number) {
 			bridge.adjustStaticCursor(removedCount);
+		},
+		onResize(cb: () => void) {
+			tui.onResize(cb);
 		},
 	};
 

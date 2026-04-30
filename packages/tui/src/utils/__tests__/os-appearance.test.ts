@@ -1,10 +1,22 @@
-import { describe, it, expect, beforeEach, afterEach, mock } from 'bun:test';
+import {
+  describe,
+  it,
+  expect,
+  beforeEach,
+  afterEach,
+  mock,
+  afterAll,
+} from 'bun:test';
 
 const mockExecSync = mock((): string => '');
 
 mock.module('child_process', () => ({
   execSync: mockExecSync,
 }));
+
+afterAll(() => {
+  mock.restore();
+});
 
 // Import AFTER mock.module
 const { getOSAppearance } = await import('../os-appearance');

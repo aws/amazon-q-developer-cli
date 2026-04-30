@@ -1,4 +1,4 @@
-import { describe, it, expect, mock } from 'bun:test';
+import { describe, it, expect, mock, afterAll } from 'bun:test';
 import { createAppStore, MessageRole } from './app-store';
 import { Kiro } from '../kiro';
 import { AgentEventType } from '../types/agent-events';
@@ -10,6 +10,10 @@ mock.module('../kiro', () => ({
     close: mock(),
   })),
 }));
+
+afterAll(() => {
+  mock.restore();
+});
 
 describe('Agent welcome message', () => {
   it('setCurrentAgent with welcomeMessage adds a Model message', () => {

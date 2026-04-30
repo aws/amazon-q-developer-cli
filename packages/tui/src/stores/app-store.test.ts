@@ -1,4 +1,4 @@
-import { describe, it, expect, mock } from 'bun:test';
+import { describe, it, expect, mock, afterAll } from 'bun:test';
 import {
   createAppStore,
   MessageRole,
@@ -16,6 +16,10 @@ mock.module('../kiro', () => ({
     close: mock(),
   })),
 }));
+
+afterAll(() => {
+  mock.restore();
+});
 
 describe('AppStore input buffer', () => {
   it('backspace removes character at cursor', () => {

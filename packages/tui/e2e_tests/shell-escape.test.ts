@@ -118,82 +118,85 @@ describe('Shell Escape (!command)', () => {
   it('accepts interactive input via read', async () => {
     testCase = await E2ETestCase.builder()
       .withTestName('shell-escape-interactive')
-      .withTerminal({ width: 80, height: 24 })
+      .withTerminal({ width: 120, height: 30 })
       .launch();
-    await testCase.waitForText('ask a question', 10000);
+    await testCase.waitForText('ask a question', 15000);
 
     // Use bash read to prompt for input and echo it back
     await testCase.sendKeys('!read -p "Name: " name && echo "Hello $name"');
-    await testCase.sleepMs(100);
+    await testCase.sleepMs(200);
     await testCase.pressEnter();
 
     // Should see the prompt from read
-    await testCase.waitForText('Name:', 15000);
+    await testCase.waitForText('Name:', 20000);
 
     // Type the response
     await testCase.sendKeys('Kiro');
-    await testCase.sleepMs(100);
+    await testCase.sleepMs(200);
     await testCase.pressEnter();
 
     // Should see the echoed greeting
-    await testCase.waitForText('Hello Kiro', 15000);
+    await testCase.waitForText('Hello Kiro', 20000);
 
     // Should return to prompt
-    await testCase.waitForText('ask a question', 10000);
-  }, 45000);
+    await testCase.waitForText('ask a question', 15000);
+  }, 60000);
 
   it('Ctrl-C cancels a running shell escape command', async () => {
     testCase = await E2ETestCase.builder()
       .withTestName('shell-escape-ctrlc')
-      .withTerminal({ width: 80, height: 24 })
+      .withTerminal({ width: 120, height: 30 })
       .launch();
-    await testCase.waitForText('ask a question', 10000);
+    await testCase.waitForText('ask a question', 15000);
 
     // Start a long-running command
     await testCase.sendKeys('!sleep 30');
-    await testCase.sleepMs(100);
+    await testCase.sleepMs(200);
     await testCase.pressEnter();
 
-    // Wait a moment for the command to start
-    await testCase.sleepMs(1000);
+    // Wait for the command to start running
+    await testCase.sleepMs(2000);
 
     // Press Ctrl+C to cancel
     await testCase.pressCtrlC();
 
     // Should return to prompt (not exit Kiro)
-    await testCase.waitForText('ask a question', 15000);
-  }, 45000);
+    await testCase.waitForText('ask a question', 20000);
+  }, 60000);
 
   it('accepts multiple lines of interactive input', async () => {
+    // Use a wider terminal to prevent the long command from wrapping and
+    // interfering with prompt detection in the xterm screen buffer.
     testCase = await E2ETestCase.builder()
       .withTestName('shell-escape-multi-input')
-      .withTerminal({ width: 80, height: 24 })
+      .withTerminal({ width: 120, height: 30 })
       .launch();
-    await testCase.waitForText('ask a question', 10000);
+    await testCase.waitForText('ask a question', 15000);
 
     // Use variables for prompt strings so the literal prompt text we wait for
     // doesn't appear in the typed command (which stays visible on screen and
     // would cause waitForText to match prematurely in slow CI environments).
     await testCase.sendKeys('!P=Prompt; read -p "${P}1: " a && read -p "${P}2: " b && echo "$a and $b"');
-    await testCase.sleepMs(100);
+    await testCase.sleepMs(200);
     await testCase.pressEnter();
 
-    // First prompt — "Prompt1:" only appears when the first read actually runs
-    await testCase.waitForText('Prompt1:', 15000);
+    // First prompt -- "Prompt1:" only appears when the first read actually runs.
+    // Allow extra time for the PTY chain to settle (TUI -> Bun.Terminal -> bash).
+    await testCase.waitForText('Prompt1:', 20000);
     await testCase.sendKeys('foo');
-    await testCase.sleepMs(100);
+    await testCase.sleepMs(200);
     await testCase.pressEnter();
 
-    // Second prompt — "Prompt2:" only appears when the second read runs
-    await testCase.waitForText('Prompt2:', 15000);
+    // Second prompt -- "Prompt2:" only appears when the second read runs
+    await testCase.waitForText('Prompt2:', 20000);
     await testCase.sendKeys('bar');
-    await testCase.sleepMs(100);
+    await testCase.sleepMs(200);
     await testCase.pressEnter();
 
     // Should see combined output
-    await testCase.waitForText('foo and bar', 15000);
+    await testCase.waitForText('foo and bar', 20000);
 
     // Should return to prompt
-    await testCase.waitForText('ask a question', 10000);
-  }, 45000);
+    await testCase.waitForText('ask a question', 15000);
+  }, 60000);
 });

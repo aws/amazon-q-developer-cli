@@ -1,4 +1,12 @@
-import { describe, it, expect, mock, beforeEach, afterEach } from 'bun:test';
+import {
+  describe,
+  it,
+  expect,
+  mock,
+  beforeEach,
+  afterEach,
+  afterAll,
+} from 'bun:test';
 
 // --- Module mocks MUST be declared before importing the module under test ---
 const mockSpawnSync = mock(() => ({ status: 1 }));
@@ -9,6 +17,10 @@ mock.module('fs', () => ({
   writeFileSync: mockWriteFileSync,
   readFileSync: () => '',
 }));
+
+afterAll(() => {
+  mock.restore();
+});
 
 import { runEffect } from '../effects.js';
 import { MessageRole } from '../../stores/app-store.js';

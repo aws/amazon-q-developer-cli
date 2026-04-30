@@ -1,4 +1,4 @@
-import { describe, it, expect, mock } from 'bun:test';
+import { describe, it, expect, mock, afterAll } from 'bun:test';
 import { createAppStore, MessageRole, ToolUseStatus } from './app-store';
 import { AgentEventType, ApprovalOptionId } from '../types/agent-events';
 import type { AgentStreamEvent } from '../types/agent-events';
@@ -11,6 +11,10 @@ mock.module('../kiro', () => ({
     close: mock(),
   })),
 }));
+
+afterAll(() => {
+  mock.restore();
+});
 
 function makeToolCallEvent(
   id: string,

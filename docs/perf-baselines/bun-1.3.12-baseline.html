@@ -1,0 +1,487 @@
+<!DOCTYPE html>
+<html><head>
+<title>Profile Report - 2026-04-30T05:41:10.154Z</title>
+<style>
+  body { font-family: system-ui; max-width: 1200px; margin: 0 auto; padding: 20px; background: #1a1a2e; color: #eee; }
+  h1, h2 { color: #00d9ff; }
+  table { width: 100%; border-collapse: collapse; margin: 20px 0; }
+  th, td { padding: 8px 12px; text-align: left; border-bottom: 1px solid #333; }
+  th { background: #16213e; color: #00d9ff; }
+  .row { cursor: pointer; }
+  .row:hover { background: #1f3460; }
+  .ours { color: #4ade80; }
+  .dep { color: #fbbf24; }
+  .rt { color: #94a3b8; }
+  .trend { font-family: monospace; letter-spacing: -2px; }
+  .meta { color: #888; margin-bottom: 20px; }
+  .details { display: none; background: #0f0f23; }
+  .details.open { display: table-row; }
+  .details td { padding: 15px 20px; }
+  .call-list { margin: 5px 0; padding-left: 20px; }
+  .call-list li { margin: 3px 0; color: #888; }
+  .call-list .fn { color: #00d9ff; }
+  .hot-path { background: #1f1f3a; padding: 15px; border-radius: 8px; margin: 10px 0; }
+  .hot-path h3 { margin: 0 0 10px 0; color: #ff6b6b; }
+  .path-item { padding: 5px 0; border-left: 2px solid #ff6b6b; padding-left: 10px; margin-left: 10px; }
+</style>
+</head><body>
+<h1>🔥 CPU Profile Report</h1>
+<div class="meta">
+  <p>Duration: 189.1s | Samples: 19905 | Generated: 2026-04-30T05:41:10.154Z</p>
+</div>
+
+<h2>🔥 Top 5 Hot Paths</h2>
+
+<div class="hot-path">
+  <h3>#1: .wasm-function[61] (32055ms self)</h3>
+  <div><strong>Called by:</strong></div>
+  <div class="path-item">← .wasm-function[61] (94509x)</div><div class="path-item">← .wasm-function[220] (13761x)</div>
+  <div style="margin-top:10px"><strong>Calls:</strong></div>
+  <div class="path-item">→ .wasm-function[61] (94509x)</div><div class="path-item">→ .wasm-function[37] (1188x)</div><div class="path-item">→ .wasm-function[229] (970x)</div>
+</div>
+
+<div class="hot-path">
+  <h3>#2: .wasm-function[31] (9463ms self)</h3>
+  <div><strong>Called by:</strong></div>
+  <div class="path-item">← .wasm-function[68] (189x)</div><div class="path-item">← .wasm-function[67] (180x)</div><div class="path-item">← .wasm-function[69] (179x)</div>
+  <div style="margin-top:10px"><strong>Calls:</strong></div>
+  <div class="path-item">→ (leaf)</div>
+</div>
+
+<div class="hot-path">
+  <h3>#3: Ze (9311ms self)</h3>
+  <div><strong>Called by:</strong></div>
+  <div class="path-item">← $ye (1325x)</div><div class="path-item">← (anonymous) (906x)</div><div class="path-item">← Hre (108x)</div>
+  <div style="margin-top:10px"><strong>Calls:</strong></div>
+  <div class="path-item">→ I1 (1107x)</div><div class="path-item">→ charCodeAt (219x)</div><div class="path-item">→ includes (15x)</div>
+</div>
+
+<div class="hot-path">
+  <h3>#4: (anonymous) (7591ms self)</h3>
+  <div><strong>Called by:</strong></div>
+  <div class="path-item">← processTicksAndRejections (18361x)</div><div class="path-item">← jR (14034x)</div><div class="path-item">← map (1023x)</div>
+  <div style="margin-top:10px"><strong>Calls:</strong></div>
+  <div class="path-item">→ doRender (18360x)</div><div class="path-item">→ (unknown) (14296x)</div><div class="path-item">→ Ze (906x)</div>
+</div>
+
+<div class="hot-path">
+  <h3>#5: .wasm-function[40] (5311ms self)</h3>
+  <div><strong>Called by:</strong></div>
+  <div class="path-item">← .wasm-function[34] (782x)</div><div class="path-item">← .wasm-function[33] (747x)</div><div class="path-item">← .wasm-function[61] (318x)</div>
+  <div style="margin-top:10px"><strong>Calls:</strong></div>
+  <div class="path-item">→ .wasm-function[69] (372x)</div><div class="path-item">→ .wasm-function[68] (360x)</div><div class="path-item">→ .wasm-function[67] (301x)</div>
+</div>
+
+
+<h2>Top Functions by Self Time</h2>
+<p style="color:#888">Click a row to see callers and callees</p>
+<table>
+  <tr><th>Function</th><th>Self Time</th><th>Total Time</th><th>Calls</th><th>Type</th><th>Trend</th></tr>
+  
+  <tr class="row" onclick="toggle(0)">
+    <td>.wasm-function[61] @ unknown</td>
+    <td>32055.4ms</td>
+    <td>1028641.4ms</td>
+    <td>3,374</td>
+    <td class="rt">runtime</td>
+    <td class="trend">▁▁▁▁▅▁█▆▄▁</td>
+  </tr>
+  <tr class="details" id="details-0">
+    <td colspan="6">
+      <strong>Called by:</strong>
+      <ul class="call-list">
+        <li><span class="fn">.wasm-function[61] @ unknown</span> (94509x)</li><li><span class="fn">.wasm-function[220] @ unknown</span> (13761x)</li>
+      </ul>
+      <strong>Calls:</strong>
+      <ul class="call-list">
+        <li><span class="fn">.wasm-function[61] @ unknown</span> (94509x)</li><li><span class="fn">.wasm-function[37] @ unknown</span> (1188x)</li><li><span class="fn">.wasm-function[229] @ unknown</span> (970x)</li><li><span class="fn">.wasm-function[63] @ unknown</span> (969x)</li><li><span class="fn">.wasm-function[123] @ unknown</span> (882x)</li>
+      </ul>
+    </td>
+  </tr>
+  <tr class="row" onclick="toggle(1)">
+    <td>.wasm-function[31] @ unknown</td>
+    <td>9462.7ms</td>
+    <td>9462.7ms</td>
+    <td>996</td>
+    <td class="rt">runtime</td>
+    <td class="trend">▁▁▁▁▅▁█▆▅▁</td>
+  </tr>
+  <tr class="details" id="details-1">
+    <td colspan="6">
+      <strong>Called by:</strong>
+      <ul class="call-list">
+        <li><span class="fn">.wasm-function[68] @ unknown</span> (189x)</li><li><span class="fn">.wasm-function[67] @ unknown</span> (180x)</li><li><span class="fn">.wasm-function[69] @ unknown</span> (179x)</li><li><span class="fn">.wasm-function[66] @ unknown</span> (152x)</li><li><span class="fn">.wasm-function[45] @ unknown</span> (101x)</li>
+      </ul>
+      <strong>Calls:</strong>
+      <ul class="call-list">
+        <li>(leaf)</li>
+      </ul>
+    </td>
+  </tr>
+  <tr class="row" onclick="toggle(2)">
+    <td>Ze @ tui.js</td>
+    <td>9310.7ms</td>
+    <td>22279.2ms</td>
+    <td>980</td>
+    <td class="rt">runtime</td>
+    <td class="trend">▂▁▁▁▅▁█▆▄▁</td>
+  </tr>
+  <tr class="details" id="details-2">
+    <td colspan="6">
+      <strong>Called by:</strong>
+      <ul class="call-list">
+        <li><span class="fn">$ye @ tui.js</span> (1325x)</li><li><span class="fn">(anonymous) @ tui.js</span> (906x)</li><li><span class="fn">Hre @ tui.js</span> (108x)</li><li><span class="fn">map @ unknown</span> (6x)</li>
+      </ul>
+      <strong>Calls:</strong>
+      <ul class="call-list">
+        <li><span class="fn">I1 @ tui.js</span> (1107x)</li><li><span class="fn">charCodeAt @ unknown</span> (219x)</li><li><span class="fn">includes @ unknown</span> (15x)</li><li><span class="fn">fromCodePoint @ unknown</span> (10x)</li><li><span class="fn">get @ unknown</span> (10x)</li>
+      </ul>
+    </td>
+  </tr>
+  <tr class="row" onclick="toggle(3)">
+    <td>(anonymous) @ tui.js</td>
+    <td>7591.1ms</td>
+    <td>360200.2ms</td>
+    <td>799</td>
+    <td class="rt">runtime</td>
+    <td class="trend">▃▂▃▃█▁▇▇▅▁</td>
+  </tr>
+  <tr class="details" id="details-3">
+    <td colspan="6">
+      <strong>Called by:</strong>
+      <ul class="call-list">
+        <li><span class="fn">processTicksAndRejections @ unknown</span> (18361x)</li><li><span class="fn">jR @ tui.js</span> (14034x)</li><li><span class="fn">map @ unknown</span> (1023x)</li><li><span class="fn">wasm-stub @ unknown</span> (729x)</li><li><span class="fn">measure @ tui.js</span> (660x)</li>
+      </ul>
+      <strong>Calls:</strong>
+      <ul class="call-list">
+        <li><span class="fn">doRender @ tui.js</span> (18360x)</li><li><span class="fn">(unknown) @ unknown</span> (14296x)</li><li><span class="fn">Ze @ tui.js</span> (906x)</li><li><span class="fn">measure @ tui.js</span> (675x)</li><li><span class="fn">ye @ tui.js</span> (614x)</li>
+      </ul>
+    </td>
+  </tr>
+  <tr class="row" onclick="toggle(4)">
+    <td>.wasm-function[40] @ unknown</td>
+    <td>5310.9ms</td>
+    <td>17547.8ms</td>
+    <td>559</td>
+    <td class="rt">runtime</td>
+    <td class="trend">▁▁▁▁▅▁█▆▄▁</td>
+  </tr>
+  <tr class="details" id="details-4">
+    <td colspan="6">
+      <strong>Called by:</strong>
+      <ul class="call-list">
+        <li><span class="fn">.wasm-function[34] @ unknown</span> (782x)</li><li><span class="fn">.wasm-function[33] @ unknown</span> (747x)</li><li><span class="fn">.wasm-function[61] @ unknown</span> (318x)</li>
+      </ul>
+      <strong>Calls:</strong>
+      <ul class="call-list">
+        <li><span class="fn">.wasm-function[69] @ unknown</span> (372x)</li><li><span class="fn">.wasm-function[68] @ unknown</span> (360x)</li><li><span class="fn">.wasm-function[67] @ unknown</span> (301x)</li><li><span class="fn">.wasm-function[66] @ unknown</span> (255x)</li>
+      </ul>
+    </td>
+  </tr>
+  <tr class="row" onclick="toggle(5)">
+    <td>.wasm-function[33] @ unknown</td>
+    <td>4835.9ms</td>
+    <td>11932.9ms</td>
+    <td>509</td>
+    <td class="rt">runtime</td>
+    <td class="trend">▁▁▁▁▅▁█▇▅▁</td>
+  </tr>
+  <tr class="details" id="details-5">
+    <td colspan="6">
+      <strong>Called by:</strong>
+      <ul class="call-list">
+        <li><span class="fn">.wasm-function[61] @ unknown</span> (829x)</li><li><span class="fn">.wasm-function[63] @ unknown</span> (274x)</li><li><span class="fn">.wasm-function[93] @ unknown</span> (138x)</li><li><span class="fn">.wasm-function[118] @ unknown</span> (15x)</li>
+      </ul>
+      <strong>Calls:</strong>
+      <ul class="call-list">
+        <li><span class="fn">.wasm-function[40] @ unknown</span> (747x)</li>
+      </ul>
+    </td>
+  </tr>
+  <tr class="row" onclick="toggle(6)">
+    <td>.wasm-function[108] @ unknown</td>
+    <td>4769.4ms</td>
+    <td>4769.4ms</td>
+    <td>502</td>
+    <td class="rt">runtime</td>
+    <td class="trend">▁▁▁▁▄▁█▅▅▁</td>
+  </tr>
+  <tr class="details" id="details-6">
+    <td colspan="6">
+      <strong>Called by:</strong>
+      <ul class="call-list">
+        <li><span class="fn">.wasm-function[52] @ unknown</span> (473x)</li><li><span class="fn">.wasm-function[115] @ unknown</span> (29x)</li>
+      </ul>
+      <strong>Calls:</strong>
+      <ul class="call-list">
+        <li>(leaf)</li>
+      </ul>
+    </td>
+  </tr>
+  <tr class="row" onclick="toggle(7)">
+    <td>.wasm-function[34] @ unknown</td>
+    <td>4645.8ms</td>
+    <td>12075.4ms</td>
+    <td>489</td>
+    <td class="rt">runtime</td>
+    <td class="trend">▁▁▁▁▅▁█▆▅▁</td>
+  </tr>
+  <tr class="details" id="details-7">
+    <td colspan="6">
+      <strong>Called by:</strong>
+      <ul class="call-list">
+        <li><span class="fn">.wasm-function[61] @ unknown</span> (819x)</li><li><span class="fn">.wasm-function[63] @ unknown</span> (293x)</li><li><span class="fn">.wasm-function[93] @ unknown</span> (124x)</li><li><span class="fn">.wasm-function[118] @ unknown</span> (33x)</li><li><span class="fn">.wasm-function[220] @ unknown</span> (2x)</li>
+      </ul>
+      <strong>Calls:</strong>
+      <ul class="call-list">
+        <li><span class="fn">.wasm-function[40] @ unknown</span> (782x)</li>
+      </ul>
+    </td>
+  </tr>
+  <tr class="row" onclick="toggle(8)">
+    <td>.wasm-function[69] @ unknown</td>
+    <td>3904.8ms</td>
+    <td>5605.4ms</td>
+    <td>411</td>
+    <td class="rt">runtime</td>
+    <td class="trend">▁▁▁▁▄▁█▅▆▁</td>
+  </tr>
+  <tr class="details" id="details-8">
+    <td colspan="6">
+      <strong>Called by:</strong>
+      <ul class="call-list">
+        <li><span class="fn">.wasm-function[40] @ unknown</span> (372x)</li><li><span class="fn">.wasm-function[80] @ unknown</span> (109x)</li><li><span class="fn">.wasm-function[83] @ unknown</span> (105x)</li><li><span class="fn">.wasm-function[54] @ unknown</span> (4x)</li>
+      </ul>
+      <strong>Calls:</strong>
+      <ul class="call-list">
+        <li><span class="fn">.wasm-function[31] @ unknown</span> (179x)</li>
+      </ul>
+    </td>
+  </tr>
+  <tr class="row" onclick="toggle(9)">
+    <td>.wasm-function[68] @ unknown</td>
+    <td>3420.3ms</td>
+    <td>5215.9ms</td>
+    <td>360</td>
+    <td class="rt">runtime</td>
+    <td class="trend">▁▁▁▁▄▁█▅▅▁</td>
+  </tr>
+  <tr class="details" id="details-9">
+    <td colspan="6">
+      <strong>Called by:</strong>
+      <ul class="call-list">
+        <li><span class="fn">.wasm-function[40] @ unknown</span> (360x)</li><li><span class="fn">.wasm-function[80] @ unknown</span> (98x)</li><li><span class="fn">.wasm-function[83] @ unknown</span> (87x)</li><li><span class="fn">.wasm-function[54] @ unknown</span> (4x)</li>
+      </ul>
+      <strong>Calls:</strong>
+      <ul class="call-list">
+        <li><span class="fn">.wasm-function[31] @ unknown</span> (189x)</li>
+      </ul>
+    </td>
+  </tr>
+  <tr class="row" onclick="toggle(10)">
+    <td>write @ unknown</td>
+    <td>3372.8ms</td>
+    <td>3372.8ms</td>
+    <td>355</td>
+    <td class="rt">runtime</td>
+    <td class="trend">▁▁▁▂█▁▇▆▄▁</td>
+  </tr>
+  <tr class="details" id="details-10">
+    <td colspan="6">
+      <strong>Called by:</strong>
+      <ul class="call-list">
+        <li><span class="fn">writeFast @ streams</span> (355x)</li>
+      </ul>
+      <strong>Calls:</strong>
+      <ul class="call-list">
+        <li>(leaf)</li>
+      </ul>
+    </td>
+  </tr>
+  <tr class="row" onclick="toggle(11)">
+    <td>.wasm-function[52] @ unknown</td>
+    <td>3353.7ms</td>
+    <td>7847.6ms</td>
+    <td>353</td>
+    <td class="rt">runtime</td>
+    <td class="trend">▁▁▁▁▄▁█▅▄▁</td>
+  </tr>
+  <tr class="details" id="details-11">
+    <td colspan="6">
+      <strong>Called by:</strong>
+      <ul class="call-list">
+        <li><span class="fn">.wasm-function[123] @ unknown</span> (623x)</li><li><span class="fn">.wasm-function[115] @ unknown</span> (203x)</li>
+      </ul>
+      <strong>Calls:</strong>
+      <ul class="call-list">
+        <li><span class="fn">.wasm-function[108] @ unknown</span> (473x)</li>
+      </ul>
+    </td>
+  </tr>
+  <tr class="row" onclick="toggle(12)">
+    <td>.wasm-function[67] @ unknown</td>
+    <td>3163.7ms</td>
+    <td>4873.9ms</td>
+    <td>333</td>
+    <td class="rt">runtime</td>
+    <td class="trend">▁▁▁▁▄▁█▇▄▁</td>
+  </tr>
+  <tr class="details" id="details-12">
+    <td colspan="6">
+      <strong>Called by:</strong>
+      <ul class="call-list">
+        <li><span class="fn">.wasm-function[40] @ unknown</span> (301x)</li><li><span class="fn">.wasm-function[80] @ unknown</span> (106x)</li><li><span class="fn">.wasm-function[83] @ unknown</span> (99x)</li><li><span class="fn">.wasm-function[54] @ unknown</span> (7x)</li>
+      </ul>
+      <strong>Calls:</strong>
+      <ul class="call-list">
+        <li><span class="fn">.wasm-function[31] @ unknown</span> (180x)</li>
+      </ul>
+    </td>
+  </tr>
+  <tr class="row" onclick="toggle(13)">
+    <td>.wasm-function[42] @ unknown</td>
+    <td>3125.7ms</td>
+    <td>3125.7ms</td>
+    <td>329</td>
+    <td class="rt">runtime</td>
+    <td class="trend">▁▁▁▁▄▁█▇▅▁</td>
+  </tr>
+  <tr class="details" id="details-13">
+    <td colspan="6">
+      <strong>Called by:</strong>
+      <ul class="call-list">
+        <li><span class="fn">.wasm-function[119] @ unknown</span> (327x)</li><li><span class="fn">.wasm-function[92] @ unknown</span> (2x)</li>
+      </ul>
+      <strong>Calls:</strong>
+      <ul class="call-list">
+        <li>(leaf)</li>
+      </ul>
+    </td>
+  </tr>
+  <tr class="row" onclick="toggle(14)">
+    <td>.wasm-function[45] @ unknown</td>
+    <td>3040.2ms</td>
+    <td>3999.8ms</td>
+    <td>320</td>
+    <td class="rt">runtime</td>
+    <td class="trend">▁▁▁▁▅▁█▆▆▁</td>
+  </tr>
+  <tr class="details" id="details-14">
+    <td colspan="6">
+      <strong>Called by:</strong>
+      <ul class="call-list">
+        <li><span class="fn">.wasm-function[63] @ unknown</span> (174x)</li><li><span class="fn">.wasm-function[61] @ unknown</span> (120x)</li><li><span class="fn">.wasm-function[37] @ unknown</span> (99x)</li><li><span class="fn">.wasm-function[122] @ unknown</span> (28x)</li>
+      </ul>
+      <strong>Calls:</strong>
+      <ul class="call-list">
+        <li><span class="fn">.wasm-function[31] @ unknown</span> (101x)</li>
+      </ul>
+    </td>
+  </tr>
+  <tr class="row" onclick="toggle(15)">
+    <td>Q1 @ tui.js</td>
+    <td>2755.2ms</td>
+    <td>4284.8ms</td>
+    <td>290</td>
+    <td class="rt">runtime</td>
+    <td class="trend">▁▁▁▁▇▁█▄▃▁</td>
+  </tr>
+  <tr class="details" id="details-15">
+    <td colspan="6">
+      <strong>Called by:</strong>
+      <ul class="call-list">
+        <li><span class="fn">I1 @ tui.js</span> (451x)</li>
+      </ul>
+      <strong>Calls:</strong>
+      <ul class="call-list">
+        <li><span class="fn">Nre @ tui.js</span> (46x)</li><li><span class="fn">C1 @ tui.js</span> (43x)</li><li><span class="fn">k1 @ tui.js</span> (38x)</li><li><span class="fn">tf @ tui.js</span> (34x)</li>
+      </ul>
+    </td>
+  </tr>
+  <tr class="row" onclick="toggle(16)">
+    <td>next @ unknown</td>
+    <td>2707.7ms</td>
+    <td>2707.7ms</td>
+    <td>285</td>
+    <td class="rt">runtime</td>
+    <td class="trend">▁▁▁▁▅▁█▃▁▁</td>
+  </tr>
+  <tr class="details" id="details-16">
+    <td colspan="6">
+      <strong>Called by:</strong>
+      <ul class="call-list">
+        <li><span class="fn">I1 @ tui.js</span> (278x)</li><li><span class="fn">zH @ tui.js</span> (7x)</li>
+      </ul>
+      <strong>Calls:</strong>
+      <ul class="call-list">
+        <li>(leaf)</li>
+      </ul>
+    </td>
+  </tr>
+  <tr class="row" onclick="toggle(17)">
+    <td>.wasm-function[66] @ unknown</td>
+    <td>2679.2ms</td>
+    <td>4123.3ms</td>
+    <td>282</td>
+    <td class="rt">runtime</td>
+    <td class="trend">▁▁▁▁▃▁█▅▄▁</td>
+  </tr>
+  <tr class="details" id="details-17">
+    <td colspan="6">
+      <strong>Called by:</strong>
+      <ul class="call-list">
+        <li><span class="fn">.wasm-function[40] @ unknown</span> (255x)</li><li><span class="fn">.wasm-function[83] @ unknown</span> (89x)</li><li><span class="fn">.wasm-function[80] @ unknown</span> (88x)</li><li><span class="fn">.wasm-function[54] @ unknown</span> (1x)</li><li><span class="fn">(unknown) @ unknown</span> (1x)</li>
+      </ul>
+      <strong>Calls:</strong>
+      <ul class="call-list">
+        <li><span class="fn">.wasm-function[31] @ unknown</span> (152x)</li>
+      </ul>
+    </td>
+  </tr>
+  <tr class="row" onclick="toggle(18)">
+    <td>RR @ tui.js</td>
+    <td>2612.7ms</td>
+    <td>17281.8ms</td>
+    <td>275</td>
+    <td class="rt">runtime</td>
+    <td class="trend">▁▁▁▂▄▁█▆▃▂</td>
+  </tr>
+  <tr class="details" id="details-18">
+    <td colspan="6">
+      <strong>Called by:</strong>
+      <ul class="call-list">
+        <li><span class="fn">RR @ tui.js</span> (1544x)</li><li><span class="fn">$ye @ tui.js</span> (275x)</li>
+      </ul>
+      <strong>Calls:</strong>
+      <ul class="call-list">
+        <li><span class="fn">RR @ tui.js</span> (1544x)</li>
+      </ul>
+    </td>
+  </tr>
+  <tr class="row" onclick="toggle(19)">
+    <td>.wasm-function[123] @ unknown</td>
+    <td>2565.2ms</td>
+    <td>8484.1ms</td>
+    <td>270</td>
+    <td class="rt">runtime</td>
+    <td class="trend">▁▁▁▁▄▁█▆▄▁</td>
+  </tr>
+  <tr class="details" id="details-19">
+    <td colspan="6">
+      <strong>Called by:</strong>
+      <ul class="call-list">
+        <li><span class="fn">.wasm-function[61] @ unknown</span> (882x)</li><li><span class="fn">(unknown) @ unknown</span> (10x)</li><li><span class="fn">.wasm-function[32] @ unknown</span> (1x)</li>
+      </ul>
+      <strong>Calls:</strong>
+      <ul class="call-list">
+        <li><span class="fn">.wasm-function[52] @ unknown</span> (623x)</li>
+      </ul>
+    </td>
+  </tr>
+</table>
+<script>
+function toggle(i) {
+  document.getElementById('details-' + i).classList.toggle('open');
+}
+</script>
+</body></html>

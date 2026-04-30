@@ -121,8 +121,12 @@ type ImageSegment = {
   sizeBytes: number;
 };
 
-// Build content for submission - use @file: markers for later expansion
-const buildContent = (segments: Segment[]): string => {
+// buildContent is defined and exported here in PromptInput.tsx so tests
+// can import it directly. Keep the implementation tiny: join the segments
+// verbatim; no whitespace collapse or trim. Collapsing runs of spaces or
+// trimming leading whitespace would destroy indentation in pasted code.
+// Empty-submit is guarded at the call sites via `content.trim()`.
+export const buildContent = (segments: Segment[]): string => {
   const parts = segments.map((s) => {
     if (s.type === 'text') return s.value;
     if (s.type === 'file') return ` @file:${s.filePath} `;
@@ -130,7 +134,7 @@ const buildContent = (segments: Segment[]): string => {
     // Images are handled separately via extractImages
     return '';
   });
-  return parts.join('').replace(/  +/g, ' ').trim();
+  return parts.join('');
 };
 
 // Detect trigger patterns
@@ -733,7 +737,9 @@ export const PromptInput = React.memo(function PromptInput({
           // or slash command rejection — the menus aren't useful here).
           if (isProcessing) {
             const content = buildContent(segments);
-            if (content) {
+            // Don't submit whitespace-only prompts, but preserve indentation
+            // (e.g. pasted code) in the submitted content.
+            if (content.trim()) {
               clearAll();
               onSubmit(content);
             }
@@ -745,7 +751,7 @@ export const PromptInput = React.memo(function PromptInput({
           if (slashMenuVisible) return;
           const content = buildContent(segments);
           const hasImages = segments.some((s) => s.type === 'image');
-          if (content || hasImages) {
+          if (content.trim() || hasImages) {
             clearAll();
             onSubmit(content);
           }
@@ -764,23 +770,31 @@ export const PromptInput = React.memo(function PromptInput({
           return;
         }
         // Tab on "/command " shows sub-command dropdown (e.g. /agent → create, edit, swap)
+        // Skip if user already typed past a subcommand (e.g. /agent swap ro)
         {
           const text = getVisibleText(segments);
           if (text.startsWith('/') && text.includes(' ')) {
             const spaceIdx = text.indexOf(' ');
             const cmdName = text.slice(0, spaceIdx);
+            const afterCmd = text.slice(spaceIdx + 1);
             const cmd = slashCommands.find((c) => c.name === cmdName);
             const subs = cmd?.meta?.subcommands;
             if (cmd && subs && subs.length > 0) {
-              const subHints = cmd.meta?.subcommandHints ?? {};
-              const subOptions = subs.map((sub) => ({
-                value: sub,
-                label: sub,
-                description: `${cmdName} ${sub}`,
-                hint: subHints[sub] ?? undefined,
-              }));
-              setActiveCommand({ command: cmd, options: subOptions });
-              return;
+              // Don't show subcommand menu if user already typed a subcommand + space
+              const alreadyInSub = subs.some((s) =>
+                afterCmd.startsWith(`${s} `)
+              );
+              if (!alreadyInSub) {
+                const subHints = cmd.meta?.subcommandHints ?? {};
+                const subOptions = subs.map((sub) => ({
+                  value: sub,
+                  label: sub,
+                  description: `${cmdName} ${sub}`,
+                  hint: subHints[sub] ?? undefined,
+                }));
+                setActiveCommand({ command: cmd, options: subOptions });
+                return;
+              }
             }
           }
         }

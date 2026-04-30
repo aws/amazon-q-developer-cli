@@ -47,9 +47,9 @@ fn truncate_server_description(description: &str) -> String {
         description.to_string()
     } else {
         // Find a good break point (word boundary) within the limit
-        let truncated = &description[..50];
+        let truncated = crate::cli::chat::util::truncate_safe(description, 50);
         if let Some(last_space) = truncated.rfind(' ') {
-            format!("{}...", &description[..last_space])
+            format!("{}...", &truncated[..last_space])
         } else {
             format!("{truncated}...")
         }

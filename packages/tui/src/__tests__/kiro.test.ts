@@ -1,4 +1,4 @@
-import { describe, it, expect, mock, beforeEach } from 'bun:test';
+import { describe, it, expect, mock, beforeEach, afterAll } from 'bun:test';
 import { AgentEventType } from '../types/agent-events';
 import type { AgentStreamEvent } from '../types/agent-events';
 
@@ -78,7 +78,15 @@ mock.module('../acp-client', () => ({
   },
 }));
 
-const { Kiro } = await import('../kiro');
+afterAll(() => {
+  mock.restore();
+});
+
+// Use a query-string import so the specifier doesn't match the bare
+// '../kiro' that other test files mock via mock.module.  This gives us
+// the real Kiro class (which will pick up our '../acp-client' mock above).
+// @ts-expect-error — query-string specifier bypasses bun's mock registry
+const { Kiro } = await import('../kiro?real');
 
 describe('Kiro', () => {
   beforeEach(() => {

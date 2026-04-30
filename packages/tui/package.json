@@ -48,6 +48,7 @@
     "@types/node": "^22.19.15",
     "@types/react": "^19.2.14",
     "@xterm/headless": "^6.0.0",
+    "es-toolkit": "^1.46.0",
     "bun-pty": "^0.4.8",
     "react-devtools-core": "^7.0.1",
     "strip-ansi": "^7.2.0",

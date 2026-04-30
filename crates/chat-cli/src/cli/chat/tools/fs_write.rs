@@ -56,6 +56,11 @@ use crate::util::tool_permission_checker::is_tool_in_allowlist;
 static SYNTAX_SET: LazyLock<SyntaxSet> = LazyLock::new(SyntaxSet::load_defaults_newlines);
 static THEME_SET: LazyLock<ThemeSet> = LazyLock::new(ThemeSet::load_defaults);
 
+/// Normalize CRLF line endings to LF for consistent string matching.
+fn normalize_line_endings(s: &str) -> String {
+    s.replace("\r\n", "\n")
+}
+
 #[derive(Debug, Clone, Deserialize)]
 #[serde(tag = "command")]
 pub enum FsWrite {
@@ -142,7 +147,11 @@ impl FsWrite {
             },
             FsWrite::StrReplace { old_str, new_str, .. } => {
                 let file = os.fs.read_to_string(&path).await?;
-                let matches = file.match_indices(old_str).collect::<Vec<_>>();
+                let has_crlf = file.contains("\r\n");
+                let normalized = normalize_line_endings(&file);
+                let old_str_normalized = normalize_line_endings(old_str);
+                let new_str_normalized = normalize_line_endings(new_str);
+                let matches = normalized.match_indices(&old_str_normalized).collect::<Vec<_>>();
                 queue!(
                     output,
                     style::Print("Updating: "),
@@ -154,8 +163,9 @@ impl FsWrite {
                 match matches.len() {
                     0 => return Err(eyre!("no occurrences of \"{old_str}\" were found")),
                     1 => {
-                        let file = file.replacen(old_str, new_str, 1);
-                        os.fs.write(&path, file).await?;
+                        let result = normalized.replacen(&old_str_normalized, &new_str_normalized, 1);
+                        let output = if has_crlf { result.replace('\n', "\r\n") } else { result };
+                        os.fs.write(&path, output).await?;
                     },
                     x => return Err(eyre!("{x} occurrences of old_str were found when only 1 is expected")),
                 }
@@ -1887,5 +1897,80 @@ mod tests {
             "editing file via symlink path should be allowed when symlink is in allowedPaths, got {:?}",
             res
         );
+    }
+
+    #[tokio::test]
+    async fn test_str_replace_crlf_file_with_lf_old_str() {
+        let os = Os::new().await.unwrap();
+        let mut stdout = std::io::stdout();
+        let mut line_tracker = HashMap::new();
+
+        let file_path = "/crlf_test.txt";
+        os.fs.write(file_path, "hello\r\nworld\r\nfoo").await.unwrap();
+
+        let v = serde_json::json!({
+            "path": file_path,
+            "command": "str_replace",
+            "old_str": "world",
+            "new_str": "rust",
+        });
+        serde_json::from_value::<FsWrite>(v)
+            .unwrap()
+            .invoke(&os, &mut stdout, &mut line_tracker)
+            .await
+            .unwrap();
+
+        let content = os.fs.read_to_string(file_path).await.unwrap();
+        assert_eq!(content, "hello\r\nrust\r\nfoo");
+    }
+
+    #[tokio::test]
+    async fn test_str_replace_crlf_multiline_old_str() {
+        let os = Os::new().await.unwrap();
+        let mut stdout = std::io::stdout();
+        let mut line_tracker = HashMap::new();
+
+        let file_path = "/crlf_multi.txt";
+        os.fs.write(file_path, "aaa\r\nbbb\r\nccc\r\n").await.unwrap();
+
+        let v = serde_json::json!({
+            "path": file_path,
+            "command": "str_replace",
+            "old_str": "aaa\nbbb",
+            "new_str": "xxx\nyyy",
+        });
+        serde_json::from_value::<FsWrite>(v)
+            .unwrap()
+            .invoke(&os, &mut stdout, &mut line_tracker)
+            .await
+            .unwrap();
+
+        let content = os.fs.read_to_string(file_path).await.unwrap();
+        assert_eq!(content, "xxx\r\nyyy\r\nccc\r\n");
+    }
+
+    #[tokio::test]
+    async fn test_str_replace_crlf_preserves_line_endings() {
+        let os = Os::new().await.unwrap();
+        let mut stdout = std::io::stdout();
+        let mut line_tracker = HashMap::new();
+
+        let file_path = "/crlf_preserve.txt";
+        os.fs.write(file_path, "line1\r\nline2\r\nline3\r\n").await.unwrap();
+
+        let v = serde_json::json!({
+            "path": file_path,
+            "command": "str_replace",
+            "old_str": "line2",
+            "new_str": "replaced",
+        });
+        serde_json::from_value::<FsWrite>(v)
+            .unwrap()
+            .invoke(&os, &mut stdout, &mut line_tracker)
+            .await
+            .unwrap();
+
+        let content = os.fs.read_to_string(file_path).await.unwrap();
+        assert_eq!(content, "line1\r\nreplaced\r\nline3\r\n");
     }
 }
