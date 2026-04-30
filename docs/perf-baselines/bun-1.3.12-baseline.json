@@ -1,0 +1,559 @@
+{
+  "timestamp": "2026-04-30T05:41:10.154Z",
+  "durationS": 189.1115415,
+  "samples": 19905,
+  "functions": [
+    {
+      "name": ".wasm-function[61] @ unknown",
+      "selfTimeMs": 32055.380106556142,
+      "totalTimeMs": 1028641.3764483798,
+      "calls": 3374,
+      "type": "runtime",
+      "trend": [
+        17,
+        43,
+        20,
+        41,
+        658,
+        0,
+        1114,
+        859,
+        610,
+        12
+      ],
+      "callers": {
+        ".wasm-function[61] @ unknown": 94509,
+        ".wasm-function[220] @ unknown": 13761
+      },
+      "callees": {
+        ".wasm-function[61] @ unknown": 94509,
+        ".wasm-function[37] @ unknown": 1188,
+        ".wasm-function[229] @ unknown": 970,
+        ".wasm-function[63] @ unknown": 969,
+        ".wasm-function[123] @ unknown": 882
+      }
+    },
+    {
+      "name": ".wasm-function[31] @ unknown",
+      "selfTimeMs": 9462.702604069329,
+      "totalTimeMs": 9462.702604069329,
+      "calls": 996,
+      "type": "runtime",
+      "trend": [
+        4,
+        12,
+        1,
+        17,
+        191,
+        0,
+        305,
+        253,
+        209,
+        4
+      ],
+      "callers": {
+        ".wasm-function[68] @ unknown": 189,
+        ".wasm-function[67] @ unknown": 180,
+        ".wasm-function[69] @ unknown": 179,
+        ".wasm-function[66] @ unknown": 152,
+        ".wasm-function[45] @ unknown": 101
+      },
+      "callees": {}
+    },
+    {
+      "name": "Ze @ tui.js",
+      "selfTimeMs": 9310.691317256971,
+      "totalTimeMs": 22279.154223436322,
+      "calls": 980,
+      "type": "runtime",
+      "trend": [
+        47,
+        32,
+        23,
+        37,
+        173,
+        0,
+        295,
+        212,
+        159,
+        2
+      ],
+      "callers": {
+        "$ye @ tui.js": 1325,
+        "(anonymous) @ tui.js": 906,
+        "Hre @ tui.js": 108,
+        "map @ unknown": 6
+      },
+      "callees": {
+        "I1 @ tui.js": 1107,
+        "charCodeAt @ unknown": 219,
+        "includes @ unknown": 15,
+        "fromCodePoint @ unknown": 10,
+        "get @ unknown": 10
+      }
+    },
+    {
+      "name": "(anonymous) @ tui.js",
+      "selfTimeMs": 7591.063635192163,
+      "totalTimeMs": 360200.24480730976,
+      "calls": 799,
+      "type": "runtime",
+      "trend": [
+        64,
+        41,
+        48,
+        60,
+        162,
+        0,
+        157,
+        147,
+        97,
+        23
+      ],
+      "callers": {
+        "processTicksAndRejections @ unknown": 18361,
+        "jR @ tui.js": 14034,
+        "map @ unknown": 1023,
+        "wasm-stub @ unknown": 729,
+        "measure @ tui.js": 660
+      },
+      "callees": {
+        "doRender @ tui.js": 18360,
+        "(unknown) @ unknown": 14296,
+        "Ze @ tui.js": 906,
+        "measure @ tui.js": 675,
+        "ye @ tui.js": 614
+      }
+    },
+    {
+      "name": ".wasm-function[40] @ unknown",
+      "selfTimeMs": 5310.894333006782,
+      "totalTimeMs": 17547.802921401657,
+      "calls": 559,
+      "type": "runtime",
+      "trend": [
+        4,
+        2,
+        5,
+        14,
+        107,
+        0,
+        182,
+        148,
+        97,
+        0
+      ],
+      "callers": {
+        ".wasm-function[34] @ unknown": 782,
+        ".wasm-function[33] @ unknown": 747,
+        ".wasm-function[61] @ unknown": 318
+      },
+      "callees": {
+        ".wasm-function[69] @ unknown": 372,
+        ".wasm-function[68] @ unknown": 360,
+        ".wasm-function[67] @ unknown": 301,
+        ".wasm-function[66] @ unknown": 255
+      }
+    },
+    {
+      "name": ".wasm-function[33] @ unknown",
+      "selfTimeMs": 4835.859061718161,
+      "totalTimeMs": 11932.88601477016,
+      "calls": 509,
+      "type": "runtime",
+      "trend": [
+        1,
+        5,
+        6,
+        8,
+        96,
+        0,
+        151,
+        139,
+        101,
+        2
+      ],
+      "callers": {
+        ".wasm-function[61] @ unknown": 829,
+        ".wasm-function[63] @ unknown": 274,
+        ".wasm-function[93] @ unknown": 138,
+        ".wasm-function[118] @ unknown": 15
+      },
+      "callees": {
+        ".wasm-function[40] @ unknown": 747
+      }
+    },
+    {
+      "name": ".wasm-function[108] @ unknown",
+      "selfTimeMs": 4769.354123737754,
+      "totalTimeMs": 4769.354123737754,
+      "calls": 502,
+      "type": "runtime",
+      "trend": [
+        9,
+        8,
+        8,
+        9,
+        89,
+        0,
+        159,
+        110,
+        96,
+        14
+      ],
+      "callers": {
+        ".wasm-function[52] @ unknown": 473,
+        ".wasm-function[115] @ unknown": 29
+      },
+      "callees": {}
+    },
+    {
+      "name": ".wasm-function[34] @ unknown",
+      "selfTimeMs": 4645.844953202713,
+      "totalTimeMs": 12075.396596156745,
+      "calls": 489,
+      "type": "runtime",
+      "trend": [
+        1,
+        7,
+        2,
+        8,
+        94,
+        0,
+        154,
+        131,
+        92,
+        0
+      ],
+      "callers": {
+        ".wasm-function[61] @ unknown": 819,
+        ".wasm-function[63] @ unknown": 293,
+        ".wasm-function[93] @ unknown": 124,
+        ".wasm-function[118] @ unknown": 33,
+        ".wasm-function[220] @ unknown": 2
+      },
+      "callees": {
+        ".wasm-function[40] @ unknown": 782
+      }
+    },
+    {
+      "name": ".wasm-function[69] @ unknown",
+      "selfTimeMs": 3904.7899299924643,
+      "totalTimeMs": 5605.416201205728,
+      "calls": 411,
+      "type": "runtime",
+      "trend": [
+        0,
+        7,
+        1,
+        12,
+        69,
+        0,
+        132,
+        87,
+        100,
+        3
+      ],
+      "callers": {
+        ".wasm-function[40] @ unknown": 372,
+        ".wasm-function[80] @ unknown": 109,
+        ".wasm-function[83] @ unknown": 105,
+        ".wasm-function[54] @ unknown": 4
+      },
+      "callees": {
+        ".wasm-function[31] @ unknown": 179
+      }
+    },
+    {
+      "name": ".wasm-function[68] @ unknown",
+      "selfTimeMs": 3420.2539532780706,
+      "totalTimeMs": 5215.887278749058,
+      "calls": 360,
+      "type": "runtime",
+      "trend": [
+        5,
+        3,
+        1,
+        7,
+        63,
+        0,
+        120,
+        82,
+        79,
+        0
+      ],
+      "callers": {
+        ".wasm-function[40] @ unknown": 360,
+        ".wasm-function[80] @ unknown": 98,
+        ".wasm-function[83] @ unknown": 87,
+        ".wasm-function[54] @ unknown": 4
+      },
+      "callees": {
+        ".wasm-function[31] @ unknown": 189
+      }
+    },
+    {
+      "name": "write @ unknown",
+      "selfTimeMs": 3372.750426149209,
+      "totalTimeMs": 3372.750426149209,
+      "calls": 355,
+      "type": "runtime",
+      "trend": [
+        2,
+        2,
+        6,
+        24,
+        101,
+        0,
+        92,
+        77,
+        51,
+        0
+      ],
+      "callers": {
+        "writeFast @ streams": 355
+      },
+      "callees": {}
+    },
+    {
+      "name": ".wasm-function[52] @ unknown",
+      "selfTimeMs": 3353.749015297664,
+      "totalTimeMs": 7847.582681688018,
+      "calls": 353,
+      "type": "runtime",
+      "trend": [
+        2,
+        2,
+        9,
+        8,
+        56,
+        0,
+        120,
+        84,
+        55,
+        17
+      ],
+      "callers": {
+        ".wasm-function[123] @ unknown": 623,
+        ".wasm-function[115] @ unknown": 203
+      },
+      "callees": {
+        ".wasm-function[108] @ unknown": 473
+      }
+    },
+    {
+      "name": ".wasm-function[67] @ unknown",
+      "selfTimeMs": 3163.7349067822156,
+      "totalTimeMs": 4873.861883421251,
+      "calls": 333,
+      "type": "runtime",
+      "trend": [
+        1,
+        4,
+        5,
+        5,
+        60,
+        0,
+        107,
+        98,
+        51,
+        2
+      ],
+      "callers": {
+        ".wasm-function[40] @ unknown": 301,
+        ".wasm-function[80] @ unknown": 106,
+        ".wasm-function[83] @ unknown": 99,
+        ".wasm-function[54] @ unknown": 7
+      },
+      "callees": {
+        ".wasm-function[31] @ unknown": 180
+      }
+    },
+    {
+      "name": ".wasm-function[42] @ unknown",
+      "selfTimeMs": 3125.732085079126,
+      "totalTimeMs": 3125.732085079126,
+      "calls": 329,
+      "type": "runtime",
+      "trend": [
+        0,
+        0,
+        0,
+        0,
+        53,
+        0,
+        102,
+        94,
+        71,
+        9
+      ],
+      "callers": {
+        ".wasm-function[119] @ unknown": 327,
+        ".wasm-function[92] @ unknown": 2
+      },
+      "callees": {}
+    },
+    {
+      "name": ".wasm-function[45] @ unknown",
+      "selfTimeMs": 3040.2257362471746,
+      "totalTimeMs": 3999.7969842501884,
+      "calls": 320,
+      "type": "runtime",
+      "trend": [
+        3,
+        1,
+        3,
+        2,
+        64,
+        0,
+        94,
+        80,
+        72,
+        1
+      ],
+      "callers": {
+        ".wasm-function[63] @ unknown": 174,
+        ".wasm-function[61] @ unknown": 120,
+        ".wasm-function[37] @ unknown": 99,
+        ".wasm-function[122] @ unknown": 28
+      },
+      "callees": {
+        ".wasm-function[31] @ unknown": 101
+      }
+    },
+    {
+      "name": "Q1 @ tui.js",
+      "selfTimeMs": 2755.204573474002,
+      "totalTimeMs": 4284.818147023361,
+      "calls": 290,
+      "type": "runtime",
+      "trend": [
+        0,
+        0,
+        0,
+        1,
+        92,
+        0,
+        106,
+        49,
+        42,
+        0
+      ],
+      "callers": {
+        "I1 @ tui.js": 451
+      },
+      "callees": {
+        "Nre @ tui.js": 46,
+        "C1 @ tui.js": 43,
+        "k1 @ tui.js": 38,
+        "tf @ tui.js": 34
+      }
+    },
+    {
+      "name": "next @ unknown",
+      "selfTimeMs": 2707.7010463451393,
+      "totalTimeMs": 2707.7010463451393,
+      "calls": 285,
+      "type": "runtime",
+      "trend": [
+        0,
+        1,
+        1,
+        1,
+        89,
+        0,
+        133,
+        41,
+        18,
+        1
+      ],
+      "callers": {
+        "I1 @ tui.js": 278,
+        "zH @ tui.js": 7
+      },
+      "callees": {}
+    },
+    {
+      "name": ".wasm-function[66] @ unknown",
+      "selfTimeMs": 2679.1989300678224,
+      "totalTimeMs": 4123.306154785229,
+      "calls": 282,
+      "type": "runtime",
+      "trend": [
+        1,
+        3,
+        1,
+        3,
+        47,
+        0,
+        111,
+        66,
+        50,
+        0
+      ],
+      "callers": {
+        ".wasm-function[40] @ unknown": 255,
+        ".wasm-function[83] @ unknown": 89,
+        ".wasm-function[80] @ unknown": 88,
+        ".wasm-function[54] @ unknown": 1,
+        "(unknown) @ unknown": 1
+      },
+      "callees": {
+        ".wasm-function[31] @ unknown": 152
+      }
+    },
+    {
+      "name": "RR @ tui.js",
+      "selfTimeMs": 2612.6939920874156,
+      "totalTimeMs": 17281.78316948003,
+      "calls": 275,
+      "type": "runtime",
+      "trend": [
+        2,
+        6,
+        10,
+        14,
+        38,
+        0,
+        83,
+        70,
+        33,
+        19
+      ],
+      "callers": {
+        "RR @ tui.js": 1544,
+        "$ye @ tui.js": 275
+      },
+      "callees": {
+        "RR @ tui.js": 1544
+      }
+    },
+    {
+      "name": ".wasm-function[123] @ unknown",
+      "selfTimeMs": 2565.190464958553,
+      "totalTimeMs": 8484.12994521477,
+      "calls": 270,
+      "type": "runtime",
+      "trend": [
+        2,
+        2,
+        2,
+        7,
+        48,
+        0,
+        94,
+        70,
+        45,
+        0
+      ],
+      "callers": {
+        ".wasm-function[61] @ unknown": 882,
+        "(unknown) @ unknown": 10,
+        ".wasm-function[32] @ unknown": 1
+      },
+      "callees": {
+        ".wasm-function[52] @ unknown": 623
+      }
+    }
+  ]
+}
