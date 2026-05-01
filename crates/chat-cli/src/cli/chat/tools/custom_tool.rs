@@ -51,6 +51,10 @@ pub enum TransportType {
 #[derive(Clone, Serialize, Deserialize, Debug, Eq, PartialEq, JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct OAuthConfig {
+    /// Pre-registered OAuth client ID for servers that don't support Dynamic Client Registration.
+    /// When set, this client_id is used instead of the default "Q DEV CLI" fallback if DCR fails.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub client_id: Option<String>,
     /// Custom redirect URI for OAuth flow (e.g., "127.0.0.1:7778")
     /// If not specified, a random available port will be assigned by the OS
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -644,5 +648,45 @@ mod tests {
 
         // The final JSON should be very minimal
         assert_eq!(json, r#"{"type":"registry"}"#);
+    }
+
+    #[test]
+    fn test_oauth_client_id_parsed() {
+        let json = r#"{
+            "command": "test",
+            "oauth": {
+                "clientId": "my-slack-app-id",
+                "oauthScopes": ["search:read"]
+            }
+        }"#;
+        let config: CustomToolConfig = serde_json::from_str(json).unwrap();
+        assert_eq!(
+            config.oauth.as_ref().unwrap().client_id.as_deref(),
+            Some("my-slack-app-id")
+        );
+    }
+
+    #[test]
+    fn test_oauth_client_id_absent_by_default() {
+        let json = r#"{
+            "command": "test",
+            "oauth": {
+                "oauthScopes": ["read"]
+            }
+        }"#;
+        let config: CustomToolConfig = serde_json::from_str(json).unwrap();
+        assert!(config.oauth.as_ref().unwrap().client_id.is_none());
+    }
+
+    #[test]
+    fn test_oauth_client_id_serialization_skipped_when_none() {
+        let config = OAuthConfig {
+            client_id: None,
+            redirect_uri: Some("127.0.0.1:8080".to_string()),
+            oauth_scopes: None,
+        };
+        let json = serde_json::to_string(&config).unwrap();
+        assert!(!json.contains("clientId"));
+        assert!(json.contains("redirectUri"));
     }
 }

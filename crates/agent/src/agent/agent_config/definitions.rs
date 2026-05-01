@@ -1318,4 +1318,47 @@ mod tests {
             ResourcePath::Complex(ComplexResource::KnowledgeBase { name: Some(n), auto_update: Some(true), .. }) if n == "my-docs"
         ));
     }
+
+    #[test]
+    fn test_remote_mcp_server_with_oauth_client_id() {
+        let config = serde_json::json!({
+            "url": "https://mcp.slack.com/mcp",
+            "oauth": {
+                "clientId": "my-slack-app-id"
+            },
+            "oauthScopes": ["search:read", "channels:read"]
+        });
+        let result: McpServerConfig = serde_json::from_value(config).unwrap();
+        match result {
+            McpServerConfig::Remote(remote) => {
+                assert_eq!(
+                    remote.oauth.as_ref().unwrap().client_id.as_deref(),
+                    Some("my-slack-app-id")
+                );
+                assert_eq!(remote.oauth_scopes, vec!["search:read", "channels:read"]);
+            },
+            _ => panic!("Expected Remote variant"),
+        }
+    }
+
+    #[test]
+    fn test_remote_mcp_server_oauth_without_client_id() {
+        let config = serde_json::json!({
+            "url": "https://example.com/mcp",
+            "oauth": {
+                "redirectUri": "127.0.0.1:8080"
+            }
+        });
+        let result: McpServerConfig = serde_json::from_value(config).unwrap();
+        match result {
+            McpServerConfig::Remote(remote) => {
+                assert!(remote.oauth.as_ref().unwrap().client_id.is_none());
+                assert_eq!(
+                    remote.oauth.as_ref().unwrap().redirect_uri.as_deref(),
+                    Some("127.0.0.1:8080")
+                );
+            },
+            _ => panic!("Expected Remote variant"),
+        }
+    }
 }

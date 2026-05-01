@@ -93,3 +93,4 @@ packages/tui/.kiro/
 target
 scripts/.es-cookie
 .bun-pinned/
+.npmrc

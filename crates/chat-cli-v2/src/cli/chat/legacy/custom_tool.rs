@@ -25,6 +25,8 @@ pub enum TransportType {
 #[serde(rename_all = "camelCase")]
 pub struct OAuthConfig {
     #[serde(skip_serializing_if = "Option::is_none")]
+    pub client_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub redirect_uri: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub oauth_scopes: Option<Vec<String>>,
