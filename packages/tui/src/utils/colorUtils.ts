@@ -1,6 +1,4 @@
-import chalk from 'chalk';
-import { Chalk } from 'chalk';
-import supportsColor from 'supports-color';
+import chalk, { Chalk, supportsColor } from 'chalk';
 import type { ChalkColorName } from '../types/themeTypes.js';
 import type { StatusType } from '../types/componentTypes.js';
 
@@ -66,7 +64,7 @@ export const getTerminalChalkColor = (
   }
 
   // For hex value, use the appropriate color based on terminal capabilities
-  const stdout = supportsColor.stdout;
+  const stdout = supportsColor;
 
   if (
     stdout &&

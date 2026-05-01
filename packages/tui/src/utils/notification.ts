@@ -3,12 +3,14 @@
  * crates/chat-cli/src/cli/chat/util/mod.rs to TypeScript.
  */
 
+import { isGhostty } from './terminal-detection.js';
+
 export type NotificationMethod = 'bel' | 'osc9';
 
 function detectNotificationMethod(): NotificationMethod | null {
   const termProgram = process.env.TERM_PROGRAM?.toLowerCase();
   if (
-    termProgram === 'ghostty' ||
+    isGhostty() ||
     termProgram === 'iterm.app' ||
     termProgram === 'wezterm' ||
     termProgram === 'windows_terminal'
@@ -18,8 +20,6 @@ function detectNotificationMethod(): NotificationMethod | null {
 
   const term = process.env.TERM;
   if (!term) return null;
-
-  if (term.startsWith('xterm-ghostty')) return 'osc9';
 
   const belTerms = [
     'xterm',

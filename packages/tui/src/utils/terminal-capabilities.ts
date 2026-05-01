@@ -1,3 +1,5 @@
+import { isGhostty, isKitty } from './terminal-detection.js';
+
 /**
  * Terminal capability detection and OSC escape sequence helpers.
  *
@@ -43,7 +45,6 @@ function buildCapabilityCache(): Map<TerminalCapability, boolean> {
   }
 
   const termProgram = process.env.TERM_PROGRAM ?? '';
-  const term = process.env.TERM ?? '';
   const terminalEmulator = process.env.TERMINAL_EMULATOR ?? '';
   const isTmux = !!process.env.TMUX;
 
@@ -55,7 +56,8 @@ function buildCapabilityCache(): Map<TerminalCapability, boolean> {
       termProgram === 'WezTerm' ||
       termProgram === 'contour' ||
       termProgram === 'foot' ||
-      term.includes('kitty') ||
+      isKitty() ||
+      isGhostty() ||
       isTmux);
   cache.set('synchronizedOutput', supportsSynchronizedOutput);
 
@@ -65,7 +67,8 @@ function buildCapabilityCache(): Map<TerminalCapability, boolean> {
     (termProgram === 'iTerm.app' ||
       termProgram === 'WezTerm' ||
       termProgram === 'Hyper' ||
-      term.includes('kitty') ||
+      isKitty() ||
+      isGhostty() ||
       terminalEmulator === 'JetBrains-JediTerm');
   cache.set('hyperlinks', supportsHyperlinks);
 

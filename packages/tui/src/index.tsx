@@ -13,6 +13,7 @@ import {
 import { logger } from './utils/logger';
 import { connectResizeSource } from './hooks/useTerminalSize';
 import { clearTerminalProgress } from './utils/terminal-capabilities.js';
+import { isGhostty } from './utils/terminal-detection.js';
 import { Kiro } from './kiro';
 import { TestModeProvider } from './test-utils/TestModeProvider';
 import { parseCliArgs, buildAcpArgs } from './utils/cli-args';
@@ -535,7 +536,7 @@ const startApp = async () => {
 
   // Some terminals (ghostty, cmux) erase the viewport on \x1b[2J without
   // preserving it in scrollback. Push content up first so it's not lost.
-  if (process.env.TERM_PROGRAM === 'ghostty') {
+  if (isGhostty()) {
     process.stdout.write('\n'.repeat(process.stdout.rows || 24));
   }
   process.stdout.write('\x1b[2J\x1b[H');

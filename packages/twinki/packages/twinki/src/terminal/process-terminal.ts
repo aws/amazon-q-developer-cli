@@ -1,5 +1,6 @@
 import * as fs from "node:fs";
 import { createRequire } from "node:module";
+import { isGhostty, isKitty } from "./capabilities.js";
 import { setKittyProtocolActive } from "../input/keys.js";
 import { StdinBuffer } from "../input/stdin-buffer.js";
 import type { Terminal } from "./terminal.js";
@@ -56,13 +57,13 @@ const MODIFY_OTHER_KEYS_DISABLE = "\x1b[>4;0m";
  *   - TERM = xterm-kitty       → Kitty
  *   - TERM_PROGRAM = WezTerm   → WezTerm
  *   - TERM_PROGRAM = ghostty   → Ghostty
+ *   - TERM = xterm-ghostty     → Ghostty (over SSH)
  *   - TERM_PROGRAM = iTerm.app → iTerm2 (≥ 3.5, does NOT respond to query)
  */
 const KNOWN_KITTY_TERMINALS: ReadonlyArray<(env: NodeJS.ProcessEnv) => boolean> = [
-	(env) => 'KITTY_WINDOW_ID' in env,
-	(env) => env['TERM'] === 'xterm-kitty',
+	() => isKitty(),
 	(env) => env['TERM_PROGRAM'] === 'WezTerm',
-	(env) => env['TERM_PROGRAM'] === 'ghostty',
+	() => isGhostty(),
 	(env) => env['TERM_PROGRAM'] === 'iTerm.app',
 ];
 

@@ -1,6 +1,7 @@
 import { execSync } from 'child_process';
 import { getOSAppearance } from './os-appearance';
 import { queryTerminalBackground } from './osc-query';
+import { isGhostty } from './terminal-detection.js';
 import {
   detectWindowsConsoleBackground,
   detectWindowsTerminalTheme,
@@ -120,9 +121,8 @@ export function detectTerminalThemeWithDetails(): DetectionResult {
 function detectFromTerminalEnv(): DetectionResult | null {
   // Ghostty: Default to dark theme since most Ghostty users use dark themes
   // and Ghostty doesn't expose its theme via environment variables
-  const isGhostty =
-    process.env.GHOSTTY_RESOURCES_DIR || process.env.TERM_PROGRAM === 'ghostty';
-  if (isGhostty) {
+  const ghostty = process.env.GHOSTTY_RESOURCES_DIR || isGhostty();
+  if (ghostty) {
     return { theme: 'dark', method: 'Ghostty-default', confidence: 'medium' };
   }
 

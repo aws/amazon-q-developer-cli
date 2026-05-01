@@ -28,6 +28,16 @@ let cached: TerminalCapabilities | null = null;
  * 
  * @returns Object describing terminal capabilities
  */
+/** Checks TERM_PROGRAM and TERM to detect Ghostty, including over SSH. */
+export function isGhostty(): boolean {
+	return process.env.TERM_PROGRAM === 'ghostty' || process.env.TERM === 'xterm-ghostty';
+}
+
+/** Checks TERM, TERM_PROGRAM, and KITTY_WINDOW_ID to detect Kitty, including over SSH. */
+export function isKitty(): boolean {
+	return process.env.TERM === 'xterm-kitty' || process.env.TERM_PROGRAM === 'kitty' || 'KITTY_WINDOW_ID' in process.env;
+}
+
 export function detectCapabilities(): TerminalCapabilities {
 	if (cached) return cached;
 
@@ -36,24 +46,22 @@ export function detectCapabilities(): TerminalCapabilities {
 	const termProgram = env.TERM_PROGRAM ?? '';
 	const colorterm = env.COLORTERM ?? '';
 
-	const isKitty = term === 'xterm-kitty' || termProgram === 'kitty';
-	const isGhostty = termProgram === 'ghostty';
 	const isWezTerm = termProgram === 'WezTerm';
 	const isITerm2 = termProgram === 'iTerm.app';
 	const isVSCode = termProgram === 'vscode';
 	const isAlacritty = env.ALACRITTY_LOG !== undefined;
 
 	let images: TerminalCapabilities['images'] = null;
-	if (isKitty || isGhostty || isWezTerm) {
+	if (isKitty() || isGhostty() || isWezTerm) {
 		images = 'kitty';
 	} else if (isITerm2) {
 		images = 'iterm2';
 	}
 
 	const trueColor = colorterm === 'truecolor' || colorterm === '24bit' ||
-		isKitty || isGhostty || isWezTerm || isITerm2 || isAlacritty;
+		isKitty() || isGhostty() || isWezTerm || isITerm2 || isAlacritty;
 
-	const hyperlinks = isKitty || isGhostty || isWezTerm || isITerm2 || isVSCode || isAlacritty;
+	const hyperlinks = isKitty() || isGhostty() || isWezTerm || isITerm2 || isVSCode || isAlacritty;
 
 	cached = { images, trueColor, hyperlinks };
 	return cached;
