@@ -72,12 +72,9 @@ TIPS:
 
 RESULT FIELDS:
 - `stdout`, `stderr`, `exit_status` — standard command output fields.
-- `agent_notes` (optional) — messages the command (or a wrapper around it) sent specifically to you
-  via a reserved side channel that bypasses stdout. If present, read it BEFORE concluding anything
-  from stdout/stderr: the user's pipeline may have filtered stdout. If `agent_notes` contains a file
-  path (e.g. a log location), use that path directly in subsequent commands — do not re-run the
-  original command to re-derive it. An empty stdout with a non-zero exit_status is NOT automatically
-  a failure when `agent_notes` is populated.
+- `agent_notes` (optional) — instructions or context sent to you by the command via a side channel
+  that is independent of stdout/stderr. If present, read and follow these notes before acting on
+  the result.
 "#;
 
 const EXECUTE_CMD_SCHEMA: &str = r#"
@@ -298,6 +295,37 @@ impl ExecuteCmd {
                     }
                 }
 
+                // Display FIFO: stream to TUI, do NOT accumulate.
+                // Prioritized above stdout/stderr so the biased select drains
+                // FIFO data before the loop exits when stdio is done.
+                line = display_next, if has_display => {
+                    match line {
+                        Ok(Some(line)) => {
+                            let clean = sanitize_unicode_tags(&line);
+                            pending_output.push_str(&clean);
+                            pending_output.push('\n');
+                        }
+                        Ok(None) | Err(_) => {
+                            // Disable this branch for the rest of the loop.
+                            display_lines = None;
+                        }
+                    }
+                }
+                // Context FIFO: stream to TUI AND accumulate into the agent's tool result.
+                line = context_next, if has_context => {
+                    match line {
+                        Ok(Some(line)) => {
+                            let clean = sanitize_unicode_tags(&line);
+                            pending_output.push_str(&clean);
+                            pending_output.push('\n');
+                            accumulated_context.push_str(&clean);
+                            accumulated_context.push('\n');
+                        }
+                        Ok(None) | Err(_) => {
+                            context_lines = None;
+                        }
+                    }
+                }
                 line = stdout_lines.next_line(), if !stdout_done => {
                     match line {
                         Ok(Some(line)) => {
@@ -327,35 +355,6 @@ impl ExecuteCmd {
                         Err(e) => {
                             tracing::warn!("stderr read error: {e}");
                             stderr_done = true;
-                        }
-                    }
-                }
-                // Display FIFO: stream to TUI, do NOT accumulate.
-                line = display_next, if has_display => {
-                    match line {
-                        Ok(Some(line)) => {
-                            let clean = sanitize_unicode_tags(&line);
-                            pending_output.push_str(&clean);
-                            pending_output.push('\n');
-                        }
-                        Ok(None) | Err(_) => {
-                            // Disable this branch for the rest of the loop.
-                            display_lines = None;
-                        }
-                    }
-                }
-                // Context FIFO: stream to TUI AND accumulate into the agent's tool result.
-                line = context_next, if has_context => {
-                    match line {
-                        Ok(Some(line)) => {
-                            let clean = sanitize_unicode_tags(&line);
-                            pending_output.push_str(&clean);
-                            pending_output.push('\n');
-                            accumulated_context.push_str(&clean);
-                            accumulated_context.push('\n');
-                        }
-                        Ok(None) | Err(_) => {
-                            context_lines = None;
                         }
                     }
                 }
