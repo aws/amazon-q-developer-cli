@@ -473,6 +473,30 @@ pub fn process_mcp_servers(
     })
 }
 
+/// Format a package identifier with a version, avoiding double version tags.
+///
+/// If the identifier already contains a version specifier (e.g., `@scope/pkg@latest`
+/// or `pkg@1.2.3`), the identifier is returned as-is. Otherwise, `@version` is appended.
+///
+/// For scoped npm packages like `@scope/pkg`, the version tag is the `@` after the
+/// package name portion (after the `/`), not the leading `@` of the scope.
+fn format_package_identifier(identifier: &str, version: &str) -> String {
+    // For scoped packages (@scope/pkg), check for a version tag after the slash
+    let has_version = if let Some(slash_pos) = identifier.find('/') {
+        // Scoped package: check if there's an @ after the slash (e.g., @scope/pkg@version)
+        identifier[slash_pos + 1..].contains('@')
+    } else {
+        // Unscoped package: check if there's an @ anywhere (e.g., pkg@version)
+        identifier.contains('@')
+    };
+
+    if has_version {
+        identifier.to_string()
+    } else {
+        format!("{identifier}@{version}")
+    }
+}
+
 /// Convert registry server definition to CustomToolConfig
 /// Uses registry definition as the base, with valid agent overrides per spec.
 ///
@@ -536,10 +560,10 @@ pub fn convert_registry_to_config(
                     .args
                     .extend(package.runtime_arguments.iter().map(|arg| arg.value.clone()));
 
-                // Add package identifier with version
+                // Add package identifier with version (skip if identifier already contains a version tag)
                 config
                     .args
-                    .push(format!("{}@{}", package.identifier, registry_server.version));
+                    .push(format_package_identifier(&package.identifier, &registry_server.version));
 
                 // Add package arguments
                 config
@@ -581,10 +605,10 @@ pub fn convert_registry_to_config(
                     .args
                     .extend(package.runtime_arguments.iter().map(|arg| arg.value.clone()));
 
-                // Add package identifier with version
+                // Add package identifier with version (skip if identifier already contains a version tag)
                 config
                     .args
-                    .push(format!("{}@{}", package.identifier, registry_server.version));
+                    .push(format_package_identifier(&package.identifier, &registry_server.version));
 
                 // Add package arguments
                 config
@@ -898,7 +922,7 @@ pub fn resolve_registry_servers_for_agent_config(
                 "npm" => {
                     let mut args = vec!["-y".to_string()];
                     args.extend(package.runtime_arguments.iter().map(|a| a.value.clone()));
-                    args.push(format!("{}@{}", package.identifier, def.version));
+                    args.push(format_package_identifier(&package.identifier, &def.version));
                     args.extend(package.package_arguments.iter().map(|a| a.value.clone()));
                     let mut env_map = std::collections::HashMap::new();
                     if let Some(ref url) = package.registry_base_url {
@@ -919,7 +943,7 @@ pub fn resolve_registry_servers_for_agent_config(
                         args.push(format!("--default-index={url}"));
                     }
                     args.extend(package.runtime_arguments.iter().map(|a| a.value.clone()));
-                    args.push(format!("{}@{}", package.identifier, def.version));
+                    args.push(format_package_identifier(&package.identifier, &def.version));
                     args.extend(package.package_arguments.iter().map(|a| a.value.clone()));
                     let mut env_map = std::collections::HashMap::new();
                     for ev in &package.environment_variables {
@@ -1851,6 +1875,33 @@ mod tests {
         let tools = loaded.tools();
         assert!(!tools.contains(&"@some-server/tool".to_string()));
         assert!(tools.contains(&"read".to_string()));
+    }
+
+    #[test]
+    fn test_format_package_identifier_no_version() {
+        // Unscoped package without version → append version
+        assert_eq!(format_package_identifier("my-server", "1.0.0"), "my-server@1.0.0");
+        // Scoped package without version → append version
+        assert_eq!(format_package_identifier("@acme/server", "2.0.0"), "@acme/server@2.0.0");
+    }
+
+    #[test]
+    fn test_format_package_identifier_with_version() {
+        // Unscoped package with version → keep as-is
+        assert_eq!(
+            format_package_identifier("my-server@latest", "1.0.0"),
+            "my-server@latest"
+        );
+        assert_eq!(format_package_identifier("my-server@1.2.3", "1.0.0"), "my-server@1.2.3");
+        // Scoped package with version → keep as-is
+        assert_eq!(
+            format_package_identifier("@playwright/mcp@latest", "1.0.0"),
+            "@playwright/mcp@latest"
+        );
+        assert_eq!(
+            format_package_identifier("@acme/server@0.8.1", "2.0.0"),
+            "@acme/server@0.8.1"
+        );
     }
 }
 /// Display registry error message to any writer that implements Write
