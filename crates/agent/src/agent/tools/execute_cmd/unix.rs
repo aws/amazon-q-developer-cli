@@ -163,9 +163,9 @@ impl ExecuteCmd {
     /// `${TMPDIR:-/tmp}/agent-context-out-{...}.fifo`, exporting their paths as
     /// `$AGENT_DISPLAY_OUT` and `$AGENT_CONTEXT_OUT` respectively.
     ///
-    /// - Lines written to `$AGENT_DISPLAY_OUT` stream to the TUI via `ToolCallUpdate` events but are
-    ///   NOT captured into the agent's tool result. Use this for output the user should see but the
-    ///   agent should not (e.g. a verbose build log whose summary is already on stdout).
+    /// - Lines written to `$AGENT_DISPLAY_OUT` stream to the TUI via `ToolCallUpdate` events but
+    ///   are NOT captured into the agent's tool result. Use this for output the user should see but
+    ///   the agent should not (e.g. a verbose build log whose summary is already on stdout).
     /// - Lines written to `$AGENT_CONTEXT_OUT` both stream to the TUI AND are surfaced to the agent
     ///   in the tool result's `agent_notes` field. Use this for messages the agent needs to see but
     ///   that wouldn't reliably reach it through direct stdout (e.g. because the user pipes stdout
@@ -260,13 +260,15 @@ impl ExecuteCmd {
         // Consume the first immediate tick so the loop starts clean.
         flush_interval.tick().await;
 
+        // After the child exits we arm a deadline and keep the same select!
+        // loop running so remaining pipe/FIFO data is drained concurrently.
+        // A grandchild daemon that inherited the FDs could keep them open
+        // indefinitely, so the deadline caps how long we wait.
+        let mut child_done = false;
+        let mut exit_status: Option<Result<std::process::ExitStatus, std::io::Error>> = None;
+        let mut drain_deadline: Option<tokio::time::Sleep> = None;
+
         let status = loop {
-            // Build the FIFO next-line futures separately so they can be disabled
-            // in the select when the corresponding Option is None. The `if` guards
-            // prevent those branches from being considered; the `future::pending()`
-            // fallback is just for type unification. On any error or EOF we clear
-            // the Option to disable the branch permanently (avoids a busy-poll
-            // if the FIFO fd starts returning errors).
             let has_display = display_lines.is_some();
             let has_context = context_lines.is_some();
             let display_next = async {
@@ -281,6 +283,7 @@ impl ExecuteCmd {
                     None => std::future::pending().await,
                 }
             };
+            let has_deadline = drain_deadline.is_some();
 
             tokio::select! {
                 biased;
@@ -306,7 +309,6 @@ impl ExecuteCmd {
                             pending_output.push('\n');
                         }
                         Ok(None) | Err(_) => {
-                            // Disable this branch for the rest of the loop.
                             display_lines = None;
                         }
                     }
@@ -358,74 +360,28 @@ impl ExecuteCmd {
                         }
                     }
                 }
-                status = child.wait() => {
-                    // Child exited. Drain remaining pipe data with a timeout —
-                    // a grandchild daemon may still hold the FDs open.
-                    const DRAIN_TIMEOUT: Duration = Duration::from_millis(100);
-
-                    // Drain a single line from `lines`, appending to `pending`
-                    // and optionally to `accum`. Returns `true` if a line was
-                    // read, `false` if the source is exhausted/timed-out.
-                    async fn drain_line(
-                        lines: &mut tokio::io::Lines<impl tokio::io::AsyncBufRead + Unpin>,
-                        pending: &mut String,
-                        accum: Option<&mut String>,
-                    ) -> bool {
-                        match tokio::time::timeout(DRAIN_TIMEOUT, lines.next_line()).await {
-                            Ok(Ok(Some(line))) => {
-                                let clean = sanitize_unicode_tags(&line);
-                                pending.push_str(&clean);
-                                pending.push('\n');
-                                if let Some(a) = accum {
-                                    a.push_str(&clean);
-                                    a.push('\n');
-                                }
-                                true
-                            },
-                            _ => false,
-                        }
-                    }
-
-                    loop {
-                        let mut drained = false;
-                        if !stdout_done {
-                            if drain_line(&mut stdout_lines, &mut pending_output, Some(&mut accumulated_stdout)).await {
-                                drained = true;
-                            } else {
-                                stdout_done = true;
-                            }
-                        }
-                        if !stderr_done {
-                            if drain_line(&mut stderr_lines, &mut pending_output, Some(&mut accumulated_stderr)).await {
-                                drained = true;
-                            } else {
-                                stderr_done = true;
-                            }
-                        }
-                        // Drain FIFOs too — the child may have written final
-                        // data just before exiting.
-                        if let Some(ref mut dl) = display_lines {
-                            if !drain_line(dl, &mut pending_output, None).await {
-                                display_lines = None;
-                            } else {
-                                drained = true;
-                            }
-                        }
-                        if let Some(ref mut cl) = context_lines {
-                            if !drain_line(cl, &mut pending_output, Some(&mut accumulated_context)).await {
-                                context_lines = None;
-                            } else {
-                                drained = true;
-                            }
-                        }
-                        if !drained || (stdout_done && stderr_done) { break; }
-                    }
-                    break status.map_err(|e| ToolExecutionError::io(
+                // Drain deadline: child already exited, stop waiting for
+                // remaining pipe data (a grandchild daemon may hold FDs open).
+                _ = async { drain_deadline.as_mut().unwrap() }, if has_deadline => {
+                    break exit_status.unwrap().map_err(|e| ToolExecutionError::io(
                         format!("No exit status for '{}'", &self.command), e))?;
                 }
+                status = child.wait(), if !child_done => {
+                    child_done = true;
+                    exit_status = Some(status);
+                    // Arm a deadline — the loop keeps running normally,
+                    // draining whatever pipe data arrives within the window.
+                    drain_deadline = Some(tokio::time::sleep(Duration::from_millis(100)));
+                }
             }
+            // Stdio closed — no need to wait for the deadline.
+            // FIFOs are opened O_RDWR so they never EOF; don't gate on them.
             if stdout_done && stderr_done {
-                // Pipes closed naturally (no daemon). Still need to wait for exit.
+                if let Some(status) = exit_status {
+                    break status
+                        .map_err(|e| ToolExecutionError::io(format!("No exit status for '{}'", &self.command), e))?;
+                }
+                // Pipes closed before child exited — wait for exit.
                 break child
                     .wait()
                     .await
