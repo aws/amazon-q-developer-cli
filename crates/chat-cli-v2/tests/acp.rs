@@ -2486,6 +2486,69 @@ async fn workspace_skill_is_advertised_and_invocable() {
     );
 }
 
+#[tokio::test]
+#[timeout(30000)]
+#[serial]
+async fn skill_without_placeholders_appends_trailing_text() {
+    let (harness, client) = AcpTestHarnessBuilder::new("skill_without_placeholders_appends_trailing_text")
+        .build()
+        .await;
+
+    // Skill body has no $ARGUMENTS or ${N} placeholders.
+    let skill_dir = harness.paths.cwd.join(".kiro").join("skills").join("plain");
+    std::fs::create_dir_all(&skill_dir).expect("failed to create skill dir");
+    let skill_body = "# Plain\n\nRun the plain skill.";
+    let skill_content = format!(
+        "---\nname: plain\ndescription: A skill with no placeholders\n---\n{}",
+        skill_body
+    );
+    std::fs::write(skill_dir.join("SKILL.md"), &skill_content).expect("failed to write skill");
+
+    let cwd = harness.paths.cwd.clone();
+    let resp = client.new_session(cwd).await.expect("new_session failed");
+    let session_id = resp.session_id;
+    let mut harness = harness;
+
+    let available_method = "kiro.dev/commands/available";
+    client
+        .wait_for(|captured| find_skill_prompt(captured, available_method, "plain").is_some())
+        .await;
+
+    harness
+        .push_mock_responses_from_file(&session_id.0, "tests/mock_responses/simple_text.jsonl")
+        .await;
+
+    // Invoke `/plain please check tests` — trailing text should be appended to
+    // the skill body since the skill has no placeholder for it.
+    client
+        .prompt_text(session_id.clone(), "/plain please check tests")
+        .await
+        .expect("slash prompt failed");
+
+    let requests = harness.get_captured_requests(&session_id.0).await;
+    assert_eq!(
+        requests.len(),
+        1,
+        "skill invocation should produce exactly one LLM request"
+    );
+    let sent = &requests[0].user_input_message.content;
+    assert!(
+        sent.contains("Run the plain skill."),
+        "skill body should be sent as the user prompt, got: {:?}",
+        sent
+    );
+    assert!(
+        sent.contains("please check tests"),
+        "trailing text should be appended to the skill body, got: {:?}",
+        sent
+    );
+    assert!(
+        !sent.contains("name: plain") && !sent.contains("description: A skill with no placeholders"),
+        "YAML frontmatter should be stripped before the skill is sent to the model, got: {:?}",
+        sent
+    );
+}
+
 /// Find a prompt advertisement matching `name` in the latest
 /// `commands/available` ExtNotification.
 fn find_skill_prompt(captured: &common::CapturedNotifications, method: &str, name: &str) -> Option<serde_json::Value> {

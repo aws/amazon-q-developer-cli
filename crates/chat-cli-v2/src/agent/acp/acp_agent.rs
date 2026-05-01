@@ -1547,7 +1547,14 @@ impl AcpSession {
                                 } else if let Some(body) = agent.resolve_skill(name.clone()).await.ok().flatten() {
                                     // Skill: frontmatter already stripped by resolve_skill()
                                     let template = agent::prompts::PromptTemplateArgs::parse(&body);
-                                    let expanded = template.expand(&body, &args);
+                                    let mut expanded = template.expand(&body, &args);
+                                    // If the skill body has no placeholders and the user typed trailing
+                                    // text, append it so the model sees the user's actual request.
+                                    if !args.is_empty() && !template.has_all_args() && template.positional().is_empty()
+                                    {
+                                        expanded.push_str("\n\n");
+                                        expanded.push_str(&args.join(" "));
+                                    }
                                     let _ = agent
                                         .send_prompt(SendPromptArgs {
                                             content: vec![agent::protocol::ContentChunk::Text(expanded)],
