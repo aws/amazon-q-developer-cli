@@ -6,5 +6,5 @@ export const useColor = (
   color256?: number,
   named?: ChalkColorName
 ) => {
-  return getTerminalChalkColor(truecolor, color256, named);
+  return getTerminalChalkColor({ truecolor, color256, named });
 };

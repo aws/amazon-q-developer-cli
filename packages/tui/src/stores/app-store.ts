@@ -4,6 +4,7 @@ import { join } from 'node:path';
 import { Kiro } from '../kiro';
 import chalk from 'chalk';
 import { kiroSafe } from '../theme/kiroSafe';
+import type { TerminalColor } from '../types/themeTypes';
 import { createContext, useContext } from 'react';
 import {
   AgentEventType,
@@ -456,17 +457,33 @@ interface BaseAppActions {
   _baseThemeSetter: ((theme: any) => void) | null;
   registerBaseThemeSetter: (setter: (theme: any) => void) => void;
 
-  // Theme diff hex getter (set by ThemeProvider bridge)
+  // Theme diff color getter (set by ThemeProvider bridge)
   _themeDiffHexGetter:
     | (() => {
-        added: { background: string; bar: string; highlight: string };
-        removed: { background: string; bar: string; highlight: string };
+        added: {
+          background: TerminalColor;
+          bar: TerminalColor;
+          highlight: TerminalColor;
+        };
+        removed: {
+          background: TerminalColor;
+          bar: TerminalColor;
+          highlight: TerminalColor;
+        };
       })
     | null;
   registerThemeDiffHexGetter: (
     getter: () => {
-      added: { background: string; bar: string; highlight: string };
-      removed: { background: string; bar: string; highlight: string };
+      added: {
+        background: TerminalColor;
+        bar: TerminalColor;
+        highlight: TerminalColor;
+      };
+      removed: {
+        background: TerminalColor;
+        bar: TerminalColor;
+        highlight: TerminalColor;
+      };
     }
   ) => void;
 
@@ -2186,14 +2203,14 @@ export const createAppStore = (props: AppStoreProps) => {
           const d = kiroSafe.colors.diff;
           return {
             added: {
-              background: d.added.background.truecolor ?? '',
-              bar: d.added.bar.truecolor ?? '',
-              highlight: d.added.highlight.truecolor ?? '',
+              background: d.added.background,
+              bar: d.added.bar,
+              highlight: d.added.highlight,
             },
             removed: {
-              background: d.removed.background.truecolor ?? '',
-              bar: d.removed.bar.truecolor ?? '',
-              highlight: d.removed.highlight.truecolor ?? '',
+              background: d.removed.background,
+              bar: d.removed.bar,
+              highlight: d.removed.highlight,
             },
           };
         },
@@ -2985,14 +3002,14 @@ export const createAppStore = (props: AppStoreProps) => {
             const d = kiroSafe.colors.diff;
             return {
               added: {
-                background: d.added.background.truecolor ?? '',
-                bar: d.added.bar.truecolor ?? '',
-                highlight: d.added.highlight.truecolor ?? '',
+                background: d.added.background,
+                bar: d.added.bar,
+                highlight: d.added.highlight,
               },
               removed: {
-                background: d.removed.background.truecolor ?? '',
-                bar: d.removed.bar.truecolor ?? '',
-                highlight: d.removed.highlight.truecolor ?? '',
+                background: d.removed.background,
+                bar: d.removed.bar,
+                highlight: d.removed.highlight,
               },
             };
           },

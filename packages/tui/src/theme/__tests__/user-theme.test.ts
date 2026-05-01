@@ -336,28 +336,37 @@ describe('user-theme', () => {
   });
 
   describe('buildFallbackDiff', () => {
-    it('returns valid DiffPreset from hex inputs', () => {
+    it('returns valid DiffPreset from TerminalColor inputs', () => {
       const result = buildFallbackDiff({
-        added: { background: '#112233', bar: '#aabbcc', highlight: '#223344' },
+        added: {
+          background: { truecolor: '#112233', color256: 22 },
+          bar: { truecolor: '#aabbcc', color256: 146 },
+          highlight: { truecolor: '#223344' },
+        },
         removed: {
-          background: '#443322',
-          bar: '#ff0000',
-          highlight: '#332211',
+          background: { truecolor: '#443322', color256: 52 },
+          bar: { truecolor: '#ff0000', color256: 196 },
+          highlight: { truecolor: '#332211' },
         },
       });
       expect(result.id).toBe('_fallback');
       expect(result.label).toBeTruthy();
       expect(result.added.bar.truecolor).toBe('#aabbcc');
+      expect(result.added.bar.color256).toBe(146);
       expect(result.removed.bar.truecolor).toBe('#ff0000');
     });
 
     it('has id "_fallback"', () => {
       const result = buildFallbackDiff({
-        added: { background: '#000000', bar: '#000000', highlight: '#000000' },
+        added: {
+          background: { named: 'default' },
+          bar: { named: 'green' },
+          highlight: { named: 'default' },
+        },
         removed: {
-          background: '#000000',
-          bar: '#000000',
-          highlight: '#000000',
+          background: { named: 'default' },
+          bar: { named: 'red' },
+          highlight: { named: 'default' },
         },
       });
       expect(result.id).toBe('_fallback');

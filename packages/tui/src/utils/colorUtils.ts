@@ -1,5 +1,5 @@
 import chalk, { Chalk, supportsColor } from 'chalk';
-import type { ChalkColorName } from '../types/themeTypes.js';
+import type { ChalkColorName, TerminalColor } from '../types/themeTypes.js';
 import type { StatusType } from '../types/componentTypes.js';
 
 // Named color to hex conversion
@@ -30,20 +30,19 @@ const namedColorToHex: { [key in ChalkColorName]: string } = {
  * Creates a chalk chain instance based on terminal color support capabilities.
  * Returns the chalk chain with an added .hex property containing the resolved color value.
  *
- * @param truecolor - Optional hex color string (e.g., "#ff0000")
- * @param color256 - Optional ANSI 256 color index (0-255)
- * @param named - Optional named color (e.g., "magenta", "red", "blue", "default")
+ * @param color - A TerminalColor object with optional truecolor, color256, and named fields
+ * @param mode - 'fg' for foreground (default), 'bg' for background
  * @returns A chalk chain instance with .hex property
  */
 export const getTerminalChalkColor = (
-  truecolor?: string,
-  color256?: number,
-  named?: ChalkColorName
+  color: TerminalColor,
+  mode: 'fg' | 'bg' = 'fg'
 ): any => {
+  const { truecolor, color256, named } = color;
   let chalkFunction: any;
   let resolvedHex: string = '#000000'; // Default fallback
 
-  // Special case: 'default' means use terminal's default foreground color.
+  // Special case: 'default' means use terminal's default color.
   // We avoid chalk.reset here because it emits \x1b[0m which resets ALL
   // formatting (bold, italic, etc.). Instead, use a plain chalk instance
   // with no color applied — it supports .bold/.italic chaining without
@@ -62,6 +61,16 @@ export const getTerminalChalkColor = (
     colorWrapper.hex = resolvedHex;
     return colorWrapper;
   }
+
+  // Helper to pick fg or bg chalk method
+  const hexFn = mode === 'bg' ? chalk.bgHex.bind(chalk) : chalk.hex.bind(chalk);
+  const ansi256Fn =
+    mode === 'bg' ? chalk.bgAnsi256.bind(chalk) : chalk.ansi256.bind(chalk);
+  const namedFn = (name: ChalkColorName) => {
+    const key =
+      mode === 'bg' ? `bg${name[0]!.toUpperCase()}${name.slice(1)}` : name;
+    return (chalk as any)[key] || chalk;
+  };
 
   // For hex value, use the appropriate color based on terminal capabilities
   const stdout = supportsColor;
@@ -102,11 +111,11 @@ export const getTerminalChalkColor = (
     stdout.has16m
   ) {
     if (truecolor) {
-      chalkFunction = chalk.hex(truecolor);
+      chalkFunction = hexFn(truecolor);
     } else if (color256 !== undefined) {
-      chalkFunction = chalk.ansi256(color256);
+      chalkFunction = ansi256Fn(color256);
     } else if (named) {
-      chalkFunction = (chalk as any)[named] || chalk;
+      chalkFunction = namedFn(named);
     }
   }
   // Fall back to 256-color mode if supported
@@ -117,25 +126,25 @@ export const getTerminalChalkColor = (
     stdout.has256
   ) {
     if (color256 !== undefined) {
-      chalkFunction = chalk.ansi256(color256);
+      chalkFunction = ansi256Fn(color256);
     } else if (truecolor) {
-      chalkFunction = chalk.hex(truecolor);
+      chalkFunction = hexFn(truecolor);
     } else if (named) {
-      chalkFunction = (chalk as any)[named] || chalk;
+      chalkFunction = namedFn(named);
     }
   }
   // Fall back to named colors if available
   else if (stdout && named) {
-    chalkFunction = (chalk as any)[named] || chalk;
+    chalkFunction = namedFn(named);
   }
   // Final fallback
   else {
     if (truecolor) {
-      chalkFunction = chalk.hex(truecolor);
+      chalkFunction = hexFn(truecolor);
     } else if (color256 !== undefined) {
-      chalkFunction = chalk.ansi256(color256);
+      chalkFunction = ansi256Fn(color256);
     } else if (named) {
-      chalkFunction = (chalk as any)[named] || chalk;
+      chalkFunction = namedFn(named);
     } else {
       chalkFunction = chalk;
     }

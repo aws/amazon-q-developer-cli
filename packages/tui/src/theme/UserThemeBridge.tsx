@@ -8,6 +8,7 @@ import { useEffect, useCallback } from 'react';
 import { useTheme } from '../hooks/useThemeContext.js';
 import { useAppStore } from '../stores/app-store.js';
 import type { Theme } from './types.js';
+import type { TerminalColor } from '../types/themeTypes.js';
 import {
   PROMPT_PREVIEW,
   RESPONSE_PREVIEW,
@@ -18,20 +19,28 @@ import {
 } from './user-theme.js';
 
 /** @internal Exported for testing */
-export function extractThemeDiffHex(getColor: (path: string) => any): {
-  added: { background: string; bar: string; highlight: string };
-  removed: { background: string; bar: string; highlight: string };
+export function extractThemeDiffColors(colors: Theme['colors']): {
+  added: {
+    background: TerminalColor;
+    bar: TerminalColor;
+    highlight: TerminalColor;
+  };
+  removed: {
+    background: TerminalColor;
+    bar: TerminalColor;
+    highlight: TerminalColor;
+  };
 } {
   return {
     added: {
-      background: getColor('diff.added.background').hex as string,
-      bar: getColor('diff.added.bar').hex as string,
-      highlight: getColor('diff.added.highlight').hex as string,
+      background: colors.diff.added.background,
+      bar: colors.diff.added.bar,
+      highlight: colors.diff.added.highlight,
     },
     removed: {
-      background: getColor('diff.removed.background').hex as string,
-      bar: getColor('diff.removed.bar').hex as string,
-      highlight: getColor('diff.removed.highlight').hex as string,
+      background: colors.diff.removed.background,
+      bar: colors.diff.removed.bar,
+      highlight: colors.diff.removed.highlight,
     },
   };
 }
@@ -73,7 +82,7 @@ export function buildAutoPreview(colors: Theme['colors']): string {
 }
 
 export const UserThemeBridge = () => {
-  const { setUserColors, setBaseTheme, getColor, baseTheme } = useTheme();
+  const { setUserColors, setBaseTheme, baseTheme } = useTheme();
   const registerUserColorsSetter = useAppStore(
     (state) => state.registerUserColorsSetter
   );
@@ -88,8 +97,8 @@ export const UserThemeBridge = () => {
   );
 
   const getThemeDiffHex = useCallback(
-    () => extractThemeDiffHex(getColor),
-    [getColor]
+    () => extractThemeDiffColors(baseTheme.colors),
+    [baseTheme]
   );
 
   const getAutoPreview = useCallback(() => {

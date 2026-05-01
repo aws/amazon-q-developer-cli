@@ -11,29 +11,19 @@ import { join } from 'path';
 import { homedir } from 'os';
 import chalk from 'chalk';
 import type { TerminalColor } from '../types/themeTypes.js';
+import { getTerminalChalkColor } from '../utils/colorUtils.js';
 import { logger } from '../utils/logger.js';
 
 /**
  * Convert a TerminalColor to a chalk function, handling truecolor, color256, and named ANSI colors.
+ * Respects terminal color capabilities (truecolor → 256-color → named fallback).
  * Returns identity when the color is 'default' or unresolvable.
  */
 export function chalkFromTerminalColor(
   color: TerminalColor,
   mode: 'fg' | 'bg'
 ): (s: string) => string {
-  if (color.truecolor) {
-    return mode === 'bg'
-      ? chalk.bgHex(color.truecolor)
-      : chalk.hex(color.truecolor);
-  }
-  if (color.named && color.named !== 'default') {
-    const name =
-      mode === 'bg'
-        ? `bg${color.named[0]!.toUpperCase()}${color.named.slice(1)}`
-        : color.named;
-    return (chalk as any)[name] ?? ((s: string) => s);
-  }
-  return (s: string) => s;
+  return getTerminalChalkColor(color, mode);
 }
 
 /** A prompt preset pairs a text color with a background color */
@@ -295,24 +285,12 @@ export function buildBundledPreview(
   theme: BundledTheme,
   fallbackDiff?: DiffPreset
 ): string {
-  const bgHex = theme.prompt.bgColor.truecolor ?? '#262626';
-  const bg = chalk.bgHex(bgHex);
-  const promptText = ` ${PROMPT_PREVIEW} `;
-  let promptPart: string;
-  if (theme.prompt.textColor.named === 'default') {
-    promptPart = bg(promptText);
-  } else {
-    const fgHex = theme.prompt.textColor.truecolor;
-    promptPart = fgHex ? bg(chalk.hex(fgHex)(promptText)) : bg(promptText);
-  }
+  const bg = chalkFromTerminalColor(theme.prompt.bgColor, 'bg');
+  const fg = chalkFromTerminalColor(theme.prompt.textColor, 'fg');
+  const promptPart = bg(fg(` ${PROMPT_PREVIEW} `));
 
-  let responsePart: string;
-  if (theme.response.textColor.named === 'default') {
-    responsePart = RESPONSE_PREVIEW;
-  } else {
-    const hex = theme.response.textColor.truecolor;
-    responsePart = hex ? chalk.hex(hex)(RESPONSE_PREVIEW) : RESPONSE_PREVIEW;
-  }
+  const responseFg = chalkFromTerminalColor(theme.response.textColor, 'fg');
+  const responsePart = responseFg(RESPONSE_PREVIEW);
 
   const diffPart = buildDiffPreview(theme.diff, undefined, fallbackDiff);
 
@@ -360,19 +338,14 @@ export function buildPromptPreview(
   themeSurfaceHex?: string
 ): string {
   const marker = preset.id === (currentId ?? 'default') ? '  ✓' : '';
-  // For default preset, use the theme's actual surface color
-  const bgHex =
+  // For default preset, use the theme's actual surface color as a truecolor-only TerminalColor
+  const bgColor: TerminalColor =
     preset.id === 'default' && themeSurfaceHex
-      ? themeSurfaceHex
-      : (preset.bgColor.truecolor ?? '#262626');
-  const bg = chalk.bgHex(bgHex);
-  const text = ` ${PROMPT_PREVIEW} `;
-  if (preset.textColor.named === 'default') return bg(text) + marker;
-  const fgHex = preset.textColor.truecolor;
-  if (fgHex) return bg(chalk.hex(fgHex)(text)) + marker;
-  if (preset.textColor.named)
-    return bg((chalk as any)[preset.textColor.named]?.(text) ?? text) + marker;
-  return bg(text) + marker;
+      ? { truecolor: themeSurfaceHex }
+      : preset.bgColor;
+  const bg = chalkFromTerminalColor(bgColor, 'bg');
+  const fg = chalkFromTerminalColor(preset.textColor, 'fg');
+  return bg(fg(` ${PROMPT_PREVIEW} `)) + marker;
 }
 
 /** Build a preview showing sample response text in the preset's color */
@@ -381,15 +354,8 @@ export function buildResponsePreview(
   currentId?: string
 ): string {
   const marker = preset.id === (currentId ?? 'default') ? '  ✓' : '';
-  if (preset.textColor.named === 'default') return RESPONSE_PREVIEW + marker;
-  const hex = preset.textColor.truecolor;
-  if (hex) return chalk.hex(hex)(RESPONSE_PREVIEW) + marker;
-  if (preset.textColor.named)
-    return (
-      ((chalk as any)[preset.textColor.named]?.(RESPONSE_PREVIEW) ??
-        RESPONSE_PREVIEW) + marker
-    );
-  return RESPONSE_PREVIEW + marker;
+  const fg = chalkFromTerminalColor(preset.textColor, 'fg');
+  return fg(RESPONSE_PREVIEW) + marker;
 }
 
 function getThemePath(): string {
@@ -446,23 +412,31 @@ export function getDiffPreset(id: string | undefined): DiffPreset | undefined {
   return diffPresets.find((p) => p.id === id);
 }
 
-/** Build a DiffPreset from raw theme diff hex values (for use as fallback in previews) */
+/** Build a DiffPreset from theme diff TerminalColor values (for use as fallback in previews) */
 export function buildFallbackDiff(themeDiff: {
-  added: { background: string; bar: string; highlight: string };
-  removed: { background: string; bar: string; highlight: string };
+  added: {
+    background: TerminalColor;
+    bar: TerminalColor;
+    highlight: TerminalColor;
+  };
+  removed: {
+    background: TerminalColor;
+    bar: TerminalColor;
+    highlight: TerminalColor;
+  };
 }): DiffPreset {
   return {
     id: '_fallback',
     label: 'Theme default',
     added: {
-      background: { truecolor: themeDiff.added.background },
-      bar: { truecolor: themeDiff.added.bar },
-      highlight: { truecolor: themeDiff.added.highlight },
+      background: themeDiff.added.background,
+      bar: themeDiff.added.bar,
+      highlight: themeDiff.added.highlight,
     },
     removed: {
-      background: { truecolor: themeDiff.removed.background },
-      bar: { truecolor: themeDiff.removed.bar },
-      highlight: { truecolor: themeDiff.removed.highlight },
+      background: themeDiff.removed.background,
+      bar: themeDiff.removed.bar,
+      highlight: themeDiff.removed.highlight,
     },
   };
 }

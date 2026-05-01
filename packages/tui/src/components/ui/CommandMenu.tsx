@@ -32,7 +32,7 @@ import {
 import { PromptsMenu } from './menu/PromptsMenu.js';
 
 export const CommandMenu: React.FC = () => {
-  const { getColor } = useTheme();
+  const { getColor, colors: themeColors } = useTheme();
   const secondaryColor = useMemo(() => getColor('secondary'), [getColor]);
   const commandInputValue = useAppStore((state) => state.commandInputValue);
   const activeTrigger = useAppStore((state) => state.activeTrigger);
@@ -377,14 +377,14 @@ export const CommandMenu: React.FC = () => {
 
       const fallbackDiff = buildFallbackDiff({
         added: {
-          background: getColor('diff.added.background').hex,
-          bar: getColor('diff.added.bar').hex,
-          highlight: getColor('diff.added.highlight').hex,
+          background: themeColors.diff.added.background,
+          bar: themeColors.diff.added.bar,
+          highlight: themeColors.diff.added.highlight,
         },
         removed: {
-          background: getColor('diff.removed.background').hex,
-          bar: getColor('diff.removed.bar').hex,
-          highlight: getColor('diff.removed.highlight').hex,
+          background: themeColors.diff.removed.background,
+          bar: themeColors.diff.removed.bar,
+          highlight: themeColors.diff.removed.highlight,
         },
       });
 
@@ -473,7 +473,7 @@ export const CommandMenu: React.FC = () => {
 
       // Keep current preview for other options (Custom, Prompt style, Response text color)
     },
-    [isThemeMenu, activeCommand, setThemePreview, getColor]
+    [isThemeMenu, activeCommand, setThemePreview, getColor, themeColors]
   );
 
   if (showAtMenu && !activeCommand) {

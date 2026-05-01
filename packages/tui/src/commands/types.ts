@@ -3,6 +3,7 @@
  */
 
 import type { AgentStreamEvent } from '../types/agent-events.js';
+import type { TerminalColor } from '../types/themeTypes.js';
 import type { Kiro } from '../kiro.js';
 import type {
   SlashCommand,
@@ -116,10 +117,18 @@ export interface CommandContext {
   setBaseTheme: (theme: any) => void;
   /** Set theme preview string (rendered below menu during /theme flow) */
   setThemePreview: (preview: string | null) => void;
-  /** Get the base theme's diff hex colors (for preview fallback when user preset is 'default') */
+  /** Get the base theme's diff colors (for preview fallback when user preset is 'default') */
   getThemeDiffHex: () => {
-    added: { background: string; bar: string; highlight: string };
-    removed: { background: string; bar: string; highlight: string };
+    added: {
+      background: TerminalColor;
+      bar: TerminalColor;
+      highlight: TerminalColor;
+    };
+    removed: {
+      background: TerminalColor;
+      bar: TerminalColor;
+      highlight: TerminalColor;
+    };
   };
   /** Get a preview string showing the auto-detected theme with no user overrides */
   getAutoPreview: () => string;

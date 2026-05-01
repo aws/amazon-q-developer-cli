@@ -115,49 +115,25 @@ export const createThemeContext = (
         }
       }
 
-      return getTerminalChalkColor(
-        colorDef.truecolor,
-        colorDef.color256,
-        colorDef.named
-      );
+      return getTerminalChalkColor(colorDef);
     },
     getUserPromptColor: () => {
       if (!userPromptColor) {
-        return getTerminalChalkColor(
-          theme.colors.primary.truecolor,
-          theme.colors.primary.color256,
-          theme.colors.primary.named
-        );
+        return getTerminalChalkColor(theme.colors.primary);
       }
-      return getTerminalChalkColor(
-        userPromptColor.truecolor,
-        userPromptColor.color256,
-        userPromptColor.named
-      );
+      return getTerminalChalkColor(userPromptColor);
     },
     getUserPromptBgHex: () => {
       if (userPromptBgColor?.truecolor) return userPromptBgColor.truecolor;
       // Fall back to theme surface; guard against 'inherit' from named:'default'
-      const surfaceHex = getTerminalChalkColor(
-        theme.colors.surface.truecolor,
-        theme.colors.surface.color256,
-        theme.colors.surface.named
-      ).hex;
+      const surfaceHex = getTerminalChalkColor(theme.colors.surface).hex;
       return surfaceHex === 'inherit' ? undefined : surfaceHex;
     },
     getUserResponseColor: () => {
       if (!userResponseColor) {
-        return getTerminalChalkColor(
-          theme.colors.primary.truecolor,
-          theme.colors.primary.color256,
-          theme.colors.primary.named
-        );
+        return getTerminalChalkColor(theme.colors.primary);
       }
-      return getTerminalChalkColor(
-        userResponseColor.truecolor,
-        userResponseColor.color256,
-        userResponseColor.named
-      );
+      return getTerminalChalkColor(userResponseColor);
     },
     setUserColors,
     setBaseTheme,

@@ -50,5 +50,5 @@ export function getAgentColor(
     return getColor('brand');
   }
   const color = AGENT_COLORS[hashString(name) % AGENT_COLORS.length]!;
-  return getTerminalChalkColor(color.truecolor, color.color256);
+  return getTerminalChalkColor(color);
 }

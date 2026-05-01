@@ -77,8 +77,16 @@ export function createMockCommandContext(
     setBaseTheme: spy('setBaseTheme') as any,
     setThemePreview: spy('setThemePreview') as any,
     getThemeDiffHex: mock(() => ({
-      added: { background: '', bar: '', highlight: '' },
-      removed: { background: '', bar: '', highlight: '' },
+      added: {
+        background: { named: 'default' as const },
+        bar: { named: 'green' as const },
+        highlight: { named: 'default' as const },
+      },
+      removed: {
+        background: { named: 'default' as const },
+        bar: { named: 'red' as const },
+        highlight: { named: 'default' as const },
+      },
     })) as any,
     getAutoPreview: mock(() => '') as any,
     _spies: spies,

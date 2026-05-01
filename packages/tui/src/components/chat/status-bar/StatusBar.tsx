@@ -176,7 +176,7 @@ export const StatusBar = React.memo(function StatusBar({
       // First line: pie spinner for executing, braille spinner for thinking, arrow for paused, dot for others
       if (i === 0 && showPieSpinner) {
         const pieColor = barColorProp
-          ? getTerminalChalkColor(barColorProp)
+          ? getTerminalChalkColor({ truecolor: barColorProp })
           : getColor('brand');
         elements.push(
           <Box key={i}>
@@ -185,7 +185,7 @@ export const StatusBar = React.memo(function StatusBar({
         );
       } else if (i === 0 && showSpinner) {
         const spinnerColor = barColorProp
-          ? getTerminalChalkColor(barColorProp)
+          ? getTerminalChalkColor({ truecolor: barColorProp })
           : getStatusColor('thinking', getColor);
         elements.push(
           <Box key={i}>

@@ -1,7 +1,7 @@
 /** Checks TERM_PROGRAM and TERM to detect Ghostty, including over SSH. */
 export function isGhostty(): boolean {
   return (
-    process.env.TERM_PROGRAM === 'ghostty' ||
+    process.env.TERM_PROGRAM?.toLowerCase() === 'ghostty' ||
     process.env.TERM === 'xterm-ghostty'
   );
 }

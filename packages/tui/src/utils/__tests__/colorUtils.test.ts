@@ -1,58 +1,244 @@
 import { describe, it, expect } from 'bun:test';
+import chalk from 'chalk';
 import {
   getTerminalChalkColor,
   getStatusColor,
   getColorHex,
 } from '../colorUtils';
 
+// Force truecolor so tests exercise real coloring even in CI (no TTY)
+chalk.level = 3;
+
 describe('getTerminalChalkColor', () => {
-  it('named "default" returns chalk.reset with hex "inherit"', () => {
-    const color = getTerminalChalkColor(undefined, undefined, 'default');
-    expect(color.hex).toBe('inherit');
-    // Should still produce a string (not throw)
-    expect(typeof color('test')).toBe('string');
+  // --- Basic return type contract ---
+
+  it('always returns a callable function', () => {
+    const cases = [
+      {},
+      { named: 'default' as const },
+      { truecolor: '#ff0000' },
+      { color256: 141 },
+      { named: 'red' as const },
+      { truecolor: '#ff0000', color256: 196, named: 'red' as const },
+    ];
+    for (const c of cases) {
+      const color = getTerminalChalkColor(c);
+      expect(typeof color).toBe('function');
+      expect(typeof color('test')).toBe('string');
+    }
   });
 
-  it('named "default" returns text unchanged and supports chaining', () => {
-    const color = getTerminalChalkColor(undefined, undefined, 'default');
-    expect(color('test')).toBe('test');
+  it('always has a .hex string property', () => {
+    const cases = [
+      {},
+      { named: 'default' as const },
+      { truecolor: '#ff0000' },
+      { color256: 141 },
+      { named: 'red' as const },
+    ];
+    for (const c of cases) {
+      expect(typeof getTerminalChalkColor(c).hex).toBe('string');
+    }
+  });
+
+  // --- named: 'default' ---
+
+  it('named "default" returns text unchanged', () => {
+    const color = getTerminalChalkColor({ named: 'default' });
+    expect(color('hello')).toBe('hello');
     expect(color.hex).toBe('inherit');
-    // Chaining must work (used by UsagePanel, McpPanel, StatusInfo)
+  });
+
+  it('named "default" supports .bold chaining without reset codes', () => {
+    const color = getTerminalChalkColor({ named: 'default' });
     expect(typeof color.bold).toBe('function');
     expect(typeof color.bold('test')).toBe('string');
-    // .bold must not emit \x1b[0m reset
     expect(color.bold('test')).not.toContain('\x1b[0m');
   });
 
-  it('truecolor value produces correct hex', () => {
-    const color = getTerminalChalkColor('#ff0000');
-    expect(color.hex).toBe('#ff0000');
-    const output = color('test');
-    expect(output).toContain('test');
+  it('named "default" in bg mode also returns text unchanged', () => {
+    const color = getTerminalChalkColor({ named: 'default' }, 'bg');
+    expect(color('hello')).toBe('hello');
+    expect(color.hex).toBe('inherit');
   });
 
-  it('color256 value produces a string output', () => {
-    const color = getTerminalChalkColor(undefined, 141);
-    expect(typeof color.hex).toBe('string');
-    expect(typeof color('test')).toBe('string');
-  });
+  // --- Empty / no color values ---
 
-  it('named color produces correct hex', () => {
-    const color = getTerminalChalkColor(undefined, undefined, 'red');
-    expect(color.hex).toBe('#ff0000');
-  });
-
-  it('no arguments returns fallback black', () => {
-    const color = getTerminalChalkColor();
+  it('empty object returns fallback black hex', () => {
+    const color = getTerminalChalkColor({});
     expect(color.hex).toBe('#000000');
   });
 
-  it('prefers truecolor over color256 and named', () => {
-    const color = getTerminalChalkColor('#abcdef', 100, 'red');
-    // hex should reflect truecolor or color256 depending on terminal,
-    // but should not be the named color hex
+  // --- Foreground mode (default) ---
+
+  it('truecolor produces correct hex', () => {
+    const color = getTerminalChalkColor({ truecolor: '#ff0000' });
+    expect(color.hex).toBe('#ff0000');
+    expect(color('test')).toContain('test');
+  });
+
+  it('color256 produces a styled string', () => {
+    const color = getTerminalChalkColor({ color256: 141 });
+    expect(typeof color.hex).toBe('string');
+    const output = color('test');
+    expect(output).toContain('test');
+    expect(output).not.toBe('test');
+  });
+
+  it('named color resolves to correct hex', () => {
+    const cases: Array<{ named: any; expectedHex: string }> = [
+      { named: 'red', expectedHex: '#ff0000' },
+      { named: 'green', expectedHex: '#00ff00' },
+      { named: 'blue', expectedHex: '#0000ff' },
+      { named: 'magenta', expectedHex: '#ff00ff' },
+      { named: 'cyan', expectedHex: '#00ffff' },
+      { named: 'white', expectedHex: '#ffffff' },
+      { named: 'black', expectedHex: '#000000' },
+      { named: 'yellow', expectedHex: '#ffff00' },
+      { named: 'gray', expectedHex: '#808080' },
+      { named: 'grey', expectedHex: '#808080' },
+    ];
+    for (const { named, expectedHex } of cases) {
+      expect(getTerminalChalkColor({ named }).hex).toBe(expectedHex);
+    }
+  });
+
+  it('named bright colors resolve to correct hex', () => {
+    const cases: Array<{ named: any; expectedHex: string }> = [
+      { named: 'redBright', expectedHex: '#ff8080' },
+      { named: 'greenBright', expectedHex: '#80ff80' },
+      { named: 'blueBright', expectedHex: '#8080ff' },
+      { named: 'magentaBright', expectedHex: '#ff80ff' },
+      { named: 'cyanBright', expectedHex: '#80ffff' },
+    ];
+    for (const { named, expectedHex } of cases) {
+      expect(getTerminalChalkColor({ named }).hex).toBe(expectedHex);
+    }
+  });
+
+  // --- Background mode ---
+
+  it('bg mode with truecolor produces different escape codes than fg', () => {
+    const fg = getTerminalChalkColor({ truecolor: '#ff0000' }, 'fg');
+    const bg = getTerminalChalkColor({ truecolor: '#ff0000' }, 'bg');
+    {
+      expect(fg('test')).not.toBe('test');
+      expect(bg('test')).not.toBe('test');
+      expect(fg('test')).not.toBe(bg('test'));
+    }
+  });
+
+  it('bg mode with color256 produces different escape codes than fg', () => {
+    const fg = getTerminalChalkColor({ color256: 196 }, 'fg');
+    const bg = getTerminalChalkColor({ color256: 196 }, 'bg');
+    {
+      expect(fg('test')).not.toBe('test');
+      expect(bg('test')).not.toBe('test');
+      expect(fg('test')).not.toBe(bg('test'));
+    }
+  });
+
+  it('bg mode with named color produces different escape codes than fg', () => {
+    const fg = getTerminalChalkColor({ named: 'red' }, 'fg');
+    const bg = getTerminalChalkColor({ named: 'red' }, 'bg');
+    {
+      expect(fg('test')).not.toBe('test');
+      expect(bg('test')).not.toBe('test');
+      expect(fg('test')).not.toBe(bg('test'));
+    }
+  });
+
+  it('bg mode with empty object returns fallback', () => {
+    const color = getTerminalChalkColor({}, 'bg');
+    expect(color.hex).toBe('#000000');
+  });
+
+  // --- Fallback priority ---
+
+  it('with all three fields set, output contains text', () => {
+    const color = getTerminalChalkColor({
+      truecolor: '#abcdef',
+      color256: 100,
+      named: 'red',
+    });
     expect(color.hex).toBeTruthy();
-    expect(typeof color('test')).toBe('string');
+    expect(color('test')).toContain('test');
+  });
+
+  it('truecolor + color256 (no named) produces styled output', () => {
+    const color = getTerminalChalkColor({ truecolor: '#2d3a30', color256: 22 });
+    expect(color('test')).toContain('test');
+    expect(color('test')).not.toBe('test');
+  });
+
+  it('color256 + named (no truecolor) produces styled output', () => {
+    const color = getTerminalChalkColor({ color256: 22, named: 'green' });
+    expect(color('test')).toContain('test');
+    expect(color('test')).not.toBe('test');
+  });
+
+  // --- Composability: fg + bg together ---
+
+  it('fg and bg can be composed via nesting', () => {
+    const fg = getTerminalChalkColor({ named: 'white' }, 'fg');
+    const bg = getTerminalChalkColor({ named: 'red' }, 'bg');
+    const result = bg(fg('hello'));
+    expect(result).toContain('hello');
+    expect(result).not.toBe('hello');
+  });
+
+  // --- Prototype chain (chalk method chaining) ---
+
+  it('fg mode supports chalk chaining (.bold, .italic)', () => {
+    const color = getTerminalChalkColor({ truecolor: '#ff0000' });
+    expect(typeof color.bold).toBe('function');
+    expect(typeof color.italic).toBe('function');
+    expect(color.bold('test')).toContain('test');
+  });
+
+  it('bg mode supports chalk chaining', () => {
+    const color = getTerminalChalkColor({ truecolor: '#ff0000' }, 'bg');
+    expect(typeof color.bold).toBe('function');
+    expect(color.bold('test')).toContain('test');
+  });
+
+  // --- Real theme color objects (integration-style) ---
+
+  it('handles kiroDark diff added background', () => {
+    const color = getTerminalChalkColor(
+      { truecolor: '#2d3a30', color256: 22 },
+      'bg'
+    );
+    expect(color('test')).toContain('test');
+    expect(color('test')).not.toBe('test');
+  });
+
+  it('handles kiroDark diff added bar', () => {
+    const color = getTerminalChalkColor(
+      { truecolor: '#80ffb5', color256: 121 },
+      'fg'
+    );
+    expect(color('+')).toContain('+');
+    expect(color('+')).not.toBe('+');
+  });
+
+  it('handles kiroSafe named-only diff foreground', () => {
+    const color = getTerminalChalkColor({ named: 'green' }, 'fg');
+    expect(color('+')).toContain('+');
+    expect(color('+')).not.toBe('+');
+  });
+
+  it('handles kiroSafe named "default" diff background as identity', () => {
+    const color = getTerminalChalkColor({ named: 'default' }, 'bg');
+    expect(color('test')).toBe('test');
+  });
+
+  // --- mode defaults to fg ---
+
+  it('defaults to fg mode when mode is omitted', () => {
+    const explicit = getTerminalChalkColor({ truecolor: '#ff0000' }, 'fg');
+    const implicit = getTerminalChalkColor({ truecolor: '#ff0000' });
+    expect(explicit('test')).toBe(implicit('test'));
   });
 });
 
@@ -130,18 +316,5 @@ describe('getColorHex', () => {
 
   it('returns custom fallback', () => {
     expect(getColorHex(null, '#000000')).toBe('#000000');
-  });
-});
-
-describe('getTerminalChalkColor (additional)', () => {
-  it('named magenta produces hex #ff00ff', () => {
-    const color = getTerminalChalkColor(undefined, undefined, 'magenta');
-    expect(color.hex).toBe('#ff00ff');
-  });
-
-  it('named cyan produces a callable function', () => {
-    const color = getTerminalChalkColor(undefined, undefined, 'cyan');
-    expect(typeof color).toBe('function');
-    expect(typeof color('test')).toBe('string');
   });
 });
