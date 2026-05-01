@@ -7,6 +7,7 @@ import { Text } from '../text/Text.js';
 import { Icon, IconType } from '../icon/Icon.js';
 import { Divider } from '../divider/Divider.js';
 import { useKeypress } from '../../../hooks/useKeypress.js';
+import { useKeybindings } from '../../../hooks/useKeybindings.js';
 import {
   visibleWidth,
   truncateToWidth,
@@ -65,6 +66,7 @@ export const Menu = React.memo(function Menu({
   const [searchText, setSearchText] = useState('');
   const { getColor } = useTheme();
   const { width: terminalWidth } = useTerminalSize();
+  const keybindings = useKeybindings();
 
   // Get chalk functions for styling and coloring
   const label = useTextStyle('label');
@@ -135,7 +137,7 @@ export const Menu = React.memo(function Menu({
       if (selectedItem) {
         onSelect(selectedItem);
       }
-    } else if (key.escape && onEscape) {
+    } else if (keybindings.matches('closeMenu', input, key) && onEscape) {
       onEscape();
     } else if (key.tab && onTabComplete) {
       onTabComplete();
@@ -260,7 +262,8 @@ export const Menu = React.memo(function Menu({
           <Divider />
           <Box paddingX={1}>
             <Text>
-              {brandText('ESC')} {dimText('to cancel')}
+              {brandText(keybindings.label('closeMenu').toUpperCase())}{' '}
+              {dimText('to cancel')}
               {dimText(' · ')}
               {brandText('↑↓')} {dimText('to navigate')}
               {onRightArrow && (

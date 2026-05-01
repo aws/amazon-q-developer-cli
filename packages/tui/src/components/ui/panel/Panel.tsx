@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { Box, useInput } from './../../../renderer.js';
 import { useTheme } from '../../../hooks/useThemeContext.js';
 import { useTerminalSize } from '../../../hooks/useTerminalSize.js';
+import { useKeybindings } from '../../../hooks/useKeybindings.js';
 import { Divider } from '../divider/Divider.js';
 import { Text } from '../text/Text.js';
 
@@ -42,13 +43,14 @@ export const Panel: React.FC<PanelProps> = ({
 }) => {
   const { getColor } = useTheme();
   const { width: termWidth } = useTerminalSize();
+  const keybindings = useKeybindings();
   const primary = getColor('primary');
   const dim = getColor('secondary');
 
   const [search, setSearch] = useState('');
 
   useInput((_input, key) => {
-    if (key.escape) {
+    if (keybindings.matches('closeMenu', _input, key)) {
       if (searchable && search) {
         setSearch('');
         onSearchChange?.('');
@@ -114,7 +116,7 @@ export const Panel: React.FC<PanelProps> = ({
       <Box justifyContent="space-between" paddingX={1}>
         <Box>
           <Text>
-            {primary('ESC')}{' '}
+            {primary(keybindings.label('closeMenu').toUpperCase())}{' '}
             {dim(searchable && search ? 'to clear search' : 'to close')}
             {canScrollUp || canScrollDown ? dim(' · ↑↓ to scroll') : ''}
           </Text>

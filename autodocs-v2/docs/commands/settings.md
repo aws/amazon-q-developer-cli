@@ -113,6 +113,9 @@ Some settings are global-only and cannot be overridden at workspace level (e.g.,
 | `chat.disableGranularTrust` | boolean | Disable granular trust options |
 | `chat.autoExpandToolOutput` | boolean | Always show full tool output |
 | `chat.disableWrap` | boolean | Disable word-wrapping in chat output; long lines soft-wrap visually but stay as a single logical line for clean copy-paste |
+| `chat.keybindings.cancelStream` | string | Key to cancel streaming (default: `esc`) |
+| `chat.keybindings.closeMenu` | string | Key to close slash menus and panels (default: `esc`) |
+| `chat.keybindings.quit` | string | Key to quit (double-press required, default: `ctrl+c`) |
 | `telemetry.enabled` | boolean | Enable/disable telemetry |
 | `knowledge.defaultIncludePatterns` | array | File patterns to include |
 | `knowledge.defaultExcludePatterns` | array | File patterns to exclude |
@@ -171,6 +174,21 @@ kiro-cli settings --delete "knowledge.*"
 ```bash
 kiro-cli settings telemetry.enabled false
 ```
+
+### Example 8: Rebind V2 TUI Shortcuts
+
+```bash
+# Cancel streaming with Ctrl+G instead of Esc
+kiro-cli settings chat.keybindings.cancelStream "ctrl+g"
+
+# Close menus with Ctrl+S
+kiro-cli settings chat.keybindings.closeMenu "ctrl+s"
+
+# Quit with Ctrl+Q (still requires a double-press)
+kiro-cli settings chat.keybindings.quit "ctrl+q"
+```
+
+**Syntax**: `+`-separated, case-insensitive. Modifiers: `ctrl`, `shift`, `alt` (aliases: `meta`, `cmd`). Named keys: `esc`, `enter`, `tab`, `up`/`down`/`left`/`right`, `space`, `backspace`, `delete`, `home`, `end`, `pageup`, `pagedown`. Any single ASCII character is also accepted. Invalid values fall back to the built-in default. Applies to V2 TUI only. These settings are global-only and cannot be overridden per workspace.
 
 ## Troubleshooting
 

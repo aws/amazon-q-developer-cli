@@ -16,9 +16,14 @@ describe('Crew Monitor', () => {
   });
 
   it('AppContainer has ctrl+g handler', () => {
-    const src = fs.readFileSync(path.join(ROOT, 'src/components/layout/AppContainer.tsx'), 'utf8');
-    expect(src).toContain('crew-monitor');
-    expect(src).toContain("'g'");
+    // Ctrl+G dispatch lives in app-keypress-dispatch.ts (extracted from
+    // AppContainer for testability). AppContainer routes keypresses through
+    // the dispatcher, so we check both files for the crew-monitor wiring.
+    const appContainer = fs.readFileSync(path.join(ROOT, 'src/components/layout/AppContainer.tsx'), 'utf8');
+    const dispatcher = fs.readFileSync(path.join(ROOT, 'src/components/layout/app-keypress-dispatch.ts'), 'utf8');
+    expect(appContainer).toContain('dispatchAppKeypress');
+    expect(dispatcher).toContain('crew-monitor');
+    expect(dispatcher).toContain("'g'");
   });
 
   it('CrewMonitorScreen component exists', () => {
