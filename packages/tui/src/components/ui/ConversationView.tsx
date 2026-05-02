@@ -14,6 +14,7 @@ import { ShellOutputMessage } from '../chat/message/ShellOutputMessage';
 import { ToolUseMessage } from './ToolUseMessage';
 import { SubagentToolPanel } from './SubagentToolPanel.js';
 import { ThinkingMessage } from '../chat/message/ThinkingMessage';
+import { ThinkingSummary } from '../chat/message/ThinkingSummary';
 import { TurnUsageSummary } from '../chat/message/TurnUsageSummary';
 import { StatusBar } from '../chat/status-bar/StatusBar';
 import { Text } from '../ui/text/Text';
@@ -119,13 +120,17 @@ const StaticMessage = React.memo(function StaticMessage({
     );
   }
   if (message.role === MessageRole.Model) {
-    if (!message.content) return null;
+    if (!message.content && !message.thinking) return null;
     const isShell = 'shellOutput' in message && message.shellOutput;
+    const thinkingText = 'thinking' in message ? message.thinking : undefined;
     return (
       <Box
         flexDirection="column"
         marginTop={needsModelSpacing(prevRole) ? 1 : 0}
       >
+        {thinkingText && (
+          <ThinkingSummary text={thinkingText} barColor={agentBarColor} />
+        )}
         {isShell ? (
           <ShellOutputMessage
             content={message.content}
@@ -179,7 +184,8 @@ const ActiveTurnTail = React.memo(function ActiveTurnTail({
       (lastVisibleMsg.role === MessageRole.Model &&
         isProcessing &&
         (!!lastVisibleMsg.content ||
-          ('shellOutput' in lastVisibleMsg && lastVisibleMsg.shellOutput)))
+          ('shellOutput' in lastVisibleMsg && lastVisibleMsg.shellOutput) ||
+          ('thinking' in lastVisibleMsg && !!lastVisibleMsg.thinking)))
     : false;
   const showThinking = isProcessing && !hasActiveContent;
 
@@ -226,12 +232,15 @@ const ActiveTurnTail = React.memo(function ActiveTurnTail({
         }
         if (
           (!message.content || message.content === '') &&
-          !('shellOutput' in message && message.shellOutput)
+          !('shellOutput' in message && message.shellOutput) &&
+          !('thinking' in message && message.thinking)
         )
           return null;
 
         const isLastModel = index === lastModelIndex;
         const isShell = 'shellOutput' in message && message.shellOutput;
+        const thinkingText =
+          'thinking' in message ? message.thinking : undefined;
         const useStreaming =
           isLastModel &&
           (isProcessing ||
@@ -273,6 +282,15 @@ const ActiveTurnTail = React.memo(function ActiveTurnTail({
             flexDirection="column"
             marginTop={needsModelSpacing(prevRole) ? 1 : 0}
           >
+            {thinkingText &&
+              (isProcessing ? (
+                <StreamingThinking
+                  text={thinkingText}
+                  barColor={agentBarColor}
+                />
+              ) : (
+                <ThinkingSummary text={thinkingText} barColor={agentBarColor} />
+              ))}
             {inner}
           </Box>
         );
@@ -286,6 +304,23 @@ const ActiveTurnTail = React.memo(function ActiveTurnTail({
     </>
   );
 });
+
+/** Renders streaming thinking/reasoning text as it arrives */
+const StreamingThinking: React.FC<{ text: string; barColor?: string }> = ({
+  text,
+  barColor,
+}) => {
+  const { getColor } = useTheme();
+  const dimColor = getColor('secondary');
+  // Show last few lines of thinking to keep it compact during streaming
+  const lines = text.split('\n');
+  const display = lines.length > 4 ? lines.slice(-4).join('\n') : text;
+  return (
+    <StatusBar status="thinking" barColor={barColor}>
+      <Text>{dimColor(`💭 ${display}`)}</Text>
+    </StatusBar>
+  );
+};
 
 /** Static turn card for completed turns that were never incrementally flushed */
 const StaticTurnCard = React.memo(function StaticTurnCard({

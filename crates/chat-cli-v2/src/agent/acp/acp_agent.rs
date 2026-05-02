@@ -2871,6 +2871,9 @@ fn convert_update_event_to_session_update(update_event: UpdateEvent) -> Option<S
         UpdateEvent::AgentContent(ContentChunk::Text(text)) => Some(SessionUpdate::AgentMessageChunk(
             SacpContentChunk::new(ContentBlock::Text(TextContent::new(text))),
         )),
+        UpdateEvent::AgentThought(ContentChunk::Text(text)) => Some(SessionUpdate::AgentThoughtChunk(
+            SacpContentChunk::new(ContentBlock::Text(TextContent::new(text))),
+        )),
         UpdateEvent::ToolCall(tool_call) => {
             let locations = get_tool_locations(&tool_call.tool);
             let title = get_tool_title(&tool_call.tool);
@@ -4137,5 +4140,32 @@ mod convert_update_event_tests {
             SessionUpdate::AgentMessageChunk(_) => {},
             other => panic!("expected AgentMessageChunk, got {:?}", other),
         }
+    }
+
+    #[test]
+    fn test_agent_thought_text_maps_to_agent_thought_chunk() {
+        let event = UpdateEvent::AgentThought(ContentChunk::Text("thinking about this...".to_string()));
+
+        let result = convert_update_event_to_session_update(event);
+        assert!(
+            result.is_some(),
+            "AgentThought with Text should produce a SessionUpdate"
+        );
+
+        match result.unwrap() {
+            SessionUpdate::AgentThoughtChunk(_) => {},
+            other => panic!("expected AgentThoughtChunk, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn test_agent_thought_non_text_returns_none() {
+        let event = UpdateEvent::AgentThought(ContentChunk::ResourceLink("some-link".to_string()));
+
+        let result = convert_update_event_to_session_update(event);
+        assert!(
+            result.is_none(),
+            "AgentThought with non-Text content should return None"
+        );
     }
 }

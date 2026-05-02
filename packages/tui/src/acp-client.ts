@@ -735,6 +735,17 @@ abstract class BaseAcpClient implements SessionClient {
             return null;
         }
 
+      case 'agent_thought_chunk': {
+        if (update.content.type === 'text') {
+          return {
+            type: AgentEventType.Thought,
+            id: crypto.randomUUID(),
+            content: { type: ContentType.Text, text: update.content.text },
+          };
+        }
+        return null;
+      }
+
       case 'tool_call': {
         const toolContent = ((update as any).content || [])
           .filter((c: any) => c.type === 'diff')

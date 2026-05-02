@@ -3,7 +3,6 @@ import * as fs from 'fs';
 import type { AgentStreamEvent } from '../types/agent-events';
 import type { AppState } from '../stores/app-store';
 import { PtyManager, TerminalSnapshot } from './shared/pty-manager';
-import { getMockSessionClient } from './MockSessionClient';
 import { TuiIpcConnection } from './shared/tui-ipc-connection';
 import { createTestDir, type TestPaths } from './shared/test-paths';
 
@@ -250,9 +249,14 @@ export class TestCase {
    * ```
    */
   async mockSessionUpdate(event: AgentStreamEvent): Promise<void> {
-    const mockClient = getMockSessionClient();
-    if (!mockClient) throw new Error('Mock client not available');
-    mockClient.injectEvent(event);
+    if (!this.tuiConnection) throw new Error('TUI not connected');
+    const response = await this.tuiConnection.sendCommand({
+      kind: 'MOCK_SESSION_UPDATE',
+      event,
+    });
+    if (response.data.kind === 'ERROR') {
+      throw new Error((response.data as any).error);
+    }
   }
 
   // /**
