@@ -306,9 +306,18 @@ export const McpPanel: React.FC<McpPanelProps> = ({
       ? `/mcp list · ${servers.length} configured${hasRegistry ? `, ${registryServers.length} registry` : ''}`
       : `/mcp · ${servers.length} server${servers.length === 1 ? '' : 's'}`;
 
-  const emptyMessage = isRegistryView
-    ? 'No servers in MCP registry'
-    : 'No MCP servers configured';
+  const governanceDisabled = initErrors.find(
+    (e): e is Extract<InitError, { type: 'mcp_governance_disabled' }> =>
+      e.type === 'mcp_governance_disabled'
+  );
+
+  const emptyMessage = governanceDisabled
+    ? governanceDisabled.apiFailure
+      ? '⚠ Failed to retrieve MCP settings — MCP disabled'
+      : '⚠ MCP has been disabled by your administrator'
+    : isRegistryView
+      ? 'No servers in MCP registry'
+      : 'No MCP servers configured';
 
   const footerExtra = isInteractive ? (
     <Text>
@@ -321,7 +330,7 @@ export const McpPanel: React.FC<McpPanelProps> = ({
     <Panel
       title={title}
       onClose={onClose}
-      searchable={true}
+      searchable={!governanceDisabled}
       onSearchChange={handleSearchChange}
       canScrollUp={scrollOffset > 0}
       canScrollDown={canScrollDown}

@@ -670,7 +670,13 @@ impl AcpSessionConfig {
 }
 
 /// Builder for constructing and spawning an [`AcpSession`] actor.
-#[derive(Default)]
+///
+/// NOTE on security defaults: `mcp_enabled` and `web_tools_enabled` default to
+/// `false` (fail-closed) for governance-sensitive fields. This is intentionally
+/// opposite of `AgentSettings`, where those same fields default to `true` (since
+/// a default `AgentSettings` is used outside of a managed session context).
+/// The `Default` impl is explicit rather than derived so a future developer
+/// can't accidentally change the fail-closed semantics by adding/reordering fields.
 pub struct AcpSessionBuilder<'a> {
     os: Option<Os>,
     session_id: Option<String>,
@@ -697,8 +703,47 @@ pub struct AcpSessionBuilder<'a> {
     subagent_info: Option<SubagentInfo>,
     legacy_session_exporter: Option<Arc<dyn LegacySessionExporter>>,
     session_injected_mcp_servers: Vec<(String, agent::agent_config::definitions::McpServerConfig)>,
-    /// Whether web tools (web_search, web_fetch) are enabled by governance
+    /// Whether web tools (web_search, web_fetch) are enabled by governance.
+    /// Fail-closed default — callers MUST set this from resolved governance.
     web_tools_enabled: bool,
+    /// Whether MCP is enabled by governance (Kiro console MCP toggle).
+    /// Fail-closed default — callers MUST set this from resolved governance.
+    mcp_enabled: bool,
+}
+
+#[allow(clippy::derivable_impls)] // intentional — see struct doc; locks in fail-closed semantics
+impl<'a> Default for AcpSessionBuilder<'a> {
+    fn default() -> Self {
+        Self {
+            os: None,
+            session_id: None,
+            cwd: None,
+            load: false,
+            initial_agent_config: None,
+            user_embedded_msg: None,
+            is_subagent: false,
+            global_mcp_path: None,
+            local_mcp_path: None,
+            model_id: None,
+            session_tx: None,
+            client_cx: None,
+            mock_registry: None,
+            code_intelligence: None,
+            available_agents: Vec::new(),
+            agent_configs: Vec::new(),
+            current_agent_name: None,
+            trust_all_tools: false,
+            trust_tools: None,
+            acp_client_info: None,
+            telemetry_event_store: None,
+            subagent_info: None,
+            legacy_session_exporter: None,
+            session_injected_mcp_servers: Vec::new(),
+            // Fail-closed: governance must be explicitly enabled by caller.
+            web_tools_enabled: false,
+            mcp_enabled: false,
+        }
+    }
 }
 
 impl<'a> AcpSessionBuilder<'a> {
@@ -799,6 +844,11 @@ impl<'a> AcpSessionBuilder<'a> {
 
     pub fn web_tools_enabled(mut self, enabled: bool) -> Self {
         self.web_tools_enabled = enabled;
+        self
+    }
+
+    pub fn mcp_enabled(mut self, enabled: bool) -> Self {
+        self.mcp_enabled = enabled;
         self
     }
 
@@ -908,6 +958,8 @@ struct AcpSession {
     /// MCP servers injected by the ACP client at session creation time.
     /// Preserved across agent swaps so they are re-merged into each new agent config.
     session_injected_mcp_servers: Vec<(String, agent::agent_config::definitions::McpServerConfig)>,
+    /// Whether MCP is enabled by governance (Kiro console MCP toggle).
+    mcp_enabled: bool,
 }
 
 impl AcpSession {
@@ -1117,6 +1169,7 @@ impl AcpSession {
             let mut s = snapshot;
             s.settings.trust_all_tools = builder.trust_all_tools;
             s.settings.web_tools_enabled = builder.web_tools_enabled;
+            s.settings.mcp_enabled = builder.mcp_enabled;
             if let Some(tools) = builder.trust_tools {
                 for tool in &tools {
                     if !tool.starts_with('@') && tool.parse::<agent::tools::BuiltInToolName>().is_err() {
@@ -1252,6 +1305,7 @@ impl AcpSession {
                 .legacy_session_exporter
                 .unwrap_or_else(|| Arc::new(crate::agent::session::legacy_compat::NoOpLegacySessionExporter)),
             session_injected_mcp_servers: builder.session_injected_mcp_servers,
+            mcp_enabled: builder.mcp_enabled,
         })
     }
 
@@ -3175,7 +3229,7 @@ pub async fn execute(
                     result.handle.advertise_commands().await;
 
                     // Notify TUI about agent loading issues
-                    send_agent_load_notifications(&cx, &session_id, &result.requested_agent_name, &result.agent_config_errors, &result.requested_model_name, &fallback_model_id);
+                    send_agent_load_notifications(&cx, &session_id, &result.requested_agent_name, &result.agent_config_errors, &result.requested_model_name, &fallback_model_id, result.mcp_enabled, result.mcp_api_failure);
 
                     Ok(())
                 }
@@ -3208,7 +3262,7 @@ pub async fn execute(
                             result.handle.advertise_commands().await;
 
                             // Notify TUI about agent loading issues
-                            send_agent_load_notifications(&cx, &request.session_id, &result.requested_agent_name, &result.agent_config_errors, &result.requested_model_name, &fallback_model_id);
+                            send_agent_load_notifications(&cx, &request.session_id, &result.requested_agent_name, &result.agent_config_errors, &result.requested_model_name, &fallback_model_id, result.mcp_enabled, result.mcp_api_failure);
 
                             Ok(())
                         },
@@ -3514,6 +3568,8 @@ pub async fn execute(
 /// Notifies about:
 /// - Agent not found (fell back to default)
 /// - Agent config parse errors from startup
+/// - MCP governance disabled (admin turned off MCP)
+#[allow(clippy::too_many_arguments)]
 fn send_agent_load_notifications(
     cx: &JrConnectionCx<AgentToClient>,
     session_id: &SessionId,
@@ -3521,10 +3577,13 @@ fn send_agent_load_notifications(
     agent_config_errors: &[super::session_manager::AgentConfigLoadError],
     requested_model_name: &Option<String>,
     current_model_id: &str,
+    mcp_enabled: bool,
+    mcp_api_failure: bool,
 ) {
     use super::extensions::{
         AgentConfigErrorNotification,
         AgentNotFoundNotification,
+        McpGovernanceDisabledNotification,
         ModelNotFoundNotification,
         methods,
     };
@@ -3561,6 +3620,17 @@ fn send_agent_load_notifications(
         };
         if let Ok(raw) = serde_json::value::to_raw_value(&notif) {
             let ext = sacp::schema::ExtNotification::new(methods::AGENT_CONFIG_ERROR, std::sync::Arc::from(raw));
+            let _ = cx.send_notification(sacp::schema::AgentNotification::ExtNotification(ext));
+        }
+    }
+
+    if !mcp_enabled {
+        let notif = McpGovernanceDisabledNotification {
+            session_id: session_id.clone(),
+            api_failure: mcp_api_failure,
+        };
+        if let Ok(raw) = serde_json::value::to_raw_value(&notif) {
+            let ext = sacp::schema::ExtNotification::new(methods::MCP_GOVERNANCE_DISABLED, std::sync::Arc::from(raw));
             let _ = cx.send_notification(sacp::schema::AgentNotification::ExtNotification(ext));
         }
     }

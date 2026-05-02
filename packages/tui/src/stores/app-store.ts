@@ -232,7 +232,8 @@ export type InitError =
   | { type: 'mcp_failure'; serverName: string; error: string }
   | { type: 'agent_not_found'; requestedAgent: string; fallbackAgent: string }
   | { type: 'agent_config_error'; path?: string; error: string }
-  | { type: 'model_not_found'; requestedModel: string; fallbackModel: string };
+  | { type: 'model_not_found'; requestedModel: string; fallbackModel: string }
+  | { type: 'mcp_governance_disabled'; apiFailure: boolean };
 
 export interface LastTurnTokens {
   input: number;
@@ -254,8 +255,20 @@ export function summarizeInitErrors(errors: InitError[]): string | null {
   const agentNotFound = errors.filter((e) => e.type === 'agent_not_found');
   const configErrors = errors.filter((e) => e.type === 'agent_config_error');
   const modelNotFound = errors.filter((e) => e.type === 'model_not_found');
-
+  const mcpGovernance = errors.filter(
+    (e) => e.type === 'mcp_governance_disabled'
+  );
   const parts: string[] = [];
+
+  // MCP governance disabled (show first — important admin notice)
+  if (mcpGovernance.length > 0) {
+    const e = mcpGovernance[0]!;
+    parts.push(
+      e.apiFailure
+        ? 'failed to retrieve MCP settings — MCP disabled'
+        : 'MCP disabled by your administrator'
+    );
+  }
 
   // Agent not found
   if (agentNotFound.length > 0) {
@@ -292,6 +305,17 @@ export function summarizeInitErrors(errors: InitError[]): string | null {
   }
 
   return parts.join('; ');
+}
+
+/**
+ * Pick alert severity from init errors. Governance-disabled is a benign admin
+ * notice (warning); everything else is a hard error (red).
+ */
+export function severityForInitErrors(
+  errors: InitError[]
+): 'warning' | 'error' {
+  const hasHardError = errors.some((e) => e.type !== 'mcp_governance_disabled');
+  return hasHardError ? 'error' : 'warning';
 }
 
 const initialInputBufferState = (): InputBufferState => ({
@@ -1618,7 +1642,7 @@ export const createAppStore = (props: AppStoreProps) => {
               if (message) {
                 get().showTransientAlert({
                   message,
-                  status: 'error',
+                  status: severityForInitErrors(updated),
                   autoHideMs: 8000,
                 });
               }
@@ -1680,7 +1704,7 @@ export const createAppStore = (props: AppStoreProps) => {
               if (message) {
                 get().showTransientAlert({
                   message,
-                  status: 'error',
+                  status: severityForInitErrors(updated),
                   autoHideMs: 8000,
                 });
               }
@@ -1701,7 +1725,7 @@ export const createAppStore = (props: AppStoreProps) => {
               if (message) {
                 get().showTransientAlert({
                   message,
-                  status: 'error',
+                  status: severityForInitErrors(updated),
                   autoHideMs: 8000,
                 });
               }
@@ -1725,7 +1749,27 @@ export const createAppStore = (props: AppStoreProps) => {
               if (message) {
                 get().showTransientAlert({
                   message,
-                  status: 'error',
+                  status: severityForInitErrors(updated),
+                  autoHideMs: 8000,
+                });
+              }
+            }
+            break;
+          case AgentEventType.McpGovernanceDisabled:
+            {
+              const updated = [
+                ...get().initErrors,
+                {
+                  type: 'mcp_governance_disabled' as const,
+                  apiFailure: event.apiFailure,
+                },
+              ];
+              set({ initErrors: updated });
+              const message = summarizeInitErrors(updated);
+              if (message) {
+                get().showTransientAlert({
+                  message,
+                  status: severityForInitErrors(updated),
                   autoHideMs: 8000,
                 });
               }

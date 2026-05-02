@@ -241,6 +241,7 @@ export class Kiro {
           (event.type === AgentEventType.McpServerInitFailure ||
             event.type === AgentEventType.McpOauthRequest ||
             event.type === AgentEventType.McpServerInitialized ||
+            event.type === AgentEventType.McpGovernanceDisabled ||
             event.type === AgentEventType.AgentNotFound ||
             event.type === AgentEventType.AgentConfigError ||
             event.type === AgentEventType.ModelNotFound) &&

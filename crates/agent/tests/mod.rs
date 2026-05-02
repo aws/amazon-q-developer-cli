@@ -1781,3 +1781,198 @@ async fn test_tool_dispatch_recovers_after_cached_specs_invalidated() {
         "expected successful tool result containing file content 'hello world'"
     );
 }
+
+/// Enterprise MCP governance: when `AgentSettings.mcp_enabled == false`, the Agent must
+/// construct with an empty `cached_mcp_configs` — MCP servers configured on the agent
+/// are suppressed before any subprocess is spawned. This is the defense-in-depth guarantee
+/// backing the Kiro CLI V2 TUI fix for P423069569.
+#[tokio::test]
+async fn test_agent_new_suppresses_mcp_when_governance_disabled() {
+    use agent::agent_config::definitions::{
+        LocalMcpServerConfig,
+        McpServerConfig,
+    };
+
+    let _ = tracing_subscriber::fmt::try_init();
+
+    let mcp_config = McpServerConfig::Local(LocalMcpServerConfig {
+        command: "/bin/echo".to_string(),
+        args: vec!["unused".to_string()],
+        env: None,
+        timeout_ms: 30_000,
+        disabled: false,
+        disabled_tools: vec![],
+    });
+
+    let settings = agent::types::AgentSettings {
+        mcp_enabled: false,
+        ..Default::default()
+    };
+
+    let test = TestCase::builder()
+        .test_name("mcp_governance_suppresses_servers")
+        .with_default_agent_config()
+        .with_settings(settings)
+        .with_mcp_server("should-not-launch", mcp_config)
+        .build()
+        .await
+        .unwrap();
+
+    // Create a snapshot of the live agent to inspect its effective config.
+    let snapshot = test.create_snapshot().await;
+
+    assert!(
+        snapshot.agent_config.config().mcp_servers().is_empty(),
+        "Agent::new must clear MCP servers when settings.mcp_enabled == false; got: {:?}",
+        snapshot.agent_config.config().mcp_servers()
+    );
+    assert!(
+        !snapshot.agent_config.config().use_legacy_mcp_json(),
+        "Agent::new must reset use_legacy_mcp_json when settings.mcp_enabled == false"
+    );
+    assert!(
+        !snapshot
+            .agent_config
+            .tools()
+            .iter()
+            .any(|t| t.starts_with('@') && !t.starts_with("@builtin")),
+        "Agent::new must strip MCP tool refs from agent config tools list"
+    );
+    assert!(
+        !snapshot.settings.mcp_enabled,
+        "settings.mcp_enabled must be persisted on the snapshot"
+    );
+}
+
+/// Baseline: when governance allows MCP, the configured server is retained on the agent
+/// (the actual spawn/launch is mocked elsewhere; here we only assert that governance is
+/// NOT stripping the config).
+#[tokio::test]
+async fn test_agent_new_keeps_mcp_when_governance_enabled() {
+    use agent::agent_config::definitions::{
+        LocalMcpServerConfig,
+        McpServerConfig,
+    };
+
+    let _ = tracing_subscriber::fmt::try_init();
+
+    let mcp_config = McpServerConfig::Local(LocalMcpServerConfig {
+        command: "/bin/echo".to_string(),
+        args: vec!["unused".to_string()],
+        env: None,
+        timeout_ms: 30_000,
+        disabled: false,
+        disabled_tools: vec![],
+    });
+
+    let settings = agent::types::AgentSettings {
+        mcp_enabled: true,
+        ..Default::default()
+    };
+
+    let test = TestCase::builder()
+        .test_name("mcp_governance_allows_servers")
+        .with_default_agent_config()
+        .with_settings(settings)
+        .with_mcp_server("should-stay", mcp_config)
+        .build()
+        .await
+        .unwrap();
+
+    let snapshot = test.create_snapshot().await;
+
+    assert!(
+        snapshot.agent_config.config().mcp_servers().contains_key("should-stay"),
+        "MCP server should remain configured when governance is enabled"
+    );
+}
+
+/// Defense-in-depth for `swap_agent`: even if the SessionManager / TUI somehow provides
+/// a swap target with MCP servers, the Agent must re-strip them when `mcp_enabled == false`.
+/// This matters because `/agent <name>` re-evaluates the underlying agent config, and any
+/// future regressions in the SessionManager pre-clearing logic must still be caught here.
+#[tokio::test]
+async fn test_agent_swap_agent_suppresses_mcp_when_governance_disabled() {
+    use agent::agent_config::definitions::{
+        AgentConfig,
+        AgentConfigV2025_08_22,
+        LocalMcpServerConfig,
+        McpServerConfig,
+    };
+    use agent::agent_config::{
+        ConfigSource,
+        LoadedAgentConfig,
+        ResolvedGlobalPrompt,
+    };
+    use agent::protocol::SwapAgentArgs;
+
+    let _ = tracing_subscriber::fmt::try_init();
+
+    // Agent starts with MCP-off governance, no MCP servers.
+    let settings = agent::types::AgentSettings {
+        mcp_enabled: false,
+        ..Default::default()
+    };
+    let test = TestCase::builder()
+        .test_name("mcp_governance_swap_defense_in_depth")
+        .with_default_agent_config()
+        .with_settings(settings)
+        .build()
+        .await
+        .unwrap();
+
+    // Build a swap target agent that DOES have MCP servers — simulating a caller that
+    // failed to pre-strip (e.g. a future SessionManager bug).
+    let mut target_inner = AgentConfigV2025_08_22 {
+        name: "rogue_agent".to_string(),
+        tools: vec!["*".to_string(), "@contraband/run".to_string()],
+        use_legacy_mcp_json: true,
+        ..Default::default()
+    };
+    target_inner.mcp_servers.insert(
+        "contraband".to_string(),
+        McpServerConfig::Local(LocalMcpServerConfig {
+            command: "/bin/echo".to_string(),
+            args: vec!["should-be-suppressed".to_string()],
+            env: None,
+            timeout_ms: 30_000,
+            disabled: false,
+            disabled_tools: vec![],
+        }),
+    );
+    let target = LoadedAgentConfig::new(
+        AgentConfig::V2025_08_22(target_inner),
+        ConfigSource::Ephemeral,
+        ResolvedGlobalPrompt::None,
+    );
+
+    test.swap_agent(SwapAgentArgs {
+        agent_config: target,
+        local_mcp_path: None,
+        global_mcp_path: None,
+        force: false,
+    })
+    .await
+    .expect("swap_agent failed");
+
+    let snapshot = test.create_snapshot().await;
+
+    assert!(
+        snapshot.agent_config.config().mcp_servers().is_empty(),
+        "swap_agent must clear MCP servers when settings.mcp_enabled == false; got: {:?}",
+        snapshot.agent_config.config().mcp_servers()
+    );
+    assert!(
+        !snapshot.agent_config.config().use_legacy_mcp_json(),
+        "swap_agent must reset use_legacy_mcp_json when settings.mcp_enabled == false"
+    );
+    assert!(
+        !snapshot
+            .agent_config
+            .tools()
+            .iter()
+            .any(|t| t.starts_with('@') && !t.starts_with("@builtin")),
+        "swap_agent must strip MCP tool refs from tools list; got: {:?}",
+        snapshot.agent_config.tools()
+    );
+}
