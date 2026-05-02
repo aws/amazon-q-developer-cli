@@ -273,6 +273,53 @@ impl AgentConfig {
             },
         }
     }
+
+    /// Clear all MCP server configurations and remove every MCP reference from the
+    /// agent config while preserving built-in tools.
+    ///
+    /// Used to enforce enterprise MCP governance (Kiro console `MCP` toggle set to off)
+    /// on already-loaded agent configs. Mirrors
+    /// `chat-cli-v2::cli::agent::Agent::clear_mcp_configs`.
+    ///
+    /// Transformations applied:
+    /// - `mcp_servers` emptied
+    /// - `use_legacy_mcp_json` set to `false`
+    /// - `tools`: `"*"` replaced with `"@builtin"`; entries starting with `@` other than `@builtin`
+    ///   (i.e. MCP references) dropped.
+    /// - `allowed_tools` / `tool_aliases` / `tools_settings`: MCP references dropped.
+    pub fn clear_mcp_configs(&mut self) {
+        match self {
+            AgentConfig::V2025_08_22(c) => {
+                c.mcp_servers.clear();
+                c.use_legacy_mcp_json = false;
+
+                c.tools = c
+                    .tools
+                    .iter()
+                    .filter_map(|tool| match tool.as_str() {
+                        "*" => Some("@builtin".to_string()),
+                        t if !is_mcp_tool_ref(t) => Some(t.to_string()),
+                        _ => None,
+                    })
+                    .collect();
+
+                c.allowed_tools.retain(|tool| !is_mcp_tool_ref(tool));
+                c.tool_aliases.retain(|orig, _| !is_mcp_tool_ref(orig));
+                // `tools_settings` only contains named fields for built-in tools, so no
+                // MCP references can live there — nothing to strip.
+            },
+        }
+    }
+}
+
+/// Returns `true` if `s` is a reference to an MCP server or MCP tool
+/// (e.g. `@my-server` or `@my-server/tool`), as opposed to the built-in tool
+/// bucket marker `@builtin` / `@builtin/*`.
+fn is_mcp_tool_ref(s: &str) -> bool {
+    if s == "@builtin" || s.starts_with("@builtin/") {
+        return false;
+    }
+    s.starts_with('@')
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize, JsonSchema)]
@@ -1360,5 +1407,73 @@ mod tests {
             },
             _ => panic!("Expected Remote variant"),
         }
+    }
+
+    #[test]
+    fn test_clear_mcp_configs_removes_servers_and_mcp_refs() {
+        let mut config: AgentConfig = serde_json::from_value(serde_json::json!({
+            "name": "test",
+            "tools": ["fs_read", "@s1", "@s2/do_thing", "@builtin/grep"],
+            "allowedTools": ["fs_read", "@s1/read_file"],
+            "toolAliases": {
+                "@s1/foo": "foo_alias",
+                "fs_read": "read_alias"
+            },
+            "mcpServers": {
+                "s1": { "command": "x", "args": [], "env": {} }
+            },
+            "useLegacyMcpJson": true
+        }))
+        .unwrap();
+
+        config.clear_mcp_configs();
+
+        assert!(config.mcp_servers().is_empty(), "mcp_servers not cleared");
+        assert!(!config.use_legacy_mcp_json(), "use_legacy_mcp_json not reset");
+
+        // @s1 and @s2/do_thing dropped, @builtin/grep kept, fs_read kept
+        let tools = config.tools();
+        assert!(tools.contains(&"fs_read".to_string()));
+        assert!(tools.contains(&"@builtin/grep".to_string()));
+        assert!(!tools.iter().any(|t| t == "@s1"));
+        assert!(!tools.iter().any(|t| t == "@s2/do_thing"));
+
+        // allowed_tools MCP ref dropped
+        assert!(config.allowed_tools().contains("fs_read"));
+        assert!(!config.allowed_tools().contains("@s1/read_file"));
+
+        // tool_aliases MCP ref dropped
+        assert!(config.tool_aliases().contains_key("fs_read"));
+        assert!(!config.tool_aliases().contains_key("@s1/foo"));
+    }
+
+    #[test]
+    fn test_clear_mcp_configs_transforms_wildcard_to_builtin() {
+        let mut config: AgentConfig = serde_json::from_value(serde_json::json!({
+            "name": "test",
+            "tools": ["*", "@s1/tool"],
+        }))
+        .unwrap();
+
+        config.clear_mcp_configs();
+
+        let tools = config.tools();
+        assert!(
+            tools.contains(&"@builtin".to_string()),
+            "wildcard not rewritten to @builtin"
+        );
+        assert!(!tools.iter().any(|t| t == "*"), "wildcard should be replaced, not kept");
+        assert!(!tools.iter().any(|t| t.starts_with("@s1")));
+    }
+
+    #[test]
+    fn test_is_mcp_tool_ref_distinguishes_builtin() {
+        assert!(!is_mcp_tool_ref("fs_read"));
+        assert!(!is_mcp_tool_ref("@builtin"));
+        assert!(!is_mcp_tool_ref("@builtin/grep"));
+        assert!(!is_mcp_tool_ref("@builtin/*"));
+        assert!(is_mcp_tool_ref("@myserver"));
+        assert!(is_mcp_tool_ref("@myserver/tool"));
+        assert!(is_mcp_tool_ref("@myserver/*"));
     }
 }

@@ -168,6 +168,10 @@ pub struct AgentSettings {
     /// When false, web_search and web_fetch tools are excluded (governance disabled them).
     #[serde(default = "default_true")]
     pub web_tools_enabled: bool,
+    /// When false, MCP servers (user-configured and registry-based) are excluded from the
+    /// agent — mirrors the Kiro console `MCP` toggle (governance) for enterprise / API-key users.
+    #[serde(default = "default_true")]
+    pub mcp_enabled: bool,
     /// When true, MCP tools are hidden until activated via search_tools.
     #[serde(default)]
     pub tool_search_enabled: bool,
@@ -204,6 +208,7 @@ impl Default for AgentSettings {
             disable_auto_compact: false,
             trust_all_tools: false,
             web_tools_enabled: true,
+            mcp_enabled: true,
             tool_search_enabled: false,
             tool_search_min_pct: default_tool_search_min_pct(),
             tool_search_min_tokens: default_tool_search_min_tokens(),

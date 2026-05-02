@@ -34,6 +34,7 @@ const EXT_METHODS = {
   MCP_SERVER_INIT_FAILURE: 'kiro.dev/mcp/server_init_failure',
   MCP_OAUTH_REQUEST: 'kiro.dev/mcp/oauth_request',
   MCP_SERVER_INITIALIZED: 'kiro.dev/mcp/server_initialized',
+  MCP_GOVERNANCE_DISABLED: 'kiro.dev/mcp/governance_disabled',
   AGENT_NOT_FOUND: 'kiro.dev/agent/not_found',
   AGENT_CONFIG_ERROR: 'kiro.dev/agent/config_error',
   MODEL_NOT_FOUND: 'kiro.dev/model/not_found',
@@ -595,6 +596,8 @@ export class AcpClient implements acp.Client, SessionClient {
       this.handleMcpOauthRequest(params),
     [EXT_METHODS.MCP_SERVER_INITIALIZED]: (params) =>
       this.handleMcpServerInitialized(params),
+    [EXT_METHODS.MCP_GOVERNANCE_DISABLED]: (params) =>
+      this.handleMcpGovernanceDisabled(params),
     [EXT_METHODS.AGENT_NOT_FOUND]: (params) => this.handleAgentNotFound(params),
     [EXT_METHODS.AGENT_CONFIG_ERROR]: (params) =>
       this.handleAgentConfigError(params),
@@ -759,6 +762,15 @@ export class AcpClient implements acp.Client, SessionClient {
     this.broadcastStreamEvent({
       type: AgentEventType.McpServerInitialized,
       serverName,
+    });
+  }
+
+  private handleMcpGovernanceDisabled(params: Record<string, unknown>) {
+    const apiFailure = (params.apiFailure as boolean) ?? false;
+    logger.warn('MCP governance disabled:', { apiFailure });
+    this.broadcastStreamEvent({
+      type: AgentEventType.McpGovernanceDisabled,
+      apiFailure,
     });
   }
 

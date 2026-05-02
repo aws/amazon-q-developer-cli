@@ -102,6 +102,11 @@ pub struct StartSessionResult {
     /// The model name originally requested (before fallback). `None` if no
     /// specific model was requested or the requested model was found.
     pub requested_model_name: Option<String>,
+    /// Whether MCP is enabled by governance. When `false`, the TUI should warn the user.
+    pub mcp_enabled: bool,
+    /// When `mcp_enabled=false`, distinguishes admin-disabled (`false`) from
+    /// API-failure fail-closed path (`true`). Ignored when `mcp_enabled=true`.
+    pub mcp_api_failure: bool,
 }
 
 /// Result returned when spawning an orchestrated session.
@@ -216,44 +221,69 @@ impl SessionManagerBuilder {
             };
 
             // Fetch MCP and web tools governance in a single GetProfile call for enterprise/API key users.
-            // Skip for non-enterprise, non-API-key users (Builder ID, social auth) and test mode.
-            // Fail-closed: MCP registry disabled and web tools disabled if GetProfile fails.
+            // Skip for non-enterprise, non-API-key users (Builder ID, social auth) and test mode —
+            // these users are not subject to admin governance, so default MCP enabled / web tools enabled
+            // and avoid an unnecessary (and unauthorized) API call.
+            // Fail-closed for enterprise/API-key users: MCP disabled and web tools disabled if GetProfile
+            // fails.
             let is_enterprise = crate::auth::builder_id::is_enterprise_user(&os.database).await;
             let is_api_key = crate::util::env_var::get_api_key().is_some();
-            let (mcp_registry_data, mcp_registry_url, web_tools_enabled) = if std::env::var(KIRO_TEST_MODE).is_ok()
-                || (!is_enterprise && !is_api_key)
-            {
-                (None, None, true)
-            } else {
-                match os.client.get_governance_config().await {
-                    Ok((mcp_enabled, Some(registry_url), web_tools_enabled)) if mcp_enabled => {
-                        let client = crate::mcp_registry::McpRegistryClient::new();
-                        let registry_data = match client.fetch_registry(&registry_url).await {
-                            Ok(registry) => {
-                                info!(
-                                    servers = registry.servers.len(),
-                                    "Fetched MCP registry from {}", registry_url
-                                );
-                                Some(registry)
-                            },
-                            Err(e) => {
-                                error!(%e, "Failed to fetch MCP registry — registry servers disabled for this session");
-                                Some(crate::mcp_registry::McpRegistryResponse { servers: vec![] })
-                            },
-                        };
-                        (registry_data, Some(registry_url), web_tools_enabled)
-                    },
-                    Ok((_, _, web_tools_enabled)) => (None, None, web_tools_enabled),
-                    Err(e) => {
-                        error!(%e, "Failed to get governance config from API — MCP registry disabled, web tools disabled");
-                        (
-                            Some(crate::mcp_registry::McpRegistryResponse { servers: vec![] }),
-                            None,
-                            false,
-                        )
-                    },
+            let (mcp_enabled, mcp_registry_data, mcp_registry_url, web_tools_enabled, mcp_api_failure) =
+                if std::env::var(KIRO_TEST_MODE).is_ok() || (!is_enterprise && !is_api_key) {
+                    // Builder ID / social auth / test mode: no governance applies — MCP on, web tools on.
+                    (true, None, None, true, false)
+                } else {
+                    match os.client.get_governance_config().await {
+                        Ok((mcp_enabled, Some(registry_url), web_tools_enabled)) if mcp_enabled => {
+                            let client = crate::mcp_registry::McpRegistryClient::new();
+                            let registry_data = match client.fetch_registry(&registry_url).await {
+                                Ok(registry) => {
+                                    info!(
+                                        servers = registry.servers.len(),
+                                        "Fetched MCP registry from {}", registry_url
+                                    );
+                                    Some(registry)
+                                },
+                                Err(e) => {
+                                    error!(%e, "Failed to fetch MCP registry — registry servers disabled for this session");
+                                    Some(crate::mcp_registry::McpRegistryResponse { servers: vec![] })
+                                },
+                            };
+                            (true, registry_data, Some(registry_url), web_tools_enabled, false)
+                        },
+                        Ok((mcp_enabled, _, web_tools_enabled)) => (mcp_enabled, None, None, web_tools_enabled, false),
+                        Err(e) => {
+                            error!(%e, "Failed to get governance config from API — MCP disabled, web tools disabled");
+                            // Fail closed: treat as MCP disabled so that no user-configured MCP
+                            // servers are launched and no registry servers are advertised.
+                            // `mcp_api_failure=true` so the TUI surfaces the correct message
+                            // ("Failed to retrieve MCP settings") instead of the admin-disabled one.
+                            (false, None, None, false, true)
+                        },
+                    }
+                };
+
+            // Enforce MCP governance on every loaded agent config up-front so downstream
+            // consumers (session start, /agent switch, session-injected servers) cannot
+            // accidentally launch MCP when the console setting is off.
+            let mut agent_configs = agent_configs;
+            debug!(
+                mcp_enabled,
+                is_enterprise,
+                is_api_key,
+                has_registry = mcp_registry_data.is_some(),
+                "MCP governance resolved"
+            );
+            if !mcp_enabled {
+                for cfg in &mut agent_configs {
+                    cfg.config_mut().clear_mcp_configs();
                 }
-            };
+                if is_enterprise || is_api_key {
+                    warn!(
+                        "MCP functionality has been disabled by governance — user-configured and registry MCP servers are suppressed for this session"
+                    );
+                }
+            }
 
             // Spawn background task to refresh registry every 24 hours
             if mcp_registry_data.is_some()
@@ -301,6 +331,8 @@ impl SessionManagerBuilder {
                 legacy_session_exporter,
                 mcp_registry_data,
                 web_tools_enabled,
+                mcp_enabled,
+                mcp_api_failure,
             );
 
             loop {
@@ -380,6 +412,14 @@ pub struct SessionManager {
     session_agent_names: HashMap<SessionId, String>,
     /// Whether web tools (web_search, web_fetch) are enabled by governance
     web_tools_enabled: bool,
+    /// Whether MCP is enabled by governance (Kiro console MCP toggle).
+    /// When `false`, all MCP servers (user-configured, legacy, registry, and session-injected)
+    /// are suppressed for every session in this process — mirroring Kiro IDE / `--classic`.
+    mcp_enabled: bool,
+    /// When `mcp_enabled=false`, distinguishes admin-disabled (`false`) from
+    /// API-failure fail-closed path (`true`). Forwarded to the TUI so it can show
+    /// the correct user-facing message.
+    mcp_api_failure: bool,
 }
 
 /// An agent config error with optional file path.
@@ -394,7 +434,7 @@ impl SessionManager {
         Default::default()
     }
 
-    #[allow(clippy::too_many_arguments)]
+    #[allow(clippy::too_many_arguments, clippy::fn_params_excessive_bools)]
     fn new(
         agent_configs: Vec<LoadedAgentConfig>,
         agent_config_errors: Vec<AgentConfigLoadError>,
@@ -409,6 +449,8 @@ impl SessionManager {
         legacy_session_exporter: Arc<dyn LegacySessionExporter>,
         mcp_registry_data: Option<crate::mcp_registry::McpRegistryResponse>,
         web_tools_enabled: bool,
+        mcp_enabled: bool,
+        mcp_api_failure: bool,
     ) -> Self {
         Self {
             sessions: HashMap::new(),
@@ -436,6 +478,8 @@ impl SessionManager {
             mcp_registry_data,
             session_agent_names: HashMap::new(),
             web_tools_enabled,
+            mcp_enabled,
+            mcp_api_failure,
         }
     }
 
@@ -609,18 +653,30 @@ impl SessionManager {
                         },
                     };
 
-                // If ACP client provided MCP servers, create an ephemeral config with them merged in
-                let converted_mcp_servers: Vec<_> = config
-                    .mcp_servers
-                    .into_iter()
-                    .filter_map(|server| match convert_mcp_server(server) {
-                        Ok((name, cfg)) => Some((name, cfg)),
-                        Err(e) => {
-                            warn!(?e, "Failed to convert MCP server, skipping");
-                            None
-                        },
-                    })
-                    .collect();
+                // If ACP client provided MCP servers, create an ephemeral config with them merged in.
+                // When MCP is disabled by governance, drop them entirely to preserve parity with
+                // Kiro IDE / kiro-cli --classic.
+                let converted_mcp_servers: Vec<_> = if self.mcp_enabled {
+                    config
+                        .mcp_servers
+                        .into_iter()
+                        .filter_map(|server| match convert_mcp_server(server) {
+                            Ok((name, cfg)) => Some((name, cfg)),
+                            Err(e) => {
+                                warn!(?e, "Failed to convert MCP server, skipping");
+                                None
+                            },
+                        })
+                        .collect()
+                } else {
+                    if !config.mcp_servers.is_empty() {
+                        warn!(
+                            count = config.mcp_servers.len(),
+                            "Dropping session-injected MCP servers: MCP disabled by governance"
+                        );
+                    }
+                    Vec::new()
+                };
 
                 let agent_config_to_use: LoadedAgentConfig = if !converted_mcp_servers.is_empty() {
                     let mut ephemeral = base_agent_config.config().clone();
@@ -667,6 +723,7 @@ impl SessionManager {
                     .trust_all_tools(self.trust_all_tools)
                     .trust_tools(self.trust_tools.clone())
                     .web_tools_enabled(self.web_tools_enabled)
+                    .mcp_enabled(self.mcp_enabled)
                     .acp_client_info(self.acp_client_info.clone())
                     .telemetry_event_store(self.telemetry_event_store.clone())
                     .legacy_session_exporter(Arc::clone(&self.legacy_session_exporter))
@@ -762,6 +819,8 @@ impl SessionManager {
                             current_model_id,
                             agent_config_errors: self.agent_config_errors.clone(),
                             requested_model_name,
+                            mcp_enabled: self.mcp_enabled,
+                            mcp_api_failure: self.mcp_api_failure,
                         }));
 
                         // Send SUBAGENT_LIST_UPDATE notification after session creation

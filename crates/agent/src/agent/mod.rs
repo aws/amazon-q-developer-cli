@@ -660,7 +660,12 @@ impl Agent {
 
         let (agent_event_tx, agent_event_rx) = broadcast::channel(8192);
 
-        let agent_config = snapshot.agent_config;
+        let mut agent_config = snapshot.agent_config;
+        // Enforce MCP governance at construction — defense-in-depth in case the caller
+        // (SessionManager / TUI) forgot to strip MCP before creating the session.
+        if !snapshot.settings.mcp_enabled {
+            agent_config.config_mut().clear_mcp_configs();
+        }
 
         let cached_mcp_configs =
             LoadedMcpServerConfigs::from_agent_config(&agent_config, local_mcp_path, global_mcp_path).await;
@@ -1446,6 +1451,11 @@ impl Agent {
 
         // 3. Update agent config and clear cached tool specs
         self.agent_config = args.agent_config;
+        // Enforce MCP governance on the incoming config — defense-in-depth in case the
+        // caller (SessionManager / TUI) forgot to strip MCP before swapping.
+        if !self.settings.mcp_enabled {
+            self.agent_config.config_mut().clear_mcp_configs();
+        }
         self.cached_tool_specs = None;
         self.session_resource_paths.clear();
 

@@ -373,3 +373,102 @@ async fn load_mcp_config_from_path(path: impl AsRef<Path>) -> Result<McpServers,
 
     Ok(McpServers { mcp_servers })
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::agent_config::definitions::{
+        AgentConfig,
+        AgentConfigV2025_08_22,
+        LocalMcpServerConfig,
+        McpServerConfig,
+    };
+
+    fn agent_config_with_mcp() -> AgentConfig {
+        let mut v = AgentConfigV2025_08_22 {
+            name: "test".to_string(),
+            tools: vec!["*".to_string(), "@foo/bar".to_string()],
+            use_legacy_mcp_json: true,
+            ..Default::default()
+        };
+        v.mcp_servers.insert(
+            "foo".to_string(),
+            McpServerConfig::Local(LocalMcpServerConfig {
+                command: "/bin/echo".to_string(),
+                args: vec![],
+                env: None,
+                timeout_ms: 5_000,
+                disabled: false,
+                disabled_tools: vec![],
+            }),
+        );
+        AgentConfig::V2025_08_22(v)
+    }
+
+    /// End-to-end: when `clear_mcp_configs` has been applied to the underlying agent config,
+    /// `LoadedMcpServerConfigs::from_agent_config` yields an empty set, regardless of whether
+    /// legacy-mcp-json loading would have pulled servers in. This is the contract that
+    /// guarantees enterprise MCP governance is honored in the V2 TUI code path.
+    #[tokio::test]
+    async fn test_from_agent_config_empty_after_clear_mcp_configs() {
+        let tmp = tempfile::tempdir().unwrap();
+        let legacy_path = tmp.path().join("mcp.json");
+        std::fs::write(
+            &legacy_path,
+            r#"{
+                "mcpServers": {
+                    "legacy-server": {
+                        "command": "/bin/echo",
+                        "args": []
+                    }
+                }
+            }"#,
+        )
+        .unwrap();
+
+        // Baseline: without clearing, legacy mcp.json IS loaded and agent-level MCP server IS present.
+        let mut cfg_before = agent_config_with_mcp();
+        assert!(!cfg_before.mcp_servers().is_empty(), "sanity: pre-clear has servers");
+        let loaded_cfg_before =
+            LoadedAgentConfig::new(cfg_before.clone(), ConfigSource::Ephemeral, ResolvedGlobalPrompt::None);
+        let before = LoadedMcpServerConfigs::from_agent_config(&loaded_cfg_before, None, Some(&legacy_path)).await;
+        assert!(
+            !before.configs.is_empty(),
+            "sanity: pre-clear must load at least one MCP server"
+        );
+
+        // Apply clear_mcp_configs (governance disabled).
+        cfg_before.clear_mcp_configs();
+
+        // After clearing: no agent-level servers AND use_legacy_mcp_json=false, so legacy
+        // mcp.json is NOT consulted — even though the file still exists on disk.
+        let loaded_cfg_after = LoadedAgentConfig::new(cfg_before, ConfigSource::Ephemeral, ResolvedGlobalPrompt::None);
+        let after = LoadedMcpServerConfigs::from_agent_config(&loaded_cfg_after, None, Some(&legacy_path)).await;
+        assert!(
+            after.configs.is_empty(),
+            "after clear_mcp_configs, no MCP configs should be loaded — got {:?}",
+            after.configs
+        );
+        assert!(
+            after.overridden_configs.is_empty(),
+            "no overridden configs expected either"
+        );
+    }
+
+    /// Defense-in-depth: even if a caller sneaks a legacy mcp.json entry past by flipping
+    /// `use_legacy_mcp_json` back on (which `clear_mcp_configs` explicitly resets to false),
+    /// the agent-level MCP servers stay empty. This ensures the only path that *could* bypass
+    /// governance is a caller mutating the cleared config after the fact — which `Agent::new`
+    /// and `handle_swap_agent` re-clear when `settings.mcp_enabled == false`.
+    #[tokio::test]
+    async fn test_clear_mcp_configs_resets_use_legacy_mcp_json_flag() {
+        let mut cfg = agent_config_with_mcp();
+        assert!(cfg.use_legacy_mcp_json(), "sanity: starts with flag on");
+        cfg.clear_mcp_configs();
+        assert!(
+            !cfg.use_legacy_mcp_json(),
+            "clear_mcp_configs must reset use_legacy_mcp_json to false"
+        );
+        assert!(cfg.mcp_servers().is_empty(), "agent-level MCP servers must be empty");
+    }
+}

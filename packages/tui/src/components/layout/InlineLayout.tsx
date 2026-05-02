@@ -53,6 +53,7 @@ import {
 import {
   useAppStore,
   summarizeInitErrors,
+  severityForInitErrors,
   type CodePanelData,
   type McpServerInfo,
 } from '../../stores/app-store.js';
@@ -679,7 +680,9 @@ export const InlineLayout: React.FC = () => {
                 (pendingOAuthServers.size > 0
                   ? `${pendingOAuthServers.keys().next().value} requires OAuth — Ctrl+y to copy URL`
                   : undefined) ??
-                summarizeInitErrors(initErrors) ??
+                summarizeInitErrors(
+                  initErrors.filter((e) => e.type !== 'mcp_governance_disabled')
+                ) ??
                 undefined)
           }
           status={
@@ -688,8 +691,8 @@ export const InlineLayout: React.FC = () => {
               : (transientAlert?.status ??
                 (pendingOAuthServers.size > 0
                   ? 'info'
-                  : initErrors.length > 0
-                    ? 'error'
+                  : initErrors.some((e) => e.type !== 'mcp_governance_disabled')
+                    ? severityForInitErrors(initErrors)
                     : undefined))
           }
           autoHideMs={

@@ -24,6 +24,7 @@ export enum AgentEventType {
   TurnSummary = 'turn_summary',
   McpOauthRequest = 'mcp_oauth_request',
   McpServerInitialized = 'mcp_server_initialized',
+  McpGovernanceDisabled = 'mcp_governance_disabled',
 }
 
 export enum ContentType {
@@ -326,6 +327,11 @@ export interface McpServerInitializedEvent {
   serverName: string;
 }
 
+export interface McpGovernanceDisabledEvent {
+  type: AgentEventType.McpGovernanceDisabled;
+  apiFailure: boolean;
+}
+
 export type AuthErrorType = string;
 export type SessionErrorType = string;
 
@@ -351,4 +357,5 @@ export type AgentStreamEvent =
   | ModelNotFoundEvent
   | TurnSummaryEvent
   | McpOauthRequestEvent
-  | McpServerInitializedEvent;
+  | McpServerInitializedEvent
+  | McpGovernanceDisabledEvent;
