@@ -18,6 +18,8 @@ import { WebSearch } from '../chat/tools/WebSearch.js';
 import { WebFetch } from '../chat/tools/WebFetch.js';
 import { SessionTool } from '../chat/tools/SessionTool.js';
 import { Tool } from '../chat/tools/Tool.js';
+import { ToolMeta } from '../chat/tools/ToolMeta.js';
+import { formatToolParams } from '../../utils/tool-params.js';
 import { ToolUseStatus, type ToolResult } from '../../stores/app-store.js';
 import {
   WRITE_TOOL_NAMES,
@@ -169,6 +171,29 @@ const ToolUseContent = React.memo(function ToolUseContent({
     } catch {
       const label = result?.status === 'cancelled' ? 'Cancelled' : 'Rejected';
       return <StatusInfo title={label} target={name} />;
+    }
+  }
+
+  // Write/Read/ImageRead/Task components don't accept a `result` prop and
+  // therefore can't render errors themselves. Route failed calls for those
+  // tools through FallbackError so the user still sees the error and the
+  // attempted arguments. All other tool components handle errors inline.
+  if (result?.status === 'error' && effectiveFinished) {
+    const toolRendersOwnError =
+      !WRITE_TOOL_NAMES.has(name) &&
+      !READ_TOOL_NAMES.has(name) &&
+      !IMAGE_READ_TOOL_NAMES.has(name) &&
+      !TASK_TOOL_NAMES.has(name);
+    if (!toolRendersOwnError) {
+      const toolId = resolveToolId(name);
+      const displayName = toolId ? getToolLabel(toolId) : name;
+      return (
+        <FallbackError
+          name={displayName}
+          content={content}
+          error={result.error}
+        />
+      );
     }
   }
 
@@ -369,7 +394,9 @@ const ToolUseContent = React.memo(function ToolUseContent({
   );
 });
 
-/** Shows a failed tool call with the error message visible to the user. */
+/** Fallback renderer for failed tool calls. Shows the tool name, a target
+ *  extracted from the args (path/command/pattern/etc), the remaining args
+ *  as meta, and the error message. */
 const FallbackError = React.memo(function FallbackError({
   name,
   content,
@@ -380,16 +407,49 @@ const FallbackError = React.memo(function FallbackError({
   error: string;
 }) {
   const { getColor } = useTheme();
-  let target: string;
+  let target: string | undefined;
   try {
     const parsed = JSON.parse(content);
-    target = parsed.path || parsed.command || parsed.pattern || name;
+    // Most tools have one of these at the top level.
+    target =
+      parsed.path ||
+      parsed.command ||
+      parsed.pattern ||
+      parsed.url ||
+      parsed.query ||
+      undefined;
+    // fs_read uses `operations: [{ mode, path|image_paths }]` (or legacy `ops`).
+    if (!target) {
+      const ops = parsed.operations ?? parsed.ops;
+      if (Array.isArray(ops) && ops.length > 0) {
+        const first = ops[0];
+        if (first && typeof first === 'object') {
+          if (typeof first.path === 'string') {
+            target = first.path;
+          } else if (
+            Array.isArray(first.image_paths) &&
+            first.image_paths.length > 0
+          ) {
+            target = first.image_paths[0];
+          }
+        }
+      }
+    }
   } catch {
-    target = name;
+    target = undefined;
   }
+  // Exclude fields already surfaced as the target to avoid duplication.
+  const params = formatToolParams(content, [
+    'path',
+    'command',
+    'pattern',
+    'url',
+    'query',
+  ]);
   return (
     <Box flexDirection="column">
-      <StatusInfo title="Failed" target={target} />
+      <StatusInfo title={name} target={target} />
+      <ToolMeta params={params} />
       <Box marginLeft={2}>
         <Text>{getColor('error')(error)}</Text>
       </Box>

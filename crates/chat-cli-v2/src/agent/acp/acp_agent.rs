@@ -2714,15 +2714,26 @@ fn convert_update_event_to_session_update(update_event: UpdateEvent) -> Option<S
             )))
         },
         UpdateEvent::ToolCallFailed {
-            tool_use_id, tool_name, ..
+            tool_use_id,
+            tool_name,
+            raw_input,
+            error,
+            ..
         } => {
             let kind = get_tool_kind(&tool_name);
+            // Surface the failure reason as a text content block so clients
+            // render a descriptive error instead of a generic fallback.
+            let error_content: ToolCallContent = ContentBlock::Text(TextContent::new(error.clone())).into();
             Some(SessionUpdate::ToolCallUpdate(ToolCallUpdate::new(
                 ToolCallId::new(tool_use_id),
                 ToolCallUpdateFields::new()
                     .status(Some(ToolCallStatus::Failed))
                     .title(Some(tool_name))
-                    .kind(Some(kind)),
+                    .kind(Some(kind))
+                    .content(Some(vec![error_content]))
+                    // Forward the model-generated arguments so the TUI can
+                    // render them when execution was blocked.
+                    .raw_input(Some(raw_input.clone())),
             )))
         },
         UpdateEvent::ToolCallUpdate {

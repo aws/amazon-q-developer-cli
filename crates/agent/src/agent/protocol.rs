@@ -172,6 +172,10 @@ pub enum UpdateEvent {
         tool_use_id: String,
         /// The tool name as requested by the model
         tool_name: String,
+        /// The raw input (arguments) the model generated for this tool call.
+        /// Included so clients can surface the attempted arguments when the
+        /// tool could not be executed.
+        raw_input: serde_json::Value,
         /// Why the tool call failed
         reason: ToolCallFailureReason,
         /// Error message

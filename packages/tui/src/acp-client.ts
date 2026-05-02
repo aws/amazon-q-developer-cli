@@ -1021,12 +1021,40 @@ export class AcpClient implements acp.Client, SessionClient {
           };
         }
         if (toolCallUpdate.status === ToolCallStatus.Failed) {
+          // If the backend rejected the tool before execution, no `tool_call`
+          // notification was sent. Synthesize one from rawInput so the TUI
+          // can render the tool name and attempted arguments.
+          if (toolCallUpdate.rawInput !== undefined) {
+            this.broadcastStreamEvent({
+              type: AgentEventType.ToolCall,
+              id: toolCallUpdate.toolCallId,
+              name: toolCallUpdate.title || 'unknown',
+              kind: toolCallUpdate.kind,
+              args: toolCallUpdate.rawInput || {},
+            });
+          }
+          // Prefer a descriptive error from the content block; fall back to
+          // rawOutput, then a generic message.
+          let errorText: string | undefined;
+          const failedContent = toolCallUpdate.content;
+          if (Array.isArray(failedContent)) {
+            const textItem = failedContent.find(
+              (item: any) =>
+                item.type === 'content' && item.content?.type === 'text'
+            );
+            if (textItem && typeof textItem.content.text === 'string') {
+              errorText = textItem.content.text;
+            }
+          }
+          if (!errorText && typeof toolCallUpdate.rawOutput === 'string') {
+            errorText = toolCallUpdate.rawOutput;
+          }
           return {
             type: AgentEventType.ToolCallFinished,
             id: toolCallUpdate.toolCallId,
             result: {
               status: 'error',
-              error: toolCallUpdate.rawOutput || 'Tool execution failed',
+              error: errorText || 'Tool execution failed',
             },
           };
         }
