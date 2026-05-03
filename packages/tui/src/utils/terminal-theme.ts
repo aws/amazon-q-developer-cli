@@ -89,7 +89,10 @@ export function detectTerminalThemeWithDetails(): DetectionResult {
 
   // Method 4: OS appearance using existing detection (macOS/Windows)
   const osTheme = getOSAppearance();
-  // Only trust OS detection on macOS/Windows where it's implemented
+  // On macOS/Windows the OS appearance reliably reflects the user's preference.
+  // While the terminal *could* differ from the OS theme, in practice it rarely
+  // does, and returning 'low' here causes an unnecessary kiroSafe fallback
+  // whenever OSC 11 fails (e.g., slow terminal startup).
   if (process.platform === 'darwin' || process.platform === 'win32') {
     return {
       theme: osTheme,
@@ -97,7 +100,7 @@ export function detectTerminalThemeWithDetails(): DetectionResult {
         process.platform === 'darwin'
           ? 'macOS-AppleInterfaceStyle'
           : 'Windows-Registry',
-      confidence: 'low',
+      confidence: 'medium',
     };
   }
 
