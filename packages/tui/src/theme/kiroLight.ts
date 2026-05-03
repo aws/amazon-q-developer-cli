@@ -25,7 +25,7 @@ export const kiroLight: Theme = {
       keyword: { truecolor: '#9370d1', color256: 134 }, // keyword.control - darker purple (from #C2A0FD)
       built_in: { truecolor: '#4dc2d9', color256: 74 }, // built-in objects - darker cyan (from #80F4FF)
       string: { truecolor: '#4dd68a', color256: 77 }, // string - darker green (from #80FFB5)
-      comment: { truecolor: '#d9d9d9', color256: 253 }, // comment - darker gray (from #FFFFFF99)
+      comment: { truecolor: '#a8a8a8', color256: 248 }, // comment - medium gray for readability on light bg
       number: { truecolor: '#d982ad', color256: 175 }, // constant.numeric - darker pink (from #FFAFD1)
       literal: { truecolor: '#d94d4d', color256: 167 }, // constant.language.boolean - darker red (from #FF8080)
       regexp: { truecolor: '#4dd68a', color256: 77 }, // string (regex uses string color) (from #80FFB5)
