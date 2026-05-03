@@ -381,7 +381,8 @@ type StaticItem =
       mainAgentName: string | undefined;
       isLast: boolean;
       prevRole?: MessageRole;
-    };
+    }
+  | { type: 'summary'; id: string; text: string };
 
 // These must also be module-level so that <Static> items, emitted IDs, and
 // per-turn flush tracking survive the unmount/remount cycle that happens when
@@ -491,6 +492,12 @@ export const ConversationView = React.memo(function ConversationView() {
   const { messages, isProcessing, settings } = useConversationState();
   const { getColor } = useTheme();
   const { adjustStaticCursor } = useTwinkiContext();
+  // Subscribe to the full turnSummaries Map. This intentionally uses a broad
+  // selector (not a focused .get(id)) because the summary for a completed turn
+  // arrives asynchronously after the turn ends. We need the Map update to
+  // trigger a re-render so the append logic runs. Low-impact: entries are added
+  // only when a turn completes (~once per 10-60s).
+  const turnSummaries = useAppStore((s) => s.turnSummaries);
   const greetingEnabled =
     settings !== null && settings[Settings.CHAT_GREETING_ENABLED] !== false;
 
@@ -663,6 +670,15 @@ export const ConversationView = React.memo(function ConversationView() {
         mainAgentName: agentName,
       });
       tailMsgs.forEach((msg) => flushedIds.add(msg.id));
+      // Append turn summary so it survives the transition to <Static>
+      const summaryText = turnSummaries.get(turn.userMessage.id);
+      if (summaryText) {
+        appendStatic({
+          type: 'summary',
+          id: `${turn.userMessage.id}__summary`,
+          text: summaryText,
+        });
+      }
     }
   });
 
@@ -752,6 +768,14 @@ export const ConversationView = React.memo(function ConversationView() {
                     prevRole={item.prevRole}
                     mainAgentName={item.mainAgentName}
                   />
+                </Box>
+              );
+            }
+            if (item.type === 'summary') {
+              return (
+                <Box key={item.id} flexDirection="column">
+                  <InkText> </InkText>
+                  <TurnUsageSummary text={item.text} />
                 </Box>
               );
             }
