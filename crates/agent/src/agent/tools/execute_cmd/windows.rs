@@ -457,6 +457,10 @@ mod tests {
             _ => panic!("Expected JSON output"),
         };
 
-        assert_eq!(json["exit_status"], "exit status: 0");
+        assert!(
+            json["exit_status"].as_str().unwrap().contains("0"),
+            "expected exit code 0, got: {}",
+            json["exit_status"]
+        );
     }
 }

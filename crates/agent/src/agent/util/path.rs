@@ -166,10 +166,17 @@ mod tests {
 
     #[test]
     fn test_canonicalize_path() {
+        #[cfg(unix)]
         let sys = TestProvider::new()
             .with_var("TEST_VAR", "test_var")
             .with_cwd("/home/testuser/testdir");
 
+        #[cfg(windows)]
+        let sys = TestProvider::new()
+            .with_var("TEST_VAR", "test_var")
+            .with_cwd("C:\\Users\\testuser\\testdir");
+
+        #[cfg(unix)]
         let tests = [
             ("path", "/home/testuser/testdir/path"),
             ("../**/.rs", "/home/testuser/**/.rs"),
@@ -177,6 +184,15 @@ mod tests {
             ("~/file/**.md", "/home/testuser/file/**.md"),
             ("~/.././../home//testuser/path/..", "/home/testuser"),
             ("../../../../../../abc", "/abc"), // traversing through root multiple times
+        ];
+
+        #[cfg(windows)]
+        let tests = [
+            ("path", "C:\\Users\\testuser\\testdir\\path"),
+            ("../**/.rs", "C:\\Users\\testuser\\**\\.rs"),
+            ("~", "C:\\Users\\testuser"),
+            ("~/file/**.md", "C:\\Users\\testuser\\file\\**.md"),
+            ("~/.././..\\Users\\testuser\\path\\..", "C:\\Users\\testuser"),
         ];
 
         for (path, expected) in tests {

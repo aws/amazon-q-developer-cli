@@ -615,7 +615,7 @@ mod tests {
     async fn test_insert_at_line() {
         let test_base = TestBase::new()
             .await
-            .with_file(("test.txt", "line1\nline2\nline3"))
+            .with_file(("test.txt", format!("line1{NEWLINE}line2{NEWLINE}line3")))
             .await;
 
         let tool = FsWrite::Insert(Insert {
@@ -628,7 +628,7 @@ mod tests {
         assert!(tool.execute(None, &test_base).await.is_ok());
 
         let content = tokio::fs::read_to_string(test_base.join("test.txt")).await.unwrap();
-        assert_eq!(content, "line1\ninserted\nline2\nline3");
+        assert_eq!(content, format!("line1{NEWLINE}inserted{NEWLINE}line2{NEWLINE}line3"));
     }
 
     #[tokio::test]
@@ -644,7 +644,7 @@ mod tests {
         assert!(tool.execute(None, &test_base).await.is_ok());
 
         let content = tokio::fs::read_to_string(test_base.join("test.txt")).await.unwrap();
-        assert_eq!(content, "existing\nappended");
+        assert_eq!(content, format!("existing{NEWLINE}appended"));
     }
 
     #[tokio::test]

@@ -1120,10 +1120,12 @@ mod tests {
         // Grant read - should allow read, still ask for write
         permissions.grant_path("~/file.txt", PathAccessType::Read, &provider);
         assert!(
-            permissions
-                .filesystem
-                .allowed_read_paths
-                .contains("/home/testuser/file.txt"),
+            permissions.filesystem.allowed_read_paths.contains(
+                &std::path::PathBuf::from(TestProvider::default_home())
+                    .join("file.txt")
+                    .to_string_lossy()
+                    .to_string()
+            ),
             "~ should be canonicalized to absolute path"
         );
         let result = evaluate_tool_permission(&permissions, &allowed_tools, &settings, &fs_read_tool, &provider);

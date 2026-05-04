@@ -196,17 +196,34 @@ pub struct TestProvider {
 }
 
 impl TestProvider {
+    /// Returns the default test home directory path for the current platform.
+    pub fn default_home() -> &'static str {
+        #[cfg(unix)]
+        {
+            "/home/testuser"
+        }
+        #[cfg(windows)]
+        {
+            "C:\\Users\\testuser"
+        }
+    }
+
     /// Creates a new implementation of [SystemProvider] with the following defaults:
-    /// - env vars: HOME=/home/testuser
-    /// - cwd: /home/testuser
-    /// - home: /home/testuser
+    /// - env vars: HOME=/home/testuser (Unix) or C:\Users\testuser (Windows)
+    /// - cwd: same as HOME
+    /// - home: same as HOME
     pub fn new() -> Self {
+        #[cfg(unix)]
+        let home = "/home/testuser";
+        #[cfg(windows)]
+        let home = "C:\\Users\\testuser";
+
         let mut env = std::collections::HashMap::new();
-        env.insert("HOME".to_string(), "/home/testuser".to_string());
+        env.insert("HOME".to_string(), home.to_string());
         Self {
             env,
-            home: Some(PathBuf::from("/home/testuser")),
-            cwd: Some(PathBuf::from("/home/testuser")),
+            home: Some(PathBuf::from(home)),
+            cwd: Some(PathBuf::from(home)),
         }
     }
 

@@ -318,7 +318,7 @@ impl RootSubcommand {
                 update::install_staged_update(handle, auto_install).await;
             }
 
-            return result;
+            result
         }
 
         #[cfg(not(target_os = "windows"))]

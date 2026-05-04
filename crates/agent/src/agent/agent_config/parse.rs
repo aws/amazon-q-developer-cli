@@ -238,47 +238,73 @@ mod tests {
     #[test]
     fn test_resource_kind_parse_file_scheme() {
         let sys = TestProvider::new();
+        let home = TestProvider::default_home();
 
         let resource = "file://project/README.md";
+        let expected_path = if cfg!(windows) {
+            format!("{home}\\project\\README.md")
+        } else {
+            format!("{home}/project/README.md")
+        };
         assert_eq!(ResourceKind::parse(resource, &sys).unwrap(), ResourceKind::File {
             original: resource,
-            file_path: "/home/testuser/project/README.md".to_string()
+            file_path: expected_path,
         });
 
         let resource = "file://~/project/**/*.rs";
+        let expected_pattern = if cfg!(windows) {
+            format!("{home}\\project\\**\\*.rs")
+        } else {
+            format!("{home}/project/**/*.rs")
+        };
         assert_eq!(ResourceKind::parse(resource, &sys).unwrap(), ResourceKind::FileGlob {
             original: resource,
-            pattern: glob::Pattern::new("/home/testuser/project/**/*.rs").unwrap()
+            pattern: glob::Pattern::new(&expected_pattern).unwrap()
         });
     }
 
     #[test]
     fn test_resource_kind_parse_skill_scheme() {
         let sys = TestProvider::new();
+        let home = TestProvider::default_home();
 
-        // Single skill file
         let resource = "skill://skills/my-skill.md";
+        let expected_path = if cfg!(windows) {
+            format!("{home}\\skills\\my-skill.md")
+        } else {
+            format!("{home}/skills/my-skill.md")
+        };
         assert_eq!(ResourceKind::parse(resource, &sys).unwrap(), ResourceKind::Skill {
             original: resource,
-            file_path: "/home/testuser/skills/my-skill.md".to_string()
+            file_path: expected_path,
         });
 
-        // Skill with home directory
         let resource = "skill://~/skills/helper.md";
+        let expected_path = if cfg!(windows) {
+            format!("{home}\\skills\\helper.md")
+        } else {
+            format!("{home}/skills/helper.md")
+        };
         assert_eq!(ResourceKind::parse(resource, &sys).unwrap(), ResourceKind::Skill {
             original: resource,
-            file_path: "/home/testuser/skills/helper.md".to_string()
+            file_path: expected_path,
         });
     }
 
     #[test]
     fn test_resource_kind_parse_skill_glob() {
         let sys = TestProvider::new();
+        let home = TestProvider::default_home();
 
         let resource = "skill://.kiro/skills/**/SKILL.md";
+        let expected_pattern = if cfg!(windows) {
+            format!("{home}\\.kiro\\skills\\**\\SKILL.md")
+        } else {
+            format!("{home}/.kiro/skills/**/SKILL.md")
+        };
         assert_eq!(ResourceKind::parse(resource, &sys).unwrap(), ResourceKind::SkillGlob {
             original: resource,
-            pattern: glob::Pattern::new("/home/testuser/.kiro/skills/**/SKILL.md").unwrap()
+            pattern: glob::Pattern::new(&expected_pattern).unwrap()
         });
     }
 

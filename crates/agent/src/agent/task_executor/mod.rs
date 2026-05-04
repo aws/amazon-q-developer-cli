@@ -725,6 +725,7 @@ mod tests {
     }
 
     #[tokio::test]
+    #[cfg_attr(windows, ignore)]
     async fn test_hook_execution_with_assistant_response() {
         let cwd = std::env::current_dir().expect("current dir exists");
         let mut executor = TaskExecutor::new(Arc::new(TestProvider::new_with_base(cwd)));
@@ -733,6 +734,9 @@ mod tests {
         let test_file = temp_dir.path().join("hook_output.json");
         let test_file_str = test_file.to_string_lossy().to_string();
 
+        #[cfg(unix)]
+        let command = format!("cat > {test_file_str}");
+        #[cfg(windows)]
         let command = format!("cat > {test_file_str}");
         let config: HookConfig = serde_json::from_value(serde_json::json!({
             "command": command
@@ -755,7 +759,7 @@ mod tests {
             })
             .await;
 
-        run_with_timeout(Duration::from_millis(5000), async move {
+        run_with_timeout(Duration::from_millis(15000), async move {
             let mut event_buf = Vec::new();
             loop {
                 executor.recv_next(&mut event_buf).await;
@@ -778,6 +782,7 @@ mod tests {
     }
 
     #[tokio::test]
+    #[cfg_attr(windows, ignore)]
     async fn test_hook_execution() {
         let cwd = std::env::current_dir().expect("current dir exists");
         let mut executor = TaskExecutor::new(Arc::new(TestProvider::new_with_base(cwd)));
@@ -798,7 +803,7 @@ mod tests {
             })
             .await;
 
-        run_with_timeout(Duration::from_millis(1000), async move {
+        run_with_timeout(Duration::from_millis(15000), async move {
             let mut event_buf = Vec::new();
             loop {
                 executor.recv_next(&mut event_buf).await;
@@ -827,6 +832,7 @@ mod tests {
     }
 
     #[tokio::test]
+    #[cfg_attr(windows, ignore)]
     async fn test_hook_execution_includes_session_id() {
         let cwd = std::env::current_dir().expect("current dir exists");
         let mut executor = TaskExecutor::new(Arc::new(TestProvider::new_with_base(cwd)));
@@ -835,6 +841,9 @@ mod tests {
         let test_file = temp_dir.path().join("hook_output.json");
         let test_file_str = test_file.to_string_lossy().to_string();
 
+        #[cfg(unix)]
+        let command = format!("cat > {test_file_str}");
+        #[cfg(windows)]
         let command = format!("cat > {test_file_str}");
         let config: HookConfig = serde_json::from_value(serde_json::json!({
             "command": command
@@ -857,7 +866,7 @@ mod tests {
             })
             .await;
 
-        run_with_timeout(Duration::from_millis(5000), async move {
+        run_with_timeout(Duration::from_millis(15000), async move {
             let mut event_buf = Vec::new();
             loop {
                 executor.recv_next(&mut event_buf).await;

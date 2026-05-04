@@ -10,10 +10,11 @@ use serde::{
     Serialize,
 };
 use tokio::fs::DirEntry;
+#[cfg(unix)]
+use tracing::warn;
 use tracing::{
     debug,
     trace,
-    warn,
 };
 
 use crate::agent::tools::{

@@ -222,11 +222,13 @@ pub fn finalize_compaction(
 
 fn create_summary_prompt(custom_prompt: Option<String>, latest_summary: Option<impl AsRef<str>>) -> String {
     const COMPACTION_PROMPT: &str = include_str!("compaction_prompt.md");
+    // Normalize CRLF to LF — include_str! may embed CRLF on Windows checkouts
+    let compaction_prompt = COMPACTION_PROMPT.replace("\r\n", "\n");
 
     let custom_instruction = custom_prompt
         .map(|p| format!("IMPORTANT CUSTOM INSTRUCTION: {}\n\n", p))
         .unwrap_or_default();
-    let mut summary_content = COMPACTION_PROMPT.replace("{{CUSTOM_INSTRUCTION}}\n", &custom_instruction);
+    let mut summary_content = compaction_prompt.replace("{{CUSTOM_INSTRUCTION}}\n", &custom_instruction);
 
     if let Some(summary) = latest_summary {
         summary_content.push_str("\n\n");
