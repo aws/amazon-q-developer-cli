@@ -142,6 +142,16 @@ fn apply_additional_metadata(env: &Env, ua: &mut AwsUserAgent) {
             Err(err) => warn!(%err, %val, "Failed to parse {AWS_TOOLING_USER_AGENT}"),
         };
     }
+
+    if let Ok(val) = env.get("KIRO_CLI_CLIENT_APPLICATION") {
+        let tag = format!("clientApp/{val}");
+        match AdditionalMetadata::new(clean_metadata(&tag)) {
+            Ok(md) => {
+                ua.add_additional_metadata(md);
+            },
+            Err(err) => warn!(%err, %val, "Failed to add client application to user agent"),
+        };
+    }
 }
 
 fn clean_metadata(s: &str) -> String {
@@ -235,5 +245,20 @@ mod tests {
         assert!(ua.contains("md/AWS-CloudShell-2024.08.29"));
         assert!(ua.contains(VERSION_HEADER));
         assert!(ua.contains(VERSION_VALUE));
+    }
+
+    #[test]
+    fn user_agent_client_application_test() {
+        let (rc, mut cfg, mut context) = user_agent_base();
+        let mut context = BeforeTransmitInterceptorContextMut::from(&mut context);
+        let env = Env::from_slice(&[("KIRO_CLI_CLIENT_APPLICATION", "AgentSpaces")]);
+        let interceptor = UserAgentOverrideInterceptor::from_env(env);
+        interceptor
+            .modify_before_signing(&mut context, &rc, &mut cfg)
+            .expect("success");
+
+        let ua = context.request().headers().get(USER_AGENT).unwrap();
+        println!("User-Agent: {ua}");
+        assert!(ua.contains("md/clientApp-AgentSpaces"));
     }
 }
