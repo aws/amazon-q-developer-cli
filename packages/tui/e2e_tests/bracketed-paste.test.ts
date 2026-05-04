@@ -238,3 +238,142 @@ describe('Bracketed Paste', () => {
     await testCase.expectExit();
   }, 30000);
 });
+
+/** Bracketed-paste 12 lines (exceeds 10-line collapse threshold). */
+const pasteCollapsible = (tc: E2ETestCase) => {
+  const lines = Array.from({ length: 12 }, (_, i) => `line ${i + 1}`);
+  return tc.sendKeys(`${PASTE_START}${lines.join('\n')}${PASTE_END}`);
+};
+
+describe('Paste Chip Expand', () => {
+  let testCase: E2ETestCase | null = null;
+
+  afterEach(async () => {
+    if (testCase) {
+      await testCase.cleanup();
+      testCase = null;
+    }
+  });
+
+  it('paste shows chip with ▸ and hint, Tab expands to inline text and clears hint', async () => {
+    testCase = await E2ETestCase.builder()
+      .withTestName('paste-expand-tab')
+      .launch();
+
+    await testCase.waitForText('ask a question', 10000);
+
+    await pasteCollapsible(testCase);
+    await testCase.sleepMs(300);
+
+    let snapshot = testCase.getSnapshot().join('\n');
+    expect(snapshot).toContain('12 lines');
+    expect(snapshot).toContain('▸');
+    expect(snapshot).toContain('Press Tab to expand');
+    expect(snapshot).not.toContain('line 1');
+
+    await testCase.sendKeys('\t');
+    await testCase.sleepMs(300);
+
+    snapshot = testCase.getSnapshot().join('\n');
+    expect(snapshot).not.toContain('12 lines');
+    expect(snapshot).not.toContain('Press Tab to expand');
+    expect(snapshot).toContain('line 1');
+  }, 30000);
+
+  it('hint clears on keypress and reappears on second paste', async () => {
+    testCase = await E2ETestCase.builder()
+      .withTestName('paste-expand-hint-lifecycle')
+      .launch();
+
+    await testCase.waitForText('ask a question', 10000);
+
+    await pasteCollapsible(testCase);
+    await testCase.sleepMs(300);
+    let snapshot = testCase.getSnapshot().join('\n');
+    expect(snapshot).toContain('Press Tab to expand');
+
+    await testCase.sendKeys('x');
+    await testCase.sleepMs(200);
+    snapshot = testCase.getSnapshot().join('\n');
+    expect(snapshot).not.toContain('Press Tab to expand');
+
+    await pasteCollapsible(testCase);
+    await testCase.sleepMs(300);
+    snapshot = testCase.getSnapshot().join('\n');
+    expect(snapshot).toContain('Press Tab to expand');
+  }, 30000);
+
+  it('typing after paste inserts after the chip', async () => {
+    testCase = await E2ETestCase.builder()
+      .withTestName('paste-cursor-position')
+      .launch();
+
+    await testCase.waitForText('ask a question', 10000);
+
+    await testCase.sendKeys('before');
+    await testCase.sleepMs(100);
+
+    await pasteCollapsible(testCase);
+    await testCase.sleepMs(300);
+
+    await testCase.sendKeys('after');
+    await testCase.sleepMs(200);
+
+    const snapshot = testCase.getSnapshot().join('\n');
+    expect(snapshot).toContain('before');
+    expect(snapshot).toContain('12 lines');
+    expect(snapshot).toContain('after');
+    expect(snapshot.indexOf('before')).toBeLessThan(snapshot.indexOf('12 lines'));
+    expect(snapshot.indexOf('12 lines')).toBeLessThan(snapshot.indexOf('after'));
+  }, 30000);
+
+  it('undo after expand restores the chip', async () => {
+    testCase = await E2ETestCase.builder()
+      .withTestName('paste-expand-undo')
+      .launch();
+
+    await testCase.waitForText('ask a question', 10000);
+
+    await pasteCollapsible(testCase);
+    await testCase.sleepMs(300);
+
+    let snapshot = testCase.getSnapshot().join('\n');
+    expect(snapshot).toContain('12 lines');
+
+    await testCase.sendKeys('\t');
+    await testCase.sleepMs(300);
+    snapshot = testCase.getSnapshot().join('\n');
+    expect(snapshot).not.toContain('12 lines');
+    expect(snapshot).toContain('line 1');
+
+    await testCase.sendKeys('\x1f');
+    await testCase.sleepMs(300);
+    snapshot = testCase.getSnapshot().join('\n');
+    expect(snapshot).toContain('12 lines');
+    expect(snapshot).not.toContain('line 1');
+  }, 30000);
+
+  it('pasting collapsible text while cursor is on a chip inserts second chip', async () => {
+    testCase = await E2ETestCase.builder()
+      .withTestName('paste-onto-chip')
+      .launch();
+
+    await testCase.waitForText('ask a question', 10000);
+
+    await pasteCollapsible(testCase);
+    await testCase.sleepMs(300);
+
+    let snapshot = testCase.getSnapshot().join('\n');
+    expect(snapshot).toContain('12 lines');
+
+    const lines2 = Array.from({ length: 15 }, (_, i) => `second ${i + 1}`);
+    await testCase.sendKeys(
+      `${PASTE_START}${lines2.join('\n')}${PASTE_END}`
+    );
+    await testCase.sleepMs(300);
+
+    snapshot = testCase.getSnapshot().join('\n');
+    expect(snapshot).toContain('12 lines');
+    expect(snapshot).toContain('15 lines');
+  }, 30000);
+});

@@ -13,6 +13,7 @@ import { Text } from '../../ui/text/Text.js';
 import { useAppStore } from '../../../stores/app-store.js';
 
 /** Visual cursor (inverse block) + hardware cursor marker (APC sequence for twinki IME positioning). */
+const EXPAND_HINT = 'Press Tab to expand';
 const CursorBlock = ({ char = ' ' }: { char?: string }) => (
   <>
     <Text>{CURSOR_MARKER}</Text>
@@ -62,6 +63,7 @@ import {
   moveToLogicalLineEnd,
   killToLogicalLineEnd,
   killToLogicalLineBeginning,
+  expandPasteSegment,
 } from '../../../utils/input-editing.js';
 import { CommandHistory } from '../../../utils/command-history.js';
 import {
@@ -242,6 +244,8 @@ export const PromptInput = React.memo(function PromptInput({
   const killRingRef = useRef(new KillRing());
   const _lastKillActionRef = useRef<'kill' | null>(null);
   const lastYankRef = useRef<{ start: number; length: number } | null>(null);
+  // Tracks whether we set promptHint — cleared on next keypress in useKeypress
+  const expandHintActive = useRef(false);
   const undoStack = useRef<Array<{ segments: Segment[]; cursor: number }>>([]);
   const lastUndoPushTime = useRef(0);
 
@@ -450,7 +454,6 @@ export const PromptInput = React.memo(function PromptInput({
     const result = shouldCollapsePaste(normalized);
 
     if (result.shouldCollapse) {
-      pushUndo();
       const pasteSegment: PasteSegment = {
         type: 'paste',
         content: normalized,
@@ -463,6 +466,7 @@ export const PromptInput = React.memo(function PromptInput({
       const seg = segs[segIdx];
 
       if (seg?.type === 'text') {
+        pushUndo();
         const newSegs = normalizeSegments([
           ...segs.slice(0, segIdx),
           { type: 'text', value: seg.value.slice(0, offset) },
@@ -471,20 +475,24 @@ export const PromptInput = React.memo(function PromptInput({
           ...segs.slice(segIdx + 1),
         ]);
         setSegments(newSegs);
-        // Position cursor after the chip
-        let newCursor = 0;
-        for (let i = 0; i < newSegs.length; i++) {
-          const s = newSegs[i]!;
-          if (
-            s === pasteSegment ||
-            (s.type === 'paste' && s.content === normalized)
-          ) {
-            newCursor += 1;
-            break;
-          }
-          newCursor += segmentWidth(s);
-        }
-        setCursor(newCursor);
+        setCursor(cur + 1);
+        syncToStore(newSegs);
+        setPromptHint(EXPAND_HINT);
+        expandHintActive.current = true;
+      } else if (seg) {
+        // Cursor on a chip — insert paste chip at cursor position
+        pushUndo();
+        const insertIdx = offset === 0 ? segIdx : segIdx + 1;
+        const newSegs = normalizeSegments([
+          ...segs.slice(0, insertIdx),
+          pasteSegment,
+          ...segs.slice(insertIdx),
+        ]);
+        setSegments(newSegs);
+        setCursor(cur + 1);
+        syncToStore(newSegs);
+        setPromptHint(EXPAND_HINT);
+        expandHintActive.current = true;
       }
       return;
     }
@@ -655,6 +663,12 @@ export const PromptInput = React.memo(function PromptInput({
       // Don't process input when selection menu is open (Menu handles its own input)
       if (activeCommand) return;
 
+      // Clear expand hint on any keypress
+      if (expandHintActive.current) {
+        setPromptHint(null);
+        expandHintActive.current = false;
+      }
+
       // --- Reverse incremental search (Ctrl+R) key handling ---
       if (reverseSearchRef.current.active) {
         const history = CommandHistory.getInstance().getAll();
@@ -806,6 +820,14 @@ export const PromptInput = React.memo(function PromptInput({
             const cmdName = text.slice(0, text.indexOf(' '));
             const cmd = slashCommands.find((c) => c.name === cmdName);
             if (cmd?.meta?.inputType === 'selection') return;
+          }
+        }
+        // Expand paste chip when cursor is on one
+        {
+          const { segIdx } = locateCursor(segments, cursor);
+          if (segments[segIdx]?.type === 'paste') {
+            applyEdit(expandPasteSegment(segments, cursor));
+            return;
           }
         }
         // Tab completion for filesystem paths
@@ -988,6 +1010,15 @@ export const PromptInput = React.memo(function PromptInput({
                 setSegments(prev.segments);
                 setCursor(prev.cursor);
                 syncToStore(prev.segments);
+                // Re-show expand hint if undo restored a paste chip under cursor
+                const { segIdx: undoSegIdx } = locateCursor(
+                  prev.segments,
+                  prev.cursor
+                );
+                if (prev.segments[undoSegIdx]?.type === 'paste') {
+                  setPromptHint(EXPAND_HINT);
+                  expandHintActive.current = true;
+                }
               }
             }
             break;

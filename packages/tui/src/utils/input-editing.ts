@@ -950,3 +950,29 @@ export const killToLogicalLineBeginning = (
     cursor: lineStart,
   };
 };
+
+/**
+ * Expand a PasteSegment into an inline TextSegment.
+ * Returns unchanged segments+cursor if cursor is not on a paste segment.
+ */
+export const expandPasteSegment = (
+  segments: Segment[],
+  cursor: number
+): EditResult => {
+  const { segIdx } = locateCursor(segments, cursor);
+  const seg = segments[segIdx];
+  if (seg?.type !== 'paste') return { segments, cursor };
+
+  const before = segments.slice(0, segIdx);
+  const after = segments.slice(segIdx + 1);
+  const expanded: TextSegment = { type: 'text', value: seg.content };
+  const normalized = normalizeSegments([...before, expanded, ...after]);
+
+  let newCursor = 0;
+  for (let i = 0; i < segIdx; i++) {
+    newCursor += segmentWidth(segments[i]!);
+  }
+  newCursor += seg.content.length;
+
+  return { segments: normalized, cursor: newCursor };
+};

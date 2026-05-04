@@ -60,7 +60,8 @@ export const PastedChip = React.memo(function PastedChip({
     label = `pasted image${details ? ` (${details})` : ''}`;
   } else {
     // Text content
-    label = lineCount > 1 ? `${lineCount} lines` : `${charCount} chars`;
+    label =
+      (lineCount > 1 ? `${lineCount} lines` : `${charCount} chars`) + ' ▸';
   }
 
   return (

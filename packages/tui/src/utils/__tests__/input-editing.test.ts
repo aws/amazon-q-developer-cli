@@ -39,6 +39,7 @@ import {
   moveToLogicalLineEnd,
   killToLogicalLineEnd,
   killToLogicalLineBeginning,
+  expandPasteSegment,
   getVisualCursorLineInfo,
 } from '../input-editing.js';
 
@@ -1343,5 +1344,57 @@ describe('visual line functions (edge cases)', () => {
     const result = killToVisualLineBeginning([text('hello')], 0, 80);
     expect(getVisibleText(result.segments)).toBe('hello');
     expect(result.cursor).toBe(0);
+  });
+});
+
+describe('expandPasteSegment', () => {
+  it('expands paste chip between text segments, cursor at end of expanded content', () => {
+    const segments = [
+      text('before '),
+      paste('line1\nline2\nline3', 3),
+      text(' after'),
+    ];
+    // cursor 8 = on paste chip (locateCursor returns segIdx=1, offset=1)
+    const result = expandPasteSegment(segments, 8);
+    expect(result.segments).toEqual([text('before line1\nline2\nline3 after')]);
+    expect(result.cursor).toBe(7 + 'line1\nline2\nline3'.length);
+  });
+
+  it('expands paste chip at start (no preceding text), cursor = content length', () => {
+    const segments = [paste('hello world', 1), text(' after')];
+    const result = expandPasteSegment(segments, 0);
+    expect(result.segments).toEqual([text('hello world after')]);
+    expect(result.cursor).toBe(11);
+  });
+
+  it('expands first of two adjacent paste chips', () => {
+    const segments = [paste('first', 1), paste('second', 1)];
+    const result = expandPasteSegment(segments, 0);
+    expect(result.segments).toEqual([text('first'), paste('second', 1)]);
+    expect(result.cursor).toBe(5);
+  });
+
+  it('expands second of two adjacent paste chips', () => {
+    const segments = [paste('first', 1), paste('second', 1)];
+    // cursor 2 = on second chip (locateCursor returns segIdx=1, offset=1)
+    const result = expandPasteSegment(segments, 2);
+    expect(result.segments).toEqual([paste('first', 1), text('second')]);
+    expect(result.cursor).toBe(7); // 1 (chip width) + 6 (content length)
+  });
+
+  it('returns unchanged for non-paste segment', () => {
+    const segments = [text('hello'), file('test.ts', 'code')];
+    // cursor 0 = in text segment, not a paste chip
+    const result = expandPasteSegment(segments, 0);
+    expect(result.segments).toEqual(segments);
+    expect(result.cursor).toBe(0); // preserves input cursor
+  });
+
+  it('expands paste chip as only segment', () => {
+    const content = 'line1\nline2\nline3\nline4';
+    const segments = [paste(content, 4)];
+    const result = expandPasteSegment(segments, 0);
+    expect(result.segments).toEqual([text(content)]);
+    expect(result.cursor).toBe(content.length);
   });
 });
