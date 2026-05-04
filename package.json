@@ -10,6 +10,7 @@
     "prettier": "^3.4.2"
   },
   "overrides": {
-    "vite": "7.3.2"
+    "vite": "7.3.2",
+    "@aws/codewhisperer-streaming-client": "1.0.34"
   }
 }

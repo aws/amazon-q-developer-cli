@@ -1,0 +1,40 @@
+name: CodeArtifact Login
+description: Authenticate to CodeArtifact and write .npmrc for @kiro packages
+
+inputs:
+  restore-role-arn:
+    description: Role ARN to re-assume after CodeArtifact login (for build jobs that need their original credentials back)
+    required: false
+    default: ""
+  restore-region:
+    description: AWS region for the restored role
+    required: false
+    default: ""
+  restore-duration:
+    description: Role duration in seconds for the restored role
+    required: false
+    default: "7200"
+
+runs:
+  using: composite
+  steps:
+    - name: Configure AWS credentials for CodeArtifact
+      uses: aws-actions/configure-aws-credentials@v4
+      with:
+        role-to-assume: arn:aws:iam::273221486557:role/kiro-agent-npm-packages-reader
+        aws-region: us-west-2
+
+    - name: Login to CodeArtifact
+      shell: bash
+      run: |
+        REGISTRY="kiro-agent-273221486557.d.codeartifact.us-west-2.amazonaws.com/npm/npm-packages"
+        TOKEN=$(aws codeartifact get-authorization-token --domain kiro-agent --domain-owner 273221486557 --query authorizationToken --output text --region us-west-2)
+        printf '@kiro:registry=https://%s/\n//%s/:always-auth=true\n//%s/:_authToken=%s\n' "$REGISTRY" "$REGISTRY" "$REGISTRY" "$TOKEN" > .npmrc
+
+    - name: Restore AWS credentials for build
+      if: inputs.restore-role-arn != ''
+      uses: aws-actions/configure-aws-credentials@v4
+      with:
+        role-to-assume: ${{ inputs.restore-role-arn }}
+        aws-region: ${{ inputs.restore-region }}
+        role-duration-seconds: ${{ inputs.restore-duration }}

@@ -113,6 +113,34 @@ pub fn tui_js_sha256_path() -> Result<PathBuf> {
     Ok(data_dir()?.join("tui.js.sha256"))
 }
 
+/// Path to extracted Node.js executable (for KAS agent)
+pub fn node_path() -> Result<PathBuf> {
+    Ok(data_dir()?.join("node"))
+}
+
+/// Path to sha256 of the extracted Node.js executable
+pub fn node_sha256_path() -> Result<PathBuf> {
+    Ok(data_dir()?.join("node.sha256"))
+}
+
+/// Path to extracted KAS bundle directory (acp-server.js + node_modules)
+pub fn kas_bundle_dir() -> Result<PathBuf> {
+    Ok(data_dir()?.join("kas"))
+}
+
+/// Path to sha256 of the extracted KAS bundle
+pub fn kas_bundle_sha256_path() -> Result<PathBuf> {
+    Ok(data_dir()?.join("kas.sha256"))
+}
+
+pub fn kas_token_path(os: &Os) -> Result<PathBuf> {
+    Ok(home_dir(os)?
+        .join(".aws")
+        .join("sso")
+        .join("cache")
+        .join("kiro-auth-token-cli.json"))
+}
+
 /// Hash a path to create a unique directory name
 fn hash_path(path: &std::path::Path) -> String {
     use std::collections::hash_map::DefaultHasher;

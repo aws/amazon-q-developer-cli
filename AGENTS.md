@@ -334,6 +334,28 @@ cargo +nightly fmt
 
 If the `gh` CLI is installed, use it to interact with GitHub — for example, creating PRs, reviewing PR comments and discussions, and checking GitHub Actions workflow status. Run `gh --version` to verify availability before use.
 
+### Testing with KAS agent engine
+
+KAS (Kiro Agent Server) is the TypeScript agent that powers Kiro IDE. To test it in the CLI:
+
+```bash
+# 1. Authenticate to CodeArtifact (token expires after 12h)
+./scripts/codeartifact-login.sh
+
+# 2. Install dependencies (fetches @kiro/agent from CodeArtifact)
+bun install
+
+# 3. Build TUI and Rust binary
+cd packages/tui && bun run build && cd ../..
+cargo build -p chat_cli
+
+# 4. Run with KAS
+KIRO_TEST_TUI_JS_PATH=$(pwd)/packages/tui/dist/tui.js \
+  cargo run -p chat_cli -- chat --agent-engine=kas
+```
+
+KAS logs are at `~/.kiro/logs/<timestamp>/kiro.log`. Use `KIRO_KAS_SERVER_PATH` env var to override the agent server path for development.
+
 ## Log Files
 
 **macOS/Linux**: `$TMPDIR/kiro-log/kiro-chat.log` (or `$XDG_RUNTIME_DIR/kiro-log/kiro-chat.log`)

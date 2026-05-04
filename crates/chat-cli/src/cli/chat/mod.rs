@@ -260,6 +260,38 @@ pub enum SessionSourceArg {
     V2,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, clap::ValueEnum)]
+pub enum AgentEngine {
+    #[default]
+    Rust,
+    Kas,
+}
+
+impl std::fmt::Display for AgentEngine {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Rust => write!(f, "rust"),
+            Self::Kas => write!(f, "kas"),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, clap::ValueEnum)]
+pub enum AgentMode {
+    #[default]
+    Vibe,
+    Spec,
+}
+
+impl std::fmt::Display for AgentMode {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Vibe => write!(f, "vibe"),
+            Self::Spec => write!(f, "spec"),
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Default, Args)]
 pub struct ChatArgs {
     /// Resume the most recent conversation from this directory.
@@ -316,6 +348,12 @@ pub struct ChatArgs {
     /// Use the legacy terminal UI
     #[arg(long, alias = "classic", conflicts_with = "tui")]
     pub legacy_ui: bool,
+    /// Agent engine to use: "rust" (default) or "kas" (TypeScript KAS agent)
+    #[arg(long, value_name = "ENGINE")]
+    pub agent_engine: Option<AgentEngine>,
+    /// Mode to use with KAS agent: "vibe" (default) or "spec"
+    #[arg(long, value_name = "MODE")]
+    pub mode: Option<AgentMode>,
 }
 
 /// Why the TUI should or should not be launched.
@@ -348,6 +386,19 @@ impl TuiShouldLaunchResult {
 }
 
 impl ChatArgs {
+    /// Resolve the agent engine: CLI flag > setting > default (Rust).
+    pub fn resolve_agent_engine(&self, os: &Os) -> AgentEngine {
+        if let Some(engine) = self.agent_engine {
+            return engine;
+        }
+        if let Some(val) = os.database.settings.get_string(Setting::ChatAgentEngine)
+            && val.eq_ignore_ascii_case("kas")
+        {
+            return AgentEngine::Kas;
+        }
+        AgentEngine::Rust
+    }
+
     /// Resolve whether to launch the TUI.
     /// Precedence: CLI flag > env var KIRO_CHAT_UI > setting chat.ui > rollout % > default (legacy)
     pub fn should_launch_tui(&self, os: &Os) -> TuiShouldLaunchResult {
@@ -359,6 +410,11 @@ impl ChatArgs {
         // Piped/heredoc stdin — TUI requires an interactive terminal
         if !std::io::stdin().is_terminal() {
             return TuiShouldLaunchResult::No;
+        }
+
+        // KAS engine requires the TUI/ACP path — it can't run in the V1 legacy path
+        if self.resolve_agent_engine(os) == AgentEngine::Kas {
+            return TuiShouldLaunchResult::CliArg;
         }
 
         // CLI flags take highest precedence

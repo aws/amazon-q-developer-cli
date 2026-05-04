@@ -206,6 +206,7 @@ impl RootSubcommand {
                     model,
                     trust_all_tools,
                     trust_tools,
+                    agent_engine: None,
                 };
                 use std::sync::Arc;
 

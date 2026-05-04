@@ -82,6 +82,12 @@ const FLAG_DEFS: FlagDef[] = [
   { type: 'boolean', key: 'resumePicker', flags: ['--resume-picker'] },
   // consumed by Rust ChatArgs before TUI is launched — skip without error
   { type: 'skip', flags: ['--tui'] },
+  {
+    type: 'string',
+    key: 'agentEngine',
+    flags: ['--agent-engine'],
+    acp: '--agent-engine',
+  },
 ];
 
 // Build a lookup map: flag string → FlagDef (built once at module load)

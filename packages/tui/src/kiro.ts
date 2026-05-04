@@ -1,4 +1,4 @@
-import { AcpClient } from './acp-client';
+import { createAcpClient } from './acp-client';
 import { logger } from './utils/logger';
 import { AgentEventType, type AgentStreamEvent } from './types/agent-events';
 import type {
@@ -19,6 +19,13 @@ export class Kiro {
   private sessionClient?: SessionClient;
   private _settings: Record<string, unknown> = {};
   private commandsHandler?: (
+    commands: Array<{
+      name: string;
+      description: string;
+      meta?: Record<string, unknown>;
+    }>
+  ) => void;
+  private extensionMethodsHandler?: (
     commands: Array<{
       name: string;
       description: string;
@@ -75,6 +82,18 @@ export class Kiro {
     ) => void
   ): void {
     this.commandsHandler = handler;
+  }
+
+  onExtensionMethodsDiscovered(
+    handler: (
+      commands: Array<{
+        name: string;
+        description: string;
+        meta?: Record<string, unknown>;
+      }>
+    ) => void
+  ): void {
+    this.extensionMethodsHandler = handler;
   }
 
   onPromptsUpdate(
@@ -189,7 +208,7 @@ export class Kiro {
       this.sessionClient = mockClient;
       setMockSessionClient(mockClient);
     } else {
-      this.sessionClient = new AcpClient(agentPath, extraAcpArgs);
+      this.sessionClient = createAcpClient(agentPath, extraAcpArgs);
     }
     logger.debug('[kiro] AcpClient created');
 
@@ -202,6 +221,12 @@ export class Kiro {
           this.commandsHandler
         ) {
           this.commandsHandler(event.commands);
+        }
+        if (
+          event.type === AgentEventType.ExtensionMethodsDiscovered &&
+          this.extensionMethodsHandler
+        ) {
+          this.extensionMethodsHandler(event.commands);
         }
         if (
           event.type === AgentEventType.PromptsUpdate &&

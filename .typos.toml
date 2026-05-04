@@ -2,6 +2,7 @@
 extend-exclude = [
   "packages/ink/",
   "packages/twinki/",
+  "docs/perf-baselines/",
   "**/__tests__/",
   "**/e2e_tests/",
   "**/tests/",

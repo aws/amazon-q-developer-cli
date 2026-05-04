@@ -11,7 +11,7 @@ import shutil
 import time
 import zipfile
 from typing import Any, Mapping, Sequence, List, Optional
-from const import APPLE_TEAM_ID, BUN_VERSION, BUN_ZIP_HASHES, CHAT_BINARY_NAME, CHAT_PACKAGE_NAME
+from const import APPLE_TEAM_ID, BUN_VERSION, BUN_ZIP_HASHES, CHAT_BINARY_NAME, CHAT_PACKAGE_NAME, NODE_VERSION, NODE_ARCHIVE_HASHES
 from util import debug, info, isDarwin, isLinux, isWindows, run_cmd, run_cmd_output, warn
 from rust import cargo_cmd_name, rust_env, rust_targets, build_hash, build_datetime
 from importlib import import_module
@@ -154,6 +154,135 @@ def download_bun() -> BunPaths:
     return result
 
 
+@dataclass
+class NodePaths:
+    x86_64: pathlib.Path | None = None
+    aarch64: pathlib.Path | None = None
+
+
+@dataclass
+class NodeDownloadInfo:
+    url: str
+    fname: str
+    arch: str
+
+
+def get_node_download_info() -> List[NodeDownloadInfo]:
+    """Get Node.js download URL(s). Returns two on macOS for per-arch embedding."""
+    from rust import get_target_triple
+
+    def dl(node_platform: str, arch: str, ext: str = "tar.gz") -> NodeDownloadInfo:
+        fname = f"node-v{NODE_VERSION}-{node_platform}.{ext}"
+        return NodeDownloadInfo(url=f"https://nodejs.org/dist/v{NODE_VERSION}/{fname}", fname=fname, arch=arch)
+
+    target_triple = get_target_triple()
+    system = platform.system().lower()
+
+    match system:
+        case "darwin":
+            if target_triple == "universal-apple-darwin":
+                return [dl("darwin-arm64", "aarch64"), dl("darwin-x64", "x86_64")]
+            elif target_triple.startswith("aarch64") or target_triple.startswith("arm64"):
+                return [dl("darwin-arm64", "aarch64")]
+            else:
+                return [dl("darwin-x64", "x86_64")]
+        case "linux":
+            if target_triple.startswith("aarch64") or target_triple.startswith("arm64"):
+                return [dl("linux-arm64", "aarch64")]
+            return [dl("linux-x64", "x86_64")]
+        case "windows":
+            if target_triple.startswith("aarch64") or target_triple.startswith("arm64"):
+                return [dl("win-arm64", "aarch64", ext="zip")]
+            return [dl("win-x64", "x86_64", ext="zip")]
+        case other:
+            raise ValueError(f"Unsupported system: {other}")
+
+
+def download_node() -> NodePaths:
+    """Download Node.js and extract per-arch binaries."""
+    import tarfile
+
+    downloads = get_node_download_info()
+    node_dir = BUILD_DIR / "node"
+    shutil.rmtree(node_dir, ignore_errors=True)
+    node_dir.mkdir(exist_ok=True)
+
+    result = NodePaths()
+
+    for dl in downloads:
+        archive_path = node_dir / dl.fname
+        info(f"Downloading Node.js from {dl.url}")
+        response = requests.get(dl.url, stream=True)
+        response.raise_for_status()
+        with open(archive_path, "wb") as f:
+            for chunk in response.iter_content(chunk_size=8192):
+                f.write(chunk)
+
+        actual_hash = calculate_sha256(archive_path)
+        expected_hash = NODE_ARCHIVE_HASHES.get(dl.fname)
+        if expected_hash is None:
+            raise ValueError(f"No pinned SHA256 hash for {dl.fname}")
+        if actual_hash != expected_hash:
+            raise ValueError(f"SHA256 mismatch for {dl.fname}: expected {expected_hash}, got {actual_hash}")
+        info(f"Verified {dl.fname} (SHA256: {actual_hash})")
+
+        if dl.fname.endswith(".tar.gz"):
+            with tarfile.open(archive_path, "r:gz") as tar:
+                tar.extractall(node_dir)
+            stem = dl.fname.replace(".tar.gz", "")
+            exe = node_dir / stem / "bin" / "node"
+        else:
+            with zipfile.ZipFile(archive_path, "r") as z:
+                z.extractall(node_dir)
+            stem = dl.fname.replace(".zip", "")
+            exe = node_dir / stem / "node.exe"
+
+        if not exe.exists():
+            raise FileNotFoundError(f"Node.js not found at {exe}")
+        if not isWindows():
+            os.chmod(exe, 0o755)
+
+        if dl.arch == "x86_64":
+            result.x86_64 = exe.absolute()
+        else:
+            result.aarch64 = exe.absolute()
+
+    info(f"Downloaded node: x86_64={result.x86_64}, aarch64={result.aarch64}")
+    return result
+
+
+def build_kas_bundle() -> pathlib.Path:
+    """Install @kiro/agent and create a tar.gz bundle of node_modules."""
+    import tarfile
+
+    kas_dir = BUILD_DIR / "kas"
+    shutil.rmtree(kas_dir, ignore_errors=True)
+    kas_dir.mkdir(exist_ok=True)
+
+    pkg = {
+        "type": "module",
+        "dependencies": {"@kiro/agent": "0.3.1"},
+        "overrides": {"@aws/codewhisperer-streaming-client": "1.0.34"},
+    }
+    with open(kas_dir / "package.json", "w") as f:
+        json.dump(pkg, f)
+
+    npmrc = pathlib.Path(".npmrc")
+    if npmrc.exists():
+        shutil.copy(npmrc, kas_dir / ".npmrc")
+
+    info("Installing @kiro/agent dependencies")
+    run_cmd(["bun", "install"], cwd=kas_dir)
+
+    bundle_path = BUILD_DIR / "kas-bundle.tar.gz"
+    info(f"Creating KAS bundle at {bundle_path}")
+    with tarfile.open(bundle_path, "w:gz") as tar:
+        tar.add(kas_dir / "node_modules", arcname="node_modules")
+
+    info(f"KAS bundle: {bundle_path} ({bundle_path.stat().st_size / 1024 / 1024:.1f} MB)")
+    return bundle_path.absolute()
+
+
 def build_tui() -> pathlib.Path:
     """Build the TypeScript TUI, returning an absolute path to the output JS file."""
     tui_dir = pathlib.Path("packages/tui")
@@ -189,6 +318,8 @@ def build_chat_bin(
     targets: Sequence[str] = [],
     bun_paths: BunPaths | None = None,
     tui_js_path: pathlib.Path | None = None,
+    node_paths: NodePaths | None = None,
+    kas_bundle_path: pathlib.Path | None = None,
 ):
     package = CHAT_PACKAGE_NAME
 
@@ -230,6 +361,19 @@ def build_chat_bin(
 
     if bun_paths or tui_js_path:
         build_env["DISABLE_V2_BUN"] = "true"
+
+    if node_paths:
+        for suffix, path in [("X86_64", node_paths.x86_64), ("AARCH64", node_paths.aarch64)]:
+            if path:
+                build_env[f"NODE_EXECUTABLE_PATH_{suffix}"] = str(path.absolute())
+                build_env[f"NODE_RUNTIME_SHA256_{suffix}"] = calculate_sha256(path)
+                info(f"Embedding Node.js {suffix}: {path.absolute()} (SHA256: {build_env[f'NODE_RUNTIME_SHA256_{suffix}']})")
+
+    if kas_bundle_path:
+        build_env["KAS_BUNDLE_PATH"] = str(kas_bundle_path.absolute())
+        kas_sha = calculate_sha256(kas_bundle_path)
+        build_env["KAS_BUNDLE_SHA256"] = kas_sha
+        info(f"Embedding KAS bundle: {kas_bundle_path.absolute()} (SHA256: {kas_sha})")
 
     run_cmd(args, env=build_env)
 
@@ -824,6 +968,71 @@ def sign_bun_per_arch(branch_name: str, commit_sha: str):
         info(f"✓ Notarized bun-{arch} uploaded to s3://{signing_bucket_name}/{s3_path}")
 
 
+def sign_node_per_arch(branch_name: str, commit_sha: str):
+    """Downloads, notarizes, and uploads per-arch Node.js binaries to S3.
+
+    Each architecture is signed and notarized separately, then uploaded
+    so the build job can embed them instead of raw binaries."""
+    import tarfile
+
+    signing_role_arn = os.environ.get("SIGNING_ROLE_ARN")
+    signing_bucket_name = os.environ.get("SIGNING_BUCKET_NAME")
+    signing_apple_notarizing_secret_arn = os.environ.get("SIGNING_APPLE_NOTARIZING_SECRET_ARN")
+
+    if not all([signing_role_arn, signing_bucket_name, signing_apple_notarizing_secret_arn]):
+        raise ValueError(
+            "Missing signing environment variables: SIGNING_ROLE_ARN, SIGNING_BUCKET_NAME, SIGNING_APPLE_NOTARIZING_SECRET_ARN"
+        )
+
+    signing_data = CdSigningData(
+        bucket_name=signing_bucket_name,
+        apple_notarizing_secret_arn=signing_apple_notarizing_secret_arn,
+        signing_role_arn=signing_role_arn,
+    )
+
+    BUILD_DIR.mkdir(exist_ok=True)
+
+    node_dir = BUILD_DIR / "node"
+    shutil.rmtree(node_dir, ignore_errors=True)
+    node_dir.mkdir(exist_ok=True)
+
+    for arch, node_platform in [("aarch64", "darwin-arm64"), ("x64", "darwin-x64")]:
+        fname = f"node-v{NODE_VERSION}-{node_platform}.tar.gz"
+        url = f"https://nodejs.org/dist/v{NODE_VERSION}/{fname}"
+        archive_path = node_dir / fname
+
+        info(f"Downloading node-{node_platform} v{NODE_VERSION}")
+        response = requests.get(url, stream=True)
+        response.raise_for_status()
+        with open(archive_path, "wb") as f:
+            for chunk in response.iter_content(chunk_size=8192):
+                f.write(chunk)
+
+        expected_hash = NODE_ARCHIVE_HASHES.get(fname)
+        if expected_hash:
+            actual_hash = calculate_sha256(archive_path)
+            if actual_hash != expected_hash:
+                raise ValueError(f"SHA256 mismatch for {fname}: expected {expected_hash}, got {actual_hash}")
+            info(f"Verified {fname} integrity (SHA256: {actual_hash})")
+
+        with tarfile.open(archive_path, "r:gz") as tar:
+            tar.extractall(node_dir)
+
+        stem = fname.replace(".tar.gz", "")
+        node_exe = node_dir / stem / "bin" / "node"
+        if not node_exe.exists():
+            raise FileNotFoundError(f"Node.js executable not found at {node_exe}")
+        os.chmod(node_exe, 0o755)
+
+        info(f"Signing and notarizing node-{node_platform}")
+        notarized_node = sign_and_notarize(signing_data, node_exe)
+
+        s3_path = f"{branch_name}/notarized-node/{commit_sha}/node-{arch}"
+        info(f"Uploading notarized node-{arch} to s3://{signing_bucket_name}/{s3_path}")
+        run_cmd(["aws", "s3", "cp", str(notarized_node), f"s3://{signing_bucket_name}/{s3_path}"])
+        info(f"✓ Notarized node-{arch} uploaded to s3://{signing_bucket_name}/{s3_path}")
+
+
 def build(
     release: bool,
     stage_name: str | None = None,
@@ -835,6 +1044,38 @@ def build(
 
     info("Building TUI")
     tui_js_path = build_tui()
+
+    include_kas = os.environ.get("INCLUDE_KAS_BUNDLE", "").lower() in ("1", "true")
+
+    # Node.js is only needed for KAS bundle
+    node_paths = None
+    if include_kas:
+        # Use pre-notarized node binaries from environment (set by CI notarize-node job)
+        pre_notarized_node_x86 = os.environ.get("NODE_EXECUTABLE_PATH_X86_64")
+        pre_notarized_node_aarch64 = os.environ.get("NODE_EXECUTABLE_PATH_AARCH64")
+        if pre_notarized_node_x86 or pre_notarized_node_aarch64:
+            info("Using pre-notarized Node.js binaries from environment")
+            node_paths = NodePaths(
+                x86_64=pathlib.Path(pre_notarized_node_x86).absolute() if pre_notarized_node_x86 else None,
+                aarch64=pathlib.Path(pre_notarized_node_aarch64).absolute() if pre_notarized_node_aarch64 else None,
+            )
+        elif os.environ.get("CI") and isDarwin():
+            raise RuntimeError(
+                "NODE_EXECUTABLE_PATH_X86_64 or NODE_EXECUTABLE_PATH_AARCH64 must be set in CI on macOS. "
+                "The notarize-node job should set these before the build step."
+            )
+        else:
+            info(f"Downloading Node.js v{NODE_VERSION}")
+            node_paths = download_node()
+    else:
+        info("Skipping Node.js download (INCLUDE_KAS_BUNDLE not set)")
+
+    kas_bundle_path = None
+    if include_kas:
+        info("Building KAS bundle")
+        kas_bundle_path = build_kas_bundle()
+    else:
+        info("Skipping KAS bundle (INCLUDE_KAS_BUNDLE not set)")
 
     # Use pre-notarized bun binaries from environment (set by CI notarize-bun job)
     pre_notarized_x86 = os.environ.get("BUN_EXECUTABLE_PATH_X86_64")
@@ -935,6 +1176,8 @@ def build(
         targets=targets,
         bun_paths=bun_paths,
         tui_js_path=tui_js_path,
+        node_paths=node_paths,
+        kas_bundle_path=kas_bundle_path,
     )
 
     if isDarwin():

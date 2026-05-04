@@ -379,6 +379,7 @@ interface BaseAppActions {
   startEditingQueue: (index: number) => void;
   cancelEditingQueue: () => void;
   setSlashCommands: (commands: SlashCommand[]) => void;
+  setExtensionCommands: (commands: SlashCommand[]) => void;
   setPrompts: (
     prompts: Array<{
       name: string;
@@ -567,6 +568,7 @@ export interface AppState {
   queuedMessages: string[];
   editingQueueIndex: number | null;
   slashCommands: SlashCommand[];
+  extensionCommands: SlashCommand[];
   prompts: Array<{
     name: string;
     description?: string;
@@ -880,6 +882,7 @@ export const createAppStore = (props: AppStoreProps) => {
         meta: { local: true },
       },
     ], // Backend sends all commands via CommandsUpdate
+    extensionCommands: [],
     prompts: [],
     kiro: props.kiro,
     sessionId: null,
@@ -2132,6 +2135,10 @@ export const createAppStore = (props: AppStoreProps) => {
       });
     },
 
+    setExtensionCommands: (commands: SlashCommand[]) => {
+      set({ extensionCommands: commands });
+    },
+
     setPrompts: (prompts) => {
       set({ prompts });
     },
@@ -2180,7 +2187,7 @@ export const createAppStore = (props: AppStoreProps) => {
       const state = get();
       const ctx: CommandContext = {
         kiro: state.kiro,
-        slashCommands: state.slashCommands,
+        slashCommands: [...state.extensionCommands, ...state.slashCommands],
         showAlert: (message, status, autoHideMs = 3000) =>
           state.showTransientAlert({ message, status, autoHideMs }),
         setLoadingMessage: state.setLoadingMessage,
@@ -2982,7 +2989,7 @@ export const createAppStore = (props: AppStoreProps) => {
         CommandHistory.getInstance().add(trimmed);
         const ctx: CommandContext = {
           kiro: state.kiro,
-          slashCommands: state.slashCommands,
+          slashCommands: [...state.extensionCommands, ...state.slashCommands],
           showAlert: (message, status, autoHideMs = 3000) =>
             state.showTransientAlert({ message, status, autoHideMs }),
           setLoadingMessage: state.setLoadingMessage,

@@ -399,6 +399,8 @@ fn embed_bun_and_tui() {
 
     let bun_dest = std::path::Path::new(&out_dir).join("bun_embedded");
     let tui_dest = std::path::Path::new(&out_dir).join("tui_embedded.js");
+    let node_dest = std::path::Path::new(&out_dir).join("node_embedded");
+    let kas_dest = std::path::Path::new(&out_dir).join("kas_bundle_embedded.tar.gz");
 
     // Per-arch bun paths (macOS): select based on CARGO_CFG_TARGET_ARCH
     let bun_path = if std::env::var("BUN_EXECUTABLE_PATH_X86_64").is_ok()
@@ -435,5 +437,40 @@ fn embed_bun_and_tui() {
         std::fs::copy(&path, &tui_dest).expect("Failed to copy TUI js to OUT_DIR");
     } else {
         std::fs::write(&tui_dest, b"").unwrap();
+    }
+
+    // Node binary for KAS agent (per-arch on macOS, single path otherwise)
+    let node_path = if std::env::var("NODE_EXECUTABLE_PATH_X86_64").is_ok()
+        || std::env::var("NODE_EXECUTABLE_PATH_AARCH64").is_ok()
+    {
+        let arch = std::env::var("CARGO_CFG_TARGET_ARCH").expect("CARGO_CFG_TARGET_ARCH not set");
+        let (path_var, sha_var) = match arch.as_str() {
+            "x86_64" => ("NODE_EXECUTABLE_PATH_X86_64", "NODE_RUNTIME_SHA256_X86_64"),
+            "aarch64" => ("NODE_EXECUTABLE_PATH_AARCH64", "NODE_RUNTIME_SHA256_AARCH64"),
+            other => panic!("Unsupported target arch for per-arch node: {other}"),
+        };
+        if let Ok(sha) = std::env::var(sha_var) {
+            println!("cargo:rustc-env=NODE_RUNTIME_SHA256={sha}");
+        }
+        std::env::var(path_var).ok()
+    } else {
+        std::env::var("NODE_EXECUTABLE_PATH").ok()
+    };
+
+    if let Some(path) = node_path {
+        println!("cargo:rerun-if-changed={path}");
+        let _ = std::fs::remove_file(&node_dest);
+        std::fs::copy(&path, &node_dest).expect("Failed to copy node executable to OUT_DIR");
+    } else {
+        std::fs::write(&node_dest, b"").unwrap();
+    }
+
+    // KAS bundle (tar.gz of acp-server.js + node_modules)
+    if let Ok(path) = std::env::var("KAS_BUNDLE_PATH") {
+        println!("cargo:rerun-if-changed={path}");
+        let _ = std::fs::remove_file(&kas_dest);
+        std::fs::copy(&path, &kas_dest).expect("Failed to copy KAS bundle to OUT_DIR");
+    } else {
+        std::fs::write(&kas_dest, b"").unwrap();
     }
 }

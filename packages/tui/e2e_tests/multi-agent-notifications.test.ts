@@ -13,13 +13,11 @@ describe('Session event routing', () => {
     // Must call multiSessionHandlers for subagent events
     expect(src).toContain('multiSessionHandlers.forEach');
     // broadcastStreamEvent must only be called for non-subagent events
-    const sessionUpdateFn = src.slice(
-      src.indexOf('async sessionUpdate'),
-      src.indexOf('async sessionUpdate') + 1200
-    );
+    const fnStart = src.indexOf('handleSessionUpdate');
+    const sessionUpdateFn = src.slice(fnStart, fnStart + 1200);
     expect(sessionUpdateFn).toContain('isSubagentEvent');
-    // subagent branch calls multiSessionHandlers, else branch calls broadcastStreamEvent
-    const multiIdx = sessionUpdateFn.indexOf('multiSessionHandlers.forEach');
+    // subagent branch calls broadcastMultiSession, else branch calls broadcastStreamEvent
+    const multiIdx = sessionUpdateFn.indexOf('broadcastMultiSession');
     const elseIdx = sessionUpdateFn.indexOf('} else {');
     const broadcastIdx = sessionUpdateFn.indexOf('broadcastStreamEvent', elseIdx);
     expect(multiIdx).toBeGreaterThan(0);
@@ -69,11 +67,9 @@ describe('Event isolation', () => {
     // multiSessionHandlers feeds pushSessionEvent -> sessionEventBuffer
     expect(src).toContain('multiSessionHandlers.forEach');
     // broadcastStreamEvent only called for non-subagent events (in else branch)
-    const sessionUpdateFn = src.slice(
-      src.indexOf('async sessionUpdate'),
-      src.indexOf('async sessionUpdate') + 1200
-    );
-    const multiIdx = sessionUpdateFn.indexOf('multiSessionHandlers.forEach');
+    const fnStart = src.indexOf('handleSessionUpdate');
+    const sessionUpdateFn = src.slice(fnStart, fnStart + 1200);
+    const multiIdx = sessionUpdateFn.indexOf('broadcastMultiSession');
     const elseIdx = sessionUpdateFn.indexOf('} else {');
     const broadcastIdx = sessionUpdateFn.indexOf('broadcastStreamEvent', elseIdx);
     expect(multiIdx).toBeGreaterThan(0);

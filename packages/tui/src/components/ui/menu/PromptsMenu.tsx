@@ -4,6 +4,7 @@ import { Menu } from './Menu.js';
 import { PromptDetails } from './PromptDetails.js';
 import { findPromptByMenuLabel } from '../command-menu-utils.js';
 import { useAppStore, type ActiveCommand } from '../../../stores/app-store.js';
+import { useCommandState } from '../../../stores/selectors.js';
 
 /** Visible content rows for both the list and detail view. */
 const VISIBLE_ITEMS = 8;
@@ -20,7 +21,7 @@ export const PromptsMenu: React.FC<PromptsMenuProps> = ({
   activeCommand,
   onDismiss,
 }) => {
-  const slashCommands = useAppStore((s) => s.slashCommands);
+  const { slashCommands } = useCommandState();
   const executeCommandWithArg = useAppStore((s) => s.executeCommandWithArg);
   const clearCommandInput = useAppStore((s) => s.clearCommandInput);
   const setCommandInput = useAppStore((s) => s.setCommandInput);

@@ -21,6 +21,7 @@ use std::io::{
     Write as _,
     stdout,
 };
+use std::path::PathBuf;
 use std::process::ExitCode;
 
 pub use agent::Agent;
@@ -36,6 +37,7 @@ use clap::{
     ValueEnum,
 };
 use eyre::{
+    Context as _,
     Result,
     bail,
 };
@@ -141,6 +143,9 @@ pub enum RootSubcommand {
         /// Trust only this set of tools
         #[arg(long, value_delimiter = ',', value_name = "TOOL_NAMES")]
         trust_tools: Option<Vec<String>>,
+        /// Agent engine to use: "rust" (default) or "kas" (TypeScript KAS agent)
+        #[arg(long, value_name = "ENGINE", default_value_t = chat::AgentEngine::Rust)]
+        agent_engine: chat::AgentEngine,
     },
     /// ACP test client
     #[command(hide = true)]
@@ -278,7 +283,7 @@ impl RootSubcommand {
                     let tui_available =
                         crate::embedded_tui::are_assets_embedded(os) || std::env::var(KIRO_TEST_TUI_JS_PATH).is_ok();
                     if args.should_launch_tui(os).should_launch() && tui_available {
-                        crate::embedded_tui::launch_v2(os).await
+                        crate::embedded_tui::launch_v2(os, args.resolve_agent_engine(os), args.mode).await
                     } else {
                         if args.should_launch_tui(os).should_launch() {
                             tracing::error!("TUI requested but assets not available, falling back to legacy UI");
@@ -293,7 +298,11 @@ impl RootSubcommand {
                     model,
                     trust_all_tools,
                     trust_tools,
+                    agent_engine,
                 } => {
+                    if agent_engine == chat::AgentEngine::Kas {
+                        return execute_kas_acp(os).await;
+                    }
                     use std::sync::Arc;
 
                     use chat_cli_v2::os::Os as NewOs;
@@ -308,6 +317,7 @@ impl RootSubcommand {
                         model,
                         trust_all_tools,
                         trust_tools,
+                        agent_engine: None,
                     };
                     chat_cli_v2::agent::acp::acp_agent::execute(&mut os, spawn_args, legacy_session_exporter).await
                 },
@@ -370,7 +380,7 @@ impl RootSubcommand {
                     "TUI launch decision"
                 );
                 if should_launch_tui.should_launch() && is_tui_supported && tui_available {
-                    crate::embedded_tui::launch_v2(os).await
+                    crate::embedded_tui::launch_v2(os, args.resolve_agent_engine(os), args.mode).await
                 } else {
                     if should_launch_tui.should_launch() && !tui_available {
                         tracing::error!("TUI requested but assets not available, falling back to legacy UI");
@@ -388,7 +398,11 @@ impl RootSubcommand {
                 model,
                 trust_all_tools,
                 trust_tools,
+                agent_engine,
             } => {
+                if agent_engine == chat::AgentEngine::Kas {
+                    return execute_kas_acp(os).await;
+                }
                 use std::sync::Arc;
 
                 use chat_cli_v2::os::Os as NewOs;
@@ -406,12 +420,46 @@ impl RootSubcommand {
                     model,
                     trust_all_tools,
                     trust_tools,
+                    agent_engine: None,
                 };
                 chat_cli_v2::agent::acp::acp_agent::execute(&mut os, spawn_args, legacy_session_exporter).await
             },
             Self::AcpClient { agent } => chat_cli_v2::agent::acp::acp_client::execute(agent).await,
         }
     }
+}
+
+/// Spawn the KAS TypeScript agent as an ACP server over stdio.
+/// Extracts embedded node + KAS assets if needed, then execs
+/// `node --experimental-wasm-modules acp-server.js --transport=stdio`.
+async fn execute_kas_acp(os: &Os) -> Result<ExitCode> {
+    let (node_bin, server_js) = if let Ok(kas_server_path) = std::env::var("KIRO_KAS_SERVER_PATH") {
+        (PathBuf::from("node"), PathBuf::from(kas_server_path))
+    } else if let Some(paths) = crate::embedded_tui::extract_kas_assets_if_needed(os).await? {
+        paths
+    } else {
+        bail!("KAS assets not embedded and KIRO_KAS_SERVER_PATH not set");
+    };
+
+    debug!(
+        "Spawning KAS ACP: {} --experimental-wasm-modules {} --transport=stdio",
+        node_bin.display(),
+        server_js.display()
+    );
+
+    let mut child = tokio::process::Command::new(&node_bin)
+        .arg("--experimental-wasm-modules")
+        .arg(&server_js)
+        .arg("--transport=stdio")
+        .stdin(std::process::Stdio::inherit())
+        .stdout(std::process::Stdio::inherit())
+        .stderr(std::process::Stdio::inherit())
+        .kill_on_drop(true)
+        .spawn()
+        .with_context(|| format!("failed to spawn KAS: {} {}", node_bin.display(), server_js.display()))?;
+
+    let status = child.wait().await?;
+    Ok(status.code().map_or(ExitCode::FAILURE, |c| ExitCode::from(c as u8)))
 }
 
 /// Handle `--list-sessions` and `--delete-session` before TUI launch.
@@ -657,6 +705,7 @@ mod test {
                 require_mcp_startup: false,
                 tui: false,
                 legacy_ui: false,
+                ..Default::default()
             })),
             verbose: 2,
             tui: false,
@@ -708,6 +757,7 @@ mod test {
                 require_mcp_startup: false,
                 tui: false,
                 legacy_ui: false,
+                ..Default::default()
             })
         );
     }
@@ -735,6 +785,7 @@ mod test {
                 require_mcp_startup: false,
                 tui: false,
                 legacy_ui: false,
+                ..Default::default()
             })
         );
     }
@@ -762,6 +813,7 @@ mod test {
                 require_mcp_startup: false,
                 tui: false,
                 legacy_ui: false,
+                ..Default::default()
             })
         );
     }
@@ -789,6 +841,7 @@ mod test {
                 require_mcp_startup: false,
                 tui: false,
                 legacy_ui: false,
+                ..Default::default()
             })
         );
         assert_parse!(
@@ -812,6 +865,7 @@ mod test {
                 require_mcp_startup: false,
                 tui: false,
                 legacy_ui: false,
+                ..Default::default()
             })
         );
     }
@@ -839,6 +893,7 @@ mod test {
                 require_mcp_startup: false,
                 tui: false,
                 legacy_ui: false,
+                ..Default::default()
             })
         );
     }
@@ -866,6 +921,7 @@ mod test {
                 require_mcp_startup: false,
                 tui: false,
                 legacy_ui: false,
+                ..Default::default()
             })
         );
     }
@@ -893,6 +949,7 @@ mod test {
                 require_mcp_startup: false,
                 tui: false,
                 legacy_ui: false,
+                ..Default::default()
             })
         );
     }
@@ -920,6 +977,7 @@ mod test {
                 require_mcp_startup: false,
                 tui: false,
                 legacy_ui: false,
+                ..Default::default()
             })
         );
     }
@@ -947,6 +1005,7 @@ mod test {
                 require_mcp_startup: true,
                 tui: false,
                 legacy_ui: false,
+                ..Default::default()
             })
         );
     }
@@ -974,6 +1033,7 @@ mod test {
                 require_mcp_startup: false,
                 tui: false,
                 legacy_ui: false,
+                ..Default::default()
             })
         );
         assert_parse!(
@@ -997,6 +1057,7 @@ mod test {
                 require_mcp_startup: false,
                 tui: false,
                 legacy_ui: false,
+                ..Default::default()
             })
         );
         assert_parse!(
@@ -1020,6 +1081,7 @@ mod test {
                 require_mcp_startup: false,
                 tui: false,
                 legacy_ui: false,
+                ..Default::default()
             })
         );
     }

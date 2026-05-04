@@ -12,6 +12,8 @@ export interface AcpSpawnArgs {
 	trustAllTools?: boolean;
 	/** Trust only this set of tools (comma-separated names from CLI). */
 	trustTools?: string[];
+	/** Agent engine to use ("rust" or "kas"). */
+	agentEngine?: string;
 }
 
 /** Arguments for /agent command */

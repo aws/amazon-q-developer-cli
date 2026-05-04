@@ -183,6 +183,8 @@ pub enum Setting {
         props(scope = "global_only")
     )]
     ChatKeybindingsQuit,
+    #[strum(message = "Default agent engine: 'rust' or 'kas' (string)")]
+    ChatAgentEngine,
 }
 
 impl Setting {
@@ -305,6 +307,7 @@ impl AsRef<str> for Setting {
             Self::ChatKeybindingsCancelStream => "chat.keybindings.cancelStream",
             Self::ChatKeybindingsCloseMenu => "chat.keybindings.closeMenu",
             Self::ChatKeybindingsQuit => "chat.keybindings.quit",
+            Self::ChatAgentEngine => "chat.agentEngine",
         }
     }
 }
@@ -379,6 +382,7 @@ impl TryFrom<&str> for Setting {
             "chat.keybindings.cancelStream" => Ok(Self::ChatKeybindingsCancelStream),
             "chat.keybindings.closeMenu" => Ok(Self::ChatKeybindingsCloseMenu),
             "chat.keybindings.quit" => Ok(Self::ChatKeybindingsQuit),
+            "chat.agentEngine" => Ok(Self::ChatAgentEngine),
             _ => Err(DatabaseError::InvalidSetting(value.to_string())),
         }
     }

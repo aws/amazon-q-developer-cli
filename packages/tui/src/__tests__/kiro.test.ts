@@ -51,31 +51,34 @@ const mockSessionClient = {
   listSessions: mock(() => Promise.resolve({ sessions: [] })),
 };
 
+const MockAcpClientClass = class MockAcpClient {
+  sessionId = mockSessionClient.sessionId;
+  initialize = mockSessionClient.initialize;
+  newSession = (...args: any[]) => {
+    const result = mockSessionClient.newSession(...(args as []));
+    result.then((r: any) => {
+      this.sessionId = r.sessionId;
+    });
+    return result;
+  };
+  loadSession = mockSessionClient.loadSession;
+  prompt = mockSessionClient.prompt;
+  cancel = mockSessionClient.cancel;
+  close = mockSessionClient.close;
+  onUpdate = mockSessionClient.onUpdate;
+  executeCommand = mockSessionClient.executeCommand;
+  getCommandOptions = mockSessionClient.getCommandOptions;
+  setMode = mockSessionClient.setMode;
+  listSettings = mockSessionClient.listSettings;
+  setSetting = mockSessionClient.setSetting;
+  terminateSession = mockSessionClient.terminateSession;
+  listSessions = mockSessionClient.listSessions;
+  constructor() {}
+};
+
 mock.module('../acp-client', () => ({
-  AcpClient: class MockAcpClient {
-    sessionId = mockSessionClient.sessionId;
-    initialize = mockSessionClient.initialize;
-    newSession = (...args: any[]) => {
-      const result = mockSessionClient.newSession(...(args as []));
-      result.then((r: any) => {
-        this.sessionId = r.sessionId;
-      });
-      return result;
-    };
-    loadSession = mockSessionClient.loadSession;
-    prompt = mockSessionClient.prompt;
-    cancel = mockSessionClient.cancel;
-    close = mockSessionClient.close;
-    onUpdate = mockSessionClient.onUpdate;
-    executeCommand = mockSessionClient.executeCommand;
-    getCommandOptions = mockSessionClient.getCommandOptions;
-    setMode = mockSessionClient.setMode;
-    listSettings = mockSessionClient.listSettings;
-    setSetting = mockSessionClient.setSetting;
-    terminateSession = mockSessionClient.terminateSession;
-    listSessions = mockSessionClient.listSessions;
-    constructor() {}
-  },
+  AcpClient: MockAcpClientClass,
+  createAcpClient: () => new MockAcpClientClass(),
 }));
 
 afterAll(() => {

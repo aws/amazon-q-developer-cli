@@ -130,6 +130,19 @@ const wireUpHandlers = () => {
     );
   });
 
+  // Extension methods are stored separately and merged at read time
+  kiro.onExtensionMethodsDiscovered((commands) => {
+    logger.debug('[tui] extension methods discovered:', commands.length);
+    appStore.getState().setExtensionCommands(
+      commands.map((cmd) => ({
+        name: cmd.name.startsWith('/') ? cmd.name : `/${cmd.name}`,
+        description: cmd.description,
+        source: 'backend' as const,
+        meta: cmd.meta as import('./types/commands').CommandMeta | undefined,
+      }))
+    );
+  });
+
   // Wire up prompts handler before initialize
   kiro.onPromptsUpdate((prompts) => {
     logger.debug('[tui] prompts update received:', prompts.length, 'prompts');

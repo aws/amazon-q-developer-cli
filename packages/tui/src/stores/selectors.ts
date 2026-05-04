@@ -3,6 +3,7 @@
  *
  * These hooks group related state and return stable references when values haven't changed.
  */
+import { useMemo } from 'react';
 import { useShallow } from 'zustand/react/shallow';
 import { useAppStore } from './app-store.js';
 
@@ -34,18 +35,25 @@ export const useNotificationActions = () =>
 /**
  * Command state selector - for CommandMenu
  */
-export const useCommandState = () =>
-  useAppStore(
-    useShallow((state) => ({
-      slashCommands: state.slashCommands,
-      activeCommand: state.activeCommand,
-      commandInputValue: state.commandInputValue,
-      activeTrigger: state.activeTrigger,
-      filePickerHasResults: state.filePickerHasResults,
-      promptHint: state.promptHint,
-      commandShadowText: state.commandShadowText,
+export const useCommandState = () => {
+  const state = useAppStore(
+    useShallow((s) => ({
+      _slashCommands: s.slashCommands,
+      _extensionCommands: s.extensionCommands,
+      activeCommand: s.activeCommand,
+      commandInputValue: s.commandInputValue,
+      activeTrigger: s.activeTrigger,
+      filePickerHasResults: s.filePickerHasResults,
+      promptHint: s.promptHint,
+      commandShadowText: s.commandShadowText,
     }))
   );
+  const slashCommands = useMemo(
+    () => [...state._extensionCommands, ...state._slashCommands],
+    [state._extensionCommands, state._slashCommands]
+  );
+  return { ...state, slashCommands };
+};
 
 export const useCommandActions = () =>
   useAppStore(

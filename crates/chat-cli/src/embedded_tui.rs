@@ -14,10 +14,19 @@ use tracing::{
     info,
 };
 
+use crate::cli::chat::{
+    AgentEngine,
+    AgentMode,
+};
 use crate::os::Os;
 use crate::util::paths::{
     bun_path,
     bun_sha256_path,
+    kas_bundle_dir,
+    kas_bundle_sha256_path,
+    kas_token_path,
+    node_path,
+    node_sha256_path,
     tui_js_path,
     tui_js_sha256_path,
 };
@@ -37,6 +46,18 @@ const BUN_RUNTIME_SHA256: &[u8] = match option_env!("BUN_RUNTIME_SHA256") {
 
 const TUI_JS: &[u8] = include_bytes!(concat!(env!("OUT_DIR"), "/tui_embedded.js"));
 const TUI_JS_SHA256: &[u8] = match option_env!("TUI_JS_SHA256") {
+    Some(s) => s.as_bytes(),
+    None => b"",
+};
+
+const NODE_RUNTIME: &[u8] = include_bytes!(concat!(env!("OUT_DIR"), "/node_embedded"));
+const NODE_RUNTIME_SHA256: &[u8] = match option_env!("NODE_RUNTIME_SHA256") {
+    Some(s) => s.as_bytes(),
+    None => b"",
+};
+
+const KAS_BUNDLE: &[u8] = include_bytes!(concat!(env!("OUT_DIR"), "/kas_bundle_embedded.tar.gz"));
+const KAS_BUNDLE_SHA256: &[u8] = match option_env!("KAS_BUNDLE_SHA256") {
     Some(s) => s.as_bytes(),
     None => b"",
 };
@@ -96,8 +117,83 @@ fn resolve_force_color(no_color: bool, force_color: Option<String>, colorterm: O
     }
 }
 
+/// Extract embedded KAS assets (node binary + acp-server.js + node_modules) if needed.
+/// Returns the paths to the extracted node binary and acp-server.js, or None if not embedded.
+pub async fn extract_kas_assets_if_needed(os: &Os) -> Result<Option<(PathBuf, PathBuf)>> {
+    if NODE_RUNTIME.is_empty() || KAS_BUNDLE.is_empty() {
+        return Ok(None);
+    }
+
+    let start_time = Instant::now();
+    let node_extract_path = node_path()?;
+    let node_sha_path = node_sha256_path()?;
+    let kas_dir = kas_bundle_dir()?;
+    let kas_sha_path = kas_bundle_sha256_path()?;
+
+    // Extract node binary
+    let node_extracted = extract_asset_if_needed(
+        os,
+        &node_extract_path,
+        &node_sha_path,
+        NODE_RUNTIME,
+        NODE_RUNTIME_SHA256,
+    )
+    .await?;
+    if node_extracted {
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let mut perms = os.fs.symlink_metadata(&node_extract_path).await?.permissions();
+            perms.set_mode(0o755);
+            os.fs.set_permissions(&node_extract_path, perms).await?;
+        }
+    }
+
+    // Extract KAS bundle tarball if SHA changed
+    let kas_extracted = {
+        let should_extract = if !os.fs.exists(&kas_dir) || !os.fs.exists(&kas_sha_path) {
+            true
+        } else {
+            let existing_sha = os.fs.read(&kas_sha_path).await.unwrap_or_default();
+            existing_sha != KAS_BUNDLE_SHA256
+        };
+
+        if should_extract {
+            info!(?kas_dir, "extracting KAS bundle");
+            if os.fs.exists(&kas_dir) {
+                os.fs.remove_dir_all(&kas_dir).await?;
+            }
+            os.fs.create_dir_all(&kas_dir).await?;
+
+            let decoder = flate2::read::GzDecoder::new(KAS_BUNDLE);
+            let mut archive = tar::Archive::new(decoder);
+            archive.unpack(&kas_dir)?;
+
+            os.fs.write(&kas_sha_path, KAS_BUNDLE_SHA256).await?;
+            true
+        } else {
+            false
+        }
+    };
+
+    info!(
+        node_extracted,
+        kas_extracted,
+        time_elapsed_ms = start_time.elapsed().as_millis(),
+        "KAS asset extraction complete",
+    );
+
+    let server_path = kas_dir
+        .join("node_modules")
+        .join("@kiro")
+        .join("agent")
+        .join("dist")
+        .join("server")
+        .join("acp-server.js");
+    Ok(Some((node_extract_path, server_path)))
+}
 /// Launch the V2 TUI. Extracts embedded assets and spawns bun with the TUI JS bundle.
-pub async fn launch_v2(os: &Os) -> Result<ExitCode> {
+pub async fn launch_v2(os: &Os, agent_engine: AgentEngine, mode: Option<AgentMode>) -> Result<ExitCode> {
     let asset_paths = extract_tui_assets_if_needed(os).await?;
 
     let args: Vec<String> = std::env::args().collect();
@@ -112,20 +208,46 @@ pub async fn launch_v2(os: &Os) -> Result<ExitCode> {
     let mut cmd = tokio::process::Command::new(&asset_paths.bun_path);
     cmd.arg(&asset_paths.tui_js_path)
         .args(&args[1..])
-        .env("KIRO_AGENT_PATH", &current_exe);
+        .env("JSC_numberOfGCMarkers", "1")
+        .kill_on_drop(true);
+
     if let Some(ref force_color) = force_color {
         cmd.env("FORCE_COLOR", force_color);
     }
-    let mut child = cmd
-        // Limit JSC garbage collector to 1 marker thread. By default JSC
-        // uses up to min(4, core_count) marker threads on Apple Silicon
-        // (see overrideDefaults() and computeNumberOfGCMarkers in Options.cpp).
-        // https://github.com/WebKit/WebKit/blob/4a93a28675f1cacb54b7e280d5d4a2ca3bf7557c/Source/JavaScriptCore/runtime/Options.cpp#L455
-        // Related: https://github.com/anthropics/claude-code/issues/38092
-        // Related: https://github.com/oven-sh/bun/issues/17723
-        .env("JSC_numberOfGCMarkers", "1")
-        .kill_on_drop(true)
-        .spawn()?;
+
+    match agent_engine {
+        AgentEngine::Kas => {
+            let token_path = kas_token_path(os)?;
+            cmd.env("KIRO_KAS_TOKEN_PATH", &token_path);
+            cmd.env("KIRO_AGENT_ENGINE", "kas");
+
+            if let Ok(kas_server_path) = std::env::var("KIRO_KAS_SERVER_PATH") {
+                cmd.env("KIRO_AGENT_PATH", "node");
+                cmd.env("KIRO_KAS_SERVER_PATH", &kas_server_path);
+                info!("Using KAS agent engine, server path override: {}", kas_server_path);
+            } else if let Some((node_bin, server_js)) = extract_kas_assets_if_needed(os).await? {
+                cmd.env("KIRO_AGENT_PATH", &node_bin);
+                cmd.env("KIRO_KAS_SERVER_PATH", &server_js);
+                info!(
+                    "Using KAS agent engine, embedded node: {}, server: {}",
+                    node_bin.display(),
+                    server_js.display()
+                );
+            } else {
+                cmd.env("KIRO_AGENT_PATH", "node");
+                info!("Using KAS agent engine, server resolved from @kiro/agent package");
+            }
+        },
+        AgentEngine::Rust => {
+            cmd.env("KIRO_AGENT_PATH", &current_exe);
+        },
+    }
+
+    if let Some(mode) = mode {
+        cmd.env("KIRO_MODE", mode.to_string());
+    }
+
+    let mut child = cmd.spawn()?;
 
     // Kill the child on SIGTERM, SIGHUP, or Ctrl-C. Without this the default
     // signal handler terminates the process without running destructors, so

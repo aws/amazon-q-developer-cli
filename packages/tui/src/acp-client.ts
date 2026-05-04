@@ -1,4 +1,6 @@
 import * as acp from '@agentclientprotocol/sdk';
+import { KiroClient } from '@kiro/client';
+import type { Stream } from '@kiro/client';
 import { logger } from './utils/logger';
 import { spawn, type ChildProcess } from 'node:child_process';
 import type { SessionClient } from './types/session-client';
@@ -23,7 +25,6 @@ const TUI_VERSION: string = packageJson.version;
 
 export type AcpSessionUpdate = acp.SessionNotification['update'];
 
-/** Custom extension method names (without leading underscore - SDK strips it) */
 const EXT_METHODS = {
   COMMANDS_AVAILABLE: 'kiro.dev/commands/available',
   COMMANDS_EXECUTE: 'kiro.dev/commands/execute',
@@ -52,13 +53,13 @@ const EXT_METHODS = {
   SESSION_UPDATE: 'kiro.dev/session/update',
 } as const;
 
-/**
- * ACP client implementation that converts ACP protocol to app domain types
- */
 function extractCurrentAgent(
   modes?: {
     currentModeId?: string;
-    availableModes?: Array<{ id: string; _meta?: Record<string, unknown> }>;
+    availableModes?: Array<{
+      id: string;
+      _meta?: Record<string, unknown> | null;
+    }>;
   } | null
 ): { name: string; welcomeMessage?: string } | undefined {
   if (!modes?.currentModeId) return undefined;
@@ -71,9 +72,119 @@ function extractCurrentAgent(
   };
 }
 
-export class AcpClient implements acp.Client, SessionClient {
-  private connection: acp.ClientSideConnection;
+type SessionResult = {
+  sessionId: string;
+  currentModel?: { id: string; name: string };
+  currentAgent?: { name: string; welcomeMessage?: string };
+};
+
+// ─── Shared stdio plumbing ───────────────────────────────────────────
+
+/** Build the parsed-message ReadableStream and ndJson WritableStream from a child process. */
+function buildStdioStreams(agentProcess: ChildProcess) {
+  const stdin = agentProcess.stdin!;
+  const stdout = agentProcess.stdout!;
+
+  stdin.on('error', (err) => logger.error('Agent stdin error:', err));
+
+  const writable = new WritableStream<Uint8Array>({
+    async write(chunk) {
+      if (stdin.destroyed || stdin.writableEnded) return;
+      return new Promise<void>((resolve, reject) => {
+        stdin.write(chunk, (err) => (err ? reject(err) : resolve()));
+      });
+    },
+    close() {
+      stdin.end();
+    },
+    abort(reason) {
+      stdin.destroy(
+        reason instanceof Error ? reason : new Error(String(reason))
+      );
+    },
+  });
+
+  let buffer = '';
+  const decoder = new TextDecoder();
+  let messageController: ReadableStreamDefaultController<any>;
+  const parsedMessages = new ReadableStream<any>({
+    start(controller) {
+      messageController = controller;
+    },
+    cancel() {
+      stdout.destroy();
+    },
+  });
+
+  stdout.on('data', (chunk: Buffer) => {
+    buffer += decoder.decode(chunk, { stream: true });
+    const lines = buffer.split('\n');
+    buffer = lines.pop() || '';
+    for (const line of lines) {
+      const trimmed = line.trim();
+      if (trimmed) {
+        try {
+          messageController.enqueue(JSON.parse(trimmed));
+        } catch (err) {
+          logger.error('[pipe] Failed to parse JSON:', trimmed, err);
+        }
+      }
+    }
+  });
+  stdout.on('end', () => {
+    if (buffer.trim()) {
+      try {
+        messageController.enqueue(JSON.parse(buffer.trim()));
+      } catch {
+        /* ignore */
+      }
+    }
+    messageController.close();
+  });
+  stdout.on('error', (err) => {
+    logger.error('[pipe] stdout error:', err);
+    messageController.error(err);
+  });
+
+  const dummyReadable = new ReadableStream<Uint8Array>({ start() {} });
+  const ndJson = acp.ndJsonStream(writable, dummyReadable);
+  return { readable: parsedMessages, writable: ndJson.writable };
+}
+
+function pipeStderr(agentProcess: ChildProcess) {
+  if (!agentProcess.stderr) return;
+  let buf = '';
+  agentProcess.stderr.on('data', (chunk: Buffer) => {
+    buf += chunk.toString();
+    const lines = buf.split('\n');
+    buf = lines.pop() || '';
+    for (const line of lines) {
+      if (line.trim()) logger.warn('[agent-stderr]', line);
+    }
+  });
+  agentProcess.stderr.on('end', () => {
+    if (buf.trim()) logger.warn('[agent-stderr]', buf);
+  });
+}
+
+function extractModel(
+  models?: {
+    currentModelId?: string;
+    availableModels?: Array<{ modelId: string; name: string }>;
+  } | null
+): { id: string; name: string } | undefined {
+  if (!models?.currentModelId || !models.availableModels) return undefined;
+  const m = models.availableModels.find(
+    (x) => x.modelId === models.currentModelId
+  );
+  return m ? { id: m.modelId, name: m.name } : undefined;
+}
+
+// ─── Base class ──────────────────────────────────────────────────────
+
+abstract class BaseAcpClient implements SessionClient {
   public sessionId?: string;
+  protected agentProcess: ChildProcess;
   private updateHandlers: Set<(event: AgentStreamEvent) => void> = new Set();
   private multiSessionHandlers: Set<
     (sessionId: string, event: AgentStreamEvent) => void
@@ -83,766 +194,43 @@ export class AcpClient implements acp.Client, SessionClient {
   private subagentListHandlers: Set<
     (subagents: any[], pendingStages?: any[]) => void
   > = new Set();
-  private agentProcess: ChildProcess;
 
-  constructor(agentPath: string, extraAcpArgs: string[] = []) {
-    this.agentProcess = spawn(agentPath, ['acp', ...extraAcpArgs], {
-      stdio: ['pipe', 'pipe', 'pipe'],
-      env: process.env,
-    });
-
-    if (!this.agentProcess.stdout || !this.agentProcess.stdin) {
+  constructor(agentProcess: ChildProcess) {
+    this.agentProcess = agentProcess;
+    if (!agentProcess.stdout || !agentProcess.stdin) {
       throw new Error('Failed to create agent process stdio streams');
     }
-
-    // Route agent stderr to the TUI logger instead of inheriting it
-    // to the terminal (prevents debug output like "[DEBUG] Invoked with model"
-    // from bleeding into the TUI).
-    if (this.agentProcess.stderr) {
-      let stderrBuf = '';
-      this.agentProcess.stderr.on('data', (chunk: Buffer) => {
-        stderrBuf += chunk.toString();
-        const lines = stderrBuf.split('\n');
-        stderrBuf = lines.pop() || '';
-        for (const line of lines) {
-          if (line.trim()) {
-            logger.warn('[agent-stderr]', line);
-          }
-        }
-      });
-      this.agentProcess.stderr.on('end', () => {
-        if (stderrBuf.trim()) {
-          logger.warn('[agent-stderr]', stderrBuf);
-        }
-      });
-    }
-
-    const stdin = this.agentProcess.stdin;
-    const stdout = this.agentProcess.stdout;
-
-    stdin.on('error', (err) => {
-      logger.error('Agent stdin error:', err);
-    });
-
-    // WritableStream wrapping node stdin
-    const writable = new WritableStream<Uint8Array>({
-      async write(chunk) {
-        if (stdin.destroyed || stdin.writableEnded) return;
-        return new Promise<void>((resolve, reject) => {
-          stdin.write(chunk, (err) => {
-            if (err) reject(err);
-            else resolve();
-          });
-        });
-      },
-      close() {
-        stdin.end();
-      },
-      abort(reason) {
-        stdin.destroy(
-          reason instanceof Error ? reason : new Error(String(reason))
-        );
-      },
-    });
-
-    // Parse ndjson directly from 'data' events and push parsed JSON-RPC
-    // messages into a ReadableStream. This bypasses ndJsonStream's
-    // reader.read() on a pipe-backed stream, which intermittently stalls
-    // under Bun when Ink/React is rendering concurrently.
-    let buffer = '';
-    const decoder = new TextDecoder();
-
-    let messageController: ReadableStreamDefaultController<any>;
-    const parsedMessages = new ReadableStream<any>({
-      start(controller) {
-        messageController = controller;
-      },
-      cancel() {
-        stdout.destroy();
-      },
-    });
-
-    stdout.on('data', (chunk: Buffer) => {
-      buffer += decoder.decode(chunk, { stream: true });
-      const lines = buffer.split('\n');
-      buffer = lines.pop() || '';
-      for (const line of lines) {
-        const trimmed = line.trim();
-        if (trimmed) {
-          try {
-            const message = JSON.parse(trimmed);
-            messageController.enqueue(message);
-          } catch (err) {
-            logger.error('[pipe] Failed to parse JSON:', trimmed, err);
-          }
-        }
-      }
-    });
-    stdout.on('end', () => {
-      if (buffer.trim()) {
-        try {
-          messageController.enqueue(JSON.parse(buffer.trim()));
-        } catch {
-          /* ignore */
-        }
-      }
-      messageController.close();
-    });
-    stdout.on('error', (err) => {
-      logger.error('[pipe] stdout error:', err);
-      messageController.error(err);
-    });
-
-    // readable: pre-parsed messages (bypasses ndJsonStream reader)
-    // writable: still uses ndJsonStream serialization for outgoing messages
-    const dummyReadable = new ReadableStream<Uint8Array>({ start() {} });
-    const ndJson = acp.ndJsonStream(writable, dummyReadable);
-    const stream = { readable: parsedMessages, writable: ndJson.writable };
-
-    this.connection = new acp.ClientSideConnection(() => this, stream);
+    pipeStderr(agentProcess);
   }
 
-  // ===========
-  // SessionClient interface methods
-  // ===========
+  // ── Abstract methods (differ per engine) ──
 
-  async initialize(): Promise<void> {
-    const initResult = await this.connection.initialize({
-      protocolVersion: acp.PROTOCOL_VERSION,
-      clientCapabilities: {},
-      clientInfo: {
-        name: 'kiro-tui',
-        version: TUI_VERSION,
-      },
-    });
+  abstract initialize(): Promise<void>;
+  abstract newSession(): Promise<SessionResult>;
+  abstract loadSession(sessionId: string): Promise<SessionResult>;
+  abstract prompt(messages: acp.ContentBlock[]): Promise<void>;
+  abstract cancel(): Promise<void>;
+  abstract executeCommand(command: TuiCommand): Promise<CommandResult>;
+  abstract getCommandOptions(
+    commandName: string,
+    partial: string
+  ): Promise<CommandOptionsResponse>;
+  abstract setMode(modeId: string): Promise<void>;
+  abstract listSessions(cwd: string): Promise<ListSessionsResponse>;
+  abstract listSettings(): Promise<Record<string, unknown>>;
+  abstract setSetting(key: string, value: unknown): Promise<void>;
+  abstract terminateSession(sessionId: string): Promise<void>;
+  abstract spawnSession(
+    task: string,
+    name?: string
+  ): Promise<{ sessionId: string; name: string }>;
+  abstract sendMessage(sessionId: string, content: string): Promise<void>;
 
-    logger.debug(
-      '[acp-client] ACP handshake done, protocolVersion:',
-      initResult.protocolVersion
-    );
-  }
-
-  async newSession(): Promise<{
-    sessionId: string;
-    currentModel?: { id: string; name: string };
-    currentAgent?: { name: string; welcomeMessage?: string };
-  }> {
-    const sessionResult = await this.connection.newSession({
-      cwd: process.cwd(),
-      mcpServers: [],
-    });
-
-    this.sessionId = sessionResult.sessionId;
-    logger.debug('ACP session created', {
-      sessionId: this.sessionId,
-      models: sessionResult.models,
-      modes: sessionResult.modes,
-    });
-
-    // Extract current model info from session response
-    let currentModel: { id: string; name: string } | undefined;
-    if (
-      sessionResult.models?.currentModelId &&
-      sessionResult.models?.availableModels
-    ) {
-      const modelInfo = sessionResult.models.availableModels.find(
-        (m) => m.modelId === sessionResult.models?.currentModelId
-      );
-      if (modelInfo) {
-        currentModel = { id: modelInfo.modelId, name: modelInfo.name };
-      }
-    }
-
-    // Extract current agent info from session response
-    const currentAgent = extractCurrentAgent(sessionResult.modes);
-
-    return { sessionId: this.sessionId, currentModel, currentAgent };
-  }
-
-  async loadSession(sessionId: string): Promise<{
-    sessionId: string;
-    currentModel?: { id: string; name: string };
-    currentAgent?: { name: string; welcomeMessage?: string };
-  }> {
-    // Update sessionId before the RPC so that history notifications
-    // arriving during loadSession are not filtered as subagent events.
-    const previousSessionId = this.sessionId;
-    this.sessionId = sessionId;
-
-    const sessionResult = await this.connection
-      .loadSession({
-        sessionId,
-        cwd: process.cwd(),
-        mcpServers: [],
-      })
-      .catch((err) => {
-        // Restore previous session ID on failure
-        this.sessionId = previousSessionId;
-        throw err;
-      });
-    logger.debug('[acp-client] loadSession completed for session:', sessionId);
-    logger.debug('ACP session loaded', {
-      sessionId: this.sessionId,
-    });
-
-    // Extract current model info from session response
-    let currentModel: { id: string; name: string } | undefined;
-    if (
-      sessionResult.models?.currentModelId &&
-      sessionResult.models?.availableModels
-    ) {
-      const modelInfo = sessionResult.models.availableModels.find(
-        (m) => m.modelId === sessionResult.models?.currentModelId
-      );
-      if (modelInfo) {
-        currentModel = { id: modelInfo.modelId, name: modelInfo.name };
-      }
-    }
-
-    // Extract current agent info from session response
-    const currentAgent = extractCurrentAgent(sessionResult.modes);
-
-    return { sessionId, currentModel, currentAgent };
-  }
+  // ── Shared methods ──
 
   onUpdate(handler: (event: AgentStreamEvent) => void): () => void {
     this.updateHandlers.add(handler);
     return () => this.updateHandlers.delete(handler);
-  }
-
-  async prompt(messages: acp.ContentBlock[]): Promise<void> {
-    if (!this.sessionId) {
-      throw new Error('cannot send prompt without an active session');
-    }
-
-    // Fail fast if the connection is already closed
-    if (this.connection.signal.aborted) {
-      logger.error('[acp] prompt called but connection already closed');
-      throw new Error('Agent connection closed unexpectedly');
-    }
-
-    logger.debug('[acp] sending prompt', { sessionId: this.sessionId });
-    try {
-      // Race the prompt against the connection closing to avoid hanging
-      // if the backend process dies while we're waiting for a response
-      const connectionClosed = new Promise<never>((_resolve, reject) => {
-        if (this.connection.signal.aborted) {
-          reject(new Error('Agent connection closed unexpectedly'));
-          return;
-        }
-        this.connection.signal.addEventListener(
-          'abort',
-          () => {
-            logger.error('[acp] connection closed while prompt was pending');
-            reject(new Error('Agent connection closed unexpectedly'));
-          },
-          { once: true }
-        );
-      });
-      // Suppress unhandled rejection if prompt wins the race
-      connectionClosed.catch(() => {});
-
-      await Promise.race([
-        this.connection.prompt({
-          prompt: messages,
-          sessionId: this.sessionId,
-        }),
-        connectionClosed,
-      ]);
-    } catch (e) {
-      logger.error('[acp] prompt failed', e);
-      throw e;
-    }
-  }
-
-  async cancel(): Promise<void> {
-    if (!this.sessionId) return;
-
-    try {
-      await this.connection.cancel({ sessionId: this.sessionId });
-      logger.debug('Cancel notification sent');
-    } catch (e) {
-      logger.error('Failed to send cancel notification:', e);
-    }
-  }
-
-  async executeCommand(command: TuiCommand): Promise<CommandResult> {
-    if (!this.sessionId) {
-      return { success: false, message: 'No active session' };
-    }
-
-    try {
-      // extMethod already prepends '_', so don't include it
-      const result = await this.connection.extMethod(
-        EXT_METHODS.COMMANDS_EXECUTE,
-        {
-          sessionId: this.sessionId,
-          command,
-        }
-      );
-      return result as unknown as CommandResult;
-    } catch (e) {
-      return {
-        success: false,
-        message: e instanceof Error ? e.message : 'Command failed',
-      };
-    }
-  }
-
-  async setMode(modeId: string): Promise<void> {
-    if (!this.sessionId) return;
-    await this.connection.setSessionMode({ sessionId: this.sessionId, modeId });
-  }
-
-  async getCommandOptions(
-    commandName: string,
-    partial: string
-  ): Promise<CommandOptionsResponse> {
-    if (!this.sessionId) {
-      return { options: [] };
-    }
-
-    try {
-      const result = await this.connection.extMethod(
-        EXT_METHODS.COMMANDS_OPTIONS,
-        {
-          sessionId: this.sessionId,
-          command: commandName.replace(/^\//, ''),
-          partial,
-        }
-      );
-      return result as unknown as CommandOptionsResponse;
-    } catch {
-      return { options: [] };
-    }
-  }
-
-  close(): void {
-    this.agentProcess.kill('SIGTERM');
-  }
-
-  async terminateSession(sessionId: string): Promise<void> {
-    try {
-      await this.connection.extMethod('kiro.dev/session/terminate', {
-        sessionId,
-      });
-    } catch (err) {
-      logger.warn('terminateSession failed (best-effort)', { sessionId, err });
-    }
-  }
-
-  async listSessions(cwd: string): Promise<ListSessionsResponse> {
-    return (await this.connection.extMethod('kiro.dev/session/list', {
-      cwd,
-    })) as unknown as ListSessionsResponse;
-  }
-
-  async listSettings(): Promise<Record<string, unknown>> {
-    const result = await this.connection.extMethod(
-      'kiro.dev/settings/list',
-      {}
-    );
-    return result as unknown as Record<string, unknown>;
-  }
-
-  async setSetting(key: string, value: unknown): Promise<void> {
-    await this.connection.extMethod('kiro.dev/settings/set', { key, value });
-  }
-
-  // ===========
-  // acp.Client interface methods
-  // ===========
-
-  async requestPermission(
-    params: acp.RequestPermissionRequest
-  ): Promise<acp.RequestPermissionResponse> {
-    const response = await new Promise<acp.RequestPermissionResponse>(
-      (resolve) => {
-        const event: AgentStreamEvent = {
-          type: AgentEventType.ApprovalRequest,
-          value: {
-            sessionId: (params as any).sessionId as string | undefined,
-            toolCall: { toolCallId: params.toolCall?.toolCallId || '' },
-            permissionOptions: (params.options || []).map((opt) => ({
-              kind: opt.kind as ApprovalOptionId,
-              name: opt.name,
-              optionId: opt.optionId,
-            })),
-            trustOptions: (params._meta as any)?.trustOptions,
-            resolve: (userResponse) => {
-              const acpResponse: acp.RequestPermissionResponse =
-                userResponse.outcome === 'selected'
-                  ? {
-                      outcome: {
-                        outcome: 'selected' as const,
-                        optionId: userResponse.optionId,
-                        _meta: userResponse._meta,
-                      } as acp.RequestPermissionResponse['outcome'],
-                    }
-                  : { outcome: { outcome: 'cancelled' as const } };
-              resolve(acpResponse);
-            },
-          },
-        };
-        this.broadcastStreamEvent(event);
-      }
-    );
-
-    return response;
-  }
-
-  async sessionUpdate(params: acp.SessionNotification): Promise<void> {
-    const { update } = params;
-    if (!update) return;
-    logger.debug('[acp] sessionUpdate received:', update.sessionUpdate);
-    const notifSessionId = (params as any).sessionId as string | undefined;
-    const isSubagentEvent = notifSessionId && notifSessionId !== this.sessionId;
-    const event = this.convertAcpUpdateToEvent(update);
-    if (!event) return;
-
-    if (isSubagentEvent) {
-      // Always forward to multi-session handlers (crew monitor)
-      this.multiSessionHandlers.forEach((h) => h(notifSessionId, event));
-
-      // Tool call events from subagents also need to reach the main chat
-      // because tool_call_chunk (ext notification) creates entries in the
-      // main messages array — their updates/completions must land there too.
-      const isToolEvent =
-        event.type === AgentEventType.ToolCall ||
-        event.type === AgentEventType.ToolCallUpdate ||
-        event.type === AgentEventType.ToolCallFinished;
-      if (isToolEvent) {
-        this.broadcastStreamEvent(event);
-      }
-    } else {
-      this.broadcastStreamEvent(event);
-    }
-  }
-
-  async writeTextFile?(
-    _params: acp.WriteTextFileRequest
-  ): Promise<acp.WriteTextFileResponse> {
-    throw new Error('writeTextFile not implemented');
-  }
-
-  async readTextFile?(
-    _params: acp.ReadTextFileRequest
-  ): Promise<acp.ReadTextFileResponse> {
-    throw new Error('readTextFile not implemented');
-  }
-
-  async createTerminal?(
-    _params: acp.CreateTerminalRequest
-  ): Promise<acp.CreateTerminalResponse> {
-    throw new Error('createTerminal not implemented');
-  }
-
-  async terminalOutput?(
-    _params: acp.TerminalOutputRequest
-  ): Promise<acp.TerminalOutputResponse> {
-    throw new Error('terminalOutput not implemented');
-  }
-
-  async releaseTerminal?(
-    _params: acp.ReleaseTerminalRequest
-  ): Promise<acp.ReleaseTerminalResponse | void> {
-    throw new Error('releaseTerminal not implemented');
-  }
-
-  async waitForTerminalExit?(
-    _params: acp.WaitForTerminalExitRequest
-  ): Promise<acp.WaitForTerminalExitResponse> {
-    throw new Error('waitForTerminalExit not implemented');
-  }
-
-  async killTerminal?(
-    _params: acp.KillTerminalCommandRequest
-  ): Promise<acp.KillTerminalResponse | void> {
-    throw new Error('killTerminal not implemented');
-  }
-
-  async extMethod?(
-    _method: string,
-
-    _params: Record<string, unknown>
-  ): Promise<Record<string, unknown>> {
-    throw new Error('extMethod not implemented');
-  }
-
-  async extNotification?(
-    method: string,
-    params: Record<string, unknown>
-  ): Promise<void> {
-    logger.debug('[acp] extNotification:', method);
-    // Handle custom commands available notification (SDK strips leading _)
-    const handler = this.extNotificationHandlers[method];
-    if (handler) {
-      handler(params);
-    }
-  }
-  private extNotificationHandlers: Record<
-    string,
-    (params: Record<string, unknown>) => void
-  > = {
-    [EXT_METHODS.COMMANDS_AVAILABLE]: (params) =>
-      this.handleCommandsAdvertising(params),
-    [EXT_METHODS.METADATA]: (params) => this.handleMetadataUpdate(params),
-    [EXT_METHODS.COMPACTION_STATUS]: (params) =>
-      this.handleCompactionStatus(params),
-    [EXT_METHODS.CLEAR_STATUS]: () => this.handleClearStatus(),
-    [EXT_METHODS.MCP_SERVER_INIT_FAILURE]: (params) =>
-      this.handleMcpServerInitFailure(params),
-    [EXT_METHODS.MCP_OAUTH_REQUEST]: (params) =>
-      this.handleMcpOauthRequest(params),
-    [EXT_METHODS.MCP_SERVER_INITIALIZED]: (params) =>
-      this.handleMcpServerInitialized(params),
-    [EXT_METHODS.MCP_GOVERNANCE_DISABLED]: (params) =>
-      this.handleMcpGovernanceDisabled(params),
-    [EXT_METHODS.AGENT_NOT_FOUND]: (params) => this.handleAgentNotFound(params),
-    [EXT_METHODS.AGENT_CONFIG_ERROR]: (params) =>
-      this.handleAgentConfigError(params),
-    [EXT_METHODS.MODEL_NOT_FOUND]: (params) => this.handleModelNotFound(params),
-    [EXT_METHODS.RATE_LIMIT_ERROR]: (params) =>
-      this.handleRateLimitError(params),
-    [EXT_METHODS.SUBAGENT_LIST_UPDATE]: (params) =>
-      this.handleSubagentListUpdate(params),
-    [EXT_METHODS.SESSION_ACTIVITY]: (params) =>
-      this.handleSessionActivity(params),
-    [EXT_METHODS.SESSION_LIST_UPDATE]: (params) =>
-      this.handleSessionListUpdate(params),
-    [EXT_METHODS.INBOX_NOTIFICATION]: (params) =>
-      this.handleInboxNotification(params),
-    [EXT_METHODS.AGENT_SWITCHED]: (params) => this.handleAgentSwitched(params),
-    [EXT_METHODS.SESSION_UPDATE]: (params) =>
-      this.handleExtSessionUpdate(params),
-  };
-
-  private handleCommandsAdvertising(params: Record<string, unknown>) {
-    const commands =
-      (params.commands as Array<{
-        name: string;
-        description: string;
-        meta?: Record<string, unknown>;
-      }>) || [];
-
-    const prompts =
-      (params.prompts as Array<{
-        name: string;
-        description?: string;
-        arguments: Array<{
-          name: string;
-          description?: string;
-          required?: boolean;
-        }>;
-        serverName: string;
-      }>) || [];
-
-    const tools =
-      (params.tools as Array<{
-        name: string;
-        description: string;
-        source: string;
-      }>) || [];
-
-    const mcpServers =
-      (params.mcpServers as Array<{
-        name: string;
-        status: string;
-        toolCount: number;
-      }>) || [];
-
-    this.broadcastStreamEvent({
-      type: AgentEventType.CommandsUpdate,
-      commands: commands.map((cmd) => {
-        // Enrich /tools and /mcp descriptions with metadata counts
-        let description = cmd.description;
-        if (cmd.name === 'tools' && tools.length > 0) {
-          description = `${cmd.description} (${tools.length} available)`;
-        } else if (cmd.name === 'mcp' && mcpServers.length > 0) {
-          const running = mcpServers.filter(
-            (s) => s.status === 'running'
-          ).length;
-          description = `${cmd.description} (${running}/${mcpServers.length} running)`;
-        }
-        return {
-          name: cmd.name,
-          description,
-          meta: cmd.meta,
-        };
-      }),
-    });
-
-    logger.debug(
-      '[acp] commands advertising: commands=',
-      commands.length,
-      'prompts=',
-      prompts.length,
-      'tools=',
-      tools.length,
-      'mcpServers=',
-      mcpServers.length
-    );
-    this.broadcastStreamEvent({
-      type: AgentEventType.PromptsUpdate,
-      prompts,
-    });
-  }
-
-  private handleMetadataUpdate(params: Record<string, unknown>) {
-    const sessionId = params.sessionId as string | undefined;
-    if (sessionId && sessionId !== this.sessionId) return;
-    const percent =
-      (params.contextUsagePercentage as number | undefined) ?? null;
-    if (percent !== null) {
-      this.broadcastStreamEvent({
-        type: AgentEventType.ContextUsage,
-        percent,
-      });
-    }
-
-    const metering = params.meteringUsage as MeteringUsage[] | undefined;
-    const durationMs = params.turnDurationMs as number | undefined;
-    if (metering && metering.length > 0) {
-      this.broadcastStreamEvent({
-        type: AgentEventType.TurnSummary,
-        meteringUsage: metering,
-        turnDurationMs: durationMs,
-      });
-    }
-  }
-
-  private handleClearStatus() {
-    logger.debug('Clear status received');
-    // Context usage will be updated by the next METADATA notification
-  }
-
-  private handleCompactionStatus(params: Record<string, unknown>) {
-    const status = params.status as {
-      type: string;
-      error?: string;
-    };
-    const summary = params.summary as string | undefined;
-    logger.debug('Compaction status received:', status);
-    if (status) {
-      this.broadcastStreamEvent({
-        type: AgentEventType.CompactionStatus,
-        status: status.type as 'started' | 'completed' | 'failed',
-        error: status.error,
-        summary,
-      });
-      // Context usage will be updated by the next METADATA notification after compaction
-    }
-  }
-
-  private handleMcpServerInitFailure(params: Record<string, unknown>) {
-    const serverName = params.serverName as string;
-    const error = params.error as string;
-    logger.error('MCP server init failure received:', { serverName, error });
-    this.broadcastStreamEvent({
-      type: AgentEventType.McpServerInitFailure,
-      serverName,
-      error,
-    });
-  }
-
-  private handleMcpOauthRequest(params: Record<string, unknown>) {
-    const serverName = params.serverName as string;
-    const oauthUrl = params.oauthUrl as string;
-    logger.debug('MCP OAuth request received:', { serverName, oauthUrl });
-    this.broadcastStreamEvent({
-      type: AgentEventType.McpOauthRequest,
-      serverName,
-      oauthUrl,
-    });
-  }
-
-  private handleMcpServerInitialized(params: Record<string, unknown>) {
-    const serverName = params.serverName as string;
-    logger.debug('MCP server initialized:', { serverName });
-    this.broadcastStreamEvent({
-      type: AgentEventType.McpServerInitialized,
-      serverName,
-    });
-  }
-
-  private handleMcpGovernanceDisabled(params: Record<string, unknown>) {
-    const apiFailure = (params.apiFailure as boolean) ?? false;
-    logger.warn('MCP governance disabled:', { apiFailure });
-    this.broadcastStreamEvent({
-      type: AgentEventType.McpGovernanceDisabled,
-      apiFailure,
-    });
-  }
-
-  private handleRateLimitError(params: Record<string, unknown>) {
-    const message = params.message as string;
-    logger.error('Rate limit error received:', { message });
-    this.broadcastStreamEvent({
-      type: AgentEventType.RateLimitError,
-      message,
-    });
-  }
-
-  private handleAgentNotFound(params: Record<string, unknown>) {
-    const requestedAgent = params.requestedAgent as string;
-    const fallbackAgent = params.fallbackAgent as string;
-    logger.warn('Agent not found received:', {
-      requestedAgent,
-      fallbackAgent,
-    });
-    this.broadcastStreamEvent({
-      type: AgentEventType.AgentNotFound,
-      requestedAgent,
-      fallbackAgent,
-    });
-  }
-
-  private handleAgentConfigError(params: Record<string, unknown>) {
-    const error = params.error as string;
-    const path = params.path as string | undefined;
-    logger.error('Agent config error received:', { path, error });
-    this.broadcastStreamEvent({
-      type: AgentEventType.AgentConfigError,
-      path,
-      error,
-    });
-  }
-
-  private handleModelNotFound(params: Record<string, unknown>) {
-    const requestedModel = params.requestedModel as string;
-    const fallbackModel = params.fallbackModel as string;
-    logger.warn('Model not found received:', {
-      requestedModel,
-      fallbackModel,
-    });
-    this.broadcastStreamEvent({
-      type: AgentEventType.ModelNotFound,
-      requestedModel,
-      fallbackModel,
-    });
-  }
-
-  private handleSubagentListUpdate(params: Record<string, unknown>) {
-    const subagents = (params as any)?.subagents ?? [];
-    const pendingStages = (params as any)?.pendingStages ?? [];
-    this.subagentListHandlers.forEach((h) => h(subagents, pendingStages));
-  }
-
-  private handleSessionActivity(params: Record<string, unknown>) {
-    const sessionId = (params as any)?.sessionId as string;
-    const event = (params as any)?.event as AgentStreamEvent;
-    if (sessionId && event) {
-      this.multiSessionHandlers.forEach((h) => h(sessionId, event));
-    }
-  }
-
-  private handleSessionListUpdate(params: Record<string, unknown>) {
-    const sessions = (params as any)?.sessions ?? [];
-    this.subagentListHandlers.forEach((h) => h(sessions));
-  }
-
-  private handleInboxNotification(params: Record<string, unknown>) {
-    this.inboxHandlers.forEach((h) => h(params));
   }
 
   onMultiSessionUpdate(
@@ -869,44 +257,232 @@ export class AcpClient implements acp.Client, SessionClient {
     return () => this.inboxHandlers.delete(handler);
   }
 
-  async spawnSession(
-    task: string,
-    name?: string
-  ): Promise<{ sessionId: string; name: string }> {
-    logger.debug('[spawnSession] calling ext method', {
-      method: EXT_METHODS.SESSION_SPAWN,
-      task,
-      name,
-    });
-    try {
-      const result = await this.connection.extMethod(
-        EXT_METHODS.SESSION_SPAWN,
-        {
-          sessionId: this.sessionId,
-          task,
-          name,
+  close(): void {
+    this.agentProcess.kill('SIGTERM');
+  }
+
+  protected broadcastStreamEvent(event: AgentStreamEvent): void {
+    this.updateHandlers.forEach((handler) => handler(event));
+  }
+
+  protected broadcastMultiSession(
+    sessionId: string,
+    event: AgentStreamEvent
+  ): void {
+    this.multiSessionHandlers.forEach((h) => h(sessionId, event));
+  }
+
+  protected broadcastSubagentList(
+    subagents: any[],
+    pendingStages?: any[]
+  ): void {
+    this.subagentListHandlers.forEach((h) => h(subagents, pendingStages));
+  }
+
+  protected broadcastInbox(notification: any): void {
+    this.inboxHandlers.forEach((h) => h(notification));
+  }
+
+  // ── Shared ext notification handlers ──
+
+  protected extNotificationHandlers: Record<
+    string,
+    (params: Record<string, unknown>) => void
+  > = {
+    [EXT_METHODS.COMMANDS_AVAILABLE]: (p) => this.handleCommandsAdvertising(p),
+    [EXT_METHODS.METADATA]: (p) => this.handleMetadataUpdate(p),
+    [EXT_METHODS.COMPACTION_STATUS]: (p) => this.handleCompactionStatus(p),
+    [EXT_METHODS.CLEAR_STATUS]: () => this.handleClearStatus(),
+    [EXT_METHODS.MCP_SERVER_INIT_FAILURE]: (p) =>
+      this.handleMcpServerInitFailure(p),
+    [EXT_METHODS.MCP_OAUTH_REQUEST]: (p) => this.handleMcpOauthRequest(p),
+    [EXT_METHODS.MCP_SERVER_INITIALIZED]: (p) =>
+      this.handleMcpServerInitialized(p),
+    [EXT_METHODS.MCP_GOVERNANCE_DISABLED]: (p) =>
+      this.handleMcpGovernanceDisabled(p),
+    [EXT_METHODS.AGENT_NOT_FOUND]: (p) => this.handleAgentNotFound(p),
+    [EXT_METHODS.AGENT_CONFIG_ERROR]: (p) => this.handleAgentConfigError(p),
+    [EXT_METHODS.MODEL_NOT_FOUND]: (p) => this.handleModelNotFound(p),
+    [EXT_METHODS.RATE_LIMIT_ERROR]: (p) => this.handleRateLimitError(p),
+    [EXT_METHODS.SUBAGENT_LIST_UPDATE]: (p) => this.handleSubagentListUpdate(p),
+    [EXT_METHODS.SESSION_ACTIVITY]: (p) => this.handleSessionActivity(p),
+    [EXT_METHODS.SESSION_LIST_UPDATE]: (p) => this.handleSessionListUpdate(p),
+    [EXT_METHODS.INBOX_NOTIFICATION]: (p) => this.handleInboxNotification(p),
+    [EXT_METHODS.AGENT_SWITCHED]: (p) => this.handleAgentSwitched(p),
+    [EXT_METHODS.SESSION_UPDATE]: (p) => this.handleExtSessionUpdate(p),
+  };
+
+  private handleCommandsAdvertising(params: Record<string, unknown>) {
+    const commands =
+      (params.commands as Array<{
+        name: string;
+        description: string;
+        meta?: Record<string, unknown>;
+      }>) || [];
+    const prompts =
+      (params.prompts as Array<{
+        name: string;
+        description?: string;
+        arguments: Array<{
+          name: string;
+          description?: string;
+          required?: boolean;
+        }>;
+        serverName: string;
+      }>) || [];
+    const tools =
+      (params.tools as Array<{
+        name: string;
+        description: string;
+        source: string;
+      }>) || [];
+    const mcpServers =
+      (params.mcpServers as Array<{
+        name: string;
+        status: string;
+        toolCount: number;
+      }>) || [];
+
+    this.broadcastStreamEvent({
+      type: AgentEventType.CommandsUpdate,
+      commands: commands.map((cmd) => {
+        let description = cmd.description;
+        if (cmd.name === 'tools' && tools.length > 0) {
+          description = `${cmd.description} (${tools.length} available)`;
+        } else if (cmd.name === 'mcp' && mcpServers.length > 0) {
+          const running = mcpServers.filter(
+            (s) => s.status === 'running'
+          ).length;
+          description = `${cmd.description} (${running}/${mcpServers.length} running)`;
         }
-      );
-      logger.debug('[spawnSession] result', result);
-      return {
-        sessionId: (result as any).sessionId,
-        name: (result as any).name ?? name ?? '',
-      };
-    } catch (e) {
-      logger.error('[spawnSession] failed', e);
-      throw e;
+        return { name: cmd.name, description, meta: cmd.meta };
+      }),
+    });
+    this.broadcastStreamEvent({ type: AgentEventType.PromptsUpdate, prompts });
+  }
+
+  private handleMetadataUpdate(params: Record<string, unknown>) {
+    const sessionId = params.sessionId as string | undefined;
+    if (sessionId && sessionId !== this.sessionId) return;
+    const percent =
+      (params.contextUsagePercentage as number | undefined) ?? null;
+    if (percent !== null) {
+      this.broadcastStreamEvent({ type: AgentEventType.ContextUsage, percent });
+    }
+    const metering = params.meteringUsage as MeteringUsage[] | undefined;
+    const durationMs = params.turnDurationMs as number | undefined;
+    if (metering && metering.length > 0) {
+      this.broadcastStreamEvent({
+        type: AgentEventType.TurnSummary,
+        meteringUsage: metering,
+        turnDurationMs: durationMs,
+      });
     }
   }
 
-  async sendMessage(sessionId: string, content: string): Promise<void> {
-    await this.connection.extMethod(EXT_METHODS.MESSAGE_SEND, {
-      sessionId,
-      content,
+  private handleClearStatus() {
+    logger.debug('Clear status received');
+  }
+
+  private handleCompactionStatus(params: Record<string, unknown>) {
+    const status = params.status as { type: string; error?: string };
+    const summary = params.summary as string | undefined;
+    if (status) {
+      this.broadcastStreamEvent({
+        type: AgentEventType.CompactionStatus,
+        status: status.type as 'started' | 'completed' | 'failed',
+        error: status.error,
+        summary,
+      });
+    }
+  }
+
+  private handleMcpServerInitFailure(params: Record<string, unknown>) {
+    this.broadcastStreamEvent({
+      type: AgentEventType.McpServerInitFailure,
+      serverName: (params.serverName as string) ?? '',
+      error: (params.error as string) ?? '',
     });
   }
 
+  private handleMcpOauthRequest(params: Record<string, unknown>) {
+    this.broadcastStreamEvent({
+      type: AgentEventType.McpOauthRequest,
+      serverName: (params.serverName as string) ?? '',
+      oauthUrl: (params.oauthUrl as string) ?? '',
+    });
+  }
+
+  private handleMcpServerInitialized(params: Record<string, unknown>) {
+    this.broadcastStreamEvent({
+      type: AgentEventType.McpServerInitialized,
+      serverName: (params.serverName as string) ?? '',
+    });
+  }
+
+  private handleMcpGovernanceDisabled(params: Record<string, unknown>) {
+    const apiFailure = (params.apiFailure as boolean) ?? false;
+    logger.warn('MCP governance disabled:', { apiFailure });
+    this.broadcastStreamEvent({
+      type: AgentEventType.McpGovernanceDisabled,
+      apiFailure,
+    });
+  }
+
+  private handleRateLimitError(params: Record<string, unknown>) {
+    this.broadcastStreamEvent({
+      type: AgentEventType.RateLimitError,
+      message: (params.message as string) ?? '',
+    });
+  }
+
+  private handleAgentNotFound(params: Record<string, unknown>) {
+    this.broadcastStreamEvent({
+      type: AgentEventType.AgentNotFound,
+      requestedAgent: (params.requestedAgent as string) ?? '',
+      fallbackAgent: (params.fallbackAgent as string) ?? '',
+    });
+  }
+
+  private handleAgentConfigError(params: Record<string, unknown>) {
+    this.broadcastStreamEvent({
+      type: AgentEventType.AgentConfigError,
+      path: params.path as string | undefined,
+      error: (params.error as string) ?? '',
+    });
+  }
+
+  private handleModelNotFound(params: Record<string, unknown>) {
+    this.broadcastStreamEvent({
+      type: AgentEventType.ModelNotFound,
+      requestedModel: (params.requestedModel as string) ?? '',
+      fallbackModel: (params.fallbackModel as string) ?? '',
+    });
+  }
+
+  private handleSubagentListUpdate(params: Record<string, unknown>) {
+    this.broadcastSubagentList(
+      (params as any)?.subagents ?? [],
+      (params as any)?.pendingStages ?? []
+    );
+  }
+
+  private handleSessionActivity(params: Record<string, unknown>) {
+    const sessionId = (params as any)?.sessionId as string;
+    const event = (params as any)?.event as AgentStreamEvent;
+    if (sessionId && event) this.broadcastMultiSession(sessionId, event);
+  }
+
+  private handleSessionListUpdate(params: Record<string, unknown>) {
+    this.broadcastSubagentList((params as any)?.sessions ?? []);
+  }
+
+  private handleInboxNotification(params: Record<string, unknown>) {
+    this.broadcastInbox(params);
+  }
+
   private handleAgentSwitched(params: Record<string, unknown>) {
-    const payload = params as {
+    const p = params as {
       agentName: string;
       previousAgentName?: string;
       welcomeMessage?: string;
@@ -914,67 +490,47 @@ export class AcpClient implements acp.Client, SessionClient {
     };
     this.broadcastStreamEvent({
       type: AgentEventType.AgentSwitched,
-      agentName: payload.agentName,
-      previousAgentName: payload.previousAgentName,
-      welcomeMessage: payload.welcomeMessage,
-      model: payload.model,
+      agentName: p.agentName,
+      previousAgentName: p.previousAgentName,
+      welcomeMessage: p.welcomeMessage,
+      model: p.model,
     });
   }
 
   private handleExtSessionUpdate(params: Record<string, unknown>) {
     const update = params.update as Record<string, unknown> | undefined;
-    if (!update) return;
-
-    if (update.sessionUpdate === 'tool_call_chunk') {
-      const chunk = update as {
-        toolCallId: string;
-        title: string;
-        kind: string;
-      };
-      const sessionId = params.sessionId as string | undefined;
-      const isSubagentEvent = sessionId && sessionId !== this.sessionId;
-      const event: AgentStreamEvent = {
-        type: AgentEventType.ToolCall,
-        id: chunk.toolCallId,
-        name: chunk.title,
-        kind: chunk.kind,
-        args: {},
-        sessionId: isSubagentEvent ? sessionId : undefined,
-      };
-
-      if (isSubagentEvent) {
-        this.multiSessionHandlers.forEach((h) => h(sessionId, event));
-      }
-      this.broadcastStreamEvent(event);
-    }
+    if (!update || update.sessionUpdate !== 'tool_call_chunk') return;
+    const chunk = update as { toolCallId: string; title: string; kind: string };
+    const sessionId = params.sessionId as string | undefined;
+    const isSubagentEvent = sessionId && sessionId !== this.sessionId;
+    const event: AgentStreamEvent = {
+      type: AgentEventType.ToolCall,
+      id: chunk.toolCallId,
+      name: chunk.title,
+      kind: chunk.kind,
+      args: {},
+      sessionId: isSubagentEvent ? sessionId : undefined,
+    };
+    if (isSubagentEvent) this.broadcastMultiSession(sessionId, event);
+    this.broadcastStreamEvent(event);
   }
 
-  // ===========
-  // Private helper methods
-  // ===========
+  // ── Shared session update → event conversion ──
 
-  private broadcastStreamEvent(event: AgentStreamEvent): void {
-    this.updateHandlers.forEach((handler) => handler(event));
-  }
-
-  private convertAcpUpdateToEvent(
+  protected convertAcpUpdateToEvent(
     update: AcpSessionUpdate
   ): AgentStreamEvent | null {
     switch (update.sessionUpdate) {
-      case 'user_message_chunk': {
-        switch (update.content.type) {
-          case 'text':
-            return {
+      case 'user_message_chunk':
+        return update.content.type === 'text'
+          ? {
               type: AgentEventType.UserMessage,
               id: crypto.randomUUID(),
               content: { type: ContentType.Text, text: update.content.text },
-            };
-          default:
-            return null;
-        }
-      }
+            }
+          : null;
 
-      case 'agent_message_chunk': {
+      case 'agent_message_chunk':
         switch (update.content.type) {
           case 'text':
             return {
@@ -989,13 +545,10 @@ export class AcpClient implements acp.Client, SessionClient {
               content: { type: ContentType.Image, image: update.content },
             };
           default:
-            logger.debug('Unhandled content type:', update.content.type);
             return null;
         }
-      }
 
       case 'tool_call': {
-        // Extract diff content from ACP ToolCallContent
         const toolContent = ((update as any).content || [])
           .filter((c: any) => c.type === 'diff')
           .map((c: any) => ({
@@ -1004,19 +557,16 @@ export class AcpClient implements acp.Client, SessionClient {
             newText: c.newText || '',
             oldText: c.oldText,
           }));
-
-        // Extract locations from ACP
         const locations = ((update as any).locations || []).map((loc: any) => ({
           path: loc.path,
           line: loc.line,
         }));
-
         return {
           type: AgentEventType.ToolCall,
           id: update.toolCallId,
           name: update.title || 'unknown',
           kind: (update as any).kind,
-          args: update.rawInput || {},
+          args: (update as any).rawInput || {},
           toolContent: toolContent.length > 0 ? toolContent : undefined,
           locations: locations.length > 0 ? locations : undefined,
         };
@@ -1024,14 +574,12 @@ export class AcpClient implements acp.Client, SessionClient {
 
       case 'tool_call_update': {
         const toolCallUpdate = update as any;
-        // Check if this is a completion update
-        if (toolCallUpdate.status === ToolCallStatus.Completed) {
+        if (toolCallUpdate.status === ToolCallStatus.Completed)
           return {
             type: AgentEventType.ToolCallFinished,
             id: toolCallUpdate.toolCallId,
             result: { status: 'success', output: toolCallUpdate.rawOutput },
           };
-        }
         if (toolCallUpdate.status === ToolCallStatus.Failed) {
           // If the backend rejected the tool before execution, no `tool_call`
           // notification was sent. Synthesize one from rawInput so the TUI
@@ -1070,6 +618,7 @@ export class AcpClient implements acp.Client, SessionClient {
             },
           };
         }
+
         // content is a Vec<ToolCallContent> — a tagged enum where the Content
         // variant wraps a ContentBlock: { type: "content", content: { type: "text", text: "..." } }
         const contentArray = toolCallUpdate.content;
@@ -1083,6 +632,7 @@ export class AcpClient implements acp.Client, SessionClient {
             firstText = textItem.content.text ?? '';
           }
         }
+
         return {
           type: AgentEventType.ToolCallUpdate,
           id: toolCallUpdate.toolCallId,
@@ -1091,22 +641,973 @@ export class AcpClient implements acp.Client, SessionClient {
       }
 
       case 'available_commands_update': {
-        const commandsUpdate = update as any;
+        const cu = update as any;
         return {
           type: AgentEventType.CommandsUpdate,
-          commands: (commandsUpdate.availableCommands || []).map(
-            (cmd: any) => ({
-              name: cmd.name,
-              description: cmd.description,
-              meta: cmd._meta, // ACP uses _meta field
-            })
-          ),
+          commands: (cu.availableCommands || []).map((cmd: any) => ({
+            name: cmd.name,
+            description: cmd.description,
+            meta: cmd._meta,
+          })),
         };
       }
 
+      // KAS-specific update types — log and skip for now
+      case 'session_info_update':
+      case 'config_option_update':
+      case 'current_mode_update':
+      case 'plan':
+      case 'usage_update':
+      case 'agent_thought_chunk':
+        logger.debug(
+          'KAS session update (not yet mapped):',
+          update.sessionUpdate
+        );
+        return null;
+
       default:
-        logger.debug('Unhandled session update type:', update.sessionUpdate);
+        logger.debug(
+          'Unhandled session update type:',
+          (update as any).sessionUpdate
+        );
         return null;
     }
   }
+
+  // ── Shared permission handling ──
+
+  protected handlePermissionRequest(
+    params: acp.RequestPermissionRequest
+  ): Promise<acp.RequestPermissionResponse> {
+    return new Promise<acp.RequestPermissionResponse>((resolve) => {
+      const event: AgentStreamEvent = {
+        type: AgentEventType.ApprovalRequest,
+        value: {
+          sessionId: (params as any).sessionId as string | undefined,
+          toolCall: { toolCallId: params.toolCall?.toolCallId || '' },
+          permissionOptions: (params.options || []).map((opt) => ({
+            kind: opt.kind as ApprovalOptionId,
+            name: opt.name,
+            optionId: opt.optionId,
+          })),
+          trustOptions: (params._meta as any)?.trustOptions,
+          resolve: (userResponse) => {
+            resolve(
+              userResponse.outcome === 'selected'
+                ? {
+                    outcome: {
+                      outcome: 'selected' as const,
+                      optionId: userResponse.optionId,
+                      _meta: userResponse._meta,
+                    } as acp.RequestPermissionResponse['outcome'],
+                  }
+                : { outcome: { outcome: 'cancelled' as const } }
+            );
+          },
+        },
+      };
+      this.broadcastStreamEvent(event);
+    });
+  }
+
+  // ── Shared session update routing ──
+
+  protected handleSessionUpdate(params: acp.SessionNotification): void {
+    const { update } = params;
+    if (!update) return;
+    const notifSessionId = (params as any).sessionId as string | undefined;
+    const isSubagentEvent = notifSessionId && notifSessionId !== this.sessionId;
+    const event = this.convertAcpUpdateToEvent(update);
+    if (!event) return;
+
+    if (isSubagentEvent) {
+      this.broadcastMultiSession(notifSessionId, event);
+      const isToolEvent =
+        event.type === AgentEventType.ToolCall ||
+        event.type === AgentEventType.ToolCallUpdate ||
+        event.type === AgentEventType.ToolCallFinished;
+      if (isToolEvent) this.broadcastStreamEvent(event);
+    } else {
+      this.broadcastStreamEvent(event);
+    }
+  }
 }
+
+// ─── Rust ACP client ─────────────────────────────────────────────────
+
+export class RustAcpClient extends BaseAcpClient implements acp.Client {
+  private connection: acp.ClientSideConnection;
+
+  constructor(agentPath: string, extraAcpArgs: string[] = []) {
+    const proc = spawn(agentPath, ['acp', ...extraAcpArgs], {
+      stdio: ['pipe', 'pipe', 'pipe'],
+      env: process.env,
+    });
+    super(proc);
+    const stream = buildStdioStreams(proc);
+    this.connection = new acp.ClientSideConnection(() => this, stream);
+  }
+
+  /** SDK >=0.16 no longer prepends '_' to ext methods; the Rust sacp backend expects it. */
+  private ext(method: string): string {
+    return method.startsWith('_') ? method : `_${method}`;
+  }
+
+  async initialize(): Promise<void> {
+    const initResult = await this.connection.initialize({
+      protocolVersion: acp.PROTOCOL_VERSION,
+      clientCapabilities: {},
+      clientInfo: { name: 'kiro-tui', version: TUI_VERSION },
+    });
+    logger.debug(
+      '[acp-client] ACP handshake done, protocolVersion:',
+      initResult.protocolVersion
+    );
+  }
+
+  async newSession(): Promise<SessionResult> {
+    const r = await this.connection.newSession({
+      cwd: process.cwd(),
+      mcpServers: [],
+    });
+    this.sessionId = r.sessionId;
+    logger.debug('ACP session created', { sessionId: this.sessionId });
+    return {
+      sessionId: r.sessionId,
+      currentModel: extractModel(r.models),
+      currentAgent: extractCurrentAgent(r.modes),
+    };
+  }
+
+  async loadSession(sessionId: string): Promise<SessionResult> {
+    const previousSessionId = this.sessionId;
+    this.sessionId = sessionId;
+    const r = await this.connection
+      .loadSession({ sessionId, cwd: process.cwd(), mcpServers: [] })
+      .catch((err) => {
+        this.sessionId = previousSessionId;
+        throw err;
+      });
+    logger.debug('[acp-client] loadSession completed for session:', sessionId);
+    return {
+      sessionId,
+      currentModel: extractModel(r.models),
+      currentAgent: extractCurrentAgent(r.modes),
+    };
+  }
+
+  async prompt(messages: acp.ContentBlock[]): Promise<void> {
+    if (!this.sessionId)
+      throw new Error('cannot send prompt without an active session');
+    if (this.connection.signal.aborted)
+      throw new Error('Agent connection closed unexpectedly');
+
+    const connectionClosed = new Promise<never>((_resolve, reject) => {
+      if (this.connection.signal.aborted) {
+        reject(new Error('Agent connection closed unexpectedly'));
+        return;
+      }
+      this.connection.signal.addEventListener(
+        'abort',
+        () => reject(new Error('Agent connection closed unexpectedly')),
+        { once: true }
+      );
+    });
+    connectionClosed.catch(() => {});
+
+    await Promise.race([
+      this.connection.prompt({ prompt: messages, sessionId: this.sessionId }),
+      connectionClosed,
+    ]);
+  }
+
+  async cancel(): Promise<void> {
+    if (!this.sessionId) return;
+    try {
+      await this.connection.cancel({ sessionId: this.sessionId });
+    } catch (e) {
+      logger.error('Failed to send cancel notification:', e);
+    }
+  }
+
+  async executeCommand(command: TuiCommand): Promise<CommandResult> {
+    if (!this.sessionId)
+      return { success: false, message: 'No active session' };
+    try {
+      return (await this.connection.extMethod(
+        this.ext(EXT_METHODS.COMMANDS_EXECUTE),
+        {
+          sessionId: this.sessionId,
+          command,
+        }
+      )) as unknown as CommandResult;
+    } catch (e) {
+      return {
+        success: false,
+        message: e instanceof Error ? e.message : 'Command failed',
+      };
+    }
+  }
+
+  async getCommandOptions(
+    commandName: string,
+    partial: string
+  ): Promise<CommandOptionsResponse> {
+    if (!this.sessionId) return { options: [] };
+    try {
+      return (await this.connection.extMethod(
+        this.ext(EXT_METHODS.COMMANDS_OPTIONS),
+        {
+          sessionId: this.sessionId,
+          command: commandName.replace(/^\//, ''),
+          partial,
+        }
+      )) as unknown as CommandOptionsResponse;
+    } catch {
+      return { options: [] };
+    }
+  }
+
+  async setMode(modeId: string): Promise<void> {
+    if (!this.sessionId) return;
+    await this.connection.setSessionMode({ sessionId: this.sessionId, modeId });
+  }
+
+  async listSessions(cwd: string): Promise<ListSessionsResponse> {
+    return (await this.connection.extMethod(this.ext('kiro.dev/session/list'), {
+      cwd,
+    })) as unknown as ListSessionsResponse;
+  }
+
+  async listSettings(): Promise<Record<string, unknown>> {
+    return (await this.connection.extMethod(
+      this.ext('kiro.dev/settings/list'),
+      {}
+    )) as unknown as Record<string, unknown>;
+  }
+
+  async setSetting(key: string, value: unknown): Promise<void> {
+    await this.connection.extMethod(this.ext('kiro.dev/settings/set'), {
+      key,
+      value,
+    });
+  }
+
+  async terminateSession(sessionId: string): Promise<void> {
+    try {
+      await this.connection.extMethod(this.ext('kiro.dev/session/terminate'), {
+        sessionId,
+      });
+    } catch (err) {
+      logger.warn('terminateSession failed (best-effort)', { sessionId, err });
+    }
+  }
+
+  async spawnSession(
+    task: string,
+    name?: string
+  ): Promise<{ sessionId: string; name: string }> {
+    const result = await this.connection.extMethod(
+      this.ext(EXT_METHODS.SESSION_SPAWN),
+      {
+        sessionId: this.sessionId,
+        task,
+        name,
+      }
+    );
+    return {
+      sessionId: (result as any).sessionId,
+      name: (result as any).name ?? name ?? '',
+    };
+  }
+
+  async sendMessage(sessionId: string, content: string): Promise<void> {
+    await this.connection.extMethod(this.ext(EXT_METHODS.MESSAGE_SEND), {
+      sessionId,
+      content,
+    });
+  }
+
+  // ── acp.Client interface ──
+
+  async requestPermission(
+    params: acp.RequestPermissionRequest
+  ): Promise<acp.RequestPermissionResponse> {
+    return this.handlePermissionRequest(params);
+  }
+
+  async sessionUpdate(params: acp.SessionNotification): Promise<void> {
+    this.handleSessionUpdate(params);
+  }
+
+  async writeTextFile?(
+    _p: acp.WriteTextFileRequest
+  ): Promise<acp.WriteTextFileResponse> {
+    throw new Error('not implemented');
+  }
+  async readTextFile?(
+    _p: acp.ReadTextFileRequest
+  ): Promise<acp.ReadTextFileResponse> {
+    throw new Error('not implemented');
+  }
+  async createTerminal?(
+    _p: acp.CreateTerminalRequest
+  ): Promise<acp.CreateTerminalResponse> {
+    throw new Error('not implemented');
+  }
+  async terminalOutput?(
+    _p: acp.TerminalOutputRequest
+  ): Promise<acp.TerminalOutputResponse> {
+    throw new Error('not implemented');
+  }
+  async releaseTerminal?(
+    _p: acp.ReleaseTerminalRequest
+  ): Promise<acp.ReleaseTerminalResponse | void> {
+    throw new Error('not implemented');
+  }
+  async waitForTerminalExit?(
+    _p: acp.WaitForTerminalExitRequest
+  ): Promise<acp.WaitForTerminalExitResponse> {
+    throw new Error('not implemented');
+  }
+  async killTerminal?(
+    _p: acp.KillTerminalRequest
+  ): Promise<acp.KillTerminalResponse | void> {
+    throw new Error('not implemented');
+  }
+  async extMethod?(
+    _method: string,
+    _params: Record<string, unknown>
+  ): Promise<Record<string, unknown>> {
+    throw new Error('not implemented');
+  }
+
+  async extNotification?(
+    method: string,
+    params: Record<string, unknown>
+  ): Promise<void> {
+    // ACP SDK >=0.16 passes raw method names; older versions strip the leading '_'.
+    const key = method.startsWith('_') ? method.substring(1) : method;
+    const handler = this.extNotificationHandlers[key];
+    if (handler) handler(params);
+  }
+}
+
+// ─── KAS ACP client ──────────────────────────────────────────────────
+
+export class KasAcpClient extends BaseAcpClient {
+  private kiroClient: KiroClient;
+
+  constructor() {
+    // Resolve KAS server: env var override > installed npm package
+    let kasServerPath = process.env.KIRO_KAS_SERVER_PATH;
+    const kasTokenPath = process.env.KIRO_KAS_TOKEN_PATH;
+    if (!kasServerPath) {
+      // Walk up from this file to find node_modules/@kiro/agent
+      const { existsSync } = require('node:fs');
+      const { join, dirname } = require('node:path');
+      const serverFile = 'node_modules/@kiro/agent/dist/server/acp-server.js';
+      let dir = __dirname;
+      for (let i = 0; i < 10; i++) {
+        const candidate = join(dir, serverFile);
+        if (existsSync(candidate)) {
+          kasServerPath = candidate;
+          break;
+        }
+        const parent = dirname(dir);
+        if (parent === dir) break;
+        dir = parent;
+      }
+      if (!kasServerPath) {
+        throw new Error(
+          'KAS agent not found. Install @kiro/agent or set KIRO_KAS_SERVER_PATH.'
+        );
+      }
+    }
+    const nodeBin = process.env.KIRO_AGENT_PATH || 'node';
+    logger.info(`[acp-client] Spawning KAS agent: ${nodeBin} ${kasServerPath}`);
+
+    const proc = spawn(
+      nodeBin,
+      [
+        '--experimental-wasm-modules',
+        kasServerPath,
+        '--transport=stdio',
+        ...(kasTokenPath ? [`--token-path=${kasTokenPath}`] : []),
+      ],
+      {
+        stdio: ['pipe', 'pipe', 'pipe'],
+        env: {
+          ...process.env,
+          NODE_CHANNEL_FD: undefined,
+          NODE_CHANNEL_SERIALIZATION_MODE: undefined,
+        },
+      }
+    );
+    super(proc);
+    const stream = buildStdioStreams(proc);
+    this.kiroClient = new KiroClient({
+      stream: stream as Stream,
+      clientInfo: { name: 'kiro-tui', version: TUI_VERSION },
+    });
+  }
+
+  // NOTE: When subagent support is added for KAS, this method will need to
+  // be reworked. Currently it assumes only one session's listeners exist at a
+  // time (disposing all previous listeners on each call). For subagents we'd
+  // need to key disposables by session ID and route events through
+  // handleSessionUpdate() for proper main-vs-subagent discrimination.
+  private sessionDisposables: Array<{ dispose: () => void }> = [];
+
+  private wireSessionListeners(sessionId: string): void {
+    this.sessionDisposables.forEach((d) => d.dispose());
+    this.sessionDisposables = [
+      this.kiroClient.onSessionUpdate(sessionId, async (notification) => {
+        const event = this.convertAcpUpdateToEvent(
+          notification.update as AcpSessionUpdate
+        );
+        if (event) this.broadcastStreamEvent(event);
+      }),
+      this.kiroClient.onPermissionRequest(sessionId, async (request) => {
+        return this.handlePermissionRequest(request);
+      }),
+    ];
+  }
+
+  /** Rejects when the KAS child process exits (crash detection). */
+  private processExitPromise(): Promise<never> {
+    return new Promise<never>((_resolve, reject) => {
+      this.agentProcess.once('exit', (code) => {
+        reject(
+          new Error(`KAS agent process exited unexpectedly (code ${code})`)
+        );
+      });
+    });
+  }
+
+  private extensionMethods: Set<string> = new Set();
+  private extensionDescriptors: Array<{
+    method: string;
+    name: string;
+    description: string;
+  }> = [];
+
+  async initialize(): Promise<void> {
+    const response = await this.kiroClient.initialize();
+    const kiroMeta = response.agentCapabilities?._meta?.kiro as
+      | Record<string, unknown>
+      | undefined;
+    const methods = kiroMeta?.extensionMethods;
+    if (Array.isArray(methods)) {
+      this.extensionDescriptors = (
+        methods as typeof this.extensionDescriptors
+      ).filter((m) => TUI_SUPPORTED_EXT_METHODS.has(m.method));
+      this.extensionMethods = new Set(
+        this.extensionDescriptors.map((m) => m.method)
+      );
+      const seen = new Set<string>();
+      const commands: Array<{
+        name: string;
+        description: string;
+        meta: Record<string, unknown>;
+      }> = [];
+      for (const desc of this.extensionDescriptors) {
+        const rawCmdName = desc.name.split(' ')[0]!;
+        const cmdName = KAS_COMMAND_ALIASES[rawCmdName] ?? rawCmdName;
+        if (seen.has(cmdName)) continue;
+        seen.add(cmdName);
+        const key = cmdName.replace(/^\//, '');
+        commands.push({
+          name: cmdName,
+          description: desc.description,
+          meta: { ...(KAS_BUILTIN_META[key] ?? {}) },
+        });
+      }
+      this.broadcastStreamEvent({
+        type: AgentEventType.ExtensionMethodsDiscovered,
+        commands,
+      });
+    }
+    logger.debug('[acp-client] KAS ACP handshake done, extensionMethods:', [
+      ...this.extensionMethods,
+    ]);
+  }
+
+  async newSession(): Promise<SessionResult> {
+    const r = await this.kiroClient.newSession({
+      cwd: process.cwd(),
+      mcpServers: [],
+    });
+    const sid = r.sessionId;
+    this.sessionId = sid;
+    logger.debug('KAS session created', { sessionId: sid });
+
+    // Register BEFORE any async work to avoid race condition
+    this.wireSessionListeners(sid);
+
+    try {
+      await this.kiroClient.setSessionConfigOption({
+        sessionId: sid,
+        configId: 'autopilot',
+        value: 'on',
+      });
+    } catch (e) {
+      logger.debug('Failed to set autopilot config:', e);
+    }
+
+    const mode = process.env.KIRO_MODE;
+    if (mode) {
+      try {
+        await this.kiroClient.setSessionConfigOption({
+          sessionId: sid,
+          configId: 'mode',
+          value: mode,
+        });
+      } catch (e) {
+        logger.debug('Failed to set mode:', e);
+      }
+    }
+
+    return {
+      sessionId: sid,
+      currentModel: extractModel(r.models),
+      // TODO: Remove cast once @kiro/client adds `modes` to NewSessionResponse
+      currentAgent: extractCurrentAgent(
+        (r as { modes?: Parameters<typeof extractCurrentAgent>[0] }).modes
+      ),
+    };
+  }
+
+  async loadSession(sessionId: string): Promise<SessionResult> {
+    const previousSessionId = this.sessionId;
+    this.sessionId = sessionId;
+
+    // Register BEFORE loadSession to capture history replay events
+    this.wireSessionListeners(sessionId);
+
+    const r = await this.kiroClient
+      .loadSession({ sessionId, cwd: process.cwd(), mcpServers: [] })
+      .catch((err) => {
+        this.sessionId = previousSessionId;
+        throw err;
+      });
+    logger.debug(
+      '[acp-client] KAS loadSession completed for session:',
+      sessionId
+    );
+
+    return {
+      sessionId,
+      currentModel: extractModel(r.models),
+      // TODO: Remove cast once @kiro/client adds `modes` to LoadSessionResponse
+      currentAgent: extractCurrentAgent(
+        (r as { modes?: Parameters<typeof extractCurrentAgent>[0] }).modes
+      ),
+    };
+  }
+
+  async prompt(messages: acp.ContentBlock[]): Promise<void> {
+    if (!this.sessionId)
+      throw new Error('cannot send prompt without an active session');
+
+    // Race prompt against process exit to detect KAS crashes
+    const crashed = this.processExitPromise();
+    crashed.catch(() => {}); // suppress unhandled rejection if prompt wins
+    await Promise.race([
+      this.kiroClient.prompt({ prompt: messages, sessionId: this.sessionId }),
+      crashed,
+    ]);
+  }
+
+  async cancel(): Promise<void> {
+    if (!this.sessionId) return;
+    try {
+      this.kiroClient.cancel(this.sessionId);
+    } catch (e) {
+      logger.error('Failed to send cancel notification:', e);
+    }
+  }
+
+  async executeCommand(command: TuiCommand): Promise<CommandResult> {
+    const name = command.command;
+    switch (name) {
+      case 'quit':
+        return { success: true, message: 'Quitting' };
+      case 'feedback':
+        return kasFeedback(
+          (command as Record<string, unknown>).args as
+            | Record<string, string>
+            | undefined
+        );
+      case 'help':
+        return this.executeHelp();
+      case 'clear':
+        return this.executeClear();
+      case 'plan':
+        return this.executePlan();
+      case 'agent': {
+        const args = (command as Record<string, unknown>).args as
+          | Record<string, string>
+          | undefined;
+        const agentName = args?.agentName ?? args?.value ?? '';
+        if (agentName) {
+          return this.executeAgentSwap(agentName);
+        }
+        return this.executeAgentList();
+      }
+      case 'chat': {
+        const args = (command as Record<string, unknown>).args as
+          | Record<string, string>
+          | undefined;
+        const value = args?.value ?? '';
+        if (/^delete\b/.test(value)) {
+          const sessionId = value.slice(7).trim();
+          if (!sessionId)
+            return {
+              success: false,
+              message: 'Usage: /chat delete <sessionId>',
+            };
+          return this.callExtMethod('_kiro/session/delete', { sessionId });
+        }
+        return {
+          success: false,
+          message: `/chat ${value || 'save/load'} is not yet supported in KAS mode`,
+        };
+      }
+      default:
+        return {
+          success: false,
+          message: `/${name} is not yet supported in KAS mode`,
+        };
+    }
+  }
+
+  /** /help — effect expects data.commands with { name, description, usage } */
+  private async executeHelp(): Promise<CommandResult> {
+    const result = await this.callExtMethod('_kiro/help');
+    if (!result.success) return result;
+    const data = result.data as {
+      commands?: Array<{ name: string; description: string }>;
+    };
+    return {
+      success: true,
+      message: 'Available commands',
+      data: {
+        commands: (data?.commands ?? []).map((c) => ({
+          name: c.name,
+          description: c.description,
+          usage: c.name,
+        })),
+      },
+    };
+  }
+
+  /** /agent (no args) — show options via getCommandOptions, not executeCommand */
+  private async executeAgentList(): Promise<CommandResult> {
+    const result = await this.callExtMethod('_kiro/agent/list');
+    if (!result.success) return result;
+    const data = result.data as {
+      agents: Array<{ name: string; description: string }>;
+      current: string;
+    };
+    return {
+      success: true,
+      message: `${data.agents.length} agents available`,
+      data: { agents: data.agents, current: data.current },
+    };
+  }
+
+  /** /agent swap — effect expects data.agent.name */
+  private async executeAgentSwap(agentName: string): Promise<CommandResult> {
+    const result = await this.callExtMethod('_kiro/agent/swap', { agentName });
+    if (!result.success) return result;
+    return {
+      success: true,
+      message: `Switched to ${agentName}`,
+      data: { agent: { name: agentName } },
+    };
+  }
+
+  /** /clear — effect calls ctx.clearMessages() */
+  private async executeClear(): Promise<CommandResult> {
+    const result = await this.callExtMethod('_kiro/clear');
+    if (!result.success) return result;
+    return { success: true, message: 'Conversation cleared' };
+  }
+
+  /** /plan — effect expects data.agent.name (uses updateAgent) */
+  private async executePlan(): Promise<CommandResult> {
+    const result = await this.callExtMethod('_kiro/plan');
+    if (!result.success) return result;
+    return {
+      success: true,
+      message: 'Switched to spec',
+      data: { agent: { name: 'spec' } },
+    };
+  }
+
+  private async callExtMethod(
+    method: string,
+    extra?: Record<string, unknown>
+  ): Promise<CommandResult> {
+    if (!this.sessionId)
+      return { success: false, message: 'No active session' };
+    if (!this.extensionMethods.has(method))
+      return { success: false, message: `${method} not supported by agent` };
+    try {
+      const result = await this.kiroClient.sendExtMethod(method, {
+        sessionId: this.sessionId,
+        ...extra,
+      });
+      return { success: true, message: '', data: result };
+    } catch (e) {
+      return {
+        success: false,
+        message: e instanceof Error ? e.message : 'Command failed',
+      };
+    }
+  }
+
+  async getCommandOptions(
+    commandName: string,
+    _partial: string
+  ): Promise<CommandOptionsResponse> {
+    if (!this.sessionId) return { options: [] };
+    const name = commandName.replace(/^\//, '');
+    switch (name) {
+      case 'feedback':
+        return KAS_FEEDBACK_OPTIONS;
+      case 'agent': {
+        if (!this.extensionMethods.has('_kiro/agent/list'))
+          return { options: [] };
+        try {
+          const result = (await this.kiroClient.sendExtMethod(
+            '_kiro/agent/list',
+            { sessionId: this.sessionId }
+          )) as {
+            agents: Array<{ name: string; description?: string }>;
+            current?: string;
+          };
+          return {
+            options: result.agents.map((a) => ({
+              value: a.name,
+              label: a.name,
+              description:
+                a.name === result.current
+                  ? `[active] ${a.description ?? ''}`
+                  : (a.description ?? ''),
+            })),
+          };
+        } catch (e) {
+          logger.debug('[kas] getCommandOptions failed:', e);
+        }
+        return { options: [] };
+      }
+      default:
+        return { options: [] };
+    }
+  }
+
+  async setMode(modeId: string): Promise<void> {
+    if (!this.sessionId) return;
+    try {
+      await this.kiroClient.setSessionConfigOption({
+        sessionId: this.sessionId,
+        configId: 'mode',
+        value: modeId,
+      });
+    } catch (e) {
+      logger.debug('Failed to set mode:', e);
+    }
+  }
+
+  async listSessions(_cwd: string): Promise<ListSessionsResponse> {
+    try {
+      const r = await this.kiroClient.listSessions();
+      logger.debug('[kas] listSessions raw:', JSON.stringify(r));
+      return {
+        sessions: r.sessions.map((s: any) => ({
+          sessionId: s.sessionId,
+          cwd: s.cwd,
+          title: s.title,
+          updatedAt: s.updatedAt ?? s._meta?.createdAt,
+        })),
+      };
+    } catch (e) {
+      logger.debug('[kas] listSessions failed:', e);
+      return { sessions: [] };
+    }
+  }
+
+  async listSettings(): Promise<Record<string, unknown>> {
+    return {};
+  }
+
+  async setSetting(_key: string, _value: unknown): Promise<void> {}
+
+  async terminateSession(_sessionId: string): Promise<void> {}
+
+  async spawnSession(
+    _task: string,
+    name?: string
+  ): Promise<{ sessionId: string; name: string }> {
+    logger.debug('spawnSession not yet supported in KAS mode');
+    return { sessionId: '', name: name ?? '' };
+  }
+
+  async sendMessage(sessionId: string, content: string): Promise<void> {
+    await this.kiroClient.prompt({
+      prompt: [{ type: 'text', text: content }],
+      sessionId,
+    });
+  }
+}
+
+/** Static feedback options for /feedback selection menu. */
+const KAS_FEEDBACK_OPTIONS: CommandOptionsResponse = {
+  options: [
+    {
+      value: 'general',
+      label: 'General feedback',
+      description: 'Share general thoughts or suggestions',
+    },
+    {
+      value: 'feature',
+      label: 'Feature request',
+      description: 'Request a new feature or improvement',
+    },
+    {
+      value: 'issue',
+      label: 'Report an issue',
+      description: 'Report a bug or problem',
+    },
+  ],
+};
+
+const FEEDBACK_URLS: Record<string, string> = {
+  general: 'https://github.com/kirodotdev/Kiro/issues/new/choose',
+  feature:
+    'https://github.com/kirodotdev/Kiro/issues/new?template=feature_request.yml',
+  issue: 'https://github.com/kirodotdev/Kiro/issues',
+};
+
+function kasFeedback(args?: Record<string, string>): CommandResult {
+  const kind = args?.value || 'general';
+  const url = FEEDBACK_URLS[kind] ?? FEEDBACK_URLS.general!;
+  try {
+    const { execSync } = require('child_process');
+    const cmd =
+      process.platform === 'darwin'
+        ? 'open'
+        : process.platform === 'win32'
+          ? 'start'
+          : 'xdg-open';
+    execSync(`${cmd} '${url}'`, { stdio: 'ignore' });
+    return { success: true, message: 'Opening in browser...' };
+  } catch {
+    return {
+      success: false,
+      message: `Could not open browser. Copy the URL: ${url}`,
+      data: { url },
+    };
+  }
+}
+
+/** TUI metadata for KAS builtin commands, keyed by name without slash. */
+/** Extension methods the TUI knows how to handle. */
+/** Map KAS extension method command names to TUI command names */
+const KAS_COMMAND_ALIASES: Record<string, string> = {
+  '/session': '/chat',
+};
+
+const TUI_SUPPORTED_EXT_METHODS = new Set([
+  '_kiro/help',
+  '_kiro/agent/list',
+  '_kiro/agent/swap',
+  '_kiro/clear',
+  '_kiro/plan',
+  '_kiro/session/list',
+  '_kiro/session/delete',
+]);
+
+const KAS_BUILTIN_META: Record<string, import('./types/commands').CommandMeta> =
+  {
+    help: { inputType: 'panel' },
+    model: {
+      inputType: 'selection',
+      optionsMethod: '_kiro.dev/commands/model/options',
+      hint: '',
+    },
+    agent: {
+      inputType: 'selection',
+      optionsMethod: '_kiro.dev/commands/agent/options',
+      hint: '',
+      subcommands: ['create', 'edit', 'swap'],
+      subcommandHints: { create: '<name>', edit: '[name]', swap: '<name>' },
+    },
+    context: {
+      inputType: 'panel',
+      hint: 'add <path>, remove <path>, clear',
+      subcommands: ['show', 'add', 'remove', 'clear'],
+      subcommandHints: { add: '[--force] <path>...', remove: '<path>...' },
+    },
+    quit: { local: true },
+    usage: { inputType: 'panel' },
+    mcp: {
+      inputType: 'panel',
+      subcommands: ['list', 'add', 'remove'],
+      subcommandHints: { add: '<server-name>', remove: '<server-name>' },
+    },
+    tools: {
+      inputType: 'panel',
+      hint: 'trust-all, trust <name>, untrust <name>, reset',
+      subcommands: ['trust-all', 'trust', 'untrust', 'reset'],
+      subcommandHints: { trust: '<name>', untrust: '<name>' },
+    },
+    feedback: { inputType: 'selection', searchable: false, hint: '' },
+    knowledge: {
+      inputType: 'panel',
+      subcommands: ['show', 'add', 'remove', 'update', 'clear', 'cancel'],
+      subcommandHints: {
+        add: '<name> <path>',
+        remove: '<name|path>',
+        update: '<path>',
+      },
+    },
+    prompts: {
+      inputType: 'selection',
+      optionsMethod: '_kiro.dev/commands/prompts/options',
+      hint: '',
+    },
+    chat: {
+      inputType: 'selection',
+      local: true,
+      hint: 'save <path>, load <path>, new [prompt]',
+      subcommands: ['save', 'load', 'new'],
+      subcommandHints: {
+        save: '[--force] <path>',
+        load: '<path>',
+        new: '[prompt]',
+      },
+    },
+    code: {
+      inputType: 'panel',
+      subcommands: ['status', 'init', 'logs', 'overview', 'summary'],
+    },
+    hooks: { inputType: 'panel' },
+  };
+
+// ─── Factory ─────────────────────────────────────────────────────────
+
+export function createAcpClient(
+  agentPath: string,
+  extraAcpArgs: string[] = []
+): SessionClient {
+  if (process.env.KIRO_AGENT_ENGINE === 'kas') {
+    return new KasAcpClient();
+  }
+  return new RustAcpClient(agentPath, extraAcpArgs);
+}
+
+/** @deprecated Use createAcpClient() instead */
+export const AcpClient = RustAcpClient;

@@ -151,6 +151,8 @@ pub struct AcpSpawnArgs {
     /// Trust only this set of tools (comma-separated names from CLI).
     #[serde(default)]
     pub trust_tools: Option<Vec<String>>,
+    /// Agent engine to use ("rust" or "kas").
+    pub agent_engine: Option<String>,
 }
 
 /// Settings to modify the runtime behavior of the agent.

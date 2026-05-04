@@ -11,6 +11,7 @@ import { Text } from '../ui/text/Text.js';
 import { Divider } from '../ui/divider/Divider.js';
 import { useTheme } from '../../hooks/useThemeContext.js';
 import { useAppStore, type SlashCommand } from '../../stores/app-store';
+import { useCommandState } from '../../stores/selectors';
 import { searchFilesAbortable } from '../../utils/file-search.js';
 import {
   getBundledTheme,
@@ -41,7 +42,7 @@ export const CommandMenu: React.FC = () => {
   const executeCommandWithArg = useAppStore(
     (state) => state.executeCommandWithArg
   );
-  const slashCommands = useAppStore((state) => state.slashCommands);
+  const { slashCommands } = useCommandState();
   const handleUserInput = useAppStore((state) => state.handleUserInput);
   const clearCommandInput = useAppStore((state) => state.clearCommandInput);
   const setCommandInput = useAppStore((state) => state.setCommandInput);

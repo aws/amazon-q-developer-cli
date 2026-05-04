@@ -6,9 +6,13 @@ on:
 permissions:
   contents: read
   pull-requests: read
+  id-token: write
 
 env:
   CI: 1
+  # Avoid GitHub API rate limits (403) during postinstall scripts
+  # that download from GitHub Releases (e.g. @vscode/ripgrep).
+  GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
 jobs:
   check-paths:
@@ -36,6 +40,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: oven-sh/setup-bun@v2
+      - uses: ./.github/actions/codeartifact-login
       - name: Install dependencies
         run: bun install
       - name: Build twinki package
@@ -54,6 +59,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: oven-sh/setup-bun@v2
+      - uses: ./.github/actions/codeartifact-login
       - name: Install dependencies
         run: bun install
       - name: Build twinki package
@@ -72,6 +78,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: oven-sh/setup-bun@v2
+      - uses: ./.github/actions/codeartifact-login
       - name: Install dependencies
         run: bun install
       - name: Build twinki package
@@ -113,6 +120,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: oven-sh/setup-bun@v2
+      - uses: ./.github/actions/codeartifact-login
       - name: Install dependencies
         run: bun install
       - name: Build twinki package
@@ -164,6 +172,8 @@ jobs:
         run: cargo build -p chat_cli
 
       - uses: oven-sh/setup-bun@v2
+
+      - uses: ./.github/actions/codeartifact-login
 
       - name: Install dependencies
         run: bun install
