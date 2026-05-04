@@ -9,6 +9,7 @@ ignore = [
   # Tracking: https://github.com/smithy-lang/smithy-rs/issues/4605
   "RUSTSEC-2026-0098",
   "RUSTSEC-2026-0099",
+  "RUSTSEC-2026-0104",
   # boxfnonce is obsolete, transitive dep via sacp
   "RUSTSEC-2019-0040",
   # yaml-rust is unmaintained, transitive dep via syntect
