@@ -161,6 +161,25 @@ export class PtyManager {
   }
 
   /**
+   * Resizes the PTY and the xterm terminal emulator.
+   * Sends SIGWINCH to the child process so it redraws at the new size.
+   */
+  resize(cols: number, rows: number): void {
+    if (!this.pty) throw new Error('PTY not spawned');
+    this.pty.resize(cols, rows);
+    this.terminal.resize(cols, rows);
+    this.options.width = cols;
+    this.options.height = rows;
+  }
+
+  /**
+   * Returns the current terminal dimensions.
+   */
+  getSize(): { cols: number; rows: number } {
+    return { cols: this.options.width, rows: this.options.height };
+  }
+
+  /**
    * Terminates the PTY process.
    */
   kill(): void {

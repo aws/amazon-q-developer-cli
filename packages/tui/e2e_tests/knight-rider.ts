@@ -30,6 +30,9 @@
  *   POST /api/wait-for-text   → { text, timeout? }  — block until text visible
  *   POST /api/sleep           → { ms }
  *   POST /api/frame           → { label }  — capture named screenshot to disk
+ *   POST /api/resize          → { cols, rows }  — resize terminal (sends SIGWINCH)
+ *   GET  /api/size            → { cols, rows }  — current terminal dimensions
+ *   GET  /api/memory          → { rss, heapUsed, heapTotal, external, arrayBuffers }  — bun memory usage
  *
  * V2 TUI interaction patterns:
  *   Slash commands:  type "/" → autocomplete menu appears → type to filter → Enter to select
@@ -357,6 +360,9 @@ const server = Bun.serve({
         case '/api/wait-for-text': { const { text, timeout } = await readBody(req); if (!text) return json({ error: 'missing "text"' }, 400); await p.waitForVisibleText(text, timeout ?? 10000); return json({ ok: true }); }
         case '/api/sleep': { const { ms } = await readBody(req); await sleep(ms ?? 1000); return json({ ok: true }); }
         case '/api/frame': { const { label } = await readBody(req); if (!label) return json({ error: 'missing "label"' }, 400); const f = captureFrame(label); return json({ ok: true, index: frames.length - 1, label: f.label, file: OUTPUT_DIR }); }
+        case '/api/resize': { const { cols, rows } = await readBody(req); if (!cols || !rows) return json({ error: 'missing "cols" or "rows"' }, 400); p.resize(cols, rows); await sleep(200); return json({ ok: true, cols, rows }); }
+        case '/api/size': { const sz = p.getSize(); return json(sz); }
+        case '/api/memory': { const mem = process.memoryUsage(); return json({ rss: mem.rss, heapUsed: mem.heapUsed, heapTotal: mem.heapTotal, external: mem.external, arrayBuffers: mem.arrayBuffers, rssMB: +(mem.rss / 1048576).toFixed(1), heapUsedMB: +(mem.heapUsed / 1048576).toFixed(1) }); }
         default: return json({ error: 'not found' }, 404);
       }
     } catch (e: any) {
