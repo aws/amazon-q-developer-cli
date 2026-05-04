@@ -8,6 +8,7 @@ use crate::lsp::{
     LspStatus,
 };
 use crate::model::types::LanguageServerConfig;
+use crate::utils::glob_matching::resolve_language_matches;
 
 /// Registry for managing LSP client instances
 #[derive(Default)]
@@ -51,20 +52,26 @@ impl LspRegistry {
         Ok(self.clients.get_mut(server_name).unwrap())
     }
 
-    /// Get client for file extension
-    pub async fn get_client_for_extension(
+    /// Get client for file matched via glob patterns (e.g., "Dockerfile", "docker-compose.yml").
+    /// Tries configs in specificity order, falling back to less specific matches if an LSP is
+    /// unavailable.
+    pub async fn get_client_for_filename(
         &mut self,
-        extension: &str,
+        filename: &str,
         workspace_root: &Path,
     ) -> Result<Option<&mut LspClient>> {
-        let server_name = self
-            .configs
-            .iter()
-            .find(|(_, config)| config.file_extensions.contains(&extension.to_string()))
-            .map(|(name, _)| name.clone());
+        let ranked = self.ranked_matching_configs(filename);
 
-        if let Some(name) = server_name {
-            return Ok(Some(self.get_client(&name, workspace_root).await?));
+        // Find the first available LSP by trying to initialize each in rank order
+        let available = ranked.iter().find(|name| {
+            self.configs
+                .get(*name)
+                .and_then(|config| which::which(&config.command).ok())
+                .is_some()
+        });
+
+        if let Some(name) = available {
+            return Ok(Some(self.get_client(name, workspace_root).await?));
         }
         Ok(None)
     }
@@ -74,12 +81,30 @@ impl LspRegistry {
         self.configs.contains_key(server_name)
     }
 
-    /// Check if any initialized LSP server handles a file extension
-    pub fn has_initialized_lsp_for_extension(&self, extension: &str) -> bool {
+    /// Check if any initialized LSP server handles a file via glob patterns
+    pub fn has_initialized_lsp_for_filename(&self, filename: &str) -> bool {
         self.configs
             .iter()
-            .filter(|(_, config)| config.file_extensions.contains(&extension.to_string()))
+            .filter(|(_, config)| Self::matches_config(filename, config))
             .any(|(name, _)| self.clients.get(name).map(|c| c.is_initialized()).unwrap_or(false))
+    }
+
+    /// Check if a filename matches a config's file_patterns or file_extensions.
+    fn matches_config(filename: &str, config: &LanguageServerConfig) -> bool {
+        config.all_patterns().iter().any(|pattern| {
+            globset::Glob::new(pattern)
+                .map(|g| g.compile_matcher().is_match(filename))
+                .unwrap_or(false)
+        })
+    }
+
+    /// Rank matching configs by specificity: exact matches first, then most literal chars.
+    fn ranked_matching_configs(&self, filename: &str) -> Vec<String> {
+        let configs = self
+            .configs
+            .iter()
+            .map(|(name, config)| (name.as_str(), config.all_patterns()));
+        resolve_language_matches(configs, filename)
     }
 
     /// Get all registered language server names
@@ -130,6 +155,7 @@ mod tests {
             command: format!("{}-lsp", name),
             args: vec!["--stdio".to_string()],
             file_extensions: extensions.iter().map(|s| s.to_string()).collect(),
+            file_patterns: vec![],
             project_patterns: vec![],
             exclude_patterns: vec!["**/test/**".to_string()],
             multi_workspace: false,
@@ -205,33 +231,72 @@ mod tests {
     }
 
     #[test]
-    fn test_has_initialized_lsp_for_extension_no_configs() {
-        let registry = LspRegistry::new();
-        assert!(!registry.has_initialized_lsp_for_extension("rs"));
-    }
-
-    #[test]
-    fn test_has_initialized_lsp_for_extension_not_initialized() {
-        let mut registry = LspRegistry::new();
-        registry.register_config(create_test_config("rust-analyzer", vec!["rs"]));
-        // Config registered but no client initialized
-        assert!(!registry.has_initialized_lsp_for_extension("rs"));
-    }
-
-    #[test]
-    fn test_has_initialized_lsp_for_extension_wrong_extension() {
-        let mut registry = LspRegistry::new();
-        registry.register_config(create_test_config("rust-analyzer", vec!["rs"]));
-        assert!(!registry.has_initialized_lsp_for_extension("xml"));
-    }
-
-    #[test]
     fn test_initialized_servers_empty_when_no_clients() {
         let mut registry = LspRegistry::new();
         registry.register_config(create_test_config("rust-analyzer", vec!["rs"]));
         registry.register_config(create_test_config("xml-lsp", vec!["xml"]));
         // Configs registered but no clients initialized
         assert!(registry.initialized_servers().is_empty());
+    }
+
+    fn create_test_config_with_file_patterns(
+        name: &str,
+        extensions: Vec<&str>,
+        file_patterns: Vec<&str>,
+    ) -> LanguageServerConfig {
+        LanguageServerConfig {
+            language: name.to_string(),
+            name: name.to_string(),
+            command: format!("{}-lsp", name),
+            args: vec!["--stdio".to_string()],
+            file_extensions: extensions.iter().map(|s| s.to_string()).collect(),
+            file_patterns: file_patterns.iter().map(|s| s.to_string()).collect(),
+            project_patterns: vec![],
+            exclude_patterns: vec!["**/test/**".to_string()],
+            multi_workspace: false,
+            initialization_options: None,
+            request_timeout_secs: 30,
+        }
+    }
+
+    #[test]
+    fn test_has_initialized_lsp_for_filename_no_configs() {
+        let registry = LspRegistry::new();
+        assert!(!registry.has_initialized_lsp_for_filename("Dockerfile"));
+    }
+
+    #[test]
+    fn test_has_initialized_lsp_for_filename_not_initialized() {
+        let mut registry = LspRegistry::new();
+        registry.register_config(create_test_config_with_file_patterns("docker-lsp", vec![], vec![
+            "Dockerfile",
+        ]));
+        // Config registered but no client initialized
+        assert!(!registry.has_initialized_lsp_for_filename("Dockerfile"));
+    }
+
+    #[test]
+    fn test_has_initialized_lsp_for_filename_wrong_name() {
+        let mut registry = LspRegistry::new();
+        registry.register_config(create_test_config_with_file_patterns("docker-lsp", vec![], vec![
+            "Dockerfile",
+        ]));
+        assert!(!registry.has_initialized_lsp_for_filename("Makefile"));
+    }
+
+    #[test]
+    fn test_matches_config_glob() {
+        let config = create_test_config_with_file_patterns("docker", vec![], vec!["Dockerfile", "Dockerfile.*"]);
+        assert!(LspRegistry::matches_config("Dockerfile", &config));
+        assert!(LspRegistry::matches_config("Dockerfile.dev", &config));
+        assert!(!LspRegistry::matches_config("Makefile", &config));
+    }
+
+    #[test]
+    fn test_matches_config_extension() {
+        let config = create_test_config("rust", vec!["rs"]);
+        assert!(LspRegistry::matches_config("main.rs", &config));
+        assert!(!LspRegistry::matches_config("main.ts", &config));
     }
 
     #[test]
@@ -243,6 +308,7 @@ mod tests {
             command: "zonbook-lsp".to_string(),
             args: vec![],
             file_extensions: vec!["xml".to_string()],
+            file_patterns: vec![],
             project_patterns: vec![],
             exclude_patterns: vec![],
             multi_workspace: false,

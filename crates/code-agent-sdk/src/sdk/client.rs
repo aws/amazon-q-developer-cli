@@ -491,8 +491,9 @@ impl CodeIntelligence {
     pub async fn get_document_symbols(&mut self, request: GetDocumentSymbolsRequest) -> Result<Vec<SymbolInfo>> {
         let top_level_only = request.top_level_only.unwrap_or(true);
 
+        let filename = request.file_path.file_name().and_then(|f| f.to_str()).unwrap_or("");
         let ext = request.file_path.extension().and_then(|e| e.to_str()).unwrap_or("");
-        let has_lsp = self.workspace_manager.has_initialized_lsp_for_extension(ext);
+        let has_lsp = self.workspace_manager.has_initialized_lsp_for_filename(filename);
 
         if has_lsp {
             let result = self

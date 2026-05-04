@@ -51,15 +51,14 @@ impl WorkspaceService for LspWorkspaceService {
             return Ok(()); // File already opened, no need to wait
         }
 
-        // Determine language ID from file extension using ConfigManager
-        let language_id = if let Some(ext) = file_path.extension().and_then(|ext| ext.to_str()) {
-            workspace_manager
-                .config_manager
-                .get_language_for_extension(ext)
-                .unwrap_or_else(|| "plaintext".to_string())
-        } else {
-            "plaintext".to_string()
-        };
+        // Determine language ID from file_patterns and file_extensions using ConfigManager
+        let filename = file_path.file_name().and_then(|f| f.to_str()).unwrap_or("");
+        let language_id = workspace_manager
+            .config_manager
+            .get_config()
+            .ok()
+            .and_then(|c| c.get_language_for_file(filename))
+            .unwrap_or_else(|| "plaintext".to_string());
 
         let client = workspace_manager.get_client_for_file(file_path).await?.ok_or_else(|| {
             crate::error::CodeIntelligenceError::lsp_not_available(file_path.to_path_buf(), &language_id, None)

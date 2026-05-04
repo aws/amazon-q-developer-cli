@@ -6,6 +6,8 @@ use serde::{
     Serialize,
 };
 
+use crate::utils::glob_matching::combine_patterns;
+
 /// Symbol kind for API requests - internal enum to avoid exposing lsp_types
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum ApiSymbolKind {
@@ -268,6 +270,9 @@ pub struct LanguageServerConfig {
     pub args: Vec<String>,
     /// File extensions this language server handles (e.g., ["rs", "toml"])
     pub file_extensions: Vec<String>,
+    /// Filename glob patterns this language server handles (e.g., ["Dockerfile", "Dockerfile.*"])
+    #[serde(default)]
+    pub file_patterns: Vec<String>,
     /// Project patterns for workspace discovery (e.g., ["Cargo.toml", "pom.xml"])
     pub project_patterns: Vec<String>,
     /// Patterns to exclude from file watching (e.g., ["**/target/**", "**/node_modules/**"])
@@ -279,6 +284,13 @@ pub struct LanguageServerConfig {
     /// Request timeout in seconds (default: 60)
     #[serde(default = "default_request_timeout")]
     pub request_timeout_secs: u64,
+}
+
+impl LanguageServerConfig {
+    /// All file matching patterns: file_patterns + file_extensions as *.ext globs
+    pub fn all_patterns(&self) -> Vec<String> {
+        combine_patterns(&self.file_patterns, &self.file_extensions)
+    }
 }
 
 /// Default timeout for LSP and tree-sitter operations (120 seconds)

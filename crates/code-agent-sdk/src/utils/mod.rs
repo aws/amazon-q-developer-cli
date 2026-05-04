@@ -4,6 +4,7 @@
 //! library for handling files, paths, and workspace operations.
 
 pub mod file;
+pub mod glob_matching;
 pub mod logging;
 pub mod position;
 pub mod scoring;

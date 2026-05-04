@@ -26,6 +26,7 @@ rmcp = { workspace = true, features = ["server", "macros", "transport-io"] }
 notify.workspace = true
 ignore.workspace = true
 globset.workspace = true
+indexmap.workspace = true
 which.workspace = true
 dashmap.workspace = true
 dirs.workspace = true

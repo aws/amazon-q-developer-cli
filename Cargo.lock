@@ -2313,6 +2313,7 @@ dependencies = [
  "futures",
  "globset",
  "ignore",
+ "indexmap 2.14.0",
  "lsp-types",
  "moka",
  "notify",

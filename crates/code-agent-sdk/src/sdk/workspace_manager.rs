@@ -33,6 +33,10 @@ use crate::sdk::file_watcher::{
     FileWatcherConfig,
 };
 
+/// Result of scanning the workspace: (file extensions, representative files per extension,
+/// extensionless filenames)
+type WorkspaceScanResult = (HashSet<String>, HashMap<String, PathBuf>, HashSet<String>);
+
 /// Status of workspace initialization
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum WorkspaceStatus {
@@ -110,9 +114,9 @@ impl WorkspaceManager {
         ".prettierrc",
     ];
 
-    /// Check if any initialized LSP handles a file extension
-    pub fn has_initialized_lsp_for_extension(&self, extension: &str) -> bool {
-        self.registry.has_initialized_lsp_for_extension(extension)
+    /// Check if any initialized LSP handles a file via file_patterns glob matching
+    pub fn has_initialized_lsp_for_filename(&self, filename: &str) -> bool {
+        self.registry.has_initialized_lsp_for_filename(filename)
     }
 
     /// Create new workspace manager with auto-detected workspace root
@@ -171,35 +175,36 @@ impl WorkspaceManager {
         let mut current = start_dir;
         let mut depth = 0;
 
-        // Detect language from file extension and use specific patterns
-        if let Some(extension) = file_path.extension().and_then(|ext| ext.to_str()) {
-            if let Some(language) = config.get_language_for_extension(extension) {
-                let language_patterns = config.get_project_patterns_for_language(&language);
-                tracing::debug!("Language: {}, looking for patterns: {:?}", language, language_patterns);
+        // Detect language from file_patterns and file_extensions
+        let language = file_path
+            .file_name()
+            .and_then(|f| f.to_str())
+            .and_then(|filename| config.get_language_for_file(filename));
 
-                loop {
-                    for pattern in &language_patterns {
-                        let check_path = current.join(pattern);
-                        if check_path.exists() {
-                            tracing::info!("Found project marker '{}' at: {}", pattern, current.display());
-                            return Some(current.to_path_buf());
-                        }
+        if let Some(language) = language {
+            let language_patterns = config.get_project_patterns_for_language(&language);
+            tracing::debug!("Language: {}, looking for patterns: {:?}", language, language_patterns);
+
+            loop {
+                for pattern in &language_patterns {
+                    let check_path = current.join(pattern);
+                    if check_path.exists() {
+                        tracing::info!("Found project marker '{}' at: {}", pattern, current.display());
+                        return Some(current.to_path_buf());
                     }
-
-                    depth += 1;
-                    if depth >= MAX_DEPTH {
-                        tracing::debug!("Reached max depth {} without finding project marker", MAX_DEPTH);
-                        break;
-                    }
-
-                    current = current.parent()?;
                 }
-            } else {
-                tracing::debug!("No language found for extension: {}", extension);
+
+                depth += 1;
+                if depth >= MAX_DEPTH {
+                    tracing::debug!("Reached max depth {} without finding project marker", MAX_DEPTH);
+                    break;
+                }
+
+                current = current.parent()?;
             }
         } else {
-            // No extension (likely a directory) - check all known project patterns
-            tracing::debug!("No extension found, checking all known project patterns");
+            // No language detected - check all known project patterns
+            tracing::debug!("No language found for file, checking all known project patterns");
             let all_languages = config.all_languages();
 
             loop {
@@ -514,11 +519,17 @@ impl WorkspaceManager {
 
     /// Get LSP client for file
     pub async fn get_client_for_file(&mut self, file_path: &Path) -> Result<Option<&mut crate::lsp::LspClient>> {
-        let extension = file_path.extension().and_then(|ext| ext.to_str()).unwrap_or("");
+        let filename = file_path.file_name().and_then(|f| f.to_str()).unwrap_or("");
 
-        self.registry
-            .get_client_for_extension(extension, &self.workspace_root)
-            .await
+        // matches_config checks both file_patterns and file_extensions
+        if !filename.is_empty() {
+            return self
+                .registry
+                .get_client_for_filename(filename, &self.workspace_root)
+                .await;
+        }
+
+        Ok(None)
     }
 
     /// Subscribe to diagnostics from all initialized LSP clients and start background tasks
@@ -585,10 +596,7 @@ impl WorkspaceManager {
     async fn ensure_file_opened(&mut self, file_path: &Path) -> Result<bool> {
         if self.is_file_opened(file_path) {
             // File already opened, check if server supports pull
-            let extension = file_path.extension().and_then(|ext| ext.to_str()).unwrap_or("");
-            if let Some(language) = self.config_manager.get_language_for_extension(extension)
-                && let Ok(Some(client)) = self.get_client_by_language(&language).await
-            {
+            if let Ok(Some(client)) = self.get_client_for_file(file_path).await {
                 return Ok(client.supports_pull_diagnostics());
             }
             return Ok(false);
@@ -596,22 +604,13 @@ impl WorkspaceManager {
 
         tracing::debug!("File not opened yet, opening: {:?}", file_path);
 
-        let extension = file_path.extension().and_then(|ext| ext.to_str()).unwrap_or("");
-        let language = self
-            .config_manager
-            .get_language_for_extension(extension)
-            .ok_or_else(|| {
-                crate::error::CodeIntelligenceError::lsp_not_available(file_path.to_path_buf(), extension, None)
-            })?;
-
-        tracing::debug!("Detected language: {} for file: {:?}", language, file_path);
-
-        if let Ok(Some(client)) = self.get_client_by_language(&language).await {
+        if let Some(client) = self.get_client_for_file(file_path).await? {
+            let language_id = client.config.language.clone();
             let content = std::fs::read_to_string(file_path)?;
             let did_open_params = lsp_types::DidOpenTextDocumentParams {
                 text_document: lsp_types::TextDocumentItem {
                     uri: url::Url::from_file_path(file_path).unwrap(),
-                    language_id: language,
+                    language_id,
                     version: 1,
                     text: content,
                 },
@@ -639,15 +638,7 @@ impl WorkspaceManager {
     async fn pull_diagnostics(&mut self, file_path: &Path) -> Result<Vec<lsp_types::Diagnostic>> {
         tracing::debug!("Pulling fresh diagnostics for: {:?}", file_path);
 
-        let extension = file_path.extension().and_then(|ext| ext.to_str()).unwrap_or("");
-        let language = self
-            .config_manager
-            .get_language_for_extension(extension)
-            .ok_or_else(|| {
-                crate::error::CodeIntelligenceError::lsp_not_available(file_path.to_path_buf(), extension, None)
-            })?;
-
-        if let Ok(Some(client)) = self.get_client_by_language(&language).await {
+        if let Some(client) = self.get_client_for_file(file_path).await? {
             let uri = url::Url::from_file_path(file_path).map_err(|_| {
                 crate::error::CodeIntelligenceError::invalid_path(file_path.to_path_buf(), "Cannot convert to URI")
             })?;
@@ -767,7 +758,7 @@ impl WorkspaceManager {
 
             // Recursively scan workspace for file extensions AND representative files in one pass
             tracing::info!("Scanning directory for file extensions and representative files (respecting .gitignore)");
-            let (file_extensions, representative_files) = self.scan_workspace_unified()?;
+            let (file_extensions, representative_files, matched_files) = self.scan_workspace_unified()?;
             self.representative_files = Some(representative_files); // Cache for auto-open
             tracing::info!(
                 "Found {} unique file extensions: {:?}",
@@ -775,13 +766,16 @@ impl WorkspaceManager {
                 file_extensions
             );
 
-            // Map extensions to languages using ConfigManager
-            tracing::debug!("Mapping extensions to languages");
-            for ext in &file_extensions {
-                if let Some(language) = self.config_manager.get_language_for_extension(ext) {
-                    tracing::debug!("Extension '{}' mapped to language '{}'", ext, language);
-                    detected_languages.push(language);
-                }
+            // Map extensions and filenames to languages
+            tracing::debug!("Mapping files to languages");
+            if let Ok(config) = self.config_manager.get_config() {
+                detected_languages.extend(
+                    file_extensions
+                        .iter()
+                        .map(|ext| format!("_.{ext}"))
+                        .chain(matched_files.iter().cloned())
+                        .flat_map(|name| config.get_all_languages_for_file(&name)),
+                );
             }
 
             detected_languages.sort();
@@ -825,7 +819,7 @@ impl WorkspaceManager {
     }
 
     /// Unified workspace scan: collects extensions AND representative files in one parallel pass
-    fn scan_workspace_unified(&self) -> Result<(HashSet<String>, HashMap<String, PathBuf>)> {
+    fn scan_workspace_unified(&self) -> Result<WorkspaceScanResult> {
         use dashmap::DashMap;
 
         use crate::utils::traversal::create_code_walker;
@@ -844,25 +838,34 @@ impl WorkspaceManager {
         };
 
         let extensions: DashMap<String, ()> = DashMap::new();
+        let filenames: DashMap<String, ()> = DashMap::new();
         let rep_files: DashMap<String, PathBuf> = DashMap::new();
 
         create_code_walker(&self.workspace_root, Some(max_depth))
             .build_parallel()
             .run(|| {
                 let extensions = &extensions;
+                let filenames = &filenames;
                 let rep_files = &rep_files;
 
                 Box::new(move |entry| {
                     if let Ok(entry) = entry
                         && entry.file_type().map(|ft| ft.is_file()).unwrap_or(false)
-                        && let Some(ext) = entry.path().extension().and_then(|e| e.to_str())
                     {
-                        let ext_str = ext.to_string();
-                        extensions.insert(ext_str.clone(), ());
+                        if let Some(ext) = entry.path().extension().and_then(|e| e.to_str()) {
+                            let ext_str = ext.to_string();
+                            extensions.insert(ext_str.clone(), ());
 
-                        // Only insert non-config files as representatives
-                        if !Self::is_config_file_static(entry.path()) {
-                            rep_files.entry(ext_str).or_insert(entry.path().to_path_buf());
+                            // Only insert non-config files as representatives
+                            if !Self::is_config_file_static(entry.path()) {
+                                rep_files.entry(ext_str).or_insert(entry.path().to_path_buf());
+                            }
+                        } else if let Some(name) = entry.path().file_name().and_then(|n| n.to_str()) {
+                            // For extensionless files, track separately so
+                            // detect_workspace can match via get_language_for_file
+                            filenames.insert(name.to_string(), ());
+                            // Also store as representative file keyed by filename
+                            rep_files.entry(name.to_string()).or_insert(entry.path().to_path_buf());
                         }
                     }
                     ignore::WalkState::Continue
@@ -870,9 +873,10 @@ impl WorkspaceManager {
             });
 
         let ext_set: HashSet<String> = extensions.into_iter().map(|(k, _)| k).collect();
+        let name_set: HashSet<String> = filenames.into_iter().map(|(k, _)| k).collect();
         let rep_map: HashMap<String, PathBuf> = rep_files.into_iter().collect();
 
-        Ok((ext_set, rep_map))
+        Ok((ext_set, rep_map, name_set))
     }
 
     /// Static version of is_config_file for use in closures
@@ -926,14 +930,8 @@ impl WorkspaceManager {
                 status_str
             );
 
-            // Map file extensions to languages using ConfigManager
-            let languages: Vec<String> = config
-                .file_extensions
-                .iter()
-                .filter_map(|ext| self.config_manager.get_language_for_extension(ext))
-                .collect::<HashSet<_>>()
-                .into_iter()
-                .collect();
+            // The config's language field tells us what language this LSP handles
+            let languages: Vec<String> = vec![config.language.clone()];
 
             // Compute workspace folders if multi_workspace is enabled and LSP is initialized
             let workspace_folders = if config.multi_workspace && is_initialized {
@@ -1100,9 +1098,9 @@ impl WorkspaceManager {
         let detected_languages = self.get_detected_languages()?;
         for language in &detected_languages {
             if let Ok(lang_config) = self.config_manager.get_config_by_language(language) {
-                // Add include patterns from file extensions
-                for ext in &lang_config.file_extensions {
-                    include_patterns.push(format!("**/*.{ext}"));
+                // Add include patterns from file_extensions and file_patterns
+                for pat in lang_config.all_patterns() {
+                    include_patterns.push(format!("**/{pat}"));
                 }
                 // Add exclude patterns from language config
                 exclude_patterns.extend(lang_config.exclude_patterns);
@@ -1149,14 +1147,12 @@ impl WorkspaceManager {
                         continue;
                     }
 
-                    // Determine language ID from file extension
-                    let language_id = if let Some(ext) = file_path.extension().and_then(|ext| ext.to_str()) {
-                        self.config_manager
-                            .get_language_for_extension(ext)
-                            .unwrap_or_else(|| "plaintext".to_string())
-                    } else {
-                        "plaintext".to_string()
-                    };
+                    // Determine language ID from filename
+                    let language_id = file_path
+                        .file_name()
+                        .and_then(|f| f.to_str())
+                        .and_then(|filename| self.config_manager.get_config().ok()?.get_language_for_file(filename))
+                        .unwrap_or_else(|| "plaintext".to_string());
 
                     // Get LSP client for this file
                     if let Ok(Some(client)) = self.get_client_for_file(&file_path).await {
@@ -1211,6 +1207,21 @@ impl WorkspaceManager {
         for extension in extensions {
             if let Some(file_path) = self.find_first_file_with_extension(&extension).await? {
                 return Ok(Some(file_path));
+            }
+        }
+
+        // Search for files matching file_patterns (e.g., "Dockerfile", "Config")
+        if let Ok(config) = self.config_manager.get_config_by_language(language)
+            && let Some(rep_files) = &self.representative_files
+        {
+            for pattern in &config.file_patterns {
+                for (name, path) in rep_files {
+                    if let Ok(glob) = globset::Glob::new(pattern)
+                        && glob.compile_matcher().is_match(name)
+                    {
+                        return Ok(Some(path.clone()));
+                    }
+                }
             }
         }
 
@@ -1320,7 +1331,7 @@ mod tests {
         let temp_dir = create_temp_workspace(&["test.rs", "test.ts", "test.py"]);
         let workspace_manager = WorkspaceManager::new(temp_dir.path().to_path_buf());
 
-        let (extensions, _) = workspace_manager.scan_workspace_unified().unwrap();
+        let (extensions, _, _) = workspace_manager.scan_workspace_unified().unwrap();
 
         assert!(extensions.contains("rs"));
         assert!(extensions.contains("ts"));
@@ -1341,7 +1352,7 @@ mod tests {
 
         let workspace_manager = WorkspaceManager::new(temp_dir.path().to_path_buf());
 
-        let (extensions, _) = workspace_manager.scan_workspace_unified().unwrap();
+        let (extensions, _, _) = workspace_manager.scan_workspace_unified().unwrap();
 
         assert!(extensions.contains("rs"));
         assert!(!extensions.contains("js")); // Should be skipped from node_modules via .gitignore
@@ -1439,5 +1450,42 @@ mod tests {
             let wm = WorkspaceManager::new(home);
             assert!(wm.is_unprojected_root());
         }
+    }
+
+    #[test]
+    fn test_detect_workspace_root_extensionless_file() {
+        let temp_dir = create_temp_workspace(&["Cargo.toml", "Dockerfile"]);
+        let dockerfile = temp_dir.path().join("Dockerfile");
+
+        let mut config = LanguagesConfig::default_config();
+        config
+            .languages
+            .insert("docker".to_string(), crate::config::json_config::LanguageConfig {
+                name: "docker-lsp".to_string(),
+                command: "docker-lsp".to_string(),
+                args: vec![],
+                file_extensions: vec![],
+                file_patterns: vec!["Dockerfile".to_string()],
+                project_patterns: vec!["Cargo.toml".to_string()],
+                exclude_patterns: vec![],
+                multi_workspace: false,
+                initialization_options: None,
+                request_timeout_secs: Some(60),
+            });
+
+        let root = WorkspaceManager::detect_workspace_root(&dockerfile, &config);
+        assert_eq!(root, Some(temp_dir.path().to_path_buf()));
+    }
+
+    #[test]
+    fn test_scan_workspace_finds_extensionless_files() {
+        let temp_dir = create_temp_workspace(&["Dockerfile", "Makefile", "src/main.rs"]);
+        let workspace_manager = WorkspaceManager::new(temp_dir.path().to_path_buf());
+
+        let (extensions, _, filenames) = workspace_manager.scan_workspace_unified().unwrap();
+
+        assert!(extensions.contains("rs"));
+        assert!(filenames.contains("Dockerfile"));
+        assert!(filenames.contains("Makefile"));
     }
 }

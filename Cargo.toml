@@ -95,6 +95,7 @@ grep-regex = "0.1.14"
 grep-searcher = "0.1.16"
 ignore = "0.4.23"
 image = "0.25"
+indexmap = { version = "2", features = ["serde"] }
 indicatif = "0.17.11"
 indoc = "2.0.6"
 insta = "1.43.1"
