@@ -2854,3 +2854,147 @@ async fn cancelled_prompt_preserved_in_next_turn_history() {
             .collect::<Vec<_>>()
     );
 }
+
+/// When a tool executes successfully but the LLM's follow-up response is cancelled mid-stream,
+/// the tool results should be preserved in conversation history (not replaced with "cancelled").
+#[tokio::test]
+#[timeout(30000)]
+#[serial]
+async fn cancelled_tool_response_preserves_tool_results() {
+    use chat_cli_v2::api_client::send_message_output::MockStreamItem;
+
+    let (mut harness, client, session_id, _) =
+        AcpTestHarnessBuilder::new("cancelled_tool_response_preserves_tool_results")
+            .with_trust_all(true)
+            .build_with_session()
+            .await;
+
+    // Create a file in the test cwd for the read tool to find
+    let cwd = &harness.paths.cwd;
+    std::fs::write(cwd.join("test_file.txt"), "hello from test file\n").unwrap();
+
+    // First response: LLM asks to read the file (tool executes automatically with trust_all)
+    harness
+        .push_mock_responses_from_file(&session_id.0, "tests/mock_responses/tool_read_then_cancel.jsonl")
+        .await;
+
+    // Second response: LLM starts streaming its reply to the tool results, but we won't terminate it
+    harness
+        .push_mock_response(
+            &session_id.0,
+            Some(vec![MockStreamItem::Event(
+                amzn_codewhisperer_streaming_client::types::ChatResponseStream::AssistantResponseEvent(
+                    AssistantResponseEventBuilder::default()
+                        .content("The file contains ")
+                        .build()
+                        .unwrap(),
+                )
+                .into(),
+            )]),
+        )
+        .await;
+
+    // Send prompt async (will complete tool use, then hang on partial second response)
+    let prompt_recv = client.prompt_text_async(session_id.clone(), "read test_file.txt").await;
+
+    // Wait for the tool to execute and the second stream to start
+    sleep(Duration::from_millis(500)).await;
+
+    // Cancel mid-stream, then push end-of-stream to unblock drain
+    client.cancel_async(session_id.clone()).await;
+    sleep(Duration::from_millis(50)).await;
+    harness.push_mock_response(&session_id.0, None).await;
+
+    // Await the prompt result
+    let prompt_res = tokio::time::timeout(Duration::from_secs(5), prompt_recv)
+        .await
+        .expect("prompt_recv timed out")
+        .expect("channel closed")
+        .expect("prompt error");
+    assert_eq!(prompt_res.stop_reason, agent_client_protocol::StopReason::Cancelled,);
+
+    // Send a follow-up prompt
+    harness
+        .push_mock_responses_from_file(&session_id.0, "tests/mock_responses/simple_text.jsonl")
+        .await;
+
+    client
+        .prompt_text(session_id.clone(), "what was in the file?")
+        .await
+        .expect("second prompt failed");
+
+    // Verify the captured history contains the tool results (not "cancelled")
+    let captured = harness.get_captured_requests(&session_id.0).await;
+    assert_eq!(
+        captured.len(),
+        3,
+        "should have 3 requests: initial, tool results, follow-up"
+    );
+
+    let third_request = &captured[2];
+    let history = third_request
+        .history
+        .as_ref()
+        .expect("third request should have history");
+
+    // The history should contain a user message with tool_results that has the actual file content
+    let has_tool_results_with_content = history.iter().any(|msg| {
+        if let chat_cli_v2::api_client::model::ChatMessage::UserInputMessage(m) = msg {
+            m.user_input_message_context
+                .as_ref()
+                .and_then(|ctx| ctx.tool_results.as_ref())
+                .is_some_and(|results| {
+                    results.iter().any(|r| {
+                        r.content.iter().any(|block| match block {
+                            chat_cli_v2::api_client::model::ToolResultContentBlock::Text(text) => {
+                                text.contains("hello from test file")
+                            },
+                            _ => false,
+                        })
+                    })
+                })
+        } else {
+            false
+        }
+    });
+
+    // The history should NOT contain "Tool use was cancelled by the user" for this tool
+    let has_cancelled_message = history.iter().any(|msg| {
+        if let chat_cli_v2::api_client::model::ChatMessage::UserInputMessage(m) = msg {
+            m.user_input_message_context
+                .as_ref()
+                .and_then(|ctx| ctx.tool_results.as_ref())
+                .is_some_and(|results| {
+                    results.iter().any(|r| {
+                        r.content.iter().any(|block| match block {
+                            chat_cli_v2::api_client::model::ToolResultContentBlock::Text(text) => {
+                                text.contains("Tool use was cancelled")
+                            },
+                            _ => false,
+                        })
+                    })
+                })
+        } else {
+            false
+        }
+    });
+
+    assert!(
+        has_tool_results_with_content,
+        "history should contain tool results with actual file content.\nHistory: {:?}",
+        history
+            .iter()
+            .map(|m| match m {
+                chat_cli_v2::api_client::model::ChatMessage::UserInputMessage(m) =>
+                    format!("User: {}", &m.content[..m.content.len().min(100)]),
+                chat_cli_v2::api_client::model::ChatMessage::AssistantResponseMessage(m) =>
+                    format!("Assistant: {}", &m.content[..m.content.len().min(100)]),
+            })
+            .collect::<Vec<_>>()
+    );
+
+    assert!(
+        !has_cancelled_message,
+        "history should NOT contain 'Tool use was cancelled' since the tool completed successfully"
+    );
+}

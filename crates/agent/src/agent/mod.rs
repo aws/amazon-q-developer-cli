@@ -1022,20 +1022,24 @@ impl Agent {
             return Ok(None);
         };
 
-        // Check if the last message is from assistant and has tool uses that need to be cancelled
-        let has_pending_tool_uses = self
-            .conversation_state
-            .messages()
-            .last()
-            .filter(|m| m.role == Role::Assistant)
-            .and_then(|m| m.tool_uses())
-            .is_some();
+        // Check if tool calls didn't complete (cancelled mid-execution, approval denied, etc.).
+        // If so, add placeholder "cancelled" tool results to maintain the alternating message
+        // invariant. Skip this if we already have completed tool results pending commit — in that
+        // case the tool ran successfully and we should preserve the real results.
+        let has_pending_tool_results = matches!(&self.execution_state.active_state, ActiveState::ExecutingRequest {
+            pending_user_message: Some(PendingUserMessage::ToolResults { .. }),
+            ..
+        });
+        let has_pending_tool_uses = !has_pending_tool_results
+            && self
+                .conversation_state
+                .messages()
+                .last()
+                .filter(|m| m.role == Role::Assistant)
+                .and_then(|m| m.tool_uses())
+                .is_some();
 
         if has_pending_tool_uses {
-            // If the agent is in the middle of sending tool uses, then add two new
-            // messages:
-            // 1. user tool results replaced with content: "Tool use was cancelled by the user"
-            // 2. assistant message with content: "Tool uses were interrupted, waiting for the next user prompt"
             let mut content = Vec::new();
             let mut results = HashMap::new();
             if let Some(m) = self.conversation_state.messages().last() {
@@ -1077,11 +1081,18 @@ impl Agent {
                 // We also append a placeholder assistant message to maintain the alternating
                 // User/Assistant invariant required by the API.
                 if let ActiveState::ExecutingRequest {
-                    pending_user_message: Some(PendingUserMessage::Prompt { content, meta }),
+                    pending_user_message: Some(pending),
                     ..
                 } = &self.execution_state.active_state
                 {
-                    self.append_user_message(content.clone(), meta.clone());
+                    match pending.clone() {
+                        PendingUserMessage::Prompt { content, meta } => {
+                            self.append_user_message(content, meta);
+                        },
+                        PendingUserMessage::ToolResults { content, results } => {
+                            self.append_tool_results(content, results);
+                        },
+                    }
                     self.append_assistant_message(Message::new(
                         Role::Assistant,
                         vec![ContentBlock::Text("Response was interrupted by the user".to_string())],

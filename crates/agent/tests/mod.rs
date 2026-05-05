@@ -720,7 +720,8 @@ async fn test_allow_always_grants_exact_file_permission() {
     );
 }
 
-/// Tests that canceling during SendingRequest or ConsumingResponse removes the user message
+/// Tests that canceling during SendingRequest or ConsumingResponse preserves the user message
+/// with a placeholder assistant response
 #[tokio::test]
 async fn test_cancel_during_executing_request() {
     let _ = tracing_subscriber::fmt::try_init();
@@ -751,16 +752,23 @@ async fn test_cancel_during_executing_request() {
     // Wait for cancellation to complete
     test.wait_until_agent_stop(Duration::from_secs(2)).await.unwrap();
 
-    // Verify the user message was removed from conversation history
+    // Verify the user message is preserved with a placeholder assistant response
     let mut snapshot = test.create_snapshot().await;
     let messages = snapshot.conversation_state.messages();
 
     assert_eq!(
         messages.len(),
-        0,
-        "expected 0 messages after cancel during execution, got {}: {:?}",
+        2,
+        "expected 2 messages (user + placeholder) after cancel during execution, got {}: {:?}",
         messages.len(),
         messages
+    );
+    assert_eq!(messages[0].role, Role::User);
+    assert_eq!(messages[1].role, Role::Assistant);
+    assert!(
+        matches!(messages[1].content.as_slice(), [ContentBlock::Text(t)] if t == "Response was interrupted by the user"),
+        "expected placeholder assistant message, got: {:?}",
+        messages[1].content
     );
 
     // Verify turn metadata was still saved

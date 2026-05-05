@@ -1,0 +1,4 @@
+// First response: LLM asks to read a file
+{"kind":"event","data":{"kind":"ToolUseEvent","data":{"tool_use_id":"tooluse_read_cancel_001","name":"read","input":null,"stop":null}}}
+{"kind":"event","data":{"kind":"ToolUseEvent","data":{"tool_use_id":"tooluse_read_cancel_001","name":"read","input":"{\"operations\": [{\"mode\": \"Line\", \"path\": \"test_file.txt\"}]}","stop":null}}}
+{"kind":"event","data":{"kind":"ToolUseEvent","data":{"tool_use_id":"tooluse_read_cancel_001","name":"read","input":null,"stop":true}}}
