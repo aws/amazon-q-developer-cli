@@ -932,7 +932,7 @@ def sign_bun_per_arch(branch_name: str, commit_sha: str):
     signing_bucket_name = os.environ.get("SIGNING_BUCKET_NAME")
     signing_apple_notarizing_secret_arn = os.environ.get("SIGNING_APPLE_NOTARIZING_SECRET_ARN")
 
-    if not all([signing_role_arn, signing_bucket_name, signing_apple_notarizing_secret_arn]):
+    if not (signing_role_arn and signing_bucket_name and signing_apple_notarizing_secret_arn):
         raise ValueError(
             "Missing signing environment variables: SIGNING_ROLE_ARN, SIGNING_BUCKET_NAME, SIGNING_APPLE_NOTARIZING_SECRET_ARN"
         )
@@ -1002,7 +1002,7 @@ def sign_node_per_arch(branch_name: str, commit_sha: str):
     signing_bucket_name = os.environ.get("SIGNING_BUCKET_NAME")
     signing_apple_notarizing_secret_arn = os.environ.get("SIGNING_APPLE_NOTARIZING_SECRET_ARN")
 
-    if not all([signing_role_arn, signing_bucket_name, signing_apple_notarizing_secret_arn]):
+    if not (signing_role_arn and signing_bucket_name and signing_apple_notarizing_secret_arn):
         raise ValueError(
             "Missing signing environment variables: SIGNING_ROLE_ARN, SIGNING_BUCKET_NAME, SIGNING_APPLE_NOTARIZING_SECRET_ARN"
         )
@@ -1050,7 +1050,7 @@ def sign_node_per_arch(branch_name: str, commit_sha: str):
         info(f"Signing and notarizing node-{node_platform}")
         node_entitlements = pathlib.Path("build-config/signing/app/artifact/SIGNING_METADATA/node-entitlements.plist")
         notarized_node = sign_and_notarize(
-            signing_data, node_exe, identifier="org.nodejs.node", entitlements_path=node_entitlements
+            signing_data, node_exe, entitlements_path=node_entitlements
         )
 
         s3_path = f"{branch_name}/notarized-node/{commit_sha}/node-{arch}"
