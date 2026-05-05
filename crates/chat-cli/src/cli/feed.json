@@ -12,6 +12,18 @@
     },
     {
       "type": "release",
+      "date": "2026-05-05",
+      "version": "2.2.2",
+      "title": "Version 2.2.2",
+      "changes": [
+        {
+          "type": "security",
+          "description": "Enforce MCP governance (Kiro console MCP toggle) in V2 TUI mode for enterprise and API key users."
+        }
+      ]
+    },
+    {
+      "type": "release",
       "date": "2026-04-27",
       "version": "2.2.0",
       "title": "Version 2.2.0",
