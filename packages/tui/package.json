@@ -28,7 +28,6 @@
   },
   "dependencies": {
     "@agentclientprotocol/sdk": "0.16.1",
-    "@kiro/agent": "0.3.11",
     "@kiro/client": "0.3.11",
     "@types/diff": "^8.0.0",
     "ansi-escapes": "^7.3.0",
