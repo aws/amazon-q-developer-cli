@@ -517,7 +517,6 @@ async fn session_cancel_notification() {
 }
 
 #[tokio::test(flavor = "multi_thread")]
-#[ignore = "still running into hangs. will need to investigate"]
 #[timeout(30000)]
 #[serial]
 async fn cancel_mid_stream_partial_response() {
@@ -552,11 +551,23 @@ async fn cancel_mid_stream_partial_response() {
             ]),
         )
         .await;
+    // Don't push None yet — we want cancel to fire while stream is still open
 
     let prompt_res_recv = client.prompt_text_async(session_id.clone(), "Hi").await;
 
-    let cancel_res = client.cancel(session_id).await;
-    assert!(cancel_res.is_ok());
+    // Wait until streaming content arrives — guarantees agent is mid-stream
+    client
+        .wait_for(|n| {
+            n.session_updates
+                .iter()
+                .any(|u| matches!(u, SessionUpdate::AgentMessageChunk(_)))
+        })
+        .await;
+
+    // Fire cancel (non-blocking), then push end-of-stream to unblock the drain
+    client.cancel_async(session_id.clone()).await;
+    sleep(Duration::from_millis(50)).await;
+    harness.push_mock_response(&session_id.to_string(), None).await;
 
     let prompt_res = prompt_res_recv
         .await
@@ -2741,4 +2752,102 @@ async fn signature_only_thinking_preserved_in_next_request() {
 
     assert_eq!(reasoning.text, "");
     assert_eq!(reasoning.signature.as_deref(), Some("sig-encrypted-456"));
+}
+
+/// Regression test: when a user cancels mid-stream (ctrl-C), the user's original prompt
+/// should be preserved in conversation history so the next turn has context.
+/// Today the prompt is silently dropped, causing the model to lose context.
+#[tokio::test(flavor = "multi_thread")]
+#[timeout(30000)]
+#[serial]
+async fn cancelled_prompt_preserved_in_next_turn_history() {
+    use chat_cli_v2::api_client::send_message_output::MockStreamItem;
+
+    let (mut harness, client, session_id, _) =
+        AcpTestHarnessBuilder::new("cancelled_prompt_preserved_in_next_turn_history")
+            .build_with_session()
+            .await;
+
+    // Push partial streaming events but NOT the end-of-stream terminator yet.
+    harness
+        .push_mock_response(
+            &session_id.0,
+            Some(vec![MockStreamItem::Event(
+                amzn_codewhisperer_streaming_client::types::ChatResponseStream::AssistantResponseEvent(
+                    AssistantResponseEventBuilder::default()
+                        .content("In silicon valleys, deep and wide,\nWhere streams of data flow like tide,\n")
+                        .build()
+                        .unwrap(),
+                )
+                .into(),
+            )]),
+        )
+        .await;
+
+    // Send prompt async (stream stays open since no None terminator)
+    let prompt_recv = client
+        .prompt_text_async(session_id.clone(), "Can you write a long poem about coding agent war")
+        .await;
+
+    // Wait for the agent to be mid-stream. We use sleep here because wait_for(AgentMessageChunk)
+    // has its own race with notification delivery.
+    sleep(Duration::from_millis(200)).await;
+
+    // Fire cancel (non-blocking), then push end-of-stream to unblock the drain
+    client.cancel_async(session_id.clone()).await;
+    sleep(Duration::from_millis(50)).await;
+    harness.push_mock_response(&session_id.0, None).await;
+
+    // Await the prompt result
+    let prompt_res = tokio::time::timeout(Duration::from_secs(5), prompt_recv)
+        .await
+        .expect("prompt_recv timed out after cancel")
+        .expect("channel closed")
+        .expect("prompt error");
+    assert_eq!(
+        prompt_res.stop_reason,
+        agent_client_protocol::StopReason::Cancelled,
+        "first prompt should be cancelled"
+    );
+
+    // Now send a follow-up prompt ("keep going")
+    harness
+        .push_mock_responses_from_file(&session_id.0, "tests/mock_responses/simple_text.jsonl")
+        .await;
+
+    client
+        .prompt_text(session_id.clone(), "keep going")
+        .await
+        .expect("second prompt failed");
+
+    // Capture the second request and verify it contains the first user prompt in history
+    let captured = harness.get_captured_requests(&session_id.0).await;
+    assert_eq!(captured.len(), 2, "should have captured two requests");
+
+    let second_request = &captured[1];
+    let history = second_request.history.as_ref().expect("second request should have history");
+
+    // The history should contain the original user prompt from the cancelled turn
+    let has_original_prompt = history.iter().any(|msg| {
+        if let chat_cli_v2::api_client::model::ChatMessage::UserInputMessage(m) = msg {
+            m.content.contains("poem about coding agent war")
+        } else {
+            false
+        }
+    });
+
+    assert!(
+        has_original_prompt,
+        "history should contain the original cancelled prompt so the model has context.\n\
+         History messages: {:?}",
+        history
+            .iter()
+            .map(|m| match m {
+                chat_cli_v2::api_client::model::ChatMessage::UserInputMessage(m) =>
+                    format!("User: {}", &m.content[..m.content.len().min(80)]),
+                chat_cli_v2::api_client::model::ChatMessage::AssistantResponseMessage(m) =>
+                    format!("Assistant: {}", &m.content[..m.content.len().min(80)]),
+            })
+            .collect::<Vec<_>>()
+    );
 }

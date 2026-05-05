@@ -366,6 +366,13 @@ impl AcpTestClient {
         rx.await.unwrap()
     }
 
+    /// Fire-and-forget cancel — sends the notification without waiting for the agent to finish.
+    /// Use this when you need to push mock end-of-stream after cancel to unblock the drain.
+    pub async fn cancel_async(&self, session_id: acp::SessionId) {
+        let (reply, _rx) = oneshot::channel();
+        self.tx.send(Command::Cancel { session_id, reply }).await.ok();
+    }
+
     pub async fn set_session_model(
         &self,
         session_id: acp::SessionId,
