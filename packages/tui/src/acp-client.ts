@@ -1190,7 +1190,7 @@ export class KasAcpClient extends BaseAcpClient {
     this.sessionDisposables.forEach((d) => d.dispose());
     this.sessionDisposables = [
       this.kiroClient.onSessionUpdate(sessionId, async (notification) => {
-        const update = notification.update as AcpSessionUpdate;
+        const update = notification.update;
         // Keep the cached current mode in sync for /agent and agent-display
         // purposes.  ACP doesn't (yet) ship an available_modes_update, so
         // availableModes is refreshed only on session/new and session/load.
