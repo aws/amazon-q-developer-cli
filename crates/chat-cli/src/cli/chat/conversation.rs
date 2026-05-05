@@ -1272,8 +1272,12 @@ Return only the JSON configuration, no additional text."
 
         Ok(FigConversationState {
             conversation_id: Some(self.conversation_id.clone()),
-            user_input_message: generation_message.into_user_input_message(self.model.clone(), &tools),
-            history: Some(flatten_history(history.iter(), self.model.as_deref())),
+            user_input_message: generation_message
+                .into_user_input_message(self.model_info.as_ref().map(|m| m.model_id.clone()), &tools),
+            history: Some(flatten_history(
+                history.iter(),
+                self.model_info.as_ref().map(|m| m.model_id.as_str()),
+            )),
             agent_continuation_id: Some(self.user_turn_metadata.continuation_id().to_string()),
         })
     }
