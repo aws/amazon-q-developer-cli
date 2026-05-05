@@ -482,13 +482,15 @@ def cd_signer_status_request(request_id: str):
     return response_json["signingRequest"]["status"]
 
 
-def cd_build_signed_package(exe_path: pathlib.Path):
+def cd_build_signed_package(exe_path: pathlib.Path, entitlements_path: pathlib.Path | None = None):
     """
     Creates a tarball `package.tar.gz` with the following structure:
     ```
     package
     ├─ EXECUTABLES_TO_SIGN
     | ├─ kiro-cli-chat
+    ├─ SIGNING_METADATA (optional)
+    | ├─ entitlements.plist
     ```
     """
     # Trying a different format without manifest.yaml and placing EXECUTABLES_TO_SIGN
@@ -501,7 +503,12 @@ def cd_build_signed_package(exe_path: pathlib.Path):
     shutil.copy2(exe_path, working_dir / "EXECUTABLES_TO_SIGN" / exe_path.name)
     exe_path.unlink()
 
-    run_cmd(["gtar", "-czf", "artifact.gz", "EXECUTABLES_TO_SIGN"], cwd=working_dir)
+    if entitlements_path:
+        (working_dir / "SIGNING_METADATA").mkdir(exist_ok=True)
+        shutil.copy2(entitlements_path, working_dir / "SIGNING_METADATA" / "entitlements.plist")
+
+    run_cmd(["gtar", "-czf", "artifact.gz", "EXECUTABLES_TO_SIGN"] +
+            (["SIGNING_METADATA"] if entitlements_path else []), cwd=working_dir)
     run_cmd(
         ["gtar", "-czf", BUILD_DIR / "package.tar.gz", "artifact.gz"],
         cwd=working_dir,
@@ -512,10 +519,18 @@ def cd_build_signed_package(exe_path: pathlib.Path):
 
 def manifest(
     identifier: str,
+    entitlements_path: str | None = None,
 ):
     """
     Returns the manifest arguments required when creating a new CD Signer request.
     """
+    signing_requirements: dict = {
+        "certificate_type": "developerIDAppDistribution",
+        "app_id_prefix": APPLE_TEAM_ID,
+    }
+    if entitlements_path:
+        signing_requirements["signing_args"] = {"entitlements_path": entitlements_path}
+
     return {
         "type": "app",
         "os": "osx",
@@ -523,15 +538,17 @@ def manifest(
         "outputs": [{"label": "macos", "path": "EXECUTABLES_TO_SIGN"}],
         "app": {
             "identifier": identifier,
-            "signing_requirements": {
-                "certificate_type": "developerIDAppDistribution",
-                "app_id_prefix": APPLE_TEAM_ID,
-            },
+            "signing_requirements": signing_requirements,
         },
     }
 
 
-def sign_executable(signing_data: CdSigningData, exe_path: pathlib.Path) -> pathlib.Path:
+def sign_executable(
+    signing_data: CdSigningData,
+    exe_path: pathlib.Path,
+    identifier: str = "com.amazon.codewhisperer",
+    entitlements_path: pathlib.Path | None = None,
+) -> pathlib.Path:
     """
     Signs an executable with CD Signer.
 
@@ -542,7 +559,7 @@ def sign_executable(signing_data: CdSigningData, exe_path: pathlib.Path) -> path
     info(f"Signing {name}")
 
     info("Packaging...")
-    package_path = cd_build_signed_package(exe_path)
+    package_path = cd_build_signed_package(exe_path, entitlements_path=entitlements_path)
 
     info("Uploading...")
     run_cmd(["aws", "s3", "rm", "--recursive", f"s3://{signing_data.bucket_name}/signed"])
@@ -550,7 +567,8 @@ def sign_executable(signing_data: CdSigningData, exe_path: pathlib.Path) -> path
     run_cmd(["aws", "s3", "cp", package_path, f"s3://{signing_data.bucket_name}/pre-signed/package.tar.gz"])
 
     info("Sending request...")
-    request_id = cd_signer_create_request(manifest("com.amazon.codewhisperer"))
+    entitlements_manifest_path = "SIGNING_METADATA/entitlements.plist" if entitlements_path else None
+    request_id = cd_signer_create_request(manifest(identifier, entitlements_path=entitlements_manifest_path))
     cd_signer_start_request(
         request_id=request_id,
         source_key="pre-signed/package.tar.gz",
@@ -645,7 +663,12 @@ def notarize_executable(signing_data: CdSigningData, exe_path: pathlib.Path):
     zip_path.unlink()
 
 
-def sign_and_notarize(signing_data: CdSigningData, chat_path: pathlib.Path) -> pathlib.Path:
+def sign_and_notarize(
+    signing_data: CdSigningData,
+    chat_path: pathlib.Path,
+    identifier: str = "com.amazon.codewhisperer",
+    entitlements_path: pathlib.Path | None = None,
+) -> pathlib.Path:
     """
     Signs an executable with CD Signer, and verifies it with Apple notary service.
 
@@ -653,7 +676,7 @@ def sign_and_notarize(signing_data: CdSigningData, chat_path: pathlib.Path) -> p
         The path to the signed executable.
     """
     # First, sign the application
-    chat_path = sign_executable(signing_data, chat_path)
+    chat_path = sign_executable(signing_data, chat_path, identifier=identifier, entitlements_path=entitlements_path)
 
     # Next, notarize the application
     notarize_executable(signing_data, chat_path)
@@ -1025,7 +1048,10 @@ def sign_node_per_arch(branch_name: str, commit_sha: str):
         os.chmod(node_exe, 0o755)
 
         info(f"Signing and notarizing node-{node_platform}")
-        notarized_node = sign_and_notarize(signing_data, node_exe)
+        node_entitlements = pathlib.Path("build-config/signing/app/artifact/SIGNING_METADATA/node-entitlements.plist")
+        notarized_node = sign_and_notarize(
+            signing_data, node_exe, identifier="org.nodejs.node", entitlements_path=node_entitlements
+        )
 
         s3_path = f"{branch_name}/notarized-node/{commit_sha}/node-{arch}"
         info(f"Uploading notarized node-{arch} to s3://{signing_bucket_name}/{s3_path}")
