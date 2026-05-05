@@ -163,6 +163,63 @@ s3://{BUILD_OUTPUT_BUCKET}/
 
 ## Local Development
 
+### Prerequisites
+
+- Rust toolchain (see `rust-toolchain.toml`)
+- Python 3
+- Bun (pinned at `.bun-pinned/1.3.13/bun`, or install globally)
+
+### Building
+
+1. **Authenticate to CodeArtifact** (required for `@kiro/*` packages):
+   ```bash
+   ./scripts/codeartifact-login.sh
+   ```
+
+2. **Full build** (Rust binary + TUI):
+   ```bash
+   python3 scripts/main.py build --skip-lints --skip-tests --not-release --skip-autodocs-embeddings
+   ```
+   This places the binary at `target/debug/chat_cli`.
+
+### Running
+
+**Standard mode** (after building):
+```bash
+./target/debug/chat_cli chat
+```
+
+**KAS agent engine mode** (requires [kiro-agent](https://github.com/kiro-team/kiro-agent) built locally):
+```bash
+KIRO_TUI_LOG_FILE=~/temp/kiro-tui.log \
+  KIRO_TUI_LOG_LEVEL=debug \
+  KIRO_KAS_SERVER_PATH=<path-to-kiro-agent>/packages/kiro-agent/dist/server/acp-server.js \
+  KIRO_TEST_TUI_JS_PATH=<path-to-kiro-cli>/packages/tui/dist/tui.js \
+  ./target/debug/chat_cli chat --agent-engine=kas
+```
+
+Or use the convenience script:
+```bash
+./scripts/test-kas.sh
+```
+
+> **Note:** KAS mode has a known issue with the file watcher — invoke the CLI from a directory with few files to avoid crashes.
+
+### Testing
+
+Run from `packages/tui/`:
+
+```bash
+# Unit tests
+../../.bun-pinned/1.3.13/bun test
+
+# Integration tests (requires a real TTY — run from a terminal, not an agent)
+PATH="$(pwd)/../../.bun-pinned/1.3.13:$PATH" ../../.bun-pinned/1.3.13/bun test ./integ_tests/
+
+# Typecheck
+../../.bun-pinned/1.3.13/bun run typecheck
+```
+
 ### Project Structure
 
 **Workspace Members**:
