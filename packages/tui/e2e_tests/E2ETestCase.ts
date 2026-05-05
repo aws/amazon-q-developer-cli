@@ -101,6 +101,7 @@ export class E2ETestCase {
       KIRO_CHAT_LOG_FILE: this.paths.rustLogFile,
       KIRO_LOG_LEVEL: 'chat_cli=debug,agent=debug,semantic_search_client=trace',
       HOME: homeDir,
+      USERPROFILE: homeDir,
       KIRO_TEST_SESSIONS_DIR: homeDir,
       KIRO_TEST_DB_PATH: path.join(homeDir, 'test.sqlite3'),
       KIRO_TEST_AGENTS_DIR: path.join(homeDir, 'agents'),
@@ -187,8 +188,19 @@ export class E2ETestCase {
     this.tuiIpcServer?.close();
     this.agentIpcServer?.close();
 
-    // Clean up sandbox directory
-    fs.rmSync(this.sandboxDir, { recursive: true, force: true });
+    // Clean up sandbox directory (retry on Windows where files may still be locked)
+    for (let attempt = 0; attempt < 3; attempt++) {
+      try {
+        fs.rmSync(this.sandboxDir, { recursive: true, force: true });
+        break;
+      } catch (e: any) {
+        if (e.code === 'EBUSY' && attempt < 2) {
+          await new Promise(resolve => setTimeout(resolve, 500));
+          continue;
+        }
+        // Ignore cleanup errors on last attempt — don't fail the test
+      }
+    }
   }
 
   /**

@@ -18,7 +18,7 @@ describe('Chat Command', () => {
     }
   });
 
-  it('loads a previous session and displays its history', async () => {
+  it.skipIf(process.platform === 'win32')('loads a previous session and displays its history', async () => {
     testCase = await E2ETestCase.builder()
       .withTerminal({ width: 120, height: 40 })
       .withTestName('chat-command-load')

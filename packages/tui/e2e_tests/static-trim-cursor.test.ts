@@ -96,7 +96,7 @@ describe('Static trim cursor desync', () => {
     expect(allText).toContain('CANARY13');
   }, 60000);
 
-  it('new messages render after resize following trim', async () => {
+  it.skipIf(process.platform === 'win32')('new messages render after resize following trim', async () => {
     testCase = await E2ETestCase.builder()
       .withTestName('static-trim-resize')
       .withTerminal({ width: 100, height: 50 })

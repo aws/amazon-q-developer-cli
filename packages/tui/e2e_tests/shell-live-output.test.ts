@@ -31,8 +31,9 @@ describe('Shell live output streaming', () => {
     await testCase.getSessionId();
 
     // Slow command: 7 lines with 1s delays gives ~7s to poll the store.
-    const command =
-      'for i in 1 2 3 4 5 6 7; do echo "stream-line-$i"; sleep 1; done';
+    const command = process.platform === 'win32'
+      ? '1..7 | ForEach-Object { Write-Output "stream-line-$_"; Start-Sleep 1 }'
+      : 'for i in 1 2 3 4 5 6 7; do echo "stream-line-$i"; sleep 1; done';
 
     // Stream 1: Tool use — Rust backend executes for real, emitting
     // ToolCallUpdate events via event_tx as each line is read.
@@ -138,7 +139,9 @@ describe('Shell live output streaming', () => {
     await testCase.waitForText('ask a question', 10000);
     await testCase.getSessionId();
 
-    const command = 'for w in alpha beta gamma; do echo "$w"; sleep 1; done';
+    const command = process.platform === 'win32'
+      ? 'ForEach-Object { Write-Output $_ ; Start-Sleep 1 } -InputObject alpha,beta,gamma'
+      : 'for w in alpha beta gamma; do echo "$w"; sleep 1; done';
 
     await testCase.pushSendMessageResponse([
       {

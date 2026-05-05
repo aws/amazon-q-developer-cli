@@ -122,8 +122,11 @@ describe('Shell Escape (!command)', () => {
       .launch();
     await testCase.waitForText('ask a question', 15000);
 
-    // Use bash read to prompt for input and echo it back
-    await testCase.sendKeys('!read -p "Name: " name && echo "Hello $name"');
+    // Use shell-specific read command to prompt for input and echo it back
+    const cmd = process.platform === 'win32'
+      ? '!$name = Read-Host "Name"; Write-Output "Hello $name"'
+      : '!read -p "Name: " name && echo "Hello $name"';
+    await testCase.sendKeys(cmd);
     await testCase.sleepMs(200);
     await testCase.pressEnter();
 
@@ -176,7 +179,10 @@ describe('Shell Escape (!command)', () => {
     // Use variables for prompt strings so the literal prompt text we wait for
     // doesn't appear in the typed command (which stays visible on screen and
     // would cause waitForText to match prematurely in slow CI environments).
-    await testCase.sendKeys('!P=Prompt; read -p "${P}1: " a && read -p "${P}2: " b && echo "$a and $b"');
+    const cmd = process.platform === 'win32'
+      ? '!$a = Read-Host "Prompt1"; $b = Read-Host "Prompt2"; Write-Output "$a and $b"'
+      : '!P=Prompt; read -p "${P}1: " a && read -p "${P}2: " b && echo "$a and $b"';
+    await testCase.sendKeys(cmd);
     await testCase.sleepMs(200);
     await testCase.pressEnter();
 

@@ -143,7 +143,7 @@ jobs:
     if: needs.check-paths.outputs.tui-changed == 'true'
     strategy:
       matrix:
-        os: [ubuntu-latest, macos-latest]
+        os: [ubuntu-latest, macos-latest, windows-x64-latest-16-cores]
       fail-fast: false
     runs-on: ${{ matrix.os }}
     timeout-minutes: 30
