@@ -1072,17 +1072,21 @@ impl Agent {
             if let AgentLoopEventKind::UserTurnEnd(md) = evt {
                 self.conversation_metadata.user_turn_metadatas.push(md.clone());
 
-                // Cancel the user message if needed
-                let should_cancel_prompt = matches!(self.active_state(), ActiveState::ExecutingRequest { .. })
-                    && self
-                        .conversation_state
-                        .messages()
-                        .last()
-                        .is_some_and(|m| m.role == Role::User);
-                if should_cancel_prompt {
-                    let entry = LogEntry::cancelled_prompt();
-                    let index = self.conversation_state.append_log(entry.clone());
-                    self.agent_event_buf.push(AgentEvent::LogEntryAppended { entry, index });
+                // Commit the pending user message so it's preserved in history.
+                // The model needs context of what the user asked even if the turn was cancelled.
+                // We also append a placeholder assistant message to maintain the alternating
+                // User/Assistant invariant required by the API.
+                if let ActiveState::ExecutingRequest {
+                    pending_user_message: Some(PendingUserMessage::Prompt { content, meta }),
+                    ..
+                } = &self.execution_state.active_state
+                {
+                    self.append_user_message(content.clone(), meta.clone());
+                    self.append_assistant_message(Message::new(
+                        Role::Assistant,
+                        vec![ContentBlock::Text("Response was interrupted by the user".to_string())],
+                        Some(Utc::now()),
+                    ));
                 }
 
                 self.agent_event_buf.push(AgentEvent::EndTurn(md.clone()));

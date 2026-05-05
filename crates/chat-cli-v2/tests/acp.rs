@@ -2825,7 +2825,10 @@ async fn cancelled_prompt_preserved_in_next_turn_history() {
     assert_eq!(captured.len(), 2, "should have captured two requests");
 
     let second_request = &captured[1];
-    let history = second_request.history.as_ref().expect("second request should have history");
+    let history = second_request
+        .history
+        .as_ref()
+        .expect("second request should have history");
 
     // The history should contain the original user prompt from the cancelled turn
     let has_original_prompt = history.iter().any(|msg| {
