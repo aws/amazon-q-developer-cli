@@ -1077,7 +1077,7 @@ export class KasAcpClient extends BaseAcpClient {
     const stream = buildStdioStreams(proc);
     this.kiroClient = new KiroClient({
       stream: stream as Stream,
-      clientInfo: { name: 'kiro-tui', version: TUI_VERSION },
+      clientInfo: { name: 'kiro-cli', version: TUI_VERSION },
       clientMeta: { telemetry: getTelemetryIdentity() },
     });
   }
