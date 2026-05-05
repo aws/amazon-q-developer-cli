@@ -366,6 +366,42 @@ describe('KasAcpClient', () => {
     });
   }
 
+  it('executeCommand("agent") with agentName swaps via setSessionConfigOption', async () => {
+    const client = new KasAcpClient();
+    await client.initialize();
+    await client.newSession();
+    mockKiroSetSessionConfigOption.mockClear();
+    const result = await client.executeCommand({
+      command: 'agent',
+      args: { agentName: 'research' },
+    } as any);
+    expect(mockKiroSetSessionConfigOption).toHaveBeenCalledWith({
+      sessionId: 'kas-session-1',
+      configId: 'mode',
+      value: 'research',
+    });
+    expect(result.success).toBe(true);
+    expect(result.data).toEqual({ agent: { name: 'research' } });
+  });
+
+  it('executeCommand("agent") with value arg strips swap prefix', async () => {
+    const client = new KasAcpClient();
+    await client.initialize();
+    await client.newSession();
+    mockKiroSetSessionConfigOption.mockClear();
+    const result = await client.executeCommand({
+      command: 'agent',
+      args: { value: 'swap docs' },
+    } as any);
+    expect(mockKiroSetSessionConfigOption).toHaveBeenCalledWith({
+      sessionId: 'kas-session-1',
+      configId: 'mode',
+      value: 'docs',
+    });
+    expect(result.success).toBe(true);
+    expect(result.data).toEqual({ agent: { name: 'docs' } });
+  });
+
   it('executeCommand("chat delete") forwards to _kiro/session/delete', async () => {
     mockKiroSendExtMethod.mockResolvedValue({ success: true });
     const client = new KasAcpClient();

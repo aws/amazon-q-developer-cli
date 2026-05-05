@@ -20,6 +20,7 @@ import type {
 import type { ListSessionsResponse } from './types/session-client';
 
 import packageJson from '../package.json';
+import { SLASH_COMMANDS } from './slash-commands';
 
 const TUI_VERSION: string = packageJson.version;
 
@@ -1086,11 +1087,6 @@ export class KasAcpClient extends BaseAcpClient {
   }
 
   private extensionMethods: Set<string> = new Set();
-  private extensionDescriptors: Array<{
-    method: string;
-    name: string;
-    description: string;
-  }> = [];
 
   async initialize(): Promise<void> {
     const response = await this.kiroClient.initialize();
@@ -1099,35 +1095,28 @@ export class KasAcpClient extends BaseAcpClient {
       | undefined;
     const methods = kiroMeta?.extensionMethods;
     if (Array.isArray(methods)) {
-      this.extensionDescriptors = (
-        methods as typeof this.extensionDescriptors
-      ).filter((m) => TUI_SUPPORTED_EXT_METHODS.has(m.method));
       this.extensionMethods = new Set(
-        this.extensionDescriptors.map((m) => m.method)
+        methods.map((m: string | { method: string }) =>
+          typeof m === 'string' ? m : m.method
+        )
       );
-      const seen = new Set<string>();
-      const commands: Array<{
-        name: string;
-        description: string;
-        meta: Record<string, unknown>;
-      }> = [];
-      for (const desc of this.extensionDescriptors) {
-        const rawCmdName = desc.name.split(' ')[0]!;
-        const cmdName = KAS_COMMAND_ALIASES[rawCmdName] ?? rawCmdName;
-        if (seen.has(cmdName)) continue;
-        seen.add(cmdName);
-        const key = cmdName.replace(/^\//, '');
-        commands.push({
-          name: cmdName,
-          description: desc.description,
-          meta: { ...(KAS_BUILTIN_META[key] ?? {}) },
-        });
-      }
+    }
+
+    const commands = SLASH_COMMANDS.filter((cmd) =>
+      cmd.requiredMethods.every((m) => this.extensionMethods.has(m))
+    ).map((cmd) => ({
+      name: cmd.name,
+      description: cmd.description,
+      meta: (cmd.meta ?? {}) as Record<string, unknown>,
+    }));
+
+    if (commands.length > 0) {
       this.broadcastStreamEvent({
         type: AgentEventType.ExtensionMethodsDiscovered,
         commands,
       });
     }
+
     logger.debug('[acp-client] KAS ACP handshake done, extensionMethods:', [
       ...this.extensionMethods,
     ]);
@@ -1249,7 +1238,9 @@ export class KasAcpClient extends BaseAcpClient {
         const args = (command as Record<string, unknown>).args as
           | Record<string, string>
           | undefined;
-        const agentName = args?.agentName ?? args?.value ?? '';
+        let agentName = args?.agentName ?? args?.value ?? '';
+        // executeCommandWithArg prefixes selection with "swap "
+        if (agentName.startsWith('swap ')) agentName = agentName.slice(5);
         if (agentName) {
           return this.executeAgentSwap(agentName);
         }
@@ -1317,15 +1308,27 @@ export class KasAcpClient extends BaseAcpClient {
     };
   }
 
-  /** /agent swap — effect expects data.agent.name */
+  /** /agent swap — uses session/setMode (standard ACP) since KAS doesn't have _kiro/agent/swap */
   private async executeAgentSwap(agentName: string): Promise<CommandResult> {
-    const result = await this.callExtMethod('_kiro/agent/swap', { agentName });
-    if (!result.success) return result;
-    return {
-      success: true,
-      message: `Switched to ${agentName}`,
-      data: { agent: { name: agentName } },
-    };
+    if (!this.sessionId)
+      return { success: false, message: 'No active session' };
+    try {
+      await this.kiroClient.setSessionConfigOption({
+        sessionId: this.sessionId,
+        configId: 'mode',
+        value: agentName,
+      });
+      return {
+        success: true,
+        message: `Switched to ${agentName}`,
+        data: { agent: { name: agentName } },
+      };
+    } catch (e) {
+      return {
+        success: false,
+        message: e instanceof Error ? e.message : 'Failed to switch agent',
+      };
+    }
   }
 
   /** /clear — effect calls ctx.clearMessages() */
@@ -1512,90 +1515,6 @@ function kasFeedback(args?: Record<string, string>): CommandResult {
     };
   }
 }
-
-/** TUI metadata for KAS builtin commands, keyed by name without slash. */
-/** Extension methods the TUI knows how to handle. */
-/** Map KAS extension method command names to TUI command names */
-const KAS_COMMAND_ALIASES: Record<string, string> = {
-  '/session': '/chat',
-};
-
-const TUI_SUPPORTED_EXT_METHODS = new Set([
-  '_kiro/help',
-  '_kiro/agent/list',
-  '_kiro/agent/swap',
-  '_kiro/clear',
-  '_kiro/plan',
-  '_kiro/session/list',
-  '_kiro/session/delete',
-]);
-
-const KAS_BUILTIN_META: Record<string, import('./types/commands').CommandMeta> =
-  {
-    help: { inputType: 'panel' },
-    model: {
-      inputType: 'selection',
-      optionsMethod: '_kiro.dev/commands/model/options',
-      hint: '',
-    },
-    agent: {
-      inputType: 'selection',
-      optionsMethod: '_kiro.dev/commands/agent/options',
-      hint: '',
-      subcommands: ['create', 'edit', 'swap'],
-      subcommandHints: { create: '<name>', edit: '[name]', swap: '<name>' },
-    },
-    context: {
-      inputType: 'panel',
-      hint: 'add <path>, remove <path>, clear',
-      subcommands: ['show', 'add', 'remove', 'clear'],
-      subcommandHints: { add: '[--force] <path>...', remove: '<path>...' },
-    },
-    quit: { local: true },
-    usage: { inputType: 'panel' },
-    mcp: {
-      inputType: 'panel',
-      subcommands: ['list', 'add', 'remove'],
-      subcommandHints: { add: '<server-name>', remove: '<server-name>' },
-    },
-    tools: {
-      inputType: 'panel',
-      hint: 'trust-all, trust <name>, untrust <name>, reset',
-      subcommands: ['trust-all', 'trust', 'untrust', 'reset'],
-      subcommandHints: { trust: '<name>', untrust: '<name>' },
-    },
-    feedback: { inputType: 'selection', searchable: false, hint: '' },
-    knowledge: {
-      inputType: 'panel',
-      subcommands: ['show', 'add', 'remove', 'update', 'clear', 'cancel'],
-      subcommandHints: {
-        add: '<name> <path>',
-        remove: '<name|path>',
-        update: '<path>',
-      },
-    },
-    prompts: {
-      inputType: 'selection',
-      optionsMethod: '_kiro.dev/commands/prompts/options',
-      hint: '',
-    },
-    chat: {
-      inputType: 'selection',
-      local: true,
-      hint: 'save <path>, load <path>, new [prompt]',
-      subcommands: ['save', 'load', 'new'],
-      subcommandHints: {
-        save: '[--force] <path>',
-        load: '<path>',
-        new: '[prompt]',
-      },
-    },
-    code: {
-      inputType: 'panel',
-      subcommands: ['status', 'init', 'logs', 'overview', 'summary'],
-    },
-    hooks: { inputType: 'panel' },
-  };
 
 // ─── Factory ─────────────────────────────────────────────────────────
 
