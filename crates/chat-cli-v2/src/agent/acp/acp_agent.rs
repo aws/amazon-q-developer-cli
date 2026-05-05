@@ -960,6 +960,8 @@ struct AcpSession {
     session_injected_mcp_servers: Vec<(String, agent::agent_config::definitions::McpServerConfig)>,
     /// Whether MCP is enabled by governance (Kiro console MCP toggle).
     mcp_enabled: bool,
+    /// In-memory ring buffer of per-request metadata for `/stats`.
+    request_stats: super::request_stats::RequestStats,
 }
 
 impl AcpSession {
@@ -1037,6 +1039,7 @@ impl AcpSession {
             cwd: &self.cwd,
             legacy_session_exporter: &self.legacy_session_exporter,
             session_injected_mcp_servers: &self.session_injected_mcp_servers,
+            request_stats: &self.request_stats,
         }
     }
 
@@ -1058,6 +1061,37 @@ impl AcpSession {
                 error!("Failed to get agent snapshot for session persistence: {}", e);
             },
         }
+    }
+
+    /// Extract metadata from a completed response stream and push to the ring buffer.
+    fn record_request_stats(
+        &self,
+        result: &Result<agent::agent_loop::types::Message, agent::agent_loop::protocol::LoopError>,
+        metadata: &agent::agent_loop::protocol::StreamMetadata,
+    ) {
+        let stream = metadata.stream.as_ref();
+        let metrics = stream.and_then(|s| s.metrics.as_ref());
+        let service = stream.and_then(|s| s.service.as_ref());
+        let usage = stream.and_then(|s| s.usage.as_ref());
+
+        let duration = metrics.map(|m| (m.request_end_time - m.request_start_time).to_std().unwrap_or_default());
+
+        let error = match result {
+            Ok(_) => None,
+            Err(e) => Some(e.to_string()),
+        };
+
+        self.request_stats.push(super::request_stats::RequestRecord {
+            request_id: service.and_then(|s| s.request_id.clone()),
+            timestamp: metrics.map_or_else(chrono::Utc::now, |m| m.request_start_time),
+            duration,
+            time_to_first_chunk: metrics.and_then(|m| m.time_to_first_chunk),
+            input_tokens: usage.and_then(|u| u.input_tokens),
+            output_tokens: usage.and_then(|u| u.output_tokens),
+            status_code: service.and_then(|s| s.status_code),
+            had_tool_use: !metadata.tool_uses.is_empty(),
+            error,
+        });
     }
 
     async fn with_builder(
@@ -1306,6 +1340,7 @@ impl AcpSession {
                 .unwrap_or_else(|| Arc::new(crate::agent::session::legacy_compat::NoOpLegacySessionExporter)),
             session_injected_mcp_servers: builder.session_injected_mcp_servers,
             mcp_enabled: builder.mcp_enabled,
+            request_stats: Default::default(),
         })
     }
 
@@ -1965,6 +2000,16 @@ impl AcpSession {
     async fn handle_agent_event(&mut self, event: AgentEvent) {
         self.telemetry_observer
             .send_event(self.session_id_str.clone(), event.clone());
+
+        // Capture per-request metadata into the in-memory ring buffer for /stats
+        if let AgentEvent::Internal(agent::protocol::InternalEvent::AgentLoop(ref loop_event)) = event
+            && let agent::agent_loop::protocol::AgentLoopEventKind::ResponseStreamEnd {
+                ref result,
+                ref metadata,
+            } = loop_event.kind
+        {
+            self.record_request_stats(result, metadata);
+        }
 
         let session_db = Arc::clone(&self.session_db);
         let rts_state = Arc::clone(&self.rts_state);

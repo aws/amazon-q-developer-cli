@@ -39,6 +39,8 @@ export interface CommandMeta {
   serverName?: string;
   /** When true, Menu uses bold instead of accent color for selected items, preserving embedded ANSI colors. */
   preserveLabelColors?: boolean;
+  /** When true, command is executable but hidden from autocomplete dropdown. */
+  hidden?: boolean;
 }
 
 /** Command advertised by backend */

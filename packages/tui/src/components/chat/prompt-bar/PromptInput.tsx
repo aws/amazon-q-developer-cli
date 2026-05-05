@@ -730,11 +730,13 @@ export const PromptInput = React.memo(function PromptInput({
       // Check if slash command menu is visible (has matching commands)
       const hasMatchingSlashCommands =
         activeTrigger?.key === '/' && !commandInputValue.includes(' ')
-          ? slashCommands.some((cmd) =>
-              cmd.name
-                .slice(1)
-                .toLowerCase()
-                .startsWith(commandInputValue.slice(1).toLowerCase())
+          ? slashCommands.some(
+              (cmd) =>
+                !cmd.meta?.hidden &&
+                cmd.name
+                  .slice(1)
+                  .toLowerCase()
+                  .startsWith(commandInputValue.slice(1).toLowerCase())
             )
           : false;
       const slashMenuVisible = hasMatchingSlashCommands;

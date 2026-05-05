@@ -7,6 +7,7 @@ pub mod extensions;
 pub mod mcp_conversion;
 mod mcp_prompts;
 pub mod orchestration;
+pub mod request_stats;
 pub mod schema;
 pub mod session_manager;
 pub mod session_tool_handler;

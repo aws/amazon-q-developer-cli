@@ -61,6 +61,8 @@ pub enum TuiCommand {
     Hooks(HooksArgs),
     /// Switch to the guide agent for help with Kiro CLI
     Guide(GuideArgs),
+    /// Show request stats for debugging slow turns
+    Stats(StatsArgs),
 }
 
 /// Arguments for /help command
@@ -238,6 +240,19 @@ pub struct GuideArgs {
     pub question: Option<String>,
 }
 
+/// Arguments for /stats command
+#[typeshare]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct StatsArgs {
+    /// Subcommand: "save <filename>" to export to file
+    #[serde(default, alias = "value", skip_serializing_if = "Option::is_none")]
+    pub subcommand: Option<String>,
+    /// Show only the last N requests (default: all)
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub last: Option<u32>,
+}
+
 impl TuiCommand {
     /// Command name with leading slash
     pub fn name(&self) -> &'static str {
@@ -262,6 +277,7 @@ impl TuiCommand {
             TuiCommand::Code(_) => "/code",
             TuiCommand::Hooks(_) => "/hooks",
             TuiCommand::Guide(_) => "/guide",
+            TuiCommand::Stats(_) => "/stats",
         }
     }
 
@@ -288,6 +304,7 @@ impl TuiCommand {
             TuiCommand::Code(_) => "Code intelligence workspace management",
             TuiCommand::Hooks(_) => "View configured hooks",
             TuiCommand::Guide(_) => "Get help with Kiro CLI features from the guide agent",
+            TuiCommand::Stats(_) => "Show request IDs and timings for debugging slow turns",
         }
     }
 
@@ -316,6 +333,7 @@ impl TuiCommand {
             TuiCommand::Code(_) => "/code [status|init|logs|overview|summary]",
             TuiCommand::Hooks(_) => "/hooks",
             TuiCommand::Guide(_) => "/guide [question]",
+            TuiCommand::Stats(_) => "/stats [N|save <filename>]",
         }
     }
 
@@ -444,6 +462,12 @@ impl TuiCommand {
                 Some(meta)
             },
             TuiCommand::Guide(_) => None,
+            TuiCommand::Stats(_) => {
+                let mut meta = serde_json::Map::new();
+                meta.insert("inputType".into(), "panel".into());
+                meta.insert("hidden".into(), true.into());
+                Some(meta)
+            },
         };
 
         // Attach subcommands to meta so the TUI can offer a sub-command dropdown
@@ -493,6 +517,7 @@ impl TuiCommand {
             TuiCommand::Code(CodeArgs::default()),
             TuiCommand::Hooks(HooksArgs::default()),
             TuiCommand::Guide(GuideArgs::default()),
+            TuiCommand::Stats(StatsArgs::default()),
         ];
         commands.sort_by_key(|cmd| cmd.name());
         commands
@@ -548,6 +573,21 @@ impl TuiCommand {
             "guide" => Some(Self::Guide(GuideArgs {
                 question: (!args.is_empty()).then(|| args.to_string()),
             })),
+            "stats" => {
+                if args.is_empty() {
+                    Some(Self::Stats(StatsArgs::default()))
+                } else if let Ok(n) = args.parse::<u32>() {
+                    Some(Self::Stats(StatsArgs {
+                        last: Some(n),
+                        ..Default::default()
+                    }))
+                } else {
+                    Some(Self::Stats(StatsArgs {
+                        subcommand: Some(args.to_string()),
+                        ..Default::default()
+                    }))
+                }
+            },
             _ => None,
         }
     }

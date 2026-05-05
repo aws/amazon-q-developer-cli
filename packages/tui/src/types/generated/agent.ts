@@ -385,6 +385,14 @@ export interface QuitArgs {
 export interface ReplyArgs {
 }
 
+/** Arguments for /stats command */
+export interface StatsArgs {
+	/** Subcommand: "save <filename>" to export to file */
+	subcommand?: string;
+	/** Show only the last N requests (default: all) */
+	last?: number;
+}
+
 export type StreamErrorKind = 
 	/**
 	 * The request failed due to the context window overflowing.
@@ -572,5 +580,7 @@ export type TuiCommand =
 	/** View configured hooks */
 	| { command: "hooks", args: HooksArgs }
 	/** Switch to the guide agent for help with Kiro CLI */
-	| { command: "guide", args: GuideArgs };
+	| { command: "guide", args: GuideArgs }
+	/** Show request stats for debugging slow turns */
+	| { command: "stats", args: StatsArgs };
 

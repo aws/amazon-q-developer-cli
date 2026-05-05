@@ -17,6 +17,7 @@ import { HelpPanel } from '../ui/HelpPanel';
 import { TuiPanel } from '../ui/TuiPanel';
 import { McpPanel } from '../ui/McpPanel';
 import { ToolsPanel } from '../ui/ToolsPanel';
+import { StatsPanel } from '../ui/StatsPanel';
 import { HooksPanel } from '../ui/HooksPanel';
 import { KnowledgePanel } from '../ui/KnowledgePanel';
 import {
@@ -194,6 +195,9 @@ export const InlineLayout: React.FC = () => {
     mcpMode,
     showToolsPanel,
     toolsList,
+    showStatsPanel,
+    statsList,
+    statsSummary,
     showHooksPanel,
     hooksList,
     showKnowledgePanel,
@@ -210,6 +214,7 @@ export const InlineLayout: React.FC = () => {
     setShowUsagePanel,
     setShowMcpPanel,
     setShowToolsPanel,
+    setShowStatsPanel,
     setShowHooksPanel,
     setShowKnowledgePanel,
     setShowCodePanel,
@@ -428,6 +433,12 @@ export const InlineLayout: React.FC = () => {
     setActiveCommand(null);
     clearCommandInput();
   }, [setShowToolsPanel, setActiveCommand, clearCommandInput]);
+
+  const handleCloseStatsPanel = useCallback(() => {
+    setShowStatsPanel(false);
+    setActiveCommand(null);
+    clearCommandInput();
+  }, [setShowStatsPanel, setActiveCommand, clearCommandInput]);
 
   const handleCloseHooksPanel = useCallback(() => {
     setShowHooksPanel(false);
@@ -728,6 +739,7 @@ export const InlineLayout: React.FC = () => {
               showUsagePanel ||
               showMcpPanel ||
               showToolsPanel ||
+              showStatsPanel ||
               showHooksPanel ||
               showKnowledgePanel ||
               showCodePanel ||
@@ -775,6 +787,7 @@ export const InlineLayout: React.FC = () => {
                   showUsagePanel ||
                   showMcpPanel ||
                   showToolsPanel ||
+                  showStatsPanel ||
                   showHooksPanel ||
                   showKnowledgePanel ||
                   showCodePanel
@@ -850,6 +863,13 @@ export const InlineLayout: React.FC = () => {
             )}
             {showToolsPanel && (
               <ToolsPanel tools={toolsList} onClose={handleCloseToolsPanel} />
+            )}
+            {showStatsPanel && (
+              <StatsPanel
+                stats={statsList}
+                summary={statsSummary}
+                onClose={handleCloseStatsPanel}
+              />
             )}
             {showHooksPanel && (
               <HooksPanel hooks={hooksList} onClose={handleCloseHooksPanel} />

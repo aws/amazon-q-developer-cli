@@ -18,6 +18,7 @@ pub mod paste_image;
 pub mod plan;
 pub mod prompts;
 pub mod reply;
+pub mod stats;
 pub mod tools;
 pub mod usage;
 
@@ -31,6 +32,7 @@ use ::agent::tui_commands::{
     TuiCommand,
 };
 
+use crate::agent::acp::request_stats::RequestStats;
 use crate::agent::acp::session_manager::{
     AgentInfo,
     SessionManagerHandle,
@@ -141,6 +143,7 @@ pub struct CommandContext<'a> {
     pub cwd: &'a std::path::Path,
     pub legacy_session_exporter: &'a Arc<dyn crate::agent::session::legacy_compat::LegacySessionExporter>,
     pub session_injected_mcp_servers: &'a [(String, ::agent::agent_config::definitions::McpServerConfig)],
+    pub request_stats: &'a RequestStats,
 }
 /// Execute a slash command by dispatching to the appropriate module
 pub async fn execute(command: TuiCommand, ctx: &CommandContext<'_>) -> CommandResult {
@@ -171,6 +174,7 @@ pub async fn execute(command: TuiCommand, ctx: &CommandContext<'_>) -> CommandRe
         TuiCommand::Code(ref args) => code::execute(args, ctx).await,
         TuiCommand::Hooks(_) => hooks::execute(ctx).await,
         TuiCommand::Guide(ref args) => guide::execute(args, ctx).await,
+        TuiCommand::Stats(ref args) => stats::execute(args, ctx).await,
     }
 }
 

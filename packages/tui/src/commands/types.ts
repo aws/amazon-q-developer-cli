@@ -13,6 +13,8 @@ import type {
   McpServerInfo,
   ToolInfo,
   CodePanelData,
+  RequestStat,
+  StatsSummary,
 } from '../stores/app-store.js';
 
 /** Context passed to command handlers */
@@ -62,6 +64,12 @@ export interface CommandContext {
   ) => void;
   /** Show/hide tools panel */
   setShowToolsPanel: (show: boolean, tools?: ToolInfo[]) => void;
+  /** Show/hide stats panel */
+  setShowStatsPanel: (
+    show: boolean,
+    stats?: RequestStat[],
+    summary?: StatsSummary | null
+  ) => void;
   /** Show/hide hooks panel */
   setShowHooksPanel: (show: boolean, hooks?: HookInfo[]) => void;
   /** Show/hide knowledge panel */

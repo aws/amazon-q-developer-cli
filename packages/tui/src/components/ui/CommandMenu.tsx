@@ -160,7 +160,9 @@ export const CommandMenu: React.FC = () => {
     const matches = slashCommands.filter((cmd) =>
       cmd.name.slice(1).toLowerCase().startsWith(partial)
     );
-    const cmds = matches.filter((c) => c.meta?.type !== 'prompt');
+    const cmds = matches.filter(
+      (c) => c.meta?.type !== 'prompt' && !c.meta?.hidden
+    );
     const promptCmds = matches.filter((c) => c.meta?.type === 'prompt');
     cmds.sort((a, b) => a.name.localeCompare(b.name));
     return [...cmds, ...promptCmds];

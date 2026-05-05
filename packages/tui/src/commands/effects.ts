@@ -94,6 +94,7 @@ type EffectName =
   | 'showThemeMenu'
   | 'showTuiPanel'
   | 'showSessionId'
+  | 'showStatsPanel'
   | 'switchToGuideAgent';
 
 /**
@@ -113,6 +114,7 @@ const commandEffects: Partial<Record<string, EffectName>> = {
   exit: 'quit',
   mcp: 'showMcpPanel',
   tools: 'showToolsPanel',
+  stats: 'showStatsPanel',
   hooks: 'showHooksPanel',
   knowledge: 'showKnowledgePanel',
   paste: 'pasteImage',
@@ -275,6 +277,20 @@ const effectHandlers: Record<EffectName, EffectHandler> = {
       ctx.setShowToolsPanel(true, data.tools);
     }
     // Subcommands (trust-all, reset) return no tools data — let dispatcher show the alert
+  },
+
+  showStatsPanel: (result, ctx, _cmd, args) => {
+    if (args?.startsWith('save')) {
+      ctx.setActiveCommand(null);
+      ctx.showAlert(
+        result?.message ?? 'Done',
+        result?.success ? 'success' : 'error',
+        3000
+      );
+      return true;
+    }
+    const data = result?.data as { stats?: any[]; summary?: any } | undefined;
+    ctx.setShowStatsPanel(true, data?.stats ?? [], data?.summary ?? null);
   },
 
   showHooksPanel: (result, ctx) => {
