@@ -1,6 +1,6 @@
 {
-  "generated_at": "2026-04-16T15:32:37.090056",
-  "total_docs": 100,
+  "generated_at": "2026-05-05T18:56:58.480685",
+  "total_docs": 103,
   "by_category": {
     "command": [
       "commands/acp.md",
@@ -26,6 +26,7 @@
       "features/mcp-registry.md",
       "features/planning-agent.md",
       "features/session-management.md",
+      "features/steering-files.md",
       "features/tangent-mode.md",
       "features/terminal-progress-indicator.md"
     ],
@@ -44,6 +45,7 @@
       "settings/default-model.md",
       "settings/diff-tool-settings.md",
       "settings/disable-markdown-rendering.md",
+      "settings/disable-wrap.md",
       "settings/enable-checkpoint.md",
       "settings/enable-code-intelligence.md",
       "settings/enable-knowledge.md",
@@ -90,6 +92,7 @@
       "slash-commands/prompts.md",
       "slash-commands/quit.md",
       "slash-commands/reply.md",
+      "slash-commands/stats.md",
       "slash-commands/tangent.md",
       "slash-commands/todo.md",
       "slash-commands/tools.md",
@@ -211,7 +214,7 @@
       "path": "commands/login.md",
       "file": "login.md",
       "title": "kiro-cli login",
-      "description": "Authenticate with Kiro CLI service using Builder ID or Identity Center",
+      "description": "Authenticate with Kiro CLI service using Builder ID, Social (Google/GitHub), or Identity Center",
       "category": "command",
       "keywords": [
         "login",
@@ -219,13 +222,19 @@
         "authentication",
         "builder-id",
         "identity-center",
-        "govcloud"
+        "govcloud",
+        "social",
+        "google",
+        "github",
+        "device-flow",
+        "remote",
+        "headless"
       ],
       "related": [
         "logout",
         "whoami"
       ],
-      "validated": "2026-01-27",
+      "validated": "2026-04-16",
       "status": "validated"
     },
     {
@@ -582,6 +591,29 @@
       "status": "validated"
     },
     {
+      "path": "features/steering-files.md",
+      "file": "steering-files.md",
+      "title": "steering-files",
+      "description": "Markdown files that provide persistent instructions and rules to guide agent behavior across sessions",
+      "category": "feature",
+      "keywords": [
+        "steering",
+        "rules",
+        "instructions",
+        "context",
+        "guidelines",
+        "conventions",
+        "kiro",
+        "configuration"
+      ],
+      "related": [
+        "agent-configuration",
+        "context"
+      ],
+      "validated": "2026-04-28",
+      "status": "validated"
+    },
+    {
       "path": "features/tangent-mode.md",
       "file": "tangent-mode.md",
       "title": "Tangent Mode",
@@ -770,6 +802,28 @@
       ],
       "related": [],
       "validated": "2025-12-19",
+      "status": "validated"
+    },
+    {
+      "path": "settings/disable-wrap.md",
+      "file": "disable-wrap.md",
+      "title": "chat.disableWrap",
+      "description": "Disable line wrapping in chat output for clean copy-paste of long lines",
+      "category": "setting",
+      "keywords": [
+        "wrap",
+        "wrapping",
+        "line-wrap",
+        "copy",
+        "paste",
+        "output",
+        "formatting"
+      ],
+      "related": [
+        "chat-interface-settings",
+        "disable-markdown-rendering"
+      ],
+      "validated": "2026-04-29",
       "status": "validated"
     },
     {
@@ -1200,7 +1254,7 @@
         "cmd-agent",
         "agent-config"
       ],
-      "validated": "2026-02-02",
+      "validated": "2026-04-24",
       "status": "validated"
     },
     {
@@ -1729,6 +1783,29 @@
       "status": "validated"
     },
     {
+      "path": "slash-commands/stats.md",
+      "file": "stats.md",
+      "title": "/stats",
+      "description": "Show request IDs and timings for debugging slow turns",
+      "category": "slash_command",
+      "keywords": [
+        "stats",
+        "debug",
+        "timing",
+        "latency",
+        "request-id",
+        "performance",
+        "slow",
+        "ttfc"
+      ],
+      "related": [
+        "usage",
+        "logdump"
+      ],
+      "validated": "2026-05-05",
+      "status": "validated"
+    },
+    {
       "path": "slash-commands/tangent.md",
       "file": "tangent.md",
       "title": "/tangent",
@@ -1829,7 +1906,7 @@
         "grep",
         "slash-code"
       ],
-      "validated": "2026-01-27",
+      "validated": "2026-04-29",
       "status": "validated"
     },
     {
@@ -1866,14 +1943,16 @@
         "terminal",
         "run",
         "working_dir",
-        "directory"
+        "directory",
+        "streaming",
+        "live output"
       ],
       "related": [
         "fs-read",
         "fs-write",
         "use-aws"
       ],
-      "validated": "2026-02-06",
+      "validated": "2026-04-14",
       "status": "validated"
     },
     {
