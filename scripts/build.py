@@ -484,13 +484,15 @@ def cd_signer_status_request(request_id: str):
 
 def cd_build_signed_package(exe_path: pathlib.Path, entitlements_path: pathlib.Path | None = None):
     """
-    Creates a tarball `package.tar.gz` with the following structure:
+    Creates a tarball `package.tar.gz` with the following structure 
+    (this is done via following https://docs.hub.amazon.dev/cd-signer/api-guide/getting-started/#how-to-use-executables-signing-with-entitlements):
     ```
     package
-    ├─ EXECUTABLES_TO_SIGN
-    | ├─ kiro-cli-chat
-    ├─ SIGNING_METADATA (optional)
-    | ├─ entitlements.plist
+    ├── EXECUTABLES_TO_SIGN
+        ├── $SAMPLE_EXECUTABLE_FILE
+        └── $SAMPLE_CLI_TOOL
+    └── SIGNING_METADATA
+        └──Entitlements.entitlements
     ```
     """
     # Trying a different format without manifest.yaml and placing EXECUTABLES_TO_SIGN
@@ -520,6 +522,7 @@ def cd_build_signed_package(exe_path: pathlib.Path, entitlements_path: pathlib.P
 def manifest(
     identifier: str,
     entitlements_path: str | None = None,
+    executable_name: str | None = None,
 ):
     """
     Returns the manifest arguments required when creating a new CD Signer request.
@@ -531,15 +534,25 @@ def manifest(
     if entitlements_path:
         signing_requirements["signing_args"] = {"entitlements_path": entitlements_path}
 
+    app: dict = {
+        "identifier": identifier,
+        "signing_requirements": signing_requirements,
+    }
+    if entitlements_path and executable_name:
+        app["embedded_requirements"] = {
+            executable_name: {
+                "signing_args": {
+                    "entitlements_path": entitlements_path,
+                }
+            }
+        }
+
     return {
         "type": "app",
         "os": "osx",
         "name": "EXECUTABLES_TO_SIGN",
         "outputs": [{"label": "macos", "path": "EXECUTABLES_TO_SIGN"}],
-        "app": {
-            "identifier": identifier,
-            "signing_requirements": signing_requirements,
-        },
+        "app": app,
     }
 
 
@@ -562,17 +575,17 @@ def sign_executable(
     package_path = cd_build_signed_package(exe_path, entitlements_path=entitlements_path)
 
     info("Uploading...")
-    run_cmd(["aws", "s3", "rm", "--recursive", f"s3://{signing_data.bucket_name}/signed"])
-    run_cmd(["aws", "s3", "rm", "--recursive", f"s3://{signing_data.bucket_name}/pre-signed"])
-    run_cmd(["aws", "s3", "cp", package_path, f"s3://{signing_data.bucket_name}/pre-signed/package.tar.gz"])
+    run_cmd(["aws", "s3", "rm", "--recursive", f"s3://{signing_data.bucket_name}/signed/{name}"])
+    run_cmd(["aws", "s3", "rm", "--recursive", f"s3://{signing_data.bucket_name}/pre-signed/{name}"])
+    run_cmd(["aws", "s3", "cp", package_path, f"s3://{signing_data.bucket_name}/pre-signed/{name}/package.tar.gz"])
 
     info("Sending request...")
     entitlements_manifest_path = "SIGNING_METADATA/entitlements.plist" if entitlements_path else None
-    request_id = cd_signer_create_request(manifest(identifier, entitlements_path=entitlements_manifest_path))
+    request_id = cd_signer_create_request(manifest(identifier, entitlements_path=entitlements_manifest_path, executable_name=name))
     cd_signer_start_request(
         request_id=request_id,
-        source_key="pre-signed/package.tar.gz",
-        destination_key="signed/signed.zip",
+        source_key=f"pre-signed/{name}/package.tar.gz",
+        destination_key=f"signed/{name}/signed.zip",
         signing_data=signing_data,
     )
 
@@ -607,7 +620,7 @@ def sign_executable(
 
     # Create a new directory for unzipping the signed executable.
     zip_dl_path = BUILD_DIR / pathlib.Path("signed.zip")
-    run_cmd(["aws", "s3", "cp", f"s3://{signing_data.bucket_name}/signed/signed.zip", zip_dl_path])
+    run_cmd(["aws", "s3", "cp", f"s3://{signing_data.bucket_name}/signed/{name}/signed.zip", zip_dl_path])
     payload_path = BUILD_DIR / "signed"
     shutil.rmtree(payload_path, ignore_errors=True)
     run_cmd(["unzip", zip_dl_path, "-d", payload_path])
