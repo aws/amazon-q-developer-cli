@@ -38,24 +38,41 @@ jobs:
   build-linux:
     name: Build Linux (${{ matrix.target }}, ${{ inputs.environment }})
     runs-on: ${{ matrix.runner }}
+    container: ${{ matrix.container }}
     environment: ${{ inputs.environment }}
     strategy:
       fail-fast: true
       matrix:
         include:
           - target: x86_64-unknown-linux-gnu
-            runner: ubuntu-22.04
+            runner: ubuntu-latest-8-cores
+            container: ubuntu:22.04
           - target: x86_64-unknown-linux-musl
-            runner: ubuntu-22.04
+            runner: ubuntu-latest-8-cores
             musl: "1"
           - target: aarch64-unknown-linux-gnu
-            runner: ubuntu-22.04
+            runner: ubuntu-latest-8-cores
             cross_target: aarch64-unknown-linux-gnu
           - target: aarch64-unknown-linux-musl
-            runner: ubuntu-22.04
+            runner: ubuntu-latest-8-cores
             musl: "1"
             cross_target: aarch64-unknown-linux-musl
     steps:
+      - name: Prepare container (install basics)
+        if: matrix.container
+        run: |
+          apt-get update
+          apt-get install -y --no-install-recommends \
+            ca-certificates curl wget git build-essential pkg-config \
+            libssl-dev unzip xz-utils sudo gnupg zip
+          # Install Node.js 20 from NodeSource (22.04's default nodejs is too old for modern deps like node-pty)
+          curl -fsSL https://deb.nodesource.com/setup_20.x | bash -
+          apt-get install -y --no-install-recommends nodejs
+          npm install -g node-gyp
+          # Install AWS CLI v2
+          curl -fsSL "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o /tmp/awscliv2.zip
+          cd /tmp && unzip -q awscliv2.zip && ./aws/install && cd - && rm -rf /tmp/aws /tmp/awscliv2.zip
+
       - uses: actions/checkout@v4
         with:
           ref: ${{ inputs.commit_sha }}
@@ -67,13 +84,19 @@ jobs:
             echo "BUILD_OUTPUT_BUCKET=${{ secrets.BUILD_OUTPUT_BUCKET }}"
           } >> "$GITHUB_ENV"
 
+      - name: Install Python (in container)
+        if: matrix.container
+        run: |
+          apt-get install -y --no-install-recommends python3 python3-pip python3-venv
+
       - name: Setup Python
+        if: '!matrix.container'
         uses: actions/setup-python@v6
         with:
           python-version: '3.11'
 
       - name: Install Python dependencies
-        run: pip install -r scripts/requirements.txt
+        run: python3 -m pip install -r scripts/requirements.txt
 
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable
@@ -82,6 +105,7 @@ jobs:
         uses: oven-sh/setup-bun@v2
 
       - name: Free Disk Space
+        if: '!matrix.container'
         uses: jlumbroso/free-disk-space@v1.3.1
         with:
           tool-cache: false
