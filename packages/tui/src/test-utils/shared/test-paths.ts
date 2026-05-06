@@ -6,6 +6,44 @@
 import * as os from 'os';
 import * as path from 'path';
 import * as fs from 'fs';
+import * as crypto from 'crypto';
+
+// macOS `sockaddr_un.sun_path` is 104 bytes (including NUL), Linux is 108.
+// Use the stricter limit with a small safety margin so sockets bind reliably
+// across platforms.
+const MAX_SOCKET_PATH_LEN = 103;
+
+/**
+ * Build a socket directory path that keeps the full socket path under the
+ * platform's sun_path limit. If the natural path `{tmp}/kiro-cli-tests/{name}/`
+ * plus the longest socket filename would exceed the limit, the test name is
+ * replaced with a short hash-suffixed variant. The original test name is still
+ * used for human-readable artifacts under `baseDir`.
+ */
+function buildSocketDir(testName: string): string {
+  const tmpRoot = path.join(os.tmpdir(), 'kiro-cli-tests');
+  // Longest socket filename we will place in this dir.
+  const longestSockFile = 'agent.sock';
+  const naturalPath = path.join(tmpRoot, testName, longestSockFile);
+  if (naturalPath.length <= MAX_SOCKET_PATH_LEN) {
+    return path.join(tmpRoot, testName);
+  }
+
+  // Too long — derive a shortened, collision-resistant directory name.
+  // 8 hex chars of sha1 is plenty for test isolation.
+  const hash = crypto
+    .createHash('sha1')
+    .update(testName)
+    .digest('hex')
+    .slice(0, 8);
+  const overhead =
+    tmpRoot.length + path.sep.length + 1 /* '/' */ + longestSockFile.length + 1;
+  const available =
+    MAX_SOCKET_PATH_LEN - overhead - (hash.length + 1); /* '-' */
+  const prefix = testName.slice(0, Math.max(0, available));
+  const shortName = prefix ? `${prefix}-${hash}` : hash;
+  return path.join(tmpRoot, shortName);
+}
 
 export interface TestPaths {
   /** Base directory for all test artifacts */
@@ -64,7 +102,7 @@ export function createTestDir(
     tuiIpcSocket = `${pipePrefix}-tui`;
     agentIpcSocket = `${pipePrefix}-agent`;
   } else {
-    const socketDir = path.join(os.tmpdir(), 'kiro-cli-tests', testName);
+    const socketDir = buildSocketDir(testName);
     // Clean and recreate socket directory to remove stale sockets from previous runs
     if (fs.existsSync(socketDir)) {
       fs.rmSync(socketDir, { recursive: true });
