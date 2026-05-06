@@ -34,4 +34,10 @@ export const SLASH_COMMANDS: SlashCommand[] = [
     },
     requiredMethods: ['_kiro/agent/list'],
   },
+  {
+    name: '/clear',
+    description: 'Clear the conversation and start a fresh session',
+    // No required extension methods: composed from ACP-standard session/new.
+    requiredMethods: [],
+  },
 ];

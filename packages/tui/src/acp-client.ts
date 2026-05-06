@@ -1343,11 +1343,31 @@ export class KasAcpClient extends BaseAcpClient {
     }
   }
 
-  /** /clear — effect calls ctx.clearMessages() */
+  /**
+   * /clear — compose from ACP primitives: create a fresh session
+   * (session/new) and let the TUI reset its screen.  KAS intentionally
+   * does not expose a higher-level "clear conversation" extension method,
+   * so the client composes this behavior itself.
+   */
   private async executeClear(): Promise<CommandResult> {
-    const result = await this.callExtMethod('_kiro/clear');
-    if (!result.success) return result;
-    return { success: true, message: 'Conversation cleared' };
+    try {
+      const session = await this.newSession();
+      return {
+        success: true,
+        message: 'Conversation cleared',
+        data: {
+          sessionId: session.sessionId,
+          currentModel: session.currentModel,
+          currentAgent: session.currentAgent,
+        },
+      };
+    } catch (e) {
+      return {
+        success: false,
+        message:
+          e instanceof Error ? e.message : 'Failed to clear conversation',
+      };
+    }
   }
 
   /** /plan — effect expects data.agent.name (uses updateAgent) */

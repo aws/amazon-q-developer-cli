@@ -321,6 +321,25 @@ const effectHandlers: Record<EffectName, EffectHandler> = {
   },
 
   clearMessages: (result, ctx) => {
+    // KAS mode: /clear composes session/new + UI reset, so the result carries
+    // a new sessionId.  Do a full wipe and adopt the new session.
+    // Rust mode: backend cleared history on the existing session, so keep the
+    // last turn visible (legacy behavior).
+    const data = result?.data as
+      | {
+          sessionId?: string;
+          currentModel?: { id: string; name: string };
+          currentAgent?: { name: string; welcomeMessage?: string };
+        }
+      | undefined;
+    if (data?.sessionId) {
+      ctx.clearUIState();
+      ctx.resetMessages();
+      ctx.setSessionId(data.sessionId);
+      if (data.currentModel) ctx.setCurrentModel(data.currentModel);
+      if (data.currentAgent) ctx.setCurrentAgent(data.currentAgent);
+      return;
+    }
     ctx.clearMessages();
   },
 

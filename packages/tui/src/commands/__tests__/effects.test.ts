@@ -361,6 +361,40 @@ describe('runEffect routing', () => {
     expect(ctx._spies.clearMessages!).toHaveBeenCalled();
   });
 
+  it('/clear with new sessionId in result resets UI and adopts session (KAS path)', () => {
+    const cmd: SlashCommand = {
+      name: '/clear',
+      description: '',
+      source: 'backend',
+    };
+    const ctx = createMockCommandContext();
+    const result = {
+      success: true,
+      message: 'Conversation cleared',
+      data: {
+        sessionId: 'new-session-id',
+        currentModel: { id: 'm1', name: 'Test Model' },
+        currentAgent: { name: 'default' },
+      },
+    };
+
+    runEffect(cmd, result, ctx, '');
+
+    // KAS path — full wipe and adopt the new session
+    expect(ctx._spies.clearUIState!).toHaveBeenCalled();
+    expect(ctx._spies.resetMessages!).toHaveBeenCalled();
+    expect(ctx._spies.setSessionId!).toHaveBeenCalledWith('new-session-id');
+    expect(ctx._spies.setCurrentModel!).toHaveBeenCalledWith({
+      id: 'm1',
+      name: 'Test Model',
+    });
+    expect(ctx._spies.setCurrentAgent!).toHaveBeenCalledWith({
+      name: 'default',
+    });
+    // Legacy Rust-mode behavior (keep-last-turn) must NOT fire
+    expect(ctx._spies.clearMessages!).not.toHaveBeenCalled();
+  });
+
   it('/context with breakdown shows panel', () => {
     const cmd: SlashCommand = {
       name: '/context',

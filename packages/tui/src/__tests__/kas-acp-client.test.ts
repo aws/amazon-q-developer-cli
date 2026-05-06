@@ -350,7 +350,6 @@ describe('KasAcpClient', () => {
 
   for (const [cmd, method, mockData] of [
     ['agent', '_kiro/agent/list', { agents: [], current: 'default' }],
-    ['clear', '_kiro/clear', {}],
     ['plan', '_kiro/plan', {}],
   ] as const) {
     it(`executeCommand("${cmd}") forwards to agent via ${method}`, async () => {
@@ -365,6 +364,52 @@ describe('KasAcpClient', () => {
       );
     });
   }
+
+  it('executeCommand("clear") creates a new session via session/new primitive', async () => {
+    const client = new KasAcpClient();
+    await client.initialize();
+    await client.newSession(); // seed an initial session
+    mockKiroNewSession.mockClear();
+    mockKiroSendExtMethod.mockClear();
+
+    // Second newSession returns a different sessionId so we can tell clear worked
+    mockKiroNewSession.mockResolvedValueOnce({
+      sessionId: 'kas-session-2',
+      models: {
+        currentModelId: 'm1',
+        availableModels: [{ modelId: 'm1', name: 'Test Model' }],
+      },
+      modes: null,
+    } as any);
+
+    const result = await client.executeCommand({ command: 'clear' } as any);
+
+    // Should have called newSession on the ACP client (not _kiro/clear ext method)
+    expect(mockKiroNewSession).toHaveBeenCalledTimes(1);
+    expect(mockKiroSendExtMethod).not.toHaveBeenCalledWith(
+      '_kiro/clear',
+      expect.anything()
+    );
+
+    // Result surfaces the new session so the effect can update the TUI
+    expect(result.success).toBe(true);
+    expect((result.data as any)?.sessionId).toBe('kas-session-2');
+    expect((result.data as any)?.currentModel).toEqual({
+      id: 'm1',
+      name: 'Test Model',
+    });
+  });
+
+  it('executeCommand("clear") returns error when newSession rejects', async () => {
+    const client = new KasAcpClient();
+    await client.initialize();
+    await client.newSession();
+    mockKiroNewSession.mockRejectedValueOnce(new Error('kas is down'));
+
+    const result = await client.executeCommand({ command: 'clear' } as any);
+    expect(result.success).toBe(false);
+    expect(result.message).toContain('kas is down');
+  });
 
   it('executeCommand("agent") with agentName swaps via setSessionConfigOption', async () => {
     const client = new KasAcpClient();
