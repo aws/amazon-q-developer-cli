@@ -1,14 +1,15 @@
 /**
  * Session discovery utilities for --resume and --resume-picker.
  *
- * Reads V2 session JSON files from ~/.kiro/sessions/cli/ to find
- * sessions matching the current working directory.
+ * Reads V2 session JSON files from ~/.kiro/sessions/cli/ (or
+ * `$KIRO_HOME/sessions/cli/`) to find sessions matching the current
+ * working directory.
  */
 
 import { existsSync, readdirSync, readFileSync, realpathSync } from 'fs';
 import { join, resolve } from 'path';
-import { homedir } from 'os';
 import { logger } from './logger.js';
+import { kiroHomePath } from './kiro-home.js';
 
 export interface SessionEntry {
   sessionId: string;
@@ -20,10 +21,7 @@ export interface SessionEntry {
 }
 
 function getSessionsDir(): string {
-  return (
-    process.env.KIRO_TEST_SESSIONS_DIR ??
-    join(homedir(), '.kiro', 'sessions', 'cli')
-  );
+  return process.env.KIRO_TEST_SESSIONS_DIR ?? kiroHomePath('sessions', 'cli');
 }
 
 function canonicalize(p: string): string {

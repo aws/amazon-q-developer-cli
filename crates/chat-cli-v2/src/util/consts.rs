@@ -135,6 +135,11 @@ pub mod env_var {
         /// Override database path for testing
         KIRO_TEST_DB_PATH = "KIRO_TEST_DB_PATH",
 
+        /// Overrides the directory used for user-level Kiro config data.
+        /// When set, this replaces `$HOME/.kiro` as the root for global
+        /// Kiro paths (agents, prompts, settings, steering, sessions, etc.).
+        KIRO_HOME = "KIRO_HOME",
+
         /// Amazon Q chat shell
         AMAZON_Q_CHAT_SHELL = "AMAZON_Q_CHAT_SHELL",
 

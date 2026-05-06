@@ -226,15 +226,14 @@ impl TaskStore {
 }
 
 /// Build the task store directory path co-located with the session.
-/// Path: ~/.kiro/sessions/cli/{session_id}/tasks/
+/// Path: ~/.kiro/sessions/cli/{session_id}/tasks/ (or $KIRO_HOME/sessions/cli/...)
 /// Respects `KIRO_TEST_SESSIONS_DIR` for testing.
 pub fn task_store_dir(session_id: &str) -> PathBuf {
     let base = if let Ok(test_dir) = std::env::var("KIRO_TEST_SESSIONS_DIR") {
         PathBuf::from(test_dir)
     } else {
-        dirs::home_dir()
+        crate::agent::util::directories::kiro_home_dir()
             .expect("HOME directory not found")
-            .join(".kiro")
             .join("sessions")
             .join("cli")
     };

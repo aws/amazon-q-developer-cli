@@ -1422,6 +1422,15 @@ async fn configure_builtin_agent_resources(agent: &mut Agent, resolver: &PathRes
             .map(|&s| s.parse().expect("DEFAULT_AGENT_RESOURCES must be valid")),
     );
 
+    // Add the global skills glob rooted at the user's Kiro home directory
+    // (honors `KIRO_HOME` when set, falling back to `~/.kiro`).
+    if let Ok(kiro_home) = paths::kiro_home_dir_from_env(resolver.env()) {
+        let skills_pattern = format!("skill://{}/skills/*/SKILL.md", kiro_home.display());
+        if let Ok(resource) = skills_pattern.parse() {
+            agent.resources.push(resource);
+        }
+    }
+
     let mut global_steering_canonical = None;
 
     // Add global steering (KIRO-only)

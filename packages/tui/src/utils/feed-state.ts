@@ -1,13 +1,12 @@
 import { join } from 'path';
 import { readFileSync, writeFileSync, mkdirSync, existsSync } from 'fs';
-import { homedir } from 'os';
 import { logger } from './logger.js';
 import { getCliVersion } from './version.js';
+import { kiroHomePath } from './kiro-home.js';
 import type { AnnouncementEntry } from '../constants/feed.js';
 
 function statePath(): string {
-  const home = process.env.HOME || homedir();
-  return join(home, '.kiro', 'settings', 'feed_state.json');
+  return kiroHomePath('settings', 'feed_state.json');
 }
 
 /**

@@ -112,7 +112,7 @@ fn resolve_global_agents_dir(system: &dyn SystemProvider) -> Option<PathBuf> {
     }
 
     let home = system.home()?;
-    let kiro_path = home.join(".kiro").join("agents");
+    let kiro_path = crate::agent::util::directories::kiro_home_dir_in(&home).join("agents");
     if kiro_path.exists() {
         return Some(kiro_path);
     }
@@ -141,9 +141,21 @@ pub fn build_default_agent(system: &dyn SystemProvider) -> LoadedAgentConfig {
         .map(|&s| s.parse().expect("DEFAULT_AGENT_RESOURCES must be valid"))
         .collect();
 
+    // Add the global skills glob rooted at the user's Kiro home directory
+    // (honors `KIRO_HOME` when set, falling back to `~/.kiro`). We compute
+    // this at load time rather than as a static `~/.kiro/...` entry so the
+    // override takes effect.
+    if let Some(home) = system.home() {
+        let kiro_home = crate::agent::util::directories::kiro_home_dir_in(&home);
+        let skills_pattern = format!("skill://{}/skills/*/SKILL.md", kiro_home.display());
+        if let Ok(resource) = skills_pattern.parse() {
+            resources.push(resource);
+        }
+    }
+
     // Add global steering if exists
     if let Some(home) = system.home() {
-        let global_steering = home.join(".kiro").join("steering");
+        let global_steering = crate::agent::util::directories::kiro_home_dir_in(&home).join("steering");
         if global_steering.exists() {
             resources.push(
                 format!("file://{}/**/*.md", global_steering.display())

@@ -115,8 +115,8 @@ pub fn resolve_file_prompt(cwd: &std::path::Path, name: &str) -> Option<String> 
         return Some(content);
     }
 
-    let global_path = dirs::home_dir()?
-        .join(".kiro")
+    let global_path = crate::agent::util::directories::kiro_home_dir()
+        .ok()?
         .join("prompts")
         .join(format!("{name}.md"));
     std::fs::read_to_string(global_path).ok()

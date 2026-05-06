@@ -1,13 +1,13 @@
 ---
 doc_meta:
-  validated: 2026-03-24
+  validated: 2026-05-05
   commit: 21e95839
   status: validated
   testable_headless: true
   category: command
   title: kiro-cli chat
   description: Start AI assistant session with support for agents, models, tool trust, and conversation management
-  keywords: [chat, conversation, agent, model, interactive, headless, mcp, require-mcp-startup, log, logging, history, KIRO_LOG_NO_COLOR]
+  keywords: [chat, conversation, agent, model, interactive, headless, mcp, require-mcp-startup, log, logging, history, KIRO_LOG_NO_COLOR, KIRO_HOME, config-directory]
   related: [slash-chat-save, slash-chat-load, slash-agent, exit-codes]
 ---
 
@@ -274,3 +274,32 @@ Disable ANSI colors in log output with `KIRO_LOG_NO_COLOR`:
 ```bash
 KIRO_LOG_NO_COLOR=1 kiro-cli chat
 ```
+
+
+## Configuration Directory
+
+By default Kiro reads and writes user-level configuration under `~/.kiro/`:
+
+- `~/.kiro/agents/` — global agent configs
+- `~/.kiro/prompts/` — global file-based prompts
+- `~/.kiro/skills/` — global skills
+- `~/.kiro/steering/` — global steering files
+- `~/.kiro/settings/cli.json` — global CLI settings
+- `~/.kiro/sessions/cli/` — saved chat sessions
+- `~/.kiro/.cli_bash_history` — shell command history
+
+Set `KIRO_HOME` to relocate this root. When set, every path above moves with
+it; an unset or empty `KIRO_HOME` falls back to `$HOME/.kiro` as before.
+
+```bash
+KIRO_HOME=/opt/team/kiro kiro-cli chat
+```
+
+`KIRO_HOME` only affects user-level paths. Two things are intentionally
+unaffected:
+
+- Workspace-local `.kiro/` directories under the current working directory
+  (agents, prompts, settings, steering, skills) — these remain project-local.
+- The SQLite database (`data.sqlite3`), which lives under the platform data
+  directory (`~/Library/Application Support/kiro-cli` on macOS,
+  `~/.local/share/kiro-cli` on Linux, `%LOCALAPPDATA%\kiro-cli` on Windows).

@@ -1,12 +1,15 @@
 pub const DEFAULT_AGENT_NAME: &str = "kiro_default";
 pub const PLANNER_AGENT_NAME: &str = "kiro_planner";
 
-/// Resources always included for the default agent
+/// Resources always included for the default agent.
+///
+/// These are static workspace-relative entries. The global
+/// `$KIRO_HOME/skills/*/SKILL.md` pattern is added dynamically by
+/// `build_default_agent` so it honors the `KIRO_HOME` override.
 pub const DEFAULT_AGENT_RESOURCES: &[&str] = &[
     "file://AGENTS.md",
     "file://README.md",
     "skill://.kiro/skills/*/SKILL.md",
-    "skill://~/.kiro/skills/*/SKILL.md",
 ];
 
 pub const DUMMY_TOOL_NAME: &str = "dummy";

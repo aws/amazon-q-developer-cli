@@ -1,6 +1,6 @@
 {
-  "generated_at": "2026-04-16T15:35:24.821293",
-  "total_docs": 68,
+  "generated_at": "2026-05-05T12:45:57.955899",
+  "total_docs": 70,
   "by_category": {
     "command": [
       "commands/acp.md",
@@ -22,7 +22,8 @@
       "features/knowledge-management.md",
       "features/mcp-registry.md",
       "features/planning-agent.md",
-      "features/session-management.md"
+      "features/session-management.md",
+      "features/steering-files.md"
     ],
     "settings-group": [
       "settings/api-service-settings.md",
@@ -59,6 +60,7 @@
       "slash-commands/quit.md",
       "slash-commands/reply.md",
       "slash-commands/spawn.md",
+      "slash-commands/stats.md",
       "slash-commands/theme.md",
       "slash-commands/tools.md",
       "slash-commands/transcript.md",
@@ -143,7 +145,9 @@
         "log",
         "logging",
         "history",
-        "KIRO_LOG_NO_COLOR"
+        "KIRO_LOG_NO_COLOR",
+        "KIRO_HOME",
+        "config-directory"
       ],
       "related": [
         "slash-chat-save",
@@ -151,7 +155,7 @@
         "slash-agent",
         "exit-codes"
       ],
-      "validated": "2026-03-24",
+      "validated": "2026-05-05",
       "status": "validated"
     },
     {
@@ -179,7 +183,7 @@
       "path": "commands/login.md",
       "file": "login.md",
       "title": "kiro-cli login",
-      "description": "Authenticate with Kiro CLI service using Builder ID or Identity Center",
+      "description": "Authenticate with Kiro CLI service using Builder ID, Social (Google/GitHub), or Identity Center",
       "category": "command",
       "keywords": [
         "login",
@@ -187,13 +191,19 @@
         "authentication",
         "builder-id",
         "identity-center",
-        "govcloud"
+        "govcloud",
+        "social",
+        "google",
+        "github",
+        "device-flow",
+        "remote",
+        "headless"
       ],
       "related": [
         "logout",
         "whoami"
       ],
-      "validated": "2026-01-27",
+      "validated": "2026-04-16",
       "status": "validated"
     },
     {
@@ -484,6 +494,29 @@
       "status": "validated"
     },
     {
+      "path": "features/steering-files.md",
+      "file": "steering-files.md",
+      "title": "steering-files",
+      "description": "Markdown files that provide persistent instructions and rules to guide agent behavior across sessions",
+      "category": "feature",
+      "keywords": [
+        "steering",
+        "rules",
+        "instructions",
+        "context",
+        "guidelines",
+        "conventions",
+        "kiro",
+        "configuration"
+      ],
+      "related": [
+        "agent-configuration",
+        "context"
+      ],
+      "validated": "2026-04-28",
+      "status": "validated"
+    },
+    {
       "path": "settings/api-service-settings.md",
       "file": "api-service-settings.md",
       "title": "API and Service Settings",
@@ -630,14 +663,17 @@
         "switch",
         "swap",
         "profile",
-        "description"
+        "description",
+        "model",
+        "autocomplete"
       ],
       "related": [
         "agent-create",
         "agent-edit",
-        "agent-configuration"
+        "agent-configuration",
+        "model"
       ],
-      "validated": "2026-04-09",
+      "validated": "2026-04-29",
       "status": "validated"
     },
     {
@@ -1086,6 +1122,27 @@
         "agent-swap"
       ],
       "validated": "2026-04-08",
+      "status": "validated"
+    },
+    {
+      "path": "slash-commands/stats.md",
+      "file": "stats.md",
+      "title": "/stats",
+      "description": "Show request IDs and timings for debugging slow turns",
+      "category": "slash_command",
+      "keywords": [
+        "stats",
+        "performance",
+        "debugging",
+        "latency",
+        "request-id",
+        "timing"
+      ],
+      "related": [
+        "usage",
+        "diagnostic"
+      ],
+      "validated": "2026-05-05",
       "status": "validated"
     },
     {

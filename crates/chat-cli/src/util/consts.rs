@@ -156,6 +156,11 @@ pub mod env_var {
         /// Used for E2E tests
         KIRO_TEST_TUI_JS_PATH = "KIRO_TEST_TUI_JS_PATH",
 
+        /// Overrides the directory used for user-level Kiro config data.
+        /// When set, this replaces `$HOME/.kiro` as the root for global
+        /// Kiro paths (agents, prompts, settings, steering, sessions, etc.).
+        KIRO_HOME = "KIRO_HOME",
+
         /// API key for headless/non-interactive authentication
         KIRO_API_KEY = "KIRO_API_KEY",
 

@@ -20,7 +20,10 @@ use tracing::{
 
 use crate::constants::CLI_NAME;
 use crate::os::Os;
-use crate::util::consts::env_var::KIRO_TEST_DB_PATH;
+use crate::util::consts::env_var::{
+    KIRO_HOME,
+    KIRO_TEST_DB_PATH,
+};
 
 #[derive(Debug, Error)]
 pub enum DirectoryError {
@@ -53,12 +56,15 @@ pub mod workspace {
     //! Project-level paths (relative to current working directory)
     pub const RULES_PATTERN: &str = "file://{}/**/*.md";
 
-    // Default documentation files for agent resources
+    // Default documentation files for agent resources.
+    //
+    // These are workspace-relative entries only. The global
+    // `$KIRO_HOME/skills/*/SKILL.md` pattern is added dynamically in
+    // `configure_builtin_agent_resources` so it honors the `KIRO_HOME` override.
     pub const DEFAULT_AGENT_RESOURCES: &[&str] = &[
         "file://AGENTS.md",
         "file://README.md",
         "skill://.kiro/skills/*/SKILL.md",
-        "skill://~/.kiro/skills/*/SKILL.md",
     ];
 }
 
@@ -114,17 +120,39 @@ pub fn tui_js_sha256_path() -> Result<PathBuf> {
     Ok(data_dir()?.join("tui.js.sha256"))
 }
 
+/// Root directory for user-level Kiro config data.
+///
+/// Honors the `KIRO_HOME` environment variable when set; otherwise falls back
+/// to `$HOME/.kiro`. Anything that previously resolved to `~/.kiro` should go
+/// through this helper so users can relocate their config with `KIRO_HOME`.
+pub fn kiro_home_dir(os: &Os) -> Result<PathBuf> {
+    if let Ok(dir) = os.env.get(KIRO_HOME)
+        && !dir.is_empty()
+    {
+        return Ok(PathBuf::from(dir));
+    }
+    Ok(home_dir(os)?.join(".kiro"))
+}
+
+/// Like [`kiro_home_dir`] but without requiring an `Os` handle.
+/// Reads `KIRO_HOME` directly from the process environment. Intended for code
+/// paths (static helpers, early bootstrap) that do not have an `Os` available.
+pub fn kiro_home_dir_from_process_env() -> Result<PathBuf> {
+    if let Ok(dir) = std::env::var(KIRO_HOME)
+        && !dir.is_empty()
+    {
+        return Ok(PathBuf::from(dir));
+    }
+    Ok(dirs::home_dir().ok_or(DirectoryError::NoHomeDirectory)?.join(".kiro"))
+}
+
 /// Path to CLI session storage directory.
 /// Can be overridden via `KIRO_TEST_SESSIONS_DIR` env var for testing.
 pub fn sessions_dir() -> Result<PathBuf> {
     if let Ok(test_dir) = std::env::var("KIRO_TEST_SESSIONS_DIR") {
         return Ok(PathBuf::from(test_dir));
     }
-    Ok(dirs::home_dir()
-        .ok_or(DirectoryError::NoHomeDirectory)?
-        .join(".kiro")
-        .join("sessions")
-        .join("cli"))
+    Ok(kiro_home_dir_from_process_env()?.join("sessions").join("cli"))
 }
 
 /// Hash a path to create a unique directory name
@@ -215,7 +243,7 @@ fn resolve_global_migrated_path(os: &Os, amazonq_subpath: &str, kiro_subpath: &s
             .ok_or(DirectoryError::NoHomeDirectory)?
             .join("kiro-cli")
     } else {
-        home.join(".kiro")
+        kiro_home_dir(os)?
     };
     let amazonq_base = home.join(".aws/amazonq");
 
@@ -404,6 +432,13 @@ impl<'a> PathResolver<'a> {
         Self { os }
     }
 
+    /// Access the underlying `Os` handle. Useful for callers that need to
+    /// resolve paths requiring `Os` (e.g. `kiro_home_dir`) alongside the
+    /// scoped resolvers exposed here.
+    pub fn os(&self) -> &'a Os {
+        self.os
+    }
+
     /// Get workspace-scoped path resolver
     pub fn workspace(&self) -> WorkspacePaths<'_> {
         WorkspacePaths { os: self.os }
@@ -495,7 +530,7 @@ impl<'a> GlobalPaths<'a> {
     }
 
     pub fn agents_dir_for_create(&self) -> Result<PathBuf> {
-        Ok(home_dir(self.os)?.join(".kiro").join("agents"))
+        Ok(kiro_home_dir(self.os)?.join("agents"))
     }
 
     pub fn prompts_dir(&self) -> Result<PathBuf> {
@@ -503,7 +538,7 @@ impl<'a> GlobalPaths<'a> {
     }
 
     pub fn prompts_dir_for_create(&self) -> Result<PathBuf> {
-        Ok(home_dir(self.os)?.join(".kiro").join("prompts"))
+        Ok(kiro_home_dir(self.os)?.join("prompts"))
     }
 
     pub fn mcp_config(&self) -> Result<PathBuf> {
@@ -531,7 +566,7 @@ impl<'a> GlobalPaths<'a> {
     }
 
     pub fn steering_dir(&self) -> Result<PathBuf> {
-        Ok(home_dir(self.os)?.join(".kiro").join("steering"))
+        Ok(kiro_home_dir(self.os)?.join("steering"))
     }
 
     pub fn subagents_dir(&self) -> Result<PathBuf> {
@@ -558,11 +593,7 @@ impl<'a> GlobalPaths<'a> {
         if let Ok(test_path) = std::env::var("KIRO_TEST_SETTINGS_PATH") {
             return Ok(PathBuf::from(test_path));
         }
-        Ok(dirs::home_dir()
-            .ok_or(DirectoryError::NoHomeDirectory)?
-            .join(".kiro")
-            .join("settings")
-            .join("cli.json"))
+        Ok(kiro_home_dir_from_process_env()?.join("settings").join("cli.json"))
     }
 
     pub fn mcp_auth_dir(&self) -> Result<PathBuf> {
@@ -825,5 +856,117 @@ mod path_tests {
 
         // Should use ~/.kiro/steering path
         assert!(steering_dir.to_string_lossy().contains(".kiro/steering"));
+    }
+
+    // ----------------------------------------------------------------------
+    // KIRO_HOME override behavior
+    //
+    // These tests use `Env::from_slice` to fake the process environment so
+    // they don't race with other parallel tests reading `std::env`. They
+    // exercise the `Os`-aware helpers (`kiro_home_dir`, `GlobalPaths::*`)
+    // rather than the process-env helpers because the former is what all
+    // production code goes through.
+    // ----------------------------------------------------------------------
+
+    async fn os_with_env(vars: &[(&str, &str)]) -> Os {
+        use crate::os::Env;
+        let env = Env::from_slice(vars);
+        let mut os = Os::new().await.unwrap();
+        os.env = env;
+        os
+    }
+
+    #[tokio::test]
+    async fn test_kiro_home_fallback_when_unset() {
+        let os = os_with_env(&[("HOME", "/home/testuser")]).await;
+        let dir = kiro_home_dir(&os).unwrap();
+        // KIRO_HOME unset → falls back to the (possibly chroot-prefixed)
+        // $HOME/.kiro. Under `cfg!(test)`, `Os::new()` applies a chroot so
+        // the concrete prefix varies — we only care that the path ends in
+        // the expected suffix.
+        assert!(
+            dir.ends_with("home/testuser/.kiro"),
+            "expected fallback to end with home/testuser/.kiro, got: {}",
+            dir.display()
+        );
+    }
+
+    #[tokio::test]
+    async fn test_kiro_home_fallback_when_empty() {
+        let os = os_with_env(&[("HOME", "/home/testuser"), ("KIRO_HOME", "")]).await;
+        let dir = kiro_home_dir(&os).unwrap();
+        // Empty KIRO_HOME is treated as unset.
+        assert!(
+            dir.ends_with("home/testuser/.kiro"),
+            "expected empty KIRO_HOME to fall back, got: {}",
+            dir.display()
+        );
+    }
+
+    #[tokio::test]
+    async fn test_kiro_home_override_absolute() {
+        let os = os_with_env(&[("HOME", "/home/testuser"), ("KIRO_HOME", "/custom/kiro")]).await;
+        let dir = kiro_home_dir(&os).unwrap();
+        assert_eq!(dir, PathBuf::from("/custom/kiro"));
+    }
+
+    #[tokio::test]
+    async fn test_kiro_home_does_not_affect_database_path() {
+        // Database path is rooted at `dirs::data_local_dir()`, which lives in
+        // Application Support / XDG_DATA_HOME — completely independent of
+        // `$HOME/.kiro`. Setting KIRO_HOME must NOT change it.
+        let _os = os_with_env(&[("HOME", "/home/testuser"), ("KIRO_HOME", "/custom/kiro")]).await;
+        let db_path = GlobalPaths::database_path_static().unwrap();
+        let db_str = db_path.to_string_lossy();
+        assert!(
+            !db_str.contains("/custom/kiro") && !db_str.contains("/home/testuser/.kiro"),
+            "database path should not depend on KIRO_HOME or $HOME/.kiro, got: {}",
+            db_str
+        );
+        assert!(
+            db_str.ends_with("kiro-cli/data.sqlite3") || db_str.ends_with("kiro-cli\\data.sqlite3"),
+            "database path should still live under the data dir, got: {}",
+            db_str
+        );
+    }
+
+    #[tokio::test]
+    async fn test_global_agents_dir_for_create_honors_kiro_home() {
+        let os = os_with_env(&[("HOME", "/home/testuser"), ("KIRO_HOME", "/custom/kiro")]).await;
+        let resolver = PathResolver::new(&os);
+        let dir = resolver.global().agents_dir_for_create().unwrap();
+        assert_eq!(dir, PathBuf::from("/custom/kiro/agents"));
+    }
+
+    #[tokio::test]
+    async fn test_global_steering_dir_honors_kiro_home() {
+        let os = os_with_env(&[("HOME", "/home/testuser"), ("KIRO_HOME", "/custom/kiro")]).await;
+        let resolver = PathResolver::new(&os);
+        let dir = resolver.global().steering_dir().unwrap();
+        assert_eq!(dir, PathBuf::from("/custom/kiro/steering"));
+    }
+
+    #[tokio::test]
+    async fn test_global_prompts_dir_for_create_honors_kiro_home() {
+        let os = os_with_env(&[("HOME", "/home/testuser"), ("KIRO_HOME", "/custom/kiro")]).await;
+        let resolver = PathResolver::new(&os);
+        let dir = resolver.global().prompts_dir_for_create().unwrap();
+        assert_eq!(dir, PathBuf::from("/custom/kiro/prompts"));
+    }
+
+    #[tokio::test]
+    async fn test_workspace_paths_are_not_affected_by_kiro_home() {
+        // KIRO_HOME is a user-level (global) override. Workspace `.kiro/`
+        // directories live under the current working directory and should
+        // be unaffected by the env var.
+        let os = os_with_env(&[("HOME", "/home/testuser"), ("KIRO_HOME", "/custom/kiro")]).await;
+        let resolver = PathResolver::new(&os);
+        let ws = resolver.workspace().steering_dir().unwrap();
+        assert!(
+            !ws.to_string_lossy().contains("/custom/kiro"),
+            "workspace steering dir must not pick up KIRO_HOME override, got: {}",
+            ws.display()
+        );
+        assert!(ws.ends_with(".kiro/steering"));
     }
 }

@@ -11,8 +11,7 @@ use semantic_search_client::types::AddContextRequest;
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("Indexing autodocs-v2 for introspect semantic search...\n");
 
-    let home = dirs::home_dir().ok_or("Could not find home directory")?;
-    let doc_search_dir = home.join(".kiro").join("doc-search-v2");
+    let doc_search_dir = agent::util::directories::kiro_home_dir()?.join("doc-search-v2");
 
     println!("Doc search directory: {}", doc_search_dir.display());
 

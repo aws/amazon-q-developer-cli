@@ -12,8 +12,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("Indexing autodocs for introspect semantic search...\n");
 
     // Use same path as introspect tool
-    let home = dirs::home_dir().ok_or("Could not find home directory")?;
-    let doc_search_dir = home.join(".kiro").join("doc-search");
+    let doc_search_dir = agent::util::directories::kiro_home_dir()?.join("doc-search");
 
     println!("Doc search directory: {}", doc_search_dir.display());
 

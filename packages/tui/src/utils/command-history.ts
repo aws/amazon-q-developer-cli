@@ -1,10 +1,13 @@
-import { homedir } from 'os';
 import { join } from 'path';
 import { readFileSync, writeFileSync, mkdirSync, existsSync } from 'fs';
 import { logger } from './logger.js';
+import { kiroHomePath } from './kiro-home.js';
 
-const DEFAULT_HISTORY_FILE = join(homedir(), '.kiro', '.cli_bash_history');
 const MAX_HISTORY_SIZE = 1000;
+
+function defaultHistoryFile(): string {
+  return kiroHomePath('.cli_bash_history');
+}
 
 export class CommandHistory {
   private static instance: CommandHistory;
@@ -14,7 +17,7 @@ export class CommandHistory {
   private savedInput: string | null = null;
 
   private constructor(historyFile?: string) {
-    this.historyFile = historyFile ?? DEFAULT_HISTORY_FILE;
+    this.historyFile = historyFile ?? defaultHistoryFile();
     this.history = this.load();
   }
 

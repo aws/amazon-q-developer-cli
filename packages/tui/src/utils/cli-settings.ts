@@ -1,12 +1,12 @@
 import { join } from 'path';
 import { readFileSync, writeFileSync, mkdirSync, existsSync } from 'fs';
-import { homedir } from 'os';
 import { logger } from './logger.js';
+import { kiroHomePath } from './kiro-home.js';
 
 /**
  * Shared synchronous access to the user's global kiro-cli settings at
- * `~/.kiro/settings/cli.json` (mirrors the path used by `chat-cli`'s
- * Rust settings loader).
+ * `~/.kiro/settings/cli.json` (or `$KIRO_HOME/settings/cli.json`, mirroring
+ * the path used by `chat-cli`'s Rust settings loader).
  *
  * Why a file read instead of going through ACP?
  *
@@ -18,8 +18,7 @@ import { logger } from './logger.js';
  */
 
 function settingsPath(): string {
-  const home = process.env.HOME || process.env.USERPROFILE || homedir();
-  return join(home, '.kiro', 'settings', 'cli.json');
+  return kiroHomePath('settings', 'cli.json');
 }
 
 /** Returns the parsed cli.json object, or `{}` on any error. */

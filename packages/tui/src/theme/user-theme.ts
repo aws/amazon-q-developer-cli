@@ -1,17 +1,18 @@
 /**
  * User theme customization — color presets and persistence.
  *
- * Stores user-chosen prompt and response styles in ~/.kiro/settings/kiro_cli_theme.json.
+ * Stores user-chosen prompt and response styles in
+ * `~/.kiro/settings/kiro_cli_theme.json` (or `$KIRO_HOME/settings/kiro_cli_theme.json`).
  * All colors are sourced from existing kiroDark/kiroLight theme definitions.
  * Prompt presets are text+background combos. Response presets are text-only.
  */
 
 import { readFileSync, writeFileSync, mkdirSync } from 'fs';
 import { join } from 'path';
-import { homedir } from 'os';
 import chalk from 'chalk';
 import type { TerminalColor } from '../types/themeTypes.js';
 import { getTerminalChalkColor } from '../utils/colorUtils.js';
+import { kiroHomePath } from '../utils/kiro-home.js';
 import { logger } from '../utils/logger.js';
 
 /**
@@ -359,8 +360,7 @@ export function buildResponsePreview(
 }
 
 function getThemePath(): string {
-  const home = process.env.HOME || process.env.USERPROFILE || homedir();
-  return join(home, '.kiro', 'settings', 'kiro_cli_theme.json');
+  return kiroHomePath('settings', 'kiro_cli_theme.json');
 }
 
 /** Load user theme prefs from disk. Returns empty object on missing/invalid file. */

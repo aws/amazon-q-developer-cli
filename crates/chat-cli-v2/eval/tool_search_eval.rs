@@ -217,7 +217,9 @@ async fn run_query(query: &str, agent_config: agent::agent_config::LoadedAgentCo
     snapshot.settings.tool_search_min_pct = None;
     snapshot.settings.tool_search_min_tokens = None;
 
-    let global_mcp_path = dirs::home_dir().map(|h| h.join(".kiro").join("settings").join("mcp.json"));
+    let global_mcp_path = chat_cli_v2::util::paths::kiro_home_dir_from_process_env()
+        .ok()
+        .map(|h| h.join("settings").join("mcp.json"));
 
     let mut agent = Agent::new(
         snapshot,

@@ -18,17 +18,31 @@ use serde::Deserialize;
 
 pub use crate::engine::acp::ApprovalPolicy;
 
-/// Root directory for all kiro-bot instances: `~/.kiro/bots/`.
-pub fn base_dir() -> Result<PathBuf> {
-    Ok(dirs::home_dir().context("no home dir")?.join(".kiro").join("bots"))
+/// Root directory for user-level Kiro config data.
+///
+/// Honors the `KIRO_HOME` environment variable when set; otherwise falls back
+/// to `$HOME/.kiro`. Kept local to kiro-bot (and duplicated from chat-cli) so
+/// this crate does not pull in the full `agent` dependency just for one helper.
+fn kiro_home_dir() -> Result<PathBuf> {
+    if let Ok(dir) = std::env::var("KIRO_HOME")
+        && !dir.is_empty()
+    {
+        return Ok(PathBuf::from(dir));
+    }
+    Ok(dirs::home_dir().context("no home dir")?.join(".kiro"))
 }
 
-/// Config directory for a specific instance: `~/.kiro/bots/<name>/`.
+/// Root directory for all kiro-bot instances: `~/.kiro/bots/` (or `$KIRO_HOME/bots/`).
+pub fn base_dir() -> Result<PathBuf> {
+    Ok(kiro_home_dir()?.join("bots"))
+}
+
+/// Config directory for a specific instance: `~/.kiro/bots/<name>/` (honors `KIRO_HOME`).
 pub fn config_dir(name: &str) -> Result<PathBuf> {
     Ok(base_dir()?.join(name))
 }
 
-/// State directory for a specific instance: `~/.kiro/bots/<name>/state/`.
+/// State directory for a specific instance: `~/.kiro/bots/<name>/state/` (honors `KIRO_HOME`).
 pub fn state_dir(name: &str) -> Result<PathBuf> {
     Ok(base_dir()?.join(name).join("state"))
 }

@@ -35,9 +35,9 @@ pub fn discover(cwd: &Path) -> HashMap<String, Vec<Prompt>> {
         }
     }
 
-    // Global prompts (~/.kiro/prompts/*.md) - skip if already in local
-    if let Some(home) = dirs::home_dir()
-        && let Ok(entries) = std::fs::read_dir(home.join(".kiro").join("prompts"))
+    // Global prompts (~/.kiro/prompts/*.md, or $KIRO_HOME/prompts/*.md) - skip if already in local
+    if let Ok(kiro_home) = crate::agent::util::directories::kiro_home_dir()
+        && let Ok(entries) = std::fs::read_dir(kiro_home.join("prompts"))
     {
         let mut global_prompts = Vec::new();
         for entry in entries.flatten() {
