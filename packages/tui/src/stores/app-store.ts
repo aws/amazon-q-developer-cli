@@ -264,7 +264,6 @@ export type InitError =
   | { type: 'mcp_failure'; serverName: string; error: string }
   | { type: 'agent_not_found'; requestedAgent: string; fallbackAgent: string }
   | { type: 'agent_config_error'; path?: string; error: string }
-  | { type: 'model_not_found'; requestedModel: string; fallbackModel: string }
   | { type: 'mcp_governance_disabled'; apiFailure: boolean };
 
 export interface LastTurnTokens {
@@ -286,7 +285,6 @@ export function summarizeInitErrors(errors: InitError[]): string | null {
   const mcpFailures = errors.filter((e) => e.type === 'mcp_failure');
   const agentNotFound = errors.filter((e) => e.type === 'agent_not_found');
   const configErrors = errors.filter((e) => e.type === 'agent_config_error');
-  const modelNotFound = errors.filter((e) => e.type === 'model_not_found');
   const mcpGovernance = errors.filter(
     (e) => e.type === 'mcp_governance_disabled'
   );
@@ -307,14 +305,6 @@ export function summarizeInitErrors(errors: InitError[]): string | null {
     const e = agentNotFound[0]!;
     parts.push(
       `agent "${e.requestedAgent}" not found, using "${e.fallbackAgent}"`
-    );
-  }
-
-  // Model not found
-  if (modelNotFound.length > 0) {
-    const e = modelNotFound[0]!;
-    parts.push(
-      `model "${e.requestedModel}" not found, using "${e.fallbackModel}"`
     );
   }
 
@@ -1806,27 +1796,6 @@ export const createAppStore = (props: AppStoreProps) => {
             break;
           case AgentEventType.TurnSummary:
             // Handled by global handleTurnSummaryEvent, not here
-            break;
-          case AgentEventType.ModelNotFound:
-            {
-              const updated = [
-                ...get().initErrors,
-                {
-                  type: 'model_not_found' as const,
-                  requestedModel: event.requestedModel,
-                  fallbackModel: event.fallbackModel,
-                },
-              ];
-              set({ initErrors: updated });
-              const message = summarizeInitErrors(updated);
-              if (message) {
-                get().showTransientAlert({
-                  message,
-                  status: severityForInitErrors(updated),
-                  autoHideMs: 8000,
-                });
-              }
-            }
             break;
           case AgentEventType.McpGovernanceDisabled:
             {

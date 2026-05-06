@@ -21,7 +21,6 @@ export enum AgentEventType {
   AgentSwitched = 'agent_switched',
   AgentNotFound = 'agent_not_found',
   AgentConfigError = 'agent_config_error',
-  ModelNotFound = 'model_not_found',
   TurnSummary = 'turn_summary',
   McpOauthRequest = 'mcp_oauth_request',
   McpServerInitialized = 'mcp_server_initialized',
@@ -310,12 +309,6 @@ export interface AgentConfigErrorEvent {
   error: string;
 }
 
-export interface ModelNotFoundEvent {
-  type: AgentEventType.ModelNotFound;
-  requestedModel: string;
-  fallbackModel: string;
-}
-
 export interface MeteringUsage {
   value: number;
   unit: string;
@@ -376,7 +369,6 @@ export type AgentStreamEvent =
   | AgentSwitchedEvent
   | AgentNotFoundEvent
   | AgentConfigErrorEvent
-  | ModelNotFoundEvent
   | TurnSummaryEvent
   | McpOauthRequestEvent
   | McpServerInitializedEvent

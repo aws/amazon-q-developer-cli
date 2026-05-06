@@ -449,6 +449,17 @@ export type StreamErrorKind =
 }}
 	/** The stream was closed to due being interrupted (for example, on ctrl+c). */
 	| { kind: "interrupted", data?: undefined }
+	/**
+	 * The backend rejected the request because the specified model id is not allowed in the
+	 * current inference path (e.g. removed or gated).
+	 * 
+	 * Corresponds to `ValidationException` with `reason == INVALID_MODEL_ID`. Not retryable —
+	 * the user must select a different model via `/model`.
+	 */
+	| { kind: "invalidModelId", data: {
+	/** The rejected model id, when known (from the outbound request). */
+	model_id?: string;
+}}
 	/** Catch-all for errors not modeled in [StreamErrorKind]. */
 	| { kind: "other", data: {
 	/** Service reason code, if available (e.g. from `ConverseStreamError::reason_code()`). */

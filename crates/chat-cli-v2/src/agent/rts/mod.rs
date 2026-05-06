@@ -244,6 +244,9 @@ impl RtsModel {
                     },
                     ConverseStreamErrorKind::ContextWindowOverflow => StreamErrorKind::ContextWindowOverflow,
                     ConverseStreamErrorKind::ModelOverloadedError => StreamErrorKind::Throttling,
+                    ConverseStreamErrorKind::InvalidModelId { ref model_id } => StreamErrorKind::InvalidModelId {
+                        model_id: model_id.clone(),
+                    },
                     ConverseStreamErrorKind::Unknown { .. } => StreamErrorKind::Other {
                         reason_code: Some(err.reason_code()),
                         message: err.to_string(),

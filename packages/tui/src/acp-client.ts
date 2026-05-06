@@ -39,7 +39,6 @@ const EXT_METHODS = {
   MCP_GOVERNANCE_DISABLED: 'kiro.dev/mcp/governance_disabled',
   AGENT_NOT_FOUND: 'kiro.dev/agent/not_found',
   AGENT_CONFIG_ERROR: 'kiro.dev/agent/config_error',
-  MODEL_NOT_FOUND: 'kiro.dev/model/not_found',
   RATE_LIMIT_ERROR: 'kiro.dev/error/rate_limit',
   SUBAGENT_LIST_UPDATE: 'kiro.dev/subagent/list_update',
   SESSION_ACTIVITY: 'kiro.dev/session/activity',
@@ -303,7 +302,6 @@ abstract class BaseAcpClient implements SessionClient {
       this.handleMcpGovernanceDisabled(p),
     [EXT_METHODS.AGENT_NOT_FOUND]: (p) => this.handleAgentNotFound(p),
     [EXT_METHODS.AGENT_CONFIG_ERROR]: (p) => this.handleAgentConfigError(p),
-    [EXT_METHODS.MODEL_NOT_FOUND]: (p) => this.handleModelNotFound(p),
     [EXT_METHODS.RATE_LIMIT_ERROR]: (p) => this.handleRateLimitError(p),
     [EXT_METHODS.SUBAGENT_LIST_UPDATE]: (p) => this.handleSubagentListUpdate(p),
     [EXT_METHODS.SESSION_ACTIVITY]: (p) => this.handleSessionActivity(p),
@@ -450,14 +448,6 @@ abstract class BaseAcpClient implements SessionClient {
       type: AgentEventType.AgentConfigError,
       path: params.path as string | undefined,
       error: (params.error as string) ?? '',
-    });
-  }
-
-  private handleModelNotFound(params: Record<string, unknown>) {
-    this.broadcastStreamEvent({
-      type: AgentEventType.ModelNotFound,
-      requestedModel: (params.requestedModel as string) ?? '',
-      fallbackModel: (params.fallbackModel as string) ?? '',
     });
   }
 

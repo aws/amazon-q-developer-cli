@@ -897,9 +897,7 @@ impl<'a> AcpSessionBuilder<'a> {
     ///
     /// Returns (handle, ready_rx, initial_model_id) where initial_model_id is the model
     /// set during session creation (avoids race condition with channel-based query).
-    pub async fn start_session(
-        mut self,
-    ) -> eyre::Result<(AcpSessionHandle, oneshot::Receiver<()>, Option<String>, Option<String>)> {
+    pub async fn start_session(mut self) -> eyre::Result<(AcpSessionHandle, oneshot::Receiver<()>, Option<String>)> {
         let os = self.os.take().ok_or_else(|| eyre::eyre!("Os is required"))?;
 
         let (tx, rx) = mpsc::channel(32);
@@ -907,7 +905,6 @@ impl<'a> AcpSessionBuilder<'a> {
         let subagent_info = self.subagent_info.clone();
         let session = AcpSession::with_builder(os, rx, self).await?;
         let initial_model_id = session.rts_state.model_id();
-        let requested_model_name = session.requested_model_name.clone();
         tokio::spawn(async move { session.main_loop(ready_tx).await });
 
         Ok((
@@ -917,7 +914,6 @@ impl<'a> AcpSessionBuilder<'a> {
             },
             ready_rx,
             initial_model_id,
-            requested_model_name,
         ))
     }
 }
@@ -952,9 +948,6 @@ struct AcpSession {
     connection_cx: JrConnectionCx<AgentToClient>,
     is_subagent: bool,
     previous_agent_name: Option<String>,
-    /// The model name originally requested (before fallback). `None` if no
-    /// specific model was requested or the requested model was found.
-    requested_model_name: Option<String>,
     pending_plan: Option<String>,
     pending_swap: Option<agent::agent_config::LoadedAgentConfig>,
     pending_prompt_response: Option<tokio::sync::Mutex<JrRequestCx<PromptResponse>>>,
@@ -1202,17 +1195,11 @@ impl AcpSession {
         }
 
         // Override with CLI --model if provided
-        let model_not_found = if let Some(model_id) = builder.model_id {
-            match update_model_info(&api_client, &os.database, &rts_state, Some(model_id)).await {
-                Ok(not_found) => not_found,
-                Err(e) => {
-                    warn!("Failed to set CLI model override: {}", e);
-                    None
-                },
-            }
-        } else {
-            None
-        };
+        if let Some(model_id) = builder.model_id
+            && let Err(e) = update_model_info(&api_client, &os.database, &rts_state, Some(model_id)).await
+        {
+            warn!("Failed to set CLI model override: {}", e);
+        }
 
         let snapshot = {
             let mut s = snapshot;
@@ -1336,7 +1323,6 @@ impl AcpSession {
             global_mcp_path: builder.global_mcp_path.cloned(),
             current_agent_name: builder.current_agent_name.unwrap_or_default(),
             previous_agent_name: None,
-            requested_model_name: model_not_found,
             pending_plan: None,
             pending_swap: None,
             connection_cx,
@@ -1791,9 +1777,8 @@ impl AcpSession {
                 let _ = respond_to.send(result);
             },
             AcpSessionRequest::SetModel { model_id, respond_to } => {
-                let result = update_model_info(&self.api_client, &self.os.database, &self.rts_state, Some(&model_id))
-                    .await
-                    .map(|_| ());
+                let result =
+                    update_model_info(&self.api_client, &self.os.database, &self.rts_state, Some(&model_id)).await;
                 let _ = respond_to.send(result);
             },
             AcpSessionRequest::GetModelId { respond_to } => {
@@ -3162,41 +3147,58 @@ fn get_tool_locations(tool: &Tool) -> Option<Vec<ToolCallLocation>> {
 }
 
 /// Update model ID in RTS state.
-/// Validates the model ID against available models if specified.
+///
 /// Priority: 1) explicit model arg, 2) user's saved default, 3) API default.
 ///
-/// Returns the requested model name if it wasn't found (fell back to default).
+/// Unknown model ids (not returned by `ListAvailableModels`) are passed through to the backend.
+/// If the backend rejects the id with `INVALID_MODEL_ID`, the user will see a friendly error
+/// on their next message. This keeps backwards compatibility with hardcoded model ids in
+/// existing integrations (e.g. models temporarily removed from `ListAvailableModels` but still
+/// accepted by the backend).
 async fn update_model_info(
     client: &ApiClient,
     database: &crate::database::Database,
     rts_state: &RtsState,
     model: Option<&str>,
-) -> Result<Option<String>, String> {
+) -> Result<(), String> {
     use crate::database::settings::Setting;
 
     let (models, api_default) = get_available_models(client)
         .await
         .map_err(|e| format!("Failed to fetch available models: {}", e))?;
 
-    let mut not_found = None;
-
     let model_info = if let Some(requested_model) = model {
-        find_model(&models, requested_model).cloned().unwrap_or_else(|| {
-            warn!(
-                "Model '{}' not found in available models, falling back to default",
-                requested_model
-            );
-            not_found = Some(requested_model.to_string());
-            api_default.clone()
-        })
+        find_model(&models, requested_model)
+            .cloned()
+            .unwrap_or_else(|| synthesize_model_info(requested_model))
     } else if let Some(saved) = database.settings.get_string(Setting::ChatDefaultModel) {
-        find_model(&models, &saved).cloned().unwrap_or(api_default)
+        find_model(&models, &saved)
+            .cloned()
+            .unwrap_or_else(|| synthesize_model_info(&saved))
     } else {
         api_default
     };
 
     rts_state.set_model_info(Some(model_info));
-    Ok(not_found)
+    Ok(())
+}
+
+/// Construct a minimal `ModelInfo` for an id that wasn't returned by `ListAvailableModels`.
+/// The backend is the authority on whether the id is valid — if not, it returns
+/// `INVALID_MODEL_ID` which is surfaced via `ConverseStreamErrorKind::InvalidModelId`.
+fn synthesize_model_info(requested_model: &str) -> crate::cli::chat::legacy::model::ModelInfo {
+    warn!(
+        "Model '{}' not in ListAvailableModels — passing through to backend for validation",
+        requested_model
+    );
+    crate::cli::chat::legacy::model::ModelInfo {
+        model_name: Some(requested_model.to_string()),
+        description: None,
+        model_id: requested_model.to_string(),
+        context_window_tokens: crate::cli::chat::legacy::model::default_context_window_for_model(requested_model),
+        rate_multiplier: None,
+        rate_unit: None,
+    }
 }
 
 /// Entry point for SACP agent
@@ -3287,7 +3289,6 @@ pub async fn execute(
                     // Wait for agent initialization to complete before responding
                     let _ = result.ready_rx.await;
 
-                    let fallback_model_id = result.current_model_id.clone();
                     let modes = to_session_mode_state(result.current_agent_name, result.available_agents);
                     let models = to_session_model_state(result.current_model_id, result.available_models);
 
@@ -3301,7 +3302,7 @@ pub async fn execute(
                     result.handle.advertise_commands().await;
 
                     // Notify TUI about agent loading issues
-                    send_agent_load_notifications(&cx, &session_id, &result.requested_agent_name, &result.agent_config_errors, &result.requested_model_name, &fallback_model_id, result.mcp_enabled, result.mcp_api_failure);
+                    send_agent_load_notifications(&cx, &session_id, &result.requested_agent_name, &result.agent_config_errors, result.mcp_enabled, result.mcp_api_failure);
 
                     Ok(())
                 }
@@ -3324,7 +3325,6 @@ pub async fn execute(
                             // Wait for historical notifications to be sent before responding
                             let _ = result.ready_rx.await;
 
-                            let fallback_model_id = result.current_model_id.clone();
                             let modes = to_session_mode_state(result.current_agent_name, result.available_agents);
                             let models = to_session_model_state(result.current_model_id, result.available_models);
 
@@ -3334,7 +3334,7 @@ pub async fn execute(
                             result.handle.advertise_commands().await;
 
                             // Notify TUI about agent loading issues
-                            send_agent_load_notifications(&cx, &request.session_id, &result.requested_agent_name, &result.agent_config_errors, &result.requested_model_name, &fallback_model_id, result.mcp_enabled, result.mcp_api_failure);
+                            send_agent_load_notifications(&cx, &request.session_id, &result.requested_agent_name, &result.agent_config_errors, result.mcp_enabled, result.mcp_api_failure);
 
                             Ok(())
                         },
@@ -3641,14 +3641,11 @@ pub async fn execute(
 /// - Agent not found (fell back to default)
 /// - Agent config parse errors from startup
 /// - MCP governance disabled (admin turned off MCP)
-#[allow(clippy::too_many_arguments)]
 fn send_agent_load_notifications(
     cx: &JrConnectionCx<AgentToClient>,
     session_id: &SessionId,
     requested_agent_name: &Option<String>,
     agent_config_errors: &[super::session_manager::AgentConfigLoadError],
-    requested_model_name: &Option<String>,
-    current_model_id: &str,
     mcp_enabled: bool,
     mcp_api_failure: bool,
 ) {
@@ -3656,7 +3653,6 @@ fn send_agent_load_notifications(
         AgentConfigErrorNotification,
         AgentNotFoundNotification,
         McpGovernanceDisabledNotification,
-        ModelNotFoundNotification,
         methods,
     };
 
@@ -3668,18 +3664,6 @@ fn send_agent_load_notifications(
         };
         if let Ok(raw) = serde_json::value::to_raw_value(&notif) {
             let ext = sacp::schema::ExtNotification::new(methods::AGENT_NOT_FOUND, std::sync::Arc::from(raw));
-            let _ = cx.send_notification(sacp::schema::AgentNotification::ExtNotification(ext));
-        }
-    }
-
-    if let Some(requested) = requested_model_name {
-        let notif = ModelNotFoundNotification {
-            session_id: session_id.clone(),
-            requested_model: requested.clone(),
-            fallback_model: current_model_id.to_string(),
-        };
-        if let Ok(raw) = serde_json::value::to_raw_value(&notif) {
-            let ext = sacp::schema::ExtNotification::new(methods::MODEL_NOT_FOUND, std::sync::Arc::from(raw));
             let _ = cx.send_notification(sacp::schema::AgentNotification::ExtNotification(ext));
         }
     }

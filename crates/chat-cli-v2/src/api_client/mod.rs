@@ -1562,6 +1562,18 @@ fn classify_error_kind<R>(
     // instead of the well-modeled GenerateAssistantResponseError::ValidationError
     let is_context_window_overflow = is_context_window_overflow || contains(body, b"CONTENT_LENGTH_EXCEEDS_THRESHOLD");
 
+    // INVALID_MODEL_ID is returned by the backend when the request's model id is not allowed in
+    // the current inference path (e.g. removed or gated). We detect via both the modeled
+    // ValidationError.reason() and the raw body — mirroring the ContentLengthExceedsThreshold
+    // fallback above, since the SDK sometimes surfaces these as `Unhandled`.
+    let is_invalid_model_id = sdk_error.as_service_error().is_some_and(|e| match e {
+        GenerateAssistantResponseError::ValidationError(err) => err
+            .reason()
+            .is_some_and(|r| r == &ValidationExceptionReason::InvalidModelId),
+        _ => false,
+    });
+    let is_invalid_model_id = is_invalid_model_id || contains(body, b"INVALID_MODEL_ID");
+
     let is_model_unavailable = contains(body, b"INSUFFICIENT_MODEL_CAPACITY")
         // Legacy error response fallback
         || (model_id_opt.is_some()
@@ -1574,6 +1586,12 @@ fn classify_error_kind<R>(
 
     if is_context_window_overflow {
         return ConverseStreamErrorKind::ContextWindowOverflow;
+    }
+
+    if is_invalid_model_id {
+        return ConverseStreamErrorKind::InvalidModelId {
+            model_id: model_id_opt.map(|s| s.to_string()),
+        };
     }
 
     // Both ModelOverloadedError and Throttling return 429,
@@ -1820,6 +1838,21 @@ mod tests {
             (Some(500), b"Some other error", None, ConverseStreamErrorKind::Unknown {
                 reason_code: "test".to_string(),
             }),
+            // InvalidModelId checks
+            (
+                Some(400),
+                b"INVALID_MODEL_ID",
+                Some("model-1"),
+                ConverseStreamErrorKind::InvalidModelId {
+                    model_id: Some("model-1".to_string()),
+                },
+            ),
+            (
+                Some(400),
+                b"{\"reason\":\"INVALID_MODEL_ID\",\"message\":\"...\"}",
+                None,
+                ConverseStreamErrorKind::InvalidModelId { model_id: None },
+            ),
         ];
 
         for (status_code, body, model_id, expected) in test_cases {

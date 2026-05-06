@@ -1923,6 +1923,7 @@ impl Agent {
                 | StreamErrorKind::ServiceFailure
                 | StreamErrorKind::ContextWindowOverflow
                 | StreamErrorKind::Throttling
+                | StreamErrorKind::InvalidModelId { .. }
                 | StreamErrorKind::Other { .. } => {
                     self.enter_error_state(err.clone().into()).await;
                 },

@@ -268,8 +268,7 @@ export class Kiro {
             event.type === AgentEventType.McpServerInitialized ||
             event.type === AgentEventType.McpGovernanceDisabled ||
             event.type === AgentEventType.AgentNotFound ||
-            event.type === AgentEventType.AgentConfigError ||
-            event.type === AgentEventType.ModelNotFound) &&
+            event.type === AgentEventType.AgentConfigError) &&
           this.initNotificationHandler
         ) {
           this.initNotificationHandler(event);

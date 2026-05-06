@@ -173,6 +173,7 @@ impl ReasonCode for ConverseStreamError {
             ConverseStreamErrorKind::MonthlyLimitReached => "MonthlyLimitReached".to_string(),
             ConverseStreamErrorKind::ContextWindowOverflow => "ContextWindowOverflow".to_string(),
             ConverseStreamErrorKind::ModelOverloadedError => "ModelOverloadedError".to_string(),
+            ConverseStreamErrorKind::InvalidModelId { .. } => "InvalidModelId".to_string(),
             ConverseStreamErrorKind::Unknown { reason_code } => reason_code.clone(),
         }
     }
@@ -209,8 +210,26 @@ pub enum ConverseStreamErrorKind {
         "The model you've selected is temporarily unavailable. Please use '/model' to select a different model and try again."
     )]
     ModelOverloadedError,
+    /// Returned from the backend when the request specifies a model id that is
+    /// not allowed in the current inference path (e.g. removed or gated).
+    ///
+    /// Corresponds to `ValidationException` with `reason == INVALID_MODEL_ID`.
+    /// `model_id` carries the rejected id (from the outbound request) when known,
+    /// so we can surface a more specific message to the user.
+    #[error("{}", format_invalid_model_id(.model_id.as_deref()))]
+    InvalidModelId { model_id: Option<String> },
     #[error("An unknown error occurred: {}", .reason_code)]
     Unknown { reason_code: String },
+}
+
+fn format_invalid_model_id(model_id: Option<&str>) -> String {
+    match model_id {
+        Some(id) => {
+            format!("The model '{id}' is not available. Please use '/model' to select a different model and try again.")
+        },
+        None => "The selected model is not available. Please use '/model' to select a different model and try again."
+            .to_string(),
+    }
 }
 
 #[derive(Debug, Error)]

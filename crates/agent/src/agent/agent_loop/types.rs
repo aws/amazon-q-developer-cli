@@ -95,14 +95,15 @@ impl StreamError {
 impl std::fmt::Display for StreamError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "Encountered an error in the response stream: ")?;
-        if let Some(request_id) = self.original_request_id.as_ref() {
-            write!(f, "request_id: {request_id}, error: ")?;
-        }
-        // Always include the kind message for better error context
+        // Always include the kind message first for better error context
         write!(f, "{}", self.kind)?;
         // Include original message if available for more detail
         if let Some(original_message) = self.original_message.as_ref() {
             write!(f, " - {original_message}")?;
+        }
+        // Append request_id at the end so the message reads naturally first.
+        if let Some(request_id) = self.original_request_id.as_ref() {
+            write!(f, " (request_id: {request_id})")?;
         }
         Ok(())
     }
@@ -147,6 +148,15 @@ pub enum StreamErrorKind {
     StreamTimeout { duration: Duration },
     /// The stream was closed to due being interrupted (for example, on ctrl+c).
     Interrupted,
+    /// The backend rejected the request because the specified model id is not allowed in the
+    /// current inference path (e.g. removed or gated).
+    ///
+    /// Corresponds to `ValidationException` with `reason == INVALID_MODEL_ID`. Not retryable —
+    /// the user must select a different model via `/model`.
+    InvalidModelId {
+        /// The rejected model id, when known (from the outbound request).
+        model_id: Option<String>,
+    },
     /// Catch-all for errors not modeled in [StreamErrorKind].
     Other {
         /// Service reason code, if available (e.g. from `ConverseStreamError::reason_code()`).
@@ -169,6 +179,13 @@ impl std::fmt::Display for StreamErrorKind {
             )
             .into(),
             StreamErrorKind::Interrupted => "The stream was interrupted".into(),
+            StreamErrorKind::InvalidModelId { model_id } => match model_id {
+                Some(id) => format!(
+                    "The model '{id}' is not available. Please use '/model' to select a different model and try again."
+                )
+                .into(),
+                None => "The selected model is not available. Please use '/model' to select a different model and try again.".into(),
+            },
             StreamErrorKind::Other { message, .. } => message.as_str().into(),
         };
         write!(f, "{msg}")

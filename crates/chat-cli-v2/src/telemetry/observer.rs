@@ -97,6 +97,9 @@ pub const REASON_SERVICE_FAILURE: &str = "ServiceFailure";
 pub const REASON_STREAM_TIMEOUT: &str = "StreamTimeout";
 /// Reason: request validation error.
 pub const REASON_VALIDATION_ERROR: &str = "ValidationError";
+/// Reason: backend rejected the request because the model id is not allowed in the current
+/// inference path (maps from `StreamErrorKind::InvalidModelId`).
+pub const REASON_INVALID_MODEL_ID: &str = "InvalidModelId";
 /// Reason: model produced invalid JSON for tool use.
 pub const REASON_INVALID_JSON: &str = "InvalidJson";
 
@@ -681,6 +684,7 @@ fn extract_reason(stream_err: &StreamError) -> (String, String) {
         StreamErrorKind::ServiceFailure => REASON_SERVICE_FAILURE,
         StreamErrorKind::StreamTimeout { .. } => REASON_STREAM_TIMEOUT,
         StreamErrorKind::Validation { .. } => REASON_VALIDATION_ERROR,
+        StreamErrorKind::InvalidModelId { .. } => REASON_INVALID_MODEL_ID,
         StreamErrorKind::Other { reason_code, message } => reason_code.as_deref().unwrap_or_else(|| {
             if message.len() > 256 {
                 agent::util::truncate_safe(message, 256)
