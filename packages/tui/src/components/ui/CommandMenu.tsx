@@ -54,6 +54,13 @@ export const CommandMenu: React.FC = () => {
   );
   const setActiveTrigger = useAppStore((state) => state.setActiveTrigger);
   const setPromptHint = useAppStore((state) => state.setPromptHint);
+  const settingsReturnOnEscape = useAppStore(
+    (state) => state.settingsReturnOnEscape
+  );
+  const setSettingsReturnOnEscape = useAppStore(
+    (state) => state.setSettingsReturnOnEscape
+  );
+  const reopenSettingsMenu = useAppStore((state) => state.reopenSettingsMenu);
   const setCommandShadowText = useAppStore(
     (state) => state.setCommandShadowText
   );
@@ -566,10 +573,25 @@ export const CommandMenu: React.FC = () => {
           }}
           onHighlight={handleActiveCommandHighlight}
           onEscape={() => {
+            // If this overlay was opened from /settings (e.g. the user is
+            // now in the /theme menu reached via /settings → Theme), ESC
+            // should return to the /settings top-level menu rather than
+            // dismiss the whole overlay. The flag is set by the /settings
+            // subcommand handlers and consumed (and cleared) here.
+            const returnToSettings = settingsReturnOnEscape;
+
             setActiveCommand(null);
             clearCommandInput();
             setPromptHint(null);
             setThemePreview(null);
+
+            if (returnToSettings) {
+              setSettingsReturnOnEscape(false);
+              // Re-open /settings directly. Going through handleUserInput
+              // here caused the process to exit for reasons not fully
+              // understood — likely races with the in-flight overlay close.
+              reopenSettingsMenu();
+            }
           }}
           showSelectedIndicator={true}
           searchable={isSearchable}

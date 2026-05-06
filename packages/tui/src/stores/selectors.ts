@@ -140,6 +140,8 @@ export const useUIState = () =>
       statsList: state.statsList,
       statsSummary: state.statsSummary,
       showHooksPanel: state.showHooksPanel,
+      showKeybindingsPanel: state.showKeybindingsPanel,
+      settingsReturnOnEscape: state.settingsReturnOnEscape,
       hooksList: state.hooksList,
       showKnowledgePanel: state.showKnowledgePanel,
       knowledgeEntries: state.knowledgeEntries,
@@ -165,6 +167,9 @@ export const useUIActions = () =>
       setShowToolsPanel: state.setShowToolsPanel,
       setShowStatsPanel: state.setShowStatsPanel,
       setShowHooksPanel: state.setShowHooksPanel,
+      setShowKeybindingsPanel: state.setShowKeybindingsPanel,
+      setSettingsReturnOnEscape: state.setSettingsReturnOnEscape,
+      reopenSettingsMenu: state.reopenSettingsMenu,
       setShowKnowledgePanel: state.setShowKnowledgePanel,
       setShowCodePanel: state.setShowCodePanel,
     }))

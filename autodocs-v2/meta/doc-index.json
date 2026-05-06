@@ -59,6 +59,7 @@
       "slash-commands/prompts.md",
       "slash-commands/quit.md",
       "slash-commands/reply.md",
+      "slash-commands/settings.md",
       "slash-commands/spawn.md",
       "slash-commands/stats.md",
       "slash-commands/theme.md",
@@ -1101,6 +1102,26 @@
         "paste"
       ],
       "validated": "2025-12-19",
+      "status": "validated"
+    },
+    {
+      "path": "slash-commands/settings.md",
+      "file": "settings.md",
+      "title": "/settings",
+      "description": "Open the settings menu to configure theme, keybindings, and other preferences",
+      "category": "slash_command",
+      "keywords": [
+        "settings",
+        "preferences",
+        "config",
+        "theme",
+        "keybindings",
+        "configure"
+      ],
+      "related": [
+        "theme"
+      ],
+      "validated": "2026-05-06",
       "status": "validated"
     },
     {

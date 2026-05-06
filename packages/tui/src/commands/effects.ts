@@ -27,9 +27,13 @@ import { executeShellEscapeTTY } from '../utils/shell-escape.js';
 import { readFileSync, writeFileSync } from 'fs';
 
 import { openTranscriptInPager } from '../utils/open-transcript.js';
+import {
+  findSettingsSubcommand,
+  buildSettingsActiveCommand,
+} from './settings-subcommands.js';
 
 /** Effect handler function. Returns true if it handled its own messaging. */
-type EffectHandler = (
+export type EffectHandler = (
   result: CommandResult | null,
   ctx: CommandContext,
   cmd: SlashCommand,
@@ -92,6 +96,7 @@ type EffectName =
   | 'copyToClipboard'
   | 'openRawView'
   | 'showThemeMenu'
+  | 'showSettingsMenu'
   | 'showTuiPanel'
   | 'showSessionId'
   | 'showStatsPanel'
@@ -126,6 +131,7 @@ const commandEffects: Partial<Record<string, EffectName>> = {
   copy: 'copyToClipboard',
   transcript: 'openRawView',
   theme: 'showThemeMenu',
+  settings: 'showSettingsMenu',
   tui: 'showTuiPanel',
   'session-id': 'showSessionId',
   guide: 'switchToGuideAgent',
@@ -738,6 +744,13 @@ const effectHandlers: Record<EffectName, EffectHandler> = {
   },
 
   showThemeMenu: (_result, ctx, cmd, args) => {
+    // Deprecation notice shown once per menu-open. Skipped on in-menu
+    // selections (args !== '') to avoid re-nagging, and on calls chained
+    // from /settings theme (cmd.name !== '/theme').
+    if (cmd.name === '/theme' && args === '') {
+      ctx.showAlert('/theme has moved to /settings theme', 'warning', 4000);
+    }
+
     const prefs = loadUserThemePrefs();
     const themeCmd = ctx.slashCommands.find((c) => c.name === '/theme');
     if (!themeCmd) return;
@@ -1057,6 +1070,39 @@ const effectHandlers: Record<EffectName, EffectHandler> = {
         },
       ],
     });
+    return true;
+  },
+
+  /**
+   * Open the /settings menu or route to a specific subcommand.
+   *
+   * Subcommands and their routing logic live in ./settings-subcommands.ts.
+   * To add a new one, add an entry there — no changes needed here.
+   */
+  showSettingsMenu: (_result, ctx, cmd, args) => {
+    if (args) {
+      const sub = findSettingsSubcommand(args);
+      if (!sub) {
+        ctx.showAlert(`Unknown settings subcommand: ${args}`, 'error', 3000);
+        return true;
+      }
+      void Promise.resolve(
+        sub.handle({
+          ctx,
+          settingsCommand: cmd,
+          resolveEffect: (name) => {
+            const handler = effectHandlers[name as EffectName];
+            if (!handler) {
+              throw new Error(`Unknown effect handler: ${name}`);
+            }
+            return handler;
+          },
+        })
+      );
+      return true;
+    }
+
+    ctx.setActiveCommand(buildSettingsActiveCommand(cmd));
     return true;
   },
 

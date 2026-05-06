@@ -19,6 +19,7 @@ import { McpPanel } from '../ui/McpPanel';
 import { ToolsPanel } from '../ui/ToolsPanel';
 import { StatsPanel } from '../ui/StatsPanel';
 import { HooksPanel } from '../ui/HooksPanel';
+import { KeybindingsPanel } from '../ui/KeybindingsPanel';
 import { KnowledgePanel } from '../ui/KnowledgePanel';
 import {
   PromptBar,
@@ -200,6 +201,8 @@ export const InlineLayout: React.FC = () => {
     statsSummary,
     showHooksPanel,
     hooksList,
+    showKeybindingsPanel,
+    settingsReturnOnEscape,
     showKnowledgePanel,
     knowledgeEntries,
     knowledgeStatus,
@@ -216,6 +219,9 @@ export const InlineLayout: React.FC = () => {
     setShowToolsPanel,
     setShowStatsPanel,
     setShowHooksPanel,
+    setShowKeybindingsPanel,
+    setSettingsReturnOnEscape,
+    reopenSettingsMenu,
     setShowKnowledgePanel,
     setShowCodePanel,
   } = useUIActions();
@@ -445,6 +451,24 @@ export const InlineLayout: React.FC = () => {
     setActiveCommand(null);
     clearCommandInput();
   }, [setShowHooksPanel, setActiveCommand, clearCommandInput]);
+
+  const handleCloseKeybindingsPanel = useCallback(() => {
+    setShowKeybindingsPanel(false);
+    setActiveCommand(null);
+    clearCommandInput();
+    // Return to /settings menu if this panel was opened from there.
+    if (settingsReturnOnEscape) {
+      setSettingsReturnOnEscape(false);
+      reopenSettingsMenu();
+    }
+  }, [
+    setShowKeybindingsPanel,
+    setActiveCommand,
+    clearCommandInput,
+    settingsReturnOnEscape,
+    setSettingsReturnOnEscape,
+    reopenSettingsMenu,
+  ]);
 
   const handleCloseKnowledgePanel = useCallback(() => {
     setShowKnowledgePanel(false);
@@ -741,6 +765,7 @@ export const InlineLayout: React.FC = () => {
               showToolsPanel ||
               showStatsPanel ||
               showHooksPanel ||
+              showKeybindingsPanel ||
               showKnowledgePanel ||
               showCodePanel ||
               !!pendingApproval
@@ -789,6 +814,7 @@ export const InlineLayout: React.FC = () => {
                   showToolsPanel ||
                   showStatsPanel ||
                   showHooksPanel ||
+                  showKeybindingsPanel ||
                   showKnowledgePanel ||
                   showCodePanel
             }
@@ -874,6 +900,9 @@ export const InlineLayout: React.FC = () => {
             {showHooksPanel && (
               <HooksPanel hooks={hooksList} onClose={handleCloseHooksPanel} />
             )}
+            {showKeybindingsPanel && (
+              <KeybindingsPanel onClose={handleCloseKeybindingsPanel} />
+            )}
             {showKnowledgePanel && (
               <KnowledgePanel
                 entries={knowledgeEntries}
@@ -902,6 +931,7 @@ export const InlineLayout: React.FC = () => {
                 !toolOutputsExpanded &&
                 !isProcessing &&
                 !pendingApproval &&
+                !activeCommand &&
                 !showContextBreakdown &&
                 !showHelpPanel &&
                 !showTuiPanel &&
@@ -909,6 +939,7 @@ export const InlineLayout: React.FC = () => {
                 !showMcpPanel &&
                 !showToolsPanel &&
                 !showHooksPanel &&
+                !showKeybindingsPanel &&
                 !showKnowledgePanel &&
                 !showCodePanel &&
                 commandInputValue.length === 0 &&

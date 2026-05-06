@@ -60,6 +60,8 @@ export function createMockCommandContext(
     setShowToolsPanel: spy('setShowToolsPanel') as any,
     setShowStatsPanel: spy('setShowStatsPanel') as any,
     setShowHooksPanel: spy('setShowHooksPanel') as any,
+    setShowKeybindingsPanel: spy('setShowKeybindingsPanel') as any,
+    setSettingsReturnOnEscape: spy('setSettingsReturnOnEscape') as any,
     setShowKnowledgePanel: spy('setShowKnowledgePanel') as any,
     setShowCodePanel: spy('setShowCodePanel') as any,
     clearMessages: spy('clearMessages') as any,

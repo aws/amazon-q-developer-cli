@@ -266,12 +266,17 @@ export const Menu = React.memo(function Menu({
               {dimText('to cancel')}
               {dimText(' · ')}
               {brandText('↑↓')} {dimText('to navigate')}
-              {onRightArrow && (
+              {onRightArrow ? (
                 <>
                   {dimText(' · ')}
                   {brandText('→')} {dimText('to view details')}
                   {dimText(' · ')}
                   {brandText('↵')} {dimText('to run')}
+                </>
+              ) : (
+                <>
+                  {dimText(' · ')}
+                  {brandText('↵')} {dimText('to select')}
                 </>
               )}
             </Text>

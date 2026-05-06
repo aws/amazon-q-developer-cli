@@ -154,6 +154,7 @@ import {
   executeCommandWithArg,
   type CommandContext,
 } from '../commands/index.js';
+import { buildSettingsActiveCommand } from '../commands/settings-subcommands.js';
 import { formatImageLabel } from '../utils/image-label.js';
 import { expandFileReferences, readFileContent } from '../utils/file-search.js';
 import { logger } from '../utils/logger.js';
@@ -486,6 +487,9 @@ interface BaseAppActions {
     summary?: StatsSummary | null
   ) => void;
   setShowHooksPanel: (show: boolean, hooks?: HookInfo[]) => void;
+  setShowKeybindingsPanel: (show: boolean) => void;
+  setSettingsReturnOnEscape: (value: boolean) => void;
+  reopenSettingsMenu: () => void;
   setShowKnowledgePanel: (
     show: boolean,
     entries?: KnowledgeEntry[],
@@ -707,6 +711,15 @@ export interface AppState {
   statsSummary: StatsSummary | null;
   showHooksPanel: boolean;
   hooksList: HookInfo[];
+  showKeybindingsPanel: boolean;
+  /**
+   * When true, closing the currently open overlay re-opens the /settings
+   * top-level menu instead of fully dismissing. Set by /settings subcommand
+   * handlers before they hand off to showThemeMenu / setShowKeybindingsPanel,
+   * consumed by the ESC handlers (CommandMenu and handleCloseKeybindingsPanel),
+   * and reset whenever consumed.
+   */
+  settingsReturnOnEscape: boolean;
   showKnowledgePanel: boolean;
   knowledgeEntries: KnowledgeEntry[];
   knowledgeStatus: string | null;
@@ -900,8 +913,19 @@ export const createAppStore = (props: AppStoreProps) => {
         meta: { local: true },
       },
       {
+        name: '/settings',
+        description:
+          'Configure theme, terminal keybindings, and other preferences',
+        source: 'local' as const,
+        // inputType is set dynamically in showSettingsMenu rather than here:
+        // a static 'selection' would make the dispatcher fetch options from
+        // the backend for what is a local command.
+        meta: { local: true },
+      },
+      {
         name: '/theme',
-        description: 'Select a theme that looks best for your terminal',
+        description:
+          '(moved to /settings theme) Select a theme that looks best for your terminal',
         source: 'local' as const,
         meta: { local: true },
       },
@@ -989,6 +1013,8 @@ export const createAppStore = (props: AppStoreProps) => {
     statsSummary: null,
     showHooksPanel: false,
     hooksList: [],
+    showKeybindingsPanel: false,
+    settingsReturnOnEscape: false,
     showKnowledgePanel: false,
     knowledgeEntries: [],
     knowledgeStatus: null,
@@ -2248,6 +2274,8 @@ export const createAppStore = (props: AppStoreProps) => {
         setShowToolsPanel: state.setShowToolsPanel,
         setShowStatsPanel: state.setShowStatsPanel,
         setShowHooksPanel: state.setShowHooksPanel,
+        setShowKeybindingsPanel: state.setShowKeybindingsPanel,
+        setSettingsReturnOnEscape: state.setSettingsReturnOnEscape,
         setShowKnowledgePanel: state.setShowKnowledgePanel,
         setShowCodePanel: state.setShowCodePanel,
         clearMessages: state.clearMessages,
@@ -2283,6 +2311,8 @@ export const createAppStore = (props: AppStoreProps) => {
             showToolsPanel: false,
             showStatsPanel: false,
             showHooksPanel: false,
+            showKeybindingsPanel: false,
+            settingsReturnOnEscape: false,
             showKnowledgePanel: false,
             showCodePanel: false,
             contextBreakdown: null,
@@ -2861,6 +2891,29 @@ export const createAppStore = (props: AppStoreProps) => {
       set({ showHooksPanel: show, hooksList: hooks });
     },
 
+    setShowKeybindingsPanel: (show) => {
+      set({ showKeybindingsPanel: show });
+    },
+
+    setSettingsReturnOnEscape: (value) => {
+      set({ settingsReturnOnEscape: value });
+    },
+
+    /**
+     * Re-open the top-level /settings menu. Used by ESC handlers when a
+     * /settings-derived overlay is dismissed: we go back one level rather
+     * than close everything. Bypasses handleUserInput() so we don't go
+     * through the whole input-reset pipeline (which can race with the
+     * concurrent overlay-close side-effects).
+     */
+    reopenSettingsMenu: () => {
+      const settingsCmd = get().slashCommands.find(
+        (c) => c.name === '/settings'
+      );
+      if (!settingsCmd) return;
+      set({ activeCommand: buildSettingsActiveCommand(settingsCmd) });
+    },
+
     setShowKnowledgePanel: (show, entries = [], status) => {
       set({
         showKnowledgePanel: show,
@@ -3059,6 +3112,8 @@ export const createAppStore = (props: AppStoreProps) => {
           setShowToolsPanel: state.setShowToolsPanel,
           setShowStatsPanel: state.setShowStatsPanel,
           setShowHooksPanel: state.setShowHooksPanel,
+          setShowKeybindingsPanel: state.setShowKeybindingsPanel,
+          setSettingsReturnOnEscape: state.setSettingsReturnOnEscape,
           setShowKnowledgePanel: state.setShowKnowledgePanel,
           setShowCodePanel: state.setShowCodePanel,
           clearMessages: state.clearMessages,
@@ -3093,6 +3148,8 @@ export const createAppStore = (props: AppStoreProps) => {
               showToolsPanel: false,
               showStatsPanel: false,
               showHooksPanel: false,
+              showKeybindingsPanel: false,
+              settingsReturnOnEscape: false,
               showKnowledgePanel: false,
               contextBreakdown: null,
               usageData: null,

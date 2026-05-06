@@ -17,6 +17,8 @@ The `/theme` command lets you select and customize the terminal color theme. The
 
 Theme preferences are saved to `~/.kiro/settings/kiro_cli_theme.json` and persist across sessions.
 
+`/theme` can also be reached as `/settings theme` — both entry points open the same menu.
+
 ## Usage
 
 ```
@@ -72,4 +74,5 @@ Check file permissions on `~/.kiro/settings/kiro_cli_theme.json`.
 
 ## Related
 
+- [/settings](settings.md) — Settings menu entry; `/settings theme` opens this command
 - [Settings](../commands/settings.md) — Other configuration options
