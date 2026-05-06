@@ -64,6 +64,10 @@ const getAgentPath = (): string => {
     return 'mock-agent-path';
   }
 
+  if (process.env.KIRO_AGENT_ENGINE === 'kas') {
+    return '';
+  }
+
   const agentPath = process.env.KIRO_AGENT_PATH;
   if (!agentPath) {
     throw new Error('KIRO_AGENT_PATH environment variable not set');

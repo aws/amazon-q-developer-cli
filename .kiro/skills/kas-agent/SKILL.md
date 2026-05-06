@@ -109,23 +109,30 @@ KAS sessions have extra setup after creation:
 
 ## Development
 
+The simplest way to run KAS locally is via the TUI dev script:
+
 ```bash
-# Authenticate to CodeArtifact (token expires after 12h)
-./scripts/codeartifact-login.sh
+# Run with KAS (handles CodeArtifact auth, bun install, and env vars automatically)
+cd packages/tui
+KIRO_AGENT_ENGINE=kas bun run dev --skip-rust-build
 
-# Install dependencies (fetches @kiro/agent from CodeArtifact)
-bun install
+# Or use the convenience script from repo root
+./scripts/test-kas.sh
+```
 
-# Build TUI and Rust binary
-cd packages/tui && bun run build && cd ../..
-cargo build -p chat_cli
+The dev script automatically:
+- Checks CodeArtifact token expiry and refreshes if needed
+- Skips setting `KIRO_AGENT_PATH` (KAS uses `node` directly)
+- Sets `KIRO_KAS_TOKEN_PATH` to `~/.aws/sso/cache/kiro-auth-token-cli.json`
 
-# Run with KAS
-KIRO_TEST_TUI_JS_PATH=$(pwd)/packages/tui/dist/tui.js \
-  cargo run -p chat_cli -- chat --agent-engine=kas
+For manual control or overriding the KAS server path:
 
+```bash
 # Override KAS server path for local kiro-agent development
-KIRO_KAS_SERVER_PATH=/path/to/kiro-agent/dist/server/acp-server.js \
+KIRO_AGENT_ENGINE=kas KIRO_KAS_SERVER_PATH=/path/to/kiro-agent/dist/server/acp-server.js \
+  bun run dev --skip-rust-build
+
+# Full Rust binary path (production-like)
 KIRO_TEST_TUI_JS_PATH=$(pwd)/packages/tui/dist/tui.js \
   cargo run -p chat_cli -- chat --agent-engine=kas
 ```

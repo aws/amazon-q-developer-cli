@@ -67,7 +67,8 @@ function startTUI() {
     stdio: "inherit",
     env: {
       ...process.env,
-      KIRO_AGENT_PATH: CARGO_BIN,
+      ...(process.env.KIRO_AGENT_ENGINE !== 'kas' && { KIRO_AGENT_PATH: CARGO_BIN }),
+      ...(process.env.KIRO_AGENT_ENGINE === 'kas' && { KIRO_KAS_TOKEN_PATH: `${process.env.HOME}/.aws/sso/cache/kiro-auth-token-cli.json` }),
       JSC_numberOfGCMarkers: "1",
     }
   });
@@ -75,6 +76,34 @@ function startTUI() {
   bunProcess.on("exit", (code) => {
     process.exit(code ?? 0);
   });
+}
+
+// Verify CodeArtifact auth is valid and refresh if expired
+{
+  const npmrc = resolve(REPO_ROOT, ".npmrc");
+  let needsLogin = !existsSync(npmrc) || !readFileSync(npmrc, "utf8").includes("@kiro:registry");
+  if (!needsLogin) {
+    const tokenMatch = readFileSync(npmrc, "utf8").match(/:_authToken=(.+)/);
+    if (tokenMatch) {
+      try {
+        const header = JSON.parse(Buffer.from(tokenMatch[1]!.split('.')[0]!, 'base64url').toString());
+        if (header.exp && header.exp < Date.now() / 1000) needsLogin = true;
+      } catch { needsLogin = true; }
+    } else {
+      needsLogin = true;
+    }
+  }
+  if (needsLogin) {
+    console.log("CodeArtifact token missing or expired, refreshing...");
+    const login = spawnSync("bash", [resolve(REPO_ROOT, "scripts/codeartifact-login.sh")], {
+      cwd: REPO_ROOT,
+      stdio: "inherit",
+    });
+    if (login.status !== 0) {
+      console.error("CodeArtifact login failed. Run manually: ./scripts/codeartifact-login.sh");
+      process.exit(1);
+    }
+  }
 }
 
 // Ensure dependencies are installed (<50ms when no deps changed)

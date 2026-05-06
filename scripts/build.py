@@ -261,7 +261,7 @@ def build_kas_bundle() -> pathlib.Path:
 
     pkg = {
         "type": "module",
-        "dependencies": {"@kiro/agent": "0.3.1"},
+        "dependencies": {"@kiro/agent": "0.3.11"},
         "overrides": {"@aws/codewhisperer-streaming-client": "1.0.34"},
     }
     with open(kas_dir / "package.json", "w") as f:
