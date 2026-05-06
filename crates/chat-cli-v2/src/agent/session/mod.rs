@@ -183,9 +183,18 @@ pub struct SessionData {
     /// Absolute path to the file this session was imported from, if any.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub imported_from: Option<String>,
+    /// `Some` only for subagent sessions; holds the parent session's ID.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub parent_session_id: Option<String>,
     /// Serialized conversation and model state.
     #[serde(deserialize_with = "deserialize_session_state")]
     pub session_state: SessionState,
+}
+
+impl SessionData {
+    pub fn is_subagent(&self) -> bool {
+        self.parent_session_id.is_some()
+    }
 }
 
 /// Deserialize `SessionState`, falling back to `Unknown` if the payload is
@@ -413,12 +422,18 @@ impl std::fmt::Debug for SessionDb {
 
 impl SessionDb {
     /// Create a new session.
-    pub fn new(session_id: String, cwd: &Path, state: SessionState) -> Result<Self, SessionError> {
+    pub fn new(
+        session_id: String,
+        cwd: &Path,
+        state: SessionState,
+        parent_session_id: Option<String>,
+    ) -> Result<Self, SessionError> {
         Self::new_impl(
             &sessions_dir()?,
             session_id,
             cwd,
             state,
+            parent_session_id,
             is_pid_alive,
             std::process::id(),
         )
@@ -429,6 +444,7 @@ impl SessionDb {
         session_id: String,
         cwd: &Path,
         state: SessionState,
+        parent_session_id: Option<String>,
         is_pid_alive: impl Fn(u32) -> bool,
         current_pid: u32,
     ) -> Result<Self, SessionError> {
@@ -446,6 +462,7 @@ impl SessionDb {
             title: None,
             exported_from_v1: false,
             imported_from: None,
+            parent_session_id,
             session_state: state,
         };
 
@@ -718,9 +735,18 @@ pub struct SessionDataView {
     pub updated_at: DateTime<Utc>,
     #[serde(default)]
     pub title: Option<String>,
+    /// `Some` only for subagent sessions; holds the parent session's ID.
+    #[serde(default)]
+    pub parent_session_id: Option<String>,
     #[serde(default)]
     #[typeshare(serialized_as = "u32")]
     pub message_count: usize,
+}
+
+impl SessionDataView {
+    pub fn is_subagent(&self) -> bool {
+        self.parent_session_id.is_some()
+    }
 }
 
 trait ListableSession: serde::de::DeserializeOwned {
@@ -884,6 +910,7 @@ mod tests {
             session_id.clone(),
             cwd,
             test_state(),
+            None,
             pid_always_dead,
             1000,
         )
@@ -911,6 +938,25 @@ mod tests {
 
         let reloaded = SessionDb::load_impl(sessions_dir, &session_id, None, pid_always_dead, 2000).unwrap();
         assert_eq!(reloaded.session().title.as_deref(), Some("Test title"));
+        assert!(reloaded.session().parent_session_id.is_none());
+        drop(reloaded);
+
+        // Create a subagent session with parent_session_id and verify it persists
+        let sub = SessionDb::new_impl(
+            sessions_dir,
+            "sub-session".to_string(),
+            cwd,
+            test_state(),
+            Some("parent-abc".to_string()),
+            pid_always_dead,
+            3000,
+        )
+        .unwrap();
+        write_dummy_log(&sub);
+        drop(sub);
+
+        let loaded_sub = SessionDb::load_impl(sessions_dir, "sub-session", None, pid_always_dead, 4000).unwrap();
+        assert_eq!(loaded_sub.session().parent_session_id.as_deref(), Some("parent-abc"));
     }
 
     #[test]
@@ -926,6 +972,7 @@ mod tests {
             session_id.clone(),
             original_cwd,
             test_state(),
+            None,
             pid_always_dead,
             1000,
         )
@@ -950,6 +997,7 @@ mod tests {
             session_id.clone(),
             cwd,
             test_state(),
+            None,
             pid_always_dead,
             1000,
         )
@@ -986,7 +1034,8 @@ mod tests {
         let cwd = Path::new("/test/project");
         let session_id = "test-session-log".to_string();
 
-        let handle = SessionDb::new_impl(sessions_dir, session_id, cwd, test_state(), pid_always_dead, 1000).unwrap();
+        let handle =
+            SessionDb::new_impl(sessions_dir, session_id, cwd, test_state(), None, pid_always_dead, 1000).unwrap();
 
         let entry1 = LogEntry::prompt("msg-1".to_string(), vec![], None);
         let entry2 = LogEntry::prompt("msg-2".to_string(), vec![], None);
@@ -1010,6 +1059,7 @@ mod tests {
             session_id.clone(),
             cwd,
             test_state(),
+            None,
             pid_always_dead,
             1000,
         )
@@ -1045,6 +1095,7 @@ mod tests {
             "s1".to_string(),
             &cwd1,
             test_state(),
+            None,
             pid_always_dead,
             1000,
         )
@@ -1056,6 +1107,7 @@ mod tests {
             "s2".to_string(),
             &cwd1,
             test_state(),
+            None,
             pid_always_dead,
             1000,
         )
@@ -1067,6 +1119,7 @@ mod tests {
             "s3".to_string(),
             &cwd2,
             test_state(),
+            None,
             pid_always_dead,
             1000,
         )
@@ -1130,6 +1183,7 @@ mod tests {
             "lt1".to_string(),
             &cwd,
             test_state(),
+            None,
             pid_always_dead,
             1000,
         )
@@ -1143,6 +1197,7 @@ mod tests {
             "lt2".to_string(),
             &cwd,
             test_state(),
+            Some("lt1".to_string()),
             pid_always_dead,
             1000,
         )
@@ -1155,9 +1210,11 @@ mod tests {
 
         let titled = sessions.iter().find(|s| s.session_id == "lt1").unwrap();
         assert_eq!(titled.title.as_deref(), Some("Session with title"));
+        assert!(titled.parent_session_id.is_none());
 
         let untitled = sessions.iter().find(|s| s.session_id == "lt2").unwrap();
         assert!(untitled.title.is_none());
+        assert_eq!(untitled.parent_session_id.as_deref(), Some("lt1"));
     }
 
     #[test]
@@ -1173,6 +1230,7 @@ mod tests {
             "perf1".to_string(),
             &cwd,
             test_state(),
+            None,
             pid_always_dead,
             1000,
         )
@@ -1278,6 +1336,7 @@ mod tests {
             "pa1".to_string(),
             cwd,
             test_state(),
+            None,
             pid_always_dead,
             1000,
         )
@@ -1289,7 +1348,8 @@ mod tests {
         // Session with agent_name → Some
         let mut state = test_state();
         state.set_agent_name("my-agent".to_string());
-        let db2 = SessionDb::new_impl(sessions_dir, "pa2".to_string(), cwd, state, pid_always_dead, 1000).unwrap();
+        let db2 =
+            SessionDb::new_impl(sessions_dir, "pa2".to_string(), cwd, state, None, pid_always_dead, 1000).unwrap();
         write_dummy_log(&db2);
         drop(db2);
         assert_eq!(peek_agent_name(sessions_dir, "pa2").as_deref(), Some("my-agent"));
@@ -1306,6 +1366,7 @@ mod tests {
             "t1".to_string(),
             &cwd,
             test_state(),
+            None,
             pid_always_dead,
             1000,
         )
@@ -1332,6 +1393,7 @@ mod tests {
             "t2".to_string(),
             &cwd,
             test_state(),
+            None,
             pid_always_dead,
             1000,
         )
@@ -1372,6 +1434,7 @@ mod tests {
             session_id.to_string(),
             cwd,
             test_state(),
+            None,
             pid_always_dead,
             1000,
         )
@@ -1408,6 +1471,7 @@ mod tests {
             session_id.to_string(),
             cwd,
             test_state(),
+            None,
             pid_always_dead,
             1000,
         )
@@ -1441,6 +1505,7 @@ mod tests {
             "del1".to_string(),
             cwd,
             test_state(),
+            None,
             pid_always_dead,
             1000,
         )
@@ -1475,6 +1540,7 @@ mod tests {
             "active1".to_string(),
             cwd,
             test_state(),
+            None,
             pid_always_dead,
             1000,
         )
@@ -1487,5 +1553,64 @@ mod tests {
 
         // Files should still exist
         assert!(metadata_path(sessions_dir, "active1").exists());
+    }
+
+    /// When `parent_session_id` is `None`, the key should be omitted from
+    /// the serialized JSON entirely (via `skip_serializing_if`). Otherwise
+    /// every top-level session file would carry a redundant `null` field.
+    #[test]
+    fn test_parent_session_id_none_is_omitted_from_disk() {
+        let temp_dir = TempDir::new().unwrap();
+        let sessions_dir = temp_dir.path();
+        let cwd = Path::new("/test/project");
+        let session_id = "top-level-session".to_string();
+
+        let handle = SessionDb::new_impl(
+            sessions_dir,
+            session_id.clone(),
+            cwd,
+            test_state(),
+            None,
+            pid_always_dead,
+            1000,
+        )
+        .unwrap();
+        write_dummy_log(&handle);
+        drop(handle);
+
+        let on_disk = fs::read_to_string(metadata_path(sessions_dir, &session_id)).unwrap();
+        assert!(
+            !on_disk.contains("parent_session_id"),
+            "parent_session_id should be omitted when None, got: {on_disk}"
+        );
+    }
+
+    /// A `SessionData` JSON payload from before the `parent_session_id`
+    /// field existed must still deserialize (as `None`). Guards the
+    /// `#[serde(default)]` backcompat promise for on-disk session files
+    /// written by older binaries.
+    #[test]
+    fn test_legacy_session_data_deserializes_without_parent_field() {
+        let current = SessionData {
+            session_id: "legacy-session".to_string(),
+            cwd: PathBuf::from("/some/path"),
+            created_at: Utc::now(),
+            updated_at: Utc::now(),
+            title: None,
+            exported_from_v1: false,
+            imported_from: None,
+            parent_session_id: None,
+            session_state: test_state(),
+        };
+
+        // Simulate the legacy on-disk shape by dropping the new key entirely.
+        let mut value = serde_json::to_value(&current).unwrap();
+        value.as_object_mut().unwrap().remove("parent_session_id");
+        assert!(!value.to_string().contains("parent_session_id"));
+
+        let parsed: SessionData = serde_json::from_value(value).unwrap();
+        assert_eq!(parsed.session_id, "legacy-session");
+        assert!(parsed.parent_session_id.is_none());
+        assert!(!parsed.is_subagent());
     }
 }

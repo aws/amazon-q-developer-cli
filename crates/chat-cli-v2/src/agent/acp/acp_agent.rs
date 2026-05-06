@@ -609,7 +609,8 @@ pub struct AcpSessionConfig {
     pub load: bool,
     pub initial_agent_name: Option<String>,
     pub user_embedded_msg: Option<String>,
-    pub is_subagent: bool,
+    /// `Some` only for subagent sessions; holds the parent session's ID.
+    pub parent_session_id: Option<String>,
     pub model_id: Option<String>,
     /// MCP servers provided by the ACP client
     pub mcp_servers: Vec<sacp::schema::McpServer>,
@@ -628,7 +629,7 @@ impl AcpSessionConfig {
             load: false,
             initial_agent_name: None,
             user_embedded_msg: None,
-            is_subagent: false,
+            parent_session_id: None,
             model_id: None,
             mcp_servers: Vec::new(),
             trust_all_tools: false,
@@ -658,8 +659,8 @@ impl AcpSessionConfig {
     }
 
     #[allow(clippy::wrong_self_convention)]
-    pub fn is_subagent(mut self, is_subagent: bool) -> Self {
-        self.is_subagent = is_subagent;
+    pub fn parent_session_id(mut self, id: String) -> Self {
+        self.parent_session_id = Some(id);
         self
     }
 
@@ -685,6 +686,7 @@ pub struct AcpSessionBuilder<'a> {
     initial_agent_config: Option<Cow<'a, LoadedAgentConfig>>,
     user_embedded_msg: Option<&'a str>,
     is_subagent: bool,
+    parent_session_id: Option<String>,
     global_mcp_path: Option<&'a PathBuf>,
     local_mcp_path: Option<&'a PathBuf>,
     model_id: Option<&'a str>,
@@ -722,6 +724,7 @@ impl<'a> Default for AcpSessionBuilder<'a> {
             initial_agent_config: None,
             user_embedded_msg: None,
             is_subagent: false,
+            parent_session_id: None,
             global_mcp_path: None,
             local_mcp_path: None,
             model_id: None,
@@ -779,6 +782,11 @@ impl<'a> AcpSessionBuilder<'a> {
 
     pub fn set_as_subagent(mut self, is_subagent: bool) -> Self {
         self.is_subagent = is_subagent;
+        self
+    }
+
+    pub fn parent_session_id(mut self, id: Option<String>) -> Self {
+        self.parent_session_id = id;
         self
     }
 
@@ -1158,7 +1166,12 @@ impl AcpSession {
                 context_usage_percentage: None,
             };
             let initial_state = SessionState::new(snapshot.conversation_metadata.clone(), rts_snapshot, permissions);
-            let db = SessionDb::new(session_id_str.clone(), &cwd, initial_state)?;
+            let db = SessionDb::new(
+                session_id_str.clone(),
+                &cwd,
+                initial_state,
+                builder.parent_session_id.clone(),
+            )?;
 
             (db, snapshot)
         };

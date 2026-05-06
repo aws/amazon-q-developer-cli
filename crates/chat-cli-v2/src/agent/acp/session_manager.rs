@@ -743,7 +743,8 @@ impl SessionManager {
                     .initial_agent_config(Cow::Owned(agent_config_to_use))
                     .user_embedded_msg(config.user_embedded_msg.as_deref())
                     .session_tx(self.session_manager_handle.clone())
-                    .set_as_subagent(config.is_subagent)
+                    .set_as_subagent(config.parent_session_id.is_some())
+                    .parent_session_id(config.parent_session_id.clone())
                     .code_intelligence(code_intel)
                     .trust_all_tools(self.trust_all_tools)
                     .trust_tools(self.trust_tools.clone())
@@ -761,7 +762,7 @@ impl SessionManager {
                         self.connection_cx = Some(cx.clone());
                     }
                     builder = builder.connection_cx(cx);
-                } else if config.is_subagent {
+                } else if config.parent_session_id.is_some() {
                     // Subagent session — clone the stored connection
                     if let Some(cx) = &self.connection_cx {
                         builder = builder.connection_cx(cx.clone());
@@ -1008,6 +1009,7 @@ impl SessionManager {
                                     created_at: v1.updated_at,
                                     updated_at: v1.updated_at,
                                     title: v1.title,
+                                    parent_session_id: None,
                                     message_count: v1.message_count,
                                 });
                             }
@@ -1391,7 +1393,7 @@ impl SessionManager {
     /// 1. Generates a bare UUID session ID (NOT "orch-{uuid}" — that fails DB validation).
     /// 2. Registers the session in `orchestrated_sessions` and permission store.
     /// 3. Spawns a `tokio::task` that:
-    ///    - Calls `start_session` with `is_subagent=true` (cloned `connection_cx`).
+    ///    - Calls `start_session` with `parent_session_id` set (cloned `connection_cx`).
     ///    - Waits for MCP init (`ready_rx`).
     ///    - Calls `internal_prompt(task)` — blocks until the agent calls the `summary` tool.
     ///    - On success: delivers summary to parent inbox, marks session `Terminated`, terminates
@@ -1498,7 +1500,7 @@ impl SessionManager {
         );
         tokio::spawn(async move {
             let config = AcpSessionConfig::new(new_sid.to_string(), std::env::current_dir().unwrap_or_default())
-                .is_subagent(true)
+                .parent_session_id(parent_sid.to_string())
                 .initial_agent_name(agent_str)
                 .user_embedded_msg(embedded_msg);
             match session_tx.start_session(&new_sid, config, None).await {

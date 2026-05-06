@@ -447,6 +447,7 @@ mod tests {
             title: Some("Test Session".into()),
             exported_from_v1: false,
             imported_from: None,
+            parent_session_id: None,
             session_state: SessionState::Unknown,
         }
     }

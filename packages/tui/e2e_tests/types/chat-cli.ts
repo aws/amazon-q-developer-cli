@@ -14,6 +14,8 @@ export interface SessionDataView {
 	created_at: string;
 	updated_at: string;
 	title?: string;
+	/** `Some` only for subagent sessions; holds the parent session's ID. */
+	parent_session_id?: string;
 	message_count?: number;
 }
 
