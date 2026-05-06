@@ -589,7 +589,7 @@ def sign_executable(
         signing_data=signing_data,
     )
 
-    max_duration = 180
+    max_duration = 600
     end_time = time.time() + max_duration
     i = 1
     while True:
