@@ -12,6 +12,78 @@
     },
     {
       "type": "release",
+      "date": "2026-05-06",
+      "version": "2.3.0",
+      "title": "Version 2.3.0",
+      "changes": [
+        {
+          "type": "added",
+          "description": "Add /session-id slash command and resume hint on exit"
+        },
+        {
+          "type": "fixed",
+          "description": "HTTP retry warnings are now displayed in the TUI instead of being silently logged"
+        },
+        {
+          "type": "added",
+          "description": "Configurable keybindings for V2 TUI cancel, close menu, and quit actions"
+        },
+        {
+          "type": "added",
+          "description": "Support file_patterns glob matching in LSP language config for targeting specific filenames"
+        },
+        {
+          "type": "fixed",
+          "description": "Pass trailing text as context when invoking a skill slash command whose body has no `$ARGUMENTS` or `${N}` placeholders"
+        },
+        {
+          "type": "added",
+          "description": "Expandable paste chips: Press Tab on a collapsed paste chip to expand it into inline editable text"
+        },
+        {
+          "type": "fixed",
+          "description": "Cursor now positions correctly after the chip when pasting multiple collapsible texts"
+        },
+        {
+          "type": "added",
+          "description": "Add $AGENT_DISPLAY_OUT and $AGENT_CONTEXT_OUT side channels for shell wrapper scripts to stream output to the TUI or agent without going through stdout"
+        },
+        {
+          "type": "fixed",
+          "description": "Fix rendering issues in remote SSH"
+        },
+        {
+          "type": "added",
+          "description": "Support user-configurable OAuth `clientId` for MCP servers that don't support Dynamic Client Registration (e.g. Slack, GitHub, Figma)"
+        },
+        {
+          "type": "fixed",
+          "description": "MCP registry npm/pypi servers now work when the package identifier already contains a version tag"
+        },
+        {
+          "type": "fixed",
+          "description": "TUI: show the tool name, attempted arguments, and real failure reason when a tool call fails (parse error, permission denied, pre-tool hook rejection, or runtime error)"
+        },
+        {
+          "type": "fixed",
+          "description": "Preserve user prompt in conversation history after cancelling a turn with ctrl-C"
+        },
+        {
+          "type": "fixed",
+          "description": "Registry-type MCP server environment variables from agent.json now correctly apply in TUI mode, and /mcp add changes persist across sessions"
+        },
+        {
+          "type": "added",
+          "description": "`KIRO_HOME` environment variable to override the `~/.kiro` directory used for global agents, prompts, skills, steering, settings, and sessions"
+        },
+        {
+          "type": "added",
+          "description": "Record parent session ID in persisted subagent sessions"
+        }
+      ]
+    },
+    {
+      "type": "release",
       "date": "2026-05-05",
       "version": "2.2.2",
       "title": "Version 2.2.2",
@@ -30,7 +102,7 @@
       "changes": [
         {
           "type": "added",
-          "description": "Added `chat.disableWrap` setting to disable word-wrapping in chat output — long lines soft-wrap visually but stay as a single logical line for clean copy-paste."
+          "description": "Added `chat.disableWrap` setting to disable word-wrapping in chat output \u2014 long lines soft-wrap visually but stay as a single logical line for clean copy-paste."
         },
         {
           "type": "fixed",
@@ -218,7 +290,7 @@
         },
         {
           "type": "added",
-          "description": "Headless mode. Run Kiro CLI programmatically with an API key — full access to all tools and agents, now scriptable. Get your access key from https://kiro.dev/"
+          "description": "Headless mode. Run Kiro CLI programmatically with an API key \u2014 full access to all tools and agents, now scriptable. Get your access key from https://kiro.dev/"
         },
         {
           "type": "changed",
@@ -550,7 +622,7 @@
       "changes": [
         {
           "type": "added",
-          "description": "A refreshed UX (experimental) with live unified status, omnipresent input, and contextual overlays—try it with kiro-cli --tui. Learn more and share your feedback: https://kiro.dev/docs/cli/experimental/tui/"
+          "description": "A refreshed UX (experimental) with live unified status, omnipresent input, and contextual overlays\u2014try it with kiro-cli --tui. Learn more and share your feedback: https://kiro.dev/docs/cli/experimental/tui/"
         },
         {
           "type": "added",

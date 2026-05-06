@@ -12,6 +12,78 @@
     },
     {
       "type": "release",
+      "date": "2026-05-06",
+      "version": "2.3.0",
+      "title": "Version 2.3.0",
+      "changes": [
+        {
+          "type": "added",
+          "description": "Add /session-id slash command and resume hint on exit"
+        },
+        {
+          "type": "fixed",
+          "description": "HTTP retry warnings are now displayed in the TUI instead of being silently logged"
+        },
+        {
+          "type": "added",
+          "description": "Configurable keybindings for V2 TUI cancel, close menu, and quit actions"
+        },
+        {
+          "type": "added",
+          "description": "Support file_patterns glob matching in LSP language config for targeting specific filenames"
+        },
+        {
+          "type": "fixed",
+          "description": "Pass trailing text as context when invoking a skill slash command whose body has no `$ARGUMENTS` or `${N}` placeholders"
+        },
+        {
+          "type": "added",
+          "description": "Expandable paste chips: Press Tab on a collapsed paste chip to expand it into inline editable text"
+        },
+        {
+          "type": "fixed",
+          "description": "Cursor now positions correctly after the chip when pasting multiple collapsible texts"
+        },
+        {
+          "type": "added",
+          "description": "Add $AGENT_DISPLAY_OUT and $AGENT_CONTEXT_OUT side channels for shell wrapper scripts to stream output to the TUI or agent without going through stdout"
+        },
+        {
+          "type": "fixed",
+          "description": "Fix rendering issues in remote SSH"
+        },
+        {
+          "type": "added",
+          "description": "Support user-configurable OAuth `clientId` for MCP servers that don't support Dynamic Client Registration (e.g. Slack, GitHub, Figma)"
+        },
+        {
+          "type": "fixed",
+          "description": "MCP registry npm/pypi servers now work when the package identifier already contains a version tag"
+        },
+        {
+          "type": "fixed",
+          "description": "TUI: show the tool name, attempted arguments, and real failure reason when a tool call fails (parse error, permission denied, pre-tool hook rejection, or runtime error)"
+        },
+        {
+          "type": "fixed",
+          "description": "Preserve user prompt in conversation history after cancelling a turn with ctrl-C"
+        },
+        {
+          "type": "fixed",
+          "description": "Registry-type MCP server environment variables from agent.json now correctly apply in TUI mode, and /mcp add changes persist across sessions"
+        },
+        {
+          "type": "added",
+          "description": "`KIRO_HOME` environment variable to override the `~/.kiro` directory used for global agents, prompts, skills, steering, settings, and sessions"
+        },
+        {
+          "type": "added",
+          "description": "Record parent session ID in persisted subagent sessions"
+        }
+      ]
+    },
+    {
+      "type": "release",
       "date": "2026-05-05",
       "version": "2.2.2",
       "title": "Version 2.2.2",
@@ -30,7 +102,7 @@
       "changes": [
         {
           "type": "added",
-          "description": "Added `chat.disableWrap` setting to disable word-wrapping in chat output — long lines soft-wrap visually but stay as a single logical line for clean copy-paste."
+          "description": "Added `chat.disableWrap` setting to disable word-wrapping in chat output \u2014 long lines soft-wrap visually but stay as a single logical line for clean copy-paste."
         },
         {
           "type": "fixed",
@@ -95,6 +167,902 @@
         {
           "type": "fixed",
           "description": "Fix subagent tool dispatch silently failing when MCP server events invalidate cached tool specs during execution"
+        }
+      ]
+    },
+    {
+      "type": "release",
+      "date": "2026-04-21",
+      "version": "2.1.0",
+      "title": "Version 2.1.0",
+      "changes": [
+        {
+          "type": "added",
+          "description": "Support for Google and GitHub login in remote environments using device flow via auth portal"
+        },
+        {
+          "type": "fixed",
+          "description": "Fix markdown table rendering: word-wrap to terminal width with inline styling support"
+        },
+        {
+          "type": "fixed",
+          "description": "Fix dangerous shell commands prompting for approval instead of respecting denyByDefault"
+        },
+        {
+          "type": "fixed",
+          "description": "Fix resume picker over-truncating session titles to 30 characters"
+        },
+        {
+          "type": "fixed",
+          "description": "Fix multiline input history splitting into separate entries across sessions"
+        },
+        {
+          "type": "fixed",
+          "description": "TUI colors no longer render as black on terminals with remapped ANSI palettes. Themes now use named ANSI colors instead of hardcoded hex values, `/theme` now supports base theme switching, and the NO_COLOR environment variable is respected."
+        },
+        {
+          "type": "added",
+          "description": "Shell command output now streams to the TUI in real-time, line by line, instead of waiting for process completion"
+        },
+        {
+          "type": "fixed",
+          "description": "Clear prompt hint when selecting a file from the @ menu"
+        },
+        {
+          "type": "fixed",
+          "description": "Fix slash-prefixed input being truncated when sent to the LLM"
+        },
+        {
+          "type": "added",
+          "description": "Add Tool Search feature for on-demand MCP tool discovery to reduce context window usage"
+        },
+        {
+          "type": "added",
+          "description": "Invoke .kiro/skills as /skill-name slash commands"
+        },
+        {
+          "type": "fixed",
+          "description": "Fix paste being split into multiple messages after using shell escape commands (!vim, !less) or /editor"
+        },
+        {
+          "type": "fixed",
+          "description": "Send working directory and OS as context in TUI/ACP by default"
+        },
+        {
+          "type": "changed",
+          "description": "Improved rendering performance for shell commands that stream large amounts of output"
+        },
+        {
+          "type": "added",
+          "description": "Add TUI support for Red Hat Enterprise Linux (RHEL)"
+        },
+        {
+          "type": "fixed",
+          "description": "Reject queued ! shell-escape commands during processing instead of sending them as literal text"
+        },
+        {
+          "type": "fixed",
+          "description": "Fix subagent tool approvals being mismatched"
+        },
+        {
+          "type": "fixed",
+          "description": "Preserve user's model selection when switching between agents"
+        },
+        {
+          "type": "fixed",
+          "description": "Fix fs_write diff output not showing when trust-all-tools is active"
+        },
+        {
+          "type": "fixed",
+          "description": "Fixed interactive shell escape (!command) not receiving user input by using a PTY, enabling programs like mwinit to work correctly"
+        },
+        {
+          "type": "fixed",
+          "description": "Sync knowledgeBase resources on session init and agent swap so agent-defined knowledge bases are indexed automatically"
+        },
+        {
+          "type": "changed",
+          "description": "Improve markdown rendering to correctly handle nested formatting (bold+italic, strikethrough+bold, bold links, code in links)"
+        }
+      ]
+    },
+    {
+      "type": "release",
+      "date": "2026-04-16",
+      "version": "2.0.1",
+      "title": "Version 2.0.1",
+      "changes": [
+        {
+          "type": "fixed",
+          "description": "Fix --trust-all-tools being ignored in non-interactive mode"
+        }
+      ]
+    },
+    {
+      "type": "release",
+      "date": "2026-04-13",
+      "version": "2.0.0",
+      "title": "Version 2.0.0",
+      "changes": [
+        {
+          "type": "added",
+          "description": "Windows support. Native install with full access to Kiro agents directly in your terminal."
+        },
+        {
+          "type": "added",
+          "description": "Headless mode. Run Kiro CLI programmatically with an API key \u2014 full access to all tools and agents, now scriptable. Get your access key from https://kiro.dev/"
+        },
+        {
+          "type": "changed",
+          "description": "UX refresh (GA). New UX is now the default with subagent monitoring (ctrl+g), real-time task lists, and stability fixes. Switch back anytime with kiro-cli --classic, or let us know /feedback."
+        }
+      ]
+    },
+    {
+      "type": "release",
+      "date": "2026-04-11",
+      "version": "1.29.8",
+      "title": "Version 1.29.8",
+      "changes": [
+        {
+          "type": "added",
+          "description": "Added confirmation and warning for --trust-all-tools"
+        },
+        {
+          "type": "fixed",
+          "description": "Fixed typing lag in TUI mode during long conversations"
+        },
+        {
+          "type": "fixed",
+          "description": "Tool calls no longer shown as running when resuming a session that was interrupted during tool execution"
+        },
+        {
+          "type": "fixed",
+          "description": "Fixed 'Prompt already in progress' error when cancelling a prompt"
+        },
+        {
+          "type": "fixed",
+          "description": "Fixed shell commands being allowed when toolsSettings deserialization fails"
+        },
+        {
+          "type": "fixed",
+          "description": "Fixed userPromptSubmit hook not included in message"
+        },
+        {
+          "type": "fixed",
+          "description": "Fixed max conversation length in agent crate to match v1 limit of 10000"
+        }
+      ]
+    },
+    {
+      "type": "release",
+      "date": "2026-04-10",
+      "version": "1.29.7",
+      "title": "Version 1.29.7",
+      "changes": [
+        {
+          "type": "added",
+          "description": "Added /guide command to swap to the Kiro guide agent"
+        },
+        {
+          "type": "added",
+          "description": "Added /transcript command and Ctrl+T to open conversation in $PAGER"
+        },
+        {
+          "type": "added",
+          "description": "Added prompt details drill-in view to /prompts command"
+        },
+        {
+          "type": "fixed",
+          "description": "Fixed duplicate hooks causing TUI hang"
+        },
+        {
+          "type": "fixed",
+          "description": "Fixed crash when tool approval triggered in non-interactive mode"
+        },
+        {
+          "type": "fixed",
+          "description": "Fixed server-side token revocation on social logout"
+        },
+        {
+          "type": "fixed",
+          "description": "Fixed approval UX keybindings for arrow navigation, esc, and tab"
+        }
+      ]
+    },
+    {
+      "type": "release",
+      "date": "2026-04-08",
+      "version": "1.29.6",
+      "title": "Version 1.29.6",
+      "changes": [
+        {
+          "type": "added",
+          "description": "Support @prompt syntax for triggering prompts in TUI and CLI arguments"
+        },
+        {
+          "type": "added",
+          "description": "Added Ctrl+R reverse incremental search to TUI prompt input"
+        },
+        {
+          "type": "added",
+          "description": "Added /hooks command in V2 TUI"
+        },
+        {
+          "type": "added",
+          "description": "Added /theme customization for code diff colors"
+        },
+        {
+          "type": "fixed",
+          "description": "Fixed --list-models not working without --classic"
+        },
+        {
+          "type": "fixed",
+          "description": "Fixed reverse search bugs: Ctrl+C, Escape, backspace after fail, up arrow context"
+        },
+        {
+          "type": "fixed",
+          "description": "Fixed viewport content preservation in scrollback on Ghostty"
+        }
+      ]
+    },
+    {
+      "type": "release",
+      "date": "2026-04-06",
+      "version": "1.29.5",
+      "title": "Version 1.29.5",
+      "changes": [
+        {
+          "type": "fixed",
+          "description": "Prevent bun application crashing causing TUI issues"
+        }
+      ]
+    },
+    {
+      "type": "release",
+      "date": "2026-04-06",
+      "version": "1.29.4",
+      "title": "Version 1.29.4",
+      "changes": [
+        {
+          "type": "added",
+          "description": "Added MCP registry support to V2 ACP code path"
+        },
+        {
+          "type": "fixed",
+          "description": "Fixed orphaned bun processes on terminal close"
+        },
+        {
+          "type": "fixed",
+          "description": "Fixed MCP OAuth mid-session re-authentication and token expiry detection"
+        },
+        {
+          "type": "fixed",
+          "description": "Fixed /tools reset not clearing all runtime permissions"
+        }
+      ]
+    },
+    {
+      "type": "release",
+      "date": "2026-04-04",
+      "version": "1.29.3",
+      "title": "Version 1.29.3",
+      "changes": [
+        {
+          "type": "added",
+          "description": "Added /theme command to override theme colors for prompt and UI elements"
+        },
+        {
+          "type": "fixed",
+          "description": "Fixed long diff lines being truncated with ellipsis instead of wrapping"
+        },
+        {
+          "type": "fixed",
+          "description": "Fixed tmux pane title showing 'twinki:c' and APC sequence corruption"
+        },
+        {
+          "type": "fixed",
+          "description": "Fixed support for `--key=value` syntax and `--trust-tools` flag"
+        },
+        {
+          "type": "fixed",
+          "description": "Fixed /copy command only copying the tail end of responses that include tool calls"
+        }
+      ]
+    },
+    {
+      "type": "release",
+      "date": "2026-04-03",
+      "version": "1.29.2",
+      "title": "Version 1.29.2",
+      "changes": [
+        {
+          "type": "fixed",
+          "description": "Fixed session-injected MCP servers being lost across mode swaps"
+        },
+        {
+          "type": "fixed",
+          "description": "Fixed Kitty protocol sequence leakage by draining stdin on exit"
+        },
+        {
+          "type": "fixed",
+          "description": "Fixed missing keyboard shortcuts in TUI input"
+        }
+      ]
+    },
+    {
+      "type": "release",
+      "date": "2026-04-02",
+      "version": "1.29.1",
+      "title": "Version 1.29.1",
+      "changes": [
+        {
+          "type": "added",
+          "description": "Added UX for managing queued messages in V2 TUI"
+        },
+        {
+          "type": "fixed",
+          "description": "Fixed V1 subagent not having access to read files in the current working directory"
+        },
+        {
+          "type": "fixed",
+          "description": "Fixed IME input in terminal multiplexers by enabling hardware cursor"
+        },
+        {
+          "type": "fixed",
+          "description": "Fixed feedback URL being clipped and input filepath handling in V2 TUI"
+        },
+        {
+          "type": "fixed",
+          "description": "Fixed Ctrl+Z to properly suspend and resume the process in V2 TUI"
+        }
+      ]
+    },
+    {
+      "type": "release",
+      "date": "2026-04-01",
+      "version": "1.29.0",
+      "title": "Version 1.29.0",
+      "changes": [
+        {
+          "type": "added",
+          "description": "The new TUI now supports all core features with the addition of sub agents, code intelligence and task management. Learn more: https://kiro.dev/blog/new-look-for-cli/"
+        },
+        {
+          "type": "added",
+          "description": "Added `/chat new` command in V2 TUI to start a fresh conversation without restarting the CLI"
+        },
+        {
+          "type": "added",
+          "description": "Add hooks.showStatus setting to suppress hook status messages"
+        },
+        {
+          "type": "fixed",
+          "description": "Fixed YAML frontmatter parsing failing on files with Windows-style (CRLF) line endings"
+        },
+        {
+          "type": "fixed",
+          "description": "Fixed panic on corrupted history file"
+        },
+        {
+          "type": "fixed",
+          "description": "Resolve relative and tilde paths in ACP file writes to display accurate diffs"
+        },
+        {
+          "type": "fixed",
+          "description": "Fixed spurious warnings when passing grep or glob to --trust-tools"
+        }
+      ]
+    },
+    {
+      "type": "release",
+      "date": "2026-03-28",
+      "version": "1.28.3",
+      "title": "Version 1.28.3",
+      "changes": [
+        {
+          "type": "fixed",
+          "description": "Fix \"profileArn is required but no profiles are available\" error for some users"
+        }
+      ]
+    },
+    {
+      "type": "release",
+      "date": "2026-03-26",
+      "version": "1.28.2",
+      "title": "Version 1.28.2",
+      "changes": [
+        {
+          "type": "added",
+          "description": "TUI v2 enhancements: /code command, /agent create & edit, filesystem path tab completion, terminal notifications, per-prompt credits/time display, OSC 9 support, and greeting settings"
+        },
+        {
+          "type": "fixed",
+          "description": "Fixed knowledge base include/exclude patterns not being applied during agent resource sync"
+        },
+        {
+          "type": "fixed",
+          "description": "Fix TUI/ACP /clear not persisting to session history, causing cleared messages to reappear on session resume"
+        },
+        {
+          "type": "fixed",
+          "description": "Support disabledTools configuration for MCP servers in ACP/TUI"
+        },
+        {
+          "type": "fixed",
+          "description": "Session & model reliability: saved model ID now restores correctly on resume, context size fallback updated, and session actor properly shuts down on terminate"
+        },
+        {
+          "type": "fixed",
+          "description": "TUI input & rendering: non-Latin character support, forward-delete key, column sizing with wide characters, and line wrap/link parsing"
+        }
+      ]
+    },
+    {
+      "type": "release",
+      "date": "2026-03-20",
+      "version": "1.28.1",
+      "title": "Version 1.28.1",
+      "changes": [
+        {
+          "type": "fixed",
+          "description": "Fixed shell command trust patterns to preserve the original command path"
+        },
+        {
+          "type": "fixed",
+          "description": "Fixed prompt references not being resolved when passed to subagents"
+        }
+      ]
+    },
+    {
+      "type": "release",
+      "date": "2026-03-20",
+      "version": "1.28.0",
+      "title": "Version 1.28.0",
+      "changes": [
+        {
+          "type": "added",
+          "description": "A refreshed UX (experimental) with live unified status, omnipresent input, and contextual overlays\u2014try it with kiro-cli --tui. Learn more and share your feedback: https://kiro.dev/docs/cli/experimental/tui/"
+        },
+        {
+          "type": "added",
+          "description": "Add --list-models flag to non-interactively display available models"
+        },
+        {
+          "type": "added",
+          "description": "Added `/chat new` command to start a fresh conversation without restarting the CLI"
+        },
+        {
+          "type": "fixed",
+          "description": "Fixed --resume-picker silently falling through to new chat in directories with many sessions"
+        },
+        {
+          "type": "fixed",
+          "description": "Fixed Ctrl+C not interrupting glob and grep tools during large directory traversals"
+        },
+        {
+          "type": "fixed",
+          "description": "Fixed thinking tool infinite loop caused by single-event tool calls being silently dropped"
+        }
+      ]
+    },
+    {
+      "type": "release",
+      "date": "2026-03-18",
+      "version": "1.27.3",
+      "title": "Version 1.27.3",
+      "changes": [
+        {
+          "type": "fixed",
+          "description": "Fixed todo lists being shared across concurrent sessions in the same directory"
+        },
+        {
+          "type": "added",
+          "description": "Added cleanup.periodDays setting to automatically delete old conversations, sessions, and knowledge bases"
+        },
+        {
+          "type": "fixed",
+          "description": "Skip unreadable files in glob expansion and isolate resource errors so one bad path does not drop all context"
+        },
+        {
+          "type": "fixed",
+          "description": "Persist CLI history after each input to prevent loss on crash or reboot"
+        },
+        {
+          "type": "added",
+          "description": "Include assistant response in stop hook event payload"
+        },
+        {
+          "type": "fixed",
+          "description": "Fixed trusted shell command patterns overwriting agent config's allowedCommands and autoAllowReadonly settings"
+        },
+        {
+          "type": "fixed",
+          "description": "Fixed certain git and npm commands being marked as readonly"
+        },
+        {
+          "type": "fixed",
+          "description": "Fixed subagent getting stuck when multiple tool calls require approval"
+        },
+        {
+          "type": "fixed",
+          "description": "Preserve valid tool uses in conversation history when retrying after invalid JSON in model response"
+        },
+        {
+          "type": "fixed",
+          "description": "Clean up MCP child processes on SIGTERM"
+        }
+      ]
+    },
+    {
+      "type": "release",
+      "date": "2026-03-09",
+      "version": "1.27.2",
+      "title": "Version 1.27.2",
+      "changes": [
+        {
+          "type": "fixed",
+          "description": "Show agent names and queries in multi-subagent permission prompt"
+        },
+        {
+          "type": "fixed",
+          "description": "Fix agent loading to follow symlinks and deduplicate agent configs with the same name within a directory"
+        },
+        {
+          "type": "fixed",
+          "description": "Fixed knowledge search panic when snippet_length lands on a multi-byte UTF-8 character boundary"
+        },
+        {
+          "type": "fixed",
+          "description": "Prevent spurious agent conflict warnings when running from home directory"
+        }
+      ]
+    },
+    {
+      "type": "release",
+      "date": "2026-03-05",
+      "version": "1.27.1",
+      "title": "Version 1.27.1",
+      "changes": [
+        {
+          "type": "fixed",
+          "description": "Prevent bash commands from hanging when processes access the terminal (SIGTTIN)"
+        }
+      ]
+    },
+    {
+      "type": "release",
+      "date": "2026-02-27",
+      "version": "1.27.0",
+      "title": "Version 1.27.0",
+      "changes": [
+        {
+          "type": "added",
+          "description": "Enable embeddings on Linux ARM (aarch64)"
+        },
+        {
+          "type": "added",
+          "description": "Granular path trust for read/write tools - trust specific paths, parent directories, or workspace instead of trusting all file operations"
+        },
+        {
+          "type": "changed",
+          "description": "Improved tool validation error messages to show required fields and hide internal details from user display"
+        },
+        {
+          "type": "fixed",
+          "description": "Reset context usage percentage on agent swap to prevent displaying stale values"
+        },
+        {
+          "type": "added",
+          "description": "Interactive agent selection for /agent edit and /agent set-default commands"
+        },
+        {
+          "type": "added",
+          "description": "session tool for temporary in-memory settings management"
+        },
+        {
+          "type": "fixed",
+          "description": "Improved MCP transport-closed error messages to be more actionable and transport-aware"
+        },
+        {
+          "type": "fixed",
+          "description": "Prefer $VISUAL over $EDITOR environment variable per Unix convention"
+        },
+        {
+          "type": "added",
+          "description": "Tree-sitter fallback for document symbols when LSP server does not support textDocument/documentSymbol"
+        },
+        {
+          "type": "fixed",
+          "description": "LSP client now respects server capabilities and dynamic registration before sending requests"
+        },
+        {
+          "type": "changed",
+          "description": "Merged /agent create and /agent generate commands - /agent create now defaults to AI-assisted mode with --manual flag for editor-based creation"
+        },
+        {
+          "type": "fixed",
+          "description": "Fixed /agent list to correctly display source location for newly created agents"
+        },
+        {
+          "type": "added",
+          "description": "Added support for specifying agent creation arguments at invocation time, bypassing interactive menu"
+        },
+        {
+          "type": "added",
+          "description": "Added 'workspace' and 'global' special values for --directory flag that resolve to system agent directories"
+        },
+        {
+          "type": "fixed",
+          "description": "Fixed agents created with --directory flag being incorrectly placed in workspace folder"
+        },
+        {
+          "type": "fixed",
+          "description": "Improved --from flag performance during agent creation"
+        },
+        {
+          "type": "fixed",
+          "description": "Hide ASCII banner and UI noise in non-interactive mode"
+        },
+        {
+          "type": "fixed",
+          "description": "Agent edit command now uses temporary file validation to prevent corruption of original config"
+        },
+        {
+          "type": "fixed",
+          "description": "AI-assisted agent creation now defaults to global directory instead of prompting for location"
+        },
+        {
+          "type": "fixed",
+          "description": "Prevent raw mode panic when spawned with piped stdio and no controlling terminal"
+        },
+        {
+          "type": "fixed",
+          "description": "Subagent and ACP agent config system prompts now resolve file:// URIs relative to the config file location"
+        },
+        {
+          "type": "fixed",
+          "description": "Reset context usage percentage when switching to a model with a different context window size via /model"
+        },
+        {
+          "type": "fixed",
+          "description": "Ctrl+C now correctly interrupts and returns to prompt instead of exiting the CLI"
+        },
+        {
+          "type": "fixed",
+          "description": "Fix subagents not respecting the model field"
+        },
+        {
+          "type": "fixed",
+          "description": "Ctrl+C now restores cursor and kills child processes instead of leaving orphans"
+        },
+        {
+          "type": "fixed",
+          "description": "Fixed crash when indexing malformed PDF files in knowledge base"
+        },
+        {
+          "type": "fixed",
+          "description": "Reduced startup time by 1-2s on macOS by caching TLS certificate loading"
+        }
+      ]
+    },
+    {
+      "type": "release",
+      "date": "2026-02-17",
+      "version": "1.26.2",
+      "title": "Version 1.26.2",
+      "changes": [
+        {
+          "type": "fixed",
+          "description": "Auto compaction for context window overflow errors"
+        }
+      ]
+    },
+    {
+      "type": "release",
+      "date": "2026-02-16",
+      "version": "1.26.1",
+      "title": "Version 1.26.1",
+      "changes": [
+        {
+          "type": "added",
+          "description": "External Identity Provider (IdP) login support"
+        }
+      ]
+    },
+    {
+      "type": "release",
+      "date": "2026-02-12",
+      "version": "1.26.0",
+      "title": "Version 1.26.0",
+      "changes": [
+        {
+          "type": "added",
+          "description": "Implement @file and @directory expansion for inline content references"
+        },
+        {
+          "type": "added",
+          "description": "Kiro unified entry point with `kiro-cli integrations install kiro-command-router`"
+        },
+        {
+          "type": "fixed",
+          "description": "Interactive shell prompts now display immediately without waiting for newlines"
+        },
+        {
+          "type": "fixed",
+          "description": "Handle context window overflow errors for Opus 4.6"
+        },
+        {
+          "type": "changed",
+          "description": "Agent name is now a positional argument (e.g., 'kiro-cli agent create my-agent' instead of '--name my-agent')"
+        },
+        {
+          "type": "fixed",
+          "description": "Respect --no-interactive flag in subagent indicator"
+        },
+        {
+          "type": "added",
+          "description": "Skills from .kiro/skills/ and ~/.kiro/skills/ are now automatically available to the default agent"
+        },
+        {
+          "type": "fixed",
+          "description": "Show glob patterns in /context show output for easier removal"
+        },
+        {
+          "type": "changed",
+          "description": "Agent edit commands now default to editing the current agent when no arguments are provided"
+        },
+        {
+          "type": "added",
+          "description": "KIRO_LOG_NO_COLOR environment variable to disable colored log output"
+        },
+        {
+          "type": "fixed",
+          "description": "Compaction failures in the subagent tool and ACP subcommand"
+        },
+        {
+          "type": "fixed",
+          "description": "Support agent lookup when filename differs from name field"
+        },
+        {
+          "type": "added",
+          "description": "Update the shell tool with a working_dir parameter to prevent the model from prefixing all commands with cd"
+        },
+        {
+          "type": "changed",
+          "description": "Remove tool description truncation and warn about large descriptions instead"
+        },
+        {
+          "type": "added",
+          "description": "Agent name tab completion and ghost text hints for /agent swap and /agent delete commands"
+        },
+        {
+          "type": "fixed",
+          "description": "LSP client now reports clientInfo (name and version) to language servers"
+        },
+        {
+          "type": "added",
+          "description": "Display estimated token counts per tool and totals per origin in /tools output"
+        },
+        {
+          "type": "added",
+          "description": "Support --agent flag for the acp subcommand"
+        },
+        {
+          "type": "fixed",
+          "description": "Fix default agent loading for ACP"
+        },
+        {
+          "type": "added",
+          "description": "Add code tool for ACP and subagents"
+        },
+        {
+          "type": "fixed",
+          "description": "Fix /clear command showing garbled ANSI output instead of confirmation prompt"
+        },
+        {
+          "type": "fixed",
+          "description": "Deduplicate steering directory patterns in /context show when running from home directory"
+        },
+        {
+          "type": "added",
+          "description": "Enable /help --legacy <command> for command-specific help"
+        },
+        {
+          "type": "fixed",
+          "description": "Gracefully shut down MCP server processes on CLI exit to prevent leaked child processes"
+        },
+        {
+          "type": "added",
+          "description": "Add dynamic model tab completion with fuzzy matching and ghost text hints for /model command"
+        },
+        {
+          "type": "added",
+          "description": "Add chat.enablePromptHints setting to control startup hint display (default: true)"
+        },
+        {
+          "type": "changed",
+          "description": "Enhanced introspect search algorithm for better accuracy"
+        }
+      ]
+    },
+    {
+      "type": "release",
+      "date": "2026-02-03",
+      "version": "1.25.0",
+      "title": "Version 1.25.0",
+      "changes": [
+        {
+          "type": "added",
+          "description": "Agent Client Protocol support for ACP-compatible IDEs via kiro-cli acp command"
+        },
+        {
+          "type": "added",
+          "description": "Introspect now powered by comprehensive documentation coverage with semantic search"
+        },
+        {
+          "type": "added",
+          "description": "Enterprise governance support for web tools (web_search, web_fetch)"
+        },
+        {
+          "type": "added",
+          "description": "Agent list and swap commands now display agent descriptions"
+        },
+        {
+          "type": "fixed",
+          "description": "Welcome messages are now displayed whenever switching agents"
+        },
+        {
+          "type": "fixed",
+          "description": "write allowedPaths now works for both create and edit operations on systems with symlinks"
+        },
+        {
+          "type": "added",
+          "description": "add --require-mcp-startup flag to enforce successful MCP server startup"
+        },
+        {
+          "type": "fixed",
+          "description": "Knowledge indexing is now terminated immediately when the user requests to exit"
+        },
+        {
+          "type": "fixed",
+          "description": "Skill resources now show estimated size in /context instead of 0%"
+        },
+        {
+          "type": "fixed",
+          "description": "Enable case-insensitive history search in chat prompt"
+        },
+        {
+          "type": "fixed",
+          "description": "AWS tool supports S3 positional arguments for cp, mv, sync commands"
+        },
+        {
+          "type": "added",
+          "description": "Built-in help agent to explore CLI features and create configurations"
+        },
+        {
+          "type": "fixed",
+          "description": "Code intelligence now properly uses custom LSP servers for languages not supported by tree-sitter"
+        },
+        {
+          "type": "fixed",
+          "description": "Hook matchers now recognize tool aliases (e.g., 'read' for 'fs_read')"
+        },
+        {
+          "type": "changed",
+          "description": "Improved tool validation error messages to show required fields and hide internal details from user display"
+        }
+      ]
+    },
+    {
+      "type": "release",
+      "date": "2026-01-25",
+      "version": "1.24.1",
+      "title": "Version 1.24.1",
+      "changes": [
+        {
+          "type": "changed",
+          "description": "Updated prompt and tool spec to expand agent capabilities"
         }
       ]
     },
@@ -346,7 +1314,7 @@
         }
       ]
     },
-        {
+    {
       "type": "release",
       "date": "2025-11-17",
       "version": "1.19.7",
