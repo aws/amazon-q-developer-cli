@@ -12,6 +12,78 @@
     },
     {
       "type": "release",
+      "date": "2026-05-05",
+      "version": "2.2.2",
+      "title": "Version 2.2.2",
+      "changes": [
+        {
+          "type": "security",
+          "description": "Enforce MCP governance (Kiro console MCP toggle) in V2 TUI mode for enterprise and API key users."
+        }
+      ]
+    },
+    {
+      "type": "release",
+      "date": "2026-04-29",
+      "version": "2.2.1",
+      "title": "Version 2.2.1",
+      "changes": [
+        {
+          "type": "added",
+          "description": "Added `chat.disableWrap` setting to disable word-wrapping in chat output — long lines soft-wrap visually but stay as a single logical line for clean copy-paste."
+        },
+        {
+          "type": "fixed",
+          "description": "Fix API key authentication failing for non us-east-1 users"
+        },
+        {
+          "type": "security",
+          "description": "Code tool now requires approval to read files outside the workspace"
+        },
+        {
+          "type": "fixed",
+          "description": "Fixed screen freeze and unbounded memory growth when attaching to detached tmux sessions"
+        },
+        {
+          "type": "fixed",
+          "description": "Add dimension guard to prevent unnecessary re-renders on no-op terminal resize signals (tmux pane focus, attach/detach)"
+        },
+        {
+          "type": "fixed",
+          "description": "Prevent OOM crash when terminal is resized to very small widths"
+        },
+        {
+          "type": "added",
+          "description": "Added `/model set-current-as-default` to save the current model as the default"
+        },
+        {
+          "type": "added",
+          "description": "TUI: autocomplete (shadow text) now works for /agent swap <name>, matching the existing /agent <name> behavior"
+        },
+        {
+          "type": "fixed",
+          "description": "Fix fs_write str_replace failing on files with CRLF (Windows) line endings"
+        },
+        {
+          "type": "fixed",
+          "description": "TUI: treat unrecognized /input (e.g. pasted file paths like /Makefile) as a message instead of showing 'Unknown command'"
+        },
+        {
+          "type": "fixed",
+          "description": "Fix shell command execution hanging when spawned process forks a background daemon (Linux/macOS)"
+        },
+        {
+          "type": "fixed",
+          "description": "Use truncate_safe for UTF-8 safe string truncation to prevent panics on multi-byte characters"
+        },
+        {
+          "type": "fixed",
+          "description": "Bump embedded bun from 1.3.12 to 1.3.13, fixing black screen during terminal resize and reducing layout time"
+        }
+      ]
+    },
+    {
+      "type": "release",
       "date": "2026-04-27",
       "version": "2.2.0",
       "title": "Version 2.2.0",
@@ -19,6 +91,10 @@
         {
           "type": "added",
           "description": "Support adaptive thinking: Preserve model reasoning across multi-turn conversations for improved response quality"
+        },
+        {
+          "type": "fixed",
+          "description": "Fix subagent tool dispatch silently failing when MCP server events invalidate cached tool specs during execution"
         }
       ]
     },
