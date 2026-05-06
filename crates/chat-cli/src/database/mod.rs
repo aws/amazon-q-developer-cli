@@ -86,6 +86,7 @@ pub struct CredentialsJson {
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct AuthProfile {
     pub arn: String,
+    #[serde(alias = "profileName")]
     pub profile_name: String,
 }
 
@@ -667,6 +668,20 @@ mod tests {
         println!("duration: {:?}", now.elapsed() / 100);
 
         store.delete_secret(key).await.unwrap();
+    }
+
+    #[test]
+    fn test_auth_profile_deserialization_snake_case() {
+        let json = r#"{"arn":"arn:aws:codewhisperer:us-east-1:123456:profile/TEST","profile_name":"TestProfile"}"#;
+        let profile: AuthProfile = serde_json::from_str(json).unwrap();
+        assert_eq!(profile.profile_name, "TestProfile");
+    }
+
+    #[test]
+    fn test_auth_profile_deserialization_camel_case() {
+        let json = r#"{"arn":"arn:aws:codewhisperer:us-east-1:123456:profile/TEST","profileName":"TestProfile"}"#;
+        let profile: AuthProfile = serde_json::from_str(json).unwrap();
+        assert_eq!(profile.profile_name, "TestProfile");
     }
 
     #[tokio::test]
