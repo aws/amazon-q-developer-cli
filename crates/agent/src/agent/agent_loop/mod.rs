@@ -477,6 +477,9 @@ struct StreamParseState {
     /// Buffered error event returned from the response stream
     stream_err: Option<StreamError>,
 
+    /// Number of HTTP-level attempts reported by the transport layer, if any.
+    request_attempts: Option<u32>,
+
     ended_time: Option<Instant>,
     /// Whether or not the stream encountered an error.
     ///
@@ -501,6 +504,7 @@ impl StreamParseState {
             message_start: None,
             message_stop: None,
             stream_err: None,
+            request_attempts: None,
             ended_time: None,
             errored: false,
         }
@@ -548,7 +552,13 @@ impl StreamParseState {
         // Metadata can arrive first when a request is cancelled before the backend sends
         // any message content (RTS emits Metadata then Interrupted on cancel).
         match &ev {
-            StreamResult::Ok(StreamEvent::MessageStart(_) | StreamEvent::Metadata(_)) | StreamResult::Err(_) => (),
+            StreamResult::Ok(
+                StreamEvent::MessageStart(_)
+                | StreamEvent::Metadata(_)
+                | StreamEvent::RetryWarning(_)
+                | StreamEvent::RequestAttempts(_),
+            )
+            | StreamResult::Err(_) => (),
             other @ StreamResult::Ok(_) => debug_assert!(
                 self.message_start.is_some(),
                 "received an unexpected event at the start of the response stream: {other:?}"
@@ -662,6 +672,16 @@ impl StreamParseState {
                     );
                     self.metadata = Some(ev);
                 },
+
+                StreamEvent::RetryWarning(_) => {
+                    // Already pushed to buf as AgentLoopEventKind::Stream above.
+                    // No parse state to update — the ACP layer handles forwarding.
+                },
+
+                StreamEvent::RequestAttempts(ev) => {
+                    // Record the max attempt count seen — defensive against duplicate events.
+                    self.request_attempts = Some(self.request_attempts.unwrap_or(0).max(ev.count));
+                },
             },
 
             // Parse invariant - we don't expect any further events after receiving a single
@@ -708,6 +728,7 @@ impl StreamParseState {
         StreamMetadata {
             stream: self.metadata.clone(),
             tool_uses: self.tool_uses.clone(),
+            request_attempts: self.request_attempts,
         }
     }
 
@@ -880,6 +901,27 @@ mod tests {
         buf.into_iter()
             .find_map(|ev| match ev {
                 AgentLoopEventKind::ResponseStreamEnd { result, .. } => Some(result),
+                _ => None,
+            })
+            .expect("expected ResponseStreamEnd event")
+    }
+
+    /// Like `run_stream` but returns both the result and the metadata.
+    fn run_stream_with_metadata(
+        events: Vec<StreamResult>,
+    ) -> (
+        Result<Message, LoopError>,
+        crate::agent::agent_loop::protocol::StreamMetadata,
+    ) {
+        let mut state = StreamParseState::new(user_message());
+        let mut buf = Vec::new();
+        for ev in events {
+            state.next(Some(ev), &mut buf);
+        }
+        state.next(None, &mut buf);
+        buf.into_iter()
+            .find_map(|ev| match ev {
+                AgentLoopEventKind::ResponseStreamEnd { result, metadata } => Some((result, metadata)),
                 _ => None,
             })
             .expect("expected ResponseStreamEnd event")
@@ -1149,5 +1191,98 @@ mod tests {
             })
             .collect();
         assert_eq!(thinking_texts, vec!["hello", " world"]);
+    }
+
+    #[test]
+    fn retry_warning_before_message_start_does_not_panic() {
+        // RetryWarning can arrive before MessageStart (during HTTP retries).
+        // This must not trigger the debug assertion that requires MessageStart first.
+        let mut state = StreamParseState::new(user_message());
+        let mut buf = Vec::new();
+        let warning = StreamResult::Ok(StreamEvent::RetryWarning(RetryWarningEvent {
+            attempt: 2,
+            max_attempts: 6,
+            delay_secs: 5.0,
+            message: "Retrying in 5s (attempt 2/6)".into(),
+        }));
+        state.next(Some(warning), &mut buf);
+        // Should be forwarded as a Stream event
+        assert!(
+            buf.iter().any(|ev| matches!(
+                ev,
+                AgentLoopEventKind::Stream(StreamResult::Ok(StreamEvent::RetryWarning(_)))
+            )),
+            "RetryWarning should be forwarded as a Stream event"
+        );
+    }
+
+    #[test]
+    fn retry_warning_during_stream_does_not_affect_parse() {
+        // RetryWarning events interspersed with normal content should not
+        // affect the final parsed message.
+        let result = run_stream(vec![
+            StreamResult::Ok(StreamEvent::RetryWarning(RetryWarningEvent {
+                attempt: 2,
+                max_attempts: 6,
+                delay_secs: 5.0,
+                message: "Retrying in 5s (attempt 2/6)".into(),
+            })),
+            message_start(),
+            text_delta("hello"),
+            StreamResult::Ok(StreamEvent::RetryWarning(RetryWarningEvent {
+                attempt: 3,
+                max_attempts: 6,
+                delay_secs: 10.0,
+                message: "Retrying in 10.0s (attempt 3/6)".into(),
+            })),
+            message_stop(),
+        ]);
+        let msg = result.expect("expected Ok");
+        assert_eq!(msg.text(), "hello");
+    }
+
+    #[test]
+    fn request_attempts_event_populates_stream_metadata() {
+        // RequestAttempts emitted mid-stream (after retries, before the actual response)
+        // should be captured in StreamMetadata.request_attempts.
+        let (result, metadata) = run_stream_with_metadata(vec![
+            StreamResult::Ok(StreamEvent::RequestAttempts(RequestAttemptsEvent { count: 3 })),
+            message_start(),
+            text_delta("hello"),
+            message_stop(),
+        ]);
+        assert!(result.is_ok());
+        assert_eq!(metadata.request_attempts, Some(3));
+    }
+
+    #[test]
+    fn request_attempts_event_propagates_on_error() {
+        // For error paths (e.g. dispatch failure after retries), the transport layer emits
+        // RequestAttempts before the Err — the parser must capture it so telemetry can
+        // distinguish "failed on first attempt" from "failed after retries".
+        let (result, metadata) = run_stream_with_metadata(vec![
+            StreamResult::Ok(StreamEvent::RequestAttempts(RequestAttemptsEvent { count: 3 })),
+            StreamResult::Err(StreamError::new(StreamErrorKind::Other {
+                reason_code: Some("dispatch failure (io error): connection refused".into()),
+                message: "dispatch failure".into(),
+            })),
+        ]);
+        assert!(matches!(result, Err(LoopError::Stream(_))));
+        assert_eq!(metadata.request_attempts, Some(3));
+    }
+
+    #[test]
+    fn request_attempts_takes_max_across_duplicate_events() {
+        // Defensive: if multiple RequestAttempts events arrive (e.g. implementation bug),
+        // the parser keeps the max rather than last-wins, since the max represents the
+        // total attempts made.
+        let (_, metadata) = run_stream_with_metadata(vec![
+            StreamResult::Ok(StreamEvent::RequestAttempts(RequestAttemptsEvent { count: 3 })),
+            StreamResult::Ok(StreamEvent::RequestAttempts(RequestAttemptsEvent { count: 1 })),
+            message_start(),
+            text_delta("x"),
+            message_stop(),
+        ]);
+        assert_eq!(metadata.request_attempts, Some(3));
     }
 }

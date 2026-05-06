@@ -147,6 +147,9 @@ const DEFAULT_TIMEOUT_DURATION: Duration = Duration::from_secs(60 * 5);
 
 pub const MAX_RETRY_DELAY_DURATION: Duration = Duration::from_secs(10);
 
+/// Max attempts for API client requests (control-plane and streaming).
+const MAX_ATTEMPTS: u32 = 3;
+
 /// Profile ARN for BuilderId (free tier) users who have no IAM IdC profile stored in the DB.
 const BUILDER_ID_PROFILE_ARN: &str = "arn:aws:codewhisperer:us-east-1:638616132270:profile/AAAACCCCXXXX";
 
@@ -281,6 +284,8 @@ struct RealApiClient {
     model_cache: ModelCache,
     endpoint: Endpoint,
     auth_mode: AuthMode,
+    retry_warnings: delay_interceptor::RetryWarningBuffer,
+    request_attempts: delay_interceptor::RequestAttemptsTracker,
 }
 
 /// Handle to an actor that owns a shared registry for mock API responses, keyed by session_id.
@@ -698,6 +703,10 @@ impl RealApiClient {
                 .build(),
         );
 
+        let retry_warnings: delay_interceptor::RetryWarningBuffer = Arc::new(Mutex::new(Vec::new()));
+        let request_attempts: delay_interceptor::RequestAttemptsTracker =
+            Arc::new(std::sync::atomic::AtomicU32::new(0));
+
         if cfg!(test) && !is_integ_test() {
             let mut this = Self {
                 client,
@@ -708,6 +717,8 @@ impl RealApiClient {
                 model_cache: Arc::new(RwLock::new(None)),
                 endpoint: endpoint.clone(),
                 auth_mode: auth_mode.clone(),
+                retry_warnings: retry_warnings.clone(),
+                request_attempts: request_attempts.clone(),
             };
 
             if let Some(json) = crate::util::env_var::get_mock_chat_response(env) {
@@ -723,12 +734,17 @@ impl RealApiClient {
                 .http_client(crate::aws_common::http_client::client())
                 .interceptor(OptOutInterceptor::new(database))
                 .interceptor(UserAgentOverrideInterceptor::new())
-                .interceptor(DelayTrackingInterceptor::new())
+                .interceptor(DelayTrackingInterceptor::new(
+                    retry_warnings.clone(),
+                    request_attempts.clone(),
+                    MAX_ATTEMPTS,
+                ))
                 .interceptor(TokenTypeInterceptor::new(auth_mode.clone()))
                 .interceptor(InternalRedirectInterceptor::new(is_internal))
                 .bearer_token_resolver(UnifiedBearerResolver)
                 .app_name(app_name())
                 .endpoint_resolver(StaticEndpointResolver::new(endpoint.url().to_string()))
+                .retry_config(retry_config())
                 .retry_classifier(retry_classifier::QCliRetryClassifier::new())
                 .stalled_stream_protection(stalled_stream_protection_config())
                 .build(),
@@ -768,6 +784,8 @@ impl RealApiClient {
             model_cache: Arc::new(RwLock::new(None)),
             endpoint,
             auth_mode,
+            retry_warnings,
+            request_attempts,
         })
     }
 
@@ -785,6 +803,27 @@ impl RealApiClient {
             return None;
         }
         self.require_profile_arn().await.ok()
+    }
+
+    /// Drain any retry warnings accumulated by the delay tracking interceptor.
+    pub fn drain_retry_warnings(&self) -> Vec<delay_interceptor::RetryWarning> {
+        std::mem::take(&mut *self.retry_warnings.lock())
+    }
+
+    /// Get a clone of the retry warning buffer for real-time polling.
+    pub fn retry_warning_buffer(&self) -> delay_interceptor::RetryWarningBuffer {
+        self.retry_warnings.clone()
+    }
+
+    /// Drain the max attempt count recorded by the delay tracking interceptor and reset
+    /// the counter to 0 so the next `send_message` starts fresh.
+    ///
+    /// Returns `None` if no attempts have been recorded (e.g. if the request did not reach
+    /// the interceptor — rare, but possible for early-failure paths like construction errors).
+    /// Returns `Some(n)` where `n >= 1` when the interceptor ran at least once.
+    pub fn drain_request_attempts(&self) -> Option<u32> {
+        let n = self.request_attempts.swap(0, std::sync::atomic::Ordering::Relaxed);
+        if n == 0 { None } else { Some(n) }
     }
 
     pub async fn send_telemetry_event(
@@ -1299,6 +1338,33 @@ impl ApiClient {
         }
     }
 
+    /// Drain any retry warnings accumulated by the delay tracking interceptor.
+    /// Returns an empty vec for mock clients.
+    pub fn drain_retry_warnings(&self) -> Vec<delay_interceptor::RetryWarning> {
+        match &self.inner {
+            ApiClientInner::Real(c) => c.drain_retry_warnings(),
+            ApiClientInner::IpcMock(_) => Vec::new(),
+        }
+    }
+
+    /// Get a clone of the retry warning buffer for real-time polling.
+    /// Returns an empty buffer for mock clients.
+    pub fn retry_warning_buffer(&self) -> delay_interceptor::RetryWarningBuffer {
+        match &self.inner {
+            ApiClientInner::Real(c) => c.retry_warning_buffer(),
+            ApiClientInner::IpcMock(_) => Arc::new(Mutex::new(Vec::new())),
+        }
+    }
+
+    /// Drain the number of attempts made for the most recent `send_message` call.
+    /// Returns `None` for mock clients (no interceptor runs in IPC mocks).
+    pub fn drain_request_attempts(&self) -> Option<u32> {
+        match &self.inner {
+            ApiClientInner::Real(c) => c.drain_request_attempts(),
+            ApiClientInner::IpcMock(_) => None,
+        }
+    }
+
     pub async fn send_telemetry_event(
         &self,
         telemetry_event: TelemetryEvent,
@@ -1548,7 +1614,7 @@ fn timeout_config(database: &Database) -> TimeoutConfig {
 
 fn retry_config() -> RetryConfig {
     RetryConfig::adaptive()
-        .with_max_attempts(3)
+        .with_max_attempts(MAX_ATTEMPTS)
         .with_max_backoff(MAX_RETRY_DELAY_DURATION)
 }
 

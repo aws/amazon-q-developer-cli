@@ -15,6 +15,7 @@ export enum AgentEventType {
   CompactionStatus = 'compaction_status',
   McpServerInitFailure = 'mcp_server_init_failure',
   RateLimitError = 'rate_limit_error',
+  RetryWarning = 'retry_warning',
   AuthError = 'auth_error',
   SessionError = 'session_error',
   AgentSwitched = 'agent_switched',
@@ -268,6 +269,14 @@ export interface RateLimitErrorEvent {
   message: string;
 }
 
+export interface RetryWarningEvent {
+  type: AgentEventType.RetryWarning;
+  attempt: number;
+  maxAttempts: number;
+  delaySecs: number;
+  message: string;
+}
+
 export interface AuthErrorEvent {
   type: AgentEventType.AuthError;
   errorType: string;
@@ -361,6 +370,7 @@ export type AgentStreamEvent =
   | CompactionStatusEvent
   | McpServerInitFailureEvent
   | RateLimitErrorEvent
+  | RetryWarningEvent
   | AuthErrorEvent
   | SessionErrorEvent
   | AgentSwitchedEvent

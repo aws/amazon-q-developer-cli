@@ -500,20 +500,42 @@ abstract class BaseAcpClient implements SessionClient {
 
   private handleExtSessionUpdate(params: Record<string, unknown>) {
     const update = params.update as Record<string, unknown> | undefined;
-    if (!update || update.sessionUpdate !== 'tool_call_chunk') return;
-    const chunk = update as { toolCallId: string; title: string; kind: string };
-    const sessionId = params.sessionId as string | undefined;
-    const isSubagentEvent = sessionId && sessionId !== this.sessionId;
-    const event: AgentStreamEvent = {
-      type: AgentEventType.ToolCall,
-      id: chunk.toolCallId,
-      name: chunk.title,
-      kind: chunk.kind,
-      args: {},
-      sessionId: isSubagentEvent ? sessionId : undefined,
-    };
-    if (isSubagentEvent) this.broadcastMultiSession(sessionId, event);
-    this.broadcastStreamEvent(event);
+    if (!update) return;
+
+    if (update.sessionUpdate === 'tool_call_chunk') {
+      const chunk = update as {
+        toolCallId: string;
+        title: string;
+        kind: string;
+      };
+      const sessionId = params.sessionId as string | undefined;
+      const isSubagentEvent = sessionId && sessionId !== this.sessionId;
+      const event: AgentStreamEvent = {
+        type: AgentEventType.ToolCall,
+        id: chunk.toolCallId,
+        name: chunk.title,
+        kind: chunk.kind,
+        args: {},
+        sessionId: isSubagentEvent ? sessionId : undefined,
+      };
+      if (isSubagentEvent) this.broadcastMultiSession(sessionId, event);
+      this.broadcastStreamEvent(event);
+    } else if (update.sessionUpdate === 'retry_warning') {
+      const warning = update as {
+        attempt: number;
+        maxAttempts: number;
+        delaySecs: number;
+        message: string;
+      };
+      logger.warn('Retry warning received:', warning);
+      this.broadcastStreamEvent({
+        type: AgentEventType.RetryWarning,
+        attempt: warning.attempt,
+        maxAttempts: warning.maxAttempts,
+        delaySecs: warning.delaySecs,
+        message: warning.message,
+      });
+    }
   }
 
   // ── Shared session update → event conversion ──

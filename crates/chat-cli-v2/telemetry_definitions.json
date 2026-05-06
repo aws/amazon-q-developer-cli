@@ -260,6 +260,11 @@
       "description": "Number of cycles in the user turn (ie, number of tool use and tool use result pairs)."
     },
     {
+      "name": "codewhispererterminal_requestAttempts",
+      "type": "int",
+      "description": "Number of HTTP-level attempts (1 = no retry, N>1 = N-1 SDK retries) for the last request in the user turn. Pairs with reason/reasonDesc when the turn ends with a failed request, so you can distinguish 'failed on first attempt' from 'failed after retries'."
+    },
+    {
       "name": "codewhispererterminal_userTurnDurationSeconds",
       "type": "int",
       "description": "Total time spent in the user turn, starting from when the first request is sent."
@@ -441,7 +446,8 @@
         { "type": "codewhispererterminal_parentToolUseId", "required": false },
         { "type": "kirocli_appType", "required": false },
         { "type": "kirocli_acpClientName", "required": false },
-        { "type": "kirocli_acpClientVersion", "required": false }
+        { "type": "kirocli_acpClientVersion", "required": false },
+        { "type": "codewhispererterminal_requestAttempts", "required": false }
       ]
     },
     {

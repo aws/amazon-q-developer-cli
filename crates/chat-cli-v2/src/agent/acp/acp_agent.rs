@@ -10,6 +10,7 @@ use agent::agent_loop::model::Model;
 use agent::agent_loop::protocol::{
     AgentLoopEventKind,
     LoopError,
+    StreamResult,
 };
 use agent::agent_loop::types::{
     ContentBlock as AgentContentBlock,
@@ -17,6 +18,7 @@ use agent::agent_loop::types::{
     ImageFormat,
     ImageSource,
     StreamErrorKind,
+    StreamEvent,
 };
 use agent::event_log::{
     LogEntry,
@@ -2331,6 +2333,18 @@ impl AcpSession {
                             tool_call_id: id,
                             title: name.clone(),
                             kind: get_tool_kind(&name),
+                        },
+                    });
+                } else if let AgentLoopEventKind::Stream(StreamResult::Ok(StreamEvent::RetryWarning(ref warning))) =
+                    loop_event.kind
+                {
+                    let _ = self.send_ext_notification(methods::SESSION_UPDATE, ExtSessionUpdateNotification {
+                        session_id: self.session_id.clone(),
+                        update: ExtSessionUpdate::RetryWarning {
+                            attempt: warning.attempt,
+                            max_attempts: warning.max_attempts,
+                            delay_secs: warning.delay_secs,
+                            message: warning.message.clone(),
                         },
                     });
                 }

@@ -1,0 +1,4 @@
+{
+  "type": "fixed",
+  "description": "HTTP retry warnings are now displayed in the TUI instead of being silently logged"
+}

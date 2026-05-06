@@ -234,4 +234,12 @@ pub enum ExtSessionUpdate {
         title: String,
         kind: ToolKind,
     },
+    /// HTTP client is retrying a request after a backoff delay.
+    #[serde(rename_all = "camelCase")]
+    RetryWarning {
+        attempt: u32,
+        max_attempts: u32,
+        delay_secs: f64,
+        message: String,
+    },
 }

@@ -385,6 +385,24 @@ export interface QuitArgs {
 export interface ReplyArgs {
 }
 
+/**
+ * Event reporting the total number of HTTP-level attempts for a request.
+ * 
+ * Emitted once per `send_message` call. `count = 1` means the request succeeded or
+ * failed on its first attempt (no retries). `count > 1` means the SDK retried.
+ */
+export interface RequestAttemptsEvent {
+	count: number;
+}
+
+/** Event emitted when the HTTP client retries a request after a delay. */
+export interface RetryWarningEvent {
+	attempt: number;
+	maxAttempts: number;
+	delaySecs: number;
+	message: string;
+}
+
 /** Arguments for /stats command */
 export interface StatsArgs {
 	/** Subcommand: "save <filename>" to export to file */
@@ -511,7 +529,17 @@ export type StreamEvent =
 	| { kind: "contentBlockStart", data: ContentBlockStartEvent }
 	| { kind: "contentBlockDelta", data: ContentBlockDeltaEvent }
 	| { kind: "contentBlockStop", data: ContentBlockStopEvent }
-	| { kind: "metadata", data: MetadataEvent };
+	| { kind: "metadata", data: MetadataEvent }
+	/** A retry warning from the HTTP client layer (e.g. throttling backoff). */
+	| { kind: "retryWarning", data: RetryWarningEvent }
+	/**
+	 * Reports the total number of HTTP-level attempts made for the request.
+	 * 
+	 * Emitted once per `send_message` call after the request completes (whether it
+	 * succeeded or failed). Used by telemetry to distinguish "error after 1 attempt"
+	 * from "error after 3 retries".
+	 */
+	| { kind: "requestAttempts", data: RequestAttemptsEvent };
 
 export type StreamResult = 
 	| { result: "ok", data: StreamEvent }

@@ -447,3 +447,86 @@ describe('Simple state setters', () => {
     expect(store.getState().pendingImages).toEqual([]);
   });
 });
+
+describe('RetryWarning event handling', () => {
+  function createStore() {
+    const mockKiro = new Kiro();
+    const store = createAppStore({ kiro: mockKiro });
+    store.setState({ isInitialized: true });
+    return store;
+  }
+
+  it('sets retryStatus and does not emit a transient alert', () => {
+    const store = createStore();
+    const handler = store.getState().createStreamEventHandler();
+
+    handler!({
+      type: AgentEventType.RetryWarning,
+      attempt: 2,
+      maxAttempts: 6,
+      delaySecs: 5.0,
+      message: 'Retrying in 5s (attempt 2/6)',
+    });
+
+    const retry = store.getState().retryStatus;
+    expect(retry).not.toBeNull();
+    expect(retry?.attempt).toBe(2);
+    expect(retry?.maxAttempts).toBe(6);
+    expect(retry?.delaySecs).toBe(5.0);
+    expect(retry?.message).toBe('Retrying in 5s (attempt 2/6)');
+
+    // The previous UX (transient alert) is intentionally not used — the retry is
+    // rendered inline with the "Thinking..." spinner instead.
+    expect(store.getState().transientAlert).toBeNull();
+  });
+
+  it('clears retryStatus when a non-retry stream event arrives', () => {
+    const store = createStore();
+    const handler = store.getState().createStreamEventHandler();
+
+    // First, fire a retry warning to set the banner.
+    handler!({
+      type: AgentEventType.RetryWarning,
+      attempt: 2,
+      maxAttempts: 6,
+      delaySecs: 5.0,
+      message: 'Retrying in 5s (attempt 2/6)',
+    });
+    expect(store.getState().retryStatus).not.toBeNull();
+
+    // Any non-retry event means the SDK finished its backoff — the banner is stale.
+    handler!({
+      type: AgentEventType.Content,
+      id: 'msg-1',
+      content: { type: ContentType.Text, text: 'hello' },
+    });
+    expect(store.getState().retryStatus).toBeNull();
+  });
+
+  it('subsequent retry overwrites previous retry status', () => {
+    const store = createStore();
+    const handler = store.getState().createStreamEventHandler();
+
+    handler!({
+      type: AgentEventType.RetryWarning,
+      attempt: 2,
+      maxAttempts: 6,
+      delaySecs: 1.0,
+      message: 'Retrying in 1s (attempt 2/6)',
+    });
+    expect(store.getState().retryStatus?.attempt).toBe(2);
+
+    // Third attempt fires — should overwrite, not accumulate.
+    handler!({
+      type: AgentEventType.RetryWarning,
+      attempt: 3,
+      maxAttempts: 6,
+      delaySecs: 2.0,
+      message: 'Retrying in 2s (attempt 3/6)',
+    });
+    const retry = store.getState().retryStatus;
+    expect(retry?.attempt).toBe(3);
+    expect(retry?.delaySecs).toBe(2.0);
+    expect(retry?.message).toBe('Retrying in 2s (attempt 3/6)');
+  });
+});

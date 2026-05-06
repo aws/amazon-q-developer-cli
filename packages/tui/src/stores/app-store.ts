@@ -247,6 +247,19 @@ export interface TransientAlert {
   action?: { label: string; key: string; onAction: () => void };
 }
 
+/**
+ * Inline retry status shown alongside the thinking spinner while the HTTP client
+ * is backing off between attempts. Replaces the previous transient-alert UX so the
+ * user sees the retry context right next to the "Thinking..." indicator.
+ */
+export interface RetryStatus {
+  attempt: number;
+  maxAttempts: number;
+  delaySecs: number;
+  /** Human-readable message from the backend (e.g. "Retrying in 5s (attempt 2/6)"). */
+  message: string;
+}
+
 export type InitError =
   | { type: 'mcp_failure'; serverName: string; error: string }
   | { type: 'agent_not_found'; requestedAgent: string; fallbackAgent: string }
@@ -446,6 +459,7 @@ interface BaseAppActions {
   resetExitSequence: () => void;
   showTransientAlert: (alert: TransientAlert) => void;
   dismissTransientAlert: () => void;
+  setRetryStatus: (status: RetryStatus | null) => void;
   setLoadingMessage: (message: string | null) => void;
   toggleToolOutputsExpanded: () => void;
   setHasExpandableToolOutputs: (has: boolean) => void;
@@ -652,6 +666,11 @@ export interface AppState {
   exitSequence: number;
   exitTimer: NodeJS.Timeout | null;
   transientAlert: TransientAlert | null;
+  /**
+   * Active HTTP-retry banner, shown inline with the thinking spinner. `null` when no
+   * retry is in flight. Cleared on cancel, on next request, and when the turn ends.
+   */
+  retryStatus: RetryStatus | null;
   loadingMessage: string | null;
   toolOutputsExpanded: boolean; // Global toggle for all tool outputs
   hasExpandableToolOutputs: boolean; // Whether there are any tool outputs that can be expanded
@@ -952,6 +971,7 @@ export const createAppStore = (props: AppStoreProps) => {
     exitSequence: 0,
     exitTimer: null,
     transientAlert: null,
+    retryStatus: null,
     loadingMessage: null as string | null,
     toolOutputsExpanded: false,
     hasExpandableToolOutputs: false,
@@ -1084,6 +1104,8 @@ export const createAppStore = (props: AppStoreProps) => {
           pendingImages: [], // Clear pending images after sending
           // Reset expandable content flag for new turn (expanded state persists)
           hasExpandableToolOutputs: false,
+          // A fresh request starts — any retry banner from a previous request is stale.
+          retryStatus: null,
         };
       });
 
@@ -1310,6 +1332,14 @@ export const createAppStore = (props: AppStoreProps) => {
       set({ streamingBuffer: { startBuffering, stopBuffering } });
 
       const handler = (event: AgentStreamEvent) => {
+        // The retry banner reflects the wait between the SDK's HTTP attempts. Once any
+        // other stream event arrives (a new message, content chunk, error, etc.) the
+        // retry window is over — clear it so the "Thinking..." line reverts. We leave
+        // the banner untouched for RetryWarning itself (that's what's being rendered).
+        if (event.type !== AgentEventType.RetryWarning && get().retryStatus) {
+          get().setRetryStatus(null);
+        }
+
         switch (event.type) {
           case AgentEventType.UserMessage:
             // Historical user message from a resumed session.
@@ -1710,6 +1740,16 @@ export const createAppStore = (props: AppStoreProps) => {
               });
             }
             break;
+          case AgentEventType.RetryWarning:
+            {
+              get().setRetryStatus({
+                attempt: event.attempt,
+                maxAttempts: event.maxAttempts,
+                delaySecs: event.delaySecs,
+                message: event.message,
+              });
+            }
+            break;
           case AgentEventType.AgentSwitched:
             get().setCurrentAgent({
               name: event.agentName,
@@ -1917,7 +1957,13 @@ export const createAppStore = (props: AppStoreProps) => {
         // the "Prompt already in progress" desync. Without this, if
         // kiro.cancel() throws or the abort signal doesn't propagate,
         // isProcessing stays true forever and blocks all future prompts.
-        set({ isProcessing: false, currentAbortController: null });
+        set({
+          isProcessing: false,
+          currentAbortController: null,
+          // Cancelling ends the turn — drop any retry banner so it doesn't
+          // linger under the next "Thinking..." spinner.
+          retryStatus: null,
+        });
         resolveCancelPromise!();
         set({ cancelInProgress: null });
         // Drain any queued messages now that isProcessing is cleared.
@@ -2781,6 +2827,10 @@ export const createAppStore = (props: AppStoreProps) => {
 
     dismissTransientAlert: () => {
       set({ transientAlert: null });
+    },
+
+    setRetryStatus: (status) => {
+      set({ retryStatus: status });
     },
 
     setLoadingMessage: (message) => {

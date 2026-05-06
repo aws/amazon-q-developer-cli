@@ -278,6 +278,7 @@ impl Event {
                         message_meta_tags,
                         is_subagent,
                         parent_tool_use_id,
+                        request_attempts,
                     },
             } => Some(
                 CodewhispererterminalRecordUserTurnCompletion {
@@ -327,6 +328,7 @@ impl Event {
                     kirocli_app_type: app_type_enum.clone(),
                     kirocli_acp_client_name: self.acp_client_name.map(Into::into),
                     kirocli_acp_client_version: self.acp_client_version.map(Into::into),
+                    codewhispererterminal_request_attempts: request_attempts.map(|v| v as i64).map(Into::into),
                 }
                 .into_metric_datum(),
             ),
@@ -688,6 +690,11 @@ pub struct RecordUserTurnCompletionArgs {
     pub message_meta_tags: Vec<MessageMetaTag>,
     pub is_subagent: bool,
     pub parent_tool_use_id: Option<String>,
+    /// Number of HTTP-level attempts for the last request in the turn. `None` if not reported
+    /// by the transport (mock clients) or if the turn didn't make any transport-level requests.
+    /// Pairs with `reason`/`reason_desc` when the turn failed.
+    #[serde(default)]
+    pub request_attempts: Option<u32>,
 }
 
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize, Default)]

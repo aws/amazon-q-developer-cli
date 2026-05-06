@@ -129,9 +129,41 @@ impl RtsModel {
         let request_start_time = Instant::now();
         let request_start_time_sys = Utc::now();
         let token_clone = cancel_token.clone();
+
+        // Spawn a background task that polls the retry warning buffer and emits
+        // warnings in real-time while send_message is in flight. Without this,
+        // warnings would only be visible after the request completes.
+        let warning_buf = self.client.retry_warning_buffer();
+        let warning_tx = tx.clone();
+        let warning_stop = CancellationToken::new();
+        let warning_stop_clone = warning_stop.clone();
+        let warning_task = tokio::spawn(async move {
+            loop {
+                tokio::select! {
+                    _ = warning_stop_clone.cancelled() => break,
+                    _ = tokio::time::sleep(Duration::from_millis(500)) => {
+                        let warnings: Vec<_> = std::mem::take(&mut *warning_buf.lock());
+                        for w in warnings {
+                            let event = StreamEvent::RetryWarning(agent::agent_loop::types::RetryWarningEvent {
+                                attempt: w.attempt,
+                                max_attempts: w.max_attempts,
+                                delay_secs: w.delay_secs,
+                                message: w.message,
+                            });
+                            if warning_tx.send(StreamResult::Ok(event)).await.is_err() {
+                                return;
+                            }
+                        }
+                    }
+                }
+            }
+        });
+
         let result = tokio::select! {
             _ = token_clone.cancelled() => {
                 warn!("rts request cancelled during send");
+                warning_stop.cancel();
+                let _ = warning_task.await;
                 tx.send(StreamResult::Err(StreamError::new(StreamErrorKind::Interrupted)))
                     .await
                     .map_err(|err| error!(?err, "failed to send event"))
@@ -139,9 +171,34 @@ impl RtsModel {
                 return;
             },
             result = self.client.send_message(state) => {
+                warning_stop.cancel();
+                let _ = warning_task.await;
                 result
             }
         };
+
+        // Final drain for any warnings that arrived between the last poll and completion.
+        for warning in self.client.drain_retry_warnings() {
+            let event = StreamEvent::RetryWarning(agent::agent_loop::types::RetryWarningEvent {
+                attempt: warning.attempt,
+                max_attempts: warning.max_attempts,
+                delay_secs: warning.delay_secs,
+                message: warning.message,
+            });
+            if tx.send(StreamResult::Ok(event)).await.is_err() {
+                break;
+            }
+        }
+
+        // Emit the total number of HTTP-level attempts for this request so telemetry can
+        // distinguish "failed on first attempt" from "failed after SDK retries". This must
+        // happen before `handle_send_message_output` sends any error event — once the parser
+        // sees an error, it drops subsequent events.
+        if let Some(count) = self.client.drain_request_attempts() {
+            let event = StreamEvent::RequestAttempts(agent::agent_loop::types::RequestAttemptsEvent { count });
+            let _ = tx.send(StreamResult::Ok(event)).await;
+        }
+
         self.handle_send_message_output(
             result,
             request_start_time.elapsed(),

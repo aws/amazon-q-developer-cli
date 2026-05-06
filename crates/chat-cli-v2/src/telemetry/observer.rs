@@ -233,6 +233,10 @@ struct TurnState {
     follow_up_count: i64,
     /// Stored from the last failed request for propagation to turn-level telemetry.
     last_error: Option<ErrorInfo>,
+    /// Number of HTTP-level attempts for the last request in the turn. Pairs with
+    /// `last_error` semantics so a turn that ends with a failed request has both
+    /// the error reason and the attempt count for that request.
+    last_request_attempts: Option<u32>,
 }
 
 #[derive(Debug, Clone)]
@@ -537,6 +541,13 @@ impl TelemetryObserver {
         session.turn_state.request_ids.push(request_id);
         session.turn_state.time_to_first_chunks_ms.push(time_to_first_chunk_ms);
         session.turn_state.assistant_response_length += response_len.unwrap_or(0) as i64;
+        // Track attempt count for the latest request in the turn — pairs with `last_error`
+        // so a turn that ends with a failed request has both the error reason and attempts.
+        // `None` if the transport layer didn't report attempts (e.g. mock clients, validation
+        // errors that short-circuit before dispatch).
+        if let Some(attempts) = metadata.request_attempts {
+            session.turn_state.last_request_attempts = Some(attempts);
+        }
         if has_tool_use {
             session.turn_state.has_tool_use = true;
             session.turn_state.follow_up_count += 1;
@@ -594,6 +605,7 @@ impl TelemetryObserver {
                 message_meta_tags: vec![], // TODO: populate meta tags for V1 parity
                 is_subagent: false,        // TODO: derive from session context
                 parent_tool_use_id: None,
+                request_attempts: turn.last_request_attempts,
             },
         });
     }
@@ -752,6 +764,7 @@ mod tests {
                     }),
                     metering_usage: Vec::new(),
                 }),
+                request_attempts: None,
             },
         }
     }
@@ -762,6 +775,19 @@ mod tests {
             metadata: StreamMetadata {
                 tool_uses: vec![],
                 stream: None,
+                request_attempts: None,
+            },
+        }
+    }
+
+    /// Like `error_stream_end`, but with a specific transport-level attempt count.
+    fn error_stream_end_with_attempts(kind: StreamErrorKind, attempts: u32) -> AgentLoopEventKind {
+        AgentLoopEventKind::ResponseStreamEnd {
+            result: Err(LoopError::Stream(StreamError::new(kind))),
+            metadata: StreamMetadata {
+                tool_uses: vec![],
+                stream: None,
+                request_attempts: Some(attempts),
             },
         }
     }
@@ -903,6 +929,99 @@ mod tests {
             EventType::RecordUserTurnCompletion { result, args, .. } => {
                 assert_eq!(*result, TelemetryResult::Failed);
                 assert_eq!(args.reason.as_deref(), Some(REASON_QUOTA_BREACH));
+            },
+            other => panic!("expected RecordUserTurnCompletion, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn test_turn_completion_carries_last_request_attempts() {
+        let (mut obs, mut rx) = make_observer();
+
+        // First request succeeded on attempt 1, second request failed after 3 attempts.
+        // We expect the turn to report the last request's attempts (3), not the max
+        // or an aggregation.
+        obs.handle_event(
+            "test-session",
+            &make_loop_event(AgentLoopEventKind::ResponseStreamEnd {
+                result: Ok(Message::new(
+                    Role::Assistant,
+                    vec![ContentBlock::Text("ok".into())],
+                    None,
+                )),
+                metadata: StreamMetadata {
+                    tool_uses: vec![],
+                    stream: None,
+                    request_attempts: Some(1),
+                },
+            }),
+        );
+        let _ = rx.try_recv();
+
+        obs.handle_event(
+            "test-session",
+            &make_loop_event(error_stream_end_with_attempts(StreamErrorKind::Throttling, 3)),
+        );
+        let _ = rx.try_recv(); // addChatMessage
+        let _ = rx.try_recv(); // messageResponseError
+
+        let metadata = UserTurnMetadata {
+            loop_id: test_loop_id(),
+            result: None,
+            message_ids: vec![],
+            total_request_count: 2,
+            number_of_cycles: 0,
+            builtin_tool_uses: 0,
+            turn_duration: None,
+            end_reason: LoopEndReason::Error,
+            end_timestamp: chrono::Utc::now(),
+            input_token_count: 0,
+            output_token_count: 0,
+            context_usage_percentage: None,
+            metering_usage: Vec::new(),
+        };
+        obs.handle_event("test-session", &AgentEvent::EndTurn(metadata));
+
+        let event = rx.try_recv().unwrap();
+        match &event.ty {
+            EventType::RecordUserTurnCompletion { result, args, .. } => {
+                assert_eq!(*result, TelemetryResult::Failed);
+                assert_eq!(args.request_attempts, Some(3));
+            },
+            other => panic!("expected RecordUserTurnCompletion, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn test_turn_completion_attempts_is_none_when_transport_does_not_report() {
+        // Mock/IPC clients don't run the interceptor, so request_attempts is None.
+        // The turn completion should reflect that (None) rather than defaulting to some value.
+        let (mut obs, mut rx) = make_observer();
+
+        obs.handle_event("test-session", &make_loop_event(success_stream_end()));
+        let _ = rx.try_recv();
+
+        let metadata = UserTurnMetadata {
+            loop_id: test_loop_id(),
+            result: None,
+            message_ids: vec![],
+            total_request_count: 1,
+            number_of_cycles: 0,
+            builtin_tool_uses: 0,
+            turn_duration: None,
+            end_reason: LoopEndReason::UserTurnEnd,
+            end_timestamp: chrono::Utc::now(),
+            input_token_count: 0,
+            output_token_count: 0,
+            context_usage_percentage: None,
+            metering_usage: Vec::new(),
+        };
+        obs.handle_event("test-session", &AgentEvent::EndTurn(metadata));
+
+        let event = rx.try_recv().unwrap();
+        match &event.ty {
+            EventType::RecordUserTurnCompletion { args, .. } => {
+                assert!(args.request_attempts.is_none());
             },
             other => panic!("expected RecordUserTurnCompletion, got {other:?}"),
         }

@@ -200,6 +200,11 @@ pub struct StreamMetadata {
     pub tool_uses: Vec<ToolUseBlock>,
     /// Metadata about the underlying stream
     pub stream: Option<MetadataEvent>,
+    /// Number of HTTP-level attempts (1 = no retry, 2+ = retried). `None` when unknown
+    /// (e.g. validation errors that short-circuit before the request is dispatched, or
+    /// in contexts where the transport layer doesn't report it).
+    #[serde(default)]
+    pub request_attempts: Option<u32>,
 }
 
 #[derive(Debug, Clone)]

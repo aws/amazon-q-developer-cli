@@ -27,6 +27,14 @@ pub enum StreamEvent {
     ContentBlockDelta(ContentBlockDeltaEvent),
     ContentBlockStop(ContentBlockStopEvent),
     Metadata(MetadataEvent),
+    /// A retry warning from the HTTP client layer (e.g. throttling backoff).
+    RetryWarning(RetryWarningEvent),
+    /// Reports the total number of HTTP-level attempts made for the request.
+    ///
+    /// Emitted once per `send_message` call after the request completes (whether it
+    /// succeeded or failed). Used by telemetry to distinguish "error after 1 attempt"
+    /// from "error after 3 retries".
+    RequestAttempts(RequestAttemptsEvent),
 }
 
 #[typeshare]
@@ -723,6 +731,28 @@ pub struct MeteringUsageInfo {
 pub struct MetadataService {
     pub request_id: Option<String>,
     pub status_code: Option<u16>,
+}
+
+/// Event emitted when the HTTP client retries a request after a delay.
+#[typeshare]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RetryWarningEvent {
+    pub attempt: u32,
+    pub max_attempts: u32,
+    pub delay_secs: f64,
+    pub message: String,
+}
+
+/// Event reporting the total number of HTTP-level attempts for a request.
+///
+/// Emitted once per `send_message` call. `count = 1` means the request succeeded or
+/// failed on its first attempt (no retries). `count > 1` means the SDK retried.
+#[typeshare]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RequestAttemptsEvent {
+    pub count: u32,
 }
 
 #[cfg(test)]
