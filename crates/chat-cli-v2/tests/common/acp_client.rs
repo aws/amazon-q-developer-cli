@@ -446,6 +446,25 @@ impl AcpTestClient {
             tokio::time::sleep(std::time::Duration::from_millis(50)).await;
         }
     }
+
+    /// Poll until the predicate returns true or the timeout expires.
+    /// Returns `true` if the predicate was satisfied, `false` on timeout.
+    pub async fn wait_for_timeout<F>(&self, predicate: F, timeout: std::time::Duration) -> bool
+    where
+        F: Fn(&CapturedNotifications) -> bool,
+    {
+        let deadline = tokio::time::Instant::now() + timeout;
+        loop {
+            let captured = self.captured().await;
+            if predicate(&captured) {
+                return true;
+            }
+            if tokio::time::Instant::now() >= deadline {
+                return false;
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+        }
+    }
 }
 
 async fn run_actor(stdin: ChildStdin, stdout: ChildStdout, mut rx: mpsc::Receiver<Command>, trust_all: bool) {

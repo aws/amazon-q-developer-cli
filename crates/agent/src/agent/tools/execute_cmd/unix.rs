@@ -257,6 +257,7 @@ impl ExecuteCmd {
         // Buffer for batching lines before sending to the broadcast channel.
         let mut pending_output = String::new();
         let mut flush_interval = tokio::time::interval(Self::STREAM_FLUSH_INTERVAL);
+        flush_interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
         // Consume the first immediate tick so the loop starts clean.
         flush_interval.tick().await;
 
@@ -1182,7 +1183,7 @@ mod tests {
         let (tx, rx) = broadcast::channel::<AgentEvent>(64);
 
         let cmd = ExecuteCmd {
-            command: "exec 2>&-; echo line_a; echo line_b; echo line_c".to_string(),
+            command: "sleep 0.05; exec 2>&-; echo line_a; echo line_b; echo line_c".to_string(),
             working_dir: None,
         };
 
@@ -1214,7 +1215,7 @@ mod tests {
         let (tx, rx) = broadcast::channel::<AgentEvent>(64);
 
         let cmd = ExecuteCmd {
-            command: "exec 1>&-; echo err_x >&2; echo err_y >&2; echo err_z >&2".to_string(),
+            command: "sleep 0.05; exec 1>&-; echo err_x >&2; echo err_y >&2; echo err_z >&2".to_string(),
             working_dir: None,
         };
 
@@ -1239,7 +1240,6 @@ mod tests {
 
     #[tokio::test]
     async fn stream_resilience_stdout_closes_mid_stream_stderr_continues() {
-        // Stdout produces one line then closes; stderr continues with more lines.
         // Both streams' content should appear in the final output.
         let test_base = TestBase::new().await;
         let (tx, _rx) = broadcast::channel::<AgentEvent>(64);
@@ -1247,7 +1247,7 @@ mod tests {
         let cmd = ExecuteCmd {
             // Use a subshell: stdout writes one line then closes its fd,
             // while stderr continues writing.
-            command: "echo early_out; exec 1>&-; echo late_err_1 >&2; echo late_err_2 >&2".to_string(),
+            command: "sleep 0.05; echo early_out; exec 1>&-; echo late_err_1 >&2; echo late_err_2 >&2".to_string(),
             working_dir: None,
         };
 
@@ -1267,12 +1267,11 @@ mod tests {
 
     #[tokio::test]
     async fn stream_resilience_stderr_closes_mid_stream_stdout_continues() {
-        // Stderr produces one line then closes; stdout continues with more lines.
         let test_base = TestBase::new().await;
         let (tx, _rx) = broadcast::channel::<AgentEvent>(64);
 
         let cmd = ExecuteCmd {
-            command: "echo early_err >&2; exec 2>&-; echo late_out_1; echo late_out_2".to_string(),
+            command: "sleep 0.05; echo early_err >&2; exec 2>&-; echo late_out_1; echo late_out_2".to_string(),
             working_dir: None,
         };
 
@@ -1292,14 +1291,13 @@ mod tests {
 
     #[tokio::test]
     async fn stream_resilience_output_schema_preserved_on_stream_close() {
-        // Even when one stream is closed, the final output must have the
         // correct JSON schema with exit_status, stdout, stderr fields.
         let test_base = TestBase::new().await;
         let (tx, _rx) = broadcast::channel::<AgentEvent>(64);
 
         // Close stderr, write to stdout.
         let cmd = ExecuteCmd {
-            command: "exec 2>&-; echo ok".to_string(),
+            command: "sleep 0.05; exec 2>&-; echo ok".to_string(),
             working_dir: None,
         };
 
@@ -1313,13 +1311,12 @@ mod tests {
 
     #[tokio::test]
     async fn stream_resilience_both_streams_closed_immediately() {
-        // Both streams closed immediately — the loop should terminate
         // gracefully and produce a valid output with empty stdout/stderr.
         let test_base = TestBase::new().await;
         let (tx, _rx) = broadcast::channel::<AgentEvent>(64);
 
         let cmd = ExecuteCmd {
-            command: "exec 1>&- 2>&-".to_string(),
+            command: "sleep 0.05; exec 1>&- 2>&-".to_string(),
             working_dir: None,
         };
 
@@ -1343,12 +1340,11 @@ mod tests {
 
     #[tokio::test]
     async fn stream_resilience_no_event_channel_fallback_with_closed_stream() {
-        // Even in blocking fallback mode (no event_tx), a closed stream
         // should not prevent the other stream's content from appearing.
         let test_base = TestBase::new().await;
 
         let cmd = ExecuteCmd {
-            command: "exec 2>&-; echo fallback_ok".to_string(),
+            command: "sleep 0.05; exec 2>&-; echo fallback_ok".to_string(),
             working_dir: None,
         };
 
@@ -1443,7 +1439,7 @@ mod tests {
         let (tx, _rx) = broadcast::channel::<AgentEvent>(64);
 
         let cmd = ExecuteCmd {
-            command: r#"echo "verbose build output"; echo "Build OK. Log: /tmp/build.log" > "$AGENT_CONTEXT_OUT""#
+            command: r#"sleep 0.05; echo "verbose build output"; echo "Build OK. Log: /tmp/build.log" > "$AGENT_CONTEXT_OUT""#
                 .to_string(),
             working_dir: None,
         };
@@ -1476,7 +1472,7 @@ mod tests {
         let (tx, rx) = broadcast::channel::<AgentEvent>(64);
 
         let cmd = ExecuteCmd {
-            command: r#"echo "summary for agent"; echo "verbose line 1" > "$AGENT_DISPLAY_OUT"; echo "verbose line 2" >> "$AGENT_DISPLAY_OUT""#
+            command: r#"sleep 0.05; echo "summary for agent"; echo "verbose line 1" > "$AGENT_DISPLAY_OUT"; echo "verbose line 2" >> "$AGENT_DISPLAY_OUT""#
                 .to_string(),
             working_dir: None,
         };
@@ -1521,6 +1517,7 @@ mod tests {
 
         let cmd = ExecuteCmd {
             command: concat!(
+                r#"sleep 0.05; "#,
                 r#"echo "compiling..." > "$AGENT_DISPLAY_OUT"; "#,
                 r#"echo "linking..." >> "$AGENT_DISPLAY_OUT"; "#,
                 r#"echo "Build succeeded. Artifacts: /out" > "$AGENT_CONTEXT_OUT"; "#,
@@ -1590,6 +1587,7 @@ mod tests {
 
         let cmd = ExecuteCmd {
             command: concat!(
+                r#"sleep 0.05; "#,
                 r#"printf "line1\nline2\nline3\n" > "$AGENT_CONTEXT_OUT"; "#,
                 r#"echo "ok""#,
             )
