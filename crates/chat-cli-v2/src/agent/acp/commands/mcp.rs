@@ -181,6 +181,82 @@ async fn execute_registry_list(ctx: &CommandContext<'_>, mode: &str) -> CommandR
     )
 }
 
+/// Persist MCP server changes to the agent's source file on disk.
+///
+/// Persist MCP server changes to the agent's source file on disk.
+///
+/// Re-reads the original file into a typed `AgentConfig`, applies the changes,
+/// and serializes back. This preserves `"type": "registry"` entries since
+/// `RegistryMcpServerConfig` is part of the schema.
+async fn persist_mcp_changes(
+    ctx: &CommandContext<'_>,
+    source: &agent::agent_config::ConfigSource,
+    added_tools: &[String],
+    removed_servers: &[&str],
+) {
+    let path = match source {
+        agent::agent_config::ConfigSource::Workspace { path } | agent::agent_config::ConfigSource::Global { path } => {
+            path
+        },
+        _ => {
+            tracing::debug!("/mcp: agent has no file path, skipping disk persistence");
+            return;
+        },
+    };
+
+    // Read and parse into the typed schema
+    let contents = match ctx.os.fs.read_to_string(path).await {
+        Ok(c) => c,
+        Err(e) => {
+            tracing::warn!("/mcp: failed to read agent config from {}: {e}", path.display());
+            return;
+        },
+    };
+
+    let mut config: agent::agent_config::definitions::AgentConfig = match serde_json::from_str(&contents) {
+        Ok(v) => v,
+        Err(e) => {
+            tracing::warn!("/mcp: failed to parse agent config: {e}");
+            return;
+        },
+    };
+
+    // Add new tool patterns
+    let mut tools = config.tools();
+    for pattern in added_tools {
+        if !tools.contains(pattern) {
+            tools.push(pattern.clone());
+        }
+    }
+
+    // Remove servers
+    if !removed_servers.is_empty() {
+        let remove_set: std::collections::HashSet<&str> = removed_servers.iter().copied().collect();
+        tools.retain(|t| {
+            !remove_set
+                .iter()
+                .any(|name| t.starts_with(&format!("@{name}/")) || t == &format!("@{name}"))
+        });
+        config.retain_mcp_servers(|name| !remove_set.contains(name));
+    }
+
+    config.set_tools(tools);
+
+    let output = match serde_json::to_string_pretty(&config) {
+        Ok(s) => s,
+        Err(e) => {
+            tracing::warn!("/mcp: failed to serialize agent config: {e}");
+            return;
+        },
+    };
+
+    if let Err(e) = ctx.os.fs.write(path, output).await {
+        tracing::warn!("/mcp: failed to write agent config to {}: {e}", path.display());
+    } else {
+        tracing::debug!("/mcp: persisted MCP changes to {}", path.display());
+    }
+}
+
 /// `/mcp add <name>[,<name>...]` — add registry servers to the agent config (single swap)
 async fn execute_add(ctx: &CommandContext<'_>, server_names: &[&str]) -> CommandResult {
     let registry = ctx.session_tx.get_registry_data().await;
@@ -199,17 +275,21 @@ async fn execute_add(ctx: &CommandContext<'_>, server_names: &[&str]) -> Command
     };
     let mut config = snapshot.agent_config;
 
+    let added_tools: Vec<String> = server_names.iter().map(|name| format!("@{name}/*")).collect();
+
     let mut tools = config.tools();
-    for name in server_names {
-        let pattern = format!("@{name}/*");
-        if !tools.contains(&pattern) {
-            tools.push(pattern);
+    for pattern in &added_tools {
+        if !tools.contains(pattern) {
+            tools.push(pattern.clone());
         }
     }
     config.config_mut().set_tools(tools);
 
     crate::mcp_registry::resolve_registry_servers_for_agent_config(&mut config, &registry);
     crate::mcp_registry::filter_agent_config_tools_by_registry(&mut config, &registry);
+
+    // Persist to disk (patches original JSON to preserve registry entries)
+    persist_mcp_changes(ctx, config.source(), &added_tools, &[]).await;
 
     if let Err(e) = ctx
         .agent
@@ -256,6 +336,9 @@ async fn execute_remove(ctx: &CommandContext<'_>, server_names: &[&str]) -> Comm
         .config_mut()
         .retain_mcp_servers(|name| !remove_set.contains(name));
 
+    // Persist to disk (patches original JSON to preserve registry entries)
+    persist_mcp_changes(ctx, config.source(), &[], server_names).await;
+
     crate::mcp_registry::filter_agent_config_tools_by_registry(&mut config, &registry);
 
     if let Err(e) = ctx
@@ -273,4 +356,131 @@ async fn execute_remove(ctx: &CommandContext<'_>, server_names: &[&str]) -> Comm
 
     let label = server_names.join(", ");
     CommandResult::success(format!("✓ Removed {label}"))
+}
+
+#[cfg(test)]
+mod tests {
+    use agent::agent_config::definitions::{
+        AgentConfig,
+        AgentConfigV2025_08_22,
+        McpServerConfig,
+        RegistryMcpServerConfig,
+    };
+
+    /// Helper: round-trip an AgentConfig through JSON (simulates persist + reload)
+    fn roundtrip(config: &AgentConfig) -> AgentConfig {
+        let json = serde_json::to_string_pretty(config).unwrap();
+        serde_json::from_str(&json).unwrap()
+    }
+
+    #[test]
+    fn test_persist_add_tools() {
+        let mut config = AgentConfig::V2025_08_22(AgentConfigV2025_08_22 {
+            name: "test-agent".to_string(),
+            tools: vec!["fs_read".to_string(), "@existing-server/*".to_string()],
+            ..Default::default()
+        });
+
+        // Simulate /mcp add
+        let mut tools = config.tools().to_vec();
+        tools.push("@new-server/*".to_string());
+        config.set_tools(tools);
+
+        let restored = roundtrip(&config);
+        let tools = restored.tools();
+        assert_eq!(tools.len(), 3);
+        assert!(tools.contains(&"@new-server/*".to_string()));
+        assert!(tools.contains(&"fs_read".to_string()));
+        assert!(tools.contains(&"@existing-server/*".to_string()));
+    }
+
+    #[test]
+    fn test_persist_remove_servers() {
+        let mut mcp_servers = std::collections::HashMap::new();
+        mcp_servers.insert(
+            "server-a".to_string(),
+            McpServerConfig::Registry(RegistryMcpServerConfig {
+                server_type: "registry".to_string(),
+                env: Some([("FOO".to_string(), "bar".to_string())].into()),
+                headers: None,
+                timeout: None,
+            }),
+        );
+        mcp_servers.insert(
+            "server-b".to_string(),
+            McpServerConfig::Registry(RegistryMcpServerConfig {
+                server_type: "registry".to_string(),
+                env: None,
+                headers: None,
+                timeout: None,
+            }),
+        );
+
+        let mut config = AgentConfig::V2025_08_22(AgentConfigV2025_08_22 {
+            name: "test-agent".to_string(),
+            tools: vec![
+                "fs_read".to_string(),
+                "@server-a/*".to_string(),
+                "@server-b/*".to_string(),
+            ],
+            mcp_servers,
+            ..Default::default()
+        });
+
+        // Simulate /mcp remove server-a
+        let tools: Vec<String> = config
+            .tools()
+            .iter()
+            .filter(|t| !t.starts_with("@server-a/") && *t != "@server-a")
+            .cloned()
+            .collect();
+        config.set_tools(tools);
+        config.retain_mcp_servers(|name| name != "server-a");
+
+        let restored = roundtrip(&config);
+        let tools = restored.tools();
+        assert_eq!(tools.len(), 2);
+        assert!(tools.contains(&"fs_read".to_string()));
+        assert!(tools.contains(&"@server-b/*".to_string()));
+        assert!(!tools.iter().any(|t| t.contains("server-a")));
+
+        // server-b preserved, server-a gone
+        assert!(restored.mcp_servers().contains_key("server-b"));
+        assert!(!restored.mcp_servers().contains_key("server-a"));
+    }
+
+    #[test]
+    fn test_persist_preserves_registry_env() {
+        let mut mcp_servers = std::collections::HashMap::new();
+        mcp_servers.insert(
+            "existing".to_string(),
+            McpServerConfig::Registry(RegistryMcpServerConfig {
+                server_type: "registry".to_string(),
+                env: Some([("SECRET".to_string(), "keep-me".to_string())].into()),
+                headers: Some([("Auth".to_string(), "Bearer tok".to_string())].into()),
+                timeout: Some(45000),
+            }),
+        );
+
+        let mut config = AgentConfig::V2025_08_22(AgentConfigV2025_08_22 {
+            name: "test-agent".to_string(),
+            tools: vec!["@existing/*".to_string()],
+            mcp_servers,
+            ..Default::default()
+        });
+
+        // Simulate /mcp add new-server (should not touch existing)
+        let mut tools = config.tools().to_vec();
+        tools.push("@new-server/*".to_string());
+        config.set_tools(tools);
+
+        let restored = roundtrip(&config);
+
+        // Existing registry entry with env/headers/timeout preserved
+        let existing = restored.mcp_servers().get("existing").unwrap();
+        let reg = existing.registry_overrides().unwrap();
+        assert_eq!(reg.env.as_ref().unwrap().get("SECRET").unwrap(), "keep-me");
+        assert_eq!(reg.headers.as_ref().unwrap().get("Auth").unwrap(), "Bearer tok");
+        assert_eq!(reg.timeout, Some(45000));
+    }
 }

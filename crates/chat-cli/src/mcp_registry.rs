@@ -731,8 +731,13 @@ pub fn resolve_registry_servers_for_agent_config(
     // 2. Servers referenced in tools but missing from mcp_servers (implicit registry)
     let mut missing_servers = std::collections::HashSet::new();
 
+    // Collect overrides from explicit Registry entries (env, headers, timeout)
+    let mut overrides: std::collections::HashMap<String, agent::agent_config::definitions::RegistryMcpServerConfig> =
+        std::collections::HashMap::new();
+
     for (name, config) in agent_config.config().mcp_servers() {
-        if config.is_registry() {
+        if let Some(reg) = config.registry_overrides() {
+            overrides.insert(name.clone(), reg.clone());
             missing_servers.insert(name.clone());
         }
     }
@@ -762,16 +767,26 @@ pub fn resolve_registry_servers_for_agent_config(
 
         if !def.remotes.is_empty() {
             let remote = &def.remotes[0];
+            let agent_overrides = overrides.get(server_name);
             let mut headers = std::collections::HashMap::new();
             for h in &remote.headers {
                 headers.insert(h.name.clone(), h.value.clone());
             }
+            // Merge agent header overrides (agent wins)
+            if let Some(agent_headers) = agent_overrides.and_then(|o| o.headers.as_ref()) {
+                for (k, v) in agent_headers {
+                    headers.insert(k.clone(), v.clone());
+                }
+            }
+            let timeout_ms = agent_overrides
+                .and_then(|o| o.timeout)
+                .unwrap_or_else(agent::agent_config::definitions::default_timeout);
             resolved.push((
                 server_name.clone(),
                 AgentMcpServerConfig::Remote(RemoteMcpServerConfig {
                     url: remote.url.clone(),
                     headers,
-                    timeout_ms: agent::agent_config::definitions::default_timeout(),
+                    timeout_ms,
                     oauth_scopes: Vec::new(),
                     oauth: None,
                     disabled: false,
@@ -780,6 +795,7 @@ pub fn resolve_registry_servers_for_agent_config(
             ));
         } else if !def.packages.is_empty() {
             let package = &def.packages[0];
+            let agent_overrides = overrides.get(server_name);
             let (command, args, env) = match package.registry_type.as_str() {
                 "npm" => {
                     let mut args = vec!["-y".to_string()];
@@ -792,6 +808,12 @@ pub fn resolve_registry_servers_for_agent_config(
                     }
                     for ev in &package.environment_variables {
                         env_map.insert(ev.name.clone(), ev.value.clone());
+                    }
+                    // Merge agent env overrides (agent wins)
+                    if let Some(agent_env) = agent_overrides.and_then(|o| o.env.as_ref()) {
+                        for (k, v) in agent_env {
+                            env_map.insert(k.clone(), v.clone());
+                        }
                     }
                     (
                         "npx".to_string(),
@@ -811,6 +833,12 @@ pub fn resolve_registry_servers_for_agent_config(
                     for ev in &package.environment_variables {
                         env_map.insert(ev.name.clone(), ev.value.clone());
                     }
+                    // Merge agent env overrides (agent wins)
+                    if let Some(agent_env) = agent_overrides.and_then(|o| o.env.as_ref()) {
+                        for (k, v) in agent_env {
+                            env_map.insert(k.clone(), v.clone());
+                        }
+                    }
                     (
                         "uvx".to_string(),
                         args,
@@ -820,11 +848,23 @@ pub fn resolve_registry_servers_for_agent_config(
                 "oci" => {
                     let mut args = vec!["run".to_string()];
                     args.extend(package.runtime_arguments.iter().map(|a| a.value.clone()));
+                    // Collect all env vars: registry first, then agent overrides
+                    let mut all_env = std::collections::HashMap::new();
                     for ev in &package.environment_variables {
                         if !ev.name.trim().is_empty() && !ev.value.trim().is_empty() {
-                            args.push("-e".to_string());
-                            args.push(format!("{}={}", ev.name, ev.value));
+                            all_env.insert(ev.name.clone(), ev.value.clone());
                         }
+                    }
+                    if let Some(agent_env) = agent_overrides.and_then(|o| o.env.as_ref()) {
+                        for (k, v) in agent_env {
+                            if !k.trim().is_empty() && !v.trim().is_empty() {
+                                all_env.insert(k.clone(), v.clone());
+                            }
+                        }
+                    }
+                    for (key, value) in &all_env {
+                        args.push("-e".to_string());
+                        args.push(format!("{key}={value}"));
                     }
                     let image = if let Some(ref url) = package.registry_base_url {
                         if package.identifier.contains(':') {
@@ -851,13 +891,16 @@ pub fn resolve_registry_servers_for_agent_config(
                 },
             };
 
+            let timeout_ms = agent_overrides
+                .and_then(|o| o.timeout)
+                .unwrap_or_else(agent::agent_config::definitions::default_timeout);
             resolved.push((
                 server_name.clone(),
                 AgentMcpServerConfig::Local(LocalMcpServerConfig {
                     command,
                     args,
                     env,
-                    timeout_ms: agent::agent_config::definitions::default_timeout(),
+                    timeout_ms,
                     disabled: false,
                     disabled_tools: Vec::new(),
                 }),

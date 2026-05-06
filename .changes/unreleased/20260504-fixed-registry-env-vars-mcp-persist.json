@@ -1,0 +1,4 @@
+{
+  "type": "fixed",
+  "description": "Registry-type MCP server environment variables from agent.json now correctly apply in TUI mode, and /mcp add changes persist across sessions"
+}

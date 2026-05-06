@@ -547,26 +547,38 @@ impl ChatArgs {
         // so they must go through the GetProfile check.
         let is_enterprise = crate::auth::builder_id::is_enterprise_user(&os.database).await;
         let is_api_key = crate::util::env_var::get_api_key().is_some();
-        let (mut mcp_enabled, mcp_registry_url, mcp_api_failure) = if !is_enterprise && !is_api_key {
-            tracing::debug!("Non-enterprise user detected, enabling MCP without registry");
-            (true, None, false)
-        } else {
-            match os.client.get_mcp_config(&os.database).await {
-                Ok((enabled, registry_url)) => {
-                    tracing::debug!(
-                        "Retrieved MCP config from API: enabled={}, registry_url={:?}",
-                        enabled,
-                        registry_url
-                    );
+        let (mut mcp_enabled, mcp_registry_url, mcp_api_failure) = {
+            // In debug builds, allow overriding the registry URL for local testing (bypasses governance).
+            let registry_override = if cfg!(debug_assertions) {
+                std::env::var("KIRO_MCP_REGISTRY_URL_OVERRIDE").ok()
+            } else {
+                None
+            };
 
-                    (enabled, registry_url, false)
-                },
-                Err(e) => {
-                    // Check if this is a GetProfile API error
-                    let is_api_failure = matches!(e, crate::api_client::ApiClientError::GetProfileError(_));
-                    tracing::warn!("Failed to get MCP config from API: {}, defaulting to disabled", e);
-                    (false, None, is_api_failure)
-                },
+            if let Some(override_url) = registry_override {
+                tracing::warn!("Using KIRO_MCP_REGISTRY_URL_OVERRIDE={}", override_url);
+                (true, Some(override_url), false)
+            } else if !is_enterprise && !is_api_key {
+                tracing::debug!("Non-enterprise user detected, enabling MCP without registry");
+                (true, None, false)
+            } else {
+                match os.client.get_mcp_config(&os.database).await {
+                    Ok((enabled, registry_url)) => {
+                        tracing::debug!(
+                            "Retrieved MCP config from API: enabled={}, registry_url={:?}",
+                            enabled,
+                            registry_url
+                        );
+
+                        (enabled, registry_url, false)
+                    },
+                    Err(e) => {
+                        // Check if this is a GetProfile API error
+                        let is_api_failure = matches!(e, crate::api_client::ApiClientError::GetProfileError(_));
+                        tracing::warn!("Failed to get MCP config from API: {}, defaulting to disabled", e);
+                        (false, None, is_api_failure)
+                    },
+                }
             }
         };
 

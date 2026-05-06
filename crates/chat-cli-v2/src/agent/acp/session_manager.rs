@@ -228,8 +228,32 @@ impl SessionManagerBuilder {
             // fails.
             let is_enterprise = crate::auth::builder_id::is_enterprise_user(&os.database).await;
             let is_api_key = crate::util::env_var::get_api_key().is_some();
-            let (mcp_enabled, mcp_registry_data, mcp_registry_url, web_tools_enabled, mcp_api_failure) =
-                if std::env::var(KIRO_TEST_MODE).is_ok() || (!is_enterprise && !is_api_key) {
+            let (mcp_enabled, mcp_registry_data, mcp_registry_url, web_tools_enabled, mcp_api_failure) = {
+                // In debug builds, allow overriding the registry URL for local testing (bypasses governance).
+                let registry_override = if cfg!(debug_assertions) {
+                    std::env::var("KIRO_MCP_REGISTRY_URL_OVERRIDE").ok()
+                } else {
+                    None
+                };
+
+                if let Some(override_url) = registry_override {
+                    tracing::warn!("Using KIRO_MCP_REGISTRY_URL_OVERRIDE={}", override_url);
+                    let client = crate::mcp_registry::McpRegistryClient::new();
+                    let registry_data = match client.fetch_registry(&override_url).await {
+                        Ok(registry) => {
+                            info!(
+                                servers = registry.servers.len(),
+                                "Fetched override registry from {}", override_url
+                            );
+                            Some(registry)
+                        },
+                        Err(e) => {
+                            error!(%e, "Failed to fetch override registry");
+                            None
+                        },
+                    };
+                    (true, registry_data, Some(override_url), true, false)
+                } else if std::env::var(KIRO_TEST_MODE).is_ok() || (!is_enterprise && !is_api_key) {
                     // Builder ID / social auth / test mode: no governance applies — MCP on, web tools on.
                     (true, None, None, true, false)
                 } else {
@@ -261,7 +285,8 @@ impl SessionManagerBuilder {
                             (false, None, None, false, true)
                         },
                     }
-                };
+                }
+            };
 
             // Enforce MCP governance on every loaded agent config up-front so downstream
             // consumers (session start, /agent switch, session-injected servers) cannot

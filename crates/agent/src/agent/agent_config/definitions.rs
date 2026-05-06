@@ -638,12 +638,26 @@ pub enum McpServerConfig {
 /// deserialization. V1 uses a flat struct with all-optional fields; V2 uses an
 /// untagged enum, so we need an explicit variant whose required field (`type`)
 /// matches the JSON.
+///
+/// Optional override fields (`env`, `headers`, `timeout`) allow agent.json authors
+/// to customise registry servers without losing those values during deserialization.
+/// These are merged into the concrete Local/Remote config by
+/// `resolve_registry_servers_for_agent_config`.
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct RegistryMcpServerConfig {
     /// Must be `"registry"`.
     #[serde(rename = "type")]
     pub server_type: String,
+    /// Optional environment variable overrides (merged on top of registry defaults).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub env: Option<HashMap<String, String>>,
+    /// Optional HTTP header overrides for remote servers.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub headers: Option<HashMap<String, String>>,
+    /// Optional timeout override in milliseconds.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub timeout: Option<u64>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
@@ -712,6 +726,14 @@ impl McpServerConfig {
     /// Returns true if this is a registry placeholder that needs resolution.
     pub fn is_registry(&self) -> bool {
         matches!(self, McpServerConfig::Registry(_))
+    }
+
+    /// Returns the registry overrides if this is a Registry variant.
+    pub fn registry_overrides(&self) -> Option<&RegistryMcpServerConfig> {
+        match self {
+            McpServerConfig::Registry(r) => Some(r),
+            _ => None,
+        }
     }
 }
 
@@ -1475,5 +1497,90 @@ mod tests {
         assert!(is_mcp_tool_ref("@myserver"));
         assert!(is_mcp_tool_ref("@myserver/tool"));
         assert!(is_mcp_tool_ref("@myserver/*"));
+    }
+
+    #[test]
+    fn test_registry_mcp_server_config_deser_with_overrides() {
+        // Minimal registry entry (just type)
+        let config = serde_json::json!({"type": "registry"});
+        let result: McpServerConfig = serde_json::from_value(config).unwrap();
+        match &result {
+            McpServerConfig::Registry(reg) => {
+                assert_eq!(reg.server_type, "registry");
+                assert!(reg.env.is_none());
+                assert!(reg.headers.is_none());
+                assert!(reg.timeout.is_none());
+            },
+            _ => panic!("Expected Registry variant"),
+        }
+
+        // Registry entry with env overrides
+        let config = serde_json::json!({
+            "type": "registry",
+            "env": {"MIMER_DISABLE_CVE": "true", "API_TOKEN": "secret123"}
+        });
+        let result: McpServerConfig = serde_json::from_value(config).unwrap();
+        match &result {
+            McpServerConfig::Registry(reg) => {
+                let env = reg.env.as_ref().unwrap();
+                assert_eq!(env.get("MIMER_DISABLE_CVE").unwrap(), "true");
+                assert_eq!(env.get("API_TOKEN").unwrap(), "secret123");
+            },
+            _ => panic!("Expected Registry variant"),
+        }
+
+        // Registry entry with headers and timeout
+        let config = serde_json::json!({
+            "type": "registry",
+            "headers": {"Authorization": "Bearer tok"},
+            "timeout": 30000
+        });
+        let result: McpServerConfig = serde_json::from_value(config).unwrap();
+        match &result {
+            McpServerConfig::Registry(reg) => {
+                let headers = reg.headers.as_ref().unwrap();
+                assert_eq!(headers.get("Authorization").unwrap(), "Bearer tok");
+                assert_eq!(reg.timeout, Some(30000));
+            },
+            _ => panic!("Expected Registry variant"),
+        }
+
+        // Full agent.json mcpServers entry with all overrides
+        let config = serde_json::json!({
+            "type": "registry",
+            "env": {"NODE_ENV": "production"},
+            "headers": {"X-Custom": "value"},
+            "timeout": 60000
+        });
+        let result: McpServerConfig = serde_json::from_value(config).unwrap();
+        match &result {
+            McpServerConfig::Registry(reg) => {
+                assert_eq!(reg.env.as_ref().unwrap().get("NODE_ENV").unwrap(), "production");
+                assert_eq!(reg.headers.as_ref().unwrap().get("X-Custom").unwrap(), "value");
+                assert_eq!(reg.timeout, Some(60000));
+            },
+            _ => panic!("Expected Registry variant"),
+        }
+    }
+
+    #[test]
+    fn test_registry_does_not_match_local_or_remote() {
+        // Ensure a config with "type": "registry" + env doesn't accidentally match Local
+        let config = serde_json::json!({
+            "type": "registry",
+            "env": {"FOO": "bar"}
+        });
+        let result: McpServerConfig = serde_json::from_value(config).unwrap();
+        assert!(result.is_registry());
+
+        // Ensure Local still works with command
+        let config = serde_json::json!({"command": "npx", "args": ["-y", "server"]});
+        let result: McpServerConfig = serde_json::from_value(config).unwrap();
+        assert!(!result.is_registry());
+
+        // Ensure Remote still works with url
+        let config = serde_json::json!({"url": "https://example.com/mcp"});
+        let result: McpServerConfig = serde_json::from_value(config).unwrap();
+        assert!(!result.is_registry());
     }
 }
