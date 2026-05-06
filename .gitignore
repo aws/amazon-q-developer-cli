@@ -96,5 +96,6 @@ packages/tui/.kiro/
 .claude/settings.local.json
 target
 scripts/.es-cookie
+.gpu-multiagent/
 .bun-pinned/
 .npmrc
