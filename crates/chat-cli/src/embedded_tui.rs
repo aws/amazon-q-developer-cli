@@ -209,8 +209,8 @@ pub async fn launch_v2(os: &Os, agent_engine: AgentEngine, mode: Option<AgentMod
     cmd.arg(&asset_paths.tui_js_path)
         .args(&args[1..])
         .env("JSC_numberOfGCMarkers", "1")
+        .env("KIRO_FEED_JSON", include_str!("cli/feed.json"))
         .kill_on_drop(true);
-
     if let Some(ref force_color) = force_color {
         cmd.env("FORCE_COLOR", force_color);
     }

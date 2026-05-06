@@ -1,13 +1,13 @@
 /**
- * Extensible feed system for the TUI. Inspired by the Rust-side feed.json,
- * but kept as typed TypeScript to avoid bundling concerns.
- *
- * Add new entry types by extending the FeedEntryType enum and FeedEntry union.
+ * Extensible feed system for the TUI. Reads release data from the Rust-side
+ * feed.json (passed via KIRO_FEED_JSON env var) and converts the latest
+ * releases into announcement entries for the greeting screen.
  */
+
+import { logger } from '../utils/logger.js';
 
 export enum FeedEntryType {
   Announcement = 'announcement',
-  // Future: Release = 'release', Tip = 'tip'
 }
 
 export interface BaseFeedEntry {
@@ -28,34 +28,87 @@ export interface AnnouncementEntry extends BaseFeedEntry {
 // Discriminated union — grows as new entry types are added
 export type FeedEntry = AnnouncementEntry;
 
-const _ANNOUNCEMENT_CONTENT = `## ✨ A new look for the Kiro CLI
+/** Shape of a single change in the Rust feed.json */
+interface RustFeedChange {
+  type: string;
+  description: string;
+}
 
-The refreshed terminal experience is now the default — a full TUI with live unified status, omnipresent input, slash commands, \`@\` context, and contextual overlay panels.
+/** Shape of a release entry in the Rust feed.json */
+interface RustFeedRelease {
+  type: string;
+  date: string;
+  version: string;
+  title?: string;
+  hidden?: boolean;
+  changes?: RustFeedChange[];
+}
 
-### What's new
+/** Shape of the Rust feed.json */
+interface RustFeed {
+  entries: RustFeedRelease[];
+}
 
-- **Agent monitor** — \`Ctrl+G\` to visualize subagent activity in real-time
-- **Activity tray** — \`Ctrl+X\` to track task progress and queued messages (type while the agent works)
-- **Overlay panels** — \`/help\`, \`/context\`, \`/tools\`, \`/mcp\`, \`/knowledge\` as in-place panels
-- **Rich tool rendering** — syntax-highlighted diffs, collapsible output (\`Ctrl+O\`)
-- **New commands** — \`/theme\` (colors), \`/copy\` (clipboard), \`/spawn\` (parallel agents), \`/feedback\`
+const TYPE_LABELS: Record<string, string> = {
+  added: 'Added',
+  fixed: 'Fixed',
+  changed: 'Changed',
+  security: 'Security',
+  deprecated: 'Deprecated',
+};
 
-### A few things to know
+/**
+ * Convert a Rust feed release entry into a markdown-formatted announcement.
+ */
+function releaseToContent(entry: RustFeedRelease): string {
+  const lines: string[] = [`## What's new in ${entry.version}`];
+  const changes = entry.changes ?? [];
+  const sorted = [...changes].sort((a, b) => a.type.localeCompare(b.type));
+  for (const change of sorted) {
+    const label = TYPE_LABELS[change.type] ?? change.type;
+    // Strip PR links like " - [#123](url)"
+    const desc = change.description.replace(/ - \[#\d+\]\([^)]+\)/, '');
+    lines.push(`- **${label}**: ${desc}`);
+  }
+  return lines.join('\n');
+}
 
-- Some classic mode features are not available:
-  - Commands like \`/agent generate\`, \`/prompts create/edit\`
-  - Settings, e.g., external diff tool, Vi edit mode
-  - Experiments such as \`/tangent\`, \`/checkpoint\`; task lists are now agent-driven
-- Custom prompts are now invoked with \`/\` instead of \`@\`; \`@\` is now for file context
-- Shell commands — output appears after completion and does not support interactive input
+/**
+ * Parse KIRO_FEED_JSON and convert the latest visible releases into
+ * announcement entries. Returns at most 1 entry (the latest release).
+ */
+function parseFeedFromEnv(): FeedEntry[] {
+  const raw = process.env.KIRO_FEED_JSON;
+  if (!raw) return [];
 
-Learn more: https://kiro.dev/docs/cli/terminal-ui/
+  try {
+    const feed: RustFeed = JSON.parse(raw);
+    const releases = feed.entries.filter(
+      (e) => e.type === 'release' && !e.hidden && (e.changes?.length ?? 0) > 0
+    );
+    if (releases.length === 0) return [];
 
-The new TUI is now the default experience.
-Prefer classic? \`kiro-cli --classic\` for a single session, or \`kiro-cli settings chat.ui classic\` to make it the default.
-Type \`/help\` for all commands · \`/feedback\` to share thoughts`;
+    // Take the latest release (first non-hidden with changes)
+    const latest = releases[0]!;
+    return [
+      {
+        type: FeedEntryType.Announcement,
+        id: `release-${latest.version}`,
+        date: latest.date,
+        version: latest.version,
+        content: releaseToContent(latest),
+        maxShowCount: 3,
+        priority: 1,
+        maxLines: 8,
+      },
+    ];
+  } catch (err) {
+    logger.warn('[feed] Failed to parse KIRO_FEED_JSON:', err);
+    return [];
+  }
+}
 
-export const FEED_ENTRIES: FeedEntry[] = [];
+export const FEED_ENTRIES: FeedEntry[] = parseFeedFromEnv();
 
 export function getAnnouncements(): AnnouncementEntry[] {
   return FEED_ENTRIES.filter(
