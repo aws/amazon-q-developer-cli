@@ -1,13 +1,13 @@
 ---
 doc_meta:
-  validated: 2026-04-09
-  commit: 4ae084db
+  validated: 2026-05-06
+  commit: 33b3c338
   status: validated
   testable_headless: true
   category: tool
   title: code
   description: Code intelligence with tree-sitter (built-in) and LSP (optional) for symbol search, pattern matching, and codebase exploration
-  keywords: [code, lsp, symbols, references, definition, diagnostics, intelligence, tree-sitter, pattern, ast, codebase-overview]
+  keywords: [code, lsp, symbols, references, definition, diagnostics, intelligence, tree-sitter, pattern, ast, codebase-overview, permissions]
   related: [fs-read, grep, slash-code]
 ---
 
@@ -124,7 +124,11 @@ Tree-sitter operations work immediately - no setup required. For LSP features, r
 
 ## Configuration
 
-No agent configuration - code tool is trusted by default. For LSP features, initialize workspace with `/code init`.
+No agent configuration required. For LSP features, initialize workspace with `/code init`.
+
+### Permissions
+
+Operations within the current workspace are auto-approved. Operations targeting files **outside the workspace** require user approval. This prevents unintended access to sensitive files like credentials or system configs.
 
 ## Operations
 
@@ -394,7 +398,7 @@ Initialize LSP servers for workspace.
 
 **Initialization**: Run `/code init` in project root. Creates `lsp.json` config. Auto-initializes on subsequent startups.
 
-**Permissions**: Trusted by default, no configuration needed.
+**Permissions**: Auto-approved within workspace. Requires approval for files outside workspace.
 
 **Position Format**: Row and column are 1-based (first line is 1, first column is 1).
 

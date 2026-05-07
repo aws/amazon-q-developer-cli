@@ -1,7 +1,7 @@
 ---
 doc_meta:
-  validated: 2026-04-09
-  commit: fe5310e2
+  validated: 2026-05-06
+  commit: 33b3c338
   status: validated
   testable_headless: false
   category: feature
@@ -93,7 +93,6 @@ This is the biggest behavioral change:
 |---------|---------------|
 | `/agent` | generate, schema, set-default, delete |
 | `/tools` | schema |
-| `/model` | set-current-as-default |
 | `/prompts` | create, edit, remove, details (selection only) |
 | `/knowledge` | fix |
 

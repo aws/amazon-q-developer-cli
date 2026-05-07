@@ -1,13 +1,13 @@
 ---
 doc_meta:
-  validated: 2026-01-26
-  commit: 0f64f6a0
+  validated: 2026-05-06
+  commit: 33b3c338
   status: validated
   testable_headless: true
   category: slash_command
   title: /model
   description: Select AI model for current conversation session
-  keywords: [model, ai, claude, select, switch, autocomplete]
+  keywords: [model, ai, claude, select, switch, autocomplete, default]
   related: [default-model, cmd-chat]
 ---
 
@@ -22,7 +22,7 @@ The `/model` command selects an AI model for the current session. You can either
 ## Usage
 
 ```
-/model [model-name]
+/model [model-name|set-current-as-default]
 ```
 
 - Without arguments: Shows interactive picker
@@ -51,6 +51,16 @@ Select a model directly by name.
 ```
 
 Supports partial matching and is case-insensitive.
+
+### set-current-as-default
+
+Save the current session's model as the default for new sessions.
+
+```
+/model set-current-as-default
+```
+
+This persists the setting to disk, so future sessions (including new process starts) will use this model.
 
 ## Examples
 
@@ -101,6 +111,19 @@ kiro-cli settings chat.defaultModel claude-sonnet-4
 ```
 
 Sets the default model for new sessions.
+
+### Example 5: Save Current Model as Default
+
+```
+/model set-current-as-default
+```
+
+**Output**:
+```
+Set Claude Sonnet 4 as default model
+```
+
+Persists the current session's model as the default for all future sessions.
 
 ## Related
 
