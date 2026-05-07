@@ -283,7 +283,15 @@ pub async fn launch_v2(os: &Os, agent_engine: AgentEngine, mode: Option<AgentMod
     }
     #[cfg(not(unix))]
     {
-        status = Some(child.wait().await?);
+        tokio::select! {
+            s = child.wait() => {
+                status = Some(s?);
+            }
+            _ = tokio::signal::ctrl_c() => {
+                let _ = child.kill().await;
+                status = None;
+            }
+        }
     }
 
     let exit_code = status

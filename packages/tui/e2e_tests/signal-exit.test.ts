@@ -84,7 +84,7 @@ async function getPpid(pid: number): Promise<number | null> {
   }
 }
 
-describe('Signal exit — full stack (Rust → bun → ACP)', () => {
+describe.skipIf(process.platform === 'win32')('Signal exit — full stack (Rust → bun → ACP)', () => {
   let testCase: E2ETestCase | null = null;
 
   afterEach(async () => {
@@ -200,5 +200,40 @@ describe('Signal exit — full stack (Rust → bun → ACP)', () => {
 
     // Must exit within 5s — a death spiral would hang indefinitely
     expect(await waitForExit(launcherPid, 5000)).toBe(true);
+  }, 15000);
+});
+
+// ─── Windows: orphan prevention on force-kill ───────────────────────────────
+
+describe.skipIf(process.platform !== 'win32')('Signal exit — Windows orphan prevention', () => {
+  let testCase: E2ETestCase | null = null;
+
+  afterEach(async () => {
+    if (testCase) await testCase.cleanup();
+    testCase = null;
+  });
+
+  it('no orphan bun after parent force-kill', async () => {
+    testCase = await E2ETestCase.builder()
+      .withTestName('win-orphan-check')
+      .launch();
+    await testCase.waitForText('ask a question', 15000);
+
+    const launcherPid = testCase.getPid()!;
+
+    // Force-kill parent (simulates TerminateProcess / hard death)
+    process.kill(launcherPid, 'SIGKILL');
+    await Bun.sleep(3000);
+
+    // Verify no orphan bun processes from our tree remain
+    // The bun child should have detected stdin EOF and exited
+    const after = Bun.spawn(['tasklist', '/FI', 'IMAGENAME eq bun.exe', '/FO', 'CSV'], {
+      stdout: 'pipe',
+    });
+    const output = await new Response(after.stdout).text();
+    await after.exited;
+
+    // If bun is still running, it's an orphan — the stdin EOF handler didn't fire
+    expect(output).not.toContain('bun.exe');
   }, 15000);
 });

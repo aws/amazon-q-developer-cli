@@ -82,6 +82,12 @@ process.on('SIGHUP', () => {
   cleanup();
 });
 
+process.on('SIGINT', () => {
+  logger.error('[tui] SIGINT received');
+  kiro.close();
+  cleanup();
+});
+
 process.on('uncaughtException', (err) => {
   logger.error('[tui] uncaughtException:', err?.message || String(err));
   kiro.close();
