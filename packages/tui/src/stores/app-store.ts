@@ -464,6 +464,7 @@ interface BaseAppActions {
     breakdown?: ContextBreakdownData
   ) => void;
   setShowTuiPanel: (show: boolean) => void;
+  setShowChangelogPanel: (show: boolean) => void;
   setShowHelpPanel: (
     show: boolean,
     commands?: Array<{
@@ -691,6 +692,7 @@ export interface AppState {
   showContextBreakdown: boolean;
   contextBreakdown: ContextBreakdownData | null;
   showTuiPanel: boolean;
+  showChangelogPanel: boolean;
   showHelpPanel: boolean;
   helpCommands: Array<{
     name: string;
@@ -936,6 +938,12 @@ export const createAppStore = (props: AppStoreProps) => {
         meta: { local: true, inputType: 'panel' as const },
       },
       {
+        name: '/changelog',
+        description: 'Show recent release notes',
+        source: 'local' as const,
+        meta: { local: true, inputType: 'panel' as const },
+      },
+      {
         name: '/session-id',
         description: 'Print the current session ID',
         source: 'local' as const,
@@ -996,6 +1004,7 @@ export const createAppStore = (props: AppStoreProps) => {
     showContextBreakdown: false,
     contextBreakdown: null,
     showTuiPanel: false,
+    showChangelogPanel: false,
     showHelpPanel: false,
     helpCommands: [],
     showUsagePanel: false,
@@ -2269,6 +2278,7 @@ export const createAppStore = (props: AppStoreProps) => {
         setShowContextBreakdown: state.setShowContextBreakdown,
         setShowHelpPanel: state.setShowHelpPanel,
         setShowTuiPanel: state.setShowTuiPanel,
+        setShowChangelogPanel: state.setShowChangelogPanel,
         setShowUsagePanel: state.setShowUsagePanel,
         setShowMcpPanel: state.setShowMcpPanel,
         setShowToolsPanel: state.setShowToolsPanel,
@@ -2305,6 +2315,7 @@ export const createAppStore = (props: AppStoreProps) => {
             activeCommand: null,
             showContextBreakdown: false,
             showTuiPanel: false,
+            showChangelogPanel: false,
             showHelpPanel: false,
             showUsagePanel: false,
             showMcpPanel: false,
@@ -2858,6 +2869,10 @@ export const createAppStore = (props: AppStoreProps) => {
       set({ showTuiPanel: show });
     },
 
+    setShowChangelogPanel: (show) => {
+      set({ showChangelogPanel: show });
+    },
+
     setShowHelpPanel: (show, commands = []) => {
       set({ showHelpPanel: show, helpCommands: commands });
     },
@@ -3107,6 +3122,7 @@ export const createAppStore = (props: AppStoreProps) => {
           setShowContextBreakdown: state.setShowContextBreakdown,
           setShowHelpPanel: state.setShowHelpPanel,
           setShowTuiPanel: state.setShowTuiPanel,
+          setShowChangelogPanel: state.setShowChangelogPanel,
           setShowUsagePanel: state.setShowUsagePanel,
           setShowMcpPanel: state.setShowMcpPanel,
           setShowToolsPanel: state.setShowToolsPanel,

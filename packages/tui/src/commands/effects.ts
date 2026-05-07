@@ -98,6 +98,7 @@ type EffectName =
   | 'showThemeMenu'
   | 'showSettingsMenu'
   | 'showTuiPanel'
+  | 'showChangelogPanel'
   | 'showSessionId'
   | 'showStatsPanel'
   | 'switchToGuideAgent';
@@ -133,6 +134,7 @@ const commandEffects: Partial<Record<string, EffectName>> = {
   theme: 'showThemeMenu',
   settings: 'showSettingsMenu',
   tui: 'showTuiPanel',
+  changelog: 'showChangelogPanel',
   'session-id': 'showSessionId',
   guide: 'switchToGuideAgent',
 };
@@ -729,6 +731,10 @@ const effectHandlers: Record<EffectName, EffectHandler> = {
   /** Show theme color selection menu */
   showTuiPanel: (_result, ctx) => {
     ctx.setShowTuiPanel(true);
+  },
+
+  showChangelogPanel: (_result, ctx) => {
+    ctx.setShowChangelogPanel(true);
   },
 
   showSessionId: (_result, ctx) => {

@@ -28,6 +28,14 @@ export interface AnnouncementEntry extends BaseFeedEntry {
 // Discriminated union — grows as new entry types are added
 export type FeedEntry = AnnouncementEntry;
 
+/** Structured release notes for a single version, rendered as markdown. */
+export interface ReleaseNotes {
+  version: string;
+  date: string;
+  /** Markdown body: `## What's new in X.Y.Z` + bullet list of changes. */
+  content: string;
+}
+
 /** Shape of a single change in the Rust feed.json */
 interface RustFeedChange {
   type: string;
@@ -74,38 +82,60 @@ function releaseToContent(entry: RustFeedRelease): string {
 }
 
 /**
- * Parse KIRO_FEED_JSON and convert the latest visible releases into
- * announcement entries. Returns at most 1 entry (the latest release).
+ * Parse KIRO_FEED_JSON and return non-hidden releases with changes.
+ * Returns [] on missing/invalid env. Shared by announcement + /changelog.
  */
-function parseFeedFromEnv(): FeedEntry[] {
+function parseReleases(): RustFeedRelease[] {
   const raw = process.env.KIRO_FEED_JSON;
   if (!raw) return [];
 
   try {
     const feed: RustFeed = JSON.parse(raw);
-    const releases = feed.entries.filter(
+    return feed.entries.filter(
       (e) => e.type === 'release' && !e.hidden && (e.changes?.length ?? 0) > 0
     );
-    if (releases.length === 0) return [];
-
-    // Take the latest release (first non-hidden with changes)
-    const latest = releases[0]!;
-    return [
-      {
-        type: FeedEntryType.Announcement,
-        id: `release-${latest.version}`,
-        date: latest.date,
-        version: latest.version,
-        content: releaseToContent(latest),
-        maxShowCount: 3,
-        priority: 1,
-        maxLines: 8,
-      },
-    ];
   } catch (err) {
     logger.warn('[feed] Failed to parse KIRO_FEED_JSON:', err);
     return [];
   }
+}
+
+/**
+ * Return the most recent N releases as markdown-rendered notes (newest first).
+ * No limit = all. Matches V1 `/changelog` when called with limit=2.
+ */
+export function getRecentReleases(limit?: number): ReleaseNotes[] {
+  const releases = parseReleases();
+  const sliced = limit != null ? releases.slice(0, limit) : releases;
+  return sliced.map((r) => ({
+    version: r.version,
+    date: r.date,
+    content: releaseToContent(r),
+  }));
+}
+
+/**
+ * Parse KIRO_FEED_JSON and convert the latest visible releases into
+ * announcement entries. Returns at most 1 entry (the latest release).
+ */
+function parseFeedFromEnv(): FeedEntry[] {
+  const releases = parseReleases();
+  if (releases.length === 0) return [];
+
+  // Take the latest release (first non-hidden with changes)
+  const latest = releases[0]!;
+  return [
+    {
+      type: FeedEntryType.Announcement,
+      id: `release-${latest.version}`,
+      date: latest.date,
+      version: latest.version,
+      content: releaseToContent(latest),
+      maxShowCount: 3,
+      priority: 1,
+      maxLines: 8,
+    },
+  ];
 }
 
 export const FEED_ENTRIES: FeedEntry[] = parseFeedFromEnv();

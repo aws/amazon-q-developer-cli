@@ -171,3 +171,124 @@ describe('feed', () => {
     }
   });
 });
+
+describe('getRecentReleases', () => {
+  it('returns empty array when KIRO_FEED_JSON is not set', async () => {
+    const { getRecentReleases } = await loadFeed(undefined);
+    expect(getRecentReleases()).toEqual([]);
+    expect(getRecentReleases(2)).toEqual([]);
+  });
+
+  it('returns empty array when KIRO_FEED_JSON is invalid JSON', async () => {
+    const { getRecentReleases } = await loadFeed('not json!!!');
+    expect(getRecentReleases(2)).toEqual([]);
+  });
+
+  it('returns all visible releases when no limit is given', async () => {
+    const { getRecentReleases } = await loadFeed(SAMPLE_FEED);
+    const releases = getRecentReleases();
+    expect(releases).toHaveLength(2);
+    expect(releases[0].version).toBe('2.2.0');
+    expect(releases[1].version).toBe('2.1.0');
+  });
+
+  it('truncates to the requested limit (matches V1 take(2))', async () => {
+    const feed = JSON.stringify({
+      entries: [
+        {
+          type: 'release',
+          date: '2026-04-27',
+          version: '2.2.0',
+          changes: [{ type: 'added', description: 'A' }],
+        },
+        {
+          type: 'release',
+          date: '2026-04-21',
+          version: '2.1.0',
+          changes: [{ type: 'fixed', description: 'B' }],
+        },
+        {
+          type: 'release',
+          date: '2026-04-01',
+          version: '2.0.0',
+          changes: [{ type: 'added', description: 'C' }],
+        },
+      ],
+    });
+    const { getRecentReleases } = await loadFeed(feed);
+    const releases = getRecentReleases(2);
+    expect(releases).toHaveLength(2);
+    expect(releases.map((r: { version: string }) => r.version)).toEqual([
+      '2.2.0',
+      '2.1.0',
+    ]);
+  });
+
+  it("renders markdown content with What's new header and sorted change bullets", async () => {
+    const { getRecentReleases } = await loadFeed(SAMPLE_FEED);
+    const [latest] = getRecentReleases(1);
+    expect(latest.version).toBe('2.2.0');
+    expect(latest.date).toBe('2026-04-27');
+    expect(latest.content).toContain("## What's new in 2.2.0");
+    expect(latest.content).toContain('**Added**: Support adaptive thinking');
+    expect(latest.content).toContain('**Fixed**: Fix API key auth');
+    // Change bullets are alphabetically sorted by type — Added before Fixed
+    const addedIdx = latest.content.indexOf('**Added**');
+    const fixedIdx = latest.content.indexOf('**Fixed**');
+    expect(addedIdx).toBeGreaterThan(0);
+    expect(fixedIdx).toBeGreaterThan(addedIdx);
+  });
+
+  it('skips hidden releases and releases with no changes', async () => {
+    const feed = JSON.stringify({
+      entries: [
+        {
+          type: 'release',
+          date: '2999-01-01',
+          version: '0.0.0',
+          hidden: true,
+          changes: [{ type: 'added', description: 'x' }],
+        },
+        {
+          type: 'release',
+          date: '2026-04-27',
+          version: '2.2.0',
+          changes: [],
+        },
+        {
+          type: 'release',
+          date: '2026-04-21',
+          version: '2.1.0',
+          changes: [{ type: 'added', description: 'Real change' }],
+        },
+      ],
+    });
+    const { getRecentReleases } = await loadFeed(feed);
+    const releases = getRecentReleases();
+    expect(releases).toHaveLength(1);
+    expect(releases[0].version).toBe('2.1.0');
+  });
+
+  it('strips PR links from change descriptions', async () => {
+    const feed = JSON.stringify({
+      entries: [
+        {
+          type: 'release',
+          date: '2026-01-01',
+          version: '1.0.0',
+          changes: [
+            {
+              type: 'added',
+              description:
+                'A feature - [#123](https://github.com/aws/repo/pull/123)',
+            },
+          ],
+        },
+      ],
+    });
+    const { getRecentReleases } = await loadFeed(feed);
+    const [entry] = getRecentReleases();
+    expect(entry.content).toContain('A feature');
+    expect(entry.content).not.toContain('#123');
+  });
+});

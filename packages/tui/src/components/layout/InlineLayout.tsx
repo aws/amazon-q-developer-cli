@@ -15,6 +15,7 @@ import { CommandMenu } from '../ui/CommandMenu';
 import { ActionHint } from '../ui/hint/ActionHint.js';
 import { HelpPanel } from '../ui/HelpPanel';
 import { TuiPanel } from '../ui/TuiPanel';
+import { ChangelogPanel } from '../ui/ChangelogPanel';
 import { McpPanel } from '../ui/McpPanel';
 import { ToolsPanel } from '../ui/ToolsPanel';
 import { StatsPanel } from '../ui/StatsPanel';
@@ -186,6 +187,7 @@ export const InlineLayout: React.FC = () => {
     showContextBreakdown,
     contextBreakdown,
     showTuiPanel,
+    showChangelogPanel,
     showHelpPanel,
     helpCommands,
     showUsagePanel,
@@ -214,6 +216,7 @@ export const InlineLayout: React.FC = () => {
     setShowContextBreakdown,
     setShowHelpPanel,
     setShowTuiPanel,
+    setShowChangelogPanel,
     setShowUsagePanel,
     setShowMcpPanel,
     setShowToolsPanel,
@@ -377,6 +380,12 @@ export const InlineLayout: React.FC = () => {
     setActiveCommand(null);
     clearCommandInput();
   }, [setShowTuiPanel, setActiveCommand, clearCommandInput]);
+
+  const handleCloseChangelogPanel = useCallback(() => {
+    setShowChangelogPanel(false);
+    setActiveCommand(null);
+    clearCommandInput();
+  }, [setShowChangelogPanel, setActiveCommand, clearCommandInput]);
 
   const handleCloseUsagePanel = useCallback(() => {
     setShowUsagePanel(false);
@@ -760,6 +769,7 @@ export const InlineLayout: React.FC = () => {
               showContextBreakdown ||
               showHelpPanel ||
               showTuiPanel ||
+              showChangelogPanel ||
               showUsagePanel ||
               showMcpPanel ||
               showToolsPanel ||
@@ -809,6 +819,7 @@ export const InlineLayout: React.FC = () => {
                   showContextBreakdown ||
                   showHelpPanel ||
                   showTuiPanel ||
+                  showChangelogPanel ||
                   showUsagePanel ||
                   showMcpPanel ||
                   showToolsPanel ||
@@ -855,6 +866,9 @@ export const InlineLayout: React.FC = () => {
               />
             )}
             {showTuiPanel && <TuiPanel onClose={handleCloseTuiPanel} />}
+            {showChangelogPanel && (
+              <ChangelogPanel onClose={handleCloseChangelogPanel} />
+            )}
             {showMcpPanel && (
               <McpPanel
                 servers={mcpServersWithAuth}
@@ -935,6 +949,7 @@ export const InlineLayout: React.FC = () => {
                 !showContextBreakdown &&
                 !showHelpPanel &&
                 !showTuiPanel &&
+                !showChangelogPanel &&
                 !showUsagePanel &&
                 !showMcpPanel &&
                 !showToolsPanel &&

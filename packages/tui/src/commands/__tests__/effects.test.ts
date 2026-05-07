@@ -449,6 +449,20 @@ describe('runEffect routing', () => {
     expect(ctx._spies.setShowTuiPanel!).toHaveBeenCalledWith(true);
   });
 
+  it('/changelog calls setShowChangelogPanel', () => {
+    const cmd: SlashCommand = {
+      name: '/changelog',
+      description: '',
+      source: 'local',
+      meta: { local: true, inputType: 'panel' },
+    };
+    const ctx = createMockCommandContext();
+
+    runEffect(cmd, null, ctx, '');
+
+    expect(ctx._spies.setShowChangelogPanel!).toHaveBeenCalledWith(true);
+  });
+
   it('/code with executePrompt sends message', () => {
     const cmd: SlashCommand = {
       name: '/code',
