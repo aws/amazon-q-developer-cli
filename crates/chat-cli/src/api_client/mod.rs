@@ -926,6 +926,14 @@ fn classify_error_kind<R>(
     // instead of the well-modeled GenerateAssistantResponseError::ValidationError
     let is_context_window_overflow = is_context_window_overflow || contains(body, b"CONTENT_LENGTH_EXCEEDS_THRESHOLD");
 
+    let is_invalid_model_id = sdk_error.as_service_error().is_some_and(|e| match e {
+        GenerateAssistantResponseError::ValidationError(err) => err
+            .reason()
+            .is_some_and(|r| r == &ValidationExceptionReason::InvalidModelId),
+        _ => false,
+    });
+    let is_invalid_model_id = is_invalid_model_id || contains(body, b"INVALID_MODEL_ID");
+
     let is_model_unavailable = contains(body, b"INSUFFICIENT_MODEL_CAPACITY")
         // Legacy error response fallback
         || (model_id_opt.is_some()
@@ -939,6 +947,12 @@ fn classify_error_kind<R>(
 
     if is_context_window_overflow {
         return ConverseStreamErrorKind::ContextWindowOverflow;
+    }
+
+    if is_invalid_model_id {
+        return ConverseStreamErrorKind::InvalidModelId {
+            model_id: model_id_opt.map(|s| s.to_string()),
+        };
     }
 
     // Both ModelOverloadedError and Throttling return 429,

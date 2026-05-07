@@ -281,9 +281,9 @@ impl<'a> Subagent<'a> {
                         || {
                             warn!(
                                 model = requested,
-                                "agent config specifies invalid model, falling back to default"
+                                "agent config model not in ListAvailableModels — passing through to backend"
                             );
-                            default_model.model_id.clone()
+                            requested.to_string()
                         },
                         |m| m.model_id.clone(),
                     )),

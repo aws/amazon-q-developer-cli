@@ -729,19 +729,17 @@ impl ChatArgs {
         // If modelId is specified, verify it exists before starting the chat
         // Otherwise, CLI will use a default model when starting chat
         let (models, default_model_opt) = get_available_models(os).await?;
-        // Fallback logic: try user's saved default, then system default
+        // Fallback logic: try user's saved default (pass through even if not in list), then system default
         let fallback_model_id = || {
             if let Some(saved) = os.database.settings.get_string(Setting::ChatDefaultModel) {
-                find_model(&models, &saved)
-                    .map(|m| m.model_id.clone())
-                    .or(Some(default_model_opt.model_id.clone()))
+                Some(find_model(&models, &saved).map(|m| m.model_id.clone()).unwrap_or(saved))
             } else {
                 Some(default_model_opt.model_id.clone())
             }
         };
 
         let model_id: Option<String> = if let Some(requested) = self.model.as_ref() {
-            // CLI argument takes highest priority
+            // CLI argument takes highest priority — bail immediately if not found (likely typo)
             if let Some(m) = find_model(&models, requested) {
                 Some(m.model_id.clone())
             } else {
@@ -753,22 +751,16 @@ impl ChatArgs {
                 bail!("Model '{}' does not exist. Available models: {}", requested, available);
             }
         } else if let Some(agent_model) = agents.get_active().and_then(|a| a.model.as_ref()) {
-            // Agent model takes second priority
+            // Agent model — pass through to backend even if not in ListAvailableModels.
+            // Backend is the authority; if invalid it returns INVALID_MODEL_ID.
             if let Some(m) = find_model(&models, agent_model) {
                 Some(m.model_id.clone())
             } else {
-                let _ = execute!(
-                    stderr,
-                    StyledText::warning_fg(),
-                    style::Print("WARNING: "),
-                    StyledText::reset(),
-                    style::Print("Agent specifies model '"),
-                    StyledText::brand_fg(),
-                    style::Print(agent_model),
-                    StyledText::reset(),
-                    style::Print("' which is not available. Falling back to configured defaults.\n"),
+                warn!(
+                    "Agent model '{}' not in ListAvailableModels — passing through to backend",
+                    agent_model
                 );
-                fallback_model_id()
+                Some(agent_model.clone())
             }
         } else {
             fallback_model_id()
@@ -1845,6 +1837,22 @@ impl ChatSession {
                         format!(
                             "Authentication failed. Your session may have expired. Run `{CLI_BINARY_NAME} login` to re-authenticate."
                         )
+                    };
+                    execute!(
+                        self.stderr,
+                        StyledText::error_fg(),
+                        style::Print(format!("{msg}\n\n")),
+                        StyledText::reset(),
+                    )?;
+                    (error_messages::TROUBLE_RESPONDING, eyre!(err), false)
+                },
+                ConverseStreamErrorKind::InvalidModelId { .. } => {
+                    // Backend rejected the model id. Print a clean user-facing message
+                    // (the Display impl already formats a friendly explanation with the
+                    // rejected model id when available) and suppress the ugly eyre chain.
+                    let msg = match &err.source.request_id {
+                        Some(req_id) => format!("{} (request_id: {})", err.source.kind, req_id),
+                        None => format!("{}", err.source.kind),
                     };
                     execute!(
                         self.stderr,

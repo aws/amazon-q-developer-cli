@@ -1526,18 +1526,13 @@ Return only the JSON configuration, no additional text."
             if let Some(model) = super::cli::model::find_model(&models, agent_model) {
                 self.model_info = Some(model.clone());
             } else {
-                // Model not found - show warning but continue (matches initialization behavior)
-                let _ = execute!(
-                    output,
-                    StyledText::warning_fg(),
-                    style::Print("WARNING: "),
-                    StyledText::reset(),
-                    style::Print("Agent specifies model '"),
-                    StyledText::brand_fg(),
-                    style::Print(agent_model),
-                    StyledText::reset(),
-                    style::Print("' which is not available. Keeping current model.\n"),
+                // Model not in ListAvailableModels — pass through to backend.
+                // Synthesize a minimal ModelInfo so the session can continue.
+                warn!(
+                    "Agent model '{}' not in ListAvailableModels — passing through to backend",
+                    agent_model
                 );
+                self.model_info = Some(super::cli::model::ModelInfo::from_id(agent_model.clone()));
             }
         }
 
