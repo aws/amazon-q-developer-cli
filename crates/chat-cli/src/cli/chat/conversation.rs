@@ -2888,6 +2888,99 @@ mod tests {
         assert!(!context_content.contains("This skill provides Rust programming assistance"));
     }
 
+    /// Verifies that recreating the context manager from the agent after clear()
+    /// resets skill inclusions so auto-loaded skills revert to frontmatter-only.
+    ///
+    /// The bug: ContextFilePath's Deserialize impl always sets Inclusion::Always,
+    /// so after a save/load cycle (e.g. session resume), Auto skills become Always
+    /// and their full content is included in context. This test simulates that drift
+    /// by round-tripping the context_manager through serde, then verifies that the
+    /// clear+recreate pattern from ClearArgs::execute reverts the inclusions.
+    ///
+    /// Note: This replicates the clear+recreate pattern rather than calling the
+    /// handler directly (which requires a full ChatSession with terminal I/O).
+    #[tokio::test]
+    async fn test_clear_resets_context_manager_skill_inclusions() {
+        use crate::cli::agent::wrapper_types::ResourcePath;
+        use crate::cli::chat::context::{
+            ContextManager,
+            calc_max_context_files_size,
+        };
+
+        let mut os = Os::new().await.unwrap();
+        let agents = {
+            let mut agents = Agents::default();
+            let mut agent = Agent::default();
+            agent.name = "TestAgent".to_string();
+            agent
+                .resources
+                .push(ResourcePath::Skill("skill://test-skill.md".to_string()));
+            agents.agents.insert("TestAgent".to_string(), agent);
+            agents.switch("TestAgent", &os).await.expect("Agent switch failed");
+            agents
+        };
+
+        let auto_content =
+            "---\nname: my-skill\ndescription: A test skill\n---\n# Full Content\nThis should not appear after clear.";
+        os.fs.write("test-skill.md", auto_content).await.unwrap();
+
+        let mut output = vec![];
+        let mut tool_manager = ToolManager::default();
+        let mut conversation = ConversationState::new(
+            "test_conv",
+            agents,
+            tool_manager.load_tools(&mut os, &mut output).await.unwrap(),
+            tool_manager,
+            None,
+            &os,
+            false,
+            None,
+        )
+        .await;
+
+        // Simulate the state drift caused by a save/load cycle: the lossy
+        // ContextFilePath Deserialize impl converts Inclusion::Auto → Always.
+        let cm = conversation.context_manager.as_ref().unwrap();
+        let json = serde_json::to_string(cm).unwrap();
+        conversation.context_manager = Some(serde_json::from_str::<ContextManager>(&json).unwrap());
+
+        // Confirm the drift: full skill content is now included
+        let (context_messages, _) = conversation.context_messages(&os, None).await;
+        let entries = context_messages.unwrap();
+        let drifted_content = match entries[0].user.content() {
+            crate::cli::chat::message::UserMessageContent::Prompt { prompt } => prompt,
+            _ => panic!("Expected Prompt content"),
+        };
+        assert!(
+            drifted_content.contains("# Full Content"),
+            "After serde round-trip, full skill content should be present (drift reproduced)"
+        );
+
+        // Simulate what /clear does: clear history, then recreate context_manager
+        conversation.clear();
+        if let Some(agent) = conversation.agents.get_active() {
+            let max_size = calc_max_context_files_size(conversation.model_info.as_ref());
+            conversation.context_manager = ContextManager::from_agent(agent, max_size).ok();
+        }
+
+        // Verify skill reverted to frontmatter-only
+        let (context_messages, _) = conversation.context_messages(&os, None).await;
+        let entries = context_messages.unwrap();
+        let context_content = match entries[0].user.content() {
+            crate::cli::chat::message::UserMessageContent::Prompt { prompt } => prompt,
+            _ => panic!("Expected Prompt content"),
+        };
+
+        assert!(
+            context_content.contains("my-skill: A test skill"),
+            "Skill frontmatter should be present"
+        );
+        assert!(
+            !context_content.contains("# Full Content"),
+            "Full skill content should NOT be present after clear"
+        );
+    }
+
     #[tokio::test]
     async fn test_get_token_warning_level_with_backend_percentage() {
         let mut os = Os::new().await.unwrap();

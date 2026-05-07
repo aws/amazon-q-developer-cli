@@ -8,6 +8,10 @@ use crossterm::{
     execute,
 };
 
+use crate::cli::chat::context::{
+    ContextManager,
+    calc_max_context_files_size,
+};
 use crate::cli::chat::{
     ChatError,
     ChatSession,
@@ -31,7 +35,7 @@ impl ClearArgs {
             stderr,
             StyledText::secondary_fg(),
             style::Print(
-                "\nAre you sure? This will erase the conversation history and context from hooks for the current session. "
+                "\nAre you sure? This will erase the conversation history, context files, and hooks for the current session. "
             ),
             style::Print("["),
             StyledText::current_item_fg(),
@@ -54,8 +58,16 @@ impl ClearArgs {
 
         if ["y", "Y"].contains(&user_input.as_str()) {
             session.conversation.clear();
-            if let Some(cm) = session.conversation.context_manager.as_mut() {
-                cm.hook_executor.cache.clear();
+
+            // Recreate context_manager from the active agent so that skill
+            // inclusions (Auto vs Always) are reset to their initial state.
+            // Without this, skills that were loaded during the session would
+            // remain fully expanded after /clear (GitHub kirodotdev/Kiro#5909).
+            if let Some(agent) = session.conversation.agents.get_active() {
+                let max_size = calc_max_context_files_size(session.conversation.model_info.as_ref());
+                session.conversation.context_manager = ContextManager::from_agent(agent, max_size).ok();
+            } else {
+                session.conversation.context_manager = None;
             }
 
             // Reset pending tool state to prevent orphaned tool approval prompts
