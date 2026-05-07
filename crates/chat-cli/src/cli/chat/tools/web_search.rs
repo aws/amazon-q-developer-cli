@@ -16,7 +16,6 @@ use super::{
     ToolInfo,
 };
 use crate::api_client::delay_interceptor::DelayTrackingInterceptor;
-use crate::api_client::internal_redirect_interceptor::InternalRedirectInterceptor;
 use crate::api_client::opt_out::OptOutInterceptor;
 use crate::api_client::token_type_interceptor::{
     AuthMode,
@@ -166,8 +165,6 @@ impl WebSearch {
             .load()
             .await;
 
-        let is_internal = crate::util::system_info::is_mwinit_available();
-
         let client = CodewhispererStreamingClient::from_conf(
             amzn_codewhisperer_streaming_client::config::Builder::from(&bearer_sdk_config)
                 .http_client(crate::aws_common::http_client::client())
@@ -175,7 +172,6 @@ impl WebSearch {
                 .interceptor(UserAgentOverrideInterceptor::new())
                 .interceptor(DelayTrackingInterceptor::new())
                 .interceptor(TokenTypeInterceptor::new(auth_mode))
-                .interceptor(InternalRedirectInterceptor::new(is_internal))
                 .bearer_token_resolver(UnifiedBearerResolver)
                 .app_name(crate::aws_common::app_name())
                 .endpoint_resolver(StaticEndpointResolver::new(endpoint.url().to_string()))

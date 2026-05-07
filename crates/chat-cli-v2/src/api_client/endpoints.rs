@@ -18,6 +18,14 @@ pub struct Endpoint {
 }
 
 impl Endpoint {
+    pub const CPS_EU_CENTRAL_1: Self = Self {
+        url: Cow::Borrowed("https://cps.prod-eu-central-1.codewhisperer.ai.aws.dev"),
+        region: Region::from_static("eu-central-1"),
+    };
+    pub const CPS_US_EAST_1: Self = Self {
+        url: Cow::Borrowed("https://cps.prod-us-east-1.codewhisperer.ai.aws.dev"),
+        region: Region::from_static("us-east-1"),
+    };
     pub const DEFAULT_ENDPOINT: Self = Self {
         url: Cow::Borrowed("https://q.us-east-1.amazonaws.com"),
         region: Region::from_static("us-east-1"),
@@ -40,6 +48,14 @@ impl Endpoint {
         Self::GOV_ENDPOINT_EAST,
         Self::GOV_ENDPOINT_WEST,
     ];
+    pub const KRS_EU_CENTRAL_1: Self = Self {
+        url: Cow::Borrowed("https://runtime.eu-central-1.kiro.dev"),
+        region: Region::from_static("eu-central-1"),
+    };
+    pub const KRS_US_EAST_1: Self = Self {
+        url: Cow::Borrowed("https://runtime.us-east-1.kiro.dev"),
+        region: Region::from_static("us-east-1"),
+    };
 
     pub fn all() -> Vec<Self> {
         Self::KNOWN_ENDPOINTS.to_vec()
@@ -87,6 +103,30 @@ impl Endpoint {
                 region: Region::new(region.clone()),
             },
             _ => Endpoint::DEFAULT_ENDPOINT,
+        }
+    }
+
+    pub(crate) fn krs_for_region(region: &str) -> Self {
+        match region {
+            "us-east-1" => Self::KRS_US_EAST_1,
+            "eu-central-1" => Self::KRS_EU_CENTRAL_1,
+            // GovCloud falls back to legacy endpoint
+            _ => Self::get_endpoints_from_region(region)
+                .into_iter()
+                .find(|e| e.region().as_ref() == region)
+                .unwrap_or(Self::DEFAULT_ENDPOINT),
+        }
+    }
+
+    pub(crate) fn cps_for_region(region: &str) -> Self {
+        match region {
+            "us-east-1" => Self::CPS_US_EAST_1,
+            "eu-central-1" => Self::CPS_EU_CENTRAL_1,
+            // GovCloud falls back to legacy endpoint
+            _ => Self::get_endpoints_from_region(region)
+                .into_iter()
+                .find(|e| e.region().as_ref() == region)
+                .unwrap_or(Self::DEFAULT_ENDPOINT),
         }
     }
 

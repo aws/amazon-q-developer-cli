@@ -3,7 +3,6 @@ pub mod delay_interceptor;
 mod endpoints;
 pub mod error;
 pub mod error_utils;
-pub(crate) mod internal_redirect_interceptor;
 pub mod model;
 pub mod opt_out;
 pub mod profile;
@@ -52,7 +51,6 @@ use tracing::{
 };
 
 use crate::api_client::delay_interceptor::DelayTrackingInterceptor;
-use crate::api_client::internal_redirect_interceptor::InternalRedirectInterceptor;
 use crate::api_client::model::{
     ChatResponseStream,
     ConversationState,
@@ -291,9 +289,17 @@ impl ApiClient {
 
         let is_social = crate::auth::social::is_social_logged_in(database).await;
 
-        // Detect Amazon-internal users by checking for the mwinit Midway auth tool.
-        // Internal users are routed to KRS via RTS ALB using the redirect-for-internal header.
-        let is_internal = crate::util::system_info::is_mwinit_available();
+        let use_krs = std::env::var("KIRO_CLI_KRS_ENDPOINTS").is_ok();
+        let krs_endpoint = if use_krs {
+            Endpoint::krs_for_region(endpoint.region().as_ref())
+        } else {
+            endpoint.clone()
+        };
+        let cps_endpoint = if use_krs {
+            Endpoint::cps_for_region(endpoint.region().as_ref())
+        } else {
+            endpoint.clone()
+        };
 
         let credentials = Credentials::new("xxx", "xxx", None, None, "xxx");
         let bearer_sdk_config = aws_config::defaults(behavior_version())
@@ -304,21 +310,20 @@ impl ApiClient {
             .load()
             .await;
 
-        // Control plane client for CPS operations — redirect header routes internal users to CPS
+        // Control plane client for CPS operations
         let client = CodewhispererClient::from_conf(
             amzn_codewhisperer_client::config::Builder::from(&bearer_sdk_config)
                 .http_client(crate::aws_common::http_client::client())
                 .interceptor(OptOutInterceptor::new(database))
                 .interceptor(UserAgentOverrideInterceptor::new())
                 .interceptor(TokenTypeInterceptor::new(auth_mode.clone()))
-                .interceptor(InternalRedirectInterceptor::new(is_internal))
                 .bearer_token_resolver(UnifiedBearerResolver)
                 .app_name(app_name())
-                .endpoint_resolver(StaticCodewhispererEndpointResolver::new(endpoint.url().to_string()))
+                .endpoint_resolver(StaticCodewhispererEndpointResolver::new(cps_endpoint.url().to_string()))
                 .build(),
         );
 
-        // Telemetry client — send_telemetry_event stays on RTS, must NOT have the redirect header
+        // Telemetry client — send_telemetry_event stays on legacy RTS
         let telemetry_client = CodewhispererClient::from_conf(
             amzn_codewhisperer_client::config::Builder::from(&bearer_sdk_config)
                 .http_client(crate::aws_common::http_client::client())
@@ -357,10 +362,9 @@ impl ApiClient {
                 .interceptor(UserAgentOverrideInterceptor::new())
                 .interceptor(DelayTrackingInterceptor::new())
                 .interceptor(TokenTypeInterceptor::new(auth_mode.clone()))
-                .interceptor(InternalRedirectInterceptor::new(is_internal))
                 .bearer_token_resolver(UnifiedBearerResolver)
                 .app_name(app_name())
-                .endpoint_resolver(StaticEndpointResolver::new(endpoint.url().to_string()))
+                .endpoint_resolver(StaticEndpointResolver::new(krs_endpoint.url().to_string()))
                 .retry_classifier(retry_classifier::QCliRetryClassifier::new())
                 .stalled_stream_protection(stalled_stream_protection_config())
                 .build(),
