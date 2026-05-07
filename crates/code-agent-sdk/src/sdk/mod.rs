@@ -4,6 +4,7 @@
 //! The SDK provides a high-level interface for interacting with language servers and
 //! performing code analysis tasks.
 
+pub mod background_init;
 pub mod client;
 pub mod code_store;
 pub mod file_watcher;

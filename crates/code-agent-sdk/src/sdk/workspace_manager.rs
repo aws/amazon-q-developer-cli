@@ -27,6 +27,7 @@ use crate::model::types::{
     LspInfo,
     WorkspaceInfo,
 };
+use crate::sdk::background_init::BackgroundInit;
 use crate::sdk::code_store::CodeStore;
 use crate::sdk::file_watcher::{
     FileWatcher,
@@ -89,8 +90,8 @@ pub struct WorkspaceManager {
     representative_files: Option<HashMap<String, PathBuf>>,
     diagnostics: Arc<RwLock<HashMap<PathBuf, Vec<lsp_types::Diagnostic>>>>, // shared diagnostics map
 
-    // File watching infrastructure
-    _file_watcher: Option<FileWatcher>,
+    // File watching infrastructure - FileWatcher created in background
+    file_watcher_init: Option<BackgroundInit<FileWatcher>>,
     event_processor_handle: Option<tokio::task::JoinHandle<()>>,
 
     // Code store for pattern search/rewrite operations
@@ -150,7 +151,7 @@ impl WorkspaceManager {
             workspace_info: None,
             representative_files: None,
             diagnostics: Arc::new(RwLock::new(HashMap::new())),
-            _file_watcher: None,
+            file_watcher_init: None,
             event_processor_handle: None,
             code_store: Arc::new(CodeStore::new()),
         }
@@ -1005,6 +1006,7 @@ impl WorkspaceManager {
         if let Some(handle) = self.event_processor_handle.take() {
             handle.abort();
         }
+        self.file_watcher_init = None;
 
         *self.status.write().await = WorkspaceStatus::NotInitialized;
         self.pending_inits.store(0, Ordering::SeqCst);
@@ -1088,14 +1090,14 @@ impl WorkspaceManager {
     /// Start file watching with patterns based on detected languages
     pub fn start_file_watching(&mut self) -> Result<()> {
         let fw_start = std::time::Instant::now();
-        let (tx, rx) = mpsc::unbounded_channel::<FsEvent>();
+
+        // Get detected languages and their patterns
+        let detected_languages = self.get_detected_languages()?;
 
         // Generate config from detected languages
         let mut include_patterns = Vec::new();
         let mut exclude_patterns = vec!["**/.git/**".to_string()]; // Always exclude .git
 
-        // Get detected languages and their patterns
-        let detected_languages = self.get_detected_languages()?;
         for language in &detected_languages {
             if let Ok(lang_config) = self.config_manager.get_config_by_language(language) {
                 // Add include patterns from file_extensions and file_patterns
@@ -1106,7 +1108,6 @@ impl WorkspaceManager {
                 exclude_patterns.extend(lang_config.exclude_patterns);
             }
         }
-        tracing::debug!("[CODE-INTEL]   - config generation: {:?}", fw_start.elapsed());
 
         let config = FileWatcherConfig {
             include_patterns,
@@ -1114,21 +1115,48 @@ impl WorkspaceManager {
             respect_gitignore: true,
         };
 
-        // Start file watcher
-        let watcher_start = std::time::Instant::now();
-        let file_watcher = FileWatcher::new(self.workspace_root.clone(), tx, config)?;
-        tracing::debug!("[CODE-INTEL]   - FileWatcher::new: {:?}", watcher_start.elapsed());
+        // Create channel for file events
+        let (tx, rx) = mpsc::unbounded_channel::<FsEvent>();
 
-        // Start event processor with workspace manager reference
+        // Capture what we need for the background task
+        let workspace_root = self.workspace_root.clone();
+
+        tracing::debug!("[CODE-INTEL]   - config generation: {:?}", fw_start.elapsed());
+        tracing::info!(
+            "Starting file watching in background for languages: {:?}",
+            detected_languages
+        );
+
+        // Start file watcher initialization in background using spawn_blocking
+        // The expensive gitignore matcher creation happens here
+        self.file_watcher_init = Some(BackgroundInit::start_blocking(move || {
+            FileWatcher::new(workspace_root, tx, config)
+        }));
+
+        // Start event processor immediately (will wait for events once watcher is ready)
         let processor = crate::sdk::file_watcher::EventProcessor::new(rx, self as *mut _, self.workspace_root.clone());
         let handle = tokio::spawn(async move {
             processor.run().await;
         });
-
-        self._file_watcher = Some(file_watcher);
         self.event_processor_handle = Some(handle);
 
-        tracing::info!("File watching started for languages: {:?}", detected_languages);
+        tracing::debug!(
+            "[CODE-INTEL]   - FileWatcher::new started in background: {:?}",
+            fw_start.elapsed()
+        );
+        Ok(())
+    }
+
+    /// Wait for file watching to be ready (blocks until background init completes).
+    ///
+    /// File watching is initialized in the background to avoid blocking workspace startup.
+    /// Most operations don't need to wait for it - the file watcher will start receiving
+    /// events once it's ready. However, tests or operations that need to verify file
+    /// watching behavior should call this method first.
+    pub async fn ensure_file_watching_ready(&self) -> Result<()> {
+        if let Some(ref init) = self.file_watcher_init {
+            init.wait().await?;
+        }
         Ok(())
     }
 
@@ -1324,6 +1352,24 @@ mod tests {
         let config = LanguagesConfig::default_config();
         let root = WorkspaceManager::detect_workspace_root(&file_path, &config);
         assert_eq!(root, Some(temp_dir.path().to_path_buf()));
+    }
+
+    #[tokio::test]
+    async fn test_file_watching_background_init() {
+        let temp_dir = create_temp_workspace(&["Cargo.toml", "src/main.rs"]);
+        let mut workspace_manager = WorkspaceManager::new(temp_dir.path().to_path_buf());
+
+        // Initialize workspace to detect languages
+        workspace_manager.initialize().await.unwrap();
+
+        // File watching should be started in background
+        assert!(workspace_manager.file_watcher_init.is_some());
+
+        // Wait for it to complete
+        workspace_manager.ensure_file_watching_ready().await.unwrap();
+
+        // Verify it's ready
+        assert!(workspace_manager.file_watcher_init.as_ref().unwrap().is_ready());
     }
 
     #[test]
