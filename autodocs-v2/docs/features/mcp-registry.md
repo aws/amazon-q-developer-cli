@@ -1,13 +1,13 @@
 ---
 doc_meta:
-  validated: 2025-12-22
-  commit: 57090ffe
+  validated: 2026-05-02
+  commit: a433349d
   status: validated
   testable_headless: false
   category: feature
   title: MCP Registry
   description: Enterprise MCP server security allowing administrators to control which servers users can access
-  keywords: [mcp, registry, security, enterprise, admin, pro]
+  keywords: [mcp, registry, security, enterprise, admin, pro, governance]
   related: [cmd-mcp, slash-mcp, agent-configuration]
 ---
 
@@ -18,6 +18,16 @@ Enterprise MCP server security allowing administrators to control which servers 
 ## Overview
 
 Pro-tier customers using IAM Identity Center can have MCP server access controlled through an MCP registry. When configured by administrators, users can only use MCP servers explicitly allowed in the registry. Provides centralized security for enterprise deployments.
+
+## MCP Governance Toggle
+
+Administrators can completely disable MCP functionality via the Kiro console. When the MCP toggle is off:
+
+- All MCP servers are suppressed (user-configured, legacy, registry, and session-injected)
+- The `/mcp` panel shows "MCP has been disabled by your administrator"
+- No MCP tools are available to the agent
+
+This applies to enterprise users (IAM Identity Center) and API key users. Builder ID and social auth users are not subject to MCP governance.
 
 ## How It Works
 
@@ -151,17 +161,17 @@ Your token overrides registry defaults.
 
 ## Troubleshooting
 
-### Issue: "MCP functionality has been disabled by your administrator"
+### Issue: "MCP has been disabled by your administrator"
 
-**Symptom**: Cannot use MCP at all  
-**Cause**: Organization disabled MCP entirely  
-**Solution**: Contact administrator for MCP access
+**Symptom**: Cannot use MCP at all, `/mcp` panel shows warning  
+**Cause**: Administrator turned off the MCP toggle in the Kiro console  
+**Solution**: Contact your administrator to request MCP access. This is an organization-level setting that only admins can change.
 
-### Issue: "Failed to retrieve MCP settings"
+### Issue: "Failed to retrieve MCP settings — MCP disabled"
 
-**Symptom**: Error fetching MCP configuration  
-**Cause**: Network issue or server error  
-**Solution**: Temporary issue - retry later or contact administrator
+**Symptom**: MCP disabled with API failure message  
+**Cause**: Could not reach the governance API to check MCP settings. For security, MCP is disabled when settings cannot be verified (fail-closed).  
+**Solution**: This is usually temporary. Retry later. If persistent, check network connectivity or contact your administrator.
 
 ### Issue: Cannot Add Custom Server
 

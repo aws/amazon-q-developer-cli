@@ -1,14 +1,14 @@
 ---
 doc_meta:
-  validated: 2026-01-28
-  commit: 0fce279f
+  validated: 2026-05-02
+  commit: a433349d
   status: validated
   testable_headless: false
   category: slash_command
   title: /mcp
   description: View MCP server status, authentication requirements, and available tools
-  keywords: [mcp, servers, status, auth, tools]
-  related: [cmd-mcp, agent-config]
+  keywords: [mcp, servers, status, auth, tools, governance]
+  related: [cmd-mcp, agent-config, mcp-registry]
 ---
 
 # /mcp
@@ -130,6 +130,12 @@ Select MCP server to remove:
 **Symptom**: Empty output  
 **Cause**: No MCP servers configured  
 **Solution**: Add servers to agent configuration or use `kiro-cli mcp add`
+
+### Issue: MCP Disabled by Administrator
+
+**Symptom**: Panel shows "MCP has been disabled by your administrator" or "Failed to retrieve MCP settings — MCP disabled"  
+**Cause**: Your organization's administrator has disabled MCP via the Kiro console, or the governance API could not be reached (fail-closed for security)  
+**Solution**: Contact your administrator to request MCP access. If the message mentions "Failed to retrieve," this may be temporary — retry later.
 
 ### Issue: Tools Not Available
 
