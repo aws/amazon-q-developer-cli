@@ -587,10 +587,27 @@ pub fn rl(
     rl.set_helper(Some(h));
 
     // Load history from CLI bash history file
-    if let Err(e) = rl.load_history(&rl.helper().unwrap().get_history_path()) {
-        if !matches!(e, ReadlineError::Io(ref io_err) if io_err.kind() == std::io::ErrorKind::NotFound) {
+    // Use a separate thread to prevent indefinite blocking on corrupted files
+    let history_path = rl.helper().unwrap().get_history_path();
+    let history_path_clone = history_path.clone();
+    
+    let load_handle = std::thread::spawn(move || {
+        std::fs::read_to_string(&history_path_clone)
+    });
+    
+    match load_handle.join() {
+        Ok(Ok(contents)) => {
+            for line in contents.lines() {
+                let _ = rl.add_history_entry(line);
+            }
+        }
+        Ok(Err(e)) if e.kind() != std::io::ErrorKind::NotFound => {
             eprintln!("Warning: Failed to load history: {}", e);
         }
+        Err(_) => {
+            eprintln!("Warning: History loading failed unexpectedly");
+        }
+        _ => {} // NotFound is expected on first run
     }
 
     // Add custom keybinding for Ctrl+D to open delegate command (configurable)
