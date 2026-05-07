@@ -66,16 +66,6 @@ const mockKiroInitialize = mock(() =>
               description: 'Show available commands',
             },
             {
-              method: '_kiro/agent/list',
-              name: '/agent',
-              description: 'List agents',
-            },
-            {
-              method: '_kiro/agent/swap',
-              name: '/agent swap',
-              description: 'Switch agent',
-            },
-            {
               method: '_kiro/clear',
               name: '/clear',
               description: 'Clear conversation',
@@ -348,22 +338,61 @@ describe('KasAcpClient', () => {
     );
   });
 
-  for (const [cmd, method, mockData] of [
-    ['agent', '_kiro/agent/list', { agents: [], current: 'default' }],
-    ['plan', '_kiro/plan', {}],
-  ] as const) {
-    it(`executeCommand("${cmd}") forwards to agent via ${method}`, async () => {
-      mockKiroSendExtMethod.mockResolvedValue(mockData);
-      const client = new KasAcpClient();
-      await client.initialize();
-      await client.newSession();
-      await client.executeCommand({ command: cmd } as any);
-      expect(mockKiroSendExtMethod).toHaveBeenCalledWith(
-        method,
-        expect.objectContaining({ sessionId: 'kas-session-1' })
-      );
-    });
-  }
+  it('executeCommand("plan") forwards to agent via _kiro/plan', async () => {
+    mockKiroSendExtMethod.mockResolvedValue({});
+    const client = new KasAcpClient();
+    await client.initialize();
+    await client.newSession();
+    await client.executeCommand({ command: 'plan' } as any);
+    expect(mockKiroSendExtMethod).toHaveBeenCalledWith(
+      '_kiro/plan',
+      expect.objectContaining({ sessionId: 'kas-session-1' })
+    );
+  });
+
+  it('executeCommand("agent") (no args) derives agent list from cached modes, not _kiro/agent/list', async () => {
+    mockKiroNewSession.mockResolvedValueOnce({
+      sessionId: 'kas-session-1',
+      models: null,
+      modes: {
+        currentModeId: 'vibe',
+        availableModes: [
+          {
+            id: 'vibe',
+            name: 'Vibe',
+            description: 'General coding assistance',
+            _meta: { kiro: { source: 'bundled' } },
+          },
+          {
+            id: 'research',
+            name: 'Research',
+            description: 'Deep investigation',
+            _meta: { kiro: { source: 'user' } },
+          },
+        ],
+      },
+    } as any);
+
+    const client = new KasAcpClient();
+    await client.initialize();
+    await client.newSession();
+    mockKiroSendExtMethod.mockClear();
+
+    const result = await client.executeCommand({ command: 'agent' } as any);
+
+    // Must NOT call the removed extension method.
+    expect(mockKiroSendExtMethod).not.toHaveBeenCalledWith(
+      '_kiro/agent/list',
+      expect.anything()
+    );
+    expect(result.success).toBe(true);
+    const data = result.data as {
+      agents: Array<{ name: string; description: string }>;
+      current: string;
+    };
+    expect(data.current).toBe('vibe');
+    expect(data.agents.map((a) => a.name)).toEqual(['vibe', 'research']);
+  });
 
   it('executeCommand("clear") creates a new session via session/new primitive', async () => {
     const client = new KasAcpClient();
@@ -447,6 +476,58 @@ describe('KasAcpClient', () => {
     expect(result.data).toEqual({ agent: { name: 'docs' } });
   });
 
+  it('executeCommand("agent create") never calls setSessionConfigOption (does not interpret "create" as a mode name)', async () => {
+    const client = new KasAcpClient();
+    await client.initialize();
+    await client.newSession();
+    mockKiroSetSessionConfigOption.mockClear();
+
+    const result = await client.executeCommand({
+      command: 'agent',
+      args: { value: 'create' },
+    } as any);
+
+    expect(mockKiroSetSessionConfigOption).not.toHaveBeenCalledWith(
+      expect.objectContaining({ configId: 'mode', value: 'create' })
+    );
+    expect(result.success).toBe(false);
+    expect(result.message).toMatch(/\/agent create.*not yet implemented/);
+  });
+
+  it('executeCommand("agent edit foo") never calls setSessionConfigOption (does not interpret "edit foo" as a mode name)', async () => {
+    const client = new KasAcpClient();
+    await client.initialize();
+    await client.newSession();
+    mockKiroSetSessionConfigOption.mockClear();
+
+    const result = await client.executeCommand({
+      command: 'agent',
+      args: { value: 'edit foo' },
+    } as any);
+
+    expect(mockKiroSetSessionConfigOption).not.toHaveBeenCalledWith(
+      expect.objectContaining({ configId: 'mode', value: 'edit foo' })
+    );
+    expect(result.success).toBe(false);
+    expect(result.message).toMatch(/\/agent edit.*not yet implemented/);
+  });
+
+  it('executeCommand("agent swap") (no name) surfaces a usage error instead of swapping', async () => {
+    const client = new KasAcpClient();
+    await client.initialize();
+    await client.newSession();
+    mockKiroSetSessionConfigOption.mockClear();
+
+    const result = await client.executeCommand({
+      command: 'agent',
+      args: { value: 'swap' },
+    } as any);
+
+    expect(mockKiroSetSessionConfigOption).not.toHaveBeenCalled();
+    expect(result.success).toBe(false);
+    expect(result.message).toMatch(/\/agent swap <name>/);
+  });
+
   it('executeCommand("chat delete") forwards to _kiro/session/delete', async () => {
     mockKiroSendExtMethod.mockResolvedValue({ success: true });
     const client = new KasAcpClient();
@@ -501,6 +582,128 @@ describe('KasAcpClient', () => {
     const client = new KasAcpClient();
     const result = await client.getCommandOptions('/help', '');
     expect(result.options).toEqual([]);
+  });
+
+  it('getCommandOptions("/agent") derives options from cached session modes, grouped by _meta.kiro.source', async () => {
+    mockKiroNewSession.mockResolvedValueOnce({
+      sessionId: 'kas-session-1',
+      models: null,
+      modes: {
+        currentModeId: 'vibe',
+        availableModes: [
+          {
+            id: 'vibe',
+            name: 'Vibe',
+            description: 'General coding assistance',
+            _meta: { kiro: { source: 'bundled' } },
+          },
+          {
+            id: 'spec',
+            name: 'Spec',
+            description: 'Structured feature development',
+            _meta: { kiro: { source: 'bundled' } },
+          },
+          {
+            id: 'reviewer',
+            name: 'Reviewer',
+            description: 'Reviews code changes',
+            _meta: { kiro: { source: 'user' } },
+          },
+          {
+            id: 'legacy',
+            name: 'Legacy',
+            description: 'No source metadata',
+          },
+        ],
+      },
+    } as any);
+
+    const client = new KasAcpClient();
+    await client.newSession();
+    mockKiroSendExtMethod.mockClear();
+
+    const result = await client.getCommandOptions('/agent', '');
+
+    // Must NOT fall back to the removed extension method.
+    expect(mockKiroSendExtMethod).not.toHaveBeenCalledWith(
+      '_kiro/agent/list',
+      expect.anything()
+    );
+    expect(result.options).toEqual([
+      {
+        value: 'vibe',
+        label: 'Vibe',
+        description: '[active] General coding assistance',
+        group: 'Bundled',
+      },
+      {
+        value: 'spec',
+        label: 'Spec',
+        description: 'Structured feature development',
+        group: 'Bundled',
+      },
+      {
+        value: 'reviewer',
+        label: 'Reviewer',
+        description: 'Reviews code changes',
+        group: 'User',
+      },
+      {
+        value: 'legacy',
+        label: 'Legacy',
+        description: 'No source metadata',
+      },
+    ]);
+  });
+
+  it('getCommandOptions("/agent") returns empty options when the agent advertised no modes', async () => {
+    // Default mockKiroNewSession returns `modes: null`.
+    const client = new KasAcpClient();
+    await client.newSession();
+    const result = await client.getCommandOptions('/agent', '');
+    expect(result.options).toEqual([]);
+  });
+
+  it('current_mode_update notification updates the cached currentModeId used by /agent', async () => {
+    mockKiroNewSession.mockResolvedValueOnce({
+      sessionId: 'kas-session-1',
+      models: null,
+      modes: {
+        currentModeId: 'vibe',
+        availableModes: [
+          {
+            id: 'vibe',
+            name: 'Vibe',
+            description: '',
+            _meta: { kiro: { source: 'bundled' } },
+          },
+          {
+            id: 'spec',
+            name: 'Spec',
+            description: '',
+            _meta: { kiro: { source: 'bundled' } },
+          },
+        ],
+      },
+    } as any);
+
+    const client = new KasAcpClient();
+    await client.newSession();
+
+    // Simulate the agent switching modes mid-session.
+    await capturedSessionUpdateHandler({
+      sessionId: 'kas-session-1',
+      update: {
+        sessionUpdate: 'current_mode_update',
+        currentModeId: 'spec',
+      },
+    });
+
+    const result = await client.getCommandOptions('/agent', '');
+    const active = result.options.find((o: { description?: string }) =>
+      (o.description ?? '').startsWith('[active]')
+    );
+    expect(active?.value).toBe('spec');
   });
 
   // ── Session update broadcasting ──

@@ -27,12 +27,15 @@ export const SLASH_COMMANDS: SlashCommand[] = [
     description: 'List or switch agents',
     meta: {
       inputType: 'selection',
-      optionsMethod: '_kiro.dev/commands/agent/options',
       hint: '',
       subcommands: ['create', 'edit', 'swap'],
       subcommandHints: { create: '<name>', edit: '[name]', swap: '<name>' },
     },
-    requiredMethods: ['_kiro/agent/list'],
+    // Composed from ACP's standard session modes (`availableModes`) — no
+    // custom extension method required. See the review discussion at
+    // https://github.com/kiro-team/kiro-agent/pull/568#discussion_r3192594213
+    // for why `_kiro/agent/list` was dropped in favor of session modes.
+    requiredMethods: [],
   },
   {
     name: '/clear',

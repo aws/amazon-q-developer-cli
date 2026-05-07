@@ -53,6 +53,21 @@ const EXT_METHODS = {
   SESSION_UPDATE: 'kiro.dev/session/update',
 } as const;
 
+/** Subset of ACP's SessionModeState that we cache client-side.  Used for the
+ *  /agent command, which is composed from the modes advertised on
+ *  session/new and session/load responses (and kept in sync via
+ *  current_mode_update notifications) rather than a custom extension
+ *  method. */
+type CachedModesState = {
+  availableModes: Array<{
+    id: string;
+    name: string;
+    description?: string | null;
+    _meta?: Record<string, unknown> | null;
+  }>;
+  currentModeId?: string;
+};
+
 function extractCurrentAgent(
   modes?: {
     currentModeId?: string;
@@ -1072,13 +1087,44 @@ export class KasAcpClient extends BaseAcpClient {
   // handleSessionUpdate() for proper main-vs-subagent discrimination.
   private sessionDisposables: Array<{ dispose: () => void }> = [];
 
+  /** Cache of session modes received on session/new and session/load.  This
+   *  is the source of truth for the /agent selection menu and stays in sync
+   *  via current_mode_update session notifications. */
+  private modesState: CachedModesState = {
+    availableModes: [],
+    currentModeId: undefined,
+  };
+
+  /** Capture availableModes / currentModeId from a session/new or
+   *  session/load response.  Responses lacking a `modes` field leave the
+   *  cache untouched so we don't accidentally blank out a known-good
+   *  snapshot. */
+  private captureModes(
+    response: { modes?: CachedModesState | null | undefined } | undefined
+  ): void {
+    const modes = response?.modes;
+    if (!modes) return;
+    this.modesState = {
+      availableModes: modes.availableModes ?? [],
+      currentModeId: modes.currentModeId,
+    };
+  }
+
   private wireSessionListeners(sessionId: string): void {
     this.sessionDisposables.forEach((d) => d.dispose());
     this.sessionDisposables = [
       this.kiroClient.onSessionUpdate(sessionId, async (notification) => {
-        const event = this.convertAcpUpdateToEvent(
-          notification.update as AcpSessionUpdate
-        );
+        const update = notification.update as AcpSessionUpdate;
+        // Keep the cached current mode in sync for /agent and agent-display
+        // purposes.  ACP doesn't (yet) ship an available_modes_update, so
+        // availableModes is refreshed only on session/new and session/load.
+        if (update.sessionUpdate === 'current_mode_update') {
+          this.modesState = {
+            ...this.modesState,
+            currentModeId: (update as { currentModeId: string }).currentModeId,
+          };
+        }
+        const event = this.convertAcpUpdateToEvent(update);
         if (event) this.broadcastStreamEvent(event);
       }),
       this.kiroClient.onPermissionRequest(sessionId, async (request) => {
@@ -1143,6 +1189,10 @@ export class KasAcpClient extends BaseAcpClient {
     this.sessionId = sid;
     logger.debug('KAS session created', { sessionId: sid });
 
+    // Snapshot modes before any further async work so /agent has data even
+    // if setSessionConfigOption below fails.
+    this.captureModes(r as { modes?: CachedModesState | null | undefined });
+
     // Register BEFORE any async work to avoid race condition
     this.wireSessionListeners(sid);
 
@@ -1197,6 +1247,8 @@ export class KasAcpClient extends BaseAcpClient {
       sessionId
     );
 
+    this.captureModes(r as { modes?: CachedModesState | null | undefined });
+
     return {
       sessionId,
       currentModel: extractModel(r.models),
@@ -1250,13 +1302,37 @@ export class KasAcpClient extends BaseAcpClient {
         const args = (command as Record<string, unknown>).args as
           | Record<string, string>
           | undefined;
-        let agentName = args?.agentName ?? args?.value ?? '';
-        // executeCommandWithArg prefixes selection with "swap "
-        if (agentName.startsWith('swap ')) agentName = agentName.slice(5);
-        if (agentName) {
-          return this.executeAgentSwap(agentName);
+        const parsed = parseAgentSubcommand(args);
+        switch (parsed.kind) {
+          case 'list':
+            return this.executeAgentList();
+          case 'swap':
+            if (!parsed.name) {
+              return { success: false, message: 'Usage: /agent swap <name>' };
+            }
+            return this.executeAgentSwap(parsed.name);
+          case 'create':
+            // TODO: route through a KAS extension method so config writes
+            // stay the source of truth on the agent side.  Until then,
+            // surface a clear not-yet-implemented error.
+            return {
+              success: false,
+              message: '/agent create is not yet implemented in KAS mode',
+            };
+          case 'edit':
+            // TODO: route through a KAS extension method (see create).
+            return {
+              success: false,
+              message: '/agent edit is not yet implemented in KAS mode',
+            };
+          default: {
+            // Exhaustiveness check — also satisfies eslint no-fallthrough.
+            const _exhaustive: never = parsed;
+            throw new Error(
+              `Unhandled /agent subcommand: ${JSON.stringify(_exhaustive)}`
+            );
+          }
         }
-        return this.executeAgentList();
       }
       case 'chat': {
         const args = (command as Record<string, unknown>).args as
@@ -1305,18 +1381,22 @@ export class KasAcpClient extends BaseAcpClient {
     };
   }
 
-  /** /agent (no args) — show options via getCommandOptions, not executeCommand */
+  /** /agent (no args) — fallback reached only when getCommandOptions returns
+   *  no options.  We derive from cached ACP modes (see getCommandOptions for
+   *  the primary code path). */
   private async executeAgentList(): Promise<CommandResult> {
-    const result = await this.callExtMethod('_kiro/agent/list');
-    if (!result.success) return result;
-    const data = result.data as {
-      agents: Array<{ name: string; description: string }>;
-      current: string;
-    };
+    if (!this.sessionId)
+      return { success: false, message: 'No active session' };
+    const modes = this.modesState.availableModes;
+    const current = this.modesState.currentModeId ?? '';
+    const agents = modes.map((m) => ({
+      name: m.id,
+      description: m.description ?? '',
+    }));
     return {
       success: true,
-      message: `${data.agents.length} agents available`,
-      data: { agents: data.agents, current: data.current },
+      message: `${agents.length} agents available`,
+      data: { agents, current },
     };
   }
 
@@ -1413,30 +1493,27 @@ export class KasAcpClient extends BaseAcpClient {
       case 'feedback':
         return KAS_FEEDBACK_OPTIONS;
       case 'agent': {
-        if (!this.extensionMethods.has('_kiro/agent/list'))
-          return { options: [] };
-        try {
-          const result = (await this.kiroClient.sendExtMethod(
-            '_kiro/agent/list',
-            { sessionId: this.sessionId }
-          )) as {
-            agents: Array<{ name: string; description?: string }>;
-            current?: string;
-          };
-          return {
-            options: result.agents.map((a) => ({
-              value: a.name,
-              label: a.name,
-              description:
-                a.name === result.current
-                  ? `[active] ${a.description ?? ''}`
-                  : (a.description ?? ''),
-            })),
-          };
-        } catch (e) {
-          logger.debug('[kas] getCommandOptions failed:', e);
-        }
-        return { options: [] };
+        // Derive options from cached session modes (ACP primitive) rather
+        // than a custom ext method.  Modes are grouped by `_meta.kiro.source`
+        // (e.g. "bundled", "user", "workspace") so the menu reflects where
+        // each agent came from.  See the review discussion at
+        // https://github.com/kiro-team/kiro-agent/pull/568#discussion_r3192594213
+        const { availableModes, currentModeId } = this.modesState;
+        return {
+          options: availableModes.map((m) => {
+            const source = getModeSource(m._meta);
+            const isActive = m.id === currentModeId;
+            const descBase = m.description ?? '';
+            return {
+              value: m.id,
+              label: m.name || m.id,
+              description: isActive
+                ? `[active]${descBase ? ` ${descBase}` : ''}`
+                : descBase,
+              ...(source ? { group: capitalize(source) } : {}),
+            };
+          }),
+        };
       }
       default:
         return { options: [] };
@@ -1495,6 +1572,68 @@ export class KasAcpClient extends BaseAcpClient {
       prompt: [{ type: 'text', text: content }],
       sessionId,
     });
+  }
+}
+
+/** Extract the Kiro agent source (bundled / user / workspace) from a
+ *  SessionMode's `_meta` field.  Returns undefined when the agent hasn't
+ *  attached any source metadata, which is fine — those modes fall into the
+ *  default (ungrouped) bucket in the /agent menu. */
+function getModeSource(
+  meta?: Record<string, unknown> | null
+): string | undefined {
+  const kiroMeta = meta?.kiro as Record<string, unknown> | undefined;
+  const source = kiroMeta?.source;
+  return typeof source === 'string' ? source : undefined;
+}
+
+function capitalize(s: string): string {
+  return s.length > 0 ? s[0]!.toUpperCase() + s.slice(1) : s;
+}
+
+/** Tagged union describing what `/agent …` should do.  Produced by
+ *  parseAgentSubcommand and consumed by KasAcpClient.executeCommand. */
+export type ParsedAgentCommand =
+  | { kind: 'list' }
+  | { kind: 'swap'; name: string }
+  | { kind: 'create'; name: string | undefined }
+  | { kind: 'edit'; name: string | undefined };
+
+/** Parse the `args` payload passed to `executeCommand({ command: 'agent' })`
+ *  into a structured subcommand.
+ *
+ *  Grammar:
+ *    ""                           → { kind: 'list' }
+ *    "swap <name>"                → { kind: 'swap',   name: '<name>' }
+ *    "create" | "create <name>"   → { kind: 'create', name: '<name>' | undefined }
+ *    "edit"   | "edit <name>"     → { kind: 'edit',   name: '<name>' | undefined }
+ *    "<name>"                     → { kind: 'swap',   name: '<name>' }  (menu shorthand)
+ *
+ *  The raw text comes from either `args.agentName` (direct test harness
+ *  usage) or `args.value` (the dispatcher's generic selection-UI shape).
+ *
+ *  Exported for unit testing; not part of the public client API. */
+export function parseAgentSubcommand(
+  args: Record<string, string> | undefined
+): ParsedAgentCommand {
+  const raw = (args?.agentName ?? args?.value ?? '').trim();
+  if (!raw) return { kind: 'list' };
+
+  const spaceIdx = raw.indexOf(' ');
+  const verb = (spaceIdx === -1 ? raw : raw.slice(0, spaceIdx)).toLowerCase();
+  const rest = spaceIdx === -1 ? '' : raw.slice(spaceIdx + 1).trim();
+
+  switch (verb) {
+    case 'create':
+      return { kind: 'create', name: rest || undefined };
+    case 'edit':
+      return { kind: 'edit', name: rest || undefined };
+    case 'swap':
+      // Bare "swap" with no name is a user error; surfaced by executeCommand.
+      return { kind: 'swap', name: rest };
+    default:
+      // Menu shorthand: a bare value with no verb swaps to that agent.
+      return { kind: 'swap', name: raw };
   }
 }
 
