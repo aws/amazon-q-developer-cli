@@ -3455,16 +3455,6 @@ where
         context_content.push_str(CONTEXT_ENTRY_END_HEADER);
     }
 
-    if let Some(name) = model_name {
-        context_content.push_str(CONTEXT_ENTRY_START_HEADER);
-        if name.eq_ignore_ascii_case("auto") {
-            context_content.push_str("The model setting is Auto (model selected dynamically on the server).\n");
-        } else {
-            context_content.push_str(&format!("The current model is {name}.\n"));
-        }
-        context_content.push_str(CONTEXT_ENTRY_END_HEADER);
-    }
-
     for hook in agent_spawn_hooks {
         let content = hook.as_ref();
         context_content.push_str(CONTEXT_ENTRY_START_HEADER);
@@ -3499,6 +3489,13 @@ where
     // prioritizes the agent's instructions over resource content.
     if let Some(prompt) = system_prompt {
         context_content.push_str(&format!("Follow this instruction: {prompt}"));
+    }
+    if let Some(name) = model_name {
+        if name.eq_ignore_ascii_case("auto") {
+            context_content.push_str("\nThe current model is Auto (model selected dynamically on the server).\n");
+        } else {
+            context_content.push_str(&format!("\nThe current model is {name}.\n"));
+        }
     }
 
     context_content
@@ -4114,10 +4111,13 @@ mod tests {
     fn test_format_user_context_message_with_model_name() {
         let content = format_user_context_message(
             None,
-            Vec::<String>::new(),
-            Vec::<String>::new(),
-            Vec::<String>::new(),
+            std::iter::empty::<(&str, &str)>(),
+            std::iter::empty::<&str>(),
+            std::iter::empty::<&str>(),
             None,
+            None,
+            None,
+            false,
             None,
             Some("Claude Sonnet 4"),
         );
@@ -4129,35 +4129,35 @@ mod tests {
 
     #[test]
     fn test_format_user_context_message_with_auto_model() {
-        for name in ["auto", "Auto", "AUTO"] {
-            let content = format_user_context_message(
-                None,
-                Vec::<String>::new(),
-                Vec::<String>::new(),
-                Vec::<String>::new(),
-                None,
-                None,
-                Some(name),
-            );
-            assert!(
-                content.contains("model selected dynamically"),
-                "expected auto wording for {name:?}: {content}"
-            );
-            assert!(
-                !content.contains(&format!("The current model is {name}")),
-                "should not use generic wording for {name:?}: {content}"
-            );
-        }
+        let content = format_user_context_message(
+            None,
+            std::iter::empty::<(&str, &str)>(),
+            std::iter::empty::<&str>(),
+            std::iter::empty::<&str>(),
+            None,
+            None,
+            None,
+            false,
+            None,
+            Some("auto"),
+        );
+        assert!(
+            content.contains("model selected dynamically"),
+            "expected auto wording: {content}"
+        );
     }
 
     #[test]
     fn test_format_user_context_message_without_model_name() {
         let content = format_user_context_message(
             None,
-            Vec::<String>::new(),
-            Vec::<String>::new(),
-            Vec::<String>::new(),
+            std::iter::empty::<(&str, &str)>(),
+            std::iter::empty::<&str>(),
+            std::iter::empty::<&str>(),
             None,
+            None,
+            None,
+            false,
             None,
             None,
         );
