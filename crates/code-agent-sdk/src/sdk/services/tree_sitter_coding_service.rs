@@ -40,8 +40,7 @@ impl TreeSitterCodingService {
             .map_err(|_| anyhow::anyhow!("Unsupported language: {}", request.language))?;
         let limit = request.limit.unwrap_or(crate::model::types::DEFAULT_SEARCH_RESULTS) as usize;
 
-        let pattern = Pattern::try_new(&request.pattern, lang)
-            .map_err(|e| anyhow::anyhow!("Invalid pattern '{}': {}", request.pattern, e))?;
+        let pattern = crate::tree_sitter::try_new_pattern(&request.pattern, lang)?;
 
         let extensions: Vec<String> = crate::tree_sitter::get_extensions(&lang_name)
             .unwrap_or(&[])

@@ -89,8 +89,7 @@ pub async fn pattern_search(workspace_root: &Path, request: PatternSearchRequest
     let offset = request.offset.unwrap_or(0) as usize;
     let limit = request.limit.unwrap_or(crate::model::types::DEFAULT_SEARCH_RESULTS) as usize;
 
-    let pattern = Pattern::try_new(&request.pattern, lang)
-        .map_err(|e| anyhow::anyhow!("Invalid pattern '{}': {}", request.pattern, e))?;
+    let pattern = crate::tree_sitter::try_new_pattern(&request.pattern, lang)?;
 
     let extensions: Vec<String> = get_extensions_for_lang(&lang_name)
         .iter()
