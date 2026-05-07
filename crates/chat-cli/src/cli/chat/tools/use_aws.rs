@@ -31,7 +31,7 @@ use crate::cli::agent::{
 use crate::os::Os;
 use crate::util::tool_permission_checker::is_tool_in_allowlist;
 
-const READONLY_OPS: [&str; 6] = ["get", "describe", "list", "ls", "search", "batch_get"];
+const READONLY_OPS: [&str; 6] = ["get", "describe", "list", "ls", "search", "batch-get"];
 
 // TODO: we should perhaps composite this struct with an interface that we can use to mock the
 // actual cli with. That will allow us to more thoroughly test it.
