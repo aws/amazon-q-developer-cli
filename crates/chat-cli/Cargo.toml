@@ -74,7 +74,6 @@ indicatif.workspace = true
 indoc.workspace = true
 insta.workspace = true
 libc.workspace = true
-mimalloc.workspace = true
 nix.workspace = true
 owo-colors.workspace = true
 parking_lot.workspace = true
@@ -150,6 +149,9 @@ objc2.workspace = true
 objc2-app-kit.workspace = true
 objc2-foundation.workspace = true
 security-framework.workspace = true
+
+[target.'cfg(not(target_os = "macos"))'.dependencies]
+mimalloc.workspace = true
 
 [target.'cfg(windows)'.dependencies]
 windows.workspace = true

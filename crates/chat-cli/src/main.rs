@@ -32,6 +32,7 @@ use logging::get_log_level_max;
 use theme::StyledText;
 use tracing::metadata::LevelFilter;
 
+#[cfg(not(target_os = "macos"))]
 #[global_allocator]
 static GLOBAL: mimalloc::MiMalloc = mimalloc::MiMalloc;
 
