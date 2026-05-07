@@ -28,10 +28,17 @@ function update_pkg() {
     mv "crates/${CRATE_NAME}/Cargo.toml.tmp" "crates/${CRATE_NAME}/Cargo.toml"
 }
 
-# Get the latest version from artifact links at: https://code.amazon.com/packages/AWSVectorConsolasRuntimeServiceRustClient/releases#
-# for example, https://prod.artifactbrowser.brazil.aws.dev/packages/AWSVectorConsolasRuntimeServiceRustClient/versions/0.1.8200.0/platforms/AL2_x86_64/flavors/DEV.STD.PTHREAD
-# Note that a `.0` is appended as part of the above script.
-CONSOLAS_VERSION="0.1.14474"
+# Usage: ./scripts/generate-clients.sh <VERSION>
+# Example: ./scripts/generate-clients.sh 0.1.16442
+#
+# Find the latest version at: https://code.amazon.com/packages/AWSVectorConsolasRuntimeServiceRustClient/releases
+# Note that a `.0` is appended as part of the download URL.
+if [ -z "$1" ]; then
+    echo "Usage: $0 <CONSOLAS_VERSION>" >&2
+    echo "Example: $0 0.1.16442" >&2
+    exit 1
+fi
+CONSOLAS_VERSION="$1"
 
 update_pkg "AWSVectorConsolasRuntimeServiceRustClient" "$CONSOLAS_VERSION" "amzn-codewhisperer-client"
 update_pkg "AWSVectorConsolasRuntimeServiceRustClient" "$CONSOLAS_VERSION" "amzn-codewhisperer-streaming-client"
