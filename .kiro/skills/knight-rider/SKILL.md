@@ -38,11 +38,48 @@ Rust binary at `target/debug/chat_cli`. Build it once with `cargo build -p chat_
 | Flag | Default | Description |
 |------|---------|-------------|
 | (none) | **local dev** | Run TUI from source + local Rust binary — picks up TS changes instantly |
+| `--kas` | off | Launch TUI with KAS agent engine instead of Rust backend |
+| `--kas-repo <path>` | — | Path to kiro-agent repo root — auto-builds the server if needed |
+| `--kas-rebuild` | off | Force rebuild of KAS server (use after kiro-agent code changes, NOT needed for CLI/TUI changes) |
 | `--system` | off | Use system `kiro-cli chat --tui` instead of local source |
 | `--v1` | off | Launch legacy V1 Rust TUI |
 | `--cmd "bash"` | — | Launch any arbitrary command |
 | `--port 4000` | `3001` | Custom port |
 | `--out /tmp/test` | auto-timestamped | Custom output directory |
+
+### KAS Mode
+
+Launch knight-rider with the KAS (TypeScript) agent engine instead of the Rust ACP backend.
+
+```bash
+# KAS with @kiro/agent from node_modules (requires bun install + CodeArtifact auth)
+bun run knight-rider --kas
+
+# KAS with local kiro-agent repo (auto-builds if dist/ missing)
+bun run knight-rider --kas --kas-repo ~/work/migrate/kas/latest
+
+# Rebuild after kiro-agent code changes (not needed for CLI/TUI changes)
+bun run knight-rider --kas --kas-repo ~/work/migrate/kas/latest --kas-rebuild
+
+# KAS via system binary (kiro-cli chat)
+bun run knight-rider --kas --system
+```
+
+**Prerequisites for KAS mode:**
+- Valid auth token at `~/.aws/sso/cache/kiro-auth-token-cli.json` (created by `kiro-cli` when you log in)
+- Either `@kiro/agent` installed (`bun install` after `./scripts/codeartifact-login.sh`) or `--kas-repo` pointing to a local checkout
+- Workspace packages must be built: `cd packages/twinki/packages/twinki && bun run build`
+- No Rust binary needed (unlike default mode)
+
+**Setup (first time or after clean):**
+```bash
+cd <repo-root>
+./scripts/codeartifact-login.sh   # get CodeArtifact token (expires 12h)
+bun install                        # install @kiro/agent + dependencies
+cd packages/twinki/packages/twinki && bun run build && cd -  # build twinki
+```
+
+**Boot timing:** KAS takes ~2-3s to initialize after the TUI renders. The prompt bar appears immediately but shows "Initializing..." until the ACP handshake completes. Wait for the mode indicator (e.g., `vibe`) to appear in the status bar before sending prompts.
 
 ## Shell Helpers
 
@@ -303,3 +340,7 @@ open "$DIR/index.html"
 | `wait_for_idle` times out | Agent may still be working — increase timeout or check screen manually |
 | Port 3001 already in use | Kill stale: `for pid in $(lsof -ti:3001 2>/dev/null); do kill $pid 2>/dev/null; done` |
 | Slash command autocomplete not appearing | Ensure you type `/` alone first, then wait 0.5s before typing command name |
+| KAS: "Cannot find package 'twinki'" | Build twinki: `cd packages/twinki/packages/twinki && bun run build` |
+| KAS: "unexpected argument '--experimental-wasm-modules'" | `KIRO_AGENT_PATH` in your shell points to kiro binary, not node. The script now sets `KIRO_AGENT_PATH=node` explicitly — ensure you're using the latest knight-rider.ts |
+| KAS: Stuck at "Initializing..." forever | Check if node process spawned: `ps aux \| grep acp-server`. If not, verify `@kiro/agent` is installed and token is valid |
+| KAS: Prompt queued but never processed | KAS hasn't finished initializing. Wait for mode indicator (e.g., `vibe`) in status bar before sending prompts |

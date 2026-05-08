@@ -9,6 +9,10 @@
  *   bun run knight-rider                          # launch TUI from source (default, picks up local changes)
  *   bun run knight-rider --system                 # launch using system kiro-cli binary
  *   bun run knight-rider --v1                     # launch kiro-cli v1 (legacy Rust TUI)
+ *   bun run knight-rider --kas                    # launch TUI with KAS agent engine
+ *   bun run knight-rider --kas --kas-repo /path/to/kiro-agent            # KAS with auto-build from repo
+ *   bun run knight-rider --kas --kas-repo /path/to/kiro-agent --kas-rebuild  # rebuild after KAS code changes
+ *   bun run knight-rider --kas --system           # launch system binary with KAS engine
  *   bun run knight-rider --cmd "bash"             # launch any command
  *   bun run knight-rider --port 4000              # custom port
  *   bun run knight-rider --out /tmp/my-test       # custom output dir
@@ -63,6 +67,9 @@ const PORT = parseInt(arg('port') ?? '3001');
 const CMD = arg('cmd');
 const USE_V1 = hasFlag('v1');
 const USE_SYSTEM = hasFlag('system');
+const USE_KAS = hasFlag('kas');
+const KAS_REPO = arg('kas-repo');
+const KAS_REBUILD = hasFlag('kas-rebuild');
 const OUTPUT_DIR = arg('out') ?? path.join(__dirname, 'test-outputs', `knight-rider-${Date.now()}`);
 const WIDTH = 120;
 const HEIGHT = 40;
@@ -76,10 +83,72 @@ fs.mkdirSync(OUTPUT_DIR, { recursive: true });
 const REPO_ROOT = path.resolve(__dirname, '../../..');
 const CARGO_BIN = path.join(REPO_ROOT, 'target/debug/chat_cli');
 
+
+function buildKasServer(repoRoot: string): string {
+  const { execSync } = require('child_process');
+  const serverJs = path.join(repoRoot, 'packages/kiro-agent/dist/server/acp-server.js');
+
+  // Skip if already built (unless --kas-rebuild for KAS code changes)
+  if (fs.existsSync(serverJs) && !KAS_REBUILD) {
+    console.log(`✅ KAS server already built: ${serverJs}`);
+    return serverJs;
+  }
+
+  console.log(`🔨 Building KAS server from ${repoRoot}...`);
+  const run = (cmd: string, cwd: string) => {
+    console.log(`   $ ${cmd}`);
+    execSync(cmd, { cwd, stdio: 'inherit' });
+  };
+
+  /**
+   *  Note: We don't use `npm install && npm run build` because the KAS repo's
+   * `prepare` hook runs `compile` which fails on a clean checkout. 
+   * We will update this sonce KAS is fixed
+   */
+
+  // Install deps if needed
+  if (!fs.existsSync(path.join(repoRoot, 'node_modules/.package-lock.json'))) {
+    run('npm install --ignore-scripts', repoRoot);
+  }
+
+  // Build workspace packages in dependency order
+  const tsc = (pkg: string, config: string) => {
+    const dist = path.join(repoRoot, 'packages', pkg, 'dist');
+    if (!fs.existsSync(dist)) {
+      run(`npx tsc -p ${config} --skipLibCheck`, path.join(repoRoot, 'packages', pkg));
+    }
+  };
+  tsc('kiro-context-providers', 'tsconfig.json');
+  tsc('acp-type-covenant', 'tsconfig.es.json');
+  tsc('kiro-client', 'tsconfig.json');
+
+  // Build the server bundle
+  run('node esbuild.server.mjs', path.join(repoRoot, 'packages/kiro-agent'));
+
+  if (!fs.existsSync(serverJs)) {
+    throw new Error(`KAS server build failed — ${serverJs} not found`);
+  }
+  console.log(`✅ KAS server built: ${serverJs}`);
+  return serverJs;
+}
+
 function resolveCommand(): { cmd: string; env: Record<string, string> } {
   if (CMD) return { cmd: CMD, env: {} };
   if (USE_V1) return { cmd: 'kiro-cli chat', env: {} };
+  if (USE_SYSTEM && USE_KAS) return { cmd: 'kiro-cli chat --tui --agent-engine=kas', env: {} };
   if (USE_SYSTEM) return { cmd: 'kiro-cli chat --tui', env: {} };
+  if (USE_KAS) {
+    const serverPath = KAS_REPO ? buildKasServer(KAS_REPO) : undefined;
+    return {
+      cmd: 'bun ./src/index.tsx',
+      env: {
+        KIRO_AGENT_ENGINE: 'kas',
+        KIRO_AGENT_PATH: 'node',
+        KIRO_KAS_TOKEN_PATH: `${process.env.HOME}/.aws/sso/cache/kiro-auth-token-cli.json`,
+        ...(serverPath && { KIRO_KAS_SERVER_PATH: serverPath }),
+      },
+    };
+  }
   // Default: run TUI source directly with local Rust binary
   return {
     cmd: 'bun ./src/index.tsx',
@@ -377,7 +446,7 @@ const server = Bun.serve({
 });
 
 console.log(`🏎️  Knight Rider — http://localhost:${PORT}`);
-console.log(`   Mode:    ${CMD ? 'custom' : USE_SYSTEM ? 'system kiro-cli' : USE_V1 ? 'v1' : 'local dev (source)'}`);
+console.log(`   Mode:    ${CMD ? 'custom' : USE_SYSTEM ? 'system kiro-cli' : USE_V1 ? 'v1' : USE_KAS ? 'KAS agent engine' : 'local dev (source)'}`);
 console.log(`   Command: ${resolvedCmd}`);
 if (Object.keys(extraEnv).length) console.log(`   Env:     ${Object.entries(extraEnv).map(([k, v]) => `${k}=${v}`).join(', ')}`);
 console.log(`   Frames:  ${OUTPUT_DIR}`);
