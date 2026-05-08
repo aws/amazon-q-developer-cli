@@ -1,0 +1,4 @@
+{
+  "type": "fixed",
+  "description": "Fixed validation error messages (e.g. image size exceeded) showing raw reason codes instead of the service's user-friendly message"
+}

@@ -174,7 +174,7 @@ impl ReasonCode for ConverseStreamError {
             ConverseStreamErrorKind::ContextWindowOverflow => "ContextWindowOverflow".to_string(),
             ConverseStreamErrorKind::ModelOverloadedError => "ModelOverloadedError".to_string(),
             ConverseStreamErrorKind::InvalidModelId { .. } => "InvalidModelId".to_string(),
-            ConverseStreamErrorKind::Unknown { reason_code } => reason_code.clone(),
+            ConverseStreamErrorKind::Unknown { reason_code, .. } => reason_code.clone(),
         }
     }
 }
@@ -186,6 +186,7 @@ impl From<aws_smithy_types::error::operation::BuildError> for ConverseStreamErro
             status_code: None,
             kind: ConverseStreamErrorKind::Unknown {
                 reason_code: value.to_string(),
+                message: None,
             },
             source: Some(Arc::new(value.into())),
         }
@@ -218,8 +219,13 @@ pub enum ConverseStreamErrorKind {
     /// so we can surface a more specific message to the user.
     #[error("{}", format_invalid_model_id(.model_id.as_deref()))]
     InvalidModelId { model_id: Option<String> },
-    #[error("An unknown error occurred: {}", .reason_code)]
-    Unknown { reason_code: String },
+    #[error("{}", format_unknown_error(.reason_code, .message.as_deref()))]
+    Unknown {
+        reason_code: String,
+        /// User-friendly message from the service, if available.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        message: Option<String>,
+    },
 }
 
 fn format_invalid_model_id(model_id: Option<&str>) -> String {
@@ -229,6 +235,13 @@ fn format_invalid_model_id(model_id: Option<&str>) -> String {
         },
         None => "The selected model is not available. Please use '/model' to select a different model and try again."
             .to_string(),
+    }
+}
+
+fn format_unknown_error(reason_code: &str, message: Option<&str>) -> String {
+    match message {
+        Some(msg) => msg.to_string(),
+        None => format!("An unknown error occurred: {}", reason_code),
     }
 }
 

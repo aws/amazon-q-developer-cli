@@ -1608,10 +1608,20 @@ fn classify_error_kind<R>(
         return ConverseStreamErrorKind::MonthlyLimitReached;
     }
 
+    // Extract the user-friendly message from the service error metadata.
+    // The SDK often returns Unhandled instead of the well-modeled ValidationError
+    // (due to a mismatch between the Smithy model name "ValidationError" and the
+    // wire type "ValidationException"), so we use ProvideErrorMetadata which works
+    // for all variants including Unhandled.
+    let service_message = sdk_error
+        .as_service_error()
+        .and_then(|e| e.meta().message().map(|s| s.to_string()));
+
     ConverseStreamErrorKind::Unknown {
         // do not change - we currently use sdk_error_code for mapping from an arbitrary sdk error
         // to a reason code.
         reason_code: error::sdk_error_code(sdk_error),
+        message: service_message,
     }
 }
 
@@ -1774,6 +1784,7 @@ mod tests {
                 // Don't match on error message
                 ConverseStreamErrorKind::Unknown {
                     reason_code: "test".to_string(),
+                    message: None,
                 },
             ),
             (
@@ -1825,6 +1836,7 @@ mod tests {
                 None,
                 ConverseStreamErrorKind::Unknown {
                     reason_code: "test".to_string(),
+                    message: None,
                 },
             ),
             (
@@ -1833,10 +1845,12 @@ mod tests {
                 Some("model-1"),
                 ConverseStreamErrorKind::Unknown {
                     reason_code: "test".to_string(),
+                    message: None,
                 },
             ),
             (Some(500), b"Some other error", None, ConverseStreamErrorKind::Unknown {
                 reason_code: "test".to_string(),
+                message: None,
             }),
             // InvalidModelId checks
             (

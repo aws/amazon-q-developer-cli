@@ -106,7 +106,6 @@ function executeClearCommand(): void {
   process.stdout.write('\x1b[3J\x1b[2J\x1b[H');
 }
 
-
 /**
  * On macOS, Bun raises RLIMIT_NOFILE to 2^63-1 which overflows Python's sh library.
  * Wrap commands with ulimit to reset to a sane value.
