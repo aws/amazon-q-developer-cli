@@ -2,44 +2,35 @@
 """Generate release notes from changelog fragments for nightly builds."""
 
 import json
-import re
 import shutil
 import sys
 from pathlib import Path
 
 
-def parse_semver(version: str) -> tuple:
-    """Parse semver string like 1.24.2-nightly.3 into comparable tuple."""
-    match = re.match(r"(\d+)\.(\d+)\.(\d+)-nightly\.(\d+)", version)
-    if not match:
-        return (0, 0, 0, 0)
-    return (int(match[1]), int(match[2]), int(match[3]), int(match[4]))
+def get_all_released_fragment_names(changes_dir: Path) -> set[str]:
+    """Get all fragment names already included in any previous nightly or stable release."""
+    names = set()
+    for subdir in ("nightly-released", "released"):
+        parent = changes_dir / subdir
+        if not parent.exists():
+            continue
+        for version_dir in parent.iterdir():
+            if version_dir.is_dir():
+                names.update(f.name for f in version_dir.glob("*.json"))
+    return names
 
 
-def get_previous_version_dir(nightly_released_dir: Path) -> Path | None:
-    """Get the most recent version directory in nightly-released."""
-    if not nightly_released_dir.exists():
-        return None
-    
-    versions = sorted(
-        [d for d in nightly_released_dir.iterdir() if d.is_dir()],
-        key=lambda d: parse_semver(d.name),
-        reverse=True
-    )
-    return versions[0] if versions else None
-
-
-def get_new_fragments(unreleased_dir: Path, prev_version_dir: Path | None) -> list[Path]:
-    """Find fragments in unreleased that aren't in the previous version."""
+def get_new_fragments(unreleased_dir: Path, changes_dir: Path) -> list[Path]:
+    """Find fragments in unreleased that haven't been included in any previous nightly or stable release."""
     if not unreleased_dir.exists():
         return []
     
     fragments = list(unreleased_dir.glob("*.json"))
-    if not prev_version_dir:
+    released_names = get_all_released_fragment_names(changes_dir)
+    if not released_names:
         return fragments
     
-    prev_names = {f.name for f in prev_version_dir.glob("*.json")}
-    return [f for f in fragments if f.name not in prev_names]
+    return [f for f in fragments if f.name not in released_names]
 
 
 def generate_release_notes(fragments: list[Path]) -> str:
@@ -78,8 +69,7 @@ def main():
     unreleased_dir = changes_dir / "unreleased"
     nightly_released_dir = changes_dir / "nightly-released"
     
-    prev_version_dir = get_previous_version_dir(nightly_released_dir)
-    new_fragments = get_new_fragments(unreleased_dir, prev_version_dir)
+    new_fragments = get_new_fragments(unreleased_dir, changes_dir)
     
     if command == "generate":
         print(generate_release_notes(new_fragments))
