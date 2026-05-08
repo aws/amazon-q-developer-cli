@@ -304,12 +304,22 @@ def build_tui() -> pathlib.Path:
     return tui_js_path.absolute()
 
 
-def _resolve_bun_path(path: pathlib.Path) -> str:
-    """Resolve bun path for the build environment, handling cross-compilation."""
+def _resolve_build_input_path(path: pathlib.Path) -> str:
+    """Resolve a host path for the build environment, handling cross-compilation.
+
+    When `cargo build` is driven by `cross`, the workspace is mounted at `/project`
+    inside the build container, so absolute host paths are not valid there. Paths
+    must be rewritten relative to the workspace root. For native builds, the
+    absolute host path is used directly.
+    """
     if cargo_cmd_name() == "cross":
         rel_path = path.relative_to(pathlib.Path.cwd())
         return f"/project/{rel_path}"
     return str(path.absolute())
+
+
+# Backwards-compatible alias (kept in case external callers reference it).
+_resolve_bun_path = _resolve_build_input_path
 
 
 def build_chat_bin(
@@ -342,18 +352,13 @@ def build_chat_bin(
     if bun_paths:
         for suffix, path in [("X86_64", bun_paths.x86_64), ("AARCH64", bun_paths.aarch64)]:
             if path:
-                path_str = _resolve_bun_path(path)
+                path_str = _resolve_build_input_path(path)
                 build_env[f"BUN_EXECUTABLE_PATH_{suffix}"] = path_str
                 build_env[f"BUN_RUNTIME_SHA256_{suffix}"] = calculate_sha256(path)
                 info(f"Embedding Bun {suffix}: {path_str} (SHA256: {build_env[f'BUN_RUNTIME_SHA256_{suffix}']})")
 
     if tui_js_path:
-        # For cross builds, use /project prefix since that's where the workspace is mounted in the container
-        if cargo_cmd_name() == "cross":
-            rel_path = tui_js_path.relative_to(pathlib.Path.cwd())
-            tui_path_str = f"/project/{rel_path}"
-        else:
-            tui_path_str = str(tui_js_path.absolute())
+        tui_path_str = _resolve_build_input_path(tui_js_path)
         build_env["TUI_JS_PATH"] = tui_path_str
         tui_sha = calculate_sha256(tui_js_path)
         build_env["TUI_JS_SHA256"] = tui_sha
@@ -365,15 +370,17 @@ def build_chat_bin(
     if node_paths:
         for suffix, path in [("X86_64", node_paths.x86_64), ("AARCH64", node_paths.aarch64)]:
             if path:
-                build_env[f"NODE_EXECUTABLE_PATH_{suffix}"] = str(path.absolute())
+                path_str = _resolve_build_input_path(path)
+                build_env[f"NODE_EXECUTABLE_PATH_{suffix}"] = path_str
                 build_env[f"NODE_RUNTIME_SHA256_{suffix}"] = calculate_sha256(path)
-                info(f"Embedding Node.js {suffix}: {path.absolute()} (SHA256: {build_env[f'NODE_RUNTIME_SHA256_{suffix}']})")
+                info(f"Embedding Node.js {suffix}: {path_str} (SHA256: {build_env[f'NODE_RUNTIME_SHA256_{suffix}']})")
 
     if kas_bundle_path:
-        build_env["KAS_BUNDLE_PATH"] = str(kas_bundle_path.absolute())
+        kas_path_str = _resolve_build_input_path(kas_bundle_path)
+        build_env["KAS_BUNDLE_PATH"] = kas_path_str
         kas_sha = calculate_sha256(kas_bundle_path)
         build_env["KAS_BUNDLE_SHA256"] = kas_sha
-        info(f"Embedding KAS bundle: {kas_bundle_path.absolute()} (SHA256: {kas_sha})")
+        info(f"Embedding KAS bundle: {kas_path_str} (SHA256: {kas_sha})")
 
     run_cmd(args, env=build_env)
 
