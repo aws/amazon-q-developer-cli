@@ -16,14 +16,19 @@ function getMachineId(): string {
   }
 }
 
+/** Strict SemVer: X.Y.Z (no prerelease suffix) */
+const SEMVER_STABLE = /^\d+\.\d+\.\d+$/;
+
 function resolveChannel(): string {
   const envChannel = process.env['KIRO_UPDATE_CHANNEL'];
   if (envChannel) return envChannel;
 
   const version: string = packageJson.version;
   if (version.includes('nightly')) return 'nightly';
-  if (version.includes('insider') || version.includes('beta')) return 'insider';
-  return 'stable';
+  if (version.includes('beta') || version.includes('insider')) return 'beta';
+  // Stable = public installations and toolbox (strict SemVer X.Y.Z)
+  if (SEMVER_STABLE.test(version)) return 'stable';
+  return 'unknown';
 }
 
 export interface TelemetryIdentity {
@@ -34,11 +39,15 @@ export interface TelemetryIdentity {
   channel: string;
 }
 
+/**
+ * KIRO_USER_ID is set by the Rust launcher in embedded_tui.rs from
+ * get_usage_limits().user_info().user_id() — only available when authenticated.
+ */
 export function getTelemetryIdentity(): TelemetryIdentity {
   const machineId = getMachineId();
   return {
     machineId,
-    userId: process.env['KIRO_USER_ID'] || machineId,
+    userId: process.env['KIRO_USER_ID'] || '',
     version: packageJson.version,
     kiroClientVersion: packageJson.version,
     channel: resolveChannel(),
