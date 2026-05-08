@@ -554,6 +554,14 @@ describe('KasAcpClient', () => {
     expect(result.message).toContain('not yet supported in KAS mode');
   });
 
+  it('executeCommand("reply") returns success without forwarding', async () => {
+    const client = new KasAcpClient();
+    await client.newSession();
+    const result = await client.executeCommand({ command: 'reply' } as any);
+    expect(result.success).toBe(true);
+    expect(mockKiroSendExtMethod).not.toHaveBeenCalled();
+  });
+
   it('executeCommand with unknown command returns unsupported', async () => {
     const client = new KasAcpClient();
     await client.newSession();
