@@ -215,6 +215,21 @@ pub async fn launch_v2(os: &Os, agent_engine: AgentEngine, mode: Option<AgentMod
         cmd.env("FORCE_COLOR", force_color);
     }
 
+    // Resolve telemetry identity for the TUI
+    let telemetry_enabled = !crate::util::env_var::is_telemetry_disabled()
+        && os
+            .database
+            .settings
+            .get_bool(crate::database::settings::Setting::TelemetryEnabled)
+            .unwrap_or(true);
+    cmd.env("KIRO_TELEMETRY_ENABLED", telemetry_enabled.to_string());
+
+    if let Ok(output) = os.client.get_usage_limits().await {
+        if let Some(info) = output.user_info() {
+            cmd.env("KIRO_USER_ID", info.user_id());
+        }
+    }
+
     match agent_engine {
         AgentEngine::Kas => {
             let token_path = kas_token_path(os)?;

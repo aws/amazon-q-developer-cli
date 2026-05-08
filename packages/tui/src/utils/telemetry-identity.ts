@@ -38,9 +38,14 @@ export function getTelemetryIdentity(): TelemetryIdentity {
   const machineId = getMachineId();
   return {
     machineId,
-    userId: machineId,
+    userId: process.env['KIRO_USER_ID'] || machineId,
     version: packageJson.version,
     kiroClientVersion: packageJson.version,
     channel: resolveChannel(),
   };
+}
+
+export function isTelemetryEnabled(): boolean {
+  if (process.env['KIRO_DISABLE_TELEMETRY']) return false;
+  return process.env['KIRO_TELEMETRY_ENABLED'] !== 'false';
 }
