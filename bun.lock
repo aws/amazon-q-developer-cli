@@ -28,7 +28,7 @@
       "name": "@kiro/tui",
       "version": "2.2.0",
       "dependencies": {
-        "@agentclientprotocol/sdk": "0.16.1",
+        "@agentclientprotocol/sdk": "^0.19.0",
         "@kiro/client": "0.3.11",
         "@types/diff": "^8.0.0",
         "ansi-escapes": "^7.3.0",
@@ -144,7 +144,7 @@
     "vite": "7.3.2",
   },
   "packages": {
-    "@agentclientprotocol/sdk": ["@agentclientprotocol/sdk@0.16.1", "", { "peerDependencies": { "zod": "^3.25.0 || ^4.0.0" } }, "sha512-1ad+Sc/0sCtZGHthxxvgEUo5Wsbw16I+aF+YwdiLnPwkZG8KAGUEAPK6LM6Pf69lCyJPt1Aomk1d+8oE3C4ZEw=="],
+    "@agentclientprotocol/sdk": ["@agentclientprotocol/sdk@0.19.2", "", { "peerDependencies": { "zod": "^3.25.0 || ^4.0.0" } }, "sha512-G1Qi50Kc2GZxYjvH6t6yG8KFZMVe5vWTzZH4c7ylb0yiqMfNQSBDHPy0FMxYLPsorMqlM+eyV4yRp4oeUjl/Lw=="],
 
     "@ampproject/remapping": ["@ampproject/remapping@2.3.0", "", { "dependencies": { "@jridgewell/gen-mapping": "^0.3.5", "@jridgewell/trace-mapping": "^0.3.24" } }, "sha512-30iZtAPgz+LTIYoeivqYo853f02jBYSd5uGnGpkFV0M3xOt9aN73erkgYAmZU43x4VfqcnLxW9Kpg3R5LC4YYw=="],
 
@@ -1648,11 +1648,7 @@
 
     "@isaacs/cliui/wrap-ansi": ["wrap-ansi@8.1.0", "", { "dependencies": { "ansi-styles": "^6.1.0", "string-width": "^5.0.1", "strip-ansi": "^7.0.1" } }, "sha512-si7QWI6zUMq56bESFvagtmzMdGOtoxfR+Sez11Mobfc7tm+VkUckk9bW2UeffTGVUbOksxmSw0AA2gs8g71NCQ=="],
 
-    "@kiro/agent/@agentclientprotocol/sdk": ["@agentclientprotocol/sdk@0.19.2", "", { "peerDependencies": { "zod": "^3.25.0 || ^4.0.0" } }, "sha512-G1Qi50Kc2GZxYjvH6t6yG8KFZMVe5vWTzZH4c7ylb0yiqMfNQSBDHPy0FMxYLPsorMqlM+eyV4yRp4oeUjl/Lw=="],
-
     "@kiro/agent/minimatch": ["minimatch@10.2.5", "", { "dependencies": { "brace-expansion": "^5.0.5" } }, "sha512-MULkVLfKGYDFYejP07QOurDLLQpcjk7Fw+7jXS2R2czRQzR56yHRveU5NDJEOviH+hETZKSkIk5c+T23GjFUMg=="],
-
-    "@kiro/client/@agentclientprotocol/sdk": ["@agentclientprotocol/sdk@0.19.2", "", { "peerDependencies": { "zod": "^3.25.0 || ^4.0.0" } }, "sha512-G1Qi50Kc2GZxYjvH6t6yG8KFZMVe5vWTzZH4c7ylb0yiqMfNQSBDHPy0FMxYLPsorMqlM+eyV4yRp4oeUjl/Lw=="],
 
     "@langchain/core/ansi-styles": ["ansi-styles@5.2.0", "", {}, "sha512-Cxwpt2SfTzTtXcfOlzGEee8O+c+MmUgGrNiBcXnuWxuFJHe6a5Hz7qwhwe5OgaSYI0IJvkLqWX1ASG+cJOkEiA=="],
 
