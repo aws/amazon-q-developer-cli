@@ -25,7 +25,8 @@ function resolveChannel(): string {
 
   const version: string = packageJson.version;
   if (version.includes('nightly')) return 'nightly';
-  if (version.includes('beta') || version.includes('insider')) return 'beta';
+  if (version.includes('insider')) return 'insider';
+  if (version.includes('beta')) return 'beta';
   // Stable = public installations and toolbox (strict SemVer X.Y.Z)
   if (SEMVER_STABLE.test(version)) return 'stable';
   return 'unknown';

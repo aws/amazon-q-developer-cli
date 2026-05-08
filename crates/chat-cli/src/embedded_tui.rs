@@ -227,14 +227,15 @@ pub async fn launch_v2(os: &Os, agent_engine: AgentEngine, mode: Option<AgentMod
             .unwrap_or(true);
     cmd.env("KIRO_TELEMETRY_ENABLED", telemetry_enabled.to_string());
 
-    if let Ok(Ok(output)) = tokio::time::timeout(Duration::from_secs(5), os.client.get_usage_limits()).await
-        && let Some(info) = output.user_info()
-    {
-        cmd.env("KIRO_USER_ID", info.user_id());
-    }
-
     match agent_engine {
         AgentEngine::Kas => {
+            // Resolve user identity for KAS telemetry (not needed for Rust engine)
+            if let Ok(Ok(output)) = tokio::time::timeout(Duration::from_secs(5), os.client.get_usage_limits()).await
+                && let Some(info) = output.user_info()
+            {
+                cmd.env("KIRO_USER_ID", info.user_id());
+            }
+
             let token_path = kas_token_path(os)?;
             cmd.env("KIRO_KAS_TOKEN_PATH", &token_path);
             cmd.env("KIRO_AGENT_ENGINE", "kas");
