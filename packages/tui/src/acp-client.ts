@@ -1482,6 +1482,8 @@ export class KasAcpClient extends BaseAcpClient {
         }
         return this.executeModelSwap(modelId);
       }
+      case 'reply':
+        return { success: true, message: '' };
       default:
         return {
           success: false,

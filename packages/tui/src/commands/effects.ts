@@ -384,7 +384,37 @@ const effectHandlers: Record<EffectName, EffectHandler> = {
       return true;
     }
     const data = result?.data as { initialContent?: string } | undefined;
-    const initialContent = data?.initialContent ?? '';
+    let initialContent = data?.initialContent ?? '';
+
+    // KAS mode fallback: compute from buffered messages.
+    // Collects all Model messages after the last User message (handles
+    // multi-part responses where tool calls interleave text).
+    if (!initialContent) {
+      const messages = ctx.getMessages();
+      const parts: string[] = [];
+      for (let i = messages.length - 1; i >= 0; i--) {
+        const msg = messages[i]!;
+        if (msg.role === MessageRole.User) break;
+        if (msg.role === MessageRole.Model && msg.content) {
+          parts.push(msg.content);
+        }
+      }
+      const lastContent = parts.reverse().join('\n\n');
+      if (lastContent) {
+        initialContent =
+          lastContent
+            .split('\n')
+            .map((line) => `> ${line}`)
+            .join('\n') + '\n\n';
+      }
+    }
+
+    // Handle case where no assistant message exists
+    if (!initialContent) {
+      ctx.showAlert('No assistant message found', 'error', 3000);
+      return true;
+    }
+
     const editorResult = openEditorSync({
       prefix: 'kiro-reply-',
       filename: 'reply.md',

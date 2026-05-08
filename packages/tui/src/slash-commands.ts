@@ -57,4 +57,9 @@ export const SLASH_COMMANDS: SlashCommand[] = [
     },
     requiredMethods: [],
   },
+  {
+    name: '/reply',
+    description: 'Reply to the last assistant message in $EDITOR',
+    requiredMethods: [],
+  },
 ];

@@ -744,3 +744,81 @@ describe('/tools subcommand (no tools data)', () => {
     expect(ctx._spies.setShowToolsPanel!).not.toHaveBeenCalled();
   });
 });
+
+describe('/reply effect', () => {
+  const replyCmd: SlashCommand = {
+    name: '/reply',
+    description: '',
+    source: 'backend',
+  };
+
+  it('shows error alert when no assistant message exists (KAS mode)', () => {
+    const ctx = createMockCommandContext({ messages: [] });
+    const result = { success: true, message: '', data: {} };
+
+    runEffect(replyCmd, result, ctx, '');
+
+    expect(ctx._spies.showAlert!).toHaveBeenCalledWith(
+      'No assistant message found',
+      'error',
+      3000
+    );
+  });
+
+  it('shows error alert when result is not success', () => {
+    const ctx = createMockCommandContext({ messages: [] });
+    const result = { success: false, message: 'Something went wrong' };
+
+    runEffect(replyCmd, result, ctx, '');
+
+    expect(ctx._spies.showAlert!).toHaveBeenCalledWith(
+      'Something went wrong',
+      'error',
+      3000
+    );
+  });
+
+  it('shows error when only user messages exist', () => {
+    const ctx = createMockCommandContext({
+      messages: [{ id: '1', role: MessageRole.User, content: 'hello' }],
+    });
+    const result = { success: true, message: '', data: {} };
+
+    runEffect(replyCmd, result, ctx, '');
+
+    expect(ctx._spies.showAlert!).toHaveBeenCalledWith(
+      'No assistant message found',
+      'error',
+      3000
+    );
+  });
+
+  it('opens editor with quoted assistant message (KAS mode fallback)', () => {
+    mockWriteFileSync.mockReset();
+    const ctx = createMockCommandContext({
+      messages: [
+        { id: '1', role: MessageRole.User, content: 'hello' },
+        {
+          id: '2',
+          role: MessageRole.Model,
+          content: 'Hi there!\nHow can I help?',
+        },
+      ],
+    });
+    const result = { success: true, message: '', data: {} };
+
+    runEffect(replyCmd, result, ctx, '');
+
+    // openEditorSync writes the quoted content to a temp file before opening $EDITOR
+    expect(mockWriteFileSync).toHaveBeenCalled();
+    const writeCalls = mockWriteFileSync.mock.calls as unknown as [
+      string,
+      string,
+    ][];
+    const contentWritten = writeCalls.find(([path]) =>
+      path.includes('kiro-reply')
+    );
+    expect(contentWritten).toBeDefined();
+    expect(contentWritten![1]).toBe('> Hi there!\n> How can I help?\n\n');
+  });
+});
