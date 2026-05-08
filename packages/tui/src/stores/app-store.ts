@@ -171,6 +171,7 @@ import {
   simplifyErrorMessage,
   detectErrorCategory,
 } from '../utils/error-guidance.js';
+import { extractRpcErrorMessage } from '../utils/error-handling.js';
 import { CommandHistory } from '../utils/command-history.js';
 import { Settings } from '../constants/settings.js';
 import {
@@ -1184,26 +1185,12 @@ export const createAppStore = (props: AppStoreProps) => {
           await get().processQueue();
           return;
         }
-        // Extract error message
-        let errorMessage = 'Unknown error';
-        if (error instanceof Error) {
-          errorMessage = error.message || error.name || 'Unknown error';
-        } else if (typeof error === 'string') {
-          errorMessage = error;
-        } else if (typeof error === 'object' && error !== null) {
-          const errObj = error as Record<string, unknown>;
-          if (typeof errObj.message === 'string' && errObj.message) {
-            errorMessage = errObj.message;
-          } else if (
-            typeof errObj.error === 'object' &&
-            errObj.error !== null
-          ) {
-            const innerErr = errObj.error as Record<string, unknown>;
-            if (typeof innerErr.message === 'string' && innerErr.message) {
-              errorMessage = innerErr.message;
-            }
-          }
-        }
+        // Extract error message. Most agent errors arrive already-extracted
+        // from kiro.ts::streamMessage (which uses extractRpcErrorMessage), but
+        // call it again here as a defensive fallback for any error that
+        // reaches this catch from another source (e.g. event-handler throws,
+        // non-kiro errors).
+        const errorMessage = extractRpcErrorMessage(error, 'Unknown error');
 
         // Mark any remaining tool calls as finished on error
         set((state) => {

@@ -362,15 +362,44 @@ describe('dispatch', () => {
       expect(ctx._spies.showAlert!.mock.calls[0]![1]).toBe('error');
     });
 
-    it('shows "Command failed" when executeCommand throws a non-Error', async () => {
+    it('surfaces string errors thrown by executeCommand', async () => {
       const ctx = createMockCommandContext();
       (ctx.kiro.executeCommand as any).mockRejectedValue('string error');
 
       const cmd = makeCmd({ name: '/deploy', source: 'backend' });
       await dispatch(cmd, 'prod', ctx);
 
+      // Raw string errors are surfaced as-is (useful info > generic fallback).
+      expect(ctx._spies.showAlert!.mock.calls[0]![0]).toBe('string error');
+      expect(ctx._spies.showAlert!.mock.calls[0]![1]).toBe('error');
+    });
+
+    it('falls back to "Command failed" for null/undefined errors', async () => {
+      const ctx = createMockCommandContext();
+      (ctx.kiro.executeCommand as any).mockRejectedValue(null);
+
+      const cmd = makeCmd({ name: '/deploy', source: 'backend' });
+      await dispatch(cmd, 'prod', ctx);
+
       expect(ctx._spies.showAlert!.mock.calls[0]![0]).toBe('Command failed');
       expect(ctx._spies.showAlert!.mock.calls[0]![1]).toBe('error');
+    });
+
+    it('extracts data.details from ACP RequestError-shaped rejection', async () => {
+      const ctx = createMockCommandContext();
+      // Simulate ACP RequestError with structured data (e.g. KAS auth errors).
+      const err = Object.assign(new Error('Internal error'), {
+        code: -32603,
+        data: { details: 'No auth token found.' },
+      });
+      (ctx.kiro.executeCommand as any).mockRejectedValue(err);
+
+      const cmd = makeCmd({ name: '/deploy', source: 'backend' });
+      await dispatch(cmd, 'prod', ctx);
+
+      expect(ctx._spies.showAlert!.mock.calls[0]![0]).toBe(
+        'No auth token found.'
+      );
     });
   });
 

@@ -24,6 +24,7 @@ import type {
 } from '../stores/app-store.js';
 import { openEditorSync } from '../utils/editor.js';
 import { executeShellEscapeTTY } from '../utils/shell-escape.js';
+import { extractRpcErrorMessage } from '../utils/error-handling.js';
 import { readFileSync, writeFileSync } from 'fs';
 
 import { openTranscriptInPager } from '../utils/open-transcript.js';
@@ -476,10 +477,10 @@ const effectHandlers: Record<EffectName, EffectHandler> = {
           stack: err instanceof Error ? err.stack : undefined,
         });
         ctx.setLoadingMessage(null);
-        const message =
-          err instanceof Error
-            ? err.message
-            : 'Failed to start new conversation';
+        const message = extractRpcErrorMessage(
+          err,
+          'Failed to start new conversation'
+        );
         ctx.showAlert(message, 'error', 5000);
       });
     return true;
@@ -560,13 +561,10 @@ const effectHandlers: Record<EffectName, EffectHandler> = {
           stack: err instanceof Error ? err.stack : undefined,
         });
         ctx.setLoadingMessage(null);
-        const data =
-          typeof err === 'object' && err !== null && 'data' in err
-            ? String((err as any).data)
-            : undefined;
-        const message =
-          data ??
-          (err instanceof Error ? err.message : 'Failed to load session');
+        // Previously did `String((err as any).data)` which produces
+        // "[object Object]" when `data` is structured (e.g. KAS auth errors).
+        // Use the shared extractor that understands ACP's RequestError shape.
+        const message = extractRpcErrorMessage(err, 'Failed to load session');
         ctx.showAlert(message, 'error', 5000);
       });
   },
@@ -680,8 +678,7 @@ const effectHandlers: Record<EffectName, EffectHandler> = {
         3000
       );
     } catch (error) {
-      const message =
-        error instanceof Error ? error.message : 'Failed to spawn session';
+      const message = extractRpcErrorMessage(error, 'Failed to spawn session');
       ctx.showAlert(message, 'error', 3000);
     }
   },
