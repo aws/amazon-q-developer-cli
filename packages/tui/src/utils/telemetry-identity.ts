@@ -16,22 +16,6 @@ function getMachineId(): string {
   }
 }
 
-/** Strict SemVer: X.Y.Z (no prerelease suffix) */
-const SEMVER_STABLE = /^\d+\.\d+\.\d+$/;
-
-function resolveChannel(): string {
-  const envChannel = process.env['KIRO_UPDATE_CHANNEL'];
-  if (envChannel) return envChannel;
-
-  const version: string = packageJson.version;
-  if (version.includes('nightly')) return 'nightly';
-  if (version.includes('insider')) return 'insider';
-  if (version.includes('beta')) return 'beta';
-  // Stable = public installations and toolbox (strict SemVer X.Y.Z)
-  if (SEMVER_STABLE.test(version)) return 'stable';
-  return 'unknown';
-}
-
 export interface TelemetryIdentity {
   machineId: string;
   userId: string;
@@ -51,7 +35,7 @@ export function getTelemetryIdentity(): TelemetryIdentity {
     userId: process.env['KIRO_USER_ID'] || '',
     version: packageJson.version,
     kiroClientVersion: packageJson.version,
-    channel: resolveChannel(),
+    channel: 'stable',
   };
 }
 
