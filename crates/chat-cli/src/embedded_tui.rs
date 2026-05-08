@@ -225,7 +225,7 @@ pub async fn launch_v2(os: &Os, agent_engine: AgentEngine, mode: Option<AgentMod
     cmd.env("KIRO_TELEMETRY_ENABLED", telemetry_enabled.to_string());
 
     if let Ok(Ok(output)) = tokio::time::timeout(
-        Duration::from_secs(3),
+        Duration::from_secs(5),
         os.client.get_usage_limits(),
     ).await {
         if let Some(info) = output.user_info() {
