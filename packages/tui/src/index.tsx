@@ -12,6 +12,7 @@ import {
   type AppStoreApi,
 } from './stores/app-store';
 import { logger } from './utils/logger';
+import { extractRpcErrorMessage } from './utils/error-handling';
 import { connectResizeSource } from './hooks/useTerminalSize';
 import { clearTerminalProgress } from './utils/terminal-capabilities.js';
 import { isGhostty } from './utils/terminal-detection.js';
@@ -432,18 +433,12 @@ const startInitialization = (resumePickerSessionId?: string) => {
     })
     .catch((error) => {
       logger.error('Failed to initialize Kiro:', error);
-      // Extract the most useful error message from the RPC error
-      let errorMsg = 'Initialization failed';
+      // Extract the most useful error message from the RPC error.
+      // ACP RequestError often carries generic `message: "Internal error"`
+      // with the real cause inside `data.details` (e.g. KAS auth failures),
+      // so use the shared extractor that understands that shape.
+      const errorMsg = extractRpcErrorMessage(error, 'Initialization failed');
       let guidance: string | undefined;
-      if (typeof error === 'object' && error !== null) {
-        if ('data' in error && typeof error.data === 'string' && error.data) {
-          errorMsg = error.data;
-        } else if (error.message && error.message !== 'Internal error') {
-          errorMsg = error.message;
-        }
-      } else if (typeof error === 'string') {
-        errorMsg = error;
-      }
       // Provide guidance for common init errors
       if (errorMsg.includes('active in another process')) {
         guidance =

@@ -1,5 +1,6 @@
 import { createAcpClient } from './acp-client';
 import { logger } from './utils/logger';
+import { extractRpcErrorMessage } from './utils/error-handling';
 import { AgentEventType, type AgentStreamEvent } from './types/agent-events';
 import type {
   SessionClient,
@@ -492,25 +493,7 @@ export class Kiro {
           settle(() => resolve());
         })
         .catch((err) => {
-          let errorMessage = 'Unknown error';
-          if (err instanceof Error) {
-            const errData = (err as any).data;
-            if (typeof errData === 'string' && errData) {
-              errorMessage = errData;
-            } else if (err.message && err.message !== 'Internal error') {
-              errorMessage = err.message;
-            } else {
-              errorMessage = err.message || 'Unknown error';
-            }
-          } else if (typeof err === 'object' && err !== null) {
-            if ('data' in err && typeof err.data === 'string' && err.data) {
-              errorMessage = err.data;
-            } else if ('message' in err && typeof err.message === 'string') {
-              errorMessage = err.message;
-            }
-          } else if (typeof err === 'string') {
-            errorMessage = err;
-          }
+          const errorMessage = extractRpcErrorMessage(err);
           logger.error('[stream] prompt failed:', errorMessage);
           settle(() => reject(new Error(errorMessage)));
         });

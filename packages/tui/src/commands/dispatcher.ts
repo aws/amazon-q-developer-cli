@@ -12,6 +12,7 @@ import type { SlashCommand } from '../stores/app-store.js';
 import type { TuiCommand, CommandOption } from '../types/commands.js';
 import { runEffect } from './effects.js';
 import { formatRelativeTime } from '../utils/sessions.js';
+import { extractRpcErrorMessage } from '../utils/error-handling.js';
 
 /**
  * Dispatch a command through the standard flow.
@@ -95,7 +96,7 @@ export async function dispatch(
         args: args ? { value: args } : {},
       } as TuiCommand);
     } catch (error) {
-      const message = error instanceof Error ? error.message : 'Command failed';
+      const message = extractRpcErrorMessage(error, 'Command failed');
       ctx.setLoadingMessage(null);
       ctx.showAlert(message, 'error');
       return;
