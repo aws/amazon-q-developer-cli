@@ -786,4 +786,225 @@ describe('KasAcpClient', () => {
     expect(result.sessions.length).toBe(1);
     expect(result.sessions[0]!.sessionId).toBe('s1');
   });
+
+  // ── /model command ──
+
+  /**
+   * Seed a newSession response that mirrors what KAS actually returns
+   * for an agent with a ModelConfigProvider: a SessionConfigOption list
+   * containing a `category: 'model'` entry with currentValue + options.
+   */
+  function seedSessionWithModels(opts: {
+    currentValue: string;
+    models: Array<{ value: string; name: string; description?: string }>;
+  }): void {
+    mockKiroNewSession.mockResolvedValueOnce({
+      sessionId: 'kas-session-models',
+      models: null,
+      modes: null,
+      configOptions: [
+        {
+          type: 'select',
+          id: 'model',
+          name: 'Model',
+          category: 'model',
+          currentValue: opts.currentValue,
+          options: opts.models,
+        },
+      ],
+    } as any);
+  }
+
+  it('newSession extracts currentModel from configOptions (KAS shape)', async () => {
+    seedSessionWithModels({
+      currentValue: 'claude-4',
+      models: [
+        { value: 'claude-4', name: 'Claude 4' },
+        { value: 'gpt-5', name: 'GPT-5' },
+      ],
+    });
+    const client = new KasAcpClient();
+    const result = await client.newSession();
+    expect(result.currentModel).toEqual({ id: 'claude-4', name: 'Claude 4' });
+  });
+
+  it('getCommandOptions("/model") returns cached options from configOptions', async () => {
+    seedSessionWithModels({
+      currentValue: 'claude-4',
+      models: [
+        { value: 'claude-4', name: 'Claude 4', description: 'Best overall' },
+        { value: 'gpt-5', name: 'GPT-5' },
+      ],
+    });
+    const client = new KasAcpClient();
+    await client.newSession();
+
+    const result = await client.getCommandOptions('/model', '');
+    expect(result.options.length).toBe(2);
+    expect(result.options[0]).toEqual({
+      value: 'claude-4',
+      label: 'Claude 4',
+      description: '[active] Best overall',
+    });
+    expect(result.options[1]).toEqual({
+      value: 'gpt-5',
+      label: 'GPT-5',
+      description: '',
+    });
+  });
+
+  it('getCommandOptions("/model") returns empty when no models configured', async () => {
+    // Default mock returns no configOptions → no model cache
+    const client = new KasAcpClient();
+    await client.newSession();
+    const result = await client.getCommandOptions('/model', '');
+    expect(result.options).toEqual([]);
+  });
+
+  it('executeCommand("model") switches via setSessionConfigOption and refreshes cache', async () => {
+    seedSessionWithModels({
+      currentValue: 'claude-4',
+      models: [
+        { value: 'claude-4', name: 'Claude 4' },
+        { value: 'gpt-5', name: 'GPT-5' },
+      ],
+    });
+    const client = new KasAcpClient();
+    await client.newSession();
+
+    // KAS returns the full configOptions state reflecting the switch
+    mockKiroSetSessionConfigOption.mockResolvedValueOnce({
+      configOptions: [
+        {
+          type: 'select',
+          id: 'model',
+          name: 'Model',
+          category: 'model',
+          currentValue: 'gpt-5',
+          options: [
+            { value: 'claude-4', name: 'Claude 4' },
+            { value: 'gpt-5', name: 'GPT-5' },
+          ],
+        },
+      ],
+    } as any);
+
+    mockKiroSetSessionConfigOption.mockClear();
+    const result = await client.executeCommand({
+      command: 'model',
+      args: { value: 'gpt-5' },
+    } as any);
+
+    expect(mockKiroSetSessionConfigOption).toHaveBeenCalledWith({
+      sessionId: 'kas-session-models',
+      configId: 'model',
+      value: 'gpt-5',
+    });
+    expect(result.success).toBe(true);
+    expect(result.message).toBe('Switched to GPT-5');
+    expect(result.data).toEqual({ model: { id: 'gpt-5', name: 'GPT-5' } });
+
+    // Cache should now mark gpt-5 as active
+    const options = await client.getCommandOptions('/model', '');
+    const activeEntry = options.options.find((o: any) =>
+      o.description?.startsWith('[active]')
+    );
+    expect(activeEntry?.value).toBe('gpt-5');
+  });
+
+  it('executeCommand("model") without a value returns usage error', async () => {
+    seedSessionWithModels({
+      currentValue: 'claude-4',
+      models: [{ value: 'claude-4', name: 'Claude 4' }],
+    });
+    const client = new KasAcpClient();
+    await client.newSession();
+
+    const result = await client.executeCommand({ command: 'model' } as any);
+    expect(result.success).toBe(false);
+    expect(result.message).toContain('Usage');
+  });
+
+  it('executeCommand("model") without a value and no models returns "No models available"', async () => {
+    const client = new KasAcpClient();
+    await client.newSession();
+    const result = await client.executeCommand({ command: 'model' } as any);
+    expect(result.success).toBe(false);
+    expect(result.message).toBe('No models available');
+  });
+
+  it('executeCommand("model") returns error when KAS rejects to a different value', async () => {
+    seedSessionWithModels({
+      currentValue: 'claude-4',
+      models: [
+        { value: 'claude-4', name: 'Claude 4' },
+        { value: 'gpt-5', name: 'GPT-5' },
+      ],
+    });
+    const client = new KasAcpClient();
+    await client.newSession();
+
+    // Simulate KAS ignoring an unknown id and leaving the selection unchanged
+    mockKiroSetSessionConfigOption.mockResolvedValueOnce({
+      configOptions: [
+        {
+          type: 'select',
+          id: 'model',
+          name: 'Model',
+          category: 'model',
+          currentValue: 'claude-4',
+          options: [
+            { value: 'claude-4', name: 'Claude 4' },
+            { value: 'gpt-5', name: 'GPT-5' },
+          ],
+        },
+      ],
+    } as any);
+
+    const result = await client.executeCommand({
+      command: 'model',
+      args: { value: 'nonexistent' },
+    } as any);
+    expect(result.success).toBe(false);
+    expect(result.message).toContain("'nonexistent' not available");
+  });
+
+  it('config_option_update session notification refreshes the model cache', async () => {
+    seedSessionWithModels({
+      currentValue: 'claude-4',
+      models: [
+        { value: 'claude-4', name: 'Claude 4' },
+        { value: 'gpt-5', name: 'GPT-5' },
+      ],
+    });
+    const client = new KasAcpClient();
+    await client.newSession();
+
+    // KAS autonomously switches models (e.g. rate-limit fallback)
+    await capturedSessionUpdateHandler({
+      sessionId: 'kas-session-models',
+      update: {
+        sessionUpdate: 'config_option_update',
+        configOptions: [
+          {
+            type: 'select',
+            id: 'model',
+            name: 'Model',
+            category: 'model',
+            currentValue: 'gpt-5',
+            options: [
+              { value: 'claude-4', name: 'Claude 4' },
+              { value: 'gpt-5', name: 'GPT-5' },
+            ],
+          },
+        ],
+      },
+    });
+
+    const options = await client.getCommandOptions('/model', '');
+    const activeEntry = options.options.find((o: any) =>
+      o.description?.startsWith('[active]')
+    );
+    expect(activeEntry?.value).toBe('gpt-5');
+  });
 });

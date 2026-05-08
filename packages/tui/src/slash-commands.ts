@@ -43,4 +43,18 @@ export const SLASH_COMMANDS: SlashCommand[] = [
     // No required extension methods: composed from ACP-standard session/new.
     requiredMethods: [],
   },
+  {
+    name: '/model',
+    description: 'List or switch models',
+    // Composed from ACP-standard session/set_config_option with
+    // configOptions[category='model']. No extension method required;
+    // the option list itself may still be empty if KAS has no
+    // ModelConfigProvider registered — in that case the dispatcher's
+    // selection flow will surface "No options available".
+    meta: {
+      inputType: 'selection',
+      hint: '',
+    },
+    requiredMethods: [],
+  },
 ];

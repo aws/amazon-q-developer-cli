@@ -195,6 +195,67 @@ function extractModel(
   return m ? { id: m.modelId, name: m.name } : undefined;
 }
 
+// ─── KAS model config extraction (ACP Session Config Options) ────────
+//
+// KAS exposes model selection through ACP's standard Session Config
+// Options API, not through the (Rust-backend-specific) `models` field.
+// The model option appears as:
+//   { type: 'select', id: 'model', category: 'model',
+//     currentValue: <id>, options: [{value, name, description?}, ...] }
+//
+// The shape of a flat SessionConfigSelectOption — matches ACP SDK 0.19.2.
+interface ModelOption {
+  value: string;
+  name: string;
+  description?: string;
+}
+
+/** Find the `category: 'model'` entry in a KAS configOptions array. */
+function findModelConfigOption(
+  configOptions: unknown
+): { currentValue?: string; options: ModelOption[] } | undefined {
+  if (!Array.isArray(configOptions)) return undefined;
+  for (const opt of configOptions as Array<Record<string, unknown>>) {
+    if (opt.category !== 'model' || opt.type !== 'select') continue;
+    // `options` may be flat (SessionConfigSelectOption[]) or grouped
+    // (SessionConfigSelectGroup[]). KAS currently emits flat; we only
+    // support flat here. Grouped options simply yield an empty list,
+    // which surfaces as "No options available" in the TUI.
+    const raw = Array.isArray(opt.options) ? opt.options : [];
+    const options = raw
+      .filter((o: any): o is Record<string, unknown> => {
+        return (
+          typeof o === 'object' &&
+          o !== null &&
+          typeof (o as any).value === 'string' &&
+          typeof (o as any).name === 'string'
+        );
+      })
+      .map((o: any) => ({
+        value: o.value as string,
+        name: o.name as string,
+        description:
+          typeof o.description === 'string' ? o.description : undefined,
+      }));
+    return {
+      currentValue:
+        typeof opt.currentValue === 'string' ? opt.currentValue : undefined,
+      options,
+    };
+  }
+  return undefined;
+}
+
+/** Extract the currently selected model as `{id, name}` from configOptions. */
+function extractModelFromConfigOptions(
+  configOptions: unknown
+): { id: string; name: string } | undefined {
+  const modelOpt = findModelConfigOption(configOptions);
+  if (!modelOpt?.currentValue) return undefined;
+  const match = modelOpt.options.find((o) => o.value === modelOpt.currentValue);
+  return match ? { id: match.value, name: match.name } : undefined;
+}
+
 // ─── Base class ──────────────────────────────────────────────────────
 
 abstract class BaseAcpClient implements SessionClient {
@@ -1110,6 +1171,21 @@ export class KasAcpClient extends BaseAcpClient {
     };
   }
 
+  /**
+   * Cached model options from the most recent session/new, session/load,
+   * or session/set_config_option response. Populated from the `model`
+   * category entry in the ACP Session Config Options list.
+   *
+   * Used by:
+   *   - getCommandOptions('/model') — powers the selection menu
+   *   - executeCommand('model') — validates the switch + resolves display name
+   *
+   * Empty when the KAS agent has no ModelConfigProvider registered.
+   */
+  private modelOptions: ModelOption[] = [];
+  /** ID of the currently selected model, or undefined if no model config. */
+  private currentModelId?: string;
+
   private wireSessionListeners(sessionId: string): void {
     this.sessionDisposables.forEach((d) => d.dispose());
     this.sessionDisposables = [
@@ -1123,6 +1199,29 @@ export class KasAcpClient extends BaseAcpClient {
             ...this.modesState,
             currentModeId: (update as { currentModeId: string }).currentModeId,
           };
+        }
+        // Intercept config_option_update (KAS-specific) to keep the
+        // local model cache fresh without a round-trip. The agent may
+        // push these notifications when it autonomously changes a
+        // config option (e.g. fallback to a different model after
+        // rate limits) or mirrors a client-initiated change.
+        //
+        // We only refresh the cache here — propagation of the new
+        // current model to the app store happens synchronously
+        // through the executeCommand result flow for user-initiated
+        // switches (see effect handler `updateModel`). Autonomous
+        // agent-side changes will be reflected in the /model menu
+        // the next time the user opens it; we intentionally skip
+        // UI propagation from this path to avoid re-using the
+        // AgentSwitched event channel, which would clobber
+        // currentAgent on the store.
+        if (
+          (update as { sessionUpdate?: string }).sessionUpdate ===
+          'config_option_update'
+        ) {
+          this.refreshModelCache(
+            (update as { configOptions?: unknown }).configOptions
+          );
         }
         const event = this.convertAcpUpdateToEvent(update);
         if (event) this.broadcastStreamEvent(event);
@@ -1219,9 +1318,14 @@ export class KasAcpClient extends BaseAcpClient {
       }
     }
 
+    this.refreshModelCache((r as { configOptions?: unknown }).configOptions);
+
     return {
       sessionId: sid,
-      currentModel: extractModel(r.models),
+      currentModel:
+        extractModelFromConfigOptions(
+          (r as { configOptions?: unknown }).configOptions
+        ) ?? extractModel(r.models),
       // TODO: Remove cast once @kiro/client adds `modes` to NewSessionResponse
       currentAgent: extractCurrentAgent(
         (r as { modes?: Parameters<typeof extractCurrentAgent>[0] }).modes
@@ -1248,10 +1352,14 @@ export class KasAcpClient extends BaseAcpClient {
     );
 
     this.captureModes(r as { modes?: CachedModesState | null | undefined });
+    this.refreshModelCache((r as { configOptions?: unknown }).configOptions);
 
     return {
       sessionId,
-      currentModel: extractModel(r.models),
+      currentModel:
+        extractModelFromConfigOptions(
+          (r as { configOptions?: unknown }).configOptions
+        ) ?? extractModel(r.models),
       // TODO: Remove cast once @kiro/client adds `modes` to LoadSessionResponse
       currentAgent: extractCurrentAgent(
         (r as { modes?: Parameters<typeof extractCurrentAgent>[0] }).modes
@@ -1353,6 +1461,27 @@ export class KasAcpClient extends BaseAcpClient {
           message: `/chat ${value || 'save/load'} is not yet supported in KAS mode`,
         };
       }
+      case 'model': {
+        const args = (command as Record<string, unknown>).args as
+          | Record<string, string>
+          | undefined;
+        const modelId = args?.value ?? '';
+        if (!modelId) {
+          // Bare `/model` invocation. The dispatcher normally fetches
+          // options via getCommandOptions for selection-type commands,
+          // so this branch fires only when the user typed `/model`
+          // directly as a command with no arg (unlikely) — surface a
+          // helpful hint rather than a generic failure.
+          return {
+            success: false,
+            message:
+              this.modelOptions.length === 0
+                ? 'No models available'
+                : 'Usage: /model <model-id>',
+          };
+        }
+        return this.executeModelSwap(modelId);
+      }
       default:
         return {
           success: false,
@@ -1421,6 +1550,93 @@ export class KasAcpClient extends BaseAcpClient {
         message: e instanceof Error ? e.message : 'Failed to switch agent',
       };
     }
+  }
+
+  /**
+   * /model switch — uses the ACP-standard `session/set_config_option`
+   * with `configId: 'model'`. KAS returns the full configOptions state
+   * in the response, which we use to refresh the local model cache and
+   * resolve the new model's display name.
+   *
+   * Session state (history, tools, MCP servers, agent profile) is
+   * preserved across model switches — KAS simply updates the
+   * `modelId` on its in-memory session and picks it up on the next
+   * prompt turn.
+   */
+  private async executeModelSwap(modelId: string): Promise<CommandResult> {
+    if (!this.sessionId)
+      return { success: false, message: 'No active session' };
+    try {
+      const response = await this.kiroClient.setSessionConfigOption({
+        sessionId: this.sessionId,
+        configId: 'model',
+        value: modelId,
+      });
+      const configOptions = (response as { configOptions?: unknown })
+        .configOptions;
+      this.refreshModelCache(configOptions);
+      const model = extractModelFromConfigOptions(configOptions);
+      // Validate the switch landed on the requested id. If KAS rejected
+      // the value but still returned a configOptions state, surface a
+      // clear error rather than silently reporting success.
+      if (!model || model.id !== modelId) {
+        return {
+          success: false,
+          message: `Model '${modelId}' not available`,
+        };
+      }
+      return {
+        success: true,
+        message: `Switched to ${model.name}`,
+        data: { model: { id: model.id, name: model.name } },
+      };
+    } catch (e) {
+      return {
+        success: false,
+        message: e instanceof Error ? e.message : 'Failed to switch model',
+      };
+    }
+  }
+
+  /**
+   * Refresh the cached model options + current model id from a KAS
+   * configOptions array (returned by session/new, session/load, and
+   * session/set_config_option).
+   *
+   * If the array contains no `category: 'model'` entry (e.g. KAS has
+   * no ModelConfigProvider registered), the cache is cleared so that
+   * `/model` surfaces "No options available" rather than stale data.
+   */
+  private refreshModelCache(configOptions: unknown): void {
+    const modelOpt = findModelConfigOption(configOptions);
+    if (!modelOpt) {
+      // Visibility into the "why is /model empty?" case — logs the
+      // ids/categories present so developers can see that KAS returned
+      // e.g. only [mode, autopilot, contentCollection] with no model
+      // entry (typical for a standalone KAS without a
+      // ModelConfigProvider registered by the host IDE).
+      const present = Array.isArray(configOptions)
+        ? (configOptions as Array<Record<string, unknown>>).map((o) => ({
+            id: o.id,
+            category: o.category,
+          }))
+        : configOptions;
+      logger.debug(
+        '[kas] refreshModelCache: no `category: "model"` entry. configOptions:',
+        present
+      );
+      this.modelOptions = [];
+      this.currentModelId = undefined;
+      return;
+    }
+    logger.debug(
+      '[kas] refreshModelCache: cached',
+      modelOpt.options.length,
+      'models, current:',
+      modelOpt.currentValue
+    );
+    this.modelOptions = modelOpt.options;
+    this.currentModelId = modelOpt.currentValue;
   }
 
   /**
@@ -1511,6 +1727,29 @@ export class KasAcpClient extends BaseAcpClient {
                 ? `[active]${descBase ? ` ${descBase}` : ''}`
                 : descBase,
               ...(source ? { group: capitalize(source) } : {}),
+            };
+          }),
+        };
+      }
+      case 'model': {
+        // Served from the local cache populated by session/new,
+        // session/load, and session/set_config_option responses.
+        // KAS returns the full configOptions state on every
+        // mutation, so the cache stays in sync without extra
+        // round-trips.
+        if (this.modelOptions.length === 0) return { options: [] };
+        return {
+          options: this.modelOptions.map((m) => {
+            const isActive = m.value === this.currentModelId;
+            const desc = m.description ?? '';
+            return {
+              value: m.value,
+              label: m.name,
+              description: isActive
+                ? desc
+                  ? `[active] ${desc}`
+                  : '[active]'
+                : desc,
             };
           }),
         };
