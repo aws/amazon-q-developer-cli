@@ -3,7 +3,7 @@ use std::path::{
     PathBuf,
 };
 use std::process::ExitCode;
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 use eyre::{
     Context as _,
@@ -224,7 +224,10 @@ pub async fn launch_v2(os: &Os, agent_engine: AgentEngine, mode: Option<AgentMod
             .unwrap_or(true);
     cmd.env("KIRO_TELEMETRY_ENABLED", telemetry_enabled.to_string());
 
-    if let Ok(output) = os.client.get_usage_limits().await {
+    if let Ok(Ok(output)) = tokio::time::timeout(
+        Duration::from_secs(3),
+        os.client.get_usage_limits(),
+    ).await {
         if let Some(info) = output.user_info() {
             cmd.env("KIRO_USER_ID", info.user_id());
         }
