@@ -12,9 +12,11 @@
 #![allow(clippy::derive_partial_eq_without_eq)]
 #![allow(clippy::result_large_err)]
 #![allow(clippy::unnecessary_map_on_constructor)]
+#![allow(clippy::useless_conversion)]
 #![allow(clippy::deprecated_semver)]
 #![allow(rustdoc::bare_urls)]
 #![allow(rustdoc::redundant_explicit_links)]
+#![allow(rustdoc::broken_intra_doc_links)]
 #![allow(rustdoc::invalid_html_tags)]
 #![forbid(unsafe_code)]
 #![warn(missing_docs)]
@@ -94,6 +96,8 @@ pub mod primitives;
 pub mod types;
 
 mod event_receiver;
+
+mod observability_feature;
 
 pub(crate) mod protocol_serde;
 

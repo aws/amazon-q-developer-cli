@@ -3,6 +3,7 @@ pub use crate::types::_access_denied_exception_reason::AccessDeniedExceptionReas
 pub use crate::types::_additional_content_entry::AdditionalContentEntry;
 pub use crate::types::_agent_task_type::AgentTaskType;
 pub use crate::types::_agentic_chat_event_status::AgenticChatEventStatus;
+pub use crate::types::_api_keys::ApiKeys;
 pub use crate::types::_app_studio_state::AppStudioState;
 pub use crate::types::_application_properties::ApplicationProperties;
 pub use crate::types::_artifact_type::ArtifactType;
@@ -113,6 +114,7 @@ pub use crate::types::_memory_entry_metadata::MemoryEntryMetadata;
 pub use crate::types::_memory_status::MemoryStatus;
 pub use crate::types::_metric_data::MetricData;
 pub use crate::types::_model::Model;
+pub use crate::types::_model_configuration::ModelConfiguration;
 pub use crate::types::_model_provider::ModelProvider;
 pub use crate::types::_notifications_feature::NotificationsFeature;
 pub use crate::types::_oidc_claim_keys::OidcClaimKeys;
@@ -251,6 +253,8 @@ mod _additional_content_entry;
 mod _agent_task_type;
 
 mod _agentic_chat_event_status;
+
+mod _api_keys;
 
 mod _app_studio_state;
 
@@ -471,6 +475,8 @@ mod _memory_status;
 mod _metric_data;
 
 mod _model;
+
+mod _model_configuration;
 
 mod _model_provider;
 

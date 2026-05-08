@@ -85,6 +85,8 @@ pub(crate) mod shape_code_reference_event;
 
 pub(crate) mod shape_context_usage_event;
 
+pub(crate) mod shape_document_citation_event;
+
 pub(crate) mod shape_followup_prompt_event;
 
 pub(crate) mod shape_intents_event;
@@ -119,6 +121,10 @@ pub(crate) mod shape_client_cache_config;
 
 pub(crate) mod shape_document_block;
 
+pub(crate) mod shape_document_citation_location;
+
+pub(crate) mod shape_document_citation_source_contents;
+
 pub(crate) mod shape_followup_prompt;
 
 pub(crate) mod shape_image_block;
@@ -152,6 +158,14 @@ pub(crate) mod shape_app_studio_state;
 pub(crate) mod shape_console_state;
 
 pub(crate) mod shape_diagnostic;
+
+pub(crate) mod shape_document_citation_search_result_span;
+
+pub(crate) mod shape_document_citation_source_content;
+
+pub(crate) mod shape_document_citation_span;
+
+pub(crate) mod shape_document_citation_web_location;
 
 pub(crate) mod shape_document_source;
 

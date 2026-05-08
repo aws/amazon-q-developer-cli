@@ -156,15 +156,17 @@ pub fn ser_list_user_memory_entries_input(
 }
 
 pub(crate) fn de_list_user_memory_entries(
-    value: &[u8],
+    _value: &[u8],
     mut builder: crate::operation::list_user_memory_entries::builders::ListUserMemoryEntriesOutputBuilder,
 ) -> ::std::result::Result<
     crate::operation::list_user_memory_entries::builders::ListUserMemoryEntriesOutputBuilder,
     ::aws_smithy_json::deserialize::error::DeserializeError,
 > {
     let mut tokens_owned =
-        ::aws_smithy_json::deserialize::json_token_iter(crate::protocol_serde::or_empty_doc(value)).peekable();
+        ::aws_smithy_json::deserialize::json_token_iter(crate::protocol_serde::or_empty_doc(_value)).peekable();
     let tokens = &mut tokens_owned;
+    #[allow(unused_variables)]
+    let depth = 0u32;
     ::aws_smithy_json::deserialize::token::expect_start_object(tokens.next())?;
     loop {
         match tokens.next().transpose()? {
@@ -172,7 +174,11 @@ pub(crate) fn de_list_user_memory_entries(
             Some(::aws_smithy_json::deserialize::Token::ObjectKey { key, .. }) => match key.to_unescaped()?.as_ref() {
                 "memoryEntries" => {
                     builder = builder.set_memory_entries(
-                        crate::protocol_serde::shape_memory_entry_list::de_memory_entry_list(tokens)?,
+                        crate::protocol_serde::shape_memory_entry_list::de_memory_entry_list(
+                            tokens,
+                            _value,
+                            depth + 1,
+                        )?,
                     );
                 },
                 "nextToken" => {

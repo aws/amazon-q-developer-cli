@@ -35,6 +35,8 @@ pub fn ser_transformation_project_state(
 
 pub(crate) fn de_transformation_project_state<'a, I>(
     tokens: &mut ::std::iter::Peekable<I>,
+    _value: &'a [u8],
+    depth: u32,
 ) -> ::std::result::Result<
     Option<crate::types::TransformationProjectState>,
     ::aws_smithy_json::deserialize::error::DeserializeError,
@@ -47,6 +49,11 @@ where
         >,
     >,
 {
+    if depth >= 128u32 {
+        return Err(::aws_smithy_json::deserialize::error::DeserializeError::custom(
+            "maximum nesting depth exceeded",
+        ));
+    }
     match tokens.next().transpose()? {
         Some(::aws_smithy_json::deserialize::Token::ValueNull { .. }) => Ok(None),
         Some(::aws_smithy_json::deserialize::Token::StartObject { .. }) => {
@@ -69,17 +76,21 @@ where
                             },
                             "runtimeEnv" => {
                                 builder = builder.set_runtime_env(
-                                crate::protocol_serde::shape_transformation_runtime_env::de_transformation_runtime_env(tokens)?,
+                                crate::protocol_serde::shape_transformation_runtime_env::de_transformation_runtime_env(tokens, _value, depth + 1)?,
                             );
                             },
                             "platformConfig" => {
                                 builder = builder.set_platform_config(
-                                crate::protocol_serde::shape_transformation_platform_config::de_transformation_platform_config(tokens)?,
+                                crate::protocol_serde::shape_transformation_platform_config::de_transformation_platform_config(
+                                    tokens,
+                                    _value,
+                                    depth + 1,
+                                )?,
                             );
                             },
                             "projectArtifact" => {
                                 builder = builder.set_project_artifact(
-                                    crate::protocol_serde::shape_transformation_project_artifact_descriptor::de_transformation_project_artifact_descriptor(tokens)?
+                                    crate::protocol_serde::shape_transformation_project_artifact_descriptor::de_transformation_project_artifact_descriptor(tokens, _value, depth + 1)?
                                 );
                             },
                             _ => ::aws_smithy_json::deserialize::token::skip_value(tokens)?,

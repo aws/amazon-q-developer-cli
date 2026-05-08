@@ -143,15 +143,17 @@ pub fn ser_allow_vended_log_delivery_for_resource_input(
 }
 
 pub(crate) fn de_allow_vended_log_delivery_for_resource(
-    value: &[u8],
+    _value: &[u8],
     mut builder: crate::operation::allow_vended_log_delivery_for_resource::builders::AllowVendedLogDeliveryForResourceOutputBuilder,
 ) -> ::std::result::Result<
     crate::operation::allow_vended_log_delivery_for_resource::builders::AllowVendedLogDeliveryForResourceOutputBuilder,
     ::aws_smithy_json::deserialize::error::DeserializeError,
 > {
     let mut tokens_owned =
-        ::aws_smithy_json::deserialize::json_token_iter(crate::protocol_serde::or_empty_doc(value)).peekable();
+        ::aws_smithy_json::deserialize::json_token_iter(crate::protocol_serde::or_empty_doc(_value)).peekable();
     let tokens = &mut tokens_owned;
+    #[allow(unused_variables)]
+    let depth = 0u32;
     ::aws_smithy_json::deserialize::token::expect_start_object(tokens.next())?;
     loop {
         match tokens.next().transpose()? {

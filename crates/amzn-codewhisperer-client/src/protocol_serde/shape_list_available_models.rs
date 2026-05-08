@@ -134,25 +134,35 @@ pub fn ser_list_available_models_input(
 }
 
 pub(crate) fn de_list_available_models(
-    value: &[u8],
+    _value: &[u8],
     mut builder: crate::operation::list_available_models::builders::ListAvailableModelsOutputBuilder,
 ) -> ::std::result::Result<
     crate::operation::list_available_models::builders::ListAvailableModelsOutputBuilder,
     ::aws_smithy_json::deserialize::error::DeserializeError,
 > {
     let mut tokens_owned =
-        ::aws_smithy_json::deserialize::json_token_iter(crate::protocol_serde::or_empty_doc(value)).peekable();
+        ::aws_smithy_json::deserialize::json_token_iter(crate::protocol_serde::or_empty_doc(_value)).peekable();
     let tokens = &mut tokens_owned;
+    #[allow(unused_variables)]
+    let depth = 0u32;
     ::aws_smithy_json::deserialize::token::expect_start_object(tokens.next())?;
     loop {
         match tokens.next().transpose()? {
             Some(::aws_smithy_json::deserialize::Token::EndObject { .. }) => break,
             Some(::aws_smithy_json::deserialize::Token::ObjectKey { key, .. }) => match key.to_unescaped()?.as_ref() {
                 "models" => {
-                    builder = builder.set_models(crate::protocol_serde::shape_models::de_models(tokens)?);
+                    builder = builder.set_models(crate::protocol_serde::shape_models::de_models(
+                        tokens,
+                        _value,
+                        depth + 1,
+                    )?);
                 },
                 "defaultModel" => {
-                    builder = builder.set_default_model(crate::protocol_serde::shape_model::de_model(tokens)?);
+                    builder = builder.set_default_model(crate::protocol_serde::shape_model::de_model(
+                        tokens,
+                        _value,
+                        depth + 1,
+                    )?);
                 },
                 "nextToken" => {
                     builder = builder.set_next_token(

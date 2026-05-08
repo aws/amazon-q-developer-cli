@@ -24,5 +24,8 @@ pub fn ser_tool_result(
     if let Some(var_4) = &input.status {
         object.key("status").string(var_4.as_str());
     }
+    if let Some(var_5) = &input.tool_name {
+        object.key("toolName").string(var_5.as_str());
+    }
     Ok(())
 }

@@ -111,7 +111,7 @@ mod create_profile;
 /// ```ignore
 /// # async fn wrapper() -> ::std::result::Result<(), amzn_consolas_client::Error> {
 /// # let client: amzn_consolas_client::Client = unimplemented!();
-/// use ::http::header::{HeaderName, HeaderValue};
+/// use ::http_1x::header::{HeaderName, HeaderValue};
 ///
 /// let result = client.allow_vended_log_delivery_for_resource()
 ///     .customize()

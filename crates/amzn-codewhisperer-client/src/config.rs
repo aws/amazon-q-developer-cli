@@ -526,6 +526,28 @@ impl Builder {
         self
     }
 
+    /// Enable no authentication regardless of what authentication mechanisms operations support
+    ///
+    /// This adds [NoAuthScheme](aws_smithy_runtime::client::auth::no_auth::NoAuthScheme) as a
+    /// fallback and the auth scheme resolver will use it when no other auth schemes are
+    /// applicable.
+    pub fn allow_no_auth(mut self) -> Self {
+        self.set_allow_no_auth();
+        self
+    }
+
+    /// Enable no authentication regardless of what authentication mechanisms operations support
+    ///
+    /// This adds [NoAuthScheme](aws_smithy_runtime::client::auth::no_auth::NoAuthScheme) as a
+    /// fallback and the auth scheme resolver will use it when no other auth schemes are
+    /// applicable.
+    pub fn set_allow_no_auth(&mut self) -> &mut Self {
+        self.push_runtime_plugin(
+            ::aws_smithy_runtime::client::auth::no_auth::NoAuthRuntimePluginV2::new().into_shared(),
+        );
+        self
+    }
+
     /// Set the auth scheme preference for an auth scheme resolver
     /// (typically the default auth scheme resolver).
     ///
@@ -1339,9 +1361,7 @@ impl Builder {
     /// # Examples
     ///
     /// Set the behavior major version to `latest`. This is equivalent to enabling the
-    /// `behavior-version-latest` cargo feature.
-    ///
-    /// ```no_run
+    /// `behavior-version-latest` cargo feature. ```no_run
     /// use amzn_codewhisperer_client::config::BehaviorVersion;
     ///
     /// let config = amzn_codewhisperer_client::Config::builder()
@@ -1350,7 +1370,7 @@ impl Builder {
     ///     .build();
     /// let client = amzn_codewhisperer_client::Client::from_conf(config);
     /// ```
-    ///
+    /// 
     /// Customizing behavior major version:
     /// ```no_run
     /// use amzn_codewhisperer_client::config::BehaviorVersion;
@@ -1376,9 +1396,7 @@ impl Builder {
     /// # Examples
     ///
     /// Set the behavior major version to `latest`. This is equivalent to enabling the
-    /// `behavior-version-latest` cargo feature.
-    ///
-    /// ```no_run
+    /// `behavior-version-latest` cargo feature. ```no_run
     /// use amzn_codewhisperer_client::config::BehaviorVersion;
     ///
     /// let config = amzn_codewhisperer_client::Config::builder()
@@ -1387,7 +1405,7 @@ impl Builder {
     ///     .build();
     /// let client = amzn_codewhisperer_client::Client::from_conf(config);
     /// ```
-    ///
+    /// 
     /// Customizing behavior major version:
     /// ```no_run
     /// use amzn_codewhisperer_client::config::BehaviorVersion;
@@ -1533,6 +1551,8 @@ impl ServiceRuntimePlugin {
         runtime_components.push_interceptor(::aws_runtime::user_agent::UserAgentInterceptor::new());
         runtime_components.push_interceptor(::aws_runtime::invocation_id::InvocationIdInterceptor::new());
         runtime_components.push_interceptor(::aws_runtime::recursion_detection::RecursionDetectionInterceptor::new());
+        runtime_components.push_interceptor(crate::config::endpoint::EndpointOverrideFeatureTrackerInterceptor);
+        runtime_components.push_interceptor(crate::observability_feature::ObservabilityFeatureTrackerInterceptor);
         Self {
             config,
             runtime_components,
@@ -1703,12 +1723,14 @@ pub(crate) fn base_client_runtime_plugins(
 
     let scope = "amzn-codewhisperer-client";
 
-    let mut plugins = ::aws_smithy_runtime_api::client::runtime_plugin::RuntimePlugins::new()
+    #[allow(deprecated)]
+                    let mut plugins = ::aws_smithy_runtime_api::client::runtime_plugin::RuntimePlugins::new()
                         // defaults
                         .with_client_plugins(::aws_smithy_runtime::client::defaults::default_plugins(
                             ::aws_smithy_runtime::client::defaults::DefaultPluginParams::new()
                                 .with_retry_partition_name(default_retry_partition)
                                 .with_behavior_version(config.behavior_version.expect("Invalid client configuration: A behavior major version must be set when sending a request or constructing a client. You must set it during client construction or by enabling the `behavior-version-latest` cargo feature."))
+
                         ))
                         // user config
                         .with_client_plugin(

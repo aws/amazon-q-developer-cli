@@ -18,7 +18,7 @@ use aws_smithy_types::error::metadata::{
 
 // currently only used by AwsJson
 #[allow(unused)]
-pub fn is_error<B>(response: &http::Response<B>) -> bool {
+pub fn is_error<B>(response: &http_1x::Response<B>) -> bool {
     !response.status().is_success()
 }
 
@@ -109,7 +109,7 @@ mod test {
     #[test]
     fn error_metadata() {
         let response = HttpResponse::try_from(
-            http::Response::builder()
+            http_1x::Response::builder()
                 .body(SdkBody::from(r#"{ "__type": "FooError", "message": "Go to foo" }"#))
                 .unwrap(),
         )
@@ -182,7 +182,7 @@ mod test {
     #[test]
     fn alternative_error_message_names() {
         let response = HttpResponse::try_from(
-            http::Response::builder()
+            http_1x::Response::builder()
                 .header("x-amzn-errortype", "ResourceNotFoundException")
                 .body(SdkBody::from(
                     r#"{

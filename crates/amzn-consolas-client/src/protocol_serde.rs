@@ -152,6 +152,8 @@ pub(crate) mod shape_identity_center_permissions;
 
 pub(crate) mod shape_identity_source;
 
+pub(crate) mod shape_models;
+
 pub(crate) mod shape_opt_in_features;
 
 pub(crate) mod shape_profile_list;
@@ -172,6 +174,8 @@ pub(crate) mod shape_tag;
 
 pub(crate) mod shape_tag_list;
 
+pub(crate) mod shape_api_keys;
+
 pub(crate) mod shape_autonomous_agents;
 
 pub(crate) mod shape_by_user_analytics;
@@ -187,6 +191,10 @@ pub(crate) mod shape_dashboard_analytics;
 pub(crate) mod shape_external_identity_source;
 
 pub(crate) mod shape_mcp_configuration;
+
+pub(crate) mod shape_model;
+
+pub(crate) mod shape_model_configuration;
 
 pub(crate) mod shape_notifications_feature;
 
@@ -222,7 +230,13 @@ pub(crate) mod shape_oidc_claim_keys;
 
 pub(crate) mod shape_previous_editor_state_metadata;
 
+pub(crate) mod shape_prompt_caching;
+
 pub(crate) mod shape_references;
+
+pub(crate) mod shape_supported_input_types_list;
+
+pub(crate) mod shape_token_limits;
 
 pub(crate) mod shape_application_properties;
 

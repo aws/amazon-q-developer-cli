@@ -662,6 +662,15 @@ pub(crate) fn usage_limit_list_correct_errors(
     builder
 }
 
+pub(crate) fn api_keys_correct_errors(
+    mut builder: crate::types::builders::ApiKeysBuilder,
+) -> crate::types::builders::ApiKeysBuilder {
+    if builder.toggle.is_none() {
+        builder.toggle = "no value was set".parse::<crate::types::OptInFeatureToggle>().ok()
+    }
+    builder
+}
+
 pub(crate) fn autonomous_agents_correct_errors(
     mut builder: crate::types::builders::AutonomousAgentsBuilder,
 ) -> crate::types::builders::AutonomousAgentsBuilder {
@@ -728,6 +737,15 @@ pub(crate) fn edit_correct_errors(
 pub(crate) fn mcp_configuration_correct_errors(
     mut builder: crate::types::builders::McpConfigurationBuilder,
 ) -> crate::types::builders::McpConfigurationBuilder {
+    if builder.toggle.is_none() {
+        builder.toggle = "no value was set".parse::<crate::types::OptInFeatureToggle>().ok()
+    }
+    builder
+}
+
+pub(crate) fn model_configuration_correct_errors(
+    mut builder: crate::types::builders::ModelConfigurationBuilder,
+) -> crate::types::builders::ModelConfigurationBuilder {
     if builder.toggle.is_none() {
         builder.toggle = "no value was set".parse::<crate::types::OptInFeatureToggle>().ok()
     }

@@ -10,6 +10,10 @@ pub struct GenerateAssistantResponseInput {
     pub profile_arn: ::std::option::Option<::std::string::String>,
     #[allow(missing_docs)] // documentation missing in model
     pub agent_mode: ::std::option::Option<::std::string::String>,
+    /// Additional model request fields (e.g. thinking, effort) to pass to the model provider.
+    /// Validated against the model's schema before merging with server defaults; throws
+    /// ValidationException if invalid.
+    pub additional_model_request_fields: ::std::option::Option<::aws_smithy_types::Document>,
 }
 impl GenerateAssistantResponseInput {
     /// Structure to represent the current state of a chat conversation.
@@ -25,6 +29,13 @@ impl GenerateAssistantResponseInput {
     #[allow(missing_docs)] // documentation missing in model
     pub fn agent_mode(&self) -> ::std::option::Option<&str> {
         self.agent_mode.as_deref()
+    }
+
+    /// Additional model request fields (e.g. thinking, effort) to pass to the model provider.
+    /// Validated against the model's schema before merging with server defaults; throws
+    /// ValidationException if invalid.
+    pub fn additional_model_request_fields(&self) -> ::std::option::Option<&::aws_smithy_types::Document> {
+        self.additional_model_request_fields.as_ref()
     }
 }
 impl GenerateAssistantResponseInput {
@@ -43,6 +54,7 @@ pub struct GenerateAssistantResponseInputBuilder {
     pub(crate) conversation_state: ::std::option::Option<crate::types::ConversationState>,
     pub(crate) profile_arn: ::std::option::Option<::std::string::String>,
     pub(crate) agent_mode: ::std::option::Option<::std::string::String>,
+    pub(crate) additional_model_request_fields: ::std::option::Option<::aws_smithy_types::Document>,
 }
 impl GenerateAssistantResponseInputBuilder {
     /// Structure to represent the current state of a chat conversation.
@@ -97,6 +109,32 @@ impl GenerateAssistantResponseInputBuilder {
         &self.agent_mode
     }
 
+    /// Additional model request fields (e.g. thinking, effort) to pass to the model provider.
+    /// Validated against the model's schema before merging with server defaults; throws
+    /// ValidationException if invalid.
+    pub fn additional_model_request_fields(mut self, input: ::aws_smithy_types::Document) -> Self {
+        self.additional_model_request_fields = ::std::option::Option::Some(input);
+        self
+    }
+
+    /// Additional model request fields (e.g. thinking, effort) to pass to the model provider.
+    /// Validated against the model's schema before merging with server defaults; throws
+    /// ValidationException if invalid.
+    pub fn set_additional_model_request_fields(
+        mut self,
+        input: ::std::option::Option<::aws_smithy_types::Document>,
+    ) -> Self {
+        self.additional_model_request_fields = input;
+        self
+    }
+
+    /// Additional model request fields (e.g. thinking, effort) to pass to the model provider.
+    /// Validated against the model's schema before merging with server defaults; throws
+    /// ValidationException if invalid.
+    pub fn get_additional_model_request_fields(&self) -> &::std::option::Option<::aws_smithy_types::Document> {
+        &self.additional_model_request_fields
+    }
+
     /// Consumes the builder and constructs a
     /// [`GenerateAssistantResponseInput`](crate::operation::generate_assistant_response::GenerateAssistantResponseInput).
     pub fn build(
@@ -110,6 +148,7 @@ impl GenerateAssistantResponseInputBuilder {
                 conversation_state: self.conversation_state,
                 profile_arn: self.profile_arn,
                 agent_mode: self.agent_mode,
+                additional_model_request_fields: self.additional_model_request_fields,
             },
         )
     }

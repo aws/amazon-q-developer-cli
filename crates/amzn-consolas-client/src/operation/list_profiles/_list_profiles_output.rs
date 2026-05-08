@@ -7,6 +7,8 @@ pub struct ListProfilesOutput {
     pub profiles: ::std::vec::Vec<crate::types::Profile>,
     #[allow(missing_docs)] // documentation missing in model
     pub next_token: ::std::option::Option<::std::string::String>,
+    /// List of all models available for admins to select from for model governance.
+    pub available_models: ::std::option::Option<::std::vec::Vec<crate::types::Model>>,
     _request_id: Option<String>,
 }
 impl ListProfilesOutput {
@@ -19,6 +21,14 @@ impl ListProfilesOutput {
     #[allow(missing_docs)] // documentation missing in model
     pub fn next_token(&self) -> ::std::option::Option<&str> {
         self.next_token.as_deref()
+    }
+
+    /// List of all models available for admins to select from for model governance.
+    ///
+    /// If no value was sent for this field, a default will be set. If you want to determine if no
+    /// value was sent, use `.available_models.is_none()`.
+    pub fn available_models(&self) -> &[crate::types::Model] {
+        self.available_models.as_deref().unwrap_or_default()
     }
 }
 impl ::aws_types::request_id::RequestId for ListProfilesOutput {
@@ -40,6 +50,7 @@ impl ListProfilesOutput {
 pub struct ListProfilesOutputBuilder {
     pub(crate) profiles: ::std::option::Option<::std::vec::Vec<crate::types::Profile>>,
     pub(crate) next_token: ::std::option::Option<::std::string::String>,
+    pub(crate) available_models: ::std::option::Option<::std::vec::Vec<crate::types::Model>>,
     _request_id: Option<String>,
 }
 impl ListProfilesOutputBuilder {
@@ -81,6 +92,30 @@ impl ListProfilesOutputBuilder {
         &self.next_token
     }
 
+    /// Appends an item to `available_models`.
+    ///
+    /// To override the contents of this collection use
+    /// [`set_available_models`](Self::set_available_models).
+    ///
+    /// List of all models available for admins to select from for model governance.
+    pub fn available_models(mut self, input: crate::types::Model) -> Self {
+        let mut v = self.available_models.unwrap_or_default();
+        v.push(input);
+        self.available_models = ::std::option::Option::Some(v);
+        self
+    }
+
+    /// List of all models available for admins to select from for model governance.
+    pub fn set_available_models(mut self, input: ::std::option::Option<::std::vec::Vec<crate::types::Model>>) -> Self {
+        self.available_models = input;
+        self
+    }
+
+    /// List of all models available for admins to select from for model governance.
+    pub fn get_available_models(&self) -> &::std::option::Option<::std::vec::Vec<crate::types::Model>> {
+        &self.available_models
+    }
+
     pub(crate) fn _request_id(mut self, request_id: impl Into<String>) -> Self {
         self._request_id = Some(request_id.into());
         self
@@ -109,6 +144,7 @@ impl ListProfilesOutputBuilder {
                 )
             })?,
             next_token: self.next_token,
+            available_models: self.available_models,
             _request_id: self._request_id,
         })
     }

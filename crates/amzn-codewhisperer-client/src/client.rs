@@ -114,7 +114,7 @@ mod create_workspace;
 /// ```ignore
 /// # async fn wrapper() -> ::std::result::Result<(), amzn_codewhisperer_client::Error> {
 /// # let client: amzn_codewhisperer_client::Client = unimplemented!();
-/// use ::http::header::{HeaderName, HeaderValue};
+/// use ::http_1x::header::{HeaderName, HeaderValue};
 ///
 /// let result = client.create_artifact_upload_url()
 ///     .customize()

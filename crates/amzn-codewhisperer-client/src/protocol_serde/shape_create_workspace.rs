@@ -166,24 +166,29 @@ pub fn ser_create_workspace_input(
 }
 
 pub(crate) fn de_create_workspace(
-    value: &[u8],
+    _value: &[u8],
     mut builder: crate::operation::create_workspace::builders::CreateWorkspaceOutputBuilder,
 ) -> ::std::result::Result<
     crate::operation::create_workspace::builders::CreateWorkspaceOutputBuilder,
     ::aws_smithy_json::deserialize::error::DeserializeError,
 > {
     let mut tokens_owned =
-        ::aws_smithy_json::deserialize::json_token_iter(crate::protocol_serde::or_empty_doc(value)).peekable();
+        ::aws_smithy_json::deserialize::json_token_iter(crate::protocol_serde::or_empty_doc(_value)).peekable();
     let tokens = &mut tokens_owned;
+    #[allow(unused_variables)]
+    let depth = 0u32;
     ::aws_smithy_json::deserialize::token::expect_start_object(tokens.next())?;
     loop {
         match tokens.next().transpose()? {
             Some(::aws_smithy_json::deserialize::Token::EndObject { .. }) => break,
             Some(::aws_smithy_json::deserialize::Token::ObjectKey { key, .. }) => match key.to_unescaped()?.as_ref() {
                 "workspace" => {
-                    builder = builder.set_workspace(
-                        crate::protocol_serde::shape_workspace_metadata::de_workspace_metadata(tokens)?,
-                    );
+                    builder =
+                        builder.set_workspace(crate::protocol_serde::shape_workspace_metadata::de_workspace_metadata(
+                            tokens,
+                            _value,
+                            depth + 1,
+                        )?);
                 },
                 _ => ::aws_smithy_json::deserialize::token::skip_value(tokens)?,
             },

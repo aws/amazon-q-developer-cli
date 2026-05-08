@@ -203,6 +203,15 @@ pub(crate) fn customization_version_summary_correct_errors(
     builder
 }
 
+pub(crate) fn model_correct_errors(
+    mut builder: crate::types::builders::ModelBuilder,
+) -> crate::types::builders::ModelBuilder {
+    if builder.model_id.is_none() {
+        builder.model_id = Some(Default::default())
+    }
+    builder
+}
+
 pub(crate) fn profile_correct_errors(
     mut builder: crate::types::builders::ProfileBuilder,
 ) -> crate::types::builders::ProfileBuilder {
@@ -245,6 +254,15 @@ pub(crate) fn tag_correct_errors(
     builder
 }
 
+pub(crate) fn prompt_caching_correct_errors(
+    mut builder: crate::types::builders::PromptCachingBuilder,
+) -> crate::types::builders::PromptCachingBuilder {
+    if builder.supports_prompt_caching.is_none() {
+        builder.supports_prompt_caching = Some(Default::default())
+    }
+    builder
+}
+
 pub(crate) fn reference_tracker_configuration_correct_errors(
     mut builder: crate::types::builders::ReferenceTrackerConfigurationBuilder,
 ) -> crate::types::builders::ReferenceTrackerConfigurationBuilder {
@@ -261,6 +279,15 @@ pub(crate) fn resource_policy_correct_errors(
 ) -> crate::types::builders::ResourcePolicyBuilder {
     if builder.effect.is_none() {
         builder.effect = "no value was set".parse::<crate::types::ResourcePolicyEffect>().ok()
+    }
+    builder
+}
+
+pub(crate) fn api_keys_correct_errors(
+    mut builder: crate::types::builders::ApiKeysBuilder,
+) -> crate::types::builders::ApiKeysBuilder {
+    if builder.toggle.is_none() {
+        builder.toggle = "no value was set".parse::<crate::types::OptInFeatureToggle>().ok()
     }
     builder
 }
@@ -313,6 +340,15 @@ pub(crate) fn dashboard_analytics_correct_errors(
 pub(crate) fn mcp_configuration_correct_errors(
     mut builder: crate::types::builders::McpConfigurationBuilder,
 ) -> crate::types::builders::McpConfigurationBuilder {
+    if builder.toggle.is_none() {
+        builder.toggle = "no value was set".parse::<crate::types::OptInFeatureToggle>().ok()
+    }
+    builder
+}
+
+pub(crate) fn model_configuration_correct_errors(
+    mut builder: crate::types::builders::ModelConfigurationBuilder,
+) -> crate::types::builders::ModelConfigurationBuilder {
     if builder.toggle.is_none() {
         builder.toggle = "no value was set".parse::<crate::types::OptInFeatureToggle>().ok()
     }

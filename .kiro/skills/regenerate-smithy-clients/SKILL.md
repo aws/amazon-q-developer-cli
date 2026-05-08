@@ -28,13 +28,7 @@ Do not proceed until all prerequisites are confirmed.
 
 ## Steps
 
-### 1. Create a branch
-
-```bash
-git checkout -b update-smithy-clients
-```
-
-### 2. Look up the latest version
+### 1. Look up the latest version
 
 Fetch the releases page to find the latest version:
 
@@ -43,6 +37,12 @@ https://code.amazon.com/packages/AWSVectorConsolasRuntimeServiceRustClient/relea
 ```
 
 Use `ReadInternalWebsites` to read this page. Extract the latest version number (format: `0.1.XXXXX`).
+
+### 2. Create a branch
+
+```bash
+git checkout -b update-smithy-clients-<VERSION>
+```
 
 ### 3. Run the script
 

@@ -63,11 +63,25 @@ pub fn ser_opt_in_features(
         crate::protocol_serde::shape_web_tools::ser_web_tools(&mut object_20, var_19)?;
         object_20.finish();
     }
+    if let Some(var_21) = &input.model_configuration {
+        #[allow(unused_mut)]
+        let mut object_22 = object.key("modelConfiguration").start_object();
+        crate::protocol_serde::shape_model_configuration::ser_model_configuration(&mut object_22, var_21)?;
+        object_22.finish();
+    }
+    if let Some(var_23) = &input.api_keys {
+        #[allow(unused_mut)]
+        let mut object_24 = object.key("apiKeys").start_object();
+        crate::protocol_serde::shape_api_keys::ser_api_keys(&mut object_24, var_23)?;
+        object_24.finish();
+    }
     Ok(())
 }
 
 pub(crate) fn de_opt_in_features<'a, I>(
     tokens: &mut ::std::iter::Peekable<I>,
+    _value: &'a [u8],
+    depth: u32,
 ) -> ::std::result::Result<Option<crate::types::OptInFeatures>, ::aws_smithy_json::deserialize::error::DeserializeError>
 where
     I: Iterator<
@@ -77,6 +91,11 @@ where
         >,
     >,
 {
+    if depth >= 128u32 {
+        return Err(::aws_smithy_json::deserialize::error::DeserializeError::custom(
+            "maximum nesting depth exceeded",
+        ));
+    }
     match tokens.next().transpose()? {
         Some(::aws_smithy_json::deserialize::Token::ValueNull { .. }) => Ok(None),
         Some(::aws_smithy_json::deserialize::Token::StartObject { .. }) => {
@@ -85,55 +104,105 @@ where
             loop {
                 match tokens.next().transpose()? {
                     Some(::aws_smithy_json::deserialize::Token::EndObject { .. }) => break,
-                    Some(::aws_smithy_json::deserialize::Token::ObjectKey { key, .. }) => match key
-                        .to_unescaped()?
-                        .as_ref()
-                    {
-                        "promptLogging" => {
-                            builder = builder.set_prompt_logging(
-                                crate::protocol_serde::shape_prompt_logging::de_prompt_logging(tokens)?,
-                            );
-                        },
-                        "byUserAnalytics" => {
-                            builder = builder.set_by_user_analytics(
-                                crate::protocol_serde::shape_by_user_analytics::de_by_user_analytics(tokens)?,
-                            );
-                        },
-                        "dashboardAnalytics" => {
-                            builder = builder.set_dashboard_analytics(
-                                crate::protocol_serde::shape_dashboard_analytics::de_dashboard_analytics(tokens)?,
-                            );
-                        },
-                        "notifications" => {
-                            builder = builder.set_notifications(
-                                crate::protocol_serde::shape_notifications::de_notifications(tokens)?,
-                            );
-                        },
-                        "workspaceContext" => {
-                            builder = builder.set_workspace_context(
-                                crate::protocol_serde::shape_workspace_context::de_workspace_context(tokens)?,
-                            );
-                        },
-                        "overageConfiguration" => {
-                            builder = builder.set_overage_configuration(
-                                crate::protocol_serde::shape_overage_configuration::de_overage_configuration(tokens)?,
-                            );
-                        },
-                        "mcpConfiguration" => {
-                            builder = builder.set_mcp_configuration(
-                                crate::protocol_serde::shape_mcp_configuration::de_mcp_configuration(tokens)?,
-                            );
-                        },
-                        "autonomousAgents" => {
-                            builder = builder.set_autonomous_agents(
-                                crate::protocol_serde::shape_autonomous_agents::de_autonomous_agents(tokens)?,
-                            );
-                        },
-                        "webTools" => {
-                            builder =
-                                builder.set_web_tools(crate::protocol_serde::shape_web_tools::de_web_tools(tokens)?);
-                        },
-                        _ => ::aws_smithy_json::deserialize::token::skip_value(tokens)?,
+                    Some(::aws_smithy_json::deserialize::Token::ObjectKey { key, .. }) => {
+                        match key.to_unescaped()?.as_ref() {
+                            "promptLogging" => {
+                                builder = builder.set_prompt_logging(
+                                    crate::protocol_serde::shape_prompt_logging::de_prompt_logging(
+                                        tokens,
+                                        _value,
+                                        depth + 1,
+                                    )?,
+                                );
+                            },
+                            "byUserAnalytics" => {
+                                builder = builder.set_by_user_analytics(
+                                    crate::protocol_serde::shape_by_user_analytics::de_by_user_analytics(
+                                        tokens,
+                                        _value,
+                                        depth + 1,
+                                    )?,
+                                );
+                            },
+                            "dashboardAnalytics" => {
+                                builder = builder.set_dashboard_analytics(
+                                    crate::protocol_serde::shape_dashboard_analytics::de_dashboard_analytics(
+                                        tokens,
+                                        _value,
+                                        depth + 1,
+                                    )?,
+                                );
+                            },
+                            "notifications" => {
+                                builder = builder.set_notifications(
+                                    crate::protocol_serde::shape_notifications::de_notifications(
+                                        tokens,
+                                        _value,
+                                        depth + 1,
+                                    )?,
+                                );
+                            },
+                            "workspaceContext" => {
+                                builder = builder.set_workspace_context(
+                                    crate::protocol_serde::shape_workspace_context::de_workspace_context(
+                                        tokens,
+                                        _value,
+                                        depth + 1,
+                                    )?,
+                                );
+                            },
+                            "overageConfiguration" => {
+                                builder = builder.set_overage_configuration(
+                                    crate::protocol_serde::shape_overage_configuration::de_overage_configuration(
+                                        tokens,
+                                        _value,
+                                        depth + 1,
+                                    )?,
+                                );
+                            },
+                            "mcpConfiguration" => {
+                                builder = builder.set_mcp_configuration(
+                                    crate::protocol_serde::shape_mcp_configuration::de_mcp_configuration(
+                                        tokens,
+                                        _value,
+                                        depth + 1,
+                                    )?,
+                                );
+                            },
+                            "autonomousAgents" => {
+                                builder = builder.set_autonomous_agents(
+                                    crate::protocol_serde::shape_autonomous_agents::de_autonomous_agents(
+                                        tokens,
+                                        _value,
+                                        depth + 1,
+                                    )?,
+                                );
+                            },
+                            "webTools" => {
+                                builder = builder.set_web_tools(crate::protocol_serde::shape_web_tools::de_web_tools(
+                                    tokens,
+                                    _value,
+                                    depth + 1,
+                                )?);
+                            },
+                            "modelConfiguration" => {
+                                builder = builder.set_model_configuration(
+                                    crate::protocol_serde::shape_model_configuration::de_model_configuration(
+                                        tokens,
+                                        _value,
+                                        depth + 1,
+                                    )?,
+                                );
+                            },
+                            "apiKeys" => {
+                                builder = builder.set_api_keys(crate::protocol_serde::shape_api_keys::de_api_keys(
+                                    tokens,
+                                    _value,
+                                    depth + 1,
+                                )?);
+                            },
+                            _ => ::aws_smithy_json::deserialize::token::skip_value(tokens)?,
+                        }
                     },
                     other => {
                         return Err(::aws_smithy_json::deserialize::error::DeserializeError::custom(

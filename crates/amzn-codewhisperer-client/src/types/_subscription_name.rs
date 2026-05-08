@@ -15,6 +15,7 @@
 ///     SubscriptionName::KiroFree => { /* ... */ },
 ///     SubscriptionName::KiroPower => { /* ... */ },
 ///     SubscriptionName::KiroPro => { /* ... */ },
+///     SubscriptionName::KiroProMax => { /* ... */ },
 ///     SubscriptionName::KiroProPlus => { /* ... */ },
 ///     other @ _ if other.as_str() == "NewFeature" => { /* handles a case for `NewFeature` */ },
 ///     _ => { /* ... */ },
@@ -56,6 +57,8 @@ pub enum SubscriptionName {
     #[allow(missing_docs)] // documentation missing in model
     KiroPro,
     #[allow(missing_docs)] // documentation missing in model
+    KiroProMax,
+    #[allow(missing_docs)] // documentation missing in model
     KiroProPlus,
     /// `Unknown` contains new variants that have been added since this code was generated.
     #[deprecated(
@@ -69,6 +72,7 @@ impl ::std::convert::From<&str> for SubscriptionName {
             "KIRO_FREE" => SubscriptionName::KiroFree,
             "KIRO_POWER" => SubscriptionName::KiroPower,
             "KIRO_PRO" => SubscriptionName::KiroPro,
+            "KIRO_PRO_MAX" => SubscriptionName::KiroProMax,
             "KIRO_PRO_PLUS" => SubscriptionName::KiroProPlus,
             other => SubscriptionName::Unknown(crate::primitives::sealed_enum_unknown::UnknownVariantValue(
                 other.to_owned(),
@@ -90,6 +94,7 @@ impl SubscriptionName {
             SubscriptionName::KiroFree => "KIRO_FREE",
             SubscriptionName::KiroPower => "KIRO_POWER",
             SubscriptionName::KiroPro => "KIRO_PRO",
+            SubscriptionName::KiroProMax => "KIRO_PRO_MAX",
             SubscriptionName::KiroProPlus => "KIRO_PRO_PLUS",
             SubscriptionName::Unknown(value) => value.as_str(),
         }
@@ -97,7 +102,7 @@ impl SubscriptionName {
 
     /// Returns all the `&str` representations of the enum members.
     pub const fn values() -> &'static [&'static str] {
-        &["KIRO_FREE", "KIRO_POWER", "KIRO_PRO", "KIRO_PRO_PLUS"]
+        &["KIRO_FREE", "KIRO_POWER", "KIRO_PRO", "KIRO_PRO_MAX", "KIRO_PRO_PLUS"]
     }
 }
 impl ::std::convert::AsRef<str> for SubscriptionName {
@@ -123,6 +128,7 @@ impl ::std::fmt::Display for SubscriptionName {
             SubscriptionName::KiroFree => write!(f, "KIRO_FREE"),
             SubscriptionName::KiroPower => write!(f, "KIRO_POWER"),
             SubscriptionName::KiroPro => write!(f, "KIRO_PRO"),
+            SubscriptionName::KiroProMax => write!(f, "KIRO_PRO_MAX"),
             SubscriptionName::KiroProPlus => write!(f, "KIRO_PRO_PLUS"),
             SubscriptionName::Unknown(value) => write!(f, "{value}"),
         }

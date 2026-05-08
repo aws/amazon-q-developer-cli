@@ -4,7 +4,7 @@ impl super::Client {
     /// [`GetProfile`](crate::operation::get_profile::builders::GetProfileFluentBuilder) operation.
     ///
     /// - The fluent builder is configurable:
-    ///   - [`profile_arn(impl Into<String>)`](crate::operation::get_profile::builders::GetProfileFluentBuilder::profile_arn) / [`set_profile_arn(Option<String>)`](crate::operation::get_profile::builders::GetProfileFluentBuilder::set_profile_arn):<br>required: **true**<br>(undocumented)<br>
+    ///   - [`profile_arn(impl Into<String>)`](crate::operation::get_profile::builders::GetProfileFluentBuilder::profile_arn) / [`set_profile_arn(Option<String>)`](crate::operation::get_profile::builders::GetProfileFluentBuilder::set_profile_arn):<br>required: **false**<br>(undocumented)<br>
     /// - On success, responds with
     ///   [`GetProfileOutput`](crate::operation::get_profile::GetProfileOutput) with field(s):
     ///   - [`profile(ProfileInfo)`](crate::operation::get_profile::GetProfileOutput::profile):

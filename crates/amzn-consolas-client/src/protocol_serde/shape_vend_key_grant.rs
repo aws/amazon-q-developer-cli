@@ -138,15 +138,17 @@ pub fn ser_vend_key_grant_input(
 }
 
 pub(crate) fn de_vend_key_grant(
-    value: &[u8],
+    _value: &[u8],
     mut builder: crate::operation::vend_key_grant::builders::VendKeyGrantOutputBuilder,
 ) -> ::std::result::Result<
     crate::operation::vend_key_grant::builders::VendKeyGrantOutputBuilder,
     ::aws_smithy_json::deserialize::error::DeserializeError,
 > {
     let mut tokens_owned =
-        ::aws_smithy_json::deserialize::json_token_iter(crate::protocol_serde::or_empty_doc(value)).peekable();
+        ::aws_smithy_json::deserialize::json_token_iter(crate::protocol_serde::or_empty_doc(_value)).peekable();
     let tokens = &mut tokens_owned;
+    #[allow(unused_variables)]
+    let depth = 0u32;
     ::aws_smithy_json::deserialize::token::expect_start_object(tokens.next())?;
     loop {
         match tokens.next().transpose()? {

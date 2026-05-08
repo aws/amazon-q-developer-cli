@@ -142,15 +142,17 @@ pub fn ser_list_feature_evaluations_input(
 }
 
 pub(crate) fn de_list_feature_evaluations(
-    value: &[u8],
+    _value: &[u8],
     mut builder: crate::operation::list_feature_evaluations::builders::ListFeatureEvaluationsOutputBuilder,
 ) -> ::std::result::Result<
     crate::operation::list_feature_evaluations::builders::ListFeatureEvaluationsOutputBuilder,
     ::aws_smithy_json::deserialize::error::DeserializeError,
 > {
     let mut tokens_owned =
-        ::aws_smithy_json::deserialize::json_token_iter(crate::protocol_serde::or_empty_doc(value)).peekable();
+        ::aws_smithy_json::deserialize::json_token_iter(crate::protocol_serde::or_empty_doc(_value)).peekable();
     let tokens = &mut tokens_owned;
+    #[allow(unused_variables)]
+    let depth = 0u32;
     ::aws_smithy_json::deserialize::token::expect_start_object(tokens.next())?;
     loop {
         match tokens.next().transpose()? {
@@ -158,7 +160,11 @@ pub(crate) fn de_list_feature_evaluations(
             Some(::aws_smithy_json::deserialize::Token::ObjectKey { key, .. }) => match key.to_unescaped()?.as_ref() {
                 "featureEvaluations" => {
                     builder = builder.set_feature_evaluations(
-                        crate::protocol_serde::shape_feature_evaluations_list::de_feature_evaluations_list(tokens)?,
+                        crate::protocol_serde::shape_feature_evaluations_list::de_feature_evaluations_list(
+                            tokens,
+                            _value,
+                            depth + 1,
+                        )?,
                     );
                 },
                 _ => ::aws_smithy_json::deserialize::token::skip_value(tokens)?,

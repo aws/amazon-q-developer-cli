@@ -15,5 +15,8 @@ pub fn ser_generate_assistant_response_input_input(
     if let Some(var_4) = &input.agent_mode {
         object.key("agentMode").string(var_4.as_str());
     }
+    if let Some(var_5) = &input.additional_model_request_fields {
+        object.key("additionalModelRequestFields").document(var_5);
+    }
     Ok(())
 }

@@ -186,12 +186,12 @@ pub fn de_generate_assistant_response_http_error(
 
 pub fn ser_generate_assistant_response_headers(
     input: &crate::operation::generate_assistant_response::GenerateAssistantResponseInput,
-    mut builder: ::http::request::Builder,
-) -> std::result::Result<::http::request::Builder, ::aws_smithy_types::error::operation::BuildError> {
+    mut builder: ::http_1x::request::Builder,
+) -> std::result::Result<::http_1x::request::Builder, ::aws_smithy_types::error::operation::BuildError> {
     if let ::std::option::Option::Some(inner_1) = &input.agent_mode {
         let formatted_2 = inner_1.as_str();
         let header_value = formatted_2;
-        let header_value: ::http::HeaderValue = header_value.parse().map_err(|err| {
+        let header_value: ::http_1x::HeaderValue = header_value.parse().map_err(|err| {
             ::aws_smithy_types::error::operation::BuildError::invalid_field(
                 "agent_mode",
                 format!("`{}` cannot be used as a header value: {}", &header_value, err),

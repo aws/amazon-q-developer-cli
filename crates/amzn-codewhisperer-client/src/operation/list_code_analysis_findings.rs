@@ -168,6 +168,52 @@ impl ::aws_smithy_runtime_api::client::ser_de::DeserializeResponse for ListCodeA
         let body = response.body().bytes().expect("body loaded");
         #[allow(unused_mut)]
         let mut force_error = false;
+        // Coral RPC v0 services may return HTTP 200 for errors. Detect error responses
+        // by reading `__type` from the body and checking if it matches a known error shape
+        // or Coral synthetic exception, matching Java's EverynightClientTransmutingProxy /
+        // TypeExtractor behavior.
+        if let Ok(parsed) = crate::json_errors::parse_error_metadata(body, &Default::default()) {
+            if matches!(
+                parsed.build().code(),
+                Some(
+                    "AccessDeniedException"
+                        | "ValidationException"
+                        | "ModelErrorException"
+                        | "ConflictException"
+                        | "InternalServerException"
+                        | "ServiceLinkedRoleLockServiceException"
+                        | "ServiceUnavailableException"
+                        | "InvalidStateException"
+                        | "UpdateUsageLimitQuotaExceededException"
+                        | "ThrottlingException"
+                        | "ServiceLinkedRoleLockClientException"
+                        | "ServiceQuotaExceededException"
+                        | "ResourceNotFoundException"
+                        | "DryRunOperationException"
+                        | "BackOffException"
+                        | "NotAuthorizedException"
+                        | "DelegationException"
+                        | "UnsupportedMediaTypeException"
+                        | "MalformedHttpRequestException"
+                        | "RequestEntityTooLargeException"
+                        | "RequestTimeoutException"
+                        | "InternalFailure"
+                        | "TimeoutException"
+                        | "UnknownOperationException"
+                        | "RequestAbortedException"
+                        | "HttpNotFoundException"
+                        | "InvalidMessageDigestException"
+                        | "MissingMessageDigestException"
+                        | "HeaderMisclassificationException"
+                        | "MissingRequiredHeaderException"
+                        | "InvalidAuthSchemeException"
+                        | "InvalidAuthSchemeParameterException"
+                        | "MissingAuthSchemeParameterException"
+                )
+            ) {
+                force_error = true;
+            }
+        }
         ::tracing::debug!(request_id = ?::aws_types::request_id::RequestId::request_id(response));
         let parse_result = if !success && status != 200 || force_error {
             crate::protocol_serde::shape_list_code_analysis_findings::de_list_code_analysis_findings_http_error(
@@ -243,23 +289,23 @@ impl ::aws_smithy_runtime_api::client::ser_de::SerializeRequest for ListCodeAnal
             #[allow(clippy::unnecessary_wraps)]
             fn update_http_builder(
                 input: &crate::operation::list_code_analysis_findings::ListCodeAnalysisFindingsInput,
-                builder: ::http::request::Builder,
-            ) -> ::std::result::Result<::http::request::Builder, ::aws_smithy_types::error::operation::BuildError>
+                builder: ::http_1x::request::Builder,
+            ) -> ::std::result::Result<::http_1x::request::Builder, ::aws_smithy_types::error::operation::BuildError>
             {
                 let mut uri = ::std::string::String::new();
                 uri_base(input, &mut uri)?;
                 uri_query(input, &mut uri)?;
                 ::std::result::Result::Ok(builder.method("POST").uri(uri))
             }
-            let mut builder = update_http_builder(&input, ::http::request::Builder::new())?;
+            let mut builder = update_http_builder(&input, ::http_1x::request::Builder::new())?;
             builder = _header_serialization_settings.set_default_header(
                 builder,
-                ::http::header::CONTENT_TYPE,
+                ::http_1x::header::CONTENT_TYPE,
                 "application/x-amz-json-1.0",
             );
             builder = _header_serialization_settings.set_default_header(
                 builder,
-                ::http::header::HeaderName::from_static("x-amz-target"),
+                ::http_1x::header::HeaderName::from_static("x-amz-target"),
                 "AmazonCodeWhispererService.ListCodeAnalysisFindings",
             );
             builder
@@ -271,7 +317,7 @@ impl ::aws_smithy_runtime_api::client::ser_de::SerializeRequest for ListCodeAnal
             let content_length = content_length.to_string();
             request_builder = _header_serialization_settings.set_default_header(
                 request_builder,
-                ::http::header::CONTENT_LENGTH,
+                ::http_1x::header::CONTENT_LENGTH,
                 &content_length,
             );
         }

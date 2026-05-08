@@ -112,15 +112,17 @@ pub fn ser_lock_service_linked_role_input(
 }
 
 pub(crate) fn de_lock_service_linked_role(
-    value: &[u8],
+    _value: &[u8],
     mut builder: crate::operation::lock_service_linked_role::builders::LockServiceLinkedRoleOutputBuilder,
 ) -> ::std::result::Result<
     crate::operation::lock_service_linked_role::builders::LockServiceLinkedRoleOutputBuilder,
     ::aws_smithy_json::deserialize::error::DeserializeError,
 > {
     let mut tokens_owned =
-        ::aws_smithy_json::deserialize::json_token_iter(crate::protocol_serde::or_empty_doc(value)).peekable();
+        ::aws_smithy_json::deserialize::json_token_iter(crate::protocol_serde::or_empty_doc(_value)).peekable();
     let tokens = &mut tokens_owned;
+    #[allow(unused_variables)]
+    let depth = 0u32;
     ::aws_smithy_json::deserialize::token::expect_start_object(tokens.next())?;
     loop {
         match tokens.next().transpose()? {
@@ -140,7 +142,7 @@ pub(crate) fn de_lock_service_linked_role(
                 },
                 "RelatedResources" => {
                     builder = builder.set_related_resources(
-                        crate::protocol_serde::shape_string_list_type::de_string_list_type(tokens)?,
+                        crate::protocol_serde::shape_string_list_type::de_string_list_type(tokens, _value, depth + 1)?,
                     );
                 },
                 _ => ::aws_smithy_json::deserialize::token::skip_value(tokens)?,

@@ -14,6 +14,8 @@ pub enum ChatResponseStream {
     CodeReferenceEvent(crate::types::CodeReferenceEvent),
     /// Context Usage event
     ContextUsageEvent(crate::types::ContextUsageEvent),
+    /// Document citation event
+    DocumentCitationEvent(crate::types::DocumentCitationEvent),
     /// DryRun Succeed Event
     DryRunSucceedEvent(crate::types::DryRunSucceedEvent),
     /// Followup prompt event
@@ -136,6 +138,24 @@ impl ChatResponseStream {
     /// [`ContextUsageEvent`](crate::types::ChatResponseStream::ContextUsageEvent).
     pub fn is_context_usage_event(&self) -> bool {
         self.as_context_usage_event().is_ok()
+    }
+
+    /// Tries to convert the enum instance into
+    /// [`DocumentCitationEvent`](crate::types::ChatResponseStream::DocumentCitationEvent),
+    /// extracting the inner [`DocumentCitationEvent`](crate::types::DocumentCitationEvent).
+    /// Returns `Err(&Self)` if it can't be converted.
+    pub fn as_document_citation_event(&self) -> ::std::result::Result<&crate::types::DocumentCitationEvent, &Self> {
+        if let ChatResponseStream::DocumentCitationEvent(val) = &self {
+            ::std::result::Result::Ok(val)
+        } else {
+            ::std::result::Result::Err(self)
+        }
+    }
+
+    /// Returns true if this is a
+    /// [`DocumentCitationEvent`](crate::types::ChatResponseStream::DocumentCitationEvent).
+    pub fn is_document_citation_event(&self) -> bool {
+        self.as_document_citation_event().is_ok()
     }
 
     /// Tries to convert the enum instance into
@@ -373,6 +393,9 @@ impl ::std::fmt::Debug for ChatResponseStream {
             ChatResponseStream::CodeEvent(val) => f.debug_tuple("CodeEvent").field(&val).finish(),
             ChatResponseStream::CodeReferenceEvent(val) => f.debug_tuple("CodeReferenceEvent").field(&val).finish(),
             ChatResponseStream::ContextUsageEvent(val) => f.debug_tuple("ContextUsageEvent").field(&val).finish(),
+            ChatResponseStream::DocumentCitationEvent(val) => {
+                f.debug_tuple("DocumentCitationEvent").field(&val).finish()
+            },
             ChatResponseStream::DryRunSucceedEvent(val) => f.debug_tuple("DryRunSucceedEvent").field(&val).finish(),
             ChatResponseStream::FollowupPromptEvent(val) => f.debug_tuple("FollowupPromptEvent").field(&val).finish(),
             ChatResponseStream::IntentsEvent(val) => f.debug_tuple("IntentsEvent").field(&val).finish(),

@@ -344,6 +344,20 @@ impl ::aws_smithy_eventstream::frame::UnmarshallMessage for ChatResponseStreamUn
                         crate::types::ChatResponseStream::CitationEvent(parsed),
                     ))
                 },
+                "documentCitationEvent" => {
+                    let parsed =
+                        crate::protocol_serde::shape_document_citation_event::de_document_citation_event_payload(
+                            &message.payload()[..],
+                        )
+                        .map_err(|err| {
+                            ::aws_smithy_eventstream::error::Error::unmarshalling(format!(
+                                "failed to unmarshall DocumentCitationEvent: {err}"
+                            ))
+                        })?;
+                    Ok(::aws_smithy_eventstream::frame::UnmarshalledMessage::Event(
+                        crate::types::ChatResponseStream::DocumentCitationEvent(parsed),
+                    ))
+                },
                 "invalidStateEvent" => {
                     let parsed = crate::protocol_serde::shape_invalid_state_event::de_invalid_state_event_payload(
                         &message.payload()[..],

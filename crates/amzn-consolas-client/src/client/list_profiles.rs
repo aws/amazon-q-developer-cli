@@ -15,6 +15,7 @@ impl super::Client {
     ///   [`ListProfilesOutput`](crate::operation::list_profiles::ListProfilesOutput) with field(s):
     ///   - [`profiles(Vec::<Profile>)`](crate::operation::list_profiles::ListProfilesOutput::profiles): (undocumented)
     ///   - [`next_token(Option<String>)`](crate::operation::list_profiles::ListProfilesOutput::next_token): (undocumented)
+    ///   - [`available_models(Option<Vec::<Model>>)`](crate::operation::list_profiles::ListProfilesOutput::available_models): List of all models available for admins to select from for model governance.
     /// - On failure, responds with
     ///   [`SdkError<ListProfilesError>`](crate::operation::list_profiles::ListProfilesError)
     pub fn list_profiles(&self) -> crate::operation::list_profiles::builders::ListProfilesFluentBuilder {

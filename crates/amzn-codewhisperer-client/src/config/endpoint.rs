@@ -5,6 +5,30 @@ pub use ::aws_smithy_runtime_api::client::endpoint::{
 };
 pub use ::aws_smithy_types::endpoint::Endpoint;
 
+/// Interceptor that tracks endpoint override business metric.
+#[derive(Debug, Default)]
+pub(crate) struct EndpointOverrideFeatureTrackerInterceptor;
+
+impl ::aws_smithy_runtime_api::client::interceptors::Intercept for EndpointOverrideFeatureTrackerInterceptor {
+    fn name(&self) -> &'static str {
+        "EndpointOverrideFeatureTrackerInterceptor"
+    }
+
+    fn read_before_execution(
+        &self,
+        _context: &::aws_smithy_runtime_api::client::interceptors::context::BeforeSerializationInterceptorContextRef<
+            '_,
+        >,
+        cfg: &mut ::aws_smithy_types::config_bag::ConfigBag,
+    ) -> ::std::result::Result<(), ::aws_smithy_runtime_api::box_error::BoxError> {
+        if cfg.load::<::aws_types::endpoint_config::EndpointUrl>().is_some() {
+            cfg.interceptor_state()
+                .store_append(::aws_runtime::sdk_feature::AwsSdkFeature::EndpointOverride);
+        }
+        ::std::result::Result::Ok(())
+    }
+}
+
 #[cfg(test)]
 mod test {}
 
@@ -117,6 +141,18 @@ impl ParamsBuilder {
     pub fn build(
         self,
     ) -> ::std::result::Result<crate::config::endpoint::Params, crate::config::endpoint::InvalidParams> {
+        if let Some(region) = &self.region {
+            if !crate::endpoint_lib::host::is_valid_host_label(
+                region.as_ref() as &str,
+                true,
+                &mut crate::endpoint_lib::diagnostic::DiagnosticCollector::new(),
+            ) {
+                return Err(crate::config::endpoint::InvalidParams::invalid_value(
+                    "region",
+                    "must be a valid host label",
+                ));
+            }
+        };
         Ok(
             #[allow(clippy::unnecessary_lazy_evaluations)]
             crate::config::endpoint::Params {
@@ -168,18 +204,42 @@ impl ParamsBuilder {
 #[derive(Debug)]
 pub struct InvalidParams {
     field: std::borrow::Cow<'static, str>,
+    kind: InvalidParamsErrorKind,
+}
+
+/// The kind of invalid parameter error
+#[derive(Debug)]
+enum InvalidParamsErrorKind {
+    MissingField,
+    InvalidValue { message: &'static str },
 }
 
 impl InvalidParams {
     #[allow(dead_code)]
     fn missing(field: &'static str) -> Self {
-        Self { field: field.into() }
+        Self {
+            field: field.into(),
+            kind: InvalidParamsErrorKind::MissingField,
+        }
+    }
+
+    #[allow(dead_code)]
+    fn invalid_value(field: &'static str, message: &'static str) -> Self {
+        Self {
+            field: field.into(),
+            kind: InvalidParamsErrorKind::InvalidValue { message },
+        }
     }
 }
 
 impl std::fmt::Display for InvalidParams {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "a required field was missing: `{}`", self.field)
+        match self.kind {
+            InvalidParamsErrorKind::MissingField => write!(f, "a required field was missing: `{}`", self.field),
+            InvalidParamsErrorKind::InvalidValue { message } => {
+                write!(f, "invalid value for field: `{}` - {}", self.field, message)
+            },
+        }
     }
 }
 

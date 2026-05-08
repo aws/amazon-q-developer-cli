@@ -21,6 +21,10 @@ pub struct OptInFeatures {
     pub autonomous_agents: ::std::option::Option<crate::types::AutonomousAgents>,
     #[allow(missing_docs)] // documentation missing in model
     pub web_tools: ::std::option::Option<crate::types::WebTools>,
+    #[allow(missing_docs)] // documentation missing in model
+    pub model_configuration: ::std::option::Option<crate::types::ModelConfiguration>,
+    #[allow(missing_docs)] // documentation missing in model
+    pub api_keys: ::std::option::Option<crate::types::ApiKeys>,
 }
 impl OptInFeatures {
     #[allow(missing_docs)] // documentation missing in model
@@ -69,6 +73,16 @@ impl OptInFeatures {
     pub fn web_tools(&self) -> ::std::option::Option<&crate::types::WebTools> {
         self.web_tools.as_ref()
     }
+
+    #[allow(missing_docs)] // documentation missing in model
+    pub fn model_configuration(&self) -> ::std::option::Option<&crate::types::ModelConfiguration> {
+        self.model_configuration.as_ref()
+    }
+
+    #[allow(missing_docs)] // documentation missing in model
+    pub fn api_keys(&self) -> ::std::option::Option<&crate::types::ApiKeys> {
+        self.api_keys.as_ref()
+    }
 }
 impl OptInFeatures {
     /// Creates a new builder-style object to manufacture
@@ -91,6 +105,8 @@ pub struct OptInFeaturesBuilder {
     pub(crate) mcp_configuration: ::std::option::Option<crate::types::McpConfiguration>,
     pub(crate) autonomous_agents: ::std::option::Option<crate::types::AutonomousAgents>,
     pub(crate) web_tools: ::std::option::Option<crate::types::WebTools>,
+    pub(crate) model_configuration: ::std::option::Option<crate::types::ModelConfiguration>,
+    pub(crate) api_keys: ::std::option::Option<crate::types::ApiKeys>,
 }
 impl OptInFeaturesBuilder {
     #[allow(missing_docs)] // documentation missing in model
@@ -257,6 +273,40 @@ impl OptInFeaturesBuilder {
         &self.web_tools
     }
 
+    #[allow(missing_docs)] // documentation missing in model
+    pub fn model_configuration(mut self, input: crate::types::ModelConfiguration) -> Self {
+        self.model_configuration = ::std::option::Option::Some(input);
+        self
+    }
+
+    #[allow(missing_docs)] // documentation missing in model
+    pub fn set_model_configuration(mut self, input: ::std::option::Option<crate::types::ModelConfiguration>) -> Self {
+        self.model_configuration = input;
+        self
+    }
+
+    #[allow(missing_docs)] // documentation missing in model
+    pub fn get_model_configuration(&self) -> &::std::option::Option<crate::types::ModelConfiguration> {
+        &self.model_configuration
+    }
+
+    #[allow(missing_docs)] // documentation missing in model
+    pub fn api_keys(mut self, input: crate::types::ApiKeys) -> Self {
+        self.api_keys = ::std::option::Option::Some(input);
+        self
+    }
+
+    #[allow(missing_docs)] // documentation missing in model
+    pub fn set_api_keys(mut self, input: ::std::option::Option<crate::types::ApiKeys>) -> Self {
+        self.api_keys = input;
+        self
+    }
+
+    #[allow(missing_docs)] // documentation missing in model
+    pub fn get_api_keys(&self) -> &::std::option::Option<crate::types::ApiKeys> {
+        &self.api_keys
+    }
+
     /// Consumes the builder and constructs a [`OptInFeatures`](crate::types::OptInFeatures).
     pub fn build(self) -> crate::types::OptInFeatures {
         crate::types::OptInFeatures {
@@ -269,6 +319,8 @@ impl OptInFeaturesBuilder {
             mcp_configuration: self.mcp_configuration,
             autonomous_agents: self.autonomous_agents,
             web_tools: self.web_tools,
+            model_configuration: self.model_configuration,
+            api_keys: self.api_keys,
         }
     }
 }

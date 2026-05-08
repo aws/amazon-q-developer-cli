@@ -410,6 +410,8 @@ pub(crate) mod shape_workspace_context_upload_context;
 
 pub(crate) mod shape_active_functionality_list;
 
+pub(crate) mod shape_api_keys;
+
 pub(crate) mod shape_application_properties_list;
 
 pub(crate) mod shape_assistant_response_message;
@@ -441,6 +443,8 @@ pub(crate) mod shape_identity_details;
 pub(crate) mod shape_imports;
 
 pub(crate) mod shape_mcp_configuration;
+
+pub(crate) mod shape_model_configuration;
 
 pub(crate) mod shape_notifications;
 

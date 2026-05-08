@@ -214,4 +214,30 @@ impl GenerateAssistantResponseFluentBuilder {
     pub fn get_agent_mode(&self) -> &::std::option::Option<::std::string::String> {
         self.inner.get_agent_mode()
     }
+
+    /// Additional model request fields (e.g. thinking, effort) to pass to the model provider.
+    /// Validated against the model's schema before merging with server defaults; throws
+    /// ValidationException if invalid.
+    pub fn additional_model_request_fields(mut self, input: ::aws_smithy_types::Document) -> Self {
+        self.inner = self.inner.additional_model_request_fields(input);
+        self
+    }
+
+    /// Additional model request fields (e.g. thinking, effort) to pass to the model provider.
+    /// Validated against the model's schema before merging with server defaults; throws
+    /// ValidationException if invalid.
+    pub fn set_additional_model_request_fields(
+        mut self,
+        input: ::std::option::Option<::aws_smithy_types::Document>,
+    ) -> Self {
+        self.inner = self.inner.set_additional_model_request_fields(input);
+        self
+    }
+
+    /// Additional model request fields (e.g. thinking, effort) to pass to the model provider.
+    /// Validated against the model's schema before merging with server defaults; throws
+    /// ValidationException if invalid.
+    pub fn get_additional_model_request_fields(&self) -> &::std::option::Option<::aws_smithy_types::Document> {
+        self.inner.get_additional_model_request_fields()
+    }
 }

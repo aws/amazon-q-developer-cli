@@ -9,7 +9,7 @@ use aws_smithy_types::config_bag::{
     Storable,
     StoreReplace,
 };
-use http::header::{
+use http_1x::header::{
     CONTENT_LENGTH,
     CONTENT_TYPE,
     HeaderName,
@@ -53,10 +53,10 @@ impl HeaderSerializationSettings {
     /// Sets a default header on the given request builder if it should be serialized
     pub(crate) fn set_default_header(
         &self,
-        mut request: http::request::Builder,
+        mut request: http_1x::request::Builder,
         header_name: HeaderName,
         value: &str,
-    ) -> http::request::Builder {
+    ) -> http_1x::request::Builder {
         if self.include_header(&header_name) {
             request = set_request_header_if_absent(request, header_name, value);
         }

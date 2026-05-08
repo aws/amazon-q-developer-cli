@@ -128,22 +128,28 @@ pub fn ser_get_usage_limits_input(
 }
 
 pub(crate) fn de_get_usage_limits(
-    value: &[u8],
+    _value: &[u8],
     mut builder: crate::operation::get_usage_limits::builders::GetUsageLimitsOutputBuilder,
 ) -> ::std::result::Result<
     crate::operation::get_usage_limits::builders::GetUsageLimitsOutputBuilder,
     ::aws_smithy_json::deserialize::error::DeserializeError,
 > {
     let mut tokens_owned =
-        ::aws_smithy_json::deserialize::json_token_iter(crate::protocol_serde::or_empty_doc(value)).peekable();
+        ::aws_smithy_json::deserialize::json_token_iter(crate::protocol_serde::or_empty_doc(_value)).peekable();
     let tokens = &mut tokens_owned;
+    #[allow(unused_variables)]
+    let depth = 0u32;
     ::aws_smithy_json::deserialize::token::expect_start_object(tokens.next())?;
     loop {
         match tokens.next().transpose()? {
             Some(::aws_smithy_json::deserialize::Token::EndObject { .. }) => break,
             Some(::aws_smithy_json::deserialize::Token::ObjectKey { key, .. }) => match key.to_unescaped()?.as_ref() {
                 "limits" => {
-                    builder = builder.set_limits(crate::protocol_serde::shape_usage_limits::de_usage_limits(tokens)?);
+                    builder = builder.set_limits(crate::protocol_serde::shape_usage_limits::de_usage_limits(
+                        tokens,
+                        _value,
+                        depth + 1,
+                    )?);
                 },
                 "nextDateReset" => {
                     builder =
@@ -161,30 +167,49 @@ pub(crate) fn de_get_usage_limits(
                 },
                 "usageBreakdown" => {
                     builder = builder.set_usage_breakdown(
-                        crate::protocol_serde::shape_usage_breakdown::de_usage_breakdown(tokens)?,
+                        crate::protocol_serde::shape_usage_breakdown::de_usage_breakdown(tokens, _value, depth + 1)?,
                     );
                 },
                 "usageBreakdownList" => {
                     builder = builder.set_usage_breakdown_list(
-                        crate::protocol_serde::shape_usage_breakdown_list::de_usage_breakdown_list(tokens)?,
+                        crate::protocol_serde::shape_usage_breakdown_list::de_usage_breakdown_list(
+                            tokens,
+                            _value,
+                            depth + 1,
+                        )?,
                     );
                 },
                 "subscriptionInfo" => {
                     builder = builder.set_subscription_info(
-                        crate::protocol_serde::shape_subscription_info::de_subscription_info(tokens)?,
+                        crate::protocol_serde::shape_subscription_info::de_subscription_info(
+                            tokens,
+                            _value,
+                            depth + 1,
+                        )?,
                     );
                 },
                 "overageConfiguration" => {
                     builder = builder.set_overage_configuration(
-                        crate::protocol_serde::shape_overage_configuration::de_overage_configuration(tokens)?,
+                        crate::protocol_serde::shape_overage_configuration::de_overage_configuration(
+                            tokens,
+                            _value,
+                            depth + 1,
+                        )?,
                     );
                 },
                 "userInfo" => {
-                    builder = builder.set_user_info(crate::protocol_serde::shape_user_info::de_user_info(tokens)?);
+                    builder = builder.set_user_info(crate::protocol_serde::shape_user_info::de_user_info(
+                        tokens,
+                        _value,
+                        depth + 1,
+                    )?);
                 },
                 "totalUsage" => {
-                    builder =
-                        builder.set_total_usage(crate::protocol_serde::shape_total_usage::de_total_usage(tokens)?);
+                    builder = builder.set_total_usage(crate::protocol_serde::shape_total_usage::de_total_usage(
+                        tokens,
+                        _value,
+                        depth + 1,
+                    )?);
                 },
                 _ => ::aws_smithy_json::deserialize::token::skip_value(tokens)?,
             },

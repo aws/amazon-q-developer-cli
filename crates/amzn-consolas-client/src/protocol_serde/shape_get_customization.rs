@@ -146,15 +146,17 @@ pub fn ser_get_customization_input(
 }
 
 pub(crate) fn de_get_customization(
-    value: &[u8],
+    _value: &[u8],
     mut builder: crate::operation::get_customization::builders::GetCustomizationOutputBuilder,
 ) -> ::std::result::Result<
     crate::operation::get_customization::builders::GetCustomizationOutputBuilder,
     ::aws_smithy_json::deserialize::error::DeserializeError,
 > {
     let mut tokens_owned =
-        ::aws_smithy_json::deserialize::json_token_iter(crate::protocol_serde::or_empty_doc(value)).peekable();
+        ::aws_smithy_json::deserialize::json_token_iter(crate::protocol_serde::or_empty_doc(_value)).peekable();
     let tokens = &mut tokens_owned;
+    #[allow(unused_variables)]
+    let depth = 0u32;
     ::aws_smithy_json::deserialize::token::expect_start_object(tokens.next())?;
     loop {
         match tokens.next().transpose()? {
@@ -192,8 +194,9 @@ pub(crate) fn de_get_customization(
                     );
                 },
                 "dataReference" => {
-                    builder = builder
-                        .set_data_reference(crate::protocol_serde::shape_data_reference::de_data_reference(tokens)?);
+                    builder = builder.set_data_reference(
+                        crate::protocol_serde::shape_data_reference::de_data_reference(tokens, _value, depth + 1)?,
+                    );
                 },
                 "customizationName" => {
                     builder = builder.set_customization_name(
@@ -224,12 +227,16 @@ pub(crate) fn de_get_customization(
                 },
                 "evaluationMetrics" => {
                     builder = builder.set_evaluation_metrics(
-                        crate::protocol_serde::shape_evaluation_metrics::de_evaluation_metrics(tokens)?,
+                        crate::protocol_serde::shape_evaluation_metrics::de_evaluation_metrics(
+                            tokens,
+                            _value,
+                            depth + 1,
+                        )?,
                     );
                 },
                 "includeRepos" => {
                     builder = builder.set_include_repos(
-                        crate::protocol_serde::shape_repository_list::de_repository_list(tokens)?,
+                        crate::protocol_serde::shape_repository_list::de_repository_list(tokens, _value, depth + 1)?,
                     );
                 },
                 _ => ::aws_smithy_json::deserialize::token::skip_value(tokens)?,

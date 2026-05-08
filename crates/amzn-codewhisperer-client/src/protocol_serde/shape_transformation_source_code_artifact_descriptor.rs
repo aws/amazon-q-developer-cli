@@ -23,6 +23,8 @@ pub fn ser_transformation_source_code_artifact_descriptor(
 
 pub(crate) fn de_transformation_source_code_artifact_descriptor<'a, I>(
     tokens: &mut ::std::iter::Peekable<I>,
+    _value: &'a [u8],
+    depth: u32,
 ) -> ::std::result::Result<
     Option<crate::types::TransformationSourceCodeArtifactDescriptor>,
     ::aws_smithy_json::deserialize::error::DeserializeError,
@@ -35,6 +37,11 @@ where
         >,
     >,
 {
+    if depth >= 128u32 {
+        return Err(::aws_smithy_json::deserialize::error::DeserializeError::custom(
+            "maximum nesting depth exceeded",
+        ));
+    }
     match tokens.next().transpose()? {
         Some(::aws_smithy_json::deserialize::Token::ValueNull { .. }) => Ok(None),
         Some(::aws_smithy_json::deserialize::Token::StartObject { .. }) => {
@@ -49,12 +56,14 @@ where
                                 builder = builder.set_languages(
                                     crate::protocol_serde::shape_transformation_languages::de_transformation_languages(
                                         tokens,
+                                        _value,
+                                        depth + 1,
                                     )?,
                                 );
                             },
                             "runtimeEnv" => {
                                 builder = builder.set_runtime_env(
-                                crate::protocol_serde::shape_transformation_runtime_env::de_transformation_runtime_env(tokens)?,
+                                crate::protocol_serde::shape_transformation_runtime_env::de_transformation_runtime_env(tokens, _value, depth + 1)?,
                             );
                             },
                             _ => ::aws_smithy_json::deserialize::token::skip_value(tokens)?,

@@ -13,9 +13,27 @@
 /// # let validationexceptionreason = unimplemented!();
 /// match validationexceptionreason {
 ///     ValidationExceptionReason::ContentLengthExceedsThreshold => { /* ... */ },
+///     ValidationExceptionReason::DocumentCountExceeded => { /* ... */ },
+///     ValidationExceptionReason::DocumentDuplicateName => { /* ... */ },
+///     ValidationExceptionReason::DocumentMaximumPagesExceeded => { /* ... */ },
+///     ValidationExceptionReason::DocumentModelNotSupported => { /* ... */ },
+///     ValidationExceptionReason::DocumentPasswordProtected => { /* ... */ },
+///     ValidationExceptionReason::DocumentSizeExceeded => { /* ... */ },
+///     ValidationExceptionReason::ImageCountExceeded => { /* ... */ },
+///     ValidationExceptionReason::ImageDimensionExceeded => { /* ... */ },
+///     ValidationExceptionReason::ImageFormatUnsupported => { /* ... */ },
+///     ValidationExceptionReason::ImageMimeMismatch => { /* ... */ },
+///     ValidationExceptionReason::ImageSizeExceeded => { /* ... */ },
 ///     ValidationExceptionReason::InvalidConversationId => { /* ... */ },
 ///     ValidationExceptionReason::InvalidKmsGrant => { /* ... */ },
 ///     ValidationExceptionReason::InvalidModelId => { /* ... */ },
+///     ValidationExceptionReason::PromptTooLong => { /* ... */ },
+///     ValidationExceptionReason::RequestBodyInvalid => { /* ... */ },
+///     ValidationExceptionReason::ThinkingSignatureInvalid => { /* ... */ },
+///     ValidationExceptionReason::ToolConfigMissing => { /* ... */ },
+///     ValidationExceptionReason::ToolDuplicate => { /* ... */ },
+///     ValidationExceptionReason::ToolSchemaInvalid => { /* ... */ },
+///     ValidationExceptionReason::ToolUseResultMismatch => { /* ... */ },
 ///     other @ _ if other.as_str() == "NewFeature" => { /* handles a case for `NewFeature` */ },
 ///     _ => { /* ... */ },
 /// }
@@ -53,11 +71,47 @@ pub enum ValidationExceptionReason {
     #[allow(missing_docs)] // documentation missing in model
     ContentLengthExceedsThreshold,
     #[allow(missing_docs)] // documentation missing in model
+    DocumentCountExceeded,
+    #[allow(missing_docs)] // documentation missing in model
+    DocumentDuplicateName,
+    #[allow(missing_docs)] // documentation missing in model
+    DocumentMaximumPagesExceeded,
+    #[allow(missing_docs)] // documentation missing in model
+    DocumentModelNotSupported,
+    #[allow(missing_docs)] // documentation missing in model
+    DocumentPasswordProtected,
+    #[allow(missing_docs)] // documentation missing in model
+    DocumentSizeExceeded,
+    #[allow(missing_docs)] // documentation missing in model
+    ImageCountExceeded,
+    #[allow(missing_docs)] // documentation missing in model
+    ImageDimensionExceeded,
+    #[allow(missing_docs)] // documentation missing in model
+    ImageFormatUnsupported,
+    #[allow(missing_docs)] // documentation missing in model
+    ImageMimeMismatch,
+    #[allow(missing_docs)] // documentation missing in model
+    ImageSizeExceeded,
+    #[allow(missing_docs)] // documentation missing in model
     InvalidConversationId,
     #[allow(missing_docs)] // documentation missing in model
     InvalidKmsGrant,
     #[allow(missing_docs)] // documentation missing in model
     InvalidModelId,
+    #[allow(missing_docs)] // documentation missing in model
+    PromptTooLong,
+    #[allow(missing_docs)] // documentation missing in model
+    RequestBodyInvalid,
+    #[allow(missing_docs)] // documentation missing in model
+    ThinkingSignatureInvalid,
+    #[allow(missing_docs)] // documentation missing in model
+    ToolConfigMissing,
+    #[allow(missing_docs)] // documentation missing in model
+    ToolDuplicate,
+    #[allow(missing_docs)] // documentation missing in model
+    ToolSchemaInvalid,
+    #[allow(missing_docs)] // documentation missing in model
+    ToolUseResultMismatch,
     /// `Unknown` contains new variants that have been added since this code was generated.
     #[deprecated(
         note = "Don't directly match on `Unknown`. See the docs on this enum for the correct way to handle unknown variants."
@@ -68,9 +122,27 @@ impl ::std::convert::From<&str> for ValidationExceptionReason {
     fn from(s: &str) -> Self {
         match s {
             "CONTENT_LENGTH_EXCEEDS_THRESHOLD" => ValidationExceptionReason::ContentLengthExceedsThreshold,
+            "DOCUMENT_COUNT_EXCEEDED" => ValidationExceptionReason::DocumentCountExceeded,
+            "DOCUMENT_DUPLICATE_NAME" => ValidationExceptionReason::DocumentDuplicateName,
+            "DOCUMENT_MAXIMUM_PAGES_EXCEEDED" => ValidationExceptionReason::DocumentMaximumPagesExceeded,
+            "DOCUMENT_MODEL_NOT_SUPPORTED" => ValidationExceptionReason::DocumentModelNotSupported,
+            "DOCUMENT_PASSWORD_PROTECTED" => ValidationExceptionReason::DocumentPasswordProtected,
+            "DOCUMENT_SIZE_EXCEEDED" => ValidationExceptionReason::DocumentSizeExceeded,
+            "IMAGE_COUNT_EXCEEDED" => ValidationExceptionReason::ImageCountExceeded,
+            "IMAGE_DIMENSION_EXCEEDED" => ValidationExceptionReason::ImageDimensionExceeded,
+            "IMAGE_FORMAT_UNSUPPORTED" => ValidationExceptionReason::ImageFormatUnsupported,
+            "IMAGE_MIME_MISMATCH" => ValidationExceptionReason::ImageMimeMismatch,
+            "IMAGE_SIZE_EXCEEDED" => ValidationExceptionReason::ImageSizeExceeded,
             "INVALID_CONVERSATION_ID" => ValidationExceptionReason::InvalidConversationId,
             "INVALID_KMS_GRANT" => ValidationExceptionReason::InvalidKmsGrant,
             "INVALID_MODEL_ID" => ValidationExceptionReason::InvalidModelId,
+            "PROMPT_TOO_LONG" => ValidationExceptionReason::PromptTooLong,
+            "REQUEST_BODY_INVALID" => ValidationExceptionReason::RequestBodyInvalid,
+            "THINKING_SIGNATURE_INVALID" => ValidationExceptionReason::ThinkingSignatureInvalid,
+            "TOOL_CONFIG_MISSING" => ValidationExceptionReason::ToolConfigMissing,
+            "TOOL_DUPLICATE" => ValidationExceptionReason::ToolDuplicate,
+            "TOOL_SCHEMA_INVALID" => ValidationExceptionReason::ToolSchemaInvalid,
+            "TOOL_USE_RESULT_MISMATCH" => ValidationExceptionReason::ToolUseResultMismatch,
             other => ValidationExceptionReason::Unknown(crate::primitives::sealed_enum_unknown::UnknownVariantValue(
                 other.to_owned(),
             )),
@@ -89,9 +161,27 @@ impl ValidationExceptionReason {
     pub fn as_str(&self) -> &str {
         match self {
             ValidationExceptionReason::ContentLengthExceedsThreshold => "CONTENT_LENGTH_EXCEEDS_THRESHOLD",
+            ValidationExceptionReason::DocumentCountExceeded => "DOCUMENT_COUNT_EXCEEDED",
+            ValidationExceptionReason::DocumentDuplicateName => "DOCUMENT_DUPLICATE_NAME",
+            ValidationExceptionReason::DocumentMaximumPagesExceeded => "DOCUMENT_MAXIMUM_PAGES_EXCEEDED",
+            ValidationExceptionReason::DocumentModelNotSupported => "DOCUMENT_MODEL_NOT_SUPPORTED",
+            ValidationExceptionReason::DocumentPasswordProtected => "DOCUMENT_PASSWORD_PROTECTED",
+            ValidationExceptionReason::DocumentSizeExceeded => "DOCUMENT_SIZE_EXCEEDED",
+            ValidationExceptionReason::ImageCountExceeded => "IMAGE_COUNT_EXCEEDED",
+            ValidationExceptionReason::ImageDimensionExceeded => "IMAGE_DIMENSION_EXCEEDED",
+            ValidationExceptionReason::ImageFormatUnsupported => "IMAGE_FORMAT_UNSUPPORTED",
+            ValidationExceptionReason::ImageMimeMismatch => "IMAGE_MIME_MISMATCH",
+            ValidationExceptionReason::ImageSizeExceeded => "IMAGE_SIZE_EXCEEDED",
             ValidationExceptionReason::InvalidConversationId => "INVALID_CONVERSATION_ID",
             ValidationExceptionReason::InvalidKmsGrant => "INVALID_KMS_GRANT",
             ValidationExceptionReason::InvalidModelId => "INVALID_MODEL_ID",
+            ValidationExceptionReason::PromptTooLong => "PROMPT_TOO_LONG",
+            ValidationExceptionReason::RequestBodyInvalid => "REQUEST_BODY_INVALID",
+            ValidationExceptionReason::ThinkingSignatureInvalid => "THINKING_SIGNATURE_INVALID",
+            ValidationExceptionReason::ToolConfigMissing => "TOOL_CONFIG_MISSING",
+            ValidationExceptionReason::ToolDuplicate => "TOOL_DUPLICATE",
+            ValidationExceptionReason::ToolSchemaInvalid => "TOOL_SCHEMA_INVALID",
+            ValidationExceptionReason::ToolUseResultMismatch => "TOOL_USE_RESULT_MISMATCH",
             ValidationExceptionReason::Unknown(value) => value.as_str(),
         }
     }
@@ -100,9 +190,27 @@ impl ValidationExceptionReason {
     pub const fn values() -> &'static [&'static str] {
         &[
             "CONTENT_LENGTH_EXCEEDS_THRESHOLD",
+            "DOCUMENT_COUNT_EXCEEDED",
+            "DOCUMENT_DUPLICATE_NAME",
+            "DOCUMENT_MAXIMUM_PAGES_EXCEEDED",
+            "DOCUMENT_MODEL_NOT_SUPPORTED",
+            "DOCUMENT_PASSWORD_PROTECTED",
+            "DOCUMENT_SIZE_EXCEEDED",
+            "IMAGE_COUNT_EXCEEDED",
+            "IMAGE_DIMENSION_EXCEEDED",
+            "IMAGE_FORMAT_UNSUPPORTED",
+            "IMAGE_MIME_MISMATCH",
+            "IMAGE_SIZE_EXCEEDED",
             "INVALID_CONVERSATION_ID",
             "INVALID_KMS_GRANT",
             "INVALID_MODEL_ID",
+            "PROMPT_TOO_LONG",
+            "REQUEST_BODY_INVALID",
+            "THINKING_SIGNATURE_INVALID",
+            "TOOL_CONFIG_MISSING",
+            "TOOL_DUPLICATE",
+            "TOOL_SCHEMA_INVALID",
+            "TOOL_USE_RESULT_MISMATCH",
         ]
     }
 }
@@ -127,9 +235,27 @@ impl ::std::fmt::Display for ValidationExceptionReason {
     fn fmt(&self, f: &mut ::std::fmt::Formatter) -> ::std::fmt::Result {
         match self {
             ValidationExceptionReason::ContentLengthExceedsThreshold => write!(f, "CONTENT_LENGTH_EXCEEDS_THRESHOLD"),
+            ValidationExceptionReason::DocumentCountExceeded => write!(f, "DOCUMENT_COUNT_EXCEEDED"),
+            ValidationExceptionReason::DocumentDuplicateName => write!(f, "DOCUMENT_DUPLICATE_NAME"),
+            ValidationExceptionReason::DocumentMaximumPagesExceeded => write!(f, "DOCUMENT_MAXIMUM_PAGES_EXCEEDED"),
+            ValidationExceptionReason::DocumentModelNotSupported => write!(f, "DOCUMENT_MODEL_NOT_SUPPORTED"),
+            ValidationExceptionReason::DocumentPasswordProtected => write!(f, "DOCUMENT_PASSWORD_PROTECTED"),
+            ValidationExceptionReason::DocumentSizeExceeded => write!(f, "DOCUMENT_SIZE_EXCEEDED"),
+            ValidationExceptionReason::ImageCountExceeded => write!(f, "IMAGE_COUNT_EXCEEDED"),
+            ValidationExceptionReason::ImageDimensionExceeded => write!(f, "IMAGE_DIMENSION_EXCEEDED"),
+            ValidationExceptionReason::ImageFormatUnsupported => write!(f, "IMAGE_FORMAT_UNSUPPORTED"),
+            ValidationExceptionReason::ImageMimeMismatch => write!(f, "IMAGE_MIME_MISMATCH"),
+            ValidationExceptionReason::ImageSizeExceeded => write!(f, "IMAGE_SIZE_EXCEEDED"),
             ValidationExceptionReason::InvalidConversationId => write!(f, "INVALID_CONVERSATION_ID"),
             ValidationExceptionReason::InvalidKmsGrant => write!(f, "INVALID_KMS_GRANT"),
             ValidationExceptionReason::InvalidModelId => write!(f, "INVALID_MODEL_ID"),
+            ValidationExceptionReason::PromptTooLong => write!(f, "PROMPT_TOO_LONG"),
+            ValidationExceptionReason::RequestBodyInvalid => write!(f, "REQUEST_BODY_INVALID"),
+            ValidationExceptionReason::ThinkingSignatureInvalid => write!(f, "THINKING_SIGNATURE_INVALID"),
+            ValidationExceptionReason::ToolConfigMissing => write!(f, "TOOL_CONFIG_MISSING"),
+            ValidationExceptionReason::ToolDuplicate => write!(f, "TOOL_DUPLICATE"),
+            ValidationExceptionReason::ToolSchemaInvalid => write!(f, "TOOL_SCHEMA_INVALID"),
+            ValidationExceptionReason::ToolUseResultMismatch => write!(f, "TOOL_USE_RESULT_MISMATCH"),
             ValidationExceptionReason::Unknown(value) => write!(f, "{value}"),
         }
     }

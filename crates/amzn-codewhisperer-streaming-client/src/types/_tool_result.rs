@@ -2,7 +2,7 @@
 
 /// A tool result that contains the results for a tool request that was previously made.
 #[non_exhaustive]
-#[derive(::std::clone::Clone, ::std::cmp::PartialEq, ::std::fmt::Debug)]
+#[derive(::std::clone::Clone, ::std::cmp::PartialEq)]
 pub struct ToolResult {
     /// The ID for the tool request.
     pub tool_use_id: ::std::string::String,
@@ -10,6 +10,8 @@ pub struct ToolResult {
     pub content: ::std::vec::Vec<crate::types::ToolResultContentBlock>,
     /// Status of the tools result.
     pub status: ::std::option::Option<crate::types::ToolResultStatus>,
+    /// The name for the tool.
+    pub tool_name: ::std::option::Option<::std::string::String>,
 }
 impl ToolResult {
     /// The ID for the tool request.
@@ -28,6 +30,21 @@ impl ToolResult {
     pub fn status(&self) -> ::std::option::Option<&crate::types::ToolResultStatus> {
         self.status.as_ref()
     }
+
+    /// The name for the tool.
+    pub fn tool_name(&self) -> ::std::option::Option<&str> {
+        self.tool_name.as_deref()
+    }
+}
+impl ::std::fmt::Debug for ToolResult {
+    fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
+        let mut formatter = f.debug_struct("ToolResult");
+        formatter.field("tool_use_id", &self.tool_use_id);
+        formatter.field("content", &self.content);
+        formatter.field("status", &self.status);
+        formatter.field("tool_name", &"*** Sensitive Data Redacted ***");
+        formatter.finish()
+    }
 }
 impl ToolResult {
     /// Creates a new builder-style object to manufacture [`ToolResult`](crate::types::ToolResult).
@@ -37,12 +54,13 @@ impl ToolResult {
 }
 
 /// A builder for [`ToolResult`](crate::types::ToolResult).
-#[derive(::std::clone::Clone, ::std::cmp::PartialEq, ::std::default::Default, ::std::fmt::Debug)]
+#[derive(::std::clone::Clone, ::std::cmp::PartialEq, ::std::default::Default)]
 #[non_exhaustive]
 pub struct ToolResultBuilder {
     pub(crate) tool_use_id: ::std::option::Option<::std::string::String>,
     pub(crate) content: ::std::option::Option<::std::vec::Vec<crate::types::ToolResultContentBlock>>,
     pub(crate) status: ::std::option::Option<crate::types::ToolResultStatus>,
+    pub(crate) tool_name: ::std::option::Option<::std::string::String>,
 }
 impl ToolResultBuilder {
     /// The ID for the tool request.
@@ -106,6 +124,23 @@ impl ToolResultBuilder {
         &self.status
     }
 
+    /// The name for the tool.
+    pub fn tool_name(mut self, input: impl ::std::convert::Into<::std::string::String>) -> Self {
+        self.tool_name = ::std::option::Option::Some(input.into());
+        self
+    }
+
+    /// The name for the tool.
+    pub fn set_tool_name(mut self, input: ::std::option::Option<::std::string::String>) -> Self {
+        self.tool_name = input;
+        self
+    }
+
+    /// The name for the tool.
+    pub fn get_tool_name(&self) -> &::std::option::Option<::std::string::String> {
+        &self.tool_name
+    }
+
     /// Consumes the builder and constructs a [`ToolResult`](crate::types::ToolResult).
     /// This method will fail if any of the following fields are not set:
     /// - [`tool_use_id`](crate::types::builders::ToolResultBuilder::tool_use_id)
@@ -127,6 +162,17 @@ impl ToolResultBuilder {
                 )
             })?,
             status: self.status,
+            tool_name: self.tool_name,
         })
+    }
+}
+impl ::std::fmt::Debug for ToolResultBuilder {
+    fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
+        let mut formatter = f.debug_struct("ToolResultBuilder");
+        formatter.field("tool_use_id", &self.tool_use_id);
+        formatter.field("content", &self.content);
+        formatter.field("status", &self.status);
+        formatter.field("tool_name", &"*** Sensitive Data Redacted ***");
+        formatter.finish()
     }
 }
