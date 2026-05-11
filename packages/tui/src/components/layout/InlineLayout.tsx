@@ -37,6 +37,8 @@ import { CrewApprovalRequest } from '../ui/CrewApprovalRequest.js';
 import { TrustAllToolsBanner } from '../ui/TrustAllToolsBanner.js';
 import { UsagePanel } from '../ui/UsagePanel';
 import { CodePanel } from '../ui/CodePanel';
+import { SurveyPanel } from '../ui/SurveyPanel';
+import { SurveyPromptBar } from '../ui/SurveyPromptBar';
 
 import {
   useNotificationState,
@@ -249,6 +251,14 @@ export const InlineLayout: React.FC = () => {
   const mode = useAppStore((state) => state.mode);
   const setMode = useAppStore((state) => state.setMode);
   const exitSequence = useAppStore((state) => state.exitSequence);
+
+  // Research-survey state — kept as a simple trio of selectors since it's
+  // only consumed here.
+  const showSurveyPanel = useAppStore((s) => s.showSurveyPanel);
+  const closeSurveyPanel = useAppStore((s) => s.closeSurveyPanel);
+  const submitSurvey = useAppStore((s) => s.submitSurvey);
+  const surveyPrompt = useAppStore((s) => s.surveyPrompt);
+  const dismissSurveyPrompt = useAppStore((s) => s.dismissSurveyPrompt);
 
   // Detect if pending approval is from a crew subagent (not the main session)
   const isCrewApproval = !!(
@@ -762,6 +772,13 @@ export const InlineLayout: React.FC = () => {
 
         <ActivityTray />
 
+        {surveyPrompt && (
+          <SurveyPromptBar
+            message={surveyPrompt.message}
+            onDismiss={dismissSurveyPrompt}
+          />
+        )}
+
         {trustAllToolsAccepted && <TrustAllToolsBanner />}
         <Box marginBottom={1}>
           <PromptBar
@@ -778,6 +795,7 @@ export const InlineLayout: React.FC = () => {
               showKeybindingsPanel ||
               showKnowledgePanel ||
               showCodePanel ||
+              showSurveyPanel ||
               !!pendingApproval
                 ? undefined
                 : toolOutputsExpanded
@@ -827,7 +845,8 @@ export const InlineLayout: React.FC = () => {
                   showHooksPanel ||
                   showKeybindingsPanel ||
                   showKnowledgePanel ||
-                  showCodePanel
+                  showCodePanel ||
+                  showSurveyPanel
             }
           >
             <CommandMenu />
@@ -931,6 +950,9 @@ export const InlineLayout: React.FC = () => {
                 onRefresh={handleRefreshCodePanel}
               />
             )}
+            {showSurveyPanel && (
+              <SurveyPanel onClose={closeSurveyPanel} onSubmit={submitSurvey} />
+            )}
             <ActionHint
               text="Showing detailed output · ctrl+o to toggle"
               visible={toolOutputsExpanded}
@@ -957,6 +979,7 @@ export const InlineLayout: React.FC = () => {
                 !showKeybindingsPanel &&
                 !showKnowledgePanel &&
                 !showCodePanel &&
+                !showSurveyPanel &&
                 commandInputValue.length === 0 &&
                 exitSequence === 0
               }

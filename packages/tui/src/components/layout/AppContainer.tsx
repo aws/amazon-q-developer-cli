@@ -75,6 +75,8 @@ export const AppContainer: React.FC = () => {
   );
   const pendingOAuthServers = useAppStore((state) => state.pendingOAuthServers);
   const showTransientAlert = useAppStore((state) => state.showTransientAlert);
+  const surveyPrompt = useAppStore((state) => state.surveyPrompt);
+  const openSurveyPanel = useAppStore((state) => state.openSurveyPanel);
 
   // Restore terminal state when the process is resumed after ctrl+z suspend
   useEffect(() => {
@@ -129,6 +131,7 @@ export const AppContainer: React.FC = () => {
       editingQueueIndex: editingQueueIndex ?? null,
       transientAlertHasAction: !!transientAlert?.action,
       pendingOAuthUrl: firstOAuthUrl,
+      surveyPromptVisible: !!surveyPrompt,
     };
 
     const actions: AppKeypressActions = {
@@ -146,6 +149,9 @@ export const AppContainer: React.FC = () => {
       },
       fireTransientAlertAction: () => transientAlert?.action?.onAction(),
       dismissTransientAlert,
+      acceptSurveyPrompt: () => {
+        if (surveyPrompt) openSurveyPanel(surveyPrompt.survey);
+      },
       copyOAuthUrl: (url) => {
         if (copyToSystemClipboard(url)) {
           showTransientAlert({

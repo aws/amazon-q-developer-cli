@@ -41,6 +41,7 @@ const baseState = (
   editingQueueIndex: null,
   transientAlertHasAction: false,
   pendingOAuthUrl: null,
+  surveyPromptVisible: false,
   ...overrides,
 });
 
@@ -68,6 +69,7 @@ function makeActions(): AppKeypressActions & {
     copyOAuthUrl: track('copyOAuthUrl'),
     suspendProcess: track('suspendProcess'),
     shellEscapeWrite: mock(),
+    acceptSurveyPrompt: track('acceptSurveyPrompt'),
     _calls: calls,
     _args: args,
   };

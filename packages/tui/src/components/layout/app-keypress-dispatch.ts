@@ -23,6 +23,7 @@ export interface AppKeypressState {
   editingQueueIndex: number | null;
   transientAlertHasAction: boolean;
   pendingOAuthUrl: string | null;
+  surveyPromptVisible: boolean;
 }
 
 export interface AppKeypressActions {
@@ -37,6 +38,7 @@ export interface AppKeypressActions {
   copyOAuthUrl: (url: string) => void;
   suspendProcess: () => void;
   shellEscapeWrite: ((bytes: string) => void) | null;
+  acceptSurveyPrompt: () => void;
 }
 
 export interface AppKeypressBindings {
@@ -83,6 +85,11 @@ export function dispatchAppKeypress(
   if (key.ctrl && input === 'y' && state.transientAlertHasAction) {
     actions.fireTransientAlertAction();
     actions.dismissTransientAlert();
+    return true;
+  }
+
+  if (key.ctrl && input === 'y' && state.surveyPromptVisible) {
+    actions.acceptSurveyPrompt();
     return true;
   }
 

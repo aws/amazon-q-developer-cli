@@ -178,6 +178,23 @@ import {
   resolveNotificationMethod,
   playNotification,
 } from '../utils/notification.js';
+import {
+  DEFAULT_TURN_THRESHOLD,
+  loadSurveyState,
+  resolveEligibility,
+  shouldShowSurvey,
+  markSurveyShown,
+  markSurveyCompleted,
+  markSurveyDismissed,
+  type SurveyState,
+} from '../utils/survey-state.js';
+import { submitFormToAperture } from '../utils/survey-submit.js';
+import {
+  SESSION_FEEDBACK_SURVEY,
+  PLAN_QUALITY_SURVEY,
+  IMPLEMENT_PLAN_SURVEY,
+  type SurveyDefinition,
+} from '../constants/survey.js';
 
 export enum MessageRole {
   User = 'user',
@@ -589,6 +606,22 @@ interface BaseAppActions {
 
   // Trust all tools acceptance
   confirmTrustAllTools: () => void;
+
+  // Research survey actions
+  /** Increment the counter we use to decide when to first show the prompt. */
+  recordCompletedTurn: () => void;
+  /** User accepted the notification and wants to take the survey. */
+  openSurveyPanel: (survey?: SurveyDefinition) => void;
+  /** Close the panel without submitting — treated as "in progress / ignored". */
+  closeSurveyPanel: () => void;
+  /** Called after the user submits answers; persists completion timestamp. */
+  submitSurvey: (answers: Record<string, string>) => void;
+  /** User dismissed the notification bar without opening the panel. */
+  dismissSurveyPrompt: () => void;
+  /** Trigger the plan-quality survey (called on plan mode exit / handoff). */
+  triggerPlanSurvey: () => void;
+  /** Trigger the implement-plan survey (called after all plan tasks complete). */
+  triggerImplementPlanSurvey: () => void;
 }
 
 export const AppStoreContext = createContext<AppStoreApi | null>(null);
@@ -753,6 +786,20 @@ export interface AppState {
   // Trust all tools mode
   trustAllToolsRequested: boolean;
   trustAllToolsConfirmed: boolean;
+
+  // Research-survey state
+  /** Lazily-loaded snapshot of persisted survey state (eligibility, cooldown). */
+  surveyState: SurveyState;
+  /** How many assistant turns have completed in THIS session. */
+  completedTurnCount: number;
+  /** Whether the research-survey panel is currently open. */
+  showSurveyPanel: boolean;
+  /** Which survey is currently active (shown in the panel). */
+  activeSurvey: SurveyDefinition | null;
+  /** Whether the plan-quality survey was shown this session (gates implement-plan). */
+  planSurveyShownThisSession: boolean;
+  /** Active survey prompt bar (null = hidden). Separate from transientAlert. */
+  surveyPrompt: { message: string; survey: SurveyDefinition } | null;
 
   // Streaming buffer control (typed properly instead of `any`)
   streamingBuffer: {
@@ -1059,6 +1106,17 @@ export const createAppStore = (props: AppStoreProps) => {
     noInteractive: props.noInteractive ?? false,
     trustAllToolsRequested: props.trustAllTools ?? false,
     trustAllToolsConfirmed: false,
+
+    // Research survey — eligibility is resolved lazily on first boot.
+    surveyState: (() => {
+      const loaded = loadSurveyState(SESSION_FEEDBACK_SURVEY.id);
+      return resolveEligibility(SESSION_FEEDBACK_SURVEY, loaded).state;
+    })(),
+    completedTurnCount: 0,
+    showSurveyPanel: false,
+    activeSurvey: null,
+    planSurveyShownThisSession: false,
+    surveyPrompt: null,
 
     sendMessage: async (
       content: string,
@@ -1967,7 +2025,19 @@ export const createAppStore = (props: AppStoreProps) => {
       set({ agentError, agentErrorGuidance: guidance ?? null }),
     setCurrentModel: (currentModel) => set({ currentModel }),
     setCurrentAgent: (agent) => {
+      const prevAgent = get().currentAgent;
       set({ currentAgent: agent ? { name: agent.name } : null });
+
+      // Trigger plan quality survey when switching away from planner
+      // (the handoff moment — plan was presented and user approved it).
+      if (
+        prevAgent?.name === 'kiro_planner' &&
+        agent?.name &&
+        agent.name !== 'kiro_planner'
+      ) {
+        queueMicrotask(() => get().triggerPlanSurvey());
+      }
+
       if (agent?.welcomeMessage) {
         set((state) => ({
           messages: [
@@ -3002,7 +3072,22 @@ export const createAppStore = (props: AppStoreProps) => {
     },
 
     setTasks: (tasks: TaskItem[]) => {
+      const prevTasks = get().tasks;
       set({ tasks });
+
+      // Trigger implement-plan survey when all tasks are done.
+      // Detection: either all tasks have status 'completed', OR tasks were
+      // cleared (set to empty) after previously having pending items — the
+      // agent removes tasks from the list once they're done.
+      const hadPending =
+        prevTasks.length > 0 && prevTasks.some((t) => t.status !== 'completed');
+      const allDone =
+        (tasks.length > 0 && tasks.every((t) => t.status === 'completed')) ||
+        (tasks.length === 0 && prevTasks.length > 0);
+
+      if (allDone && hadPending) {
+        queueMicrotask(() => get().triggerImplementPlanSurvey());
+      }
     },
 
     toggleActivityTray: () => {
@@ -3028,6 +3113,197 @@ export const createAppStore = (props: AppStoreProps) => {
 
     confirmTrustAllTools: () => {
       set({ trustAllToolsConfirmed: true });
+    },
+
+    recordCompletedTurn: () => {
+      const state = get();
+      const nextCount = state.completedTurnCount + 1;
+      set({ completedTurnCount: nextCount });
+
+      // Only evaluate the session-feedback survey trigger once we reach the
+      // threshold. shouldShowSurvey() checks eligibility + cooldown.
+      const surveyState = state.surveyState;
+      if (
+        nextCount < DEFAULT_TURN_THRESHOLD ||
+        state.showSurveyPanel ||
+        !shouldShowSurvey(SESSION_FEEDBACK_SURVEY, surveyState)
+      ) {
+        return;
+      }
+
+      // Don't interrupt in-flight work or other attention-grabbing UI.
+      if (
+        state.isProcessing ||
+        state.isCompacting ||
+        state.pendingApproval ||
+        state.agentError ||
+        state.transientAlert ||
+        state.surveyPrompt ||
+        state.queuedMessages.length > 0 ||
+        state.tasks.some((t) => t.status === 'pending')
+      ) {
+        return;
+      }
+
+      // Record cooldown immediately when showing the prompt — even if the
+      // user quits without responding, the cooldown clock starts now.
+      markSurveyShown(SESSION_FEEDBACK_SURVEY.id);
+      set({
+        surveyPrompt: {
+          message: SESSION_FEEDBACK_SURVEY.notificationMessage,
+          survey: SESSION_FEEDBACK_SURVEY,
+        },
+      });
+    },
+
+    openSurveyPanel: (survey?: SurveyDefinition) => {
+      const target = survey ?? get().activeSurvey ?? SESSION_FEEDBACK_SURVEY;
+      markSurveyShown(target.id);
+      set((s) => ({
+        showSurveyPanel: true,
+        activeSurvey: target,
+        surveyPrompt: null,
+        transientAlert: null,
+        surveyState: { ...s.surveyState, lastShownAt: Date.now() },
+      }));
+    },
+
+    closeSurveyPanel: () => {
+      set({ showSurveyPanel: false, activeSurvey: null });
+    },
+
+    submitSurvey: (answers) => {
+      const survey = get().activeSurvey ?? SESSION_FEEDBACK_SURVEY;
+      markSurveyCompleted(survey.id);
+
+      // Answering either plan survey sets the cooldown for both (they're paired).
+      if (
+        survey.id === PLAN_QUALITY_SURVEY.id ||
+        survey.id === IMPLEMENT_PLAN_SURVEY.id
+      ) {
+        markSurveyCompleted(PLAN_QUALITY_SURVEY.id);
+        markSurveyCompleted(IMPLEMENT_PLAN_SURVEY.id);
+      }
+
+      logger.info('[survey] submitted', {
+        surveyId: survey.id,
+        answerCount: Object.keys(answers).length,
+      });
+
+      // Track plan survey shown for gating implement-plan survey.
+      const planShown =
+        survey.id === PLAN_QUALITY_SURVEY.id
+          ? true
+          : get().planSurveyShownThisSession;
+
+      set((s) => ({
+        showSurveyPanel: false,
+        activeSurvey: null,
+        planSurveyShownThisSession: planShown,
+        surveyState: {
+          ...s.surveyState,
+          lastShownAt: Date.now(),
+          lastCompletedAt: Date.now(),
+        },
+        transientAlert: {
+          message: 'Thanks for your feedback',
+          status: 'success' as const,
+          autoHideMs: 3000,
+        },
+      }));
+
+      // Fire-and-forget ingestion.
+      const metadata = {
+        sessionId: get().sessionId ?? undefined,
+        isInternal: !!process.env.KIRO_INTERNAL,
+      };
+      submitFormToAperture(survey, answers, { metadata })
+        .then((outcome) => {
+          if (outcome.rateLimited) {
+            get().showTransientAlert({
+              message:
+                outcome.message ??
+                'Feedback submission is temporarily unavailable.',
+              status: 'warning',
+              autoHideMs: 5000,
+            });
+          }
+        })
+        .catch((err) => {
+          logger.warn('[survey] submit promise rejected', err);
+        });
+    },
+
+    dismissSurveyPrompt: () => {
+      const survey =
+        get().activeSurvey ??
+        get().surveyPrompt?.survey ??
+        SESSION_FEEDBACK_SURVEY;
+      markSurveyDismissed(survey.id);
+
+      // Dismissing either plan survey sets the cooldown for both (they're paired).
+      if (
+        survey.id === PLAN_QUALITY_SURVEY.id ||
+        survey.id === IMPLEMENT_PLAN_SURVEY.id
+      ) {
+        markSurveyDismissed(PLAN_QUALITY_SURVEY.id);
+        markSurveyDismissed(IMPLEMENT_PLAN_SURVEY.id);
+      }
+
+      set((s) => ({
+        surveyPrompt: null,
+        transientAlert: null,
+        activeSurvey: null,
+        surveyState: {
+          ...s.surveyState,
+          lastShownAt: Date.now(),
+          dismissCount: s.surveyState.dismissCount + 1,
+        },
+      }));
+    },
+
+    triggerPlanSurvey: () => {
+      const state = get();
+      if (state.showSurveyPanel || state.surveyPrompt || state.transientAlert)
+        return;
+
+      // Resolve eligibility for plan survey (10% sampling, 30-day cooldown)
+      const planState = loadSurveyState(PLAN_QUALITY_SURVEY.id);
+      const { eligible, state: resolved } = resolveEligibility(
+        PLAN_QUALITY_SURVEY,
+        planState
+      );
+      if (!eligible || !shouldShowSurvey(PLAN_QUALITY_SURVEY, resolved)) return;
+
+      markSurveyShown(PLAN_QUALITY_SURVEY.id);
+      set({
+        planSurveyShownThisSession: true,
+        surveyPrompt: {
+          message: PLAN_QUALITY_SURVEY.notificationMessage,
+          survey: PLAN_QUALITY_SURVEY,
+        },
+      });
+    },
+
+    triggerImplementPlanSurvey: () => {
+      const state = get();
+      // Only shown if the plan-quality survey was shown this session.
+      if (!state.planSurveyShownThisSession) return;
+      if (state.showSurveyPanel || state.transientAlert) return;
+
+      // If the plan survey prompt is still showing (user never responded),
+      // replace it with the more relevant implementation survey.
+      if (state.surveyPrompt?.survey.id === PLAN_QUALITY_SURVEY.id) {
+        markSurveyDismissed(PLAN_QUALITY_SURVEY.id);
+      }
+
+      markSurveyShown(IMPLEMENT_PLAN_SURVEY.id);
+      set({
+        surveyPrompt: {
+          message: IMPLEMENT_PLAN_SURVEY.notificationMessage,
+          survey: IMPLEMENT_PLAN_SURVEY,
+        },
+      });
     },
 
     // Main orchestrator
@@ -3076,6 +3352,7 @@ export const createAppStore = (props: AppStoreProps) => {
       }
 
       // Clear all UI state before processing any input
+      const hadSurveyPrompt = !!state.surveyPrompt;
       set({
         activeCommand: null,
         showContextBreakdown: false,
@@ -3085,8 +3362,31 @@ export const createAppStore = (props: AppStoreProps) => {
         activeTrigger: null,
         promptHint: null,
         commandShadowText: null,
+        surveyPrompt: null,
       });
       state.clearInput();
+
+      // If the survey prompt was showing and the user chose to type instead
+      // of accepting it, count that as a dismissal toward the cooldown.
+      if (hadSurveyPrompt) {
+        const survey = state.surveyPrompt?.survey ?? SESSION_FEEDBACK_SURVEY;
+        markSurveyDismissed(survey.id);
+        // Dismissing either plan survey sets cooldown for both (paired).
+        if (
+          survey.id === PLAN_QUALITY_SURVEY.id ||
+          survey.id === IMPLEMENT_PLAN_SURVEY.id
+        ) {
+          markSurveyDismissed(PLAN_QUALITY_SURVEY.id);
+          markSurveyDismissed(IMPLEMENT_PLAN_SURVEY.id);
+        }
+        set((s) => ({
+          surveyState: {
+            ...s.surveyState,
+            lastShownAt: Date.now(),
+            dismissCount: s.surveyState.dismissCount + 1,
+          },
+        }));
+      }
 
       // Clear announcement on first user interaction
       if (state.announcement) {
@@ -3374,6 +3674,22 @@ export const createAppStore = (props: AppStoreProps) => {
     prevProcessing = state.isProcessing;
     prevApproval = state.pendingApproval;
 
+    // Turn completed cleanly — bump our survey turn counter regardless of
+    // whether the terminal bell is enabled. The store action decides whether
+    // to trigger the survey prompt.
+    const turnJustEnded =
+      wasProcessing &&
+      !state.isProcessing &&
+      !state.agentError &&
+      !state.wasCancelled;
+    if (turnJustEnded) {
+      // Defer so we run after the state that set isProcessing=false commits,
+      // avoiding a re-entrant set() inside this subscriber.
+      queueMicrotask(() => {
+        store.getState().recordCompletedTurn();
+      });
+    }
+
     if (!enabled) return;
 
     const method = resolveNotificationMethod(
@@ -3381,13 +3697,7 @@ export const createAppStore = (props: AppStoreProps) => {
     );
     if (!method) return;
 
-    // Turn completed cleanly (no error, no cancellation)
-    if (
-      wasProcessing &&
-      !state.isProcessing &&
-      !state.agentError &&
-      !state.wasCancelled
-    ) {
+    if (turnJustEnded) {
       playNotification(method, 'Response complete');
     }
 
