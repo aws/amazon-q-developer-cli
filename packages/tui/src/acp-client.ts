@@ -2,6 +2,10 @@ import * as acp from '@agentclientprotocol/sdk';
 import { KiroClient } from '@kiro/client';
 import type { Stream } from '@kiro/client';
 import { logger } from './utils/logger';
+import {
+  getTelemetryIdentity,
+  isTelemetryEnabled,
+} from './utils/telemetry-identity';
 import { spawn, type ChildProcess } from 'node:child_process';
 import type { SessionClient } from './types/session-client';
 import {
@@ -1138,7 +1142,11 @@ export class KasAcpClient extends BaseAcpClient {
     const stream = buildStdioStreams(proc);
     this.kiroClient = new KiroClient({
       stream: stream as Stream,
-      clientInfo: { name: 'kiro-tui', version: TUI_VERSION },
+      clientInfo: { name: 'kiro-cli', version: TUI_VERSION },
+      clientMeta: {
+        telemetryEnabled: isTelemetryEnabled(),
+        telemetry: getTelemetryIdentity(),
+      },
     });
   }
 

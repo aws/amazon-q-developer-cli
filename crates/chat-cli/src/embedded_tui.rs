@@ -3,7 +3,10 @@ use std::path::{
     PathBuf,
 };
 use std::process::ExitCode;
-use std::time::Instant;
+use std::time::{
+    Duration,
+    Instant,
+};
 
 use eyre::{
     Context as _,
@@ -215,8 +218,24 @@ pub async fn launch_v2(os: &Os, agent_engine: AgentEngine, mode: Option<AgentMod
         cmd.env("FORCE_COLOR", force_color);
     }
 
+    // Resolve telemetry identity for the TUI
+    let telemetry_enabled = !crate::util::env_var::is_telemetry_disabled()
+        && os
+            .database
+            .settings
+            .get_bool(crate::database::settings::Setting::TelemetryEnabled)
+            .unwrap_or(true);
+    cmd.env("KIRO_TELEMETRY_ENABLED", telemetry_enabled.to_string());
+
     match agent_engine {
         AgentEngine::Kas => {
+            // Resolve user identity for KAS telemetry (not needed for Rust engine)
+            if let Ok(Ok(output)) = tokio::time::timeout(Duration::from_secs(5), os.client.get_usage_limits()).await
+                && let Some(info) = output.user_info()
+            {
+                cmd.env("KIRO_USER_ID", info.user_id());
+            }
+
             let token_path = kas_token_path(os)?;
             cmd.env("KIRO_KAS_TOKEN_PATH", &token_path);
             cmd.env("KIRO_AGENT_ENGINE", "kas");
