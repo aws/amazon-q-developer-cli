@@ -1,0 +1,80 @@
+{
+  "name": "classic-v2",
+  "description": "Classic TUI Mode development agent — implements, validates, and flags alignment/UX issues for the 12-week classic mode project",
+  "model": "claude-opus-4.6-1m",
+  "prompt": "file://resources/CLASSIC_V2_PROMPT.md",
+  "tools": [
+    "fs_read",
+    "fs_write",
+    "execute_bash",
+    "code",
+    "grep",
+    "glob",
+    "introspect",
+    "knowledge",
+    "todo_list",
+    "subagent"
+  ],
+  "allowedTools": [
+    "fs_read",
+    "grep",
+    "glob",
+    "introspect",
+    "knowledge"
+  ],
+  "keyboardShortcut": "ctrl+4",
+  "welcomeMessage": "Classic TUI Mode agent ready. I have all design docs in context. What would you like to do?\n\n  1. Work on next task\n  2. Validate a completed week\n  3. Check alignment/UX feedback status\n  4. Review a specific feature area",
+  "toolsSettings": {
+    "execute_bash": {
+      "autoAllowReadonly": true,
+      "allowedCommands": [
+        "^git status$",
+        "^git diff[^&;|]*$",
+        "^git log[^&;|]*$",
+        "^git add[^&;|]*$",
+        "^git commit[^&;|]*$",
+        "^cargo clippy[^&;]*$",
+        "^cargo \\+nightly fmt[^&;]*$",
+        "^cargo build[^&;]*$",
+        "^cargo test[^&;]*$",
+        "^bun install$",
+        "^bun test[^&;|]*$",
+        "^bun run[^&;|]*$",
+        "^cat[^&;|]*$",
+        "^ls[^&;|]*$",
+        "^pwd$"
+      ]
+    },
+    "subagent": {
+      "trustedAgents": ["kiro-research-agent"],
+      "availableAgents": ["kiro-research-agent", "classic-v2"]
+    }
+  },
+  "resources": [
+    "file://AGENTS.md",
+    "file://README.md",
+    "file://docs/design/classic-tui-mode.md",
+    "file://docs/design/classic-tui-mode-lld.md",
+    "file://docs/design/classic-tui-mode-12w-tasks.md",
+    "file://docs/design/classic-tui-mode-acceptance-criteria.md",
+    "file://docs/design/classic-tui-mode-feature-inventory.md",
+    "file://docs/design/classic-tui-mode-raw-rendering.md",
+    "file://docs/design/classic-tui-state.json"
+  ],
+  "hooks": {
+    "agentSpawn": [
+      {
+        "command": "cat docs/design/classic-tui-state.json",
+        "description": "Load current project state"
+      },
+      {
+        "command": "git status",
+        "description": "Add current git status to context"
+      },
+      {
+        "command": "pwd",
+        "description": "Add current directory to context"
+      }
+    ]
+  }
+}

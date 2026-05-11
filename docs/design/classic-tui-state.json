@@ -1,0 +1,9 @@
+{
+  "stage": "W1-0",
+  "week": 1,
+  "renderingPath": null,
+  "completedTasks": [],
+  "notes": [
+    { "date": "2026-05-11", "text": "Feature flag added as W1-0. Classic mode gated by chat.classicUiEnabled (default false). Enable with KIRO_CLASSIC_UI_ENABLED=1." }
+  ]
+}
