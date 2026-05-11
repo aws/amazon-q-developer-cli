@@ -26,6 +26,7 @@ pub async fn get_command_options_legacy(
         TuiCommandKind::Model => commands::model::get_options(partial, ctx).await,
         TuiCommandKind::Agent => commands::agent::get_options(partial, ctx),
         TuiCommandKind::Feedback => commands::issue::get_options(),
+        TuiCommandKind::Effort => commands::effort::get_options(ctx),
         TuiCommandKind::Chat
         | TuiCommandKind::Context
         | TuiCommandKind::Compact

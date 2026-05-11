@@ -52,6 +52,7 @@ pub enum TuiCommandKind {
     Prompts,
     Feedback,
     Chat,
+    Effort,
 }
 
 /// Request to get command options (autocomplete)

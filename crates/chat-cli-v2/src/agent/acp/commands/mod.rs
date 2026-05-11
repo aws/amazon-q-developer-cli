@@ -6,6 +6,7 @@ pub mod clear;
 pub mod code;
 pub mod compact;
 pub mod context;
+pub mod effort;
 pub mod exit;
 pub mod guide;
 pub mod help;
@@ -175,6 +176,7 @@ pub async fn execute(command: TuiCommand, ctx: &CommandContext<'_>) -> CommandRe
         TuiCommand::Hooks(_) => hooks::execute(ctx).await,
         TuiCommand::Guide(ref args) => guide::execute(args, ctx).await,
         TuiCommand::Stats(ref args) => stats::execute(args, ctx).await,
+        TuiCommand::Effort(ref args) => effort::execute(args, ctx),
     }
 }
 

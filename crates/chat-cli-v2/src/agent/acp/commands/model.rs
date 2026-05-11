@@ -102,10 +102,23 @@ async fn switch_model(name: &str, ctx: &CommandContext<'_>) -> CommandResult {
 
     // Exact match — switch immediately
     if let Some(m) = models.iter().find(|m| m.id == name) {
-        let model = to_legacy_model_info(m);
         let display_name = m.display_name.clone();
         let id = m.id.clone();
-        ctx.rts_state.set_model_info(Some(model));
+        // Fetch full ModelInfo from API (includes additional_fields schema).
+        // list_available_models_cached() is cheap (in-memory cache).
+        let full_model = ctx
+            .api_client
+            .list_available_models_cached()
+            .await
+            .ok()
+            .and_then(|r| {
+                r.models
+                    .iter()
+                    .find(|api_m| api_m.model_id() == id)
+                    .map(crate::cli::chat::legacy::model::ModelInfo::from_api_model)
+            })
+            .unwrap_or_else(|| to_legacy_model_info(m));
+        ctx.rts_state.set_model_info(Some(full_model));
         return CommandResult::success_with_data(
             format!("Model changed to {}", display_name),
             serde_json::json!({ "model": { "id": id, "name": display_name } }),
@@ -137,6 +150,7 @@ fn to_legacy_model_info(m: &ModelInfo) -> crate::cli::chat::legacy::model::Model
         ),
         rate_multiplier: None,
         rate_unit: None,
+        additional_fields: None,
     }
 }
 

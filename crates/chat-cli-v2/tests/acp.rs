@@ -3185,3 +3185,61 @@ async fn empty_mcp_tool_content_invokes_zero_arg_tool_without_retry() {
         too_large_mention
     );
 }
+
+/// E2E: /effort command flow — get options, select one via command execute,
+/// verify override flows through to additional_model_request_fields on next prompt.
+#[tokio::test]
+#[timeout(30000)]
+#[serial]
+async fn effort_command_e2e() {
+    let (mut harness, client, session_id, _) = AcpTestHarnessBuilder::new("effort_command_e2e")
+        .with_trust_all(true)
+        .build_with_session()
+        .await;
+
+    // 1. Get effort options (simulates user running /effort)
+    let options = client
+        .get_command_options(session_id.clone(), "effort")
+        .await
+        .expect("get_command_options for effort failed");
+
+    assert!(!options.options.is_empty(), "effort should have options");
+    let values: Vec<&str> = options.options.iter().map(|o| o.value.as_str()).collect();
+    assert!(values.contains(&"low"), "should contain 'low': {:?}", values);
+    assert!(values.contains(&"high"), "should contain 'high': {:?}", values);
+
+    // 2. User selects "low" via /effort command execute
+    let result = client
+        .execute_command(
+            session_id.clone(),
+            serde_json::json!({ "command": "effort", "args": { "value": "low" } }),
+        )
+        .await
+        .expect("execute_command for effort failed");
+    assert!(result.success, "effort execute should succeed: {}", result.message);
+
+    // 3. Verify the override is applied on the next prompt
+    harness
+        .push_mock_responses_from_file(&session_id.0, "tests/mock_responses/simple_text.jsonl")
+        .await;
+
+    client
+        .prompt_text(session_id.clone(), "hello")
+        .await
+        .expect("prompt failed");
+
+    let requests = harness.get_captured_requests(&session_id.0).await;
+    assert!(!requests.is_empty(), "should have captured at least one request");
+
+    let last_request = requests.last().unwrap();
+    let additional_fields = last_request
+        .additional_model_request_fields
+        .as_ref()
+        .expect("additional_model_request_fields should be set");
+
+    assert_eq!(
+        additional_fields["output_config"]["effort"],
+        "low",
+        "effort should be 'low' in the request"
+    );
+}

@@ -85,6 +85,7 @@ use crate::api_client::{
     ApiClient,
     model as rts,
 };
+use crate::cli::chat::legacy::additional_fields::AdditionalFields;
 use crate::cli::chat::legacy::model::ModelInfo;
 use crate::cli::chat::legacy::util::serde_value_to_document;
 use crate::telemetry::ReasonCode;
@@ -364,6 +365,7 @@ impl RtsModel {
             user_input_message,
             history: Some(history),
             agent_continuation_id: None,
+            additional_model_request_fields: self.state.additional_fields().and_then(|af| af.to_value().cloned()),
         })
     }
 }
@@ -536,6 +538,8 @@ pub struct RtsStateSnapshot {
     // within the ACP impl so cleanup will be done altogether.
     pub model_info: Option<ModelInfo>,
     pub context_usage_percentage: Option<f32>,
+    #[serde(default)]
+    pub additional_fields: Option<AdditionalFields>,
 }
 
 /// RTS model state with interior mutability for safe shared access.
@@ -568,6 +572,7 @@ impl RtsState {
                 conversation_id,
                 model_info: None,
                 context_usage_percentage: None,
+                additional_fields: None,
             }),
             cwd: None,
         }
@@ -607,7 +612,12 @@ impl RtsState {
     }
 
     pub fn set_model_info(&self, info: Option<ModelInfo>) {
-        self.inner.lock().unwrap().model_info = info;
+        let mut inner = self.inner.lock().unwrap();
+        // Reset additional fields from the new model's schema (clears any prior overrides)
+        inner.additional_fields = info
+            .as_ref()
+            .and_then(|m| m.additional_fields.clone());
+        inner.model_info = info;
     }
 
     pub fn context_usage_percentage(&self) -> Option<f32> {
@@ -616,6 +626,20 @@ impl RtsState {
 
     pub fn set_context_usage_percentage(&self, percentage: Option<f32>) {
         self.inner.lock().unwrap().context_usage_percentage = percentage;
+    }
+
+    pub fn additional_fields(&self) -> Option<AdditionalFields> {
+        self.inner.lock().unwrap().additional_fields.clone()
+    }
+
+    /// Set a single override by dotted path. Validates against the model's schema.
+    pub fn set_additional_field(&self, path: &str, value: &str) -> Result<(), String> {
+        let mut inner = self.inner.lock().unwrap();
+        let af = inner
+            .additional_fields
+            .as_mut()
+            .ok_or_else(|| "model does not support additional fields".to_string())?;
+        af.set(path, value)
     }
 
     /// Get a serializable snapshot of the current state.

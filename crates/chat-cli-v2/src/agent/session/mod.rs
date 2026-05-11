@@ -523,6 +523,7 @@ impl SessionDb {
                     conversation_id: session.session_id.clone(),
                     model_info: None,
                     context_usage_percentage: None,
+                    additional_fields: None,
                 },
                 permissions: RuntimePermissions::default(),
                 agent_name: None,

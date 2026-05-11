@@ -63,6 +63,8 @@ pub enum TuiCommand {
     Guide(GuideArgs),
     /// Show request stats for debugging slow turns
     Stats(StatsArgs),
+    /// Set reasoning effort level
+    Effort(EffortArgs),
 }
 
 /// Arguments for /help command
@@ -253,6 +255,17 @@ pub struct StatsArgs {
     pub last: Option<u32>,
 }
 
+/// Arguments for /effort command
+#[typeshare]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct EffortArgs {
+    /// Effort level to set. If None, shows available levels.
+    /// Accepts either `level` or `value` (for generic selection UI)
+    #[serde(alias = "value", skip_serializing_if = "Option::is_none")]
+    pub level: Option<String>,
+}
+
 impl TuiCommand {
     /// Command name with leading slash
     pub fn name(&self) -> &'static str {
@@ -278,6 +291,7 @@ impl TuiCommand {
             TuiCommand::Hooks(_) => "/hooks",
             TuiCommand::Guide(_) => "/guide",
             TuiCommand::Stats(_) => "/stats",
+            TuiCommand::Effort(_) => "/effort",
         }
     }
 
@@ -305,6 +319,7 @@ impl TuiCommand {
             TuiCommand::Hooks(_) => "View configured hooks",
             TuiCommand::Guide(_) => "Get help with Kiro CLI features from the guide agent",
             TuiCommand::Stats(_) => "Show request IDs and timings for debugging slow turns",
+            TuiCommand::Effort(_) => "Set reasoning effort level",
         }
     }
 
@@ -334,6 +349,7 @@ impl TuiCommand {
             TuiCommand::Hooks(_) => "/hooks",
             TuiCommand::Guide(_) => "/guide [question]",
             TuiCommand::Stats(_) => "/stats [N|save <filename>]",
+            TuiCommand::Effort(_) => "/effort [level]",
         }
     }
 
@@ -468,6 +484,12 @@ impl TuiCommand {
                 meta.insert("hidden".into(), true.into());
                 Some(meta)
             },
+            TuiCommand::Effort(_) => {
+                let mut meta = serde_json::Map::new();
+                meta.insert("inputType".into(), "selection".into());
+                meta.insert("hint".into(), "".into());
+                Some(meta)
+            },
         };
 
         // Attach subcommands to meta so the TUI can offer a sub-command dropdown
@@ -518,6 +540,7 @@ impl TuiCommand {
             TuiCommand::Hooks(HooksArgs::default()),
             TuiCommand::Guide(GuideArgs::default()),
             TuiCommand::Stats(StatsArgs::default()),
+            TuiCommand::Effort(EffortArgs::default()),
         ];
         commands.sort_by_key(|cmd| cmd.name());
         commands
@@ -588,6 +611,9 @@ impl TuiCommand {
                     }))
                 }
             },
+            "effort" => Some(Self::Effort(EffortArgs {
+                level: (!args.is_empty()).then(|| args.to_string()),
+            })),
             _ => None,
         }
     }

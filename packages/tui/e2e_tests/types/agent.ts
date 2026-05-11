@@ -191,6 +191,15 @@ export interface ContextArgs {
 	subcommand?: string;
 }
 
+/** Arguments for /effort command */
+export interface EffortArgs {
+	/**
+	 * Effort level to set. If None, shows available levels.
+	 * Accepts either `level` or `value` (for generic selection UI)
+	 */
+	level?: string;
+}
+
 /** Arguments for /feedback command */
 export interface FeedbackArgs {
 	/** Feedback type: general, feature, issue. If None, shows the selection panel. */
@@ -621,5 +630,7 @@ export type TuiCommand =
 	/** Switch to the guide agent for help with Kiro CLI */
 	| { command: "guide", args: GuideArgs }
 	/** Show request stats for debugging slow turns */
-	| { command: "stats", args: StatsArgs };
+	| { command: "stats", args: StatsArgs }
+	/** Set reasoning effort level */
+	| { command: "effort", args: EffortArgs };
 

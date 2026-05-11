@@ -89,6 +89,11 @@ enum Command {
         model_id: String,
         reply: oneshot::Sender<acp::Result<acp::SetSessionModelResponse>>,
     },
+    ExecuteCommand {
+        session_id: acp::SessionId,
+        command: serde_json::Value,
+        reply: oneshot::Sender<acp::Result<agent::tui_commands::CommandResult>>,
+    },
     Cancel {
         session_id: acp::SessionId,
         reply: oneshot::Sender<acp::Result<()>>,
@@ -390,6 +395,27 @@ impl AcpTestClient {
         rx.await.unwrap()
     }
 
+    pub async fn execute_command(
+        &self,
+        session_id: acp::SessionId,
+        command: serde_json::Value,
+    ) -> acp::Result<agent::tui_commands::CommandResult> {
+        let (reply, rx) = oneshot::channel();
+        self.tx
+            .send(Command::ExecuteCommand {
+                session_id,
+                command,
+                reply,
+            })
+            .await
+            .ok();
+        rx.await.map_err(|_e| acp::Error {
+            code: -1,
+            message: "execute_command actor channel closed".to_string(),
+            data: None,
+        })?
+    }
+
     pub async fn list_sessions(&self, cwd: PathBuf) -> acp::Result<ListSessionsResponse> {
         let (reply, rx) = oneshot::channel();
         self.tx.send(Command::ListSessions { cwd, reply }).await.ok();
@@ -646,6 +672,31 @@ async fn run_actor(stdin: ChildStdin, stdout: ChildStdout, mut rx: mpsc::Receive
                         meta: None,
                     })
                     .await;
+                let _ = reply.send(result);
+            },
+            Command::ExecuteCommand {
+                session_id,
+                command,
+                reply,
+            } => {
+                let params = serde_json::json!({
+                    "sessionId": session_id.0.as_ref(),
+                    "command": command,
+                });
+                let raw_params = acp::RawValue::from_string(serde_json::to_string(&params).unwrap()).unwrap();
+                let result = conn
+                    .ext_method(acp::ExtRequest {
+                        method: "kiro.dev/commands/execute".into(),
+                        params: raw_params.into(),
+                    })
+                    .await
+                    .and_then(|resp| {
+                        serde_json::from_str::<agent::tui_commands::CommandResult>(resp.get()).map_err(|e| acp::Error {
+                            code: -1,
+                            message: e.to_string(),
+                            data: None,
+                        })
+                    });
                 let _ = reply.send(result);
             },
             Command::GetCaptured { reply } => {

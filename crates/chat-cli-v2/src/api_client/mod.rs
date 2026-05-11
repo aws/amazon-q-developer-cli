@@ -570,6 +570,29 @@ impl IpcMockApiClient {
 
     pub async fn list_available_models_cached(&self) -> Result<ModelListResult, ApiClientError> {
         // Return mock models for testing
+        use aws_smithy_types::Document;
+        let schema = Document::Object(
+            [
+                ("type".to_string(), Document::String("object".to_string())),
+                ("properties".to_string(), Document::Object(
+                    [("output_config".to_string(), Document::Object(
+                        [("type".to_string(), Document::String("object".to_string())),
+                         ("properties".to_string(), Document::Object(
+                            [("effort".to_string(), Document::Object(
+                                [("type".to_string(), Document::String("string".to_string())),
+                                 ("enum".to_string(), Document::Array(vec![
+                                    Document::String("low".to_string()),
+                                    Document::String("medium".to_string()),
+                                    Document::String("high".to_string()),
+                                    Document::String("xhigh".to_string()),
+                                    Document::String("max".to_string()),
+                                 ]))].into_iter().collect(),
+                            ))].into_iter().collect(),
+                         ))].into_iter().collect(),
+                    ))].into_iter().collect(),
+                )),
+            ].into_iter().collect(),
+        );
         let models: Vec<Model> = [
             ("Auto", "Auto"),
             ("claude-sonnet-4.5", "Claude Sonnet 4.5"),
@@ -580,7 +603,12 @@ impl IpcMockApiClient {
             ("qwen3-coder-480b", "Qwen3 Coder 480B"),
         ]
         .into_iter()
-        .map(|(id, name)| Model::builder().model_id(id).model_name(name).build().unwrap())
+        .map(|(id, name)| Model::builder()
+            .model_id(id)
+            .model_name(name)
+            .additional_model_request_fields_schema(schema.clone())
+            .build()
+            .unwrap())
         .collect();
         let default_model = models[0].clone();
         Ok(ModelListResult { models, default_model })
@@ -1042,6 +1070,7 @@ impl RealApiClient {
             user_input_message,
             history,
             agent_continuation_id,
+            additional_model_request_fields,
         } = conversation;
 
         let model_id_opt: Option<String> = user_input_message.model_id.clone();
@@ -1068,6 +1097,9 @@ impl RealApiClient {
             match client
                 .generate_assistant_response()
                 .conversation_state(conversation_state)
+                .set_additional_model_request_fields(
+                    additional_model_request_fields.map(|v| crate::cli::chat::legacy::additional_fields::value_to_document(&v))
+                )
                 .set_profile_arn(self.optional_profile_arn().await)
                 .send()
                 .await
@@ -1751,6 +1783,7 @@ mod tests {
                 },
                 history: None,
                 agent_continuation_id: None,
+                additional_model_request_fields: None,
             })
             .await
             .unwrap();

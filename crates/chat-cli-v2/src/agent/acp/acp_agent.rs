@@ -1159,6 +1159,7 @@ impl AcpSession {
                 conversation_id: session_id_str.clone(),
                 model_info: None,
                 context_usage_percentage: None,
+                additional_fields: None,
             };
             let initial_state = SessionState::new(snapshot.conversation_metadata.clone(), rts_snapshot, permissions);
             let db = SessionDb::new(
@@ -1910,6 +1911,7 @@ impl AcpSession {
                     super::schema::TuiCommandKind::Agent => super::commands::agent::get_options(&partial, &ctx),
                     super::schema::TuiCommandKind::Prompts => super::commands::prompts::get_options(&self.agent).await,
                     super::schema::TuiCommandKind::Feedback => super::commands::issue::get_options(),
+                    super::schema::TuiCommandKind::Effort => super::commands::effort::get_options(&ctx),
                     super::schema::TuiCommandKind::Chat => {
                         match super::commands::chat::list_sessions(ctx.session_tx, Some(ctx.cwd.to_path_buf())).await {
                             Ok(entries) => {
@@ -3220,6 +3222,7 @@ fn synthesize_model_info(requested_model: &str) -> crate::cli::chat::legacy::mod
         context_window_tokens: crate::cli::chat::legacy::model::default_context_window_for_model(requested_model),
         rate_multiplier: None,
         rate_unit: None,
+        additional_fields: None,
     }
 }
 
@@ -3512,7 +3515,6 @@ pub async fn execute(
                         req_cx.respond(serde_json::json!({}))?;
                         return Ok(sacp::Handled::Yes);
                     }
-
 
 
                     // Handle _session/spawn ext method from TUI

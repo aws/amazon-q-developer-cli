@@ -212,6 +212,7 @@ fn write_v1_session(
             context_window_tokens: m.context_window_tokens,
             rate_multiplier: m.rate_multiplier,
             rate_unit: m.rate_unit.clone(),
+            additional_fields: None,
         });
     let session_data = SessionData {
         session_id: conversation_id.to_string(),
@@ -228,6 +229,7 @@ fn write_v1_session(
                 conversation_id: conversation_id.to_string(),
                 model_info,
                 context_usage_percentage: None,
+                additional_fields: None,
             },
             permissions: RuntimePermissions::default().with_cwd(cwd),
             agent_name: None,
