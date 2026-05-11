@@ -572,6 +572,32 @@ describe('KasAcpClient', () => {
     expect(result.message).toContain('not yet supported in KAS mode');
   });
 
+  // ── /paste command ──
+  //
+  // /paste composes entirely client-side in the TUI: it reads the system
+  // clipboard and returns the image in a CommandResult. This test just
+  // checks the dispatch wiring — it doesn't exercise the clipboard read
+  // itself, which requires the real OS clipboard.
+
+  it('executeCommand("paste") returns a CommandResult without forwarding to KAS', async () => {
+    const client = new KasAcpClient();
+    await client.initialize();
+    await client.newSession();
+    mockKiroSendExtMethod.mockClear();
+
+    const result = await client.executeCommand({ command: 'paste' } as any);
+
+    // Result shape: CommandResult has { success: boolean }.
+    // The actual value depends on the real clipboard at test time — in CI
+    // it's empty and we get `success: false` — but we never want to see
+    // the generic "not yet supported in KAS mode" message.
+    expect(typeof result.success).toBe('boolean');
+    expect(result.message ?? '').not.toContain('not yet supported');
+
+    // Client-side composition — /paste must never reach the agent.
+    expect(mockKiroSendExtMethod).not.toHaveBeenCalled();
+  });
+
   // ── getCommandOptions ──
 
   it('getCommandOptions("feedback") returns static options', async () => {

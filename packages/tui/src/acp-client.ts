@@ -21,6 +21,7 @@ import type { ListSessionsResponse } from './types/session-client';
 
 import packageJson from '../package.json';
 import { SLASH_COMMANDS } from './slash-commands';
+import { readClipboardImage } from './utils/clipboard-image';
 
 const TUI_VERSION: string = packageJson.version;
 
@@ -1406,6 +1407,8 @@ export class KasAcpClient extends BaseAcpClient {
         return this.executeClear();
       case 'plan':
         return this.executePlan();
+      case 'paste':
+        return executePaste();
       case 'agent': {
         const args = (command as Record<string, unknown>).args as
           | Record<string, string>
@@ -1926,6 +1929,33 @@ function kasFeedback(args?: Record<string, string>): CommandResult {
       data: { url },
     };
   }
+}
+
+/**
+ * /paste — read an image from the system clipboard and return it in the
+ * shape expected by the `pasteImage` effect handler (base64 PNG + dims).
+ *
+ * The Rust backend handles this server-side via the `arboard` crate; in
+ * KAS mode the agent is a plain TypeScript ACP server with no clipboard
+ * access, so the TUI composes the command itself. The returned image is
+ * forwarded as a ContentBlock on the next prompt by the effect handler.
+ */
+export function executePaste(): CommandResult {
+  const result = readClipboardImage();
+  if (!result.ok) {
+    return { success: false, message: result.error.message };
+  }
+  return {
+    success: true,
+    message: 'Image pasted from clipboard',
+    data: {
+      data: result.image.data,
+      mimeType: result.image.mimeType,
+      width: result.image.width,
+      height: result.image.height,
+      sizeBytes: result.image.sizeBytes,
+    },
+  };
 }
 
 // ─── Factory ─────────────────────────────────────────────────────────

@@ -62,4 +62,13 @@ export const SLASH_COMMANDS: SlashCommand[] = [
     description: 'Reply to the last assistant message in $EDITOR',
     requiredMethods: [],
   },
+  {
+    name: '/paste',
+    description: 'Paste image from clipboard',
+    // Composed client-side: the TUI reads the system clipboard directly
+    // and forwards image bytes as a ContentBlock. KAS does not need a
+    // dedicated extension method — it just receives the image as part
+    // of the next prompt like any other content block.
+    requiredMethods: [],
+  },
 ];
