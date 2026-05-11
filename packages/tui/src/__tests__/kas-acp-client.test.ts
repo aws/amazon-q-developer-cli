@@ -42,6 +42,7 @@ const mockSpawn = mock((_cmd: string, _args: string[], _opts: any) => {
     pid: 12345,
     on: mock(() => {}),
     once: mock(() => {}),
+    off: mock(() => {}),
   };
   return mockProcess;
 });
@@ -194,6 +195,7 @@ function freshMocks() {
       pid: 12345,
       on: mock(() => {}),
       once: mock(() => {}),
+      off: mock(() => {}),
     };
     return mockProcess;
   });

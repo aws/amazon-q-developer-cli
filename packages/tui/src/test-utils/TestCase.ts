@@ -7,7 +7,7 @@ import { getMockSessionClient } from './MockSessionClient';
 import { TuiIpcConnection } from './shared/tui-ipc-connection';
 import { createTestDir, type TestPaths } from './shared/test-paths';
 
-interface TestCaseOptions {
+export interface TestCaseOptions {
   args?: string[];
   terminalSize?: { width: number; height: number };
   logLevel?: 'debug' | 'info' | 'warn' | 'error';

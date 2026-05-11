@@ -6,6 +6,7 @@ import {
   getTelemetryIdentity,
   isTelemetryEnabled,
 } from './utils/telemetry-identity';
+import { maybeWrapStreamWithRecorder } from './acp-recorder';
 import { spawn, type ChildProcess } from 'node:child_process';
 import type { SessionClient } from './types/session-client';
 import {
@@ -171,7 +172,65 @@ function buildStdioStreams(agentProcess: ChildProcess) {
   return { readable: parsedMessages, writable: ndJson.writable };
 }
 
-function pipeStderr(agentProcess: ChildProcess) {
+/**
+ * Narrowed view of `ChildProcess` used by `BaseAcpClient` and its
+ * subclasses. Declared explicitly so the null shim used in test mode can
+ * satisfy it without pretending to implement the entirety of
+ * `ChildProcess`. Adding a new method here forces the mock to implement
+ * it rather than silently misbehaving at runtime.
+ */
+export interface AgentProcess {
+  readonly stdin: NodeJS.WritableStream | null;
+  readonly stdout: NodeJS.ReadableStream | null;
+  readonly stderr: NodeJS.ReadableStream | null;
+  kill(signal?: NodeJS.Signals | number): boolean;
+  /**
+   * Registers an exit listener. Returns an unsubscribe function so callers
+   * that may register many times (e.g. once per prompt) can detach on
+   * completion and never leak listeners in mock mode where exit never
+   * fires.
+   */
+  onExit(listener: (code: number | null) => void): () => void;
+}
+
+/** Wrap a real `ChildProcess` so it satisfies `AgentProcess`. */
+function toAgentProcess(proc: ChildProcess): AgentProcess {
+  // stdin/stdout/stderr are set synchronously on spawn and never change,
+  // so plain property reads are sufficient (no getter indirection).
+  return {
+    stdin: proc.stdin,
+    stdout: proc.stdout,
+    stderr: proc.stderr,
+    kill: (signal) => proc.kill(signal),
+    onExit(listener) {
+      proc.once('exit', listener);
+      return () => {
+        proc.off('exit', listener);
+      };
+    },
+  };
+}
+
+/**
+ * `AgentProcess` implementation for test mode where no real subprocess
+ * exists. stdin/stdout/stderr are real in-memory PassThrough streams so
+ * `BaseAcpClient`'s stdio existence check passes and `pipeStderr` has a
+ * stream to consume (it reads nothing, since nothing writes). `onExit`
+ * never fires and registers no underlying listener, so repeated
+ * subscriptions cannot accumulate.
+ */
+export function createNullAgentProcess(): AgentProcess {
+  const { PassThrough } = require('node:stream');
+  return {
+    stdin: new PassThrough(),
+    stdout: new PassThrough(),
+    stderr: new PassThrough(),
+    kill: () => true,
+    onExit: () => () => {},
+  };
+}
+
+function pipeStderr(agentProcess: AgentProcess) {
   if (!agentProcess.stderr) return;
   let buf = '';
   agentProcess.stderr.on('data', (chunk: Buffer) => {
@@ -265,7 +324,7 @@ function extractModelFromConfigOptions(
 
 abstract class BaseAcpClient implements SessionClient {
   public sessionId?: string;
-  protected agentProcess: ChildProcess;
+  protected agentProcess: AgentProcess;
   private updateHandlers: Set<(event: AgentStreamEvent) => void> = new Set();
   private multiSessionHandlers: Set<
     (sessionId: string, event: AgentStreamEvent) => void
@@ -276,7 +335,7 @@ abstract class BaseAcpClient implements SessionClient {
     (subagents: any[], pendingStages?: any[]) => void
   > = new Set();
 
-  constructor(agentProcess: ChildProcess) {
+  constructor(agentProcess: AgentProcess) {
     this.agentProcess = agentProcess;
     if (!agentProcess.stdout || !agentProcess.stdin) {
       throw new Error('Failed to create agent process stdio streams');
@@ -837,9 +896,10 @@ export class RustAcpClient extends BaseAcpClient implements acp.Client {
       stdio: ['pipe', 'pipe', 'pipe'],
       env: process.env,
     });
-    super(proc);
+    super(toAgentProcess(proc));
     const stream = buildStdioStreams(proc);
-    this.connection = new acp.ClientSideConnection(() => this, stream);
+    const finalStream = maybeWrapStreamWithRecorder(stream);
+    this.connection = new acp.ClientSideConnection(() => this, finalStream);
   }
 
   /** SDK >=0.16 no longer prepends '_' to ext methods; the Rust sacp backend expects it. */
@@ -1092,7 +1152,32 @@ export class RustAcpClient extends BaseAcpClient implements acp.Client {
 export class KasAcpClient extends BaseAcpClient {
   private kiroClient: KiroClient;
 
-  constructor() {
+  /**
+   * Construct a KAS ACP client.
+   *
+   * Default (no options): spawn the KAS subprocess and wire its stdio as
+   * the ACP `Stream`. This is the production path.
+   *
+   * With `options.stream`: skip the subprocess spawn and use the provided
+   * stream (for `acp_integ_tests/`'s mock transport). The client reports
+   * `kill()`/`onExit()` through a no-op null agent process internally so
+   * `BaseAcpClient` has a uniform interface to work against.
+   *
+   * `agentProcess` is intentionally not a public option - mock callers
+   * never need to inject a different one, and accepting it without a
+   * stream would silently ignore it.
+   */
+  constructor(options?: { stream: Stream }) {
+    if (options) {
+      super(createNullAgentProcess());
+      const finalStream = maybeWrapStreamWithRecorder(options.stream);
+      this.kiroClient = new KiroClient({
+        stream: finalStream,
+        clientInfo: { name: 'kiro-cli', version: TUI_VERSION },
+      });
+      return;
+    }
+
     // Resolve KAS server: env var override > installed npm package
     let kasServerPath = process.env.KIRO_KAS_SERVER_PATH;
     const kasTokenPath = process.env.KIRO_KAS_TOKEN_PATH;
@@ -1138,10 +1223,11 @@ export class KasAcpClient extends BaseAcpClient {
         },
       }
     );
-    super(proc);
+    super(toAgentProcess(proc));
     const stream = buildStdioStreams(proc);
+    const finalStream = maybeWrapStreamWithRecorder(stream);
     this.kiroClient = new KiroClient({
-      stream: stream as Stream,
+      stream: finalStream,
       clientInfo: { name: 'kiro-cli', version: TUI_VERSION },
       clientMeta: {
         telemetryEnabled: isTelemetryEnabled(),
@@ -1241,15 +1327,26 @@ export class KasAcpClient extends BaseAcpClient {
     ];
   }
 
-  /** Rejects when the KAS child process exits (crash detection). */
-  private processExitPromise(): Promise<never> {
-    return new Promise<never>((_resolve, reject) => {
-      this.agentProcess.once('exit', (code) => {
+  /**
+   * Returns a rejection-promise that fires if the KAS agent process exits,
+   * together with an `unsubscribe` to detach the listener. Callers MUST
+   * invoke `unsubscribe()` in a `finally` so listeners never accumulate
+   * across repeated prompts (and so mock-mode prompts are a strict no-op
+   * on the `onExit` path, since the null agent process never emits).
+   */
+  private processExitPromise(): {
+    promise: Promise<never>;
+    unsubscribe: () => void;
+  } {
+    let unsubscribe = () => {};
+    const promise = new Promise<never>((_resolve, reject) => {
+      unsubscribe = this.agentProcess.onExit((code) => {
         reject(
           new Error(`KAS agent process exited unexpectedly (code ${code})`)
         );
       });
     });
+    return { promise, unsubscribe };
   }
 
   private extensionMethods: Set<string> = new Set();
@@ -1381,12 +1478,21 @@ export class KasAcpClient extends BaseAcpClient {
       throw new Error('cannot send prompt without an active session');
 
     // Race prompt against process exit to detect KAS crashes
-    const crashed = this.processExitPromise();
-    crashed.catch(() => {}); // suppress unhandled rejection if prompt wins
-    await Promise.race([
-      this.kiroClient.prompt({ prompt: messages, sessionId: this.sessionId }),
-      crashed,
-    ]);
+    const { promise: crashed, unsubscribe } = this.processExitPromise();
+    // Defensive: the exit listener is detached in finally, but there is a
+    // narrow window between Promise.race settling and the finally running
+    // where a late rejection could surface as an unhandled rejection. The
+    // unsubscribe() call in finally removes the listener; this catch
+    // covers the race between scheduling finally and the listener firing.
+    crashed.catch(() => {});
+    try {
+      await Promise.race([
+        this.kiroClient.prompt({ prompt: messages, sessionId: this.sessionId }),
+        crashed,
+      ]);
+    } finally {
+      unsubscribe();
+    }
   }
 
   async cancel(): Promise<void> {
@@ -1973,6 +2079,21 @@ export function createAcpClient(
   extraAcpArgs: string[] = []
 ): SessionClient {
   if (process.env.KIRO_AGENT_ENGINE === 'kas') {
+    // Test-only: inject an in-process mock transport when the harness set
+    // the socket path env var. Production boots skip this branch entirely.
+    // The require() path stays in this one call site so the rest of
+    // `KasAcpClient` never references test-utils.
+    const mockSocketPath = process.env.KIRO_ACP_MOCK_SOCKET;
+    if (mockSocketPath) {
+      logger.info(
+        `[acp-client] KAS mock transport (test-only), socket=${mockSocketPath}`
+      );
+      const {
+        connectMockTransport,
+      } = require('./test-utils/acp-mock/MockAcpTransport');
+      const stream = connectMockTransport(mockSocketPath);
+      return new KasAcpClient({ stream });
+    }
     return new KasAcpClient();
   }
   return new RustAcpClient(agentPath, extraAcpArgs);
