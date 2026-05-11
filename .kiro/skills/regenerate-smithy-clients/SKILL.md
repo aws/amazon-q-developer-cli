@@ -75,12 +75,14 @@ cargo build --workspace
 
 ### 6. Commit and PR
 
-Stage the changed crates, commit, and open a PR:
+Stage the changed crates **and Cargo.lock**, commit, and open a PR:
 
 ```bash
-git add crates/amzn-codewhisperer-client crates/amzn-codewhisperer-streaming-client crates/amzn-consolas-client crates/amzn-qdeveloper-streaming-client
+git add Cargo.lock crates/amzn-codewhisperer-client crates/amzn-codewhisperer-streaming-client crates/amzn-consolas-client crates/amzn-qdeveloper-streaming-client
 git commit -m "chore: regenerate smithy clients to 0.1.XXXXX"
 ```
+
+
 
 ## Notes
 
