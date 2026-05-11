@@ -84,6 +84,11 @@ where
                                     )?,
                                 );
                             },
+                            "additionalModelRequestFieldsSchema" => {
+                                builder = builder.set_additional_model_request_fields_schema(Some(
+                                    ::aws_smithy_json::deserialize::token::expect_document(tokens)?,
+                                ));
+                            },
                             _ => ::aws_smithy_json::deserialize::token::skip_value(tokens)?,
                         }
                     },

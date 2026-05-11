@@ -84,6 +84,11 @@ where
                                     )?,
                                 );
                             },
+                            "additionalModelRequestFieldsSchema" => {
+                                builder = builder.set_additional_model_request_fields_schema(Some(
+                                    ::aws_smithy_json::deserialize::token::expect_document(tokens)?,
+                                ));
+                            },
                             _ => ::aws_smithy_json::deserialize::token::skip_value(tokens)?,
                         }
                     },
@@ -148,6 +153,9 @@ pub fn ser_model(
         let mut object_11 = object.key("promptCaching").start_object();
         crate::protocol_serde::shape_prompt_caching::ser_prompt_caching(&mut object_11, var_10)?;
         object_11.finish();
+    }
+    if let Some(var_12) = &input.additional_model_request_fields_schema {
+        object.key("additionalModelRequestFieldsSchema").document(var_12);
     }
     Ok(())
 }

@@ -19,6 +19,8 @@ pub struct Model {
     pub supported_input_types: ::std::option::Option<::std::vec::Vec<crate::types::InputType>>,
     /// Prompt caching configuration for this model
     pub prompt_caching: ::std::option::Option<crate::types::PromptCaching>,
+    /// JSON schema describing the supported additionalModelRequestFields for this model.
+    pub additional_model_request_fields_schema: ::std::option::Option<::aws_smithy_types::Document>,
 }
 impl Model {
     /// Unique identifier for the model
@@ -64,6 +66,11 @@ impl Model {
     pub fn prompt_caching(&self) -> ::std::option::Option<&crate::types::PromptCaching> {
         self.prompt_caching.as_ref()
     }
+
+    /// JSON schema describing the supported additionalModelRequestFields for this model.
+    pub fn additional_model_request_fields_schema(&self) -> ::std::option::Option<&::aws_smithy_types::Document> {
+        self.additional_model_request_fields_schema.as_ref()
+    }
 }
 impl Model {
     /// Creates a new builder-style object to manufacture [`Model`](crate::types::Model).
@@ -84,6 +91,7 @@ pub struct ModelBuilder {
     pub(crate) token_limits: ::std::option::Option<crate::types::TokenLimits>,
     pub(crate) supported_input_types: ::std::option::Option<::std::vec::Vec<crate::types::InputType>>,
     pub(crate) prompt_caching: ::std::option::Option<crate::types::PromptCaching>,
+    pub(crate) additional_model_request_fields_schema: ::std::option::Option<::aws_smithy_types::Document>,
 }
 impl ModelBuilder {
     /// Unique identifier for the model
@@ -233,6 +241,26 @@ impl ModelBuilder {
         &self.prompt_caching
     }
 
+    /// JSON schema describing the supported additionalModelRequestFields for this model.
+    pub fn additional_model_request_fields_schema(mut self, input: ::aws_smithy_types::Document) -> Self {
+        self.additional_model_request_fields_schema = ::std::option::Option::Some(input);
+        self
+    }
+
+    /// JSON schema describing the supported additionalModelRequestFields for this model.
+    pub fn set_additional_model_request_fields_schema(
+        mut self,
+        input: ::std::option::Option<::aws_smithy_types::Document>,
+    ) -> Self {
+        self.additional_model_request_fields_schema = input;
+        self
+    }
+
+    /// JSON schema describing the supported additionalModelRequestFields for this model.
+    pub fn get_additional_model_request_fields_schema(&self) -> &::std::option::Option<::aws_smithy_types::Document> {
+        &self.additional_model_request_fields_schema
+    }
+
     /// Consumes the builder and constructs a [`Model`](crate::types::Model).
     /// This method will fail if any of the following fields are not set:
     /// - [`model_id`](crate::types::builders::ModelBuilder::model_id)
@@ -251,6 +279,7 @@ impl ModelBuilder {
             token_limits: self.token_limits,
             supported_input_types: self.supported_input_types,
             prompt_caching: self.prompt_caching,
+            additional_model_request_fields_schema: self.additional_model_request_fields_schema,
         })
     }
 }
