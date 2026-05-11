@@ -708,7 +708,10 @@ impl Agents {
             let results = load_agents_from_entries(files, os, &mut global_mcp_config, mcp_enabled, false, output).await;
             for result in results {
                 match result {
-                    Ok(agent) => agents.push(agent),
+                    Ok(mut agent) => {
+                        configure_builtin_agent_resources(&mut agent, &resolver).await;
+                        agents.push(agent);
+                    },
                     Err(e) => {
                         load_metadata.load_failed_count += 1;
                         let _ = queue!(
@@ -746,7 +749,10 @@ impl Agents {
             let results = load_agents_from_entries(files, os, &mut global_mcp_config, mcp_enabled, true, output).await;
             for result in results {
                 match result {
-                    Ok(agent) => agents.push(agent),
+                    Ok(mut agent) => {
+                        configure_builtin_agent_resources(&mut agent, &resolver).await;
+                        agents.push(agent);
+                    },
                     Err(e) => {
                         load_metadata.load_failed_count += 1;
                         let _ = queue!(

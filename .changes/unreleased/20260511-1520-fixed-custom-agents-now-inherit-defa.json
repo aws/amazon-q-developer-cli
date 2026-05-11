@@ -1,0 +1,4 @@
+{
+  "type": "fixed",
+  "description": "Custom agents now inherit default resources (steering, skills, AGENTS.md) like built-in agents"
+}

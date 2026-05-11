@@ -3800,10 +3800,21 @@ where
     U: AsRef<str>,
     P: SystemProvider,
 {
+    use std::collections::HashSet;
+
     use glob;
 
     let mut files = Vec::new();
     let mut skills = Vec::new();
+    // Track canonicalized paths already loaded so we don't include the same file
+    // twice when multiple URIs resolve to the same path. Examples:
+    //   - "file://./AGENTS.md" and "file://AGENTS.md" (one user-declared, one default-injected)
+    //   - A literal "file://path/foo.md" plus a glob like "file://**/*.md" that also matches it
+    //   - Two paths via different symlink chains pointing at the same target
+    // Cardinality is bounded by the number of resource files (typically ~tens, ~100 worst case),
+    // so a HashSet of String paths is fine.
+    let mut seen_files: HashSet<String> = HashSet::new();
+    let mut seen_skills: HashSet<String> = HashSet::new();
 
     for resource in resources {
         let Ok(kind) = ResourceKind::parse(resource.as_ref(), provider) else {
@@ -3814,6 +3825,9 @@ where
                 let Ok(path) = canonicalize_path_sys(file_path, provider) else {
                     continue;
                 };
+                if !seen_files.insert(path.clone()) {
+                    continue;
+                }
                 let Ok((content, _)) = read_file_with_max_limit(&path, MAX_RESOURCE_FILE_LENGTH, "...truncated").await
                 else {
                     continue;
@@ -3833,6 +3847,10 @@ where
                         continue;
                     };
                     if entry.is_file() {
+                        let entry_path_str = entry.to_string_lossy().to_string();
+                        if !seen_files.insert(entry_path_str.clone()) {
+                            continue;
+                        }
                         let Ok((content, _)) =
                             read_file_with_max_limit(entry.as_path(), MAX_RESOURCE_FILE_LENGTH, "...truncated").await
                         else {
@@ -3840,7 +3858,7 @@ where
                         };
                         files.push(Resource {
                             config_value: original.to_string(),
-                            file_path: entry.to_string_lossy().to_string(),
+                            file_path: entry_path_str,
                             content,
                         });
                     }
@@ -3850,6 +3868,9 @@ where
                 let Ok(path) = canonicalize_path_sys(&file_path, provider) else {
                     continue;
                 };
+                if !seen_skills.insert(path.clone()) {
+                    continue;
+                }
                 let Ok((content, _)) = read_file_with_max_limit(&path, MAX_RESOURCE_FILE_LENGTH, "...truncated").await
                 else {
                     continue;
@@ -3871,6 +3892,9 @@ where
                     };
                     if entry.is_file() {
                         let file_path_str = entry.to_string_lossy().to_string();
+                        if !seen_skills.insert(file_path_str.clone()) {
+                            continue;
+                        }
                         let Ok((content, _)) =
                             read_file_with_max_limit(entry.as_path(), MAX_RESOURCE_FILE_LENGTH, "...truncated").await
                         else {
@@ -4243,6 +4267,29 @@ mod tests {
         for file in files {
             assert!(resources.iter().any(|r| r.content == file.1));
         }
+    }
+
+    /// Two `file://` URIs that canonicalize to the same path (e.g. `./AGENTS.md`
+    /// and `AGENTS.md`) should not produce duplicate `Resource` entries. The
+    /// `append_default_agent_resources` helper injects the bare-form `file://AGENTS.md`
+    /// and a user agent might declare `file://./AGENTS.md` — both end up in the
+    /// resources list because `add_resource` only string-compares. The dedup
+    /// must happen here, post-canonicalization.
+    #[tokio::test]
+    async fn test_collect_resources_dedupes_canonical_paths() {
+        let test_base = TestBase::new().await.with_file(("AGENTS.md", "# Agents")).await;
+
+        let (resources, _skills) = collect_resources(["file://./AGENTS.md", "file://AGENTS.md"], &test_base).await;
+
+        assert_eq!(
+            resources.len(),
+            1,
+            "expected ./AGENTS.md and AGENTS.md to dedup to one Resource, got: {:?}",
+            resources
+                .iter()
+                .map(|r| (&r.config_value, &r.file_path))
+                .collect::<Vec<_>>()
+        );
     }
 
     #[test]

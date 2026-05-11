@@ -16,7 +16,6 @@ use super::definitions::{
     AgentConfigV2025_08_22,
     ToolsSettings,
 };
-use super::types::ResourcePath;
 use super::{
     AgentConfigError,
     ConfigSource,
@@ -49,6 +48,9 @@ pub async fn load_agents<P: SystemProvider>(
         .await
         {
             Ok((mut valid, mut invalid)) => {
+                for loaded in &mut valid {
+                    append_default_agent_resources(loaded.config_mut(), system);
+                }
                 agent_configs.append(&mut valid);
                 errors.append(&mut invalid);
             },
@@ -70,6 +72,9 @@ pub async fn load_agents<P: SystemProvider>(
         .await
         {
             Ok((mut valid, mut invalid)) => {
+                for loaded in &mut valid {
+                    append_default_agent_resources(loaded.config_mut(), system);
+                }
                 agent_configs.append(&mut valid);
                 errors.append(&mut invalid);
             },
@@ -81,8 +86,8 @@ pub async fn load_agents<P: SystemProvider>(
 
     // Add default agent
     agent_configs.push(build_default_agent(system));
-    agent_configs.push(build_planner_agent());
-    agent_configs.push(build_guide_agent());
+    agent_configs.push(build_planner_agent(system));
+    agent_configs.push(build_guide_agent(system));
 
     info!(?agent_configs, "loaded agent configs");
 
@@ -135,11 +140,22 @@ pub async fn load_agent_config<P: SystemProvider>(
     LoadedAgentConfig::new(config, source, resolved_prompt)
 }
 
-pub fn build_default_agent(system: &dyn SystemProvider) -> LoadedAgentConfig {
-    let mut resources: Vec<ResourcePath> = DEFAULT_AGENT_RESOURCES
-        .iter()
-        .map(|&s| s.parse().expect("DEFAULT_AGENT_RESOURCES must be valid"))
-        .collect();
+/// Appends the default "built-in" resources onto an agent config.
+///
+/// These resources are injected into all agents (built-in and user-defined) so that
+/// globally-applicable context like steering files, skills, and project-level marker files
+/// (AGENTS.md, README.md, AmazonQ.md) are inherited by every agent without each needing to
+/// redeclare them.
+///
+/// Resources are added via `add_resource`, which dedupes by source string — so a user agent
+/// that already references one of these paths will not end up with duplicates.
+pub fn append_default_agent_resources(config: &mut AgentConfig, system: &dyn SystemProvider) {
+    // Static workspace defaults: AGENTS.md, README.md, workspace skills
+    for pattern in DEFAULT_AGENT_RESOURCES {
+        if let Ok(resource) = pattern.parse() {
+            config.add_resource(resource);
+        }
+    }
 
     // Add the global skills glob rooted at the user's Kiro home directory
     // (honors `KIRO_HOME` when set, falling back to `~/.kiro`). We compute
@@ -165,19 +181,17 @@ pub fn build_default_agent(system: &dyn SystemProvider) -> LoadedAgentConfig {
         let kiro_home = crate::agent::util::directories::kiro_home_dir_in(&home);
         let skills_pattern = format!("skill://{}/skills/*/SKILL.md", kiro_home.display());
         if let Ok(resource) = skills_pattern.parse() {
-            resources.push(resource);
+            config.add_resource(resource);
         }
     }
 
     // Add global steering if exists
     let global_steering_canonical = system.home().and_then(|home| {
         let global_steering = crate::agent::util::directories::kiro_home_dir_in(&home).join("steering");
-        if global_steering.exists() {
-            resources.push(
-                format!("file://{}/**/*.md", global_steering.display())
-                    .parse()
-                    .expect("valid resource"),
-            );
+        if global_steering.exists()
+            && let Ok(resource) = format!("file://{}/**/*.md", global_steering.display()).parse()
+        {
+            config.add_resource(resource);
             global_steering.canonicalize().ok()
         } else {
             None
@@ -193,34 +207,37 @@ pub fn build_default_agent(system: &dyn SystemProvider) -> LoadedAgentConfig {
                 .ok()
                 .zip(global_steering_canonical.as_ref())
                 .is_some_and(|(w, g)| w == *g);
-            if !is_duplicate {
-                resources.push(
-                    format!("file://{}/**/*.md", workspace_steering.display())
-                        .parse()
-                        .expect("valid resource"),
-                );
+            if !is_duplicate && let Ok(resource) = format!("file://{}/**/*.md", workspace_steering.display()).parse() {
+                config.add_resource(resource);
             }
         }
 
-        if cwd.join("AmazonQ.md").exists() {
-            resources.push("file://AmazonQ.md".parse().expect("valid resource"));
+        if cwd.join("AmazonQ.md").exists()
+            && let Ok(resource) = "file://AmazonQ.md".parse()
+        {
+            config.add_resource(resource);
         }
 
         // Add rules pattern if .amazonq exists but .kiro doesn't
         let amazonq_dir = cwd.join(".amazonq");
         let kiro_dir = cwd.join(".kiro");
-        if amazonq_dir.exists() && !kiro_dir.exists() {
-            resources.push("file://.amazonq/rules/**/*.md".parse().expect("valid resource"));
+        if amazonq_dir.exists()
+            && !kiro_dir.exists()
+            && let Ok(resource) = "file://.amazonq/rules/**/*.md".parse()
+        {
+            config.add_resource(resource);
         }
     }
+}
 
+pub fn build_default_agent(system: &dyn SystemProvider) -> LoadedAgentConfig {
     let config = AgentConfigV2025_08_22 {
         name: DEFAULT_AGENT_NAME.to_string(),
         description: Some("The default agent for Kiro CLI".to_string()),
         global_prompt: Some(include_str!("default_agent_prompt.md").to_string()),
         tools: vec!["*".to_string()],
         use_legacy_mcp_json: true,
-        resources,
+        resources: Vec::new(),
         ..Default::default()
     };
 
@@ -229,10 +246,12 @@ pub fn build_default_agent(system: &dyn SystemProvider) -> LoadedAgentConfig {
         .clone()
         .map(ResolvedGlobalPrompt::Resolved)
         .unwrap_or_default();
-    LoadedAgentConfig::new(AgentConfig::V2025_08_22(config), ConfigSource::BuiltIn, resolved_prompt)
+    let mut config = AgentConfig::V2025_08_22(config);
+    append_default_agent_resources(&mut config, system);
+    LoadedAgentConfig::new(config, ConfigSource::BuiltIn, resolved_prompt)
 }
 
-pub fn build_planner_agent() -> LoadedAgentConfig {
+pub fn build_planner_agent(system: &dyn SystemProvider) -> LoadedAgentConfig {
     let mut config: AgentConfigV2025_08_22 =
         serde_json::from_str(include_str!("kiro_planner.json")).expect("Invalid kiro_planner.json");
     config.global_prompt = Some(include_str!("planner_prompt.md").to_string());
@@ -241,10 +260,12 @@ pub fn build_planner_agent() -> LoadedAgentConfig {
         .clone()
         .map(ResolvedGlobalPrompt::Resolved)
         .unwrap_or_default();
-    LoadedAgentConfig::new(AgentConfig::V2025_08_22(config), ConfigSource::BuiltIn, resolved_prompt)
+    let mut config = AgentConfig::V2025_08_22(config);
+    append_default_agent_resources(&mut config, system);
+    LoadedAgentConfig::new(config, ConfigSource::BuiltIn, resolved_prompt)
 }
 
-pub fn build_guide_agent() -> LoadedAgentConfig {
+pub fn build_guide_agent(system: &dyn SystemProvider) -> LoadedAgentConfig {
     let config: AgentConfigV2025_08_22 =
         serde_json::from_str(include_str!("kiro_guide.json")).expect("Invalid kiro_guide.json");
     let resolved_prompt = config
@@ -252,7 +273,9 @@ pub fn build_guide_agent() -> LoadedAgentConfig {
         .clone()
         .map(ResolvedGlobalPrompt::Resolved)
         .unwrap_or_default();
-    LoadedAgentConfig::new(AgentConfig::V2025_08_22(config), ConfigSource::BuiltIn, resolved_prompt)
+    let mut config = AgentConfig::V2025_08_22(config);
+    append_default_agent_resources(&mut config, system);
+    LoadedAgentConfig::new(config, ConfigSource::BuiltIn, resolved_prompt)
 }
 
 /// Pre-process agent JSON to normalize alias keys in `toolsSettings` to canonical names.
@@ -851,16 +874,18 @@ mod tests {
         );
     }
 
-    #[test]
-    fn test_build_planner_agent_works() {
-        let agent = build_planner_agent();
+    #[tokio::test]
+    async fn test_build_planner_agent_works() {
+        let test_base = TestBase::new().await;
+        let agent = build_planner_agent(test_base.provider());
         assert!(matches!(agent.source(), ConfigSource::BuiltIn));
         assert!(agent.global_prompt().is_some());
     }
 
-    #[test]
-    fn test_build_guide_agent_works() {
-        let agent = build_guide_agent();
+    #[tokio::test]
+    async fn test_build_guide_agent_works() {
+        let test_base = TestBase::new().await;
+        let agent = build_guide_agent(test_base.provider());
         assert!(matches!(agent.source(), ConfigSource::BuiltIn));
     }
 
@@ -1068,5 +1093,57 @@ mod tests {
             1,
             "when cwd == home, skills should appear only once, got: {skills:?}"
         );
+    }
+
+    /// User-loaded agents (workspace and global) inherit default resources such as
+    /// `AGENTS.md`, `README.md`, and global steering — matching the behavior of
+    /// built-in agents. Guards against regression of the behavior landed in PR #2361.
+    #[tokio::test]
+    async fn test_user_agents_inherit_default_resources() {
+        let workspace_agent = r#"{"name": "workspace-agent", "tools": ["fs_read"]}"#;
+        let global_agent = r#"{"name": "global-agent", "tools": ["*"]}"#;
+
+        let base = TestBase::new()
+            .await
+            .with_file((".kiro/agents/workspace.json", workspace_agent))
+            .await
+            .with_file(("~/.kiro/agents/global.json", global_agent))
+            .await
+            .with_file(("~/.kiro/steering/global-rule.md", "# Global rule"))
+            .await
+            .with_file((".kiro/steering/workspace-rule.md", "# Workspace rule"))
+            .await;
+
+        let (agents, errors) = load_agents(base.provider()).await.unwrap();
+        assert!(errors.is_empty(), "expected no errors, got: {:?}", errors);
+
+        for name in ["workspace-agent", "global-agent"] {
+            let agent = agents
+                .iter()
+                .find(|a| a.name() == name)
+                .unwrap_or_else(|| panic!("expected to load {name}"));
+            let resources: Vec<&str> = agent.resources().into_iter().map(|r| r.as_ref()).collect();
+
+            assert!(
+                resources.iter().any(|r| r == &"file://AGENTS.md"),
+                "{name} should inherit AGENTS.md default, got: {resources:?}"
+            );
+            assert!(
+                resources.iter().any(|r| r == &"file://README.md"),
+                "{name} should inherit README.md default, got: {resources:?}"
+            );
+            assert!(
+                resources
+                    .iter()
+                    .any(|r| r.starts_with("skill://") && r.ends_with("/skills/*/SKILL.md")),
+                "{name} should inherit skills glob default, got: {resources:?}"
+            );
+            let steering: Vec<&&str> = resources.iter().filter(|r| r.contains("steering")).collect();
+            assert_eq!(
+                steering.len(),
+                2,
+                "{name} should inherit both global and workspace steering, got: {steering:?}"
+            );
+        }
     }
 }
