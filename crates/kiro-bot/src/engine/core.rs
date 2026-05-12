@@ -146,6 +146,13 @@ pub enum Action {
     Unknown,
 }
 
+impl Action {
+    /// Read-only commands that don't hold a worker or block other requests.
+    fn is_readonly(&self) -> bool {
+        matches!(self, Action::Help | Action::Status | Action::ListAgents)
+    }
+}
+
 /// Parse a message into an action. `!`-prefixed messages are bot commands;
 /// everything else is a prompt to the agent.
 pub fn resolve_action(text: &str) -> Action {
@@ -231,7 +238,16 @@ pub fn dispatch(core: &BotCore, msg: IncomingMessage, frontend: Arc<dyn Frontend
         return;
     }
 
-    if !core.inflight.lock().unwrap().insert(session_key.clone()) {
+    if !action.is_readonly() && !core.inflight.lock().unwrap().insert(session_key.clone()) {
+        tokio::spawn(async move {
+            let _ = frontend
+                .send(Reply::Send {
+                    conversation: platform_id,
+                    reply_to,
+                    text: "⏳ A request is already in progress — this message was dropped".into(),
+                })
+                .await;
+        });
         return;
     }
 
@@ -245,6 +261,16 @@ pub fn dispatch(core: &BotCore, msg: IncomingMessage, frontend: Arc<dyn Frontend
                     _ => {
                         info!("Bot access denied for user {} in {}", msg.user, conv_id);
                         core.inflight.lock().unwrap().remove(&session_key);
+                        let denied = format!("❌ Access denied for user `{}` in `{}`", msg.user, conv_id);
+                        tokio::spawn(async move {
+                            let _ = frontend
+                                .send(Reply::Send {
+                                    conversation: platform_id,
+                                    reply_to,
+                                    text: denied,
+                                })
+                                .await;
+                        });
                         return;
                     },
                 }
@@ -327,6 +353,13 @@ pub fn dispatch(core: &BotCore, msg: IncomingMessage, frontend: Arc<dyn Frontend
                 match check_authz(&core.authz, |a| a.can_use_bot(&user, &conversation)) {
                     Ok(true) => {},
                     _ => {
+                        let _ = frontend
+                            .send(Reply::Send {
+                                conversation: platform_id.clone(),
+                                reply_to: reply_to.clone(),
+                                text: format!("❌ Access denied for user `{}` in `{}`", user, conv_id),
+                            })
+                            .await;
                         core.inflight.lock().unwrap().remove(&session_key);
                         return;
                     },

@@ -431,20 +431,34 @@ impl Worker for AcpWorker {
 
     #[allow(clippy::await_holding_refcell_ref)]
     async fn kill(&self) {
-        let _ = self.child.borrow_mut().kill().await;
+        #[cfg(unix)]
+        {
+            if let Some(pid) = self.child.borrow().id() {
+                let pgid = pid as libc::pid_t;
+                // Two-phase group kill: SIGTERM for graceful shutdown, then SIGKILL.
+                unsafe { libc::killpg(pgid, libc::SIGTERM) };
+                tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+                unsafe { libc::killpg(pgid, libc::SIGKILL) };
+            }
+        }
+        #[cfg(not(unix))]
+        {
+            let _ = self.child.borrow_mut().kill().await;
+        }
     }
 }
 
 async fn spawn_acp_worker(cfg: &AcpConfig, acp_info: &Arc<Mutex<AcpInfo>>) -> Result<AcpWorker, String> {
     let parts: Vec<&str> = cfg.command.split_whitespace().collect();
-    let mut child = tokio::process::Command::new(parts[0])
-        .args(&parts[1..])
+    let mut cmd = tokio::process::Command::new(parts[0]);
+    cmd.args(&parts[1..])
         .stdin(std::process::Stdio::piped())
         .stdout(std::process::Stdio::piped())
         .stderr(std::process::Stdio::null())
-        .kill_on_drop(true)
-        .spawn()
-        .map_err(|e| format!("Failed to spawn ACP: {e}"))?;
+        .kill_on_drop(true);
+    #[cfg(unix)]
+    cmd.process_group(0);
+    let mut child = cmd.spawn().map_err(|e| format!("Failed to spawn ACP: {e}"))?;
 
     let chunks: Rc<RefCell<Vec<String>>> = Rc::new(RefCell::new(Vec::new()));
     let progress: Rc<RefCell<Option<mpsc::UnboundedSender<String>>>> = Rc::new(RefCell::new(None));

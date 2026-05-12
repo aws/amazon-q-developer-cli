@@ -39,3 +39,6 @@ cron = "0.16"
 jsonschema = { version = "0.44", default-features = false }
 rpassword = "7"
 slack-morphism = { version = "2", features = ["hyper"] }
+
+[target.'cfg(unix)'.dependencies]
+libc = "0.2"
