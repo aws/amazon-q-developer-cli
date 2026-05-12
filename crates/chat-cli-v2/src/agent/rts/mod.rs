@@ -85,7 +85,7 @@ use crate::api_client::{
     ApiClient,
     model as rts,
 };
-use crate::cli::chat::legacy::additional_fields::AdditionalFields;
+use crate::cli::chat::legacy::additional_fields::AdditionalModelFields;
 use crate::cli::chat::legacy::model::ModelInfo;
 use crate::cli::chat::legacy::util::serde_value_to_document;
 use crate::telemetry::ReasonCode;
@@ -360,12 +360,14 @@ impl RtsModel {
                 .collect(),
         );
 
+        let additional_model_request_fields = self.state.additional_fields().and_then(|af| af.to_value().cloned());
+
         Ok(ConversationState {
             conversation_id: Some(self.state.conversation_id()),
             user_input_message,
             history: Some(history),
             agent_continuation_id: None,
-            additional_model_request_fields: self.state.additional_fields().and_then(|af| af.to_value().cloned()),
+            additional_model_request_fields,
         })
     }
 }
@@ -539,7 +541,7 @@ pub struct RtsStateSnapshot {
     pub model_info: Option<ModelInfo>,
     pub context_usage_percentage: Option<f32>,
     #[serde(default)]
-    pub additional_fields: Option<AdditionalFields>,
+    pub additional_fields: Option<AdditionalModelFields>,
 }
 
 /// RTS model state with interior mutability for safe shared access.
@@ -617,6 +619,25 @@ impl RtsState {
         inner.additional_fields = info
             .as_ref()
             .and_then(|m| m.additional_fields.clone());
+        // Apply default effort for Claude models (only if not already set)
+        if let (Some(model_info), Some(fields)) = (&info, &mut inner.additional_fields) {
+            let has_effort = fields.overrides()
+                .and_then(|o| o.pointer("/output_config/effort"))
+                .is_some();
+            if !has_effort {
+                let id = model_info.model_id.to_lowercase();
+                let default_effort = if id.contains("claude") && id.contains("4.7") {
+                    Some("xhigh")
+                } else if id.contains("claude") && id.contains("4.6") {
+                    Some("high")
+                } else {
+                    None
+                };
+                if let Some(effort) = default_effort {
+                    let _ = fields.set("output_config.effort", effort);
+                }
+            }
+        }
         inner.model_info = info;
     }
 
@@ -628,7 +649,7 @@ impl RtsState {
         self.inner.lock().unwrap().context_usage_percentage = percentage;
     }
 
-    pub fn additional_fields(&self) -> Option<AdditionalFields> {
+    pub fn additional_fields(&self) -> Option<AdditionalModelFields> {
         self.inner.lock().unwrap().additional_fields.clone()
     }
 

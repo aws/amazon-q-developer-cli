@@ -7,7 +7,7 @@ use serde::{
     Serialize,
 };
 
-use super::additional_fields::AdditionalFields;
+use super::additional_fields::AdditionalModelFields;
 use crate::api_client::ApiClient;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -24,7 +24,7 @@ pub struct ModelInfo {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub rate_unit: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub additional_fields: Option<AdditionalFields>,
+    pub additional_fields: Option<AdditionalModelFields>,
 }
 
 impl ModelInfo {
@@ -36,7 +36,7 @@ impl ModelInfo {
             .map_or(default_context_window_for_model(&model_id), |tokens| tokens as usize);
         let additional_fields = model
             .additional_model_request_fields_schema()
-            .map(AdditionalFields::from_document);
+            .map(AdditionalModelFields::from_document);
         Self {
             model_id,
             description: model.description.clone(),

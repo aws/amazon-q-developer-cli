@@ -187,6 +187,7 @@ export const useContextState = () =>
       contextUsagePercent: state.contextUsagePercent,
       lastTurnTokens: state.lastTurnTokens,
       currentModel: state.currentModel,
+      currentEffort: state.currentEffort,
       currentAgent: state.currentAgent,
       previousAgentName: state.previousAgentName,
       codeIntelligenceActive: state.codeIntelligenceActive,

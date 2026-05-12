@@ -25,9 +25,8 @@ export enum AgentEventType {
   McpOauthRequest = 'mcp_oauth_request',
   McpServerInitialized = 'mcp_server_initialized',
   McpGovernanceDisabled = 'mcp_governance_disabled',
-  // Similar to CommandUpdate, but only for extension method and instead of overriding the entire list
-  // This is to be emitted once per session
   ExtensionMethodsDiscovered = 'extension_methods_discovered',
+  EffortUpdate = 'effort_update',
 }
 
 export enum ContentType {
@@ -242,6 +241,11 @@ export interface ContextUsageEvent {
   percent: number;
 }
 
+export interface EffortUpdateEvent {
+  type: AgentEventType.EffortUpdate;
+  effort: string | null;
+}
+
 export interface MetadataEvent {
   type: AgentEventType.Metadata;
   totalTokens?: number;
@@ -373,4 +377,5 @@ export type AgentStreamEvent =
   | McpOauthRequestEvent
   | McpServerInitializedEvent
   | McpGovernanceDisabledEvent
-  | ExtensionMethodsDiscoveredEvent;
+  | ExtensionMethodsDiscoveredEvent
+  | EffortUpdateEvent;

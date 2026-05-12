@@ -151,7 +151,8 @@ pub struct MetadataNotification {
     pub metering_usage: Option<Vec<MeteringUsageInfo>>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub turn_duration_ms: Option<u64>,
-    // Future fields can be added here
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub effort: Option<String>,
 }
 
 // ---------------------------------------------------------------------------

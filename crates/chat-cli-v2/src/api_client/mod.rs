@@ -594,6 +594,8 @@ impl IpcMockApiClient {
             ].into_iter().collect(),
         );
         let models: Vec<Model> = [
+            ("claude-opus-4.7", "Claude Opus 4.7"),
+            ("claude-sonnet-4.6", "Claude Sonnet 4.6"),
             ("Auto", "Auto"),
             ("claude-sonnet-4.5", "Claude Sonnet 4.5"),
             ("claude-sonnet-4", "Claude Sonnet 4"),

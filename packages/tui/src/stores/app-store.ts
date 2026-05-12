@@ -402,6 +402,8 @@ interface BaseAppActions {
   setApprovalMode: (mode: 'dropdown' | 'drill-in') => void;
   setAutoApproveCrewTools: (value: boolean) => void;
   setCurrentModel: (model: { id: string; name: string } | null) => void;
+  currentEffort: string | null;
+  setCurrentEffort: (effort: string | null) => void;
   setCurrentAgent: (
     agent: { name: string; welcomeMessage?: string } | null
   ) => void;
@@ -663,6 +665,7 @@ export interface AppState {
   focusedCrewIndex: number;
   setFocusedCrewIndex: (index: number) => void;
   currentModel: { id: string; name: string } | null;
+  currentEffort: string | null;
   currentAgent: { name: string } | null;
   previousAgentName: string | null;
   settings: Record<string, unknown> | null;
@@ -1013,6 +1016,7 @@ export const createAppStore = (props: AppStoreProps) => {
     autoApproveCrewTools: false,
     focusedCrewIndex: 0,
     currentModel: null,
+    currentEffort: null,
     currentAgent: null,
     previousAgentName: null,
     settings: null,
@@ -1703,6 +1707,9 @@ export const createAppStore = (props: AppStoreProps) => {
           case AgentEventType.ContextUsage:
             get().setContextUsage(event.percent);
             break;
+          case AgentEventType.EffortUpdate:
+            get().setCurrentEffort(event.effort);
+            break;
           case AgentEventType.Metadata:
             if (
               event.inputTokens !== undefined ||
@@ -2024,6 +2031,7 @@ export const createAppStore = (props: AppStoreProps) => {
     setAgentError: (agentError, guidance) =>
       set({ agentError, agentErrorGuidance: guidance ?? null }),
     setCurrentModel: (currentModel) => set({ currentModel }),
+    setCurrentEffort: (currentEffort) => set({ currentEffort }),
     setCurrentAgent: (agent) => {
       const prevAgent = get().currentAgent;
       set({ currentAgent: agent ? { name: agent.name } : null });
@@ -2062,6 +2070,10 @@ export const createAppStore = (props: AppStoreProps) => {
           event.percent
         );
         get().setContextUsage(event.percent);
+        return;
+      }
+      if (event.type === AgentEventType.EffortUpdate) {
+        get().setCurrentEffort(event.effort);
         return;
       }
       if (event.type !== AgentEventType.CompactionStatus) return;

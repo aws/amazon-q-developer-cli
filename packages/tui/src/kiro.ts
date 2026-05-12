@@ -244,6 +244,7 @@ export class Kiro {
         if (
           (event.type === AgentEventType.CompactionStatus ||
             event.type === AgentEventType.ContextUsage ||
+            event.type === AgentEventType.EffortUpdate ||
             event.type === AgentEventType.Content) &&
           this.compactionHandler
         ) {

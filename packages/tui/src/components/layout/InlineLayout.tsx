@@ -234,6 +234,7 @@ export const InlineLayout: React.FC = () => {
     sessionId,
     contextUsagePercent,
     currentModel,
+    currentEffort,
     currentAgent,
     previousAgentName,
     codeIntelligenceActive,
@@ -572,6 +573,9 @@ export const InlineLayout: React.FC = () => {
       currentModel && (
         <Chip value={currentModel.name} color={ChipColor.PRIMARY} />
       ),
+      currentEffort && (
+        <Chip value={currentEffort} color={ChipColor.SECONDARY} />
+      ),
       contextUsagePercent != null && (
         <ProgressChip value={contextUsagePercent} warningThreshold={60} />
       ),
@@ -605,6 +609,7 @@ export const InlineLayout: React.FC = () => {
     codeIntelligenceActive,
     gitBranch,
     currentModel,
+    currentEffort,
     getColor,
   ]);
 
@@ -623,6 +628,7 @@ export const InlineLayout: React.FC = () => {
         />
       ),
       currentModel && <Chip value={currentModel.name} color={mutedColor} />,
+      currentEffort && <Chip value={currentEffort} color={mutedColor} />,
       contextUsagePercent != null && (
         <ProgressChip
           value={contextUsagePercent}
@@ -652,6 +658,7 @@ export const InlineLayout: React.FC = () => {
     toolOutputsExpanded,
     currentAgent,
     currentModel,
+    currentEffort,
     contextUsagePercent,
     codeIntelligenceActive,
     gitBranch,

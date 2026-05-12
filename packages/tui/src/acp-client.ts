@@ -517,6 +517,8 @@ abstract class BaseAcpClient implements SessionClient {
         turnDurationMs: durationMs,
       });
     }
+    const effort = (params.effort as string | undefined) ?? null;
+    this.broadcastStreamEvent({ type: AgentEventType.EffortUpdate, effort });
   }
 
   private handleClearStatus() {

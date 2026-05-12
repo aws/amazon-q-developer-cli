@@ -1,6 +1,6 @@
 //! Generic additional model request fields — schema + overrides.
 //!
-//! `AdditionalFields` holds the raw JSON Schema from the API and the user's current
+//! `AdditionalModelFields` holds the raw JSON Schema from the API and the user's current
 //! overrides. It provides methods to validate, set overrides, flatten for display,
 //! and convert to the Smithy `Document` needed by the API.
 
@@ -10,7 +10,7 @@ use serde_json::Value;
 
 /// Manages additional model request fields: schema validation and user overrides.
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct AdditionalFields {
+pub struct AdditionalModelFields {
     /// The raw JSON Schema from the API (describes available fields and their enums).
     schema: Value,
     /// User overrides as a nested JSON object (e.g. `{"output_config": {"effort": "low"}}`).
@@ -18,7 +18,7 @@ pub struct AdditionalFields {
     overrides: Option<Value>,
 }
 
-impl AdditionalFields {
+impl AdditionalModelFields {
     /// Create from a Smithy Document (as returned by `additional_model_request_fields_schema()`).
     pub fn from_document(doc: &Document) -> Self {
         Self {
@@ -170,7 +170,7 @@ pub fn value_to_document(value: &Value) -> Document {
 mod tests {
     use super::*;
 
-    fn sample() -> AdditionalFields {
+    fn sample() -> AdditionalModelFields {
         let schema = serde_json::json!({
             "type": "object",
             "properties": {
@@ -189,7 +189,7 @@ mod tests {
                 }
             }
         });
-        AdditionalFields { schema, overrides: None }
+        AdditionalModelFields { schema, overrides: None }
     }
 
     #[test]

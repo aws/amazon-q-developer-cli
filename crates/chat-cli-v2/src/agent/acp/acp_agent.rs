@@ -270,6 +270,7 @@ pub enum AcpSessionRequest {
     Shutdown { respond_to: oneshot::Sender<()> },
     /// Trigger command/prompt advertising to the client.
     AdvertiseCommands,
+    EmitInitialMetadata,
     /// Queue an MCP server refresh with updated registry data.
     /// The actual swap happens in the event loop when the session is idle.
     RefreshMcpServers {
@@ -596,6 +597,11 @@ impl AcpSessionHandle {
     /// Fire-and-forget: tell the session to advertise commands/prompts to the client.
     pub async fn advertise_commands(&self) {
         let _ = self.tx.send(AcpSessionRequest::AdvertiseCommands).await;
+    }
+
+    /// Fire-and-forget: tell the session to emit initial metadata (context usage, effort).
+    pub async fn emit_initial_metadata(&self) {
+        let _ = self.tx.send(AcpSessionRequest::EmitInitialMetadata).await;
     }
 }
 
@@ -1356,8 +1362,6 @@ impl AcpSession {
         loop {
             match self.agent.recv().await {
                 Ok(AgentEvent::Initialized) => {
-                    // Emit initial context usage so TUI shows it immediately
-                    self.emit_initial_context_usage().await;
                     return Ok(());
                 },
                 Ok(AgentEvent::InitializeUpdate(init_event)) => match init_event {
@@ -1455,6 +1459,12 @@ impl AcpSession {
             .send_notification(sacp::schema::AgentNotification::ExtNotification(ext_notification))
     }
 
+    fn current_effort(&self) -> Option<String> {
+        self.rts_state
+            .additional_fields()
+            .and_then(|f| f.overrides().and_then(|o| o.pointer("/output_config/effort")).and_then(|v| v.as_str()).map(|s| s.to_string()))
+    }
+
     fn send_turn_metadata(&self, metadata: &agent::agent_loop::protocol::UserTurnMetadata) -> Result<(), sacp::Error> {
         let metering = if metadata.metering_usage.is_empty() {
             None
@@ -1466,6 +1476,7 @@ impl AcpSession {
             context_usage_percentage: metadata.context_usage_percentage,
             metering_usage: metering,
             turn_duration_ms: metadata.turn_duration.map(|d| d.as_millis() as u64),
+            effort: self.current_effort(),
         };
         self.connection_cx.send_notification(notification)
     }
@@ -1503,6 +1514,7 @@ impl AcpSession {
             context_usage_percentage: Some(estimated_pct),
             metering_usage: None,
             turn_duration_ms: None,
+            effort: self.current_effort(),
         };
         if let Err(e) = self.connection_cx.send_notification(notification) {
             warn!("Failed to send initial context usage: {}", e);
@@ -1888,6 +1900,19 @@ impl AcpSession {
 
                 let create_succeeded = is_agent_create && result.success;
                 let _ = respond_to.send(result);
+
+                // Send metadata notification after every command (keeps TUI effort/context in sync)
+                let notification = super::schema::MetadataNotification {
+                    session_id: self.session_id_str.clone(),
+                    context_usage_percentage: self.rts_state.context_usage_percentage(),
+                    metering_usage: None,
+                    turn_duration_ms: None,
+                    effort: self.current_effort(),
+                };
+                if let Err(e) = self.connection_cx.send_notification(notification) {
+                    warn!("Failed to send metadata after command execute: {}", e);
+                }
+
                 if is_agent_swap && let Err(e) = self.advertise_commands_and_prompts().await {
                     warn!("Failed to advertise commands after agent swap: {}", e);
                 }
@@ -2013,6 +2038,9 @@ impl AcpSession {
                 if let Err(e) = self.advertise_commands_and_prompts().await {
                     warn!("Failed to advertise commands: {}", e);
                 }
+            },
+            AcpSessionRequest::EmitInitialMetadata => {
+                self.emit_initial_context_usage().await;
             },
             AcpSessionRequest::RefreshMcpServers { agent_config } => {
                 self.pending_mcp_refresh = Some(agent_config);
@@ -2284,6 +2312,7 @@ impl AcpSession {
                         context_usage_percentage: self.rts_state.context_usage_percentage(),
                         metering_usage: None,
                         turn_duration_ms: None,
+                        effort: self.current_effort(),
                     };
                     if let Err(e) = self.connection_cx.send_notification(notification) {
                         warn!("Failed to send metadata after compaction: {}", e);
@@ -2323,6 +2352,7 @@ impl AcpSession {
                     context_usage_percentage: self.rts_state.context_usage_percentage(),
                     metering_usage: None,
                     turn_duration_ms: None,
+                    effort: self.current_effort(),
                 };
                 if let Err(e) = self.connection_cx.send_notification(notification) {
                     warn!("Failed to send metadata after clear: {}", e);
@@ -3325,6 +3355,7 @@ pub async fn execute(
 
                     // Advertise after responding so the TUI has processed the session response
                     result.handle.advertise_commands().await;
+                    result.handle.emit_initial_metadata().await;
 
                     // Notify TUI about agent loading issues
                     send_agent_load_notifications(&cx, &session_id, &result.requested_agent_name, &result.agent_config_errors, result.mcp_enabled, result.mcp_api_failure);
@@ -3357,6 +3388,7 @@ pub async fn execute(
 
                             // Advertise after responding so the TUI has processed the session response
                             result.handle.advertise_commands().await;
+                            result.handle.emit_initial_metadata().await;
 
                             // Notify TUI about agent loading issues
                             send_agent_load_notifications(&cx, &request.session_id, &result.requested_agent_name, &result.agent_config_errors, result.mcp_enabled, result.mcp_api_failure);
