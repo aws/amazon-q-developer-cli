@@ -3,10 +3,10 @@ doc_meta:
   title: /theme
   description: Select and customize the terminal color theme
   category: slash_command
-  keywords: [theme, colors, dark, light, auto, custom, appearance, prompt, diff]
+  keywords: [theme, colors, dark, light, auto, custom, appearance, prompt, diff, NO_COLOR]
   related: [settings]
-  validated: 2026-04-09
-  commit: 4ae084db
+  validated: 2026-04-24
+  commit: 22dc5f71
   status: validated
   testable_headless: false
 ---
@@ -28,9 +28,11 @@ Theme preferences are saved to `~/.kiro/settings/kiro_cli_theme.json` and persis
 Opens the theme selection menu with four options:
 
 - **Auto** — Uses auto-detected theme based on terminal background
-- **Dark Theme** — Optimized for dark terminal backgrounds
-- **Light Theme** — Optimized for light terminal backgrounds
+- **Dark Theme** — Switches to dark base theme with optimized colors
+- **Light Theme** — Switches to light base theme with optimized colors
 - **Custom** — Configure prompt, response, and diff colors separately
+
+When you select Dark Theme or Light Theme, the entire base theme switches (not just accent colors), ensuring all UI elements render correctly for your terminal background.
 
 ## Examples
 
@@ -62,11 +64,21 @@ Select "Custom" to configure:
 - **Response text color** — Default, Light, Dark
 - **Code diff colors** — Default, Dark, Light, Accessible Dark, Accessible Light
 
+## Environment Variables
+
+The TUI respects the `NO_COLOR` environment variable. When set, color output is disabled regardless of theme settings.
+
+```bash
+NO_COLOR=1 kiro-cli chat
+```
+
 ## Troubleshooting
 
 ### Colors look wrong
 
 Try `/theme bundled:default` to reset to auto-detected theme.
+
+If colors render as black or are unreadable on terminals with remapped ANSI palettes, select a bundled theme (Dark or Light) explicitly rather than relying on auto-detection.
 
 ### Theme not persisting
 

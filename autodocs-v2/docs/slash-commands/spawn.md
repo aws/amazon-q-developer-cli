@@ -5,15 +5,15 @@ doc_meta:
   category: slash_command
   keywords: [spawn, session, parallel, agent, task, background]
   related: [subagent, agent-swap]
-  validated: 2026-04-08
-  commit: 1a984cb0
+  validated: 2026-04-24
+  commit: 22dc5f71
   status: validated
   testable_headless: false
 ---
 
 ## Overview
 
-The `/spawn` command creates a new agent session that runs a task in parallel with your current conversation. Monitor spawned sessions with Ctrl+G (crew monitor).
+The `/spawn` command creates a new agent session that runs a task in parallel with your current conversation. Monitor spawned sessions with `Ctrl+G` (agent monitor).
 
 ## Usage
 
@@ -41,7 +41,7 @@ The `/spawn` command creates a new agent session that runs a task in parallel wi
 
 ### Monitor spawned sessions
 
-Press `Ctrl+G` to open the crew monitor and see status of all spawned sessions.
+Press `Ctrl+G` to open the agent monitor and see status of all spawned sessions.
 
 ## Troubleshooting
 
