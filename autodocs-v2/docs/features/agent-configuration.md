@@ -1,13 +1,13 @@
 ---
 doc_meta:
-  validated: 2026-04-24
-  commit: 22dc5f71
+  validated: 2026-05-01
+  commit: 626ab640
   status: validated
   testable_headless: true
   category: feature
   title: Agent Configuration
   description: Complete guide to agent configuration format including tools, settings, resources, hooks, and MCP servers
-  keywords: [agent, configuration, json, tools, settings, resources, hooks, mcp, keyboardShortcut, welcomeMessage, skill, denyByDefault, allowedCommands]
+  keywords: [agent, configuration, json, tools, settings, resources, hooks, mcp, keyboardShortcut, welcomeMessage, skill, denyByDefault, allowedCommands, oauth, clientId]
   related: [agent-create, agent-edit, agent-swap]
 ---
 
@@ -337,6 +337,22 @@ MCP server configurations. Supports local (stdio) and remote (HTTP) servers.
 }
 ```
 
+**Remote server with custom OAuth client ID** (for servers that don't support Dynamic Client Registration):
+
+```json
+{
+  "mcpServers": {
+    "slack": {
+      "url": "https://mcp.slack.com/mcp",
+      "oauth": {
+        "clientId": "my-slack-app-id"
+      },
+      "oauthScopes": ["search:read", "channels:read"]
+    }
+  }
+}
+```
+
 **Local Server Fields**:
 - `command` (required): Command to start server
 - `args` (optional): Command arguments
@@ -348,6 +364,9 @@ MCP server configurations. Supports local (stdio) and remote (HTTP) servers.
 **Remote Server Fields**:
 - `url` (required): HTTP endpoint URL
 - `headers` (optional): HTTP headers for requests
+- `oauth` (optional): OAuth configuration object
+  - `clientId` (optional): Pre-registered OAuth client ID for servers that don't support Dynamic Client Registration (e.g., Slack, GitHub, Figma)
+  - `redirectUri` (optional): Custom redirect URI for OAuth flow
 - `oauthScopes` (optional): OAuth scopes for authentication
 - `timeout` (optional): Request timeout in milliseconds (default: 120000)
 - `disabled` (optional): Set to `true` to skip loading this server (default: false)
