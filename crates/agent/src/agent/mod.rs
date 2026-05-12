@@ -1140,12 +1140,12 @@ impl Agent {
             },
             AgentRequest::GetSkills => {
                 let response =
-                    prompts::discover_skills_from_resources(self.agent_config.resources(), &self.sys_provider);
+                    prompts::discover_skills_from_resources(&self.agent_config.resources(), &self.sys_provider);
                 Ok(AgentResponse::Skills(response))
             },
             AgentRequest::ResolveSkill { name } => {
                 let content =
-                    prompts::resolve_skill_from_resources(self.agent_config.resources(), &self.sys_provider, &name);
+                    prompts::resolve_skill_from_resources(&self.agent_config.resources(), &self.sys_provider, &name);
                 Ok(AgentResponse::SkillContent(content))
             },
             AgentRequest::GetMcpPrompt { name, arguments } => {

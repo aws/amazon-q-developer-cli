@@ -91,6 +91,12 @@ impl ResourcePath {
             ResourcePath::Complex(res) => res.source(),
         }
     }
+
+    /// Returns true if this resource is a knowledgeBase type (handled by the
+    /// knowledge indexing system, not the context file loader).
+    pub fn is_knowledge_base(&self) -> bool {
+        matches!(self, ResourcePath::Complex(ComplexResource::KnowledgeBase { .. }))
+    }
 }
 
 impl Deref for ResourcePath {
