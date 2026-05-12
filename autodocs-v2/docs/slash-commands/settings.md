@@ -1,11 +1,11 @@
 ---
 doc_meta:
   title: /settings
-  description: Open the settings menu to configure theme, keybindings, and other preferences
+  description: Open the settings menu to configure theme, keybindings, terminal, and other preferences
   category: slash_command
-  keywords: [settings, preferences, config, theme, keybindings, configure]
+  keywords: [settings, preferences, config, theme, keybindings, terminal, configure, multi-line, shift-enter, tmux]
   related: [theme]
-  validated: 2026-05-06
+  validated: 2026-05-07
   status: validated
   testable_headless: false
 ---
@@ -32,10 +32,11 @@ You can also jump directly to a subcommand:
 
 ## Subcommands
 
-| Subcommand    | Description                             | Details |
-|---------------|-----------------------------------------|---------|
-| `theme`       | Customize colors and styling            | See [/theme](theme.md) |
-| `keybindings` | View configurable keyboard shortcuts    | Read-only; edit in `~/.kiro/settings.json` |
+| Subcommand    | Description                                          | Details |
+|---------------|------------------------------------------------------|---------|
+| `theme`       | Colors, prompt style, diff styling                   | See [/theme](theme.md) |
+| `keybindings` | View configurable keyboard shortcuts                 | Read-only; edit in `~/.kiro/settings.json` |
+| `terminal`    | Shift+Enter / Option+Enter for newlines              | Configures your terminal app |
 
 ### theme
 
@@ -46,6 +47,42 @@ Opens the theme selection menu. Equivalent to `/theme`.
 Shows a read-only view of the three configurable keyboard shortcuts: cancel streaming, dismiss overlay, and quit. Each row shows the current value and a `[default]` label when unchanged.
 
 Editing is not available inside the TUI for this release — users remap bindings by editing `~/.kiro/settings.json` directly. See the CLI [`settings`](../commands/settings.md) documentation for the full list of `chat.keybindings.*` keys.
+
+### terminal
+
+Configures your terminal application so Shift+Enter (or Option+Enter on macOS Terminal) inserts a newline in the prompt instead of submitting.
+
+Behavior depends on the detected terminal:
+
+- **Native support** (iTerm2, WezTerm, Ghostty, Kitty, Warp): nothing to install — shows a confirmation.
+- **Needs config** (VS Code, Cursor, Windsurf, Alacritty, Zed, macOS Terminal): automatically writes the key binding to the terminal's config file (with a `.bak` backup). You may need to restart the terminal for changes to take effect.
+- **Not supported** (Windows Terminal, gnome-terminal, JetBrains IDEs, etc.): shows the workaround (use `Ctrl+J` or `\` followed by Enter).
+
+**tmux users**: if you run Kiro inside tmux under a native-support terminal (iTerm2, Kitty, etc.) and Shift+Enter doesn't work, tmux is probably filtering the extended-key sequence. Add the following to your `~/.tmux.conf`:
+
+```
+set -s extended-keys on
+set -as terminal-features 'xterm*:extkeys'
+```
+
+Then reload tmux with `tmux source-file ~/.tmux.conf`. `/settings terminal` surfaces this reminder automatically when it detects you're in tmux.
+
+The result is shown as a transient notification; the settings overlay closes automatically.
+
+#### What gets changed
+
+Before modifying anything, the command writes a `.bak` of the file it's about to edit (for Apple Terminal, it exports the full `com.apple.Terminal` plist). Restoring is just a file copy.
+
+| Terminal | What's written | Where |
+|----------|----------------|-------|
+| VS Code / Cursor / Windsurf | Appends a keybinding: `shift+enter` → `workbench.action.terminal.sendSequence` with `\u001b\r` (Esc + CR) | `~/Library/Application Support/<app>/User/keybindings.json` (Linux / Windows paths differ) |
+| Alacritty | Appends `[[keyboard.bindings]]` entry mapping Shift+Return to `\u001B\r` | `~/.config/alacritty/alacritty.toml` (or `$XDG_CONFIG_HOME`) |
+| Zed | Appends a `Terminal`-scoped `shift-enter` binding sending `\u001b\r` | `~/.config/zed/keymap.json` |
+| Apple Terminal | Sets `useOptionAsMetaKey=true` **and** `Bell=false` on the default and startup profiles, then `killall cfprefsd` to flush the cache | `~/Library/Preferences/com.apple.Terminal.plist` |
+| iTerm2 / WezTerm / Ghostty / Kitty / Warp | Nothing — they already support Shift+Enter natively | — |
+| Windows Terminal, gnome-terminal, JetBrains IDEs, etc. | Nothing — unsupported; use `Ctrl+J` as the workaround | — |
+
+**Why Apple Terminal also flips the bell**: enabling `useOptionAsMetaKey` causes Option+<char> sequences to be delivered as escape sequences, which also trip the audio bell on some keypresses. Switching to visual bell avoids the terminal beeping on every Option+Enter. If you'd rather keep the audio bell, you can flip it back in Terminal.app → Settings → <profile> → Advanced → "Audible bell".
 
 ## Examples
 
@@ -65,6 +102,12 @@ Editing is not available inside the TUI for this release — users remap binding
 
 ```
 /settings keybindings
+```
+
+### Set up multi-line input
+
+```
+/settings terminal
 ```
 
 ## Related

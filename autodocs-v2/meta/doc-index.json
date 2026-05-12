@@ -1108,7 +1108,7 @@
       "path": "slash-commands/settings.md",
       "file": "settings.md",
       "title": "/settings",
-      "description": "Open the settings menu to configure theme, keybindings, and other preferences",
+      "description": "Open the settings menu to configure theme, keybindings, terminal, and other preferences",
       "category": "slash_command",
       "keywords": [
         "settings",
@@ -1116,12 +1116,16 @@
         "config",
         "theme",
         "keybindings",
-        "configure"
+        "terminal",
+        "configure",
+        "multi-line",
+        "shift-enter",
+        "tmux"
       ],
       "related": [
         "theme"
       ],
-      "validated": "2026-05-06",
+      "validated": "2026-05-07",
       "status": "validated"
     },
     {

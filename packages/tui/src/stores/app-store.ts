@@ -965,7 +965,7 @@ export const createAppStore = (props: AppStoreProps) => {
       {
         name: '/settings',
         description:
-          'Configure theme, terminal keybindings, and other preferences',
+          'Configure theme, terminal, keybindings, and other preferences',
         source: 'local' as const,
         // inputType is set dynamically in showSettingsMenu rather than here:
         // a static 'selection' would make the dispatcher fetch options from
