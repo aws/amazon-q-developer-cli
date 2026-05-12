@@ -67,7 +67,8 @@ jobs:
         env:
           KIRO_API_KEY: ${{ secrets.KIRO_REVIEW_PAT }}
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          SLACK_BOT_TOKEN: ${{ secrets.SLACK_REVIEWER_BOT_TOKEN }}
           PR_NUMBER: ${{ steps.pr.outputs.number }}
         run: |
-          kiro-cli chat --no-interactive --trust-all-tools \
-            "Review PR $PR_NUMBER using the semantic-pr-reviewer skill. Post the review as a PR comment using gh CLI. DO NOT wait for user input."
+          kiro-cli chat --no-interactive --trust-all-tools --agent pr-reviewer \
+            "Review PR $PR_NUMBER. Check for prior bot comments and only post if you have new findings. DO NOT wait for user input."
