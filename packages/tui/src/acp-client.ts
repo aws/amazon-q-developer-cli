@@ -6,6 +6,7 @@ import {
   getTelemetryIdentity,
   isTelemetryEnabled,
 } from './utils/telemetry-identity';
+import { buildKasSettings } from './utils/kas-settings';
 import { maybeWrapStreamWithRecorder } from './acp-recorder';
 import { spawn, type ChildProcess } from 'node:child_process';
 import type { SessionClient } from './types/session-client';
@@ -1226,12 +1227,14 @@ export class KasAcpClient extends BaseAcpClient {
     super(toAgentProcess(proc));
     const stream = buildStdioStreams(proc);
     const finalStream = maybeWrapStreamWithRecorder(stream);
+    const kasSettings = buildKasSettings();
     this.kiroClient = new KiroClient({
       stream: finalStream,
       clientInfo: { name: 'kiro-cli', version: TUI_VERSION },
       clientMeta: {
         telemetryEnabled: isTelemetryEnabled(),
         telemetry: getTelemetryIdentity(),
+        ...(kasSettings && { settings: kasSettings }),
       },
     });
   }
