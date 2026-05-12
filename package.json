@@ -11,6 +11,13 @@
   },
   "overrides": {
     "vite": "7.3.2",
-    "@aws/codewhisperer-streaming-client": "1.0.34"
+    "@aws/codewhisperer-streaming-client": "1.0.34",
+    "fast-xml-parser": "5.7.2",
+    "hono": "4.12.18",
+    "ip-address": "10.1.1",
+    "langsmith": "0.5.19",
+    "postcss": "8.5.10",
+    "@opentelemetry/exporter-prometheus": "0.217.0",
+    "@opentelemetry/sdk-node": "0.217.0"
   }
 }

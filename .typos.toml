@@ -17,6 +17,9 @@ extend-ignore-re = [
   "\\b[0-9a-f]{7,40}\\b",
 ]
 
+[default.extend-identifiers]
+PNGf = "PNGf" # AppleScript clipboard class name «class PNGf»
+
 [default.extend-words]
 mmaped = "mmaped"
 caf = "caf" # used in chat tools test
