@@ -1,13 +1,13 @@
 ---
 doc_meta:
-  validated: 2026-04-24
-  commit: 22dc5f71
+  validated: 2026-04-30
+  commit: be2c1347
   status: validated
   testable_headless: false
   category: feature
   title: Session Management
   description: Automatic session saving, resumption, and file-based storage
-  keywords: [session, save, load, resume, auto-save, storage, KIRO_SESSION_ID, environment]
+  keywords: [session, save, load, resume, auto-save, storage, history, conversation, KIRO_SESSION_ID, environment]
   related: [chat-save, chat-load, chat, hooks]
 ---
 
@@ -62,6 +62,9 @@ kiro-cli chat --resume
 # Interactive picker
 kiro-cli chat --resume-picker
 
+# Resume specific session by ID
+kiro-cli chat --resume-id f2946a26-3735-4b08-8d05-c928010302d5
+
 # List all sessions
 kiro-cli chat --list-sessions
 
@@ -77,6 +80,9 @@ kiro-cli chat --delete-session <SESSION_ID>
 
 # Load from file
 /chat load <path>
+
+# Start fresh session
+/chat new
 ```
 
 **Note**: `.json` extension optional when loading.
@@ -104,7 +110,7 @@ Continues most recent conversation, restoring the model that was active when the
 kiro-cli chat --resume-picker
 ```
 
-Shows list of sessions to choose from.
+Shows list of sessions to choose from. Displays session title, age, and message count.
 
 ### Example 3: Export to File
 
@@ -124,27 +130,75 @@ Exports current session to file.
 /chat load ./backup.json
 ```
 
+### Example 5: Share Session Across Machines
+
+```bash
+# On machine A: export session
+/chat save ~/shared/my-session.json
+
+# On machine B: import session
+/chat load ~/shared/my-session.json
+```
+
+The loaded session gets a new UUID but preserves conversation history.
+
+## FAQ
+
+### How do I name or rename a session?
+
+Sessions are identified by auto-generated UUIDs and auto-titled based on conversation content. You cannot manually rename sessions. To organize sessions:
+- Use `/chat save meaningful-name.json` to export with a descriptive filename
+- Use `--resume-picker` to see session titles when selecting
+
+### How do I search past conversations by content?
+
+Content search is not built-in. Workarounds:
+- Sessions are stored as `.jsonl` files in `~/.kiro/sessions/cli/`
+- Use grep to search: `grep -r "search term" ~/.kiro/sessions/cli/*.jsonl`
+- Export important sessions with `/chat save` to searchable locations
+
+### How do I share context across sessions?
+
+Sessions are independent. To share context:
+- Export relevant context to a file and reference it in new sessions
+- Use agent `resources` to load common context files automatically
+- Use `/chat save` and `/chat load` to continue the same conversation
+
+### How do I centralize conversations across workspaces?
+
+Sessions are per-directory by design. To work around this:
+- Export sessions with `/chat save` to a central location
+- Load them with `/chat load` from any directory
+- Note: The loaded session runs in the current directory context
+
 ## Troubleshooting
 
 ### Issue: No Sessions to Resume
 
 **Symptom**: "No saved chat sessions"  
 **Cause**: No sessions in current directory  
-**Solution**: Sessions are per-directory. Navigate to correct directory.
+**Solution**: Sessions are per-directory. Navigate to correct directory or use `/chat load` with a path.
+
+### Issue: Session Shows Wrong Directory
+
+**Symptom**: Resumed session references files from different directory  
+**Cause**: Session was created in a different directory  
+**Solution**: Sessions are tied to their original directory. Start a new session or navigate to the original directory.
 
 ## Related
 
 - [/chat save](../slash-commands/chat-save.md) - Save command
 - [/chat load](../slash-commands/chat-load.md) - Load command
+- [/chat new](../slash-commands/chat-new.md) - Start new session
 - [kiro-cli chat](../commands/chat.md) - CLI options
 
 ## Limitations
 
-- Sessions stored per-directory
-- Auto-save to files only (not cloud)
-- Session IDs are UUIDs (not human-readable)
-- No cloud sync built-in
-- No session search by content
+- Sessions stored per-directory (by design for project isolation)
+- Session IDs are UUIDs (auto-titled based on content)
+- No built-in content search (use grep on session files)
+- No cloud sync (use `/chat save` to export for manual sync)
+- No cross-session context sharing (sessions are independent)
 
 ## Technical Details
 

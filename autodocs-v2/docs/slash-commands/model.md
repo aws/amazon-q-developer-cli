@@ -125,15 +125,52 @@ Set Claude Sonnet 4 as default model
 
 Persists the current session's model as the default for all future sessions.
 
+### Example 6: Start Session with Specific Model
+
+```bash
+kiro-cli chat --model claude-sonnet-4
+```
+
+Starts a new session with the specified model.
+
+## FAQ
+
+### How do I switch models mid-session?
+
+Use `/model` to open the picker or `/model <name>` to switch directly. The change takes effect immediately for subsequent messages.
+
+### How do I set a default model?
+
+Use the settings command:
+
+```bash
+kiro-cli settings chat.defaultModel <model-id>
+```
+
+Or start sessions with `--model`:
+
+```bash
+kiro-cli chat --model <model-id>
+```
+
+### Does the model persist when I resume a session?
+
+Yes. When you resume a session with `--resume`, the model active when the session was saved is restored. Use `--model` to override.
+
+### How do I see available models?
+
+Run `/model` without arguments to see the interactive picker with all available models, their credit multipliers, and descriptions.
+
 ## Related
 
 - [chat.defaultModel](../settings/default-model.md) - Set default model
 - [kiro-cli chat --model](../commands/chat.md) - Start with specific model
+- [/usage](usage.md) - Check account usage
 
 ## Limitations
 
 - Interactive picker not available in headless mode (use direct selection instead)
-- Changes apply to current session only
+- Changes apply to current session only (unless resumed)
 - Available models depend on region
 
 ## Technical Details
@@ -146,4 +183,4 @@ Persists the current session's model as the default for all future sessions.
 
 **Tab Completion**: Model names are fetched dynamically and filtered by prefix as you type.
 
-**Persistence**: Model selection persists for session, not saved to database.
+**Persistence**: Model selection persists for session. When resuming, the saved model is restored.

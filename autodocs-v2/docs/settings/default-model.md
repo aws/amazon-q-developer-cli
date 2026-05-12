@@ -1,13 +1,13 @@
 ---
 doc_meta:
-  validated: 2025-12-19
-  commit: 57090ffe
+  validated: 2026-04-30
+  commit: be2c1347
   status: validated
   testable_headless: true
   category: setting
   title: chat.defaultModel
   description: Set default AI model for new chat sessions
-  keywords: [setting, model, default, ai]
+  keywords: [setting, model, default, ai, switch]
   related: [slash-model, cmd-chat]
 ---
 
@@ -45,6 +45,15 @@ kiro-cli settings --delete chat.defaultModel
 **Default**: None (uses system default)  
 **Example**: `anthropic.claude-3-5-sonnet-20241022-v2:0`
 
+## Model Selection Priority
+
+When starting a session, the model is selected in this order:
+
+1. `--model` CLI flag (highest priority)
+2. Resumed session's saved model (when using `--resume`)
+3. `chat.defaultModel` setting
+4. System default model
+
 ## Examples
 
 ### Example 1: Set Claude 3.5 Sonnet
@@ -67,10 +76,29 @@ kiro-cli settings chat.defaultModel
 kiro-cli settings --delete chat.defaultModel
 ```
 
+### Example 4: Override Default at Startup
+
+```bash
+kiro-cli chat --model claude-sonnet-4
+```
+
+The `--model` flag overrides the default for this session.
+
+### Example 5: Find Available Models
+
+Use `/model` in a chat session to see available models:
+
+```
+/model
+```
+
+Shows all models with their IDs, which you can use with this setting.
+
 ## Related
 
-- [/model](../slash-commands/model.md) - Switch models in session
+- [/model](../slash-commands/model.md) - Switch models mid-session
 - [kiro-cli chat --model](../commands/chat.md) - Start with specific model
+- [/usage](../slash-commands/usage.md) - Check model usage
 
 ## Troubleshooting
 
@@ -78,10 +106,15 @@ kiro-cli settings --delete chat.defaultModel
 
 **Symptom**: Error using model  
 **Cause**: Model not available in region  
-**Solution**: Check available models with `/model`
+**Solution**: Check available models with `/model` in a chat session
 
 ### Issue: Setting Not Applied
 
 **Symptom**: Different model used  
-**Cause**: Session already started or model specified in command  
-**Solution**: Restart session or remove `--model` flag
+**Cause**: Session already started, model specified in command, or resuming saved session  
+**Solution**: The `--model` flag and resumed sessions take priority. Start a fresh session without flags.
+
+### Issue: Don't Know Model ID
+
+**Symptom**: Unsure what value to use  
+**Solution**: Run `/model` in a chat session to see available models and their IDs
