@@ -7,7 +7,7 @@ doc_meta:
   category: feature
   title: Classic Mode vs New TUI
   description: Differences between classic mode (V1) and the new TUI experience, including what changed, what's new, and how to switch
-  keywords: [classic, tui, v1, v2, migration, legacy, differences, new]
+  keywords: [classic, tui, v1, v2, migration, legacy, differences, new, paste, chip]
   related: [help, theme, spawn, feedback]
 ---
 
@@ -47,6 +47,16 @@ Track task list progress and queued messages. Type your next message while the a
 - Shift+Enter for multi-line input (terminal-dependent)
 - Segment-based input with file and paste chips
 - Async @ file search with debounce
+
+### Paste Chips
+
+When you paste text longer than 10 lines, the TUI collapses it into a compact chip (e.g., `12 lines ▸`) instead of flooding your input. This keeps the prompt readable while preserving the full content.
+
+**Expanding chips**: Press Tab when your cursor is on a paste chip to expand it back into inline editable text. A hint ("Press Tab to expand") appears after pasting.
+
+**Undo**: Press Ctrl+_ after expanding to restore the collapsed chip.
+
+**Multiple chips**: You can paste multiple times — each creates a separate chip. Typing between pastes inserts text between chips.
 
 ### New Commands
 
