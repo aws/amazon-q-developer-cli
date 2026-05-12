@@ -1,7 +1,7 @@
 ---
 doc_meta:
-  validated: 2026-04-30
-  commit: be2c1347
+  validated: 2026-05-06
+  commit: c4ad3238
   status: validated
   testable_headless: true
   category: setting
@@ -104,9 +104,11 @@ Shows all models with their IDs, which you can use with this setting.
 
 ### Issue: Model Not Available
 
-**Symptom**: Error using model  
-**Cause**: Model not available in region  
-**Solution**: Check available models with `/model` in a chat session
+**Symptom**: Error "The model 'X' is not available. Please use '/model' to select a different model and try again." when sending a message.
+
+**Cause**: The configured default model is not available in the current region or has been removed.
+
+**Solution**: Update the setting with a valid model ID, or delete the setting to use the system default. Use `/model` in a chat session to see available models.
 
 ### Issue: Setting Not Applied
 

@@ -1,7 +1,7 @@
 ---
 doc_meta:
-  validated: 2026-05-05
-  commit: 21e95839
+  validated: 2026-05-06
+  commit: c4ad3238
   status: validated
   testable_headless: true
   category: command
@@ -196,6 +196,14 @@ Use `--no-interactive` for automation and scripts:
 **Symptom**: Error about agent not existing  
 **Cause**: Specified agent doesn't exist  
 **Solution**: Check agent name. Use `kiro-cli agent list` to see available agents.
+
+### Issue: Model Not Available
+
+**Symptom**: Error "The model 'X' is not available. Please use '/model' to select a different model and try again." when sending a message.
+
+**Cause**: The model specified with `--model` is not available in the current region or has been removed.
+
+**Solution**: Use `/model` to see available models and select a valid one, or omit the `--model` flag to use the default.
 
 ### Issue: Interactive Command Fails in Headless
 

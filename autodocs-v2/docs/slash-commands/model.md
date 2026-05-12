@@ -1,7 +1,7 @@
 ---
 doc_meta:
   validated: 2026-05-06
-  commit: 33b3c338
+  commit: c4ad3238
   status: validated
   testable_headless: true
   category: slash_command
@@ -172,6 +172,16 @@ Run `/model` without arguments to see the interactive picker with all available 
 - Interactive picker not available in headless mode (use direct selection instead)
 - Changes apply to current session only (unless resumed)
 - Available models depend on region
+
+## Troubleshooting
+
+### Issue: Model Not Available
+
+**Symptom**: Error "The model 'X' is not available. Please use '/model' to select a different model and try again."
+
+**Cause**: The specified model ID is not available in the current region or has been removed.
+
+**Solution**: Use `/model` to see available models and select a valid one.
 
 ## Technical Details
 
