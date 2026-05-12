@@ -336,6 +336,12 @@ Initialize LSP servers for workspace.
 **Cause**: LSP servers starting up  
 **Solution**: Wait a moment and retry. If persists, use `/code init -f` to restart servers.
 
+### Issue: Permission Required for File Outside Workspace
+
+**Symptom**: Code tool asks for permission when reading a file  
+**Cause**: The target file is outside the current working directory  
+**Solution**: Approve the permission request if you trust the file path. The code tool auto-allows reads within your workspace but requires approval for files outside it to prevent unintended access to sensitive files.
+
 ### Issue: "No symbols found"
 
 **Symptom**: search_symbols returns empty  
@@ -398,7 +404,7 @@ Initialize LSP servers for workspace.
 
 **Initialization**: Run `/code init` in project root. Creates `lsp.json` config. Auto-initializes on subsequent startups.
 
-**Permissions**: Auto-approved within workspace. Requires approval for files outside workspace.
+**Permissions**: Read operations within the current working directory are auto-allowed. Read operations targeting files outside the workspace require user approval. Write operations (pattern_rewrite, rename_symbol, format) always require approval unless the code tool is explicitly trusted in agent configuration.
 
 **Position Format**: Row and column are 1-based (first line is 1, first column is 1).
 
