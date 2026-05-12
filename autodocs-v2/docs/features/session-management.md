@@ -1,14 +1,14 @@
 ---
 doc_meta:
-  validated: 2026-04-09
-  commit: 4ae084db
+  validated: 2026-04-24
+  commit: 22dc5f71
   status: validated
   testable_headless: false
   category: feature
   title: Session Management
   description: Automatic session saving, resumption, and file-based storage
-  keywords: [session, save, load, resume, auto-save, storage]
-  related: [chat-save, chat-load, chat]
+  keywords: [session, save, load, resume, auto-save, storage, KIRO_SESSION_ID, environment]
+  related: [chat-save, chat-load, chat, hooks]
 ---
 
 # Session Management
@@ -29,6 +29,27 @@ Kiro CLI automatically saves all chat sessions on every conversation turn. Sessi
 - `{session_id}.lock` - lock file (exists only when session is active)
 
 **Session ID**: UUID for each session
+
+## Environment Variable
+
+Kiro sets the `KIRO_SESSION_ID` environment variable when a session starts. All child processes inherit this value:
+
+- Shell commands executed by the agent
+- Hook scripts
+- MCP servers
+- AWS CLI calls
+
+This allows child processes to detect they're running inside a Kiro session and correlate activity back to a specific session for logging or telemetry.
+
+```bash
+# In a hook script or shell command
+echo "Running in Kiro session: $KIRO_SESSION_ID"
+```
+
+The variable is updated when:
+- A new chat session starts
+- `/chat new` creates a new session
+- `/chat load` loads a saved session
 
 ## Managing Sessions
 

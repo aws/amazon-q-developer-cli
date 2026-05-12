@@ -159,6 +159,22 @@ Adds git-server to rust-dev agent configuration.
 
 Your token overrides registry defaults.
 
+### Example 4: Registry Server in Agent Config
+
+In agent configurations, you can explicitly reference registry servers:
+
+```json
+{
+  "mcpServers": {
+    "github": {
+      "type": "registry"
+    }
+  }
+}
+```
+
+The server is resolved from the registry before the agent launches. This is useful when you want to reference a registry server without specifying full connection details.
+
 ## Troubleshooting
 
 ### Issue: "MCP has been disabled by your administrator"

@@ -1,13 +1,13 @@
 ---
 doc_meta:
-  validated: 2026-04-09
-  commit: 69e517e1
+  validated: 2026-04-24
+  commit: 22dc5f71
   status: validated
   testable_headless: true
   category: feature
   title: Agent Configuration
   description: Complete guide to agent configuration format including tools, settings, resources, hooks, and MCP servers
-  keywords: [agent, configuration, json, tools, settings, resources, hooks, mcp, keyboardShortcut, welcomeMessage, skill]
+  keywords: [agent, configuration, json, tools, settings, resources, hooks, mcp, keyboardShortcut, welcomeMessage, skill, denyByDefault, allowedCommands]
   related: [agent-create, agent-edit, agent-swap]
 ---
 
@@ -157,13 +157,23 @@ Tool-specific configuration.
       "allowedPaths": ["~/projects/**"],
       "deniedPaths": ["/etc/**"]
     },
-    "execute_bash": {
+    "shell": {
       "allowedCommands": ["git status", "cargo check"],
-      "autoAllowReadonly": true
+      "deniedCommands": ["rm -rf *", "sudo *"],
+      "autoAllowReadonly": true,
+      "denyByDefault": false
     }
   }
 }
 ```
+
+> The `shell` key also accepts aliases: `execute_bash`, `executeBash`, `executeCmd`, `execute_cmd`. All route to the same settings.
+
+**shell settings**:
+- `allowedCommands` - Regex patterns for commands to auto-approve
+- `deniedCommands` - Regex patterns for commands to always deny
+- `autoAllowReadonly` - Auto-approve read-only commands (e.g., `ls`, `cat`, `git status`)
+- `denyByDefault` - Deny all commands not matching `allowedCommands`. When enabled, dangerous commands are silently denied rather than prompting for approval
 
 ### resources
 
