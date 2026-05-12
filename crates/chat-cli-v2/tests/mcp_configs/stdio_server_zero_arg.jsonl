@@ -1,0 +1,3 @@
+// Zero-argument MCP tool (input_schema.properties is empty).
+{"type": "tool", "name": "list_crons", "description": "Lists all cron jobs (takes no arguments)", "input_schema": {"type": "object", "properties": {}}}
+{"type": "response", "tool": "list_crons", "response": {"crons": []}}

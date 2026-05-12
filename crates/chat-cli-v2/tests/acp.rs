@@ -3077,3 +3077,111 @@ async fn cancelled_tool_response_preserves_tool_results() {
         "history should NOT contain 'Tool use was cancelled' since the tool completed successfully"
     );
 }
+
+/// A zero-arg MCP tool invoked with empty-string input should dispatch
+/// normally (input coerced to `{}`), not trigger the "tool was too large"
+/// retry.
+#[tokio::test]
+#[timeout(120000)]
+#[serial]
+async fn empty_mcp_tool_content_invokes_zero_arg_tool_without_retry() {
+    // MCP stdio handshake is unreliable on CI runners under load, same as
+    // mcp_stdio_server_tool_call.
+    if std::env::var("CI").is_ok() {
+        return;
+    }
+
+    use std::path::PathBuf;
+
+    use mock_mcp_server::prebuild_bin;
+    use sacp::schema::McpServerStdio;
+
+    // Ensure mock-mcp-server binary is built
+    prebuild_bin().expect("failed to build mock-mcp-server");
+
+    let binary_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .parent()
+        .unwrap()
+        .parent()
+        .unwrap()
+        .join("target/debug/mock-mcp-server");
+
+    // Zero-arg MCP tool config — `properties: {}` is the schema shape that triggers
+    // the LLM-side quirk the test case documents.
+    let config_path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/mcp_configs/stdio_server_zero_arg.jsonl");
+
+    let (harness, client) = AcpTestHarnessBuilder::new("empty_mcp_tool_content_invokes_zero_arg_tool_without_retry")
+        .with_trust_all(true)
+        .build()
+        .await;
+
+    let cwd = harness.paths.cwd.clone();
+
+    let mcp_server = sacp::schema::McpServer::Stdio(
+        McpServerStdio::new("test-stdio-mcp", binary_path)
+            .args(vec!["--config".to_string(), config_path.to_str().unwrap().to_string()]),
+    );
+
+    let resp = client
+        .new_session_with_mcp(cwd, vec![mcp_server])
+        .await
+        .expect("new_session failed");
+    let session_id = resp.session_id;
+
+    // Wait for MCP server to initialize before prompting.
+    let mcp_initialized_method = methods::MCP_SERVER_INITIALIZED
+        .strip_prefix("_")
+        .expect("method should have underscore prefix");
+
+    let initialized = client
+        .wait_for_timeout(
+            |captured| {
+                captured.ext_notifications.iter().any(|n| {
+                    n.method.as_ref() == mcp_initialized_method && {
+                        let params: serde_json::Value = serde_json::from_str(n.params.get()).unwrap_or_default();
+                        params.get("serverName").and_then(|v| v.as_str()) == Some("test-stdio-mcp")
+                    }
+                })
+            },
+            std::time::Duration::from_secs(90),
+        )
+        .await;
+    assert!(initialized, "MCP server 'test-stdio-mcp' did not initialize within 90s");
+
+    let mut harness = harness;
+    harness
+        .push_mock_responses_from_file(&session_id.0, "tests/mock_responses/mcp_stdio_empty_tool_content.jsonl")
+        .await;
+
+    client
+        .prompt_text(session_id.clone(), "list my cron jobs")
+        .await
+        .expect("prompt failed");
+
+    // Post-fix expectation: empty-string tool content is coerced to {}, so the
+    // agent dispatches the zero-arg tool normally without entering the
+    // InvalidJson retry path.
+
+    let captured = client.captured().await;
+    let has_tool_call = captured
+        .session_updates
+        .iter()
+        .any(|u| matches!(u, SessionUpdate::ToolCall(tc) if tc.title.contains("list_crons")));
+    assert!(
+        has_tool_call,
+        "expected a ToolCall for 'list_crons'; updates: {:?}",
+        captured.session_updates
+    );
+
+    // No SessionUpdate should mention "tool was too large" — that phrase is
+    // only emitted on the retry path we're fixing.
+    let too_large_mention = captured
+        .session_updates
+        .iter()
+        .find(|u| format!("{u:?}").contains("tool was too large"));
+    assert!(
+        too_large_mention.is_none(),
+        "unexpected retry path: {:?}",
+        too_large_mention
+    );
+}

@@ -1,0 +1,4 @@
+{
+  "type": "fixed",
+  "description": "Fixed infinite retry loop when invoking zero-argument MCP tools"
+}
