@@ -1,13 +1,13 @@
 ---
 doc_meta:
-  validated: 2026-05-02
-  commit: a433349d
+  validated: 2026-05-06
+  commit: 17be3b13
   status: validated
   testable_headless: false
   category: slash_command
   title: /mcp
   description: View MCP server status, authentication requirements, and available tools
-  keywords: [mcp, servers, status, auth, tools, governance]
+  keywords: [mcp, servers, status, auth, tools, governance, add, remove, persist]
   related: [cmd-mcp, agent-config, mcp-registry]
 ---
 
@@ -38,7 +38,7 @@ List all MCP servers (shows registry servers if configured by admin, or local co
 
 ### add
 
-Add an MCP server from the registry (only available if a registry has been configured by admin).
+Add an MCP server from the registry (only available if a registry has been configured by admin). Changes are persisted to your agent's configuration file.
 
 ```
 /mcp add
@@ -46,7 +46,7 @@ Add an MCP server from the registry (only available if a registry has been confi
 
 ### remove
 
-Remove an enabled MCP server (only available if a registry has been configured by admin).
+Remove an enabled MCP server (only available if a registry has been configured by admin). Changes are persisted to your agent's configuration file.
 
 ```
 /mcp remove

@@ -1,13 +1,13 @@
 ---
 doc_meta:
-  validated: 2026-05-02
-  commit: a433349d
+  validated: 2026-05-06
+  commit: 17be3b13
   status: validated
   testable_headless: false
   category: feature
   title: MCP Registry
   description: Enterprise MCP server security allowing administrators to control which servers users can access
-  keywords: [mcp, registry, security, enterprise, admin, pro, governance]
+  keywords: [mcp, registry, security, enterprise, admin, pro, governance, env, headers, timeout, override]
   related: [cmd-mcp, slash-mcp, agent-configuration]
 ---
 
@@ -101,21 +101,52 @@ Shows:
 
 ## Customization (Registry Mode)
 
-Even with registry, you can customize:
+Even with registry, you can customize servers in your `agent.json` using registry overrides. Your values are merged on top of registry defaults (your values win on conflict).
 
-### Local (stdio) Servers
-- Environment variables (API keys, paths)
-- Request timeout
-- Server scope (Global/Workspace/Agent)
-- Tool trust settings
+### Registry Server Overrides
 
-### Remote (HTTP) Servers
-- HTTP headers (authentication tokens)
-- Request timeout
-- Server scope
-- Tool trust settings
+Use `"type": "registry"` with optional `env`, `headers`, and `timeout` fields:
 
-**Custom values override registry defaults**, allowing personal credentials and configuration.
+```json
+{
+  "mcpServers": {
+    "github": {
+      "type": "registry",
+      "env": {
+        "GITHUB_TOKEN": "$GITHUB_TOKEN",
+        "GITHUB_ORG": "my-org"
+      },
+      "timeout": 60000
+    }
+  }
+}
+```
+
+### Override Fields
+
+**For Local (stdio) Servers**:
+- `env` - Environment variables (API keys, paths, feature flags)
+- `timeout` - Request timeout in milliseconds
+
+**For Remote (HTTP) Servers**:
+- `headers` - HTTP headers (authentication tokens)
+- `timeout` - Request timeout in milliseconds
+
+### Merge Behavior
+
+Override values are merged with registry defaults:
+- Registry provides base configuration (command, args, default env)
+- Your overrides add or replace specific values
+- Conflicts: your values win
+
+Example: If registry sets `NODE_ENV=development` and you set `NODE_ENV=production`, the server runs with `NODE_ENV=production`.
+
+### Persistence
+
+Changes made via `/mcp add` and `/mcp remove` are automatically persisted to your agent's configuration file. This means:
+- Added servers remain available after restarting the CLI
+- Removed servers stay removed across sessions
+- No manual editing required for basic add/remove operations
 
 ## Examples
 
@@ -143,12 +174,13 @@ Adds git-server to rust-dev agent configuration.
 
 ### Example 3: Customize with Environment Variables
 
+In your `agent.json`, use registry type with env overrides:
+
 ```json
 {
   "mcpServers": {
     "github": {
-      "command": "mcp-server-github",
-      "args": ["--stdio"],
+      "type": "registry",
       "env": {
         "GITHUB_TOKEN": "$GITHUB_TOKEN"
       }
@@ -157,7 +189,7 @@ Adds git-server to rust-dev agent configuration.
 }
 ```
 
-Your token overrides registry defaults.
+Your token is merged with registry defaults. The server uses registry's command/args but your environment variable.
 
 ### Example 4: Registry Server in Agent Config
 

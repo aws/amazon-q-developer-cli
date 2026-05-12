@@ -1,14 +1,14 @@
 ---
 doc_meta:
-  validated: 2026-05-01
-  commit: 626ab640
+  validated: 2026-05-06
+  commit: 17be3b13
   status: validated
   testable_headless: true
   category: feature
   title: Agent Configuration
   description: Complete guide to agent configuration format including tools, settings, resources, hooks, and MCP servers
-  keywords: [agent, configuration, json, tools, settings, resources, hooks, mcp, keyboardShortcut, welcomeMessage, skill, denyByDefault, allowedCommands, oauth, clientId]
-  related: [agent-create, agent-edit, agent-swap]
+  keywords: [agent, configuration, json, tools, settings, resources, hooks, mcp, keyboardShortcut, welcomeMessage, skill, denyByDefault, allowedCommands, oauth, clientId, registry]
+  related: [agent-create, agent-edit, agent-swap, mcp-registry]
 ---
 
 # Agent Configuration
@@ -301,7 +301,7 @@ If not specified, uses default model. Falls back to default if model unavailable
 
 ### mcpServers
 
-MCP server configurations. Supports local (stdio) and remote (HTTP) servers.
+MCP server configurations. Supports local (stdio), remote (HTTP), and registry servers.
 
 **Local (stdio) server**:
 
@@ -353,6 +353,44 @@ MCP server configurations. Supports local (stdio) and remote (HTTP) servers.
 }
 ```
 
+**Registry server with overrides**:
+
+For servers from the MCP registry, use `"type": "registry"` with optional overrides. Applicable override fields depend on the underlying server type resolved from the registry — `env` for local (stdio) servers, `headers` for remote (HTTP) servers; `timeout` and `disabled` apply to both.
+
+Local (stdio) registry server with `env` overrides:
+
+```json
+{
+  "mcpServers": {
+    "github": {
+      "type": "registry",
+      "env": {
+        "GITHUB_TOKEN": "$GITHUB_TOKEN"
+      },
+      "timeout": 60000
+    }
+  }
+}
+```
+
+Remote (HTTP) registry server with `headers` overrides:
+
+```json
+{
+  "mcpServers": {
+    "slack": {
+      "type": "registry",
+      "headers": {
+        "Authorization": "Bearer $API_TOKEN"
+      },
+      "timeout": 60000
+    }
+  }
+}
+```
+
+Registry servers are resolved from the organization's MCP registry. Override fields let you customize the server without duplicating the full configuration.
+
 **Local Server Fields**:
 - `command` (required): Command to start server
 - `args` (optional): Command arguments
@@ -371,6 +409,12 @@ MCP server configurations. Supports local (stdio) and remote (HTTP) servers.
 - `timeout` (optional): Request timeout in milliseconds (default: 120000)
 - `disabled` (optional): Set to `true` to skip loading this server (default: false)
 - `disabledTools` (optional): List of tool names from this server to disable
+
+**Registry Server Fields**:
+- `type` (required): Must be `"registry"`
+- `env` (optional): Environment variables merged on top of registry defaults (agent values win)
+- `headers` (optional): HTTP headers merged on top of registry defaults (agent values win, remote servers only)
+- `timeout` (optional): Request timeout in milliseconds (overrides registry default)
 
 ### keyboardShortcut
 
