@@ -1,0 +1,73 @@
+name: Code Review
+
+on:
+  pull_request_target:
+    types: [opened, synchronize]
+    branches: [main]
+  issue_comment:
+    types: [created]
+
+concurrency:
+  group: kiro-review-${{ github.event.pull_request.number || github.event.issue.number }}
+  cancel-in-progress: true
+
+jobs:
+  review:
+    if: >-
+      (github.event_name == 'pull_request_target') ||
+      (github.event_name == 'issue_comment' &&
+       github.event.issue.pull_request &&
+       startsWith(github.event.comment.body, '/review') &&
+       (github.event.comment.author_association == 'OWNER' ||
+        github.event.comment.author_association == 'MEMBER' ||
+        github.event.comment.author_association == 'COLLABORATOR'))
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      pull-requests: write
+    steps:
+      - name: Get PR number
+        id: pr
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          if [ "${{ github.event_name }}" = "issue_comment" ]; then
+            echo "number=${{ github.event.issue.number }}" >> "$GITHUB_OUTPUT"
+          else
+            echo "number=${{ github.event.pull_request.number }}" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Check skip marker
+        id: gate
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          BODY=$(gh pr view "${{ steps.pr.outputs.number }}" --repo "${{ github.repository }}" --json body --jq '.body // ""')
+          if echo "$BODY" | grep -qF '[review:ignore]'; then
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - uses: actions/checkout@v6
+        if: steps.gate.outputs.skip != 'true'
+        with:
+          ref: ${{ github.event.pull_request.head.sha || '' }}
+          fetch-depth: 0
+
+      - name: Install Kiro CLI
+        if: steps.gate.outputs.skip != 'true'
+        run: |
+          curl -fsSL https://cli.kiro.dev/install | bash
+          kiro-cli --version
+
+      - name: Run review
+        if: steps.gate.outputs.skip != 'true'
+        env:
+          KIRO_API_KEY: ${{ secrets.KIRO_REVIEW_PAT }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_NUMBER: ${{ steps.pr.outputs.number }}
+        run: |
+          kiro-cli chat --no-interactive --trust-all-tools \
+            "Review PR $PR_NUMBER using the semantic-pr-reviewer skill. Post the review as a PR comment using gh CLI. DO NOT wait for user input."
