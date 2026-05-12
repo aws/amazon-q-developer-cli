@@ -62,4 +62,10 @@ export const SLASH_COMMANDS: SlashCommand[] = [
     description: 'Show plan usage and billing information',
     meta: { inputType: 'panel' },
   },
+  {
+    name: '/knowledge',
+    description: 'Manage knowledge bases',
+    meta: { inputType: 'panel' },
+    requiredMethods: ['_kiro/knowledge'],
+  },
 ];

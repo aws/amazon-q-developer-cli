@@ -1255,5 +1255,178 @@ describe('KasAcpClient', () => {
     });
 
     expect((client as any).promptsCache).toHaveLength(0);
+
+  // ── /knowledge command ──
+
+  describe('knowledge command', () => {
+    function seedInitializeWithKnowledge() {
+      mockKiroInitialize.mockResolvedValueOnce({
+        protocolVersion: '1.0',
+        agentCapabilities: {
+          _meta: {
+            kiro: {
+              extensionMethods: [
+                { method: '_kiro/knowledge', name: '/knowledge', description: 'Manage knowledge' },
+              ],
+            },
+          },
+        },
+      });
+    }
+
+    it('executeCommand knowledge show calls ext method with { subcommand: "show" }', async () => {
+      seedInitializeWithKnowledge();
+      mockKiroSendExtMethod.mockResolvedValue({ entries: [] });
+      const client = new KasAcpClient();
+      await client.initialize();
+      await client.newSession();
+      mockKiroSendExtMethod.mockClear();
+
+      const result = await client.executeCommand({
+        command: 'knowledge',
+        args: { value: 'show' },
+      } as any);
+
+      expect(mockKiroSendExtMethod).toHaveBeenCalledWith(
+        '_kiro/knowledge',
+        expect.objectContaining({ subcommand: 'show' })
+      );
+      expect(result.success).toBe(true);
+      expect((result.data as any).entries).toEqual([]);
+    });
+
+    it('executeCommand knowledge add parses name and path correctly', async () => {
+      seedInitializeWithKnowledge();
+      mockKiroSendExtMethod.mockResolvedValue({ message: 'Started indexing' });
+      const client = new KasAcpClient();
+      await client.initialize();
+      await client.newSession();
+      mockKiroSendExtMethod.mockClear();
+
+      await client.executeCommand({
+        command: 'knowledge',
+        args: { value: 'add my-kb /path/to/dir' },
+      } as any);
+
+      expect(mockKiroSendExtMethod).toHaveBeenCalledWith(
+        '_kiro/knowledge',
+        expect.objectContaining({
+          subcommand: 'add',
+          name: 'my-kb',
+          path: '/path/to/dir',
+        })
+      );
+    });
+
+    it('executeCommand knowledge remove parses target correctly', async () => {
+      seedInitializeWithKnowledge();
+      mockKiroSendExtMethod.mockResolvedValue({ message: 'Removed' });
+      const client = new KasAcpClient();
+      await client.initialize();
+      await client.newSession();
+      mockKiroSendExtMethod.mockClear();
+
+      await client.executeCommand({
+        command: 'knowledge',
+        args: { value: 'remove my-kb' },
+      } as any);
+
+      expect(mockKiroSendExtMethod).toHaveBeenCalledWith(
+        '_kiro/knowledge',
+        expect.objectContaining({ subcommand: 'remove', target: 'my-kb' })
+      );
+    });
+
+    it('executeCommand knowledge update parses path correctly', async () => {
+      seedInitializeWithKnowledge();
+      mockKiroSendExtMethod.mockResolvedValue({ message: 'Re-indexing' });
+      const client = new KasAcpClient();
+      await client.initialize();
+      await client.newSession();
+      mockKiroSendExtMethod.mockClear();
+
+      await client.executeCommand({
+        command: 'knowledge',
+        args: { value: 'update /path/to/dir' },
+      } as any);
+
+      expect(mockKiroSendExtMethod).toHaveBeenCalledWith(
+        '_kiro/knowledge',
+        expect.objectContaining({ subcommand: 'update', path: '/path/to/dir' })
+      );
+    });
+
+    it('executeCommand knowledge cancel parses operationId correctly', async () => {
+      seedInitializeWithKnowledge();
+      mockKiroSendExtMethod.mockResolvedValue({ message: 'Cancelled' });
+      const client = new KasAcpClient();
+      await client.initialize();
+      await client.newSession();
+      mockKiroSendExtMethod.mockClear();
+
+      await client.executeCommand({
+        command: 'knowledge',
+        args: { value: 'cancel abc123' },
+      } as any);
+
+      expect(mockKiroSendExtMethod).toHaveBeenCalledWith(
+        '_kiro/knowledge',
+        expect.objectContaining({ subcommand: 'cancel', operationId: 'abc123' })
+      );
+    });
+
+    it('executeCommand knowledge clear sends correct subcommand', async () => {
+      seedInitializeWithKnowledge();
+      mockKiroSendExtMethod.mockResolvedValue({ message: 'Cleared 2 entries' });
+      const client = new KasAcpClient();
+      await client.initialize();
+      await client.newSession();
+      mockKiroSendExtMethod.mockClear();
+
+      await client.executeCommand({
+        command: 'knowledge',
+        args: { value: 'clear' },
+      } as any);
+
+      expect(mockKiroSendExtMethod).toHaveBeenCalledWith(
+        '_kiro/knowledge',
+        expect.objectContaining({ subcommand: 'clear' })
+      );
+    });
+
+    it('propagates errors from ext method', async () => {
+      seedInitializeWithKnowledge();
+      const client = new KasAcpClient();
+      await client.initialize();
+      await client.newSession();
+      mockKiroSendExtMethod.mockRejectedValueOnce(new Error('Store error'));
+
+      const result = await client.executeCommand({
+        command: 'knowledge',
+        args: { value: 'show' },
+      } as any);
+
+      expect(result.success).toBe(false);
+      expect(result.message).toBe('Store error');
+    });
+
+    it('defaults to show when no args', async () => {
+      seedInitializeWithKnowledge();
+      mockKiroSendExtMethod.mockResolvedValue({ entries: [] });
+      const client = new KasAcpClient();
+      await client.initialize();
+      await client.newSession();
+      mockKiroSendExtMethod.mockClear();
+
+      await client.executeCommand({
+        command: 'knowledge',
+        args: { value: '' },
+      } as any);
+
+      expect(mockKiroSendExtMethod).toHaveBeenCalledWith(
+        '_kiro/knowledge',
+        expect.objectContaining({ subcommand: 'show' })
+      );
+    });
   });
 });
