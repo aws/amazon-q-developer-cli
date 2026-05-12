@@ -33,10 +33,10 @@ Local agents take precedence over global with same name.
   "name": "my-agent",
   "description": "Agent description",
   "prompt": "System prompt or file:///path/to/prompt.txt",
-  "tools": ["fs_read", "fs_write", "execute_bash"],
-  "allowedTools": ["fs_read", "grep"],
+  "tools": ["read", "write", "shell"],
+  "allowedTools": ["read", "grep"],
   "toolsSettings": {
-    "fs_write": {
+    "write": {
       "allowedPaths": ["~/projects/**"]
     }
   },
@@ -109,7 +109,7 @@ Available tools for agent.
 
 ```json
 {
-  "tools": ["fs_read", "fs_write", "execute_bash", "grep", "code"]
+  "tools": ["read", "write", "shell", "grep", "code"]
 }
 ```
 
@@ -120,7 +120,7 @@ Tools auto-approved without prompts. Supports exact matches and wildcard pattern
 ```json
 {
   "allowedTools": [
-    "fs_read",
+    "read",
     "fs_*",
     "@git/git_status",
     "@server/read_*",
@@ -130,13 +130,13 @@ Tools auto-approved without prompts. Supports exact matches and wildcard pattern
 ```
 
 **Exact Matches**:
-- Built-in tools: `"fs_read"`, `"execute_bash"`
+- Built-in tools: `"read"`, `"shell"`
 - Specific MCP tools: `"@server_name/tool_name"`
 - All tools from server: `"@server_name"`
 
 **Wildcard Patterns** (using `*` and `?`):
-- Prefix: `"fs_*"` → matches `fs_read`, `fs_write`
-- Suffix: `"*_bash"` → matches `execute_bash`
+- Prefix: `"fs_*"` → matches `fs_read`, `fs_write` (legacy names still work)
+- Suffix: `"*_bash"` → matches `execute_bash` (legacy alias for shell)
 - Middle: `"fs_*_tool"` → matches `fs_read_tool`
 - Single char: `"fs_?ead"` → matches `fs_read`, `fs_head`
 - MCP tool: `"@server/read_*"` → matches `@server/read_file`, `@server/read_config`
@@ -153,7 +153,7 @@ Tool-specific configuration.
 ```json
 {
   "toolsSettings": {
-    "fs_write": {
+    "write": {
       "allowedPaths": ["~/projects/**"],
       "deniedPaths": ["/etc/**"]
     },
@@ -227,13 +227,13 @@ Commands executed at trigger points. Each trigger maps to an array of hook confi
     ],
     "preToolUse": [
       {
-        "matcher": "fs_write",
+        "matcher": "write",
         "command": "git diff"
       }
     ],
     "postToolUse": [
       {
-        "matcher": "execute_bash",
+        "matcher": "shell",
         "command": "echo 'Command executed'"
       }
     ],
@@ -471,24 +471,24 @@ Appears after agent switch confirmation to orient users to agent's purpose.
   "description": "Rust development agent with full toolset",
   "prompt": "You are an expert Rust developer. Focus on safety, performance, and idiomatic code.",
   "tools": [
-    "fs_read",
-    "fs_write",
-    "execute_bash",
+    "read",
+    "write",
+    "shell",
     "grep",
     "glob",
     "code"
   ],
   "allowedTools": [
-    "fs_read",
+    "read",
     "grep",
     "glob"
   ],
   "toolsSettings": {
-    "fs_write": {
+    "write": {
       "allowedPaths": ["~/rust-projects/**"],
       "deniedPaths": ["~/.cargo/**"]
     },
-    "execute_bash": {
+    "shell": {
       "allowedCommands": [
         "cargo check",
         "cargo test",
@@ -563,8 +563,8 @@ Checks JSON syntax and schema compliance.
 {
   "name": "reader",
   "description": "Read-only agent for browsing code",
-  "tools": ["fs_read", "grep", "glob"],
-  "allowedTools": ["fs_read", "grep", "glob"],
+  "tools": ["read", "grep", "glob"],
+  "allowedTools": ["read", "grep", "glob"],
   "resources": ["file://src/**/*", "file://README.md"]
 }
 ```
@@ -576,14 +576,14 @@ Checks JSON syntax and schema compliance.
   "name": "rust-dev",
   "description": "Rust development with testing",
   "prompt": "You are a Rust expert. Focus on safety and performance.",
-  "tools": ["fs_read", "fs_write", "execute_bash", "code"],
-  "allowedTools": ["fs_read", "code"],
+  "tools": ["read", "write", "shell", "code"],
+  "allowedTools": ["read", "code"],
   "toolsSettings": {
-    "fs_write": {
+    "write": {
       "allowedPaths": ["src/**", "tests/**"],
       "deniedPaths": ["target/**"]
     },
-    "execute_bash": {
+    "shell": {
       "allowedCommands": ["cargo check", "cargo test", "cargo build"],
       "autoAllowReadonly": true
     }
@@ -605,7 +605,7 @@ Checks JSON syntax and schema compliance.
 {
   "name": "aws-ops",
   "description": "AWS operations and management",
-  "tools": ["use_aws", "fs_read", "execute_bash"],
+  "tools": ["use_aws", "read", "shell"],
   "toolsSettings": {
     "use_aws": {
       "allowedServices": ["s3", "lambda", "ec2"],
@@ -621,7 +621,7 @@ Checks JSON syntax and schema compliance.
 {
   "name": "full-stack",
   "description": "Full-stack development with git integration",
-  "tools": ["fs_read", "fs_write", "execute_bash", "code"],
+  "tools": ["read", "write", "shell", "code"],
   "mcpServers": {
     "git": {
       "command": "mcp-server-git",

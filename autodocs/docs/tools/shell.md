@@ -1,10 +1,10 @@
 ---
 doc_meta:
-  title: execute_bash
-  description: Execute bash commands on the user's system with output capture
+  title: shell
+  description: Execute shell commands with output capture. Also known as execute_bash (legacy alias).
   category: tool
   keywords: [execute_bash, shell, bash, command, terminal, run, working_dir]
-  related: [fs-read, fs-write, use-aws, shell-escape]
+  related: [read, write, use-aws, shell-escape]
   validated: 2026-04-24
   commit: 22dc5f71
   status: validated
@@ -15,7 +15,19 @@ doc_meta:
 
 > This tool is used by the AI assistant to fulfill your requests. You don't invoke it directly - simply ask questions naturally.
 
-The execute_bash tool runs shell commands and captures stdout, stderr, and exit codes. It is used as a last resort when no other tool can accomplish the task.
+The shell tool (also known as `execute_bash`) runs shell commands and captures stdout, stderr, and exit codes. It is used as a last resort when no other tool can accomplish the task.
+
+## Naming
+
+This tool has multiple accepted names:
+
+| Name | Context |
+|------|---------|
+| `shell` | **Canonical name** — displayed in TUI, use in new agent configs |
+| `execute_bash` | Legacy alias — still works in agent configs and tool calls |
+| `execute_cmd` | Internal alias — also accepted |
+
+All three names refer to the same tool. Use `shell` in new configurations.
 
 Limitations:
 - Output is buffered — appears after command completes, not streamed in real-time
@@ -73,7 +85,7 @@ Large outputs are truncated to prevent context window overflow. Use `head`, `tai
 
 ## Related
 
-- [fs_read](fs-read.md) — Prefer this for reading files instead of `cat`
-- [fs_write](fs-write.md) — Prefer this for writing files instead of `echo >`
+- [read](read.md) — Prefer this for reading files instead of `cat`
+- [write](write.md) — Prefer this for writing files instead of `echo >`
 - [grep](grep.md) — Prefer this for searching files instead of `grep` command
 - [use_aws](use-aws.md) — Prefer this for AWS CLI calls

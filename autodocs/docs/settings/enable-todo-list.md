@@ -30,7 +30,7 @@ kiro-cli settings chat.enableTodoList true
 
 ## Related
 
-- [todo_list](../tools/todo-list.md) - TODO list tool
+- [task](../tools/task.md) - TODO list tool
 - [/todo](../slash-commands/todo.md) - TODO commands
 
 ## Examples
@@ -41,7 +41,7 @@ kiro-cli settings chat.enableTodoList true
 kiro-cli settings chat.enableTodoList true
 ```
 
-Enables todo_list tool and `/todo` commands.
+Enables task tool and `/todo` commands.
 
 ### Example 2: Check Status
 

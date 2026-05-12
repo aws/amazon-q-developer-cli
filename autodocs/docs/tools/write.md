@@ -5,10 +5,10 @@ doc_meta:
   status: validated
   testable_headless: true
   category: tool
-  title: fs_write
+  title: write
   description: Create and modify files with support for create, str_replace, insert, and append operations
   keywords: [fs_write, write, create, edit, modify, file, str_replace, insert, append]
-  related: [fs-read, code]
+  related: [read, code]
 ---
 
 # fs_write
@@ -283,9 +283,9 @@ Append text to end of file.
 
 ## Related Features
 
-- [fs_read](fs-read.md) - Read files before modifying
+- [read](read.md) - Read files before modifying
 - [code](code.md) - LSP-powered code intelligence for precise edits
-- [execute_bash](execute-bash.md) - Run commands like `git diff` to verify changes
+- [shell](shell.md) - Run commands like `git diff` to verify changes
 
 ## Limitations
 

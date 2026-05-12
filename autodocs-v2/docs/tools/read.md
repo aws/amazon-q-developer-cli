@@ -1,10 +1,10 @@
 ---
 doc_meta:
-  title: fs_read
+  title: read
   description: Read files, directories, and images with support for line ranges and batch operations
   category: tool
   keywords: [fs_read, read, file, directory, image, batch, line, offset, limit, trust, permission]
-  related: [fs-write, grep, glob]
+  related: [write, grep, glob]
   validated: 2026-04-24
   commit: 22dc5f71
   status: validated
@@ -15,7 +15,9 @@ doc_meta:
 
 > This tool is used by the AI assistant to fulfill your requests. You don't invoke it directly - simply ask questions naturally.
 
-The fs_read tool provides file system reading capabilities with three operation modes: reading file lines with offset/limit, listing directory contents, and reading images. Multiple operations can be batched in a single invocation.
+The read tool (also known as `fs_read`) provides file system reading capabilities with three operation modes: reading file lines with offset/limit, listing directory contents, and reading images. Multiple operations can be batched in a single invocation.
+
+**Naming**: This tool is called `read` (canonical), with `fs_read` and `fsRead` as legacy aliases. All names work in agent configs.
 
 ## Usage
 
@@ -149,7 +151,7 @@ File format not recognized. Convert to PNG, JPG, JPEG, GIF, or WEBP.
 
 ## Related
 
-- [fs_write](fs-write.md) — Write and modify files
+- [write](write.md) — Write and modify files
 - [grep](grep.md) — Fast regex pattern search across multiple files
 - [glob](glob.md) — Find files matching glob patterns
 - [code](code.md) — LSP-powered code intelligence

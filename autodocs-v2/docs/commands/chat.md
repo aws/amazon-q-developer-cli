@@ -64,10 +64,10 @@ kiro-cli chat --trust-all-tools "Run tests and analyze results"
 #### Use Case 5: Trust Specific Tools
 
 ```bash
-kiro-cli chat --trust-tools=fs_read,grep "Find all TODOs"
+kiro-cli chat --trust-tools=read,grep "Find all TODOs"
 ```
 
-**What this does**: Auto-approves only fs_read and grep tools.
+**What this does**: Auto-approves only read and grep tools.
 
 #### Use Case 6: Resume Last Conversation
 

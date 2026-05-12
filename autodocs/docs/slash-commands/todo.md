@@ -17,7 +17,7 @@ View, manage, and resume TODO lists with clear-finished, resume, view, and delet
 
 ## Overview
 
-The `/todo` command manages TODO lists created by the todo_list tool. View lists, resume in-progress lists, delete lists, or clear completed lists.
+The `/todo` command manages TODO lists created by the task tool. View lists, resume in-progress lists, delete lists, or clear completed lists.
 
 ## Usage
 
@@ -108,7 +108,7 @@ kiro-cli settings chat.enableTodoList true
 
 ## Related
 
-- [todo_list](../tools/todo-list.md) - TODO list tool
+- [task](../tools/task.md) - TODO list tool
 - [chat.enableTodoList](../settings/enable-todo-list.md) - Enable setting
 
 ## Limitations

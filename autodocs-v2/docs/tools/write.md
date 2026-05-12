@@ -1,10 +1,10 @@
 ---
 doc_meta:
-  title: fs_write
+  title: write
   description: Create and modify text files with create, strReplace, and insert operations
   category: tool
   keywords: [fs_write, write, create, edit, modify, file, strReplace, insert, append, replaceAll, trust, permission]
-  related: [fs-read, code]
+  related: [read, code]
   validated: 2026-04-24
   commit: 22dc5f71
   status: validated
@@ -15,7 +15,9 @@ doc_meta:
 
 > This tool is used by the AI assistant to fulfill your requests. You don't invoke it directly - simply ask questions naturally.
 
-The fs_write tool creates and modifies text files. It supports three commands: `create` (new file), `strReplace` (find and replace), and `insert` (insert at line or append).
+The write tool (also known as `fs_write`) creates and modifies text files. It supports three commands: `create` (new file), `strReplace` (find and replace), and `insert` (insert at line or append).
+
+**Naming**: This tool is called `write` (canonical), with `fs_write` and `fsWrite` as legacy aliases. All names work in agent configs.
 
 ## Usage
 
@@ -138,5 +140,5 @@ The `path` parameter is missing or empty.
 
 ## Related
 
-- [fs_read](fs-read.md) — Read files and directories
+- [read](read.md) — Read files and directories
 - [code](code.md) — LSP-powered code intelligence

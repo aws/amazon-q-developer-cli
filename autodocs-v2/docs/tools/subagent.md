@@ -17,6 +17,8 @@ doc_meta:
 
 The subagent tool (also known as `agent_crew`) spawns and coordinates multiple AI agents in a pipeline (DAG). Each stage runs as a persistent session. Stages with no dependencies start immediately in parallel, while dependent stages wait for their prerequisites to complete.
 
+**Naming**: This tool is called `subagent` (canonical), with `agent_crew` and `use_subagent` as legacy aliases. All names work in agent configs.
+
 Use this when you need multi-step work with specialized agents:
 - Research → Implement → Review pipelines
 - Parallel research tracks that feed into a single implementer

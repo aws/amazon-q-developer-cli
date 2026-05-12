@@ -8,7 +8,7 @@ doc_meta:
   title: use_aws
   description: Make AWS CLI API calls with service, operation, and parameters
   keywords: [use_aws, aws, cli, api, cloud, readonly, auto-approve]
-  related: [execute-bash]
+  related: [shell]
 ---
 
 # use_aws
@@ -328,7 +328,7 @@ Auto-approved by default (`autoAllowReadonly: true`). Uses a comprehensive list 
 
 ## Related Features
 
-- [execute_bash](execute-bash.md) - Alternative for AWS CLI commands
+- [shell](shell.md) - Alternative for AWS CLI commands
 - [Agent Configuration](../features/agent-configuration.md) - Configure tool permissions
 
 ## Limitations

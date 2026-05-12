@@ -8,7 +8,7 @@ doc_meta:
   title: code
   description: Code intelligence with tree-sitter (built-in) and LSP (optional) for symbol search, pattern matching, and codebase exploration
   keywords: [code, lsp, symbols, references, definition, diagnostics, intelligence, tree-sitter, pattern, ast, codebase-overview, permissions]
-  related: [fs-read, grep, slash-code]
+  related: [read, grep, slash-code]
 ---
 
 # code
@@ -370,7 +370,7 @@ Initialize LSP servers for workspace.
 
 - [/code](../slash-commands/code.md) - Slash commands for code intelligence
 - [grep](grep.md) - Text-based pattern search
-- [fs-read](fs-read.md) - Read source files
+- [read](read.md) - Read source files
 
 ## Limitations
 

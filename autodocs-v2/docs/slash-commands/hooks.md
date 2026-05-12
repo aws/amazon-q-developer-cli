@@ -52,7 +52,7 @@ agentSpawn:
   Command: git status
   Description: Show git status
 
-preToolUse (fs_write):
+preToolUse (write):
   Command: git diff
   Description: Show pending changes
 ```

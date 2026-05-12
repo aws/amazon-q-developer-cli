@@ -110,4 +110,4 @@ kiro-cli settings -d chat.diffTool
 ## Related
 
 * [chat.diffTool setting](../settings/diff-tool-settings.md)
-* [Write tool](../tools/fs-write.md)
+* [Write tool](../tools/write.md)

@@ -5,10 +5,10 @@ doc_meta:
   status: validated
   testable_headless: true
   category: tool
-  title: fs_read
+  title: read
   description: Read files, directories, and images with support for line ranges, pattern search, and batch operations
   keywords: [fs_read, read, file, directory, image, search, batch]
-  related: [fs-write, grep, glob]
+  related: [write, grep, glob]
 ---
 
 # fs_read
@@ -306,7 +306,7 @@ Read image files for vision models.
 
 ## Related Features
 
-- [fs_write](fs-write.md) - Write and modify files
+- [write](write.md) - Write and modify files
 - [grep](grep.md) - Fast regex pattern search across multiple files
 - [glob](glob.md) - Find files matching glob patterns
 - [code](code.md) - LSP-powered code intelligence for semantic file navigation

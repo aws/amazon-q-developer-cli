@@ -298,4 +298,4 @@ Local agents take precedence over global agents with same name.
 
 **Validation**: Uses JSON schema validation against agent format specification.
 
-**Example Agent Tools**: fs_read, fs_write, execute_bash, use_aws, introspect, knowledge, grep, glob, code, subagent.
+**Example Agent Tools**: read, write, shell, use_aws, introspect, knowledge, grep, glob, code, subagent.

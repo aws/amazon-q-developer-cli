@@ -1,6 +1,6 @@
 ---
 doc_meta:
-  title: todo_list
+  title: task
   description: Task list tool for tracking multi-step work with create, complete, add, remove, and list commands
   category: tool
   keywords: [todo_list, todo, task, task_list, plan, checklist, tracking]

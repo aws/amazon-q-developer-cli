@@ -245,7 +245,7 @@ Stores text note.
 
 - [/knowledge](../slash-commands/knowledge.md) - Slash commands for knowledge management
 - [chat.enableKnowledge](../settings/enable-knowledge.md) - Enable setting
-- [fs_read](fs-read.md) - Read files for indexing
+- [read](read.md) - Read files for indexing
 
 ## Limitations
 

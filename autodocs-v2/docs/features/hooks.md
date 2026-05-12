@@ -36,7 +36,7 @@ Add hooks to your agent's JSON configuration file (`.kiro/agents/your-agent.json
     ],
     "preToolUse": [
       {
-        "matcher": "fs_write",
+        "matcher": "write",
         "command": "echo 'About to write file'",
       }
     ]
@@ -69,7 +69,7 @@ chmod +x ~/.kiro/hooks/validate-write.sh
   "hooks": {
     "preToolUse": [
       {
-        "matcher": "fs_write",
+        "matcher": "write",
         "command": "~/.kiro/hooks/validate-write.sh",
       }
     ]
