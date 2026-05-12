@@ -1,12 +1,13 @@
 ---
-description: Propose changelog entries for recent changes
+name: generate-changelog
+description: Propose changelog entries for recent changes. Use when the user asks to generate a changelog, add changelog entries, or document recent changes.
 ---
 
 # Changelog Entry Creator
 
 Create changelog entries by analyzing recent changes and proposing commands to add them.
 
-## Your Task
+## Workflow
 
 1. **Analyze recent changes** using `git diff` or `git log` to understand what changed
 2. **Determine the change type**:
