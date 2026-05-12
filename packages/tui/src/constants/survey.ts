@@ -132,7 +132,7 @@ export const PLAN_QUALITY_SURVEY: SurveyDefinition = {
   title: 'Plan feedback',
   notificationMessage: 'How did the planning agent do?',
   sampleRate: 0.1,
-  cooldownDays: 30,
+  cooldownDays: 90,
   questions: [
     {
       id: 'plan_quality',
@@ -179,7 +179,7 @@ export const IMPLEMENT_PLAN_SURVEY: SurveyDefinition = {
   title: 'Implementation feedback',
   notificationMessage: 'How was the implementation?',
   sampleRate: 1.0, // Only shown if plan-quality was shown — no independent sampling.
-  cooldownDays: 0, // Gated by plan-quality, not its own cooldown.
+  cooldownDays: 90, // Shared cooldown with all surveys.
   questions: [
     {
       id: 'implementation_quality',

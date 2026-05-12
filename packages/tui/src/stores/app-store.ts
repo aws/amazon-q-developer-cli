@@ -3174,16 +3174,11 @@ export const createAppStore = (props: AppStoreProps) => {
 
     submitSurvey: (answers) => {
       const survey = get().activeSurvey ?? SESSION_FEEDBACK_SURVEY;
-      markSurveyCompleted(survey.id);
 
-      // Answering either plan survey sets the cooldown for both (they're paired).
-      if (
-        survey.id === PLAN_QUALITY_SURVEY.id ||
-        survey.id === IMPLEMENT_PLAN_SURVEY.id
-      ) {
-        markSurveyCompleted(PLAN_QUALITY_SURVEY.id);
-        markSurveyCompleted(IMPLEMENT_PLAN_SURVEY.id);
-      }
+      // Answering any survey sets the cooldown for all (shared 90-day cooldown).
+      markSurveyCompleted(SESSION_FEEDBACK_SURVEY.id);
+      markSurveyCompleted(PLAN_QUALITY_SURVEY.id);
+      markSurveyCompleted(IMPLEMENT_PLAN_SURVEY.id);
 
       logger.info('[survey] submitted', {
         surveyId: survey.id,
@@ -3235,20 +3230,10 @@ export const createAppStore = (props: AppStoreProps) => {
     },
 
     dismissSurveyPrompt: () => {
-      const survey =
-        get().activeSurvey ??
-        get().surveyPrompt?.survey ??
-        SESSION_FEEDBACK_SURVEY;
-      markSurveyDismissed(survey.id);
-
-      // Dismissing either plan survey sets the cooldown for both (they're paired).
-      if (
-        survey.id === PLAN_QUALITY_SURVEY.id ||
-        survey.id === IMPLEMENT_PLAN_SURVEY.id
-      ) {
-        markSurveyDismissed(PLAN_QUALITY_SURVEY.id);
-        markSurveyDismissed(IMPLEMENT_PLAN_SURVEY.id);
-      }
+      // Dismissing any survey sets the cooldown for all (shared 90-day cooldown).
+      markSurveyDismissed(SESSION_FEEDBACK_SURVEY.id);
+      markSurveyDismissed(PLAN_QUALITY_SURVEY.id);
+      markSurveyDismissed(IMPLEMENT_PLAN_SURVEY.id);
 
       set((s) => ({
         surveyPrompt: null,
@@ -3369,16 +3354,10 @@ export const createAppStore = (props: AppStoreProps) => {
       // If the survey prompt was showing and the user chose to type instead
       // of accepting it, count that as a dismissal toward the cooldown.
       if (hadSurveyPrompt) {
-        const survey = state.surveyPrompt?.survey ?? SESSION_FEEDBACK_SURVEY;
-        markSurveyDismissed(survey.id);
-        // Dismissing either plan survey sets cooldown for both (paired).
-        if (
-          survey.id === PLAN_QUALITY_SURVEY.id ||
-          survey.id === IMPLEMENT_PLAN_SURVEY.id
-        ) {
-          markSurveyDismissed(PLAN_QUALITY_SURVEY.id);
-          markSurveyDismissed(IMPLEMENT_PLAN_SURVEY.id);
-        }
+        // Shared cooldown: dismissing any survey sets cooldown for all.
+        markSurveyDismissed(SESSION_FEEDBACK_SURVEY.id);
+        markSurveyDismissed(PLAN_QUALITY_SURVEY.id);
+        markSurveyDismissed(IMPLEMENT_PLAN_SURVEY.id);
         set((s) => ({
           surveyState: {
             ...s.surveyState,
