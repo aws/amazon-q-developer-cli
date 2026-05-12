@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 use std::path::PathBuf;
+use std::sync::Arc;
 
 use serde::{
     Deserialize,
@@ -527,6 +528,8 @@ pub struct SwapAgentArgs {
     pub global_mcp_path: Option<PathBuf>,
     /// Skip the same-name short-circuit check (used for registry refresh)
     pub force: bool,
+    /// Updated knowledge provider for the new agent (if different from current)
+    pub knowledge_provider: Option<Arc<dyn super::tools::KnowledgeProvider>>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

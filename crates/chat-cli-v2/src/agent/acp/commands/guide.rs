@@ -33,6 +33,7 @@ pub async fn execute(args: &GuideArgs, ctx: &CommandContext<'_>) -> CommandResul
                 local_mcp_path: ctx.local_mcp_path.cloned(),
                 global_mcp_path: ctx.global_mcp_path.cloned(),
                 force: false,
+                knowledge_provider: None,
             })
             .await
         {
@@ -57,6 +58,7 @@ pub async fn execute(args: &GuideArgs, ctx: &CommandContext<'_>) -> CommandResul
             local_mcp_path: ctx.local_mcp_path.cloned(),
             global_mcp_path: ctx.global_mcp_path.cloned(),
             force: false,
+            knowledge_provider: None,
         })
         .await
     {

@@ -1959,6 +1959,7 @@ async fn test_agent_swap_agent_suppresses_mcp_when_governance_disabled() {
         local_mcp_path: None,
         global_mcp_path: None,
         force: false,
+        knowledge_provider: None,
     })
     .await
     .expect("swap_agent failed");
@@ -1982,5 +1983,150 @@ async fn test_agent_swap_agent_suppresses_mcp_when_governance_disabled() {
             .any(|t| t.starts_with('@') && !t.starts_with("@builtin")),
         "swap_agent must strip MCP tool refs from tools list; got: {:?}",
         snapshot.agent_config.tools()
+    );
+}
+
+#[tokio::test]
+async fn test_swap_agent_updates_knowledge_provider() {
+    use std::sync::Arc;
+
+    use agent::agent_config::definitions::{
+        AgentConfig,
+        AgentConfigV2025_08_22,
+    };
+    use agent::agent_config::{
+        ConfigSource,
+        LoadedAgentConfig,
+        ResolvedGlobalPrompt,
+    };
+    use agent::protocol::SwapAgentArgs;
+    use agent::tools::{
+        Knowledge,
+        KnowledgeProvider,
+        ToolExecutionOutput,
+        ToolExecutionOutputItem,
+        ToolExecutionResult,
+    };
+    use async_trait::async_trait;
+
+    #[derive(Debug)]
+    struct MockKnowledgeProvider {
+        name: String,
+    }
+
+    #[async_trait]
+    impl KnowledgeProvider for MockKnowledgeProvider {
+        async fn execute(&self, _command: Knowledge) -> ToolExecutionResult {
+            Ok(ToolExecutionOutput::new(vec![ToolExecutionOutputItem::Text(format!(
+                "mock-kb: {}",
+                self.name
+            ))]))
+        }
+
+        async fn list_available(&self) -> Option<String> {
+            Some(format!("KB: {}", self.name))
+        }
+    }
+
+    let _ = tracing_subscriber::fmt::try_init();
+
+    let test = TestCase::builder()
+        .test_name("swap_agent_updates_knowledge_provider")
+        .with_default_agent_config()
+        .build()
+        .await
+        .unwrap();
+
+    // Initially no knowledge provider
+    let snapshot = test.create_snapshot().await;
+    assert!(
+        !snapshot.has_knowledge_provider,
+        "agent should start without a knowledge provider"
+    );
+
+    // Swap with a knowledge provider
+    let target = LoadedAgentConfig::new(
+        AgentConfig::V2025_08_22(AgentConfigV2025_08_22 {
+            name: "agent-alpha".to_string(),
+            ..Default::default()
+        }),
+        ConfigSource::Ephemeral,
+        ResolvedGlobalPrompt::None,
+    );
+
+    let provider_alpha: Arc<dyn KnowledgeProvider> = Arc::new(MockKnowledgeProvider {
+        name: "alpha".to_string(),
+    });
+
+    test.swap_agent(SwapAgentArgs {
+        agent_config: target,
+        local_mcp_path: None,
+        global_mcp_path: None,
+        force: false,
+        knowledge_provider: Some(provider_alpha),
+    })
+    .await
+    .expect("swap to alpha failed");
+
+    let snapshot = test.create_snapshot().await;
+    assert!(
+        snapshot.has_knowledge_provider,
+        "knowledge provider should be set after swap with provider"
+    );
+
+    // Swap to another agent with a different provider
+    let target_beta = LoadedAgentConfig::new(
+        AgentConfig::V2025_08_22(AgentConfigV2025_08_22 {
+            name: "agent-beta".to_string(),
+            ..Default::default()
+        }),
+        ConfigSource::Ephemeral,
+        ResolvedGlobalPrompt::None,
+    );
+
+    let provider_beta: Arc<dyn KnowledgeProvider> = Arc::new(MockKnowledgeProvider {
+        name: "beta".to_string(),
+    });
+
+    test.swap_agent(SwapAgentArgs {
+        agent_config: target_beta,
+        local_mcp_path: None,
+        global_mcp_path: None,
+        force: false,
+        knowledge_provider: Some(provider_beta),
+    })
+    .await
+    .expect("swap to beta failed");
+
+    let snapshot = test.create_snapshot().await;
+    assert!(
+        snapshot.has_knowledge_provider,
+        "knowledge provider should still be set after second swap"
+    );
+
+    // Swap without a provider (e.g. MCP reload) should NOT clear it
+    let target_reload = LoadedAgentConfig::new(
+        AgentConfig::V2025_08_22(AgentConfigV2025_08_22 {
+            name: "agent-beta".to_string(),
+            ..Default::default()
+        }),
+        ConfigSource::Ephemeral,
+        ResolvedGlobalPrompt::None,
+    );
+
+    test.swap_agent(SwapAgentArgs {
+        agent_config: target_reload,
+        local_mcp_path: None,
+        global_mcp_path: None,
+        force: true,
+        knowledge_provider: None,
+    })
+    .await
+    .expect("reload swap failed");
+
+    let snapshot = test.create_snapshot().await;
+    assert!(
+        snapshot.has_knowledge_provider,
+        "knowledge provider should be preserved when swap passes None (reload case)"
     );
 }

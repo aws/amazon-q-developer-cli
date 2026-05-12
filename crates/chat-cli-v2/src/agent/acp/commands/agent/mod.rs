@@ -158,6 +158,27 @@ async fn do_switch_agent(index: usize, agent_info: &AgentInfo, ctx: &CommandCont
         crate::mcp_registry::resolve_registry_servers_for_agent_config(&mut config, &registry);
     }
 
+    // Create the new knowledge provider BEFORE swapping so the agent gets it immediately
+    let agent_path = match config.source() {
+        agent::agent_config::ConfigSource::Workspace { path } | agent::agent_config::ConfigSource::Global { path } => {
+            Some(path.clone())
+        },
+        _ => None,
+    };
+    let new_knowledge_provider = match crate::util::knowledge_store::KnowledgeStore::get_async_instance(
+        ctx.os,
+        Some(&agent_info.name),
+        agent_path.as_deref(),
+    )
+    .await
+    {
+        Ok(store) => Some(
+            std::sync::Arc::new(crate::util::knowledge_store::KnowledgeStoreProvider::new(store))
+                as std::sync::Arc<dyn agent::tools::KnowledgeProvider>,
+        ),
+        Err(_) => None,
+    };
+
     if let Err(e) = ctx
         .agent
         .swap_agent(SwapAgentArgs {
@@ -165,6 +186,7 @@ async fn do_switch_agent(index: usize, agent_info: &AgentInfo, ctx: &CommandCont
             local_mcp_path: ctx.local_mcp_path.cloned(),
             global_mcp_path: ctx.global_mcp_path.cloned(),
             force: false,
+            knowledge_provider: new_knowledge_provider,
         })
         .await
     {
@@ -172,20 +194,13 @@ async fn do_switch_agent(index: usize, agent_info: &AgentInfo, ctx: &CommandCont
     }
 
     // Sync KB resources for the new agent
-    {
-        let agent_path = match config.source() {
-            agent::agent_config::ConfigSource::Workspace { path }
-            | agent::agent_config::ConfigSource::Global { path } => Some(path.clone()),
-            _ => None,
-        };
-        let _ = crate::util::knowledge_store::KnowledgeStore::sync_agent_resources(
-            &agent_info.name,
-            agent_path.as_deref(),
-            config.resource_paths(),
-            ctx.os,
-        )
-        .await;
-    }
+    let _ = crate::util::knowledge_store::KnowledgeStore::sync_agent_resources(
+        &agent_info.name,
+        agent_path.as_deref(),
+        config.resource_paths(),
+        ctx.os,
+    )
+    .await;
 
     CommandResult::success_with_data(
         format!("Agent changed to {}", agent_info.name),

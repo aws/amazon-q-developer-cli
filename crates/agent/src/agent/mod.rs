@@ -986,6 +986,7 @@ impl Agent {
             permissions: self.permissions.clone(),
             tool_specs,
             session_resource_paths: self.session_resource_paths.clone(),
+            has_knowledge_provider: self.knowledge_provider.is_some(),
         }
     }
 
@@ -1484,6 +1485,11 @@ impl Agent {
 
         // 5. Launch new MCP servers
         self.launch_mcp_servers().await;
+
+        // 6. Update knowledge provider if a new one was provided
+        if let Some(provider) = args.knowledge_provider {
+            self.knowledge_provider = Some(provider);
+        }
 
         Ok(AgentResponse::SwapComplete)
     }

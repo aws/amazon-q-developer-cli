@@ -1401,6 +1401,7 @@ impl AcpSession {
                         local_mcp_path,
                         global_mcp_path,
                         force: true,
+                        knowledge_provider: None,
                     })
                     .await
                 {
@@ -1750,6 +1751,25 @@ impl AcpSession {
                 };
                 let new_resources = agent_config.resource_paths().to_vec();
 
+                // Create a new knowledge provider for the target agent BEFORE swapping
+                let new_knowledge_provider = if std::env::var(KIRO_TEST_MODE).is_ok() {
+                    None
+                } else {
+                    match crate::util::knowledge_store::KnowledgeStore::get_async_instance(
+                        &self.os,
+                        Some(&new_name),
+                        new_agent_path.as_deref(),
+                    )
+                    .await
+                    {
+                        Ok(store) => Some(std::sync::Arc::new(
+                            crate::util::knowledge_store::KnowledgeStoreProvider::new(store),
+                        )
+                            as std::sync::Arc<dyn agent::tools::KnowledgeProvider>),
+                        Err(_) => None,
+                    }
+                };
+
                 let result = self
                     .agent
                     .swap_agent(agent::protocol::SwapAgentArgs {
@@ -1757,6 +1777,7 @@ impl AcpSession {
                         local_mcp_path,
                         global_mcp_path,
                         force: false,
+                        knowledge_provider: new_knowledge_provider,
                     })
                     .await;
 
@@ -2127,6 +2148,7 @@ impl AcpSession {
                             local_mcp_path,
                             global_mcp_path,
                             force: false,
+                            knowledge_provider: None,
                         })
                         .await
                     {

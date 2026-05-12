@@ -1,0 +1,4 @@
+{
+  "type": "fixed",
+  "description": "Fixed knowledge store not updating when swapping agents, causing the previous agent's knowledge base to persist"
+}
