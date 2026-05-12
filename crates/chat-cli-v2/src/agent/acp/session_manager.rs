@@ -24,11 +24,8 @@ use agent::tools::session::{
 };
 use agent::util::providers::RealProvider;
 use code_agent_sdk::CodeIntelligence;
+use sacp::ConnectionTo;
 use sacp::schema::SessionId;
-use sacp::{
-    AgentToClient,
-    JrConnectionCx,
-};
 use tokio::sync::{
     RwLock,
     mpsc,
@@ -421,7 +418,7 @@ pub struct SessionManager {
     /// Orchestration: session groups
     groups: HashMap<String, SessionGroup>,
     /// Shared TUI connection — cloned into every AcpSession (main + subagent)
-    connection_cx: Option<JrConnectionCx<AgentToClient>>,
+    connection_cx: Option<ConnectionTo<sacp::Client>>,
     /// Pending group completion waiters: group_name -> sender
     group_completion_waiters: HashMap<String, GroupCompletionSender>,
     /// V1 session exporter for lazy migration of V1 conversations.
@@ -2103,7 +2100,7 @@ pub(crate) struct SessionManagerRequest {
 pub(crate) enum SessionManagerRequestData {
     StartSession {
         config: Box<AcpSessionConfig>,
-        connection_cx: Option<JrConnectionCx<AgentToClient>>,
+        connection_cx: Option<ConnectionTo<sacp::Client>>,
         resp_sender: oneshot::Sender<Result<StartSessionResult, sacp::Error>>,
     },
     GetSessionHandle {
@@ -2262,7 +2259,7 @@ impl SessionManagerHandle {
         &self,
         session_id: &SessionId,
         config: AcpSessionConfig,
-        connection_cx: Option<JrConnectionCx<AgentToClient>>,
+        connection_cx: Option<ConnectionTo<sacp::Client>>,
     ) -> Result<StartSessionResult, sacp::Error> {
         let (resp_sender, rx) = oneshot::channel();
         self.tx

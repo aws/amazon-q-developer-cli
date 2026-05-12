@@ -109,10 +109,10 @@ use sacp::schema::{
     ToolKind,
 };
 use sacp::{
-    AgentToClient,
-    JrConnectionCx,
-    JrRequestCx,
-    MessageCx,
+    Agent as AgentToClient,
+    ConnectionTo,
+    Dispatch,
+    Responder,
 };
 use tokio::sync::{
     RwLock,
@@ -190,7 +190,7 @@ pub enum AcpSessionRequest {
     /// The response is sent via the `request_cx` when the turn completes.
     Prompt {
         request: PromptRequest,
-        request_cx: JrRequestCx<PromptResponse>,
+        request_cx: Responder<PromptResponse>,
     },
     /// Internal prompt for subagent execution (no ACP connection needed).
     /// Used when spawning subagents that run without TUI interaction.
@@ -342,7 +342,7 @@ impl AcpSessionHandle {
     pub async fn handle_prompt(
         &self,
         request: PromptRequest,
-        request_cx: JrRequestCx<PromptResponse>,
+        request_cx: Responder<PromptResponse>,
     ) -> Result<(), sacp::Error> {
         self.tx.send(AcpSessionRequest::Prompt { request, request_cx }).await
     }
@@ -693,7 +693,7 @@ pub struct AcpSessionBuilder<'a> {
     local_mcp_path: Option<&'a PathBuf>,
     model_id: Option<&'a str>,
     session_tx: Option<SessionManagerHandle>,
-    client_cx: Option<JrConnectionCx<AgentToClient>>,
+    client_cx: Option<ConnectionTo<sacp::Client>>,
     mock_registry: Option<MockResponseRegistryHandle>,
     code_intelligence: Option<Arc<RwLock<CodeIntelligence>>>,
     available_agents: Vec<super::session_manager::AgentInfo>,
@@ -812,7 +812,7 @@ impl<'a> AcpSessionBuilder<'a> {
         self
     }
 
-    pub fn connection_cx(mut self, cx: JrConnectionCx<AgentToClient>) -> Self {
+    pub fn connection_cx(mut self, cx: ConnectionTo<sacp::Client>) -> Self {
         self.client_cx = Some(cx);
         self
     }
@@ -922,7 +922,7 @@ impl<'a> AcpSessionBuilder<'a> {
 ///
 /// Each session owns:
 /// - An [`Agent`](agent::Agent) for LLM interactions
-/// - A [`JrConnectionCx`] for direct client communication (egress)
+/// - A [`ConnectionTo`] for direct client communication (egress)
 /// - A [`SessionDb`] for persistence
 ///
 /// The session handles:
@@ -945,12 +945,12 @@ struct AcpSession {
     global_mcp_path: Option<PathBuf>,
     current_agent_name: String,
     /// Connection to the TUI client
-    connection_cx: JrConnectionCx<AgentToClient>,
+    connection_cx: ConnectionTo<sacp::Client>,
     is_subagent: bool,
     previous_agent_name: Option<String>,
     pending_plan: Option<String>,
     pending_swap: Option<agent::agent_config::LoadedAgentConfig>,
-    pending_prompt_response: Option<tokio::sync::Mutex<JrRequestCx<PromptResponse>>>,
+    pending_prompt_response: Option<tokio::sync::Mutex<Responder<PromptResponse>>>,
     /// Agent config to swap to when the session becomes idle (set by registry refresh)
     pending_mcp_refresh: Option<Box<agent::agent_config::LoadedAgentConfig>>,
     compaction_summary: Option<String>,
@@ -2447,7 +2447,7 @@ impl AcpSession {
 async fn advertise_commands_and_prompts_to_client(
     session_id: &str,
     agent_handle: &AgentHandle,
-    client_cx: &JrConnectionCx<AgentToClient>,
+    client_cx: &ConnectionTo<sacp::Client>,
 ) -> Result<(), sacp::Error> {
     let commands: Vec<super::schema::AvailableCommand> = TuiCommand::all_commands()
         .into_iter()
@@ -2583,7 +2583,7 @@ async fn advertise_commands_and_prompts_to_client(
 
 async fn handle_approval_request(
     req: ApprovalRequest,
-    client_cx: JrConnectionCx<AgentToClient>,
+    client_cx: ConnectionTo<sacp::Client>,
     session_id: SessionId,
     agent: AgentHandle,
     is_subagent: bool,
@@ -3240,7 +3240,7 @@ pub async fn execute(
     // response processing. The TLDR; is the request path and response path are _not_ done on the
     // same task.
     let (stdin_reader, stdin_closed) = super::stdin_reader::StdinReader::new();
-    let serve_future = AgentToClient::builder()
+    let serve_future = AgentToClient.builder()
         .name("kiro-cli-agent")
         .on_receive_request(
             {
@@ -3264,9 +3264,9 @@ pub async fn execute(
                                 .title(crate::constants::AGENT_NAME),
                         );
                     if !logged_in {
-                        response = response.auth_methods(vec![AuthMethod::new("kiro-login", "Kiro Login").description(
+                        response = response.auth_methods(vec![AuthMethod::Agent(sacp::schema::AuthMethodAgent::new("kiro-login", "Kiro Login").description(
                             format!("Run '{} login' in terminal to authenticate. See https://kiro.dev/docs/cli/authentication/", crate::constants::CLI_NAME),
-                        )]);
+                        ))]);
                     }
                     request_cx.respond(response)
                 }
@@ -3276,7 +3276,7 @@ pub async fn execute(
         .on_receive_request(
             {
                 let session_tx = session_manager_handle.clone();
-                async move |request: NewSessionRequest, request_cx, cx: JrConnectionCx<AgentToClient>| {
+                async move |request: NewSessionRequest, request_cx, cx: ConnectionTo<sacp::Client>| {
                     let session_id = SessionId::new(Uuid::new_v4().to_string());
 
                     // Publish session ID so all child processes inherit it
@@ -3312,7 +3312,7 @@ pub async fn execute(
         .on_receive_request(
             {
                 let session_tx = session_manager_handle.clone();
-                async move |request: LoadSessionRequest, request_cx, cx: JrConnectionCx<AgentToClient>| {
+                async move |request: LoadSessionRequest, request_cx, cx: ConnectionTo<sacp::Client>| {
                     // Publish session ID so all child processes inherit it
                     agent::util::consts::env_var::publish_session_id(&request.session_id.to_string());
 
@@ -3469,15 +3469,15 @@ pub async fn execute(
             },
             sacp::on_receive_request!(),
         )
-        .on_receive_message(
+        .on_receive_dispatch(
             {
                 let session_tx = session_manager_handle.clone();
-                async move |message: MessageCx, _cx: JrConnectionCx<AgentToClient>| {
+                async move |message: Dispatch, _cx: ConnectionTo<sacp::Client>| {
                     let method = message.method().to_string();
 
                     // Handle session/set_model (unstable ACP method)
                     if method == "session/set_model" {
-                        let MessageCx::Request(req, req_cx) = message else {
+                        let Dispatch::Request(req, req_cx) = message else {
                             return Ok(sacp::Handled::Yes);
                         };
                         let request: sacp::schema::SetSessionModelRequest = serde_json::from_value(req.params().clone())
@@ -3491,10 +3491,12 @@ pub async fn execute(
                         return Ok(sacp::Handled::Yes);
                     }
 
+
+
                     // Handle _session/spawn ext method from TUI
                     use super::extensions::methods;
                     if method == methods::SESSION_SPAWN {
-                        let MessageCx::Request(req, req_cx) = message else {
+                        let Dispatch::Request(req, req_cx) = message else {
                             return Ok(sacp::Handled::Yes);
                         };
                         #[derive(serde::Deserialize)]
@@ -3524,7 +3526,7 @@ pub async fn execute(
                         return Ok(sacp::Handled::Yes);
                     }
                     if method == methods::MESSAGE_SEND {
-                        let MessageCx::Request(req, req_cx) = message else {
+                        let Dispatch::Request(req, req_cx) = message else {
                             return Ok(sacp::Handled::Yes);
                         };
                         #[derive(serde::Deserialize)]
@@ -3546,7 +3548,7 @@ pub async fn execute(
                     }
 
                     // Handle extension notifications
-                    if let MessageCx::Notification(notif) = &message {
+                    if let Dispatch::Notification(notif) = &message {
                         match notif.method() {
                             name if name == AGENT_METHOD_NAMES.session_cancel => {
                                 if let Ok(cancel_notif) =
@@ -3565,9 +3567,9 @@ pub async fn execute(
                     Ok(sacp::Handled::No { message, retry: false })
                 }
             },
-            sacp::on_receive_message!(),
+            sacp::on_receive_dispatch!(),
         )
-        .serve(sacp::ByteStreams::new(
+        .connect_to(sacp::ByteStreams::new(
             tokio::io::stdout().compat_write(),
             stdin_reader,
         ));
@@ -3642,7 +3644,7 @@ pub async fn execute(
 /// - Agent config parse errors from startup
 /// - MCP governance disabled (admin turned off MCP)
 fn send_agent_load_notifications(
-    cx: &JrConnectionCx<AgentToClient>,
+    cx: &ConnectionTo<sacp::Client>,
     session_id: &SessionId,
     requested_agent_name: &Option<String>,
     agent_config_errors: &[super::session_manager::AgentConfigLoadError],

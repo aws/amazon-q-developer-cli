@@ -172,16 +172,16 @@ dependencies = [
 
 [[package]]
 name = "agent-client-protocol-schema"
-version = "0.10.8"
+version = "0.11.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "44bc1fef9c32f03bce2ab44af35b6f483bfd169bf55cc59beeb2e3b1a00ae4d1"
+checksum = "2d24232129441563139fe5389de351433240d5f0ec8a6c775bf632dc6da7e549"
 dependencies = [
  "anyhow",
  "derive_more",
  "schemars 1.2.1",
  "serde",
  "serde_json",
- "strum 0.27.2",
+ "strum 0.28.0",
 ]
 
 [[package]]
@@ -2015,7 +2015,7 @@ version = "2.3.0"
 dependencies = [
  "agent",
  "agent-client-protocol",
- "agent-client-protocol-schema 0.10.8",
+ "agent-client-protocol-schema 0.11.7",
  "amzn-codewhisperer-client",
  "amzn-codewhisperer-streaming-client",
  "amzn-consolas-client",
@@ -7536,28 +7536,6 @@ dependencies = [
 
 [[package]]
 name = "rmcp"
-version = "0.12.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "528d42f8176e6e5e71ea69182b17d1d0a19a6b3b894b564678b74cd7cab13cfa"
-dependencies = [
- "async-trait",
- "base64 0.22.1",
- "chrono",
- "futures",
- "pastey 0.2.2",
- "pin-project-lite",
- "rmcp-macros 0.12.0",
- "schemars 1.2.1",
- "serde",
- "serde_json",
- "thiserror 2.0.18",
- "tokio",
- "tokio-util",
- "tracing",
-]
-
-[[package]]
-name = "rmcp"
 version = "0.17.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8a0ce46f9101dc911f07e1468084c057839d15b08040d110820c5513312ef56a"
@@ -7592,10 +7570,32 @@ dependencies = [
 ]
 
 [[package]]
-name = "rmcp-macros"
-version = "0.12.0"
+name = "rmcp"
+version = "1.6.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e3f81daaa494eb8e985c9462f7d6ce1ab05e5299f48aafd76cdd3d8b060e6f59"
+checksum = "e12ca9067b5ebfbd5b3fcdc4acfceb81aa7d5ab2a879dff7cb75d22434276aad"
+dependencies = [
+ "async-trait",
+ "base64 0.22.1",
+ "chrono",
+ "futures",
+ "pastey 0.2.2",
+ "pin-project-lite",
+ "rmcp-macros 1.6.0",
+ "schemars 1.2.1",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.18",
+ "tokio",
+ "tokio-util",
+ "tracing",
+]
+
+[[package]]
+name = "rmcp-macros"
+version = "0.17.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "abad6f5f46e220e3bda2fc90fd1ad64c1c2a2bd716d52c845eb5c9c64cda7542"
 dependencies = [
  "darling 0.23.0",
  "proc-macro2",
@@ -7606,9 +7606,9 @@ dependencies = [
 
 [[package]]
 name = "rmcp-macros"
-version = "0.17.0"
+version = "1.6.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "abad6f5f46e220e3bda2fc90fd1ad64c1c2a2bd716d52c845eb5c9c64cda7542"
+checksum = "7caa6743cc0888e433105fe1bc551a7f607940b126a37bc97b478e86064627eb"
 dependencies = [
  "darling 0.23.0",
  "proc-macro2",
@@ -7924,18 +7924,18 @@ checksum = "9774ba4a74de5f7b1c1451ed6cd5285a32eddb5cccb8cc655a4e50009e06477f"
 
 [[package]]
 name = "sacp"
-version = "10.1.0"
+version = "11.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "704f40d3c269b30229c34093b658ec80c4fac103281654b3965249c592dd6fa6"
+checksum = "b4c55e83008bb3aec4bc1348bf1a58dc5d42381ee704697dccb5c59553dce0fc"
 dependencies = [
- "agent-client-protocol-schema 0.10.8",
+ "agent-client-protocol-schema 0.11.7",
  "anyhow",
  "boxfnonce",
  "futures",
  "futures-concurrency",
- "fxhash",
  "jsonrpcmsg",
- "rmcp 0.12.0",
+ "rmcp 1.6.0",
+ "rustc-hash",
  "sacp-derive",
  "schemars 1.2.1",
  "serde",
@@ -7949,9 +7949,9 @@ dependencies = [
 
 [[package]]
 name = "sacp-derive"
-version = "10.0.0"
+version = "11.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "92150f9246c01d501855e34469810a82adc27c416c8d8e21665567f8cd966f29"
+checksum = "ab42f7ccff8ab957cb7eaee9727cfca1ba38ea390178cb3d1cdfc1ddbce1ddd8"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -8823,6 +8823,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "strum"
+version = "0.28.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "9628de9b8791db39ceda2b119bbe13134770b56c138ec1d3af810d045c04f9bd"
+dependencies = [
+ "strum_macros 0.28.0",
+]
+
+[[package]]
 name = "strum_macros"
 version = "0.24.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -8853,6 +8862,18 @@ name = "strum_macros"
 version = "0.27.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7695ce3845ea4b33927c055a39dc438a45b059f7c1b3d91d38d10355fb8cbca7"
+dependencies = [
+ "heck 0.5.0",
+ "proc-macro2",
+ "quote",
+ "syn 2.0.117",
+]
+
+[[package]]
+name = "strum_macros"
+version = "0.28.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ab85eea0270ee17587ed4156089e10b9e6880ee688791d45a905f5b1ca36f664"
 dependencies = [
  "heck 0.5.0",
  "proc-macro2",
