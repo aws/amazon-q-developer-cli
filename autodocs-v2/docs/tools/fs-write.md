@@ -3,10 +3,10 @@ doc_meta:
   title: fs_write
   description: Create and modify text files with create, strReplace, and insert operations
   category: tool
-  keywords: [fs_write, write, create, edit, modify, file, strReplace, insert, append, replaceAll]
+  keywords: [fs_write, write, create, edit, modify, file, strReplace, insert, append, replaceAll, trust, permission]
   related: [fs-read, code]
-  validated: 2026-04-08
-  commit: 1a984cb0
+  validated: 2026-04-24
+  commit: 22dc5f71
   status: validated
   testable_headless: true
 ---
@@ -99,6 +99,23 @@ Inserts content at a specific line or appends to end.
   "path": "README.md",
   "content": "\n## License\nMIT"
 }
+```
+
+## Permissions
+
+Files within the current working directory are auto-approved. Files outside CWD require approval.
+
+When approval is needed, you see granular trust options:
+
+- **Specific paths** — Trust only the exact file being written
+- **Directory** — Trust a parent directory containing the file
+
+Selecting a trust option adds those paths to your session's allowed write paths. The trust persists for the session.
+
+To disable granular options and use simple Yes/No prompts:
+
+```bash
+kiro-cli settings chat.disableGranularTrust true
 ```
 
 ## Troubleshooting

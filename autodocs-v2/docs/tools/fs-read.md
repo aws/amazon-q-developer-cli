@@ -3,10 +3,10 @@ doc_meta:
   title: fs_read
   description: Read files, directories, and images with support for line ranges and batch operations
   category: tool
-  keywords: [fs_read, read, file, directory, image, batch, line, offset, limit]
+  keywords: [fs_read, read, file, directory, image, batch, line, offset, limit, trust, permission]
   related: [fs-write, grep, glob]
-  validated: 2026-04-08
-  commit: 1a984cb0
+  validated: 2026-04-24
+  commit: 22dc5f71
   status: validated
   testable_headless: true
 ---
@@ -110,6 +110,23 @@ Lists current directory one level deep, excluding default patterns.
     {"mode": "Line", "path": "README.md", "limit": 20}
   ]
 }
+```
+
+## Permissions
+
+Files within the current working directory are auto-approved. Files outside CWD require approval.
+
+When approval is needed, you see granular trust options:
+
+- **Specific paths** — Trust only the exact files being accessed
+- **Directory** — Trust a common parent directory containing all requested paths
+
+Selecting a trust option adds those paths to your session's allowed read paths. The trust persists for the session.
+
+To disable granular options and use simple Yes/No prompts:
+
+```bash
+kiro-cli settings chat.disableGranularTrust true
 ```
 
 ## Troubleshooting

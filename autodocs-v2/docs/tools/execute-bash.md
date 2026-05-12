@@ -4,9 +4,9 @@ doc_meta:
   description: Execute bash commands on the user's system with output capture
   category: tool
   keywords: [execute_bash, shell, bash, command, terminal, run, working_dir]
-  related: [fs-read, fs-write, use-aws]
-  validated: 2026-04-08
-  commit: 1a984cb0
+  related: [fs-read, fs-write, use-aws, shell-escape]
+  validated: 2026-04-24
+  commit: 22dc5f71
   status: validated
   testable_headless: true
 ---
@@ -19,7 +19,7 @@ The execute_bash tool runs shell commands and captures stdout, stderr, and exit 
 
 Limitations:
 - Output is buffered — appears after command completes, not streamed in real-time
-- Interactive commands that require stdin (e.g., `rm -i`, `npm init`, `sudo`) will not work — use non-interactive alternatives (`rm` without `-i`, `npm init -y`, etc.)
+- Interactive commands that require stdin (e.g., `rm -i`, `npm init`, `sudo`) will not work — use [shell escape](../features/shell-escape.md) (`!command`) for interactive commands
 - Does not respect the user's bash profile or aliases
 - Use `working_dir` instead of prefixing commands with `cd`
 

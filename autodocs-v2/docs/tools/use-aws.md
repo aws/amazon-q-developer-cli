@@ -1,7 +1,7 @@
 ---
 doc_meta:
-  validated: 2026-01-29
-  commit: 5db28275
+  validated: 2026-04-24
+  commit: 22dc5f71
   status: validated
   testable_headless: true
   category: tool
@@ -148,6 +148,31 @@ Configure service restrictions in agent's `toolsSettings`:
 | `allowedServices` | array | `[]` | Services accessible without prompting |
 | `deniedServices` | array | `[]` | Services to block. Evaluated before allow rules |
 | `autoAllowReadonly` | boolean | `true` | Auto-approve read-only operations (7,069 known readonly operations) |
+
+### Service Pattern Matching
+
+Service entries support glob patterns for fine-grained control:
+
+- **Bare service name** (e.g., `"dynamodb"`) — matches all operations for that service (`dynamodb:*`)
+- **Service:operation pattern** (e.g., `"s3:get-*"`) — matches specific operations
+- **Wildcard patterns** (e.g., `"s3*"`) — matches services/operations by prefix
+
+```json
+{
+  "toolsSettings": {
+    "use_aws": {
+      "allowedServices": [
+        "s3",
+        "dynamodb:get-*",
+        "lambda:list-*"
+      ],
+      "deniedServices": ["iam", "s3:delete-*"]
+    }
+  }
+}
+```
+
+This configuration allows all S3 operations except deletions, only read operations for DynamoDB and Lambda, and blocks all IAM operations.
 
 ## Parameters
 
