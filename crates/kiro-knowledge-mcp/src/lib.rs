@@ -62,6 +62,24 @@ pub fn format_chunks(chunks: &[RetrievedChunk]) -> String {
     out.trim_end().to_string()
 }
 
+/// In-memory retriever used by tests and the `--stub` CLI mode.
+pub struct StubRetriever {
+    chunks: Vec<RetrievedChunk>,
+}
+
+impl StubRetriever {
+    pub fn new(chunks: Vec<RetrievedChunk>) -> Self {
+        Self { chunks }
+    }
+}
+
+#[async_trait::async_trait]
+impl Retriever for StubRetriever {
+    async fn retrieve(&self, input: &SearchInput) -> anyhow::Result<Vec<RetrievedChunk>> {
+        Ok(self.chunks.iter().take(input.max_results as usize).cloned().collect())
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -123,5 +141,52 @@ mod tests {
     fn format_chunks_handles_empty_input() {
         let rendered = format_chunks(&[]);
         assert_eq!(rendered, "No relevant results found.");
+    }
+
+    #[tokio::test]
+    async fn stub_retriever_returns_canned_chunks() {
+        let stub = StubRetriever::new(vec![RetrievedChunk {
+            source_path: "docs/x.md".into(),
+            content: "stub".into(),
+            relevance: 0.5,
+        }]);
+        let input = SearchInput {
+            query: "anything".into(),
+            source_filter: SourceFilter::All,
+            max_results: 5,
+        };
+        let chunks = stub.retrieve(&input).await.unwrap();
+        assert_eq!(chunks.len(), 1);
+        assert_eq!(chunks[0].source_path, "docs/x.md");
+    }
+
+    #[tokio::test]
+    async fn stub_retriever_respects_max_results() {
+        let stub = StubRetriever::new(vec![
+            RetrievedChunk {
+                source_path: "a".into(),
+                content: "a".into(),
+                relevance: 1.0,
+            },
+            RetrievedChunk {
+                source_path: "b".into(),
+                content: "b".into(),
+                relevance: 0.9,
+            },
+            RetrievedChunk {
+                source_path: "c".into(),
+                content: "c".into(),
+                relevance: 0.8,
+            },
+        ]);
+        let input = SearchInput {
+            query: "anything".into(),
+            source_filter: SourceFilter::All,
+            max_results: 2,
+        };
+        let chunks = stub.retrieve(&input).await.unwrap();
+        assert_eq!(chunks.len(), 2);
+        assert_eq!(chunks[0].source_path, "a");
+        assert_eq!(chunks[1].source_path, "b");
     }
 }
