@@ -412,6 +412,15 @@ export interface RetryWarningEvent {
 	message: string;
 }
 
+/** Arguments for /rewind command */
+export interface RewindArgs {
+	/**
+	 * Log entry index of the selected `Prompt` entry. If None, shows the picker.
+	 * Accepts either `turnIndex` or `value` (for generic selection UI).
+	 */
+	turnIndex?: string;
+}
+
 /** Arguments for /stats command */
 export interface StatsArgs {
 	/** Subcommand: "save <filename>" to export to file */
@@ -629,6 +638,8 @@ export type TuiCommand =
 	| { command: "hooks", args: HooksArgs }
 	/** Switch to the guide agent for help with Kiro CLI */
 	| { command: "guide", args: GuideArgs }
+	/** Rewind to a previous turn (clones history into a new session) */
+	| { command: "rewind", args: RewindArgs }
 	/** Show request stats for debugging slow turns */
 	| { command: "stats", args: StatsArgs }
 	/** Set thinking effort for this session */

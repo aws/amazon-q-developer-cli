@@ -26,6 +26,15 @@ import type { SubagentInfo, SubagentStatus } from '../types/subagent.js';
 import type { AgentSession, InboxMessage } from '../types/multi-session.js';
 import type { TaskItem, RawTask } from '../types/tasks';
 
+/** A selectable turn in the `/rewind` Explorer. Shape is defined by the
+ *  backend `/rewind` execute handler in `CommandResult.data.turns`. */
+export interface RewindTurn {
+  logIndex: number;
+  label: string;
+  group: string;
+  responseSnippet: string;
+}
+
 export interface ContextBreakdownData {
   contextFiles: {
     percent: number;
@@ -404,7 +413,8 @@ interface BaseAppActions {
   setCurrentModel: (model: { id: string; name: string } | null) => void;
   setCurrentEffort: (effort: string | null) => void;
   setCurrentAgent: (
-    agent: { name: string; welcomeMessage?: string } | null
+    agent: { name: string; welcomeMessage?: string } | null,
+    options?: { suppressWelcome?: boolean }
   ) => void;
   setPreviousAgentName: (name: string | null) => void;
   handleCompactionEvent: (event: AgentStreamEvent) => Promise<void>;
@@ -494,6 +504,7 @@ interface BaseAppActions {
     }>
   ) => void;
   setShowUsagePanel: (show: boolean, data?: any) => void;
+  setShowRewindExplorer: (show: boolean, rows?: RewindTurn[]) => void;
   setShowMcpPanel: (
     show: boolean,
     servers?: McpServerInfo[],
@@ -714,6 +725,10 @@ export interface AppState {
   // Usage panel state
   showUsagePanel: boolean;
   usageData: UsageData | null;
+
+  // Rewind explorer state
+  showRewindExplorer: boolean;
+  rewindRows: RewindTurn[];
 
   // File attachments
   attachedFiles: string[];
@@ -1060,6 +1075,8 @@ export const createAppStore = (props: AppStoreProps) => {
     helpCommands: [],
     showUsagePanel: false,
     usageData: null,
+    showRewindExplorer: false,
+    rewindRows: [],
     showMcpPanel: false,
     mcpServers: [],
     mcpRegistryServers: [],
@@ -2031,7 +2048,7 @@ export const createAppStore = (props: AppStoreProps) => {
       set({ agentError, agentErrorGuidance: guidance ?? null }),
     setCurrentModel: (currentModel) => set({ currentModel }),
     setCurrentEffort: (currentEffort) => set({ currentEffort }),
-    setCurrentAgent: (agent) => {
+    setCurrentAgent: (agent, options) => {
       const prevAgent = get().currentAgent;
       set({ currentAgent: agent ? { name: agent.name } : null });
 
@@ -2045,7 +2062,7 @@ export const createAppStore = (props: AppStoreProps) => {
         queueMicrotask(() => get().triggerPlanSurvey());
       }
 
-      if (agent?.welcomeMessage) {
+      if (agent?.welcomeMessage && !options?.suppressWelcome) {
         set((state) => ({
           messages: [
             ...state.messages,
@@ -2348,6 +2365,7 @@ export const createAppStore = (props: AppStoreProps) => {
         setShowTuiPanel: state.setShowTuiPanel,
         setShowChangelogPanel: state.setShowChangelogPanel,
         setShowUsagePanel: state.setShowUsagePanel,
+        setShowRewindExplorer: state.setShowRewindExplorer,
         setShowMcpPanel: state.setShowMcpPanel,
         setShowToolsPanel: state.setShowToolsPanel,
         setShowStatsPanel: state.setShowStatsPanel,
@@ -2386,6 +2404,7 @@ export const createAppStore = (props: AppStoreProps) => {
             showChangelogPanel: false,
             showHelpPanel: false,
             showUsagePanel: false,
+            showRewindExplorer: false,
             showMcpPanel: false,
             showToolsPanel: false,
             showStatsPanel: false,
@@ -2949,6 +2968,10 @@ export const createAppStore = (props: AppStoreProps) => {
       set({ showUsagePanel: show, usageData: data ?? null });
     },
 
+    setShowRewindExplorer: (show, rows) => {
+      set({ showRewindExplorer: show, rewindRows: rows ?? [] });
+    },
+
     setShowMcpPanel: (
       show,
       servers = [],
@@ -3354,6 +3377,7 @@ export const createAppStore = (props: AppStoreProps) => {
         showContextBreakdown: false,
         showHelpPanel: false,
         showUsagePanel: false,
+        showRewindExplorer: false,
         commandInputValue: '',
         activeTrigger: null,
         promptHint: null,
@@ -3401,6 +3425,7 @@ export const createAppStore = (props: AppStoreProps) => {
           setShowTuiPanel: state.setShowTuiPanel,
           setShowChangelogPanel: state.setShowChangelogPanel,
           setShowUsagePanel: state.setShowUsagePanel,
+          setShowRewindExplorer: state.setShowRewindExplorer,
           setShowMcpPanel: state.setShowMcpPanel,
           setShowToolsPanel: state.setShowToolsPanel,
           setShowStatsPanel: state.setShowStatsPanel,
@@ -3437,6 +3462,7 @@ export const createAppStore = (props: AppStoreProps) => {
               showContextBreakdown: false,
               showHelpPanel: false,
               showUsagePanel: false,
+              showRewindExplorer: false,
               showMcpPanel: false,
               showToolsPanel: false,
               showStatsPanel: false,

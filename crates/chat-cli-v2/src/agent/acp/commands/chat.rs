@@ -430,8 +430,11 @@ mod tests {
     use chrono::Utc;
 
     use super::*;
-    use crate::agent::session::SessionState;
     use crate::agent::session::legacy_compat::NoOpLegacySessionExporter;
+    use crate::agent::session::{
+        SessionCreatedReason,
+        SessionState,
+    };
 
     fn noop_exporter() -> Arc<dyn LegacySessionExporter> {
         Arc::new(NoOpLegacySessionExporter)
@@ -448,6 +451,7 @@ mod tests {
             exported_from_v1: false,
             imported_from: None,
             parent_session_id: None,
+            session_created_reason: SessionCreatedReason::Subagent,
             session_state: SessionState::Unknown,
         }
     }

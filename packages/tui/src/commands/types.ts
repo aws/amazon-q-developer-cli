@@ -36,7 +36,10 @@ export interface CommandContext {
   /** Update current model in store */
   setCurrentModel: (model: { id: string; name: string }) => void;
   /** Update current agent in store */
-  setCurrentAgent: (agent: { name: string }) => void;
+  setCurrentAgent: (
+    agent: { name: string; welcomeMessage?: string },
+    options?: { suppressWelcome?: boolean }
+  ) => void;
   /** Update context usage percentage */
   setContextUsage: (percent: number) => void;
   /** Show/hide context breakdown panel */
@@ -57,6 +60,7 @@ export interface CommandContext {
   setShowChangelogPanel: (show: boolean) => void;
   /** Show/hide usage panel */
   setShowUsagePanel: (show: boolean, data?: any) => void;
+  setShowRewindExplorer: (show: boolean, rows?: any[]) => void;
   /** Show/hide MCP servers panel */
   setShowMcpPanel: (
     show: boolean,

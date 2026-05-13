@@ -61,6 +61,8 @@ pub enum TuiCommand {
     Hooks(HooksArgs),
     /// Switch to the guide agent for help with Kiro CLI
     Guide(GuideArgs),
+    /// Rewind to a previous turn (clones history into a new session)
+    Rewind(RewindArgs),
     /// Show request stats for debugging slow turns
     Stats(StatsArgs),
     /// Set thinking effort for this session
@@ -242,6 +244,17 @@ pub struct GuideArgs {
     pub question: Option<String>,
 }
 
+/// Arguments for /rewind command
+#[typeshare]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RewindArgs {
+    /// Log entry index of the selected `Prompt` entry. If None, shows the picker.
+    /// Accepts either `turnIndex` or `value` (for generic selection UI).
+    #[serde(alias = "value", skip_serializing_if = "Option::is_none")]
+    pub turn_index: Option<String>,
+}
+
 /// Arguments for /stats command
 #[typeshare]
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
@@ -290,6 +303,7 @@ impl TuiCommand {
             TuiCommand::Code(_) => "/code",
             TuiCommand::Hooks(_) => "/hooks",
             TuiCommand::Guide(_) => "/guide",
+            TuiCommand::Rewind(_) => "/rewind",
             TuiCommand::Stats(_) => "/stats",
             TuiCommand::Effort(_) => "/effort",
         }
@@ -318,6 +332,7 @@ impl TuiCommand {
             TuiCommand::Code(_) => "Code intelligence workspace management",
             TuiCommand::Hooks(_) => "View configured hooks",
             TuiCommand::Guide(_) => "Get help with Kiro CLI features from the guide agent",
+            TuiCommand::Rewind(_) => "Rewind conversation to a previous turn (forks into a new session)",
             TuiCommand::Stats(_) => "Show request IDs and timings for debugging slow turns",
             TuiCommand::Effort(_) => "Set thinking effort for this session",
         }
@@ -348,6 +363,7 @@ impl TuiCommand {
             TuiCommand::Code(_) => "/code [status|init|logs|overview|summary]",
             TuiCommand::Hooks(_) => "/hooks",
             TuiCommand::Guide(_) => "/guide [question]",
+            TuiCommand::Rewind(_) => "/rewind",
             TuiCommand::Stats(_) => "/stats [N|save <filename>]",
             TuiCommand::Effort(_) => "/effort [level]",
         }
@@ -478,6 +494,11 @@ impl TuiCommand {
                 Some(meta)
             },
             TuiCommand::Guide(_) => None,
+            TuiCommand::Rewind(_) => {
+                let mut meta = serde_json::Map::new();
+                meta.insert("inputType".into(), "panel".into());
+                Some(meta)
+            },
             TuiCommand::Stats(_) => {
                 let mut meta = serde_json::Map::new();
                 meta.insert("inputType".into(), "panel".into());
@@ -540,6 +561,7 @@ impl TuiCommand {
             TuiCommand::Code(CodeArgs::default()),
             TuiCommand::Hooks(HooksArgs::default()),
             TuiCommand::Guide(GuideArgs::default()),
+            TuiCommand::Rewind(RewindArgs::default()),
             TuiCommand::Stats(StatsArgs::default()),
             TuiCommand::Effort(EffortArgs::default()),
         ];
@@ -596,6 +618,9 @@ impl TuiCommand {
             "hooks" => Some(Self::Hooks(HooksArgs::default())),
             "guide" => Some(Self::Guide(GuideArgs {
                 question: (!args.is_empty()).then(|| args.to_string()),
+            })),
+            "rewind" => Some(Self::Rewind(RewindArgs {
+                turn_index: (!args.is_empty()).then(|| args.to_string()),
             })),
             "stats" => {
                 if args.is_empty() {

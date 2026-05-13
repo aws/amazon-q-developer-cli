@@ -157,6 +157,7 @@ use crate::agent::rts::{
 };
 use crate::agent::session::legacy_compat::LegacySessionExporter;
 use crate::agent::session::{
+    SessionCreatedReason,
     SessionDb,
     SessionState,
 };
@@ -626,6 +627,9 @@ pub struct AcpSessionConfig {
     pub user_embedded_msg: Option<String>,
     /// `Some` only for subagent sessions; holds the parent session's ID.
     pub parent_session_id: Option<String>,
+    /// Why this session was created. Combined with `parent_session_id`, used
+    /// to distinguish subagent vs rewind-fork at session-load time.
+    pub session_created_reason: SessionCreatedReason,
     pub model_id: Option<String>,
     /// MCP servers provided by the ACP client
     pub mcp_servers: Vec<sacp::schema::McpServer>,
@@ -645,6 +649,7 @@ impl AcpSessionConfig {
             initial_agent_name: None,
             user_embedded_msg: None,
             parent_session_id: None,
+            session_created_reason: SessionCreatedReason::default(),
             model_id: None,
             mcp_servers: Vec::new(),
             trust_all_tools: false,
@@ -1183,6 +1188,7 @@ impl AcpSession {
                 &cwd,
                 initial_state,
                 builder.parent_session_id.clone(),
+                SessionCreatedReason::default(),
             )?;
 
             (db, snapshot)
@@ -1972,7 +1978,8 @@ impl AcpSession {
                             Err(_) => agent::tui_commands::CommandOptionsResponse::default(),
                         }
                     },
-                    super::schema::TuiCommandKind::Context
+                    super::schema::TuiCommandKind::Rewind
+                    | super::schema::TuiCommandKind::Context
                     | super::schema::TuiCommandKind::Compact
                     | super::schema::TuiCommandKind::Clear
                     | super::schema::TuiCommandKind::Quit

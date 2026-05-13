@@ -163,6 +163,23 @@ impl SessionState {
     }
 }
 
+/// Why a session was created. Combined with `parent_session_id`, this
+/// distinguishes session origins. The default is [`Subagent`] for backward
+/// compatibility: pre-`/rewind` sessions were saved without this field, and
+/// when present they were always subagent flows.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize, strum::EnumString, strum::Display)]
+#[typeshare::typeshare]
+#[serde(rename_all = "snake_case")]
+#[strum(serialize_all = "snake_case")]
+pub enum SessionCreatedReason {
+    /// Session is part of a subagent (use_subagent / agent_crew) flow.
+    /// Default for backward compatibility with sessions saved before this field existed.
+    #[default]
+    Subagent,
+    /// Session was forked from an earlier turn of another session via `/rewind`.
+    Rewind,
+}
+
 /// Session metadata stored in `{session_id}.json`.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SessionData {
@@ -183,9 +200,16 @@ pub struct SessionData {
     /// Absolute path to the file this session was imported from, if any.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub imported_from: Option<String>,
-    /// `Some` only for subagent sessions; holds the parent session's ID.
+    /// `Some` when this session was derived from another (subagent or rewind fork).
+    /// Combined with [`session_created_reason`](Self::session_created_reason) to
+    /// distinguish: top-level (`None`), subagent (`Some` + `Subagent`),
+    /// rewind fork (`Some` + `Rewind`).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub parent_session_id: Option<String>,
+    /// Why this session was created. Defaults to [`SessionCreatedReason::Subagent`]
+    /// for legacy sessions saved before this field existed (which were always subagents).
+    #[serde(default)]
+    pub session_created_reason: SessionCreatedReason,
     /// Serialized conversation and model state.
     #[serde(deserialize_with = "deserialize_session_state")]
     pub session_state: SessionState,
@@ -193,7 +217,7 @@ pub struct SessionData {
 
 impl SessionData {
     pub fn is_subagent(&self) -> bool {
-        self.parent_session_id.is_some()
+        self.parent_session_id.is_some() && matches!(self.session_created_reason, SessionCreatedReason::Subagent)
     }
 }
 
@@ -427,6 +451,7 @@ impl SessionDb {
         cwd: &Path,
         state: SessionState,
         parent_session_id: Option<String>,
+        session_created_reason: SessionCreatedReason,
     ) -> Result<Self, SessionError> {
         Self::new_impl(
             &sessions_dir()?,
@@ -434,17 +459,20 @@ impl SessionDb {
             cwd,
             state,
             parent_session_id,
+            session_created_reason,
             is_pid_alive,
             std::process::id(),
         )
     }
 
+    #[allow(clippy::too_many_arguments)]
     fn new_impl(
         sessions_dir: &Path,
         session_id: String,
         cwd: &Path,
         state: SessionState,
         parent_session_id: Option<String>,
+        session_created_reason: SessionCreatedReason,
         is_pid_alive: impl Fn(u32) -> bool,
         current_pid: u32,
     ) -> Result<Self, SessionError> {
@@ -463,6 +491,7 @@ impl SessionDb {
             exported_from_v1: false,
             imported_from: None,
             parent_session_id,
+            session_created_reason,
             session_state: state,
         };
 
@@ -739,6 +768,9 @@ pub struct SessionDataView {
     /// `Some` only for subagent sessions; holds the parent session's ID.
     #[serde(default)]
     pub parent_session_id: Option<String>,
+    /// Why this session was created. See [`SessionCreatedReason`].
+    #[serde(default)]
+    pub session_created_reason: SessionCreatedReason,
     #[serde(default)]
     #[typeshare(serialized_as = "u32")]
     pub message_count: usize,
@@ -746,7 +778,7 @@ pub struct SessionDataView {
 
 impl SessionDataView {
     pub fn is_subagent(&self) -> bool {
-        self.parent_session_id.is_some()
+        self.parent_session_id.is_some() && matches!(self.session_created_reason, SessionCreatedReason::Subagent)
     }
 }
 
@@ -913,6 +945,7 @@ mod tests {
             cwd,
             test_state(),
             None,
+            SessionCreatedReason::Subagent,
             pid_always_dead,
             1000,
         )
@@ -950,6 +983,7 @@ mod tests {
             cwd,
             test_state(),
             Some("parent-abc".to_string()),
+            SessionCreatedReason::Subagent,
             pid_always_dead,
             3000,
         )
@@ -975,6 +1009,7 @@ mod tests {
             original_cwd,
             test_state(),
             None,
+            SessionCreatedReason::Subagent,
             pid_always_dead,
             1000,
         )
@@ -1000,6 +1035,7 @@ mod tests {
             cwd,
             test_state(),
             None,
+            SessionCreatedReason::Subagent,
             pid_always_dead,
             1000,
         )
@@ -1036,8 +1072,17 @@ mod tests {
         let cwd = Path::new("/test/project");
         let session_id = "test-session-log".to_string();
 
-        let handle =
-            SessionDb::new_impl(sessions_dir, session_id, cwd, test_state(), None, pid_always_dead, 1000).unwrap();
+        let handle = SessionDb::new_impl(
+            sessions_dir,
+            session_id,
+            cwd,
+            test_state(),
+            None,
+            SessionCreatedReason::Subagent,
+            pid_always_dead,
+            1000,
+        )
+        .unwrap();
 
         let entry1 = LogEntry::prompt("msg-1".to_string(), vec![], None);
         let entry2 = LogEntry::prompt("msg-2".to_string(), vec![], None);
@@ -1062,6 +1107,7 @@ mod tests {
             cwd,
             test_state(),
             None,
+            SessionCreatedReason::Subagent,
             pid_always_dead,
             1000,
         )
@@ -1098,6 +1144,7 @@ mod tests {
             &cwd1,
             test_state(),
             None,
+            SessionCreatedReason::Subagent,
             pid_always_dead,
             1000,
         )
@@ -1110,6 +1157,7 @@ mod tests {
             &cwd1,
             test_state(),
             None,
+            SessionCreatedReason::Subagent,
             pid_always_dead,
             1000,
         )
@@ -1122,6 +1170,7 @@ mod tests {
             &cwd2,
             test_state(),
             None,
+            SessionCreatedReason::Subagent,
             pid_always_dead,
             1000,
         )
@@ -1186,6 +1235,7 @@ mod tests {
             &cwd,
             test_state(),
             None,
+            SessionCreatedReason::Subagent,
             pid_always_dead,
             1000,
         )
@@ -1200,6 +1250,7 @@ mod tests {
             &cwd,
             test_state(),
             Some("lt1".to_string()),
+            SessionCreatedReason::Subagent,
             pid_always_dead,
             1000,
         )
@@ -1233,6 +1284,7 @@ mod tests {
             &cwd,
             test_state(),
             None,
+            SessionCreatedReason::Subagent,
             pid_always_dead,
             1000,
         )
@@ -1339,6 +1391,7 @@ mod tests {
             cwd,
             test_state(),
             None,
+            SessionCreatedReason::Subagent,
             pid_always_dead,
             1000,
         )
@@ -1350,8 +1403,17 @@ mod tests {
         // Session with agent_name → Some
         let mut state = test_state();
         state.set_agent_name("my-agent".to_string());
-        let db2 =
-            SessionDb::new_impl(sessions_dir, "pa2".to_string(), cwd, state, None, pid_always_dead, 1000).unwrap();
+        let db2 = SessionDb::new_impl(
+            sessions_dir,
+            "pa2".to_string(),
+            cwd,
+            state,
+            None,
+            SessionCreatedReason::Subagent,
+            pid_always_dead,
+            1000,
+        )
+        .unwrap();
         write_dummy_log(&db2);
         drop(db2);
         assert_eq!(peek_agent_name(sessions_dir, "pa2").as_deref(), Some("my-agent"));
@@ -1369,6 +1431,7 @@ mod tests {
             &cwd,
             test_state(),
             None,
+            SessionCreatedReason::Subagent,
             pid_always_dead,
             1000,
         )
@@ -1396,6 +1459,7 @@ mod tests {
             &cwd,
             test_state(),
             None,
+            SessionCreatedReason::Subagent,
             pid_always_dead,
             1000,
         )
@@ -1437,6 +1501,7 @@ mod tests {
             cwd,
             test_state(),
             None,
+            SessionCreatedReason::Subagent,
             pid_always_dead,
             1000,
         )
@@ -1474,6 +1539,7 @@ mod tests {
             cwd,
             test_state(),
             None,
+            SessionCreatedReason::Subagent,
             pid_always_dead,
             1000,
         )
@@ -1508,6 +1574,7 @@ mod tests {
             cwd,
             test_state(),
             None,
+            SessionCreatedReason::Subagent,
             pid_always_dead,
             1000,
         )
@@ -1543,6 +1610,7 @@ mod tests {
             cwd,
             test_state(),
             None,
+            SessionCreatedReason::Subagent,
             pid_always_dead,
             1000,
         )
@@ -1573,6 +1641,7 @@ mod tests {
             cwd,
             test_state(),
             None,
+            SessionCreatedReason::Subagent,
             pid_always_dead,
             1000,
         )
@@ -1602,6 +1671,7 @@ mod tests {
             exported_from_v1: false,
             imported_from: None,
             parent_session_id: None,
+            session_created_reason: SessionCreatedReason::Subagent,
             session_state: test_state(),
         };
 
@@ -1614,5 +1684,47 @@ mod tests {
         assert_eq!(parsed.session_id, "legacy-session");
         assert!(parsed.parent_session_id.is_none());
         assert!(!parsed.is_subagent());
+    }
+
+    /// Round-trip + string conversions for [`SessionCreatedReason`].
+    /// Exercises both the serde JSON path and the strum string path so that
+    /// an accidental rename or `rename_all` change is caught at test time
+    /// rather than silently breaking on-disk session files.
+    macro_rules! test_ser_deser {
+        ($ty:ident, $variant:expr, $text:expr) => {
+            let quoted = format!("\"{}\"", $text);
+            assert_eq!(quoted, serde_json::to_string(&$variant).unwrap());
+            assert_eq!($variant, serde_json::from_str(&quoted).unwrap());
+            assert_eq!($variant, $text.parse::<$ty>().unwrap());
+            assert_eq!($text, $variant.to_string());
+        };
+    }
+
+    #[test]
+    fn test_session_created_reason_ser_deser() {
+        test_ser_deser!(SessionCreatedReason, SessionCreatedReason::Subagent, "subagent");
+        test_ser_deser!(SessionCreatedReason, SessionCreatedReason::Rewind, "rewind");
+    }
+
+    #[test]
+    fn test_session_created_reason_default_is_subagent() {
+        assert_eq!(SessionCreatedReason::default(), SessionCreatedReason::Subagent);
+    }
+
+    /// A `SessionData` JSON written before this field existed must still
+    /// deserialize, and the missing field must default to `Subagent`.
+    /// This is what preserves correctness for sessions saved by older binaries
+    /// (which were always subagents when they had a parent).
+    #[test]
+    fn test_missing_session_created_reason_defaults_to_subagent() {
+        let json = serde_json::json!({
+            "session_id": "legacy",
+            "cwd": "/tmp",
+            "created_at": "2026-01-01T00:00:00Z",
+            "updated_at": "2026-01-01T00:00:00Z",
+            "session_state": "Unknown",
+        });
+        let parsed: SessionData = serde_json::from_value(json).unwrap();
+        assert_eq!(parsed.session_created_reason, SessionCreatedReason::Subagent);
     }
 }

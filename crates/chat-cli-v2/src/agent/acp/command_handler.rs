@@ -35,6 +35,7 @@ pub async fn get_command_options_legacy(
         | TuiCommandKind::Usage
         | TuiCommandKind::Mcp
         | TuiCommandKind::Tools
-        | TuiCommandKind::Prompts => CommandOptionsResponse::default(),
+        | TuiCommandKind::Prompts
+        | TuiCommandKind::Rewind => CommandOptionsResponse::default(),
     }
 }

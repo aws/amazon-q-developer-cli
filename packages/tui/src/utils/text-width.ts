@@ -51,3 +51,13 @@ export function padToWidth(s: string, targetCols: number): string {
   if (w >= targetCols) return s;
   return s + ' '.repeat(targetCols - w);
 }
+
+/**
+ * Pad a string on the left with spaces to exactly `targetCols` visible columns
+ * (right-align). If the string is already wider, returns it unchanged.
+ */
+export function padToWidthRight(s: string, targetCols: number): string {
+  const w = visibleWidth(s);
+  if (w >= targetCols) return s;
+  return ' '.repeat(targetCols - w) + s;
+}

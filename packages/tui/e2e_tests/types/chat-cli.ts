@@ -3,6 +3,22 @@
 */
 
 /**
+ * Why a session was created. Combined with `parent_session_id`, this
+ * distinguishes session origins. The default is [`Subagent`] for backward
+ * compatibility: pre-`/rewind` sessions were saved without this field, and
+ * when present they were always subagent flows.
+ */
+export enum SessionCreatedReason {
+	/**
+	 * Session is part of a subagent (use_subagent / agent_crew) flow.
+	 * Default for backward compatibility with sessions saved before this field existed.
+	 */
+	Subagent = "subagent",
+	/** Session was forked from an earlier turn of another session via `/rewind`. */
+	Rewind = "rewind",
+}
+
+/**
  * Lightweight view of session metadata for listing.
  * 
  * Skips [`SessionData::session_state`]. Somewhat of a micro-optimization, but saves time scanning
@@ -16,6 +32,8 @@ export interface SessionDataView {
 	title?: string;
 	/** `Some` only for subagent sessions; holds the parent session's ID. */
 	parent_session_id?: string;
+	/** Why this session was created. See [`SessionCreatedReason`]. */
+	session_created_reason?: SessionCreatedReason;
 	message_count?: number;
 }
 
