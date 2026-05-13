@@ -1,0 +1,4 @@
+{
+  "type": "added",
+  "description": "Wire client settings to KAS agent on initialize. CLI settings (code intelligence, knowledge, tool search, etc.) now flow to the KAS agent engine via ACP, enabling feature flag control in KAS mode."
+}

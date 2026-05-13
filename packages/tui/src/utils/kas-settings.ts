@@ -94,7 +94,8 @@ export function buildKasSettings(): KasSettings | undefined {
     const chunkOverlap = raw['knowledge.chunkOverlap'];
     if (typeof chunkOverlap === 'number') k.chunkOverlap = chunkOverlap;
     const indexType = raw['knowledge.indexType'];
-    if (indexType === 'fast' || indexType === 'accurate') k.indexType = indexType;
+    if (indexType === 'fast' || indexType === 'accurate')
+      k.indexType = indexType;
     // Override the simple boolean mapping with the structured version
     settings.knowledge = k;
   }
