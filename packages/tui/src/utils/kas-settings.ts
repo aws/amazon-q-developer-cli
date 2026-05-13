@@ -28,7 +28,6 @@ export function buildKasSettings(): KasSettings | undefined {
   const cliDefaults: Record<string, boolean> = {
     codeIntelligence: true,
     knowledge: true,
-    toolSearch: true,
   };
 
   // ─── Boolean feature flags → { enabled: bool } ─────────────────────

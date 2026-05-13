@@ -7,7 +7,6 @@ import { tmpdir } from 'os';
 const CLI_DEFAULTS = {
   codeIntelligence: { enabled: true },
   knowledge: { enabled: true },
-  toolSearch: { enabled: true },
 };
 
 describe('buildKasSettings', () => {
