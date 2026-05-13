@@ -55,13 +55,19 @@ describe('buildKasSettings', () => {
   test('maps boolean flag to { enabled: true }', async () => {
     writeSettings({ 'chat.enableThinking': true });
     const buildKasSettings = await getBuildKasSettings();
-    expect(buildKasSettings()).toEqual({ ...CLI_DEFAULTS, thinking: { enabled: true } });
+    expect(buildKasSettings()).toEqual({
+      ...CLI_DEFAULTS,
+      thinking: { enabled: true },
+    });
   });
 
   test('maps boolean flag to { enabled: false }', async () => {
     writeSettings({ 'chat.enableThinking': false });
     const buildKasSettings = await getBuildKasSettings();
-    expect(buildKasSettings()).toEqual({ ...CLI_DEFAULTS, thinking: { enabled: false } });
+    expect(buildKasSettings()).toEqual({
+      ...CLI_DEFAULTS,
+      thinking: { enabled: false },
+    });
   });
 
   test('ignores non-boolean values for boolean flags', async () => {
@@ -106,7 +112,11 @@ describe('buildKasSettings', () => {
       'toolSearch.minTokens': 50000,
     });
     const buildKasSettings = await getBuildKasSettings();
-    expect(buildKasSettings()?.toolSearch).toEqual({ enabled: true, minPct: 5, minTokens: 50000 });
+    expect(buildKasSettings()?.toolSearch).toEqual({
+      enabled: true,
+      minPct: 5,
+      minTokens: 50000,
+    });
   });
 
   test('maps toolSearch with only enabled=false', async () => {
@@ -121,7 +131,11 @@ describe('buildKasSettings', () => {
       'compaction.excludeMessages': 4,
     });
     const buildKasSettings = await getBuildKasSettings();
-    expect(buildKasSettings()?.compaction).toEqual({ enabled: true, excludePercent: 20, excludeMessages: 4 });
+    expect(buildKasSettings()?.compaction).toEqual({
+      enabled: true,
+      excludePercent: 20,
+      excludeMessages: 4,
+    });
   });
 
   test('maps knowledge with structured config', async () => {
@@ -131,7 +145,11 @@ describe('buildKasSettings', () => {
       'knowledge.indexType': 'fast',
     });
     const buildKasSettings = await getBuildKasSettings();
-    expect(buildKasSettings()?.knowledge).toEqual({ enabled: true, maxFiles: 1000, indexType: 'fast' });
+    expect(buildKasSettings()?.knowledge).toEqual({
+      enabled: true,
+      maxFiles: 1000,
+      indexType: 'fast',
+    });
   });
 
   test('ignores unrelated settings', async () => {
@@ -142,6 +160,9 @@ describe('buildKasSettings', () => {
       'chat.enableThinking': true,
     });
     const buildKasSettings = await getBuildKasSettings();
-    expect(buildKasSettings()).toEqual({ ...CLI_DEFAULTS, thinking: { enabled: true } });
+    expect(buildKasSettings()).toEqual({
+      ...CLI_DEFAULTS,
+      thinking: { enabled: true },
+    });
   });
 });
