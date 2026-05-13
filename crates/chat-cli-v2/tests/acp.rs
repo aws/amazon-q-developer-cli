@@ -3238,8 +3238,7 @@ async fn effort_command_e2e() {
         .expect("additional_model_request_fields should be set");
 
     assert_eq!(
-        additional_fields["output_config"]["effort"],
-        "low",
+        additional_fields["output_config"]["effort"], "low",
         "effort should be 'low' in the request"
     );
 }

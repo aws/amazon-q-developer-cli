@@ -868,6 +868,7 @@ mod tests {
                 conversation_id: "test-session".to_string(),
                 model_info: None,
                 context_usage_percentage: None,
+                additional_fields: None,
             },
             RuntimePermissions::default(),
         )

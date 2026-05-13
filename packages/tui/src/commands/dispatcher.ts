@@ -55,12 +55,16 @@ export async function dispatch(
           ctx.setActiveCommand({ command: cmd, options });
           return;
         }
-        const noOptionsMsg =
-          cmdName === 'chat'
-            ? 'No previous sessions found'
-            : `No options available for /${cmdName}`;
-        ctx.showAlert(noOptionsMsg, 'error', 3000);
-        return;
+        if (cmdName === 'chat') {
+          ctx.showAlert('No previous sessions found', 'error', 3000);
+          return;
+        }
+        if (cmdName === 'effort') {
+          // Fall through to execute — backend returns a descriptive error
+        } else {
+          ctx.showAlert(`No options available for /${cmdName}`, 'error', 3000);
+          return;
+        }
       } catch {
         ctx.setLoadingMessage(null);
         // Fall through to execute if options fetch fails

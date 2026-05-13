@@ -631,6 +631,6 @@ export type TuiCommand =
 	| { command: "guide", args: GuideArgs }
 	/** Show request stats for debugging slow turns */
 	| { command: "stats", args: StatsArgs }
-	/** Set reasoning effort level */
+	/** Set thinking effort for this session */
 	| { command: "effort", args: EffortArgs };
 

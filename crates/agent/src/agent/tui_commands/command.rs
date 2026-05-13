@@ -63,7 +63,7 @@ pub enum TuiCommand {
     Guide(GuideArgs),
     /// Show request stats for debugging slow turns
     Stats(StatsArgs),
-    /// Set reasoning effort level
+    /// Set thinking effort for this session
     Effort(EffortArgs),
 }
 
@@ -319,7 +319,7 @@ impl TuiCommand {
             TuiCommand::Hooks(_) => "View configured hooks",
             TuiCommand::Guide(_) => "Get help with Kiro CLI features from the guide agent",
             TuiCommand::Stats(_) => "Show request IDs and timings for debugging slow turns",
-            TuiCommand::Effort(_) => "Set reasoning effort level",
+            TuiCommand::Effort(_) => "Set thinking effort for this session",
         }
     }
 
@@ -488,6 +488,7 @@ impl TuiCommand {
                 let mut meta = serde_json::Map::new();
                 meta.insert("inputType".into(), "selection".into());
                 meta.insert("hint".into(), "".into());
+                meta.insert("searchable".into(), false.into());
                 Some(meta)
             },
         };

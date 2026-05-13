@@ -169,9 +169,7 @@ export const CommandMenu: React.FC = () => {
     );
     const cmds = matches.filter(
       (c) =>
-        c.meta?.type !== 'prompt' &&
-        c.meta?.type !== 'skill' &&
-        !c.meta?.hidden
+        c.meta?.type !== 'prompt' && c.meta?.type !== 'skill' && !c.meta?.hidden
     );
     const promptCmds = matches.filter(
       (c) => c.meta?.type === 'prompt' || c.meta?.type === 'skill'

@@ -215,7 +215,9 @@ pub enum AcpSessionRequest {
         respond_to: oneshot::Sender<Result<(), String>>,
     },
     /// Get the current model ID for this session.
-    GetModelId { respond_to: oneshot::Sender<String> },
+    GetModelId {
+        respond_to: oneshot::Sender<String>,
+    },
     /// Cancel the current operation and end the turn.
     Cancel,
     /// Execute a slash command via an extension method.
@@ -257,7 +259,10 @@ pub enum AcpSessionRequest {
         respond_to: oneshot::Sender<agent::AgentHandle>,
     },
     /// Send an extension notification to the TUI client.
-    SendExtNotification { method: String, params: serde_json::Value },
+    SendExtNotification {
+        method: String,
+        params: serde_json::Value,
+    },
     /// Get tool info for advertising.
     GetToolInfo {
         respond_to: oneshot::Sender<Result<Vec<agent::tui_commands::ToolInfo>, String>>,
@@ -267,7 +272,9 @@ pub enum AcpSessionRequest {
         respond_to: oneshot::Sender<Result<Vec<agent::tui_commands::McpServerInfo>, String>>,
     },
     /// Graceful shutdown: terminate the agent and await MCP cleanup.
-    Shutdown { respond_to: oneshot::Sender<()> },
+    Shutdown {
+        respond_to: oneshot::Sender<()>,
+    },
     /// Trigger command/prompt advertising to the client.
     AdvertiseCommands,
     EmitInitialMetadata,
@@ -1122,6 +1129,8 @@ impl AcpSession {
         // Determine if loading existing session or creating new one
         // Track the model ID from a loaded session so we can restore it below
         let mut saved_model_id: Option<String> = None;
+        let mut saved_additional_fields: Option<crate::cli::chat::legacy::additional_fields::AdditionalModelFields> =
+            None;
 
         let (session_db, snapshot) = if builder.load {
             // Load existing session
@@ -1133,6 +1142,7 @@ impl AcpSession {
             saved_model_id = state
                 .rts_model_state()
                 .and_then(|s| s.model_info.as_ref().map(|m| m.model_id.clone()));
+            saved_additional_fields = state.rts_model_state().and_then(|s| s.additional_fields.clone());
 
             let conversation_id = Uuid::parse_str(&session_id_str)
                 .map_err(|_e| eyre::eyre!("Invalid session ID '{}': must be a valid UUID", session_id_str))?;
@@ -1206,6 +1216,13 @@ impl AcpSession {
             && let Err(e) = update_model_info(&api_client, &os.database, &rts_state, Some(model_id)).await
         {
             warn!("Failed to set CLI model override: {}", e);
+        }
+
+        // Restore saved effort/additional_fields from the loaded session (only if no CLI model override)
+        if builder.model_id.is_none()
+            && let Some(saved_af) = saved_additional_fields
+        {
+            rts_state.restore_additional_fields(saved_af);
         }
 
         let snapshot = {
@@ -1460,9 +1477,12 @@ impl AcpSession {
     }
 
     fn current_effort(&self) -> Option<String> {
-        self.rts_state
-            .additional_fields()
-            .and_then(|f| f.overrides().and_then(|o| o.pointer("/output_config/effort")).and_then(|v| v.as_str()).map(|s| s.to_string()))
+        self.rts_state.additional_fields().and_then(|f| {
+            f.overrides()
+                .and_then(|o| o.pointer("/output_config/effort"))
+                .and_then(|v| v.as_str())
+                .map(|s| s.to_string())
+        })
     }
 
     fn send_turn_metadata(&self, metadata: &agent::agent_loop::protocol::UserTurnMetadata) -> Result<(), sacp::Error> {
@@ -1900,6 +1920,9 @@ impl AcpSession {
 
                 let create_succeeded = is_agent_create && result.success;
                 let _ = respond_to.send(result);
+
+                // Persist state after commands (captures effort, model changes, etc.)
+                self.persist_session_state().await;
 
                 // Send metadata notification after every command (keeps TUI effort/context in sync)
                 let notification = super::schema::MetadataNotification {

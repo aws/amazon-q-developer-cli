@@ -540,7 +540,7 @@ pub struct RtsStateSnapshot {
     // within the ACP impl so cleanup will be done altogether.
     pub model_info: Option<ModelInfo>,
     pub context_usage_percentage: Option<f32>,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub additional_fields: Option<AdditionalModelFields>,
 }
 
@@ -616,19 +616,18 @@ impl RtsState {
     pub fn set_model_info(&self, info: Option<ModelInfo>) {
         let mut inner = self.inner.lock().unwrap();
         // Reset additional fields from the new model's schema (clears any prior overrides)
-        inner.additional_fields = info
-            .as_ref()
-            .and_then(|m| m.additional_fields.clone());
+        inner.additional_fields = info.as_ref().and_then(|m| m.additional_fields.clone());
         // Apply default effort for Claude models (only if not already set)
         if let (Some(model_info), Some(fields)) = (&info, &mut inner.additional_fields) {
-            let has_effort = fields.overrides()
+            let has_effort = fields
+                .overrides()
                 .and_then(|o| o.pointer("/output_config/effort"))
                 .is_some();
             if !has_effort {
                 let id = model_info.model_id.to_lowercase();
-                let default_effort = if id.contains("claude") && id.contains("4.7") {
+                let default_effort = if id.contains("claude-opus-4.7") {
                     Some("xhigh")
-                } else if id.contains("claude") && id.contains("4.6") {
+                } else if id.contains("claude-opus-4.6") || id.contains("claude-sonnet-4.6") {
                     Some("high")
                 } else {
                     None
@@ -661,6 +660,11 @@ impl RtsState {
             .as_mut()
             .ok_or_else(|| "model does not support additional fields".to_string())?;
         af.set(path, value)
+    }
+
+    /// Restore additional fields from a previously persisted snapshot.
+    pub fn restore_additional_fields(&self, fields: AdditionalModelFields) {
+        self.inner.lock().unwrap().additional_fields = Some(fields);
     }
 
     /// Get a serializable snapshot of the current state.

@@ -5,7 +5,10 @@
 //! and convert to the Smithy `Document` needed by the API.
 
 use aws_smithy_types::Document;
-use serde::{Deserialize, Serialize};
+use serde::{
+    Deserialize,
+    Serialize,
+};
 use serde_json::Value;
 
 /// Manages additional model request fields: schema validation and user overrides.
@@ -29,7 +32,10 @@ impl AdditionalModelFields {
 
     /// Create from a raw JSON schema value.
     pub fn from_schema(schema: Value) -> Self {
-        Self { schema, overrides: None }
+        Self {
+            schema,
+            overrides: None,
+        }
     }
 
     /// Flatten the schema into dotted paths → allowed enum values for display.
@@ -48,10 +54,7 @@ impl AdditionalModelFields {
     fn flatten_recursive(obj: &Value, prefix: &str, result: &mut Vec<(String, Vec<String>)>) {
         // If this field has an enum, it's a leaf
         if let Some(enums) = obj.get("enum").and_then(|v| v.as_array()) {
-            let values: Vec<String> = enums
-                .iter()
-                .filter_map(|v| v.as_str().map(|s| s.to_string()))
-                .collect();
+            let values: Vec<String> = enums.iter().filter_map(|v| v.as_str().map(|s| s.to_string())).collect();
             if !values.is_empty() {
                 result.push((prefix.to_string(), values));
             }
@@ -75,17 +78,20 @@ impl AdditionalModelFields {
                 } else {
                     Err(format!(
                         "invalid value '{}' for '{}', must be one of: {}",
-                        value, path, allowed.join(", ")
+                        value,
+                        path,
+                        allowed.join(", ")
                     ))
                 }
-            }
+            },
             None => {
                 let available: Vec<&str> = fields.iter().map(|(p, _)| p.as_str()).collect();
                 Err(format!(
                     "unknown field '{}', available fields: {}",
-                    path, available.join(", ")
+                    path,
+                    available.join(", ")
                 ))
-            }
+            },
         }
     }
 
@@ -132,15 +138,11 @@ fn document_to_value(doc: &Document) -> Value {
         Document::Number(n) => match *n {
             aws_smithy_types::Number::PosInt(i) => Value::Number(i.into()),
             aws_smithy_types::Number::NegInt(i) => Value::Number(i.into()),
-            aws_smithy_types::Number::Float(f) => {
-                serde_json::Number::from_f64(f).map_or(Value::Null, Value::Number)
-            }
+            aws_smithy_types::Number::Float(f) => serde_json::Number::from_f64(f).map_or(Value::Null, Value::Number),
         },
         Document::String(s) => Value::String(s.clone()),
         Document::Array(arr) => Value::Array(arr.iter().map(document_to_value).collect()),
-        Document::Object(map) => {
-            Value::Object(map.iter().map(|(k, v)| (k.clone(), document_to_value(v))).collect())
-        }
+        Document::Object(map) => Value::Object(map.iter().map(|(k, v)| (k.clone(), document_to_value(v))).collect()),
     }
 }
 
@@ -150,19 +152,19 @@ pub fn value_to_document(value: &Value) -> Document {
         Value::Null => Document::Null,
         Value::Bool(b) => Document::Bool(*b),
         Value::Number(n) => {
-            if let Some(i) = n.as_i64() {
-                Document::Number(aws_smithy_types::Number::PosInt(i as u64))
+            if let Some(u) = n.as_u64() {
+                Document::Number(aws_smithy_types::Number::PosInt(u))
+            } else if let Some(i) = n.as_i64() {
+                Document::Number(aws_smithy_types::Number::NegInt(i))
             } else if let Some(f) = n.as_f64() {
                 Document::Number(aws_smithy_types::Number::Float(f))
             } else {
                 Document::Null
             }
-        }
+        },
         Value::String(s) => Document::String(s.clone()),
         Value::Array(arr) => Document::Array(arr.iter().map(value_to_document).collect()),
-        Value::Object(map) => {
-            Document::Object(map.iter().map(|(k, v)| (k.clone(), value_to_document(v))).collect())
-        }
+        Value::Object(map) => Document::Object(map.iter().map(|(k, v)| (k.clone(), value_to_document(v))).collect()),
     }
 }
 
@@ -189,7 +191,10 @@ mod tests {
                 }
             }
         });
-        AdditionalModelFields { schema, overrides: None }
+        AdditionalModelFields {
+            schema,
+            overrides: None,
+        }
     }
 
     #[test]
@@ -197,7 +202,11 @@ mod tests {
         let af = sample();
         let flat = af.flatten_schema();
         assert!(flat.contains(&("output_config.effort".into(), vec![
-            "low".into(), "medium".into(), "high".into(), "xhigh".into(), "max".into()
+            "low".into(),
+            "medium".into(),
+            "high".into(),
+            "xhigh".into(),
+            "max".into()
         ])));
         assert!(flat.contains(&("thinking.type".into(), vec!["adaptive".into(), "disabled".into()])));
         assert!(flat.contains(&("thinking.display".into(), vec!["summarized".into(), "omitted".into()])));
@@ -273,9 +282,15 @@ mod tests {
                 }
             }
         });
-        let af = AdditionalFields { schema, overrides: None };
+        let af = AdditionalModelFields {
+            schema,
+            overrides: None,
+        };
         let flat = af.flatten_schema();
-        assert_eq!(flat, vec![("thinking.budget.mode".into(), vec!["auto".into(), "fixed".into()])]);
+        assert_eq!(flat, vec![("thinking.budget.mode".into(), vec![
+            "auto".into(),
+            "fixed".into()
+        ])]);
     }
 
     #[test]
@@ -296,7 +311,10 @@ mod tests {
                 }
             }
         });
-        let mut af = AdditionalFields { schema, overrides: None };
+        let mut af = AdditionalModelFields {
+            schema,
+            overrides: None,
+        };
         af.set("thinking.budget.mode", "fixed").unwrap();
         assert_eq!(af.overrides.as_ref().unwrap()["thinking"]["budget"]["mode"], "fixed");
     }

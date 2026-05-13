@@ -402,7 +402,6 @@ interface BaseAppActions {
   setApprovalMode: (mode: 'dropdown' | 'drill-in') => void;
   setAutoApproveCrewTools: (value: boolean) => void;
   setCurrentModel: (model: { id: string; name: string } | null) => void;
-  currentEffort: string | null;
   setCurrentEffort: (effort: string | null) => void;
   setCurrentAgent: (
     agent: { name: string; welcomeMessage?: string } | null

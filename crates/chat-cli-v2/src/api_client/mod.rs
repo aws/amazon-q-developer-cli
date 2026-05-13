@@ -570,30 +570,21 @@ impl IpcMockApiClient {
 
     pub async fn list_available_models_cached(&self) -> Result<ModelListResult, ApiClientError> {
         // Return mock models for testing
-        use aws_smithy_types::Document;
-        let schema = Document::Object(
-            [
-                ("type".to_string(), Document::String("object".to_string())),
-                ("properties".to_string(), Document::Object(
-                    [("output_config".to_string(), Document::Object(
-                        [("type".to_string(), Document::String("object".to_string())),
-                         ("properties".to_string(), Document::Object(
-                            [("effort".to_string(), Document::Object(
-                                [("type".to_string(), Document::String("string".to_string())),
-                                 ("enum".to_string(), Document::Array(vec![
-                                    Document::String("low".to_string()),
-                                    Document::String("medium".to_string()),
-                                    Document::String("high".to_string()),
-                                    Document::String("xhigh".to_string()),
-                                    Document::String("max".to_string()),
-                                 ]))].into_iter().collect(),
-                            ))].into_iter().collect(),
-                         ))].into_iter().collect(),
-                    ))].into_iter().collect(),
-                )),
-            ].into_iter().collect(),
-        );
-        let models: Vec<Model> = [
+        let schema = json_to_document(&serde_json::json!({
+            "type": "object",
+            "properties": {
+                "output_config": {
+                    "type": "object",
+                    "properties": {
+                        "effort": {
+                            "type": "string",
+                            "enum": ["low", "medium", "high", "xhigh", "max"]
+                        }
+                    }
+                }
+            }
+        }));
+        let mut models: Vec<Model> = [
             ("claude-opus-4.7", "Claude Opus 4.7"),
             ("claude-sonnet-4.6", "Claude Sonnet 4.6"),
             ("Auto", "Auto"),
@@ -605,13 +596,23 @@ impl IpcMockApiClient {
             ("qwen3-coder-480b", "Qwen3 Coder 480B"),
         ]
         .into_iter()
-        .map(|(id, name)| Model::builder()
-            .model_id(id)
-            .model_name(name)
-            .additional_model_request_fields_schema(schema.clone())
-            .build()
-            .unwrap())
+        .map(|(id, name)| {
+            Model::builder()
+                .model_id(id)
+                .model_name(name)
+                .additional_model_request_fields_schema(schema.clone())
+                .build()
+                .unwrap()
+        })
         .collect();
+        // Model without effort support (no additional_fields schema)
+        models.push(
+            Model::builder()
+                .model_id("amazon-nova-pro")
+                .model_name("Amazon Nova Pro")
+                .build()
+                .unwrap(),
+        );
         let default_model = models[0].clone();
         Ok(ModelListResult { models, default_model })
     }
@@ -1100,7 +1101,8 @@ impl RealApiClient {
                 .generate_assistant_response()
                 .conversation_state(conversation_state)
                 .set_additional_model_request_fields(
-                    additional_model_request_fields.map(|v| crate::cli::chat::legacy::additional_fields::value_to_document(&v))
+                    additional_model_request_fields
+                        .map(|v| crate::cli::chat::legacy::additional_fields::value_to_document(&v)),
                 )
                 .set_profile_arn(self.optional_profile_arn().await)
                 .send()

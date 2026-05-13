@@ -831,7 +831,10 @@ export const InlineLayout: React.FC = () => {
             })}
             hint={
               promptHint ||
-              (activeCommand?.command.meta?.hint as string | undefined)
+              (activeCommand?.command.meta?.hint as string | undefined) ||
+              (activeCommand && activeCommand.command.meta?.searchable === false
+                ? activeCommand.command.description
+                : undefined)
             }
             hideInput={
               editingQueueIndex != null
