@@ -808,7 +808,6 @@ abstract class BaseAcpClient implements SessionClient {
       // KAS-specific update types — log and skip for now
       case 'session_info_update':
       case 'config_option_update':
-      case 'current_mode_update':
       case 'plan':
       case 'usage_update':
       case 'agent_thought_chunk':
@@ -817,6 +816,17 @@ abstract class BaseAcpClient implements SessionClient {
           update.sessionUpdate
         );
         return null;
+
+      case 'current_mode_update': {
+        const modeId = (update as { currentModeId?: string }).currentModeId;
+        if (modeId) {
+          return {
+            type: AgentEventType.AgentSwitched,
+            agentName: modeId,
+          };
+        }
+        return null;
+      }
 
       default:
         logger.debug(
@@ -1419,6 +1429,7 @@ export class KasAcpClient extends BaseAcpClient {
           configId: 'mode',
           value: mode,
         });
+        this.modesState = { ...this.modesState, currentModeId: mode };
       } catch (e) {
         logger.debug('Failed to set mode:', e);
       }
@@ -1434,7 +1445,7 @@ export class KasAcpClient extends BaseAcpClient {
         ) ?? extractModel(r.models),
       // TODO: Remove cast once @kiro/client adds `modes` to NewSessionResponse
       currentAgent: extractCurrentAgent(
-        (r as { modes?: Parameters<typeof extractCurrentAgent>[0] }).modes
+        this.modesState
       ),
     };
   }
