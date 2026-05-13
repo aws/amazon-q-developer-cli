@@ -122,6 +122,8 @@ const mockKiroListSessions = mock(() =>
 const mockSessionUpdateDispose = mock(() => {});
 const mockPermissionRequestDispose = mock(() => {});
 
+let capturedKiroClientConfig: any = null;
+
 const MockKiroClient = class {
   initialize = mockKiroInitialize;
   newSession = mockKiroNewSession;
@@ -139,7 +141,9 @@ const MockKiroClient = class {
     capturedPermissionHandler = handler;
     return { dispose: mockPermissionRequestDispose };
   });
-  constructor(_config: any) {}
+  constructor(config: any) {
+    capturedKiroClientConfig = config;
+  }
 };
 
 mock.module('@kiro/client', () => ({
@@ -184,6 +188,7 @@ function freshMocks() {
   mockKiroListSessions.mockClear();
   capturedSessionUpdateHandler = null;
   capturedPermissionHandler = null;
+  capturedKiroClientConfig = null;
   mockSessionUpdateDispose.mockClear();
   mockPermissionRequestDispose.mockClear();
   mockSpawn.mockImplementation((_cmd: string, _args: string[], _opts: any) => {
@@ -221,6 +226,11 @@ describe('KasAcpClient', () => {
     const [_cmd, args] = mockSpawn.mock.calls[0]!;
     expect(args).toContain('--experimental-wasm-modules');
     expect(args).toContain('--transport=stdio');
+  });
+
+  it('declares knowledge capability in clientMeta', () => {
+    const _client = new KasAcpClient();
+    expect(capturedKiroClientConfig?.clientMeta?.knowledge).toBe(true);
   });
 
   it('close() calls kill("SIGTERM") on the agent process', () => {
