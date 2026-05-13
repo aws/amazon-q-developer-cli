@@ -23,6 +23,14 @@ export function buildKasSettings(): KasSettings | undefined {
   const raw = readCliSettings();
   const settings: KasSettings = {};
 
+  // ─── CLI defaults: tools that were always-on for CLI before settings-driven gating ───
+  // These default to enabled unless explicitly disabled by the user.
+  const cliDefaults: Record<string, boolean> = {
+    codeIntelligence: true,
+    knowledge: true,
+    toolSearch: true,
+  };
+
   // ─── Boolean feature flags → { enabled: bool } ─────────────────────
   const boolMappings: Array<[string, string]> = [
     ['chat.enableThinking', 'thinking'],
@@ -40,6 +48,13 @@ export function buildKasSettings(): KasSettings | undefined {
     const val = raw[cliKey];
     if (typeof val === 'boolean') {
       settings[agentKey] = { enabled: val };
+    }
+  }
+
+  // Apply CLI defaults for tools not explicitly configured
+  for (const [key, defaultEnabled] of Object.entries(cliDefaults)) {
+    if (!(key in settings)) {
+      settings[key] = { enabled: defaultEnabled };
     }
   }
 
