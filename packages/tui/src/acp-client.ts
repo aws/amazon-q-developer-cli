@@ -1819,11 +1819,20 @@ export class KasAcpClient extends BaseAcpClient {
     const result = await this.callExtMethod('_kiro/knowledge', params);
     if (!result.success) return result;
 
-    const data = result.data as { entries?: unknown[]; message?: string } | undefined;
+    const data = result.data as
+      | { entries?: unknown[]; message?: string }
+      | undefined;
+    // 'show' returns entries (triggers panel). Mutations return message (triggers alert).
+    if (subcommand === 'show') {
+      return {
+        success: true,
+        message: '',
+        data: { entries: data?.entries ?? [] },
+      };
+    }
     return {
       success: true,
       message: data?.message ?? '',
-      data: { entries: data?.entries ?? [] },
     };
   }
 
