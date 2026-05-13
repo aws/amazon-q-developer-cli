@@ -38,6 +38,30 @@ pub struct RetrievedChunk {
     pub relevance: f64,
 }
 
+/// Pluggable retriever backend. Production uses Bedrock; tests use a stub.
+#[async_trait::async_trait]
+pub trait Retriever: Send + Sync {
+    async fn retrieve(&self, input: &SearchInput) -> anyhow::Result<Vec<RetrievedChunk>>;
+}
+
+/// Render retrieved chunks into the agent-facing string format.
+pub fn format_chunks(chunks: &[RetrievedChunk]) -> String {
+    if chunks.is_empty() {
+        return "No relevant results found.".to_string();
+    }
+    let mut out = String::new();
+    for (i, chunk) in chunks.iter().enumerate() {
+        out.push_str(&format!(
+            "[{n}] {path} (relevance: {rel:.2})\n    {content}\n\n",
+            n = i + 1,
+            path = chunk.source_path,
+            rel = chunk.relevance,
+            content = chunk.content,
+        ));
+    }
+    out.trim_end().to_string()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -72,5 +96,32 @@ mod tests {
             "source_filter": "bogus"
         }));
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn format_chunks_renders_numbered_chunks() {
+        let chunks = vec![
+            RetrievedChunk {
+                source_path: "docs/auth.md".into(),
+                content: "Run kiro-cli login.".into(),
+                relevance: 0.9123,
+            },
+            RetrievedChunk {
+                source_path: "github_issue:kiro-team/kiro-cli#42".into(),
+                content: "Login hangs on Linux.".into(),
+                relevance: 0.7000,
+            },
+        ];
+        let rendered = format_chunks(&chunks);
+        assert!(rendered.contains("[1] docs/auth.md (relevance: 0.91)"));
+        assert!(rendered.contains("Run kiro-cli login."));
+        assert!(rendered.contains("[2] github_issue:kiro-team/kiro-cli#42 (relevance: 0.70)"));
+        assert!(rendered.contains("Login hangs on Linux."));
+    }
+
+    #[test]
+    fn format_chunks_handles_empty_input() {
+        let rendered = format_chunks(&[]);
+        assert_eq!(rendered, "No relevant results found.");
     }
 }
