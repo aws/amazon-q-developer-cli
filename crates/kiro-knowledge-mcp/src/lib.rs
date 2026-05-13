@@ -1,5 +1,7 @@
 //! MCP stdio server backed by an Amazon Bedrock Knowledge Base.
 
+pub mod retrieve;
+
 use serde::{
     Deserialize,
     Serialize,
