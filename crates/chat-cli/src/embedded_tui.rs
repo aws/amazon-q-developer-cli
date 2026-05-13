@@ -2,12 +2,9 @@ use std::path::{
     Path,
     PathBuf,
 };
-use std::process::ExitCode;
-use std::time::{
-    Duration,
-    Instant,
-};
+use std::time::Instant;
 
+pub use chat_cli_v2::launch_options::TuiAssetPaths;
 use eyre::{
     Context as _,
     Result,
@@ -17,29 +14,17 @@ use tracing::{
     info,
 };
 
-use crate::cli::chat::{
-    AgentEngine,
-    AgentMode,
-};
 use crate::os::Os;
 use crate::util::paths::{
     bun_path,
     bun_sha256_path,
     kas_bundle_dir,
     kas_bundle_sha256_path,
-    kas_token_path,
     node_path,
     node_sha256_path,
     tui_js_path,
     tui_js_sha256_path,
 };
-
-/// Paths to the bun executable and TUI JS file to use
-#[derive(Debug, Clone)]
-pub struct TuiAssetPaths {
-    pub bun_path: PathBuf,
-    pub tui_js_path: PathBuf,
-}
 
 const BUN_RUNTIME: &[u8] = include_bytes!(concat!(env!("OUT_DIR"), "/bun_embedded"));
 const BUN_RUNTIME_SHA256: &[u8] = match option_env!("BUN_RUNTIME_SHA256") {
@@ -93,31 +78,6 @@ pub async fn extract_tui_assets_if_needed(os: &Os) -> Result<TuiAssetPaths> {
         bun_path: bun_path()?,
         tui_js_path: tui_js_path()?,
     })
-}
-
-/// Determine the `FORCE_COLOR` value to pass to the bun/chalk process.
-///
-/// Returns `None` when color should not be forced (i.e. `NO_COLOR` is set),
-/// otherwise returns the appropriate chalk color level:
-/// - User's explicit `FORCE_COLOR` value if already set
-/// - `"3"` (truecolor) when `COLORTERM` is `truecolor` or `24bit`
-/// - `"2"` (256-color) as fallback
-///
-/// ES module imports are hoisted so env vars must be set before bun starts,
-/// not in JS top-level code. Without this, chalk downgrades hex colors to
-/// ANSI 256/basic codes which some terminals render incorrectly (e.g. gray
-/// as black on non-standard palettes).
-fn resolve_force_color(no_color: bool, force_color: Option<String>, colorterm: Option<&str>) -> Option<String> {
-    if no_color {
-        return None;
-    }
-    if let Some(val) = force_color {
-        return Some(val);
-    }
-    match colorterm {
-        Some("truecolor" | "24bit") => Some("3".to_string()),
-        _ => Some("2".to_string()),
-    }
 }
 
 /// Extract embedded KAS assets (node binary + acp-server.js + node_modules) if needed.
@@ -194,130 +154,6 @@ pub async fn extract_kas_assets_if_needed(os: &Os) -> Result<Option<(PathBuf, Pa
         .join("server")
         .join("acp-server.js");
     Ok(Some((node_extract_path, server_path)))
-}
-/// Launch the V2 TUI. Extracts embedded assets and spawns bun with the TUI JS bundle.
-pub async fn launch_v2(os: &Os, agent_engine: AgentEngine, mode: Option<AgentMode>) -> Result<ExitCode> {
-    let asset_paths = extract_tui_assets_if_needed(os).await?;
-
-    let args: Vec<String> = std::env::args().collect();
-    let current_exe = std::env::current_exe()?;
-
-    let force_color = resolve_force_color(
-        std::env::var_os("NO_COLOR").is_some(),
-        std::env::var("FORCE_COLOR").ok(),
-        std::env::var("COLORTERM").ok().as_deref(),
-    );
-
-    let mut cmd = tokio::process::Command::new(&asset_paths.bun_path);
-    cmd.arg(&asset_paths.tui_js_path)
-        .args(&args[1..])
-        .env("JSC_numberOfGCMarkers", "1")
-        .env("KIRO_FEED_JSON", include_str!("cli/feed.json"))
-        .kill_on_drop(true);
-    if let Some(ref force_color) = force_color {
-        cmd.env("FORCE_COLOR", force_color);
-    }
-
-    // Resolve telemetry identity for the TUI
-    let telemetry_enabled = !crate::util::env_var::is_telemetry_disabled()
-        && os
-            .database
-            .settings
-            .get_bool(crate::database::settings::Setting::TelemetryEnabled)
-            .unwrap_or(true);
-    cmd.env("KIRO_TELEMETRY_ENABLED", telemetry_enabled.to_string());
-
-    match agent_engine {
-        AgentEngine::Kas => {
-            // Resolve user identity for KAS telemetry (not needed for Rust engine)
-            if let Ok(Ok(output)) = tokio::time::timeout(Duration::from_secs(5), os.client.get_usage_limits()).await
-                && let Some(info) = output.user_info()
-            {
-                cmd.env("KIRO_USER_ID", info.user_id());
-            }
-
-            let token_path = kas_token_path(os)?;
-            cmd.env("KIRO_KAS_TOKEN_PATH", &token_path);
-            cmd.env("KIRO_AGENT_ENGINE", "kas");
-
-            if let Ok(kas_server_path) = std::env::var("KIRO_KAS_SERVER_PATH") {
-                cmd.env("KIRO_AGENT_PATH", "node");
-                cmd.env("KIRO_KAS_SERVER_PATH", &kas_server_path);
-                info!("Using KAS agent engine, server path override: {}", kas_server_path);
-            } else if let Some((node_bin, server_js)) = extract_kas_assets_if_needed(os).await? {
-                cmd.env("KIRO_AGENT_PATH", &node_bin);
-                cmd.env("KIRO_KAS_SERVER_PATH", &server_js);
-                info!(
-                    "Using KAS agent engine, embedded node: {}, server: {}",
-                    node_bin.display(),
-                    server_js.display()
-                );
-            } else {
-                cmd.env("KIRO_AGENT_PATH", "node");
-                info!("Using KAS agent engine, server resolved from @kiro/agent package");
-            }
-        },
-        AgentEngine::Rust => {
-            cmd.env("KIRO_AGENT_PATH", &current_exe);
-        },
-    }
-
-    if let Some(mode) = mode {
-        cmd.env("KIRO_MODE", mode.to_string());
-    }
-
-    let mut child = cmd.spawn()?;
-
-    // Kill the child on SIGTERM, SIGHUP, or Ctrl-C. Without this the default
-    // signal handler terminates the process without running destructors, so
-    // kill_on_drop never fires and bun becomes an orphan at 100% CPU.
-    // SIGHUP is sent when the terminal tab/window is closed (Cmd+W).
-    let status;
-
-    #[cfg(unix)]
-    {
-        use tokio::signal::unix::{
-            SignalKind,
-            signal,
-        };
-        let mut sigterm = signal(SignalKind::terminate())?;
-        let mut sighup = signal(SignalKind::hangup())?;
-        tokio::select! {
-            s = child.wait() => {
-                status = Some(s?);
-            }
-            _ = sigterm.recv() => {
-                let _ = child.kill().await;
-                status = None;
-            }
-            _ = sighup.recv() => {
-                let _ = child.kill().await;
-                status = None;
-            }
-            _ = tokio::signal::ctrl_c() => {
-                let _ = child.kill().await;
-                status = None;
-            }
-        }
-    }
-    #[cfg(not(unix))]
-    {
-        tokio::select! {
-            s = child.wait() => {
-                status = Some(s?);
-            }
-            _ = tokio::signal::ctrl_c() => {
-                let _ = child.kill().await;
-                status = None;
-            }
-        }
-    }
-
-    let exit_code = status
-        .and_then(|s| s.code())
-        .map_or(ExitCode::FAILURE, |e| ExitCode::from(e as u8));
-
-    Ok(exit_code)
 }
 
 async fn extract_tui_assets_if_needed_impl(
@@ -538,36 +374,5 @@ mod tests {
         assert_eq!(bun_sha_content, BUN_RUNTIME_SHA256);
         assert_eq!(tui_content, TUI_JS);
         assert_eq!(tui_sha_content, TUI_JS_SHA256);
-    }
-
-    #[test]
-    fn test_resolve_force_color_no_color_set() {
-        assert_eq!(resolve_force_color(true, None, None), None);
-    }
-
-    #[test]
-    fn test_resolve_force_color_no_color_overrides_force_color() {
-        assert_eq!(resolve_force_color(true, Some("3".into()), Some("truecolor")), None);
-    }
-
-    #[test]
-    fn test_resolve_force_color_respects_explicit_force_color() {
-        assert_eq!(resolve_force_color(false, Some("1".into()), None), Some("1".into()));
-    }
-
-    #[test]
-    fn test_resolve_force_color_truecolor() {
-        assert_eq!(resolve_force_color(false, None, Some("truecolor")), Some("3".into()));
-    }
-
-    #[test]
-    fn test_resolve_force_color_24bit() {
-        assert_eq!(resolve_force_color(false, None, Some("24bit")), Some("3".into()));
-    }
-
-    #[test]
-    fn test_resolve_force_color_fallback() {
-        assert_eq!(resolve_force_color(false, None, None), Some("2".into()));
-        assert_eq!(resolve_force_color(false, None, Some("256color")), Some("2".into()));
     }
 }

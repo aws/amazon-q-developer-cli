@@ -143,9 +143,12 @@ pub enum RootSubcommand {
         /// Trust only this set of tools
         #[arg(long, value_delimiter = ',', value_name = "TOOL_NAMES")]
         trust_tools: Option<Vec<String>>,
-        /// Agent engine to use: "rust" (default) or "kas" (TypeScript KAS agent)
-        #[arg(long, value_name = "ENGINE", default_value_t = chat::AgentEngine::Rust)]
+        /// Agent engine to use: "v1", "v2" (default), or "kas"
+        #[arg(long, value_name = "ENGINE", default_value_t = chat::AgentEngine::V2)]
         agent_engine: chat::AgentEngine,
+        /// Path to the KAS token file (resolved internally if not provided)
+        #[arg(long)]
+        token_path: Option<PathBuf>,
     },
     /// ACP test client
     #[command(hide = true)]
@@ -257,7 +260,7 @@ impl RootSubcommand {
                 Self::Settings(settings_args) => settings_args.execute(os).await,
                 Self::Issue(args) => args.execute(os).await,
                 Self::Version { changelog } => Cli::print_version(changelog),
-                Self::Chat(args) => {
+                Self::Chat(mut args) => {
                     // Handle --list-models before TUI launch
                     if args.list_models {
                         return crate::cli::chat::cli::model::print_model_list(os, args.format)
@@ -282,13 +285,17 @@ impl RootSubcommand {
 
                     let tui_available =
                         crate::embedded_tui::are_assets_embedded(os) || std::env::var(KIRO_TEST_TUI_JS_PATH).is_ok();
-                    if args.should_launch_tui(os).should_launch() && tui_available {
-                        crate::embedded_tui::launch_v2(os, args.resolve_agent_engine(os), args.mode).await
-                    } else {
-                        if args.should_launch_tui(os).should_launch() {
-                            tracing::error!("TUI requested but assets not available, falling back to legacy UI");
-                        }
-                        args.execute(os).await
+                    let engine = args.resolve_agent_engine(os)?;
+                    match engine {
+                        chat::AgentEngine::V1 => args.execute(os).await,
+                        chat::AgentEngine::V2 | chat::AgentEngine::Kas => {
+                            if !args.no_interactive && !tui_available {
+                                tracing::error!("TUI assets not available, falling back to legacy UI");
+                                args.execute(os).await
+                            } else {
+                                launch_acp_session(os, &mut args, engine).await
+                            }
+                        },
                     }
                 },
                 Self::Mcp(args) => args.execute(os, &mut std::io::stderr()).await,
@@ -299,9 +306,10 @@ impl RootSubcommand {
                     trust_all_tools,
                     trust_tools,
                     agent_engine,
+                    token_path,
                 } => {
                     if agent_engine == chat::AgentEngine::Kas {
-                        return execute_kas_acp(os).await;
+                        return execute_kas_acp(os, token_path).await;
                     }
                     use std::sync::Arc;
 
@@ -342,7 +350,7 @@ impl RootSubcommand {
             Self::Settings(settings_args) => settings_args.execute(os).await,
             Self::Issue(args) => args.execute(os).await,
             Self::Version { changelog } => Cli::print_version(changelog),
-            Self::Chat(args) => {
+            Self::Chat(mut args) => {
                 // Handle --list-models before TUI launch
                 if args.list_models {
                     return crate::cli::chat::cli::model::print_model_list(os, args.format)
@@ -371,24 +379,24 @@ impl RootSubcommand {
 
                 let tui_available =
                     crate::embedded_tui::are_assets_embedded(os) || std::env::var(KIRO_TEST_TUI_JS_PATH).is_ok();
-                let should_launch_tui = args.should_launch_tui(os);
+                let engine = args.resolve_agent_engine(os)?;
                 let is_tui_supported = crate::util::system_info::is_tui_supported();
-                tracing::debug!(
-                    ?should_launch_tui,
-                    is_tui_supported,
-                    tui_available,
-                    "TUI launch decision"
-                );
-                if should_launch_tui.should_launch() && is_tui_supported && tui_available {
-                    crate::embedded_tui::launch_v2(os, args.resolve_agent_engine(os), args.mode).await
-                } else {
-                    if should_launch_tui.should_launch() && !tui_available {
-                        tracing::error!("TUI requested but assets not available, falling back to legacy UI");
-                    }
-                    if !is_tui_supported && should_launch_tui.is_user_requested() {
-                        eprintln!("The TUI is currently not supported for the current platform");
-                    }
-                    args.execute(os).await
+                tracing::debug!(?engine, is_tui_supported, tui_available, "launch decision");
+                match engine {
+                    chat::AgentEngine::V1 => args.execute(os).await,
+                    chat::AgentEngine::V2 | chat::AgentEngine::Kas => {
+                        if !args.no_interactive && (!is_tui_supported || !tui_available) {
+                            if !tui_available {
+                                tracing::error!("TUI assets not available, falling back to legacy UI");
+                            }
+                            if !is_tui_supported {
+                                eprintln!("The TUI is currently not supported for the current platform");
+                            }
+                            args.execute(os).await
+                        } else {
+                            launch_acp_session(os, &mut args, engine).await
+                        }
+                    },
                 }
             },
             Self::Mcp(args) => args.execute(os, &mut std::io::stderr()).await,
@@ -399,9 +407,10 @@ impl RootSubcommand {
                 trust_all_tools,
                 trust_tools,
                 agent_engine,
+                token_path,
             } => {
                 if agent_engine == chat::AgentEngine::Kas {
-                    return execute_kas_acp(os).await;
+                    return execute_kas_acp(os, token_path).await;
                 }
                 use std::sync::Arc;
 
@@ -429,10 +438,25 @@ impl RootSubcommand {
     }
 }
 
+/// Build [`LaunchOptions`] and launch the ACP session.
+/// When `--no-interactive` is set, resolves the prompt input from CLI args or
+/// stdin and selects the non-interactive variant; otherwise runs the
+/// interactive TUI.
+async fn launch_acp_session(os: &Os, args: &mut ChatArgs, agent_engine: chat::AgentEngine) -> Result<ExitCode> {
+    let mode = args.mode;
+    let options = if args.no_interactive {
+        let input = args.resolve_non_interactive_input()?;
+        crate::launch::LaunchOptions::non_interactive(agent_engine, mode, input, args.trust_all_tools)
+    } else {
+        crate::launch::LaunchOptions::interactive(agent_engine, mode)
+    };
+    crate::launch::launch(options, os).await
+}
+
 /// Spawn the KAS TypeScript agent as an ACP server over stdio.
 /// Extracts embedded node + KAS assets if needed, then execs
 /// `node --experimental-wasm-modules acp-server.js --transport=stdio`.
-async fn execute_kas_acp(os: &Os) -> Result<ExitCode> {
+async fn execute_kas_acp(os: &Os, token_path: Option<PathBuf>) -> Result<ExitCode> {
     let (node_bin, server_js) = if let Ok(kas_server_path) = std::env::var("KIRO_KAS_SERVER_PATH") {
         (PathBuf::from("node"), PathBuf::from(kas_server_path))
     } else if let Some(paths) = crate::embedded_tui::extract_kas_assets_if_needed(os).await? {
@@ -440,6 +464,8 @@ async fn execute_kas_acp(os: &Os) -> Result<ExitCode> {
     } else {
         bail!("KAS assets not embedded and KIRO_KAS_SERVER_PATH not set");
     };
+
+    let token_path = token_path.map_or_else(|| crate::util::paths::kas_token_path(os), Ok)?;
 
     debug!(
         "Spawning KAS ACP: {} --experimental-wasm-modules {} --transport=stdio",
@@ -451,6 +477,7 @@ async fn execute_kas_acp(os: &Os) -> Result<ExitCode> {
         .arg("--experimental-wasm-modules")
         .arg(&server_js)
         .arg("--transport=stdio")
+        .arg(format!("--token-path={}", token_path.display()))
         .stdin(std::process::Stdio::inherit())
         .stdout(std::process::Stdio::inherit())
         .stderr(std::process::Stdio::inherit())
@@ -1107,5 +1134,167 @@ mod test {
                 ..Default::default()
             })
         );
+    }
+
+    mod resolve_agent_engine {
+        use super::*;
+
+        async fn make_os() -> crate::os::Os {
+            crate::os::Os::new().await.unwrap()
+        }
+
+        #[tokio::test]
+        async fn defaults_to_v1_when_stdin_not_terminal() {
+            // In test environments stdin is piped, so default is V1
+            let os = make_os().await;
+            let args = ChatArgs::default();
+            assert_eq!(args.resolve_agent_engine(&os).unwrap(), chat::AgentEngine::V1);
+        }
+
+        #[tokio::test]
+        async fn defaults_to_v1_non_interactive() {
+            let os = make_os().await;
+            let args = ChatArgs {
+                no_interactive: true,
+                ..Default::default()
+            };
+            assert_eq!(args.resolve_agent_engine(&os).unwrap(), chat::AgentEngine::V1);
+        }
+
+        #[tokio::test]
+        async fn explicit_engine_overrides_default() {
+            let os = make_os().await;
+            let args = ChatArgs {
+                agent_engine: Some(chat::AgentEngine::Kas),
+                ..Default::default()
+            };
+            assert_eq!(args.resolve_agent_engine(&os).unwrap(), chat::AgentEngine::Kas);
+        }
+
+        #[tokio::test]
+        async fn explicit_v2_in_non_interactive() {
+            let os = make_os().await;
+            let args = ChatArgs {
+                no_interactive: true,
+                agent_engine: Some(chat::AgentEngine::V2),
+                ..Default::default()
+            };
+            assert_eq!(args.resolve_agent_engine(&os).unwrap(), chat::AgentEngine::V2);
+        }
+
+        #[tokio::test]
+        async fn legacy_ui_flag_defaults_to_v1() {
+            let os = make_os().await;
+            let args = ChatArgs {
+                legacy_ui: true,
+                ..Default::default()
+            };
+            assert_eq!(args.resolve_agent_engine(&os).unwrap(), chat::AgentEngine::V1);
+        }
+
+        #[tokio::test]
+        async fn tui_flag_with_explicit_v2() {
+            let os = make_os().await;
+            let args = ChatArgs {
+                tui: true,
+                agent_engine: Some(chat::AgentEngine::V2),
+                ..Default::default()
+            };
+            assert_eq!(args.resolve_agent_engine(&os).unwrap(), chat::AgentEngine::V2);
+        }
+
+        #[tokio::test]
+        async fn conflict_legacy_ui_with_kas() {
+            let os = make_os().await;
+            let args = ChatArgs {
+                legacy_ui: true,
+                agent_engine: Some(chat::AgentEngine::Kas),
+                ..Default::default()
+            };
+            assert!(args.resolve_agent_engine(&os).is_err());
+        }
+
+        #[tokio::test]
+        async fn conflict_legacy_ui_with_v2() {
+            let os = make_os().await;
+            let args = ChatArgs {
+                legacy_ui: true,
+                agent_engine: Some(chat::AgentEngine::V2),
+                ..Default::default()
+            };
+            assert!(args.resolve_agent_engine(&os).is_err());
+        }
+
+        #[tokio::test]
+        async fn conflict_tui_with_v1() {
+            let os = make_os().await;
+            let args = ChatArgs {
+                tui: true,
+                agent_engine: Some(chat::AgentEngine::V1),
+                ..Default::default()
+            };
+            assert!(args.resolve_agent_engine(&os).is_err());
+        }
+
+        #[tokio::test]
+        async fn legacy_ui_with_v1_is_ok() {
+            let os = make_os().await;
+            let args = ChatArgs {
+                legacy_ui: true,
+                agent_engine: Some(chat::AgentEngine::V1),
+                ..Default::default()
+            };
+            assert_eq!(args.resolve_agent_engine(&os).unwrap(), chat::AgentEngine::V1);
+        }
+
+        #[tokio::test]
+        async fn non_interactive_with_input_resolves() {
+            let os = make_os().await;
+            let mut args = ChatArgs {
+                no_interactive: true,
+                input: Some("hello".to_string()),
+                ..Default::default()
+            };
+            assert_eq!(args.resolve_agent_engine(&os).unwrap(), chat::AgentEngine::V1);
+            assert_eq!(args.resolve_non_interactive_input().unwrap(), "hello");
+        }
+
+        #[tokio::test]
+        async fn non_interactive_with_kas_and_input() {
+            let os = make_os().await;
+            let mut args = ChatArgs {
+                no_interactive: true,
+                agent_engine: Some(chat::AgentEngine::Kas),
+                input: Some("test prompt".to_string()),
+                ..Default::default()
+            };
+            assert_eq!(args.resolve_agent_engine(&os).unwrap(), chat::AgentEngine::Kas);
+            assert_eq!(args.resolve_non_interactive_input().unwrap(), "test prompt");
+        }
+
+        #[tokio::test]
+        async fn non_interactive_without_input_errors() {
+            let _os = make_os().await;
+            let mut args = ChatArgs {
+                no_interactive: true,
+                input: None,
+                ..Default::default()
+            };
+            // stdin is piped but empty in tests, so this should error
+            assert!(args.resolve_non_interactive_input().is_err());
+        }
+
+        #[tokio::test]
+        async fn non_interactive_v2_with_input() {
+            let os = make_os().await;
+            let mut args = ChatArgs {
+                no_interactive: true,
+                agent_engine: Some(chat::AgentEngine::V2),
+                input: Some("query".to_string()),
+                ..Default::default()
+            };
+            assert_eq!(args.resolve_agent_engine(&os).unwrap(), chat::AgentEngine::V2);
+            assert_eq!(args.resolve_non_interactive_input().unwrap(), "query");
+        }
     }
 }

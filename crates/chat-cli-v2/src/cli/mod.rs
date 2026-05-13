@@ -294,64 +294,7 @@ impl Cli {
 
         let result = if matches!(&subcommand, RootSubcommand::Chat(args) if !args.legacy_mode) {
             let asset_paths = crate::embedded_tui::extract_tui_assets_if_needed(&os).await?;
-
-            // Execute TUI with all original arguments
-            let args: Vec<String> = std::env::args().collect();
-            let current_exe = std::env::current_exe()?;
-            let mut child = tokio::process::Command::new(&asset_paths.bun_path)
-                .arg(&asset_paths.tui_js_path)
-                .args(&args[1..])
-                .env("KIRO_AGENT_PATH", &current_exe)
-                // Limit JSC garbage collector to 1 marker thread. By default JSC
-                // uses up to min(4, core_count) marker threads on Apple Silicon
-                // (see overrideDefaults() and computeNumberOfGCMarkers in Options.cpp).
-                // https://github.com/WebKit/WebKit/blob/4a93a28675f1cacb54b7e280d5d4a2ca3bf7557c/Source/JavaScriptCore/runtime/Options.cpp#L455
-                // Related: https://github.com/anthropics/claude-code/issues/38092
-                // Related: https://github.com/oven-sh/bun/issues/17723
-                .env("JSC_numberOfGCMarkers", "1")
-                .kill_on_drop(true)
-                .spawn()?;
-
-            // Kill the child on SIGTERM, SIGHUP, or Ctrl-C to prevent orphaned
-            // bun processes at 100% CPU. Without this, the default signal handler
-            // terminates the process without running destructors.
-            let status;
-            #[cfg(unix)]
-            {
-                use tokio::signal::unix::{
-                    SignalKind,
-                    signal,
-                };
-                let mut sigterm = signal(SignalKind::terminate())?;
-                let mut sighup = signal(SignalKind::hangup())?;
-                tokio::select! {
-                    s = child.wait() => {
-                        status = Some(s?);
-                    }
-                    _ = sigterm.recv() => {
-                        let _ = child.kill().await;
-                        status = None;
-                    }
-                    _ = sighup.recv() => {
-                        let _ = child.kill().await;
-                        status = None;
-                    }
-                    _ = tokio::signal::ctrl_c() => {
-                        let _ = child.kill().await;
-                        status = None;
-                    }
-                }
-            }
-            #[cfg(not(unix))]
-            {
-                status = Some(child.wait().await?);
-            }
-
-            let exit_code = status
-                .and_then(|s| s.code())
-                .map_or(ExitCode::FAILURE, |e| ExitCode::from(e as u8));
-
-            Ok(exit_code)
+            crate::launch_options::launch_tui(&asset_paths).await
         } else {
             subcommand.execute(&mut os).await
         };

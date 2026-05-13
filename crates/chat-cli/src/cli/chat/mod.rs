@@ -263,37 +263,10 @@ pub enum SessionSourceArg {
     V2,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, clap::ValueEnum)]
-pub enum AgentEngine {
-    #[default]
-    Rust,
-    Kas,
-}
-
-impl std::fmt::Display for AgentEngine {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Self::Rust => write!(f, "rust"),
-            Self::Kas => write!(f, "kas"),
-        }
-    }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, clap::ValueEnum)]
-pub enum AgentMode {
-    #[default]
-    Vibe,
-    Spec,
-}
-
-impl std::fmt::Display for AgentMode {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Self::Vibe => write!(f, "vibe"),
-            Self::Spec => write!(f, "spec"),
-        }
-    }
-}
+pub use chat_cli_v2::launch_options::{
+    AgentEngine,
+    AgentMode,
+};
 
 #[derive(Debug, Clone, PartialEq, Eq, Default, Args)]
 pub struct ChatArgs {
@@ -348,10 +321,10 @@ pub struct ChatArgs {
     /// Use the new terminal UI
     #[arg(long, conflicts_with = "legacy_ui")]
     pub tui: bool,
-    /// Use the legacy terminal UI
+    /// Use the legacy harness
     #[arg(long, visible_alias = "classic", conflicts_with = "tui")]
     pub legacy_ui: bool,
-    /// Agent engine to use: "rust" (default) or "kas" (TypeScript KAS agent)
+    /// Agent engine to use: "v1", "v2" (default), or "kas"
     #[arg(long, value_name = "ENGINE")]
     pub agent_engine: Option<AgentEngine>,
     /// Mode to use with KAS agent: "vibe" (default) or "spec"
@@ -359,95 +332,112 @@ pub struct ChatArgs {
     pub mode: Option<AgentMode>,
 }
 
-/// Why the TUI should or should not be launched.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-#[allow(dead_code)]
-pub enum TuiShouldLaunchResult {
-    /// User explicitly requested TUI via `--tui` flag
-    CliArg,
-    /// User requested TUI via KIRO_CHAT_UI env var
-    EnvVar,
-    /// User requested TUI via chat.ui setting
-    Setting,
-    /// TUI enabled by rollout
-    Rollout,
-    /// Platform default (e.g. Windows)
-    Default,
-    /// Should not launch TUI
-    No,
-}
-
-impl TuiShouldLaunchResult {
-    pub fn should_launch(&self) -> bool {
-        !matches!(self, Self::No)
-    }
-
-    /// True when the user explicitly opted in (not rollout or default).
-    pub fn is_user_requested(&self) -> bool {
-        matches!(self, Self::CliArg | Self::EnvVar | Self::Setting)
-    }
-}
-
 impl ChatArgs {
-    /// Resolve the agent engine: CLI flag > setting > default (Rust).
-    pub fn resolve_agent_engine(&self, os: &Os) -> AgentEngine {
-        if let Some(engine) = self.agent_engine {
-            return engine;
+    /// Resolve the agent engine.
+    ///
+    /// Precedence: `--agent-engine` CLI flag > `chat.agentEngine` setting > default.
+    /// Default depends on interactivity: non-interactive defaults to V1,
+    /// interactive defaults to V2.
+    ///
+    /// Returns `Err` if conflicting flags are supplied (e.g. `--legacy-ui`
+    /// with `--agent-engine=kas`).
+    pub fn resolve_agent_engine(&self, os: &Os) -> Result<AgentEngine> {
+        let engine = if let Some(engine) = self.agent_engine {
+            engine
+        } else if let Some(val) = os.database.settings.get_string(Setting::ChatAgentEngine) {
+            if val.eq_ignore_ascii_case("kas") {
+                AgentEngine::Kas
+            } else if val.eq_ignore_ascii_case("v1") {
+                AgentEngine::V1
+            } else if val.eq_ignore_ascii_case("v2") || val.eq_ignore_ascii_case("rust") {
+                AgentEngine::V2
+            } else {
+                self.default_engine(os)
+            }
+        } else {
+            self.default_engine(os)
+        };
+
+        // Validate: --legacy-ui conflicts with non-V1 engines
+        if self.legacy_ui && engine != AgentEngine::V1 {
+            bail!(
+                "Conflicting options: --legacy-ui cannot be used with --agent-engine={engine}. \
+                 Use --agent-engine=v1 or remove --legacy-ui."
+            );
         }
-        if let Some(val) = os.database.settings.get_string(Setting::ChatAgentEngine)
-            && val.eq_ignore_ascii_case("kas")
-        {
-            return AgentEngine::Kas;
+
+        // Validate: --tui conflicts with V1 engine
+        if self.tui && engine == AgentEngine::V1 {
+            bail!(
+                "Conflicting options: --tui cannot be used with --agent-engine=v1. \
+                 Use --agent-engine=v2 or remove --tui."
+            );
         }
-        AgentEngine::Rust
+
+        Ok(engine)
     }
 
-    /// Resolve whether to launch the TUI.
-    /// Precedence: CLI flag > env var KIRO_CHAT_UI > setting chat.ui > rollout % > default (legacy)
-    pub fn should_launch_tui(&self, os: &Os) -> TuiShouldLaunchResult {
-        // Non-interactive mode always uses the legacy (v1) path
+    /// Default engine based on interactivity mode and TUI preferences.
+    ///
+    /// When `--agent-engine` is not explicitly set, the default is determined by:
+    /// - Non-interactive: V1
+    /// - Interactive: check `--tui`/`--legacy-ui` flags, `KIRO_CHAT_UI` env var, `chat.ui` setting,
+    ///   then default to V2.
+    fn default_engine(&self, os: &Os) -> AgentEngine {
         if self.no_interactive {
-            return TuiShouldLaunchResult::No;
+            return AgentEngine::V1;
         }
 
         // Piped/heredoc stdin — TUI requires an interactive terminal
         if !std::io::stdin().is_terminal() {
-            return TuiShouldLaunchResult::No;
+            return AgentEngine::V1;
         }
 
-        // KAS engine requires the TUI/ACP path — it can't run in the V1 legacy path
-        if self.resolve_agent_engine(os) == AgentEngine::Kas {
-            return TuiShouldLaunchResult::CliArg;
-        }
-
-        // CLI flags take highest precedence
         if self.tui {
-            return TuiShouldLaunchResult::CliArg;
+            return AgentEngine::V2;
         }
         if self.legacy_ui {
-            return TuiShouldLaunchResult::No;
+            return AgentEngine::V1;
         }
 
-        // Env var next
         if let Ok(val) = std::env::var(crate::util::consts::env_var::KIRO_CHAT_UI) {
-            return if val.eq_ignore_ascii_case("tui") {
-                TuiShouldLaunchResult::EnvVar
+            if val.eq_ignore_ascii_case("tui") {
+                return AgentEngine::V2;
             } else {
-                TuiShouldLaunchResult::No
-            };
+                return AgentEngine::V1;
+            }
         }
 
-        // Setting next
         if let Some(val) = os.database.settings.get_string(Setting::ChatUi) {
-            return if val.eq_ignore_ascii_case("tui") {
-                TuiShouldLaunchResult::Setting
+            if val.eq_ignore_ascii_case("tui") {
+                return AgentEngine::V2;
             } else {
-                TuiShouldLaunchResult::No
-            };
+                return AgentEngine::V1;
+            }
         }
 
-        // Default to TUI for all users
-        TuiShouldLaunchResult::Default
+        AgentEngine::V2
+    }
+
+    /// Resolve the non-interactive input from `--input` or stdin.
+    ///
+    /// If `--input` was provided, returns it directly. Otherwise, when stdin
+    /// is piped, reads the entire stdin buffer. The resolved value is stored
+    /// in `self.input` so downstream code paths (e.g. the legacy `execute`)
+    /// observe a consistent value.
+    ///
+    /// Errors if neither source yields a non-empty input.
+    pub fn resolve_non_interactive_input(&mut self) -> Result<String> {
+        if self.input.is_none() && !std::io::stdin().is_terminal() {
+            let mut buffer = String::new();
+            if std::io::stdin().read_to_string(&mut buffer).is_ok() && !buffer.trim().is_empty() {
+                self.input = Some(buffer.trim().to_string());
+            }
+        }
+        match &self.input {
+            Some(input) => Ok(input.clone()),
+            None => bail!("Input must be supplied when running in non-interactive mode"),
+        }
     }
 
     pub async fn execute(mut self, os: &mut Os) -> Result<ExitCode> {

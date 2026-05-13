@@ -11,6 +11,7 @@ mod constants;
 mod database;
 mod embedded_tui;
 mod feature_flags;
+mod launch;
 mod logging;
 mod mcp_client;
 mod mcp_registry;

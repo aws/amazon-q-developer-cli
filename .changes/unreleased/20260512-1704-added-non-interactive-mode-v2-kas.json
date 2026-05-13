@@ -1,0 +1,4 @@
+{
+  "type": "added",
+  "description": "Non-interactive mode now supports V2 and KAS agent engines via --agent-engine flag"
+}

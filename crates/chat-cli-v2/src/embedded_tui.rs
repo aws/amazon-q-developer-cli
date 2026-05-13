@@ -10,6 +10,7 @@ use tracing::{
     info,
 };
 
+use crate::launch_options::TuiAssetPaths;
 use crate::os::Os;
 use crate::util::paths::{
     bun_path,
@@ -17,13 +18,6 @@ use crate::util::paths::{
     tui_js_path,
     tui_js_sha256_path,
 };
-
-/// Paths to the bun executable and TUI JS file to use
-#[derive(Debug, Clone)]
-pub struct TuiAssetPaths {
-    pub bun_path: PathBuf,
-    pub tui_js_path: PathBuf,
-}
 
 #[cfg(bun_executable_path)]
 const BUN_RUNTIME: &[u8] = include_bytes!(env!("BUN_EXECUTABLE_PATH"));

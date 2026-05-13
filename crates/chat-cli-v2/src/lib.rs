@@ -12,6 +12,7 @@ pub mod constants;
 pub mod database;
 pub mod embedded_tui;
 pub mod feature_flags;
+pub mod launch_options;
 pub mod logging;
 pub mod mcp_registry;
 pub mod os;
