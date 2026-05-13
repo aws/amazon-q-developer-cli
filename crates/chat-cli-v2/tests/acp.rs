@@ -3242,3 +3242,92 @@ async fn effort_command_e2e() {
         "effort should be 'low' in the request"
     );
 }
+
+/// E2E: per-model additional field defaults from settings file.
+/// When cli.json contains `"claude-opus-4.7": {"output_config.effort": "low"}`,
+/// a new session should use effort=low instead of the hardcoded default (xhigh).
+#[tokio::test]
+#[timeout(30000)]
+#[serial]
+async fn model_defaults_from_settings_override_hardcoded() {
+    let (mut harness, client, session_id, _) = AcpTestHarnessBuilder::new("model_defaults_from_settings")
+        .with_setting(
+            "chat.modelDefaults",
+            serde_json::json!({"claude-opus-4.7": {"output_config": {"effort": "low"}}}),
+        )
+        .with_trust_all(true)
+        .build_with_session()
+        .await;
+
+    // Send a prompt so we can inspect the captured request
+    harness
+        .push_mock_responses_from_file(&session_id.0, "tests/mock_responses/simple_text.jsonl")
+        .await;
+
+    client
+        .prompt_text(session_id.clone(), "hello")
+        .await
+        .expect("prompt failed");
+
+    let requests = harness.get_captured_requests(&session_id.0).await;
+    assert!(!requests.is_empty(), "should have captured at least one request");
+
+    let last_request = requests.last().unwrap();
+    let additional_fields = last_request
+        .additional_model_request_fields
+        .as_ref()
+        .expect("additional_model_request_fields should be set");
+
+    // Should be "low" from settings, NOT "xhigh" (the hardcoded default for opus-4.7)
+    assert_eq!(
+        additional_fields["output_config"]["effort"], "low",
+        "effort should be 'low' from settings, not the hardcoded 'xhigh' default"
+    );
+}
+
+#[tokio::test]
+#[timeout(30000)]
+#[serial]
+async fn model_switch_applies_settings_defaults() {
+    // Start on sonnet-4.6, configure opus-4.7 defaults, then switch and verify
+    let (mut harness, client, session_id, _) = AcpTestHarnessBuilder::new("model_switch_defaults")
+        .with_setting("chat.defaultModel", serde_json::json!("claude-sonnet-4.6"))
+        .with_setting(
+            "chat.modelDefaults",
+            serde_json::json!({"claude-opus-4.7": {"output_config": {"effort": "low"}}}),
+        )
+        .with_trust_all(true)
+        .build_with_session()
+        .await;
+
+    // Switch to opus-4.7 via /model command (slash commands don't consume mock responses)
+    client
+        .prompt_text(session_id.clone(), "/model claude-opus-4.7")
+        .await
+        .expect("model switch failed");
+
+    // Send a prompt to capture the request with the new model's settings
+    harness
+        .push_mock_responses_from_file(&session_id.0, "tests/mock_responses/simple_text.jsonl")
+        .await;
+
+    client
+        .prompt_text(session_id.clone(), "hello")
+        .await
+        .expect("prompt failed");
+
+    let requests = harness.get_captured_requests(&session_id.0).await;
+    assert!(!requests.is_empty(), "should have captured at least one request");
+
+    let last_request = requests.last().unwrap();
+    let additional_fields = last_request
+        .additional_model_request_fields
+        .as_ref()
+        .expect("additional_model_request_fields should be set");
+
+    // Should be "low" from settings, NOT "xhigh" (the hardcoded default for opus-4.7)
+    assert_eq!(
+        additional_fields["output_config"]["effort"], "low",
+        "effort should be 'low' from settings after /model switch, not the hardcoded 'xhigh'"
+    );
+}

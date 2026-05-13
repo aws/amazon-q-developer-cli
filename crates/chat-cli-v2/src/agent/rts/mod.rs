@@ -617,27 +617,53 @@ impl RtsState {
         let mut inner = self.inner.lock().unwrap();
         // Reset additional fields from the new model's schema (clears any prior overrides)
         inner.additional_fields = info.as_ref().and_then(|m| m.additional_fields.clone());
-        // Apply default effort for Claude models (only if not already set)
-        if let (Some(model_info), Some(fields)) = (&info, &mut inner.additional_fields) {
-            let has_effort = fields
-                .overrides()
-                .and_then(|o| o.pointer("/output_config/effort"))
-                .is_some();
-            if !has_effort {
-                let id = model_info.model_id.to_lowercase();
-                let default_effort = if id.contains("claude-opus-4.7") {
-                    Some("xhigh")
-                } else if id.contains("claude-opus-4.6") || id.contains("claude-sonnet-4.6") {
-                    Some("high")
-                } else {
-                    None
-                };
-                if let Some(effort) = default_effort {
-                    let _ = fields.set("output_config.effort", effort);
-                }
+        inner.model_info = info;
+    }
+
+    /// Apply model overrides: hardcoded Claude defaults + user-level DB settings.
+    /// Call after `set_model_info` to configure the model's additional fields.
+    pub fn apply_model_defaults(&self, settings: &crate::database::settings::Settings) {
+        use crate::database::settings::Setting;
+
+        let mut inner = self.inner.lock().unwrap();
+        let Some(ref model_info) = inner.model_info else { return };
+        let Some(ref fields) = inner.additional_fields else {
+            return;
+        };
+
+        // Hardcoded effort defaults for Claude models (only if not already set)
+        let has_effort = fields
+            .overrides()
+            .and_then(|o| o.pointer("/output_config/effort"))
+            .is_some();
+        let model_id = model_info.model_id.clone();
+        let id = model_id.to_lowercase();
+        let default_effort = if id.contains("claude-opus-4.7") {
+            Some("xhigh")
+        } else if id.contains("claude-opus-4.6") || id.contains("claude-sonnet-4.6") {
+            Some("high")
+        } else {
+            None
+        };
+
+        // Now take mutable access to fields
+        let fields = inner.additional_fields.as_mut().unwrap();
+        if !has_effort && let Some(effort) = default_effort {
+            let _ = fields.set("output_config.effort", effort);
+        }
+
+        // User-level DB overrides (take precedence over hardcoded defaults)
+        if let Some(ref defaults) = settings
+            .get(Setting::ChatModelDefaults)
+            .and_then(|v| v.get(&model_id))
+            .filter(|v| v.is_object())
+            .cloned()
+        {
+            let errors = fields.apply_overrides(defaults);
+            for e in errors {
+                tracing::warn!("Model default override ignored: {}", e);
             }
         }
-        inner.model_info = info;
     }
 
     pub fn context_usage_percentage(&self) -> Option<f32> {

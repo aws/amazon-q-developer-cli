@@ -119,6 +119,7 @@ async fn switch_model(name: &str, ctx: &CommandContext<'_>) -> CommandResult {
             })
             .unwrap_or_else(|| to_legacy_model_info(m));
         ctx.rts_state.set_model_info(Some(full_model));
+        ctx.rts_state.apply_model_defaults(&ctx.os.database.settings);
         return CommandResult::success_with_data(
             format!("Model changed to {}", display_name),
             serde_json::json!({ "model": { "id": id, "name": display_name } }),

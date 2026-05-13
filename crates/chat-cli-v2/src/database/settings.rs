@@ -161,6 +161,8 @@ pub enum Setting {
         message = "Disable line wrapping in chat output; long lines soft-wrap visually but remain single logical lines for copy-paste (boolean)"
     )]
     ChatDisableWrap,
+    #[strum(message = "Per-model additional field defaults (object of model ID → overrides)")]
+    ChatModelDefaults,
 }
 
 impl Setting {
@@ -231,6 +233,7 @@ impl AsRef<str> for Setting {
             Self::ToolSearchMinPct => "toolSearch.minPct",
             Self::ToolSearchMinTokens => "toolSearch.minTokens",
             Self::ChatDisableWrap => "chat.disableWrap",
+            Self::ChatModelDefaults => "chat.modelDefaults",
         }
     }
 }
@@ -302,6 +305,7 @@ impl TryFrom<&str> for Setting {
             "toolSearch.minPct" => Ok(Self::ToolSearchMinPct),
             "toolSearch.minTokens" => Ok(Self::ToolSearchMinTokens),
             "chat.disableWrap" => Ok(Self::ChatDisableWrap),
+            "chat.modelDefaults" => Ok(Self::ChatModelDefaults),
             _ => Err(DatabaseError::InvalidSetting(value.to_string())),
         }
     }

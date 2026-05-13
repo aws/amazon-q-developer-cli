@@ -3264,6 +3264,8 @@ async fn update_model_info(
     };
 
     rts_state.set_model_info(Some(model_info));
+    rts_state.apply_model_defaults(&database.settings);
+
     Ok(())
 }
 
