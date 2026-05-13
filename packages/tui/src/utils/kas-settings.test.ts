@@ -1,7 +1,14 @@
-import { describe, test, expect, beforeEach, afterEach, mock } from 'bun:test';
-import { mkdtempSync, writeFileSync, rmSync } from 'fs';
+import { describe, test, expect, beforeEach, afterEach } from 'bun:test';
+import { mkdtempSync, writeFileSync, rmSync, mkdirSync } from 'fs';
 import { join } from 'path';
 import { tmpdir } from 'os';
+
+/** Default settings that buildKasSettings always includes (tools that were always-on for CLI). */
+const CLI_DEFAULTS = {
+  codeIntelligence: { enabled: true },
+  knowledge: { enabled: true },
+  toolSearch: { enabled: true },
+};
 
 describe('buildKasSettings', () => {
   let tmpDir: string;
@@ -24,47 +31,50 @@ describe('buildKasSettings', () => {
 
   function writeSettings(settings: Record<string, unknown>) {
     const dir = join(tmpDir, 'settings');
-    const { mkdirSync } = require('fs');
     mkdirSync(dir, { recursive: true });
     writeFileSync(join(dir, 'cli.json'), JSON.stringify(settings));
   }
 
-  // Re-import each test to pick up fresh env
   async function getBuildKasSettings() {
-    // Clear module cache to pick up new KIRO_HOME
     delete require.cache[require.resolve('./kas-settings.js')];
     delete require.cache[require.resolve('./cli-settings.js')];
     const mod = await import('./kas-settings.js');
     return mod.buildKasSettings;
   }
 
-  test('returns undefined when no settings file exists', async () => {
+  test('returns defaults when no settings file exists', async () => {
     const buildKasSettings = await getBuildKasSettings();
-    expect(buildKasSettings()).toBeUndefined();
+    expect(buildKasSettings()).toEqual(CLI_DEFAULTS);
   });
 
-  test('returns undefined when settings file is empty object', async () => {
+  test('returns defaults when settings file is empty object', async () => {
     writeSettings({});
     const buildKasSettings = await getBuildKasSettings();
-    expect(buildKasSettings()).toBeUndefined();
+    expect(buildKasSettings()).toEqual(CLI_DEFAULTS);
   });
 
   test('maps boolean flag to { enabled: true }', async () => {
     writeSettings({ 'chat.enableThinking': true });
     const buildKasSettings = await getBuildKasSettings();
-    expect(buildKasSettings()).toEqual({ thinking: { enabled: true } });
+    expect(buildKasSettings()).toEqual({ ...CLI_DEFAULTS, thinking: { enabled: true } });
   });
 
   test('maps boolean flag to { enabled: false }', async () => {
     writeSettings({ 'chat.enableThinking': false });
     const buildKasSettings = await getBuildKasSettings();
-    expect(buildKasSettings()).toEqual({ thinking: { enabled: false } });
+    expect(buildKasSettings()).toEqual({ ...CLI_DEFAULTS, thinking: { enabled: false } });
   });
 
   test('ignores non-boolean values for boolean flags', async () => {
     writeSettings({ 'chat.enableThinking': 'yes', 'chat.enableKnowledge': 42 });
     const buildKasSettings = await getBuildKasSettings();
-    expect(buildKasSettings()).toBeUndefined();
+    expect(buildKasSettings()).toEqual(CLI_DEFAULTS);
+  });
+
+  test('explicit false overrides CLI defaults', async () => {
+    writeSettings({ 'chat.enableCodeIntelligence': false });
+    const buildKasSettings = await getBuildKasSettings();
+    expect(buildKasSettings()?.codeIntelligence).toEqual({ enabled: false });
   });
 
   test('maps all boolean flags correctly', async () => {
@@ -80,16 +90,14 @@ describe('buildKasSettings', () => {
     });
     const buildKasSettings = await getBuildKasSettings();
     const result = buildKasSettings();
-    expect(result).toEqual({
-      thinking: { enabled: true },
-      codeIntelligence: { enabled: true },
-      todoList: { enabled: false },
-      checkpoint: { enabled: true },
-      tangentMode: { enabled: false },
-      disableAutoCompaction: { enabled: true },
-      _subagent: { enabled: true },
-      _delegate: { enabled: false },
-    });
+    expect(result?.thinking).toEqual({ enabled: true });
+    expect(result?.codeIntelligence).toEqual({ enabled: true });
+    expect(result?.todoList).toEqual({ enabled: false });
+    expect(result?.checkpoint).toEqual({ enabled: true });
+    expect(result?.tangentMode).toEqual({ enabled: false });
+    expect(result?.disableAutoCompaction).toEqual({ enabled: true });
+    expect(result?._subagent).toEqual({ enabled: true });
+    expect(result?._delegate).toEqual({ enabled: false });
   });
 
   test('maps toolSearch with all fields', async () => {
@@ -99,17 +107,13 @@ describe('buildKasSettings', () => {
       'toolSearch.minTokens': 50000,
     });
     const buildKasSettings = await getBuildKasSettings();
-    expect(buildKasSettings()).toEqual({
-      toolSearch: { enabled: true, minPct: 5, minTokens: 50000 },
-    });
+    expect(buildKasSettings()?.toolSearch).toEqual({ enabled: true, minPct: 5, minTokens: 50000 });
   });
 
-  test('maps toolSearch with only enabled', async () => {
+  test('maps toolSearch with only enabled=false', async () => {
     writeSettings({ 'toolSearch.enabled': false });
     const buildKasSettings = await getBuildKasSettings();
-    expect(buildKasSettings()).toEqual({
-      toolSearch: { enabled: false },
-    });
+    expect(buildKasSettings()?.toolSearch).toEqual({ enabled: false });
   });
 
   test('maps compaction settings', async () => {
@@ -118,9 +122,7 @@ describe('buildKasSettings', () => {
       'compaction.excludeMessages': 4,
     });
     const buildKasSettings = await getBuildKasSettings();
-    expect(buildKasSettings()).toEqual({
-      compaction: { enabled: true, excludePercent: 20, excludeMessages: 4 },
-    });
+    expect(buildKasSettings()?.compaction).toEqual({ enabled: true, excludePercent: 20, excludeMessages: 4 });
   });
 
   test('maps knowledge with structured config', async () => {
@@ -130,18 +132,7 @@ describe('buildKasSettings', () => {
       'knowledge.indexType': 'fast',
     });
     const buildKasSettings = await getBuildKasSettings();
-    expect(buildKasSettings()).toEqual({
-      knowledge: { enabled: true, maxFiles: 1000, indexType: 'fast' },
-    });
-  });
-
-  test('knowledge structured overrides simple boolean mapping', async () => {
-    writeSettings({ 'chat.enableKnowledge': false });
-    const buildKasSettings = await getBuildKasSettings();
-    // knowledge structured config overrides the simple boolean entry
-    expect(buildKasSettings()).toEqual({
-      knowledge: { enabled: false },
-    });
+    expect(buildKasSettings()?.knowledge).toEqual({ enabled: true, maxFiles: 1000, indexType: 'fast' });
   });
 
   test('ignores unrelated settings', async () => {
@@ -152,6 +143,6 @@ describe('buildKasSettings', () => {
       'chat.enableThinking': true,
     });
     const buildKasSettings = await getBuildKasSettings();
-    expect(buildKasSettings()).toEqual({ thinking: { enabled: true } });
+    expect(buildKasSettings()).toEqual({ ...CLI_DEFAULTS, thinking: { enabled: true } });
   });
 });
