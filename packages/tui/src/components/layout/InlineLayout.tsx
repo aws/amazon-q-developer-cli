@@ -67,7 +67,7 @@ import { useSessionConversation } from '../../stores/session-conversations.js';
 import { useShallow } from 'zustand/react/shallow';
 import { useKeypress } from '../../hooks/useKeypress';
 import { getGitBranch } from '../../utils/git';
-import { shortenPath } from '../../utils/string';
+import { shortenPath, formatEffort } from '../../utils/string';
 import { getAgentColor } from '../../utils/agentColors.js';
 import { useTheme } from '../../hooks/useThemeContext.js';
 
@@ -601,7 +601,7 @@ export const InlineLayout: React.FC = () => {
         <Chip value={currentModel.name} color={ChipColor.PRIMARY} />
       ),
       currentEffort && (
-        <Chip value={currentEffort} color={ChipColor.SECONDARY} />
+        <Chip value={formatEffort(currentEffort)} color={ChipColor.SECONDARY} />
       ),
       contextUsagePercent != null && (
         <ProgressChip value={contextUsagePercent} warningThreshold={60} />
@@ -655,7 +655,9 @@ export const InlineLayout: React.FC = () => {
         />
       ),
       currentModel && <Chip value={currentModel.name} color={mutedColor} />,
-      currentEffort && <Chip value={currentEffort} color={mutedColor} />,
+      currentEffort && (
+        <Chip value={formatEffort(currentEffort)} color={mutedColor} />
+      ),
       contextUsagePercent != null && (
         <ProgressChip
           value={contextUsagePercent}
