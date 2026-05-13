@@ -25,7 +25,13 @@ describe('/knowledge command', () => {
     tc = new AcpTestCase({ testName: 'knowledge-command' });
 
     const cannedEntries = [
-      { name: 'test-entry', id: 'entry-1', description: 'Test', item_count: 1, path: '/test' },
+      {
+        name: 'test-entry',
+        id: 'entry-1',
+        description: 'Test',
+        item_count: 1,
+        path: '/test',
+      },
     ];
 
     tc.mock.on<InitializeRequest, InitializeResponse>('initialize', () => ({
@@ -35,7 +41,11 @@ describe('/knowledge command', () => {
         _meta: {
           kiro: {
             extensionMethods: [
-              { method: '_kiro/knowledge', name: '/knowledge', description: 'Manage knowledge' },
+              {
+                method: '_kiro/knowledge',
+                name: '/knowledge',
+                description: 'Manage knowledge',
+              },
             ],
           },
         },
@@ -69,7 +79,10 @@ describe('/knowledge command', () => {
     const knowledgeReqs = tc.mock.receivedRequests('_kiro/knowledge');
     expect(knowledgeReqs.length).toBeGreaterThanOrEqual(1);
 
-    const params = knowledgeReqs[0]!.params as { sessionId: string; subcommand: string };
+    const params = knowledgeReqs[0]!.params as {
+      sessionId: string;
+      subcommand: string;
+    };
     expect(params.subcommand).toBe('show');
     expect(params.sessionId).toBe('test-session-1');
 
