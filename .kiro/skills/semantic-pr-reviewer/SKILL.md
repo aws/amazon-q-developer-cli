@@ -43,6 +43,15 @@ Do NOT duplicate points already raised. Acknowledge them if relevant.
 
 ### 3. Checkout & build (when reviewing kiro-team/kiro-cli)
 
+**Skip this entire step when running in CI** (`$CI == "true"`). The PR already has dedicated Rust/TUI workflows that run clippy, build, and tests. Trust those results — check the PR status checks instead:
+
+```bash
+gh pr view <N> --repo kiro-team/kiro-cli --json statusCheckRollup \
+  --jq '.statusCheckRollup[] | select(.name | test("Clippy|Build|Test")) | "\(.name): \(.conclusion)"'
+```
+
+When running locally (dev-dsk), do the full checkout and build:
+
 ```bash
 git fetch origin
 git worktree add ../kiro-cli-pr-<N> origin/main
@@ -242,25 +251,27 @@ Collapsible section listing files changed with a one-phrase description each.
 
 ### Memory Context
 
-From the PR intelligence system (step 5). List up to 3 similar past PRs with what was flagged:
-```
-PR #1287 | brandonskiser | crates/agent/src/agent/mod.rs — flagged: bare-unwrap
-PR #659  | erbenmo       | crates/agent/src/agent/tools/ — flagged: missing-e2e-test
-```
-If `known_patterns` is non-empty, call them out explicitly: "This file area has a history of `bare-unwrap` — check all `.unwrap()` calls."
+From the PR intelligence system (step 5). Use bullet points — no code blocks, no tables:
+- PR #1287 (brandonskiser) — flagged bare-unwrap in mod.rs
+- PR #659 (erbenmo) — flagged missing-e2e-test in tools/
+
+If `known_patterns` is non-empty, add one line: "Known pattern in this area: `bare-unwrap`."
 
 ### Suggested Reviewers
 
-From the PR intelligence system (step 5). List top reviewers by expertise count:
-```
-erbenmo (47 reviews in this area)
-kensave (31 reviews in this area)
-```
+From the PR intelligence system (step 5). Use bullet points:
+- erbenmo (47 reviews in this area)
+- kensave (31 reviews in this area)
 
 ### Verdict
 
-On first-pass reviews: flag concerns without rendering a verdict.
-On third-or-later pass (v3+) or when explicitly asked for a "final review": render a verdict — are concerns blocking or acceptable, is the change ready to ship?
+Always render a verdict based on findings:
+
+- **Approve** — no critical issues, change is safe to merge
+- **Comment** — improvements suggested but nothing blocking
+- **Request Changes** — one or more [Critical] issues must be fixed before merge
+
+One line. Example: "**Request Changes** — byte-index slice will panic on multi-byte input (Critical, must fix)."
 
 ## Writing style
 
