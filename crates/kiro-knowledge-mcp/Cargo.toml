@@ -20,7 +20,7 @@ anyhow.workspace = true
 async-trait.workspace = true
 aws-config = { workspace = true }
 aws-sdk-bedrockagentruntime.workspace = true
-clap = { workspace = true }
+clap = { workspace = true, features = ["env"] }
 rmcp = { workspace = true, features = ["server", "transport-io"] }
 serde = { workspace = true, features = ["derive"] }
 serde_json.workspace = true
