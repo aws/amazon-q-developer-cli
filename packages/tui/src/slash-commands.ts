@@ -71,4 +71,13 @@ export const SLASH_COMMANDS: SlashCommand[] = [
     // of the next prompt like any other content block.
     requiredMethods: [],
   },
+  {
+    name: '/prompts',
+    description: 'Select or list available prompts',
+    meta: {
+      inputType: 'selection',
+      hint: '',
+    },
+    requiredMethods: [],
+  },
 ];

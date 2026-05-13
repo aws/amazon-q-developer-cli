@@ -320,6 +320,36 @@ function extractModelFromConfigOptions(
   return match ? { id: match.value, name: match.name } : undefined;
 }
 
+// ─── Prompt types ────────────────────────────────────────────────────
+
+type PromptCacheEntry = {
+  name: string;
+  description?: string;
+  arguments: Array<{ name: string; description?: string; required?: boolean }>;
+  serverName: string;
+};
+
+/** KAS command types that represent prompts (skills, steering docs, etc.) */
+const PROMPT_COMMAND_TYPES = new Set(['prompt', 'skill', 'steering']);
+
+/**
+ * Map KAS _meta.kiro.type to a group name matching Rust's convention.
+ * Rust uses "workspace" for file prompts and "skill" for skills.
+ * KAS only provides the type, not a source field.
+ */
+function kasTypeToGroupName(type: string | undefined): string {
+  switch (type) {
+    case 'steering':
+      return 'workspace';
+    case 'skill':
+      return 'skill';
+    case 'prompt':
+      return 'workspace';
+    default:
+      return type || '';
+  }
+}
+
 // ─── Base class ──────────────────────────────────────────────────────
 
 abstract class BaseAcpClient implements SessionClient {
@@ -334,6 +364,7 @@ abstract class BaseAcpClient implements SessionClient {
   private subagentListHandlers: Set<
     (subagents: any[], pendingStages?: any[]) => void
   > = new Set();
+  protected promptsCache: PromptCacheEntry[] = [];
 
   constructor(agentProcess: AgentProcess) {
     this.agentProcess = agentProcess;
@@ -458,17 +489,7 @@ abstract class BaseAcpClient implements SessionClient {
         description: string;
         meta?: Record<string, unknown>;
       }>) || [];
-    const prompts =
-      (params.prompts as Array<{
-        name: string;
-        description?: string;
-        arguments: Array<{
-          name: string;
-          description?: string;
-          required?: boolean;
-        }>;
-        serverName: string;
-      }>) || [];
+    const prompts = (params.prompts as PromptCacheEntry[]) || [];
     const tools =
       (params.tools as Array<{
         name: string;
@@ -498,6 +519,7 @@ abstract class BaseAcpClient implements SessionClient {
       }),
     });
     this.broadcastStreamEvent({ type: AgentEventType.PromptsUpdate, prompts });
+    this.promptsCache = prompts;
   }
 
   private handleMetadataUpdate(params: Record<string, unknown>) {
@@ -797,9 +819,37 @@ abstract class BaseAcpClient implements SessionClient {
 
       case 'available_commands_update': {
         const cu = update as any;
+        // Extract prompt-type commands into promptsCache for /prompts selection.
+        // KAS sends prompts/skills/steering as commands with _meta.kiro.type.
+        const allCommands = (cu.availableCommands || []) as Array<{
+          name: string;
+          description?: string;
+          _meta?: {
+            kiro?: { type?: string };
+            arguments?: Array<{
+              name: string;
+              description?: string;
+              required?: boolean;
+            }>;
+          };
+        }>;
+        const promptCommands = allCommands.filter((cmd) => {
+          const type = cmd._meta?.kiro?.type;
+          return type != null && PROMPT_COMMAND_TYPES.has(type);
+        });
+        this.promptsCache = promptCommands.map((cmd) => ({
+          name: cmd.name,
+          description: cmd.description,
+          arguments: (cmd._meta?.arguments || []) as Array<{
+            name: string;
+            description?: string;
+            required?: boolean;
+          }>,
+          serverName: kasTypeToGroupName(cmd._meta?.kiro?.type),
+        }));
         return {
           type: AgentEventType.CommandsUpdate,
-          commands: (cu.availableCommands || []).map((cmd: any) => ({
+          commands: allCommands.map((cmd: any) => ({
             name: cmd.name,
             description: cmd.description,
             meta: cmd._meta,
@@ -1603,6 +1653,23 @@ export class KasAcpClient extends BaseAcpClient {
       }
       case 'reply':
         return { success: true, message: '' };
+      case 'prompts': {
+        const args = (command as Record<string, unknown>).args as
+          | Record<string, string>
+          | undefined;
+        const promptName = args?.value ?? '';
+        if (!promptName) {
+          return {
+            success: true,
+            message: 'Use the selection menu to pick a prompt.',
+          };
+        }
+        return {
+          success: true,
+          message: '',
+          data: { executePrompt: `/${promptName}` },
+        };
+      }
       default:
         return {
           success: false,
@@ -1873,6 +1940,29 @@ export class KasAcpClient extends BaseAcpClient {
                 : desc,
             };
           }),
+        };
+      }
+      case 'prompts': {
+        return {
+          options: this.promptsCache
+            .map((p) => {
+              const hint =
+                p.arguments
+                  .map((a) => (a.required ? `<${a.name}>` : `[${a.name}]`))
+                  .join(' ') || undefined;
+              return {
+                value: p.name,
+                label: `/${p.name}`,
+                description: p.description ?? '',
+                group: p.serverName,
+                hint,
+              };
+            })
+            .sort(
+              (a, b) =>
+                (a.group ?? '').localeCompare(b.group ?? '') ||
+                a.label.toLowerCase().localeCompare(b.label.toLowerCase())
+            ),
         };
       }
       default:
