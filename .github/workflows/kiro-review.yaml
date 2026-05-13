@@ -26,6 +26,7 @@ jobs:
     permissions:
       contents: read
       pull-requests: write
+      id-token: write
     steps:
       - name: Get PR number
         id: pr
@@ -61,6 +62,13 @@ jobs:
         run: |
           curl -fsSL https://cli.kiro.dev/install | bash
           kiro-cli --version
+
+      - name: Configure AWS credentials
+        if: steps.gate.outputs.skip != 'true'
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::551670267384:role/KiroCLIReviewerQueryRole
+          aws-region: us-east-1
 
       - name: Run review
         if: steps.gate.outputs.skip != 'true'

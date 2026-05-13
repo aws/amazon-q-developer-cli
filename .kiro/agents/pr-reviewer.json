@@ -22,6 +22,8 @@
     "execute_bash": {
       "autoAllowReadonly": true,
       "allowedCommands": [
+        "^aws lambda invoke .*$",
+        "^aws sts assume-role .*$",
         "^gh .*$",
         "^git .*$",
         "^cat[^&;|]*$",
@@ -38,6 +40,7 @@
   },
   "resources": [
     "skill://semantic-pr-reviewer/SKILL.md",
+    "skill://pr-memory/SKILL.md",
     "skill://slack-publish/SKILL.md",
     "file://AGENTS.md"
   ],

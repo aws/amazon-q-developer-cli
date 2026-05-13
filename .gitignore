@@ -65,6 +65,7 @@ chat.log
 !.kiro/skills/kas-agent/
 !.kiro/skills/pragmatic-reviewer/
 !.kiro/skills/semantic-pr-reviewer/
+!.kiro/skills/pr-memory/
 !.kiro/skills/feedback-digest/
 !.kiro/skills/tcorp-tickets/
 !.kiro/skills/taskei-tasks/

@@ -1,0 +1,39 @@
+name: PR Memory Ingest
+
+on:
+  push:
+    branches: [main]
+
+jobs:
+  ingest:
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+      contents: read
+      pull-requests: read
+    steps:
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::551670267384:role/KiroCLIReviewerIngestRole
+          aws-region: us-east-1
+
+      - name: Get merged PR number
+        id: pr
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          PR=$(gh api repos/${{ github.repository }}/commits/${{ github.sha }}/pulls \
+            --jq '.[0].number // empty')
+          echo "number=$PR" >> "$GITHUB_OUTPUT"
+
+      - name: Ingest merged PR
+        if: steps.pr.outputs.number != ''
+        env:
+          PR_NUM: ${{ steps.pr.outputs.number }}
+        run: |
+          aws lambda invoke \
+            --function-name KiroCLIReviewerIterator \
+            --region us-east-1 \
+            --payload "{\"repo\":\"kiro-team/kiro-cli\",\"pr_number\":$PR_NUM,\"batch_size\":1}" \
+            --cli-binary-format raw-in-base64-out \
+            /dev/stdout

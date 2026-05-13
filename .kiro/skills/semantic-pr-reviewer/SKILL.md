@@ -85,12 +85,34 @@ Determine: POC (who wrote the code), suggested reviewer (most context), risk lev
 
 ### 5. Memory search (kiro-cli)
 
-Search before analyzing:
-- `"<author> review patterns"`
-- `"<component> issues bugs"`
-- `"<specific pattern>"`
+Query the PR intelligence system **before** analyzing the diff. This gives semantic similarity across 1,415 historical PRs plus Neptune graph data (reviewer expertise, known patterns).
 
-Save after: `"PR #<N>: <key finding>"`
+```bash
+# In CI: configure-aws-credentials already assumed KiroCLIReviewerQueryRole.
+# Locally: assume the role first via ReviewerRole.
+#   aws sts assume-role --role-arn arn:aws:iam::551670267384:role/KiroCLIReviewerQueryRole \
+#     --role-session-name pr-review --query 'Credentials.[AccessKeyId,SecretAccessKey,SessionToken]'
+#   export AWS_ACCESS_KEY_ID=... AWS_SECRET_ACCESS_KEY=... AWS_SESSION_TOKEN=...
+
+# Query for each changed file (top 3 files by diff size)
+DIFF=$(gh pr diff <N> --repo kiro-team/kiro-cli | head -200)
+TOP_FILE=$(gh pr diff <N> --repo kiro-team/kiro-cli --name-only | head -1)
+PAYLOAD=$(jq -n --arg diff "$DIFF" --arg file "$TOP_FILE" \
+  '{"diff":$diff,"file_path":$file,"repo":"kiro-team/kiro-cli","top_k":5}')
+aws lambda invoke \
+  --function-name KiroCLIReviewerQuery \
+  --region us-east-1 \
+  --payload "$PAYLOAD" \
+  --cli-binary-format raw-in-base64-out \
+  /tmp/pr-memory-<N>.json && cat /tmp/pr-memory-<N>.json
+```
+
+Use the response to populate:
+- **Memory Context** — for each result in `results[]`, synthesize one line: "PR #N (reviewer) did X — [what the comment body says, related to current PR]". Example: "PR #506 (erbenmo) refined agent swap ordering — flagged async ordering concern in mod.rs"
+- **Suggested Reviewers** — `suggested_reviewers[]`: experts for the changed files
+- **Known Patterns** — `known_patterns[]`: patterns historically flagged in this area (e.g. `bare-unwrap`, `missing-e2e-test`)
+
+See `skill://pr-memory/SKILL.md` for full payload spec and auth details.
 
 ### 6. Read full files when needed
 
@@ -123,6 +145,12 @@ Analyze the diff using this prioritized checklist. These are what to look for, n
 - API surface — backwards compatibility, contract changes
 
 Do NOT flag: style, naming, formatting, missing docs, nits (unless prefixed with "Nit:").
+
+**Every flagged issue MUST include:**
+1. The exact location (file + line or code snippet from the diff)
+2. Why it's a problem (one sentence, grounded in a technical fact)
+3. A concrete remediation — show the fixed code, not just a description
+4. If memory context has a prior PR with the same pattern, cite it: "PR #X had the same issue — reviewer Y flagged it as Z"
 
 ### 7b. Testing discipline
 
@@ -211,6 +239,23 @@ Typical concerns (pick what's relevant, name them specifically):
 ### File map (collapsed footer)
 
 Collapsible section listing files changed with a one-phrase description each.
+
+### Memory Context
+
+From the PR intelligence system (step 5). List up to 3 similar past PRs with what was flagged:
+```
+PR #1287 | brandonskiser | crates/agent/src/agent/mod.rs — flagged: bare-unwrap
+PR #659  | erbenmo       | crates/agent/src/agent/tools/ — flagged: missing-e2e-test
+```
+If `known_patterns` is non-empty, call them out explicitly: "This file area has a history of `bare-unwrap` — check all `.unwrap()` calls."
+
+### Suggested Reviewers
+
+From the PR intelligence system (step 5). List top reviewers by expertise count:
+```
+erbenmo (47 reviews in this area)
+kensave (31 reviews in this area)
+```
 
 ### Verdict
 
