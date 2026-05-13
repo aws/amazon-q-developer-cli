@@ -90,38 +90,50 @@ gh pr diff <N> --repo kiro-team/kiro-cli --name-only
 git log --format='%an' --follow -20 -- <file> | sort | uniq -c | sort -rn | head -5
 ```
 
-Determine: POC (who wrote the code), suggested reviewer (most context), risk level.
+Determine: POC (who wrote the code), suggested reviewer (most context), risk level (own code vs someone else's).
 
-### 5. Memory search (kiro-cli)
+### 5. Memory search (kiro-cli) — 3 searches REQUIRED
 
-Query the PR intelligence system **before** analyzing the diff. This gives semantic similarity across 1,415 historical PRs plus Neptune graph data (reviewer expertise, known patterns).
+Run **all three** before analyzing the diff. This is how the reviewer builds context from 1,415 historical PRs.
 
 ```bash
-# In CI: configure-aws-credentials already assumed KiroCLIReviewerQueryRole.
-# Locally: assume the role first via ReviewerRole.
-#   aws sts assume-role --role-arn arn:aws:iam::551670267384:role/KiroCLIReviewerQueryRole \
-#     --role-session-name pr-review --query 'Credentials.[AccessKeyId,SecretAccessKey,SessionToken]'
-#   export AWS_ACCESS_KEY_ID=... AWS_SECRET_ACCESS_KEY=... AWS_SESSION_TOKEN=...
-
-# Query for each changed file (top 3 files by diff size)
-DIFF=$(gh pr diff <N> --repo kiro-team/kiro-cli | head -200)
+PR_AUTHOR=$(gh pr view <N> --repo kiro-team/kiro-cli --json author --jq '.author.login')
 TOP_FILE=$(gh pr diff <N> --repo kiro-team/kiro-cli --name-only | head -1)
-PAYLOAD=$(jq -n --arg diff "$DIFF" --arg file "$TOP_FILE" \
+DIFF=$(gh pr diff <N> --repo kiro-team/kiro-cli | head -200)
+
+# Search 1: Author patterns — what does this author typically get flagged for?
+PAYLOAD=$(jq -n --arg diff "$PR_AUTHOR review patterns" --arg file "" \
   '{"diff":$diff,"file_path":$file,"repo":"kiro-team/kiro-cli","top_k":5}')
-aws lambda invoke \
-  --function-name KiroCLIReviewerQuery \
-  --region us-east-1 \
-  --payload "$PAYLOAD" \
-  --cli-binary-format raw-in-base64-out \
-  /tmp/pr-memory-<N>.json && cat /tmp/pr-memory-<N>.json
+aws lambda invoke --function-name KiroCLIReviewerQuery --region us-east-1 \
+  --payload "$PAYLOAD" --cli-binary-format raw-in-base64-out /tmp/mem-author.json
+
+# Search 2: Component patterns — what gets flagged in this file area?
+PAYLOAD=$(jq -n --arg diff "$DIFF" --arg file "$TOP_FILE" \
+  '{"diff":$diff,"file_path":$file,"repo":"kiro-team/kiro-cli","top_k":10}')
+aws lambda invoke --function-name KiroCLIReviewerQuery --region us-east-1 \
+  --payload "$PAYLOAD" --cli-binary-format raw-in-base64-out /tmp/mem-component.json
+
+# Search 3: Specific patterns spotted in diff (unwrap, truncation, string slice, etc.)
+PATTERN=$(echo "$DIFF" | grep -oE 'unwrap\(\)|string_slice|truncat|regex|unsafe' | head -1)
+if [ -n "$PATTERN" ]; then
+  PAYLOAD=$(jq -n --arg diff "$PATTERN error handling rust" --arg file "" \
+    '{"diff":$diff,"file_path":$file,"repo":"kiro-team/kiro-cli","top_k":5}')
+  aws lambda invoke --function-name KiroCLIReviewerQuery --region us-east-1 \
+    --payload "$PAYLOAD" --cli-binary-format raw-in-base64-out /tmp/mem-pattern.json
+fi
+
+cat /tmp/mem-author.json /tmp/mem-component.json /tmp/mem-pattern.json 2>/dev/null
 ```
 
-Use the response to populate:
-- **Memory Context** — for each result in `results[]`, synthesize one line: "PR #N (reviewer) did X — [what the comment body says, related to current PR]". Example: "PR #506 (erbenmo) refined agent swap ordering — flagged async ordering concern in mod.rs"
-- **Suggested Reviewers** — `suggested_reviewers[]`: experts for the changed files
-- **Known Patterns** — `known_patterns[]`: patterns historically flagged in this area (e.g. `bare-unwrap`, `missing-e2e-test`)
+**Correlate results with the diff:**
+- If memory returns "PR #X flagged bare-unwrap in this file" → check if current diff introduces `.unwrap()`
+- If memory returns "team decided X in PR #Y" → don't re-litigate it, acknowledge it
+- If author has a known pattern (e.g. "kensave questions removed code") → look for that in the diff
 
-See `skill://pr-memory/SKILL.md` for full payload spec and auth details.
+Use the combined response to populate:
+- **Memory Context** — synthesize how past PRs relate to the current change: "PR #506 (erbenmo) refined agent swap ordering — this PR extends that pattern"
+- **Suggested Reviewers** — from `suggested_reviewers[]` across all three searches (deduplicated)
+- **Known Patterns** — from `known_patterns[]` — flag if current diff introduces them
 
 ### 6. Read full files when needed
 
