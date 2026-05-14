@@ -25,6 +25,12 @@ import type {
 import { openEditorSync } from '../utils/editor.js';
 import { executeShellEscapeTTY } from '../utils/shell-escape.js';
 import { extractRpcErrorMessage } from '../utils/error-handling.js';
+import {
+  describeSpecDocuments,
+  findSpecFeature,
+  listSpecFeatures,
+  type SpecFeatureSummary,
+} from '../utils/spec-workspace.js';
 import { readFileSync, writeFileSync } from 'fs';
 
 import { openTranscriptInPager } from '../utils/open-transcript.js';
@@ -42,7 +48,7 @@ export type EffectHandler = (
 ) => boolean | void | Promise<boolean | void>;
 
 /** Extract command name from TuiCommand union type */
-type CommandName = TuiCommand['command'] | 'spawn';
+type CommandName = TuiCommand['command'] | 'spawn' | 'spec';
 
 /**
  * Keep only the last `maxTurns` user turns from a buffered event stream.
@@ -93,6 +99,7 @@ type EffectName =
   | 'showCodePanel'
   | 'showFeedbackUrl'
   | 'spawnSession'
+  | 'runSpec'
   | 'switchSession'
   | 'copyToClipboard'
   | 'openRawView'
@@ -130,6 +137,7 @@ const commandEffects: Partial<Record<string, EffectName>> = {
   reply: 'replyEditor',
   code: 'showCodePanel',
   spawn: 'spawnSession',
+  spec: 'runSpec',
   copy: 'copyToClipboard',
   transcript: 'openRawView',
   theme: 'showThemeMenu',
@@ -713,6 +721,138 @@ const effectHandlers: Record<EffectName, EffectHandler> = {
     }
   },
 
+  /**
+   * /spec — list feature directories under `.kiro/specs/` and drive the KAS
+   * spec workflow.
+   *
+   * Subcommands (all KAS-only; surface a clear error when the agent doesn't
+   * advertise `_kiro/spec/*`):
+   *   /spec                    → selection menu of discovered specs
+   *   /spec <name>             → switch to spec mode and resume work on <name>
+   *   /spec new <name>         → switch to spec mode and ask the agent to
+   *                              start a fresh spec for <name>
+   *   /spec run <name>         → invoke `_kiro/spec/invoke runAllTasks` and
+   *                              let the agent drive to completion
+   */
+  runSpec: async (_result, ctx, cmd, args) => {
+    const trimmed = args.trim();
+    const workspaceRoot = process.cwd();
+
+    // Selection menu when invoked without args. We pre-fetch the features
+    // here (not in the dispatcher) because the list is cheap to build and
+    // we want the shape to match the `inputType: 'selection'` contract
+    // without going through `getCommandOptions` (which is KAS backend
+    // driven and has no awareness of the on-disk .kiro/specs layout).
+    if (!trimmed) {
+      const features = listSpecFeatures(workspaceRoot);
+      if (features.length === 0) {
+        ctx.showAlert(
+          'No specs found under .kiro/specs/. Use "/spec new <name>" to start one.',
+          'warning',
+          6000
+        );
+        return true;
+      }
+      ctx.setActiveCommand({
+        command: {
+          ...cmd,
+          meta: { ...cmd.meta, inputType: 'selection' as const },
+        },
+        options: features.map((f) => ({
+          value: f.featureName,
+          label: f.featureName,
+          description: describeSpecDocuments(f),
+        })),
+      });
+      return true;
+    }
+
+    // /spec new <name> — switch to spec mode, then nudge the agent to
+    // kick off the spec workflow via a normal prompt. The agent's spec
+    // mode knows how to create the feature directory and the initial
+    // requirements document when asked to start a new spec.
+    if (/^new(\s|$)/.test(trimmed)) {
+      const name = trimmed.slice(3).trim();
+      if (!name) {
+        ctx.showAlert('Usage: /spec new <feature-name>', 'error', 4000);
+        return true;
+      }
+      try {
+        await ctx.kiro.setMode('spec');
+      } catch (err) {
+        ctx.showAlert(
+          extractRpcErrorMessage(err, 'Failed to switch to spec mode'),
+          'error',
+          5000
+        );
+        return true;
+      }
+      ctx.setCurrentAgent({ name: 'spec' });
+      await ctx.sendMessage(
+        `Start a new spec called "${name}". Create the .kiro/specs/${name}/ directory and draft the initial requirements document.`
+      );
+      return true;
+    }
+
+    // /spec run <name> — invoke runAllTasks via ACP ext method. The agent
+    // drives the execution from there; we surface the outcome via a toast
+    // since there's no dedicated progress UI yet.
+    if (/^run(\s|$)/.test(trimmed)) {
+      const name = trimmed.slice(3).trim();
+      if (!name) {
+        ctx.showAlert('Usage: /spec run <feature-name>', 'error', 4000);
+        return true;
+      }
+      const feature = findSpecFeature(workspaceRoot, name);
+      if (!feature) {
+        ctx.showAlert(`No spec found at .kiro/specs/${name}/`, 'error', 5000);
+        return true;
+      }
+      if (!feature.tasksFilePath) {
+        ctx.showAlert(
+          `Spec "${name}" has no tasks.md yet — generate it first.`,
+          'error',
+          5000
+        );
+        return true;
+      }
+      await runSpecFeature(ctx, feature);
+      return true;
+    }
+
+    // /spec <name> — resume work on an existing spec. Switch modes and
+    // point the agent at the feature's documents via a prompt. We
+    // deliberately don't call `_kiro/spec/resolveSession` here: the spec
+    // session tracker lives on the agent side, and letting the agent
+    // stay in its current ACP session (now in spec mode) is simpler and
+    // less disruptive than switching the TUI to a different sessionId.
+    const featureName = trimmed;
+    const feature = findSpecFeature(workspaceRoot, featureName);
+    if (!feature) {
+      ctx.showAlert(
+        `No spec found at .kiro/specs/${featureName}/`,
+        'error',
+        5000
+      );
+      return true;
+    }
+    try {
+      await ctx.kiro.setMode('spec');
+    } catch (err) {
+      ctx.showAlert(
+        extractRpcErrorMessage(err, 'Failed to switch to spec mode'),
+        'error',
+        5000
+      );
+      return true;
+    }
+    ctx.setCurrentAgent({ name: 'spec' });
+    await ctx.sendMessage(
+      `Continue working on the "${featureName}" spec. The existing documents are: ${feature.documents.join(', ')}.`
+    );
+    return true;
+  },
+
   /** Copy last assistant response to system clipboard */
   copyToClipboard: async (_result, ctx) => {
     const messages = ctx.getMessages();
@@ -1171,6 +1311,44 @@ import {
   getBundledTheme,
 } from '../theme/user-theme.js';
 import { spawnSync } from 'child_process';
+
+/**
+ * Resolve a spec session and invoke `runAllTasks` via the KAS ACP ext
+ * methods.  The agent drives execution autonomously from there — the TUI
+ * observes progress through the normal session-update stream.
+ */
+async function runSpecFeature(
+  ctx: CommandContext,
+  feature: SpecFeatureSummary
+): Promise<void> {
+  try {
+    ctx.setLoadingMessage(`Running all tasks for ${feature.featureName}...`);
+    const { sessionId } = await ctx.kiro.resolveSpecSession({
+      featureName: feature.featureName,
+      strategy: 'reuse',
+    });
+    await ctx.kiro.invokeSpec({
+      operation: 'runAllTasks',
+      sessionId,
+      featureName: feature.featureName,
+      specDocuments: feature.specDocumentPaths,
+      tasksFilePath: feature.tasksFilePath!,
+    });
+    ctx.setLoadingMessage(null);
+    ctx.showAlert(
+      `Running all tasks for "${feature.featureName}" — the agent is working autonomously.`,
+      'success',
+      5000
+    );
+  } catch (err) {
+    ctx.setLoadingMessage(null);
+    ctx.showAlert(
+      extractRpcErrorMessage(err, 'Failed to run spec tasks'),
+      'error',
+      5000
+    );
+  }
+}
 
 /**
  * Copy text to the system clipboard using platform-native tools.
