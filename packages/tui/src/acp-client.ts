@@ -1647,7 +1647,7 @@ export class KasAcpClient extends BaseAcpClient {
       case 'reply':
         return { success: true, message: '' };
       case 'usage': {
-        const result = await this.callExtMethod('_kiro/usage/get');
+        const result = await this.callExtMethod('_kiro/account/getUsage');
         if (!result.success) return result;
         const response = result.data as
           | { success: boolean; message: string; data?: unknown }
