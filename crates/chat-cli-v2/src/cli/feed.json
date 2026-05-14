@@ -12,6 +12,110 @@
     },
     {
       "type": "release",
+      "date": "2026-05-13",
+      "version": "2.4.0",
+      "title": "Version 2.4.0",
+      "changes": [
+        {
+          "type": "fixed",
+          "description": "Fixed MCP server env variables being overridden by shell env"
+        },
+        {
+          "type": "changed",
+          "description": "Reduced workspace initialization time by 88% (652ms \u2192 76ms) by moving file watching setup to background"
+        },
+        {
+          "type": "fixed",
+          "description": "Hardened pattern search and rewrite against tree-sitter parser panics for unsupported languages"
+        },
+        {
+          "type": "fixed",
+          "description": "Reset context manager on /clear so loaded skills revert to frontmatter-only"
+        },
+        {
+          "type": "added",
+          "description": "Added the current model to the agent's context"
+        },
+        {
+          "type": "fixed",
+          "description": "Fixed spurious MallocStackLogging warning on macOS"
+        },
+        {
+          "type": "changed",
+          "description": "Show actionable remediation steps when MCP is disabled due to a profile API failure"
+        },
+        {
+          "type": "fixed",
+          "description": "Improved error message when remote MCP server OAuth discovery fails"
+        },
+        {
+          "type": "added",
+          "description": "Added `/settings terminal` to enable Shift+Enter / Option+Enter for multi-line input."
+        },
+        {
+          "type": "fixed",
+          "description": "Fixed @ file picker ignoring nested .gitignore files, causing slow scans in large directories"
+        },
+        {
+          "type": "fixed",
+          "description": "Show --classic flag in --help output"
+        },
+        {
+          "type": "changed",
+          "description": "Shell escape (`!`) commands now use the user's default shell from $SHELL instead of hardcoded bash"
+        },
+        {
+          "type": "changed",
+          "description": "Show a clear error suggesting `/model` when the current model is unavailable, instead of a generic validation error. Unknown model ids are now sent to the backend rather than silently falling back to the default."
+        },
+        {
+          "type": "added",
+          "description": "Added `/settings` \u2014 a menu to configure your theme and view keyboard shortcuts. Run `/settings theme` to customize colors, or `/settings keybindings` to see the current shortcuts. `/theme` still works as before."
+        },
+        {
+          "type": "added",
+          "description": "Add /changelog slash command to show recent release notes"
+        },
+        {
+          "type": "fixed",
+          "description": "Fixed validation error messages (e.g. image size exceeded) showing raw reason codes instead of the service's user-friendly message"
+        },
+        {
+          "type": "fixed",
+          "description": "Prioritize built-in commands over skills in slash command autocomplete"
+        },
+        {
+          "type": "added",
+          "description": "Optional in-session surveys to rate your experience with Kiro CLI, plan quality, and implementation quality."
+        },
+        {
+          "type": "added",
+          "description": "Add /effort command to set model reasoning effort level (low/medium/high/xhigh/max)"
+        },
+        {
+          "type": "fixed",
+          "description": "Fixed knowledgeBase resources being loaded as regular context files, causing duplicate content in the agent context window"
+        },
+        {
+          "type": "fixed",
+          "description": "Fixed knowledge store not updating when swapping agents, causing the previous agent's knowledge base to persist"
+        },
+        {
+          "type": "fixed",
+          "description": "Fixed infinite retry loop when invoking zero-argument MCP tools"
+        },
+        {
+          "type": "added",
+          "description": "/rewind to jump back to an earlier prompt in a conversation and continue in a new session."
+        },
+        {
+          "type": "added",
+          "description": "Add KIRO_ACP_RECORD_PATH env var to record TUI ACP wire traffic to a JSONL trace file for debugging"
+        }
+      ]
+    },
+    {
+      "type": "release",
       "date": "2026-05-06",
       "version": "2.3.0",
       "title": "Version 2.3.0",
