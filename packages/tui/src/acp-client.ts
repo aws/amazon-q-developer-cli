@@ -1412,40 +1412,18 @@ export class KasAcpClient extends BaseAcpClient {
     return { promise, unsubscribe };
   }
 
-  private extensionMethods: Set<string> = new Set();
-
   async initialize(): Promise<void> {
-    const response = await this.kiroClient.initialize();
-    const kiroMeta = response.agentCapabilities?._meta?.kiro as
-      | Record<string, unknown>
-      | undefined;
-    const methods = kiroMeta?.extensionMethods;
-    if (Array.isArray(methods)) {
-      this.extensionMethods = new Set(
-        methods.map((m: string | { method: string }) =>
-          typeof m === 'string' ? m : m.method
-        )
-      );
-    }
-
-    const commands = SLASH_COMMANDS.filter((cmd) =>
-      cmd.requiredMethods.every((m) => this.extensionMethods.has(m))
-    ).map((cmd) => ({
+    await this.kiroClient.initialize();
+    const commands = SLASH_COMMANDS.map((cmd) => ({
       name: cmd.name,
       description: cmd.description,
       meta: (cmd.meta ?? {}) as Record<string, unknown>,
     }));
-
-    if (commands.length > 0) {
-      this.broadcastStreamEvent({
-        type: AgentEventType.ExtensionMethodsDiscovered,
-        commands,
-      });
-    }
-
-    logger.debug('[acp-client] KAS ACP handshake done, extensionMethods:', [
-      ...this.extensionMethods,
-    ]);
+    this.broadcastStreamEvent({
+      type: AgentEventType.ExtensionMethodsDiscovered,
+      commands,
+    });
+    logger.debug('[acp-client] KAS ACP handshake done');
   }
 
   async newSession(): Promise<SessionResult> {
@@ -1865,8 +1843,6 @@ export class KasAcpClient extends BaseAcpClient {
   ): Promise<CommandResult> {
     if (!this.sessionId)
       return { success: false, message: 'No active session' };
-    if (!this.extensionMethods.has(method))
-      return { success: false, message: `${method} not supported by agent` };
     try {
       const result = await this.kiroClient.sendExtMethod(method, {
         sessionId: this.sessionId,
@@ -1897,9 +1873,6 @@ export class KasAcpClient extends BaseAcpClient {
   async resolveSpecSession(
     request: SpecResolveSessionRequest
   ): Promise<SpecResolveSessionResponse> {
-    if (!this.extensionMethods.has('_kiro/spec/resolveSession')) {
-      throw new Error('_kiro/spec/resolveSession not supported by this agent');
-    }
     return this.kiroClient.sendExtMethod('_kiro/spec/resolveSession', request);
   }
 
@@ -1910,9 +1883,6 @@ export class KasAcpClient extends BaseAcpClient {
    * session-update and `_kiro/spec/taskStatusChanged` notifications.
    */
   async invokeSpec(request: SpecInvokeRequest): Promise<SpecInvokeResponse> {
-    if (!this.extensionMethods.has('_kiro/spec/invoke')) {
-      throw new Error('_kiro/spec/invoke not supported by this agent');
-    }
     return this.kiroClient.sendExtMethod('_kiro/spec/invoke', request);
   }
 

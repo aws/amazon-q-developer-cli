@@ -54,10 +54,10 @@ describe('slash-commands', () => {
       });
     });
 
-    it('/spec has no required extension methods (available whenever KAS is active)', async () => {
+    it('/spec is available whenever KAS is active (no gating on extension methods)', async () => {
       const { SLASH_COMMANDS } = await import('../slash-commands');
       const specCmd = SLASH_COMMANDS.find((cmd) => cmd.name === '/spec');
-      expect(specCmd!.requiredMethods).toEqual([]);
+      expect(specCmd).toBeDefined();
     });
   });
 
@@ -121,19 +121,12 @@ describe('slash-commands', () => {
       expect(specInExtension!.description).toContain('spec');
     });
 
-    it('/spec is filtered from SLASH_COMMANDS when all requiredMethods are met', async () => {
-      // SLASH_COMMANDS filtering logic: commands are included when all
-      // requiredMethods are present. /spec has requiredMethods: [], so it
-      // always passes the filter when KasAcpClient processes SLASH_COMMANDS.
+    it('/spec is included in SLASH_COMMANDS for KAS mode', async () => {
+      // All SLASH_COMMANDS are broadcast by KasAcpClient on initialize().
+      // /spec is always present in the array.
       const { SLASH_COMMANDS } = await import('../slash-commands');
 
-      // Simulate KasAcpClient's filtering logic
-      const extensionMethods = new Set<string>();
-      const filteredCommands = SLASH_COMMANDS.filter((cmd) =>
-        cmd.requiredMethods.every((m) => extensionMethods.has(m))
-      );
-
-      const specCmd = filteredCommands.find((cmd) => cmd.name === '/spec');
+      const specCmd = SLASH_COMMANDS.find((cmd) => cmd.name === '/spec');
       expect(specCmd).toBeDefined();
     });
   });
