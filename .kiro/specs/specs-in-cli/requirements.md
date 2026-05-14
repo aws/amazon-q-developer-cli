@@ -1,4 +1,4 @@
-# Spec-Mode Support in Kiro CLI TUI
+# Requirements Document
 
 ## Introduction
 

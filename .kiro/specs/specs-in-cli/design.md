@@ -1,4 +1,4 @@
-# Design — Spec-Mode Support in Kiro CLI TUI
+# Design Document: Spec-Mode Support in Kiro CLI TUI
 
 ## Architecture Overview
 
@@ -161,6 +161,101 @@ Agent internally switches mode
 4. **No session switching on `/spec <name>`**: The `_kiro/spec/resolveSession` method returns a *different* session ID (the agent's internal spec session). We don't switch the TUI's active session to it — that would disrupt the user's conversation. Instead, we stay on the current session (now in spec mode) and let the agent route internally.
 
 5. **`/spec run` uses `resolveSession` + `invokeSpec`**: Unlike `/spec new` which is prompt-driven, `/spec run` needs the structured ACP path because `runAllTasks` is a fire-and-forget operation that the agent drives autonomously without further user prompts.
+
+## Correctness Properties
+
+*A property is a characteristic or behavior that should hold true across all valid executions of a system — essentially, a formal statement about what the system should do. Properties serve as the bridge between human-readable specifications and machine-verifiable correctness guarantees.*
+
+### Property 1: Mode Change Propagation
+
+*For any* valid `currentModeId` value received in a `current_mode_update` notification that differs from the currently cached mode, the TUI SHALL update the store to reflect the new mode AND broadcast exactly one `AgentSwitched` event containing the correct `agentName` and `previousAgentName`.
+
+**Validates: Requirements 1.1, 1.2**
+
+### Property 2: No Spurious Mode Events
+
+*For any* `current_mode_update` notification where the `currentModeId` matches the already-cached mode, the TUI SHALL NOT broadcast an `AgentSwitched` event. Processing the same mode ID N times (N ≥ 2) produces exactly one event (on the first occurrence only).
+
+**Validates: Requirements 1.3**
+
+### Property 3: Spec Discovery Completeness
+
+*For any* workspace directory structure, the scanner SHALL return exactly the set of non-dotfile subdirectories under `.kiro/specs/` that contain at least one entry, reporting the correct subset of well-known documents (`requirements.md`, `design.md`, `tasks.md`, `bugfix.md`) for each, sorted alphabetically by feature name.
+
+**Validates: Requirements 7.1, 7.2, 7.4**
+
+### Property 4: Command Routing Correctness
+
+*For any* valid feature name string, `/spec new <name>` SHALL produce a prompt containing that name and referencing requirements creation, and `/spec <name>` (for an existing feature) SHALL produce a resume prompt that accurately describes exactly the documents that exist for that feature.
+
+**Validates: Requirements 3.2, 5.2**
+
+### Property 5: Workspace Scanner Never Throws
+
+*For any* input string as `workspaceRoot` (including non-existent paths, empty strings, paths to files, and paths with permission errors), `listSpecFeatures` SHALL return an array (possibly empty) and SHALL NOT throw an exception.
+
+**Validates: Requirements 7.3**
+
+## Testing Strategy
+
+### Unit Tests
+
+1. **`spec-workspace.ts` (Workspace Scanner)**
+   - `listSpecFeatures` returns correct features with document summaries
+   - Skips dotfiles and non-directory entries
+   - Returns empty array for non-existent `.kiro/specs/` directory
+   - Returns empty array for unreadable directories (permission errors)
+   - Results are sorted alphabetically
+   - `findSpecFeature` returns matching feature or undefined
+   - `describeSpecDocuments` produces human-readable document list
+
+2. **`runSpec` Effect Handler (`effects.ts`)**
+   - `/spec` with no args triggers workspace scan and shows selection menu
+   - `/spec` with no args and no specs shows warning alert
+   - `/spec new <name>` calls `setMode('spec')` and sends start prompt
+   - `/spec new` without name shows usage error
+   - `/spec <name>` for existing feature switches mode and sends resume prompt
+   - `/spec <name>` for non-existent feature shows error
+   - `/spec run <name>` validates `tasks.md` exists before calling ACP methods
+   - `/spec run <name>` with missing `tasks.md` shows error
+   - `/spec run <name>` calls `resolveSpecSession` then `invokeSpec` with correct params
+   - `/spec run <name>` shows error when agent doesn't support `_kiro/spec/invoke`
+
+3. **Mode Change Notification Handler (`KasAcpClient`)**
+   - Processes `current_mode_update` and updates `modesState` cache
+   - Broadcasts `AgentSwitched` event when mode actually changes
+   - Suppresses duplicate broadcast when mode matches cached value
+
+### Property-Based Tests
+
+Using `fast-check` for property-based testing (minimum 100 iterations per property):
+
+1. **Discovery Completeness** (Property 3)
+   - Generate random directory structures with varying combinations of well-known documents
+   - Verify scanner reports exactly the correct documents for each feature
+   - Tag: `Feature: specs-in-cli, Property 3: Spec Discovery Completeness`
+
+2. **Scanner Never Throws** (Property 5)
+   - Generate arbitrary strings as workspace root inputs
+   - Verify function always returns an array without throwing
+   - Tag: `Feature: specs-in-cli, Property 5: Workspace Scanner Never Throws`
+
+3. **No Spurious Mode Events** (Property 2)
+   - Generate random mode IDs, set as current, then re-process same ID
+   - Verify exactly one event is emitted per unique mode transition
+   - Tag: `Feature: specs-in-cli, Property 2: No Spurious Mode Events`
+
+### Integration Tests
+
+1. **`/spec` Command Flow (end-to-end)**
+   - Full flow: user types `/spec` → scanner runs → menu displayed → user selects → mode switches → prompt sent
+   - Full flow: `/spec run auth` → `resolveSpecSession` called → `invokeSpec` called → success alert shown
+   - Error flow: `/spec run auth` with unsupported agent → clear error message displayed
+
+2. **ACP Integration**
+   - `resolveSpecSession` sends correct `_kiro/spec/resolveSession` ext method call
+   - `invokeSpec` sends correct `_kiro/spec/invoke` ext method call with operation and params
+   - Graceful error handling when ACP methods are not available (V1 engine)
 
 ## Future Considerations
 
