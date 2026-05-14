@@ -23,8 +23,12 @@ pub struct BedrockRetriever {
 }
 
 impl BedrockRetriever {
-    pub async fn new(knowledge_base_id: impl Into<String>) -> Result<Self> {
-        let config = aws_config::load_defaults(aws_config::BehaviorVersion::latest()).await;
+    pub async fn new(knowledge_base_id: impl Into<String>, region: Option<String>) -> Result<Self> {
+        let mut loader = aws_config::defaults(aws_config::BehaviorVersion::latest());
+        if let Some(r) = region {
+            loader = loader.region(aws_config::Region::new(r));
+        }
+        let config = loader.load().await;
         let client = Client::new(&config);
         Ok(Self {
             client,

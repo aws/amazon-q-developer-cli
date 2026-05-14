@@ -162,3 +162,57 @@ fn calls_search_kiro_knowledge_returns_chunks() {
     let _ = child.wait_timeout(Duration::from_secs(5));
     let _ = child.kill();
 }
+
+#[test]
+fn rejects_unknown_tool_with_invalid_params_error() {
+    let mut child = Command::new(cargo_bin())
+        .args(["--stub"])
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .expect("spawn binary");
+
+    let mut stdin = child.stdin.take().unwrap();
+    let mut stdout = BufReader::new(child.stdout.take().unwrap());
+
+    let _ = send_jsonrpc(
+        &mut stdin,
+        &mut stdout,
+        "initialize",
+        serde_json::json!({
+            "protocolVersion": "2024-11-05",
+            "capabilities": {},
+            "clientInfo": {"name": "test", "version": "0.1"}
+        }),
+        1,
+    );
+    send_initialized_notification(&mut stdin);
+
+    // tools/call with a bogus tool name.
+    let response = send_jsonrpc(
+        &mut stdin,
+        &mut stdout,
+        "tools/call",
+        serde_json::json!({
+            "name": "definitely_not_a_real_tool",
+            "arguments": { "query": "x" }
+        }),
+        2,
+    );
+
+    let error = response
+        .get("error")
+        .unwrap_or_else(|| panic!("expected JSON-RPC error, got: {response:?}"));
+    let code = error.get("code").and_then(|c| c.as_i64()).expect("error code");
+    assert_eq!(code, -32602, "expected invalid_params (-32602), got: {error:?}");
+    let message = error.get("message").and_then(|m| m.as_str()).expect("error message");
+    assert!(
+        message.contains("definitely_not_a_real_tool"),
+        "error message should mention the unknown tool: {message}"
+    );
+
+    drop(stdin);
+    let _ = child.wait_timeout(Duration::from_secs(5));
+    let _ = child.kill();
+}

@@ -77,7 +77,7 @@ impl ServerHandler for KnowledgeServer {
             description: Some(
                 "Search the kiro-cli documentation, GitHub issues, and release notes for relevant context. Use this whenever the user asks about kiro-cli behavior, errors, or how-tos before answering.".to_string().into()
             ),
-            input_schema: Arc::new(serde_json::from_value(schema).unwrap_or_default()),
+            input_schema: Arc::new(serde_json::from_value(schema).expect("static schema is valid")),
             output_schema: None,
             annotations: None,
             execution: None,
@@ -107,6 +107,16 @@ impl ServerHandler for KnowledgeServer {
 
         let input: SearchInput = serde_json::from_value(args_value)
             .map_err(|e| ErrorData::invalid_params(format!("invalid arguments: {e}"), None))?;
+
+        // Bedrock's `numberOfResults` accepts 1..=100. Reject out-of-range
+        // values here so we surface a clear MCP error instead of an opaque
+        // "calling Bedrock Retrieve" anyhow context at runtime.
+        if input.max_results == 0 || input.max_results > 100 {
+            return Err(ErrorData::invalid_params(
+                format!("max_results must be between 1 and 100 (got {})", input.max_results),
+                None,
+            ));
+        }
 
         let chunks: Vec<RetrievedChunk> = self
             .retriever
@@ -147,7 +157,7 @@ async fn main() -> Result<()> {
         let kb_id = args.kb_id.ok_or_else(|| {
             anyhow::anyhow!("--kb-id is required when --stub is not set (or set KIRO_KNOWLEDGE_KB_ID)")
         })?;
-        Arc::new(BedrockRetriever::new(kb_id).await?)
+        Arc::new(BedrockRetriever::new(kb_id, args.region).await?)
     };
 
     let server = KnowledgeServer { retriever };
