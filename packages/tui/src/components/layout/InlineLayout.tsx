@@ -36,6 +36,7 @@ import { ApprovalRequest } from '../ui/ApprovalRequest.js';
 import { CrewApprovalRequest } from '../ui/CrewApprovalRequest.js';
 import { TrustAllToolsBanner } from '../ui/TrustAllToolsBanner.js';
 import { UsagePanel } from '../ui/UsagePanel';
+import { Explorer } from '../ui/Explorer';
 import { CodePanel } from '../ui/CodePanel';
 import { SurveyPanel } from '../ui/SurveyPanel';
 import { SurveyPromptBar } from '../ui/SurveyPromptBar';
@@ -66,7 +67,7 @@ import { useSessionConversation } from '../../stores/session-conversations.js';
 import { useShallow } from 'zustand/react/shallow';
 import { useKeypress } from '../../hooks/useKeypress';
 import { getGitBranch } from '../../utils/git';
-import { shortenPath } from '../../utils/string';
+import { shortenPath, formatEffort } from '../../utils/string';
 import { getAgentColor } from '../../utils/agentColors.js';
 import { useTheme } from '../../hooks/useThemeContext.js';
 
@@ -194,6 +195,8 @@ export const InlineLayout: React.FC = () => {
     helpCommands,
     showUsagePanel,
     usageData,
+    showRewindExplorer,
+    rewindRows,
     showMcpPanel,
     mcpServers,
     mcpRegistryServers,
@@ -220,6 +223,7 @@ export const InlineLayout: React.FC = () => {
     setShowTuiPanel,
     setShowChangelogPanel,
     setShowUsagePanel,
+    setShowRewindExplorer,
     setShowMcpPanel,
     setShowToolsPanel,
     setShowStatsPanel,
@@ -234,6 +238,7 @@ export const InlineLayout: React.FC = () => {
     sessionId,
     contextUsagePercent,
     currentModel,
+    currentEffort,
     currentAgent,
     previousAgentName,
     codeIntelligenceActive,
@@ -402,6 +407,29 @@ export const InlineLayout: React.FC = () => {
     setActiveCommand(null);
     clearCommandInput();
   }, [setShowUsagePanel, setActiveCommand, clearCommandInput]);
+
+  const handleCloseRewindExplorer = useCallback(() => {
+    setShowRewindExplorer(false);
+    setActiveCommand(null);
+    clearCommandInput();
+  }, [setShowRewindExplorer, setActiveCommand, clearCommandInput]);
+
+  const handleRewindSelect = useCallback(
+    (rowId: string) => {
+      setShowRewindExplorer(false);
+      setActiveCommand(null);
+      clearCommandInput();
+      // Fire `/rewind <idx>` through the normal command pipeline so the
+      // rewindAction effect handles the clone + session load.
+      void handleUserInput(`/rewind ${rowId}`);
+    },
+    [
+      setShowRewindExplorer,
+      setActiveCommand,
+      clearCommandInput,
+      handleUserInput,
+    ]
+  );
 
   const handleTabFromContext = useCallback(async () => {
     try {
@@ -572,6 +600,9 @@ export const InlineLayout: React.FC = () => {
       currentModel && (
         <Chip value={currentModel.name} color={ChipColor.PRIMARY} />
       ),
+      currentEffort && (
+        <Chip value={formatEffort(currentEffort)} color={ChipColor.SECONDARY} />
+      ),
       contextUsagePercent != null && (
         <ProgressChip value={contextUsagePercent} warningThreshold={60} />
       ),
@@ -605,6 +636,7 @@ export const InlineLayout: React.FC = () => {
     codeIntelligenceActive,
     gitBranch,
     currentModel,
+    currentEffort,
     getColor,
   ]);
 
@@ -623,6 +655,9 @@ export const InlineLayout: React.FC = () => {
         />
       ),
       currentModel && <Chip value={currentModel.name} color={mutedColor} />,
+      currentEffort && (
+        <Chip value={formatEffort(currentEffort)} color={mutedColor} />
+      ),
       contextUsagePercent != null && (
         <ProgressChip
           value={contextUsagePercent}
@@ -652,6 +687,7 @@ export const InlineLayout: React.FC = () => {
     toolOutputsExpanded,
     currentAgent,
     currentModel,
+    currentEffort,
     contextUsagePercent,
     codeIntelligenceActive,
     gitBranch,
@@ -788,6 +824,7 @@ export const InlineLayout: React.FC = () => {
               showTuiPanel ||
               showChangelogPanel ||
               showUsagePanel ||
+              showRewindExplorer ||
               showMcpPanel ||
               showToolsPanel ||
               showStatsPanel ||
@@ -824,7 +861,10 @@ export const InlineLayout: React.FC = () => {
             })}
             hint={
               promptHint ||
-              (activeCommand?.command.meta?.hint as string | undefined)
+              (activeCommand?.command.meta?.hint as string | undefined) ||
+              (activeCommand && activeCommand.command.meta?.searchable === false
+                ? activeCommand.command.description
+                : undefined)
             }
             hideInput={
               editingQueueIndex != null
@@ -839,6 +879,7 @@ export const InlineLayout: React.FC = () => {
                   showTuiPanel ||
                   showChangelogPanel ||
                   showUsagePanel ||
+                  showRewindExplorer ||
                   showMcpPanel ||
                   showToolsPanel ||
                   showStatsPanel ||
@@ -876,6 +917,33 @@ export const InlineLayout: React.FC = () => {
                 data={usageData}
                 onClose={handleCloseUsagePanel}
                 onTabSwitch={handleTabFromUsage}
+              />
+            )}
+            {showRewindExplorer && (
+              <Explorer
+                title="/rewind"
+                description="Fork from a previous prompt in this session"
+                columns={[
+                  { key: 'label', label: 'User Prompt' },
+                  { key: 'group', label: 'Context used', align: 'right' },
+                ]}
+                rows={rewindRows.map((turn) => ({
+                  id: String(turn.logIndex),
+                  values: {
+                    label: turn.label,
+                    group: turn.group ?? '',
+                  },
+                  preview: turn.responseSnippet
+                    ? { body: turn.responseSnippet }
+                    : undefined,
+                }))}
+                previewHeading="Response Snippet"
+                keyHints={[
+                  { key: '↑↓', label: 'navigate' },
+                  { key: 'Enter', label: 'to fork' },
+                ]}
+                onSelect={(row) => handleRewindSelect(row.id)}
+                onClose={handleCloseRewindExplorer}
               />
             )}
             {showHelpPanel && (
@@ -973,6 +1041,7 @@ export const InlineLayout: React.FC = () => {
                 !showTuiPanel &&
                 !showChangelogPanel &&
                 !showUsagePanel &&
+                !showRewindExplorer &&
                 !showMcpPanel &&
                 !showToolsPanel &&
                 !showHooksPanel &&

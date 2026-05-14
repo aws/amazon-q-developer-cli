@@ -244,5 +244,20 @@ describe('dispatch - additional coverage', () => {
       expect(call[0]).toContain('No options available');
       expect(call[1]).toBe('error');
     });
+
+    it('falls through to backend for /effort with no options', async () => {
+      const ctx = createMockCommandContext();
+      (ctx.kiro.getCommandOptions as any).mockResolvedValue({
+        options: [],
+      });
+
+      const cmd = makeCmd({
+        name: '/effort',
+        meta: { inputType: 'selection' },
+      });
+      await dispatch(cmd, '', ctx);
+
+      expect(ctx.kiro.executeCommand).toHaveBeenCalled();
+    });
   });
 });

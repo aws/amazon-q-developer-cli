@@ -14,6 +14,7 @@ pub mod constants;
 pub mod database;
 pub mod embedded_tui;
 pub mod feature_flags;
+pub mod launch;
 pub mod logging;
 pub mod mcp_client;
 pub mod mcp_registry;

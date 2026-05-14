@@ -8,7 +8,7 @@ doc_meta:
   title: /paste
   description: Paste image from system clipboard into conversation for vision model analysis
   keywords: [paste, clipboard, image, screenshot, vision]
-  related: [fs-read]
+  related: [read]
 ---
 
 # /paste
@@ -86,7 +86,7 @@ Pastes image from clipboard and sends to AI.
 
 ## Related Features
 
-- [fs_read Image mode](../tools/fs-read.md) - Read image files directly
+- [read Image mode](../tools/read.md) - Read image files directly
 - [/reply](reply.md) - Compose a reply
 - [/model](model.md) - Switch to vision-capable model
 

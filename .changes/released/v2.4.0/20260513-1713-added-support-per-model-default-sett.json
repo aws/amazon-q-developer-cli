@@ -1,0 +1,4 @@
+{
+  "type": "added",
+  "description": "Support per-model default settings in cli.json that apply across all new sessions (e.g., set default effort level per model)"
+}

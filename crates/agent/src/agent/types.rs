@@ -75,6 +75,10 @@ pub struct AgentSnapshot {
     #[typeshare(skip)]
     #[serde(default)]
     pub session_resource_paths: std::collections::HashSet<String>,
+    /// Whether a knowledge provider is configured
+    #[typeshare(skip)]
+    #[serde(default)]
+    pub has_knowledge_provider: bool,
 }
 
 impl AgentSnapshot {
@@ -91,6 +95,7 @@ impl AgentSnapshot {
             permissions: Default::default(),
             tool_specs: Default::default(),
             session_resource_paths: Default::default(),
+            has_knowledge_provider: false,
         }
     }
 }

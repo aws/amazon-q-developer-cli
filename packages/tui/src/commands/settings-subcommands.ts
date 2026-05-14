@@ -2,33 +2,16 @@
  * Registry of /settings subcommands.
  *
  * Each entry declares its menu presentation and its `handle` function.
- * Subcommands can be either TUI-local (delegate to an effect like
- * showThemeMenu) or backend (invoke via ctx.kiro.executeCommand). The
- * /settings command doesn't care — the handle closure encapsulates it.
+ * Handlers can delegate to an effect (e.g. `showThemeMenu`), open a panel,
+ * or run local logic directly.
  *
- * To add a new settings subcommand, add a single entry to `settingsSubcommands`
- * below. No changes are required in effects.ts.
- *
- * Example backend subcommand entry (for when its backend command lands):
- *
- *   {
- *     value: 'terminal',
- *     label: 'terminal',
- *     description: 'Enable Shift+Enter / Option+Enter for newlines',
- *     handle: async ({ ctx }) => {
- *       const result = await ctx.kiro.executeCommand({
- *         command: 'terminal-setup',
- *       } as TuiCommand);
- *       if (result?.message) {
- *         ctx.showAlert(result.message, result.success ? 'success' : 'error', 5000);
- *       }
- *     },
- *   },
+ * To add a new subcommand, add an entry to `settingsSubcommands` below.
  */
 
 import type { CommandContext } from './types.js';
 import type { SlashCommand } from '../stores/app-store.js';
 import type { EffectHandler } from './effects.js';
+import { setupTerminal } from '../utils/terminal-setup.js';
 
 export interface SettingsSubcommand {
   /** Machine value passed as `/settings <value>` */
@@ -70,6 +53,32 @@ export const settingsSubcommands: readonly SettingsSubcommand[] = [
     },
   },
   {
+    value: 'terminal',
+    label: 'terminal',
+    description: 'Shift+Enter / Option+Enter for newlines',
+    handle: async ({ ctx }) => {
+      // Final-decision subcommand: execute, surface the result as a transient
+      // alert, close overlay. Setup logic lives in utils/terminal-setup.ts.
+      ctx.setLoadingMessage('Configuring terminal…');
+      try {
+        const result = await setupTerminal();
+        ctx.setLoadingMessage(null);
+        if (result.message) {
+          ctx.showAlert(
+            result.message,
+            result.success ? 'success' : 'error',
+            alertDurationFor(result.message)
+          );
+        }
+      } catch (error) {
+        ctx.setLoadingMessage(null);
+        const message =
+          error instanceof Error ? error.message : 'Terminal setup failed';
+        ctx.showAlert(message, 'error', alertDurationFor(message));
+      }
+    },
+  },
+  {
     value: 'keybindings',
     label: 'keybindings',
     description: 'Customize keyboard shortcuts',
@@ -85,6 +94,16 @@ export function findSettingsSubcommand(
   value: string
 ): SettingsSubcommand | undefined {
   return settingsSubcommands.find((s) => s.value === value);
+}
+
+/**
+ * Pick an alert duration based on message length. Short results (install
+ * confirmations) get the default 5s; long results that include tmux
+ * instructions, Apple Terminal multi-line output, or fallback hints get
+ * 10s so users can actually read + copy the config.
+ */
+function alertDurationFor(message: string): number {
+  return message.length > 180 ? 10000 : 5000;
 }
 
 /**

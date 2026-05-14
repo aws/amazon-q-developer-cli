@@ -3,10 +3,10 @@ doc_meta:
   title: subagent
   description: Spawn and coordinate multiple AI agents in a pipeline (DAG) with dependency management
   category: tool
-  keywords: [subagent, agent_crew, crew, pipeline, DAG, stages, parallel, blocking, use_subagent]
+  keywords: [subagent, agent_crew, crew, pipeline, DAG, stages, parallel, blocking, use_subagent, trust, turn-limit]
   related: [summary, session-management, agent-configuration]
-  validated: 2026-04-08
-  commit: 1a984cb0
+  validated: 2026-04-30
+  commit: be2c1347
   status: validated
   testable_headless: true
 ---
@@ -16,6 +16,8 @@ doc_meta:
 > This tool is used by the AI assistant to fulfill your requests. You don't invoke it directly - simply ask questions naturally.
 
 The subagent tool (also known as `agent_crew`) spawns and coordinates multiple AI agents in a pipeline (DAG). Each stage runs as a persistent session. Stages with no dependencies start immediately in parallel, while dependent stages wait for their prerequisites to complete.
+
+**Naming**: This tool is called `subagent` (canonical), with `agent_crew` and `use_subagent` as legacy aliases. All names work in agent configs.
 
 Use this when you need multi-step work with specialized agents:
 - Research → Implement → Review pipelines
@@ -110,6 +112,30 @@ Control which agents can be used as stages via `toolsSettings` in your agent con
 
 The config key `agent_crew` is also accepted as an alias for `crew`.
 
+## FAQ
+
+### Do subagents inherit trust from the parent agent?
+
+No. Subagents use their own agent configuration's `allowedTools` for tool permissions. The parent agent's trust settings do not transfer. To auto-approve tools for subagents:
+- Add tools to the subagent's agent config `allowedTools`
+- Or add the agent to `trustedAgents` in the parent's crew settings (this trusts the agent spawn, not its tools)
+
+### What is the turn limit for subagents?
+
+Subagents have a default turn limit to prevent runaway execution. The limit is not currently user-configurable. If a subagent hits the limit, it will complete with whatever progress it made.
+
+### Can subagents spawn sub-subagents?
+
+No. Subagents cannot spawn additional subagents. The crew tool is only available to the parent agent. This prevents unbounded recursion.
+
+### Do subagent sessions persist after the task completes?
+
+No. Subagent sessions terminate when their task completes. The results are returned to the parent agent via the summary tool. You cannot resume a subagent session later.
+
+### Why do I see MCP errors after a subagent completes?
+
+When a subagent session terminates, its MCP server connections close. If the parent agent tries to reference MCP state from the subagent, you may see connection errors. This is expected — each subagent has its own isolated MCP connections that don't outlive the session.
+
 ## Troubleshooting
 
 ### "Agents not available for crew stages: X"
@@ -123,6 +149,16 @@ Press `ctrl+g` to monitor stage progress. A stage may be waiting for tool approv
 ### Stage doesn't start
 
 Check that all stages listed in its `depends_on` have completed. Use `ctrl+g` to see which stages are still running.
+
+### Subagent requires tool approval
+
+Subagents prompt for tool approval based on their own agent config. To avoid prompts:
+- Add tools to the subagent's `allowedTools` in its agent configuration
+- Or run the parent with `--trust-all-tools` (trusts all tools for all agents)
+
+### MCP tools not available in subagent
+
+Each subagent loads MCP servers from its own agent configuration. If a subagent needs MCP tools, add the `mcpServers` section to that agent's config file.
 
 ## Related
 

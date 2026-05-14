@@ -109,7 +109,8 @@ type EffectName =
   | 'showChangelogPanel'
   | 'showSessionId'
   | 'showStatsPanel'
-  | 'switchToGuideAgent';
+  | 'switchToGuideAgent'
+  | 'rewindAction';
 
 /**
  * Command → Effect mapping.
@@ -146,6 +147,7 @@ const commandEffects: Partial<Record<string, EffectName>> = {
   changelog: 'showChangelogPanel',
   'session-id': 'showSessionId',
   guide: 'switchToGuideAgent',
+  rewind: 'rewindAction',
 };
 
 /**
@@ -525,6 +527,27 @@ const effectHandlers: Record<EffectName, EffectHandler> = {
   },
 
   loadSession: (_result, ctx, _cmd, args) => {
+    // /rewind <idx> — backend cloned the session, now auto-load the new one.
+    // Detect via the switchSession flag so we don't collide with /chat semantics.
+    const resultData = _result?.data as
+      | {
+          sessionId?: string;
+          switchSession?: boolean;
+          suppressAgentWelcome?: boolean;
+          resetMessagesBeforeReplay?: boolean;
+        }
+      | undefined;
+    const suppressAgentWelcome = resultData?.suppressAgentWelcome === true;
+    const resetMessagesBeforeReplay =
+      resultData?.resetMessagesBeforeReplay === true;
+    if (resultData?.switchSession && resultData.sessionId) {
+      if (!_result?.success) {
+        if (_result?.message) ctx.showAlert(_result.message, 'error', 5000);
+        return true;
+      }
+      args = resultData.sessionId;
+    }
+
     if (!args) return;
 
     // /chat save — show result and done
@@ -555,6 +578,13 @@ const effectHandlers: Record<EffectName, EffectHandler> = {
     // /chat <sessionId> — load an existing session
     const sessionId = args;
     ctx.clearUIState();
+    if (resetMessagesBeforeReplay) {
+      // /rewind-only: drop the previous session's live messages so the
+      // forked session's replayed history doesn't stack on top of them
+      // (and more importantly, so stale turns from the old session don't
+      // appear to be part of the forked session's context).
+      ctx.resetMessages();
+    }
     ctx.setLoadingMessage(`Loading session ${sessionId}...`);
 
     // Buffer history events during load via direct onUpdate subscriber
@@ -589,7 +619,10 @@ const effectHandlers: Record<EffectName, EffectHandler> = {
         ctx.setLoadingMessage(null);
         ctx.setSessionId(sessionId);
         if (session.currentModel) ctx.setCurrentModel(session.currentModel);
-        if (session.currentAgent) ctx.setCurrentAgent(session.currentAgent);
+        if (session.currentAgent)
+          ctx.setCurrentAgent(session.currentAgent, {
+            suppressWelcome: suppressAgentWelcome,
+          });
         ctx.showAlert('Session loaded', 'success', 3000);
       })
       .catch((err: unknown) => {
@@ -1289,6 +1322,63 @@ const effectHandlers: Record<EffectName, EffectHandler> = {
     if (data?.prompt) {
       ctx.sendMessage(data.prompt);
     }
+  },
+
+  rewindAction: (result, ctx, cmd, args) => {
+    // /rewind <idx> — backend cloned the session, now auto-load the new one.
+    const data = result?.data as
+      | {
+          sessionId?: string;
+          switchSession?: boolean;
+          turns?: Array<{
+            logIndex: number;
+            label: string;
+            group: string;
+            responseSnippet: string;
+          }>;
+        }
+      | undefined;
+    if (data?.switchSession && data.sessionId) {
+      if (!result?.success) {
+        if (result?.message) ctx.showAlert(result.message, 'error', 5000);
+        return true;
+      }
+      // Defer to the loadSession handler to actually switch the TUI over.
+      const loadSessionHandler = effectHandlers.loadSession;
+      if (loadSessionHandler) {
+        return loadSessionHandler(
+          {
+            success: true,
+            message: '',
+            data: {
+              sessionId: data.sessionId,
+              switchSession: true,
+              // /rewind-only: skip the agent welcome message on reload since
+              // the user is continuing, not starting fresh.
+              suppressAgentWelcome: true,
+              // /rewind-only: clear live messages before replaying the forked
+              // session's history so stale turns from the old session don't
+              // leak into the new session's display.
+              resetMessagesBeforeReplay: true,
+            },
+          },
+          ctx,
+          cmd,
+          args
+        );
+      }
+      return true;
+    }
+
+    // /rewind with no args — backend returned the turn list under
+    // `result.data.turns`. Open the Explorer with those rows.
+    const turns = data?.turns ?? [];
+    if (turns.length === 0) {
+      ctx.showAlert('No previous turns to rewind to', 'warning', 3000);
+      return true;
+    }
+    ctx.setShowRewindExplorer(true, turns);
+    return true;
   },
 };
 

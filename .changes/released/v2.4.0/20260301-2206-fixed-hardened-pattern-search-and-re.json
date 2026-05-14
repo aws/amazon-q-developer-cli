@@ -1,0 +1,4 @@
+{
+  "type": "fixed",
+  "description": "Hardened pattern search and rewrite against tree-sitter parser panics for unsupported languages"
+}

@@ -1,0 +1,4 @@
+{
+  "type": "fixed",
+  "description": "Fixed typing lag in TUI mode during long conversations"
+}

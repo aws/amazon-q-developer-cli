@@ -1,0 +1,4 @@
+{
+  "type": "fixed",
+  "description": "Gracefully shut down MCP server processes on CLI exit to prevent leaked child processes"
+}

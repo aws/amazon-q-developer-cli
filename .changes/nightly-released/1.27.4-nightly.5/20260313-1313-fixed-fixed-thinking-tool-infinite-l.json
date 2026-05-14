@@ -1,0 +1,4 @@
+{
+  "type": "fixed",
+  "description": "Fixed thinking tool infinite loop caused by single-event tool calls being silently dropped"
+}

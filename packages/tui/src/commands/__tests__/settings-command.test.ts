@@ -9,7 +9,7 @@ import { settingsSubcommands } from '../settings-subcommands.js';
 
 const settingsCmd: SlashCommand = {
   name: '/settings',
-  description: 'Configure theme, terminal keybindings, and other preferences',
+  description: 'Configure theme, terminal, keybindings, and other preferences',
   source: 'local',
   meta: { local: true },
 };

@@ -1,0 +1,4 @@
+{
+  "type": "fixed",
+  "description": "Fixed YAML frontmatter parsing failing on files with Windows-style (CRLF) line endings"
+}

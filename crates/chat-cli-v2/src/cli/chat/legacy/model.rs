@@ -7,6 +7,7 @@ use serde::{
     Serialize,
 };
 
+use super::additional_fields::AdditionalModelFields;
 use crate::api_client::ApiClient;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -22,6 +23,8 @@ pub struct ModelInfo {
     pub rate_multiplier: Option<f64>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub rate_unit: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub additional_fields: Option<AdditionalModelFields>,
 }
 
 impl ModelInfo {
@@ -31,6 +34,9 @@ impl ModelInfo {
             .token_limits()
             .and_then(|limits| limits.max_input_tokens())
             .map_or(default_context_window_for_model(&model_id), |tokens| tokens as usize);
+        let additional_fields = model
+            .additional_model_request_fields_schema()
+            .map(AdditionalModelFields::from_document);
         Self {
             model_id,
             description: model.description.clone(),
@@ -38,18 +44,7 @@ impl ModelInfo {
             context_window_tokens,
             rate_multiplier: model.rate_multiplier(),
             rate_unit: model.rate_unit().map(|s| s.to_string()),
-        }
-    }
-
-    pub fn from_id(model_id: String) -> Self {
-        let context_window_tokens = default_context_window_for_model(&model_id);
-        Self {
-            model_id,
-            description: None,
-            model_name: None,
-            context_window_tokens,
-            rate_multiplier: None,
-            rate_unit: None,
+            additional_fields,
         }
     }
 
@@ -118,6 +113,7 @@ pub fn get_fallback_models() -> Vec<ModelInfo> {
             context_window_tokens: 200_000,
             rate_multiplier: None,
             rate_unit: None,
+            additional_fields: None,
         },
         ModelInfo {
             model_name: Some("claude-sonnet-4.5".to_string()),
@@ -126,6 +122,7 @@ pub fn get_fallback_models() -> Vec<ModelInfo> {
             context_window_tokens: 200_000,
             rate_multiplier: None,
             rate_unit: None,
+            additional_fields: None,
         },
     ]
 }
@@ -167,17 +164,5 @@ mod tests {
         assert_eq!(default_context_window_for_model("claude-sonnet-4.5"), 200_000);
         assert_eq!(default_context_window_for_model("auto"), 200_000);
         assert_eq!(default_context_window_for_model("unknown-model"), 200_000);
-    }
-
-    #[test]
-    fn test_from_id_uses_model_specific_context_window() {
-        let sonnet_46 = ModelInfo::from_id("claude-sonnet-4.6".to_string());
-        assert_eq!(sonnet_46.context_window_tokens, 1_000_000);
-
-        let opus_46 = ModelInfo::from_id("claude-opus-4.6".to_string());
-        assert_eq!(opus_46.context_window_tokens, 1_000_000);
-
-        let sonnet_4 = ModelInfo::from_id("claude-sonnet-4".to_string());
-        assert_eq!(sonnet_4.context_window_tokens, 200_000);
     }
 }

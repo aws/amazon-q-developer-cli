@@ -42,6 +42,8 @@ export interface MenuProps {
   showFooterHints?: boolean;
   /** When true, selected item uses bold instead of accent color, preserving embedded ANSI colors in labels. */
   preserveLabelColors?: boolean;
+  /** Static title shown above the menu items (rendered regardless of searchable). */
+  title?: string;
 }
 
 import { fuzzyScore } from '../../../utils/fuzzyScore.js';
@@ -61,6 +63,7 @@ export const Menu = React.memo(function Menu({
   searchPlaceholder = 'type to search',
   showFooterHints,
   preserveLabelColors = false,
+  title,
 }: MenuProps) {
   const [selectedIndex, setSelectedIndex] = useState(0);
   const [searchText, setSearchText] = useState('');
@@ -194,6 +197,12 @@ export const Menu = React.memo(function Menu({
 
   return (
     <Box flexDirection="column">
+      {title && !searchable && (
+        <>
+          <Text>{dimText(title)}</Text>
+          <Box height={1} />
+        </>
+      )}
       {searchable && (
         <Box>
           <Text>{dimText(`${searchLabel}: `)}</Text>

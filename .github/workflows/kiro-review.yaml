@@ -1,0 +1,82 @@
+name: Code Review
+
+on:
+  pull_request_target:
+    types: [opened]
+    branches: [main]
+  issue_comment:
+    types: [created]
+
+concurrency:
+  group: kiro-review-${{ github.event.pull_request.number || github.event.issue.number }}
+  cancel-in-progress: true
+
+jobs:
+  review:
+    if: >-
+      (github.event_name == 'pull_request_target') ||
+      (github.event_name == 'issue_comment' &&
+       github.event.issue.pull_request &&
+       startsWith(github.event.comment.body, '/review') &&
+       (github.event.comment.author_association == 'OWNER' ||
+        github.event.comment.author_association == 'MEMBER' ||
+        github.event.comment.author_association == 'COLLABORATOR'))
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      pull-requests: write
+      id-token: write
+    steps:
+      - name: Get PR number
+        id: pr
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          if [ "${{ github.event_name }}" = "issue_comment" ]; then
+            echo "number=${{ github.event.issue.number }}" >> "$GITHUB_OUTPUT"
+          else
+            echo "number=${{ github.event.pull_request.number }}" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Check skip marker
+        id: gate
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          BODY=$(gh pr view "${{ steps.pr.outputs.number }}" --repo "${{ github.repository }}" --json body --jq '.body // ""')
+          if echo "$BODY" | grep -qF '[review:ignore]'; then
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - uses: actions/checkout@v6
+        if: steps.gate.outputs.skip != 'true'
+        with:
+          ref: ${{ github.event.pull_request.head.sha || '' }}
+          fetch-depth: 0
+
+      - name: Install Kiro CLI
+        if: steps.gate.outputs.skip != 'true'
+        run: |
+          curl -fsSL https://cli.kiro.dev/install | bash
+          kiro-cli --version
+
+      - name: Configure AWS credentials
+        if: steps.gate.outputs.skip != 'true'
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::551670267384:role/KiroCLIReviewerQueryRole
+          aws-region: us-east-1
+
+      - name: Run review
+        if: steps.gate.outputs.skip != 'true'
+        env:
+          KIRO_API_KEY: ${{ secrets.KIRO_REVIEW_PAT }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          SLACK_BOT_TOKEN: ${{ secrets.SLACK_REVIEWER_BOT_TOKEN }}
+          PR_NUMBER: ${{ steps.pr.outputs.number }}
+        run: |
+          kiro-cli chat --no-interactive --trust-all-tools --agent pr-reviewer \
+            "Review PR $PR_NUMBER. Check for prior bot comments and only post if you have new findings. DO NOT wait for user input."

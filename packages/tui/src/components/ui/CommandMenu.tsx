@@ -168,9 +168,12 @@ export const CommandMenu: React.FC = () => {
       cmd.name.slice(1).toLowerCase().startsWith(partial)
     );
     const cmds = matches.filter(
-      (c) => c.meta?.type !== 'prompt' && !c.meta?.hidden
+      (c) =>
+        c.meta?.type !== 'prompt' && c.meta?.type !== 'skill' && !c.meta?.hidden
     );
-    const promptCmds = matches.filter((c) => c.meta?.type === 'prompt');
+    const promptCmds = matches.filter(
+      (c) => c.meta?.type === 'prompt' || c.meta?.type === 'skill'
+    );
     cmds.sort((a, b) => a.name.localeCompare(b.name));
     return [...cmds, ...promptCmds];
   }, [commandInputValue, slashCommands, activeTrigger]);

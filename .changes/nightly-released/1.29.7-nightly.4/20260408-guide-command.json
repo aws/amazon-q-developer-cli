@@ -1,0 +1,4 @@
+{
+  "type": "added",
+  "description": "Added /guide command that switches to an interactive guide agent for help with Kiro CLI features, commands, and settings"
+}

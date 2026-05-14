@@ -12,8 +12,7 @@ export interface SlashCommand {
   meta?: CommandMeta;
 }
 
-/** TUI-owned slash commands. A command is available when all its
- *  required extension methods are advertised by the agent. */
+/** TUI-owned slash commands for KAS mode. */
 export const SLASH_COMMANDS: SlashCommand[] = [
   {
     name: '/help',
@@ -49,6 +48,19 @@ export const SLASH_COMMANDS: SlashCommand[] = [
   {
     name: '/paste',
     description: 'Paste image from clipboard',
+  },
+  {
+    name: '/prompts',
+    description: 'Select or list available prompts',
+    meta: {
+      inputType: 'selection',
+      hint: '',
+    },
+  },
+  {
+    name: '/usage',
+    description: 'Show plan usage and billing information',
+    meta: { inputType: 'panel' },
   },
   {
     name: '/spec',

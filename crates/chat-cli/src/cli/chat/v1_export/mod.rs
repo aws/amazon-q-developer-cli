@@ -32,6 +32,7 @@ use chat_cli_v2::agent::session::legacy_compat::{
     LegacySessionInfo,
 };
 use chat_cli_v2::agent::session::{
+    SessionCreatedReason,
     SessionData,
     SessionState,
     SessionStateV1,
@@ -212,6 +213,7 @@ fn write_v1_session(
             context_window_tokens: m.context_window_tokens,
             rate_multiplier: m.rate_multiplier,
             rate_unit: m.rate_unit.clone(),
+            additional_fields: None,
         });
     let session_data = SessionData {
         session_id: conversation_id.to_string(),
@@ -222,12 +224,14 @@ fn write_v1_session(
         exported_from_v1: true,
         imported_from: imported_from.map(|p| p.to_string_lossy().into_owned()),
         parent_session_id: None,
+        session_created_reason: SessionCreatedReason::Subagent,
         session_state: SessionState::V1(SessionStateV1 {
             conversation_metadata: ConversationMetadata::default(),
             rts_model_state: RtsStateSnapshot {
                 conversation_id: conversation_id.to_string(),
                 model_info,
                 context_usage_percentage: None,
+                additional_fields: None,
             },
             permissions: RuntimePermissions::default().with_cwd(cwd),
             agent_name: None,

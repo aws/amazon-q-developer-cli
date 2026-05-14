@@ -93,4 +93,5 @@ describe('Slash Commands', () => {
     await testCase.waitForText('Claude Opus 4.5', 2000);
     await testCase.waitForText('Claude Haiku 4.5', 2000);
   }, 30000);
+
 });

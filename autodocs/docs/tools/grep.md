@@ -8,7 +8,7 @@ doc_meta:
   title: grep
   description: Fast regex pattern search in files with configurable output modes and limits
   keywords: [grep, search, regex, pattern, find, text]
-  related: [fs-read, glob, code]
+  related: [read, glob, code]
 ---
 
 # grep
@@ -247,7 +247,7 @@ src/lib.rs:45:    log::error!("Failed to connect");
 
 ## Related Features
 
-- [fs_read](fs-read.md) - Read specific files found by grep
+- [read](read.md) - Read specific files found by grep
 - [glob](glob.md) - Find files by name pattern
 - [code](code.md) - Semantic code search with LSP
 

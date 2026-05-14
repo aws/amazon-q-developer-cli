@@ -1,0 +1,4 @@
+{
+  "type": "fixed",
+  "description": "Fixed spurious warnings when passing grep or glob to --trust-tools"
+}

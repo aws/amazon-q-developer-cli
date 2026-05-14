@@ -172,3 +172,12 @@ export const shortenPath = (path: string): string => {
 
   return path;
 };
+
+/**
+ * Format an effort level for display. Capitalizes the first letter,
+ * with a special case for "xhigh" → "xHigh".
+ */
+export function formatEffort(effort: string): string {
+  if (effort === 'xhigh') return 'xHigh';
+  return effort.charAt(0).toUpperCase() + effort.slice(1);
+}

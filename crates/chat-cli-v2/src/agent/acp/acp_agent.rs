@@ -109,10 +109,10 @@ use sacp::schema::{
     ToolKind,
 };
 use sacp::{
-    AgentToClient,
-    JrConnectionCx,
-    JrRequestCx,
-    MessageCx,
+    Agent as AgentToClient,
+    ConnectionTo,
+    Dispatch,
+    Responder,
 };
 use tokio::sync::{
     RwLock,
@@ -157,6 +157,7 @@ use crate::agent::rts::{
 };
 use crate::agent::session::legacy_compat::LegacySessionExporter;
 use crate::agent::session::{
+    SessionCreatedReason,
     SessionDb,
     SessionState,
 };
@@ -190,7 +191,7 @@ pub enum AcpSessionRequest {
     /// The response is sent via the `request_cx` when the turn completes.
     Prompt {
         request: PromptRequest,
-        request_cx: JrRequestCx<PromptResponse>,
+        request_cx: Responder<PromptResponse>,
     },
     /// Internal prompt for subagent execution (no ACP connection needed).
     /// Used when spawning subagents that run without TUI interaction.
@@ -215,7 +216,9 @@ pub enum AcpSessionRequest {
         respond_to: oneshot::Sender<Result<(), String>>,
     },
     /// Get the current model ID for this session.
-    GetModelId { respond_to: oneshot::Sender<String> },
+    GetModelId {
+        respond_to: oneshot::Sender<String>,
+    },
     /// Cancel the current operation and end the turn.
     Cancel,
     /// Execute a slash command via an extension method.
@@ -257,7 +260,10 @@ pub enum AcpSessionRequest {
         respond_to: oneshot::Sender<agent::AgentHandle>,
     },
     /// Send an extension notification to the TUI client.
-    SendExtNotification { method: String, params: serde_json::Value },
+    SendExtNotification {
+        method: String,
+        params: serde_json::Value,
+    },
     /// Get tool info for advertising.
     GetToolInfo {
         respond_to: oneshot::Sender<Result<Vec<agent::tui_commands::ToolInfo>, String>>,
@@ -267,9 +273,12 @@ pub enum AcpSessionRequest {
         respond_to: oneshot::Sender<Result<Vec<agent::tui_commands::McpServerInfo>, String>>,
     },
     /// Graceful shutdown: terminate the agent and await MCP cleanup.
-    Shutdown { respond_to: oneshot::Sender<()> },
+    Shutdown {
+        respond_to: oneshot::Sender<()>,
+    },
     /// Trigger command/prompt advertising to the client.
     AdvertiseCommands,
+    EmitInitialMetadata,
     /// Queue an MCP server refresh with updated registry data.
     /// The actual swap happens in the event loop when the session is idle.
     RefreshMcpServers {
@@ -342,7 +351,7 @@ impl AcpSessionHandle {
     pub async fn handle_prompt(
         &self,
         request: PromptRequest,
-        request_cx: JrRequestCx<PromptResponse>,
+        request_cx: Responder<PromptResponse>,
     ) -> Result<(), sacp::Error> {
         self.tx.send(AcpSessionRequest::Prompt { request, request_cx }).await
     }
@@ -597,6 +606,11 @@ impl AcpSessionHandle {
     pub async fn advertise_commands(&self) {
         let _ = self.tx.send(AcpSessionRequest::AdvertiseCommands).await;
     }
+
+    /// Fire-and-forget: tell the session to emit initial metadata (context usage, effort).
+    pub async fn emit_initial_metadata(&self) {
+        let _ = self.tx.send(AcpSessionRequest::EmitInitialMetadata).await;
+    }
 }
 
 /// Configuration for spawning an [`AcpSession`].
@@ -613,6 +627,9 @@ pub struct AcpSessionConfig {
     pub user_embedded_msg: Option<String>,
     /// `Some` only for subagent sessions; holds the parent session's ID.
     pub parent_session_id: Option<String>,
+    /// Why this session was created. Combined with `parent_session_id`, used
+    /// to distinguish subagent vs rewind-fork at session-load time.
+    pub session_created_reason: SessionCreatedReason,
     pub model_id: Option<String>,
     /// MCP servers provided by the ACP client
     pub mcp_servers: Vec<sacp::schema::McpServer>,
@@ -632,6 +649,7 @@ impl AcpSessionConfig {
             initial_agent_name: None,
             user_embedded_msg: None,
             parent_session_id: None,
+            session_created_reason: SessionCreatedReason::default(),
             model_id: None,
             mcp_servers: Vec::new(),
             trust_all_tools: false,
@@ -693,7 +711,7 @@ pub struct AcpSessionBuilder<'a> {
     local_mcp_path: Option<&'a PathBuf>,
     model_id: Option<&'a str>,
     session_tx: Option<SessionManagerHandle>,
-    client_cx: Option<JrConnectionCx<AgentToClient>>,
+    client_cx: Option<ConnectionTo<sacp::Client>>,
     mock_registry: Option<MockResponseRegistryHandle>,
     code_intelligence: Option<Arc<RwLock<CodeIntelligence>>>,
     available_agents: Vec<super::session_manager::AgentInfo>,
@@ -812,7 +830,7 @@ impl<'a> AcpSessionBuilder<'a> {
         self
     }
 
-    pub fn connection_cx(mut self, cx: JrConnectionCx<AgentToClient>) -> Self {
+    pub fn connection_cx(mut self, cx: ConnectionTo<sacp::Client>) -> Self {
         self.client_cx = Some(cx);
         self
     }
@@ -922,7 +940,7 @@ impl<'a> AcpSessionBuilder<'a> {
 ///
 /// Each session owns:
 /// - An [`Agent`](agent::Agent) for LLM interactions
-/// - A [`JrConnectionCx`] for direct client communication (egress)
+/// - A [`ConnectionTo`] for direct client communication (egress)
 /// - A [`SessionDb`] for persistence
 ///
 /// The session handles:
@@ -945,12 +963,12 @@ struct AcpSession {
     global_mcp_path: Option<PathBuf>,
     current_agent_name: String,
     /// Connection to the TUI client
-    connection_cx: JrConnectionCx<AgentToClient>,
+    connection_cx: ConnectionTo<sacp::Client>,
     is_subagent: bool,
     previous_agent_name: Option<String>,
     pending_plan: Option<String>,
     pending_swap: Option<agent::agent_config::LoadedAgentConfig>,
-    pending_prompt_response: Option<tokio::sync::Mutex<JrRequestCx<PromptResponse>>>,
+    pending_prompt_response: Option<tokio::sync::Mutex<Responder<PromptResponse>>>,
     /// Agent config to swap to when the session becomes idle (set by registry refresh)
     pending_mcp_refresh: Option<Box<agent::agent_config::LoadedAgentConfig>>,
     compaction_summary: Option<String>,
@@ -1116,6 +1134,8 @@ impl AcpSession {
         // Determine if loading existing session or creating new one
         // Track the model ID from a loaded session so we can restore it below
         let mut saved_model_id: Option<String> = None;
+        let mut saved_additional_fields: Option<crate::cli::chat::legacy::additional_fields::AdditionalModelFields> =
+            None;
 
         let (session_db, snapshot) = if builder.load {
             // Load existing session
@@ -1127,6 +1147,7 @@ impl AcpSession {
             saved_model_id = state
                 .rts_model_state()
                 .and_then(|s| s.model_info.as_ref().map(|m| m.model_id.clone()));
+            saved_additional_fields = state.rts_model_state().and_then(|s| s.additional_fields.clone());
 
             let conversation_id = Uuid::parse_str(&session_id_str)
                 .map_err(|_e| eyre::eyre!("Invalid session ID '{}': must be a valid UUID", session_id_str))?;
@@ -1159,6 +1180,7 @@ impl AcpSession {
                 conversation_id: session_id_str.clone(),
                 model_info: None,
                 context_usage_percentage: None,
+                additional_fields: None,
             };
             let initial_state = SessionState::new(snapshot.conversation_metadata.clone(), rts_snapshot, permissions);
             let db = SessionDb::new(
@@ -1166,6 +1188,7 @@ impl AcpSession {
                 &cwd,
                 initial_state,
                 builder.parent_session_id.clone(),
+                SessionCreatedReason::default(),
             )?;
 
             (db, snapshot)
@@ -1199,6 +1222,13 @@ impl AcpSession {
             && let Err(e) = update_model_info(&api_client, &os.database, &rts_state, Some(model_id)).await
         {
             warn!("Failed to set CLI model override: {}", e);
+        }
+
+        // Restore saved effort/additional_fields from the loaded session (only if no CLI model override)
+        if builder.model_id.is_none()
+            && let Some(saved_af) = saved_additional_fields
+        {
+            rts_state.restore_additional_fields(saved_af);
         }
 
         let snapshot = {
@@ -1355,8 +1385,6 @@ impl AcpSession {
         loop {
             match self.agent.recv().await {
                 Ok(AgentEvent::Initialized) => {
-                    // Emit initial context usage so TUI shows it immediately
-                    self.emit_initial_context_usage().await;
                     return Ok(());
                 },
                 Ok(AgentEvent::InitializeUpdate(init_event)) => match init_event {
@@ -1401,6 +1429,7 @@ impl AcpSession {
                         local_mcp_path,
                         global_mcp_path,
                         force: true,
+                        knowledge_provider: None,
                     })
                     .await
                 {
@@ -1453,6 +1482,15 @@ impl AcpSession {
             .send_notification(sacp::schema::AgentNotification::ExtNotification(ext_notification))
     }
 
+    fn current_effort(&self) -> Option<String> {
+        self.rts_state.additional_fields().and_then(|f| {
+            f.overrides()
+                .and_then(|o| o.pointer("/output_config/effort"))
+                .and_then(|v| v.as_str())
+                .map(|s| s.to_string())
+        })
+    }
+
     fn send_turn_metadata(&self, metadata: &agent::agent_loop::protocol::UserTurnMetadata) -> Result<(), sacp::Error> {
         let metering = if metadata.metering_usage.is_empty() {
             None
@@ -1464,6 +1502,7 @@ impl AcpSession {
             context_usage_percentage: metadata.context_usage_percentage,
             metering_usage: metering,
             turn_duration_ms: metadata.turn_duration.map(|d| d.as_millis() as u64),
+            effort: self.current_effort(),
         };
         self.connection_cx.send_notification(notification)
     }
@@ -1501,6 +1540,7 @@ impl AcpSession {
             context_usage_percentage: Some(estimated_pct),
             metering_usage: None,
             turn_duration_ms: None,
+            effort: self.current_effort(),
         };
         if let Err(e) = self.connection_cx.send_notification(notification) {
             warn!("Failed to send initial context usage: {}", e);
@@ -1750,6 +1790,25 @@ impl AcpSession {
                 };
                 let new_resources = agent_config.resource_paths().to_vec();
 
+                // Create a new knowledge provider for the target agent BEFORE swapping
+                let new_knowledge_provider = if std::env::var(KIRO_TEST_MODE).is_ok() {
+                    None
+                } else {
+                    match crate::util::knowledge_store::KnowledgeStore::get_async_instance(
+                        &self.os,
+                        Some(&new_name),
+                        new_agent_path.as_deref(),
+                    )
+                    .await
+                    {
+                        Ok(store) => Some(std::sync::Arc::new(
+                            crate::util::knowledge_store::KnowledgeStoreProvider::new(store),
+                        )
+                            as std::sync::Arc<dyn agent::tools::KnowledgeProvider>),
+                        Err(_) => None,
+                    }
+                };
+
                 let result = self
                     .agent
                     .swap_agent(agent::protocol::SwapAgentArgs {
@@ -1757,6 +1816,7 @@ impl AcpSession {
                         local_mcp_path,
                         global_mcp_path,
                         force: false,
+                        knowledge_provider: new_knowledge_provider,
                     })
                     .await;
 
@@ -1866,6 +1926,22 @@ impl AcpSession {
 
                 let create_succeeded = is_agent_create && result.success;
                 let _ = respond_to.send(result);
+
+                // Persist state after commands (captures effort, model changes, etc.)
+                self.persist_session_state().await;
+
+                // Send metadata notification after every command (keeps TUI effort/context in sync)
+                let notification = super::schema::MetadataNotification {
+                    session_id: self.session_id_str.clone(),
+                    context_usage_percentage: self.rts_state.context_usage_percentage(),
+                    metering_usage: None,
+                    turn_duration_ms: None,
+                    effort: self.current_effort(),
+                };
+                if let Err(e) = self.connection_cx.send_notification(notification) {
+                    warn!("Failed to send metadata after command execute: {}", e);
+                }
+
                 if is_agent_swap && let Err(e) = self.advertise_commands_and_prompts().await {
                     warn!("Failed to advertise commands after agent swap: {}", e);
                 }
@@ -1889,6 +1965,7 @@ impl AcpSession {
                     super::schema::TuiCommandKind::Agent => super::commands::agent::get_options(&partial, &ctx),
                     super::schema::TuiCommandKind::Prompts => super::commands::prompts::get_options(&self.agent).await,
                     super::schema::TuiCommandKind::Feedback => super::commands::issue::get_options(),
+                    super::schema::TuiCommandKind::Effort => super::commands::effort::get_options(&ctx),
                     super::schema::TuiCommandKind::Chat => {
                         match super::commands::chat::list_sessions(ctx.session_tx, Some(ctx.cwd.to_path_buf())).await {
                             Ok(entries) => {
@@ -1901,7 +1978,8 @@ impl AcpSession {
                             Err(_) => agent::tui_commands::CommandOptionsResponse::default(),
                         }
                     },
-                    super::schema::TuiCommandKind::Context
+                    super::schema::TuiCommandKind::Rewind
+                    | super::schema::TuiCommandKind::Context
                     | super::schema::TuiCommandKind::Compact
                     | super::schema::TuiCommandKind::Clear
                     | super::schema::TuiCommandKind::Quit
@@ -1990,6 +2068,9 @@ impl AcpSession {
                 if let Err(e) = self.advertise_commands_and_prompts().await {
                     warn!("Failed to advertise commands: {}", e);
                 }
+            },
+            AcpSessionRequest::EmitInitialMetadata => {
+                self.emit_initial_context_usage().await;
             },
             AcpSessionRequest::RefreshMcpServers { agent_config } => {
                 self.pending_mcp_refresh = Some(agent_config);
@@ -2127,6 +2208,7 @@ impl AcpSession {
                             local_mcp_path,
                             global_mcp_path,
                             force: false,
+                            knowledge_provider: None,
                         })
                         .await
                     {
@@ -2260,6 +2342,7 @@ impl AcpSession {
                         context_usage_percentage: self.rts_state.context_usage_percentage(),
                         metering_usage: None,
                         turn_duration_ms: None,
+                        effort: self.current_effort(),
                     };
                     if let Err(e) = self.connection_cx.send_notification(notification) {
                         warn!("Failed to send metadata after compaction: {}", e);
@@ -2299,6 +2382,7 @@ impl AcpSession {
                     context_usage_percentage: self.rts_state.context_usage_percentage(),
                     metering_usage: None,
                     turn_duration_ms: None,
+                    effort: self.current_effort(),
                 };
                 if let Err(e) = self.connection_cx.send_notification(notification) {
                     warn!("Failed to send metadata after clear: {}", e);
@@ -2447,7 +2531,7 @@ impl AcpSession {
 async fn advertise_commands_and_prompts_to_client(
     session_id: &str,
     agent_handle: &AgentHandle,
-    client_cx: &JrConnectionCx<AgentToClient>,
+    client_cx: &ConnectionTo<sacp::Client>,
 ) -> Result<(), sacp::Error> {
     let commands: Vec<super::schema::AvailableCommand> = TuiCommand::all_commands()
         .into_iter()
@@ -2583,7 +2667,7 @@ async fn advertise_commands_and_prompts_to_client(
 
 async fn handle_approval_request(
     req: ApprovalRequest,
-    client_cx: JrConnectionCx<AgentToClient>,
+    client_cx: ConnectionTo<sacp::Client>,
     session_id: SessionId,
     agent: AgentHandle,
     is_subagent: bool,
@@ -3180,6 +3264,8 @@ async fn update_model_info(
     };
 
     rts_state.set_model_info(Some(model_info));
+    rts_state.apply_model_defaults(&database.settings);
+
     Ok(())
 }
 
@@ -3198,6 +3284,7 @@ fn synthesize_model_info(requested_model: &str) -> crate::cli::chat::legacy::mod
         context_window_tokens: crate::cli::chat::legacy::model::default_context_window_for_model(requested_model),
         rate_multiplier: None,
         rate_unit: None,
+        additional_fields: None,
     }
 }
 
@@ -3240,7 +3327,7 @@ pub async fn execute(
     // response processing. The TLDR; is the request path and response path are _not_ done on the
     // same task.
     let (stdin_reader, stdin_closed) = super::stdin_reader::StdinReader::new();
-    let serve_future = AgentToClient::builder()
+    let serve_future = AgentToClient.builder()
         .name("kiro-cli-agent")
         .on_receive_request(
             {
@@ -3264,9 +3351,9 @@ pub async fn execute(
                                 .title(crate::constants::AGENT_NAME),
                         );
                     if !logged_in {
-                        response = response.auth_methods(vec![AuthMethod::new("kiro-login", "Kiro Login").description(
+                        response = response.auth_methods(vec![AuthMethod::Agent(sacp::schema::AuthMethodAgent::new("kiro-login", "Kiro Login").description(
                             format!("Run '{} login' in terminal to authenticate. See https://kiro.dev/docs/cli/authentication/", crate::constants::CLI_NAME),
-                        )]);
+                        ))]);
                     }
                     request_cx.respond(response)
                 }
@@ -3276,7 +3363,7 @@ pub async fn execute(
         .on_receive_request(
             {
                 let session_tx = session_manager_handle.clone();
-                async move |request: NewSessionRequest, request_cx, cx: JrConnectionCx<AgentToClient>| {
+                async move |request: NewSessionRequest, request_cx, cx: ConnectionTo<sacp::Client>| {
                     let session_id = SessionId::new(Uuid::new_v4().to_string());
 
                     // Publish session ID so all child processes inherit it
@@ -3300,6 +3387,7 @@ pub async fn execute(
 
                     // Advertise after responding so the TUI has processed the session response
                     result.handle.advertise_commands().await;
+                    result.handle.emit_initial_metadata().await;
 
                     // Notify TUI about agent loading issues
                     send_agent_load_notifications(&cx, &session_id, &result.requested_agent_name, &result.agent_config_errors, result.mcp_enabled, result.mcp_api_failure);
@@ -3312,7 +3400,7 @@ pub async fn execute(
         .on_receive_request(
             {
                 let session_tx = session_manager_handle.clone();
-                async move |request: LoadSessionRequest, request_cx, cx: JrConnectionCx<AgentToClient>| {
+                async move |request: LoadSessionRequest, request_cx, cx: ConnectionTo<sacp::Client>| {
                     // Publish session ID so all child processes inherit it
                     agent::util::consts::env_var::publish_session_id(&request.session_id.to_string());
 
@@ -3332,6 +3420,7 @@ pub async fn execute(
 
                             // Advertise after responding so the TUI has processed the session response
                             result.handle.advertise_commands().await;
+                            result.handle.emit_initial_metadata().await;
 
                             // Notify TUI about agent loading issues
                             send_agent_load_notifications(&cx, &request.session_id, &result.requested_agent_name, &result.agent_config_errors, result.mcp_enabled, result.mcp_api_failure);
@@ -3469,15 +3558,15 @@ pub async fn execute(
             },
             sacp::on_receive_request!(),
         )
-        .on_receive_message(
+        .on_receive_dispatch(
             {
                 let session_tx = session_manager_handle.clone();
-                async move |message: MessageCx, _cx: JrConnectionCx<AgentToClient>| {
+                async move |message: Dispatch, _cx: ConnectionTo<sacp::Client>| {
                     let method = message.method().to_string();
 
                     // Handle session/set_model (unstable ACP method)
                     if method == "session/set_model" {
-                        let MessageCx::Request(req, req_cx) = message else {
+                        let Dispatch::Request(req, req_cx) = message else {
                             return Ok(sacp::Handled::Yes);
                         };
                         let request: sacp::schema::SetSessionModelRequest = serde_json::from_value(req.params().clone())
@@ -3491,10 +3580,11 @@ pub async fn execute(
                         return Ok(sacp::Handled::Yes);
                     }
 
+
                     // Handle _session/spawn ext method from TUI
                     use super::extensions::methods;
                     if method == methods::SESSION_SPAWN {
-                        let MessageCx::Request(req, req_cx) = message else {
+                        let Dispatch::Request(req, req_cx) = message else {
                             return Ok(sacp::Handled::Yes);
                         };
                         #[derive(serde::Deserialize)]
@@ -3524,7 +3614,7 @@ pub async fn execute(
                         return Ok(sacp::Handled::Yes);
                     }
                     if method == methods::MESSAGE_SEND {
-                        let MessageCx::Request(req, req_cx) = message else {
+                        let Dispatch::Request(req, req_cx) = message else {
                             return Ok(sacp::Handled::Yes);
                         };
                         #[derive(serde::Deserialize)]
@@ -3546,7 +3636,7 @@ pub async fn execute(
                     }
 
                     // Handle extension notifications
-                    if let MessageCx::Notification(notif) = &message {
+                    if let Dispatch::Notification(notif) = &message {
                         match notif.method() {
                             name if name == AGENT_METHOD_NAMES.session_cancel => {
                                 if let Ok(cancel_notif) =
@@ -3565,9 +3655,9 @@ pub async fn execute(
                     Ok(sacp::Handled::No { message, retry: false })
                 }
             },
-            sacp::on_receive_message!(),
+            sacp::on_receive_dispatch!(),
         )
-        .serve(sacp::ByteStreams::new(
+        .connect_to(sacp::ByteStreams::new(
             tokio::io::stdout().compat_write(),
             stdin_reader,
         ));
@@ -3642,7 +3732,7 @@ pub async fn execute(
 /// - Agent config parse errors from startup
 /// - MCP governance disabled (admin turned off MCP)
 fn send_agent_load_notifications(
-    cx: &JrConnectionCx<AgentToClient>,
+    cx: &ConnectionTo<sacp::Client>,
     session_id: &SessionId,
     requested_agent_name: &Option<String>,
     agent_config_errors: &[super::session_manager::AgentConfigLoadError],

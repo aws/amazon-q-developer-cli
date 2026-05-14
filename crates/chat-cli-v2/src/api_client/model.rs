@@ -107,6 +107,9 @@ pub struct ConversationState {
     pub user_input_message: UserInputMessage,
     pub history: Option<Vec<ChatMessage>>,
     pub agent_continuation_id: Option<String>,
+    /// Transient: rebuilt from AdditionalModelFields overrides on each request, not persisted.
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub additional_model_request_fields: Option<serde_json::Value>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

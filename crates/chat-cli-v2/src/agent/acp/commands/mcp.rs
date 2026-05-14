@@ -298,6 +298,7 @@ async fn execute_add(ctx: &CommandContext<'_>, server_names: &[&str]) -> Command
             local_mcp_path: ctx.local_mcp_path.cloned(),
             global_mcp_path: ctx.global_mcp_path.cloned(),
             force: true,
+            knowledge_provider: None,
         })
         .await
     {
@@ -348,6 +349,7 @@ async fn execute_remove(ctx: &CommandContext<'_>, server_names: &[&str]) -> Comm
             local_mcp_path: ctx.local_mcp_path.cloned(),
             global_mcp_path: ctx.global_mcp_path.cloned(),
             force: true,
+            knowledge_provider: None,
         })
         .await
     {

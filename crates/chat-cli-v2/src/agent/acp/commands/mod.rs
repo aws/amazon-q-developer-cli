@@ -6,6 +6,7 @@ pub mod clear;
 pub mod code;
 pub mod compact;
 pub mod context;
+pub mod effort;
 pub mod exit;
 pub mod guide;
 pub mod help;
@@ -18,6 +19,7 @@ pub mod paste_image;
 pub mod plan;
 pub mod prompts;
 pub mod reply;
+pub mod rewind;
 pub mod stats;
 pub mod tools;
 pub mod usage;
@@ -174,7 +176,9 @@ pub async fn execute(command: TuiCommand, ctx: &CommandContext<'_>) -> CommandRe
         TuiCommand::Code(ref args) => code::execute(args, ctx).await,
         TuiCommand::Hooks(_) => hooks::execute(ctx).await,
         TuiCommand::Guide(ref args) => guide::execute(args, ctx).await,
+        TuiCommand::Rewind(ref args) => rewind::execute(args, ctx).await,
         TuiCommand::Stats(ref args) => stats::execute(args, ctx).await,
+        TuiCommand::Effort(ref args) => effort::execute(args, ctx),
     }
 }
 

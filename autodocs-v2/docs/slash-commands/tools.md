@@ -110,34 +110,34 @@ Removes session trust changes, restores agent configuration.
 ### Example 2: Trust Tool
 
 ```
-/tools trust fs_write
+/tools trust write
 ```
 
 **Output**:
 ```
-fs_write now trusted
+write now trusted
 ```
 
 ### Example 3: Trust Multiple Tools
 
 ```
-/tools trust execute_bash grep
+/tools trust shell grep
 ```
 
 **Output**:
 ```
-execute_bash, grep now trusted
+shell, grep now trusted
 ```
 
 ### Example 4: Untrust Tool
 
 ```
-/tools untrust fs_write
+/tools untrust write
 ```
 
 **Output**:
 ```
-fs_write set to per-request confirmation
+write set to per-request confirmation
 ```
 
 ### Example 5: Trust All

@@ -1,0 +1,4 @@
+{
+  "type": "added",
+  "description": "Support file_patterns glob matching in LSP language config for targeting specific filenames"
+}

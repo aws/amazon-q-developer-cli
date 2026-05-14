@@ -641,7 +641,15 @@ impl StreamParseState {
                         // Defensively clear any stale signature state from protocol violations.
                         self.pending_signature.take();
                         self.pending_redacted_content.take();
-                        match serde_json::from_str::<serde_json::Value>(&tool_content) {
+                        // Empty content → `{}`. Matches V1 parser
+                        // (chat-cli/src/cli/chat/parser.rs) and handles zero-arg
+                        // tool uses where the model emits "" instead of "{}".
+                        let parsed = if tool_content.is_empty() {
+                            Ok(serde_json::json!({}))
+                        } else {
+                            serde_json::from_str::<serde_json::Value>(&tool_content)
+                        };
+                        match parsed {
                             Ok(val) => {
                                 let tool_use = ToolUseBlock {
                                     tool_use_id,
@@ -1284,5 +1292,29 @@ mod tests {
             message_stop(),
         ]);
         assert_eq!(metadata.request_attempts, Some(3));
+    }
+
+    /// Empty tool_content (e.g. zero-arg tool with "" input) should be coerced
+    /// to `{}`, not classified as InvalidJson.
+    #[test]
+    fn empty_tool_content_is_coerced_to_empty_object() {
+        let result = run_stream(vec![
+            message_start(),
+            tool_start("tooluse_repro_001", "list_crons"),
+            // No tool_delta — simulates empty-string content.
+            block_stop(),
+            message_stop(),
+        ]);
+
+        let msg = result.expect("expected Ok — empty content should coerce to {}");
+        assert_eq!(msg.content.len(), 2, "expected Text + ToolUse blocks");
+        match &msg.content[1] {
+            ContentBlock::ToolUse(tool) => {
+                assert_eq!(tool.tool_use_id, "tooluse_repro_001");
+                assert_eq!(tool.name, "list_crons");
+                assert_eq!(tool.input, serde_json::json!({}));
+            },
+            other => panic!("expected ToolUse, got: {other:?}"),
+        }
     }
 }

@@ -75,4 +75,4 @@ Uses `delta` with side-by-side layout.
 ## Related
 
 * [custom diff tool](../features/diff-tool.md)
-* [Write tool](../tools/fs-write.md)
+* [Write tool](../tools/write.md)

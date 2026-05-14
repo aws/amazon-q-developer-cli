@@ -43,6 +43,15 @@ Do NOT duplicate points already raised. Acknowledge them if relevant.
 
 ### 3. Checkout & build (when reviewing kiro-team/kiro-cli)
 
+**Skip this entire step when running in CI** (`$CI == "true"`). The PR already has dedicated Rust/TUI workflows that run clippy, build, and tests. Trust those results — check the PR status checks instead:
+
+```bash
+gh pr view <N> --repo kiro-team/kiro-cli --json statusCheckRollup \
+  --jq '.statusCheckRollup[] | select(.name | test("Clippy|Build|Test")) | "\(.name): \(.conclusion)"'
+```
+
+When running locally (dev-dsk), do the full checkout and build:
+
 ```bash
 git fetch origin
 git worktree add ../kiro-cli-pr-<N> origin/main
@@ -81,16 +90,50 @@ gh pr diff <N> --repo kiro-team/kiro-cli --name-only
 git log --format='%an' --follow -20 -- <file> | sort | uniq -c | sort -rn | head -5
 ```
 
-Determine: POC (who wrote the code), suggested reviewer (most context), risk level.
+Determine: POC (who wrote the code), suggested reviewer (most context), risk level (own code vs someone else's).
 
-### 5. Memory search (kiro-cli)
+### 5. Memory search (kiro-cli) — 3 searches REQUIRED
 
-Search before analyzing:
-- `"<author> review patterns"`
-- `"<component> issues bugs"`
-- `"<specific pattern>"`
+Run **all three** before analyzing the diff. This is how the reviewer builds context from 1,415 historical PRs.
 
-Save after: `"PR #<N>: <key finding>"`
+```bash
+PR_AUTHOR=$(gh pr view <N> --repo kiro-team/kiro-cli --json author --jq '.author.login')
+TOP_FILE=$(gh pr diff <N> --repo kiro-team/kiro-cli --name-only | head -1)
+DIFF=$(gh pr diff <N> --repo kiro-team/kiro-cli | head -200)
+
+# Search 1: Author patterns — what does this author typically get flagged for?
+PAYLOAD=$(jq -n --arg diff "$PR_AUTHOR review patterns" --arg file "" \
+  '{"diff":$diff,"file_path":$file,"repo":"kiro-team/kiro-cli","top_k":5}')
+aws lambda invoke --function-name KiroCLIReviewerQuery --region us-east-1 \
+  --payload "$PAYLOAD" --cli-binary-format raw-in-base64-out /tmp/mem-author.json
+
+# Search 2: Component patterns — what gets flagged in this file area?
+PAYLOAD=$(jq -n --arg diff "$DIFF" --arg file "$TOP_FILE" \
+  '{"diff":$diff,"file_path":$file,"repo":"kiro-team/kiro-cli","top_k":10}')
+aws lambda invoke --function-name KiroCLIReviewerQuery --region us-east-1 \
+  --payload "$PAYLOAD" --cli-binary-format raw-in-base64-out /tmp/mem-component.json
+
+# Search 3: Specific patterns spotted in diff (unwrap, truncation, string slice, etc.)
+PATTERN=$(echo "$DIFF" | grep -oE 'unwrap\(\)|string_slice|truncat|regex|unsafe' | head -1)
+if [ -n "$PATTERN" ]; then
+  PAYLOAD=$(jq -n --arg diff "$PATTERN error handling rust" --arg file "" \
+    '{"diff":$diff,"file_path":$file,"repo":"kiro-team/kiro-cli","top_k":5}')
+  aws lambda invoke --function-name KiroCLIReviewerQuery --region us-east-1 \
+    --payload "$PAYLOAD" --cli-binary-format raw-in-base64-out /tmp/mem-pattern.json
+fi
+
+cat /tmp/mem-author.json /tmp/mem-component.json /tmp/mem-pattern.json 2>/dev/null
+```
+
+**Correlate results with the diff:**
+- If memory returns "PR #X flagged bare-unwrap in this file" → check if current diff introduces `.unwrap()`
+- If memory returns "team decided X in PR #Y" → don't re-litigate it, acknowledge it
+- If author has a known pattern (e.g. "kensave questions removed code") → look for that in the diff
+
+Use the combined response to populate:
+- **Memory Context** — synthesize how past PRs relate to the current change: "PR #506 (erbenmo) refined agent swap ordering — this PR extends that pattern"
+- **Suggested Reviewers** — from `suggested_reviewers[]` across all three searches (deduplicated)
+- **Known Patterns** — from `known_patterns[]` — flag if current diff introduces them
 
 ### 6. Read full files when needed
 
@@ -123,6 +166,12 @@ Analyze the diff using this prioritized checklist. These are what to look for, n
 - API surface — backwards compatibility, contract changes
 
 Do NOT flag: style, naming, formatting, missing docs, nits (unless prefixed with "Nit:").
+
+**Every flagged issue MUST include:**
+1. The exact location (file + line or code snippet from the diff)
+2. Why it's a problem (one sentence, grounded in a technical fact)
+3. A concrete remediation — show the fixed code, not just a description
+4. If memory context has a prior PR with the same pattern, cite it: "PR #X had the same issue — reviewer Y flagged it as Z"
 
 ### 7b. Testing discipline
 
@@ -212,10 +261,29 @@ Typical concerns (pick what's relevant, name them specifically):
 
 Collapsible section listing files changed with a one-phrase description each.
 
+### Memory Context
+
+From the PR intelligence system (step 5). Use bullet points — no code blocks, no tables:
+- PR #1287 (brandonskiser) — flagged bare-unwrap in mod.rs
+- PR #659 (erbenmo) — flagged missing-e2e-test in tools/
+
+If `known_patterns` is non-empty, add one line: "Known pattern in this area: `bare-unwrap`."
+
+### Suggested Reviewers
+
+From the PR intelligence system (step 5). Use bullet points:
+- erbenmo (47 reviews in this area)
+- kensave (31 reviews in this area)
+
 ### Verdict
 
-On first-pass reviews: flag concerns without rendering a verdict.
-On third-or-later pass (v3+) or when explicitly asked for a "final review": render a verdict — are concerns blocking or acceptable, is the change ready to ship?
+Always render a verdict based on findings:
+
+- **Approve** — no critical issues, change is safe to merge
+- **Comment** — improvements suggested but nothing blocking
+- **Request Changes** — one or more [Critical] issues must be fixed before merge
+
+One line. Example: "**Request Changes** — byte-index slice will panic on multi-byte input (Critical, must fix)."
 
 ## Writing style
 

@@ -1,7 +1,7 @@
 ---
 doc_meta:
   validated: 2026-05-06
-  commit: 33b3c338
+  commit: c4ad3238
   status: validated
   testable_headless: true
   category: slash_command
@@ -125,16 +125,63 @@ Set Claude Sonnet 4 as default model
 
 Persists the current session's model as the default for all future sessions.
 
+### Example 6: Start Session with Specific Model
+
+```bash
+kiro-cli chat --model claude-sonnet-4
+```
+
+Starts a new session with the specified model.
+
+## FAQ
+
+### How do I switch models mid-session?
+
+Use `/model` to open the picker or `/model <name>` to switch directly. The change takes effect immediately for subsequent messages.
+
+### How do I set a default model?
+
+Use the settings command:
+
+```bash
+kiro-cli settings chat.defaultModel <model-id>
+```
+
+Or start sessions with `--model`:
+
+```bash
+kiro-cli chat --model <model-id>
+```
+
+### Does the model persist when I resume a session?
+
+Yes. When you resume a session with `--resume`, the model active when the session was saved is restored. Use `--model` to override.
+
+### How do I see available models?
+
+Run `/model` without arguments to see the interactive picker with all available models, their credit multipliers, and descriptions.
+
 ## Related
 
 - [chat.defaultModel](../settings/default-model.md) - Set default model
 - [kiro-cli chat --model](../commands/chat.md) - Start with specific model
+- [/usage](usage.md) - Check account usage
 
 ## Limitations
 
 - Interactive picker not available in headless mode (use direct selection instead)
-- Changes apply to current session only
+- Changes apply to current session only (unless resumed)
 - Available models depend on region
+
+## Troubleshooting
+
+### Issue: Model Not Available
+
+**Symptom**: Error "The model 'X' is not available. Please use '/model' to select a different model and try again."
+
+**Cause**: The specified model ID is not available in the current region or has been removed.
+
+**Solution**: Use `/model` to see available models and select a valid one.
 
 ## Technical Details
 
@@ -146,4 +193,4 @@ Persists the current session's model as the default for all future sessions.
 
 **Tab Completion**: Model names are fetched dynamically and filtered by prefix as you type.
 
-**Persistence**: Model selection persists for session, not saved to database.
+**Persistence**: Model selection persists for session. When resuming, the saved model is restored.

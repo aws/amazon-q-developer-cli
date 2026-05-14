@@ -1,0 +1,4 @@
+{
+  "type": "fixed",
+  "description": "Skill resources now show estimated size in /context instead of 0%"
+}

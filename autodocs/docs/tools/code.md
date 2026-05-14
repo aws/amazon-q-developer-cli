@@ -1,14 +1,14 @@
 ---
 doc_meta:
-  validated: 2026-04-29
-  commit: 624cfc69
+  validated: 2026-04-30
+  commit: a327a606
   status: validated
   testable_headless: true
   category: tool
   title: code
   description: Code intelligence with tree-sitter (built-in) and LSP (optional) for symbol search, pattern matching, and codebase exploration
   keywords: [code, lsp, symbols, references, definition, diagnostics, intelligence, tree-sitter, pattern, ast, codebase-overview]
-  related: [fs-read, grep, slash-code]
+  related: [read, grep, slash-code]
 ---
 
 # code
@@ -362,7 +362,7 @@ Initialize LSP servers for workspace.
 
 - [/code](../slash-commands/code.md) - Slash commands for code intelligence
 - [grep](grep.md) - Text-based pattern search
-- [fs_read](fs-read.md) - Read source files
+- [read](read.md) - Read source files
 
 ## Limitations
 

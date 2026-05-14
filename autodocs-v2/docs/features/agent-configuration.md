@@ -1,14 +1,14 @@
 ---
 doc_meta:
-  validated: 2026-04-09
-  commit: 69e517e1
+  validated: 2026-05-06
+  commit: 17be3b13
   status: validated
   testable_headless: true
   category: feature
   title: Agent Configuration
   description: Complete guide to agent configuration format including tools, settings, resources, hooks, and MCP servers
-  keywords: [agent, configuration, json, tools, settings, resources, hooks, mcp, keyboardShortcut, welcomeMessage, skill]
-  related: [agent-create, agent-edit, agent-swap]
+  keywords: [agent, configuration, json, tools, settings, resources, hooks, mcp, keyboardShortcut, welcomeMessage, skill, denyByDefault, allowedCommands, oauth, clientId, registry]
+  related: [agent-create, agent-edit, agent-swap, mcp-registry]
 ---
 
 # Agent Configuration
@@ -33,10 +33,10 @@ Local agents take precedence over global with same name.
   "name": "my-agent",
   "description": "Agent description",
   "prompt": "System prompt or file:///path/to/prompt.txt",
-  "tools": ["fs_read", "fs_write", "execute_bash"],
-  "allowedTools": ["fs_read", "grep"],
+  "tools": ["read", "write", "shell"],
+  "allowedTools": ["read", "grep"],
   "toolsSettings": {
-    "fs_write": {
+    "write": {
       "allowedPaths": ["~/projects/**"]
     }
   },
@@ -109,7 +109,7 @@ Available tools for agent.
 
 ```json
 {
-  "tools": ["fs_read", "fs_write", "execute_bash", "grep", "code"]
+  "tools": ["read", "write", "shell", "grep", "code"]
 }
 ```
 
@@ -120,7 +120,7 @@ Tools auto-approved without prompts. Supports exact matches and wildcard pattern
 ```json
 {
   "allowedTools": [
-    "fs_read",
+    "read",
     "fs_*",
     "@git/git_status",
     "@server/read_*",
@@ -130,13 +130,13 @@ Tools auto-approved without prompts. Supports exact matches and wildcard pattern
 ```
 
 **Exact Matches**:
-- Built-in tools: `"fs_read"`, `"execute_bash"`
+- Built-in tools: `"read"`, `"shell"`
 - Specific MCP tools: `"@server_name/tool_name"`
 - All tools from server: `"@server_name"`
 
 **Wildcard Patterns** (using `*` and `?`):
-- Prefix: `"fs_*"` → matches `fs_read`, `fs_write`
-- Suffix: `"*_bash"` → matches `execute_bash`
+- Prefix: `"fs_*"` → matches `fs_read`, `fs_write` (legacy names still work)
+- Suffix: `"*_bash"` → matches `execute_bash` (legacy alias for shell)
 - Middle: `"fs_*_tool"` → matches `fs_read_tool`
 - Single char: `"fs_?ead"` → matches `fs_read`, `fs_head`
 - MCP tool: `"@server/read_*"` → matches `@server/read_file`, `@server/read_config`
@@ -153,17 +153,27 @@ Tool-specific configuration.
 ```json
 {
   "toolsSettings": {
-    "fs_write": {
+    "write": {
       "allowedPaths": ["~/projects/**"],
       "deniedPaths": ["/etc/**"]
     },
-    "execute_bash": {
+    "shell": {
       "allowedCommands": ["git status", "cargo check"],
-      "autoAllowReadonly": true
+      "deniedCommands": ["rm -rf *", "sudo *"],
+      "autoAllowReadonly": true,
+      "denyByDefault": false
     }
   }
 }
 ```
+
+> The `shell` key also accepts aliases: `execute_bash`, `executeBash`, `executeCmd`, `execute_cmd`. All route to the same settings.
+
+**shell settings**:
+- `allowedCommands` - Regex patterns for commands to auto-approve
+- `deniedCommands` - Regex patterns for commands to always deny
+- `autoAllowReadonly` - Auto-approve read-only commands (e.g., `ls`, `cat`, `git status`)
+- `denyByDefault` - Deny all commands not matching `allowedCommands`. When enabled, dangerous commands are silently denied rather than prompting for approval
 
 ### resources
 
@@ -217,13 +227,13 @@ Commands executed at trigger points. Each trigger maps to an array of hook confi
     ],
     "preToolUse": [
       {
-        "matcher": "fs_write",
+        "matcher": "write",
         "command": "git diff"
       }
     ],
     "postToolUse": [
       {
-        "matcher": "execute_bash",
+        "matcher": "shell",
         "command": "echo 'Command executed'"
       }
     ],
@@ -291,7 +301,7 @@ If not specified, uses default model. Falls back to default if model unavailable
 
 ### mcpServers
 
-MCP server configurations. Supports local (stdio) and remote (HTTP) servers.
+MCP server configurations. Supports local (stdio), remote (HTTP), and registry servers.
 
 **Local (stdio) server**:
 
@@ -327,6 +337,60 @@ MCP server configurations. Supports local (stdio) and remote (HTTP) servers.
 }
 ```
 
+**Remote server with custom OAuth client ID** (for servers that don't support Dynamic Client Registration):
+
+```json
+{
+  "mcpServers": {
+    "slack": {
+      "url": "https://mcp.slack.com/mcp",
+      "oauth": {
+        "clientId": "my-slack-app-id"
+      },
+      "oauthScopes": ["search:read", "channels:read"]
+    }
+  }
+}
+```
+
+**Registry server with overrides**:
+
+For servers from the MCP registry, use `"type": "registry"` with optional overrides. Applicable override fields depend on the underlying server type resolved from the registry — `env` for local (stdio) servers, `headers` for remote (HTTP) servers; `timeout` and `disabled` apply to both.
+
+Local (stdio) registry server with `env` overrides:
+
+```json
+{
+  "mcpServers": {
+    "github": {
+      "type": "registry",
+      "env": {
+        "GITHUB_TOKEN": "$GITHUB_TOKEN"
+      },
+      "timeout": 60000
+    }
+  }
+}
+```
+
+Remote (HTTP) registry server with `headers` overrides:
+
+```json
+{
+  "mcpServers": {
+    "slack": {
+      "type": "registry",
+      "headers": {
+        "Authorization": "Bearer $API_TOKEN"
+      },
+      "timeout": 60000
+    }
+  }
+}
+```
+
+Registry servers are resolved from the organization's MCP registry. Override fields let you customize the server without duplicating the full configuration.
+
 **Local Server Fields**:
 - `command` (required): Command to start server
 - `args` (optional): Command arguments
@@ -338,10 +402,19 @@ MCP server configurations. Supports local (stdio) and remote (HTTP) servers.
 **Remote Server Fields**:
 - `url` (required): HTTP endpoint URL
 - `headers` (optional): HTTP headers for requests
+- `oauth` (optional): OAuth configuration object
+  - `clientId` (optional): Pre-registered OAuth client ID for servers that don't support Dynamic Client Registration (e.g., Slack, GitHub, Figma)
+  - `redirectUri` (optional): Custom redirect URI for OAuth flow
 - `oauthScopes` (optional): OAuth scopes for authentication
 - `timeout` (optional): Request timeout in milliseconds (default: 120000)
 - `disabled` (optional): Set to `true` to skip loading this server (default: false)
 - `disabledTools` (optional): List of tool names from this server to disable
+
+**Registry Server Fields**:
+- `type` (required): Must be `"registry"`
+- `env` (optional): Environment variables merged on top of registry defaults (agent values win)
+- `headers` (optional): HTTP headers merged on top of registry defaults (agent values win, remote servers only)
+- `timeout` (optional): Request timeout in milliseconds (overrides registry default)
 
 ### keyboardShortcut
 
@@ -398,24 +471,24 @@ Appears after agent switch confirmation to orient users to agent's purpose.
   "description": "Rust development agent with full toolset",
   "prompt": "You are an expert Rust developer. Focus on safety, performance, and idiomatic code.",
   "tools": [
-    "fs_read",
-    "fs_write",
-    "execute_bash",
+    "read",
+    "write",
+    "shell",
     "grep",
     "glob",
     "code"
   ],
   "allowedTools": [
-    "fs_read",
+    "read",
     "grep",
     "glob"
   ],
   "toolsSettings": {
-    "fs_write": {
+    "write": {
       "allowedPaths": ["~/rust-projects/**"],
       "deniedPaths": ["~/.cargo/**"]
     },
-    "execute_bash": {
+    "shell": {
       "allowedCommands": [
         "cargo check",
         "cargo test",
@@ -490,8 +563,8 @@ Checks JSON syntax and schema compliance.
 {
   "name": "reader",
   "description": "Read-only agent for browsing code",
-  "tools": ["fs_read", "grep", "glob"],
-  "allowedTools": ["fs_read", "grep", "glob"],
+  "tools": ["read", "grep", "glob"],
+  "allowedTools": ["read", "grep", "glob"],
   "resources": ["file://src/**/*", "file://README.md"]
 }
 ```
@@ -503,14 +576,14 @@ Checks JSON syntax and schema compliance.
   "name": "rust-dev",
   "description": "Rust development with testing",
   "prompt": "You are a Rust expert. Focus on safety and performance.",
-  "tools": ["fs_read", "fs_write", "execute_bash", "code"],
-  "allowedTools": ["fs_read", "code"],
+  "tools": ["read", "write", "shell", "code"],
+  "allowedTools": ["read", "code"],
   "toolsSettings": {
-    "fs_write": {
+    "write": {
       "allowedPaths": ["src/**", "tests/**"],
       "deniedPaths": ["target/**"]
     },
-    "execute_bash": {
+    "shell": {
       "allowedCommands": ["cargo check", "cargo test", "cargo build"],
       "autoAllowReadonly": true
     }
@@ -532,7 +605,7 @@ Checks JSON syntax and schema compliance.
 {
   "name": "aws-ops",
   "description": "AWS operations and management",
-  "tools": ["use_aws", "fs_read", "execute_bash"],
+  "tools": ["use_aws", "read", "shell"],
   "toolsSettings": {
     "use_aws": {
       "allowedServices": ["s3", "lambda", "ec2"],
@@ -548,7 +621,7 @@ Checks JSON syntax and schema compliance.
 {
   "name": "full-stack",
   "description": "Full-stack development with git integration",
-  "tools": ["fs_read", "fs_write", "execute_bash", "code"],
+  "tools": ["read", "write", "shell", "code"],
   "mcpServers": {
     "git": {
       "command": "mcp-server-git",

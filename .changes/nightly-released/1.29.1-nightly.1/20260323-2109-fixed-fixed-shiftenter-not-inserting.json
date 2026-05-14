@@ -1,0 +1,4 @@
+{
+  "type": "fixed",
+  "description": "Fixed Shift+Enter not inserting newline on terminals without Kitty keyboard protocol support (e.g. GNOME Terminal)"
+}

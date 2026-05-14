@@ -986,6 +986,7 @@ impl Agent {
             permissions: self.permissions.clone(),
             tool_specs,
             session_resource_paths: self.session_resource_paths.clone(),
+            has_knowledge_provider: self.knowledge_provider.is_some(),
         }
     }
 
@@ -1140,12 +1141,12 @@ impl Agent {
             },
             AgentRequest::GetSkills => {
                 let response =
-                    prompts::discover_skills_from_resources(self.agent_config.resources(), &self.sys_provider);
+                    prompts::discover_skills_from_resources(&self.agent_config.resources(), &self.sys_provider);
                 Ok(AgentResponse::Skills(response))
             },
             AgentRequest::ResolveSkill { name } => {
                 let content =
-                    prompts::resolve_skill_from_resources(self.agent_config.resources(), &self.sys_provider, &name);
+                    prompts::resolve_skill_from_resources(&self.agent_config.resources(), &self.sys_provider, &name);
                 Ok(AgentResponse::SkillContent(content))
             },
             AgentRequest::GetMcpPrompt { name, arguments } => {
@@ -1484,6 +1485,11 @@ impl Agent {
 
         // 5. Launch new MCP servers
         self.launch_mcp_servers().await;
+
+        // 6. Update knowledge provider if a new one was provided
+        if let Some(provider) = args.knowledge_provider {
+            self.knowledge_provider = Some(provider);
+        }
 
         Ok(AgentResponse::SwapComplete)
     }

@@ -1,14 +1,14 @@
 ---
 doc_meta:
-  validated: 2026-03-10
-  commit: 33f60059
+  validated: 2026-04-24
+  commit: 22dc5f71
   status: validated
   testable_headless: true
   category: feature
   title: Hooks System
   description: Execute commands at trigger points with JSON input/output and exit code control
-  keywords: [hooks, commands, triggers, context, dynamic, exit, stdin, stop, assistant_response]
-  related: [agent-configuration, hooks]
+  keywords: [hooks, commands, triggers, context, dynamic, exit, stdin, stop, assistant_response, KIRO_SESSION_ID]
+  related: [agent-configuration, hooks, session-management]
 ---
 
 # Hooks System
@@ -36,7 +36,7 @@ Add hooks to your agent's JSON configuration file (`.kiro/agents/your-agent.json
     ],
     "preToolUse": [
       {
-        "matcher": "fs_write",
+        "matcher": "write",
         "command": "echo 'About to write file'",
       }
     ]
@@ -69,7 +69,7 @@ chmod +x ~/.kiro/hooks/validate-write.sh
   "hooks": {
     "preToolUse": [
       {
-        "matcher": "fs_write",
+        "matcher": "write",
         "command": "~/.kiro/hooks/validate-write.sh",
       }
     ]
@@ -103,6 +103,10 @@ For tool-related hooks, additional fields are included:
 - `tool_name`: Name of the tool being executed
 - `tool_input`: Tool-specific parameters (see individual tool documentation)
 - `tool_response`: Tool execution results (PostToolUse only)
+
+### Environment
+
+Hook scripts have access to the `KIRO_SESSION_ID` environment variable, which contains the current session's UUID. Use this to correlate hook activity with a specific session for logging or telemetry. See [Session Management](session-management.md#environment-variable) for details.
 
 ## Hook Output
 

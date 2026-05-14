@@ -8,7 +8,7 @@ doc_meta:
   title: glob
   description: Find files and directories matching glob patterns with .gitignore support
   keywords: [glob, find, files, pattern, search, wildcard]
-  related: [fs-read, grep, execute-bash]
+  related: [read, grep, shell]
 ---
 
 # glob
@@ -234,9 +234,9 @@ Returns JSON with:
 
 ## Related Features
 
-- [fs_read](fs-read.md) - Read files found by glob
+- [read](read.md) - Read files found by glob
 - [grep](grep.md) - Search content in files
-- [execute_bash](execute-bash.md) - Alternative: use `find` command
+- [shell](shell.md) - Alternative: use `find` command
 
 ## Limitations
 

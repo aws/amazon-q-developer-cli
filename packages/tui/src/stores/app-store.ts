@@ -26,6 +26,15 @@ import type { SubagentInfo, SubagentStatus } from '../types/subagent.js';
 import type { AgentSession, InboxMessage } from '../types/multi-session.js';
 import type { TaskItem, RawTask } from '../types/tasks';
 
+/** A selectable turn in the `/rewind` Explorer. Shape is defined by the
+ *  backend `/rewind` execute handler in `CommandResult.data.turns`. */
+export interface RewindTurn {
+  logIndex: number;
+  label: string;
+  group: string;
+  responseSnippet: string;
+}
+
 export interface ContextBreakdownData {
   contextFiles: {
     percent: number;
@@ -402,8 +411,10 @@ interface BaseAppActions {
   setApprovalMode: (mode: 'dropdown' | 'drill-in') => void;
   setAutoApproveCrewTools: (value: boolean) => void;
   setCurrentModel: (model: { id: string; name: string } | null) => void;
+  setCurrentEffort: (effort: string | null) => void;
   setCurrentAgent: (
-    agent: { name: string; welcomeMessage?: string } | null
+    agent: { name: string; welcomeMessage?: string } | null,
+    options?: { suppressWelcome?: boolean }
   ) => void;
   setPreviousAgentName: (name: string | null) => void;
   handleCompactionEvent: (event: AgentStreamEvent) => Promise<void>;
@@ -493,6 +504,7 @@ interface BaseAppActions {
     }>
   ) => void;
   setShowUsagePanel: (show: boolean, data?: any) => void;
+  setShowRewindExplorer: (show: boolean, rows?: RewindTurn[]) => void;
   setShowMcpPanel: (
     show: boolean,
     servers?: McpServerInfo[],
@@ -663,6 +675,7 @@ export interface AppState {
   focusedCrewIndex: number;
   setFocusedCrewIndex: (index: number) => void;
   currentModel: { id: string; name: string } | null;
+  currentEffort: string | null;
   currentAgent: { name: string } | null;
   previousAgentName: string | null;
   settings: Record<string, unknown> | null;
@@ -712,6 +725,10 @@ export interface AppState {
   // Usage panel state
   showUsagePanel: boolean;
   usageData: UsageData | null;
+
+  // Rewind explorer state
+  showRewindExplorer: boolean;
+  rewindRows: RewindTurn[];
 
   // File attachments
   attachedFiles: string[];
@@ -965,7 +982,7 @@ export const createAppStore = (props: AppStoreProps) => {
       {
         name: '/settings',
         description:
-          'Configure theme, terminal keybindings, and other preferences',
+          'Configure theme, terminal, keybindings, and other preferences',
         source: 'local' as const,
         // inputType is set dynamically in showSettingsMenu rather than here:
         // a static 'selection' would make the dispatcher fetch options from
@@ -1013,6 +1030,7 @@ export const createAppStore = (props: AppStoreProps) => {
     autoApproveCrewTools: false,
     focusedCrewIndex: 0,
     currentModel: null,
+    currentEffort: null,
     currentAgent: null,
     previousAgentName: null,
     settings: null,
@@ -1057,6 +1075,8 @@ export const createAppStore = (props: AppStoreProps) => {
     helpCommands: [],
     showUsagePanel: false,
     usageData: null,
+    showRewindExplorer: false,
+    rewindRows: [],
     showMcpPanel: false,
     mcpServers: [],
     mcpRegistryServers: [],
@@ -1703,6 +1723,9 @@ export const createAppStore = (props: AppStoreProps) => {
           case AgentEventType.ContextUsage:
             get().setContextUsage(event.percent);
             break;
+          case AgentEventType.EffortUpdate:
+            get().setCurrentEffort(event.effort);
+            break;
           case AgentEventType.Metadata:
             if (
               event.inputTokens !== undefined ||
@@ -2024,7 +2047,8 @@ export const createAppStore = (props: AppStoreProps) => {
     setAgentError: (agentError, guidance) =>
       set({ agentError, agentErrorGuidance: guidance ?? null }),
     setCurrentModel: (currentModel) => set({ currentModel }),
-    setCurrentAgent: (agent) => {
+    setCurrentEffort: (currentEffort) => set({ currentEffort }),
+    setCurrentAgent: (agent, options) => {
       const prevAgent = get().currentAgent;
       set({ currentAgent: agent ? { name: agent.name } : null });
 
@@ -2038,7 +2062,7 @@ export const createAppStore = (props: AppStoreProps) => {
         queueMicrotask(() => get().triggerPlanSurvey());
       }
 
-      if (agent?.welcomeMessage) {
+      if (agent?.welcomeMessage && !options?.suppressWelcome) {
         set((state) => ({
           messages: [
             ...state.messages,
@@ -2062,6 +2086,10 @@ export const createAppStore = (props: AppStoreProps) => {
           event.percent
         );
         get().setContextUsage(event.percent);
+        return;
+      }
+      if (event.type === AgentEventType.EffortUpdate) {
+        get().setCurrentEffort(event.effort);
         return;
       }
       if (event.type !== AgentEventType.CompactionStatus) return;
@@ -2337,6 +2365,7 @@ export const createAppStore = (props: AppStoreProps) => {
         setShowTuiPanel: state.setShowTuiPanel,
         setShowChangelogPanel: state.setShowChangelogPanel,
         setShowUsagePanel: state.setShowUsagePanel,
+        setShowRewindExplorer: state.setShowRewindExplorer,
         setShowMcpPanel: state.setShowMcpPanel,
         setShowToolsPanel: state.setShowToolsPanel,
         setShowStatsPanel: state.setShowStatsPanel,
@@ -2375,6 +2404,7 @@ export const createAppStore = (props: AppStoreProps) => {
             showChangelogPanel: false,
             showHelpPanel: false,
             showUsagePanel: false,
+            showRewindExplorer: false,
             showMcpPanel: false,
             showToolsPanel: false,
             showStatsPanel: false,
@@ -2938,6 +2968,10 @@ export const createAppStore = (props: AppStoreProps) => {
       set({ showUsagePanel: show, usageData: data ?? null });
     },
 
+    setShowRewindExplorer: (show, rows) => {
+      set({ showRewindExplorer: show, rewindRows: rows ?? [] });
+    },
+
     setShowMcpPanel: (
       show,
       servers = [],
@@ -3174,16 +3208,11 @@ export const createAppStore = (props: AppStoreProps) => {
 
     submitSurvey: (answers) => {
       const survey = get().activeSurvey ?? SESSION_FEEDBACK_SURVEY;
-      markSurveyCompleted(survey.id);
 
-      // Answering either plan survey sets the cooldown for both (they're paired).
-      if (
-        survey.id === PLAN_QUALITY_SURVEY.id ||
-        survey.id === IMPLEMENT_PLAN_SURVEY.id
-      ) {
-        markSurveyCompleted(PLAN_QUALITY_SURVEY.id);
-        markSurveyCompleted(IMPLEMENT_PLAN_SURVEY.id);
-      }
+      // Answering any survey sets the cooldown for all (shared 90-day cooldown).
+      markSurveyCompleted(SESSION_FEEDBACK_SURVEY.id);
+      markSurveyCompleted(PLAN_QUALITY_SURVEY.id);
+      markSurveyCompleted(IMPLEMENT_PLAN_SURVEY.id);
 
       logger.info('[survey] submitted', {
         surveyId: survey.id,
@@ -3235,20 +3264,10 @@ export const createAppStore = (props: AppStoreProps) => {
     },
 
     dismissSurveyPrompt: () => {
-      const survey =
-        get().activeSurvey ??
-        get().surveyPrompt?.survey ??
-        SESSION_FEEDBACK_SURVEY;
-      markSurveyDismissed(survey.id);
-
-      // Dismissing either plan survey sets the cooldown for both (they're paired).
-      if (
-        survey.id === PLAN_QUALITY_SURVEY.id ||
-        survey.id === IMPLEMENT_PLAN_SURVEY.id
-      ) {
-        markSurveyDismissed(PLAN_QUALITY_SURVEY.id);
-        markSurveyDismissed(IMPLEMENT_PLAN_SURVEY.id);
-      }
+      // Dismissing any survey sets the cooldown for all (shared 90-day cooldown).
+      markSurveyDismissed(SESSION_FEEDBACK_SURVEY.id);
+      markSurveyDismissed(PLAN_QUALITY_SURVEY.id);
+      markSurveyDismissed(IMPLEMENT_PLAN_SURVEY.id);
 
       set((s) => ({
         surveyPrompt: null,
@@ -3358,6 +3377,7 @@ export const createAppStore = (props: AppStoreProps) => {
         showContextBreakdown: false,
         showHelpPanel: false,
         showUsagePanel: false,
+        showRewindExplorer: false,
         commandInputValue: '',
         activeTrigger: null,
         promptHint: null,
@@ -3369,16 +3389,10 @@ export const createAppStore = (props: AppStoreProps) => {
       // If the survey prompt was showing and the user chose to type instead
       // of accepting it, count that as a dismissal toward the cooldown.
       if (hadSurveyPrompt) {
-        const survey = state.surveyPrompt?.survey ?? SESSION_FEEDBACK_SURVEY;
-        markSurveyDismissed(survey.id);
-        // Dismissing either plan survey sets cooldown for both (paired).
-        if (
-          survey.id === PLAN_QUALITY_SURVEY.id ||
-          survey.id === IMPLEMENT_PLAN_SURVEY.id
-        ) {
-          markSurveyDismissed(PLAN_QUALITY_SURVEY.id);
-          markSurveyDismissed(IMPLEMENT_PLAN_SURVEY.id);
-        }
+        // Shared cooldown: dismissing any survey sets cooldown for all.
+        markSurveyDismissed(SESSION_FEEDBACK_SURVEY.id);
+        markSurveyDismissed(PLAN_QUALITY_SURVEY.id);
+        markSurveyDismissed(IMPLEMENT_PLAN_SURVEY.id);
         set((s) => ({
           surveyState: {
             ...s.surveyState,
@@ -3411,6 +3425,7 @@ export const createAppStore = (props: AppStoreProps) => {
           setShowTuiPanel: state.setShowTuiPanel,
           setShowChangelogPanel: state.setShowChangelogPanel,
           setShowUsagePanel: state.setShowUsagePanel,
+          setShowRewindExplorer: state.setShowRewindExplorer,
           setShowMcpPanel: state.setShowMcpPanel,
           setShowToolsPanel: state.setShowToolsPanel,
           setShowStatsPanel: state.setShowStatsPanel,
@@ -3447,6 +3462,7 @@ export const createAppStore = (props: AppStoreProps) => {
               showContextBreakdown: false,
               showHelpPanel: false,
               showUsagePanel: false,
+              showRewindExplorer: false,
               showMcpPanel: false,
               showToolsPanel: false,
               showStatsPanel: false,

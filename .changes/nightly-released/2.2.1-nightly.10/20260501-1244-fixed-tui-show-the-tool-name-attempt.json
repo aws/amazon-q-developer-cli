@@ -1,0 +1,4 @@
+{
+  "type": "fixed",
+  "description": "TUI: show the tool name, attempted arguments, and real failure reason when a tool call fails (parse error, permission denied, pre-tool hook rejection, or runtime error)"
+}

@@ -1,0 +1,4 @@
+{
+  "type": "fixed",
+  "description": "Agent edit command now uses temporary file validation to prevent corruption of original config"
+}

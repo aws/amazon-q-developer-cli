@@ -1128,4 +1128,217 @@ describe('KasAcpClient', () => {
     );
     expect(activeEntry?.value).toBe('gpt-5');
   });
+
+  // ── /prompts command ──
+
+  it('executeCommand("prompts") with no args returns success message', async () => {
+    const client = new KasAcpClient();
+    await client.newSession();
+    const result = await client.executeCommand({ command: 'prompts' } as any);
+    expect(result.success).toBe(true);
+    expect(result.message).toBe('Use the selection menu to pick a prompt.');
+  });
+
+  it('executeCommand("prompts") with a name returns executePrompt data', async () => {
+    const client = new KasAcpClient();
+    await client.newSession();
+    (client as any).promptsCache = [
+      {
+        name: 'research',
+        description: 'Deep research',
+        arguments: [],
+        serverName: 'builder-mcp',
+      },
+    ];
+    const result = await client.executeCommand({
+      command: 'prompts',
+      args: { value: 'research' },
+    } as any);
+    expect(result.success).toBe(true);
+    expect(result.data).toEqual({ executePrompt: '/research' });
+  });
+
+  it('executeCommand("prompts") with any name returns executePrompt data (no validation)', async () => {
+    const client = new KasAcpClient();
+    await client.newSession();
+    const result = await client.executeCommand({
+      command: 'prompts',
+      args: { value: 'anything' },
+    } as any);
+    expect(result.success).toBe(true);
+    expect(result.data).toEqual({ executePrompt: '/anything' });
+  });
+
+  it('getCommandOptions("/prompts") computes hint from multiple arguments', async () => {
+    const client = new KasAcpClient();
+    await client.newSession();
+    (client as any).promptsCache = [
+      {
+        name: 'search',
+        description: 'Search docs',
+        arguments: [
+          { name: 'query', required: true },
+          { name: 'context', required: false },
+        ],
+        serverName: 'mcp-server',
+      },
+    ];
+    const result = await client.getCommandOptions('/prompts', '');
+    expect(result.options[0]!.hint).toBe('<query> [context]');
+  });
+
+  it('getCommandOptions("/prompts") returns formatted options from cache', async () => {
+    const client = new KasAcpClient();
+    await client.newSession();
+    (client as any).promptsCache = [
+      {
+        name: 'research',
+        description: 'Deep research',
+        arguments: [{ name: 'topic', required: true }],
+        serverName: 'builder-mcp',
+      },
+      {
+        name: 'summarize',
+        description: '',
+        arguments: [{ name: 'length', required: false }],
+        serverName: 'builder-mcp',
+      },
+    ];
+
+    const result = await client.getCommandOptions('/prompts', '');
+    expect(result.options).toEqual([
+      {
+        value: 'research',
+        label: '/research',
+        description: 'Deep research',
+        group: 'builder-mcp',
+        hint: '<topic>',
+      },
+      {
+        value: 'summarize',
+        label: '/summarize',
+        description: '',
+        group: 'builder-mcp',
+        hint: '[length]',
+      },
+    ]);
+  });
+
+  it('getCommandOptions("/prompts") returns empty when no prompts cached', async () => {
+    const client = new KasAcpClient();
+    await client.newSession();
+    const result = await client.getCommandOptions('/prompts', '');
+    expect(result.options).toEqual([]);
+  });
+
+  it('getCommandOptions("/prompts") sorts by group then label', async () => {
+    const client = new KasAcpClient();
+    await client.newSession();
+    (client as any).promptsCache = [
+      {
+        name: 'zebra',
+        description: '',
+        arguments: [],
+        serverName: 'workspace',
+      },
+      {
+        name: 'alpha',
+        description: '',
+        arguments: [],
+        serverName: 'builder-mcp',
+      },
+      {
+        name: 'beta',
+        description: '',
+        arguments: [],
+        serverName: 'builder-mcp',
+      },
+    ];
+
+    const result = await client.getCommandOptions('/prompts', '');
+    expect(result.options.map((o: any) => o.value)).toEqual([
+      'alpha',
+      'beta',
+      'zebra',
+    ]);
+  });
+
+  it('getCommandOptions("/prompts") handles prompts with no arguments (hint is undefined)', async () => {
+    const client = new KasAcpClient();
+    await client.newSession();
+    (client as any).promptsCache = [
+      {
+        name: 'simple',
+        description: 'No args',
+        arguments: [],
+        serverName: 'test',
+      },
+    ];
+
+    const result = await client.getCommandOptions('/prompts', '');
+    expect(result.options[0]!.hint).toBeUndefined();
+  });
+
+  // ── available_commands_update populates promptsCache ──
+
+  it('available_commands_update session notification populates promptsCache from prompt-type commands', async () => {
+    const client = new KasAcpClient();
+    await client.newSession();
+
+    // Simulate the KAS session update — prompts arrive as commands with _meta.kiro.type
+    (client as any).handleSessionUpdate({
+      sessionId: client.sessionId,
+      update: {
+        sessionUpdate: 'available_commands_update',
+        availableCommands: [
+          { name: 'help', description: 'Show help', _meta: {} },
+          {
+            name: 'research',
+            description: 'Deep research',
+            _meta: { kiro: { type: 'skill' } },
+          },
+          {
+            name: 'plan',
+            description: 'Create a plan',
+            _meta: { kiro: { type: 'steering' } },
+          },
+        ],
+      },
+    });
+
+    // Verify promptsCache was populated from prompt-type commands only
+    expect((client as any).promptsCache).toHaveLength(2);
+    const names = (client as any).promptsCache.map((p: any) => p.name).sort();
+    expect(names).toEqual(['plan', 'research']);
+
+    // Verify getCommandOptions now returns the prompts
+    const options = await client.getCommandOptions('/prompts', '');
+    expect(options.options).toHaveLength(2);
+    // Verify serverName mapping: steering → workspace, skill → skill
+    const groups = options.options.map((o: any) => o.group);
+    expect(groups.sort()).toEqual(['skill', 'workspace']);
+  });
+
+  it('available_commands_update with no prompt-type commands clears promptsCache', async () => {
+    const client = new KasAcpClient();
+    await client.newSession();
+
+    // Pre-populate cache
+    (client as any).promptsCache = [
+      { name: 'old', description: '', arguments: [], serverName: 'workspace' },
+    ];
+
+    // Send update with only non-prompt commands
+    (client as any).handleSessionUpdate({
+      sessionId: client.sessionId,
+      update: {
+        sessionUpdate: 'available_commands_update',
+        availableCommands: [
+          { name: 'help', description: 'Show help', _meta: {} },
+        ],
+      },
+    });
+
+    expect((client as any).promptsCache).toHaveLength(0);
+  });
 });

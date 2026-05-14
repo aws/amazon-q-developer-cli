@@ -3,7 +3,6 @@ pub mod delay_interceptor;
 mod endpoints;
 pub mod error;
 pub mod error_utils;
-mod internal_redirect_interceptor;
 pub mod model;
 pub mod opt_out;
 pub mod profile;
@@ -63,7 +62,6 @@ use tracing::{
 };
 
 use crate::api_client::delay_interceptor::DelayTrackingInterceptor;
-use crate::api_client::internal_redirect_interceptor::InternalRedirectInterceptor;
 use crate::api_client::model::{
     ChatResponseStream,
     ConversationState,
@@ -572,7 +570,23 @@ impl IpcMockApiClient {
 
     pub async fn list_available_models_cached(&self) -> Result<ModelListResult, ApiClientError> {
         // Return mock models for testing
-        let models: Vec<Model> = [
+        let schema = json_to_document(&serde_json::json!({
+            "type": "object",
+            "properties": {
+                "output_config": {
+                    "type": "object",
+                    "properties": {
+                        "effort": {
+                            "type": "string",
+                            "enum": ["low", "medium", "high", "xhigh", "max"]
+                        }
+                    }
+                }
+            }
+        }));
+        let mut models: Vec<Model> = [
+            ("claude-opus-4.7", "Claude Opus 4.7"),
+            ("claude-sonnet-4.6", "Claude Sonnet 4.6"),
             ("Auto", "Auto"),
             ("claude-sonnet-4.5", "Claude Sonnet 4.5"),
             ("claude-sonnet-4", "Claude Sonnet 4"),
@@ -582,8 +596,23 @@ impl IpcMockApiClient {
             ("qwen3-coder-480b", "Qwen3 Coder 480B"),
         ]
         .into_iter()
-        .map(|(id, name)| Model::builder().model_id(id).model_name(name).build().unwrap())
+        .map(|(id, name)| {
+            Model::builder()
+                .model_id(id)
+                .model_name(name)
+                .additional_model_request_fields_schema(schema.clone())
+                .build()
+                .unwrap()
+        })
         .collect();
+        // Model without effort support (no additional_fields schema)
+        models.push(
+            Model::builder()
+                .model_id("amazon-nova-pro")
+                .model_name("Amazon Nova Pro")
+                .build()
+                .unwrap(),
+        );
         let default_model = models[0].clone();
         Ok(ModelListResult { models, default_model })
     }
@@ -664,8 +693,9 @@ impl RealApiClient {
 
         let is_social = crate::auth::social::is_social_logged_in(database).await;
 
-        // Detect Amazon-internal users by checking for the mwinit Midway auth tool.
-        let is_internal = crate::util::system_info::is_mwinit_available();
+        let region = endpoint.region().as_ref();
+        let krs_endpoint = Endpoint::krs_for_region(region);
+        let cps_endpoint = Endpoint::cps_for_region(region);
 
         let credentials = Credentials::new("xxx", "xxx", None, None, "xxx");
         let bearer_sdk_config = aws_config::defaults(behavior_version())
@@ -676,21 +706,20 @@ impl RealApiClient {
             .load()
             .await;
 
-        // Control plane client for CPS operations — redirect header routes internal users to KRS
+        // Control plane client for CPS operations
         let client = CodewhispererClient::from_conf(
             amzn_codewhisperer_client::config::Builder::from(&bearer_sdk_config)
                 .http_client(crate::aws_common::http_client::client())
                 .interceptor(OptOutInterceptor::new(database))
                 .interceptor(UserAgentOverrideInterceptor::new())
                 .interceptor(TokenTypeInterceptor::new(auth_mode.clone()))
-                .interceptor(InternalRedirectInterceptor::new(is_internal))
                 .bearer_token_resolver(UnifiedBearerResolver)
                 .app_name(app_name())
-                .endpoint_resolver(StaticCodewhispererEndpointResolver::new(endpoint.url().to_string()))
+                .endpoint_resolver(StaticCodewhispererEndpointResolver::new(cps_endpoint.url().to_string()))
                 .build(),
         );
 
-        // Telemetry client — send_telemetry_event stays on RTS, must NOT have the redirect header
+        // Telemetry client — send_telemetry_event stays on legacy RTS
         let telemetry_client = CodewhispererClient::from_conf(
             amzn_codewhisperer_client::config::Builder::from(&bearer_sdk_config)
                 .http_client(crate::aws_common::http_client::client())
@@ -740,10 +769,9 @@ impl RealApiClient {
                     MAX_ATTEMPTS,
                 ))
                 .interceptor(TokenTypeInterceptor::new(auth_mode.clone()))
-                .interceptor(InternalRedirectInterceptor::new(is_internal))
                 .bearer_token_resolver(UnifiedBearerResolver)
                 .app_name(app_name())
-                .endpoint_resolver(StaticEndpointResolver::new(endpoint.url().to_string()))
+                .endpoint_resolver(StaticEndpointResolver::new(krs_endpoint.url().to_string()))
                 .retry_config(retry_config())
                 .retry_classifier(retry_classifier::QCliRetryClassifier::new())
                 .stalled_stream_protection(stalled_stream_protection_config())
@@ -1037,6 +1065,7 @@ impl RealApiClient {
             user_input_message,
             history,
             agent_continuation_id,
+            additional_model_request_fields,
         } = conversation;
 
         let model_id_opt: Option<String> = user_input_message.model_id.clone();
@@ -1063,6 +1092,10 @@ impl RealApiClient {
             match client
                 .generate_assistant_response()
                 .conversation_state(conversation_state)
+                .set_additional_model_request_fields(
+                    additional_model_request_fields
+                        .map(|v| crate::cli::chat::legacy::additional_fields::value_to_document(&v)),
+                )
                 .set_profile_arn(self.optional_profile_arn().await)
                 .send()
                 .await
@@ -1746,6 +1779,7 @@ mod tests {
                 },
                 history: None,
                 agent_continuation_id: None,
+                additional_model_request_fields: None,
             })
             .await
             .unwrap();

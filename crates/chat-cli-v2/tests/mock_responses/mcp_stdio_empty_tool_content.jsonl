@@ -1,0 +1,8 @@
+// Mock LLM response: zero-arg tool called with empty-string input ("" instead
+// of "{}"). Post-fix the agent coerces "" → {} and dispatches normally.
+{"kind":"event","data":{"kind":"ToolUseEvent","data":{"tool_use_id":"tooluse_repro_001","name":"list_crons","input":null,"stop":null}}}
+{"kind":"event","data":{"kind":"ToolUseEvent","data":{"tool_use_id":"tooluse_repro_001","name":"list_crons","input":"","stop":null}}}
+{"kind":"event","data":{"kind":"ToolUseEvent","data":{"tool_use_id":"tooluse_repro_001","name":"list_crons","input":null,"stop":true}}}
+
+// Follow-up turn after tool execution — ends the test.
+{"kind":"event","data":{"kind":"AssistantResponseEvent","data":{"content":"Done."}}}

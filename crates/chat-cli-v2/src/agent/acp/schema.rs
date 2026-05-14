@@ -7,9 +7,9 @@ use agent::tui_commands::{
     TuiCommand,
 };
 use sacp::{
-    JrNotification,
-    JrRequest,
-    JrResponsePayload,
+    JsonRpcNotification,
+    JsonRpcRequest,
+    JsonRpcResponse,
 };
 use serde::{
     Deserialize,
@@ -17,7 +17,7 @@ use serde::{
 };
 
 /// Request to execute a TUI command
-#[derive(Debug, Clone, Serialize, Deserialize, JrRequest)]
+#[derive(Debug, Clone, Serialize, Deserialize, JsonRpcRequest)]
 #[request(method = "_kiro.dev/commands/execute", response = CommandExecuteResponse)]
 #[serde(rename_all = "camelCase")]
 pub struct CommandExecuteRequest {
@@ -26,7 +26,7 @@ pub struct CommandExecuteRequest {
 }
 
 /// Response - transparent wrapper for wire compatibility
-#[derive(Debug, Clone, Serialize, Deserialize, JrResponsePayload)]
+#[derive(Debug, Clone, Serialize, Deserialize, JsonRpcResponse)]
 #[serde(transparent)]
 pub struct CommandExecuteResponse(pub CommandResult);
 
@@ -52,10 +52,12 @@ pub enum TuiCommandKind {
     Prompts,
     Feedback,
     Chat,
+    Rewind,
+    Effort,
 }
 
 /// Request to get command options (autocomplete)
-#[derive(Debug, Clone, Serialize, Deserialize, JrRequest)]
+#[derive(Debug, Clone, Serialize, Deserialize, JsonRpcRequest)]
 #[request(method = "_kiro.dev/commands/options", response = CommandOptionsResponseWrapper)]
 #[serde(rename_all = "camelCase")]
 pub struct CommandOptionsRequest {
@@ -66,7 +68,7 @@ pub struct CommandOptionsRequest {
 }
 
 /// Response wrapper for command options
-#[derive(Debug, Clone, Serialize, Deserialize, JrResponsePayload)]
+#[derive(Debug, Clone, Serialize, Deserialize, JsonRpcResponse)]
 #[serde(transparent)]
 pub struct CommandOptionsResponseWrapper(pub CommandOptionsResponse);
 
@@ -77,7 +79,7 @@ impl From<CommandOptionsResponse> for CommandOptionsResponseWrapper {
 }
 
 /// Notification to advertise available commands
-#[derive(Debug, Clone, Serialize, Deserialize, JrNotification)]
+#[derive(Debug, Clone, Serialize, Deserialize, JsonRpcNotification)]
 #[notification(method = "_kiro.dev/commands/available")]
 #[serde(rename_all = "camelCase")]
 pub struct CommandsAvailableNotification {
@@ -139,7 +141,7 @@ pub struct McpServerAdvertisement {
 }
 
 /// Metadata update sent as a session notification (extensible)
-#[derive(Debug, Clone, Serialize, Deserialize, JrNotification)]
+#[derive(Debug, Clone, Serialize, Deserialize, JsonRpcNotification)]
 #[notification(method = "_kiro.dev/metadata")]
 #[serde(rename_all = "camelCase")]
 pub struct MetadataNotification {
@@ -150,7 +152,8 @@ pub struct MetadataNotification {
     pub metering_usage: Option<Vec<MeteringUsageInfo>>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub turn_duration_ms: Option<u64>,
-    // Future fields can be added here
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub effort: Option<String>,
 }
 
 // ---------------------------------------------------------------------------
@@ -170,7 +173,7 @@ pub struct MetadataNotification {
 /// extension method namespace. This is a temporary extension until sacp adds
 /// native session/list support, at which point this should use `session/list`.
 /// TODO: Change method to `session/list` once sacp adds native handler support.
-#[derive(Debug, Clone, Default, Serialize, Deserialize, JrRequest)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize, JsonRpcRequest)]
 #[request(method = "_kiro.dev/session/list", response = ListSessionsResponse)]
 #[serde(rename_all = "camelCase")]
 pub struct ListSessionsRequest {
@@ -182,7 +185,7 @@ pub struct ListSessionsRequest {
 }
 
 /// Response from `session/list`.
-#[derive(Debug, Clone, Serialize, Deserialize, JrResponsePayload)]
+#[derive(Debug, Clone, Serialize, Deserialize, JsonRpcResponse)]
 #[serde(rename_all = "camelCase")]
 pub struct ListSessionsResponse {
     pub sessions: Vec<SessionInfoEntry>,
@@ -205,13 +208,13 @@ pub struct SessionInfoEntry {
 }
 
 /// Request to list user settings.
-#[derive(Debug, Clone, Serialize, Deserialize, JrRequest)]
+#[derive(Debug, Clone, Serialize, Deserialize, JsonRpcRequest)]
 #[request(method = "_kiro.dev/settings/list", response = SettingsListResponse)]
 pub struct SettingsListRequest {}
 
 /// Response containing all user settings as a flat JSON map.
 /// Keys use the same dotted names as the settings file (e.g. "chat.greeting.enabled").
-#[derive(Debug, Clone, Serialize, Deserialize, JrResponsePayload)]
+#[derive(Debug, Clone, Serialize, Deserialize, JsonRpcResponse)]
 #[serde(transparent)]
 pub struct SettingsListResponse(pub serde_json::Map<String, serde_json::Value>);
 
@@ -219,7 +222,7 @@ pub struct SettingsListResponse(pub serde_json::Map<String, serde_json::Value>);
 /// The key uses the same dotted names as the settings file (e.g.
 /// "chat.disableTrustAllConfirmation"). The write is performed with file-level locking so it is
 /// safe to call from the TUI process while the Rust backend may also be writing settings.
-#[derive(Debug, Clone, Serialize, Deserialize, JrRequest)]
+#[derive(Debug, Clone, Serialize, Deserialize, JsonRpcRequest)]
 #[request(method = "_kiro.dev/settings/set", response = SettingsSetResponse)]
 pub struct SettingsSetRequest {
     pub key: String,
@@ -227,11 +230,11 @@ pub struct SettingsSetRequest {
 }
 
 /// Response for settings/set — empty on success.
-#[derive(Debug, Clone, Serialize, Deserialize, JrResponsePayload)]
+#[derive(Debug, Clone, Serialize, Deserialize, JsonRpcResponse)]
 pub struct SettingsSetResponse {}
 
 /// Request to terminate a session
-#[derive(Debug, Clone, Serialize, Deserialize, JrRequest)]
+#[derive(Debug, Clone, Serialize, Deserialize, JsonRpcRequest)]
 #[request(method = "_kiro.dev/session/terminate", response = TerminateSessionResponse)]
 #[serde(rename_all = "camelCase")]
 pub struct TerminateSessionRequest {
@@ -239,5 +242,5 @@ pub struct TerminateSessionRequest {
 }
 
 /// Response for session terminate
-#[derive(Debug, Clone, Serialize, Deserialize, JrResponsePayload)]
+#[derive(Debug, Clone, Serialize, Deserialize, JsonRpcResponse)]
 pub struct TerminateSessionResponse {}

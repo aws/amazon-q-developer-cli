@@ -1,7 +1,7 @@
 ---
 doc_meta:
-  validated: 2025-12-19
-  commit: 57090ffe
+  validated: 2026-04-24
+  commit: 22dc5f71
   status: validated
   testable_headless: false
   category: slash_command
@@ -15,10 +15,18 @@ Exit the chat session and return to terminal.
 
 ## Overview
 
+The `/quit` command exits the current chat session. You can also use `/exit` as an alias.
 
 ## Usage
 
 ```
+/quit
+```
+
+Or:
+
+```
+/exit
 ```
 
 
@@ -34,6 +42,7 @@ Exit the chat session and return to terminal.
 ### Example 1: Exit Session
 
 ```
+/quit
 ```
 
 Session ends, returns to terminal.
@@ -41,7 +50,10 @@ Session ends, returns to terminal.
 ### Example 2: Using Alias
 
 ```
+/exit
 ```
+
+Same behavior as `/quit`.
 
 
 ## Auto-Save

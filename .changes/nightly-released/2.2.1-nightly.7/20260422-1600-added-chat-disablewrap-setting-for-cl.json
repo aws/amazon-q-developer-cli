@@ -1,0 +1,4 @@
+{
+  "type": "added",
+  "description": "Added `chat.disableWrap` setting to disable word-wrapping in chat output — long lines soft-wrap visually but stay as a single logical line for clean copy-paste."
+}

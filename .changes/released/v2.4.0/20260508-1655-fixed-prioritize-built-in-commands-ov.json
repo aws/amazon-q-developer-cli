@@ -1,0 +1,4 @@
+{
+  "type": "fixed",
+  "description": "Prioritize built-in commands over skills in slash command autocomplete"
+}

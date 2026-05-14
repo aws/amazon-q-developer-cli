@@ -24,11 +24,8 @@ use agent::tools::session::{
 };
 use agent::util::providers::RealProvider;
 use code_agent_sdk::CodeIntelligence;
+use sacp::ConnectionTo;
 use sacp::schema::SessionId;
-use sacp::{
-    AgentToClient,
-    JrConnectionCx,
-};
 use tokio::sync::{
     RwLock,
     mpsc,
@@ -421,7 +418,7 @@ pub struct SessionManager {
     /// Orchestration: session groups
     groups: HashMap<String, SessionGroup>,
     /// Shared TUI connection — cloned into every AcpSession (main + subagent)
-    connection_cx: Option<JrConnectionCx<AgentToClient>>,
+    connection_cx: Option<ConnectionTo<sacp::Client>>,
     /// Pending group completion waiters: group_name -> sender
     group_completion_waiters: HashMap<String, GroupCompletionSender>,
     /// V1 session exporter for lazy migration of V1 conversations.
@@ -740,7 +737,13 @@ impl SessionManager {
                     .initial_agent_config(Cow::Owned(agent_config_to_use))
                     .user_embedded_msg(config.user_embedded_msg.as_deref())
                     .session_tx(self.session_manager_handle.clone())
-                    .set_as_subagent(config.parent_session_id.is_some())
+                    .set_as_subagent(
+                        config.parent_session_id.is_some()
+                            && matches!(
+                                config.session_created_reason,
+                                crate::agent::session::SessionCreatedReason::Subagent
+                            ),
+                    )
                     .parent_session_id(config.parent_session_id.clone())
                     .code_intelligence(code_intel)
                     .trust_all_tools(self.trust_all_tools)
@@ -760,7 +763,8 @@ impl SessionManager {
                     }
                     builder = builder.connection_cx(cx);
                 } else if config.parent_session_id.is_some() {
-                    // Subagent session — clone the stored connection
+                    // Subagent or rewind-fork session — clone the stored connection
+                    // (any session derived from a parent reuses the parent's connection).
                     if let Some(cx) = &self.connection_cx {
                         builder = builder.connection_cx(cx.clone());
                     }
@@ -1006,6 +1010,7 @@ impl SessionManager {
                                     updated_at: v1.updated_at,
                                     title: v1.title,
                                     parent_session_id: None,
+                                    session_created_reason: crate::agent::session::SessionCreatedReason::Subagent,
                                     message_count: v1.message_count,
                                 });
                             }
@@ -2103,7 +2108,7 @@ pub(crate) struct SessionManagerRequest {
 pub(crate) enum SessionManagerRequestData {
     StartSession {
         config: Box<AcpSessionConfig>,
-        connection_cx: Option<JrConnectionCx<AgentToClient>>,
+        connection_cx: Option<ConnectionTo<sacp::Client>>,
         resp_sender: oneshot::Sender<Result<StartSessionResult, sacp::Error>>,
     },
     GetSessionHandle {
@@ -2262,7 +2267,7 @@ impl SessionManagerHandle {
         &self,
         session_id: &SessionId,
         config: AcpSessionConfig,
-        connection_cx: Option<JrConnectionCx<AgentToClient>>,
+        connection_cx: Option<ConnectionTo<sacp::Client>>,
     ) -> Result<StartSessionResult, sacp::Error> {
         let (resp_sender, rx) = oneshot::channel();
         self.tx

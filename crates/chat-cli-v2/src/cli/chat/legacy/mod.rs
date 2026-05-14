@@ -5,6 +5,7 @@
 //!
 //! TODO: Move these to more appropriate locations in the codebase.
 
+pub mod additional_fields;
 pub mod custom_tool;
 pub mod model;
 pub mod tools;

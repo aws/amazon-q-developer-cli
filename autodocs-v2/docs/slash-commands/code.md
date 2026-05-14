@@ -1,7 +1,7 @@
 ---
 doc_meta:
-  validated: 2026-04-09
-  commit: be9ce792
+  validated: 2026-04-24
+  commit: 22dc5f71
   status: validated
   testable_headless: false
   category: slash_command
@@ -75,6 +75,8 @@ Ideal for:
 - Q&A sessions about project structure
 - Understanding unfamiliar packages quickly
 
+**Note**: This command cannot be run from your home directory or filesystem root — the scan would be too large. Navigate to a project directory first.
+
 ### summary
 
 Generate comprehensive codebase documentation using agentic analysis.
@@ -92,6 +94,8 @@ Ideal for:
 - Creating AI-friendly documentation (AGENTS.md)
 - Generating README.md or CONTRIBUTING.md
 - Building comprehensive knowledge bases for codebases
+
+**Note**: This command cannot be run from your home directory or filesystem root — the scan would be too large. Navigate to a project directory first.
 
 ## Examples
 
@@ -200,3 +204,9 @@ I'll help you create comprehensive documentation. Please provide:
 **Symptom**: Warning about workspace being home directory  
 **Cause**: Running `/code init` from home directory  
 **Solution**: Navigate to a project directory. If initialized by mistake, remove `~/.kiro/settings/lsp.json`
+
+### Issue: Cannot Generate Overview from Home/Root Directory
+
+**Symptom**: Error "Cannot generate overview for home or root directory — the scan would be too large"  
+**Cause**: Running `/code overview` or `/code summary` from home directory (`~`) or filesystem root (`/`)  
+**Solution**: Navigate to a specific project directory and try again

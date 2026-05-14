@@ -96,9 +96,11 @@ impl AgentConfig {
         }
     }
 
-    pub fn resources(&self) -> &[impl AsRef<str>] {
+    /// Returns context-file resources (excludes knowledgeBase resources which
+    /// are handled by the knowledge indexing system).
+    pub fn resources(&self) -> Vec<&ResourcePath> {
         match self {
-            AgentConfig::V2025_08_22(a) => a.resources.as_slice(),
+            AgentConfig::V2025_08_22(a) => a.resources.iter().filter(|r| !r.is_knowledge_base()).collect(),
         }
     }
 
@@ -1386,6 +1388,32 @@ mod tests {
             &paths[1],
             ResourcePath::Complex(ComplexResource::KnowledgeBase { name: Some(n), auto_update: Some(true), .. }) if n == "my-docs"
         ));
+    }
+
+    #[test]
+    fn test_resources_excludes_knowledge_base() {
+        let agent: AgentConfig = serde_json::from_value(serde_json::json!({
+            "name": "test",
+            "resources": [
+                "file://readme.md",
+                "skill://my-skill",
+                {
+                    "type": "knowledgeBase",
+                    "source": "file://./docs/*.md",
+                    "name": "my-docs"
+                }
+            ]
+        }))
+        .unwrap();
+
+        // resources() should exclude knowledgeBase entries
+        let resources = agent.resources();
+        assert_eq!(resources.len(), 2);
+        assert_eq!(resources[0].as_ref(), "file://readme.md");
+        assert_eq!(resources[1].as_ref(), "skill://my-skill");
+
+        // resource_paths() should include all entries
+        assert_eq!(agent.resource_paths().len(), 3);
     }
 
     #[test]

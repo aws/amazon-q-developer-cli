@@ -1,13 +1,13 @@
 ---
 doc_meta:
-  validated: 2026-04-09
-  commit: 4ae084db
+  validated: 2026-04-30
+  commit: be2c1347
   status: validated
   testable_headless: false
   category: slash_command
   title: /usage
   description: Show account-level usage limits and subscription plan information
-  keywords: [usage, billing, credits, plan, limits, subscription]
+  keywords: [usage, billing, credits, plan, limits, subscription, tokens]
   related: [model, settings]
 ---
 
@@ -18,6 +18,8 @@ Show account-level usage limits and subscription plan information.
 ## Overview
 
 Retrieves your account's usage limits from the API, including subscription plan details, usage breakdowns by resource type, and bonus credits with expiry information.
+
+**Note**: This shows account-level usage, not per-session token counts. Token-level metrics for individual sessions are not currently available.
 
 ## Usage
 
@@ -37,15 +39,6 @@ Returns JSON data containing:
   - `currentOverages`, `overageRate`, `overageCharges`, `currency`
 - `bonusCredits[]` - Array of bonus credits:
   - `name`, `used`, `total`, `daysUntilExpiry`
-
-## Limitations
-
-- Enterprise users see "Your plan is managed by admin" message
-- Requires valid API authentication
-
-## Technical Details
-
-Calls `get_usage_limits()` API to retrieve account-level subscription and usage data.
 
 ## Examples
 
@@ -90,6 +83,35 @@ With JSON data:
 }
 ```
 
+## FAQ
+
+### How do I check token usage for my current session?
+
+Per-session token counts are not currently available. `/usage` shows account-level usage only, which aggregates all your activity.
+
+### What's the difference between cached and non-cached tokens?
+
+Token caching is handled automatically by the service. The `/usage` command shows aggregate usage — it doesn't break down cached vs non-cached tokens.
+
+### When does usage reset?
+
+Usage resets based on your billing cycle. The exact reset date depends on your subscription plan. Check your account settings for billing cycle details.
+
+### What counts as an "agentic request"?
+
+An agentic request is a conversation turn where the agent uses tools. Simple Q&A without tool use may be counted differently depending on your plan.
+
+## Limitations
+
+- Shows account-level usage only (not per-session)
+- Token-level breakdown not available
+- Enterprise users see "Your plan is managed by admin" message
+- Requires valid API authentication
+
+## Technical Details
+
+Calls `get_usage_limits()` API to retrieve account-level subscription and usage data.
+
 ## Troubleshooting
 
 ### Issue: "Your plan is managed by admin"
@@ -103,3 +125,8 @@ With JSON data:
 **Symptom**: Error message about retrieval failure  
 **Cause**: API authentication or connectivity issue  
 **Solution**: Check your login status with `/whoami` and re-authenticate if needed
+
+## Related
+
+- [/model](model.md) - Switch models mid-session
+- [chat.defaultModel](../settings/default-model.md) - Set default model

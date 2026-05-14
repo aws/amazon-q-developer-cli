@@ -116,7 +116,7 @@ impl LoadedAgentConfig {
         self.config.hooks()
     }
 
-    pub fn resources(&self) -> &[impl AsRef<str>] {
+    pub fn resources(&self) -> Vec<&types::ResourcePath> {
         self.config.resources()
     }
 

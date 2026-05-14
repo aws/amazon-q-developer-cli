@@ -191,6 +191,15 @@ export interface ContextArgs {
 	subcommand?: string;
 }
 
+/** Arguments for /effort command */
+export interface EffortArgs {
+	/**
+	 * Effort level to set. If None, shows available levels.
+	 * Accepts either `level` or `value` (for generic selection UI)
+	 */
+	level?: string;
+}
+
 /** Arguments for /feedback command */
 export interface FeedbackArgs {
 	/** Feedback type: general, feature, issue. If None, shows the selection panel. */
@@ -401,6 +410,15 @@ export interface RetryWarningEvent {
 	maxAttempts: number;
 	delaySecs: number;
 	message: string;
+}
+
+/** Arguments for /rewind command */
+export interface RewindArgs {
+	/**
+	 * Log entry index of the selected `Prompt` entry. If None, shows the picker.
+	 * Accepts either `turnIndex` or `value` (for generic selection UI).
+	 */
+	turnIndex?: string;
 }
 
 /** Arguments for /stats command */
@@ -620,6 +638,10 @@ export type TuiCommand =
 	| { command: "hooks", args: HooksArgs }
 	/** Switch to the guide agent for help with Kiro CLI */
 	| { command: "guide", args: GuideArgs }
+	/** Rewind to a previous turn (clones history into a new session) */
+	| { command: "rewind", args: RewindArgs }
 	/** Show request stats for debugging slow turns */
-	| { command: "stats", args: StatsArgs };
+	| { command: "stats", args: StatsArgs }
+	/** Set thinking effort for this session */
+	| { command: "effort", args: EffortArgs };
 

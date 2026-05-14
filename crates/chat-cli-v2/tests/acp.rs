@@ -3077,3 +3077,257 @@ async fn cancelled_tool_response_preserves_tool_results() {
         "history should NOT contain 'Tool use was cancelled' since the tool completed successfully"
     );
 }
+
+/// A zero-arg MCP tool invoked with empty-string input should dispatch
+/// normally (input coerced to `{}`), not trigger the "tool was too large"
+/// retry.
+#[tokio::test]
+#[timeout(120000)]
+#[serial]
+async fn empty_mcp_tool_content_invokes_zero_arg_tool_without_retry() {
+    // MCP stdio handshake is unreliable on CI runners under load, same as
+    // mcp_stdio_server_tool_call.
+    if std::env::var("CI").is_ok() {
+        return;
+    }
+
+    use std::path::PathBuf;
+
+    use mock_mcp_server::prebuild_bin;
+    use sacp::schema::McpServerStdio;
+
+    // Ensure mock-mcp-server binary is built
+    prebuild_bin().expect("failed to build mock-mcp-server");
+
+    let binary_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .parent()
+        .unwrap()
+        .parent()
+        .unwrap()
+        .join("target/debug/mock-mcp-server");
+
+    // Zero-arg MCP tool config — `properties: {}` is the schema shape that triggers
+    // the LLM-side quirk the test case documents.
+    let config_path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/mcp_configs/stdio_server_zero_arg.jsonl");
+
+    let (harness, client) = AcpTestHarnessBuilder::new("empty_mcp_tool_content_invokes_zero_arg_tool_without_retry")
+        .with_trust_all(true)
+        .build()
+        .await;
+
+    let cwd = harness.paths.cwd.clone();
+
+    let mcp_server = sacp::schema::McpServer::Stdio(
+        McpServerStdio::new("test-stdio-mcp", binary_path)
+            .args(vec!["--config".to_string(), config_path.to_str().unwrap().to_string()]),
+    );
+
+    let resp = client
+        .new_session_with_mcp(cwd, vec![mcp_server])
+        .await
+        .expect("new_session failed");
+    let session_id = resp.session_id;
+
+    // Wait for MCP server to initialize before prompting.
+    let mcp_initialized_method = methods::MCP_SERVER_INITIALIZED
+        .strip_prefix("_")
+        .expect("method should have underscore prefix");
+
+    let initialized = client
+        .wait_for_timeout(
+            |captured| {
+                captured.ext_notifications.iter().any(|n| {
+                    n.method.as_ref() == mcp_initialized_method && {
+                        let params: serde_json::Value = serde_json::from_str(n.params.get()).unwrap_or_default();
+                        params.get("serverName").and_then(|v| v.as_str()) == Some("test-stdio-mcp")
+                    }
+                })
+            },
+            std::time::Duration::from_secs(90),
+        )
+        .await;
+    assert!(initialized, "MCP server 'test-stdio-mcp' did not initialize within 90s");
+
+    let mut harness = harness;
+    harness
+        .push_mock_responses_from_file(&session_id.0, "tests/mock_responses/mcp_stdio_empty_tool_content.jsonl")
+        .await;
+
+    client
+        .prompt_text(session_id.clone(), "list my cron jobs")
+        .await
+        .expect("prompt failed");
+
+    // Post-fix expectation: empty-string tool content is coerced to {}, so the
+    // agent dispatches the zero-arg tool normally without entering the
+    // InvalidJson retry path.
+
+    let captured = client.captured().await;
+    let has_tool_call = captured
+        .session_updates
+        .iter()
+        .any(|u| matches!(u, SessionUpdate::ToolCall(tc) if tc.title.contains("list_crons")));
+    assert!(
+        has_tool_call,
+        "expected a ToolCall for 'list_crons'; updates: {:?}",
+        captured.session_updates
+    );
+
+    // No SessionUpdate should mention "tool was too large" — that phrase is
+    // only emitted on the retry path we're fixing.
+    let too_large_mention = captured
+        .session_updates
+        .iter()
+        .find(|u| format!("{u:?}").contains("tool was too large"));
+    assert!(
+        too_large_mention.is_none(),
+        "unexpected retry path: {:?}",
+        too_large_mention
+    );
+}
+
+/// E2E: /effort command flow — get options, select one via command execute,
+/// verify override flows through to additional_model_request_fields on next prompt.
+#[tokio::test]
+#[timeout(30000)]
+#[serial]
+async fn effort_command_e2e() {
+    let (mut harness, client, session_id, _) = AcpTestHarnessBuilder::new("effort_command_e2e")
+        .with_trust_all(true)
+        .build_with_session()
+        .await;
+
+    // 1. Get effort options (simulates user running /effort)
+    let options = client
+        .get_command_options(session_id.clone(), "effort")
+        .await
+        .expect("get_command_options for effort failed");
+
+    assert!(!options.options.is_empty(), "effort should have options");
+    let values: Vec<&str> = options.options.iter().map(|o| o.value.as_str()).collect();
+    assert!(values.contains(&"low"), "should contain 'low': {:?}", values);
+    assert!(values.contains(&"high"), "should contain 'high': {:?}", values);
+
+    // 2. User selects "low" via /effort command execute
+    let result = client
+        .execute_command(
+            session_id.clone(),
+            serde_json::json!({ "command": "effort", "args": { "value": "low" } }),
+        )
+        .await
+        .expect("execute_command for effort failed");
+    assert!(result.success, "effort execute should succeed: {}", result.message);
+
+    // 3. Verify the override is applied on the next prompt
+    harness
+        .push_mock_responses_from_file(&session_id.0, "tests/mock_responses/simple_text.jsonl")
+        .await;
+
+    client
+        .prompt_text(session_id.clone(), "hello")
+        .await
+        .expect("prompt failed");
+
+    let requests = harness.get_captured_requests(&session_id.0).await;
+    assert!(!requests.is_empty(), "should have captured at least one request");
+
+    let last_request = requests.last().unwrap();
+    let additional_fields = last_request
+        .additional_model_request_fields
+        .as_ref()
+        .expect("additional_model_request_fields should be set");
+
+    assert_eq!(
+        additional_fields["output_config"]["effort"], "low",
+        "effort should be 'low' in the request"
+    );
+}
+
+/// E2E: per-model additional field defaults from settings file.
+/// When cli.json contains `"claude-opus-4.7": {"output_config.effort": "low"}`,
+/// a new session should use effort=low instead of the hardcoded default (xhigh).
+#[tokio::test]
+#[timeout(30000)]
+#[serial]
+async fn model_defaults_from_settings_override_hardcoded() {
+    let (mut harness, client, session_id, _) = AcpTestHarnessBuilder::new("model_defaults_from_settings")
+        .with_setting(
+            "chat.modelDefaults",
+            serde_json::json!({"claude-opus-4.7": {"output_config": {"effort": "low"}}}),
+        )
+        .with_trust_all(true)
+        .build_with_session()
+        .await;
+
+    // Send a prompt so we can inspect the captured request
+    harness
+        .push_mock_responses_from_file(&session_id.0, "tests/mock_responses/simple_text.jsonl")
+        .await;
+
+    client
+        .prompt_text(session_id.clone(), "hello")
+        .await
+        .expect("prompt failed");
+
+    let requests = harness.get_captured_requests(&session_id.0).await;
+    assert!(!requests.is_empty(), "should have captured at least one request");
+
+    let last_request = requests.last().unwrap();
+    let additional_fields = last_request
+        .additional_model_request_fields
+        .as_ref()
+        .expect("additional_model_request_fields should be set");
+
+    // Should be "low" from settings, NOT "xhigh" (the hardcoded default for opus-4.7)
+    assert_eq!(
+        additional_fields["output_config"]["effort"], "low",
+        "effort should be 'low' from settings, not the hardcoded 'xhigh' default"
+    );
+}
+
+#[tokio::test]
+#[timeout(30000)]
+#[serial]
+async fn model_switch_applies_settings_defaults() {
+    // Start on sonnet-4.6, configure opus-4.7 defaults, then switch and verify
+    let (mut harness, client, session_id, _) = AcpTestHarnessBuilder::new("model_switch_defaults")
+        .with_setting("chat.defaultModel", serde_json::json!("claude-sonnet-4.6"))
+        .with_setting(
+            "chat.modelDefaults",
+            serde_json::json!({"claude-opus-4.7": {"output_config": {"effort": "low"}}}),
+        )
+        .with_trust_all(true)
+        .build_with_session()
+        .await;
+
+    // Switch to opus-4.7 via /model command (slash commands don't consume mock responses)
+    client
+        .prompt_text(session_id.clone(), "/model claude-opus-4.7")
+        .await
+        .expect("model switch failed");
+
+    // Send a prompt to capture the request with the new model's settings
+    harness
+        .push_mock_responses_from_file(&session_id.0, "tests/mock_responses/simple_text.jsonl")
+        .await;
+
+    client
+        .prompt_text(session_id.clone(), "hello")
+        .await
+        .expect("prompt failed");
+
+    let requests = harness.get_captured_requests(&session_id.0).await;
+    assert!(!requests.is_empty(), "should have captured at least one request");
+
+    let last_request = requests.last().unwrap();
+    let additional_fields = last_request
+        .additional_model_request_fields
+        .as_ref()
+        .expect("additional_model_request_fields should be set");
+
+    // Should be "low" from settings, NOT "xhigh" (the hardcoded default for opus-4.7)
+    assert_eq!(
+        additional_fields["output_config"]["effort"], "low",
+        "effort should be 'low' from settings after /model switch, not the hardcoded 'xhigh'"
+    );
+}

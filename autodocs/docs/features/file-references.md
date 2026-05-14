@@ -8,7 +8,7 @@ doc_meta:
   title: File References
   description: Use @path syntax to include file contents or directory listings inline in chat messages
   keywords: [file, directory, reference, at, path, inline, context, tree, quoted]
-  related: [prompts, fs-read, context]
+  related: [prompts, read, context]
 ---
 
 # File References
@@ -222,4 +222,4 @@ File contents provide context for the error.
 
 - [/prompts](../slash-commands/prompts.md) - Prompt templates (also use @ syntax)
 - [/context](../slash-commands/context.md) - Persistent context files
-- [fs_read](../tools/fs-read.md) - Tool for reading files
+- [read](../tools/read.md) - Tool for reading files

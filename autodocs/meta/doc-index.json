@@ -1,6 +1,6 @@
 {
-  "generated_at": "2026-05-05T12:46:05.710722",
-  "total_docs": 103,
+  "generated_at": "2026-05-13T22:16:36.655755",
+  "total_docs": 106,
   "by_category": {
     "command": [
       "commands/acp.md",
@@ -24,7 +24,9 @@
       "features/hooks.md",
       "features/knowledge-management.md",
       "features/mcp-registry.md",
+      "features/paste-chips.md",
       "features/planning-agent.md",
+      "features/research-surveys.md",
       "features/session-management.md",
       "features/steering-files.md",
       "features/tangent-mode.md",
@@ -92,6 +94,7 @@
       "slash-commands/prompts.md",
       "slash-commands/quit.md",
       "slash-commands/reply.md",
+      "slash-commands/rewind.md",
       "slash-commands/stats.md",
       "slash-commands/tangent.md",
       "slash-commands/todo.md",
@@ -101,21 +104,21 @@
     "tool": [
       "tools/code.md",
       "tools/delegate.md",
-      "tools/execute-bash.md",
-      "tools/fs-read.md",
-      "tools/fs-write.md",
       "tools/glob.md",
       "tools/grep.md",
       "tools/introspect.md",
       "tools/knowledge.md",
+      "tools/read.md",
       "tools/report-issue.md",
+      "tools/shell.md",
       "tools/switch-to-execution.md",
       "tools/thinking.md",
       "tools/todo-list.md",
       "tools/use-aws.md",
       "tools/use-subagent.md",
       "tools/web-fetch.md",
-      "tools/web-search.md"
+      "tools/web-search.md",
+      "tools/write.md"
     ]
   },
   "documents": [
@@ -335,14 +338,16 @@
         "mcp",
         "keyboardShortcut",
         "welcomeMessage",
-        "skill"
+        "skill",
+        "oauth",
+        "clientId"
       ],
       "related": [
         "cmd-agent",
         "slash-agent",
         "slash-agent-generate"
       ],
-      "validated": "2026-02-10",
+      "validated": "2026-05-01",
       "status": "validated"
     },
     {
@@ -451,7 +456,7 @@
       ],
       "related": [
         "prompts",
-        "fs-read",
+        "read",
         "context"
       ],
       "validated": "2026-02-09",
@@ -550,6 +555,29 @@
       "status": "validated"
     },
     {
+      "path": "features/paste-chips.md",
+      "file": "paste-chips.md",
+      "title": "Paste Chips",
+      "description": "Large pasted text collapses into expandable chips to keep the prompt input readable",
+      "category": "feature",
+      "keywords": [
+        "paste",
+        "chip",
+        "collapse",
+        "expand",
+        "tab",
+        "multiline",
+        "text",
+        "input"
+      ],
+      "related": [
+        "file-references",
+        "editor"
+      ],
+      "validated": "2026-05-04",
+      "status": "validated"
+    },
+    {
       "path": "features/planning-agent.md",
       "file": "planning-agent.md",
       "title": "Planning Agent",
@@ -568,6 +596,26 @@
         "agent-configuration"
       ],
       "validated": "2025-12-22",
+      "status": "validated"
+    },
+    {
+      "path": "features/research-surveys.md",
+      "file": "research-surveys.md",
+      "title": "Research Surveys",
+      "description": "Optional in-session surveys to rate your experience with Kiro CLI, plan quality, and implementation quality",
+      "category": "feature",
+      "keywords": [
+        "survey",
+        "feedback",
+        "rating",
+        "research",
+        "aperture"
+      ],
+      "related": [
+        "session-management",
+        "planning-agent"
+      ],
+      "validated": "2026-05-11",
       "status": "validated"
     },
     {
@@ -1702,7 +1750,7 @@
         "vision"
       ],
       "related": [
-        "fs-read"
+        "read"
       ],
       "validated": "2025-12-19",
       "status": "validated"
@@ -1782,6 +1830,29 @@
         "paste"
       ],
       "validated": "2025-12-19",
+      "status": "validated"
+    },
+    {
+      "path": "slash-commands/rewind.md",
+      "file": "rewind.md",
+      "title": "/rewind",
+      "description": "Fork conversation at an earlier turn into a new session",
+      "category": "slash_command",
+      "keywords": [
+        "rewind",
+        "fork",
+        "branch",
+        "undo",
+        "history",
+        "turn",
+        "session"
+      ],
+      "related": [
+        "chat-load",
+        "checkpoint",
+        "session-management"
+      ],
+      "validated": "2026-05-13",
       "status": "validated"
     },
     {
@@ -1904,11 +1975,11 @@
         "codebase-overview"
       ],
       "related": [
-        "fs-read",
+        "read",
         "grep",
         "slash-code"
       ],
-      "validated": "2026-04-29",
+      "validated": "2026-04-30",
       "status": "validated"
     },
     {
@@ -1932,79 +2003,6 @@
       "status": "validated"
     },
     {
-      "path": "tools/execute-bash.md",
-      "file": "execute-bash.md",
-      "title": "execute_bash",
-      "description": "Execute bash commands on the user's system with output capture and safety checks",
-      "category": "tool",
-      "keywords": [
-        "execute_bash",
-        "shell",
-        "bash",
-        "command",
-        "terminal",
-        "run",
-        "working_dir",
-        "directory",
-        "streaming",
-        "live output"
-      ],
-      "related": [
-        "fs-read",
-        "fs-write",
-        "use-aws"
-      ],
-      "validated": "2026-04-14",
-      "status": "validated"
-    },
-    {
-      "path": "tools/fs-read.md",
-      "file": "fs-read.md",
-      "title": "fs_read",
-      "description": "Read files, directories, and images with support for line ranges, pattern search, and batch operations",
-      "category": "tool",
-      "keywords": [
-        "fs_read",
-        "read",
-        "file",
-        "directory",
-        "image",
-        "search",
-        "batch"
-      ],
-      "related": [
-        "fs-write",
-        "grep",
-        "glob"
-      ],
-      "validated": "2025-12-19",
-      "status": "validated"
-    },
-    {
-      "path": "tools/fs-write.md",
-      "file": "fs-write.md",
-      "title": "fs_write",
-      "description": "Create and modify files with support for create, str_replace, insert, and append operations",
-      "category": "tool",
-      "keywords": [
-        "fs_write",
-        "write",
-        "create",
-        "edit",
-        "modify",
-        "file",
-        "str_replace",
-        "insert",
-        "append"
-      ],
-      "related": [
-        "fs-read",
-        "code"
-      ],
-      "validated": "2025-12-19",
-      "status": "validated"
-    },
-    {
       "path": "tools/glob.md",
       "file": "glob.md",
       "title": "glob",
@@ -2019,9 +2017,9 @@
         "wildcard"
       ],
       "related": [
-        "fs-read",
+        "read",
         "grep",
-        "execute-bash"
+        "shell"
       ],
       "validated": "2025-12-19",
       "status": "validated"
@@ -2041,7 +2039,7 @@
         "text"
       ],
       "related": [
-        "fs-read",
+        "read",
         "glob",
         "code"
       ],
@@ -2090,6 +2088,29 @@
       "status": "validated"
     },
     {
+      "path": "tools/read.md",
+      "file": "read.md",
+      "title": "read",
+      "description": "Read files, directories, and images with support for line ranges, pattern search, and batch operations",
+      "category": "tool",
+      "keywords": [
+        "fs_read",
+        "read",
+        "file",
+        "directory",
+        "image",
+        "search",
+        "batch"
+      ],
+      "related": [
+        "write",
+        "grep",
+        "glob"
+      ],
+      "validated": "2025-12-19",
+      "status": "validated"
+    },
+    {
       "path": "tools/report-issue.md",
       "file": "report-issue.md",
       "title": "report_issue",
@@ -2106,6 +2127,30 @@
         "slash-issue"
       ],
       "validated": "2025-12-19",
+      "status": "validated"
+    },
+    {
+      "path": "tools/shell.md",
+      "file": "shell.md",
+      "title": "shell",
+      "description": "Execute shell commands with output capture. Also known as execute_bash (legacy alias).",
+      "category": "tool",
+      "keywords": [
+        "execute_bash",
+        "shell",
+        "bash",
+        "command",
+        "terminal",
+        "run",
+        "working_dir"
+      ],
+      "related": [
+        "read",
+        "write",
+        "use-aws",
+        "shell-escape"
+      ],
+      "validated": "2026-04-24",
       "status": "validated"
     },
     {
@@ -2177,7 +2222,7 @@
         "auto-approve"
       ],
       "related": [
-        "execute-bash"
+        "shell"
       ],
       "validated": "2026-01-29",
       "status": "validated"
@@ -2246,6 +2291,30 @@
         "web-fetch"
       ],
       "validated": "2026-01-27",
+      "status": "validated"
+    },
+    {
+      "path": "tools/write.md",
+      "file": "write.md",
+      "title": "write",
+      "description": "Create and modify files with support for create, str_replace, insert, and append operations",
+      "category": "tool",
+      "keywords": [
+        "fs_write",
+        "write",
+        "create",
+        "edit",
+        "modify",
+        "file",
+        "str_replace",
+        "insert",
+        "append"
+      ],
+      "related": [
+        "read",
+        "code"
+      ],
+      "validated": "2025-12-19",
       "status": "validated"
     }
   ]

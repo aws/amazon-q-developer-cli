@@ -1,0 +1,4 @@
+{
+  "type": "fixed",
+  "description": "Fix TUI/ACP /clear not persisting to session history, causing cleared messages to reappear on session resume"
+}

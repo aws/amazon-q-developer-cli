@@ -1,0 +1,4 @@
+{
+  "type": "fixed",
+  "description": "Fixed Ctrl+C not interrupting glob and grep tools during large directory traversals"
+}

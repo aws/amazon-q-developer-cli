@@ -5,8 +5,8 @@ doc_meta:
   category: slash_command
   keywords: [copy, clipboard, response, output]
   related: [transcript]
-  validated: 2026-04-08
-  commit: 1a984cb0
+  validated: 2026-04-24
+  commit: 22dc5f71
   status: validated
   testable_headless: false
 ---

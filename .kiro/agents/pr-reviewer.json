@@ -1,0 +1,49 @@
+{
+  "name": "pr-reviewer",
+  "description": "Automated PR reviewer for CI. Reviews PRs using the semantic-pr-reviewer skill with dedup against prior bot comments.",
+  "prompt": "file://resources/REVIEWER_PROMPT.md",
+  "tools": [
+    "fs_read",
+    "fs_write",
+    "execute_bash",
+    "code",
+    "grep",
+    "glob",
+    "knowledge",
+    "subagent"
+  ],
+  "allowedTools": [
+    "fs_read",
+    "grep",
+    "glob",
+    "execute_bash"
+  ],
+  "toolsSettings": {
+    "execute_bash": {
+      "autoAllowReadonly": true,
+      "allowedCommands": [
+        "^aws lambda invoke .*$",
+        "^aws sts assume-role .*$",
+        "^gh .*$",
+        "^git .*$",
+        "^cat[^&;|]*$",
+        "^ls[^&;|]*$",
+        "^head[^&;|]*$",
+        "^tail[^&;|]*$",
+        "^grep[^&;|]*$",
+        "^find[^&;|]*$",
+        "^jq[^&;|]*$",
+        "^wc[^&;|]*$",
+        "^curl[^&;|]*$"
+      ]
+    }
+  },
+  "resources": [
+    "file://.kiro/skills/semantic-pr-reviewer/SKILL.md",
+    "file://.kiro/skills/pr-memory/SKILL.md",
+    "file://.kiro/skills/slack-publish/SKILL.md",
+    "file://AGENTS.md"
+  ],
+  "hooks": {},
+  "useLegacyMcpJson": true
+}

@@ -1,6 +1,6 @@
 [workspace]
 resolver = "3"
-members = ["crates/amzn-codewhisperer-client", "crates/amzn-codewhisperer-streaming-client", "crates/amzn-consolas-client", "crates/amzn-qdeveloper-streaming-client", "crates/amzn-toolkit-telemetry-client", "crates/aws-toolkit-telemetry-definitions", "crates/chat-cli", "crates/chat-cli-v2", "crates/code-agent-sdk", "crates/semantic-search-client", "crates/agent", "crates/mock-mcp-server", "crates/chat-cli-ui", "crates/kiro-bot"]
+members = ["crates/amzn-codewhisperer-client", "crates/amzn-codewhisperer-streaming-client", "crates/amzn-consolas-client", "crates/amzn-qdeveloper-streaming-client", "crates/amzn-toolkit-telemetry-client", "crates/aws-toolkit-telemetry-definitions", "crates/chat-cli", "crates/chat-cli-v2", "crates/code-agent-sdk", "crates/semantic-search-client", "crates/agent", "crates/mock-mcp-server", "crates/chat-cli-ui", "crates/kiro-bot", "crates/kiro-knowledge-mcp"]
 default-members = ["crates/chat-cli"]
 
 [workspace.package]
@@ -8,7 +8,7 @@ authors = ["Amazon Q CLI Team (q-cli@amazon.com)", "Chay Nabors (nabochay@amazon
 edition = "2024"
 homepage = "https://aws.amazon.com/q/"
 publish = false
-version = "2.3.0"
+version = "2.4.0"
 license = "MIT OR Apache-2.0"
 
 [workspace.dependencies]
@@ -51,6 +51,7 @@ aws-credential-types = "1.0.3"
 aws-runtime = "1.4.4"
 aws-sdk-cognitoidentity = { version = "1.51.0", features = ["test-util"] }
 aws-sdk-ssooidc = "1.51.0"
+aws-sdk-bedrockagentruntime = "1.66"
 aws-smithy-async = "1.2.2"
 aws-smithy-mocks = "0.2"
 aws-smithy-runtime-api = "1.6.1"
@@ -131,8 +132,8 @@ rustls = "0.23.23"
 rustls-native-certs = "0.8.1"
 rustls-pemfile = "2.1.0"
 rustyline = { version = "15.0.0", features = ["custom-bindings", "derive", "with-file-history", "case_insensitive_history_search"], default-features = false }
-sacp = "10.0.0"
-agent-client-protocol-schema = { version = "0.10.8", features = ["unstable_session_model"] }
+sacp = "11.0.0"
+agent-client-protocol-schema = { version = "0.11.0", features = ["unstable_session_model"] }
 schemars = "1.0.4"
 security-framework = "3.2.0"
 semantic_search_client = { path = "crates/semantic-search-client" }

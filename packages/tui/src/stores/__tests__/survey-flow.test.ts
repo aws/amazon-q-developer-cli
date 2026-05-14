@@ -362,17 +362,21 @@ describe('Survey flow integration', () => {
     expect(implState.dismissCount).toBeGreaterThan(0);
   });
 
-  it('session feedback survey cooldown does NOT affect plan surveys', async () => {
+  it('submitting any survey sets shared 90-day cooldown for all surveys', async () => {
     const store = makeStore();
     // Submit session feedback
     store.setState({ showSurveyPanel: true, activeSurvey: null });
     store.getState().submitSurvey({ experience: 'Good' });
     await new Promise((r) => setTimeout(r, 50));
 
-    // Plan survey state should be unaffected
+    // All surveys should have lastCompletedAt set (shared cooldown)
     const { loadSurveyState } = await import('../../utils/survey-state.js');
+    const sessionState = loadSurveyState('session-feedback');
     const planState = loadSurveyState('plan-quality');
-    expect(planState.lastCompletedAt).toBeNull();
+    const implState = loadSurveyState('implement-plan');
+    expect(sessionState.lastCompletedAt).not.toBeNull();
+    expect(planState.lastCompletedAt).not.toBeNull();
+    expect(implState.lastCompletedAt).not.toBeNull();
   });
 
   it('implementation survey replaces plan survey when tasks all complete', async () => {

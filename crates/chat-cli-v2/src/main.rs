@@ -9,6 +9,7 @@ mod constants;
 mod database;
 mod embedded_tui;
 mod feature_flags;
+mod launch_options;
 mod logging;
 mod mcp_registry;
 mod os;
