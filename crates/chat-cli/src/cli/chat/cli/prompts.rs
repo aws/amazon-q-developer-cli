@@ -32,6 +32,12 @@ use thiserror::Error;
 use unicode_width::UnicodeWidthStr;
 
 use crate::cli::chat::cli::editor::open_editor_file;
+use crate::cli::chat::prompt_args::{
+    count_arguments,
+    has_args_placeholder,
+    substitute_arguments,
+    validate_placeholders,
+};
 use crate::cli::chat::tool_manager::PromptBundle;
 use crate::cli::chat::{
     ChatError,
@@ -110,6 +116,14 @@ impl Prompt {
 
     /// Save content to the prompt file
     fn save_content(&self, content: &str) -> Result<(), GetPromptError> {
+        // Validate argument placeholders before saving
+        if let Err(arg_error) = validate_placeholders(content) {
+            return Err(GetPromptError::General(eyre::eyre!(
+                "Invalid argument placeholders: {}",
+                arg_error
+            )));
+        }
+
         // Ensure parent directory exists
         if let Some(parent) = self.path.parent() {
             fs::create_dir_all(parent).map_err(GetPromptError::Io)?;
@@ -741,7 +755,25 @@ impl PromptsArgs {
                     style::Print("\n"),
                 )?;
                 for name in &global_prompts {
+                    let prompts = Prompts::new(name, os).map_err(|e| ChatError::Custom(e.to_string().into()))?;
+                    let arg_count = if let Some((content, _)) = prompts
+                        .load_existing()
+                        .map_err(|e| ChatError::Custom(e.to_string().into()))?
+                    {
+                        count_arguments(&content)
+                    } else {
+                        0
+                    };
+
                     queue!(session.stderr, style::Print("- "), style::Print(name))?;
+                    if arg_count > 0 {
+                        queue!(
+                            session.stderr,
+                            StyledText::secondary_fg(),
+                            style::Print(&format!(" ({} arguments)", arg_count)),
+                            StyledText::reset(),
+                        )?;
+                    }
                     queue!(session.stderr, style::Print("\n"))?;
                 }
             }
@@ -759,7 +791,25 @@ impl PromptsArgs {
                 )?;
                 for name in &local_prompts {
                     let has_global_version = overridden_globals.contains(name);
+                    let prompts = Prompts::new(name, os).map_err(|e| ChatError::Custom(e.to_string().into()))?;
+                    let arg_count = if let Some((content, _)) = prompts
+                        .load_existing()
+                        .map_err(|e| ChatError::Custom(e.to_string().into()))?
+                    {
+                        count_arguments(&content)
+                    } else {
+                        0
+                    };
+
                     queue!(session.stderr, style::Print("- "), style::Print(name),)?;
+                    if arg_count > 0 {
+                        queue!(
+                            session.stderr,
+                            StyledText::secondary_fg(),
+                            style::Print(&format!(" ({} arguments)", arg_count)),
+                            StyledText::reset(),
+                        )?;
+                    }
                     if has_global_version {
                         queue!(
                             session.stderr,
@@ -1245,6 +1295,8 @@ impl PromptsSubcommand {
         )?;
 
         // Display usage example
+        let arg_count = count_arguments(content);
+        let has_args = has_args_placeholder(content);
         queue!(
             session.stderr,
             style::SetAttribute(Attribute::Bold),
@@ -1253,9 +1305,68 @@ impl PromptsSubcommand {
             StyledText::success_fg(),
             style::Print("@"),
             style::Print(name),
-            StyledText::reset(),
-            style::Print("\n\n"),
         )?;
+
+        // Show argument placeholders if any exist
+        if arg_count > 0 {
+            if has_args {
+                queue!(session.stderr, style::Print(" <arguments>"))?;
+            }
+            if let Ok(positions) = validate_placeholders(content) {
+                for pos in positions {
+                    queue!(
+                        session.stderr,
+                        style::Print(" <arg"),
+                        style::Print(pos.to_string()),
+                        style::Print(">"),
+                    )?;
+                }
+            }
+        }
+
+        queue!(session.stderr, StyledText::reset(), style::Print("\n\n"),)?;
+
+        // Display argument information
+        if arg_count > 0 {
+            queue!(
+                session.stderr,
+                style::SetAttribute(Attribute::Bold),
+                style::Print("Arguments:"),
+                StyledText::reset_attributes(),
+                style::Print("\n"),
+            )?;
+
+            if has_args {
+                queue!(
+                    session.stderr,
+                    style::Print("  "),
+                    StyledText::error_fg(),
+                    style::Print("(required) "),
+                    StyledText::brand_fg(),
+                    style::Print("$ARGS or ${@}"),
+                    StyledText::reset(),
+                    style::Print(" - All provided arguments\n"),
+                )?;
+            }
+
+            if let Ok(positions) = validate_placeholders(content) {
+                for pos in positions {
+                    queue!(
+                        session.stderr,
+                        style::Print("  "),
+                        StyledText::error_fg(),
+                        style::Print("(required) "),
+                        StyledText::brand_fg(),
+                        style::Print(&format!("arg{}", pos)),
+                        StyledText::reset(),
+                        style::Print(" - Positional argument "),
+                        style::Print(pos.to_string()),
+                        style::Print("\n"),
+                    )?;
+                }
+            }
+            queue!(session.stderr, style::Print("\n"))?;
+        }
 
         // Display content preview (first few lines)
         queue!(
@@ -1330,16 +1441,54 @@ impl PromptsSubcommand {
                 execute!(session.stderr)?;
             }
 
+            // Handle argument substitution for file-based prompt
+            let final_content = if let Some(ref args) = arguments {
+                match substitute_arguments(&content, args) {
+                    Ok((substituted, has_excess)) => {
+                        if has_excess {
+                            queue!(
+                                session.stderr,
+                                style::Print("\n"),
+                                StyledText::warning_fg(),
+                                style::Print(
+                                    "⚠ Warning: More arguments provided than expected. Ignoring extra arguments.\n"
+                                ),
+                                StyledText::reset(),
+                            )?;
+                            execute!(session.stderr)?;
+                        }
+                        substituted
+                    },
+                    Err(arg_error) => {
+                        queue!(
+                            session.stderr,
+                            style::Print("\n"),
+                            StyledText::error_fg(),
+                            style::Print("Error processing arguments: "),
+                            style::Print(arg_error.to_string()),
+                            StyledText::reset(),
+                            style::Print("\n"),
+                        )?;
+                        execute!(session.stderr)?;
+                        return Ok(ChatState::PromptUser {
+                            skip_printing_tools: true,
+                        });
+                    },
+                }
+            } else {
+                content.clone()
+            };
+
             // Display the file-based prompt content to the user
-            display_file_prompt_content(&name, &content, session)?;
+            display_file_prompt_content(&name, &final_content, session)?;
 
             // Handle local prompt
             session.pending_prompts.clear();
 
-            // Create a PromptMessage from the local prompt content
+            // Create a PromptMessage from the processed prompt content
             let prompt_message = PromptMessage {
                 role: PromptMessageRole::User,
-                content: PromptMessageContent::Text { text: content.clone() },
+                content: PromptMessageContent::Text { text: final_content },
             };
             session.pending_prompts.push_back(prompt_message);
 

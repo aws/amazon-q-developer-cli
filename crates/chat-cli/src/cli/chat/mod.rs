@@ -20,6 +20,7 @@ pub mod checkpoint;
 mod line_tracker;
 mod parser;
 mod prompt;
+mod prompt_args;
 mod prompt_parser;
 pub mod server_messenger;
 use crate::cli::chat::checkpoint::CHECKPOINT_MESSAGE_MAX_LENGTH;
