@@ -1,7 +1,7 @@
 {
   "name": "pr-reviewer",
   "description": "Automated PR reviewer for CI. Reviews PRs using the semantic-pr-reviewer skill with dedup against prior bot comments.",
-  "prompt": "file://.kiro/agents/resources/REVIEWER_PROMPT.md",
+  "prompt": "file://resources/REVIEWER_PROMPT.md",
   "tools": [
     "fs_read",
     "fs_write",
