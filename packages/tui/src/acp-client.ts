@@ -1296,6 +1296,7 @@ export class KasAcpClient extends BaseAcpClient {
       clientMeta: {
         telemetryEnabled: isTelemetryEnabled(),
         telemetry: getTelemetryIdentity(),
+        knowledge: true,
         ...(kasSettings && { settings: kasSettings }),
       },
     });
@@ -1675,6 +1676,13 @@ export class KasAcpClient extends BaseAcpClient {
           data: { executePrompt: `/${promptName}` },
         };
       }
+      case 'knowledge': {
+        const args = (command as Record<string, unknown>).args as
+          | Record<string, string>
+          | undefined;
+        const value = args?.value ?? 'show';
+        return this.executeKnowledge(value);
+      }
       default:
         return {
           success: false,
@@ -1789,6 +1797,43 @@ export class KasAcpClient extends BaseAcpClient {
         message: e instanceof Error ? e.message : 'Failed to switch model',
       };
     }
+  }
+
+  private async executeKnowledge(value: string): Promise<CommandResult> {
+    const parts = value.trim().split(/\s+/);
+    const subcommand = parts[0] || 'show';
+
+    const params: Record<string, unknown> = { subcommand };
+
+    if (subcommand === 'add' && parts.length >= 3) {
+      params.name = parts[1];
+      params.path = parts.slice(2).join(' ');
+    } else if (subcommand === 'remove' && parts.length >= 2) {
+      params.target = parts.slice(1).join(' ');
+    } else if (subcommand === 'update' && parts.length >= 2) {
+      params.path = parts.slice(1).join(' ');
+    } else if (subcommand === 'cancel' && parts.length >= 2) {
+      params.operationId = parts[1];
+    }
+
+    const result = await this.callExtMethod('_kiro/knowledge', params);
+    if (!result.success) return result;
+
+    const data = result.data as
+      | { entries?: unknown[]; message?: string }
+      | undefined;
+    // 'show' returns entries (triggers panel). Mutations return message (triggers alert).
+    if (subcommand === 'show') {
+      return {
+        success: true,
+        message: '',
+        data: { entries: data?.entries ?? [] },
+      };
+    }
+    return {
+      success: true,
+      message: data?.message ?? '',
+    };
   }
 
   /**
