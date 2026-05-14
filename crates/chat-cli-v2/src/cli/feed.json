@@ -111,6 +111,10 @@
         {
           "type": "added",
           "description": "Add KIRO_ACP_RECORD_PATH env var to record TUI ACP wire traffic to a JSONL trace file for debugging"
+        },
+        {
+          "type": "added",
+          "description": "Support per-model default settings in cli.json that apply across all new sessions (e.g., set default effort level per model)"
         }
       ]
     },
