@@ -1,0 +1,28 @@
+name = "kiro-help"
+
+[frontend]
+type = "slack"
+bot_name = "KiroHelp"
+bot_member_id = "U0B2T7JNXLL"
+conversation_history = 10
+
+[agent]
+command = "kiro-cli acp"
+model = ""
+approval_policy = "approve"
+max_workers = 5
+idle_timeout_secs = 300
+mcp_wait_ms = 2000
+
+[authorization]
+cedar_policy_file = "policies/agents.cedar"
+
+[[response_policies]]
+conversation = "dm:*"
+trigger = "always"
+reply = "inline"
+
+[[response_policies]]
+conversation = "*"
+trigger = "directed_only"
+reply = "thread"
