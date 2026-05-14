@@ -66,6 +66,5 @@ export const SLASH_COMMANDS: SlashCommand[] = [
     name: '/knowledge',
     description: 'Manage knowledge bases',
     meta: { inputType: 'panel' },
-    requiredMethods: [],
   },
 ];
