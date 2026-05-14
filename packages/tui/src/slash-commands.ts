@@ -71,4 +71,40 @@ export const SLASH_COMMANDS: SlashCommand[] = [
     // of the next prompt like any other content block.
     requiredMethods: [],
   },
+  {
+    name: '/spec',
+    description: 'List specs, switch to spec mode, or run spec tasks',
+    meta: {
+      local: true,
+      subcommands: ['new', 'run'],
+      subcommandHints: { new: '<feature-name>', run: '<feature-name>' },
+    },
+    // KAS-only: spec workflow is composed from `_kiro/spec/resolveSession`
+    // and `_kiro/spec/invoke` extension methods, but the command itself
+    // doesn't gate on them — it's available whenever KAS is active (this
+    // array is only processed by KasAcpClient). The effect handler shows
+    // a clear error if the agent doesn't support the spec methods.
+    requiredMethods: [],
+  },
 ];
+
+/**
+ * Returns true when the KAS agent engine is active.
+ *
+ * Detection is based on the `KIRO_AGENT_ENGINE` environment variable which
+ * is set by the Rust launcher when `--agent-engine=kas` is passed. This is
+ * the same check used by `createAcpClient()` to decide whether to
+ * instantiate `KasAcpClient` vs `RustAcpClient`.
+ *
+ * NOTE: The engine cannot change mid-session. It is determined at process
+ * startup by the Rust launcher and the `createAcpClient()` factory is
+ * called exactly once during `Kiro.initialize()`. There is no reconnect or
+ * engine-switch flow. Therefore, if the engine is not KAS at startup,
+ * `SLASH_COMMANDS` (including `/spec`) will never be broadcast — and if it
+ * IS KAS, the commands remain valid for the entire session lifetime. No
+ * explicit removal logic is needed when the engine "changes away from KAS"
+ * because that transition cannot occur.
+ */
+export function isKasEngine(): boolean {
+  return process.env.KIRO_AGENT_ENGINE === 'kas';
+}

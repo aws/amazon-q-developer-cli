@@ -1,0 +1,165 @@
+{
+  "pbtResults": {},
+  "executionHistory": {
+    "2.1 Remove `/spec` from the static `slashCommands` array in `app-store.ts`": [
+      {
+        "executionId": "0a860d42-2859-4317-9727-488499216ba7",
+        "chatSessionId": "sess_2ea77c1e-69c3-4e77-afce-948fef572774",
+        "timestamp": 1778791942455
+      },
+      {
+        "executionId": "0a860d42-2859-4317-9727-488499216ba7",
+        "chatSessionId": "sess_2ea77c1e-69c3-4e77-afce-948fef572774",
+        "timestamp": 1778791952332
+      },
+      {
+        "executionId": "0a860d42-2859-4317-9727-488499216ba7",
+        "chatSessionId": "sess_2ea77c1e-69c3-4e77-afce-948fef572774",
+        "timestamp": 1778792020458
+      }
+    ],
+    "2.2 Add a mechanism to detect when the KAS engine is active (check session client type or `KIRO_AGENT_ENGINE` env var)": [
+      {
+        "executionId": "0a860d42-2859-4317-9727-488499216ba7",
+        "chatSessionId": "sess_2ea77c1e-69c3-4e77-afce-948fef572774",
+        "timestamp": 1778791942488
+      },
+      {
+        "executionId": "0a860d42-2859-4317-9727-488499216ba7",
+        "chatSessionId": "sess_2ea77c1e-69c3-4e77-afce-948fef572774",
+        "timestamp": 1778792024566
+      },
+      {
+        "executionId": "0a860d42-2859-4317-9727-488499216ba7",
+        "chatSessionId": "sess_2ea77c1e-69c3-4e77-afce-948fef572774",
+        "timestamp": 1778792364335
+      }
+    ],
+    "2.3 Dynamically add `/spec` to the slash command list when KAS is detected": [
+      {
+        "executionId": "0a860d42-2859-4317-9727-488499216ba7",
+        "chatSessionId": "sess_2ea77c1e-69c3-4e77-afce-948fef572774",
+        "timestamp": 1778791942514
+      },
+      {
+        "executionId": "0a860d42-2859-4317-9727-488499216ba7",
+        "chatSessionId": "sess_2ea77c1e-69c3-4e77-afce-948fef572774",
+        "timestamp": 1778792025459
+      },
+      {
+        "executionId": "0a860d42-2859-4317-9727-488499216ba7",
+        "chatSessionId": "sess_2ea77c1e-69c3-4e77-afce-948fef572774",
+        "timestamp": 1778792365100
+      }
+    ],
+    "2.4 Remove `/spec` from the list if the engine changes away from KAS": [
+      {
+        "executionId": "0a860d42-2859-4317-9727-488499216ba7",
+        "chatSessionId": "sess_2ea77c1e-69c3-4e77-afce-948fef572774",
+        "timestamp": 1778791942540
+      },
+      {
+        "executionId": "0a860d42-2859-4317-9727-488499216ba7",
+        "chatSessionId": "sess_2ea77c1e-69c3-4e77-afce-948fef572774",
+        "timestamp": 1778792369132
+      }
+    ],
+    "2.5 Add unit test: `/spec` not in command list when engine is not KAS": [
+      {
+        "executionId": "0a860d42-2859-4317-9727-488499216ba7",
+        "chatSessionId": "sess_2ea77c1e-69c3-4e77-afce-948fef572774",
+        "timestamp": 1778791942580
+      },
+      {
+        "executionId": "0a860d42-2859-4317-9727-488499216ba7",
+        "chatSessionId": "sess_2ea77c1e-69c3-4e77-afce-948fef572774",
+        "timestamp": 1778792369978
+      },
+      {
+        "executionId": "0a860d42-2859-4317-9727-488499216ba7",
+        "chatSessionId": "sess_2ea77c1e-69c3-4e77-afce-948fef572774",
+        "timestamp": 1778792585165
+      }
+    ],
+    "2.6 Add unit test: `/spec` appears in command list when KAS engine is active": [
+      {
+        "executionId": "0a860d42-2859-4317-9727-488499216ba7",
+        "chatSessionId": "sess_2ea77c1e-69c3-4e77-afce-948fef572774",
+        "timestamp": 1778791942597
+      },
+      {
+        "executionId": "0a860d42-2859-4317-9727-488499216ba7",
+        "chatSessionId": "sess_2ea77c1e-69c3-4e77-afce-948fef572774",
+        "timestamp": 1778792370710
+      },
+      {
+        "executionId": "0a860d42-2859-4317-9727-488499216ba7",
+        "chatSessionId": "sess_2ea77c1e-69c3-4e77-afce-948fef572774",
+        "timestamp": 1778792585962
+      }
+    ],
+    "5.1 Subscribe to `_kiro/spec/taskStatusChanged` ext notification in KasAcpClient": [
+      {
+        "executionId": "0a860d42-2859-4317-9727-488499216ba7",
+        "chatSessionId": "sess_2ea77c1e-69c3-4e77-afce-948fef572774",
+        "timestamp": 1778791942615
+      }
+    ],
+    "5.2 Define a new `AgentEventType` or use transient alerts to surface task status changes": [
+      {
+        "executionId": "0a860d42-2859-4317-9727-488499216ba7",
+        "chatSessionId": "sess_2ea77c1e-69c3-4e77-afce-948fef572774",
+        "timestamp": 1778791942636
+      }
+    ],
+    "5.3 Show task progress in the activity tray or as inline alerts": [
+      {
+        "executionId": "0a860d42-2859-4317-9727-488499216ba7",
+        "chatSessionId": "sess_2ea77c1e-69c3-4e77-afce-948fef572774",
+        "timestamp": 1778791942657
+      }
+    ],
+    "5.4 Handle terminal statuses (completed, failed, aborted) with appropriate UX": [
+      {
+        "executionId": "0a860d42-2859-4317-9727-488499216ba7",
+        "chatSessionId": "sess_2ea77c1e-69c3-4e77-afce-948fef572774",
+        "timestamp": 1778791942690
+      }
+    ],
+    "6.1 Add unit tests for `spec-workspace.ts` (listSpecFeatures, findSpecFeature edge cases)": [
+      {
+        "executionId": "0a860d42-2859-4317-9727-488499216ba7",
+        "chatSessionId": "sess_2ea77c1e-69c3-4e77-afce-948fef572774",
+        "timestamp": 1778791942714
+      }
+    ],
+    "6.2 Add unit tests for the `runSpec` effect handler (mock kiro methods)": [
+      {
+        "executionId": "0a860d42-2859-4317-9727-488499216ba7",
+        "chatSessionId": "sess_2ea77c1e-69c3-4e77-afce-948fef572774",
+        "timestamp": 1778791942740
+      }
+    ],
+    "6.3 Add integration test (cucumber BDD) for `/spec` command flow": [
+      {
+        "executionId": "0a860d42-2859-4317-9727-488499216ba7",
+        "chatSessionId": "sess_2ea77c1e-69c3-4e77-afce-948fef572774",
+        "timestamp": 1778791942763
+      }
+    ],
+    "6.4 Run full `pr-check:quick` and fix any issues": [
+      {
+        "executionId": "0a860d42-2859-4317-9727-488499216ba7",
+        "chatSessionId": "sess_2ea77c1e-69c3-4e77-afce-948fef572774",
+        "timestamp": 1778791942781
+      }
+    ],
+    "6.5 Invoke semantic reviewer for PR review": [
+      {
+        "executionId": "0a860d42-2859-4317-9727-488499216ba7",
+        "chatSessionId": "sess_2ea77c1e-69c3-4e77-afce-948fef572774",
+        "timestamp": 1778791942799
+      }
+    ]
+  }
+}

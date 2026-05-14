@@ -28,16 +28,18 @@ The Kiro CLI TUI (V2, KAS engine) needs first-class support for the spec workflo
 3. WHEN the `currentModeId` in the notification matches the already-cached mode, THE TUI SHALL NOT broadcast a spurious `AgentSwitched` event.
 4. WHEN the user explicitly switches mode via `/spec` or `/agent spec`, THE TUI SHALL update the agent chip immediately (not wait for the async notification).
 
-### Requirement 2: `/spec` Slash Command — Feature Discovery
+### Requirement 2: `/spec` Slash Command — Registration and Feature Discovery
 
-**User Story:** As a user, I want to type `/spec` to see all my existing specs so I can quickly pick one to work on.
+**User Story:** As a user, I want to type `/spec` to see all my existing specs so I can quickly pick one to work on, and I only want to see the command when the KAS engine is active.
 
 #### Acceptance Criteria
 
-1. WHEN the user types `/spec` with no arguments, THE TUI SHALL scan `.kiro/specs/` in the workspace root for feature directories.
-2. THE TUI SHALL display a selection menu listing each feature name with a description of which documents exist (e.g. "requirements, design, tasks").
-3. WHEN no specs exist, THE TUI SHALL show a warning alert with usage guidance (`/spec new <name>`).
-4. WHEN the user selects a feature from the menu, THE TUI SHALL switch to spec mode and send a resume prompt to the agent.
+1. THE TUI SHALL only register and display the `/spec` slash command in the command list WHEN the KAS agent engine is the active engine.
+2. WHILE the KAS agent engine is not the active engine, THE TUI SHALL NOT show `/spec` in autocomplete, help, or command listings.
+3. WHEN the user types `/spec` with no arguments, THE TUI SHALL scan `.kiro/specs/` in the workspace root for feature directories.
+4. THE TUI SHALL display a selection menu listing each feature name with a description of which documents exist (e.g. "requirements, design, tasks").
+5. WHEN no specs exist, THE TUI SHALL show a warning alert with usage guidance (`/spec new <name>`).
+6. WHEN the user selects a feature from the menu, THE TUI SHALL switch to spec mode and send a resume prompt to the agent.
 
 ### Requirement 3: `/spec new <name>` — Create New Spec
 
@@ -60,7 +62,6 @@ The Kiro CLI TUI (V2, KAS engine) needs first-class support for the spec workflo
 3. THE TUI SHALL call `_kiro/spec/invoke` with `operation: 'runAllTasks'`, passing the `tasksFilePath` and `specDocuments`.
 4. THE TUI SHALL show a success alert indicating the agent is working autonomously.
 5. WHEN `tasks.md` does not exist, THE TUI SHALL show an error prompting the user to generate it first.
-6. WHEN the agent does not support `_kiro/spec/invoke`, THE TUI SHALL show a clear error message.
 
 ### Requirement 5: `/spec <name>` — Resume Existing Spec
 

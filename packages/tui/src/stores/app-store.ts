@@ -944,17 +944,6 @@ export const createAppStore = (props: AppStoreProps) => {
         meta: { local: true },
       },
       {
-        name: '/spec',
-        description:
-          'List specs in .kiro/specs, switch to spec mode, or run spec tasks',
-        source: 'local' as const,
-        meta: {
-          local: true,
-          subcommands: ['new', 'run'],
-          subcommandHints: { new: '<feature-name>', run: '<feature-name>' },
-        },
-      },
-      {
         name: '/copy',
         description:
           'Copy last response to clipboard (use /transcript for full conversation)',

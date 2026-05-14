@@ -82,11 +82,15 @@ Registered as `runSpec` in the effect map (`spec: 'runSpec'`). Handles four bran
 
 The `runSpecFeature()` helper encapsulates the resolve-then-invoke flow with loading state and error handling.
 
-### 5. App Store — Command Registration
+### 5. App Store — Command Registration (Conditional)
 
 **Location:** `packages/tui/src/stores/app-store.ts`
 
-`/spec` is registered as a local slash command (same pattern as `/spawn`, `/editor`):
+`/spec` is **NOT** included in the static initial `slashCommands` array. Instead, it is dynamically added when the KAS agent engine is detected as active:
+
+- **Detection:** The TUI checks whether the session client is a `KasAcpClient` instance or whether `KIRO_AGENT_ENGINE === 'kas'`. When either condition is true, the `/spec` command is appended to the slash command list.
+- **Removal:** If the engine changes away from KAS (e.g., fallback to V1), the `/spec` entry is removed from the list so it no longer appears in autocomplete or help.
+- **Registration shape** (when added):
 
 ```ts
 {
@@ -100,6 +104,8 @@ The `runSpecFeature()` helper encapsulates the resolve-then-invoke flow with loa
   },
 }
 ```
+
+This ensures users on non-KAS engines never see a command that cannot function.
 
 ## Data Flow
 
@@ -162,6 +168,8 @@ Agent internally switches mode
 
 5. **`/spec run` uses `resolveSession` + `invokeSpec`**: Unlike `/spec new` which is prompt-driven, `/spec run` needs the structured ACP path because `runAllTasks` is a fire-and-forget operation that the agent drives autonomously without further user prompts.
 
+6. **Conditional command registration (not register-and-error)**: The `/spec` command is only added to the slash command list when the KAS engine is active. This avoids confusing users who aren't using KAS with a command that would always fail. Rather than registering the command unconditionally and returning an error at invocation time, we keep the command list clean — users only see commands they can actually use.
+
 ## Correctness Properties
 
 *A property is a characteristic or behavior that should hold true across all valid executions of a system — essentially, a formal statement about what the system should do. Properties serve as the bridge between human-readable specifications and machine-verifiable correctness guarantees.*
@@ -195,6 +203,12 @@ Agent internally switches mode
 *For any* input string as `workspaceRoot` (including non-existent paths, empty strings, paths to files, and paths with permission errors), `listSpecFeatures` SHALL return an array (possibly empty) and SHALL NOT throw an exception.
 
 **Validates: Requirements 7.3**
+
+### Property 6: Conditional Command Visibility
+
+*For any* engine that is not KAS, the `/spec` command SHALL NOT appear in the slash command list at any point during the session. Conversely, when the KAS engine is active, `/spec` SHALL be present in the slash command list.
+
+**Validates: Requirements 2.1, 2.2**
 
 ## Testing Strategy
 
@@ -244,6 +258,11 @@ Using `fast-check` for property-based testing (minimum 100 iterations per proper
    - Generate random mode IDs, set as current, then re-process same ID
    - Verify exactly one event is emitted per unique mode transition
    - Tag: `Feature: specs-in-cli, Property 2: No Spurious Mode Events`
+
+4. **Conditional Command Visibility** (Property 6)
+   - Generate random engine configurations (KAS vs non-KAS)
+   - Verify `/spec` is present in the slash command list if and only if the engine is KAS
+   - Tag: `Feature: specs-in-cli, Property 6: Conditional Command Visibility`
 
 ### Integration Tests
 
