@@ -1414,40 +1414,21 @@ export class KasAcpClient extends BaseAcpClient {
     return { promise, unsubscribe };
   }
 
-  private extensionMethods: Set<string> = new Set();
-
   async initialize(): Promise<void> {
-    const response = await this.kiroClient.initialize();
-    const kiroMeta = response.agentCapabilities?._meta?.kiro as
-      | Record<string, unknown>
-      | undefined;
-    const methods = kiroMeta?.extensionMethods;
-    if (Array.isArray(methods)) {
-      this.extensionMethods = new Set(
-        methods.map((m: string | { method: string }) =>
-          typeof m === 'string' ? m : m.method
-        )
-      );
-    }
+    await this.kiroClient.initialize();
 
-    const commands = SLASH_COMMANDS.filter((cmd) =>
-      cmd.requiredMethods.every((m) => this.extensionMethods.has(m))
-    ).map((cmd) => ({
+    const commands = SLASH_COMMANDS.map((cmd) => ({
       name: cmd.name,
       description: cmd.description,
       meta: (cmd.meta ?? {}) as Record<string, unknown>,
     }));
 
-    if (commands.length > 0) {
-      this.broadcastStreamEvent({
-        type: AgentEventType.ExtensionMethodsDiscovered,
-        commands,
-      });
-    }
+    this.broadcastStreamEvent({
+      type: AgentEventType.ExtensionMethodsDiscovered,
+      commands,
+    });
 
-    logger.debug('[acp-client] KAS ACP handshake done, extensionMethods:', [
-      ...this.extensionMethods,
-    ]);
+    logger.debug('[acp-client] KAS ACP handshake done');
   }
 
   async newSession(): Promise<SessionResult> {
@@ -1665,6 +1646,18 @@ export class KasAcpClient extends BaseAcpClient {
       }
       case 'reply':
         return { success: true, message: '' };
+      case 'usage': {
+        const result = await this.callExtMethod('_kiro/usage/get');
+        if (!result.success) return result;
+        const response = result.data as
+          | { success: boolean; message: string; data?: unknown }
+          | undefined;
+        return {
+          success: response?.success ?? true,
+          message: response?.message ?? '',
+          data: response?.data,
+        };
+      }
       case 'prompts': {
         const args = (command as Record<string, unknown>).args as
           | Record<string, string>
@@ -1883,8 +1876,6 @@ export class KasAcpClient extends BaseAcpClient {
   ): Promise<CommandResult> {
     if (!this.sessionId)
       return { success: false, message: 'No active session' };
-    if (!this.extensionMethods.has(method))
-      return { success: false, message: `${method} not supported by agent` };
     try {
       const result = await this.kiroClient.sendExtMethod(method, {
         sessionId: this.sessionId,
