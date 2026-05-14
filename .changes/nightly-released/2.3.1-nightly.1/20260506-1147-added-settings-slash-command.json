@@ -1,0 +1,4 @@
+{
+  "type": "added",
+  "description": "Added `/settings` — a menu to configure your theme and view keyboard shortcuts. Run `/settings theme` to customize colors, or `/settings keybindings` to see the current shortcuts. `/theme` still works as before."
+}

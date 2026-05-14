@@ -1,0 +1,4 @@
+{
+  "type": "fixed",
+  "description": "Prevent spurious agent conflict warnings when running from home directory"
+}

@@ -1,0 +1,4 @@
+{
+  "type": "added",
+  "description": "KIRO_LOG_NO_COLOR environment variable to disable colored log output"
+}

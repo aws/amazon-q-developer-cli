@@ -1,0 +1,4 @@
+{
+  "type": "changed",
+  "description": "Show actionable remediation steps when MCP is disabled due to a profile API failure"
+}

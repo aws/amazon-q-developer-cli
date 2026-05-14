@@ -1,0 +1,4 @@
+{
+  "type": "added",
+  "description": "Add KIRO_ACP_RECORD_PATH env var to record TUI ACP wire traffic to a JSONL trace file for debugging"
+}

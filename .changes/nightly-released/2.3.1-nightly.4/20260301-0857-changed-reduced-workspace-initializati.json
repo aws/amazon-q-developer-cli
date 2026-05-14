@@ -1,0 +1,4 @@
+{
+  "type": "changed",
+  "description": "Reduced workspace initialization time by 88% (652ms → 76ms) by moving file watching setup to background"
+}

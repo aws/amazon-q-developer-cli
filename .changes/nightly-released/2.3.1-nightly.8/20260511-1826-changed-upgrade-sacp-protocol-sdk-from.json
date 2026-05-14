@@ -1,0 +1,4 @@
+{
+  "type": "changed",
+  "description": "Upgrade SACP protocol SDK from 10.0.0 to 11.0.0"
+}

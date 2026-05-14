@@ -1,0 +1,4 @@
+{
+  "type": "fixed",
+  "description": "Fix subagent tool dispatch silently failing when MCP server events invalidate cached tool specs during execution"
+}

@@ -1,0 +1,4 @@
+{
+  "type": "fixed",
+  "description": "AWS tool supports S3 positional arguments for cp, mv, sync commands"
+}

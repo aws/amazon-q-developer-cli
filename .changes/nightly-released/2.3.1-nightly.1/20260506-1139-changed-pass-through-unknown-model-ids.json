@@ -1,0 +1,4 @@
+{
+  "type": "changed",
+  "description": "Show a clear error suggesting `/model` when the current model is unavailable, instead of a generic validation error. Unknown model ids are now sent to the backend rather than silently falling back to the default."
+}
