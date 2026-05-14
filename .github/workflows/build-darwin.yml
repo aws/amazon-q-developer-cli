@@ -234,7 +234,7 @@ jobs:
       - name: Upload ${{ matrix.arch }} binary
         uses: actions/upload-artifact@v4
         with:
-          name: darwin-bin-${{ matrix.arch }}
+          name: darwin-bin-${{ inputs.environment }}-${{ matrix.arch }}
           path: target/${{ matrix.target }}/release/chat_cli
           retention-days: 1
 
@@ -276,13 +276,13 @@ jobs:
       - name: Download x86_64 binary
         uses: actions/download-artifact@v4
         with:
-          name: darwin-bin-x86_64
+          name: darwin-bin-${{ inputs.environment }}-x86_64
           path: darwin-bin-x86_64
 
       - name: Download aarch64 binary
         uses: actions/download-artifact@v4
         with:
-          name: darwin-bin-aarch64
+          name: darwin-bin-${{ inputs.environment }}-aarch64
           path: darwin-bin-aarch64
 
       - name: Make binaries executable
