@@ -1,4 +1,10 @@
 import type { ContentBlock } from '@agentclientprotocol/sdk';
+import type {
+  SpecInvokeRequest,
+  SpecInvokeResponse,
+  SpecResolveSessionRequest,
+  SpecResolveSessionResponse,
+} from '@kiro/acp-type-covenant';
 import type { AgentStreamEvent } from './agent-events';
 import type {
   CommandOptionsResponse,
@@ -178,6 +184,28 @@ export interface SessionClient {
   onMultiSessionUpdate?(
     handler: (sessionId: string, event: AgentStreamEvent) => void
   ): () => void;
+
+  /**
+   * Resolves (or creates) the ACP session the agent uses to work on a
+   * spec feature.  Implemented only by engines that support the
+   * `_kiro/spec/resolveSession` extension method (currently KAS).
+   *
+   * Callers should check that the method exists before invoking it; the
+   * `Kiro` class wraps this with a friendlier "spec workflow not
+   * supported" error when the method is absent.
+   */
+  resolveSpecSession?(
+    request: SpecResolveSessionRequest
+  ): Promise<SpecResolveSessionResponse>;
+
+  /**
+   * Invokes a spec operation (`executeTask`, `runAllTasks`, or
+   * `generateDocument`) on the agent.  Implemented only by engines that
+   * support the `_kiro/spec/invoke` extension method (currently KAS).
+   *
+   * See {@link resolveSpecSession} for caller responsibilities.
+   */
+  invokeSpec?(request: SpecInvokeRequest): Promise<SpecInvokeResponse>;
 }
 
 /**

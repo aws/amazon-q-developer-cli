@@ -77,24 +77,3 @@ export const SLASH_COMMANDS: SlashCommand[] = [
     meta: { inputType: 'panel' },
   },
 ];
-
-/**
- * Returns true when the KAS agent engine is active.
- *
- * Detection is based on the `KIRO_AGENT_ENGINE` environment variable which
- * is set by the Rust launcher when `--agent-engine=kas` is passed. This is
- * the same check used by `createAcpClient()` to decide whether to
- * instantiate `KasAcpClient` vs `RustAcpClient`.
- *
- * NOTE: The engine cannot change mid-session. It is determined at process
- * startup by the Rust launcher and the `createAcpClient()` factory is
- * called exactly once during `Kiro.initialize()`. There is no reconnect or
- * engine-switch flow. Therefore, if the engine is not KAS at startup,
- * `SLASH_COMMANDS` (including `/spec`) will never be broadcast — and if it
- * IS KAS, the commands remain valid for the entire session lifetime. No
- * explicit removal logic is needed when the engine "changes away from KAS"
- * because that transition cannot occur.
- */
-export function isKasEngine(): boolean {
-  return process.env.KIRO_AGENT_ENGINE === 'kas';
-}

@@ -1,47 +1,7 @@
-import { describe, it, expect, beforeEach, afterEach } from 'bun:test';
+import { describe, it, expect } from 'bun:test';
 import type { Kiro } from '../kiro';
 
 describe('slash-commands', () => {
-  let originalEnv: string | undefined;
-
-  beforeEach(() => {
-    originalEnv = process.env.KIRO_AGENT_ENGINE;
-  });
-
-  afterEach(() => {
-    if (originalEnv === undefined) {
-      delete process.env.KIRO_AGENT_ENGINE;
-    } else {
-      process.env.KIRO_AGENT_ENGINE = originalEnv;
-    }
-  });
-
-  describe('isKasEngine()', () => {
-    it('returns true when KIRO_AGENT_ENGINE is "kas"', async () => {
-      process.env.KIRO_AGENT_ENGINE = 'kas';
-      const { isKasEngine } = await import('../slash-commands');
-      expect(isKasEngine()).toBe(true);
-    });
-
-    it('returns false when KIRO_AGENT_ENGINE is unset', async () => {
-      delete process.env.KIRO_AGENT_ENGINE;
-      const { isKasEngine } = await import('../slash-commands');
-      expect(isKasEngine()).toBe(false);
-    });
-
-    it('returns false when KIRO_AGENT_ENGINE is a different value', async () => {
-      process.env.KIRO_AGENT_ENGINE = 'rust';
-      const { isKasEngine } = await import('../slash-commands');
-      expect(isKasEngine()).toBe(false);
-    });
-
-    it('returns false when KIRO_AGENT_ENGINE is empty string', async () => {
-      process.env.KIRO_AGENT_ENGINE = '';
-      const { isKasEngine } = await import('../slash-commands');
-      expect(isKasEngine()).toBe(false);
-    });
-  });
-
   describe('SLASH_COMMANDS array', () => {
     it('contains /spec command definition', async () => {
       const { SLASH_COMMANDS } = await import('../slash-commands');

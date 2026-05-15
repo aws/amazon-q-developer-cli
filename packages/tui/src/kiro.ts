@@ -16,7 +16,7 @@ import type {
   SpecInvokeResponse,
   SpecResolveSessionRequest,
   SpecResolveSessionResponse,
-} from './acp-client';
+} from '@kiro/acp-type-covenant';
 
 /**
  * Stateless Kiro class that only manages session client lifecycle.
@@ -192,18 +192,12 @@ export class Kiro {
     if (!this.sessionClient) {
       throw new Error('Kiro not initialized');
     }
-    if (!('resolveSpecSession' in this.sessionClient)) {
+    if (!this.sessionClient.resolveSpecSession) {
       throw new Error(
         'Spec workflow is not supported by the current agent engine'
       );
     }
-    return (
-      this.sessionClient as unknown as {
-        resolveSpecSession: (
-          r: SpecResolveSessionRequest
-        ) => Promise<SpecResolveSessionResponse>;
-      }
-    ).resolveSpecSession(request);
+    return this.sessionClient.resolveSpecSession(request);
   }
 
   /**
@@ -218,16 +212,12 @@ export class Kiro {
     if (!this.sessionClient) {
       throw new Error('Kiro not initialized');
     }
-    if (!('invokeSpec' in this.sessionClient)) {
+    if (!this.sessionClient.invokeSpec) {
       throw new Error(
         'Spec workflow is not supported by the current agent engine'
       );
     }
-    return (
-      this.sessionClient as unknown as {
-        invokeSpec: (r: SpecInvokeRequest) => Promise<SpecInvokeResponse>;
-      }
-    ).invokeSpec(request);
+    return this.sessionClient.invokeSpec(request);
   }
 
   async sendMessage(sessionId: string, content: string): Promise<void> {

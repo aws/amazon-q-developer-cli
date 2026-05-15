@@ -1,44 +1,15 @@
 import * as acp from '@agentclientprotocol/sdk';
 import { KiroClient } from '@kiro/client';
 import type { Stream } from '@kiro/client';
-// Spec workflow types — mirrors @kiro/acp-type-covenant but defined locally
-// to avoid adding a direct dependency on the covenant package (which isn't
-// in the TUI's package.json). The shapes are stable ACP contracts.
-export interface SpecResolveSessionRequest {
-  featureName: string;
-  strategy: 'fresh' | 'reuse';
-}
-export interface SpecResolveSessionResponse {
-  sessionId: string;
-}
-interface SpecInvokeBase {
-  sessionId: string;
-  featureName: string;
-  specDocuments: string[];
-}
-export interface SpecRunAllTasksRequest extends SpecInvokeBase {
-  operation: 'runAllTasks';
-  tasksFilePath: string;
-  makeAllRequired?: boolean;
-}
-export interface SpecExecuteTaskRequest extends SpecInvokeBase {
-  operation: 'executeTask';
-  tasksFilePath: string;
-  taskId: string;
-}
-export interface SpecGenerateDocumentRequest extends SpecInvokeBase {
-  operation: 'generateDocument';
-  documentType: 'requirements' | 'design' | 'tasks' | 'bugfix';
-  action: 'create' | 'update';
-}
-export type SpecInvokeRequest =
-  | SpecRunAllTasksRequest
-  | SpecExecuteTaskRequest
-  | SpecGenerateDocumentRequest;
-export interface SpecInvokeResponse {
-  sessionId: string;
-  executionId?: string;
-}
+// Spec workflow types are sourced from the shared ACP type covenant so the
+// TUI, KAS, and any other ACP client speak the same contract for the
+// `_kiro/spec/*` extension methods.
+import type {
+  SpecInvokeRequest,
+  SpecInvokeResponse,
+  SpecResolveSessionRequest,
+  SpecResolveSessionResponse,
+} from '@kiro/acp-type-covenant';
 import { logger } from './utils/logger';
 import {
   getTelemetryIdentity,
