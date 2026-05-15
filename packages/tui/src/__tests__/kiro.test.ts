@@ -750,4 +750,69 @@ describe('Kiro — streamMessage', () => {
     await kiro.streamMessage('hello', controller.signal, onEvent);
     expect(onEvent).not.toHaveBeenCalled();
   });
+
+  it('onApprovalRequest forwards ApprovalRequest from global handler when no prompt is active', async () => {
+    const kiro = new Kiro();
+    const approvalHandler = mock(() => {});
+    kiro.onApprovalRequest(approvalHandler);
+    await kiro.initialize('/path/to/agent');
+
+    // Simulate an ApprovalRequest arriving via the global onUpdate handler
+    // (as happens when a background /spawn session needs tool permission)
+    if (mockOnUpdateHandler) {
+      mockOnUpdateHandler({
+        type: AgentEventType.ApprovalRequest,
+        value: {
+          sessionId: 'spawn-session-1',
+          toolCall: { toolCallId: 'tc-1' },
+          permissionOptions: [
+            {
+              kind: 'allow_once' as any,
+              optionId: 'allow_once',
+              name: 'Allow once',
+            },
+          ],
+          resolve: () => {},
+        },
+      } as AgentStreamEvent);
+    }
+    expect(approvalHandler).toHaveBeenCalledTimes(1);
+  });
+
+  it('onApprovalRequest does NOT forward when a prompt is active (avoids double-processing)', async () => {
+    const kiro = new Kiro();
+    const approvalHandler = mock(() => {});
+    kiro.onApprovalRequest(approvalHandler);
+    await kiro.initialize('/path/to/agent');
+    await kiro.createSession();
+
+    // Start a prompt — this sets _promptActive = true
+    const onEvent = mock(() => {});
+    mockSessionClient.prompt.mockImplementationOnce(() => {
+      // While prompt is active, simulate an ApprovalRequest via global handler
+      if (mockOnUpdateHandler) {
+        mockOnUpdateHandler({
+          type: AgentEventType.ApprovalRequest,
+          value: {
+            sessionId: 'spawn-session-2',
+            toolCall: { toolCallId: 'tc-2' },
+            permissionOptions: [
+              {
+                kind: 'allow_once' as any,
+                optionId: 'allow_once',
+                name: 'Allow once',
+              },
+            ],
+            resolve: () => {},
+          },
+        } as AgentStreamEvent);
+      }
+      return Promise.resolve();
+    });
+    const controller = new AbortController();
+    await kiro.streamMessage('test', controller.signal, onEvent);
+
+    // The global handler should NOT have forwarded (per-message handler covers it)
+    expect(approvalHandler).not.toHaveBeenCalled();
+  });
 });

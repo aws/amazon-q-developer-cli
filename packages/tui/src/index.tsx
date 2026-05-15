@@ -223,6 +223,13 @@ const wireUpHandlers = () => {
   kiro.onInitNotification((event) => {
     initHandler(event);
   });
+
+  // Wire up approval requests from background sessions (e.g. /spawn).
+  // These arrive outside of sendMessage() so need a persistent handler.
+  const approvalHandler = appStore.getState().createStreamEventHandler();
+  kiro.onApprovalRequest((event) => {
+    approvalHandler(event);
+  });
 };
 
 const startInitialization = (resumePickerSessionId?: string) => {
