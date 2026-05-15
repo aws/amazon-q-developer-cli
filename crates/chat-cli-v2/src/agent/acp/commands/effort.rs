@@ -13,6 +13,7 @@ use agent::tui_commands::{
 };
 
 use super::CommandContext;
+use crate::database::settings::Setting;
 
 pub fn get_options(ctx: &CommandContext<'_>) -> CommandOptionsResponse {
     let Some(af) = ctx.rts_state.additional_fields() else {
@@ -56,7 +57,7 @@ pub fn get_options(ctx: &CommandContext<'_>) -> CommandOptionsResponse {
     }
 }
 
-pub fn execute(args: &EffortArgs, ctx: &CommandContext<'_>) -> CommandResult {
+pub async fn execute(args: &EffortArgs, ctx: &CommandContext<'_>) -> CommandResult {
     let Some(level) = &args.level else {
         return match get_options(ctx) {
             r if r.options.is_empty() => {
@@ -76,7 +77,36 @@ pub fn execute(args: &EffortArgs, ctx: &CommandContext<'_>) -> CommandResult {
     };
 
     match ctx.rts_state.set_effort(level) {
-        Ok(()) => CommandResult::success(format!("Effort set to {level}")),
+        Ok(()) => {
+            // Persist as per-model default via merge (avoids stale-read clobber).
+            // Build the delta at the schema-resolved effort path (e.g.
+            // `output_config.effort` for Claude, `reasoning.effort` for GPT).
+            let persisted = if let (Some(model_id), Some(path)) = (
+                ctx.rts_state.model_id(),
+                ctx.rts_state.additional_fields().and_then(|af| af.effort_path()),
+            ) {
+                let mut node = serde_json::json!(level);
+                for seg in path.rsplit('.') {
+                    node = serde_json::json!({ seg: node });
+                }
+                ctx.session_tx
+                    .merge_setting(Setting::ChatModelDefaults, serde_json::json!({ model_id: node }))
+                    .await
+                    .is_ok()
+            } else {
+                false
+            };
+            let model_name = ctx
+                .rts_state
+                .model_info()
+                .map_or_else(|| "current model".to_string(), |m| m.display_name().to_string());
+            let suffix = if persisted {
+                format!(" (saved for {model_name})")
+            } else {
+                String::new()
+            };
+            CommandResult::success(format!("Effort set to {level}{suffix}"))
+        },
         Err(e) if e.contains("does not support") => {
             let model_name = ctx
                 .rts_state

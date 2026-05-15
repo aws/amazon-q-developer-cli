@@ -72,6 +72,19 @@ use crate::database::settings::Setting;
 use crate::os::Os;
 use crate::util::consts::env_var::KIRO_TEST_MODE;
 
+/// Recursively merge `patch` into `base`. Objects are merged key-by-key; all other types are
+/// replaced.
+fn deep_merge(base: &mut serde_json::Value, patch: serde_json::Value) {
+    match (base, patch) {
+        (serde_json::Value::Object(base_map), serde_json::Value::Object(patch_map)) => {
+            for (k, v) in patch_map {
+                deep_merge(base_map.entry(k).or_insert(serde_json::Value::Null), v);
+            }
+        },
+        (base, patch) => *base = patch,
+    }
+}
+
 /// Metadata about an available agent configuration.
 #[derive(Debug, Clone, serde::Serialize)]
 pub struct AgentInfo {
@@ -1001,6 +1014,28 @@ impl SessionManager {
                     .set(key, value, None)
                     .await
                     .map_err(|e| sacp::util::internal_error(format!("Failed to update setting: {e}")));
+                _ = resp_sender.send(result);
+            },
+            SessionManagerRequestData::MergeSetting {
+                key,
+                value,
+                resp_sender,
+            } => {
+                let mut current = self
+                    .os
+                    .database
+                    .settings
+                    .get(key)
+                    .cloned()
+                    .unwrap_or_else(|| serde_json::json!({}));
+                deep_merge(&mut current, value);
+                let result = self
+                    .os
+                    .database
+                    .settings
+                    .set(key, current, None)
+                    .await
+                    .map_err(|e| sacp::util::internal_error(format!("Failed to merge setting: {e}")));
                 _ = resp_sender.send(result);
             },
             SessionManagerRequestData::Initialize {
@@ -2388,6 +2423,11 @@ pub(crate) enum SessionManagerRequestData {
         value: serde_json::Value,
         resp_sender: oneshot::Sender<Result<(), sacp::Error>>,
     },
+    MergeSetting {
+        key: Setting,
+        value: serde_json::Value,
+        resp_sender: oneshot::Sender<Result<(), sacp::Error>>,
+    },
     Initialize {
         name: String,
         version: String,
@@ -2653,6 +2693,23 @@ impl SessionManagerHandle {
             .map_err(|_e| sacp::util::internal_error("Failed to send update_setting request"))?;
         rx.await
             .map_err(|_e| sacp::util::internal_error("Failed to receive update_setting response"))?
+    }
+
+    pub async fn merge_setting(&self, key: Setting, value: serde_json::Value) -> Result<(), sacp::Error> {
+        let (resp_sender, rx) = oneshot::channel();
+        self.tx
+            .send(SessionManagerRequest {
+                session_id: SessionId::new(String::new()),
+                data: SessionManagerRequestData::MergeSetting {
+                    key,
+                    value,
+                    resp_sender,
+                },
+            })
+            .await
+            .map_err(|_e| sacp::util::internal_error("Failed to send merge_setting request"))?;
+        rx.await
+            .map_err(|_e| sacp::util::internal_error("Failed to receive merge_setting response"))?
     }
 
     pub async fn initialize(&self, name: String, version: String) -> Result<(), sacp::Error> {

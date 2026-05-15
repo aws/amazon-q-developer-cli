@@ -180,7 +180,7 @@ pub async fn execute(command: TuiCommand, ctx: &CommandContext<'_>) -> CommandRe
         TuiCommand::Guide(ref args) => guide::execute(args, ctx).await,
         TuiCommand::Rewind(ref args) => rewind::execute(args, ctx).await,
         TuiCommand::Stats(ref args) => stats::execute(args, ctx).await,
-        TuiCommand::Effort(ref args) => effort::execute(args, ctx),
+        TuiCommand::Effort(ref args) => effort::execute(args, ctx).await,
         #[cfg(feature = "voice")]
         TuiCommand::Voice(ref args) => {
             if crate::rollout::Rollout::is_enabled(crate::rollout::Feature::Voice) {

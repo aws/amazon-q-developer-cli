@@ -135,8 +135,17 @@ async fn switch_model(name: &str, ctx: &CommandContext<'_>) -> CommandResult {
             .unwrap_or_else(|| to_legacy_model_info(m));
         ctx.rts_state.set_model_info(Some(full_model));
         ctx.rts_state.apply_model_defaults(&ctx.os.database.settings);
+
+        // Persist as default
+        let persisted = ctx
+            .session_tx
+            .update_setting(Setting::ChatDefaultModel, serde_json::Value::String(id.clone()))
+            .await
+            .is_ok();
+        let suffix = if persisted { " (saved as default)" } else { "" };
+
         return CommandResult::success_with_data(
-            format!("Model changed to {}", display_name),
+            format!("Model changed to {}{}", display_name, suffix),
             serde_json::json!({ "model": { "id": id, "name": display_name } }),
         );
     }
