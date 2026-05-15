@@ -288,3 +288,346 @@ describe('Kiro', () => {
     expect(throwingHandler).toHaveBeenCalled();
   });
 });
+
+describe('Kiro — handler registration and forwarding', () => {
+  it('onPromptsUpdate receives PromptsUpdate events', async () => {
+    const kiro = new Kiro();
+    const handler = mock(() => {});
+    kiro.onPromptsUpdate(handler);
+    await kiro.initialize('/path/to/agent');
+    if (mockOnUpdateHandler) {
+      mockOnUpdateHandler({
+        type: AgentEventType.PromptsUpdate,
+        prompts: [{ name: 'test-prompt', arguments: [], serverName: 'srv' }],
+      } as AgentStreamEvent);
+    }
+    expect(handler).toHaveBeenCalledWith([
+      { name: 'test-prompt', arguments: [], serverName: 'srv' },
+    ]);
+  });
+
+  it('onExtensionMethodsDiscovered receives events', async () => {
+    const kiro = new Kiro();
+    const handler = mock(() => {});
+    kiro.onExtensionMethodsDiscovered(handler);
+    await kiro.initialize('/path/to/agent');
+    if (mockOnUpdateHandler) {
+      mockOnUpdateHandler({
+        type: AgentEventType.ExtensionMethodsDiscovered,
+        commands: [{ name: 'ext-cmd', description: 'Extension' }],
+      } as AgentStreamEvent);
+    }
+    expect(handler).toHaveBeenCalledWith([
+      { name: 'ext-cmd', description: 'Extension' },
+    ]);
+  });
+
+  it('onCompactionStatus receives compaction events', async () => {
+    const kiro = new Kiro();
+    const handler = mock(() => {});
+    kiro.onCompactionStatus(handler);
+    await kiro.initialize('/path/to/agent');
+    if (mockOnUpdateHandler) {
+      mockOnUpdateHandler({
+        type: AgentEventType.CompactionStatus,
+        status: 'started',
+      } as AgentStreamEvent);
+    }
+    expect(handler).toHaveBeenCalled();
+  });
+
+  it('onCompactionStatus receives ContextUsage events', async () => {
+    const kiro = new Kiro();
+    const handler = mock(() => {});
+    kiro.onCompactionStatus(handler);
+    await kiro.initialize('/path/to/agent');
+    if (mockOnUpdateHandler) {
+      mockOnUpdateHandler({
+        type: AgentEventType.ContextUsage,
+        percent: 75,
+      } as AgentStreamEvent);
+    }
+    expect(handler).toHaveBeenCalled();
+  });
+
+  it('onCompactionStatus receives EffortUpdate events', async () => {
+    const kiro = new Kiro();
+    const handler = mock(() => {});
+    kiro.onCompactionStatus(handler);
+    await kiro.initialize('/path/to/agent');
+    if (mockOnUpdateHandler) {
+      mockOnUpdateHandler({
+        type: AgentEventType.EffortUpdate,
+        effort: 'high',
+      } as AgentStreamEvent);
+    }
+    expect(handler).toHaveBeenCalled();
+  });
+
+  it('onInitNotification receives MCP failure events', async () => {
+    const kiro = new Kiro();
+    const handler = mock(() => {});
+    kiro.onInitNotification(handler);
+    await kiro.initialize('/path/to/agent');
+    if (mockOnUpdateHandler) {
+      mockOnUpdateHandler({
+        type: AgentEventType.McpServerInitFailure,
+        serverName: 'test-mcp',
+        error: 'connection refused',
+      } as AgentStreamEvent);
+    }
+    expect(handler).toHaveBeenCalled();
+  });
+
+  it('onInitNotification receives AgentNotFound events', async () => {
+    const kiro = new Kiro();
+    const handler = mock(() => {});
+    kiro.onInitNotification(handler);
+    await kiro.initialize('/path/to/agent');
+    if (mockOnUpdateHandler) {
+      mockOnUpdateHandler({
+        type: AgentEventType.AgentNotFound,
+        requestedAgent: 'missing',
+        fallbackAgent: 'default',
+      } as AgentStreamEvent);
+    }
+    expect(handler).toHaveBeenCalled();
+  });
+
+  it('onHistoryEvent receives historical content events', async () => {
+    const kiro = new Kiro();
+    const handler = mock(() => {});
+    kiro.onHistoryEvent(handler);
+    await kiro.initialize('/path/to/agent');
+    if (mockOnUpdateHandler) {
+      mockOnUpdateHandler({
+        type: AgentEventType.Content,
+        id: 'msg-1',
+        content: { type: 'text', text: 'hello' },
+      } as AgentStreamEvent);
+    }
+    expect(handler).toHaveBeenCalled();
+  });
+
+  it('onTurnSummary receives TurnSummary events', async () => {
+    const kiro = new Kiro();
+    const handler = mock(() => {});
+    kiro.onTurnSummary(handler);
+    await kiro.initialize('/path/to/agent');
+    if (mockOnUpdateHandler) {
+      mockOnUpdateHandler({
+        type: AgentEventType.TurnSummary,
+        meteringUsage: [],
+      } as AgentStreamEvent);
+    }
+    expect(handler).toHaveBeenCalled();
+  });
+
+  it('AgentSwitched event notifies agent and model handlers', async () => {
+    const kiro = new Kiro();
+    const agentHandler = mock(() => {});
+    const modelHandler = mock(() => {});
+    kiro.onAgentUpdate(agentHandler);
+    kiro.onModelUpdate(modelHandler);
+    await kiro.initialize('/path/to/agent');
+    if (mockOnUpdateHandler) {
+      mockOnUpdateHandler({
+        type: AgentEventType.AgentSwitched,
+        agentName: 'planner',
+        welcomeMessage: 'Planning!',
+        model: 'claude-opus',
+      } as AgentStreamEvent);
+    }
+    expect(agentHandler).toHaveBeenCalledWith({
+      name: 'planner',
+      welcomeMessage: 'Planning!',
+    });
+    expect(modelHandler).toHaveBeenCalledWith({
+      id: 'claude-opus',
+      name: 'claude-opus',
+    });
+  });
+});
+
+describe('Kiro — session methods', () => {
+  it('spawnSession throws when not initialized', async () => {
+    const kiro = new Kiro();
+    await expect(kiro.spawnSession('task')).rejects.toThrow(
+      'Kiro not initialized'
+    );
+  });
+
+  it('sendMessage throws when not initialized', async () => {
+    const kiro = new Kiro();
+    await expect(kiro.sendMessage('s1', 'hi')).rejects.toThrow(
+      'Kiro not initialized'
+    );
+  });
+
+  it('terminateSession does nothing when not initialized', async () => {
+    const kiro = new Kiro();
+    await kiro.terminateSession('s1');
+    expect(mockSessionClient.terminateSession).not.toHaveBeenCalled();
+  });
+
+  it('setMode forwards to sessionClient', async () => {
+    const kiro = new Kiro();
+    await kiro.initialize('/path/to/agent');
+    await kiro.setMode('fast');
+    expect(mockSessionClient.setMode).toHaveBeenCalledWith('fast');
+  });
+
+  it('getCommandOptions returns empty when not initialized', async () => {
+    const kiro = new Kiro();
+    const result = await kiro.getCommandOptions('/help');
+    expect(result).toEqual({ options: [] });
+  });
+
+  it('listSessions returns empty when not initialized', async () => {
+    const kiro = new Kiro();
+    const result = await kiro.listSessions('/tmp');
+    expect(result).toEqual({ sessions: [] });
+  });
+
+  it('setSetting throws when not initialized', async () => {
+    const kiro = new Kiro();
+    await expect(kiro.setSetting('key', 'val')).rejects.toThrow(
+      'Kiro not initialized'
+    );
+  });
+
+  it('loadSession loads and terminates previous session', async () => {
+    const kiro = new Kiro();
+    await kiro.initialize('/path/to/agent');
+    await kiro.createSession();
+    mockSessionClient.terminateSession.mockClear();
+    const result = await kiro.loadSession('session-new');
+    expect(result.sessionId).toBe('session-new');
+    expect(mockSessionClient.terminateSession).toHaveBeenCalled();
+  });
+
+  it('loadSession calls onHistoryEvent handler', async () => {
+    const kiro = new Kiro();
+    await kiro.initialize('/path/to/agent');
+    await kiro.createSession();
+    const historyHandler = mock(() => {});
+    await kiro.loadSession('session-hist', historyHandler);
+    // The handler is registered via onUpdate
+    expect(mockSessionClient.onUpdate).toHaveBeenCalled();
+  });
+
+  it('createSession with resumeSessionId calls loadSession', async () => {
+    const kiro = new Kiro();
+    await kiro.initialize('/path/to/agent');
+    await kiro.createSession('existing-session');
+    expect(mockSessionClient.loadSession).toHaveBeenCalledWith(
+      'existing-session'
+    );
+  });
+
+  it('onSessionEvent registers handler', async () => {
+    const kiro = new Kiro();
+    const handler = mock(() => {});
+    kiro.onSessionEvent(handler);
+    // No error
+    expect(handler).not.toHaveBeenCalled();
+  });
+
+  it('onMultiSessionUpdate registers handler', async () => {
+    const kiro = new Kiro();
+    const handler = mock(() => {});
+    kiro.onMultiSessionUpdate(handler);
+    expect(handler).not.toHaveBeenCalled();
+  });
+
+  it('onSubagentListUpdate registers handler', async () => {
+    const kiro = new Kiro();
+    const handler = mock(() => {});
+    kiro.onSubagentListUpdate(handler);
+    expect(handler).not.toHaveBeenCalled();
+  });
+
+  it('onInboxNotification registers handler', async () => {
+    const kiro = new Kiro();
+    const handler = mock(() => {});
+    kiro.onInboxNotification(handler);
+    expect(handler).not.toHaveBeenCalled();
+  });
+});
+
+describe('Kiro — streamMessage', () => {
+  it('resolves when prompt completes successfully', async () => {
+    const kiro = new Kiro();
+    await kiro.initialize('/path/to/agent');
+    await kiro.createSession();
+    const controller = new AbortController();
+    const onEvent = mock(() => {});
+    await kiro.streamMessage('hello', controller.signal, onEvent);
+    expect(mockSessionClient.prompt).toHaveBeenCalled();
+  });
+
+  it('rejects when prompt fails', async () => {
+    const kiro = new Kiro();
+    await kiro.initialize('/path/to/agent');
+    await kiro.createSession();
+    mockSessionClient.prompt.mockImplementationOnce(() =>
+      Promise.reject(new Error('backend error'))
+    );
+    const controller = new AbortController();
+    await expect(
+      kiro.streamMessage('hello', controller.signal, () => {})
+    ).rejects.toThrow('backend error');
+  });
+
+  it('delivers events to onEvent callback', async () => {
+    const kiro = new Kiro();
+    await kiro.initialize('/path/to/agent');
+    await kiro.createSession();
+    const onEvent = mock(() => {});
+    // Make prompt resolve after we fire an event
+    mockSessionClient.prompt.mockImplementationOnce(() => {
+      // Simulate an event arriving during prompt
+      if (mockOnUpdateHandler) {
+        mockOnUpdateHandler({
+          type: AgentEventType.Content,
+          id: 'msg-1',
+          content: { type: 'text', text: 'chunk' },
+        } as AgentStreamEvent);
+      }
+      return Promise.resolve();
+    });
+    const controller = new AbortController();
+    await kiro.streamMessage('hello', controller.signal, onEvent);
+    expect(onEvent).toHaveBeenCalled();
+  });
+
+  it('sends images as content blocks', async () => {
+    const kiro = new Kiro();
+    await kiro.initialize('/path/to/agent');
+    await kiro.createSession();
+    const controller = new AbortController();
+    const images = [{ base64: 'abc', mimeType: 'image/png' }];
+    await kiro.streamMessage('describe', controller.signal, () => {}, images);
+    expect(mockSessionClient.prompt).toHaveBeenCalled();
+  });
+
+  it('filters out UserMessage events during streaming', async () => {
+    const kiro = new Kiro();
+    await kiro.initialize('/path/to/agent');
+    await kiro.createSession();
+    const onEvent = mock(() => {});
+    mockSessionClient.prompt.mockImplementationOnce(() => {
+      if (mockOnUpdateHandler) {
+        mockOnUpdateHandler({
+          type: AgentEventType.UserMessage,
+          id: 'um-1',
+          content: { type: 'text', text: 'historical' },
+        } as AgentStreamEvent);
+      }
+      return Promise.resolve();
+    });
+    const controller = new AbortController();
+    await kiro.streamMessage('hello', controller.signal, onEvent);
+    expect(onEvent).not.toHaveBeenCalled();
+  });
+});

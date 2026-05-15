@@ -1198,3 +1198,144 @@ describe('showHelpPanel effect', () => {
     expect(ctx._spies.setShowHelpPanel).toHaveBeenCalled();
   });
 });
+
+describe('/spawn effect', () => {
+  const spawnCmd: SlashCommand = {
+    name: '/spawn',
+    description: 'Spawn session',
+    source: 'local' as const,
+    meta: { local: true },
+  };
+
+  it('shows error when no args', async () => {
+    const ctx = createMockCommandContext();
+    await runEffect(spawnCmd, { success: true, message: '' }, ctx, '');
+    expect(ctx._spies.showAlert).toHaveBeenCalledWith(
+      'Task description is required',
+      'error',
+      3000
+    );
+  });
+
+  it('spawns session with task', async () => {
+    const ctx = createMockCommandContext({
+      kiro: {
+        spawnSession: mock(() =>
+          Promise.resolve({ sessionId: 'new-s', name: 'my-task' })
+        ),
+      } as any,
+    });
+    await runEffect(
+      spawnCmd,
+      { success: true, message: '' },
+      ctx,
+      'do something'
+    );
+    expect(ctx._spies.addSession).toHaveBeenCalled();
+    expect(ctx._spies.showAlert).toHaveBeenCalled();
+  });
+
+  it('parses --name flag', async () => {
+    const spawnMock = mock(() =>
+      Promise.resolve({ sessionId: 'ns', name: 'custom' })
+    );
+    const ctx = createMockCommandContext({
+      kiro: { spawnSession: spawnMock } as any,
+    });
+    await runEffect(
+      spawnCmd,
+      { success: true, message: '' },
+      ctx,
+      '--name custom do work'
+    );
+    expect(spawnMock).toHaveBeenCalledWith('do work', 'custom');
+  });
+});
+
+describe('/rewind effect', () => {
+  const rewindCmd: SlashCommand = {
+    name: '/rewind',
+    description: 'Rewind',
+    source: 'local' as const,
+    meta: { local: true },
+  };
+
+  it('shows explorer when turns are returned', () => {
+    const ctx = createMockCommandContext();
+    const turns = [
+      { logIndex: 0, label: 'Turn 1', group: 'g1', responseSnippet: 'hi' },
+    ];
+    runEffect(
+      rewindCmd,
+      { success: true, message: '', data: { turns } },
+      ctx,
+      ''
+    );
+    expect(ctx._spies.setShowRewindExplorer).toHaveBeenCalledWith(true, turns);
+  });
+
+  it('shows alert when no turns', () => {
+    const ctx = createMockCommandContext();
+    runEffect(
+      rewindCmd,
+      { success: true, message: '', data: { turns: [] } },
+      ctx,
+      ''
+    );
+    expect(ctx._spies.showAlert).toHaveBeenCalledWith(
+      'No previous turns to rewind to',
+      'warning',
+      3000
+    );
+  });
+});
+
+describe('switchToGuideAgent effect', () => {
+  const guideCmd: SlashCommand = {
+    name: '/guide',
+    description: 'Guide',
+    source: 'backend' as const,
+  };
+
+  it('sets agent and sends prompt', () => {
+    const ctx = createMockCommandContext();
+    runEffect(
+      guideCmd,
+      {
+        success: true,
+        message: '',
+        data: { agent: { name: 'guide' }, prompt: 'help me' },
+      },
+      ctx,
+      ''
+    );
+    expect(ctx._spies.setCurrentAgent).toHaveBeenCalledWith({
+      name: 'guide',
+    });
+    expect(ctx._spies.sendMessage).toHaveBeenCalledWith('help me');
+  });
+});
+
+describe('loadSession effect', () => {
+  const chatCmd: SlashCommand = {
+    name: '/chat',
+    description: 'Load session',
+    source: 'local' as const,
+    meta: { local: true },
+  };
+
+  it('shows error when load command fails', () => {
+    const ctx = createMockCommandContext();
+    runEffect(
+      chatCmd,
+      { success: false, message: 'Import failed' },
+      ctx,
+      'load /tmp/file.json'
+    );
+    expect(ctx._spies.showAlert).toHaveBeenCalledWith(
+      'Import failed',
+      'error',
+      5000
+    );
+  });
+});

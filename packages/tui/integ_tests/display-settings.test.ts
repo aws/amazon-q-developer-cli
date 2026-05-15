@@ -32,7 +32,7 @@ async function openDisplaySettings(tc: TestCase) {
   await tc.sleepMs(500);
 }
 
-async function waitForSettingsFile(path: string, timeoutMs = 3000): Promise<Record<string, unknown>> {
+async function _waitForSettingsFile(path: string, timeoutMs = 3000): Promise<Record<string, unknown>> {
   const start = Date.now();
   while (Date.now() - start < timeoutMs) {
     if (existsSync(path)) {
