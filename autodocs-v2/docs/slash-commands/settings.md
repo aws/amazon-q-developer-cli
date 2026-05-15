@@ -34,9 +34,24 @@ You can also jump directly to a subcommand:
 
 | Subcommand    | Description                                          | Details |
 |---------------|------------------------------------------------------|---------|
+| `display`     | Control animations, ASCII art, and icons             | Toggle display preferences |
 | `theme`       | Colors, prompt style, diff styling                   | See [/theme](theme.md) |
 | `keybindings` | View configurable keyboard shortcuts                 | Read-only; edit in `~/.kiro/settings.json` |
 | `terminal`    | Shift+Enter / Option+Enter for newlines              | Configures your terminal app |
+
+### display
+
+Opens a toggle panel for three display accessibility settings. Use ↑↓ to navigate, ←→ or Enter to toggle, Esc to go back.
+
+| Setting | Key | Default | Effect |
+|---------|-----|---------|--------|
+| Animations | `chat.allowAnimations` | on | When off, all spinners and shimmers show static frames |
+| ASCII art | `chat.allowAsciiArt` | on (Unicode) | When off, replaces braille dots, box-drawing, and Unicode symbols with plain ASCII |
+| Icons | `chat.allowIcons` | on | When off, hides status indicator icons (●, ○, ⚠, etc.) |
+
+Changes take effect immediately without restart. Settings persist to `~/.kiro/settings/cli.json`.
+
+**Environment variable override**: `KIRO_ASCII_MODE=1` forces ASCII mode regardless of the setting.
 
 ### theme
 
@@ -90,6 +105,12 @@ Before modifying anything, the command writes a `.bak` of the file it's about to
 
 ```
 /settings
+```
+
+### Configure display accessibility
+
+```
+/settings display
 ```
 
 ### Open the theme menu directly

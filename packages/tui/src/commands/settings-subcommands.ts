@@ -41,6 +41,15 @@ export interface SettingsHandleContext {
 
 export const settingsSubcommands: readonly SettingsSubcommand[] = [
   {
+    value: 'display',
+    label: 'display',
+    description: 'Control animations, ASCII art, and icons',
+    handle: ({ ctx }) => {
+      ctx.setSettingsReturnOnEscape(true);
+      ctx.setShowDisplaySettingsPanel(true);
+    },
+  },
+  {
     value: 'theme',
     label: 'theme',
     description: 'Colors, prompt style, diff styling',

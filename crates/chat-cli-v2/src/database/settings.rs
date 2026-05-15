@@ -163,6 +163,23 @@ pub enum Setting {
     ChatDisableWrap,
     #[strum(message = "Per-model additional field defaults (object of model ID → overrides)")]
     ChatModelDefaults,
+    #[strum(
+        message = "Enable animated spinners and progress indicators (boolean)",
+        props(scope = "global_only")
+    )]
+    ChatAllowAnimations,
+    #[strum(
+        message = "Enable Unicode/braille symbols and decorative art (boolean)",
+        props(scope = "global_only")
+    )]
+    ChatAllowAsciiArt,
+    #[strum(message = "Show status indicator icons (boolean)", props(scope = "global_only"))]
+    ChatAllowIcons,
+    #[strum(
+        message = "Whether the braille logo has been shown on first launch (boolean)",
+        props(scope = "global_only")
+    )]
+    ChatHasSeenLogo,
 }
 
 impl Setting {
@@ -234,6 +251,10 @@ impl AsRef<str> for Setting {
             Self::ToolSearchMinTokens => "toolSearch.minTokens",
             Self::ChatDisableWrap => "chat.disableWrap",
             Self::ChatModelDefaults => "chat.modelDefaults",
+            Self::ChatAllowAnimations => "chat.allowAnimations",
+            Self::ChatAllowAsciiArt => "chat.allowAsciiArt",
+            Self::ChatAllowIcons => "chat.allowIcons",
+            Self::ChatHasSeenLogo => "chat.hasSeenLogo",
         }
     }
 }
@@ -306,6 +327,10 @@ impl TryFrom<&str> for Setting {
             "toolSearch.minTokens" => Ok(Self::ToolSearchMinTokens),
             "chat.disableWrap" => Ok(Self::ChatDisableWrap),
             "chat.modelDefaults" => Ok(Self::ChatModelDefaults),
+            "chat.allowAnimations" => Ok(Self::ChatAllowAnimations),
+            "chat.allowAsciiArt" => Ok(Self::ChatAllowAsciiArt),
+            "chat.allowIcons" => Ok(Self::ChatAllowIcons),
+            "chat.hasSeenLogo" => Ok(Self::ChatHasSeenLogo),
             _ => Err(DatabaseError::InvalidSetting(value.to_string())),
         }
     }

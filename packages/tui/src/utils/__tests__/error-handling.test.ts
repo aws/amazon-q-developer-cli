@@ -176,3 +176,88 @@ describe('extractRpcErrorMessage', () => {
     expect(extractRpcErrorMessage(err)).toBe('direct string data');
   });
 });
+
+import {
+  getErrorMessage,
+  isNetworkError,
+  isPermissionError,
+  formatErrorForUser,
+} from '../error-handling';
+
+describe('getErrorMessage', () => {
+  it('extracts message from Error instance', () => {
+    expect(getErrorMessage(new Error('boom'))).toBe('boom');
+  });
+
+  it('returns string errors as-is', () => {
+    expect(getErrorMessage('something failed')).toBe('something failed');
+  });
+
+  it('returns fallback for non-string non-Error', () => {
+    expect(getErrorMessage(42)).toBe('An unknown error occurred');
+    expect(getErrorMessage(null)).toBe('An unknown error occurred');
+    expect(getErrorMessage(undefined)).toBe('An unknown error occurred');
+  });
+});
+
+describe('isNetworkError', () => {
+  it('detects network keyword', () => {
+    expect(isNetworkError(new Error('network unreachable'))).toBe(true);
+  });
+
+  it('detects connection keyword', () => {
+    expect(isNetworkError('connection reset')).toBe(true);
+  });
+
+  it('detects timeout', () => {
+    expect(isNetworkError('request timeout')).toBe(true);
+  });
+
+  it('detects ECONNREFUSED', () => {
+    expect(isNetworkError('ECONNREFUSED 127.0.0.1')).toBe(true);
+  });
+
+  it('detects ENOTFOUND', () => {
+    expect(isNetworkError('ENOTFOUND api.example.com')).toBe(true);
+  });
+
+  it('returns false for non-network errors', () => {
+    expect(isNetworkError('file not found')).toBe(false);
+  });
+});
+
+describe('isPermissionError', () => {
+  it('detects permission keyword', () => {
+    expect(isPermissionError('permission denied')).toBe(true);
+  });
+
+  it('detects EACCES', () => {
+    expect(isPermissionError('EACCES: /etc/shadow')).toBe(true);
+  });
+
+  it('detects EPERM', () => {
+    expect(isPermissionError('EPERM: operation not permitted')).toBe(true);
+  });
+
+  it('returns false for non-permission errors', () => {
+    expect(isPermissionError('file not found')).toBe(false);
+  });
+});
+
+describe('formatErrorForUser', () => {
+  it('formats network errors with connection prefix', () => {
+    const result = formatErrorForUser('connection timeout');
+    expect(result).toContain('Connection error');
+    expect(result).toContain('check your network');
+  });
+
+  it('formats permission errors with permission prefix', () => {
+    const result = formatErrorForUser('EACCES: /tmp/file');
+    expect(result).toContain('Permission error');
+    expect(result).toContain('file permissions');
+  });
+
+  it('returns plain message for other errors', () => {
+    expect(formatErrorForUser('something broke')).toBe('something broke');
+  });
+});

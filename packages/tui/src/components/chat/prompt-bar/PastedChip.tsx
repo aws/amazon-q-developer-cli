@@ -1,6 +1,7 @@
 import React from 'react';
 import { Text } from './../../../renderer.js';
 import { useTheme } from '../../../hooks/useThemeContext.js';
+import { useGlyphs } from '../../../hooks/useGlyphs.js';
 
 export const PASTE_COLLAPSE_THRESHOLD_LINES = 10;
 export const PASTE_COLLAPSE_THRESHOLD_CHARS = 500;
@@ -47,6 +48,7 @@ export const PastedChip = React.memo(function PastedChip({
   imageSizeBytes,
 }: PastedChipProps) {
   const { getColor } = useTheme();
+  const glyphs = useGlyphs();
   const rawMutedBg = getColor('muted').hex;
   const mutedBg = rawMutedBg === 'inherit' ? undefined : rawMutedBg;
   let label: string;
@@ -61,7 +63,8 @@ export const PastedChip = React.memo(function PastedChip({
   } else {
     // Text content
     label =
-      (lineCount > 1 ? `${lineCount} lines` : `${charCount} chars`) + ' ▸';
+      (lineCount > 1 ? `${lineCount} lines` : `${charCount} chars`) +
+      ` ${glyphs.arrowRight}`;
   }
 
   return (

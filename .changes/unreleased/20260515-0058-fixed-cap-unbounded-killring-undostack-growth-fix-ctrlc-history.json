@@ -1,0 +1,4 @@
+{
+  "type": "fixed",
+  "description": "Fixed unbounded memory growth in KillRing and UndoStack during long sessions, and fixed Ctrl+C failing to clear history-recalled text"
+}

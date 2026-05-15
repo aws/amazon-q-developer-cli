@@ -5,6 +5,7 @@ import { Panel } from './panel/index.js';
 import { Table, type Row } from './table/index.js';
 import { useTheme } from '../../hooks/useThemeContext';
 import { useTerminalSize } from '../../hooks/useTerminalSize';
+import { useGlyphs, useAllowIcons } from '../../hooks/useGlyphs.js';
 import { fuzzyScore } from '../../utils/fuzzyScore.js';
 import type { McpServerInfo, InitError } from '../../stores/app-store.js';
 import { visibleWidth } from '../../utils/text-width.js';
@@ -20,14 +21,6 @@ interface McpPanelProps {
   onAction?: (serverNames: string[]) => Promise<void>;
 }
 
-const statusLabels: Record<McpServerInfo['status'], string> = {
-  running: '● running',
-  loading: '◌ loading',
-  failed: '✕ failed',
-  disabled: '○ disabled',
-  'auth-required': '⚠ auth-required',
-};
-
 const GAP = 2;
 
 export const McpPanel: React.FC<McpPanelProps> = ({
@@ -41,11 +34,24 @@ export const McpPanel: React.FC<McpPanelProps> = ({
 }) => {
   const { getColor } = useTheme();
   const { height: termHeight } = useTerminalSize();
+  const glyphs = useGlyphs();
+  const { allowIcons } = useAllowIcons();
   const primary = getColor('primary');
   const dim = getColor('secondary');
   const success = getColor('success');
   const warning = getColor('warning');
   const error = getColor('error');
+
+  const statusLabels: Record<McpServerInfo['status'], string> = useMemo(
+    () => ({
+      running: `${!allowIcons ? '' : glyphs.dotFilled} running`,
+      loading: `${!allowIcons ? '' : glyphs.dotLoading} loading`,
+      failed: `${!allowIcons ? '' : glyphs.cross} failed`,
+      disabled: `${!allowIcons ? '' : glyphs.dotEmpty} disabled`,
+      'auth-required': `${!allowIcons ? '' : glyphs.warning} auth-required`,
+    }),
+    [glyphs, allowIcons]
+  );
 
   const isRegistryView =
     servers.length > 0 && servers[0]?.version !== undefined;
@@ -131,7 +137,7 @@ export const McpPanel: React.FC<McpPanelProps> = ({
           const checkbox = isInteractive
             ? [
                 {
-                  text: isSelected ? '[✓]' : '[ ]',
+                  text: isSelected ? `[${glyphs.checkmark}]` : '[ ]',
                   color: isSelected ? success : dim,
                 },
               ]
@@ -140,10 +146,13 @@ export const McpPanel: React.FC<McpPanelProps> = ({
           let statusText: string;
           let statusClr: (s: string) => string;
           if (isPending) {
-            statusText = mode === 'add' ? '◌ adding...' : '◌ removing...';
+            statusText =
+              mode === 'add'
+                ? `${!allowIcons ? '' : glyphs.dotLoading} adding...`
+                : `${!allowIcons ? '' : glyphs.dotLoading} removing...`;
             statusClr = warning;
           } else if (server.enabled) {
-            statusText = '✓ enabled';
+            statusText = `${!allowIcons ? '' : glyphs.checkmark} enabled`;
             statusClr = success;
           } else {
             statusText = '  disabled';
@@ -193,6 +202,7 @@ export const McpPanel: React.FC<McpPanelProps> = ({
       error,
       failureReasons,
       pendingOAuthUrls,
+      statusLabels,
     ]
   );
 
@@ -281,7 +291,9 @@ export const McpPanel: React.FC<McpPanelProps> = ({
   const registryRows: Row[] = useMemo(
     () =>
       registryServers.map((server) => {
-        const statusText = server.enabled ? '✓ enabled' : '  disabled';
+        const statusText = server.enabled
+          ? `${!allowIcons ? '' : glyphs.checkmark} enabled`
+          : '  disabled';
         const statusClr = server.enabled ? success : dim;
         return [
           { text: server.name, color: primary },
@@ -313,8 +325,8 @@ export const McpPanel: React.FC<McpPanelProps> = ({
 
   const emptyMessage = governanceDisabled
     ? governanceDisabled.apiFailure
-      ? '⚠ Failed to retrieve MCP settings — MCP disabled'
-      : '⚠ MCP has been disabled by your administrator'
+      ? `${!allowIcons ? '' : glyphs.warning} Failed to retrieve MCP settings — MCP disabled`
+      : `${!allowIcons ? '' : glyphs.warning} MCP has been disabled by your administrator`
     : isRegistryView
       ? 'No servers in MCP registry'
       : 'No MCP servers configured';

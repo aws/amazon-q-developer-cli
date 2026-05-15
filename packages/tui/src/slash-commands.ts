@@ -71,6 +71,11 @@ export const SLASH_COMMANDS: SlashCommand[] = [
       subcommandHints: { new: '<feature-name>', run: '<feature-name>' },
     },
   },
+  {
+    name: '/knowledge',
+    description: 'Manage knowledge bases',
+    meta: { inputType: 'panel' },
+  },
 ];
 
 /**

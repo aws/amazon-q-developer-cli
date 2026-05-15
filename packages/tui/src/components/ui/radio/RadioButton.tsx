@@ -1,6 +1,7 @@
 import React from 'react';
 import { useTheme } from '../../../hooks/useThemeContext.js';
 import { useTextStyle } from '../../../hooks/useTextStyle.js';
+import { useGlyphs } from '../../../hooks/useGlyphs.js';
 import { Text } from '../text/Text.js';
 
 export interface RadioButtonProps {
@@ -16,15 +17,13 @@ export const RadioButton = React.memo(function RadioButton({
   disabled = false,
 }: RadioButtonProps) {
   const { getColor } = useTheme();
+  const glyphs = useGlyphs();
 
   // Get text styling functions
   const label = useTextStyle('label');
 
   // Characters for radio button states
-  const selectedChar = '●'; // Filled circle
-  const unselectedChar = '○'; // Empty circle
-
-  const radioChar = selected ? selectedChar : unselectedChar;
+  const radioChar = selected ? glyphs.dotFilled : glyphs.dotEmpty;
 
   // Radio dot color function using chalk approach
   const radioColorFn = disabled

@@ -1,6 +1,7 @@
 import React from 'react';
 import { Box, Text } from '../../../renderer.js';
 import { useTheme } from '../../../hooks/useThemeContext.js';
+import { useGlyphs } from '../../../hooks/useGlyphs.js';
 import { getAgentColor } from '../../../utils/agentColors.js';
 import { SpinnerIcon } from './SpinnerIcon.js';
 import type { Stage } from './types.js';
@@ -26,6 +27,7 @@ export const StageRow = React.memo(function StageRow({
   depW: number;
 }) {
   const { getColor } = useTheme();
+  const glyphs = useGlyphs();
   const agentColor = getAgentColor(stage.agentName, getColor);
 
   const statusText = stage.activeStatus ?? '';
@@ -39,7 +41,7 @@ export const StageRow = React.memo(function StageRow({
 
   // Dependency arrow column: "←2,3" or empty
   const depCol = depLabel
-    ? `←${depLabel}`.padEnd(depW + 2)
+    ? `${glyphs.arrowLeft}${depLabel}`.padEnd(depW + 2)
     : ' '.repeat(depW + 2);
 
   return (

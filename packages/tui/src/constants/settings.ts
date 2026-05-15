@@ -14,4 +14,7 @@ export const Settings = {
   CHAT_KEYBINDINGS_CANCEL_STREAM: 'chat.keybindings.cancelStream',
   CHAT_KEYBINDINGS_CLOSE_MENU: 'chat.keybindings.closeMenu',
   CHAT_KEYBINDINGS_QUIT: 'chat.keybindings.quit',
+  CHAT_ASCII_MODE: 'chat.allowAsciiArt',
+  CHAT_ANIMATIONS: 'chat.allowAnimations',
+  CHAT_ICONS: 'chat.allowIcons',
 } as const;

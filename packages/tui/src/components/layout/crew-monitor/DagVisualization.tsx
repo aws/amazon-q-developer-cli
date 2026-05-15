@@ -1,6 +1,7 @@
 import React, { useMemo } from 'react';
 import { Box, Text } from '../../../renderer.js';
 import { useTheme } from '../../../hooks/useThemeContext.js';
+import { useGlyphs, useAllowIcons } from '../../../hooks/useGlyphs.js';
 import type { Stage, StageState } from './types.js';
 import { truncate } from './types.js';
 import { SpinnerIcon } from './SpinnerIcon.js';
@@ -28,6 +29,8 @@ export const DagVisualization = React.memo(function DagVisualization({
   sessionsWithApproval: Set<string>;
 }) {
   const { getColor } = useTheme();
+  const glyphs = useGlyphs();
+  const { allowIcons } = useAllowIcons();
 
   const stageByName = useMemo(
     () => new Map(stages.map((s) => [s.name, s])),
@@ -67,7 +70,7 @@ export const DagVisualization = React.memo(function DagVisualization({
           key: stage.name,
           depName: dep0,
           depState: dState,
-          connector: '──→',
+          connector: `${glyphs.lineHorizontal}${glyphs.lineHorizontal}${glyphs.arrow}`,
           targetName: stage.name,
           targetState: tState,
         });
@@ -75,7 +78,11 @@ export const DagVisualization = React.memo(function DagVisualization({
         deps.forEach((dep, i) => {
           const dState = nameToStage.get(dep)?.state ?? 'Pending';
           const connector =
-            i === 0 ? '──┐' : i === deps.length - 1 ? '──┘' : '──┤';
+            i === 0
+              ? `${glyphs.lineHorizontal}${glyphs.lineHorizontal}${glyphs.cornerTopRight}`
+              : i === deps.length - 1
+                ? `${glyphs.lineHorizontal}${glyphs.lineHorizontal}${glyphs.cornerBottomRight}`
+                : `${glyphs.lineHorizontal}${glyphs.lineHorizontal}${glyphs.teeLeft}`;
           result.push({
             key: `${stage.name}-${dep}`,
             depName: dep,
@@ -108,7 +115,7 @@ export const DagVisualization = React.memo(function DagVisualization({
     });
 
     return result;
-  }, [stages, allStages, selectedIndex, indexByName]);
+  }, [stages, allStages, selectedIndex, indexByName, glyphs]);
 
   if (nodes.length === 0) return null;
 
@@ -134,7 +141,7 @@ export const DagVisualization = React.memo(function DagVisualization({
     return !!(s && sessionsWithApproval.has(s.sessionId));
   };
 
-  /** Render a fixed-width cell. leaf=true uses spaces for padding, otherwise ─ */
+  /** Render a fixed-width cell. leaf=true uses spaces for padding, otherwise lineHorizontal */
   const cell = (name: string, state: StageState, leaf: boolean) => {
     const idx = indexByName.get(name) ?? -1;
     const sel = isSel(name);
@@ -142,14 +149,14 @@ export const DagVisualization = React.memo(function DagVisualization({
     const paddedName = truncate(name, maxNameLen).padEnd(maxNameLen);
     const statusText = st.text;
     const fillLen = Math.max(0, STATUS_W - statusText.length);
-    const fillChar = leaf ? ' ' : '─';
+    const fillChar = leaf ? ' ' : glyphs.lineHorizontal;
     const fill = fillChar.repeat(fillLen);
 
     return (
       <>
         <Text color="gray">{(idx + 1).toString().padStart(2)} </Text>
         {hasPending(name) ? (
-          <Text color="yellow">⚠</Text>
+          <Text color="yellow">{!allowIcons ? '' : glyphs.warning}</Text>
         ) : (
           <SpinnerIcon state={state} />
         )}
@@ -190,7 +197,13 @@ export const DagVisualization = React.memo(function DagVisualization({
             if (n.isConnectorOnly) {
               return (
                 <Box key={n.key}>
-                  <Text color="gray">{' '.repeat(cellW)}├──→ </Text>
+                  <Text color="gray">
+                    {' '.repeat(cellW)}
+                    {glyphs.teeRight}
+                    {glyphs.lineHorizontal}
+                    {glyphs.lineHorizontal}
+                    {glyphs.arrow}{' '}
+                  </Text>
                   {cell(n.targetName!, n.targetState!, true)}
                 </Box>
               );
@@ -199,7 +212,11 @@ export const DagVisualization = React.memo(function DagVisualization({
               return (
                 <Box key={n.key}>
                   {cell(n.depName!, n.depState!, false)}
-                  <Text color="gray">──→ </Text>
+                  <Text color="gray">
+                    {glyphs.lineHorizontal}
+                    {glyphs.lineHorizontal}
+                    {glyphs.arrow}{' '}
+                  </Text>
                   {cell(n.targetName, n.targetState!, true)}
                 </Box>
               );

@@ -7,7 +7,10 @@ import { truncateToWidth } from '../../utils/text-width.js';
 const Region = isDevMode()
   ? (await import('twinki').catch(() => ({ Region: null }))).Region
   : null;
-import { AnimationPausedContext } from '../../contexts/AnimationPausedContext.js';
+import {
+  AnimationPausedContext,
+  useAnimationPaused,
+} from '../../contexts/AnimationPausedContext.js';
 import { ConversationView } from '../ui/ConversationView';
 import { ActivityTray } from '../ui/activity-tray/index.js';
 import { ExitHint } from '../ui/ExitHint';
@@ -21,6 +24,7 @@ import { ToolsPanel } from '../ui/ToolsPanel';
 import { StatsPanel } from '../ui/StatsPanel';
 import { HooksPanel } from '../ui/HooksPanel';
 import { KeybindingsPanel } from '../ui/KeybindingsPanel';
+import { DisplaySettingsPanel } from '../ui/DisplaySettingsPanel';
 import { KnowledgePanel } from '../ui/KnowledgePanel';
 import {
   PromptBar,
@@ -181,6 +185,7 @@ export const InlineLayout: React.FC = () => {
     noInteractive,
   } = useProcessingState();
   const { cancelApproval, approvalMode } = useApprovalState();
+  const globalPaused = useAnimationPaused();
   const trustAllToolsAccepted = useAppStore(
     (state) => state.trustAllToolsConfirmed
   );
@@ -209,6 +214,7 @@ export const InlineLayout: React.FC = () => {
     showHooksPanel,
     hooksList,
     showKeybindingsPanel,
+    showDisplaySettingsPanel,
     settingsReturnOnEscape,
     showKnowledgePanel,
     knowledgeEntries,
@@ -229,6 +235,7 @@ export const InlineLayout: React.FC = () => {
     setShowStatsPanel,
     setShowHooksPanel,
     setShowKeybindingsPanel,
+    setShowDisplaySettingsPanel,
     setSettingsReturnOnEscape,
     reopenSettingsMenu,
     setShowKnowledgePanel,
@@ -517,6 +524,23 @@ export const InlineLayout: React.FC = () => {
     reopenSettingsMenu,
   ]);
 
+  const handleCloseDisplaySettingsPanel = useCallback(() => {
+    setShowDisplaySettingsPanel(false);
+    setActiveCommand(null);
+    clearCommandInput();
+    if (settingsReturnOnEscape) {
+      setSettingsReturnOnEscape(false);
+      reopenSettingsMenu();
+    }
+  }, [
+    setShowDisplaySettingsPanel,
+    setActiveCommand,
+    clearCommandInput,
+    settingsReturnOnEscape,
+    setSettingsReturnOnEscape,
+    reopenSettingsMenu,
+  ]);
+
   const handleCloseKnowledgePanel = useCallback(() => {
     setShowKnowledgePanel(false);
     setActiveCommand(null);
@@ -748,7 +772,9 @@ export const InlineLayout: React.FC = () => {
   }, [setAgentError]);
 
   return (
-    <AnimationPausedContext.Provider value={!!pendingApproval || !!agentError}>
+    <AnimationPausedContext.Provider
+      value={globalPaused || !!pendingApproval || !!agentError}
+    >
       <Box flexDirection="column">
         {agentError && (
           <BlockingErrorAlert
@@ -830,6 +856,7 @@ export const InlineLayout: React.FC = () => {
               showStatsPanel ||
               showHooksPanel ||
               showKeybindingsPanel ||
+              showDisplaySettingsPanel ||
               showKnowledgePanel ||
               showCodePanel ||
               showSurveyPanel ||
@@ -885,6 +912,7 @@ export const InlineLayout: React.FC = () => {
                   showStatsPanel ||
                   showHooksPanel ||
                   showKeybindingsPanel ||
+                  showDisplaySettingsPanel ||
                   showKnowledgePanel ||
                   showCodePanel ||
                   showSurveyPanel
@@ -1004,6 +1032,9 @@ export const InlineLayout: React.FC = () => {
             {showKeybindingsPanel && (
               <KeybindingsPanel onClose={handleCloseKeybindingsPanel} />
             )}
+            {showDisplaySettingsPanel && (
+              <DisplaySettingsPanel onClose={handleCloseDisplaySettingsPanel} />
+            )}
             {showKnowledgePanel && (
               <KnowledgePanel
                 entries={knowledgeEntries}
@@ -1046,6 +1077,7 @@ export const InlineLayout: React.FC = () => {
                 !showToolsPanel &&
                 !showHooksPanel &&
                 !showKeybindingsPanel &&
+                !showDisplaySettingsPanel &&
                 !showKnowledgePanel &&
                 !showCodePanel &&
                 !showSurveyPanel &&

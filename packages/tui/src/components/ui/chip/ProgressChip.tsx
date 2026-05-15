@@ -2,6 +2,7 @@ import React from 'react';
 import { Box } from './../../../renderer.js';
 import { Text } from '../text/Text.js';
 import { useTheme } from '../../../hooks/useThemeContext.js';
+import { useGlyphs, useAllowIcons } from '../../../hooks/useGlyphs.js';
 
 interface ProgressChipProps {
   /** Progress value from 0-100 */
@@ -24,6 +25,8 @@ export default function ProgressChip({
   colorOverride,
 }: ProgressChipProps) {
   const { getColor } = useTheme();
+  const glyphs = useGlyphs();
+  const { allowIcons } = useAllowIcons();
 
   // Clamp value between 0 and 100
   const clampedValue = Math.max(0, Math.min(100, value));
@@ -33,19 +36,19 @@ export default function ProgressChip({
   let colorFn: (text: string) => string;
 
   if (clampedValue === 0) {
-    icon = '◷';
+    icon = glyphs.progress0;
     colorFn = getColor('success');
   } else if (clampedValue <= 25) {
-    icon = '◔';
+    icon = glyphs.progress25;
     colorFn = getColor('success');
   } else if (clampedValue <= 50) {
-    icon = '◑';
+    icon = glyphs.progress50;
     colorFn = getColor('success');
   } else if (clampedValue < warningThreshold) {
-    icon = '◑';
+    icon = glyphs.progress50;
     colorFn = getColor('warning');
   } else {
-    icon = '◕';
+    icon = glyphs.progress75;
     colorFn = getColor('warning');
   }
 
@@ -53,7 +56,7 @@ export default function ProgressChip({
 
   return (
     <Box flexDirection="row" gap={1}>
-      <Text>{(colorOverride ?? colorFn)(icon)}</Text>
+      {allowIcons && <Text>{(colorOverride ?? colorFn)(icon)}</Text>}
       {showPercentage && (
         <Text>
           {(colorOverride ?? colorFn)(`${Math.round(clampedValue)}%`)}

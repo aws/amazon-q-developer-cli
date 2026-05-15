@@ -3,6 +3,7 @@ import { Box, Text } from './../../../renderer.js';
 import { StatusBar } from '../status-bar/StatusBar.js';
 import { StatusInfo } from '../../ui/status/StatusInfo.js';
 import { useTheme } from '../../../hooks/useThemeContext.js';
+import { useGlyphs } from '../../../hooks/useGlyphs.js';
 import { useExpandableOutput } from '../../../hooks/useExpandableOutput.js';
 import {
   parseToolArg,
@@ -71,6 +72,7 @@ export const Grep = React.memo(function Grep({
   result,
 }: GrepProps) {
   const { getColor } = useTheme();
+  const glyphs = useGlyphs();
 
   // Parse search pattern from content (tool args)
   const searchPattern = useMemo(
@@ -192,7 +194,9 @@ export const Grep = React.memo(function Grep({
           {results.map((fileResult, i) => (
             <Box key={i} flexDirection="column" marginLeft={2}>
               <Text>
-                {getColor('primary')(`→ ${getFileName(fileResult.file)}`)}{' '}
+                {getColor('primary')(
+                  `${glyphs.arrow} ${getFileName(fileResult.file)}`
+                )}{' '}
                 {getColor('secondary')(`(${fileResult.count})`)}
               </Text>
               {fileResult.matches?.map((match, j) => (
@@ -222,7 +226,9 @@ export const Grep = React.memo(function Grep({
         {results.slice(0, PREVIEW_FILES).map((fileResult, i) => (
           <Box key={i} flexDirection="column" marginLeft={2}>
             <Text>
-              {getColor('primary')(`→ ${getFileName(fileResult.file)}`)}{' '}
+              {getColor('primary')(
+                `${glyphs.arrow} ${getFileName(fileResult.file)}`
+              )}{' '}
               {getColor('secondary')(`(${fileResult.count})`)}
             </Text>
             {fileResult.matches

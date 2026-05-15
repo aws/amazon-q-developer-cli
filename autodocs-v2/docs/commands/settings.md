@@ -109,6 +109,9 @@ Some settings are global-only and cannot be overridden at workspace level (e.g.,
 | `chat.enableTodoList` | boolean | Enable todo list feature |
 | `chat.enableNotifications` | boolean | Enable desktop notifications |
 | `chat.greeting.enabled` | boolean | Show greeting message on start |
+| `chat.allowAnimations` | boolean | Enable animated spinners and progress indicators (default: true) |
+| `chat.allowAsciiArt` | boolean | Enable Unicode/braille symbols and decorative art (default: true) |
+| `chat.allowIcons` | boolean | Show status indicator icons (default: true) |
 | `chat.disableAutoCompaction` | boolean | Disable automatic summarization |
 | `chat.disableGranularTrust` | boolean | Disable granular trust options |
 | `chat.autoExpandToolOutput` | boolean | Always show full tool output |
@@ -175,7 +178,19 @@ kiro-cli settings --delete "knowledge.*"
 kiro-cli settings telemetry.enabled false
 ```
 
-### Example 8: Rebind V2 TUI Shortcuts
+### Example 8: Disable ASCII Art (Accessibility)
+
+```bash
+kiro-cli settings chat.allowAsciiArt false
+```
+
+### Example 9: Disable Animations
+
+```bash
+kiro-cli settings chat.allowAnimations false
+```
+
+### Example 10: Rebind V2 TUI Shortcuts
 
 ```bash
 # Cancel streaming with Ctrl+G instead of Esc

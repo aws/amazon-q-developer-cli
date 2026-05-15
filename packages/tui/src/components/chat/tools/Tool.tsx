@@ -1,6 +1,7 @@
 import React, { useMemo } from 'react';
 import { Box, Text } from './../../../renderer.js';
 import { useTheme } from '../../../hooks/useThemeContext.js';
+import { useGlyphs } from '../../../hooks/useGlyphs.js';
 import { StatusBar } from '../status-bar/StatusBar.js';
 import { useExpandableOutput } from '../../../hooks/useExpandableOutput.js';
 import { unwrapResultOutput } from '../../../utils/tool-result.js';
@@ -67,6 +68,7 @@ export const Tool = React.memo(function Tool({
   content,
 }: ToolProps) {
   const { getColor } = useTheme();
+  const glyphs = useGlyphs();
 
   const params = useMemo(() => formatToolParams(content), [content]);
 
@@ -127,7 +129,7 @@ export const Tool = React.memo(function Tool({
     return (
       <Box marginLeft={2} flexDirection="column">
         {formattedLocations.map((loc, i) => (
-          <Text key={i}>{getColor('secondary')(`→ ${loc}`)}</Text>
+          <Text key={i}>{getColor('secondary')(`${glyphs.arrow} ${loc}`)}</Text>
         ))}
       </Box>
     );
