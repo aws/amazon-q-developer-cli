@@ -40,4 +40,25 @@ describe('UndoStack', () => {
 		expect(stack.length).toBe(0);
 		expect(stack.pop()).toBeUndefined();
 	});
+
+	it('should cap at default 200 entries', () => {
+		const stack = new UndoStack<number>();
+		for (let i = 0; i < 250; i++) {
+			stack.push(i);
+		}
+		expect(stack.length).toBe(200);
+		// Most recent entry is preserved
+		expect(stack.pop()).toBe(249);
+	});
+
+	it('should respect custom max size', () => {
+		const stack = new UndoStack<number>(10);
+		for (let i = 0; i < 15; i++) {
+			stack.push(i);
+		}
+		expect(stack.length).toBe(10);
+		// Oldest (0-4) evicted, newest (14) at top
+		expect(stack.pop()).toBe(14);
+		expect(stack.pop()).toBe(13);
+	});
 });

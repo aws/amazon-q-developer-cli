@@ -916,8 +916,10 @@ export const PromptInput = React.memo(function PromptInput({
           // Suppress trigger so slash commands from history don't open the menu
           suppressNextTriggerRef.current = true;
           setPromptHint(null);
-          setSegments([{ type: 'text', value: command }]);
+          const newSegs: Segment[] = [{ type: 'text', value: command }];
+          setSegments(newSegs);
           setCursor(command.length);
+          syncToStore(newSegs);
         }
       } else if (key.downArrow) {
         // shift+arrow is used by ActivityTray for queue navigation — don't handle here
@@ -940,8 +942,10 @@ export const PromptInput = React.memo(function PromptInput({
         if (command !== null) {
           suppressNextTriggerRef.current = true;
           setPromptHint(null);
-          setSegments([{ type: 'text', value: command }]);
+          const newSegs: Segment[] = [{ type: 'text', value: command }];
+          setSegments(newSegs);
           setCursor(command.length);
+          syncToStore(newSegs);
         }
       } else if (key.home) {
         inputMetrics.markStateUpdate();
