@@ -49,6 +49,12 @@ const mockSessionClient = {
   setSetting: mock(() => Promise.resolve()),
   terminateSession: mock(() => Promise.resolve()),
   listSessions: mock(() => Promise.resolve({ sessions: [] })),
+  resolveSpecSession: mock((req: { featureName: string }) =>
+    Promise.resolve({ sessionId: `spec-${req.featureName}` })
+  ),
+  invokeSpec: mock((req: { sessionId: string }) =>
+    Promise.resolve({ sessionId: req.sessionId, executionId: 'exec-1' })
+  ),
 };
 
 const MockAcpClientClass = class MockAcpClient {
@@ -73,6 +79,8 @@ const MockAcpClientClass = class MockAcpClient {
   setSetting = mockSessionClient.setSetting;
   terminateSession = mockSessionClient.terminateSession;
   listSessions = mockSessionClient.listSessions;
+  resolveSpecSession = mockSessionClient.resolveSpecSession;
+  invokeSpec = mockSessionClient.invokeSpec;
   constructor() {}
 };
 
@@ -108,6 +116,8 @@ describe('Kiro', () => {
     mockSessionClient.setSetting.mockClear();
     mockSessionClient.terminateSession.mockClear();
     mockSessionClient.listSessions.mockClear();
+    mockSessionClient.resolveSpecSession.mockClear();
+    mockSessionClient.invokeSpec.mockClear();
     mockOnUpdateHandler = null;
     // Reset newSession to update sessionId
     mockSessionClient.newSession.mockImplementation(() => {
@@ -286,6 +296,116 @@ describe('Kiro', () => {
       }).toThrow('handler error');
     }
     expect(throwingHandler).toHaveBeenCalled();
+  });
+
+  describe('resolveSpecSession()', () => {
+    it('throws when not initialized', async () => {
+      const kiro = new Kiro();
+      await expect(
+        kiro.resolveSpecSession({ featureName: 'login', strategy: 'reuse' })
+      ).rejects.toThrow('Kiro not initialized');
+    });
+
+    it('forwards request to sessionClient and returns its response', async () => {
+      const kiro = new Kiro();
+      await kiro.initialize('/path/to/agent');
+
+      const result = await kiro.resolveSpecSession({
+        featureName: 'login',
+        strategy: 'reuse',
+      });
+
+      expect(mockSessionClient.resolveSpecSession).toHaveBeenCalledTimes(1);
+      expect(mockSessionClient.resolveSpecSession).toHaveBeenCalledWith({
+        featureName: 'login',
+        strategy: 'reuse',
+      });
+      expect(result.sessionId).toBe('spec-login');
+    });
+
+    it('throws "not supported" when sessionClient lacks resolveSpecSession', async () => {
+      const kiro = new Kiro();
+      await kiro.initialize('/path/to/agent');
+
+      // Drill into the private sessionClient to drop the method, then
+      // restore. This simulates a non-KAS engine which has no spec
+      // workflow methods on its session client.
+      const sc = (kiro as any).sessionClient;
+      const original = sc.resolveSpecSession;
+      delete sc.resolveSpecSession;
+      try {
+        await expect(
+          kiro.resolveSpecSession({ featureName: 'login', strategy: 'reuse' })
+        ).rejects.toThrow(
+          'Spec workflow is not supported by the current agent engine'
+        );
+      } finally {
+        sc.resolveSpecSession = original;
+      }
+    });
+  });
+
+  describe('invokeSpec()', () => {
+    it('throws when not initialized', async () => {
+      const kiro = new Kiro();
+      await expect(
+        kiro.invokeSpec({
+          operation: 'runAllTasks',
+          sessionId: 's',
+          featureName: 'login',
+          specDocuments: [],
+          tasksFilePath: '/x/tasks.md',
+        })
+      ).rejects.toThrow('Kiro not initialized');
+    });
+
+    it('forwards request to sessionClient and returns its response', async () => {
+      const kiro = new Kiro();
+      await kiro.initialize('/path/to/agent');
+
+      const result = await kiro.invokeSpec({
+        operation: 'runAllTasks',
+        sessionId: 'sess-7',
+        featureName: 'login',
+        specDocuments: ['/x/requirements.md'],
+        tasksFilePath: '/x/tasks.md',
+      });
+
+      expect(mockSessionClient.invokeSpec).toHaveBeenCalledTimes(1);
+      expect(mockSessionClient.invokeSpec).toHaveBeenCalledWith({
+        operation: 'runAllTasks',
+        sessionId: 'sess-7',
+        featureName: 'login',
+        specDocuments: ['/x/requirements.md'],
+        tasksFilePath: '/x/tasks.md',
+      });
+      expect(result.sessionId).toBe('sess-7');
+      expect(result.executionId).toBe('exec-1');
+    });
+
+    it('throws "not supported" when sessionClient lacks invokeSpec', async () => {
+      const kiro = new Kiro();
+      await kiro.initialize('/path/to/agent');
+
+      const sc = (kiro as any).sessionClient;
+      const original = sc.invokeSpec;
+      delete sc.invokeSpec;
+      try {
+        await expect(
+          kiro.invokeSpec({
+            operation: 'runAllTasks',
+            sessionId: 's',
+            featureName: 'login',
+            specDocuments: [],
+            tasksFilePath: '/x/tasks.md',
+          })
+        ).rejects.toThrow(
+          'Spec workflow is not supported by the current agent engine'
+        );
+      } finally {
+        sc.invokeSpec = original;
+      }
+    });
   });
 });
 

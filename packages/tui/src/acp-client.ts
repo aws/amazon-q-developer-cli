@@ -1,6 +1,15 @@
 import * as acp from '@agentclientprotocol/sdk';
 import { KiroClient } from '@kiro/client';
 import type { Stream } from '@kiro/client';
+// Spec workflow types are sourced from the shared ACP type covenant so the
+// TUI, KAS, and any other ACP client speak the same contract for the
+// `_kiro/spec/*` extension methods.
+import type {
+  SpecInvokeRequest,
+  SpecInvokeResponse,
+  SpecResolveSessionRequest,
+  SpecResolveSessionResponse,
+} from '@kiro/acp-type-covenant';
 import { logger } from './utils/logger';
 import {
   getTelemetryIdentity,
@@ -858,7 +867,10 @@ abstract class BaseAcpClient implements SessionClient {
         };
       }
 
-      // KAS-specific update types — log and skip for now
+      // KAS-specific update types.  `current_mode_update` and
+      // `config_option_update` are intercepted in KasAcpClient.wireSessionListeners
+      // (they update local caches before this switch runs).  The rest are
+      // not yet mapped to TUI events.
       case 'session_info_update':
       case 'config_option_update':
       case 'plan':
@@ -871,13 +883,7 @@ abstract class BaseAcpClient implements SessionClient {
         return null;
 
       case 'current_mode_update': {
-        const modeId = (update as { currentModeId?: string }).currentModeId;
-        if (modeId) {
-          return {
-            type: AgentEventType.AgentSwitched,
-            agentName: modeId,
-          };
-        }
+        // Handled by KasAcpClient.wireSessionListeners with dedup logic.
         return null;
       }
 
@@ -1355,11 +1361,33 @@ export class KasAcpClient extends BaseAcpClient {
         // Keep the cached current mode in sync for /agent and agent-display
         // purposes.  ACP doesn't (yet) ship an available_modes_update, so
         // availableModes is refreshed only on session/new and session/load.
+        //
+        // We also broadcast an AgentSwitched stream event so the app store
+        // updates its currentAgent / previousAgentName / welcomeMessage.
+        // Without this broadcast, agent-initiated mode changes (e.g. a
+        // spec-mode workflow handoff) silently update the cache but leave
+        // the header chip and welcome banner stale.
         if (update.sessionUpdate === 'current_mode_update') {
-          this.modesState = {
-            ...this.modesState,
-            currentModeId: (update as { currentModeId: string }).currentModeId,
-          };
+          const newModeId = (update as { currentModeId: string }).currentModeId;
+          const previousModeId = this.modesState.currentModeId;
+          this.modesState = { ...this.modesState, currentModeId: newModeId };
+          // Broadcast only on an actual change so we don't emit a
+          // spurious "switched to X" welcome message when the agent
+          // re-asserts its current mode at session start.
+          if (newModeId && newModeId !== previousModeId) {
+            const mode = this.modesState.availableModes.find(
+              (m) => m.id === newModeId
+            );
+            const welcomeMessage = mode?._meta?.welcomeMessage as
+              | string
+              | undefined;
+            this.broadcastStreamEvent({
+              type: AgentEventType.AgentSwitched,
+              agentName: newModeId,
+              previousAgentName: previousModeId,
+              welcomeMessage,
+            });
+          }
         }
         // Intercept config_option_update (KAS-specific) to keep the
         // local model cache fresh without a round-trip. The agent may
@@ -1933,6 +1961,35 @@ export class KasAcpClient extends BaseAcpClient {
         message: e instanceof Error ? e.message : 'Command failed',
       };
     }
+  }
+
+  /**
+   * Resolve (or create) the ACP session the agent uses to work on a spec
+   * feature.  See `_kiro/spec/resolveSession` in `@kiro/acp-type-covenant`.
+   *
+   * Strategy `'reuse'` returns the session previously associated with the
+   * feature (via `SpecSessionTracker`), or creates a new one.  Strategy
+   * `'fresh'` always creates a new session.
+   *
+   * Note: the returned session ID is owned by the agent.  The client does
+   * not switch its active `sessionId` here — `_kiro/spec/invoke` routes
+   * updates to whichever session it started execution on, and the client
+   * re-subscribes separately when it wants to render them.
+   */
+  async resolveSpecSession(
+    request: SpecResolveSessionRequest
+  ): Promise<SpecResolveSessionResponse> {
+    return this.kiroClient.sendExtMethod('_kiro/spec/resolveSession', request);
+  }
+
+  /**
+   * Invoke a spec operation (`executeTask`, `runAllTasks`, or
+   * `generateDocument`) on the agent.  The agent drives execution
+   * autonomously from here — the client observes progress via the usual
+   * session-update and `_kiro/spec/taskStatusChanged` notifications.
+   */
+  async invokeSpec(request: SpecInvokeRequest): Promise<SpecInvokeResponse> {
+    return this.kiroClient.sendExtMethod('_kiro/spec/invoke', request);
   }
 
   async getCommandOptions(

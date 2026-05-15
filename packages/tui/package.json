@@ -29,6 +29,7 @@
   },
   "dependencies": {
     "@agentclientprotocol/sdk": "^0.19.0",
+    "@kiro/acp-type-covenant": "0.3.11",
     "@kiro/client": "0.3.11",
     "@types/diff": "^8.0.0",
     "ansi-escapes": "^7.3.0",

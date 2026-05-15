@@ -11,6 +11,12 @@ import type {
   CommandResult,
   TuiCommand,
 } from './types/commands';
+import type {
+  SpecInvokeRequest,
+  SpecInvokeResponse,
+  SpecResolveSessionRequest,
+  SpecResolveSessionResponse,
+} from '@kiro/acp-type-covenant';
 
 /**
  * Stateless Kiro class that only manages session client lifecycle.
@@ -171,6 +177,47 @@ export class Kiro {
       throw new Error('Kiro not initialized');
     }
     return (this.sessionClient as any).spawnSession(task, name);
+  }
+
+  /**
+   * Resolve (or create) the ACP session the agent uses for a spec feature.
+   *
+   * KAS-only: V1 engines have no spec workflow.  Throws when the active
+   * session client doesn't implement the `_kiro/spec/resolveSession`
+   * extension method.
+   */
+  async resolveSpecSession(
+    request: SpecResolveSessionRequest
+  ): Promise<SpecResolveSessionResponse> {
+    if (!this.sessionClient) {
+      throw new Error('Kiro not initialized');
+    }
+    if (!this.sessionClient.resolveSpecSession) {
+      throw new Error(
+        'Spec workflow is not supported by the current agent engine'
+      );
+    }
+    return this.sessionClient.resolveSpecSession(request);
+  }
+
+  /**
+   * Invoke a spec operation (`executeTask`, `runAllTasks`, or
+   * `generateDocument`) on the agent.  See `_kiro/spec/invoke` in
+   * `@kiro/acp-type-covenant`.
+   *
+   * KAS-only: throws when the active session client doesn't implement
+   * the `_kiro/spec/invoke` extension method.
+   */
+  async invokeSpec(request: SpecInvokeRequest): Promise<SpecInvokeResponse> {
+    if (!this.sessionClient) {
+      throw new Error('Kiro not initialized');
+    }
+    if (!this.sessionClient.invokeSpec) {
+      throw new Error(
+        'Spec workflow is not supported by the current agent engine'
+      );
+    }
+    return this.sessionClient.invokeSpec(request);
   }
 
   async sendMessage(sessionId: string, content: string): Promise<void> {

@@ -754,6 +754,91 @@ describe('KasAcpClient', () => {
     expect(active?.value).toBe('spec');
   });
 
+  it('current_mode_update broadcasts AgentSwitched with previousAgentName and welcomeMessage', async () => {
+    mockKiroNewSession.mockResolvedValueOnce({
+      sessionId: 'kas-session-1',
+      models: null,
+      modes: {
+        currentModeId: 'vibe',
+        availableModes: [
+          {
+            id: 'vibe',
+            name: 'Vibe',
+            description: '',
+            _meta: { kiro: { source: 'bundled' } },
+          },
+          {
+            id: 'spec',
+            name: 'Spec',
+            description: '',
+            _meta: {
+              kiro: { source: 'bundled' },
+              welcomeMessage: 'Spec mode: ready to plan',
+            },
+          },
+        ],
+      },
+    } as any);
+
+    const client = new KasAcpClient();
+    const handler = mock((_event: any) => {});
+    client.onUpdate(handler);
+    await client.newSession();
+
+    await capturedSessionUpdateHandler({
+      sessionId: 'kas-session-1',
+      update: {
+        sessionUpdate: 'current_mode_update',
+        currentModeId: 'spec',
+      },
+    });
+
+    const switched = handler.mock.calls
+      .map((c) => c[0])
+      .find((e: any) => e.type === AgentEventType.AgentSwitched);
+    expect(switched).toBeDefined();
+    expect(switched.agentName).toBe('spec');
+    expect(switched.previousAgentName).toBe('vibe');
+    expect(switched.welcomeMessage).toBe('Spec mode: ready to plan');
+  });
+
+  it('current_mode_update does not broadcast AgentSwitched when the mode is unchanged', async () => {
+    mockKiroNewSession.mockResolvedValueOnce({
+      sessionId: 'kas-session-1',
+      models: null,
+      modes: {
+        currentModeId: 'vibe',
+        availableModes: [
+          {
+            id: 'vibe',
+            name: 'Vibe',
+            description: '',
+            _meta: { kiro: { source: 'bundled' } },
+          },
+        ],
+      },
+    } as any);
+
+    const client = new KasAcpClient();
+    const handler = mock((_event: any) => {});
+    client.onUpdate(handler);
+    await client.newSession();
+
+    // Agent re-asserts the current mode (e.g. after reconnect).
+    await capturedSessionUpdateHandler({
+      sessionId: 'kas-session-1',
+      update: {
+        sessionUpdate: 'current_mode_update',
+        currentModeId: 'vibe',
+      },
+    });
+
+    const switched = handler.mock.calls
+      .map((c) => c[0])
+      .find((e: any) => e.type === AgentEventType.AgentSwitched);
+    expect(switched).toBeUndefined();
+  });
+
   // ── Session update broadcasting ──
 
   it('session update broadcasts Content event via onUpdate handler', async () => {

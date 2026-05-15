@@ -63,6 +63,15 @@ export const SLASH_COMMANDS: SlashCommand[] = [
     meta: { inputType: 'panel' },
   },
   {
+    name: '/spec',
+    description: 'List specs, switch to spec mode, or run spec tasks',
+    meta: {
+      local: true,
+      subcommands: ['new', 'run'],
+      subcommandHints: { new: '<feature-name>', run: '<feature-name>' },
+    },
+  },
+  {
     name: '/knowledge',
     description: 'Manage knowledge bases',
     meta: { inputType: 'panel' },
