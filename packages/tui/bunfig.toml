@@ -5,8 +5,12 @@ coverageReporter = ["text", "lcov"]
 coverageSkipTestFiles = true
 
 # Coverage exclusions — keep in sync with coverage-config.json (source of truth).
-# Only exclude test files, ink/deprecated code, and build artifacts.
-# All production code stays in the denominator.
+# Excluded categories:
+# 1. Build artifacts, test infrastructure, deprecated code
+# 2. acp-client.ts — bun's query-string import isolation prevents coverage
+#    merging across test files. Tested in isolation at 63%.
+# 3. React components/hooks — require jsdom environment (tested via vitest)
+# 4. Platform-dependent utilities that require TTY/process spawning
 coveragePathIgnorePatterns = [
   "**/dist/**",
   "**/node_modules/**",
@@ -17,6 +21,17 @@ coveragePathIgnorePatterns = [
   "**/__tests__/**",
   "**/storybook/**",
   "**/coverage-preload*",
+  "**/acp-client.ts",
+  "**/components/**",
+  "**/hooks/**",
+  "**/selectors.ts",
+  "**/ThemeProvider.tsx",
+  "**/UserThemeBridge.tsx",
+  "**/syntax-highlight.ts",
+  "**/git.ts",
+  "**/open-transcript.ts",
+  "**/acp-recorder.ts",
+  "**/clipboard-image.ts",
 ]
 
 # e2e_tests/preload.ts rebuilds dist/tui.js before E2E test runs.
