@@ -22,6 +22,8 @@ import {
   type AppKeypressState,
   type AppKeypressActions,
 } from './app-keypress-dispatch.js';
+import { AnimationPausedContext } from '../../contexts/AnimationPausedContext.js';
+import { useAllowAnimations } from '../../hooks/useGlyphs.js';
 
 /**
  * Suspends the process by restoring terminal state and sending SIGTSTP
@@ -168,6 +170,8 @@ export const AppContainer: React.FC = () => {
     dispatchAppKeypress(userInput, key, state, actions, keybindings);
   });
 
+  const { allowAnimations } = useAllowAnimations();
+
   // Show trust-all-tools confirmation gate before allowing session to proceed
   if (trustAllToolsRequested && !trustAllToolsConfirmed) {
     return (
@@ -187,11 +191,11 @@ export const AppContainer: React.FC = () => {
   }
 
   return (
-    <>
+    <AnimationPausedContext.Provider value={!allowAnimations}>
       {mode === 'inline' && <InlineLayout />}
       {mode === 'expanded' && <ExpandedLayout />}
       {mode === 'crew-monitor' && <CrewMonitorScreen />}
       {mode === 'session-view' && <SessionViewScreen />}
-    </>
+    </AnimationPausedContext.Provider>
   );
 };

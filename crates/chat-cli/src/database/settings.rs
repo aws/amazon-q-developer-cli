@@ -185,6 +185,23 @@ pub enum Setting {
     ChatKeybindingsQuit,
     #[strum(message = "Default agent engine: 'rust' or 'kas' (string)")]
     ChatAgentEngine,
+    #[strum(
+        message = "Enable animated spinners and progress indicators (boolean)",
+        props(scope = "global_only")
+    )]
+    ChatAllowAnimations,
+    #[strum(
+        message = "Enable Unicode/braille symbols and decorative art (boolean)",
+        props(scope = "global_only")
+    )]
+    ChatAllowAsciiArt,
+    #[strum(message = "Show status indicator icons (boolean)", props(scope = "global_only"))]
+    ChatAllowIcons,
+    #[strum(
+        message = "Whether the braille logo has been shown on first launch (boolean)",
+        props(scope = "global_only")
+    )]
+    ChatHasSeenLogo,
 }
 
 impl Setting {
@@ -308,6 +325,10 @@ impl AsRef<str> for Setting {
             Self::ChatKeybindingsCloseMenu => "chat.keybindings.closeMenu",
             Self::ChatKeybindingsQuit => "chat.keybindings.quit",
             Self::ChatAgentEngine => "chat.agentEngine",
+            Self::ChatAllowAnimations => "chat.allowAnimations",
+            Self::ChatAllowAsciiArt => "chat.allowAsciiArt",
+            Self::ChatAllowIcons => "chat.allowIcons",
+            Self::ChatHasSeenLogo => "chat.hasSeenLogo",
         }
     }
 }
@@ -383,6 +404,10 @@ impl TryFrom<&str> for Setting {
             "chat.keybindings.closeMenu" => Ok(Self::ChatKeybindingsCloseMenu),
             "chat.keybindings.quit" => Ok(Self::ChatKeybindingsQuit),
             "chat.agentEngine" => Ok(Self::ChatAgentEngine),
+            "chat.allowAnimations" => Ok(Self::ChatAllowAnimations),
+            "chat.allowAsciiArt" => Ok(Self::ChatAllowAsciiArt),
+            "chat.allowIcons" => Ok(Self::ChatAllowIcons),
+            "chat.hasSeenLogo" => Ok(Self::ChatHasSeenLogo),
             _ => Err(DatabaseError::InvalidSetting(value.to_string())),
         }
     }

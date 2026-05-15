@@ -4,6 +4,7 @@ import { Panel } from './panel/index.js';
 import { Table, type Row } from './table/index.js';
 import { useTheme } from '../../hooks/useThemeContext';
 import { useTerminalSize } from '../../hooks/useTerminalSize';
+import { useGlyphs, useAllowIcons } from '../../hooks/useGlyphs.js';
 import { fuzzyScore } from '../../utils/fuzzyScore.js';
 import type { ToolInfo } from '../../stores/app-store.js';
 import { visibleWidth, truncateToWidth } from '../../utils/text-width.js';
@@ -12,12 +13,6 @@ interface ToolsPanelProps {
   tools: ToolInfo[];
   onClose: () => void;
 }
-
-const statusLabels: Record<ToolInfo['status'], string> = {
-  allowed: '● allowed',
-  'requires-approval': '◌ approval required',
-  denied: '✕ denied',
-};
 
 function shortDescription(desc: string, maxLen: number): string {
   const firstLine = desc.trim().split('\n')[0] ?? '';
@@ -32,6 +27,8 @@ const GAP = 2;
 export const ToolsPanel: React.FC<ToolsPanelProps> = ({ tools, onClose }) => {
   const { getColor } = useTheme();
   const { width: termWidth, height: termHeight } = useTerminalSize();
+  const glyphs = useGlyphs();
+  const { allowIcons } = useAllowIcons();
   const primary = getColor('primary');
   const dim = getColor('secondary');
   const brand = getColor('brand');
@@ -39,6 +36,15 @@ export const ToolsPanel: React.FC<ToolsPanelProps> = ({ tools, onClose }) => {
   const success = getColor('success');
   const warning = getColor('warning');
   const error = getColor('error');
+
+  const statusLabels: Record<ToolInfo['status'], string> = useMemo(
+    () => ({
+      allowed: `${!allowIcons ? '' : glyphs.dotFilled} allowed`,
+      'requires-approval': `${!allowIcons ? '' : glyphs.dotLoading} approval required`,
+      denied: `${!allowIcons ? '' : glyphs.cross} denied`,
+    }),
+    [glyphs, allowIcons]
+  );
 
   const maxVisible = Math.max(termHeight - 9, 5);
   const [scrollOffset, setScrollOffset] = useState(0);
@@ -113,7 +119,18 @@ export const ToolsPanel: React.FC<ToolsPanelProps> = ({ tools, onClose }) => {
           { text: shortDescription(tool.description, descCol), color: dim },
         ];
       }),
-    [visible, descCol, primary, dim, brand, info, success, warning, error]
+    [
+      visible,
+      descCol,
+      primary,
+      dim,
+      brand,
+      info,
+      success,
+      warning,
+      error,
+      statusLabels,
+    ]
   );
 
   const handleSearchChange = useCallback((s: string) => {

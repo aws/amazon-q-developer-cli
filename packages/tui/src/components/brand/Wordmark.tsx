@@ -3,6 +3,10 @@ import { Box } from './../../renderer.js';
 import { Text } from '../ui/text/Text.js';
 import { useTheme } from '../../hooks/useThemeContext.js';
 import { useTerminalSize } from '../../hooks/useTerminalSize.js';
+import { useAllowAsciiArt } from '../../hooks/useGlyphs.js';
+import { useAnimationPaused } from '../../contexts/AnimationPausedContext.js';
+import { readBoolSetting } from '../../utils/cli-settings.js';
+import { useAppStore } from '../../stores/app-store.js';
 
 // The ASCII art wordmark is ~72 columns wide
 const WORDMARK_MIN_WIDTH = 75;
@@ -14,11 +18,16 @@ interface WordmarkProps {
 export default function Wordmark({ animate = false }: WordmarkProps) {
   const { getColor } = useTheme();
   const brandColor = getColor('brand');
+  const animationPaused = useAnimationPaused();
 
   // Animation state
   const [visibleLetters, setVisibleLetters] = useState(animate ? 0 : 4);
 
   useEffect(() => {
+    if (animationPaused) {
+      setVisibleLetters(4);
+      return;
+    }
     if (!animate || visibleLetters >= 4) return;
 
     const timer = setInterval(() => {
@@ -30,7 +39,7 @@ export default function Wordmark({ animate = false }: WordmarkProps) {
     }, 300);
 
     return () => clearInterval(timer);
-  }, [animate, visibleLetters >= 4]);
+  }, [animate, visibleLetters >= 4, animationPaused]);
 
   const letterK = ` ⢀⣴⣶⣶⣦⡀⠀⠀⠀⠀⢀⣴⣶⣦⣄⡀
 ⢰⣿⠋⠁⠈⠙⣿⡆⠀⢀⣾⡿⠁  ⠈⢻⡆
@@ -126,6 +135,19 @@ export default function Wordmark({ animate = false }: WordmarkProps) {
 
   const letters = [letterK, letterI, letterR, letterO];
   const { width: termWidth } = useTerminalSize();
+  const { allowAsciiArt } = useAllowAsciiArt();
+  const asciiArtDisabled = !allowAsciiArt;
+
+  const hasSeenLogo = asciiArtDisabled
+    ? readBoolSetting('chat.hasSeenLogo', false)
+    : false;
+  const kiro = useAppStore((state) => state.kiro);
+
+  useEffect(() => {
+    if (asciiArtDisabled && !hasSeenLogo) {
+      kiro.setSetting('chat.hasSeenLogo', true).catch(() => {});
+    }
+  }, [asciiArtDisabled, hasSeenLogo, kiro]);
 
   if (termWidth < WORDMARK_MIN_WIDTH) {
     return (
@@ -134,6 +156,8 @@ export default function Wordmark({ animate = false }: WordmarkProps) {
       </Box>
     );
   }
+
+  if (asciiArtDisabled && hasSeenLogo) return null;
 
   return (
     <Box width="100%" justifyContent="center">

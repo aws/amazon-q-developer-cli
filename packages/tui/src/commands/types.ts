@@ -79,6 +79,7 @@ export interface CommandContext {
   /** Show/hide hooks panel */
   setShowHooksPanel: (show: boolean, hooks?: HookInfo[]) => void;
   setShowKeybindingsPanel: (show: boolean) => void;
+  setShowDisplaySettingsPanel: (show: boolean) => void;
   setSettingsReturnOnEscape: (value: boolean) => void;
   /** Show/hide knowledge panel */
   setShowKnowledgePanel: (

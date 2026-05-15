@@ -8,6 +8,7 @@ import {
   useProcessingState,
 } from '../../../stores/selectors.js';
 import { useTheme } from '../../../hooks/useThemeContext.js';
+import { useGlyphs, useAllowIcons } from '../../../hooks/useGlyphs.js';
 import { useTerminalSize } from '../../../hooks/useTerminalSize.js';
 
 const MAX_VISIBLE_LINES = 6;
@@ -27,6 +28,8 @@ export const ActivityTrayExpanded = React.memo(function ActivityTrayExpanded({
   const { commandInputValue } = useCommandState();
   const { pendingApproval } = useProcessingState();
   const { getColor } = useTheme();
+  const glyphs = useGlyphs();
+  const { allowIcons } = useAllowIcons();
   const { width: termWidth } = useTerminalSize();
 
   const hasTasks = tasks.length > 0;
@@ -175,7 +178,7 @@ export const ActivityTrayExpanded = React.memo(function ActivityTrayExpanded({
               color={activeTab === 'tasks' ? fg : mutedHex}
               bold={activeTab === 'tasks'}
             >
-              ◐ Tasks ({tasks.length})
+              {!allowIcons ? '' : glyphs.executing} Tasks ({tasks.length})
             </Text>
           )}
           {hasTasks && hasQueue && (
@@ -189,7 +192,7 @@ export const ActivityTrayExpanded = React.memo(function ActivityTrayExpanded({
               color={activeTab === 'queue' ? fg : mutedHex}
               bold={activeTab === 'queue'}
             >
-              ◇ Queue ({queueCount})
+              {!allowIcons ? '' : glyphs.diamond} Queue ({queueCount})
             </Text>
           )}
         </Box>
@@ -268,6 +271,8 @@ function TaskList({
   mutedHex,
   termWidth,
 }: TaskListProps) {
+  const glyphs = useGlyphs();
+  const { allowIcons } = useAllowIcons();
   const nextIndex = tasks.findIndex((t) => t.status !== 'completed');
   const visible = tasks.slice(scrollOffset, scrollOffset + maxVisible);
 
@@ -277,11 +282,17 @@ function TaskList({
         const globalIndex = scrollOffset + i;
         const isLast = globalIndex === tasks.length - 1;
         const isNext = globalIndex === nextIndex;
-        const { icon, color } = getStatusIcon(task.status, isNext, {
-          successHex,
-          infoHex,
-          mutedHex,
-        });
+        const { icon, color } = getStatusIcon(
+          task.status,
+          isNext,
+          {
+            successHex,
+            infoHex,
+            mutedHex,
+          },
+          glyphs,
+          allowIcons
+        );
         const connector = isLast ? '└──' : '├──';
 
         return (
@@ -385,13 +396,16 @@ function QueueList({
 function getStatusIcon(
   status: 'pending' | 'completed',
   isNext: boolean,
-  colors: { successHex: string; infoHex: string; mutedHex: string | undefined }
+  colors: { successHex: string; infoHex: string; mutedHex: string | undefined },
+  icons: { dotFilled: string; executing: string; dotEmpty: string },
+  allowIcons: boolean
 ): { icon: string; color: string | undefined } {
+  if (!allowIcons) return { icon: '', color: undefined };
   if (status === 'completed') {
-    return { icon: '●', color: colors.successHex };
+    return { icon: icons.dotFilled, color: colors.successHex };
   }
   if (isNext) {
-    return { icon: '◐', color: colors.infoHex };
+    return { icon: icons.executing, color: colors.infoHex };
   }
-  return { icon: '○', color: colors.mutedHex };
+  return { icon: icons.dotEmpty, color: colors.mutedHex };
 }

@@ -3,6 +3,7 @@ import { Box, Text } from '../../../renderer.js';
 import { useTaskState } from '../../../stores/selectors.js';
 import { useTheme } from '../../../hooks/useThemeContext.js';
 import { useTerminalSize } from '../../../hooks/useTerminalSize.js';
+import { useGlyphs, useAllowIcons } from '../../../hooks/useGlyphs.js';
 
 interface ActivityTrayCollapsedProps {
   queueCount: number;
@@ -14,6 +15,8 @@ export const ActivityTrayCollapsed = React.memo(function ActivityTrayCollapsed({
   const { tasks } = useTaskState();
   const { getColor } = useTheme();
   const { width: termWidth } = useTerminalSize();
+  const glyphs = useGlyphs();
+  const { allowIcons } = useAllowIcons();
 
   const rawBg = getColor('surface').hex;
   const bg = rawBg === 'inherit' ? undefined : rawBg;
@@ -34,7 +37,7 @@ export const ActivityTrayCollapsed = React.memo(function ActivityTrayCollapsed({
         <Box flexGrow={1} overflow="hidden">
           <Text backgroundColor={bg} color={fg} wrap="truncate-end">
             <Text backgroundColor={bg} color={muted}>
-              ◇
+              {!allowIcons ? '' : glyphs.diamond}
             </Text>
             <Text backgroundColor={bg} color={fg} bold>
               {' '}
@@ -56,7 +59,7 @@ export const ActivityTrayCollapsed = React.memo(function ActivityTrayCollapsed({
       <Box flexGrow={1} overflow="hidden">
         <Text backgroundColor={bg} color={fg} wrap="truncate-end">
           <Text backgroundColor={bg} color={fg} bold>
-            ◐ Tasks
+            {!allowIcons ? '' : glyphs.executing} Tasks
           </Text>
           {done > 0 && (
             <Text backgroundColor={bg}>

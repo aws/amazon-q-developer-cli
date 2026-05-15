@@ -24,16 +24,23 @@ export const ShimmerText = React.memo(function ShimmerText({
 
   return (
     <Text>
-      {text.split('').map((char, i) => {
-        const dist = Math.abs(i - pos);
-        const bright = dist === 0;
-        const near = dist <= 2;
-        return (
-          <Text key={i} color={bright ? 'whiteBright' : near ? 'white' : color}>
-            {char}
-          </Text>
-        );
-      })}
+      {paused ? (
+        <Text color={color}>{text}</Text>
+      ) : (
+        text.split('').map((char, i) => {
+          const dist = Math.abs(i - pos);
+          const bright = dist === 0;
+          const near = dist <= 2;
+          return (
+            <Text
+              key={i}
+              color={bright ? 'whiteBright' : near ? 'white' : color}
+            >
+              {char}
+            </Text>
+          );
+        })
+      )}
     </Text>
   );
 });

@@ -24,6 +24,7 @@ import { pickSessionFromEntries } from './utils/session-picker';
 import type { AgentStreamEvent } from './types/agent-events';
 import { readBoolSetting } from './utils/cli-settings';
 import { Settings } from './constants/settings';
+import { GlyphsProvider } from './hooks/useGlyphs';
 import { getAnnouncements } from './constants/feed.js';
 import {
   getActiveAnnouncement,
@@ -594,14 +595,16 @@ const startApp = async () => {
 
     return (
       <ErrorBoundary>
-        <ThemeProvider wrapDisabled={wrapDisabled}>
-          <AppStoreContext.Provider value={appStoreRef.current}>
-            <UserThemeBridge />
-            <TestModeProvider>
-              <AppContainer />
-            </TestModeProvider>
-          </AppStoreContext.Provider>
-        </ThemeProvider>
+        <GlyphsProvider>
+          <ThemeProvider wrapDisabled={wrapDisabled}>
+            <AppStoreContext.Provider value={appStoreRef.current}>
+              <UserThemeBridge />
+              <TestModeProvider>
+                <AppContainer />
+              </TestModeProvider>
+            </AppStoreContext.Provider>
+          </ThemeProvider>
+        </GlyphsProvider>
       </ErrorBoundary>
     );
   }

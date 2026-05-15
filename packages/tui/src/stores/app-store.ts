@@ -519,6 +519,7 @@ interface BaseAppActions {
   ) => void;
   setShowHooksPanel: (show: boolean, hooks?: HookInfo[]) => void;
   setShowKeybindingsPanel: (show: boolean) => void;
+  setShowDisplaySettingsPanel: (show: boolean) => void;
   setSettingsReturnOnEscape: (value: boolean) => void;
   reopenSettingsMenu: () => void;
   setShowKnowledgePanel: (
@@ -765,6 +766,7 @@ export interface AppState {
   showHooksPanel: boolean;
   hooksList: HookInfo[];
   showKeybindingsPanel: boolean;
+  showDisplaySettingsPanel: boolean;
   /**
    * When true, closing the currently open overlay re-opens the /settings
    * top-level menu instead of fully dismissing. Set by /settings subcommand
@@ -1091,6 +1093,7 @@ export const createAppStore = (props: AppStoreProps) => {
     showHooksPanel: false,
     hooksList: [],
     showKeybindingsPanel: false,
+    showDisplaySettingsPanel: false,
     settingsReturnOnEscape: false,
     showKnowledgePanel: false,
     knowledgeEntries: [],
@@ -1289,7 +1292,13 @@ export const createAppStore = (props: AppStoreProps) => {
 
         // Determine error category and handle accordingly
         const category = detectErrorCategory(errorMessage);
-        const displayMessage = simplifyErrorMessage(errorMessage);
+        let displayMessage = simplifyErrorMessage(errorMessage);
+
+        // If retries happened, enrich the message so the user knows we tried
+        const retryInfo = get().retryStatus;
+        if (retryInfo && category === 'network') {
+          displayMessage = `${displayMessage} (failed after ${retryInfo.maxAttempts} attempts)`;
+        }
 
         // Only auth and session errors are blocking (require user action)
         if (category === 'auth' || category === 'session') {
@@ -2371,6 +2380,7 @@ export const createAppStore = (props: AppStoreProps) => {
         setShowStatsPanel: state.setShowStatsPanel,
         setShowHooksPanel: state.setShowHooksPanel,
         setShowKeybindingsPanel: state.setShowKeybindingsPanel,
+        setShowDisplaySettingsPanel: state.setShowDisplaySettingsPanel,
         setSettingsReturnOnEscape: state.setSettingsReturnOnEscape,
         setShowKnowledgePanel: state.setShowKnowledgePanel,
         setShowCodePanel: state.setShowCodePanel,
@@ -3001,6 +3011,10 @@ export const createAppStore = (props: AppStoreProps) => {
       set({ showKeybindingsPanel: show });
     },
 
+    setShowDisplaySettingsPanel: (show) => {
+      set({ showDisplaySettingsPanel: show });
+    },
+
     setSettingsReturnOnEscape: (value) => {
       set({ settingsReturnOnEscape: value });
     },
@@ -3431,6 +3445,7 @@ export const createAppStore = (props: AppStoreProps) => {
           setShowStatsPanel: state.setShowStatsPanel,
           setShowHooksPanel: state.setShowHooksPanel,
           setShowKeybindingsPanel: state.setShowKeybindingsPanel,
+          setShowDisplaySettingsPanel: state.setShowDisplaySettingsPanel,
           setSettingsReturnOnEscape: state.setSettingsReturnOnEscape,
           setShowKnowledgePanel: state.setShowKnowledgePanel,
           setShowCodePanel: state.setShowCodePanel,

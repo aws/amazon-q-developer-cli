@@ -2,6 +2,7 @@ import React from 'react';
 import { Box } from './../../renderer.js';
 import { Text } from './text/Text.js';
 import { useTheme } from '../../hooks/useThemeContext.js';
+import { useGlyphs, useAllowIcons } from '../../hooks/useGlyphs.js';
 import { Menu } from './menu/Menu.js';
 import { useKeypress } from '../../hooks/useKeypress.js';
 import { useApprovalState } from '../../stores/selectors.js';
@@ -25,6 +26,8 @@ export const CrewApprovalRequest: React.FC<{
   );
   const { respondToApproval, cancelApproval } = useApprovalState();
   const { getColor } = useTheme();
+  const glyphs = useGlyphs();
+  const { allowIcons } = useAllowIcons();
 
   const count = approvalQueue.length;
 
@@ -82,7 +85,7 @@ export const CrewApprovalRequest: React.FC<{
       <Box>
         <Text>
           {getColor('warning').bold(
-            `⚠ ${count} tool approval${count !== 1 ? 's' : ''} pending from subagents`
+            `${!allowIcons ? '' : glyphs.warning} ${count} tool approval${count !== 1 ? 's' : ''} pending from subagents`
           )}
         </Text>
       </Box>

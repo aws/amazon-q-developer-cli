@@ -3,6 +3,7 @@ import { Box, Text } from './../../../renderer.js';
 import { StatusBar } from '../status-bar/StatusBar.js';
 import { StatusInfo } from '../../ui/status/StatusInfo.js';
 import { useTheme } from '../../../hooks/useThemeContext.js';
+import { useGlyphs } from '../../../hooks/useGlyphs.js';
 import {
   parseToolArg,
   unwrapResultOutput,
@@ -56,6 +57,7 @@ export const Code = React.memo(function Code({
   result,
 }: CodeProps) {
   const { getColor } = useTheme();
+  const glyphs = useGlyphs();
 
   const operation = useMemo(
     () => parseToolArg(content, 'operation'),
@@ -117,7 +119,7 @@ export const Code = React.memo(function Code({
     if (Array.isArray(obj.symbols)) {
       return (obj.symbols as any[])
         .slice(0, PREVIEW_LINES)
-        .map((s) => `→ ${s.name || s}`);
+        .map((s) => `${glyphs.arrow} ${s.name || s}`);
     }
 
     // find_references — show count
@@ -129,7 +131,7 @@ export const Code = React.memo(function Code({
     if (Array.isArray(obj.documentSymbols)) {
       return (obj.documentSymbols as any[])
         .slice(0, PREVIEW_LINES)
-        .map((s) => `→ ${s.name || s}`);
+        .map((s) => `${glyphs.arrow} ${s.name || s}`);
     }
 
     // Fallback: try text fields
@@ -141,7 +143,7 @@ export const Code = React.memo(function Code({
     }
 
     return [];
-  }, [result]);
+  }, [result, glyphs]);
 
   const renderContent = () => {
     if (result?.status === 'error') {

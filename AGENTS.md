@@ -258,6 +258,36 @@ The render metrics chip displays in the prompt bar when `KIRO_DEV=1` or `NODE_EN
 - **Use tagged unions**: Discriminated unions with a `type` field rather than generic objects with `any` payloads.
 - **Use Bun** instead of Node.js for all tooling (`bun install`, `bun test`, `bun run`, etc.)
 
+### Accessibility
+
+The TUI has three display settings accessible via `/settings display`:
+
+| Setting | Key | Default | Effect |
+|---------|-----|---------|--------|
+| Animations | `chat.allowAnimations` | `true` | When off, all spinners/shimmers show static frames |
+| ASCII art | `chat.allowAsciiArt` | `true` | When off, replaces Unicode/braille with plain ASCII |
+| Icons | `chat.allowIcons` | `true` | When off, hides status indicator icons |
+
+**Environment variable overrides** (take precedence over settings file):
+- `KIRO_ASCII_MODE=1` — enable ASCII mode
+
+**Architecture:**
+- `GlyphsProvider` (`src/hooks/useGlyphs.ts`) — provides reactive glyph/spinner sets and display setting state
+- `AnimationPausedContext` — wraps all screens from `AppContainer`; components check `useAnimationPaused()`
+- `useIconsDisabled()` — checked by `Icon` component and all status indicator renderers
+- `useGlyphs()` / `useSpinners()` — return Unicode or ASCII glyph/spinner sets based on mode
+
+**When adding new UI elements:**
+- Use `useGlyphs()` for any symbol/icon character — never hardcode Unicode
+- Use `useSpinners()` for animation frame arrays
+- Check `useAnimationPaused()` in any `setInterval`/`setTimeout` animation
+- Check `useIconsDisabled()` when rendering status indicator glyphs
+- Use the `Icon` component where possible (it handles both glyphs and icons-disabled)
+
+**Screen reader support:**
+- Menus place `CURSOR_MARKER` on the selected item so the hardware cursor tracks selection
+- The `/model` menu marks the current model with `[active]` in the description
+
 ### React Guidelines
 
 - Use functional components with Hooks only (no class components)

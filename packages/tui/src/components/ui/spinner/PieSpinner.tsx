@@ -1,9 +1,8 @@
 import { useState, useEffect } from 'react';
 import { Text } from '../text/Text.js';
 import { useTheme } from '../../../hooks/useThemeContext.js';
-
-/** Pie chart animation frames — fills clockwise */
-const FRAMES = ['◔', '◑', '◕', '●'];
+import { useSpinners } from '../../../hooks/useGlyphs.js';
+import { useAnimationPaused } from '../../../contexts/AnimationPausedContext.js';
 
 /** Animation interval in ms */
 const INTERVAL = 150;
@@ -17,18 +16,23 @@ export interface PieSpinnerProps {
 
 export const PieSpinner = ({ color, paused }: PieSpinnerProps) => {
   const { getColor } = useTheme();
+  const spinners = useSpinners();
+  const frames = spinners.pie;
   const [frameIndex, setFrameIndex] = useState(0);
+  const globalPaused = useAnimationPaused();
 
   const colorFn = color || getColor('brand');
 
   useEffect(() => {
-    if (paused) return;
+    if (paused || globalPaused) return;
     const timer = setInterval(() => {
-      setFrameIndex((prev) => (prev + 1) % FRAMES.length);
+      setFrameIndex((prev) => (prev + 1) % frames.length);
     }, INTERVAL);
 
     return () => clearInterval(timer);
-  }, [paused]);
+  }, [paused, globalPaused, frames.length]);
 
-  return <Text>{colorFn(FRAMES[frameIndex])}</Text>;
+  const displayIndex = paused || globalPaused ? frames.length - 1 : frameIndex;
+
+  return <Text>{colorFn(frames[displayIndex])}</Text>;
 };

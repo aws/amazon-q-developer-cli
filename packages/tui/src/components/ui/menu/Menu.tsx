@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
-import { Box, useMouse } from './../../../renderer.js';
+import { Box, useMouse, CURSOR_MARKER } from './../../../renderer.js';
 import { useTheme } from '../../../hooks/useThemeContext.js';
 import { useTextStyle } from '../../../hooks/useTextStyle.js';
 import { useTerminalSize } from '../../../hooks/useTerminalSize.js';
@@ -240,6 +240,7 @@ export const Menu = React.memo(function Menu({
               </>
             )}
             <Text>
+              {isSelected ? CURSOR_MARKER : ''}
               {isSelected
                 ? preserveLabelColors
                   ? chalk.bold(paddedItem)

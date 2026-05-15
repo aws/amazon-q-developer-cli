@@ -1,24 +1,8 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { Text } from './../../renderer.js';
 import { useTheme } from '../../hooks/useThemeContext.js';
-
-// Idle: just normal blinking
-const IDLE_FRAMES: [string, number][] = [
-  ['◉ ◉', 3000],
-  ['– –', 150],
-];
-
-// Thinking: winks and expressions
-const THINKING_FRAMES: [string, number, string][] = [
-  ['◉ ◉', 2500, 'thinking...'],
-  ['– –', 150, 'thinking...'],
-  ['◉ ◉', 2500, 'thinking...'],
-  ['◉ –', 800, 'hmm...'],
-  ['– –', 150, 'processing...'],
-  ['◉ ◉', 2500, 'thinking...'],
-  ['– ◉', 800, 'hmm...'],
-  ['– –', 150, 'processing...'],
-];
+import { useGlyphs } from '../../hooks/useGlyphs.js';
+import { useAnimationPaused } from '../../contexts/AnimationPausedContext.js';
 
 interface KiroEyesProps {
   isWaiting?: boolean;
@@ -31,7 +15,31 @@ export const KiroEyes: React.FC<KiroEyesProps> = ({
 }) => {
   const [frameIndex, setFrameIndex] = useState(0);
   const { getColor } = useTheme();
+  const glyphs = useGlyphs();
   const primaryColor = getColor('primary');
+  const animationPaused = useAnimationPaused();
+
+  const IDLE_FRAMES: [string, number][] = useMemo(
+    () => [
+      [`${glyphs.eye} ${glyphs.eye}`, 3000],
+      ['– –', 150],
+    ],
+    [glyphs]
+  );
+
+  const THINKING_FRAMES: [string, number, string][] = useMemo(
+    () => [
+      [`${glyphs.eye} ${glyphs.eye}`, 2500, 'thinking...'],
+      ['– –', 150, 'thinking...'],
+      [`${glyphs.eye} ${glyphs.eye}`, 2500, 'thinking...'],
+      [`${glyphs.eye} –`, 800, 'hmm...'],
+      ['– –', 150, 'processing...'],
+      [`${glyphs.eye} ${glyphs.eye}`, 2500, 'thinking...'],
+      [`– ${glyphs.eye}`, 800, 'hmm...'],
+      ['– –', 150, 'processing...'],
+    ],
+    [glyphs]
+  );
 
   // Reset frame when switching modes
   useEffect(() => {
@@ -39,6 +47,7 @@ export const KiroEyes: React.FC<KiroEyesProps> = ({
   }, [isWaiting]);
 
   useEffect(() => {
+    if (animationPaused) return;
     const frames = isWaiting ? THINKING_FRAMES : IDLE_FRAMES;
     const frame = frames[frameIndex];
     if (!frame) return;
@@ -49,7 +58,7 @@ export const KiroEyes: React.FC<KiroEyesProps> = ({
     }, duration);
 
     return () => clearTimeout(timer);
-  }, [frameIndex, isWaiting]);
+  }, [frameIndex, isWaiting, animationPaused, IDLE_FRAMES, THINKING_FRAMES]);
 
   if (message) {
     return <Text>{primaryColor(message)}</Text>;
