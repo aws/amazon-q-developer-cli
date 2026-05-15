@@ -10,7 +10,7 @@
  */
 
 import { afterEach, beforeEach, describe, expect, it } from 'bun:test';
-import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'fs';
+import { mkdirSync, rmSync, writeFileSync } from 'fs';
 import { join } from 'path';
 import { tmpdir } from 'os';
 import { TestCase } from '../src/test-utils/TestCase';
@@ -30,19 +30,6 @@ async function openDisplaySettings(tc: TestCase) {
   await typeSlowly(tc, '/settings display');
   await tc.sendKeys(ENTER);
   await tc.sleepMs(500);
-}
-
-async function waitForSettingsFile(path: string, timeoutMs = 3000): Promise<Record<string, unknown>> {
-  const start = Date.now();
-  while (Date.now() - start < timeoutMs) {
-    if (existsSync(path)) {
-      try {
-        return JSON.parse(readFileSync(path, 'utf-8'));
-      } catch { /* file may be partially written */ }
-    }
-    await new Promise((r) => setTimeout(r, 100));
-  }
-  throw new Error(`Settings file not found at ${path} within ${timeoutMs}ms`);
 }
 
 describe('Display settings panel', () => {
