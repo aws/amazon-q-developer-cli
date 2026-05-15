@@ -1,4 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach } from 'bun:test';
+import type { Kiro } from '../kiro';
 
 describe('slash-commands', () => {
   let originalEnv: string | undefined;
@@ -66,13 +67,19 @@ describe('slash-commands', () => {
       // The app-store's static slashCommands array is defined inline in
       // createAppStore. We import it and verify /spec is absent from the
       // initial state. This confirms non-KAS users never see /spec.
+      //
+      // Note: we cannot rely on the real `Kiro` class here because other
+      // test files in this suite call `mock.module('../kiro', ...)` which
+      // replaces `Kiro` with a `mock(() => ...)` arrow function for the
+      // rest of the test run. Arrow functions have no `.prototype`, so
+      // `Object.create(Kiro.prototype)` throws "Object prototype may only
+      // be an Object or null" depending on test execution order.
+      // `createAppStore` only stores the `kiro` reference without calling
+      // any methods on it during initialization, so a typed placeholder is
+      // sufficient.
       const { createAppStore } = await import('../stores/app-store');
-      const { Kiro } = await import('../kiro');
 
-      // Create a minimal Kiro instance (it won't connect anywhere)
-      const mockKiro = Object.create(Kiro.prototype) as InstanceType<
-        typeof Kiro
-      >;
+      const mockKiro = {} as InstanceType<typeof Kiro>;
       const store = createAppStore({ kiro: mockKiro });
       const state = store.getState();
 
@@ -87,11 +94,8 @@ describe('slash-commands', () => {
       // which calls setExtensionCommands. The combined list (extensionCommands
       // + slashCommands) then includes /spec.
       const { createAppStore } = await import('../stores/app-store');
-      const { Kiro } = await import('../kiro');
 
-      const mockKiro = Object.create(Kiro.prototype) as InstanceType<
-        typeof Kiro
-      >;
+      const mockKiro = {} as InstanceType<typeof Kiro>;
       const store = createAppStore({ kiro: mockKiro });
 
       // Simulate what KasAcpClient does after initialize():
