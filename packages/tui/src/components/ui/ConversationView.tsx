@@ -14,7 +14,7 @@ import { ShellOutputMessage } from '../chat/message/ShellOutputMessage';
 import { ToolUseMessage } from './ToolUseMessage';
 import { SubagentToolPanel } from './SubagentToolPanel.js';
 import { ThinkingMessage } from '../chat/message/ThinkingMessage';
-import { ThinkingSummary } from '../chat/message/ThinkingSummary';
+import { ThinkingDisplay } from '../chat/message/ThinkingDisplay';
 import { TurnUsageSummary } from '../chat/message/TurnUsageSummary';
 import { StatusBar } from '../chat/status-bar/StatusBar';
 import { Text } from '../ui/text/Text';
@@ -129,7 +129,11 @@ const StaticMessage = React.memo(function StaticMessage({
         marginTop={needsModelSpacing(prevRole) ? 1 : 0}
       >
         {thinkingText && (
-          <ThinkingSummary text={thinkingText} barColor={agentBarColor} />
+          <ThinkingDisplay
+            text={thinkingText}
+            isStatic
+            barColor={agentBarColor}
+          />
         )}
         {isShell ? (
           <ShellOutputMessage
@@ -282,15 +286,9 @@ const ActiveTurnTail = React.memo(function ActiveTurnTail({
             flexDirection="column"
             marginTop={needsModelSpacing(prevRole) ? 1 : 0}
           >
-            {thinkingText &&
-              (isProcessing ? (
-                <StreamingThinking
-                  text={thinkingText}
-                  barColor={agentBarColor}
-                />
-              ) : (
-                <ThinkingSummary text={thinkingText} barColor={agentBarColor} />
-              ))}
+            {thinkingText && (
+              <ThinkingDisplay text={thinkingText} barColor={agentBarColor} />
+            )}
             {inner}
           </Box>
         );
@@ -304,23 +302,6 @@ const ActiveTurnTail = React.memo(function ActiveTurnTail({
     </>
   );
 });
-
-/** Renders streaming thinking/reasoning text as it arrives */
-const StreamingThinking: React.FC<{ text: string; barColor?: string }> = ({
-  text,
-  barColor,
-}) => {
-  const { getColor } = useTheme();
-  const dimColor = getColor('secondary');
-  // Show last few lines of thinking to keep it compact during streaming
-  const lines = text.split('\n');
-  const display = lines.length > 4 ? lines.slice(-4).join('\n') : text;
-  return (
-    <StatusBar status="thinking" barColor={barColor}>
-      <Text>{dimColor(`💭 ${display}`)}</Text>
-    </StatusBar>
-  );
-};
 
 /** Static turn card for completed turns that were never incrementally flushed */
 const StaticTurnCard = React.memo(function StaticTurnCard({

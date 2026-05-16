@@ -882,11 +882,11 @@ abstract class BaseAcpClient implements SessionClient {
       // `config_option_update` are intercepted in KasAcpClient.wireSessionListeners
       // (they update local caches before this switch runs).  The rest are
       // not yet mapped to TUI events.
+      // (`agent_thought_chunk` is handled above — see ThinkingDisplay pipeline.)
       case 'session_info_update':
       case 'config_option_update':
       case 'plan':
       case 'usage_update':
-      case 'agent_thought_chunk':
         logger.debug(
           'KAS session update (not yet mapped):',
           update.sessionUpdate
