@@ -86,6 +86,12 @@ describe('Chat Command', () => {
     testCase = await E2ETestCase.builder()
       .withTerminal({ width: 120, height: 40 })
       .withTestName('chat-cmd-resume-think')
+      // Without this, the TUI's `chat.showThinking` gate (default false)
+      // would suppress the ThinkingDisplay even though the chunk is replayed,
+      // and this test would silently depend on the developer's local
+      // ~/.kiro/settings/cli.json. The setting itself is exercised by
+      // show-thinking-setting.test.ts.
+      .withGlobalSettings({ 'chat.showThinking': true })
       .launch();
 
     // Create a session whose persisted log includes a reasoning block

@@ -2,6 +2,17 @@ import { describe, it, expect, afterEach } from 'bun:test';
 import { TestCase } from '../src/test-utils/TestCase';
 import { AgentEventType, ContentType } from '../src/types/agent-events';
 
+/**
+ * These tests exercise the `<ThinkingDisplay>` component (rendering, tail
+ * truncation, ctrl+o expand/collapse). Rendering is gated by
+ * `chat.showThinking` (default `false`), so each test opts in via
+ * `withGlobalSettings({ 'chat.showThinking': true })`. Without this, the
+ * gate would fall through to the developer's real
+ * `~/.kiro/settings/cli.json` and the suite would silently depend on local
+ * config — failing in CI or any environment where the setting is unset.
+ *
+ * The setting itself is exercised by `e2e_tests/show-thinking-setting.test.ts`.
+ */
 describe('Thinking display', () => {
   let testCase: TestCase | null = null;
 
@@ -14,7 +25,8 @@ describe('Thinking display', () => {
 
   it('stores thinking text on model message', async () => {
     testCase = await TestCase.builder()
-      .withTestName('thinking-store')
+          .withGlobalSettings({ 'chat.showThinking': true })
+          .withTestName('thinking-store')
       .withTimeout(15000)
       .launch();
 
@@ -55,7 +67,8 @@ describe('Thinking display', () => {
 
   it('renders thinking text in terminal output', async () => {
     testCase = await TestCase.builder()
-      .withTestName('thinking-renders')
+          .withGlobalSettings({ 'chat.showThinking': true })
+          .withTestName('thinking-renders')
       .withTimeout(15000)
       .launch();
 
@@ -92,7 +105,8 @@ describe('Thinking display', () => {
 
   it('long thinking shows tail and ctrl+o hint after the turn ends', async () => {
     testCase = await TestCase.builder()
-      .withTestName('thinking-tail-hint')
+          .withGlobalSettings({ 'chat.showThinking': true })
+          .withTestName('thinking-tail-hint')
       .withTimeout(15000)
       .launch();
 
@@ -137,7 +151,8 @@ describe('Thinking display', () => {
 
   it('ctrl+o toggles between collapsed tail and expanded full thinking', async () => {
     testCase = await TestCase.builder()
-      .withTestName('thinking-ctrl-o-expand')
+          .withGlobalSettings({ 'chat.showThinking': true })
+          .withTestName('thinking-ctrl-o-expand')
       .withTimeout(15000)
       .launch();
 
@@ -204,7 +219,8 @@ describe('Thinking display', () => {
 
   it('preserves paragraph breaks and trims leading empty in the tail', async () => {
     testCase = await TestCase.builder()
-      .withTestName('thinking-paragraphed')
+          .withGlobalSettings({ 'chat.showThinking': true })
+          .withTestName('thinking-paragraphed')
       .withTimeout(15000)
       .launch();
 
