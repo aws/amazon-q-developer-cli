@@ -529,6 +529,26 @@ describe('Kiro — handler registration and forwarding', () => {
     expect(handler).toHaveBeenCalled();
   });
 
+  // Regression: --resume goes through this global filter, not through the
+  // onUpdate-bypass path used by /chat <id>. If `Thought` isn't whitelisted
+  // here, `AgentThoughtChunk` events are emitted by the backend and converted
+  // by acp-client but never reach the message store on resume — so resumed
+  // sessions show no thinking even when it was persisted.
+  it('onHistoryEvent receives historical thought events', async () => {
+    const kiro = new Kiro();
+    const handler = mock(() => {});
+    kiro.onHistoryEvent(handler);
+    await kiro.initialize('/path/to/agent');
+    if (mockOnUpdateHandler) {
+      mockOnUpdateHandler({
+        type: AgentEventType.Thought,
+        id: 'thought-1',
+        content: { type: 'text', text: 'thinking out loud' },
+      } as AgentStreamEvent);
+    }
+    expect(handler).toHaveBeenCalled();
+  });
+
   it('onTurnSummary receives TurnSummary events', async () => {
     const kiro = new Kiro();
     const handler = mock(() => {});

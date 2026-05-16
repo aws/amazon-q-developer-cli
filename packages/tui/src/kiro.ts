@@ -352,6 +352,7 @@ export class Kiro {
         if (
           event.type === AgentEventType.UserMessage ||
           event.type === AgentEventType.Content ||
+          event.type === AgentEventType.Thought ||
           event.type === AgentEventType.ToolCall ||
           event.type === AgentEventType.ToolCallUpdate ||
           event.type === AgentEventType.ToolCallFinished
