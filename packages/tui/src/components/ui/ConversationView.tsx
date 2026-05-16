@@ -22,12 +22,25 @@ import { WelcomeScreen } from '../welcome-screen/index.js';
 import { WelcomeMessageBar } from './WelcomeMessageBar.js';
 import { getAgentColor } from '../../utils/agentColors.js';
 import { Settings } from '../../constants/settings.js';
+import { readBoolSetting } from '../../utils/cli-settings.js';
 import { computeFlushSet } from '../../utils/turn-flush-machine.js';
 import { trimStaticItems } from '../../utils/trim-static-items.js';
 import { useTerminalSize } from '../../hooks/useTerminalSize.js';
 import { useTheme } from '../../hooks/useThemeContext.js';
 import { useTwinkiContext } from 'twinki';
 import { SESSION_TOOL_NAMES } from '../../types/agent-events.js';
+
+/**
+ * Read the `chat.showThinking` setting once at module load. When `false`
+ * (the default), the streaming reasoning panel (`<ThinkingDisplay>`) is
+ * hidden everywhere it would otherwise render. The live "Thinking..."
+ * spinner (`<ThinkingMessage>`) is unaffected — that's a separate
+ * "model is working" affordance, not reasoning content.
+ *
+ * Startup-only by design: the setting lives in `~/.kiro/settings/cli.json`
+ * and takes effect on the next TUI launch. There is no live toggle.
+ */
+const SHOW_THINKING = readBoolSetting(Settings.CHAT_SHOW_THINKING, false);
 
 interface ConversationTurn {
   userMessage: StoreMessageType;
@@ -120,9 +133,13 @@ const StaticMessage = React.memo(function StaticMessage({
     );
   }
   if (message.role === MessageRole.Model) {
-    if (!message.content && !message.thinking) return null;
+    const thinkingText =
+      SHOW_THINKING && 'thinking' in message ? message.thinking : undefined;
+    // Skip messages whose only content is hidden thinking — otherwise we'd
+    // render an empty wrapping Box and leave a stray blank row in the
+    // scrollback when `chat.showThinking` is off.
+    if (!message.content && !thinkingText) return null;
     const isShell = 'shellOutput' in message && message.shellOutput;
-    const thinkingText = 'thinking' in message ? message.thinking : undefined;
     return (
       <Box
         flexDirection="column"
@@ -234,17 +251,20 @@ const ActiveTurnTail = React.memo(function ActiveTurnTail({
             </React.Fragment>
           );
         }
+        const thinkingText =
+          SHOW_THINKING && 'thinking' in message ? message.thinking : undefined;
+        // Skip messages whose only content is hidden thinking — otherwise we'd
+        // render an empty wrapping Box and leave a stray blank row in the
+        // streaming scrollback when `chat.showThinking` is off.
         if (
           (!message.content || message.content === '') &&
           !('shellOutput' in message && message.shellOutput) &&
-          !('thinking' in message && message.thinking)
+          !thinkingText
         )
           return null;
 
         const isLastModel = index === lastModelIndex;
         const isShell = 'shellOutput' in message && message.shellOutput;
-        const thinkingText =
-          'thinking' in message ? message.thinking : undefined;
         const useStreaming =
           isLastModel &&
           (isProcessing ||

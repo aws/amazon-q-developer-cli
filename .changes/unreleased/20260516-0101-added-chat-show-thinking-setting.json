@@ -1,0 +1,4 @@
+{
+  "type": "added",
+  "description": "Added `chat.showThinking` setting (boolean, default `false`, startup-only) to control whether the TUI renders streaming reasoning/thinking blocks emitted by the agent. The live `Thinking...` spinner is unaffected."
+}

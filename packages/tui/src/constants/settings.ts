@@ -17,4 +17,5 @@ export const Settings = {
   CHAT_ASCII_MODE: 'chat.allowAsciiArt',
   CHAT_ANIMATIONS: 'chat.allowAnimations',
   CHAT_ICONS: 'chat.allowIcons',
+  CHAT_SHOW_THINKING: 'chat.showThinking',
 } as const;
