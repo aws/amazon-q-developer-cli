@@ -1,0 +1,45 @@
+# Single-role dedup preset for the bun/TUI review runner.
+#
+# Sits between worker output (per-worker {{STATE_DIR}}/findings/
+# scratchpads in each autoloop run directory) and the committed
+# `docs/review-playbook/runner/findings/` tree. For each new finding:
+#
+#   - SKIP   — duplicate of an existing finding (same file, same class,
+#              same root cause). Do not copy; append a back-reference to
+#              the original's `## Related` section.
+#   - ENRICH — overlaps with an existing finding but adds new info.
+#              Append a "## Additional evidence" section; union
+#              platforms-affected; keep the higher severity; add
+#              `corroborated-by:` to the original's frontmatter.
+#   - COPY   — genuinely new. Copy verbatim from the worker scratchpad
+#              into the committed findings directory.
+#
+# Emits `docs/review-playbook/runner/findings/_dedup-log.md` summarising
+# every decision and its rationale.
+#
+# Design:
+#   - Single role, one-shot (a few iterations to chew through candidates).
+#   - review.enabled = false (one-shot scan pattern, no metareview gate).
+#   - required_events = [] because the only signal is task.complete.
+#   - Longer timeout than the planner because dedup iterates once per
+#     candidate finding.
+
+event_loop.max_iterations = 12
+event_loop.completion_event = "task.complete"
+event_loop.completion_promise = "LOOP_COMPLETE"
+event_loop.required_events = []
+
+backend.kind = "kiro"
+backend.command = "kiro-cli"
+backend.args = ["acp"]
+backend.timeout_ms = 1800000
+backend.trust_all_tools = true
+
+review.enabled = false
+
+memory.prompt_budget_chars = 8000
+harness.instructions_file = "harness.md"
+
+core.state_dir = ".autoloop"
+core.journal_file = ".autoloop/journal.jsonl"
+core.memory_file = ".autoloop/memory.jsonl"

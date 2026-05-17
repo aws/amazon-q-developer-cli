@@ -1,0 +1,14 @@
+name = "review-blackbox"
+completion = "task.complete"
+
+# Single role, one-shot. The reviewer reads a blackbox work item, runs
+# probes or existing tests, and emits per-finding files plus a done marker.
+# The key difference from review-code: the harness encourages shelling out
+# to test commands and probe scripts, not just grepping.
+[[role]]
+id = "reviewer"
+emits = ["task.complete"]
+prompt_file = "roles/reviewer.md"
+
+[handoff]
+"loop.start" = ["reviewer"]

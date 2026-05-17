@@ -1,0 +1,36 @@
+# Single-role planner preset for the bun/TUI review runner.
+#
+# Turns a directive (like "review Review 04 against the whole package"
+# or "since:7 days ago") into a set of work-item files that downstream
+# workers can execute one at a time.
+#
+# Design:
+#   - Single role, one-shot. The spike showed the real work happens in
+#     iteration 1; multi-role choreography adds no value for planning.
+#   - review.enabled = false because the metareview gate is inappropriate
+#     for a deterministic one-shot scan task (it exits the loop at iteration 1
+#     when the scratchpad is empty).
+#   - required_events = [] because we have no quality-gate event worth
+#     enforcing for the planner — task.complete is the only signal.
+#   - Completion is driven by task.complete.
+#   - Low iteration cap: planning is a single-shot job.
+
+event_loop.max_iterations = 5
+event_loop.completion_event = "task.complete"
+event_loop.completion_promise = "LOOP_COMPLETE"
+event_loop.required_events = []
+
+backend.kind = "kiro"
+backend.command = "kiro-cli"
+backend.args = ["acp"]
+backend.timeout_ms = 900000
+backend.trust_all_tools = true
+
+review.enabled = false
+
+memory.prompt_budget_chars = 8000
+harness.instructions_file = "harness.md"
+
+core.state_dir = ".autoloop"
+core.journal_file = ".autoloop/journal.jsonl"
+core.memory_file = ".autoloop/memory.jsonl"

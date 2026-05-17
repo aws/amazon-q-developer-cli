@@ -1,0 +1,12 @@
+name = "review-ui-test"
+completion = "task.complete"
+
+# Single role. The tester drives the TUI via Knight Rider HTTP API,
+# captures frames as evidence, and emits findings for any issues.
+[[role]]
+id = "tester"
+emits = ["task.complete"]
+prompt_file = "roles/tester.md"
+
+[handoff]
+"loop.start" = ["tester"]

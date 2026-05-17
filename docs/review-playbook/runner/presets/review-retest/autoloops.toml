@@ -1,0 +1,19 @@
+event_loop.max_iterations = 12
+event_loop.completion_event = "task.complete"
+event_loop.completion_promise = "LOOP_COMPLETE"
+event_loop.required_events = []
+
+backend.kind = "kiro"
+backend.command = "kiro-cli"
+backend.args = ["acp"]
+backend.timeout_ms = 1800000
+backend.trust_all_tools = true
+
+review.enabled = false
+
+memory.prompt_budget_chars = 8000
+harness.instructions_file = "harness.md"
+
+core.state_dir = ".autoloop"
+core.journal_file = ".autoloop/journal.jsonl"
+core.memory_file = ".autoloop/memory.jsonl"
