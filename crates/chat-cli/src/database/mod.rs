@@ -1,4 +1,5 @@
 pub mod settings;
+pub mod local_settings;
 
 use std::ops::Deref;
 use std::path::Path;
