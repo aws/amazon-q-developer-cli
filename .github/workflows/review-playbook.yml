@@ -266,7 +266,13 @@ jobs:
           autoloop --help | head -5
 
       # ----- Knight Rider sidecar (LLM-drivable TUI) ------------------
-      - name: Configure CodeArtifact for @kiro packages
+      - uses: ./.github/actions/codeartifact-login
+        if: inputs.build != 'none' && inputs.dry-run != true
+        continue-on-error: true
+        with:
+          restore-role-arn: arn:aws:iam::551670267384:role/KiroCLIReviewerQueryRole
+          restore-region: us-east-1
+      - name: CodeArtifact login (secret fallback)
         if: inputs.build != 'none' && inputs.dry-run != true
         shell: bash
         env:
