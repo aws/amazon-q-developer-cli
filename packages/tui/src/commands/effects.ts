@@ -31,7 +31,11 @@ import {
   listSpecFeatures,
   type SpecFeatureSummary,
 } from '../utils/spec-workspace.js';
-import { readFileSync, writeFileSync } from 'fs';
+import {
+  resolveArtifactPath,
+  type ArtifactKind,
+} from '../utils/spec-artifact-loader.js';
+import { readFileSync, writeFileSync, statSync } from 'fs';
 
 import { openTranscriptInPager } from '../utils/open-transcript.js';
 import {
@@ -853,6 +857,78 @@ const effectHandlers: Record<EffectName, EffectHandler> = {
       return true;
     }
 
+    // /spec view <name> [requirements|design|tasks] — open the structured
+    // artifact view panel. Local-only (no agent round-trip).
+    if (/^view(\s|$)/.test(trimmed)) {
+      const rest = trimmed.slice(4).trim();
+      if (!rest) {
+        // No feature given — show a picker of features. The picked option's
+        // `value` re-enters runSpec as `view <name>`, landing in this same
+        // branch with the explicit name on the next dispatch.
+        const features = listSpecFeatures(workspaceRoot);
+        if (features.length === 0) {
+          ctx.showAlert(
+            'No specs found under .kiro/specs/. Use "/spec new <name>" to start one.',
+            'warning',
+            6000
+          );
+          return true;
+        }
+        ctx.setActiveCommand({
+          command: {
+            ...cmd,
+            meta: { ...cmd.meta, inputType: 'selection' as const },
+          },
+          options: features.map((f) => ({
+            value: `view ${f.featureName}`,
+            label: f.featureName,
+            description: describeSpecDocuments(f),
+          })),
+        });
+        return true;
+      }
+      const parts = rest.split(/\s+/);
+      const name = parts[0]!;
+      const explicitArtifact = parts[1];
+
+      const feature = findSpecFeature(workspaceRoot, name);
+      if (!feature) {
+        ctx.showAlert(`No spec found at .kiro/specs/${name}/`, 'error', 5000);
+        return true;
+      }
+
+      let artifact: ArtifactKind;
+      if (explicitArtifact !== undefined) {
+        if (
+          explicitArtifact !== 'requirements' &&
+          explicitArtifact !== 'design' &&
+          explicitArtifact !== 'tasks'
+        ) {
+          ctx.showAlert(
+            `Unknown artifact "${explicitArtifact}". Use one of: requirements, design, tasks.`,
+            'error',
+            5000
+          );
+          return true;
+        }
+        artifact = explicitArtifact;
+      } else {
+        const picked = pickMostRecentArtifact(workspaceRoot, name);
+        if (!picked) {
+          ctx.showAlert(
+            `No artifact files in .kiro/specs/${name}/ — generate requirements/design/tasks first.`,
+            'error',
+            5000
+          );
+          return true;
+        }
+        artifact = picked;
+      }
+
+      await ctx.openArtifactView(name, artifact);
+      return true;
+    }
+
     // /spec <name> — resume work on an existing spec. Switch modes and
     // point the agent at the feature's documents via a prompt. We
     // deliberately don't call `_kiro/spec/resolveSession` here: the spec
@@ -1401,6 +1477,38 @@ import {
   getBundledTheme,
 } from '../theme/user-theme.js';
 import { spawnSync } from 'child_process';
+
+/**
+ * Pick the most-recently-modified artifact among requirements/design/tasks
+ * under `.kiro/specs/<feature>/`. Returns null when none of the three
+ * artifact files exist.
+ *
+ * Used for `/spec view <feature>` (no explicit artifact arg) so the user
+ * lands on the most-active document by default.
+ */
+function pickMostRecentArtifact(
+  workspaceRoot: string,
+  featureName: string
+): ArtifactKind | null {
+  const candidates: ArtifactKind[] = ['requirements', 'design', 'tasks'];
+  let best: { kind: ArtifactKind; mtime: number } | null = null;
+  for (const kind of candidates) {
+    const path = resolveArtifactPath(workspaceRoot, featureName, kind);
+    try {
+      const s = statSync(path);
+      // Use mtimeMs so we can compare with simple > and don't lose
+      // sub-second precision (POSIX mtime in seconds is too coarse for
+      // generation events that arrive within the same second).
+      const mtime = s.mtimeMs;
+      if (!best || mtime > best.mtime) {
+        best = { kind, mtime };
+      }
+    } catch {
+      // File missing or unreadable: skip it.
+    }
+  }
+  return best?.kind ?? null;
+}
 
 /**
  * Resolve a spec session and invoke `runAllTasks` via the KAS ACP ext

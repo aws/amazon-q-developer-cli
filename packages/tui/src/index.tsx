@@ -223,6 +223,41 @@ const wireUpHandlers = () => {
   kiro.onInitNotification((event) => {
     initHandler(event);
   });
+
+  // ── KAS-only wiring: spec artifact view ──
+  //
+  // Engine is fixed at process start (see slash-commands.ts comment),
+  // so we wire this once at startup. We still call
+  // `clearArtifactViewOnEngineSwitch` from any future engine-switch
+  // path as defence-in-depth.
+  if (process.env.KIRO_AGENT_ENGINE === 'kas') {
+    // Idle-timer registry, keyed by absolute path. Each fs_write resets
+    // the corresponding timer; on fire, we mark the entry complete.
+    const idleTimers = new Map<string, ReturnType<typeof setTimeout>>();
+    const IDLE_TIMEOUT_MS = 2000;
+
+    kiro.onArtifactWrite((match) => {
+      const store = appStore.getState();
+      store.notifyArtifactGenerationWrite({
+        path: match.absolutePath,
+        featureName: match.featureName,
+        artifact: match.artifact,
+      });
+
+      const existing = idleTimers.get(match.absolutePath);
+      if (existing) clearTimeout(existing);
+      const timer = setTimeout(() => {
+        idleTimers.delete(match.absolutePath);
+        appStore.getState().markArtifactGenerationComplete(match.absolutePath);
+      }, IDLE_TIMEOUT_MS);
+      idleTimers.set(match.absolutePath, timer);
+    });
+  } else {
+    // Non-KAS engine: belt-and-braces clear in case state somehow
+    // ended up populated (shouldn't happen on cold start).
+    appStore.getState().clearArtifactViewOnEngineSwitch();
+  }
+  // ── End KAS-only wiring ──
 };
 
 const startInitialization = (resumePickerSessionId?: string) => {

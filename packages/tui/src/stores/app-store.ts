@@ -158,11 +158,53 @@ export interface CodePanelData {
   message?: string;
 }
 
+// ── Spec artifact view ───────────────────────────────────────
+//
+// Generation-phase tracker state and the open artifact-view panel.
+// See `utils/spec-artifact-loader.ts` and
+// `utils/spec-artifact-parser/` for the underlying types.
+
+/** Per-path generation-phase entry, keyed in `artifactGenerating` by absolute path. */
+export interface ArtifactGenerationEntry {
+  featureName: string;
+  artifact: ArtifactKind;
+  /** Last successful summary parse, or null while we wait for the first read. */
+  summary: ArtifactSummary | null;
+  /** Wall-clock ms of the most recent fs_write notification. */
+  lastWriteTs: number;
+  /** Marked true after 2 s of idleness or when the panel is opened directly. */
+  complete: boolean;
+  /** Set when a parse failed mid-stream so the card can show a non-blocking indicator. */
+  parseError: string | null;
+}
+
+export interface OpenArtifactView {
+  featureName: string;
+  artifact: ArtifactKind;
+  summary: ArtifactSummary;
+  mode: 'summary' | 'detail';
+  /** Index into the displayed item list. */
+  cursor: number;
+  /** Tasks-only expansion state, keyed by item index. */
+  expanded: Record<number, boolean>;
+  /** Non-fatal load error to surface inline; null on success. */
+  error: { message: string } | null;
+}
+
+// ── End spec artifact view ───────────────────────────────────
+
 import {
   executeCommand,
   executeCommandWithArg,
   type CommandContext,
 } from '../commands/index.js';
+import {
+  loadArtifactSummary,
+  type ArtifactKind,
+  type ArtifactSummary,
+  type LoadError,
+} from '../utils/spec-artifact-loader.js';
+export type { ArtifactKind, ArtifactSummary } from '../utils/spec-artifact-loader.js';
 import { buildSettingsActiveCommand } from '../commands/settings-subcommands.js';
 import { formatImageLabel } from '../utils/image-label.js';
 import { expandFileReferences, readFileContent } from '../utils/file-search.js';
@@ -214,6 +256,63 @@ export enum MessageRole {
 
 // Helper to generate unique message IDs
 const generateMessageId = () => crypto.randomUUID();
+
+// ── Spec artifact view helpers ─────────────────────────────
+//
+// Kept local because they only exist to support the artifactView
+// slice and aren't part of the public store API.
+
+/** Count items in a summary for cursor / wrap-around math. */
+function countArtifactItems(summary: ArtifactSummary): number {
+  switch (summary.kind) {
+    case 'requirements':
+      return summary.items.length;
+    case 'design':
+      return summary.sections.length;
+    case 'tasks':
+      return summary.items.length;
+  }
+}
+
+/** Produce a human-readable message for a `LoadError`. */
+function describeLoadError(err: LoadError): string {
+  switch (err.kind) {
+    case 'FeatureNotFound':
+      return `No spec found at .kiro/specs/${err.featureName}/`;
+    case 'ArtifactNotFound':
+      return `No ${err.artifact}.md in spec "${err.featureName}".`;
+    case 'TooLarge':
+      return `Artifact at ${err.path} is too large (${err.sizeBytes} bytes).`;
+    case 'ReadFailed':
+      switch (err.category) {
+        case 'NotFound':
+          return `File not found: ${err.path}`;
+        case 'PermissionDenied':
+          return `Permission denied reading ${err.path}`;
+        case 'Io':
+          return `Failed to read ${err.path}: ${err.message}`;
+      }
+  }
+}
+
+/** Empty-summary placeholder used when opening the panel in error mode. */
+function emptySummaryFor(artifact: ArtifactKind): ArtifactSummary {
+  switch (artifact) {
+    case 'requirements':
+      return { kind: 'requirements', items: [] };
+    case 'design':
+      return {
+        kind: 'design',
+        overview: '',
+        overviewTruncated: false,
+        sections: [],
+      };
+    case 'tasks':
+      return { kind: 'tasks', items: [] };
+  }
+}
+
+// ── End spec artifact view helpers ─────────────────────────
 
 /**
  * Tools that are known to be broken or unavailable in the current environment.
@@ -529,6 +628,40 @@ interface BaseAppActions {
   ) => void;
   setShowCodePanel: (show: boolean, data?: CodePanelData) => void;
 
+  // ── Spec artifact view actions ─────────────────────────────
+  /**
+   * Record an `fs_write` to a spec artifact path. Triggers a background
+   * load of the artifact summary so the generation card can render the
+   * latest state. Idempotent — calling twice for the same path with the
+   * same content is safe.
+   */
+  notifyArtifactGenerationWrite: (args: {
+    path: string;
+    featureName: string;
+    artifact: ArtifactKind;
+  }) => void;
+  /** Mark a generation-phase entry as complete (transitions card to its post-write state). */
+  markArtifactGenerationComplete: (path: string) => void;
+  /** Open the artifact view panel; loads the summary and sets `artifactViewOpen`. */
+  openArtifactView: (
+    featureName: string,
+    artifact: ArtifactKind
+  ) => Promise<void>;
+  /** Close the panel and clear cursor/expansion state. */
+  closeArtifactView: () => void;
+  moveArtifactCursor: (direction: 'prev' | 'next') => void;
+  toggleArtifactExpand: (index: number) => void;
+  enterArtifactDetail: () => void;
+  leaveArtifactDetail: () => void;
+  /**
+   * Reset all artifact-view state on engine switch. The agent engine in
+   * Kiro CLI is fixed at startup (see `slash-commands.ts`), so this is
+   * a defence-in-depth no-op-safe action: callable from anywhere
+   * without breaking the store.
+   */
+  clearArtifactViewOnEngineSwitch: () => void;
+  // ── End spec artifact view actions ─────────────────────────
+
   // File attachment actions
   attachFile: (path: string) => void;
   removeAttachedFile: (path: string) => void;
@@ -781,6 +914,22 @@ export interface AppState {
   showCodePanel: boolean;
   codeData: CodePanelData | null;
   codeIntelligenceActive: boolean;
+
+  // ── Spec artifact view state ───────────────────────────────
+  /**
+   * Generation-phase tracker keyed by absolute file path. Entries are
+   * created when the agent's first matching `fs_write` arrives and live
+   * for the remainder of the session (idle entries flip to
+   * `complete: true` after 2 s of no writes).
+   */
+  artifactGenerating: Record<string, ArtifactGenerationEntry>;
+  /**
+   * Open artifact-view panel. Mutually exclusive with the generation
+   * card path: the card can show alongside, but the panel takes over
+   * keyboard input.
+   */
+  artifactViewOpen: OpenArtifactView | null;
+  // ── End spec artifact view state ───────────────────────────
 
   // Task management state
   tasks: TaskItem[];
@@ -1103,6 +1252,8 @@ export const createAppStore = (props: AppStoreProps) => {
     codeIntelligenceActive: existsSync(
       join(process.cwd(), '.kiro', 'settings', 'lsp.json')
     ),
+    artifactGenerating: {},
+    artifactViewOpen: null,
     attachedFiles: [],
     _userColorsSetter: null,
     _baseThemeSetter: null,
@@ -2384,6 +2535,7 @@ export const createAppStore = (props: AppStoreProps) => {
         setSettingsReturnOnEscape: state.setSettingsReturnOnEscape,
         setShowKnowledgePanel: state.setShowKnowledgePanel,
         setShowCodePanel: state.setShowCodePanel,
+        openArtifactView: state.openArtifactView,
         clearMessages: state.clearMessages,
         resetMessages: state.resetMessages,
         sendMessage: state.sendMessage,
@@ -3052,6 +3204,193 @@ export const createAppStore = (props: AppStoreProps) => {
       });
     },
 
+    // ── Spec artifact view actions ───────────────────────────
+    notifyArtifactGenerationWrite: ({ path, featureName, artifact }) => {
+      const now = Date.now();
+      // Eagerly mark the entry: we want the card to appear within
+      // 500 ms of the first write even if the load is slow.
+      set((state) => {
+        const existing = state.artifactGenerating[path];
+        return {
+          artifactGenerating: {
+            ...state.artifactGenerating,
+            [path]: existing
+              ? {
+                  ...existing,
+                  lastWriteTs: now,
+                  // A new write resets `complete` so the card returns to
+                  // its live state if the agent issues another write
+                  // after the 2 s idle timeout.
+                  complete: false,
+                }
+              : {
+                  featureName,
+                  artifact,
+                  summary: null,
+                  lastWriteTs: now,
+                  complete: false,
+                  parseError: null,
+                },
+          },
+        };
+      });
+
+      // Background load — never blocks the caller. Errors are surfaced
+      // as `parseError` on the entry so the card can show a non-blocking
+      // indicator while retaining the last good summary.
+      void loadArtifactSummary(process.cwd(), featureName, artifact)
+        .then((res) => {
+          set((state) => {
+            const entry = state.artifactGenerating[path];
+            // Entry could have been cleared by clearArtifactViewOnEngineSwitch
+            // while the load was in flight. Drop the result silently.
+            if (!entry) return state;
+
+            if (res.ok) {
+              return {
+                artifactGenerating: {
+                  ...state.artifactGenerating,
+                  [path]: {
+                    ...entry,
+                    summary: res.summary,
+                    parseError: null,
+                  },
+                },
+              };
+            }
+
+            const message = describeLoadError(res.error);
+            return {
+              artifactGenerating: {
+                ...state.artifactGenerating,
+                [path]: { ...entry, parseError: message },
+              },
+            };
+          });
+        })
+        .catch((err: unknown) => {
+          // The loader is contracted to never throw; this is a
+          // last-resort guard so a stray rejection doesn't crash
+          // the agent stream listener.
+          logger.error('[artifact-view] load threw', {
+            path,
+            err: err instanceof Error ? err.message : String(err),
+          });
+        });
+    },
+
+    markArtifactGenerationComplete: (path: string) => {
+      set((state) => {
+        const entry = state.artifactGenerating[path];
+        if (!entry || entry.complete) return state;
+        return {
+          artifactGenerating: {
+            ...state.artifactGenerating,
+            [path]: { ...entry, complete: true },
+          },
+        };
+      });
+    },
+
+    openArtifactView: async (
+      featureName: string,
+      artifact: ArtifactKind
+    ) => {
+      const result = await loadArtifactSummary(
+        process.cwd(),
+        featureName,
+        artifact
+      );
+      if (!result.ok) {
+        // Surface a transient alert + open the panel in error mode so
+        // the user can read the message and dismiss with `q`.
+        set({
+          artifactViewOpen: {
+            featureName,
+            artifact,
+            summary: emptySummaryFor(artifact),
+            mode: 'summary',
+            cursor: 0,
+            expanded: {},
+            error: { message: describeLoadError(result.error) },
+          },
+        });
+        return;
+      }
+      set({
+        artifactViewOpen: {
+          featureName,
+          artifact,
+          summary: result.summary,
+          mode: 'summary',
+          cursor: 0,
+          expanded: {},
+          error: null,
+        },
+      });
+    },
+
+    closeArtifactView: () => {
+      set({ artifactViewOpen: null });
+    },
+
+    moveArtifactCursor: (direction: 'prev' | 'next') => {
+      set((state) => {
+        const open = state.artifactViewOpen;
+        if (!open || open.mode !== 'summary') return state;
+        const count = countArtifactItems(open.summary);
+        if (count === 0) return state;
+        const cursor =
+          direction === 'next'
+            ? (open.cursor + 1) % count
+            : // Wrap around: -1 mod n becomes n-1
+              (open.cursor - 1 + count) % count;
+        return { artifactViewOpen: { ...open, cursor } };
+      });
+    },
+
+    toggleArtifactExpand: (index: number) => {
+      set((state) => {
+        const open = state.artifactViewOpen;
+        if (!open) return state;
+        const next = { ...open.expanded };
+        next[index] = !next[index];
+        return { artifactViewOpen: { ...open, expanded: next } };
+      });
+    },
+
+    enterArtifactDetail: () => {
+      set((state) => {
+        const open = state.artifactViewOpen;
+        if (!open || open.mode !== 'summary') return state;
+        // Guard: don't enter detail if there are no items to drill into.
+        if (countArtifactItems(open.summary) === 0) return state;
+        return {
+          artifactViewOpen: { ...open, mode: 'detail' },
+        };
+      });
+    },
+
+    leaveArtifactDetail: () => {
+      set((state) => {
+        const open = state.artifactViewOpen;
+        if (!open || open.mode !== 'detail') return state;
+        // Spec: pressing Escape returns cursor to the item that was open
+        // in detail. If the item is no longer valid (eg. the file shrank
+        // externally), clamp to first.
+        const count = countArtifactItems(open.summary);
+        const cursor = count === 0 ? 0 : Math.min(open.cursor, count - 1);
+        return {
+          artifactViewOpen: { ...open, mode: 'summary', cursor },
+        };
+      });
+    },
+
+    clearArtifactViewOnEngineSwitch: () => {
+      set({ artifactGenerating: {}, artifactViewOpen: null });
+    },
+    // ── End spec artifact view actions ───────────────────────
+
     // File attachment actions
     attachFile: (path) => {
       set((state) => ({
@@ -3449,6 +3788,7 @@ export const createAppStore = (props: AppStoreProps) => {
           setSettingsReturnOnEscape: state.setSettingsReturnOnEscape,
           setShowKnowledgePanel: state.setShowKnowledgePanel,
           setShowCodePanel: state.setShowCodePanel,
+          openArtifactView: state.openArtifactView,
           clearMessages: state.clearMessages,
           resetMessages: state.resetMessages,
           sendMessage: state.sendMessage,

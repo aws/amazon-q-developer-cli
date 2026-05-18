@@ -67,8 +67,12 @@ export const SLASH_COMMANDS: SlashCommand[] = [
     description: 'List specs, switch to spec mode, or run spec tasks',
     meta: {
       local: true,
-      subcommands: ['new', 'run'],
-      subcommandHints: { new: '<feature-name>', run: '<feature-name>' },
+      subcommands: ['new', 'run', 'view'],
+      subcommandHints: {
+        new: '<feature-name>',
+        run: '<feature-name>',
+        view: '<feature-name> [requirements|design|tasks]',
+      },
     },
   },
   {

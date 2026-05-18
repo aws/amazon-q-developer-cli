@@ -67,6 +67,7 @@ export function createMockCommandContext(
     setSettingsReturnOnEscape: spy('setSettingsReturnOnEscape') as any,
     setShowKnowledgePanel: spy('setShowKnowledgePanel') as any,
     setShowCodePanel: spy('setShowCodePanel') as any,
+    openArtifactView: spy('openArtifactView') as any,
     clearMessages: spy('clearMessages') as any,
     resetMessages: spy('resetMessages') as any,
     sendMessage: spy('sendMessage') as any,

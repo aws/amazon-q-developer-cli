@@ -89,6 +89,17 @@ export interface CommandContext {
   ) => void;
   /** Show/hide code panel */
   setShowCodePanel: (show: boolean, data?: CodePanelData) => void;
+  /**
+   * Open the structured spec artifact view panel.
+   *
+   * Resolves once the summary has been loaded (or once the load fails
+   * and the panel is opened in error mode). The store handles all
+   * state — the caller doesn't have to manage cursor / mode.
+   */
+  openArtifactView: (
+    featureName: string,
+    artifact: 'requirements' | 'design' | 'tasks'
+  ) => Promise<void>;
   /** Clear conversation messages (keeps last turn for /clear) */
   clearMessages: () => void;
   /** Reset all messages (full wipe for /chat new) */
