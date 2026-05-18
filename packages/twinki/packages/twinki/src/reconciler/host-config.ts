@@ -155,6 +155,12 @@ export const reconciler = ReactReconciler(({
 			applyYogaProps(instance.yogaNode, newProps);
 			if (instance.type === NODE_TYPES.TWINKI_TEXT) instance.yogaNode.markDirty();
 		}
+		// Invalidate overflow cache if wrap prop changed
+		if ((oldProps as any).wrap !== (newProps as any).wrap) {
+			instance._hasOverflow = undefined;
+			let anc = instance.parent;
+			while (anc) { anc._hasOverflow = undefined; anc = anc.parent; }
+		}
 		// Mark all ancestor twinki-text nodes dirty
 		let p = instance.parent;
 		while (p?.type === NODE_TYPES.TWINKI_TEXT) {
