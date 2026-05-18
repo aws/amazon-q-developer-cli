@@ -617,6 +617,12 @@ pub fn rl(
         EventHandler::Simple(Cmd::Insert(1, "\n".to_string())),
     );
 
+    // Add custom keybinding for Shift+Enter to insert a newline (works in some terminals)
+    rl.bind_sequence(
+        KeyEvent(KeyCode::Enter, Modifiers::SHIFT),
+        EventHandler::Simple(Cmd::Insert(1, "\n".to_string())),
+    );
+
     // Add custom keybinding for autocompletion hint acceptance (configurable)
     let autocompletion_key_char = match os.database.settings.get_string(Setting::AutocompletionKey) {
         Some(key) if key.len() == 1 => key.chars().next().unwrap_or('g'),
