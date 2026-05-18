@@ -44,6 +44,12 @@ export const StageRow = React.memo(function StageRow({
     ? `${glyphs.arrowLeft}${depLabel}`.padEnd(depW + 2)
     : ' '.repeat(depW + 2);
 
+  // Loop indicator: "↻ [2/4]" when stage has loop config
+  const loopLabel =
+    stage.hasLoop && stage.loopMaxIterations
+      ? ` ↻ [${stage.loopIteration}/${stage.loopMaxIterations}]`
+      : '';
+
   return (
     <Box
       paddingX={1}
@@ -58,6 +64,7 @@ export const StageRow = React.memo(function StageRow({
       <Box width={nameW} flexShrink={0}>
         <Text bold={isSelected} underline={isSelected} wrap="truncate">
           {getColor('primary')(truncate(stage.name, nameW))}
+          {loopLabel && <Text color="cyan">{loopLabel}</Text>}
         </Text>
       </Box>
       <Box width={agentNameW} flexShrink={0}>

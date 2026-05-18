@@ -152,6 +152,12 @@ export const DagVisualization = React.memo(function DagVisualization({
     const fillChar = leaf ? ' ' : glyphs.lineHorizontal;
     const fill = fillChar.repeat(fillLen);
 
+    const stage = stageByName.get(name);
+    const loopLabel =
+      stage?.hasLoop && stage.loopMaxIterations
+        ? ` ↻[${stage.loopIteration}/${stage.loopMaxIterations}]`
+        : '';
+
     return (
       <>
         <Text color="gray">{(idx + 1).toString().padStart(2)} </Text>
@@ -164,7 +170,8 @@ export const DagVisualization = React.memo(function DagVisualization({
           {' '}
           <Text color="gray" underline={sel} bold={sel}>
             {paddedName}
-          </Text>{' '}
+          </Text>
+          {loopLabel && <Text color="cyan">{loopLabel}</Text>}{' '}
           <Text color={st.color}>{statusText}</Text>{' '}
           <Text color="gray">{fill}</Text>
         </Text>

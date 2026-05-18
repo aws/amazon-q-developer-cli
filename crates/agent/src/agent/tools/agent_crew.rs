@@ -29,6 +29,22 @@ use crate::agent::agent_loop::types::ToolSpec;
 use crate::agent_config::parse::CanonicalToolName;
 use crate::protocol::AgentEvent;
 
+/// Hard ceiling on loop iterations regardless of what the model requests.
+const MAX_LOOP_ITERATIONS_CAP: u32 = 10;
+/// Minimum trigger length to avoid accidental matches on common words.
+const MIN_TRIGGER_LENGTH: usize = 4;
+
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub struct LoopConfig {
+    /// Name of the stage to loop back to when triggered.
+    pub target: String,
+    /// Maximum number of loop iterations before stopping (capped at 10).
+    pub max_iterations: u32,
+    /// Text that, when present in the stage's output, triggers the loop.
+    pub trigger: String,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub struct PipelineStage {
@@ -39,6 +55,10 @@ pub struct PipelineStage {
     pub depends_on: Vec<String>,
     #[serde(default)]
     pub model: Option<String>,
+    /// Optional loop-back configuration: when this stage completes and its output
+    /// contains the trigger text, re-run the target stage (up to max_iterations).
+    #[serde(default)]
+    pub loop_to: Option<LoopConfig>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
@@ -96,6 +116,12 @@ USE THIS when you need multi-step work with specialized agents:
 - Parallel research tracks that feed into a single implementer
 - Any workflow where stages have dependencies
 
+LOOPS:
+- Add loop_to on a stage to create iterative cycles (e.g., reviewer loops back to implementer)
+- trigger: text in the stage's output that triggers the loop (e.g., "NEEDS_CHANGES")
+- max_iterations: safety cap to prevent infinite loops
+- The target stage re-runs with the triggering stage's feedback as context
+
 Each stage becomes a session you can monitor via ctrl+g in the TUI.
 "#;
 
@@ -120,7 +146,17 @@ const TOOL_SCHEMA: &str = r#"
           "role": { "type": "string" },
           "prompt_template": { "type": "string", "description": "Task for this stage. Use {task} to reference the overall task." },
           "depends_on": { "type": "array", "items": { "type": "string" } },
-          "model": { "type": "string" }
+          "model": { "type": "string" },
+          "loop_to": {
+            "type": "object",
+            "description": "Loop back to a target stage when this stage's output contains the trigger text. Useful for review→implement cycles.",
+            "properties": {
+              "target": { "type": "string", "description": "Name of the stage to loop back to" },
+              "max_iterations": { "type": "integer", "description": "Maximum loop iterations (safety cap)" },
+              "trigger": { "type": "string", "description": "Text in output that triggers the loop (e.g. 'NEEDS_CHANGES')" }
+            },
+            "required": ["target", "max_iterations", "trigger"]
+          }
         }
       }
     }
@@ -154,6 +190,9 @@ pub struct PendingStageSpec {
     pub role: String,
     pub task: String,
     pub depends_on: Vec<String>,
+    /// Loop-back config from the source stage that points to this stage's target.
+    #[serde(default)]
+    pub loop_config: Option<LoopConfig>,
 }
 
 impl AgentCrew {
@@ -163,49 +202,145 @@ impl AgentCrew {
         event_tx: broadcast::Sender<AgentEvent>,
         crew_settings: &AgentCrewSettings,
     ) -> ToolExecutionResult {
-        // Validate stage roles against availableAgents before spawning
-        if !crew_settings.available_agents.is_empty() {
-            let denied: Vec<&str> = self
-                .stages
-                .iter()
-                .filter(|s| !AgentIdentifier::any_matches(&crew_settings.available_agents, &s.role))
-                .map(|s| s.role.as_str())
-                .collect();
-            if !denied.is_empty() {
-                return Err(ToolExecutionError::Custom(format!(
-                    "Agents not available for crew stages: {}",
-                    denied.join(", ")
-                )));
+        self.validate_roles(crew_settings)?;
+        self.validate_loop_configs()?;
+        let stages = self.clamp_loop_iterations();
+        let group = format!("crew-{}", crate::agent::util::truncate_safe(&self.task, 20));
+
+        let (spawned, pending_specs) = Self::spawn_ready_stages(&stages, &self.task, &group, &event_tx).await?;
+
+        Self::register_pending_stages(&pending_specs, &group, &event_tx).await;
+
+        match self.mode {
+            CrewMode::Blocking => Self::await_blocking(&group, stages.len(), &tool_use_id, &event_tx).await,
+            #[allow(unreachable_patterns)]
+            _ => Ok(Self::non_blocking_summary(&spawned, &pending_specs)),
+        }
+    }
+
+    // ── Validation ──────────────────────────────────────────────────────
+
+    /// Reject stages whose role isn't in the allowed agent list.
+    fn validate_roles(&self, crew_settings: &AgentCrewSettings) -> Result<(), ToolExecutionError> {
+        if crew_settings.available_agents.is_empty() {
+            return Ok(());
+        }
+        let denied: Vec<&str> = self
+            .stages
+            .iter()
+            .filter(|s| !AgentIdentifier::any_matches(&crew_settings.available_agents, &s.role))
+            .map(|s| s.role.as_str())
+            .collect();
+        if !denied.is_empty() {
+            return Err(ToolExecutionError::Custom(format!(
+                "Agents not available for crew stages: {}",
+                denied.join(", ")
+            )));
+        }
+        Ok(())
+    }
+
+    /// Validate every `loop_to` config: target exists, no self-loops, trigger is
+    /// long enough to avoid accidental matches, max_iterations > 0, and no
+    /// circular A↔B loop_to pairs.
+    fn validate_loop_configs(&self) -> Result<(), ToolExecutionError> {
+        let stage_names: std::collections::HashSet<&str> = self.stages.iter().map(|s| s.name.as_str()).collect();
+
+        for stage in &self.stages {
+            if let Some(lc) = &stage.loop_to {
+                if !stage_names.contains(lc.target.as_str()) {
+                    return Err(ToolExecutionError::Custom(format!(
+                        "Stage '{}' has loop_to targeting '{}', which does not exist",
+                        stage.name, lc.target
+                    )));
+                }
+                if lc.target == stage.name {
+                    return Err(ToolExecutionError::Custom(format!(
+                        "Stage '{}' cannot loop_to itself",
+                        stage.name
+                    )));
+                }
+                if lc.trigger.trim().len() < MIN_TRIGGER_LENGTH {
+                    return Err(ToolExecutionError::Custom(format!(
+                        "Stage '{}' loop trigger '{}' is too short (min {} chars). Use a distinctive trigger like NEEDS_CHANGES",
+                        stage.name, lc.trigger, MIN_TRIGGER_LENGTH
+                    )));
+                }
+                if lc.max_iterations == 0 {
+                    return Err(ToolExecutionError::Custom(format!(
+                        "Stage '{}' loop max_iterations must be at least 1",
+                        stage.name
+                    )));
+                }
             }
         }
 
-        let group = format!("crew-{}", crate::agent::util::truncate_safe(&self.task, 20));
+        Self::detect_circular_loops(&self.stages)
+    }
 
-        // Spawn all stages with no dependencies immediately (parallel)
-        let ready: Vec<&PipelineStage> = self.stages.iter().filter(|s| s.depends_on.is_empty()).collect();
-        let pending_specs: Vec<PendingStageSpec> = self
-            .stages
+    /// Detect mutual loop_to references (A→B and B→A).
+    fn detect_circular_loops(stages: &[PipelineStage]) -> Result<(), ToolExecutionError> {
+        let loop_targets: std::collections::HashMap<&str, &str> = stages
+            .iter()
+            .filter_map(|s| s.loop_to.as_ref().map(|lc| (s.name.as_str(), lc.target.as_str())))
+            .collect();
+        for (src, tgt) in &loop_targets {
+            if loop_targets.get(tgt) == Some(src) {
+                return Err(ToolExecutionError::Custom(format!(
+                    "Circular loop_to detected: '{}' → '{}' → '{}'. Only one direction should have loop_to",
+                    src, tgt, src
+                )));
+            }
+        }
+        Ok(())
+    }
+
+    /// Return a copy of stages with `max_iterations` clamped to the server-side cap.
+    fn clamp_loop_iterations(&self) -> Vec<PipelineStage> {
+        self.stages
+            .iter()
+            .map(|s| {
+                let mut s = s.clone();
+                if let Some(lc) = &mut s.loop_to {
+                    lc.max_iterations = lc.max_iterations.min(MAX_LOOP_ITERATIONS_CAP);
+                }
+                s
+            })
+            .collect()
+    }
+
+    // ── Spawning ────────────────────────────────────────────────────────
+
+    /// Spawn stages with no dependencies immediately. Returns (spawned names, pending specs).
+    async fn spawn_ready_stages(
+        stages: &[PipelineStage],
+        task: &str,
+        group: &str,
+        event_tx: &broadcast::Sender<AgentEvent>,
+    ) -> Result<(Vec<String>, Vec<PendingStageSpec>), ToolExecutionError> {
+        let pending_specs: Vec<PendingStageSpec> = stages
             .iter()
             .filter(|s| !s.depends_on.is_empty())
             .map(|s| PendingStageSpec {
                 name: s.name.clone(),
                 role: s.role.clone(),
-                task: s.prompt_template.replace("{task}", &self.task),
+                task: s.prompt_template.replace("{task}", task),
                 depends_on: s.depends_on.clone(),
+                loop_config: s.loop_to.clone(),
             })
             .collect();
 
         let mut spawned = Vec::new();
-        for stage in &ready {
-            let task = stage.prompt_template.replace("{task}", &self.task);
+        for stage in stages.iter().filter(|s| s.depends_on.is_empty()) {
+            let stage_task = stage.prompt_template.replace("{task}", task);
             let (response_tx, response_rx) = tokio::sync::oneshot::channel();
             let request = SessionToolRequest {
                 request: SessionTool::SpawnSession {
                     agent_name: stage.role.clone(),
-                    task,
+                    task: stage_task,
                     name: Some(stage.name.clone()),
                     role: Some(stage.role.clone()),
-                    group: Some(group.clone()),
+                    group: Some(group.to_string()),
                     persistent: Some(false),
                 },
                 response_tx: SessionResponseSender::new(response_tx),
@@ -213,98 +348,110 @@ impl AgentCrew {
             event_tx
                 .send(AgentEvent::SessionToolRequest(request))
                 .map_err(|e| ToolExecutionError::Custom(format!("Failed to spawn stage {}: {e}", stage.name)))?;
-            // Await the response to ensure the session is registered in the session manager
-            // before we send WaitForGroup. Without this, WaitForGroup can race ahead and
-            // see an empty group (`.all()` on empty iterator = true), firing immediately.
+            // Await to ensure the session is registered before WaitForGroup.
+            // Without this, WaitForGroup can race ahead and see an empty group
+            // (`.all()` on empty iterator = true), firing immediately.
             let _ = response_rx.await;
             spawned.push(stage.name.clone());
         }
 
-        // Register pending stages so the session manager can trigger them when deps complete
-        if !pending_specs.is_empty() {
-            let (response_tx, response_rx) = tokio::sync::oneshot::channel();
-            let register_request = SessionToolRequest {
-                request: SessionTool::RegisterPendingStages {
-                    group: group.clone(),
-                    pending_stages: pending_specs.clone(),
-                },
-                response_tx: SessionResponseSender::new(response_tx),
-            };
-            let _ = event_tx.send(AgentEvent::SessionToolRequest(register_request));
-            let _ = response_rx.await;
+        Ok((spawned, pending_specs))
+    }
+
+    /// Register pending stages so the session manager can trigger them when deps complete.
+    async fn register_pending_stages(
+        pending_specs: &[PendingStageSpec],
+        group: &str,
+        event_tx: &broadcast::Sender<AgentEvent>,
+    ) {
+        if pending_specs.is_empty() {
+            return;
         }
-
-        match self.mode {
-            CrewMode::Blocking => {
-                // Emit live output so LLM knows it's waiting
-                let _ = event_tx.send(AgentEvent::Update(crate::protocol::UpdateEvent::ToolCallUpdate {
-                    id: tool_use_id.clone(),
-                    content: crate::protocol::ContentChunk::Text(format!(
-                        "⏳ Running crew pipeline ({} stages)... Press ctrl+g to monitor progress.",
-                        self.stages.len()
-                    )),
-                }));
-
-                // Wait for all stages to complete via session manager
-                let (response_tx, response_rx) = tokio::sync::oneshot::channel();
-                let wait_request = SessionToolRequest {
-                    request: SessionTool::WaitForGroup { group: group.clone() },
-                    response_tx: SessionResponseSender::new(response_tx),
-                };
-                event_tx
-                    .send(AgentEvent::SessionToolRequest(wait_request))
-                    .map_err(|e| ToolExecutionError::Custom(format!("Failed to wait for group: {e}")))?;
-
-                // Await completion
-                let response = response_rx
-                    .await
-                    .map_err(|_e| ToolExecutionError::Custom("Group wait channel dropped".to_string()))?
-                    .map_err(ToolExecutionError::Custom)?;
-
-                // Parse and format consolidated results
-                let response_text = match &response.output.items[0] {
-                    ToolExecutionOutputItem::Text(text) => text.clone(),
-                    _ => "No text response".to_string(),
-                };
-
-                let results: serde_json::Value =
-                    serde_json::from_str(&response_text).unwrap_or_else(|_| serde_json::json!({"results": []}));
-
-                let formatted_results = if let Some(results_array) = results.get("results").and_then(|r| r.as_array()) {
-                    results_array
-                        .iter()
-                        .map(|r| {
-                            format!(
-                                "## {}\n\n{}",
-                                r.get("name").and_then(|n| n.as_str()).unwrap_or("Unknown"),
-                                r.get("result").and_then(|res| res.as_str()).unwrap_or("No result")
-                            )
-                        })
-                        .collect::<Vec<_>>()
-                        .join("\n\n---\n\n")
-                } else {
-                    "No results available".to_string()
-                };
-
-                Ok(ToolExecutionOutput::new(vec![ToolExecutionOutputItem::Text(format!(
-                    "Pipeline completed: {} stages finished.\n\n{}",
-                    self.stages.len(),
-                    formatted_results
-                ))]))
+        let (response_tx, response_rx) = tokio::sync::oneshot::channel();
+        let request = SessionToolRequest {
+            request: SessionTool::RegisterPendingStages {
+                group: group.to_string(),
+                pending_stages: pending_specs.to_vec(),
             },
-            // TODO: enable non-blocking mode
-            #[allow(unreachable_patterns)]
-            _ => {
-                let pending_names: Vec<&str> = pending_specs.iter().map(|s| s.name.as_str()).collect();
-                Ok(ToolExecutionOutput::new(vec![ToolExecutionOutputItem::Text(format!(
-                    "Pipeline started: {} stages spawned immediately: [{}]. {} stages pending dependencies: [{}]. Monitor with ctrl+g.",
-                    spawned.len(),
-                    spawned.join(", "),
-                    pending_names.len(),
-                    pending_names.join(", ")
-                ))]))
+            response_tx: SessionResponseSender::new(response_tx),
+        };
+        let _ = event_tx.send(AgentEvent::SessionToolRequest(request));
+        let _ = response_rx.await;
+    }
+
+    // ── Completion ──────────────────────────────────────────────────────
+
+    /// Block until all stages complete, then format consolidated results.
+    async fn await_blocking(
+        group: &str,
+        stage_count: usize,
+        tool_use_id: &str,
+        event_tx: &broadcast::Sender<AgentEvent>,
+    ) -> ToolExecutionResult {
+        let _ = event_tx.send(AgentEvent::Update(crate::protocol::UpdateEvent::ToolCallUpdate {
+            id: tool_use_id.to_string(),
+            content: crate::protocol::ContentChunk::Text(format!(
+                "⏳ Running crew pipeline ({stage_count} stages)... Press ctrl+g to monitor progress."
+            )),
+        }));
+
+        let (response_tx, response_rx) = tokio::sync::oneshot::channel();
+        let wait_request = SessionToolRequest {
+            request: SessionTool::WaitForGroup {
+                group: group.to_string(),
             },
+            response_tx: SessionResponseSender::new(response_tx),
+        };
+        event_tx
+            .send(AgentEvent::SessionToolRequest(wait_request))
+            .map_err(|e| ToolExecutionError::Custom(format!("Failed to wait for group: {e}")))?;
+
+        let response = response_rx
+            .await
+            .map_err(|_e| ToolExecutionError::Custom("Group wait channel dropped".to_string()))?
+            .map_err(ToolExecutionError::Custom)?;
+
+        let formatted = Self::format_group_results(&response.output);
+        Ok(ToolExecutionOutput::new(vec![ToolExecutionOutputItem::Text(format!(
+            "Pipeline completed: {stage_count} stages finished.\n\n{formatted}"
+        ))]))
+    }
+
+    /// Parse the JSON results envelope and format as markdown sections.
+    fn format_group_results(output: &ToolExecutionOutput) -> String {
+        let text = match output.items.first() {
+            Some(ToolExecutionOutputItem::Text(t)) => t.as_str(),
+            _ => return "No text response".to_string(),
+        };
+        let results: serde_json::Value =
+            serde_json::from_str(text).unwrap_or_else(|_| serde_json::json!({"results": []}));
+
+        match results.get("results").and_then(|r| r.as_array()) {
+            Some(arr) => arr
+                .iter()
+                .map(|r| {
+                    format!(
+                        "## {}\n\n{}",
+                        r.get("name").and_then(|n| n.as_str()).unwrap_or("Unknown"),
+                        r.get("result").and_then(|v| v.as_str()).unwrap_or("No result")
+                    )
+                })
+                .collect::<Vec<_>>()
+                .join("\n\n---\n\n"),
+            None => "No results available".to_string(),
         }
+    }
+
+    /// Build a summary for non-blocking mode (fire-and-forget).
+    fn non_blocking_summary(spawned: &[String], pending: &[PendingStageSpec]) -> ToolExecutionOutput {
+        let pending_names: Vec<&str> = pending.iter().map(|s| s.name.as_str()).collect();
+        ToolExecutionOutput::new(vec![ToolExecutionOutputItem::Text(format!(
+            "Pipeline started: {} stages spawned immediately: [{}]. {} stages pending dependencies: [{}]. Monitor with ctrl+g.",
+            spawned.len(),
+            spawned.join(", "),
+            pending_names.len(),
+            pending_names.join(", ")
+        ))])
     }
 
     pub fn get_canonical_name() -> CanonicalToolName {
@@ -547,5 +694,206 @@ mod tests {
         .unwrap();
         let spec = AgentCrew::generate_dynamic_tool_spec(&agents, &settings);
         assert!(role_enum(&spec).is_empty());
+    }
+
+    // ── Helpers for loop_to tests ───────────────────────────────────────
+
+    fn stage(name: &str, loop_to: Option<LoopConfig>) -> PipelineStage {
+        PipelineStage {
+            name: name.to_string(),
+            role: "default".to_string(),
+            prompt_template: "{task}".to_string(),
+            depends_on: vec![],
+            model: None,
+            loop_to,
+        }
+    }
+
+    fn lc(target: &str, max_iterations: u32, trigger: &str) -> Option<LoopConfig> {
+        Some(LoopConfig {
+            target: target.to_string(),
+            max_iterations,
+            trigger: trigger.to_string(),
+        })
+    }
+
+    fn crew(stages: Vec<PipelineStage>) -> AgentCrew {
+        AgentCrew {
+            task: "test".to_string(),
+            stages,
+            mode: CrewMode::Blocking,
+        }
+    }
+
+    // ── validate_loop_configs ───────────────────────────────────────────
+
+    #[test]
+    fn validate_loop_configs_target_does_not_exist() {
+        let c = crew(vec![stage("A", lc("nonexistent", 3, "RETRY"))]);
+        let err = c.validate_loop_configs().unwrap_err().to_string();
+        assert!(err.contains("nonexistent"), "expected missing target in: {err}");
+    }
+
+    #[test]
+    fn validate_loop_configs_self_loop() {
+        let c = crew(vec![stage("A", lc("A", 3, "RETRY"))]);
+        let err = c.validate_loop_configs().unwrap_err().to_string();
+        assert!(
+            err.contains("cannot loop_to itself"),
+            "expected self-loop error in: {err}"
+        );
+    }
+
+    #[test]
+    fn validate_loop_configs_short_trigger() {
+        let c = crew(vec![stage("A", lc("B", 3, "no")), stage("B", None)]);
+        let err = c.validate_loop_configs().unwrap_err().to_string();
+        assert!(err.contains("too short"), "expected short trigger error in: {err}");
+    }
+
+    #[test]
+    fn validate_loop_configs_zero_max_iterations() {
+        let c = crew(vec![stage("A", lc("B", 0, "RETRY")), stage("B", None)]);
+        let err = c.validate_loop_configs().unwrap_err().to_string();
+        assert!(err.contains("at least 1"), "expected zero iterations error in: {err}");
+    }
+
+    #[test]
+    fn validate_loop_configs_valid() {
+        let c = crew(vec![stage("A", lc("B", 3, "NEEDS_CHANGES")), stage("B", None)]);
+        assert!(c.validate_loop_configs().is_ok());
+    }
+
+    #[test]
+    fn validate_loop_configs_no_loops() {
+        let c = crew(vec![stage("A", None), stage("B", None)]);
+        assert!(c.validate_loop_configs().is_ok());
+    }
+
+    // ── detect_circular_loops ───────────────────────────────────────────
+
+    #[test]
+    fn detect_circular_loops_mutual() {
+        let stages = vec![stage("A", lc("B", 3, "RETRY")), stage("B", lc("A", 3, "RETRY"))];
+        let err = AgentCrew::detect_circular_loops(&stages).unwrap_err().to_string();
+        assert!(err.contains("Circular loop_to"), "expected circular error in: {err}");
+    }
+
+    #[test]
+    fn detect_circular_loops_one_direction_ok() {
+        let stages = vec![stage("A", lc("B", 3, "RETRY")), stage("B", None)];
+        assert!(AgentCrew::detect_circular_loops(&stages).is_ok());
+    }
+
+    #[test]
+    fn detect_circular_loops_none() {
+        let stages = vec![stage("A", None), stage("B", None)];
+        assert!(AgentCrew::detect_circular_loops(&stages).is_ok());
+    }
+
+    // ── clamp_loop_iterations ───────────────────────────────────────────
+
+    #[test]
+    fn clamp_loop_iterations_above_cap() {
+        let c = crew(vec![stage("A", lc("B", 20, "RETRY")), stage("B", None)]);
+        let clamped = c.clamp_loop_iterations();
+        assert_eq!(clamped[0].loop_to.as_ref().unwrap().max_iterations, 10);
+    }
+
+    #[test]
+    fn clamp_loop_iterations_below_cap() {
+        let c = crew(vec![stage("A", lc("B", 5, "RETRY")), stage("B", None)]);
+        let clamped = c.clamp_loop_iterations();
+        assert_eq!(clamped[0].loop_to.as_ref().unwrap().max_iterations, 5);
+    }
+
+    #[test]
+    fn clamp_loop_iterations_no_loop() {
+        let c = crew(vec![stage("A", None)]);
+        let clamped = c.clamp_loop_iterations();
+        assert!(clamped[0].loop_to.is_none());
+    }
+
+    // ── format_group_results ────────────────────────────────────────────
+
+    #[test]
+    fn format_group_results_valid_json() {
+        let json = serde_json::json!({
+            "results": [
+                {"name": "Research", "result": "Found 3 papers"},
+                {"name": "Code", "result": "Implemented feature"}
+            ]
+        });
+        let output = ToolExecutionOutput::new(vec![ToolExecutionOutputItem::Text(json.to_string())]);
+        let formatted = AgentCrew::format_group_results(&output);
+        assert!(formatted.contains("## Research"));
+        assert!(formatted.contains("Found 3 papers"));
+        assert!(formatted.contains("## Code"));
+        assert!(formatted.contains("Implemented feature"));
+    }
+
+    #[test]
+    fn format_group_results_empty_array() {
+        let json = serde_json::json!({"results": []});
+        let output = ToolExecutionOutput::new(vec![ToolExecutionOutputItem::Text(json.to_string())]);
+        let formatted = AgentCrew::format_group_results(&output);
+        assert!(formatted.is_empty(), "expected empty string, got: {formatted}");
+    }
+
+    #[test]
+    fn format_group_results_invalid_json() {
+        let output = ToolExecutionOutput::new(vec![ToolExecutionOutputItem::Text("not json".to_string())]);
+        let formatted = AgentCrew::format_group_results(&output);
+        // Invalid JSON falls through to the empty results array default, then empty join
+        assert!(formatted.is_empty() || formatted == "No results available" || !formatted.contains("##"));
+    }
+
+    #[test]
+    fn format_group_results_no_text_item() {
+        let output = ToolExecutionOutput::new(vec![ToolExecutionOutputItem::Json(serde_json::json!({}))]);
+        let formatted = AgentCrew::format_group_results(&output);
+        assert_eq!(formatted, "No text response");
+    }
+
+    #[test]
+    fn format_group_results_empty_output() {
+        let output = ToolExecutionOutput::new(vec![]);
+        let formatted = AgentCrew::format_group_results(&output);
+        assert_eq!(formatted, "No text response");
+    }
+
+    // ── non_blocking_summary ────────────────────────────────────────────
+
+    #[test]
+    fn non_blocking_summary_with_pending() {
+        let spawned = vec!["research".to_string(), "code".to_string()];
+        let pending = vec![PendingStageSpec {
+            name: "review".to_string(),
+            role: "reviewer".to_string(),
+            task: "review code".to_string(),
+            depends_on: vec!["code".to_string()],
+            loop_config: None,
+        }];
+        let output = AgentCrew::non_blocking_summary(&spawned, &pending);
+        let text = match &output.items[0] {
+            ToolExecutionOutputItem::Text(t) => t.as_str(),
+            _ => panic!("expected text"),
+        };
+        assert!(text.contains("2 stages spawned"));
+        assert!(text.contains("research"));
+        assert!(text.contains("code"));
+        assert!(text.contains("1 stages pending"));
+        assert!(text.contains("review"));
+    }
+
+    #[test]
+    fn non_blocking_summary_zero_pending() {
+        let spawned = vec!["A".to_string()];
+        let output = AgentCrew::non_blocking_summary(&spawned, &[]);
+        let text = match &output.items[0] {
+            ToolExecutionOutputItem::Text(t) => t.as_str(),
+            _ => panic!("expected text"),
+        };
+        assert!(text.contains("0 stages pending"));
     }
 }

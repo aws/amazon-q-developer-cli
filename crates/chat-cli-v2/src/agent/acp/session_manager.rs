@@ -1077,6 +1077,14 @@ impl SessionManager {
                             task: ps.task,
                             depends_on: ps.depends_on,
                             agent_name: ps.role,
+                            loop_config: ps
+                                .loop_config
+                                .map(|lc| crate::agent::acp::orchestration::types::LoopConfig {
+                                    target: lc.target,
+                                    max_iterations: lc.max_iterations,
+                                    trigger: lc.trigger,
+                                }),
+                            loop_iteration: 0,
                         });
                 }
                 self.send_subagent_list_update().await;
@@ -1151,6 +1159,8 @@ impl SessionManager {
                                 Some(&gname),
                                 false,
                                 deps,
+                                stage.loop_config.clone(),
+                                stage.loop_iteration,
                             )
                             .await;
                         if result.is_ok() {
@@ -1173,6 +1183,14 @@ impl SessionManager {
                     if session.status == SessionStatus::Terminated
                         && let Some(group) = session.group.clone()
                     {
+                        // Extract loop data from session before dropping the mutable borrow
+                        let loop_data = Self::check_loop_trigger(session);
+
+                        if let Some(data) = loop_data {
+                            self.enqueue_loop_iteration(&group, &data);
+                            self.spawn_ready_pending_stages(&group).await;
+                        }
+
                         let has_pending = self.groups.get(&group).is_some_and(|g| !g.pending_stages.is_empty());
                         let all_done = !has_pending
                             && self
@@ -1249,6 +1267,8 @@ impl SessionManager {
                         group.as_deref(),
                         persistent,
                         vec![],
+                        None,
+                        0,
                     )
                     .await;
                 if result.is_ok() {
@@ -1418,6 +1438,8 @@ impl SessionManager {
         group: Option<&str>,
         persistent: bool,
         depends_on: Vec<String>,
+        loop_config: Option<crate::agent::acp::orchestration::types::LoopConfig>,
+        loop_iteration: u32,
     ) -> Result<SpawnOrchestratedResult, sacp::Error> {
         // Determine group and series
         let group_name = group.unwrap_or("default").to_string();
@@ -1475,6 +1497,8 @@ impl SessionManager {
             persistent,
             depends_on,
             result: None,
+            loop_config,
+            loop_iteration,
         };
         self.orchestrated_sessions
             .insert(new_session_id.to_string(), orch_session);
@@ -1617,6 +1641,8 @@ impl SessionManager {
             persistent: old_session.persistent,
             depends_on: old_session.depends_on.clone(),
             result: None,
+            loop_config: old_session.loop_config.clone(),
+            loop_iteration: old_session.loop_iteration,
         };
         self.orchestrated_sessions
             .insert(new_session_id.to_string(), orch_session);
@@ -2039,18 +2065,165 @@ impl SessionManager {
         }
     }
 
-    /// Broadcast the current subagent list (active + pending) to all TUI sessions.
+    // ── Loop handling ─────────────────────────────────────────────────
+
+    /// Check whether a terminated session's output triggers a loop-back.
     ///
-    /// Sends `SUBAGENT_LIST_UPDATE` (`kiro.dev/subagent/list_update`) to every active ACP session.
-    /// The TUI uses this to update the crew monitor DAG and session list.
-    ///
-    /// # Payload
-    /// ```json
-    /// {
-    ///   "subagents": [{ "sessionId", "agentName", "initialQuery", "status", "group", "role" }],
-    ///   "pendingStages": [{ "name", "role", "group", "dependsOn" }]
-    /// }
-    /// ```
+    /// Returns `Some(LoopTriggerData)` if the trigger text appears in the tail
+    /// of the session's result and the iteration cap hasn't been reached.
+    /// Only inspects the last 500 bytes of output to avoid false positives from
+    /// trigger text embedded in feedback context from prior iterations.
+    fn check_loop_trigger(
+        session: &crate::agent::acp::orchestration::types::OrchestratedSession,
+    ) -> Option<crate::agent::acp::orchestration::types::LoopTriggerData> {
+        let cfg = session.loop_config.as_ref()?;
+        let result = session.result.as_ref()?;
+
+        if session.loop_iteration >= cfg.max_iterations {
+            info!(
+                stage = %session.name,
+                iteration = session.loop_iteration,
+                max = cfg.max_iterations,
+                "Loop max iterations reached, stopping"
+            );
+            return None;
+        }
+
+        // Only check the tail of the output to reduce false positives from
+        // trigger text appearing in injected feedback context.
+        let check_region = if result.len() > 500 {
+            // SAFETY: floor_char_boundary ensures we don't split a multi-byte char
+            let start = result.floor_char_boundary(result.len() - 500);
+            #[allow(clippy::string_slice)]
+            &result[start..]
+        } else {
+            result.as_str()
+        };
+
+        if !check_region.contains(&cfg.trigger) {
+            return None;
+        }
+
+        Some(crate::agent::acp::orchestration::types::LoopTriggerData {
+            loop_config: cfg.clone(),
+            iteration: session.loop_iteration,
+            session_name: session.name.clone(),
+            result_text: result.clone(),
+            session_task: session.task.clone(),
+            session_role: session.role.clone().unwrap_or_default(),
+            agent_name: session.agent_name.clone(),
+        })
+    }
+
+    /// Re-enqueue the target stage (with feedback) and the triggering stage
+    /// (with incremented iteration) into the group's pending list.
+    fn enqueue_loop_iteration(&mut self, group: &str, data: &crate::agent::acp::orchestration::types::LoopTriggerData) {
+        let cfg = &data.loop_config;
+
+        info!(
+            stage = %data.session_name,
+            target = %cfg.target,
+            iteration = data.iteration + 1,
+            max = cfg.max_iterations,
+            "Loop triggered, re-enqueuing target stage"
+        );
+
+        // Look up the target stage's original task and role from existing sessions
+        let target_task = self
+            .orchestrated_sessions
+            .values()
+            .find(|s| s.name == cfg.target && s.group.as_deref() == Some(group))
+            .map_or_else(|| cfg.target.clone(), |s| s.task.clone());
+
+        let target_role = self
+            .orchestrated_sessions
+            .values()
+            .find(|s| s.name == cfg.target && s.group.as_deref() == Some(group))
+            .and_then(|s| s.role.clone())
+            .unwrap_or_else(|| cfg.target.clone());
+
+        let loop_task = format!(
+            "{}\n\n---\n\n## Loop iteration {} (feedback from {})\n\n{}",
+            target_task,
+            data.iteration + 1,
+            data.session_name,
+            data.result_text
+        );
+
+        if let Some(g) = self.groups.get_mut(group) {
+            // Target stage (e.g., implementer): no deps, ready to run immediately
+            g.pending_stages
+                .push(crate::agent::acp::orchestration::types::PendingStage {
+                    name: cfg.target.clone(),
+                    role: target_role.clone(),
+                    task: loop_task,
+                    depends_on: vec![],
+                    agent_name: target_role,
+                    loop_config: None,
+                    loop_iteration: 0,
+                });
+            // Triggering stage (e.g., reviewer): depends on target, carries loop config forward
+            g.pending_stages
+                .push(crate::agent::acp::orchestration::types::PendingStage {
+                    name: data.session_name.clone(),
+                    role: data.session_role.clone(),
+                    task: data.session_task.clone(),
+                    depends_on: vec![cfg.target.clone()],
+                    agent_name: data.agent_name.clone(),
+                    loop_config: Some(crate::agent::acp::orchestration::types::LoopConfig {
+                        target: cfg.target.clone(),
+                        max_iterations: cfg.max_iterations,
+                        trigger: cfg.trigger.clone(),
+                    }),
+                    loop_iteration: data.iteration + 1,
+                });
+        }
+    }
+
+    /// Drain ready pending stages (those with empty `depends_on`) from a group
+    /// and spawn them as new sessions.
+    async fn spawn_ready_pending_stages(&mut self, group: &str) {
+        let ready: Vec<crate::agent::acp::orchestration::types::PendingStage> =
+            if let Some(g) = self.groups.get_mut(group) {
+                let r: Vec<_> = g
+                    .pending_stages
+                    .iter()
+                    .filter(|ps| ps.depends_on.is_empty())
+                    .cloned()
+                    .collect();
+                g.pending_stages.retain(|ps| !ps.depends_on.is_empty());
+                r
+            } else {
+                return;
+            };
+
+        let parent = self
+            .orchestrated_sessions
+            .values()
+            .find(|s| s.group.as_deref() == Some(group))
+            .and_then(|s| s.parent_session.clone());
+
+        let Some(parent_id) = parent else { return };
+
+        for stage in ready {
+            let _ = self
+                .handle_spawn_orchestrated(
+                    &parent_id,
+                    &stage.agent_name,
+                    &stage.task,
+                    Some(&stage.name),
+                    Some(&stage.role),
+                    Some(group),
+                    false,
+                    stage.depends_on,
+                    stage.loop_config,
+                    stage.loop_iteration,
+                )
+                .await;
+        }
+    }
+
+    /// Builds the `SubagentListUpdateNotification` and sends it to the TUI.
     ///
     /// Called after: session spawn, status change, DAG stage trigger, session termination.
     async fn send_subagent_list_update(&self) {
@@ -2072,6 +2245,9 @@ impl SessionManager {
                 group: s.group.clone(),
                 role: s.role.clone(),
                 depends_on: s.depends_on.clone(),
+                has_loop: s.loop_config.is_some(),
+                loop_iteration: s.loop_iteration,
+                loop_max_iterations: s.loop_config.as_ref().map_or(0, |lc| lc.max_iterations),
             })
             .collect();
 

@@ -64,6 +64,9 @@ export const CrewMonitorScreen: React.FC = () => {
       group: (session as any).group,
       isPending: session.status === 'pending',
       dependsOn: (session as any).dependsOn ?? [],
+      hasLoop: (session as any).hasLoop ?? false,
+      loopIteration: (session as any).loopIteration ?? 0,
+      loopMaxIterations: (session as any).loopMaxIterations ?? 0,
     }));
     // Build a lookup from name → created timestamp for stable tiebreaking
     const createdByName = new Map(

@@ -14,6 +14,9 @@ export interface Stage {
   isPending?: boolean;
   dependsOn?: string[];
   activeStatus?: string;
+  hasLoop?: boolean;
+  loopIteration?: number;
+  loopMaxIterations?: number;
 }
 
 export const mapSessionStatusToStageState = (

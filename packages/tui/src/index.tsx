@@ -267,9 +267,18 @@ const startInitialization = (resumePickerSessionId?: string) => {
           group: sub.group,
           role: sub.role,
           dependsOn: sub.dependsOn ?? [],
+          hasLoop: sub.hasLoop ?? false,
+          loopIteration: sub.loopIteration ?? 0,
+          loopMaxIterations: sub.loopMaxIterations ?? 0,
         } as any);
       } else {
-        state.addSession({ ...session, dependsOn: sub.dependsOn ?? [] } as any);
+        state.addSession({
+          ...session,
+          dependsOn: sub.dependsOn ?? [],
+          hasLoop: sub.hasLoop ?? false,
+          loopIteration: sub.loopIteration ?? 0,
+          loopMaxIterations: sub.loopMaxIterations ?? 0,
+        } as any);
       }
     });
 
