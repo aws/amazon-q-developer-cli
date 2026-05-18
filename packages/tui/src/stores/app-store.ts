@@ -651,6 +651,14 @@ interface BaseAppActions {
   }) => void;
   /** Mark a generation-phase entry as complete (transitions card to its post-write state). */
   markArtifactGenerationComplete: (path: string) => void;
+  /**
+   * Re-parse a tracked spec-artifact entry from disk. Called when the
+   * agent's write tool call finishes — the file is now fully flushed,
+   * so a fresh parse is more authoritative than whatever interim state
+   * the mid-stream parse captured. No-op when no entry is tracked for
+   * `path` (e.g. after the user closed the panel or switched engines).
+   */
+  reparseArtifactGeneration: (path: string) => void;
   /** Open the artifact view panel; loads the summary and sets `artifactViewOpen`. */
   openArtifactView: (
     featureName: string,
@@ -2219,7 +2227,20 @@ export const createAppStore = (props: AppStoreProps) => {
     setCurrentEffort: (currentEffort) => set({ currentEffort }),
     setCurrentAgent: (agent, options) => {
       const prevAgent = get().currentAgent;
-      set({ currentAgent: agent ? { name: agent.name } : null });
+      // The artifact-generation card belongs to the spec workflow's
+      // active agent. Switching agents (e.g. spec → kiro_planner →
+      // anything else) means any in-flight card is stale. Clear it.
+      // We only update the map when there's actually an agent change
+      // and an entry to clear, so no-op rerenders are avoided.
+      const isAgentChanging = prevAgent?.name !== agent?.name;
+      const hasGenerating =
+        Object.keys(get().artifactGenerating).length > 0;
+      set({
+        currentAgent: agent ? { name: agent.name } : null,
+        ...(isAgentChanging && hasGenerating
+          ? { artifactGenerating: {} }
+          : {}),
+      });
 
       // Trigger plan quality survey when switching away from planner
       // (the handoff moment — plan was presented and user approved it).
@@ -2876,7 +2897,18 @@ export const createAppStore = (props: AppStoreProps) => {
     },
 
     // UI actions
-    setMode: (mode) => set({ mode }),
+    setMode: (mode) => {
+      // The artifact-generation card is tied to the spec workflow.
+      // Clear it on any mode change so the user doesn't see stale
+      // generation state after switching to vibe mode (or away from
+      // spec mode in general). The open artifact-view panel is left
+      // alone — the user explicitly opened it and dismisses with Q.
+      set((state) =>
+        Object.keys(state.artifactGenerating).length === 0
+          ? { mode }
+          : { mode, artifactGenerating: {} }
+      );
+    },
 
     addSubagentSession: (info) => {
       set((state) => {
@@ -3216,13 +3248,17 @@ export const createAppStore = (props: AppStoreProps) => {
     // ── Spec artifact view actions ───────────────────────────
     notifyArtifactGenerationWrite: ({ path, featureName, artifact }) => {
       const now = Date.now();
-      // Eagerly mark the entry: we want the card to appear within
-      // 500 ms of the first write even if the load is slow.
+      // We render at most one generation card at a time. When a new
+      // write comes in for a different path, drop any prior entry —
+      // the user only ever sees the most-recently written artifact
+      // until the agent moves on.
+      //
+      // Same-path writes refresh the existing entry (which preserves
+      // the last good summary while parsing continues).
       set((state) => {
         const existing = state.artifactGenerating[path];
         return {
           artifactGenerating: {
-            ...state.artifactGenerating,
             [path]: existing
               ? {
                   ...existing,
@@ -3299,6 +3335,59 @@ export const createAppStore = (props: AppStoreProps) => {
           },
         };
       });
+    },
+
+    reparseArtifactGeneration: (path: string) => {
+      // Read the entry once to recover the (featureName, artifact) tuple
+      // without making the caller pass them in. If the entry was cleared
+      // before we got here (engine switch, panel teardown), bail out.
+      const entry = get().artifactGenerating[path];
+      if (!entry) return;
+      const { featureName, artifact } = entry;
+
+      void loadArtifactSummary(process.cwd(), featureName, artifact)
+        .then((res) => {
+          set((state) => {
+            const current = state.artifactGenerating[path];
+            // Re-check: another action could have cleared the entry
+            // (e.g. clearArtifactViewOnEngineSwitch) while we were
+            // waiting on the read.
+            if (!current) return state;
+
+            if (res.ok) {
+              return {
+                artifactGenerating: {
+                  ...state.artifactGenerating,
+                  [path]: {
+                    ...current,
+                    summary: res.summary,
+                    // Clear any mid-stream parse error: the post-flush
+                    // parse is authoritative.
+                    parseError: null,
+                  },
+                },
+              };
+            }
+
+            // Failed parse on a fully-flushed file — surface the error
+            // but keep whatever last-good summary the entry already has.
+            return {
+              artifactGenerating: {
+                ...state.artifactGenerating,
+                [path]: {
+                  ...current,
+                  parseError: describeLoadError(res.error),
+                },
+              },
+            };
+          });
+        })
+        .catch((err: unknown) => {
+          logger.error('[artifact-view] reparse threw', {
+            path,
+            err: err instanceof Error ? err.message : String(err),
+          });
+        });
     },
 
     openArtifactView: async (

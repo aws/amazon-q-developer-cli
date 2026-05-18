@@ -104,6 +104,8 @@ const ArtifactFooterHints: React.FC<{ view: OpenArtifactView }> = ({
       {dim(' · ')}
       {primary('R/D/T')} {dim('switch')}
       {dim(' · ')}
+      {primary('C')} {dim('continue')}
+      {dim(' · ')}
       {primary('Q')} {dim('close')}
     </Text>
   );

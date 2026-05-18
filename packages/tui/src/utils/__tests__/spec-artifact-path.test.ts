@@ -3,6 +3,7 @@ import {
   matchSpecArtifactPath,
   extractToolPath,
   isFileWriteToolName,
+  isWriteOperation,
 } from '../spec-artifact-path';
 
 describe('matchSpecArtifactPath', () => {
@@ -89,14 +90,52 @@ describe('extractToolPath', () => {
 });
 
 describe('isFileWriteToolName', () => {
-  it('accepts fs_write and Write', () => {
+  it('accepts the V1 alias and KAS native names', () => {
     expect(isFileWriteToolName('fs_write')).toBe(true);
     expect(isFileWriteToolName('Write')).toBe(true);
   });
 
+  it('accepts the multiplex KAS spec workflow names', () => {
+    // KAS spec workflow has been observed surfacing writes as `create`,
+    // `Edit`, or `fs_edit` rather than the single-purpose write tools.
+    expect(isFileWriteToolName('create')).toBe(true);
+    expect(isFileWriteToolName('Edit')).toBe(true);
+    expect(isFileWriteToolName('fs_edit')).toBe(true);
+  });
+
   it('rejects unrelated tool names', () => {
     expect(isFileWriteToolName('fs_read')).toBe(false);
-    expect(isFileWriteToolName('write')).toBe(false); // lowercase doesn't match
+    expect(isFileWriteToolName('write')).toBe(false); // case-sensitive
     expect(isFileWriteToolName('execute_bash')).toBe(false);
+    expect(isFileWriteToolName('Read')).toBe(false);
+  });
+});
+
+describe('isWriteOperation', () => {
+  it('returns true when args has no command field', () => {
+    // Single-purpose tools (fs_write / Write / create) don't carry a
+    // `command` arg; we should always treat them as writes.
+    expect(isWriteOperation({})).toBe(true);
+    expect(isWriteOperation({ path: 'foo.md' })).toBe(true);
+    expect(isWriteOperation(undefined)).toBe(true);
+  });
+
+  it('returns true for recognised write commands', () => {
+    expect(isWriteOperation({ command: 'create' })).toBe(true);
+    expect(isWriteOperation({ command: 'update' })).toBe(true);
+    expect(isWriteOperation({ command: 'replace' })).toBe(true);
+    expect(isWriteOperation({ command: 'write' })).toBe(true);
+    expect(isWriteOperation({ command: 'overwrite' })).toBe(true);
+  });
+
+  it('returns false for non-write commands on multiplex tools', () => {
+    expect(isWriteOperation({ command: 'delete' })).toBe(false);
+    expect(isWriteOperation({ command: 'move' })).toBe(false);
+    expect(isWriteOperation({ command: 'rename' })).toBe(false);
+  });
+
+  it('returns false for non-string command values', () => {
+    expect(isWriteOperation({ command: 42 } as any)).toBe(false);
+    expect(isWriteOperation({ command: true } as any)).toBe(false);
   });
 });

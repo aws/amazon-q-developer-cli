@@ -64,11 +64,67 @@ export function extractToolPath(
 }
 
 /**
+ * Recognised tool names that may write a file. We accept multiple
+ * variants so we stay compatible across agent engines:
+ *
+ *   - `fs_write` — V1 alias used historically.
+ *   - `Write`    — KAS native single-purpose write tool.
+ *   - `create`   — KAS spec workflow uses this lowercase variant
+ *                  with `args.command === 'create'` for new files.
+ *   - `Edit`/`fs_edit` — multiplex tools whose operation is given by
+ *                  `args.command` (e.g. `create`, `update`, `replace`).
+ *                  The caller must check `command` before treating it
+ *                  as a write; we handle that in `isWriteOperation`.
+ */
+const KNOWN_WRITE_TOOL_NAMES = new Set([
+  'fs_write',
+  'Write',
+  'create',
+  'Edit',
+  'fs_edit',
+]);
+
+/**
+ * Operation strings that imply the tool is producing/modifying file
+ * content (and therefore worth tracking as a generation event).
+ */
+const WRITE_COMMAND_VALUES = new Set([
+  'create',
+  'update',
+  'replace',
+  'write',
+  'overwrite',
+]);
+
+/**
  * True for tool names that the agent uses to write file content. We
- * include both the V1 alias (`fs_write`) and the KAS native name
- * (`Write`) to stay engine-portable, even though this feature is
- * KAS-only — the gating check happens at the listener layer.
+ * include the V1 alias (`fs_write`), the KAS native names (`Write`,
+ * `create`), and the multiplex `Edit` / `fs_edit` tools whose
+ * operation is selected via `args.command`.
+ *
+ * Some tools in this set (`Edit` / `fs_edit`) handle non-write
+ * operations too; the caller must combine this check with
+ * `isWriteOperation(args)` to decide whether the tool call is
+ * actually creating or replacing file content.
  */
 export function isFileWriteToolName(name: string): boolean {
-  return name === 'fs_write' || name === 'Write';
+  return KNOWN_WRITE_TOOL_NAMES.has(name);
+}
+
+/**
+ * True when the tool args either don't carry a `command` field (the
+ * single-purpose write tools `fs_write` / `Write` / `create`) or carry
+ * one of the recognised write operations. False when `command` is
+ * present but names a non-write op (e.g. `delete`, `move`).
+ *
+ * Pure / synchronous: relies only on the args object.
+ */
+export function isWriteOperation(
+  args: Record<string, unknown> | undefined
+): boolean {
+  if (!args) return true;
+  const cmd = args['command'];
+  if (cmd === undefined || cmd === null) return true;
+  if (typeof cmd !== 'string') return false;
+  return WRITE_COMMAND_VALUES.has(cmd);
 }

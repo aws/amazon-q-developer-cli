@@ -244,6 +244,17 @@ const wireUpHandlers = () => {
         artifact: match.artifact,
       });
 
+      // Single-card UX: when a different path takes over, the store
+      // drops any prior entry. Cancel any orphan idle timers so they
+      // don't fire `markArtifactGenerationComplete` on an entry that
+      // no longer exists.
+      for (const [path, t] of idleTimers) {
+        if (path !== match.absolutePath) {
+          clearTimeout(t);
+          idleTimers.delete(path);
+        }
+      }
+
       const existing = idleTimers.get(match.absolutePath);
       if (existing) clearTimeout(existing);
       const timer = setTimeout(() => {
@@ -251,6 +262,28 @@ const wireUpHandlers = () => {
         appStore.getState().markArtifactGenerationComplete(match.absolutePath);
       }, IDLE_TIMEOUT_MS);
       idleTimers.set(match.absolutePath, timer);
+    });
+
+    // On tool completion, re-parse the on-disk file. The mid-stream
+    // parses driven by `onArtifactWrite` may have observed a partially
+    // written buffer (missing closing fence on a code block, half a
+    // heading, etc.). The post-finish read is authoritative — by this
+    // point KAS has flushed its buffer to disk.
+    //
+    // We still leave the idle timer in place as a fallback for write
+    // tools that don't emit ToolCallFinished events, but cancel it
+    // here so the "complete" transition matches the actual finish
+    // event rather than waiting out the 2 s tail.
+    kiro.onArtifactFinish((match) => {
+      const store = appStore.getState();
+      store.reparseArtifactGeneration(match.absolutePath);
+      store.markArtifactGenerationComplete(match.absolutePath);
+
+      const pending = idleTimers.get(match.absolutePath);
+      if (pending) {
+        clearTimeout(pending);
+        idleTimers.delete(match.absolutePath);
+      }
     });
   } else {
     // Non-KAS engine: belt-and-braces clear in case state somehow
