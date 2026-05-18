@@ -25,13 +25,18 @@ import type {
 import { openEditorSync } from '../utils/editor.js';
 import { executeShellEscapeTTY } from '../utils/shell-escape.js';
 import { extractRpcErrorMessage } from '../utils/error-handling.js';
+import { Kiro } from '../kiro.js';
 import {
   describeSpecDocuments,
   findSpecFeature,
   listSpecFeatures,
   type SpecFeatureSummary,
 } from '../utils/spec-workspace.js';
-import { readFileSync, writeFileSync } from 'fs';
+import {
+  resolveArtifactPath,
+  type ArtifactKind,
+} from '../utils/spec-artifact-loader.js';
+import { readFileSync, writeFileSync, statSync } from 'fs';
 
 import { openTranscriptInPager } from '../utils/open-transcript.js';
 import {
@@ -771,33 +776,11 @@ const effectHandlers: Record<EffectName, EffectHandler> = {
     const trimmed = args.trim();
     const workspaceRoot = process.cwd();
 
-    // Selection menu when invoked without args. We pre-fetch the features
-    // here (not in the dispatcher) because the list is cheap to build and
-    // we want the shape to match the `inputType: 'selection'` contract
-    // without going through `getCommandOptions` (which is KAS backend
-    // driven and has no awareness of the on-disk .kiro/specs layout).
+    // No-args path: delegate to the shared `openSpecView` helper
+    // which handles both the empty-args feature picker and the
+    // `<name> [artifact]` direct-open path.
     if (!trimmed) {
-      const features = listSpecFeatures(workspaceRoot);
-      if (features.length === 0) {
-        ctx.showAlert(
-          'No specs found under .kiro/specs/. Use "/spec new <name>" to start one.',
-          'warning',
-          6000
-        );
-        return true;
-      }
-      ctx.setActiveCommand({
-        command: {
-          ...cmd,
-          meta: { ...cmd.meta, inputType: 'selection' as const },
-        },
-        options: features.map((f) => ({
-          value: f.featureName,
-          label: f.featureName,
-          description: describeSpecDocuments(f),
-        })),
-      });
-      return true;
+      return openSpecView(ctx, cmd, workspaceRoot, '');
     }
 
     // /spec new <name> — switch to spec mode, then nudge the agent to
@@ -853,37 +836,23 @@ const effectHandlers: Record<EffectName, EffectHandler> = {
       return true;
     }
 
-    // /spec <name> — resume work on an existing spec. Switch modes and
-    // point the agent at the feature's documents via a prompt. We
-    // deliberately don't call `_kiro/spec/resolveSession` here: the spec
-    // session tracker lives on the agent side, and letting the agent
-    // stay in its current ACP session (now in spec mode) is simpler and
-    // less disruptive than switching the TUI to a different sessionId.
-    const featureName = trimmed;
-    const feature = findSpecFeature(workspaceRoot, featureName);
-    if (!feature) {
-      ctx.showAlert(
-        `No spec found at .kiro/specs/${featureName}/`,
-        'error',
-        5000
-      );
-      return true;
+    // /spec view <name> [requirements|design|tasks] — explicit alias for
+    // the default action below. Kept so existing muscle memory and the
+    // tab-completion flow that surfaces `view` as a subcommand still work.
+    if (/^view(\s|$)/.test(trimmed)) {
+      const rest = trimmed.slice(4).trim();
+      // Strip the `view` prefix and fall through to the default-view
+      // handler with the remainder (which may be empty, in which case
+      // the picker fires; or `<name> [artifact]`, in which case we
+      // open the panel).
+      return openSpecView(ctx, cmd, workspaceRoot, rest);
     }
-    try {
-      await ctx.kiro.setMode('spec');
-    } catch (err) {
-      ctx.showAlert(
-        extractRpcErrorMessage(err, 'Failed to switch to spec mode'),
-        'error',
-        5000
-      );
-      return true;
-    }
-    ctx.setCurrentAgent({ name: 'spec' });
-    await ctx.sendMessage(
-      `Continue working on the "${featureName}" spec. The existing documents are: ${feature.documents.join(', ')}.`
-    );
-    return true;
+
+    // /spec <name> — default action: open the structured view panel for
+    // the named feature. The "continue work on this spec" path that
+    // used to live here is now triggered by pressing `c` inside the
+    // view panel (see useArtifactKeybinds).
+    return openSpecView(ctx, cmd, workspaceRoot, trimmed);
   },
 
   /** Copy last assistant response to system clipboard */
@@ -1403,6 +1372,122 @@ import {
 import { spawnSync } from 'child_process';
 
 /**
+ * Pick the most-recently-modified artifact among requirements/design/tasks
+ * under `.kiro/specs/<feature>/`. Returns null when none of the three
+ * artifact files exist.
+ *
+ * Used for `/spec view <feature>` (no explicit artifact arg) so the user
+ * lands on the most-active document by default.
+ */
+function pickMostRecentArtifact(
+  workspaceRoot: string,
+  featureName: string
+): ArtifactKind | null {
+  const candidates: ArtifactKind[] = ['requirements', 'design', 'tasks'];
+  let best: { kind: ArtifactKind; mtime: number } | null = null;
+  for (const kind of candidates) {
+    const path = resolveArtifactPath(workspaceRoot, featureName, kind);
+    try {
+      const s = statSync(path);
+      // Use mtimeMs so we can compare with simple > and don't lose
+      // sub-second precision (POSIX mtime in seconds is too coarse for
+      // generation events that arrive within the same second).
+      const mtime = s.mtimeMs;
+      if (!best || mtime > best.mtime) {
+        best = { kind, mtime };
+      }
+    } catch {
+      // File missing or unreadable: skip it.
+    }
+  }
+  return best?.kind ?? null;
+}
+
+/**
+ * Render the structured view panel for a spec.
+ *
+ * Shared between `/spec <name>` (default) and `/spec view <name>`. When
+ * `rest` is empty, surfaces a feature picker; otherwise parses
+ * `<name> [artifact]` and opens the panel directly.
+ *
+ * Returns `true` (the standard "effect handled the message" signal) in
+ * all cases — even when an alert is shown for an invalid feature name.
+ */
+async function openSpecView(
+  ctx: CommandContext,
+  cmd: SlashCommand,
+  workspaceRoot: string,
+  rest: string
+): Promise<boolean> {
+  if (!rest) {
+    const features = listSpecFeatures(workspaceRoot);
+    if (features.length === 0) {
+      ctx.showAlert(
+        'No specs found under .kiro/specs/. Use "/spec new <name>" to start one.',
+        'warning',
+        6000
+      );
+      return true;
+    }
+    ctx.setActiveCommand({
+      command: {
+        ...cmd,
+        meta: { ...cmd.meta, inputType: 'selection' as const },
+      },
+      options: features.map((f) => ({
+        // Re-enter as `/spec view <name>` so picker selection routes
+        // straight into this same handler.
+        value: `view ${f.featureName}`,
+        label: f.featureName,
+        description: describeSpecDocuments(f),
+      })),
+    });
+    return true;
+  }
+
+  const parts = rest.split(/\s+/);
+  const name = parts[0]!;
+  const explicitArtifact = parts[1];
+
+  const feature = findSpecFeature(workspaceRoot, name);
+  if (!feature) {
+    ctx.showAlert(`No spec found at .kiro/specs/${name}/`, 'error', 5000);
+    return true;
+  }
+
+  let artifact: ArtifactKind;
+  if (explicitArtifact !== undefined) {
+    if (
+      explicitArtifact !== 'requirements' &&
+      explicitArtifact !== 'design' &&
+      explicitArtifact !== 'tasks'
+    ) {
+      ctx.showAlert(
+        `Unknown artifact "${explicitArtifact}". Use one of: requirements, design, tasks.`,
+        'error',
+        5000
+      );
+      return true;
+    }
+    artifact = explicitArtifact;
+  } else {
+    const picked = pickMostRecentArtifact(workspaceRoot, name);
+    if (!picked) {
+      ctx.showAlert(
+        `No artifact files in .kiro/specs/${name}/ — generate requirements/design/tasks first.`,
+        'error',
+        5000
+      );
+      return true;
+    }
+    artifact = picked;
+  }
+
+  await ctx.openArtifactView(name, artifact);
+  return true;
+}
+
+/**
  * Resolve a spec session and invoke `runAllTasks` via the KAS ACP ext
  * methods.  The agent drives execution autonomously from there — the TUI
  * observes progress through the normal session-update stream.
@@ -1440,6 +1525,48 @@ async function runSpecFeature(
   }
 }
 
+/**
+ * Switch to spec mode and ask the agent to continue work on a feature.
+ *
+ * Extracted as a free function so the artifact-view `c` keybind can
+ * reuse the exact same path the slash command used to take. Keeping
+ * the wording stable matters: KAS's spec workflow keys off the prompt
+ * shape ("Continue working on the …") to know it's resuming an
+ * existing feature rather than starting a new one.
+ *
+ * Returns nothing; surfaces failures via `showAlert` so the caller
+ * doesn't have to handle errors.
+ */
+export interface ResumeSpecDeps {
+  kiro: Kiro;
+  setCurrentAgent: (agent: { name: string } | null) => void;
+  sendMessage: (content: string) => Promise<void> | void;
+  showAlert: (
+    message: string,
+    status: 'error' | 'success' | 'warning',
+    autoHideMs?: number
+  ) => void;
+}
+
+export async function resumeSpecFeature(
+  deps: ResumeSpecDeps,
+  feature: SpecFeatureSummary
+): Promise<void> {
+  try {
+    await deps.kiro.setMode('spec');
+  } catch (err) {
+    deps.showAlert(
+      extractRpcErrorMessage(err, 'Failed to switch to spec mode'),
+      'error',
+      5000
+    );
+    return;
+  }
+  deps.setCurrentAgent({ name: 'spec' });
+  await deps.sendMessage(
+    `Continue working on the "${feature.featureName}" spec. The existing documents are: ${feature.documents.join(', ')}.`
+  );
+}
 /**
  * Copy text to the system clipboard using platform-native tools.
  * Returns true if a clipboard tool was found and executed without error.

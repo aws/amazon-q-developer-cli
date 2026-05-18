@@ -2,6 +2,13 @@ import { createAcpClient } from './acp-client';
 import { logger } from './utils/logger';
 import { extractRpcErrorMessage } from './utils/error-handling';
 import { AgentEventType, type AgentStreamEvent } from './types/agent-events';
+import {
+  isFileWriteToolName,
+  isWriteOperation,
+  extractToolPath,
+  matchSpecArtifactPath,
+  type SpecArtifactPathMatch,
+} from './utils/spec-artifact-path';
 import type {
   SessionClient,
   ListSessionsResponse,
@@ -68,6 +75,16 @@ export class Kiro {
   private historyHandler?: (event: AgentStreamEvent) => void;
   private turnSummaryHandler?: (event: AgentStreamEvent) => void;
   private initNotificationHandler?: (event: AgentStreamEvent) => void;
+  private artifactWriteHandler?: (match: SpecArtifactPathMatch) => void;
+  private artifactFinishHandler?: (match: SpecArtifactPathMatch) => void;
+  /**
+   * Track in-flight write tool calls by id so we can correlate a
+   * `ToolCallFinished` event back to the spec-artifact path that the
+   * `ToolCall` carried. The `ToolCallFinished` payload is indexed only
+   * by id and does not include the original args.
+   */
+  private artifactWriteCallsById: Map<string, SpecArtifactPathMatch> =
+    new Map();
   private approvalHandler?: (event: AgentStreamEvent) => void;
   private globalUpdateUnsubscribe?: () => void;
   private pendingPrompt: Promise<void> | null = null;
@@ -253,6 +270,34 @@ export class Kiro {
     this.turnSummaryHandler = handler;
   }
 
+  /**
+   * Register a handler for agent-initiated writes to spec artifact files
+   * under `.kiro/specs/<feature>/{requirements,design,tasks}.md`. Fires
+   * once per `tool_call` notification whose tool name is a write tool
+   * and whose `args.path` matches the spec-artifact path pattern.
+   *
+   * The handler is engine-agnostic but the consuming layer (index.tsx)
+   * is responsible for KAS gating — V1 / V2-Rust never write the
+   * relevant tool calls in a way that should drive this UI, but we
+   * filter on engine at registration time as defence-in-depth.
+   */
+  onArtifactWrite(handler: (match: SpecArtifactPathMatch) => void): void {
+    this.artifactWriteHandler = handler;
+  }
+
+  /**
+   * Register a callback that fires once a tracked spec-artifact write
+   * tool call completes (i.e. when the agent's `ToolCallFinished`
+   * arrives for an id we previously saw write to a spec artifact).
+   *
+   * Use this to re-parse the on-disk artifact when the parser failed
+   * mid-stream — by `ToolCallFinished` the file has been fully flushed
+   * to disk and the second parse is reliable.
+   */
+  onArtifactFinish(handler: (match: SpecArtifactPathMatch) => void): void {
+    this.artifactFinishHandler = handler;
+  }
+
   async initialize(
     agentPath: string,
     extraAcpArgs: string[] = []
@@ -359,6 +404,48 @@ export class Kiro {
         ) {
           if (this.historyHandler) {
             this.historyHandler(event);
+          }
+        }
+        // Spec artifact write detection. KAS-gated at registration: in
+        // non-KAS engines no handler is attached so this branch is dead.
+        if (
+          event.type === AgentEventType.ToolCall &&
+          this.artifactWriteHandler
+        ) {
+          if (isFileWriteToolName(event.name) && isWriteOperation(event.args)) {
+            const path = extractToolPath(event.args);
+            if (path) {
+              const match = matchSpecArtifactPath(path, process.cwd());
+              if (match) {
+                // Log only on a successful spec-artifact match. Keeps the
+                // debug stream readable during agent streaming and avoids
+                // serialising args.argKeys for every unrelated ToolCall.
+                logger.debug('[kiro] spec-artifact write', {
+                  name: event.name,
+                  sessionId: event.sessionId,
+                  path,
+                  artifact: match.artifact,
+                  featureName: match.featureName,
+                });
+                // Track the in-flight call so we can re-parse on
+                // ToolCallFinished. Stored even when no finish handler
+                // is registered — the lookup is cheap and harmless.
+                this.artifactWriteCallsById.set(event.id, match);
+                this.artifactWriteHandler(match);
+              }
+            }
+          }
+        }
+        // Re-parse on tool completion so the final on-disk content
+        // becomes the source of truth (the mid-stream parse may have
+        // observed a half-written file with a missing closing fence,
+        // truncated heading, etc.). The store-side action is idempotent
+        // so a duplicate parse on the happy path is harmless.
+        if (event.type === AgentEventType.ToolCallFinished) {
+          const match = this.artifactWriteCallsById.get(event.id);
+          if (match) {
+            this.artifactWriteCallsById.delete(event.id);
+            this.artifactFinishHandler?.(match);
           }
         }
       }

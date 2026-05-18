@@ -44,6 +44,8 @@ import { Explorer } from '../ui/Explorer';
 import { CodePanel } from '../ui/CodePanel';
 import { SurveyPanel } from '../ui/SurveyPanel';
 import { SurveyPromptBar } from '../ui/SurveyPromptBar';
+import { ArtifactView } from '../ui/ArtifactView/index.js';
+import { ArtifactGenerationCard } from '../ui/ArtifactView/ArtifactGenerationCard.js';
 
 import {
   useNotificationState,
@@ -221,6 +223,7 @@ export const InlineLayout: React.FC = () => {
     knowledgeStatus,
     showCodePanel,
     codeData,
+    artifactViewOpen,
   } = useUIState();
   const {
     toggleToolOutputsExpanded,
@@ -834,6 +837,8 @@ export const InlineLayout: React.FC = () => {
 
         <ActivityTray />
 
+        <ArtifactGenerationCard />
+
         {surveyPrompt && (
           <SurveyPromptBar
             message={surveyPrompt.message}
@@ -859,6 +864,7 @@ export const InlineLayout: React.FC = () => {
               showDisplaySettingsPanel ||
               showKnowledgePanel ||
               showCodePanel ||
+              !!artifactViewOpen ||
               showSurveyPanel ||
               !!pendingApproval
                 ? undefined
@@ -915,6 +921,7 @@ export const InlineLayout: React.FC = () => {
                   showDisplaySettingsPanel ||
                   showKnowledgePanel ||
                   showCodePanel ||
+                  !!artifactViewOpen ||
                   showSurveyPanel
             }
           >
@@ -1049,6 +1056,7 @@ export const InlineLayout: React.FC = () => {
                 onRefresh={handleRefreshCodePanel}
               />
             )}
+            {artifactViewOpen && <ArtifactView />}
             {showSurveyPanel && (
               <SurveyPanel onClose={closeSurveyPanel} onSubmit={submitSurvey} />
             )}
@@ -1080,6 +1088,7 @@ export const InlineLayout: React.FC = () => {
                 !showDisplaySettingsPanel &&
                 !showKnowledgePanel &&
                 !showCodePanel &&
+                !artifactViewOpen &&
                 !showSurveyPanel &&
                 commandInputValue.length === 0 &&
                 exitSequence === 0

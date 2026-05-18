@@ -152,6 +152,8 @@ export const useUIState = () =>
       knowledgeStatus: state.knowledgeStatus,
       showCodePanel: state.showCodePanel,
       codeData: state.codeData,
+      // Spec artifact view
+      artifactViewOpen: state.artifactViewOpen,
     }))
   );
 
@@ -179,6 +181,12 @@ export const useUIActions = () =>
       reopenSettingsMenu: state.reopenSettingsMenu,
       setShowKnowledgePanel: state.setShowKnowledgePanel,
       setShowCodePanel: state.setShowCodePanel,
+      // Spec artifact view actions
+      closeArtifactView: state.closeArtifactView,
+      moveArtifactCursor: state.moveArtifactCursor,
+      toggleArtifactExpand: state.toggleArtifactExpand,
+      enterArtifactDetail: state.enterArtifactDetail,
+      leaveArtifactDetail: state.leaveArtifactDetail,
     }))
   );
 

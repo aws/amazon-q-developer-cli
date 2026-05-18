@@ -230,6 +230,78 @@ const wireUpHandlers = () => {
   kiro.onApprovalRequest((event) => {
     approvalHandler(event);
   });
+
+  // ── KAS-only wiring: spec artifact view ──
+  //
+  // Engine is fixed at process start (see slash-commands.ts comment),
+  // so we wire this once at startup. We still call
+  // `clearArtifactViewOnEngineSwitch` from any future engine-switch
+  // path as defence-in-depth.
+  if (process.env.KIRO_AGENT_ENGINE === 'kas') {
+    // Single in-flight idle timer — the store holds at most one
+    // artifact-generating entry at a time, so we never need more than
+    // one outstanding timer. We track the path it's keyed to so that
+    // a write to a different path (the agent moved on) cleanly cancels
+    // the prior timer instead of letting it fire on stale state.
+    let activeTimer: { path: string; t: ReturnType<typeof setTimeout> } | null =
+      null;
+    const IDLE_TIMEOUT_MS = 2000;
+
+    const clearTimer = () => {
+      if (activeTimer) {
+        clearTimeout(activeTimer.t);
+        activeTimer = null;
+      }
+    };
+
+    kiro.onArtifactWrite((match) => {
+      const store = appStore.getState();
+      store.notifyArtifactGenerationWrite({
+        path: match.absolutePath,
+        featureName: match.featureName,
+        artifact: match.artifact,
+      });
+
+      // Reset the idle timer on every write. If the prior timer was
+      // for a different path the store has already replaced the entry;
+      // cancelling avoids a `markArtifactGenerationComplete` call on
+      // the now-active entry.
+      clearTimer();
+      const path = match.absolutePath;
+      activeTimer = {
+        path,
+        t: setTimeout(() => {
+          activeTimer = null;
+          appStore.getState().markArtifactGenerationComplete(path);
+        }, IDLE_TIMEOUT_MS),
+      };
+    });
+
+    // On tool completion, re-parse the on-disk file. The mid-stream
+    // parses driven by `onArtifactWrite` may have observed a partially
+    // written buffer (missing closing fence on a code block, half a
+    // heading, etc.). The post-finish read is authoritative — by this
+    // point KAS has flushed its buffer to disk.
+    //
+    // We still leave the idle timer in place as a fallback for write
+    // tools that don't emit ToolCallFinished events, but cancel it
+    // here so the "complete" transition matches the actual finish
+    // event rather than waiting out the 2 s tail.
+    kiro.onArtifactFinish((match) => {
+      const store = appStore.getState();
+      store.reparseArtifactGeneration(match.absolutePath);
+      store.markArtifactGenerationComplete(match.absolutePath);
+
+      if (activeTimer && activeTimer.path === match.absolutePath) {
+        clearTimer();
+      }
+    });
+  } else {
+    // Non-KAS engine: belt-and-braces clear in case state somehow
+    // ended up populated (shouldn't happen on cold start).
+    appStore.getState().clearArtifactViewOnEngineSwitch();
+  }
+  // ── End KAS-only wiring ──
 };
 
 const startInitialization = (resumePickerSessionId?: string) => {
