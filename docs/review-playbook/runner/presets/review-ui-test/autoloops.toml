@@ -1,0 +1,25 @@
+# Single-role UI test preset for Knight Rider interactive testing.
+#
+# The worker drives the TUI directly via Knight Rider HTTP API —
+# sending keystrokes, reading the screen, capturing frames.
+# No probe scripts needed. No deferral to runbook. The agent IS the test.
+
+event_loop.max_iterations = 10
+event_loop.completion_event = "task.complete"
+event_loop.completion_promise = "LOOP_COMPLETE"
+event_loop.required_events = []
+
+backend.kind = "kiro"
+backend.command = "kiro-cli"
+backend.args = ["acp"]
+backend.timeout_ms = 1800000
+backend.trust_all_tools = true
+
+review.enabled = false
+
+memory.prompt_budget_chars = 8000
+harness.instructions_file = "harness.md"
+
+core.state_dir = ".autoloop"
+core.journal_file = ".autoloop/journal.jsonl"
+core.memory_file = ".autoloop/memory.jsonl"

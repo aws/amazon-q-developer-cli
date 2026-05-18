@@ -1551,6 +1551,14 @@ impl SessionManager {
                 },
                 Err(e) => {
                     error!("Failed to start orchestrated session {}: {}", new_sid, e);
+                    let msg = format!("[{} failed to start: {}]", session_name_clone, e);
+                    session_tx.deliver_subagent_result(&parent_sid, &msg).await;
+                    session_tx
+                        .update_session_status(&new_sid, SessionStatus::Terminated)
+                        .await;
+                    session_tx
+                        .trigger_pending_stages(&session_name_clone, &parent_sid)
+                        .await;
                 },
             }
         });

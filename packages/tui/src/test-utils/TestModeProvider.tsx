@@ -4,6 +4,7 @@ import * as fs from 'fs';
 import { AppStoreContext } from '../stores/app-store';
 import type { TestCommand, TestResponse } from './shared/ipc-types';
 import { TuiIpcConnection } from './shared/tui-ipc-connection';
+import { getMockSessionClient } from './MockSessionClient';
 
 interface TestModeProviderProps {
   children: React.ReactNode;
@@ -108,6 +109,14 @@ export const TestModeProvider: React.FC<TestModeProviderProps> = ({
         case 'FORCE_GC': {
           if (typeof Bun !== 'undefined') Bun.gc(true);
           return { kind: 'FORCE_GC' };
+        }
+
+        case 'MOCK_SESSION_UPDATE': {
+          const mockClient = getMockSessionClient();
+          if (!mockClient)
+            return { kind: 'ERROR', error: 'Mock client not available' };
+          mockClient.injectEvent(command.event);
+          return { kind: 'MOCK_SESSION_UPDATE' };
         }
 
         default:

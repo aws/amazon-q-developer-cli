@@ -180,6 +180,8 @@ pub enum Setting {
         props(scope = "global_only")
     )]
     ChatHasSeenLogo,
+    #[strum(message = "Show thinking/reasoning blocks in chat output (boolean, default: false; startup-only)")]
+    ChatShowThinking,
 }
 
 impl Setting {
@@ -255,6 +257,7 @@ impl AsRef<str> for Setting {
             Self::ChatAllowAsciiArt => "chat.allowAsciiArt",
             Self::ChatAllowIcons => "chat.allowIcons",
             Self::ChatHasSeenLogo => "chat.hasSeenLogo",
+            Self::ChatShowThinking => "chat.showThinking",
         }
     }
 }
@@ -331,6 +334,7 @@ impl TryFrom<&str> for Setting {
             "chat.allowAsciiArt" => Ok(Self::ChatAllowAsciiArt),
             "chat.allowIcons" => Ok(Self::ChatAllowIcons),
             "chat.hasSeenLogo" => Ok(Self::ChatHasSeenLogo),
+            "chat.showThinking" => Ok(Self::ChatShowThinking),
             _ => Err(DatabaseError::InvalidSetting(value.to_string())),
         }
     }

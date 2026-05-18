@@ -1,0 +1,13 @@
+name = "review-retest"
+completion = "task.complete"
+
+# Single role. The retester investigates findings whose evidence
+# disappeared (status: retest), determines if the bug was fixed or
+# moved, and verifies via code review and/or blackbox probe.
+[[role]]
+id = "retester"
+emits = ["task.complete"]
+prompt_file = "roles/retester.md"
+
+[handoff]
+"loop.start" = ["retester"]

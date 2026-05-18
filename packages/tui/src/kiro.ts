@@ -85,8 +85,10 @@ export class Kiro {
    */
   private artifactWriteCallsById: Map<string, SpecArtifactPathMatch> =
     new Map();
+  private approvalHandler?: (event: AgentStreamEvent) => void;
   private globalUpdateUnsubscribe?: () => void;
   private pendingPrompt: Promise<void> | null = null;
+  private _promptActive = false;
 
   get sessionId(): string | undefined {
     return this.sessionClient?.sessionId;
@@ -157,6 +159,14 @@ export class Kiro {
    */
   onInitNotification(handler: (event: AgentStreamEvent) => void): void {
     this.initNotificationHandler = handler;
+  }
+
+  /**
+   * Register a handler for approval requests that arrive outside of an active
+   * sendMessage() call — e.g. from background sessions spawned via /spawn.
+   */
+  onApprovalRequest(handler: (event: AgentStreamEvent) => void): void {
+    this.approvalHandler = handler;
   }
 
   onSubagentListUpdate(
@@ -371,6 +381,16 @@ export class Kiro {
         ) {
           this.initNotificationHandler(event);
         }
+        // Forward approval requests from background sessions (e.g. /spawn)
+        // so they surface in the UI even when no sendMessage() is active.
+        // Skip when a prompt is active — the per-message handler already covers it.
+        if (
+          event.type === AgentEventType.ApprovalRequest &&
+          this.approvalHandler &&
+          !this._promptActive
+        ) {
+          this.approvalHandler(event);
+        }
         // Forward historical content events (user messages, assistant text,
         // tool calls) so the store can populate the message list on resume.
         if (event.type === AgentEventType.TurnSummary) {
@@ -381,6 +401,7 @@ export class Kiro {
         if (
           event.type === AgentEventType.UserMessage ||
           event.type === AgentEventType.Content ||
+          event.type === AgentEventType.Thought ||
           event.type === AgentEventType.ToolCall ||
           event.type === AgentEventType.ToolCallUpdate ||
           event.type === AgentEventType.ToolCallFinished
@@ -542,7 +563,10 @@ export class Kiro {
         // before pending notification microtasks have called
         // broadcastStreamEvent.  Deferring the unsubscribe by one macrotask
         // gives those handlers time to deliver their events.
-        setTimeout(() => unsubscribe(), 0);
+        setTimeout(() => {
+          this._promptActive = false;
+          unsubscribe();
+        }, 0);
         fn();
       };
 
@@ -584,7 +608,11 @@ export class Kiro {
         }
       };
 
+      // Subscribe before setting the flag — if an event arrives between these
+      // two lines, double-delivery (both handlers fire) is harmless since the
+      // store's ApprovalRequest handler is idempotent. Lost delivery is not.
       const unsubscribe = this.sessionClient!.onUpdate(updateHandler);
+      this._promptActive = true;
 
       // Start initial-response timeout
       timeoutId = setTimeout(() => {

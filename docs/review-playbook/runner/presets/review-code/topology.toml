@@ -1,0 +1,12 @@
+name = "review-code"
+completion = "task.complete"
+
+# Single role, one-shot. The reviewer reads a code work item, applies the
+# listed techniques to the scoped files, and emits per-finding files.
+[[role]]
+id = "reviewer"
+emits = ["task.complete"]
+prompt_file = "roles/reviewer.md"
+
+[handoff]
+"loop.start" = ["reviewer"]

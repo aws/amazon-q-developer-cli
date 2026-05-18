@@ -347,6 +347,7 @@ export type MessageType =
       id: string;
       role: MessageRole.Model;
       content: string;
+      thinking?: string;
       agentName?: string;
       shellOutput?: boolean;
       standalone?: boolean;
@@ -1496,6 +1497,7 @@ export const createAppStore = (props: AppStoreProps) => {
     createStreamEventHandler: () => {
       let isBuffering = false;
       let bufferedContent = '';
+      let bufferedThinking = '';
 
       // Batching: accumulate content chunks and flush to the store
       // on a timer so Ink's render loop isn't starved by rapid-fire
@@ -1536,7 +1538,7 @@ export const createAppStore = (props: AppStoreProps) => {
       };
 
       const commitBufferedContent = () => {
-        if (!bufferedContent) return;
+        if (!bufferedContent && !bufferedThinking) return;
         set((state) => {
           const lastModelMsgIndex = state.messages.findLastIndex(
             (msg) => msg.role === MessageRole.Model
@@ -1548,6 +1550,7 @@ export const createAppStore = (props: AppStoreProps) => {
               messages[lastModelMsgIndex] = {
                 ...msg,
                 content: bufferedContent,
+                thinking: bufferedThinking || msg.thinking,
               };
               return { messages };
             }
@@ -1558,7 +1561,7 @@ export const createAppStore = (props: AppStoreProps) => {
 
       const flushContentToStore = () => {
         pendingContentFlush = null;
-        if (!bufferedContent) return;
+        if (!bufferedContent && !bufferedThinking) return;
 
         set((state) => {
           const lastMsg = state.messages[state.messages.length - 1];
@@ -1569,6 +1572,7 @@ export const createAppStore = (props: AppStoreProps) => {
               id: lastMsg.id,
               role: MessageRole.Model,
               content: bufferedContent,
+              thinking: bufferedThinking || lastMsg.thinking,
               agentName: lastMsg.agentName ?? state.currentAgent?.name,
             };
             return { messages };
@@ -1581,6 +1585,7 @@ export const createAppStore = (props: AppStoreProps) => {
                   id: lastContentEventId ?? crypto.randomUUID(),
                   role: MessageRole.Model,
                   content: bufferedContent,
+                  thinking: bufferedThinking || undefined,
                   agentName: state.currentAgent?.name,
                 },
               ],
@@ -1619,6 +1624,7 @@ export const createAppStore = (props: AppStoreProps) => {
             }
             // Reset buffer for the next assistant turn
             bufferedContent = '';
+            bufferedThinking = '';
             lastContentEventId = null;
 
             if (event.content.type === 'text') {
@@ -1652,6 +1658,19 @@ export const createAppStore = (props: AppStoreProps) => {
               }
             }
             break;
+          case AgentEventType.Thought:
+            // Thinking content — tracked separately for distinct rendering
+            if (event.content.type === 'text') {
+              bufferedThinking += event.content.text;
+              lastContentEventId = event.id;
+
+              if (!isBuffering) {
+                if (!pendingContentFlush) {
+                  pendingContentFlush = setTimeout(flushContentToStore, 16);
+                }
+              }
+            }
+            break;
           case AgentEventType.ToolCall:
             if (isBuffering && bufferedContent) {
               commitBufferedContent();
@@ -1666,6 +1685,7 @@ export const createAppStore = (props: AppStoreProps) => {
             // Reset buffer so the next Model message after this tool
             // doesn't repeat text from before the tool call.
             bufferedContent = '';
+            bufferedThinking = '';
             lastContentEventId = null;
 
             set((state) => {

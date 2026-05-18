@@ -1,0 +1,646 @@
+name: Review playbook (manual)
+
+# Manually-triggered workflow for running the bun/TUI code-safety review
+# playbook via autoloop + kiro-cli ACP.
+#
+# Architecture:
+#   1. expand    — resolve review IDs to a matrix
+#   2. build     — single job: compile chat_cli + TUI, upload as artifact
+#   3. review    — fan-out: download build, plan (cached), execute work items
+#   4. rollup    — download all findings, produce merged report
+#
+# Triggers: workflow_dispatch only. No PR / push / schedule.
+
+on:
+  workflow_dispatch:
+    inputs:
+      scope:
+        description: 'What to review'
+        required: false
+        type: choice
+        default: 'package'
+        options:
+          - 'changed'
+          - 'package'
+      reviews:
+        description: "'all' or comma-separated review ids (e.g. '04' or '04,07,11')"
+        required: false
+        default: 'all'
+      build:
+        description: 'What to build before blackbox probes'
+        required: false
+        type: choice
+        default: 'tui+rust'
+        options:
+          - 'none'
+          - 'tui'
+          - 'tui+rust'
+      dry-run:
+        description: 'Only run planners (skip workers)'
+        required: false
+        type: boolean
+        default: false
+      timeout-minutes:
+        description: 'Per-review job timeout in minutes'
+        required: false
+        default: '360'
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  # ------------------------------------------------------------------
+  # Expand: read reviews/ dir, resolve input to a matrix.
+  # ------------------------------------------------------------------
+  expand:
+    name: Resolve review matrix
+    runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.resolve.outputs.matrix }}
+      has-any: ${{ steps.resolve.outputs.has-any }}
+    steps:
+      - uses: actions/checkout@v6
+
+      - id: resolve
+        shell: bash
+        run: |
+          set -euo pipefail
+          input_reviews='${{ inputs.reviews }}'
+          all_files=(docs/review-playbook/[0-9][0-9]-*.md)
+
+          # Treat any file renamed to -disabled.md as opted out.
+          active=()
+          for f in "${all_files[@]}"; do
+            base=$(basename "$f" .md)
+            if [[ "$base" == *-disabled ]]; then continue; fi
+            id="${base%%-*}"
+            slug="${base#*-}"
+            active+=("${id}|${base}|${slug}")
+          done
+
+          # Filter by the inputs.reviews selector.
+          if [[ "$input_reviews" == "all" ]]; then
+            selected=("${active[@]}")
+          else
+            wanted=(${input_reviews//,/ })
+            selected=()
+            for a in "${active[@]}"; do
+              id="${a%%|*}"
+              for w in "${wanted[@]}"; do
+                w_padded=$(printf "%02d" "${w#0}" 2>/dev/null || echo "$w")
+                slug="${a##*|}"
+                if [[ "$id" == "$w" || "$id" == "$w_padded" || "$slug" == "$w" ]]; then
+                  selected+=("$a")
+                fi
+              done
+            done
+          fi
+
+          if [[ ${#selected[@]} -eq 0 ]]; then
+            echo "::warning::No reviews selected from input '$input_reviews'"
+            echo 'matrix={"include":[]}' >> "$GITHUB_OUTPUT"
+            echo 'has-any=false' >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          json='{"include":['
+          first=1
+          for a in "${selected[@]}"; do
+            id="${a%%|*}"
+            rest="${a#*|}"
+            base="${rest%%|*}"
+            slug="${rest##*|}"
+            if [[ $first -eq 0 ]]; then json+=","; fi
+            json+="{\"review-id\":\"$id\",\"review-base\":\"$base\",\"review-slug\":\"$slug\"}"
+            first=0
+          done
+          json+=']}'
+          echo "matrix=$json" >> "$GITHUB_OUTPUT"
+          echo "has-any=true" >> "$GITHUB_OUTPUT"
+          echo "Resolved ${#selected[@]} review(s): $json"
+
+  # ------------------------------------------------------------------
+  # Build: single job that compiles chat_cli + TUI, uploads artifact.
+  # ------------------------------------------------------------------
+  build:
+    name: Build
+    needs: expand
+    if: needs.expand.outputs.has-any == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: oven-sh/setup-bun@v2
+      - name: Cache bun dependencies
+        uses: actions/cache@v5
+        with:
+          path: ~/.bun/install/cache
+          key: bun-${{ runner.os }}-${{ hashFiles('bun.lock') }}
+          restore-keys: bun-${{ runner.os }}-
+
+      - uses: ./.github/actions/codeartifact-login
+        continue-on-error: true
+      - name: CodeArtifact login (secret fallback)
+        shell: bash
+        env:
+          CODEARTIFACT_TOKEN: ${{ secrets.CODEARTIFACT_TOKEN }}
+        run: |
+          if [[ -n "$CODEARTIFACT_TOKEN" ]]; then
+            REGISTRY="kiro-agent-273221486557.d.codeartifact.us-west-2.amazonaws.com/npm/npm-packages"
+            printf '@kiro:registry=https://%s/\n//%s/:always-auth=true\n//%s/:_authToken=%s\n' \
+              "$REGISTRY" "$REGISTRY" "$REGISTRY" "$CODEARTIFACT_TOKEN" > .npmrc
+          fi
+      - name: Install TS dependencies
+        run: bun install
+
+      - name: Install Linux build deps
+        if: inputs.build != 'none'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y -qq \
+            build-essential pkg-config jq dpkg curl wget zstd cmake clang \
+            libssl-dev libgtk-3-dev libayatana-appindicator3-dev librsvg2-dev \
+            libdbus-1-dev libwebkit2gtk-4.1-dev libjavascriptcoregtk-4.1-dev \
+            valac libibus-1.0-dev libglib2.0-dev sqlite3 libxdo-dev \
+            protobuf-compiler libfuse2
+
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Cache cargo
+        uses: actions/cache@v5
+        with:
+          path: |
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
+          key: cargo-release-${{ runner.os }}-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            cargo-review-${{ runner.os }}-
+            cargo-e2e-${{ runner.os }}-
+
+      - name: Build chat_cli
+        run: cargo build -p chat_cli
+
+      - name: Build twinki
+        if: inputs.build != 'none'
+        run: bun run build
+        working-directory: packages/twinki/packages/twinki
+
+      - name: Build TUI
+        if: inputs.build != 'none'
+        run: bun run build
+        working-directory: packages/tui
+
+      - name: Upload build artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: review-build
+          retention-days: 1
+          path: |
+            target/debug/chat_cli
+            packages/twinki/packages/twinki/dist/
+            packages/tui/dist/
+
+  # ------------------------------------------------------------------
+  # Review: one job per review id. Downloads build, plans, executes.
+  # ------------------------------------------------------------------
+  review:
+    name: Review ${{ matrix.review-id }} (${{ matrix.review-slug }})
+    needs: [expand, build]
+    if: needs.expand.outputs.has-any == 'true'
+    strategy:
+      fail-fast: false
+      max-parallel: 1
+      matrix: ${{ fromJson(needs.expand.outputs.matrix) }}
+    runs-on: ubuntu-latest
+    timeout-minutes: ${{ fromJSON(inputs.timeout-minutes) }}
+
+    env:
+      CI: '1'
+      KIRO_API_KEY: ${{ secrets.KIRO_REVIEW_PAT }}
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      KIRO_REVIEW_ID: ${{ matrix.review-id }}
+      KIRO_REVIEW_BASE: ${{ matrix.review-base }}
+      KIRO_SCOPE: ${{ inputs.scope }}
+      KIRO_BUILD: ${{ inputs.build }}
+      KIRO_DRY_RUN: ${{ inputs.dry-run }}
+
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        continue-on-error: true
+        with:
+          role-to-assume: arn:aws:iam::551670267384:role/KiroCLIReviewerQueryRole
+          aws-region: us-east-1
+
+      # ----- Download pre-built artifacts ----------------------------
+      - name: Download build artifact
+        uses: actions/download-artifact@v8
+        with:
+          name: review-build
+
+      - name: Make chat_cli executable and shim onto PATH
+        shell: bash
+        run: |
+          chmod +x target/debug/chat_cli
+          mkdir -p "$HOME/.local/bin"
+          ln -sf "$GITHUB_WORKSPACE/target/debug/chat_cli" "$HOME/.local/bin/kiro-cli"
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+          PATH="$HOME/.local/bin:$PATH" kiro-cli --version
+
+      # ----- bun + autoloop ------------------------------------------
+      - uses: oven-sh/setup-bun@v2
+      - name: Cache npm global
+        uses: actions/cache@v5
+        with:
+          path: ~/.npm
+          key: npm-global-${{ runner.os }}-autoloop-0.7.0
+      - name: Install autoloop
+        run: |
+          npm install -g @mobrienv/autoloop@0.7.0
+          autoloop --help | head -5
+
+      # ----- Knight Rider sidecar (LLM-drivable TUI) ------------------
+      - uses: ./.github/actions/codeartifact-login
+        if: inputs.build != 'none' && inputs.dry-run != true
+        continue-on-error: true
+        with:
+          restore-role-arn: arn:aws:iam::551670267384:role/KiroCLIReviewerQueryRole
+          restore-region: us-east-1
+      - name: CodeArtifact login (secret fallback)
+        if: inputs.build != 'none' && inputs.dry-run != true
+        shell: bash
+        env:
+          CODEARTIFACT_TOKEN: ${{ secrets.CODEARTIFACT_TOKEN }}
+        run: |
+          if [[ -n "$CODEARTIFACT_TOKEN" ]]; then
+            REGISTRY="kiro-agent-273221486557.d.codeartifact.us-west-2.amazonaws.com/npm/npm-packages"
+            printf '@kiro:registry=https://%s/\n//%s/:always-auth=true\n//%s/:_authToken=%s\n' \
+              "$REGISTRY" "$REGISTRY" "$REGISTRY" "$CODEARTIFACT_TOKEN" > .npmrc
+          fi
+
+      - name: Install TUI dependencies for Knight Rider
+        if: inputs.build != 'none' && inputs.dry-run != true
+        run: bun install
+
+      - name: Start Knight Rider sidecar
+        if: inputs.build != 'none' && inputs.dry-run != true
+        shell: bash
+        run: |
+          cd packages/tui
+          nohup bun run knight-rider --out "$GITHUB_WORKSPACE/.knight-rider-frames" \
+            > /tmp/knight-rider.log 2>&1 &
+          echo $! > /tmp/knight-rider.pid
+          echo "Knight Rider PID: $(cat /tmp/knight-rider.pid)"
+          # Wait for ready (up to 30s)
+          for i in $(seq 1 30); do
+            if curl -sf http://localhost:3001/api/status | grep -q '"ready"'; then
+              echo "✅ Knight Rider ready"
+              exit 0
+            fi
+            sleep 1
+          done
+          echo "::warning::Knight Rider did not become ready within 30s"
+          cat /tmp/knight-rider.log | tail -20
+        env:
+          KIRO_AGENT_PATH: ${{ github.workspace }}/target/debug/chat_cli
+
+      # ----- plan cache ----------------------------------------------
+      - name: Compute scope fingerprint
+        id: scope
+        shell: bash
+        run: |
+          fp=$(find packages -type f \( -name '*.ts' -o -name '*.tsx' \) \
+            -not -path '*/node_modules/*' \
+            -not -path '*/__tests__/*' \
+            -not -path '*/dist/*' \
+            -not -path '*/build/*' \
+            -not -path '*/generated/*' \
+            -not -path '*/examples/*' \
+            -not -name '*.test.*' \
+            -not -name '*.vitest.*' \
+            -not -name '*.spec.*' \
+            -print0 2>/dev/null | sort -z | xargs -0 sha256sum | sha256sum | cut -d' ' -f1)
+          echo "ts-hash=$fp" >> "$GITHUB_OUTPUT"
+          echo "scope ts-hash: $fp"
+
+      - name: Cache review plan
+        id: plan-cache
+        uses: actions/cache@v5
+        with:
+          path: .autoloop/plans/${{ matrix.review-id }}
+          key: review-plan-v1-${{ matrix.review-id }}-${{ hashFiles(format('docs/review-playbook/{0}.md', matrix.review-base)) }}-${{ steps.scope.outputs.ts-hash }}-${{ inputs.scope }}
+          restore-keys: |
+            review-plan-v1-${{ matrix.review-id }}-${{ hashFiles(format('docs/review-playbook/{0}.md', matrix.review-base)) }}-
+            review-plan-v1-${{ matrix.review-id }}-
+
+      # ----- planner (runs on cache miss, or always if scope=changed) -
+      - name: Plan
+        if: steps.plan-cache.outputs.cache-hit != 'true' || inputs.scope == 'changed'
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p .autoloop/plans/${{ matrix.review-id }}/work
+          case "${{ inputs.scope }}" in
+            package)
+              directive="Plan Review ${{ matrix.review-id }} (${{ matrix.review-slug }}) against the whole bun/TUI codebase. Scope: every TypeScript file under packages/ excluding node_modules, tests, dist, build, generated, examples. Playbook file: docs/review-playbook/${{ matrix.review-base }}.md. Write work items to .autoloop/plans/${{ matrix.review-id }}/work/."
+              ;;
+            changed)
+              git diff --name-only origin/main...HEAD > .autoloop/changed-files.txt || git diff --name-only HEAD~1...HEAD > .autoloop/changed-files.txt
+              directive="Plan Review ${{ matrix.review-id }} (${{ matrix.review-slug }}) against the files listed in .autoloop/changed-files.txt. Scope is limited to those changed files that match the review's declared scope. Playbook file: docs/review-playbook/${{ matrix.review-base }}.md. Write work items to .autoloop/plans/${{ matrix.review-id }}/work/."
+              ;;
+          esac
+          autoloop run docs/review-playbook/runner/presets/review-planner \
+            -b kiro "$directive"
+          # Autoloop writes to {{STATE_DIR}}/work/ (its per-run scratchpad).
+          # Copy work items to the cached plan path if they landed there instead.
+          for run_dir in .autoloop/runs/*/work; do
+            if [[ -d "$run_dir" ]]; then
+              cp -n "$run_dir"/*.md .autoloop/plans/${{ matrix.review-id }}/work/ 2>/dev/null || true
+            fi
+          done
+
+      - name: List planned work items
+        shell: bash
+        run: |
+          find .autoloop/plans/${{ matrix.review-id }}/work -maxdepth 1 -name '*.md' | sort
+
+      - name: Un-defer work items with available probes
+        shell: bash
+        run: |
+          planwork=".autoloop/plans/${{ matrix.review-id }}/work"
+          shopt -s nullglob
+          for wi in "$planwork"/*.md; do
+            if grep -q '^defer: runbook' "$wi" 2>/dev/null; then
+              # Match probe name from the work item filename (e.g. 01-resize-storm-blackbox → resize-storm.ts)
+              base=$(basename "$wi" .md)
+              probe_name=$(echo "$base" | sed 's/^[0-9]*-//; s/-blackbox.*//').ts
+              probe_path="packages/tui/scripts/probes/$probe_name"
+              if [[ -f "$probe_path" ]]; then
+                echo "Un-deferring $base — probe $probe_path exists"
+                sed -i '/^defer: runbook/d' "$wi"
+                # Ensure harness is ad-hoc and add probe path
+                if ! grep -q '^harness:' "$wi"; then
+                  sed -i "/^kind:/a harness: ad-hoc" "$wi"
+                else
+                  sed -i "s/^harness:.*/harness: ad-hoc/" "$wi"
+                fi
+                if ! grep -q '^probe:' "$wi"; then
+                  sed -i "/^harness:/a probe: $probe_path" "$wi"
+                fi
+              fi
+            fi
+          done
+          shopt -u nullglob
+
+      # ----- workers (skip if dry-run) -------------------------------
+      - name: Execute work items
+        if: inputs.dry-run != true
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p docs/review-playbook/runner/findings
+          planwork=".autoloop/plans/${{ matrix.review-id }}/work"
+          shopt -s nullglob
+          files=("$planwork"/*.md)
+          shopt -u nullglob
+          if [[ ${#files[@]} -eq 0 ]]; then
+            echo "::warning::No work items found in $planwork"
+            exit 0
+          fi
+          for wi in "${files[@]}"; do
+            base=$(basename "$wi" .md)
+            case "$base" in
+              _manifest|_done) continue ;;
+            esac
+            kind=$(grep -m1 '^kind:' "$wi" | awk '{print $2}' || echo "code")
+            preset_dir="docs/review-playbook/runner/presets/review-${kind:-code}"
+            if [[ ! -d "$preset_dir" ]]; then
+              echo "::warning::No preset for kind=$kind; skipping $base"
+              continue
+            fi
+            echo "::group::Execute $base (kind=$kind)"
+            prompt=$(cat "$wi")
+            autoloop run "$preset_dir" -b kiro "$prompt" || true
+            echo "::endgroup::"
+          done
+
+      - name: Collect findings
+        if: inputs.dry-run != true
+        shell: bash
+        run: |
+          mkdir -p docs/review-playbook/runner/findings
+          # Copy from bare findings/ at repo root (agent writes here)
+          if [[ -d findings ]]; then
+            cp -n findings/*.md docs/review-playbook/runner/findings/ 2>/dev/null || true
+          fi
+          # Copy from autoloop scratchpad
+          for run_dir in .autoloop/runs/*/findings; do
+            if [[ -d "$run_dir" ]]; then
+              cp -n "$run_dir"/*.md docs/review-playbook/runner/findings/ 2>/dev/null || true
+            fi
+          done
+          # Report what we found
+          count=$(find docs/review-playbook/runner/findings -name '*.md' ! -name '.gitkeep*' | wc -l | tr -d ' ')
+          echo "Collected $count finding(s)"
+
+      - name: Validate and triage findings
+        if: inputs.dry-run != true
+        shell: bash
+        run: |
+          findings=$(grep -rl '^status: open' docs/review-playbook/runner/findings/ 2>/dev/null || true)
+          count=$(echo "$findings" | grep -c . || echo 0)
+          if [[ "$count" -eq 0 ]]; then
+            echo "No open findings to validate"
+            exit 0
+          fi
+          echo "Validating $count open finding(s) one at a time..."
+          triaged=0
+          for f in $findings; do
+            basename=$(basename "$f")
+            echo "--- Validating: $basename ---"
+            autoloop run docs/review-playbook/runner/presets/review-validate \
+              -b kiro "$basename" || true
+            # Check if triage was added
+            if grep -q "## Triage" "$f" 2>/dev/null; then
+              triaged=$((triaged + 1))
+            fi
+          done
+          echo "Triage complete: $triaged/$count findings enriched"
+
+      - name: Retest findings with missing evidence
+        if: inputs.dry-run != true
+        shell: bash
+        run: |
+          retests=$(grep -rl '^status: retest' docs/review-playbook/runner/findings/ 2>/dev/null || true)
+          count=$(echo "$retests" | grep -c . || echo 0)
+          if [[ "$count" -eq 0 ]]; then
+            echo "No findings need retesting"
+            exit 0
+          fi
+          echo "Retesting $count finding(s)..."
+          for f in $retests; do
+            basename=$(basename "$f")
+            echo "--- Retesting: $basename ---"
+            autoloop run docs/review-playbook/runner/presets/review-retest \
+              -b kiro "$basename" || true
+          done
+
+      # ----- Knight Rider teardown ------------------------------------
+      - name: Stop Knight Rider
+        if: always() && inputs.build != 'none' && inputs.dry-run != true
+        shell: bash
+        run: |
+          if [[ -f /tmp/knight-rider.pid ]]; then
+            kill "$(cat /tmp/knight-rider.pid)" 2>/dev/null || true
+            rm -f /tmp/knight-rider.pid
+          fi
+          pkill -f "knight-rider" 2>/dev/null || true
+          frames=$(find .knight-rider-frames -name '*.html' 2>/dev/null | wc -l | tr -d ' ')
+          echo "Knight Rider captured ${frames:-0} frame(s)"
+        continue-on-error: true
+
+      # ----- artifact upload -----------------------------------------
+      - name: Upload findings artifact
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: findings-${{ matrix.review-id }}
+          path: |
+            docs/review-playbook/runner/findings/
+            .autoloop/plans/${{ matrix.review-id }}/work/
+          if-no-files-found: warn
+          retention-days: 14
+
+      - name: Upload Knight Rider frames
+        if: always() && inputs.build != 'none' && inputs.dry-run != true
+        uses: actions/upload-artifact@v7
+        with:
+          name: knight-rider-${{ matrix.review-id }}
+          path: .knight-rider-frames/
+          if-no-files-found: ignore
+          retention-days: 14
+
+      - name: Per-review summary
+        if: always()
+        shell: bash
+        run: |
+          work_items=$(find .autoloop/plans/${{ matrix.review-id }}/work -maxdepth 1 -name '*.md' 2>/dev/null | grep -v _manifest | grep -v _done | wc -l | tr -d ' ')
+          findings=$(find docs/review-playbook/runner/findings -maxdepth 1 -name '${{ matrix.review-id }}-*.md' ! -name '*-done.md' 2>/dev/null | wc -l | tr -d ' ')
+          done_markers=$(find docs/review-playbook/runner/findings -maxdepth 1 -name '${{ matrix.review-id }}-*-done.md' 2>/dev/null | wc -l | tr -d ' ')
+          cache_status=$(if [[ "${{ steps.plan-cache.outputs.cache-hit }}" == "true" ]]; then echo "hit"; else echo "miss"; fi)
+          {
+            echo "## Review ${{ matrix.review-id }} (${{ matrix.review-slug }})"
+            echo ""
+            echo "| item | value |"
+            echo "|------|-------|"
+            echo "| status | ${{ job.status }} |"
+            echo "| work items planned | $work_items |"
+            echo "| findings emitted | $findings |"
+            echo "| done markers | $done_markers |"
+            echo "| plan cache | $cache_status |"
+            echo "| dry-run | ${{ inputs.dry-run }} |"
+            echo "| commit | \`${{ github.sha }}\` |"
+            echo ""
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  # ------------------------------------------------------------------
+  # Rollup: merge all review artifacts into a single report.
+  # ------------------------------------------------------------------
+  rollup:
+    name: Rollup
+    needs: [build, review]
+    if: always() && needs.expand.outputs.has-any == 'true' && inputs.dry-run != true
+    runs-on: ubuntu-latest
+    env:
+      KIRO_API_KEY: ${{ secrets.KIRO_REVIEW_PAT }}
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        continue-on-error: true
+        with:
+          role-to-assume: arn:aws:iam::551670267384:role/KiroCLIReviewerQueryRole
+          aws-region: us-east-1
+
+      - name: Download build artifact
+        uses: actions/download-artifact@v8
+        with:
+          name: review-build
+
+      - name: Shim chat_cli as kiro-cli on PATH
+        shell: bash
+        run: |
+          chmod +x target/debug/chat_cli
+          mkdir -p "$HOME/.local/bin"
+          ln -sf "$GITHUB_WORKSPACE/target/debug/chat_cli" "$HOME/.local/bin/kiro-cli"
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+          PATH="$HOME/.local/bin:$PATH" kiro-cli --version
+
+      - uses: actions/download-artifact@v8
+        with:
+          pattern: findings-*
+          path: /tmp/artifacts
+          merge-multiple: false
+
+      - name: Collate findings
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p docs/review-playbook/runner/findings
+          # Find all finding .md files in the downloaded artifacts, regardless of nesting
+          find /tmp/artifacts -name '*.md' -path '*/findings/*' ! -name '.gitkeep*' -exec cp -n {} docs/review-playbook/runner/findings/ \; 2>/dev/null || true
+          count=$(find docs/review-playbook/runner/findings -name '*.md' ! -name '.gitkeep*' | wc -l | tr -d ' ')
+          echo "Collated $count finding(s)"
+          ls docs/review-playbook/runner/findings/ | head -40 || true
+
+      - name: Run rollup prompt via kiro-cli
+        shell: bash
+        run: |
+          {
+            cat docs/review-playbook/runner/rollup.md
+            echo ""
+            echo "Scan docs/review-playbook/runner/findings/ and produce docs/review-playbook/runner/findings/_rollup.md following the template in rollup.md."
+          } > /tmp/rollup-prompt.md
+          kiro-cli chat --no-interactive --trust-all-tools "$(cat /tmp/rollup-prompt.md)" || true
+
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: rollup
+          path: docs/review-playbook/runner/findings/_rollup.md
+          if-no-files-found: warn
+          retention-days: 30
+
+      - name: Final summary
+        if: always()
+        shell: bash
+        run: |
+          {
+            echo "# Review playbook — full rollup"
+            echo ""
+            echo "- Scope: ${{ inputs.scope }}"
+            echo "- Reviews: ${{ inputs.reviews }}"
+            echo "- Build: ${{ inputs.build }}"
+            echo "- Dry-run: ${{ inputs.dry-run }}"
+            echo "- Commit: \`${{ github.sha }}\`"
+            echo ""
+            echo "## Download findings"
+            echo ""
+            echo '```bash'
+            echo "# Sync to local checkout:"
+            echo "gh run download ${{ github.run_id }} --repo ${{ github.repository }}"
+            echo "bun run packages/tui/scripts/probes/sync-findings.ts \\"
+            echo "  --run-id ${{ github.run_id }} --repo ${{ github.repository }}"
+            echo '```'
+            echo ""
+            echo "The artifact named \`rollup\` contains the merged report."
+            echo "Per-review artifacts are named \`findings-<id>\`."
+          } >> "$GITHUB_STEP_SUMMARY"

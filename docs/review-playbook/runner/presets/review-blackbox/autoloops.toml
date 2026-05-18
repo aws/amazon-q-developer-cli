@@ -1,0 +1,28 @@
+# Single-role blackbox-review preset for the bun/TUI review runner.
+#
+# Executes one [blackbox] work item: run the probes or tests named by
+# the technique list, interpret output, emit findings. Handles
+# `defer: runbook` by writing a runbook file instead of executing.
+#
+# Longer wall-clock timeout than the code preset because probes may
+# include multi-minute tests (bun test, integ tests, memory-leak tests).
+
+event_loop.max_iterations = 10
+event_loop.completion_event = "task.complete"
+event_loop.completion_promise = "LOOP_COMPLETE"
+event_loop.required_events = []
+
+backend.kind = "kiro"
+backend.command = "kiro-cli"
+backend.args = ["acp"]
+backend.timeout_ms = 1800000
+backend.trust_all_tools = true
+
+review.enabled = false
+
+memory.prompt_budget_chars = 8000
+harness.instructions_file = "harness.md"
+
+core.state_dir = ".autoloop"
+core.journal_file = ".autoloop/journal.jsonl"
+core.memory_file = ".autoloop/memory.jsonl"

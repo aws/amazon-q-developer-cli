@@ -1,0 +1,13 @@
+name = "review-dedup"
+completion = "task.complete"
+
+# Single role, one-shot. The deduplicator collects new findings from
+# worker scratchpads, compares each to the committed findings tree,
+# applies SKIP / ENRICH / COPY decisions, and emits a decision log.
+[[role]]
+id = "deduplicator"
+emits = ["task.complete"]
+prompt_file = "roles/deduplicator.md"
+
+[handoff]
+"loop.start" = ["deduplicator"]

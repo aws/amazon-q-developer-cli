@@ -529,6 +529,26 @@ describe('Kiro — handler registration and forwarding', () => {
     expect(handler).toHaveBeenCalled();
   });
 
+  // Regression: --resume goes through this global filter, not through the
+  // onUpdate-bypass path used by /chat <id>. If `Thought` isn't whitelisted
+  // here, `AgentThoughtChunk` events are emitted by the backend and converted
+  // by acp-client but never reach the message store on resume — so resumed
+  // sessions show no thinking even when it was persisted.
+  it('onHistoryEvent receives historical thought events', async () => {
+    const kiro = new Kiro();
+    const handler = mock(() => {});
+    kiro.onHistoryEvent(handler);
+    await kiro.initialize('/path/to/agent');
+    if (mockOnUpdateHandler) {
+      mockOnUpdateHandler({
+        type: AgentEventType.Thought,
+        id: 'thought-1',
+        content: { type: 'text', text: 'thinking out loud' },
+      } as AgentStreamEvent);
+    }
+    expect(handler).toHaveBeenCalled();
+  });
+
   it('onTurnSummary receives TurnSummary events', async () => {
     const kiro = new Kiro();
     const handler = mock(() => {});
@@ -749,5 +769,70 @@ describe('Kiro — streamMessage', () => {
     const controller = new AbortController();
     await kiro.streamMessage('hello', controller.signal, onEvent);
     expect(onEvent).not.toHaveBeenCalled();
+  });
+
+  it('onApprovalRequest forwards ApprovalRequest from global handler when no prompt is active', async () => {
+    const kiro = new Kiro();
+    const approvalHandler = mock(() => {});
+    kiro.onApprovalRequest(approvalHandler);
+    await kiro.initialize('/path/to/agent');
+
+    // Simulate an ApprovalRequest arriving via the global onUpdate handler
+    // (as happens when a background /spawn session needs tool permission)
+    if (mockOnUpdateHandler) {
+      mockOnUpdateHandler({
+        type: AgentEventType.ApprovalRequest,
+        value: {
+          sessionId: 'spawn-session-1',
+          toolCall: { toolCallId: 'tc-1' },
+          permissionOptions: [
+            {
+              kind: 'allow_once' as any,
+              optionId: 'allow_once',
+              name: 'Allow once',
+            },
+          ],
+          resolve: () => {},
+        },
+      } as AgentStreamEvent);
+    }
+    expect(approvalHandler).toHaveBeenCalledTimes(1);
+  });
+
+  it('onApprovalRequest does NOT forward when a prompt is active (avoids double-processing)', async () => {
+    const kiro = new Kiro();
+    const approvalHandler = mock(() => {});
+    kiro.onApprovalRequest(approvalHandler);
+    await kiro.initialize('/path/to/agent');
+    await kiro.createSession();
+
+    // Start a prompt — this sets _promptActive = true
+    const onEvent = mock(() => {});
+    mockSessionClient.prompt.mockImplementationOnce(() => {
+      // While prompt is active, simulate an ApprovalRequest via global handler
+      if (mockOnUpdateHandler) {
+        mockOnUpdateHandler({
+          type: AgentEventType.ApprovalRequest,
+          value: {
+            sessionId: 'spawn-session-2',
+            toolCall: { toolCallId: 'tc-2' },
+            permissionOptions: [
+              {
+                kind: 'allow_once' as any,
+                optionId: 'allow_once',
+                name: 'Allow once',
+              },
+            ],
+            resolve: () => {},
+          },
+        } as AgentStreamEvent);
+      }
+      return Promise.resolve();
+    });
+    const controller = new AbortController();
+    await kiro.streamMessage('test', controller.signal, onEvent);
+
+    // The global handler should NOT have forwarded (per-message handler covers it)
+    expect(approvalHandler).not.toHaveBeenCalled();
   });
 });

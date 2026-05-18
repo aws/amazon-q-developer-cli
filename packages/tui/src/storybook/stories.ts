@@ -11,6 +11,7 @@ import * as MenuStories from '../components/ui/menu/Menu.stories.js';
 import * as ChipStories from '../components/ui/chip/Chip.stories.js';
 import * as ProgressChipStories from '../components/ui/chip/ProgressChip.stories.js';
 import * as MessageStories from '../components/chat/message/Message.stories.js';
+import * as ThinkingDisplayStories from '../components/chat/message/ThinkingDisplay.stories.js';
 import * as RadioButtonStories from '../components/ui/radio/RadioButton.stories.js';
 import * as RadioGroupStories from '../components/ui/radio/RadioGroup.stories.js';
 import * as SnackBarStories from '../components/chat/prompt-bar/SnackBar.stories.js';
@@ -184,6 +185,10 @@ export const stories = [
   convertStoryModule(
     MessageStories,
     '../components/chat/message/Message.stories.js'
+  ),
+  convertStoryModule(
+    ThinkingDisplayStories,
+    '../components/chat/message/ThinkingDisplay.stories.js'
   ),
   convertStoryModule(
     RadioButtonStories,

@@ -3,6 +3,7 @@ import type { BuiltinToolId } from './tool-status.js';
 
 export enum AgentEventType {
   Content = 'content',
+  Thought = 'thought',
   UserMessage = 'user_message',
   ToolCall = 'tool_call',
   ToolCallUpdate = 'tool_call_update',
@@ -165,6 +166,12 @@ export interface ApprovalRequestInfo {
 
 export interface AgentContentEvent {
   type: AgentEventType.Content;
+  id: string;
+  content: ContentChunk;
+}
+
+export interface AgentThoughtEvent {
+  type: AgentEventType.Thought;
   id: string;
   content: ContentChunk;
 }
@@ -355,6 +362,7 @@ export interface ExtensionMethodsDiscoveredEvent {
 
 export type AgentStreamEvent =
   | AgentContentEvent
+  | AgentThoughtEvent
   | UserMessageEvent
   | ToolCallEvent
   | ToolCallUpdateEvent

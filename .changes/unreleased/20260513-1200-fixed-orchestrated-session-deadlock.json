@@ -1,0 +1,4 @@
+{
+  "type": "fixed",
+  "description": "Fixed orchestrated subagent session deadlock when start_session fails"
+}

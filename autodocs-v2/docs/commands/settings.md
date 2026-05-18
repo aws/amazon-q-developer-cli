@@ -103,6 +103,7 @@ Some settings are global-only and cannot be overridden at workspace level (e.g.,
 | `chat.defaultAgent` | string | Default agent for new sessions |
 | `chat.defaultModel` | string | Default AI model |
 | `chat.enableThinking` | boolean | Enable thinking tool |
+| `chat.showThinking` | boolean | Show thinking/reasoning blocks in chat output (default: false; startup-only) |
 | `chat.enableKnowledge` | boolean | Enable knowledge base |
 | `chat.enableCodeIntelligence` | boolean | Enable code intelligence with LSP |
 | `chat.enableSubagent` | boolean | Enable subagent feature |

@@ -1,0 +1,13 @@
+name = "review-validate"
+completion = "task.complete"
+
+# Single role, one-shot. The triager reads a finding, verifies the
+# evidence is still present, then appends a ## Triage section with
+# confidence, fix risk, and suggested test.
+[[role]]
+id = "triager"
+emits = ["task.complete"]
+prompt_file = "roles/triager.md"
+
+[handoff]
+"loop.start" = ["triager"]
