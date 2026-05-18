@@ -2,15 +2,24 @@ import React from 'react';
 import { Box } from './../../../renderer.js';
 import { Text } from '../text/Text.js';
 import { useTheme } from '../../../hooks/useThemeContext.js';
+import { MarkdownRenderer } from '../MarkdownRenderer.js';
 import type { OpenArtifactView } from '../../../stores/app-store.js';
 
 interface Props {
   view: OpenArtifactView;
 }
 
-/** Render the verbatim detailBody for the currently selected item. */
+/**
+ * Render the verbatim detailBody for the currently selected item, with
+ * markdown formatting applied (headings, lists, code blocks, tables, etc).
+ *
+ * The parser produces `detailBody` as a verbatim slice of the source
+ * markdown — heading + body for requirements/design, or the numbered
+ * task plus its sub-list for tasks. `MarkdownRenderer` handles wrapping,
+ * inline styles, syntax highlighting in fenced blocks, and table layout.
+ */
 export const DetailView: React.FC<Props> = ({ view }) => {
-  const { getColor } = useTheme();
+  const { getColor, getUserResponseColor } = useTheme();
   const dim = getColor('secondary');
   const body = pickDetailBody(view);
   if (body == null) {
@@ -21,14 +30,9 @@ export const DetailView: React.FC<Props> = ({ view }) => {
     );
   }
 
-  // Render the detail body line-by-line so long markdown bodies wrap
-  // gracefully under twinki's flexbox layout.
-  const lines = body.split('\n');
   return (
     <Box flexDirection="column">
-      {lines.map((line, i) => (
-        <Text key={i}>{line.length === 0 ? ' ' : line}</Text>
-      ))}
+      <MarkdownRenderer content={body} color={getUserResponseColor()} />
     </Box>
   );
 };

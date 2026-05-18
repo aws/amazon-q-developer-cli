@@ -29,7 +29,6 @@ export function useArtifactKeybinds(): void {
     moveArtifactCursor,
     toggleArtifactExpand,
     enterArtifactDetail,
-    leaveArtifactDetail,
   } = useUIActions();
 
   // `openArtifactView` isn't on `useUIActions` (it's surfaced through the
@@ -98,12 +97,9 @@ export function useArtifactKeybinds(): void {
           return;
         }
       } else {
-        // Detail mode: only escape navigates back. Up/down/left/right are
-        // explicitly ignored per spec.
-        if (key.escape) {
-          leaveArtifactDetail();
-          return;
-        }
+        // Detail mode: Esc/back is owned by Panel.onClose (which we wire
+        // mode-aware in ArtifactView), so we explicitly do nothing here.
+        // Up/down/left/right are intentionally ignored per spec.
       }
     },
     { isActive }

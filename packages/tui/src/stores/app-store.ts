@@ -189,6 +189,13 @@ export interface OpenArtifactView {
   expanded: Record<number, boolean>;
   /** Non-fatal load error to surface inline; null on success. */
   error: { message: string } | null;
+  /**
+   * Workflow config for this feature, loaded from
+   * `.kiro/specs/<feature>/.config.kiro` when the panel opens. Drives
+   * the stage-bar order in the panel header. Falls back to defaults
+   * when the file is missing or malformed (see `loadSpecConfig`).
+   */
+  workflow: SpecConfig;
 }
 
 // ── End spec artifact view ───────────────────────────────────
@@ -204,7 +211,9 @@ import {
   type ArtifactSummary,
   type LoadError,
 } from '../utils/spec-artifact-loader.js';
+import { loadSpecConfig, type SpecConfig } from '../utils/spec-config.js';
 export type { ArtifactKind, ArtifactSummary } from '../utils/spec-artifact-loader.js';
+export type { SpecConfig } from '../utils/spec-config.js';
 import { buildSettingsActiveCommand } from '../commands/settings-subcommands.js';
 import { formatImageLabel } from '../utils/image-label.js';
 import { expandFileReferences, readFileContent } from '../utils/file-search.js';
@@ -3296,8 +3305,10 @@ export const createAppStore = (props: AppStoreProps) => {
       featureName: string,
       artifact: ArtifactKind
     ) => {
+      const workspaceRoot = process.cwd();
+      const workflow = loadSpecConfig(workspaceRoot, featureName);
       const result = await loadArtifactSummary(
-        process.cwd(),
+        workspaceRoot,
         featureName,
         artifact
       );
@@ -3313,6 +3324,7 @@ export const createAppStore = (props: AppStoreProps) => {
             cursor: 0,
             expanded: {},
             error: { message: describeLoadError(result.error) },
+            workflow,
           },
         });
         return;
@@ -3326,6 +3338,7 @@ export const createAppStore = (props: AppStoreProps) => {
           cursor: 0,
           expanded: {},
           error: null,
+          workflow,
         },
       });
     },

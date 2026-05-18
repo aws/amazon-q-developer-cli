@@ -6,6 +6,7 @@ import { useTheme } from '../../../hooks/useThemeContext.js';
 import { SummaryView } from './SummaryView.js';
 import { DetailView } from './DetailView.js';
 import { ErrorState } from './ErrorState.js';
+import { StageBar } from './StageBar.js';
 import { useArtifactKeybinds } from './useArtifactKeybinds.js';
 import { useUIState, useUIActions } from '../../../stores/selectors.js';
 import type { OpenArtifactView } from '../../../stores/app-store.js';
@@ -25,7 +26,7 @@ const ARTIFACT_LABELS: Record<OpenArtifactView['artifact'], string> = {
  */
 export const ArtifactView: React.FC = () => {
   const { artifactViewOpen } = useUIState();
-  const { closeArtifactView } = useUIActions();
+  const { closeArtifactView, leaveArtifactDetail } = useUIActions();
   // Wire up keybindings unconditionally; the hook gates on `view.open`.
   useArtifactKeybinds();
 
@@ -33,15 +34,30 @@ export const ArtifactView: React.FC = () => {
 
   const title = `/spec view ${artifactViewOpen.featureName} ${artifactViewOpen.artifact}`;
 
+  // Panel listens for Esc internally (via `useInput` keyed on `closeMenu`).
+  // We make that one keystroke do the right thing for the current mode:
+  // in detail mode it returns to the summary; in summary or error mode
+  // it closes the whole panel. This is the *only* Esc handler — the hook
+  // intentionally no longer listens for Esc, to avoid the dual-handler
+  // race that previously closed the panel before the mode-change took
+  // effect.
+  const inDetail =
+    artifactViewOpen.mode === 'detail' && !artifactViewOpen.error;
+  const handleClose = inDetail ? leaveArtifactDetail : closeArtifactView;
+  const closeHintLabel = inDetail ? 'back' : 'close';
+
   return (
     <Panel
       title={title}
-      onClose={closeArtifactView}
+      onClose={handleClose}
       hideTitleDivider={false}
-      footerLeft={
-        <ArtifactFooterHints view={artifactViewOpen} />
-      }
+      closeHintLabel={closeHintLabel}
+      footerLeft={<ArtifactFooterHints view={artifactViewOpen} />}
     >
+      <StageBar
+        workflow={artifactViewOpen.workflow}
+        current={artifactViewOpen.artifact}
+      />
       {artifactViewOpen.error ? (
         <ErrorState message={artifactViewOpen.error.message} />
       ) : artifactViewOpen.mode === 'summary' ? (
@@ -59,13 +75,16 @@ const ArtifactFooterHints: React.FC<{ view: OpenArtifactView }> = ({
   const { getColor } = useTheme();
   const dim = getColor('secondary');
   const primary = getColor('primary');
+  // Error mode: Esc/Q close. Panel renders the Esc hint; nothing extra
+  // for us to surface here.
   if (view.error) {
-    return <Text>{dim('Press Q to close')}</Text>;
+    return null;
   }
   if (view.mode === 'detail') {
+    // Esc-back is rendered by Panel (closeHintLabel='back'). We add a
+    // Q-close shortcut so users have a one-press exit from any mode.
     return (
       <Text>
-        {primary('Esc')} {dim('back · ')}
         {primary('Q')} {dim('close')}
       </Text>
     );
