@@ -24,7 +24,7 @@ function makeToolCallEvent(
   return {
     type: AgentEventType.ToolCall,
     id,
-    name: 'execute_bash',
+    name,
     kind: 'shell' as any,
     args: { command },
   } as AgentStreamEvent;
@@ -403,5 +403,139 @@ describe('Trust options (_meta.trustOptions)', () => {
     expect(resolved.outcome).toBe('selected');
     expect(resolved.optionId).toBe('allow_once');
     expect(resolved._meta).toBeUndefined();
+  });
+});
+
+describe('Trust cascade — allow_always auto-resolves same-tool approvals', () => {
+  it('cascades trust to all queued approvals of the same tool', () => {
+    const store = createTestStore();
+    const handler = store.getState().createStreamEventHandler();
+    const resolved: any[] = [];
+
+    // 5 tool calls of the same tool
+    handler(makeToolCallEvent('t1', 'execute_bash', 'cmd1'));
+    handler(makeToolCallEvent('t2', 'execute_bash', 'cmd2'));
+    handler(makeToolCallEvent('t3', 'execute_bash', 'cmd3'));
+    handler(makeToolCallEvent('t4', 'execute_bash', 'cmd4'));
+    handler(makeToolCallEvent('t5', 'execute_bash', 'cmd5'));
+
+    handler(makeApprovalEventWithTrustOptions('t1', (r) => resolved.push(r)));
+    handler(makeApprovalEventWithTrustOptions('t2', (r) => resolved.push(r)));
+    handler(makeApprovalEventWithTrustOptions('t3', (r) => resolved.push(r)));
+    handler(makeApprovalEventWithTrustOptions('t4', (r) => resolved.push(r)));
+    handler(makeApprovalEventWithTrustOptions('t5', (r) => resolved.push(r)));
+
+    expect(store.getState().approvalQueue).toHaveLength(5);
+
+    // Trust the first one (full tool trust, no trustOption in _meta)
+    store.getState().respondToApproval('allow_always');
+
+    // All should be resolved, queue empty
+    expect(store.getState().approvalQueue).toHaveLength(0);
+    expect(store.getState().pendingApproval).toBeNull();
+    expect(resolved).toHaveLength(5);
+
+    // First resolved with allow_always
+    expect(resolved[0].optionId).toBe('allow_always');
+    // Remaining resolved with allow_once (cascaded)
+    for (let i = 1; i < 5; i++) {
+      expect(resolved[i].optionId).toBe('allow_once');
+    }
+  });
+
+  it('does NOT cascade when using path-specific trust (trustOption in _meta)', () => {
+    const store = createTestStore();
+    const handler = store.getState().createStreamEventHandler();
+    const resolved: any[] = [];
+
+    handler(makeToolCallEvent('t1', 'execute_bash', 'cmd1'));
+    handler(makeToolCallEvent('t2', 'execute_bash', 'cmd2'));
+    handler(makeToolCallEvent('t3', 'execute_bash', 'cmd3'));
+
+    handler(makeApprovalEventWithTrustOptions('t1', (r) => resolved.push(r)));
+    handler(makeApprovalEventWithTrustOptions('t2', (r) => resolved.push(r)));
+    handler(makeApprovalEventWithTrustOptions('t3', (r) => resolved.push(r)));
+
+    // Trust with a specific trustOption (path-level, not full tool trust)
+    store.getState().respondToApproval('allow_always', undefined, {
+      trustOption: {
+        label: 'Full command',
+        setting_key: 'allowedCommands',
+        patterns: ['cmd1'],
+      },
+    });
+
+    // Only the first should be resolved; others remain queued
+    expect(store.getState().approvalQueue).toHaveLength(2);
+    expect(store.getState().pendingApproval?.toolCall.toolCallId).toBe('t2');
+    expect(resolved).toHaveLength(1);
+    expect(resolved[0].optionId).toBe('allow_always');
+  });
+
+  it('does NOT cascade to approvals of a different tool', () => {
+    const store = createTestStore();
+    const handler = store.getState().createStreamEventHandler();
+    const resolved: any[] = [];
+
+    // Mix of tool types
+    handler(makeToolCallEvent('t1', 'execute_bash', 'cmd1'));
+    handler(makeToolCallEvent('t2', 'fs_write', 'write something'));
+    handler(makeToolCallEvent('t3', 'execute_bash', 'cmd3'));
+
+    handler(makeApprovalEventWithTrustOptions('t1', (r) => resolved.push(r)));
+    handler(makeApprovalEvent('t2', (r) => resolved.push(r)));
+    handler(makeApprovalEventWithTrustOptions('t3', (r) => resolved.push(r)));
+
+    // Trust execute_bash
+    store.getState().respondToApproval('allow_always');
+
+    // t1 and t3 resolved (same tool), t2 remains (different tool)
+    expect(store.getState().approvalQueue).toHaveLength(1);
+    expect(store.getState().pendingApproval?.toolCall.toolCallId).toBe('t2');
+    expect(resolved).toHaveLength(2);
+    expect(resolved[0].optionId).toBe('allow_always'); // t1
+    expect(resolved[1].optionId).toBe('allow_once'); // t3 cascaded
+  });
+
+  it('marks all cascaded tool messages as Approved', () => {
+    const store = createTestStore();
+    const handler = store.getState().createStreamEventHandler();
+
+    handler(makeToolCallEvent('t1', 'execute_bash', 'cmd1'));
+    handler(makeToolCallEvent('t2', 'execute_bash', 'cmd2'));
+    handler(makeToolCallEvent('t3', 'execute_bash', 'cmd3'));
+
+    handler(makeApprovalEventWithTrustOptions('t1'));
+    handler(makeApprovalEventWithTrustOptions('t2'));
+    handler(makeApprovalEventWithTrustOptions('t3'));
+
+    store.getState().respondToApproval('allow_always');
+
+    const toolMsgs = store
+      .getState()
+      .messages.filter((m) => m.role === MessageRole.ToolUse);
+
+    for (const msg of toolMsgs) {
+      if (msg.role === MessageRole.ToolUse) {
+        expect(msg.status).toBe(ToolUseStatus.Approved);
+      }
+    }
+  });
+
+  it('does NOT cascade on allow_once', () => {
+    const store = createTestStore();
+    const handler = store.getState().createStreamEventHandler();
+
+    handler(makeToolCallEvent('t1', 'execute_bash', 'cmd1'));
+    handler(makeToolCallEvent('t2', 'execute_bash', 'cmd2'));
+
+    handler(makeApprovalEventWithTrustOptions('t1'));
+    handler(makeApprovalEventWithTrustOptions('t2'));
+
+    store.getState().respondToApproval('allow_once');
+
+    // Only t1 resolved, t2 still pending
+    expect(store.getState().approvalQueue).toHaveLength(1);
+    expect(store.getState().pendingApproval?.toolCall.toolCallId).toBe('t2');
   });
 });

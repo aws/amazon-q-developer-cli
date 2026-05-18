@@ -1,0 +1,4 @@
+{
+  "type": "fixed",
+  "description": "MCP tool call summaries now show all parameters instead of truncating to 4, so users can see the full context of a tool invocation without expanding"
+}

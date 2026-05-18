@@ -2404,16 +2404,48 @@ export const createAppStore = (props: AppStoreProps) => {
       target?: ApprovalRequestInfo,
       _meta?: Record<string, unknown>
     ) => {
-      const { pendingApproval, approvalQueue } = get();
+      const { pendingApproval, approvalQueue, messages } = get();
       const approval = target ?? pendingApproval;
       if (approval) {
         const toolCallId = approval.toolCall.toolCallId;
         const isRejected =
           optionId === ApprovalOptionId.RejectOnce ||
           optionId === ApprovalOptionId.RejectAlways;
+        const isTrust =
+          optionId === ApprovalOptionId.AllowAlways && !_meta?.trustOption;
+
+        // When trusting a tool, cascade to all pending approvals of the same tool
+        let cascadeApprovals: ApprovalRequestInfo[] = [];
+        if (isTrust) {
+          const toolMsg = messages.find(
+            (m) => m.role === MessageRole.ToolUse && m.id === toolCallId
+          );
+          if (toolMsg && toolMsg.role === MessageRole.ToolUse) {
+            const trustedName = toolMsg.name;
+            cascadeApprovals = approvalQueue.filter((a) => {
+              if (a === approval) return false;
+              const msg = messages.find(
+                (m) =>
+                  m.role === MessageRole.ToolUse &&
+                  m.id === a.toolCall.toolCallId
+              );
+              return (
+                msg &&
+                msg.role === MessageRole.ToolUse &&
+                msg.name === trustedName
+              );
+            });
+          }
+        }
+
+        const cascadeIds = new Set(
+          cascadeApprovals.map((a) => a.toolCall.toolCallId)
+        );
 
         // Update the tool call status based on user response
-        const remainingQueue = approvalQueue.filter((a) => a !== approval);
+        const remainingQueue = approvalQueue.filter(
+          (a) => a !== approval && !cascadeIds.has(a.toolCall.toolCallId)
+        );
         const nextApproval = remainingQueue[0] ?? null;
 
         set((state) => ({
@@ -2427,11 +2459,15 @@ export const createAppStore = (props: AppStoreProps) => {
                 isFinished: isRejected ? true : msg.isFinished,
               };
             }
+            if (msg.role === MessageRole.ToolUse && cascadeIds.has(msg.id)) {
+              return { ...msg, status: ToolUseStatus.Approved };
+            }
             return msg;
           }),
           approvalQueue: remainingQueue,
           pendingApproval:
-            state.pendingApproval === approval
+            state.pendingApproval === approval ||
+            cascadeIds.has(state.pendingApproval?.toolCall.toolCallId ?? '')
               ? nextApproval
               : state.pendingApproval,
           approvalMode: 'dropdown',
@@ -2442,6 +2478,14 @@ export const createAppStore = (props: AppStoreProps) => {
           optionId,
           _meta,
         });
+
+        // Auto-resolve cascaded approvals with allow_once (trust is already applied)
+        for (const cascaded of cascadeApprovals) {
+          cascaded.resolve({
+            outcome: 'selected',
+            optionId: ApprovalOptionId.AllowOnce,
+          });
+        }
       }
     },
 
