@@ -1,0 +1,4 @@
+{
+  "type": "fixed",
+  "description": "Bumped html2text to 0.17.1 to pick up upstream bug fixes"
+}
