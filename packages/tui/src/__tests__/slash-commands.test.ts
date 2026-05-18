@@ -10,8 +10,12 @@ describe('slash-commands', () => {
       expect(specCmd!.description).toContain('spec');
       expect(specCmd!.meta).toEqual({
         local: true,
-        subcommands: ['new', 'run'],
-        subcommandHints: { new: '<feature-name>', run: '<feature-name>' },
+        subcommands: ['new', 'run', 'view'],
+        subcommandHints: {
+          new: '<feature-name>',
+          run: '<feature-name>',
+          view: '<feature-name> [requirements|design|tasks]',
+        },
       });
     });
 

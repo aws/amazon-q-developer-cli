@@ -776,39 +776,11 @@ const effectHandlers: Record<EffectName, EffectHandler> = {
     const trimmed = args.trim();
     const workspaceRoot = process.cwd();
 
-    // Selection menu when invoked without args. We pre-fetch the features
-    // here (not in the dispatcher) because the list is cheap to build and
-    // we want the shape to match the `inputType: 'selection'` contract
-    // without going through `getCommandOptions` (which is KAS backend
-    // driven and has no awareness of the on-disk .kiro/specs layout).
-    //
-    // Picking a feature opens the structured artifact view panel — that's
-    // the default `/spec` action now. The "resume / continue" intent has
-    // moved to the `c` keybind inside the view panel.
+    // No-args path: delegate to the shared `openSpecView` helper
+    // which handles both the empty-args feature picker and the
+    // `<name> [artifact]` direct-open path.
     if (!trimmed) {
-      const features = listSpecFeatures(workspaceRoot);
-      if (features.length === 0) {
-        ctx.showAlert(
-          'No specs found under .kiro/specs/. Use "/spec new <name>" to start one.',
-          'warning',
-          6000
-        );
-        return true;
-      }
-      ctx.setActiveCommand({
-        command: {
-          ...cmd,
-          meta: { ...cmd.meta, inputType: 'selection' as const },
-        },
-        options: features.map((f) => ({
-          // Re-enter as `/spec view <name>` so the picker drops the user
-          // straight into the view panel rather than the resume prompt.
-          value: `view ${f.featureName}`,
-          label: f.featureName,
-          description: describeSpecDocuments(f),
-        })),
-      });
-      return true;
+      return openSpecView(ctx, cmd, workspaceRoot, '');
     }
 
     // /spec new <name> — switch to spec mode, then nudge the agent to
@@ -1569,7 +1541,11 @@ export interface ResumeSpecDeps {
   kiro: Kiro;
   setCurrentAgent: (agent: { name: string } | null) => void;
   sendMessage: (content: string) => Promise<void> | void;
-  showAlert: (message: string, status: 'error' | 'success' | 'warning', autoHideMs?: number) => void;
+  showAlert: (
+    message: string,
+    status: 'error' | 'success' | 'warning',
+    autoHideMs?: number
+  ) => void;
 }
 
 export async function resumeSpecFeature(

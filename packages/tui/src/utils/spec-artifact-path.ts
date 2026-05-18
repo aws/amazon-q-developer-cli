@@ -87,9 +87,23 @@ const KNOWN_WRITE_TOOL_NAMES = new Set([
 /**
  * Operation strings that imply the tool is producing/modifying file
  * content (and therefore worth tracking as a generation event).
+ *
+ * The first four (`create`, `str_replace`, `insert`, `append`) are the
+ * canonical values for V1's `fs_write` tool — see the `FsWrite` enum
+ * in `crates/chat-cli/src/cli/chat/tools/fs_write.rs`. They MUST stay
+ * in sync with the Rust enum's `#[serde(rename = ...)]` attributes.
+ *
+ * The remainder (`update`, `replace`, `write`, `overwrite`) are
+ * conjectural names that some KAS multiplex tools may emit; they're
+ * accepted defensively. None map to a known wire format today.
  */
 const WRITE_COMMAND_VALUES = new Set([
+  // V1 `fs_write` canonical commands.
   'create',
+  'str_replace',
+  'insert',
+  'append',
+  // Defensive: possible KAS multiplex command names.
   'update',
   'replace',
   'write',

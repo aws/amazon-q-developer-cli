@@ -1,9 +1,5 @@
 import { describe, it, expect } from 'bun:test';
-import {
-  parseArtifact,
-  bytesToUtf8,
-  type ArtifactKind,
-} from '../index';
+import { parseArtifact, bytesToUtf8, type ArtifactKind } from '../index';
 
 /**
  * Property-style robustness tests for the parser.
@@ -149,8 +145,9 @@ describe('parser robustness', () => {
       for (const item of out.items) {
         expect(typeof item.number).toBe('number');
         expect(typeof item.title).toBe('string');
-        expect(item.userStory === null || typeof item.userStory === 'string')
-          .toBe(true);
+        expect(
+          item.userStory === null || typeof item.userStory === 'string'
+        ).toBe(true);
         expect(typeof item.detailBody).toBe('string');
       }
     }

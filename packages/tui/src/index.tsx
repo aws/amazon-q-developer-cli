@@ -238,10 +238,21 @@ const wireUpHandlers = () => {
   // `clearArtifactViewOnEngineSwitch` from any future engine-switch
   // path as defence-in-depth.
   if (process.env.KIRO_AGENT_ENGINE === 'kas') {
-    // Idle-timer registry, keyed by absolute path. Each fs_write resets
-    // the corresponding timer; on fire, we mark the entry complete.
-    const idleTimers = new Map<string, ReturnType<typeof setTimeout>>();
+    // Single in-flight idle timer — the store holds at most one
+    // artifact-generating entry at a time, so we never need more than
+    // one outstanding timer. We track the path it's keyed to so that
+    // a write to a different path (the agent moved on) cleanly cancels
+    // the prior timer instead of letting it fire on stale state.
+    let activeTimer: { path: string; t: ReturnType<typeof setTimeout> } | null =
+      null;
     const IDLE_TIMEOUT_MS = 2000;
+
+    const clearTimer = () => {
+      if (activeTimer) {
+        clearTimeout(activeTimer.t);
+        activeTimer = null;
+      }
+    };
 
     kiro.onArtifactWrite((match) => {
       const store = appStore.getState();
@@ -251,24 +262,19 @@ const wireUpHandlers = () => {
         artifact: match.artifact,
       });
 
-      // Single-card UX: when a different path takes over, the store
-      // drops any prior entry. Cancel any orphan idle timers so they
-      // don't fire `markArtifactGenerationComplete` on an entry that
-      // no longer exists.
-      for (const [path, t] of idleTimers) {
-        if (path !== match.absolutePath) {
-          clearTimeout(t);
-          idleTimers.delete(path);
-        }
-      }
-
-      const existing = idleTimers.get(match.absolutePath);
-      if (existing) clearTimeout(existing);
-      const timer = setTimeout(() => {
-        idleTimers.delete(match.absolutePath);
-        appStore.getState().markArtifactGenerationComplete(match.absolutePath);
-      }, IDLE_TIMEOUT_MS);
-      idleTimers.set(match.absolutePath, timer);
+      // Reset the idle timer on every write. If the prior timer was
+      // for a different path the store has already replaced the entry;
+      // cancelling avoids a `markArtifactGenerationComplete` call on
+      // the now-active entry.
+      clearTimer();
+      const path = match.absolutePath;
+      activeTimer = {
+        path,
+        t: setTimeout(() => {
+          activeTimer = null;
+          appStore.getState().markArtifactGenerationComplete(path);
+        }, IDLE_TIMEOUT_MS),
+      };
     });
 
     // On tool completion, re-parse the on-disk file. The mid-stream
@@ -286,10 +292,8 @@ const wireUpHandlers = () => {
       store.reparseArtifactGeneration(match.absolutePath);
       store.markArtifactGenerationComplete(match.absolutePath);
 
-      const pending = idleTimers.get(match.absolutePath);
-      if (pending) {
-        clearTimeout(pending);
-        idleTimers.delete(match.absolutePath);
+      if (activeTimer && activeTimer.path === match.absolutePath) {
+        clearTimer();
       }
     });
   } else {

@@ -154,7 +154,6 @@ export const useUIState = () =>
       codeData: state.codeData,
       // Spec artifact view
       artifactViewOpen: state.artifactViewOpen,
-      artifactGenerating: state.artifactGenerating,
     }))
   );
 

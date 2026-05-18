@@ -119,14 +119,9 @@ describe('extractDesign', () => {
     });
 
     it('skips empty sections', () => {
-      const md = [
-        '# Design',
-        '',
-        '## Empty',
-        '',
-        '## Filled',
-        'has body',
-      ].join('\n');
+      const md = ['# Design', '', '## Empty', '', '## Filled', 'has body'].join(
+        '\n'
+      );
       const out = extractDesign(md);
       expect(out.sections.map((s) => s.title)).toEqual(['Filled']);
     });

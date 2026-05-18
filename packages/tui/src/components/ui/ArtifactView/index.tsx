@@ -125,7 +125,11 @@ const DetailModeFrame: React.FC<{ view: OpenArtifactView }> = ({ view }) => {
       return section ? section.title : '';
     }
     const task = summary.items[view.cursor];
-    return task ? (task.number ? `${task.number}. ${task.title}` : task.title) : '';
+    return task
+      ? task.number
+        ? `${task.number}. ${task.title}`
+        : task.title
+      : '';
   })();
 
   return (

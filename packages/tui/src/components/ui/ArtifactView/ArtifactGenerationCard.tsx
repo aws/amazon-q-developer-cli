@@ -20,27 +20,26 @@ const KIND_LABELS: Record<ArtifactKind, string> = {
 };
 
 /**
- * Generation-phase card stack.
+ * Generation-phase card.
  *
- * Renders one compact card per active `artifactGenerating` entry. Each
- * card is read-only — it summarises what the agent has written so far
- * (replacing the streamed markdown noise in the chat transcript) and
- * transitions to a "complete" state after the 2 s idle timer fires.
+ * Renders the active `artifactGenerating` entry, if any. The store
+ * holds at most one — switching to a new artifact replaces the prior
+ * entry — so the card is read-only and summarises what the agent has
+ * written so far (replacing the streamed markdown noise in the chat
+ * transcript). Transitions to a "complete" state after the 2 s idle
+ * timer fires or on `ToolCallFinished`.
  *
  * Read-only is intentional: the user opens the structured view via
  * `/spec view <feature> [artifact]` rather than clicking through the
  * generation card.
  */
 export const ArtifactGenerationCard: React.FC = () => {
-  const generating = useAppStore((s) => s.artifactGenerating);
-  const entries = Object.entries(generating);
-  if (entries.length === 0) return null;
+  const entry = useAppStore((s) => s.artifactGenerating);
+  if (!entry) return null;
 
   return (
     <Box flexDirection="column" marginTop={1}>
-      {entries.map(([path, entry]) => (
-        <SingleCard key={path} entry={entry} />
-      ))}
+      <SingleCard entry={entry} />
     </Box>
   );
 };
@@ -148,10 +147,7 @@ const SummaryStrip: React.FC<{ summary: ArtifactSummary | null }> = ({
   // tasks
   const taskCount = summary.items.length;
   const checked = summary.items.filter((t) => t.checked).length;
-  const subTotal = summary.items.reduce(
-    (acc, t) => acc + t.subTasks.length,
-    0
-  );
+  const subTotal = summary.items.reduce((acc, t) => acc + t.subTasks.length, 0);
   return (
     <Box>
       <Text>

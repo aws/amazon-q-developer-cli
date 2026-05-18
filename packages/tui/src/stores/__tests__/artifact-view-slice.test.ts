@@ -2,7 +2,6 @@ import { describe, it, expect, beforeEach, afterEach } from 'bun:test';
 import { mkdtempSync, rmSync, mkdirSync, writeFileSync } from 'fs';
 import { tmpdir } from 'os';
 import { join } from 'path';
-import type { Mock } from 'bun:test';
 
 import { createAppStore } from '../app-store';
 
@@ -154,11 +153,7 @@ describe('artifactView slice — cursor navigation', () => {
 
   it('cursor is preserved when toggling expand', async () => {
     makeSpec('t', {
-      'tasks.md': [
-        '- [ ] 1. A',
-        '  - [ ] 1.1. A1',
-        '- [ ] 2. B',
-      ].join('\n'),
+      'tasks.md': ['- [ ] 1. A', '  - [ ] 1.1. A1', '- [ ] 2. B'].join('\n'),
     });
     const store = createAppStore({ kiro: makeFakeKiro() });
     await store.getState().openArtifactView('t', 'tasks');
@@ -207,10 +202,9 @@ describe('artifactView slice — expand/collapse', () => {
 describe('artifactView slice — detail mode', () => {
   it('enters detail and back to summary preserving cursor', async () => {
     makeSpec('a', {
-      'requirements.md': [
-        '### Requirement 1: A',
-        '### Requirement 2: B',
-      ].join('\n'),
+      'requirements.md': ['### Requirement 1: A', '### Requirement 2: B'].join(
+        '\n'
+      ),
     });
     const store = createAppStore({ kiro: makeFakeKiro() });
     await store.getState().openArtifactView('a', 'requirements');
@@ -235,17 +229,18 @@ describe('artifactView slice — detail mode', () => {
 describe('artifactView slice — generation tracker', () => {
   it('creates an entry on first write', () => {
     const store = createAppStore({ kiro: makeFakeKiro() });
+    const path = '/fake/.kiro/specs/x/requirements.md';
     store.getState().notifyArtifactGenerationWrite({
-      path: '/fake/.kiro/specs/x/requirements.md',
+      path,
       featureName: 'x',
       artifact: 'requirements',
     });
-    const entries = store.getState().artifactGenerating;
-    expect(Object.keys(entries)).toHaveLength(1);
-    const entry = entries['/fake/.kiro/specs/x/requirements.md']!;
-    expect(entry.featureName).toBe('x');
-    expect(entry.artifact).toBe('requirements');
-    expect(entry.complete).toBe(false);
+    const entry = store.getState().artifactGenerating;
+    expect(entry).not.toBeNull();
+    expect(entry!.absolutePath).toBe(path);
+    expect(entry!.featureName).toBe('x');
+    expect(entry!.artifact).toBe('requirements');
+    expect(entry!.complete).toBe(false);
   });
 
   it('markArtifactGenerationComplete flips complete to true', () => {
@@ -257,7 +252,40 @@ describe('artifactView slice — generation tracker', () => {
       artifact: 'tasks',
     });
     store.getState().markArtifactGenerationComplete(path);
-    expect(store.getState().artifactGenerating[path]!.complete).toBe(true);
+    expect(store.getState().artifactGenerating!.complete).toBe(true);
+  });
+
+  it('a write to a different path replaces the active entry', () => {
+    const store = createAppStore({ kiro: makeFakeKiro() });
+    store.getState().notifyArtifactGenerationWrite({
+      path: '/fake/.kiro/specs/a/requirements.md',
+      featureName: 'a',
+      artifact: 'requirements',
+    });
+    store.getState().notifyArtifactGenerationWrite({
+      path: '/fake/.kiro/specs/b/design.md',
+      featureName: 'b',
+      artifact: 'design',
+    });
+    const entry = store.getState().artifactGenerating;
+    expect(entry).not.toBeNull();
+    expect(entry!.featureName).toBe('b');
+    expect(entry!.artifact).toBe('design');
+  });
+
+  it('markArtifactGenerationComplete is a no-op for a non-active path', () => {
+    const store = createAppStore({ kiro: makeFakeKiro() });
+    const path = '/fake/.kiro/specs/x/requirements.md';
+    store.getState().notifyArtifactGenerationWrite({
+      path,
+      featureName: 'x',
+      artifact: 'requirements',
+    });
+    // Mark a different path complete — should not affect the active entry.
+    store
+      .getState()
+      .markArtifactGenerationComplete('/fake/.kiro/specs/y/design.md');
+    expect(store.getState().artifactGenerating!.complete).toBe(false);
   });
 
   it('clearArtifactViewOnEngineSwitch wipes both fields', () => {
@@ -268,7 +296,7 @@ describe('artifactView slice — generation tracker', () => {
       artifact: 'requirements',
     });
     store.getState().clearArtifactViewOnEngineSwitch();
-    expect(Object.keys(store.getState().artifactGenerating)).toHaveLength(0);
+    expect(store.getState().artifactGenerating).toBeNull();
     expect(store.getState().artifactViewOpen).toBeNull();
   });
 });

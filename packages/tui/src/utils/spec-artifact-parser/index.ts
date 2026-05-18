@@ -23,11 +23,7 @@ import { extractDesign } from './extract-design.js';
 import { extractTasks } from './extract-tasks.js';
 import type { ArtifactKind, ArtifactSummary } from './types.js';
 
-export {
-  extractRequirements,
-  extractDesign,
-  extractTasks,
-};
+export { extractRequirements, extractDesign, extractTasks };
 
 export type {
   ArtifactKind,

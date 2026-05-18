@@ -13,7 +13,7 @@
  * UX-affecting (it drives the stage-bar order) but never user-blocking.
  */
 
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync, readFileSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import { specsRoot } from './spec-workspace.js';
 
@@ -45,13 +45,18 @@ export function specConfigPath(
   return join(specsRoot(workspaceRoot), featureName, '.config.kiro');
 }
 
+/** Hard cap on `.config.kiro` size. Anything larger is treated as missing. */
+const SPEC_CONFIG_MAX_BYTES = 64 * 1024;
+
 /**
  * Load the spec config for `<feature>` or return defaults.
  *
  * Synchronous on purpose: callers (the artifact-view open path) want
  * the config to land in the same render frame as the artifact summary.
  * The file is tiny (well under a kB in practice) so the cost is
- * negligible. We also bound the read to 64 kB defensively.
+ * negligible. We pre-stat to avoid reading anything larger than 64 kB
+ * — `.config.kiro` is a tiny manifest, anything bigger is almost
+ * certainly not a config file.
  */
 export function loadSpecConfig(
   workspaceRoot: string,
@@ -60,15 +65,20 @@ export function loadSpecConfig(
   const path = specConfigPath(workspaceRoot, featureName);
   if (!existsSync(path)) return DEFAULT_SPEC_CONFIG;
 
+  // Pre-stat so we never buffer more than `SPEC_CONFIG_MAX_BYTES`.
+  // `readFileSync` would otherwise read the whole file before we got a
+  // chance to reject it on size — a real cap, not a decorative one.
+  try {
+    const size = statSync(path).size;
+    if (size > SPEC_CONFIG_MAX_BYTES) return DEFAULT_SPEC_CONFIG;
+  } catch {
+    return DEFAULT_SPEC_CONFIG;
+  }
+
   let text: string;
   try {
     text = readFileSync(path, 'utf8');
   } catch {
-    return DEFAULT_SPEC_CONFIG;
-  }
-  if (text.length > 64 * 1024) {
-    // .config.kiro is a tiny manifest; anything bigger than 64 kB is
-    // almost certainly not a config file. Treat as missing.
     return DEFAULT_SPEC_CONFIG;
   }
 

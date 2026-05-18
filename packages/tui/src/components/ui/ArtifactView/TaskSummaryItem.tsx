@@ -33,7 +33,8 @@ export const TaskSummaryItem: React.FC<Props> = ({
   const subCount = task.subTasks.length;
   const subSummary =
     subCount === 0 ? '' : ` (${subCount} sub-task${subCount === 1 ? '' : 's'})`;
-  const expandHint = subCount > 0 ? (expanded ? glyphs.arrowDown : glyphs.arrowRight) : ' ';
+  const expandHint =
+    subCount > 0 ? (expanded ? glyphs.arrowDown : glyphs.arrowRight) : ' ';
 
   const titleColor = selected ? accent.bold : primary;
 

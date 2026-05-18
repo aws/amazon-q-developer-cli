@@ -37,7 +37,11 @@ describe('spec-artifact-loader', () => {
 
   describe('loadArtifactSummary', () => {
     it('returns FeatureNotFound when feature directory is missing', async () => {
-      const result = await loadArtifactSummary(workspace, 'nope', 'requirements');
+      const result = await loadArtifactSummary(
+        workspace,
+        'nope',
+        'requirements'
+      );
       expect(result.ok).toBe(false);
       if (result.ok) throw new Error('expected error');
       expect(result.error.kind).toBe('FeatureNotFound');
@@ -60,7 +64,11 @@ describe('spec-artifact-loader', () => {
           '**User Story:** us-b',
         ].join('\n'),
       });
-      const result = await loadArtifactSummary(workspace, 'login', 'requirements');
+      const result = await loadArtifactSummary(
+        workspace,
+        'login',
+        'requirements'
+      );
       expect(result.ok).toBe(true);
       if (!result.ok) throw new Error('unexpected error');
       expect(result.summary.kind).toBe('requirements');
@@ -94,7 +102,11 @@ describe('spec-artifact-loader', () => {
           'Arch body.',
         ].join('\n'),
       });
-      const result = await loadArtifactSummary(workspace, 'design-feat', 'design');
+      const result = await loadArtifactSummary(
+        workspace,
+        'design-feat',
+        'design'
+      );
       expect(result.ok).toBe(true);
       if (!result.ok) throw new Error();
       if (result.summary.kind !== 'design') throw new Error();
@@ -104,7 +116,11 @@ describe('spec-artifact-loader', () => {
 
     it('handles empty file content', async () => {
       makeSpec('empty', { 'requirements.md': '' });
-      const result = await loadArtifactSummary(workspace, 'empty', 'requirements');
+      const result = await loadArtifactSummary(
+        workspace,
+        'empty',
+        'requirements'
+      );
       expect(result.ok).toBe(true);
       if (!result.ok) throw new Error();
       if (result.summary.kind !== 'requirements') throw new Error();
@@ -114,7 +130,11 @@ describe('spec-artifact-loader', () => {
     it('rejects files larger than ARTIFACT_MAX_BYTES', async () => {
       const big = 'x'.repeat(ARTIFACT_MAX_BYTES + 1);
       makeSpec('big', { 'requirements.md': big });
-      const result = await loadArtifactSummary(workspace, 'big', 'requirements');
+      const result = await loadArtifactSummary(
+        workspace,
+        'big',
+        'requirements'
+      );
       expect(result.ok).toBe(false);
       if (result.ok) throw new Error();
       expect(result.error.kind).toBe('TooLarge');

@@ -36,9 +36,7 @@ describe('matchSpecArtifactPath', () => {
       '/wherever'
     );
     expect(m).not.toBeNull();
-    expect(m!.absolutePath).toBe(
-      '/Users/me/repo/.kiro/specs/feature/tasks.md'
-    );
+    expect(m!.absolutePath).toBe('/Users/me/repo/.kiro/specs/feature/tasks.md');
     expect(m!.featureName).toBe('feature');
   });
 
@@ -51,18 +49,14 @@ describe('matchSpecArtifactPath', () => {
   });
 
   it('rejects files outside .kiro/specs', () => {
-    expect(
-      matchSpecArtifactPath('docs/requirements.md', '/work')
-    ).toBeNull();
+    expect(matchSpecArtifactPath('docs/requirements.md', '/work')).toBeNull();
     expect(
       matchSpecArtifactPath('.kiro/other/requirements.md', '/work')
     ).toBeNull();
   });
 
   it('rejects unsupported artifact names', () => {
-    expect(
-      matchSpecArtifactPath('.kiro/specs/x/notes.md', '/work')
-    ).toBeNull();
+    expect(matchSpecArtifactPath('.kiro/specs/x/notes.md', '/work')).toBeNull();
     expect(
       matchSpecArtifactPath('.kiro/specs/x/bugfix.md', '/work')
     ).toBeNull();
@@ -70,7 +64,9 @@ describe('matchSpecArtifactPath', () => {
 
   it('returns null for empty / non-string input', () => {
     expect(matchSpecArtifactPath('', '/work')).toBeNull();
-    expect(matchSpecArtifactPath(null as unknown as string, '/work')).toBeNull();
+    expect(
+      matchSpecArtifactPath(null as unknown as string, '/work')
+    ).toBeNull();
   });
 });
 
@@ -121,7 +117,13 @@ describe('isWriteOperation', () => {
   });
 
   it('returns true for recognised write commands', () => {
+    // Canonical V1 `fs_write` commands — must match
+    // `FsWrite` enum in crates/chat-cli/src/cli/chat/tools/fs_write.rs.
     expect(isWriteOperation({ command: 'create' })).toBe(true);
+    expect(isWriteOperation({ command: 'str_replace' })).toBe(true);
+    expect(isWriteOperation({ command: 'insert' })).toBe(true);
+    expect(isWriteOperation({ command: 'append' })).toBe(true);
+    // Defensive multiplex names accepted by `WRITE_COMMAND_VALUES`.
     expect(isWriteOperation({ command: 'update' })).toBe(true);
     expect(isWriteOperation({ command: 'replace' })).toBe(true);
     expect(isWriteOperation({ command: 'write' })).toBe(true);

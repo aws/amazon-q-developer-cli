@@ -164,8 +164,18 @@ export interface CodePanelData {
 // See `utils/spec-artifact-loader.ts` and
 // `utils/spec-artifact-parser/` for the underlying types.
 
-/** Per-path generation-phase entry, keyed in `artifactGenerating` by absolute path. */
+/**
+ * Generation-phase entry for the live artifact-generation card.
+ *
+ * The store holds at most one entry at a time (see `artifactGenerating`
+ * below) — when the agent moves on to a new artifact, the prior entry
+ * is replaced. The `absolutePath` field doubles as the dedup key the
+ * lifecycle wiring in `index.tsx` uses to correlate idle timers and
+ * `ToolCallFinished` events with the active card.
+ */
 export interface ArtifactGenerationEntry {
+  /** Absolute path on disk. Used as the dedup key for idle timers. */
+  absolutePath: string;
   featureName: string;
   artifact: ArtifactKind;
   /** Last successful summary parse, or null while we wait for the first read. */
@@ -212,7 +222,10 @@ import {
   type LoadError,
 } from '../utils/spec-artifact-loader.js';
 import { loadSpecConfig, type SpecConfig } from '../utils/spec-config.js';
-export type { ArtifactKind, ArtifactSummary } from '../utils/spec-artifact-loader.js';
+export type {
+  ArtifactKind,
+  ArtifactSummary,
+} from '../utils/spec-artifact-loader.js';
 export type { SpecConfig } from '../utils/spec-config.js';
 import { buildSettingsActiveCommand } from '../commands/settings-subcommands.js';
 import { formatImageLabel } from '../utils/image-label.js';
@@ -935,12 +948,17 @@ export interface AppState {
 
   // ── Spec artifact view state ───────────────────────────────
   /**
-   * Generation-phase tracker keyed by absolute file path. Entries are
-   * created when the agent's first matching `fs_write` arrives and live
-   * for the remainder of the session (idle entries flip to
-   * `complete: true` after 2 s of no writes).
+   * Generation-phase tracker for the live artifact-generation card.
+   * Holds at most one active entry at a time — switching to a new
+   * artifact replaces the prior entry. The entry's `absolutePath`
+   * doubles as the dedup key for idle timers.
+   *
+   * `null` when no spec artifact is being written. Entries are
+   * created when the agent's first matching `fs_write` arrives and
+   * flip to `complete: true` after 2 s of no writes (or when the
+   * tool's `ToolCallFinished` event arrives).
    */
-  artifactGenerating: Record<string, ArtifactGenerationEntry>;
+  artifactGenerating: ArtifactGenerationEntry | null;
   /**
    * Open artifact-view panel. Mutually exclusive with the generation
    * card path: the card can show alongside, but the panel takes over
@@ -1270,7 +1288,7 @@ export const createAppStore = (props: AppStoreProps) => {
     codeIntelligenceActive: existsSync(
       join(process.cwd(), '.kiro', 'settings', 'lsp.json')
     ),
-    artifactGenerating: {},
+    artifactGenerating: null,
     artifactViewOpen: null,
     attachedFiles: [],
     _userColorsSetter: null,
@@ -2250,15 +2268,14 @@ export const createAppStore = (props: AppStoreProps) => {
       // The artifact-generation card belongs to the spec workflow's
       // active agent. Switching agents (e.g. spec → kiro_planner →
       // anything else) means any in-flight card is stale. Clear it.
-      // We only update the map when there's actually an agent change
+      // We only update the field when there's actually an agent change
       // and an entry to clear, so no-op rerenders are avoided.
       const isAgentChanging = prevAgent?.name !== agent?.name;
-      const hasGenerating =
-        Object.keys(get().artifactGenerating).length > 0;
+      const hasGenerating = get().artifactGenerating !== null;
       set({
         currentAgent: agent ? { name: agent.name } : null,
         ...(isAgentChanging && hasGenerating
-          ? { artifactGenerating: {} }
+          ? { artifactGenerating: null }
           : {}),
       });
 
@@ -2924,9 +2941,9 @@ export const createAppStore = (props: AppStoreProps) => {
       // spec mode in general). The open artifact-view panel is left
       // alone — the user explicitly opened it and dismisses with Q.
       set((state) =>
-        Object.keys(state.artifactGenerating).length === 0
+        state.artifactGenerating === null
           ? { mode }
-          : { mode, artifactGenerating: {} }
+          : { mode, artifactGenerating: null }
       );
     },
 
@@ -3276,27 +3293,29 @@ export const createAppStore = (props: AppStoreProps) => {
       // Same-path writes refresh the existing entry (which preserves
       // the last good summary while parsing continues).
       set((state) => {
-        const existing = state.artifactGenerating[path];
+        const existing =
+          state.artifactGenerating?.absolutePath === path
+            ? state.artifactGenerating
+            : null;
         return {
-          artifactGenerating: {
-            [path]: existing
-              ? {
-                  ...existing,
-                  lastWriteTs: now,
-                  // A new write resets `complete` so the card returns to
-                  // its live state if the agent issues another write
-                  // after the 2 s idle timeout.
-                  complete: false,
-                }
-              : {
-                  featureName,
-                  artifact,
-                  summary: null,
-                  lastWriteTs: now,
-                  complete: false,
-                  parseError: null,
-                },
-          },
+          artifactGenerating: existing
+            ? {
+                ...existing,
+                lastWriteTs: now,
+                // A new write resets `complete` so the card returns to
+                // its live state if the agent issues another write
+                // after the 2 s idle timeout.
+                complete: false,
+              }
+            : {
+                absolutePath: path,
+                featureName,
+                artifact,
+                summary: null,
+                lastWriteTs: now,
+                complete: false,
+                parseError: null,
+              },
         };
       });
 
@@ -3306,30 +3325,25 @@ export const createAppStore = (props: AppStoreProps) => {
       void loadArtifactSummary(process.cwd(), featureName, artifact)
         .then((res) => {
           set((state) => {
-            const entry = state.artifactGenerating[path];
+            const entry = state.artifactGenerating;
             // Entry could have been cleared by clearArtifactViewOnEngineSwitch
-            // while the load was in flight. Drop the result silently.
-            if (!entry) return state;
+            // while the load was in flight, or replaced by a write to a
+            // different artifact. Drop the result silently.
+            if (!entry || entry.absolutePath !== path) return state;
 
             if (res.ok) {
               return {
                 artifactGenerating: {
-                  ...state.artifactGenerating,
-                  [path]: {
-                    ...entry,
-                    summary: res.summary,
-                    parseError: null,
-                  },
+                  ...entry,
+                  summary: res.summary,
+                  parseError: null,
                 },
               };
             }
 
             const message = describeLoadError(res.error);
             return {
-              artifactGenerating: {
-                ...state.artifactGenerating,
-                [path]: { ...entry, parseError: message },
-              },
+              artifactGenerating: { ...entry, parseError: message },
             };
           });
         })
@@ -3346,45 +3360,41 @@ export const createAppStore = (props: AppStoreProps) => {
 
     markArtifactGenerationComplete: (path: string) => {
       set((state) => {
-        const entry = state.artifactGenerating[path];
-        if (!entry || entry.complete) return state;
+        const entry = state.artifactGenerating;
+        if (!entry || entry.absolutePath !== path || entry.complete) {
+          return state;
+        }
         return {
-          artifactGenerating: {
-            ...state.artifactGenerating,
-            [path]: { ...entry, complete: true },
-          },
+          artifactGenerating: { ...entry, complete: true },
         };
       });
     },
 
     reparseArtifactGeneration: (path: string) => {
       // Read the entry once to recover the (featureName, artifact) tuple
-      // without making the caller pass them in. If the entry was cleared
-      // before we got here (engine switch, panel teardown), bail out.
-      const entry = get().artifactGenerating[path];
-      if (!entry) return;
+      // without making the caller pass them in. If the active entry is
+      // for a different path (the agent moved on) or was cleared
+      // entirely (engine switch, panel teardown), bail out.
+      const entry = get().artifactGenerating;
+      if (!entry || entry.absolutePath !== path) return;
       const { featureName, artifact } = entry;
 
       void loadArtifactSummary(process.cwd(), featureName, artifact)
         .then((res) => {
           set((state) => {
-            const current = state.artifactGenerating[path];
-            // Re-check: another action could have cleared the entry
-            // (e.g. clearArtifactViewOnEngineSwitch) while we were
-            // waiting on the read.
-            if (!current) return state;
+            const current = state.artifactGenerating;
+            // Re-check: another action could have cleared or replaced
+            // the entry while we were waiting on the read.
+            if (!current || current.absolutePath !== path) return state;
 
             if (res.ok) {
               return {
                 artifactGenerating: {
-                  ...state.artifactGenerating,
-                  [path]: {
-                    ...current,
-                    summary: res.summary,
-                    // Clear any mid-stream parse error: the post-flush
-                    // parse is authoritative.
-                    parseError: null,
-                  },
+                  ...current,
+                  summary: res.summary,
+                  // Clear any mid-stream parse error: the post-flush
+                  // parse is authoritative.
+                  parseError: null,
                 },
               };
             }
@@ -3393,11 +3403,8 @@ export const createAppStore = (props: AppStoreProps) => {
             // but keep whatever last-good summary the entry already has.
             return {
               artifactGenerating: {
-                ...state.artifactGenerating,
-                [path]: {
-                  ...current,
-                  parseError: describeLoadError(res.error),
-                },
+                ...current,
+                parseError: describeLoadError(res.error),
               },
             };
           });
@@ -3410,10 +3417,7 @@ export const createAppStore = (props: AppStoreProps) => {
         });
     },
 
-    openArtifactView: async (
-      featureName: string,
-      artifact: ArtifactKind
-    ) => {
+    openArtifactView: async (featureName: string, artifact: ArtifactKind) => {
       const workspaceRoot = process.cwd();
       const workflow = loadSpecConfig(workspaceRoot, featureName);
       const result = await loadArtifactSummary(
@@ -3509,7 +3513,7 @@ export const createAppStore = (props: AppStoreProps) => {
     },
 
     clearArtifactViewOnEngineSwitch: () => {
-      set({ artifactGenerating: {}, artifactViewOpen: null });
+      set({ artifactGenerating: null, artifactViewOpen: null });
     },
     // ── End spec artifact view actions ───────────────────────
 

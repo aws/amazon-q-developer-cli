@@ -10,9 +10,10 @@
  * to throw and to produce deterministic output.
  */
 
+import { existsSync } from 'node:fs';
 import { open } from 'node:fs/promises';
 import { join } from 'node:path';
-import { specsRoot, findSpecFeature } from './spec-workspace.js';
+import { specsRoot } from './spec-workspace.js';
 import {
   parseArtifact,
   type ArtifactKind,
@@ -45,7 +46,9 @@ export type LoadResult =
   | { ok: false; error: LoadError };
 
 /** Map a Node fs error code to our `ReadFailed.category`. */
-function categorizeFsError(code: unknown): 'NotFound' | 'PermissionDenied' | 'Io' {
+function categorizeFsError(
+  code: unknown
+): 'NotFound' | 'PermissionDenied' | 'Io' {
   if (code === 'ENOENT') return 'NotFound';
   if (code === 'EACCES' || code === 'EPERM') return 'PermissionDenied';
   return 'Io';
@@ -73,8 +76,7 @@ async function readBoundedFile(
   path: string,
   maxBytes: number
 ): Promise<
-  | { ok: true; bytes: Buffer }
-  | { tooLarge: true; sizeBytes: number }
+  { ok: true; bytes: Buffer } | { tooLarge: true; sizeBytes: number }
 > {
   const fh = await open(path, 'r');
   try {
@@ -97,8 +99,10 @@ async function readBoundedFile(
  * Load and parse an artifact summary.
  *
  * Steps:
- *   1. Confirm the feature directory exists (delegates to
- *      `findSpecFeature`). Returns `FeatureNotFound` if missing.
+ *   1. Confirm the feature directory exists with a single `existsSync`
+ *      check. Returns `FeatureNotFound` if missing. (Avoids the full
+ *      `findSpecFeature` directory scan, which would be quadratic in
+ *      the number of specs when called once per agent write event.)
  *   2. Resolve the artifact path under the feature directory.
  *      Returns `ArtifactNotFound` if the file isn't on disk.
  *   3. Read up to 10 MB; reject `TooLarge` for anything bigger.
@@ -113,8 +117,8 @@ export async function loadArtifactSummary(
   featureName: string,
   artifact: ArtifactKind
 ): Promise<LoadResult> {
-  const feature = findSpecFeature(workspaceRoot, featureName);
-  if (!feature) {
+  const featureDir = join(specsRoot(workspaceRoot), featureName);
+  if (!existsSync(featureDir)) {
     return { ok: false, error: { kind: 'FeatureNotFound', featureName } };
   }
 

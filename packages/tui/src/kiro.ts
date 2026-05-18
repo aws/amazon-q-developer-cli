@@ -281,9 +281,7 @@ export class Kiro {
    * relevant tool calls in a way that should drive this UI, but we
    * filter on engine at registration time as defence-in-depth.
    */
-  onArtifactWrite(
-    handler: (match: SpecArtifactPathMatch) => void
-  ): void {
+  onArtifactWrite(handler: (match: SpecArtifactPathMatch) => void): void {
     this.artifactWriteHandler = handler;
   }
 
@@ -296,9 +294,7 @@ export class Kiro {
    * mid-stream — by `ToolCallFinished` the file has been fully flushed
    * to disk and the second parse is reliable.
    */
-  onArtifactFinish(
-    handler: (match: SpecArtifactPathMatch) => void
-  ): void {
+  onArtifactFinish(handler: (match: SpecArtifactPathMatch) => void): void {
     this.artifactFinishHandler = handler;
   }
 
@@ -416,26 +412,21 @@ export class Kiro {
           event.type === AgentEventType.ToolCall &&
           this.artifactWriteHandler
         ) {
-          // Log every ToolCall so we can debug which write tool KAS uses
-          // (it's been observed routing through `create` rather than
-          // `fs_write` / `Write`). This is debug-level only; remove or
-          // tighten once we've nailed the matrix.
-          const debugPath =
-            typeof event.args?.['path'] === 'string'
-              ? (event.args['path'] as string)
-              : undefined;
-          logger.debug('[kiro] tool_call', {
-            name: event.name,
-            sessionId: event.sessionId,
-            path: debugPath,
-            argKeys: Object.keys(event.args ?? {}),
-          });
-
           if (isFileWriteToolName(event.name) && isWriteOperation(event.args)) {
             const path = extractToolPath(event.args);
             if (path) {
               const match = matchSpecArtifactPath(path, process.cwd());
               if (match) {
+                // Log only on a successful spec-artifact match. Keeps the
+                // debug stream readable during agent streaming and avoids
+                // serialising args.argKeys for every unrelated ToolCall.
+                logger.debug('[kiro] spec-artifact write', {
+                  name: event.name,
+                  sessionId: event.sessionId,
+                  path,
+                  artifact: match.artifact,
+                  featureName: match.featureName,
+                });
                 // Track the in-flight call so we can re-parse on
                 // ToolCallFinished. Stored even when no finish handler
                 // is registered — the lookup is cheap and harmless.

@@ -58,17 +58,22 @@ describe('extractTasks', () => {
   });
 
   it('uses min-depth as the high-level depth', () => {
-    // All checkbox lines at depth 2 — they're all high-level then
+    // High-level tasks are determined by the smallest indentation depth
+    // among all checkbox lines. Checkbox lines at deeper indentation
+    // are sub-tasks of the most recent high-level task in *source order*
+    // — there is no nesting heuristic that re-attributes a deeper line
+    // to an earlier task that doesn't immediately precede it.
     const md = [
       '  - [ ] 1. A',
-      '  - [ ] 2. B',
       '    - [ ] 1.1. nested under A',
+      '  - [ ] 2. B',
     ].join('\n');
     const tasks = extractTasks(md);
     expect(tasks).toHaveLength(2);
     expect(tasks[0]!.number).toBe('1');
     expect(tasks[1]!.number).toBe('2');
     expect(tasks[0]!.subTasks).toHaveLength(1);
+    expect(tasks[1]!.subTasks).toHaveLength(0);
   });
 
   it('captures detail body verbatim from task line to next task', () => {
@@ -100,11 +105,7 @@ describe('extractTasks', () => {
   });
 
   it('is deterministic', () => {
-    const md = [
-      '- [ ] 1. A',
-      '  - [ ] 1.1. a-sub',
-      '- [x] 2. B',
-    ].join('\n');
+    const md = ['- [ ] 1. A', '  - [ ] 1.1. a-sub', '- [x] 2. B'].join('\n');
     expect(JSON.stringify(extractTasks(md))).toBe(
       JSON.stringify(extractTasks(md))
     );
