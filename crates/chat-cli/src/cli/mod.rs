@@ -62,7 +62,10 @@ use crate::logging::{
 use crate::os::Os;
 use crate::util::CLI_BINARY_NAME;
 use crate::util::consts::env_var::KIRO_API_KEY;
-use crate::util::paths::logs_dir;
+use crate::util::paths::{
+    kas_token_path,
+    logs_dir,
+};
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, ValueEnum)]
 pub enum OutputFormat {
@@ -269,7 +272,7 @@ impl RootSubcommand {
                     }
 
                     // Handle headless session commands before TUI launch
-                    if let Some(result) = handle_session_flags(&args, os) {
+                    if let Some(result) = handle_session_flags(&args, os).await {
                         return result;
                     }
 
@@ -359,7 +362,7 @@ impl RootSubcommand {
                 }
 
                 // Handle headless session commands before TUI launch
-                if let Some(result) = handle_session_flags(&args, os) {
+                if let Some(result) = handle_session_flags(&args, os).await {
                     return result;
                 }
 
@@ -457,6 +460,35 @@ async fn launch_acp_session(os: &Os, args: &mut ChatArgs, agent_engine: chat::Ag
 /// Extracts embedded node + KAS assets if needed, then execs
 /// `node --experimental-wasm-modules acp-server.js --transport=stdio`.
 async fn execute_kas_acp(os: &Os, token_path: Option<PathBuf>) -> Result<ExitCode> {
+    let mut child = spawn_kas_process(os, KasStdio::Inherit, token_path).await?;
+    let status = child.wait().await?;
+    Ok(status.code().map_or(ExitCode::FAILURE, |c| ExitCode::from(c as u8)))
+}
+
+/// Stdio configuration for a spawned KAS process.
+#[derive(Debug, Clone, Copy)]
+pub(crate) enum KasStdio {
+    /// Inherit parent stdio. Used for passthrough `kiro-cli acp`.
+    Inherit,
+    /// Pipe stdin/stdout (for ACP client use), null stderr.
+    Piped,
+}
+
+/// Spawn a KAS process with `--transport=stdio`.
+///
+/// Resolves the node binary and server script from `KIRO_KAS_SERVER_PATH` or
+/// embedded assets. Pins the child to the CLI auth token via `--token-path`
+/// (default `kas_token_path(os)`); pass `token_path_override` to use a
+/// different file (e.g. user-supplied `--token-path` on `kiro-cli acp`).
+///
+/// TODO: token sync currently lives in the autocomplete repo. Move that
+/// into this CLI binary so KAS-via-CLI flows don't depend on the desktop
+/// app having run recently.
+pub(crate) async fn spawn_kas_process(
+    os: &Os,
+    stdio: KasStdio,
+    token_path_override: Option<PathBuf>,
+) -> Result<tokio::process::Child> {
     let (node_bin, server_js) = if let Ok(kas_server_path) = std::env::var("KIRO_KAS_SERVER_PATH") {
         (PathBuf::from("node"), PathBuf::from(kas_server_path))
     } else if let Some(paths) = crate::embedded_tui::extract_kas_assets_if_needed(os).await? {
@@ -465,45 +497,66 @@ async fn execute_kas_acp(os: &Os, token_path: Option<PathBuf>) -> Result<ExitCod
         bail!("KAS assets not embedded and KIRO_KAS_SERVER_PATH not set");
     };
 
-    let token_path = token_path.map_or_else(|| crate::util::paths::kas_token_path(os), Ok)?;
-
     debug!(
-        "Spawning KAS ACP: {} --experimental-wasm-modules {} --transport=stdio",
-        node_bin.display(),
-        server_js.display()
+        node = %node_bin.display(),
+        server = %server_js.display(),
+        ?stdio,
+        "spawning KAS process"
     );
 
-    let mut child = tokio::process::Command::new(&node_bin)
-        .arg("--experimental-wasm-modules")
+    let mut cmd = tokio::process::Command::new(&node_bin);
+    cmd.arg("--experimental-wasm-modules")
         .arg(&server_js)
         .arg("--transport=stdio")
-        .arg(format!("--token-path={}", token_path.display()))
-        .stdin(std::process::Stdio::inherit())
-        .stdout(std::process::Stdio::inherit())
-        .stderr(std::process::Stdio::inherit())
-        .kill_on_drop(true)
+        .kill_on_drop(true);
+
+    let token_path = token_path_override.map_or_else(|| kas_token_path(os), Ok)?;
+    cmd.arg(format!("--token-path={}", token_path.display()));
+
+    match stdio {
+        KasStdio::Piped => {
+            cmd.stdin(std::process::Stdio::piped())
+                .stdout(std::process::Stdio::piped())
+                // stderr is null'd in Piped mode so KAS chatter doesn't
+                // leak into one-shot output. To debug startup failures,
+                // run `kiro-cli acp --agent-engine=kas` (Inherit mode).
+                .stderr(std::process::Stdio::null());
+        },
+        KasStdio::Inherit => {
+            cmd.stdin(std::process::Stdio::inherit())
+                .stdout(std::process::Stdio::inherit())
+                .stderr(std::process::Stdio::inherit());
+        },
+    }
+
+    let child = cmd
         .spawn()
         .with_context(|| format!("failed to spawn KAS: {} {}", node_bin.display(), server_js.display()))?;
 
-    let status = child.wait().await?;
-    Ok(status.code().map_or(ExitCode::FAILURE, |c| ExitCode::from(c as u8)))
+    Ok(child)
 }
 
 /// Handle `--list-sessions` and `--delete-session` before TUI launch.
 ///
 /// Returns `Some(Result)` if a flag was handled, `None` to continue normal dispatch.
-fn handle_session_flags(args: &ChatArgs, os: &Os) -> Option<Result<ExitCode>> {
+async fn handle_session_flags(args: &ChatArgs, os: &Os) -> Option<Result<ExitCode>> {
     use crate::cli::chat::SessionSourceArg;
     use crate::cli::chat::cli::persist::SessionSource;
+
+    if !args.list_sessions && args.delete_session.is_none() {
+        return None;
+    }
     crate::cli::chat::cli::persist::handle_list_delete_session_flags(
         args.list_sessions,
         args.delete_session.as_deref(),
         args.session_source.map(|s| match s {
             SessionSourceArg::V1 => SessionSource::V1,
             SessionSourceArg::V2 => SessionSource::V2,
+            SessionSourceArg::V3 => SessionSource::Kas,
         }),
         os,
     )
+    .await
     .map(Ok)
 }
 

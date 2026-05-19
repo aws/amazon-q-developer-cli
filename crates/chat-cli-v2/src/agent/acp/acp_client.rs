@@ -53,13 +53,12 @@ impl acp::Client for AcpClient {
         let option_id = args
             .options
             .first()
-            .map(|opt| opt.id.clone())
+            .map(|opt| opt.option_id.clone())
             .ok_or_else(acp::Error::internal_error)?;
 
-        Ok(acp::RequestPermissionResponse {
-            outcome: acp::RequestPermissionOutcome::Selected { option_id },
-            meta: None,
-        })
+        Ok(acp::RequestPermissionResponse::new(
+            acp::RequestPermissionOutcome::Selected(acp::SelectedPermissionOutcome::new(option_id)),
+        ))
     }
 
     async fn write_text_file(&self, _args: acp::WriteTextFileRequest) -> acp::Result<acp::WriteTextFileResponse> {
@@ -89,10 +88,7 @@ impl acp::Client for AcpClient {
         Err(acp::Error::method_not_found())
     }
 
-    async fn kill_terminal_command(
-        &self,
-        _args: acp::KillTerminalCommandRequest,
-    ) -> acp::Result<acp::KillTerminalCommandResponse> {
+    async fn kill_terminal(&self, _args: acp::KillTerminalRequest) -> acp::Result<acp::KillTerminalResponse> {
         Err(acp::Error::method_not_found())
     }
 
@@ -128,25 +124,14 @@ pub async fn execute(agent_path: String) -> Result<ExitCode> {
             tokio::task::spawn_local(handle_io);
 
             // Initialize connection
-            conn.initialize(acp::InitializeRequest {
-                protocol_version: acp::V1,
-                client_capabilities: acp::ClientCapabilities::default(),
-                client_info: Some(acp::Implementation {
-                    name: "acp-test-client".to_string(),
-                    title: Some("ACP Test Client".to_string()),
-                    version: "0.1.0".to_string(),
-                }),
-                meta: None,
-            })
+            conn.initialize(acp::InitializeRequest::new(acp::ProtocolVersion::V1).client_info(Some(
+                acp::Implementation::new("acp-test-client", "0.1.0").title(Some("ACP Test Client".to_string())),
+            )))
             .await?;
 
             // Create session
             let session = conn
-                .new_session(acp::NewSessionRequest {
-                    mcp_servers: Vec::new(),
-                    cwd: std::env::current_dir()?,
-                    meta: None,
-                })
+                .new_session(acp::NewSessionRequest::new(std::env::current_dir()?))
                 .await?;
 
             println!("Session created: {:#?}", session);
@@ -172,11 +157,10 @@ pub async fn execute(agent_path: String) -> Result<ExitCode> {
                 if let Some(mode_id) = input.strip_prefix("/mode ") {
                     let mode_id = mode_id.trim();
                     match conn
-                        .set_session_mode(acp::SetSessionModeRequest {
-                            session_id: session.session_id.clone(),
-                            mode_id: acp::SessionModeId(mode_id.into()),
-                            meta: None,
-                        })
+                        .set_session_mode(acp::SetSessionModeRequest::new(
+                            session.session_id.clone(),
+                            acp::SessionModeId::new(mode_id),
+                        ))
                         .await
                     {
                         Ok(_) => println!("Switched to agent: {}", mode_id),
@@ -185,15 +169,9 @@ pub async fn execute(agent_path: String) -> Result<ExitCode> {
                     continue;
                 }
 
-                conn.prompt(acp::PromptRequest {
-                    session_id: session.session_id.clone(),
-                    prompt: vec![acp::ContentBlock::Text(acp::TextContent {
-                        text: input.to_string(),
-                        annotations: None,
-                        meta: None,
-                    })],
-                    meta: None,
-                })
+                conn.prompt(acp::PromptRequest::new(session.session_id.clone(), vec![
+                    acp::ContentBlock::Text(acp::TextContent::new(input.to_string())),
+                ]))
                 .await?;
             }
 

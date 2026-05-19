@@ -13,7 +13,7 @@ license = "MIT OR Apache-2.0"
 
 [workspace.dependencies]
 agent = { path = "crates/agent" }
-agent-client-protocol = { version = "0.7.0", features = ["unstable"] }
+agent-client-protocol = { version = "0.10.4", features = ["unstable"] }
 amzn-codewhisperer-client = { path = "crates/amzn-codewhisperer-client" }
 amzn-codewhisperer-streaming-client = { path = "crates/amzn-codewhisperer-streaming-client" }
 amzn-consolas-client = { path = "crates/amzn-consolas-client" }

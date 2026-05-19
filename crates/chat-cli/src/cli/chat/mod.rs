@@ -261,6 +261,8 @@ fn get_shadow_repo_dir(os: &Os, conversation_id: String) -> Result<PathBuf, crat
 pub enum SessionSourceArg {
     V1,
     V2,
+    #[value(hide = true)]
+    V3,
 }
 
 pub use chat_cli_v2::launch_options::{

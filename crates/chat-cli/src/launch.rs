@@ -205,12 +205,12 @@ async fn launch_acp_non_interactive(
     }
 
     fn non_interactive_error(reason: &str) -> acp::Error {
-        acp::Error::internal_error().with_data(serde_json::json!({
+        acp::Error::internal_error().data(Some(serde_json::json!({
             "reason": format!(
                 "{reason} is not supported in non-interactive mode. \
                  Use --trust-all-tools to auto-approve tool use, or drop --no-interactive.",
             ),
-        }))
+        })))
     }
 
     #[async_trait::async_trait(?Send)]
@@ -254,12 +254,11 @@ async fn launch_acp_non_interactive(
                             .iter()
                             .find(|opt| opt.kind == acp::PermissionOptionKind::AllowOnce)
                     })
-                    .map(|opt| opt.id.clone())
+                    .map(|opt| opt.option_id.clone())
                     .ok_or_else(acp::Error::internal_error)?;
-                return Ok(acp::RequestPermissionResponse {
-                    outcome: acp::RequestPermissionOutcome::Selected { option_id },
-                    meta: None,
-                });
+                return Ok(acp::RequestPermissionResponse::new(
+                    acp::RequestPermissionOutcome::Selected(acp::SelectedPermissionOutcome::new(option_id)),
+                ));
             }
             eprintln!(
                 "[denied] tool permission approval is not supported in non-interactive mode. \
@@ -298,10 +297,7 @@ async fn launch_acp_non_interactive(
             Err(non_interactive_error("client-side terminal wait"))
         }
 
-        async fn kill_terminal_command(
-            &self,
-            _args: acp::KillTerminalCommandRequest,
-        ) -> acp::Result<acp::KillTerminalCommandResponse> {
+        async fn kill_terminal(&self, _args: acp::KillTerminalRequest) -> acp::Result<acp::KillTerminalResponse> {
             Err(non_interactive_error("client-side terminal kill"))
         }
 
@@ -362,39 +358,25 @@ async fn launch_acp_non_interactive(
             );
             tokio::task::spawn_local(handle_io);
 
-            conn.initialize(acp::InitializeRequest {
-                protocol_version: acp::V1,
-                client_capabilities: acp::ClientCapabilities::default(),
-                client_info: Some(acp::Implementation {
-                    name: "kiro-cli-non-interactive".to_string(),
-                    title: Some("Kiro CLI (non-interactive)".to_string()),
-                    version: env!("CARGO_PKG_VERSION").to_string(),
-                }),
-                meta: None,
-            })
+            conn.initialize(
+                acp::InitializeRequest::new(acp::ProtocolVersion::V1).client_info(Some(
+                    acp::Implementation::new("kiro-cli-non-interactive", env!("CARGO_PKG_VERSION"))
+                        .title(Some("Kiro CLI (non-interactive)".to_string())),
+                )),
+            )
             .await
             .context("ACP initialize failed")?;
 
             let cwd = std::env::current_dir().context("failed to resolve current working directory")?;
             let session = conn
-                .new_session(acp::NewSessionRequest {
-                    mcp_servers: Vec::new(),
-                    cwd,
-                    meta: None,
-                })
+                .new_session(acp::NewSessionRequest::new(cwd))
                 .await
                 .context("ACP new_session failed")?;
 
             let response = conn
-                .prompt(acp::PromptRequest {
-                    session_id: session.session_id,
-                    prompt: vec![acp::ContentBlock::Text(acp::TextContent {
-                        text: input,
-                        annotations: None,
-                        meta: None,
-                    })],
-                    meta: None,
-                })
+                .prompt(acp::PromptRequest::new(session.session_id, vec![
+                    acp::ContentBlock::Text(acp::TextContent::new(input)),
+                ]))
                 .await;
 
             // Ensure trailing newline after streamed agent text.
@@ -412,7 +394,10 @@ async fn launch_acp_non_interactive(
                 acp::StopReason::EndTurn | acp::StopReason::MaxTokens | acp::StopReason::MaxTurnRequests => {
                     ExitCode::SUCCESS
                 },
-                acp::StopReason::Cancelled | acp::StopReason::Refusal => ExitCode::FAILURE,
+                // Cancelled / Refusal / future variants (StopReason is non_exhaustive) all
+                // surface as a failure exit. Listed under the catch-all rather than enumerated
+                // so new variants don't accidentally promote to success.
+                _ => ExitCode::FAILURE,
             };
             Ok(exit_code)
         })

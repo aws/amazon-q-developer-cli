@@ -29,17 +29,16 @@ async fn initialize() {
     let client = common::AcpTestClient::spawn(stdin, stdout, true);
 
     let resp = client.initialize().await.expect("initialize failed");
-    assert_eq!(resp.protocol_version, agent_client_protocol::V1);
+    assert_eq!(resp.protocol_version, agent_client_protocol::ProtocolVersion::V1);
 
     // Verify auth_methods contains login guidance
     assert_eq!(resp.auth_methods.len(), 1);
     let auth_method = &resp.auth_methods[0];
-    assert_eq!(auth_method.id.0.as_ref(), "kiro-login");
-    assert_eq!(auth_method.name, "Kiro Login");
+    assert_eq!(auth_method.id().0.as_ref(), "kiro-login");
+    assert_eq!(auth_method.name(), "Kiro Login");
     assert!(
         auth_method
-            .description
-            .as_ref()
+            .description()
             .unwrap()
             .contains("https://kiro.dev/docs/cli/authentication/")
     );
@@ -683,16 +682,10 @@ async fn prompt_with_resource_link() {
     // Send prompt with mixed Text and ResourceLink
     let content = vec![
         common::text_content("Please analyze this file:"),
-        acp::ContentBlock::ResourceLink(acp::ResourceLink {
-            uri: "file:///test/project/auth.rs".to_string(),
-            name: "auth.rs".to_string(),
-            mime_type: Some("text/x-rust".to_string()),
-            title: None,
-            description: None,
-            size: None,
-            annotations: None,
-            meta: None,
-        }),
+        acp::ContentBlock::ResourceLink(
+            acp::ResourceLink::new("auth.rs", "file:///test/project/auth.rs")
+                .mime_type(Some("text/x-rust".to_string())),
+        ),
         common::text_content("What security issues do you see?"),
     ];
 
@@ -882,13 +875,7 @@ async fn prompt_with_image() {
 
     let content = vec![
         common::text_content("What's in this image?"),
-        acp::ContentBlock::Image(acp::ImageContent {
-            data: base64_data,
-            mime_type: "image/png".to_string(),
-            uri: None,
-            annotations: None,
-            meta: None,
-        }),
+        acp::ContentBlock::Image(acp::ImageContent::new(base64_data, "image/png".to_string())),
     ];
 
     let result = client.prompt(session_id.clone(), content).await;
