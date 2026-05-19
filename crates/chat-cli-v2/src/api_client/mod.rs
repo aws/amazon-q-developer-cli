@@ -140,8 +140,7 @@ impl amzn_codewhisperer_client::config::endpoint::ResolveEndpoint for StaticCode
 // Opt out constants
 pub const X_AMZN_CODEWHISPERER_OPT_OUT_HEADER: &str = "x-amzn-codewhisperer-optout";
 
-// TODO(bskiser): confirm timeout is updated to an appropriate value?
-const DEFAULT_TIMEOUT_DURATION: Duration = Duration::from_secs(60 * 5);
+const DEFAULT_TIMEOUT_DURATION: Duration = Duration::from_secs(600);
 
 pub const MAX_RETRY_DELAY_DURATION: Duration = Duration::from_secs(10);
 
@@ -1681,7 +1680,7 @@ fn retry_config() -> RetryConfig {
 
 pub fn stalled_stream_protection_config() -> StalledStreamProtectionConfig {
     StalledStreamProtectionConfig::enabled()
-        .grace_period(Duration::from_secs(60 * 5))
+        .grace_period(Duration::from_secs(600))
         .build()
 }
 
