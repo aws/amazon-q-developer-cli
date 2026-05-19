@@ -324,7 +324,7 @@ const startInitialization = (resumePickerSessionId?: string) => {
               ? ('terminated' as const)
               : ('idle' as const),
         type: 'ephemeral' as const,
-        created: new Date(),
+        created: sub.createdAtMs ? new Date(sub.createdAtMs) : new Date(),
         lastActivity: new Date(),
         group: sub.group,
         parentSession: sub.parentSessionId,
@@ -388,7 +388,12 @@ const startInitialization = (resumePickerSessionId?: string) => {
 
     // Mark busy sessions missing from list as terminated; remove old terminated sessions
     const activeIds = new Set(subagents.map((s: any) => s.sessionId));
-    // Also clean up terminated sessions' handlers to prevent memory leaks
+    const activeNames = new Map<string, string>(); // name::group → sessionId (latest)
+    subagents.forEach((s: any) => {
+      const key = `${s.group ?? ''}::${s.sessionName || s.agentName}`;
+      activeNames.set(key, s.sessionId);
+    });
+    // Clean up handlers for superseded sessions (same name+group but different ID)
     state.sessions.forEach((s, id) => {
       if (s.status === 'pending') return;
       if (!activeIds.has(id) && s.status === 'busy') {
@@ -397,6 +402,11 @@ const startInitialization = (resumePickerSessionId?: string) => {
           lastActivity: new Date(),
         });
       } else if (!activeIds.has(id) && s.status === 'terminated') {
+        // Only clear conversation if a newer session with same name exists
+        const key = `${(s as any).group ?? ''}::${s.name}`;
+        if (activeNames.has(key) && activeNames.get(key) !== id) {
+          sessionConversationsStore.getState().clearSession(id);
+        }
         sessionHandlers.delete(id);
       }
     });

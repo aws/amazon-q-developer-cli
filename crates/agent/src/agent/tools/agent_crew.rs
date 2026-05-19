@@ -419,27 +419,44 @@ impl AgentCrew {
 
     /// Parse the JSON results envelope and format as markdown sections.
     fn format_group_results(output: &ToolExecutionOutput) -> String {
+        #[derive(serde::Deserialize)]
+        struct GroupResult {
+            name: String,
+            result: String,
+            #[serde(default)]
+            loop_iterations_used: u64,
+        }
+        #[derive(serde::Deserialize)]
+        struct GroupResponse {
+            #[serde(default)]
+            results: Vec<GroupResult>,
+        }
+
         let text = match output.items.first() {
             Some(ToolExecutionOutputItem::Text(t)) => t.as_str(),
             _ => return "No text response".to_string(),
         };
-        let results: serde_json::Value =
-            serde_json::from_str(text).unwrap_or_else(|_| serde_json::json!({"results": []}));
+        let response: GroupResponse = serde_json::from_str(text).unwrap_or_else(|_| GroupResponse { results: vec![] });
 
-        match results.get("results").and_then(|r| r.as_array()) {
-            Some(arr) => arr
-                .iter()
-                .map(|r| {
-                    format!(
-                        "## {}\n\n{}",
-                        r.get("name").and_then(|n| n.as_str()).unwrap_or("Unknown"),
-                        r.get("result").and_then(|v| v.as_str()).unwrap_or("No result")
-                    )
-                })
-                .collect::<Vec<_>>()
-                .join("\n\n---\n\n"),
-            None => "No results available".to_string(),
+        if response.results.is_empty() {
+            return "No results available".to_string();
         }
+
+        response
+            .results
+            .iter()
+            .map(|r| {
+                if r.loop_iterations_used > 0 {
+                    format!(
+                        "## {} (↻ {} iterations)\n\n{}",
+                        r.name, r.loop_iterations_used, r.result
+                    )
+                } else {
+                    format!("## {}\n\n{}", r.name, r.result)
+                }
+            })
+            .collect::<Vec<_>>()
+            .join("\n\n---\n\n")
     }
 
     /// Build a summary for non-blocking mode (fire-and-forget).
@@ -820,8 +837,8 @@ mod tests {
     fn format_group_results_valid_json() {
         let json = serde_json::json!({
             "results": [
-                {"name": "Research", "result": "Found 3 papers"},
-                {"name": "Code", "result": "Implemented feature"}
+                {"name": "Research", "result": "Found 3 papers", "loop_iterations_used": 0},
+                {"name": "Code", "result": "Implemented feature", "loop_iterations_used": 0}
             ]
         });
         let output = ToolExecutionOutput::new(vec![ToolExecutionOutputItem::Text(json.to_string())]);
@@ -830,6 +847,21 @@ mod tests {
         assert!(formatted.contains("Found 3 papers"));
         assert!(formatted.contains("## Code"));
         assert!(formatted.contains("Implemented feature"));
+        // No loop annotation when iterations = 0
+        assert!(!formatted.contains("↻"));
+    }
+
+    #[test]
+    fn format_group_results_with_loop_iterations() {
+        let json = serde_json::json!({
+            "results": [
+                {"name": "reviewer", "result": "All good", "loop_iterations_used": 3}
+            ]
+        });
+        let output = ToolExecutionOutput::new(vec![ToolExecutionOutputItem::Text(json.to_string())]);
+        let formatted = AgentCrew::format_group_results(&output);
+        assert!(formatted.contains("## reviewer (↻ 3 iterations)"));
+        assert!(formatted.contains("All good"));
     }
 
     #[test]
@@ -837,7 +869,7 @@ mod tests {
         let json = serde_json::json!({"results": []});
         let output = ToolExecutionOutput::new(vec![ToolExecutionOutputItem::Text(json.to_string())]);
         let formatted = AgentCrew::format_group_results(&output);
-        assert!(formatted.is_empty(), "expected empty string, got: {formatted}");
+        assert_eq!(formatted, "No results available");
     }
 
     #[test]

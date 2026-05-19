@@ -115,10 +115,11 @@ pub async fn handle_session_tool_request(
             let results = session_tx.wait_for_group_completion(group.clone()).await;
             let formatted: Vec<serde_json::Value> = results
                 .iter()
-                .map(|(name, result)| {
+                .map(|r| {
                     serde_json::json!({
-                        "name": name,
-                        "result": result.as_deref().unwrap_or("No result")
+                        "name": r.name,
+                        "result": r.result.as_deref().unwrap_or("No result"),
+                        "loop_iterations_used": r.loop_iterations_used
                     })
                 })
                 .collect();

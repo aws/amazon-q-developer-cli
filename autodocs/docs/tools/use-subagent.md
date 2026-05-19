@@ -1,13 +1,13 @@
 ---
 doc_meta:
-  validated: 2026-02-19
-  commit: d171e67b
+  validated: 2026-05-19
+  commit: 303e25369
   status: validated
   testable_headless: true
   category: tool
   title: use_subagent
   description: Delegate tasks to specialized subagents running in parallel with isolated context
-  keywords: [use_subagent, subagent, delegate, parallel, multi-agent, availableAgents, trustedAgents, agent_crew, pipeline, loop]
+  keywords: [use_subagent, subagent, delegate, parallel, multi-agent, availableAgents, trustedAgents, agent_crew, pipeline, loop, loop_iterations_used, resultType, changes_needed]
   related: [delegate, slash-agent]
 ---
 
@@ -132,7 +132,21 @@ The `agent_crew` mode orchestrates multi-stage pipelines with dependencies. Stag
 }
 ```
 
-**What this does**: Runs an implement→review cycle. If the reviewer outputs "NEEDS_CHANGES", the implementer re-runs with feedback (up to 3 iterations).
+**What this does**: Runs an implement→review cycle. If the reviewer signals changes are needed, the implementer re-runs with feedback (up to 3 iterations).
+
+**Triggering loops**: Stages can trigger loops in two ways:
+1. **Structured signal (recommended)**: The subagent sets `resultType: "changes_needed"` when calling the summary tool
+2. **Text matching (fallback)**: The trigger text (e.g., "NEEDS_CHANGES") appears in the last 500 bytes of output
+
+The structured signal is more reliable because it avoids false positives from trigger text appearing in feedback context from prior iterations.
+
+**Output**: When stages complete, results include `loop_iterations_used` showing how many iterations each stage ran. Stages that looped display this in the formatted output:
+
+```
+## reviewer (↻ 3 iterations)
+
+All checks passed.
+```
 
 **Stage fields**:
 - `name` (string, required): Unique stage identifier

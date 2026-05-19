@@ -79,6 +79,9 @@ pub struct SubagentInfo {
     /// Maximum loop iterations (0 if not looping).
     #[serde(default)]
     pub loop_max_iterations: u32,
+    /// When this session was created (millis since epoch).
+    #[serde(default)]
+    pub created_at_ms: u64,
 }
 
 /// OAuth request notification payload for MCP servers.

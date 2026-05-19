@@ -48,6 +48,9 @@ pub struct OrchestratedSession {
     /// Current loop iteration count for this session.
     #[serde(default)]
     pub loop_iteration: u32,
+    /// Whether the subagent explicitly signaled "changes_needed" via the summary tool's resultType.
+    #[serde(default)]
+    pub changes_needed: bool,
 }
 
 /// Status of an orchestrated session.

@@ -201,3 +201,147 @@ describe('AgentSession to Stage loop field mapping', () => {
     expect(stage.loopMaxIterations).toBe(0);
   });
 });
+
+// ---------------------------------------------------------------------------
+// 6. Loop iteration deduplication
+// ---------------------------------------------------------------------------
+
+/**
+ * Replicates the deduplication logic from CrewMonitorScreen.tsx:
+ * When a loop fires, the backend creates new sessions with the same name.
+ * The monitor should show only the latest iteration per stage name+group.
+ * At the same loopIteration, prefers the most recently created session.
+ */
+function deduplicateStages(
+  allStages: (Stage & { created?: number })[]
+): Stage[] {
+  const deduped = new Map<string, (typeof allStages)[0]>();
+  for (const stage of allStages) {
+    const key = `${stage.group ?? ''}::${stage.name}`;
+    const existing = deduped.get(key);
+    if (!existing) {
+      deduped.set(key, stage);
+    } else if ((stage.loopIteration ?? 0) > (existing.loopIteration ?? 0)) {
+      deduped.set(key, stage);
+    } else if ((stage.loopIteration ?? 0) === (existing.loopIteration ?? 0)) {
+      // Same iteration — prefer most recently created
+      if ((stage.created ?? 0) > (existing.created ?? 0)) {
+        deduped.set(key, stage);
+      }
+    }
+  }
+  return [...deduped.values()];
+}
+
+describe('Loop iteration deduplication', () => {
+  it('keeps only the latest iteration per stage name', () => {
+    const stages = [
+      baseStage({
+        name: 'writer',
+        sessionId: 's1',
+        loopIteration: 0,
+        state: 'Completed',
+        group: 'g1',
+        created: 100,
+      } as any),
+      baseStage({
+        name: 'reviewer',
+        sessionId: 's2',
+        loopIteration: 0,
+        hasLoop: true,
+        loopMaxIterations: 2,
+        state: 'Completed',
+        group: 'g1',
+        created: 200,
+      } as any),
+      baseStage({
+        name: 'writer',
+        sessionId: 's3',
+        loopIteration: 1,
+        state: 'Executing',
+        group: 'g1',
+        created: 300,
+      } as any),
+      baseStage({
+        name: 'reviewer',
+        sessionId: 's4',
+        loopIteration: 1,
+        hasLoop: true,
+        loopMaxIterations: 2,
+        state: 'Pending',
+        group: 'g1',
+        created: 400,
+      } as any),
+    ];
+
+    const result = deduplicateStages(stages);
+    expect(result).toHaveLength(2);
+    expect(result.find((s) => s.name === 'writer')?.sessionId).toBe('s3');
+    expect(result.find((s) => s.name === 'reviewer')?.sessionId).toBe('s4');
+  });
+
+  it('does not deduplicate across different groups', () => {
+    const stages = [
+      baseStage({
+        name: 'writer',
+        sessionId: 's1',
+        group: 'g1',
+        created: 100,
+      } as any),
+      baseStage({
+        name: 'writer',
+        sessionId: 's2',
+        group: 'g2',
+        created: 200,
+      } as any),
+    ];
+
+    const result = deduplicateStages(stages);
+    expect(result).toHaveLength(2);
+  });
+
+  it('prefers most recently created at same iteration', () => {
+    const stages = [
+      baseStage({
+        name: 'writer',
+        sessionId: 's1',
+        loopIteration: 0,
+        state: 'Completed',
+        group: 'g1',
+        created: 100,
+      } as any),
+      baseStage({
+        name: 'writer',
+        sessionId: 's2',
+        loopIteration: 0,
+        state: 'Completed',
+        group: 'g1',
+        created: 200,
+      } as any),
+    ];
+
+    const result = deduplicateStages(stages);
+    expect(result).toHaveLength(1);
+    expect(result[0]?.sessionId).toBe('s2');
+  });
+
+  it('with no duplicates returns all stages unchanged', () => {
+    const stages = [
+      baseStage({
+        name: 'writer',
+        sessionId: 's1',
+        group: 'g1',
+        created: 100,
+      } as any),
+      baseStage({
+        name: 'reviewer',
+        sessionId: 's2',
+        group: 'g1',
+        created: 200,
+      } as any),
+    ];
+
+    const result = deduplicateStages(stages);
+    expect(result).toHaveLength(2);
+  });
+});
