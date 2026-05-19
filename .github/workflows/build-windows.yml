@@ -29,6 +29,9 @@ env:
   AWS_REGION: "us-east-1"
   STAGE_NAME: ${{ inputs.environment }}
   CI: 1
+  # Avoid GitHub API rate limits (403) during postinstall scripts
+  # that download from GitHub Releases (e.g. @vscode/ripgrep).
+  GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
 permissions:
   id-token: write
