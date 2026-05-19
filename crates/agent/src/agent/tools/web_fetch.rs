@@ -169,7 +169,14 @@ impl WebFetch {
     }
 
     fn strip_html(html: &str) -> String {
-        html2text::from_read(html.as_bytes(), usize::MAX).unwrap_or_else(|_| html.to_string())
+        let html_owned = html.to_string();
+        match std::panic::catch_unwind(move || html2text::from_read(html_owned.as_bytes(), usize::MAX)) {
+            Ok(Ok(text)) => text,
+            _ => {
+                tracing::warn!("html2text panicked, falling back to raw HTML");
+                html.to_string()
+            },
+        }
     }
 
     fn truncate_content(text: &str, max_chars: usize) -> String {
@@ -230,5 +237,32 @@ impl WebFetch {
                 .join(". ");
             format!("{joined}.")
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn strip_html_renders_basic_html() {
+        let html = "<p>Hello <b>world</b></p>";
+        let result = WebFetch::strip_html(html);
+        assert!(result.contains("Hello"));
+        assert!(result.contains("world"));
+        assert!(!result.contains("<p>"));
+    }
+
+    #[test]
+    fn strip_html_fallback_on_empty() {
+        let result = WebFetch::strip_html("");
+        assert!(result.is_empty() || result.trim().is_empty());
+    }
+
+    #[test]
+    fn strip_html_does_not_panic_on_malformed_html() {
+        let malformed = "<div><p>unclosed<table><tr><td>nested</div>";
+        let result = WebFetch::strip_html(malformed);
+        assert!(!result.is_empty());
     }
 }
