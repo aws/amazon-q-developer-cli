@@ -60,11 +60,13 @@ export function isFocusable(component: Component | null): component is Component
 
 /**
  * Special marker used to indicate cursor position in rendered output.
- * 
+ *
  * This APC sequence is used internally to mark where the cursor should
- * be positioned after rendering. It's stripped from final output.
+ * be positioned after rendering. It's stripped before writing to stdout.
+ * The payload is kept minimal to avoid leaking identifiable text if a
+ * terminal or multiplexer echoes unrecognized APC sequences.
  */
-export const CURSOR_MARKER = '\x1b_twinki:c\x07';
+export const CURSOR_MARKER = '\x1b_k\x07';
 
 /**
  * Function type for handling input events.

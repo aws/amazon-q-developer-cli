@@ -659,7 +659,7 @@ const startApp = async () => {
   }
   process.stdout.write('\x1b[2J\x1b[H');
 
-  // Set process title so tmux automatic-rename shows "kiro" instead of "twinki:c".
+  // Set process title so tmux automatic-rename shows "kiro" instead of the APC marker.
   // This doesn't override manual pane renames — only affects automatic-rename.
   process.title = 'kiro';
 

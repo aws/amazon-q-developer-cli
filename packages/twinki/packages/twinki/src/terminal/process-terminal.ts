@@ -390,6 +390,21 @@ export class ProcessTerminal implements Terminal {
 	 * @param data - Data to write to terminal
 	 */
 	write(data: string): void {
+		// Safety guard: strip internal APC cursor marker if it leaked into the
+		// write buffer. Prevents terminals/multiplexers from echoing it back as
+		// visible text (e.g. tmux showing the APC payload in the input line).
+		// Only strips BEL-terminated APC (\x1b_...\x07); ST-terminated sequences
+		// (\x1b_...\x1b\\) used by Kitty graphics are preserved.
+		// Uses indexOf loop instead of regex to avoid polynomial backtracking.
+		if (data.includes('\x1b_')) {
+			let i = data.indexOf('\x1b_');
+			while (i !== -1) {
+				const end = data.indexOf('\x07', i + 2);
+				if (end === -1) break;
+				data = data.slice(0, i) + data.slice(end + 1);
+				i = data.indexOf('\x1b_', i);
+			}
+		}
 		process.stdout.write(data);
 		if (this.writeLogPath) {
 			try {
