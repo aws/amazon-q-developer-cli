@@ -4,6 +4,7 @@ import { Text } from './text/Text.js';
 import { Panel } from './panel/Panel.js';
 import { Divider } from './divider/Divider.js';
 import { useTheme } from '../../hooks/useThemeContext.js';
+import { useTerminalSize } from '../../hooks/useTerminalSize.js';
 import {
   padToWidth,
   padToWidthRight,
@@ -81,6 +82,7 @@ export const Explorer: React.FC<ExplorerProps> = ({
   onClose,
 }) => {
   const { getColor, colors } = useTheme();
+  const { width: termWidth, height: termHeight } = useTerminalSize();
   const secondaryHex =
     (colors as { secondary?: { truecolor?: string } }).secondary?.truecolor ??
     '#808080';
@@ -166,15 +168,55 @@ export const Explorer: React.FC<ExplorerProps> = ({
     });
   }, [columns, filteredRows]);
 
+  // Responsive: adjust list rows and preview to fit terminal height.
+  // All chrome (panel border, title, description, search, header, footer) always renders.
+  // Measured from actual JSX output:
+  //   panel border+title: 2, blank+description+blank: 3, search+margin: 2,
+  //   column header: 1, "(+N more)": 1, footer+border: 2 = 11
+  const CHROME_LINES = 11;
+
+  // Reserve a fixed budget for preview so layout doesn't jump as selection changes.
+  const hasAnyPreview = filteredRows.some((r) => r.preview);
+  const PREVIEW_CHROME = 3; // divider + heading + margin
+  const PREVIEW_BODY_MAX = 8;
+  const previewBudget = hasAnyPreview ? PREVIEW_BODY_MAX + PREVIEW_CHROME : 0;
+
+  const spaceForContent = termHeight - CHROME_LINES;
+  // List gets priority (minimum 3), preview gets the remainder.
+  const effectiveVisibleRows = Math.max(
+    Math.min(visibleRows, spaceForContent - previewBudget),
+    3
+  );
+  const maxPreviewLines =
+    spaceForContent - effectiveVisibleRows > PREVIEW_CHROME + 2
+      ? Math.min(
+          PREVIEW_BODY_MAX,
+          spaceForContent - effectiveVisibleRows - PREVIEW_CHROME
+        )
+      : 0;
+
+  // Responsive width: max width for the first column so rows never wrap.
+  const chevronW = 2;
+  const gapW = 4;
+  const panelPad = 4;
+  const secondColW = columnWidths[1] ?? 0;
+  const maxFirstColWidth = Math.max(
+    termWidth - chevronW - gapW - secondColW - panelPad,
+    20
+  );
+
   // Scroll window.
   const startIndex = Math.max(
     0,
     Math.min(
-      selectedIndex - Math.floor(visibleRows / 2),
-      filteredRows.length - visibleRows
+      selectedIndex - Math.floor(effectiveVisibleRows / 2),
+      filteredRows.length - effectiveVisibleRows
     )
   );
-  const endIndex = Math.min(startIndex + visibleRows, filteredRows.length);
+  const endIndex = Math.min(
+    startIndex + effectiveVisibleRows,
+    filteredRows.length
+  );
   const windowRows = filteredRows.slice(startIndex, endIndex);
 
   const renderHint = (hint: { key: string; label: string }) => (
@@ -256,10 +298,13 @@ export const Explorer: React.FC<ExplorerProps> = ({
               {columns.map((c, ci) => {
                 const w = columnWidths[ci] ?? 0;
                 const raw = row.values[c.key] ?? '';
+                // Truncate first column to available terminal width to prevent wrapping.
+                const cellWidth = ci === 0 ? Math.min(w, maxFirstColWidth) : w;
+                const truncated = truncateToWidth(raw, cellWidth);
                 const value =
                   c.align === 'right'
-                    ? padToWidthRight(raw, w)
-                    : padToWidth(raw, w);
+                    ? padToWidthRight(truncated, cellWidth)
+                    : padToWidth(truncated, cellWidth);
                 const styled = isSel
                   ? chalk.hex(accentHex).bold(value)
                   : chalk.hex(secondaryHex)(value);
@@ -297,7 +342,7 @@ export const Explorer: React.FC<ExplorerProps> = ({
         )}
 
         {/* Preview pane */}
-        {selected?.preview && (
+        {selected?.preview && maxPreviewLines > 0 && (
           <>
             <Divider />
             {previewHeading && (
@@ -312,20 +357,26 @@ export const Explorer: React.FC<ExplorerProps> = ({
             )}
             <Box flexDirection="row" marginTop={previewHeading ? 1 : 0}>
               <Box flexDirection="column" width={1} backgroundColor={brandHex}>
-                {selected.preview.body.split('\n').map((_line, i) => (
-                  <Text key={i}> </Text>
-                ))}
+                {selected.preview.body
+                  .split('\n')
+                  .slice(0, maxPreviewLines)
+                  .map((_line, i) => (
+                    <Text key={i}> </Text>
+                  ))}
               </Box>
               <Box flexDirection="column" marginLeft={1}>
-                {selected.preview.body.split('\n').map((line, i) => {
-                  const truncated =
-                    visibleWidth(line) > 160
-                      ? truncateToWidth(line, 160, '…')
-                      : line;
-                  return (
-                    <Text key={i}>{chalk.hex(secondaryHex)(truncated)}</Text>
-                  );
-                })}
+                {selected.preview.body
+                  .split('\n')
+                  .slice(0, maxPreviewLines)
+                  .map((line, i) => {
+                    const truncated =
+                      visibleWidth(line) > 160
+                        ? truncateToWidth(line, 160, '…')
+                        : line;
+                    return (
+                      <Text key={i}>{chalk.hex(secondaryHex)(truncated)}</Text>
+                    );
+                  })}
               </Box>
             </Box>
           </>

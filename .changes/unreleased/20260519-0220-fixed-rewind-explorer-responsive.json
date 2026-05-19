@@ -1,0 +1,4 @@
+{
+  "type": "fixed",
+  "description": "/rewind picker now adapts to small terminal panes instead of overflowing."
+}
