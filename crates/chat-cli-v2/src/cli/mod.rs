@@ -294,6 +294,10 @@ impl Cli {
 
         let result = if matches!(&subcommand, RootSubcommand::Chat(args) if !args.legacy_mode) {
             let asset_paths = crate::embedded_tui::extract_tui_assets_if_needed(&os).await?;
+            // Write feed.json alongside TUI assets so the TUI reads it from disk
+            // instead of receiving the entire changelog (~100KB) as an env var.
+            let feed_path = crate::util::paths::feed_json_path()?;
+            std::fs::write(&feed_path, include_str!("feed.json"))?;
             crate::launch_options::launch_tui(&asset_paths).await
         } else {
             subcommand.execute(&mut os).await

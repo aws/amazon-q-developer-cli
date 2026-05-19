@@ -120,6 +120,11 @@ pub fn tui_js_sha256_path() -> Result<PathBuf> {
     Ok(data_dir()?.join("tui.js.sha256"))
 }
 
+/// Path to feed.json written for the TUI to read
+pub fn feed_json_path() -> Result<PathBuf> {
+    Ok(data_dir()?.join("feed.json"))
+}
+
 /// Root directory for user-level Kiro config data.
 ///
 /// Honors the `KIRO_HOME` environment variable when set; otherwise falls back

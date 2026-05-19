@@ -76,8 +76,12 @@ async fn launch_acp_interactive(os: &Os, agent_engine: AgentEngine, mode: Option
     cmd.arg(&asset_paths.tui_js_path)
         .args(&args[1..])
         .env("JSC_numberOfGCMarkers", "1")
-        .env("KIRO_FEED_JSON", include_str!("cli/feed.json"))
         .kill_on_drop(true);
+
+    // Write feed.json to data dir and pass the path to the TUI (avoids 100KB env var).
+    let feed_path = crate::util::paths::feed_json_path()?;
+    std::fs::write(&feed_path, include_str!("cli/feed.json"))?;
+    cmd.env("KIRO_FEED_FILE", &feed_path);
     if let Some(ref force_color) = force_color {
         cmd.env("FORCE_COLOR", force_color);
     }

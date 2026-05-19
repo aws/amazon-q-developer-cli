@@ -1,28 +1,40 @@
 import { describe, it, expect, beforeEach, afterEach } from 'bun:test';
+import { writeFileSync, unlinkSync, mkdtempSync } from 'fs';
+import { join } from 'path';
+import { tmpdir } from 'os';
 import { FeedEntryType, type AnnouncementEntry } from '../../constants/feed.js';
 
-let originalFeedJson: string | undefined;
+let originalFeedFile: string | undefined;
+let tmpDir: string;
+let feedFile: string;
 
 beforeEach(() => {
-  originalFeedJson = process.env.KIRO_FEED_JSON;
+  originalFeedFile = process.env.KIRO_FEED_FILE;
+  tmpDir = mkdtempSync(join(tmpdir(), 'feed-test-'));
+  feedFile = join(tmpDir, 'feed.json');
 });
 
 afterEach(() => {
-  if (originalFeedJson !== undefined) {
-    process.env.KIRO_FEED_JSON = originalFeedJson;
+  if (originalFeedFile !== undefined) {
+    process.env.KIRO_FEED_FILE = originalFeedFile;
   } else {
-    delete process.env.KIRO_FEED_JSON;
+    delete process.env.KIRO_FEED_FILE;
+  }
+  try {
+    unlinkSync(feedFile);
+  } catch {
+    // file may not exist
   }
 });
 
-/** Helper: re-import feed.ts with a fresh module to pick up env changes */
-async function loadFeed(envJson?: string) {
-  if (envJson !== undefined) {
-    process.env.KIRO_FEED_JSON = envJson;
+/** Helper: write feed JSON to a temp file and re-import feed.ts */
+async function loadFeed(json?: string) {
+  if (json !== undefined) {
+    writeFileSync(feedFile, json);
+    process.env.KIRO_FEED_FILE = feedFile;
   } else {
-    delete process.env.KIRO_FEED_JSON;
+    delete process.env.KIRO_FEED_FILE;
   }
-  // Bust the module cache so parseFeedFromEnv() re-runs
   const cacheBuster = `?t=${Date.now()}-${Math.random()}`;
   const mod = await import(`../../constants/feed.js${cacheBuster}`);
   return mod;
@@ -51,13 +63,13 @@ const SAMPLE_FEED = JSON.stringify({
 });
 
 describe('feed', () => {
-  it('returns empty entries when KIRO_FEED_JSON is not set', async () => {
+  it('returns empty entries when KIRO_FEED_FILE is not set', async () => {
     const { FEED_ENTRIES, getAnnouncements } = await loadFeed(undefined);
     expect(FEED_ENTRIES).toEqual([]);
     expect(getAnnouncements()).toEqual([]);
   });
 
-  it('returns empty entries when KIRO_FEED_JSON is invalid JSON', async () => {
+  it('returns empty entries when feed file is invalid JSON', async () => {
     const { FEED_ENTRIES } = await loadFeed('not json!!!');
     expect(FEED_ENTRIES).toEqual([]);
   });
@@ -173,13 +185,13 @@ describe('feed', () => {
 });
 
 describe('getRecentReleases', () => {
-  it('returns empty array when KIRO_FEED_JSON is not set', async () => {
+  it('returns empty array when KIRO_FEED_FILE is not set', async () => {
     const { getRecentReleases } = await loadFeed(undefined);
     expect(getRecentReleases()).toEqual([]);
     expect(getRecentReleases(2)).toEqual([]);
   });
 
-  it('returns empty array when KIRO_FEED_JSON is invalid JSON', async () => {
+  it('returns empty array when feed file is invalid JSON', async () => {
     const { getRecentReleases } = await loadFeed('not json!!!');
     expect(getRecentReleases(2)).toEqual([]);
   });
@@ -290,5 +302,16 @@ describe('getRecentReleases', () => {
     const [entry] = getRecentReleases();
     expect(entry.content).toContain('A feature');
     expect(entry.content).not.toContain('#123');
+  });
+});
+
+describe('file read errors', () => {
+  it('returns empty when KIRO_FEED_FILE points to nonexistent file', async () => {
+    process.env.KIRO_FEED_FILE = '/nonexistent/feed.json';
+    const cacheBuster = `?t=${Date.now()}-${Math.random()}`;
+    const { FEED_ENTRIES } = await import(
+      `../../constants/feed.js${cacheBuster}`
+    );
+    expect(FEED_ENTRIES).toEqual([]);
   });
 });

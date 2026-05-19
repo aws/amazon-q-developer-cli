@@ -1,0 +1,4 @@
+{
+  "type": "fixed",
+  "description": "Write feed.json to disk instead of passing 100KB changelog as environment variable to TUI subprocess"
+}

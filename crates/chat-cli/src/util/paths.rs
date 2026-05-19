@@ -117,6 +117,11 @@ pub fn tui_js_sha256_path() -> Result<PathBuf> {
     Ok(data_dir()?.join("tui.js.sha256"))
 }
 
+/// Path to feed.json written for the TUI to read
+pub fn feed_json_path() -> Result<PathBuf> {
+    Ok(data_dir()?.join("feed.json"))
+}
+
 /// Path to extracted Node.js executable (for KAS agent)
 pub fn node_path() -> Result<PathBuf> {
     Ok(data_dir()?.join("node"))
