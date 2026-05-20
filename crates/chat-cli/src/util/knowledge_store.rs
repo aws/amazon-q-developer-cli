@@ -328,7 +328,14 @@ impl KnowledgeStore {
                 Some(s) => match EmbeddingType::from_str(s) {
                     Some(et) => Some(et),
                     None => {
-                        return Err(format!("Invalid embedding type '{}'. Valid options are: fast, best", s));
+                        #[cfg(all(target_os = "linux", target_arch = "aarch64"))]
+                        let valid = "fast";
+                        #[cfg(not(all(target_os = "linux", target_arch = "aarch64")))]
+                        let valid = "fast, best";
+                        return Err(format!(
+                            "Invalid embedding type '{}'. Valid options are: {}",
+                            s, valid
+                        ));
                     },
                 },
                 None => None,
@@ -623,5 +630,32 @@ mod tests {
 
         // Verify directory structure
         assert!(base_dir.to_string_lossy().contains("knowledge_bases"));
+    }
+
+    /// Regression test for #3139: on Linux ARM64, the error message for an invalid
+    /// embedding type must not list "best" as a valid option since it is unavailable.
+    #[test]
+    fn invalid_embedding_type_error_does_not_mention_best_on_linux_arm() {
+        use semantic_search_client::embedding::EmbeddingType;
+
+        // Simulate what knowledge_store does when from_str returns None
+        let invalid = "best";
+        let result = EmbeddingType::from_str(invalid);
+
+        #[cfg(all(target_os = "linux", target_arch = "aarch64"))]
+        {
+            // On Linux ARM64, "best" must not be accepted
+            assert!(result.is_none(), "'best' should not be valid on Linux ARM64");
+            // And the error message must only list "fast"
+            let valid = "fast";
+            let msg = format!("Invalid embedding type '{}'. Valid options are: {}", invalid, valid);
+            assert!(!msg.contains("best"), "error message must not mention 'best' on Linux ARM64");
+        }
+
+        #[cfg(not(all(target_os = "linux", target_arch = "aarch64")))]
+        {
+            // On other platforms, "best" is valid
+            assert!(result.is_some(), "'best' should be valid on this platform");
+        }
     }
 }
