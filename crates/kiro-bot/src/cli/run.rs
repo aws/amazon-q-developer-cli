@@ -136,6 +136,8 @@ async fn run_bot(cfg: Config, secrets: Secrets) -> Result<()> {
     };
     info!(bot_user_id, "Bot authenticated");
 
+    let feedback_writer = build_feedback_writer().await;
+
     let state = SlackState {
         core,
         frontend,
@@ -144,6 +146,7 @@ async fn run_bot(cfg: Config, secrets: Secrets) -> Result<()> {
         bot_user_id,
         user_map,
         pending_approvals,
+        feedback_writer,
     };
 
     let env = Arc::new(
@@ -278,4 +281,23 @@ pub async fn cmd_cron(name: &str) -> Result<()> {
 /// Run a cron instance as a scheduled daemon loop.
 pub async fn cmd_cron_daemon(name: &str) -> Result<()> {
     crate::frontend::cron::run_scheduled(name).await
+}
+
+/// Build a [`crate::engine::feedback::DynamoFeedbackWriter`] when the runtime
+/// is configured for it (env var `KIRO_BOT_FEEDBACK_TABLE` set). Returns
+/// `None` when feedback persistence is disabled — typical for the local CLI
+/// frontends, the cron daemon, or any non-Slack invocation.
+async fn build_feedback_writer()
+-> Option<std::sync::Arc<dyn crate::engine::feedback::FeedbackWriter>> {
+    let table = match std::env::var("KIRO_BOT_FEEDBACK_TABLE") {
+        Ok(v) if !v.is_empty() => v,
+        _ => return None,
+    };
+    let cfg = aws_config::defaults(aws_config::BehaviorVersion::latest())
+        .load()
+        .await;
+    let client = aws_sdk_dynamodb::Client::new(&cfg);
+    Some(std::sync::Arc::new(
+        crate::engine::feedback::DynamoFeedbackWriter::new(client, table),
+    ))
 }

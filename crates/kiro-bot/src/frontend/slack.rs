@@ -260,6 +260,11 @@ pub struct SlackState {
     pub bot_user_id: String,
     pub user_map: Arc<UserMap>,
     pub pending_approvals: PendingApprovals,
+    /// 👍/👎 reactions on bot-authored messages flow into this writer for the
+    /// nightly metrics Lambda. None when no feedback table is configured —
+    /// reactions are still consumed by the approval flow above, just not
+    /// persisted as feedback.
+    pub feedback_writer: Option<Arc<dyn crate::engine::feedback::FeedbackWriter>>,
 }
 
 static MENTION_PATTERN: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"<@[A-Z0-9]+>").unwrap());
@@ -493,6 +498,25 @@ async fn handle_reaction(
         pending_count,
         "Reaction on message, checking pending approvals"
     );
+
+    // Phase 6: 👍/👎 on a bot-authored message → persist as feedback. Runs
+    // alongside the approval flow below — a 👍 on an approval prompt is
+    // both an "allow_once" and (incidentally) a positive-feedback signal.
+    if let Some(writer) = state.feedback_writer.as_ref() {
+        if let Some(reaction_kind) = crate::engine::feedback::Reaction::from_slack(emoji) {
+            let channel_str = channel.as_ref().map(|c| c.to_string()).unwrap_or_default();
+            let record = crate::engine::feedback::FeedbackRecord {
+                slack_msg_id: format!("{channel_str}:{ts}"),
+                reaction: reaction_kind,
+                chunk_ids: Vec::new(), // populated from transcript lookup in a follow-up
+                ts: chrono::Utc::now(),
+            };
+            if let Err(e) = writer.record(record).await {
+                tracing::warn!(error = %e, "feedback PutItem failed; not blocking approval flow");
+            }
+        }
+    }
+
     let approval = state.pending_approvals.lock().unwrap().remove(&ts);
     let Some(mut approval) = approval else { return Ok(()) };
 
