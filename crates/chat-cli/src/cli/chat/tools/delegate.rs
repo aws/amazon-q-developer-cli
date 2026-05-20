@@ -599,4 +599,71 @@ mod tests {
         let schema = schemars::schema_for!(Delegate);
         println!("{}", serde_json::to_string_pretty(&schema).unwrap());
     }
+
+    // ── truncate_description ─────────────────────────────────────────────────
+
+    #[test]
+    fn truncate_at_first_period() {
+        assert_eq!(truncate_description("Short desc. More text."), "Short desc.");
+    }
+
+    #[test]
+    fn truncate_long_string_without_period() {
+        let long = "a".repeat(80);
+        let result = truncate_description(&long);
+        assert_eq!(result.len(), 57);
+    }
+
+    #[test]
+    fn truncate_short_string_without_period_unchanged() {
+        assert_eq!(truncate_description("short"), "short");
+    }
+
+    // ── format_launch_success ────────────────────────────────────────────────
+
+    #[test]
+    fn format_launch_success_contains_agent_and_task() {
+        let msg = format_launch_success("my-agent", "do the thing");
+        assert!(msg.contains("my-agent"));
+        assert!(msg.contains("do the thing"));
+    }
+
+    // ── AgentStatus ──────────────────────────────────────────────────────────
+
+    #[test]
+    fn agent_status_default_is_running() {
+        assert!(matches!(AgentStatus::default(), AgentStatus::Running));
+    }
+
+    // ── Delegate deserialization ─────────────────────────────────────────────
+
+    #[test]
+    fn deserialize_launch() {
+        let v = serde_json::json!({
+            "operation": "launch",
+            "task": "write a hello world program"
+        });
+        let d = serde_json::from_value::<Delegate>(v).unwrap();
+        assert!(matches!(d.operation, Operation::Launch));
+        assert_eq!(d.task.as_deref(), Some("write a hello world program"));
+    }
+
+    #[test]
+    fn deserialize_status_all() {
+        let v = serde_json::json!({ "operation": "status" });
+        let d = serde_json::from_value::<Delegate>(v).unwrap();
+        assert!(matches!(d.operation, Operation::Status));
+        assert!(d.agent.is_none());
+    }
+
+    #[test]
+    fn resolve_agent_name_fallback_chain() {
+        // explicit > configured_default > DEFAULT_AGENT_NAME
+        fn resolve<'a>(explicit: Option<&'a str>, configured: Option<&'a str>) -> &'a str {
+            explicit.or(configured).unwrap_or(DEFAULT_AGENT_NAME)
+        }
+        assert_eq!(resolve(Some("explicit"), Some("configured")), "explicit");
+        assert_eq!(resolve(None, Some("configured")), "configured");
+        assert_eq!(resolve(None, None), DEFAULT_AGENT_NAME);
+    }
 }

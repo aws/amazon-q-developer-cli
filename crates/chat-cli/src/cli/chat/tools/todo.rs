@@ -481,3 +481,91 @@ where
     let mut seen = HashSet::with_capacity(vec.len());
     vec.iter().any(|item| !seen.insert(item))
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // ── has_duplicates ───────────────────────────────────────────────────────
+
+    #[test]
+    fn has_duplicates_empty() {
+        assert!(!has_duplicates::<usize>(&[]));
+    }
+
+    #[test]
+    fn has_duplicates_unique() {
+        assert!(!has_duplicates(&[1, 2, 3]));
+    }
+
+    #[test]
+    fn has_duplicates_with_duplicate() {
+        assert!(has_duplicates(&[1, 2, 1]));
+    }
+
+    // ── generate_new_todo_id ─────────────────────────────────────────────────
+
+    #[test]
+    fn generate_new_todo_id_is_unique() {
+        // IDs are millisecond timestamps — sleep to guarantee different values
+        let a = generate_new_todo_id();
+        std::thread::sleep(std::time::Duration::from_millis(2));
+        let b = generate_new_todo_id();
+        assert_ne!(a, b, "IDs generated at different times must be unique");
+    }
+
+    #[test]
+    fn generate_new_todo_id_format() {
+        let id = generate_new_todo_id();
+        assert!(!id.is_empty());
+        assert!(id.chars().all(|c| c.is_ascii_digit()), "ID must be numeric: {id}");
+    }
+
+    // ── TodoList deserialization ─────────────────────────────────────────────
+
+    #[test]
+    fn deserialize_create() {
+        let v = serde_json::json!({
+            "command": "create",
+            "todo_list_description": "test todo",
+            "tasks": ["task 1", "task 2"]
+        });
+        let tl = serde_json::from_value::<TodoList>(v).unwrap();
+        assert!(matches!(tl, TodoList::Create { .. }));
+    }
+
+    #[test]
+    fn deserialize_complete() {
+        let v = serde_json::json!({
+            "command": "complete",
+            "current_id": "abc123",
+            "completed_indices": [0],
+            "context_update": "done"
+        });
+        let tl = serde_json::from_value::<TodoList>(v).unwrap();
+        assert!(matches!(tl, TodoList::Complete { .. }));
+    }
+
+    #[test]
+    fn deserialize_add() {
+        let v = serde_json::json!({
+            "command": "add",
+            "current_id": "abc123",
+            "new_tasks": ["new task"],
+            "insert_indices": [0]
+        });
+        let tl = serde_json::from_value::<TodoList>(v).unwrap();
+        assert!(matches!(tl, TodoList::Add { .. }));
+    }
+
+    #[test]
+    fn deserialize_remove() {
+        let v = serde_json::json!({
+            "command": "remove",
+            "current_id": "abc123",
+            "remove_indices": [1]
+        });
+        let tl = serde_json::from_value::<TodoList>(v).unwrap();
+        assert!(matches!(tl, TodoList::Remove { .. }));
+    }
+}

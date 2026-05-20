@@ -94,3 +94,46 @@ pub fn get_all_env_vars() -> std::env::Vars {
 pub fn get_telemetry_client_id(env: &Env) -> Result<String, std::env::VarError> {
     env.get(Q_TELEMETRY_CLIENT_ID)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::os::Env;
+
+    #[test]
+    fn get_mock_chat_response_present() {
+        let env = Env::from_slice(&[("Q_MOCK_CHAT_RESPONSE", "hello")]);
+        assert_eq!(get_mock_chat_response(&env), Some("hello".to_string()));
+    }
+
+    #[test]
+    fn get_mock_chat_response_absent() {
+        let env = Env::from_slice(&[]);
+        assert_eq!(get_mock_chat_response(&env), None);
+    }
+
+    #[test]
+    fn is_sigv4_enabled_with_value() {
+        let env = Env::from_slice(&[("AMAZON_Q_SIGV4", "true")]);
+        assert!(is_sigv4_enabled(&env));
+    }
+
+    #[test]
+    fn is_sigv4_enabled_empty_value() {
+        let env = Env::from_slice(&[("AMAZON_Q_SIGV4", "")]);
+        assert!(!is_sigv4_enabled(&env));
+    }
+
+    #[test]
+    fn is_sigv4_enabled_absent() {
+        let env = Env::from_slice(&[]);
+        assert!(!is_sigv4_enabled(&env));
+    }
+
+    #[test]
+    fn get_editor_fallback() {
+        // get_editor() reads from real env — just verify it returns a non-empty string
+        let editor = get_editor();
+        assert!(!editor.is_empty());
+    }
+}

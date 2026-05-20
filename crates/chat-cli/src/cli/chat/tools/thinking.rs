@@ -71,3 +71,36 @@ impl Thinking {
         Ok(())
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn deserialize_thinking() {
+        let v = serde_json::json!({ "thought": "let me reason through this" });
+        let t = serde_json::from_value::<Thinking>(v).unwrap();
+        assert_eq!(t.thought, "let me reason through this");
+    }
+
+    #[tokio::test]
+    async fn invoke_returns_empty_output() {
+        let t = Thinking { thought: "some thought".to_string() };
+        let result = t.invoke(std::io::sink()).await.unwrap();
+        assert!(matches!(result.output, OutputKind::Text(ref s) if s.is_empty()));
+    }
+
+    #[tokio::test]
+    async fn validate_accepts_empty_thought() {
+        let mut t = Thinking { thought: String::new() };
+        let os = crate::os::Os::new().await.unwrap();
+        assert!(t.validate(&os).await.is_ok());
+    }
+
+    #[tokio::test]
+    async fn validate_accepts_non_empty_thought() {
+        let mut t = Thinking { thought: "complex reasoning".to_string() };
+        let os = crate::os::Os::new().await.unwrap();
+        assert!(t.validate(&os).await.is_ok());
+    }
+}

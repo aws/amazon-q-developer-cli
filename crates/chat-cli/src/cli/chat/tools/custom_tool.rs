@@ -196,3 +196,31 @@ impl CustomTool {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn default_timeout_is_two_minutes_in_ms() {
+        assert_eq!(default_timeout(), 120 * 1000);
+    }
+
+    #[test]
+    fn get_default_scopes_returns_non_empty() {
+        let scopes = get_default_scopes();
+        assert!(!scopes.is_empty(), "default OAuth scopes must not be empty");
+    }
+
+    #[test]
+    fn get_default_scopes_are_strings() {
+        for scope in get_default_scopes() {
+            assert!(!scope.is_empty(), "each scope must be a non-empty string");
+        }
+    }
+
+    #[test]
+    fn transport_type_default_is_stdio() {
+        assert!(matches!(TransportType::default(), TransportType::Stdio));
+    }
+}

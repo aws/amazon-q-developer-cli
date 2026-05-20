@@ -615,4 +615,26 @@ mod tests {
         )
         .await;
     }
+
+    #[tokio::test]
+    async fn test_sanitize_path_absolute_unchanged() {
+        let os = Os::new().await.unwrap();
+        let actual = sanitize_path_tool_arg(&os, "/absolute/path");
+        assert_eq!(actual, os.fs.chroot_path("/absolute/path"));
+    }
+
+    #[tokio::test]
+    async fn test_sanitize_path_empty_string() {
+        let os = Os::new().await.unwrap();
+        // Empty string should not panic — result is implementation-defined but stable
+        let _ = sanitize_path_tool_arg(&os, "");
+    }
+
+    #[tokio::test]
+    async fn test_sanitize_path_tilde_only_expands_at_start() {
+        let os = Os::new().await.unwrap();
+        // Tilde in the middle should not expand
+        let actual = sanitize_path_tool_arg(&os, "/foo/~/bar");
+        assert_eq!(actual, os.fs.chroot_path("/foo/~/bar"));
+    }
 }
