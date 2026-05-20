@@ -161,7 +161,7 @@ Find and replace exact text match.
 }
 ```
 
-**Behavior**: Fails if old_str not found or found multiple times. Include enough context in old_str to ensure unique match.
+**Behavior**: Fails if old_str not found or found multiple times. Include enough context in old_str to ensure unique match. Also fails if `old_str` is a verbatim substring of `new_str` (this pattern silently grows the file on repeated calls — use a more specific `old_str` or use `insert` instead).
 
 ### insert
 
@@ -262,6 +262,32 @@ Append text to end of file.
 **Symptom**: str_replace fails with multiple matches  
 **Cause**: old_str matches multiple locations in file  
 **Solution**: Include more context in old_str to make it unique. Add surrounding lines or unique identifiers.
+
+### Issue: "Cannot edit file: old_str is a substring of new_str"
+
+**Symptom**: str_replace fails with this error  
+**Cause**: `old_str` appears verbatim inside `new_str`. This pattern is rejected because repeated calls would silently re-match the just-written content and grow the file on each invocation (linearly when `replace_all=false`, exponentially when `replace_all=true` and `old_str` appears multiple times in `new_str`).  
+**Solution**: Either include more context in `old_str` so it no longer appears in `new_str` (e.g., include surrounding text that is changed by the edit), or use the `insert` command at a specific line if the goal is to add text without removing anything.
+
+**"Wrap" patterns**: A common case is wrapping an expression with another (e.g., wrapping `Some(value)` in `Ok(...)`, wrapping a function call with retry logic). These are supported as long as `old_str` includes enough surrounding context that the substring relationship breaks.
+
+Rejected (too short):
+```json
+{
+  "command": "str_replace",
+  "old_str": "compute()",
+  "new_str": "retry(compute())"
+}
+```
+Accepted (with surrounding context):
+```json
+{
+  "command": "str_replace",
+  "old_str": "    let r = compute();",
+  "new_str": "    let r = retry(compute());"
+}
+```
+Including the leading whitespace and `let r = ` prefix means `old_str` is no longer a substring of `new_str`, so the call is allowed. As a bonus, the extra context also disambiguates the match against other occurrences in the file.
 
 ### Issue: Permission Denied
 
