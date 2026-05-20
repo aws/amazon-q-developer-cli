@@ -11,7 +11,8 @@ use anyhow::{
     Result,
     bail,
 };
-use kiro_bot::config::{
+
+use crate::config::{
     self,
     FrontendConfig,
 };
