@@ -65,7 +65,7 @@ jobs:
     
     # OIDC enabled for github for ArjunPersonal
     - name: Configure AWS credentials
-      uses: aws-actions/configure-aws-credentials@v4
+      uses: aws-actions/configure-aws-credentials@v5
       with:
         role-to-assume: ${{ secrets.AWS_TB_ROLE }}
         aws-region: us-east-1
