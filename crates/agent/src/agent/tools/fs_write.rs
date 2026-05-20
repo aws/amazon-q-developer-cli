@@ -882,6 +882,34 @@ mod tests {
         );
     }
 
+    /// "Wrap" patterns are a legitimate use case (e.g., wrapping a return value
+    /// in `Ok(...)`, wrapping a function call with retry logic). They are
+    /// supported when `old_str` includes enough surrounding context that the
+    /// substring relationship breaks. This test documents that the canonical
+    /// well-formed wrap pattern passes validation.
+    #[tokio::test]
+    async fn test_validate_allows_wrap_with_context() {
+        let test_base = TestBase::new()
+            .await
+            .with_file(("lib.rs", "fn handler() {\n    return Some(value);\n}\n"))
+            .await;
+
+        // Wrap `Some(value)` in `Ok(...)`. Including the leading whitespace and
+        // `return ` prefix makes `old_str` not appear in `new_str` (the bytes
+        // after `return ` differ), so the substring guard passes.
+        let mut tool = FsWrite::StrReplace(StrReplace {
+            path: test_base.join("lib.rs").to_string_lossy().to_string(),
+            old_str: "    return Some(value);".to_string(),
+            new_str: "    return Ok(Some(value));".to_string(),
+            ..Default::default()
+        });
+
+        assert!(
+            tool.validate(&test_base).await.is_ok(),
+            "wrap pattern with sufficient surrounding context must be allowed"
+        );
+    }
+
     /// Regression test for ticket P431388657.
     ///
     /// Demonstrates both halves of the bug story in one place:

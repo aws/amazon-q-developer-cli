@@ -2085,4 +2085,30 @@ mod tests {
             "disjoint old_str and new_str must be allowed"
         );
     }
+
+    /// "Wrap" patterns are a legitimate use case (e.g., wrapping a return value
+    /// in `Ok(...)`, wrapping a function call with retry logic). They are
+    /// supported when `old_str` includes enough surrounding context that the
+    /// substring relationship breaks. This test documents that the canonical
+    /// well-formed wrap pattern passes validation.
+    #[tokio::test]
+    async fn test_validate_allows_wrap_with_context() {
+        let os = setup_test_directory().await;
+
+        // Wrap `Some(value)` in `Ok(...)`. Including the leading whitespace and
+        // `return ` prefix makes `old_str` not appear in `new_str` (the bytes
+        // after `return ` differ), so the substring guard passes.
+        let mut tool = serde_json::from_value::<FsWrite>(serde_json::json!({
+            "path": TEST_FILE_PATH,
+            "command": "str_replace",
+            "old_str": "    return Some(value);",
+            "new_str": "    return Ok(Some(value));",
+        }))
+        .unwrap();
+
+        assert!(
+            tool.validate(&os).await.is_ok(),
+            "wrap pattern with sufficient surrounding context must be allowed"
+        );
+    }
 }
