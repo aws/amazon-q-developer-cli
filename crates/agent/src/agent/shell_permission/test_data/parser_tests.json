@@ -45,13 +45,13 @@
     "name": "output_redirection",
     "input": "echo hello > file.txt",
     "parse_failed": false,
-    "commands": [{"command": "echo hello", "command_path": "echo", "command_name": "echo", "args": ["hello"], "has_redirection": true}]
+    "commands": [{"command": "echo hello", "command_path": "echo", "command_name": "echo", "args": ["hello"], "has_redirection": true, "redirect_targets": ["file.txt"]}]
   },
   {
     "name": "append_redirection",
     "input": "echo hello >> file.txt",
     "parse_failed": false,
-    "commands": [{"command": "echo hello", "command_path": "echo", "command_name": "echo", "args": ["hello"], "has_redirection": true}]
+    "commands": [{"command": "echo hello", "command_path": "echo", "command_name": "echo", "args": ["hello"], "has_redirection": true, "redirect_targets": ["file.txt"]}]
   },
   {
     "name": "input_redirection",
@@ -187,14 +187,14 @@
     "parse_failed": false,
     "commands": [
       {"command": "cat file", "command_path": "cat", "command_name": "cat", "args": ["file"], "operator": "Pipe"},
-      {"command": "grep pattern", "command_path": "grep", "command_name": "grep", "args": ["pattern"], "has_redirection": true}
+      {"command": "grep pattern", "command_path": "grep", "command_name": "grep", "args": ["pattern"], "has_redirection": true, "redirect_targets": ["output.txt"]}
     ]
   },
   {
     "name": "subshell_with_redirection",
     "input": "(echo hello) > file.txt",
     "parse_failed": false,
-    "commands": [{"command": "echo hello", "command_path": "echo", "command_name": "echo", "args": ["hello"], "has_redirection": true, "is_subshell": true}]
+    "commands": [{"command": "echo hello", "command_path": "echo", "command_name": "echo", "args": ["hello"], "has_redirection": true, "is_subshell": true, "redirect_targets": ["file.txt"]}]
   },
   {
     "name": "background_command",

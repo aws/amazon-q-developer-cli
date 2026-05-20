@@ -72,6 +72,7 @@ dependencies = [
  "crossterm",
  "dialoguer",
  "dirs 5.0.1",
+ "dunce",
  "eyre",
  "fd-lock",
  "flate2",

@@ -1,0 +1,4 @@
+{
+  "type": "fixed",
+  "description": "Fix shell command output redirection from writing to untrusted paths"
+}

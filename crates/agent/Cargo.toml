@@ -18,6 +18,7 @@ amzn-qdeveloper-streaming-client.workspace = true
 anstream.workspace = true
 async-trait.workspace = true
 aws-config.workspace = true
+dunce.workspace = true
 aws-credential-types.workspace = true
 aws-runtime.workspace = true
 aws-sdk-cognitoidentity.workspace = true

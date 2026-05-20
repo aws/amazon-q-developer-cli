@@ -3,6 +3,7 @@
 use std::collections::HashMap;
 
 use serde::Deserialize;
+use tracing::debug;
 
 use super::parser::{
     ChainOperator,
@@ -14,6 +15,13 @@ use super::parser::{
 pub enum DangerLevel {
     /// No dangerous patterns detected.
     None,
+    /// The only source of danger is shell output redirection (`>`, `>>`).
+    /// Less severe than [`Self::High`] because the underlying command is otherwise
+    /// safe and the redirect target is a well-defined filesystem write that can be
+    /// gated separately via `allowedWritePaths`. The decider treats this case as
+    /// trustable at the command-pattern level (so the UI can offer the standard
+    /// 3-tier trust options) instead of falling back to whole-shell-tool trust.
+    RedirectOutput,
     /// Command is dangerous. Detected when:
     /// - Flags give a false sense of safety (e.g., `find -exec`, `sed /e`, `git --upload-pack`)
     /// - Shell syntax hides execution from allow rules (e.g., `$(...)`, process substitution)
@@ -36,6 +44,8 @@ pub struct DetectResult {
     pub command_danger_levels: Vec<DangerLevel>,
     /// Per-command readonly flags (parallel to input commands).
     pub command_readonly: Vec<bool>,
+    /// Aggregated output redirection target paths across all commands.
+    pub redirect_targets: Vec<String>,
 }
 
 #[derive(Deserialize)]
@@ -85,12 +95,27 @@ pub fn detect(commands: &[ParsedCommand]) -> DetectResult {
     let max_single = command_danger_levels.iter().max().copied().unwrap_or(DangerLevel::None);
     let danger_level = max_single.max(chain_danger);
 
-    DetectResult {
+    let redirect_targets: Vec<String> = commands
+        .iter()
+        .flat_map(|cmd| cmd.redirect_targets.iter().cloned())
+        .collect();
+
+    let result = DetectResult {
         danger_level,
         is_readonly,
         command_danger_levels,
         command_readonly,
-    }
+        redirect_targets,
+    };
+
+    debug!(
+        ?danger_level,
+        is_readonly,
+        commands = commands.len(),
+        "shell_permission::detect result"
+    );
+
+    result
 }
 
 /// Detect patterns that span multiple commands.
@@ -112,15 +137,32 @@ fn detect_chain_patterns(commands: &[ParsedCommand], config: &DetectorConfig, _i
 // ============================================================================
 
 fn get_danger_level_with_config(cmd: &ParsedCommand, config: &DetectorConfig) -> DangerLevel {
-    // High: false sense of safety — flags that turn seemingly safe commands into code execution,
-    // or execution controlled by runtime data
-    if cmd.has_command_substitution
+    let has_dangerous_opts = has_dangerous_command_options(cmd, config);
+    let has_dangerous_env = is_dangerous_env_manipulation(cmd, config);
+    let has_prompt_exp = has_prompt_expansion(cmd);
+
+    let high_danger = cmd.has_command_substitution
         || cmd.has_process_substitution
-        || has_dangerous_command_options(cmd, config)
-        || is_dangerous_env_manipulation(cmd, config)
-        || has_prompt_expansion(cmd)
-    {
+        || has_dangerous_opts
+        || has_dangerous_env
+        || has_prompt_exp;
+
+    if high_danger {
+        debug!(
+            command = %cmd.command,
+            command_substitution = cmd.has_command_substitution,
+            process_substitution = cmd.has_process_substitution,
+            dangerous_options = has_dangerous_opts,
+            dangerous_env = has_dangerous_env,
+            prompt_expansion = has_prompt_exp,
+            "dangerous command detected"
+        );
         return DangerLevel::High;
+    }
+
+    if cmd.has_redirection {
+        debug!(command = %cmd.command, "redirect-output detected");
+        return DangerLevel::RedirectOutput;
     }
 
     DangerLevel::None
@@ -260,7 +302,14 @@ mod tests {
 
     #[test]
     fn test_dangerous() {
-        // --- Command substitution — hides execution from allow rules ---
+        // Output redirection
+        assert_eq!(
+            get_danger_level(&make_cmd_with_flags("echo hello", true, false, false, &[])),
+            DangerLevel::RedirectOutput
+        );
+        assert_eq!(get_danger_level(&make_cmd("echo hello")), DangerLevel::None);
+
+        // Command substitution — hides execution from allow rules
         assert_eq!(
             get_danger_level(&make_cmd_with_flags("echo result", false, true, false, &[])),
             DangerLevel::High
