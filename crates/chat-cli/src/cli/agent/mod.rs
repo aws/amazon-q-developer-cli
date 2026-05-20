@@ -1233,6 +1233,16 @@ impl Agents {
             agent
         });
 
+        // Add Slack-bot help agent (kiro-help mode used by the kiro-help bot
+        // only; distinct from the in-CLI kiro_help built-in above).
+        all_agents.push({
+            let mut agent: Agent = serde_json::from_str(include_str!("../../agents/kiro-help.json"))
+                .expect("Invalid kiro-help.json");
+            agent.prompt = Some(include_str!("../../agents/kiro_help_prompt.md").to_string());
+            configure_builtin_agent_resources(&mut agent, &resolver).await;
+            agent
+        });
+
         let all_agents = validator::validate_agents(all_agents, output);
 
         // Assume agent in the following order of priority:
@@ -2679,6 +2689,40 @@ mod tests {
             "execute_bash should be removed when untrusting 'shell'"
         );
         assert!(active.allowed_tools.contains("fs_write"), "fs_write should remain");
+    }
+
+    /// Phase 6 Task 1: a separate `kiro-help` (note: hyphen) agent ships
+    /// alongside the in-CLI `kiro_help` (underscore) built-in, because the
+    /// terminal-mode and Slack-mode prompts and tool sets diverge.
+    #[test]
+    fn kiro_help_bot_agent_is_loadable_from_embedded_json() {
+        let agent: Agent = serde_json::from_str(include_str!("../../agents/kiro-help.json"))
+            .expect("Invalid agents/kiro-help.json");
+        assert_eq!(agent.name, "kiro-help");
+        assert_ne!(
+            agent.name, "kiro_help",
+            "bot agent name must NOT collide with the in-CLI kiro_help built-in"
+        );
+        assert!(
+            agent.mcp_servers.mcp_servers.contains_key("kiro-knowledge"),
+            "bot agent must launch kiro-knowledge-mcp"
+        );
+        assert!(
+            agent.tools.iter().any(|t| t == "@kiro-knowledge/search_kiro_knowledge"),
+            "bot agent must list search_kiro_knowledge in tools"
+        );
+        assert!(
+            agent.allowed_tools.contains("@kiro-knowledge/search_kiro_knowledge"),
+            "bot agent must auto-approve search_kiro_knowledge so users don't see prompts"
+        );
+        // Slack bot is read-only; assert no fs_write / execute_bash / etc. on the
+        // tools list. fs_read is allowed (used for runtime config inspection).
+        for forbidden in ["fs_write", "execute_bash", "shell"] {
+            assert!(
+                !agent.tools.iter().any(|t| t == forbidden),
+                "bot agent must not expose write tool {forbidden}"
+            );
+        }
     }
 
     /// Phase 2 wireup: kiro_help.json must declare the kiro-knowledge MCP server, list

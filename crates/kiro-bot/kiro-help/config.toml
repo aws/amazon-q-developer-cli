@@ -9,6 +9,9 @@ conversation_history = 10
 [agent]
 command = "kiro-cli acp"
 model = ""
+# Phase 6: pin to the bot-only kiro-help agent (chat-cli/src/agents/kiro-help.json),
+# distinct from the in-CLI kiro_help built-in. Differs in tool list and prompt.
+default_mode = "kiro-help"
 approval_policy = "ask"
 max_workers = 5
 idle_timeout_secs = 300
