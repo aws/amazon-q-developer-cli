@@ -33,6 +33,7 @@ use spinners::{
 
 use crate::cli::agent::hook::{
     Hook,
+    HookResponse,
     HookTrigger,
 };
 use crate::cli::agent::is_mcp_tool_ref;
@@ -48,9 +49,10 @@ use crate::theme::StyledText;
 use crate::util::MCP_SERVER_TOOL_DELIMITER;
 use crate::util::pattern_matching::matches_any_pattern;
 
-/// Hook execution result: (exit_code, output)
+/// Hook execution result: (exit_code, output, hook_response)
 /// Output is stdout if exit_code is 0, stderr otherwise.
-pub type HookOutput = (i32, String);
+/// hook_response is parsed from stdout JSON if present.
+pub type HookOutput = (i32, String, Option<HookResponse>);
 
 /// Check if a hook matches a tool name based on its matcher pattern
 fn hook_matches_tool(hook: &Hook, tool_name: &str) -> bool {
@@ -139,7 +141,8 @@ impl HookExecutor {
 
             if let Some(cache) = self.get_cache(&hook) {
                 // Note: we only cache successful hook run. hence always using 0 as exit code for cached hook
-                cached.push((hook.clone(), (0, cache)));
+                // Cached hooks don't have HookResponse since we don't cache Ask decisions
+                cached.push((hook.clone(), (0, cache, None)));
                 continue;
             }
             futures.push(self.run_hook(hook, cwd, prompt, tool_context.clone()));
@@ -194,7 +197,7 @@ impl HookExecutor {
             }
 
             // Process results regardless of output enabled
-            if let Ok((exit_code, hook_output)) = &result {
+            if let Ok((exit_code, hook_output, _)) = &result {
                 // Print warning if exit code is not 0
                 if *exit_code != 0 {
                     queue!(
@@ -243,7 +246,7 @@ impl HookExecutor {
         drop(futures);
 
         // Fill cache with executed results, skipping what was already from cache
-        for ((trigger, hook), (exit_code, output)) in &results {
+        for ((trigger, hook), (exit_code, output, _)) in &results {
             if *exit_code != 0 {
                 continue; // Only cache successful hooks
             }
@@ -351,7 +354,13 @@ impl HookExecutor {
                         ""
                     }
                 );
-                Ok((exit_code, formatted_output))
+                // Parse JSON response from stdout if exit code is 0
+                let hook_response = if exit_code == 0 {
+                    HookResponse::from_stdout(&formatted_output)
+                } else {
+                    None
+                };
+                Ok((exit_code, formatted_output, hook_response))
             },
             Ok(Err(err)) => Err(eyre!("failed to execute command: {}", err)),
             Err(_) => Err(eyre!("command timed out after {} ms", timeout.as_millis())),
@@ -382,6 +391,33 @@ fn sanitize_user_prompt(input: &str) -> String {
 
     // Remove any potentially problematic characters
     truncated.replace(|c: char| c.is_control() && c != '\n' && c != '\r' && c != '\t', "")
+}
+
+/// Prompt user for confirmation with a custom message from a hook
+/// Returns true if user confirms (y/yes), false otherwise
+pub fn prompt_hook_confirmation(message: &str) -> std::io::Result<bool> {
+    use std::io::{
+        Write,
+        stdin,
+        stdout,
+    };
+
+    let mut stdout = stdout();
+    queue!(
+        stdout,
+        style::Print("\n"),
+        StyledText::warning_fg(),
+        style::Print(message),
+        StyledText::reset(),
+        style::Print("\n[y/N]: "),
+    )?;
+    stdout.flush()?;
+
+    let mut input = String::new();
+    stdin().read_line(&mut input)?;
+    let input = input.trim().to_lowercase();
+
+    Ok(input == "y" || input == "yes")
 }
 
 #[deny(missing_docs)]

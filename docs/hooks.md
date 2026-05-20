@@ -80,7 +80,7 @@ Runs when user submits a prompt. Output is added to conversation context.
 
 ### PreToolUse
 
-Runs before tool execution. Can validate and block tool usage.
+Runs before tool execution. Can validate, block, or prompt for confirmation.
 
 **Hook Event**
 ```json
@@ -100,9 +100,43 @@ Runs before tool execution. Can validate and block tool usage.
 ```
 
 **Exit Code Behavior:**
-- **0**: Allow tool execution.
+- **0**: Allow tool execution (or check JSON response for decision).
 - **2**: Block tool execution, return STDERR to LLM.
 - **Other**: Show STDERR warning to user, allow tool execution.
+
+#### JSON Decision Response
+
+PreToolUse hooks can output a JSON response to STDOUT to control tool execution:
+
+```json
+{
+  "decision": "ask",
+  "message": "⚠️ This command uses sudo. Allow execution?"
+}
+```
+
+| Decision | Behavior |
+|----------|----------|
+| `allow` | Allow tool execution (same as empty output) |
+| `ask` | Prompt user for confirmation (y/n) |
+| `block` | Block tool execution, return message to LLM |
+
+**Example: Sudo confirmation hook**
+
+```python
+#!/usr/bin/env python3
+import json, sys, re
+
+input_data = json.load(sys.stdin)
+command = input_data.get("tool_input", {}).get("command", "")
+
+if re.search(r'(^|;|&&|\|\||\|)\s*sudo(\s|$)', command):
+    print(json.dumps({
+        "decision": "ask",
+        "message": f"⚠️ This command uses sudo:\n\n  {command}\n\nAllow execution?"
+    }))
+sys.exit(0)
+```
 
 ### PostToolUse
 

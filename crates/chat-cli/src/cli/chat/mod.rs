@@ -71,7 +71,10 @@ use clap::{
     ValueEnum,
 };
 use cli::compact::CompactStrategy;
-use cli::hooks::ToolContext;
+use cli::hooks::{
+    ToolContext,
+    prompt_hook_confirmation,
+};
 use cli::model::{
     find_model,
     get_available_models,
@@ -3397,12 +3400,15 @@ impl ChatSession {
                     .await?;
 
                 // Here is how we handle the preToolUse hook output:
-                // Exit code is 0: nothing. stdout is not shown to user.
+                // Exit code is 0: check for JSON decision response
+                //   - decision: allow (or no JSON) -> allow tool execution
+                //   - decision: ask -> prompt user for confirmation
+                //   - decision: block -> block tool execution
                 // Exit code is 2: block the tool use. return stderr to LLM. show warning to user
                 // Other error: show warning to user.
 
                 // Check for exit code 2 and add to tool_results
-                for (_, (exit_code, output)) in &hook_results {
+                for (_, (exit_code, output, hook_response)) in &hook_results {
                     if *exit_code == 2 {
                         tool_results.push(ToolUseResult {
                             tool_use_id: tool.id.clone(),
@@ -3412,6 +3418,45 @@ impl ChatSession {
                             ))],
                             status: ToolResultStatus::Error,
                         });
+                    } else if *exit_code == 0 {
+                        // Check for JSON decision response
+                        if let Some(response) = hook_response {
+                            use crate::cli::agent::hook::HookDecision;
+                            match response.decision {
+                                HookDecision::Block => {
+                                    let msg = response.message.as_deref().unwrap_or("Hook blocked execution");
+                                    tool_results.push(ToolUseResult {
+                                        tool_use_id: tool.id.clone(),
+                                        content: vec![ToolUseResultBlock::Text(format!(
+                                            "PreToolHook blocked the tool execution: {}",
+                                            msg
+                                        ))],
+                                        status: ToolResultStatus::Error,
+                                    });
+                                },
+                                HookDecision::Ask => {
+                                    let msg = response.message.as_deref().unwrap_or("Hook requests confirmation");
+                                    match prompt_hook_confirmation(msg) {
+                                        Ok(true) => {
+                                            // User approved, continue with tool execution
+                                        },
+                                        Ok(false) | Err(_) => {
+                                            // User denied or error reading input
+                                            tool_results.push(ToolUseResult {
+                                                tool_use_id: tool.id.clone(),
+                                                content: vec![ToolUseResultBlock::Text(
+                                                    "User denied tool execution after hook prompt".to_string(),
+                                                )],
+                                                status: ToolResultStatus::Error,
+                                            });
+                                        },
+                                    }
+                                },
+                                HookDecision::Allow => {
+                                    // Explicitly allowed, continue
+                                },
+                            }
+                        }
                     }
                 }
             }

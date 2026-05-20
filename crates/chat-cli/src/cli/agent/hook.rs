@@ -100,3 +100,113 @@ impl Hook {
         DEFAULT_CACHE_TTL_SECONDS
     }
 }
+
+/// Decision returned by a PreToolUse hook
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum HookDecision {
+    /// Allow tool execution (default behavior)
+    #[default]
+    Allow,
+    /// Prompt user for confirmation before executing
+    Ask,
+    /// Block tool execution
+    Block,
+}
+
+/// Response from a hook that can include a decision and message
+#[derive(Debug, Clone, Default)]
+pub struct HookResponse {
+    pub decision: HookDecision,
+    pub message: Option<String>,
+}
+
+impl HookResponse {
+    /// Try to parse a JSON response from hook stdout
+    /// Returns None if the output is not valid JSON or doesn't contain a decision field
+    pub fn from_stdout(stdout: &str) -> Option<Self> {
+        let trimmed = stdout.trim();
+        if trimmed.is_empty() || !trimmed.starts_with('{') {
+            return None;
+        }
+
+        let json: serde_json::Value = serde_json::from_str(trimmed).ok()?;
+        let decision_str = json.get("decision")?.as_str()?;
+
+        let decision = match decision_str.to_lowercase().as_str() {
+            "allow" => HookDecision::Allow,
+            "ask" => HookDecision::Ask,
+            "block" => HookDecision::Block,
+            _ => return None,
+        };
+
+        let message = json.get("message").and_then(|m| m.as_str()).map(String::from);
+
+        Some(Self { decision, message })
+    }
+}
+
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_hook_response_from_stdout_ask() {
+        let stdout = r#"{"decision": "ask", "message": "⚠️ This command uses sudo. Allow?"}"#;
+        let response = HookResponse::from_stdout(stdout).unwrap();
+        assert_eq!(response.decision, HookDecision::Ask);
+        assert_eq!(response.message, Some("⚠️ This command uses sudo. Allow?".to_string()));
+    }
+
+    #[test]
+    fn test_hook_response_from_stdout_block() {
+        let stdout = r#"{"decision": "block", "message": "Blocked by policy"}"#;
+        let response = HookResponse::from_stdout(stdout).unwrap();
+        assert_eq!(response.decision, HookDecision::Block);
+        assert_eq!(response.message, Some("Blocked by policy".to_string()));
+    }
+
+    #[test]
+    fn test_hook_response_from_stdout_allow() {
+        let stdout = r#"{"decision": "allow"}"#;
+        let response = HookResponse::from_stdout(stdout).unwrap();
+        assert_eq!(response.decision, HookDecision::Allow);
+        assert_eq!(response.message, None);
+    }
+
+    #[test]
+    fn test_hook_response_from_stdout_case_insensitive() {
+        let stdout = r#"{"decision": "ASK", "message": "Confirm?"}"#;
+        let response = HookResponse::from_stdout(stdout).unwrap();
+        assert_eq!(response.decision, HookDecision::Ask);
+    }
+
+    #[test]
+    fn test_hook_response_from_stdout_empty() {
+        assert!(HookResponse::from_stdout("").is_none());
+    }
+
+    #[test]
+    fn test_hook_response_from_stdout_not_json() {
+        assert!(HookResponse::from_stdout("not json").is_none());
+    }
+
+    #[test]
+    fn test_hook_response_from_stdout_no_decision() {
+        let stdout = r#"{"message": "some message"}"#;
+        assert!(HookResponse::from_stdout(stdout).is_none());
+    }
+
+    #[test]
+    fn test_hook_response_from_stdout_invalid_decision() {
+        let stdout = r#"{"decision": "invalid"}"#;
+        assert!(HookResponse::from_stdout(stdout).is_none());
+    }
+
+    #[test]
+    fn test_hook_response_from_stdout_with_whitespace() {
+        let stdout = "  \n{\"decision\": \"ask\", \"message\": \"test\"}\n  ";
+        let response = HookResponse::from_stdout(stdout).unwrap();
+        assert_eq!(response.decision, HookDecision::Ask);
+    }
+}
