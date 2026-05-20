@@ -16,6 +16,8 @@ path = "src/main.rs"
 agent-client-protocol = { version = "0.7.0", features = ["unstable"] }
 anyhow.workspace = true
 async-trait.workspace = true
+aws-config.workspace = true
+aws-sdk-dynamodb.workspace = true
 chrono.workspace = true
 clap.workspace = true
 dirs.workspace = true
@@ -34,11 +36,16 @@ tracing-subscriber.workspace = true
 rustls.workspace = true
 
 # New deps (not yet in workspace)
+axum = "0.7"
 cedar-policy = "4.0"
 cron = "0.16"
 jsonschema = { version = "0.44", default-features = false }
 rpassword = "7"
 slack-morphism = { version = "2", features = ["hyper"] }
+
+[dev-dependencies]
+tempfile.workspace = true
+tokio = { workspace = true, features = ["macros", "rt"] }
 
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"
