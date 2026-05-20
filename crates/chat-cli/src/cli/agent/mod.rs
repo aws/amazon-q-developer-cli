@@ -2680,4 +2680,34 @@ mod tests {
         );
         assert!(active.allowed_tools.contains("fs_write"), "fs_write should remain");
     }
+
+    /// Phase 2 wireup: kiro_help.json must declare the kiro-knowledge MCP server, list
+    /// `@kiro-knowledge/search_kiro_knowledge` in its tools, and auto-approve it via
+    /// allowedTools so the kiro-help bot can answer Q&A without an interactive prompt.
+    #[test]
+    fn kiro_help_agent_has_search_kiro_knowledge_wired_up() {
+        let agent: Agent =
+            serde_json::from_str(include_str!("../../kiro_help.json")).expect("Invalid kiro_help.json");
+
+        assert_eq!(agent.name, "kiro_help");
+
+        let server = agent
+            .mcp_servers
+            .mcp_servers
+            .get("kiro-knowledge")
+            .expect("kiro_help.json must declare an mcpServers.kiro-knowledge entry");
+        assert_eq!(server.command, "kiro-knowledge-mcp");
+
+        assert!(
+            agent.tools.iter().any(|t| t == "@kiro-knowledge/search_kiro_knowledge"),
+            "tools must include @kiro-knowledge/search_kiro_knowledge, got {:?}",
+            agent.tools
+        );
+        assert!(
+            agent
+                .allowed_tools
+                .contains("@kiro-knowledge/search_kiro_knowledge"),
+            "allowedTools must auto-approve @kiro-knowledge/search_kiro_knowledge"
+        );
+    }
 }
