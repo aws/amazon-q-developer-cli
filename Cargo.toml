@@ -20,7 +20,7 @@ amzn-qdeveloper-streaming-client = { path = "crates/amzn-qdeveloper-streaming-cl
 amzn-toolkit-telemetry-client = { path = "crates/amzn-toolkit-telemetry-client" }
 anstream = "0.6.13"
 arboard = { version = "3.6.1", default-features = false, features = ["image-data"] }
-assert_cmd = "2.0"
+assert_cmd = "2.1"
 async-trait = "0.1.87"
 aws-config = "1.0.3"
 aws-credential-types = "1.0.3"
