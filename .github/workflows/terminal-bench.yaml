@@ -39,7 +39,7 @@ jobs:
         df -h
 
     - name: Checkout repository
-      uses: actions/checkout@v4
+      uses: actions/checkout@v6
 
     # Captures git hash of branch to query specific S3 bucket
     - name: Set git hash
