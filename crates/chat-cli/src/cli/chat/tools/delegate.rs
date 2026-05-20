@@ -36,6 +36,7 @@ use crate::cli::{
     Agent,
     DEFAULT_AGENT_NAME,
 };
+use crate::database::settings::Setting;
 use crate::os::Os;
 use crate::theme::StyledText;
 use crate::util::env_var::get_all_env_vars;
@@ -99,7 +100,14 @@ impl Delegate {
                     .as_ref()
                     .ok_or(eyre::eyre!("Task description is required for launch operation"))?;
 
-                let agent_name = self.agent.as_deref().unwrap_or(DEFAULT_AGENT_NAME);
+                // Respect chat.defaultAgent setting before falling back to the hardcoded default.
+                // See: #3174
+                let configured_default = os.database.settings.get_string(Setting::ChatDefaultAgent);
+                let agent_name = self
+                    .agent
+                    .as_deref()
+                    .or(configured_default.as_deref())
+                    .unwrap_or(DEFAULT_AGENT_NAME);
 
                 launch_agent(os, agent_name, agents, task).await?
             },
@@ -598,5 +606,28 @@ mod tests {
     fn get_schema() {
         let schema = schemars::schema_for!(Delegate);
         println!("{}", serde_json::to_string_pretty(&schema).unwrap());
+    }
+
+    /// Simulates the agent name resolution logic from Delegate::invoke.
+    fn resolve_agent_name<'a>(
+        explicit: Option<&'a str>,
+        configured_default: Option<&'a str>,
+    ) -> &'a str {
+        explicit.or(configured_default).unwrap_or(DEFAULT_AGENT_NAME)
+    }
+
+    #[test]
+    fn explicit_agent_takes_priority() {
+        assert_eq!(resolve_agent_name(Some("my-agent"), Some("other")), "my-agent");
+    }
+
+    #[test]
+    fn configured_default_used_when_no_explicit_agent() {
+        assert_eq!(resolve_agent_name(None, Some("configured-agent")), "configured-agent");
+    }
+
+    #[test]
+    fn falls_back_to_default_agent_name_when_nothing_configured() {
+        assert_eq!(resolve_agent_name(None, None), DEFAULT_AGENT_NAME);
     }
 }
