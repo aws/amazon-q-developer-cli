@@ -5328,6 +5328,23 @@ dependencies = [
 ]
 
 [[package]]
+name = "kiro-github-mcp"
+version = "2.4.0"
+dependencies = [
+ "anyhow",
+ "async-trait",
+ "chrono",
+ "clap",
+ "reqwest 0.13.3",
+ "rmcp 0.17.0",
+ "serde",
+ "serde_json",
+ "tokio",
+ "tracing",
+ "tracing-subscriber",
+]
+
+[[package]]
 name = "kiro-help-corpus-ingest"
 version = "2.4.0"
 dependencies = [
