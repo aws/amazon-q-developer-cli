@@ -879,6 +879,34 @@ dependencies = [
 ]
 
 [[package]]
+name = "aws-sdk-cloudwatch"
+version = "1.111.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "5e38977872cd417295f767cedf84767973a9e324175e0143ee0c08fc8c7f49dc"
+dependencies = [
+ "aws-credential-types",
+ "aws-runtime",
+ "aws-smithy-async",
+ "aws-smithy-cbor",
+ "aws-smithy-compression",
+ "aws-smithy-http 0.63.6",
+ "aws-smithy-json 0.62.5",
+ "aws-smithy-observability",
+ "aws-smithy-runtime",
+ "aws-smithy-runtime-api",
+ "aws-smithy-types",
+ "aws-types",
+ "fastrand",
+ "flate2",
+ "http 0.2.12",
+ "http 1.4.0",
+ "http-body 1.0.1",
+ "http-body-util",
+ "regex-lite",
+ "tracing",
+]
+
+[[package]]
 name = "aws-sdk-cognitoidentity"
 version = "1.99.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1074,6 +1102,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "aws-smithy-cbor"
+version = "0.61.7"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "448f0ebde2b5dc9775055e5260dbf83a981e45891905b9b93d577e5886ae8519"
+dependencies = [
+ "aws-smithy-types",
+ "minicbor",
+]
+
+[[package]]
 name = "aws-smithy-checksums"
 version = "0.64.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1091,6 +1129,24 @@ dependencies = [
  "pin-project-lite",
  "sha1 0.11.0",
  "sha2 0.11.0",
+ "tracing",
+]
+
+[[package]]
+name = "aws-smithy-compression"
+version = "0.1.6"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "0e3cba0f1e060e0025523d3965f4967e668f9bbf7342c09427a1ad110437f4bb"
+dependencies = [
+ "aws-smithy-runtime-api",
+ "aws-smithy-types",
+ "bytes",
+ "flate2",
+ "futures-util",
+ "http 1.4.0",
+ "http-body 1.0.1",
+ "http-body-util",
+ "pin-project-lite",
  "tracing",
 ]
 
@@ -5328,6 +5384,24 @@ dependencies = [
 ]
 
 [[package]]
+name = "kiro-bot-metrics"
+version = "2.4.0"
+dependencies = [
+ "anyhow",
+ "async-trait",
+ "aws-config",
+ "aws-sdk-cloudwatch",
+ "aws-sdk-dynamodb",
+ "chrono",
+ "lambda_runtime",
+ "serde",
+ "serde_json",
+ "tokio",
+ "tracing",
+ "tracing-subscriber",
+]
+
+[[package]]
 name = "kiro-github-mcp"
 version = "2.4.0"
 dependencies = [
@@ -5936,6 +6010,27 @@ checksum = "f7c44f8e672c00fe5308fa235f821cb4198414e1c77935c1ab6948d3fd78550e"
 dependencies = [
  "mime",
  "unicase",
+]
+
+[[package]]
+name = "minicbor"
+version = "0.24.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "29be4f60e41fde478b36998b88821946aafac540e53591e76db53921a0cc225b"
+dependencies = [
+ "half",
+ "minicbor-derive",
+]
+
+[[package]]
+name = "minicbor-derive"
+version = "0.15.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "bd2209fff77f705b00c737016a48e73733d7fbccb8b007194db148f03561fb70"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 2.0.117",
 ]
 
 [[package]]

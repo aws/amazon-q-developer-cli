@@ -69,6 +69,7 @@ mod col {
     pub const TEXT: &str = "text";
     pub const TS: &str = "ts";
     pub const EXPIRES_AT: &str = "expires_at";
+    pub const CHUNK_IDS: &str = "chunk_ids";
 }
 
 /// One DDB-backed coordinator. Cheap to clone (`Client` is `Arc`-internal).
@@ -294,7 +295,8 @@ impl Coordinator for DynamoCoordinator {
             TurnRole::Assistant => "assistant",
         };
         let expires = (turn.ts + Duration::days(DEFAULT_TRANSCRIPT_RETENTION_DAYS)).timestamp();
-        self.client
+        let mut req = self
+            .client
             .put_item()
             .table_name(&self.transcripts_table)
             .item(col::CONVERSATION_ID, Self::s(conversation_id))
@@ -302,10 +304,14 @@ impl Coordinator for DynamoCoordinator {
             .item(col::ROLE, Self::s(role_str))
             .item(col::TEXT, Self::s(&turn.text))
             .item(col::TS, Self::s(turn.ts.to_rfc3339()))
-            .item(col::EXPIRES_AT, Self::n(expires))
-            .send()
-            .await
-            .context("transcript PutItem")?;
+            .item(col::EXPIRES_AT, Self::n(expires));
+        if !turn.chunk_ids.is_empty() {
+            req = req.item(
+                col::CHUNK_IDS,
+                AttributeValue::Ss(turn.chunk_ids.clone()),
+            );
+        }
+        req.send().await.context("transcript PutItem")?;
         Ok(())
     }
 
@@ -365,7 +371,12 @@ fn item_to_turn(item: &HashMap<String, AttributeValue>) -> Option<Turn> {
     let text = item.get(col::TEXT)?.as_s().ok()?.clone();
     let ts_str = item.get(col::TS)?.as_s().ok()?;
     let ts: DateTime<Utc> = DateTime::parse_from_rfc3339(ts_str).ok()?.with_timezone(&Utc);
-    Some(Turn { role, text, ts })
+    let chunk_ids = item
+        .get(col::CHUNK_IDS)
+        .and_then(|v| v.as_ss().ok())
+        .map(|ss| ss.to_vec())
+        .unwrap_or_default();
+    Some(Turn { role, text, ts, chunk_ids })
 }
 
 fn is_conditional_check_failed_put(err: &SdkError<PutItemError>) -> bool {
@@ -438,6 +449,27 @@ mod tests {
         assert_eq!(turn.role, TurnRole::User);
         assert_eq!(turn.text, "hi");
         assert_eq!(turn.ts, ts);
+        assert!(turn.chunk_ids.is_empty(), "missing chunk_ids attribute → empty Vec");
+    }
+
+    #[test]
+    fn item_to_turn_preserves_chunk_ids() {
+        let mut item = HashMap::new();
+        item.insert(
+            col::ROLE.to_string(),
+            AttributeValue::S("assistant".to_string()),
+        );
+        item.insert(col::TEXT.to_string(), AttributeValue::S("...".to_string()));
+        item.insert(
+            col::TS.to_string(),
+            AttributeValue::S(Utc::now().to_rfc3339()),
+        );
+        item.insert(
+            col::CHUNK_IDS.to_string(),
+            AttributeValue::Ss(vec!["docs/a.md".into(), "docs/b.md".into()]),
+        );
+        let turn = item_to_turn(&item).expect("parse");
+        assert_eq!(turn.chunk_ids, vec!["docs/a.md", "docs/b.md"]);
     }
 
     #[test]

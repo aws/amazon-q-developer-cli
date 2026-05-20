@@ -45,6 +45,13 @@ pub struct Turn {
     pub role: TurnRole,
     pub text: String,
     pub ts: DateTime<Utc>,
+    /// Source paths of the retrieval chunks the assistant used to ground this
+    /// turn. Empty for user turns and for assistant turns that didn't go
+    /// through `search_kiro_knowledge`. Phase 6 reaction listener reads this
+    /// when persisting 👍/👎 feedback so the metric Lambda can correlate bad
+    /// answers back to specific docs/issues.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub chunk_ids: Vec<String>,
 }
 
 /// Result of a `try_acquire` call.
@@ -302,6 +309,7 @@ mod tests {
             role,
             text: text.to_string(),
             ts: Utc.timestamp_opt(secs, 0).single().unwrap(),
+            chunk_ids: Vec::new(),
         }
     }
 
