@@ -235,7 +235,6 @@ mod tests {
             "service_name": "ecs",
             "operation_name": "list-task-definitions",
             "region": "us-west-2",
-            "profile_name": "default",
             "label": ""
         }};
         assert!(!cmd.requires_acceptance());
@@ -243,7 +242,6 @@ mod tests {
             "service_name": "lambda",
             "operation_name": "list-functions",
             "region": "us-west-2",
-            "profile_name": "default",
             "label": ""
         }};
         assert!(!cmd.requires_acceptance());
@@ -251,7 +249,6 @@ mod tests {
             "service_name": "s3",
             "operation_name": "put-object",
             "region": "us-west-2",
-            "profile_name": "default",
             "label": ""
         }};
         assert!(cmd.requires_acceptance());
@@ -267,7 +264,6 @@ mod tests {
                 "KeyConditionExpression": "PartitionKey = :pkValue"
             },
             "region": "us-west-2",
-            "profile_name": "default",
             "label": ""
         }};
         let params = cmd.cli_parameters().unwrap();
@@ -297,7 +293,6 @@ mod tests {
             // okay for this test
             "parameters": {},
             "region": "us-west-2",
-            "profile_name": "default",
             "label": ""
         });
 
@@ -320,7 +315,6 @@ mod tests {
             "operation_name": "ls",
             "parameters": {},
             "region": "us-west-2",
-            "profile_name": "default",
             "label": ""
         });
         let out = serde_json::from_value::<UseAws>(v)
@@ -349,7 +343,6 @@ mod tests {
             "service_name": "s3",
             "operation_name": "put-object",
             "region": "us-west-2",
-            "profile_name": "default",
             "label": ""
         }};
 
@@ -377,7 +370,6 @@ mod tests {
             "service_name": "api_gateway",
             "operation_name": "request",
             "region": "us-west-2",
-            "profile_name": "default",
             "label": ""
         }};
 
@@ -403,7 +395,6 @@ mod tests {
             "service_name": "s3",
             "operation_name": "list-objects",
             "region": "us-west-2",
-            "profile_name": "default",
             "label": ""
         }};
 
@@ -417,7 +408,6 @@ mod tests {
             "service_name": "s3",
             "operation_name": "put-object",
             "region": "us-west-2",
-            "profile_name": "default",
             "label": ""
         }};
 
@@ -450,7 +440,6 @@ mod tests {
             "service_name": "s3",
             "operation_name": "list-objects",
             "region": "us-west-2",
-            "profile_name": "default",
             "label": ""
         }};
 
@@ -463,7 +452,6 @@ mod tests {
             "service_name": "s3",
             "operation_name": "put-object",
             "region": "us-west-2",
-            "profile_name": "default",
             "label": ""
         }};
 
@@ -497,7 +485,6 @@ mod tests {
             "service_name": "s3",
             "operation_name": "list-objects",
             "region": "us-west-2",
-            "profile_name": "default",
             "label": ""
         }};
 
