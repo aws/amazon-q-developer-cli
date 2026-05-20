@@ -132,7 +132,11 @@ pub enum SlashCommand {
 impl SlashCommand {
     pub async fn execute(self, os: &mut Os, session: &mut ChatSession) -> Result<ChatState, ChatError> {
         match self {
-            Self::Quit => Ok(ChatState::Exit),
+            Self::Quit => {
+                // Flush all pending retention checks before quitting
+                session.conversation.flush_all_retention_metrics(os, "quit").await.ok();
+                Ok(ChatState::Exit)
+            },
             Self::Clear(args) => args.execute(session).await,
             Self::Agent(subcommand) => subcommand.execute(os, session).await,
             Self::Profile => {

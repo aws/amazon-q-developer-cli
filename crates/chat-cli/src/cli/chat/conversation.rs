@@ -260,6 +260,7 @@ impl ConversationState {
     }
 
     /// Enter tangent mode - creates checkpoint of current state
+    /// Allows exploring side topics without affecting main conversation
     pub fn enter_tangent_mode(&mut self) {
         if self.tangent_state.is_none() {
             self.tangent_state = Some(self.create_checkpoint());
@@ -958,6 +959,132 @@ Return only the JSON configuration, no additional text.",
 
         self.update_state(true).await;
 
+        Ok(())
+    }
+
+    pub async fn check_due_retention_metrics(&mut self, os: &Os) -> Result<Vec<(String, usize, usize)>, ChatError> {
+        let mut all_results = Vec::new();
+        let message_id = self.message_id().map(|s| s.to_string());
+        let model_id = self.model_info.as_ref().map(|m| m.model_id.clone());
+        
+        for (path, tracker) in &mut self.file_line_tracker {
+            match os.fs.read_to_string(path).await {
+                Ok(content) => {
+                    let results = tracker.check_due_retention(&content);
+                    
+                    for (conversation_id, tool_use_id, retained, total, source) in results {
+                        debug!("Retention check for {}: {}/{} lines retained, tool_use_id: {}, source: {}", 
+                               path, retained, total, tool_use_id, source);
+                        
+                        // Send retention metric with source
+                        os.telemetry
+                            .send_agent_contribution_metric_with_source(
+                                &os.database,
+                                conversation_id,
+                                message_id.clone(),
+                                Some(tool_use_id.clone()),
+                                None,
+                                None,
+                                None,
+                                Some(retained),
+                                Some(total),
+                                Some(source),
+                                model_id.clone(),
+                            )
+                            .await
+                            .ok();
+                        
+                        all_results.push((tool_use_id, retained, total));
+                    }
+                }
+                Err(_) => {
+                    // File not found - emit metrics for all pending checks with file_not_found reason
+                    for check in &tracker.pending_retention_checks {
+                        debug!("File not found during retention check: {}, tool_use_id: {}", path, check.tool_use_id);
+                        
+                        os.telemetry
+                            .send_agent_contribution_metric_with_source(
+                                &os.database,
+                                check.conversation_id.clone(),
+                                message_id.clone(),
+                                Some(check.tool_use_id.clone()),
+                                None,
+                                None,
+                                None,
+                                Some(0), // retained = 0 since file doesn't exist
+                                Some(check.lines.len()),
+                                Some("file_not_found".to_string()),
+                                model_id.clone(),
+                            )
+                            .await
+                            .ok();
+                    }
+                    // Clear pending checks since file is gone
+                    tracker.pending_retention_checks.clear();
+                }
+            }
+        }
+        Ok(all_results)
+    }
+
+    pub async fn flush_all_retention_metrics(&mut self, os: &Os, source: &str) -> Result<(), ChatError> {
+        let message_id = self.message_id().map(|s| s.to_string());
+        let model_id = self.model_info.as_ref().map(|m| m.model_id.clone());
+        
+        for (path, tracker) in &mut self.file_line_tracker {
+            match os.fs.read_to_string(path).await {
+                Ok(content) => {
+                    let results = tracker.flush_all_retention_checks(&content, source);
+                    
+                    for (conversation_id, tool_use_id, retained, total, source) in results {
+                        debug!("Flushing retention check for {}: {}/{} lines retained, tool_use_id: {}, source: {}", 
+                               path, retained, total, tool_use_id, source);
+                        
+                        os.telemetry
+                            .send_agent_contribution_metric_with_source(
+                                &os.database,
+                                conversation_id,
+                                message_id.clone(),
+                                Some(tool_use_id.clone()),
+                                None,
+                                None,
+                                None,
+                                Some(retained),
+                                Some(total),
+                                Some(source),
+                                model_id.clone(),
+                            )
+                            .await
+                            .ok();
+                    }
+                }
+                Err(_) => {
+                    // File not found - emit metrics for all pending checks with file_not_found reason
+                    for check in &tracker.pending_retention_checks {
+                        debug!("File not found during flush: {}, tool_use_id: {}", path, check.tool_use_id);
+                        
+                        os.telemetry
+                            .send_agent_contribution_metric_with_source(
+                                &os.database,
+                                check.conversation_id.clone(),
+                                message_id.clone(),
+                                Some(check.tool_use_id.clone()),
+                                None,
+                                None,
+                                None,
+                                Some(0), // retained = 0 since file doesn't exist
+                                Some(check.lines.len()),
+                                Some("file_not_found".to_string()),
+                                model_id.clone(),
+                            )
+                            .await
+                            .ok();
+                    }
+                    // Clear pending checks since file is gone
+                    tracker.pending_retention_checks.clear();
+                }
+            }
+        }
         Ok(())
     }
 }

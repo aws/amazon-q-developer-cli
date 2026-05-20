@@ -261,6 +261,23 @@ impl FsWrite {
         Ok(())
     }
 
+    pub fn extract_agent_lines(&self) -> Vec<String> {
+        match self {
+            FsWrite::Create { file_text, .. } => {
+                file_text.as_ref().map(|s| s.lines().map(|l| l.to_string()).collect()).unwrap_or_default()
+            },
+            FsWrite::StrReplace { new_str, .. } => {
+                new_str.lines().map(|s| s.to_string()).collect()
+            },
+            FsWrite::Insert { new_str, .. } => {
+                new_str.lines().map(|s| s.to_string()).collect()
+            },
+            FsWrite::Append { new_str, .. } => {
+                new_str.lines().map(|s| s.to_string()).collect()
+            },
+        }
+    }
+
     async fn calculate_diff_lines(&self, os: &Os) -> Result<(usize, usize)> {
         let path = self.path(os);
 

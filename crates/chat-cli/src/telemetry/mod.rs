@@ -296,6 +296,39 @@ impl TelemetryThread {
         tool_name: Option<String>,
         lines_by_agent: Option<isize>,
         lines_by_user: Option<isize>,
+        lines_retained: Option<usize>,
+        total_lines_checked: Option<usize>,
+        model: Option<String>,
+    ) -> Result<(), TelemetryError> {
+        self.send_agent_contribution_metric_with_source(
+            database,
+            conversation_id,
+            utterance_id,
+            tool_use_id,
+            tool_name,
+            lines_by_agent,
+            lines_by_user,
+            lines_retained,
+            total_lines_checked,
+            None,
+            model,
+        ).await
+    }
+
+    #[allow(clippy::too_many_arguments)] // TODO: Should make a parameters struct.
+    pub async fn send_agent_contribution_metric_with_source(
+        &self,
+        database: &Database,
+        conversation_id: String,
+        utterance_id: Option<String>,
+        tool_use_id: Option<String>,
+        tool_name: Option<String>,
+        lines_by_agent: Option<isize>,
+        lines_by_user: Option<isize>,
+        lines_retained: Option<usize>,
+        total_lines_checked: Option<usize>,
+        source: Option<String>,
+        model: Option<String>,
     ) -> Result<(), TelemetryError> {
         let mut telemetry_event = Event::new(EventType::AgentContribution {
             conversation_id,
@@ -304,6 +337,10 @@ impl TelemetryThread {
             tool_name,
             lines_by_agent,
             lines_by_user,
+            lines_retained,
+            total_lines_checked,
+            source,
+            model,
         });
         set_event_metadata(database, &mut telemetry_event).await;
         Ok(self.tx.send(telemetry_event)?)
