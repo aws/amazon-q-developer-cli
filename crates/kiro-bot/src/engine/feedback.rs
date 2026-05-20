@@ -100,6 +100,24 @@ impl FeedbackWriter for DynamoFeedbackWriter {
     }
 }
 
+/// Pick `chunk_ids` for a feedback row given a window of recent transcript
+/// turns (oldest first, as `Coordinator::load_history` returns them). Walks
+/// from newest to oldest looking for the first assistant turn that carries
+/// chunk_ids — that's the answer the user just reacted to.
+///
+/// Returns `Vec::new()` if no such turn exists in the window. Empty
+/// chunk_ids on the recorded feedback row are still useful as a thumbs
+/// signal; they just lose the per-doc attribution.
+pub fn chunk_ids_for_recent_assistant_turn(turns: &[crate::engine::coordinator::Turn]) -> Vec<String> {
+    use crate::engine::coordinator::TurnRole;
+    for turn in turns.iter().rev() {
+        if turn.role == TurnRole::Assistant && !turn.chunk_ids.is_empty() {
+            return turn.chunk_ids.clone();
+        }
+    }
+    Vec::new()
+}
+
 fn build_item(record: &FeedbackRecord) -> HashMap<String, AttributeValue> {
     let mut m = HashMap::new();
     m.insert(
@@ -128,6 +146,7 @@ fn build_item(record: &FeedbackRecord) -> HashMap<String, AttributeValue> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use chrono::TimeZone;
 
     #[test]
     fn reaction_from_slack_recognizes_canonical_names() {
@@ -187,5 +206,57 @@ mod tests {
             item.get("chunk_ids").is_none(),
             "expected no chunk_ids attribute when empty"
         );
+    }
+
+    use crate::engine::coordinator::{Turn, TurnRole};
+
+    fn turn(role: TurnRole, text: &str, chunks: &[&str], secs: i64) -> Turn {
+        Turn {
+            role,
+            text: text.to_string(),
+            ts: chrono::Utc.timestamp_opt(secs, 0).single().unwrap(),
+            chunk_ids: chunks.iter().map(|s| s.to_string()).collect(),
+        }
+    }
+
+    #[test]
+    fn chunk_ids_picks_most_recent_grounded_assistant_turn() {
+        let turns = vec![
+            turn(TurnRole::User, "hi", &[], 100),
+            turn(TurnRole::Assistant, "ok", &["docs/old.md"], 101),
+            turn(TurnRole::User, "next", &[], 102),
+            turn(TurnRole::Assistant, "answer", &["docs/auth.md", "docs/login.md"], 103),
+        ];
+        let got = chunk_ids_for_recent_assistant_turn(&turns);
+        assert_eq!(got, vec!["docs/auth.md", "docs/login.md"]);
+    }
+
+    #[test]
+    fn chunk_ids_skips_assistant_turns_without_chunks() {
+        let turns = vec![
+            turn(TurnRole::Assistant, "grounded", &["docs/auth.md"], 100),
+            turn(TurnRole::User, "follow up", &[], 101),
+            turn(TurnRole::Assistant, "ungrounded reply", &[], 102),
+        ];
+        let got = chunk_ids_for_recent_assistant_turn(&turns);
+        // Walks past the empty assistant turn back to the grounded one.
+        assert_eq!(got, vec!["docs/auth.md"]);
+    }
+
+    #[test]
+    fn chunk_ids_returns_empty_when_no_grounded_turn_in_window() {
+        let turns = vec![
+            turn(TurnRole::User, "q", &[], 100),
+            turn(TurnRole::Assistant, "a", &[], 101),
+        ];
+        assert!(chunk_ids_for_recent_assistant_turn(&turns).is_empty());
+    }
+
+    #[test]
+    fn chunk_ids_ignores_user_turns_even_if_chunks_set() {
+        // Defensive: user turns shouldn't carry chunk_ids in practice, but
+        // if they did (corruption / migration), don't pick them up.
+        let turns = vec![turn(TurnRole::User, "q", &["docs/wrong.md"], 100)];
+        assert!(chunk_ids_for_recent_assistant_turn(&turns).is_empty());
     }
 }
