@@ -5,6 +5,9 @@
 //! testable without any AWS or GitHub integration — fakes plug in via
 //! [`Source`].
 
+pub mod git_source;
+pub mod github_source;
+pub mod manifest;
 pub mod normalize;
 
 use serde::{
@@ -14,7 +17,7 @@ use serde::{
 
 /// Which corpus partition a chunk belongs to. Drives S3 key prefixes and the
 /// `source` field on the JSONL record.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum Partition {
     Docs,
