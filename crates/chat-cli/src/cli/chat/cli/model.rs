@@ -171,6 +171,19 @@ pub async fn get_model_info(model_id: &str, os: &Os) -> Result<ModelInfo, ChatEr
 
 /// Get available models with caching support
 pub async fn get_available_models(os: &Os) -> Result<(Vec<ModelInfo>, ModelInfo), ChatError> {
+    // Check if Bedrock mode is enabled
+    let bedrock_enabled = os
+        .database
+        .settings
+        .get(crate::database::settings::Setting::BedrockEnabled)
+        .and_then(|v| v.as_bool())
+        .unwrap_or(false);
+
+    if bedrock_enabled {
+        // Get models from Bedrock
+        return get_bedrock_models(os).await;
+    }
+
     let endpoint = Endpoint::configured_value(&os.database);
     let region = endpoint.region().as_ref();
 
@@ -202,6 +215,66 @@ pub fn context_window_tokens(model_info: Option<&ModelInfo>) -> usize {
 
 fn default_context_window() -> usize {
     200_000
+}
+
+async fn get_bedrock_models(os: &Os) -> Result<(Vec<ModelInfo>, ModelInfo), ChatError> {
+    use crate::api_client::bedrock::BedrockApiClient;
+
+    let bedrock_client = BedrockApiClient::new(os.database.clone())
+        .await
+        .map_err(|e| ChatError::Custom(format!("Failed to create Bedrock client: {}", e).into()))?;
+
+    match bedrock_client.list_foundation_models().await {
+        Ok(model_ids) => {
+            let models: Vec<ModelInfo> = model_ids
+                .into_iter()
+                .map(|id| ModelInfo {
+                    model_name: Some(id.clone()),
+                    model_id: id,
+                    description: None,
+                    context_window_tokens: 200_000,
+                })
+                .collect();
+
+            if models.is_empty() {
+                let fallback = get_bedrock_fallback_models();
+                let default = fallback[0].clone();
+                Ok((fallback, default))
+            } else {
+                let default = models[0].clone();
+                Ok((models, default))
+            }
+        }
+        Err(e) => {
+            tracing::error!("Failed to fetch Bedrock models: {}, using fallback", e);
+            let fallback = get_bedrock_fallback_models();
+            let default = fallback[0].clone();
+            Ok((fallback, default))
+        }
+    }
+}
+
+fn get_bedrock_fallback_models() -> Vec<ModelInfo> {
+    vec![
+        ModelInfo {
+            model_name: Some("Claude 3.5 Sonnet v2".to_string()),
+            model_id: "anthropic.claude-3-5-sonnet-20241022-v2:0".to_string(),
+            description: Some("Most intelligent model".to_string()),
+            context_window_tokens: 200_000,
+        },
+        ModelInfo {
+            model_name: Some("Claude 3.5 Sonnet".to_string()),
+            model_id: "anthropic.claude-3-5-sonnet-20240620-v1:0".to_string(),
+            description: Some("Balance of intelligence and speed".to_string()),
+            context_window_tokens: 200_000,
+        },
+        ModelInfo {
+            model_name: Some("Claude 3 Sonnet".to_string()),
+            model_id: "anthropic.claude-3-sonnet-20240229-v1:0".to_string(),
+            description: Some("Fast and efficient".to_string()),
+            context_window_tokens: 200_000,
+        },
+    ]
 }
 
 fn get_fallback_models() -> Vec<ModelInfo> {

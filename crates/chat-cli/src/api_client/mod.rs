@@ -8,6 +8,7 @@ mod opt_out;
 pub mod profile;
 mod retry_classifier;
 pub mod send_message_output;
+pub mod bedrock;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -37,6 +38,7 @@ pub use error::ApiClientError;
 use error::{
     ConverseStreamError,
     ConverseStreamErrorKind,
+    ConverseStreamSdkError,
 };
 use parking_lot::Mutex;
 pub use profile::list_available_profiles;
@@ -99,6 +101,7 @@ pub struct ApiClient {
     client: CodewhispererClient,
     streaming_client: Option<CodewhispererStreamingClient>,
     sigv4_streaming_client: Option<QDeveloperStreamingClient>,
+    bedrock_client: Option<bedrock::BedrockApiClient>,
     mock_client: Option<Arc<Mutex<std::vec::IntoIter<Vec<ChatResponseStream>>>>>,
     profile: Option<AuthProfile>,
     model_cache: ModelCache,
@@ -139,6 +142,7 @@ impl ApiClient {
                 client,
                 streaming_client: None,
                 sigv4_streaming_client: None,
+                bedrock_client: None,
                 mock_client: None,
                 profile: None,
                 model_cache: Arc::new(RwLock::new(None)),
@@ -214,10 +218,29 @@ impl ApiClient {
             None
         };
 
+        // Initialize Bedrock client if enabled
+        let bedrock_client = if database
+            .settings
+            .get(Setting::BedrockEnabled)
+            .and_then(|v| v.as_bool())
+            .unwrap_or(false)
+        {
+            match bedrock::BedrockApiClient::new(database.clone()).await {
+                Ok(client) => Some(client),
+                Err(err) => {
+                    error!("Failed to initialize Bedrock client: {err}");
+                    None
+                }
+            }
+        } else {
+            None
+        };
+
         Ok(Self {
             client,
             streaming_client,
             sigv4_streaming_client,
+            bedrock_client,
             mock_client: None,
             profile,
             model_cache: Arc::new(RwLock::new(None)),
@@ -386,6 +409,22 @@ impl ApiClient {
         conversation: ConversationState,
     ) -> Result<SendMessageOutput, ConverseStreamError> {
         debug!("Sending conversation: {:#?}", conversation);
+
+        // Route to Bedrock if enabled
+        if let Some(bedrock_client) = &self.bedrock_client {
+            match bedrock_client.converse_stream(conversation).await {
+                Ok(response) => return Ok(SendMessageOutput::Bedrock(response)),
+                Err(err) => {
+                    error!("Bedrock API error: {err}");
+                    return Err(ConverseStreamError::new(
+                        ConverseStreamErrorKind::Unknown {
+                            reason_code: err.to_string(),
+                        },
+                        None::<ConverseStreamSdkError>,
+                    ));
+                }
+            }
+        }
 
         let ConversationState {
             conversation_id,
