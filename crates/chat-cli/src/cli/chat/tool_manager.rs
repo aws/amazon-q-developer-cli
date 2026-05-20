@@ -1094,6 +1094,10 @@ impl ToolManager {
             name if name == ToolMetadata::INTROSPECT.spec_name => {
                 Tool::Introspect(serde_json::from_value::<Introspect>(value.args).map_err(&map_err)?)
             },
+            name if name == ToolMetadata::KIRO_CLI_HELP.spec_name => Tool::KiroCliHelp(
+                serde_json::from_value::<crate::cli::chat::tools::kiro_cli_help::KiroCliHelp>(value.args)
+                    .map_err(&map_err)?,
+            ),
             name if name == ToolMetadata::THINKING.spec_name => {
                 Tool::Thinking(serde_json::from_value::<Thinking>(value.args).map_err(&map_err)?)
             },

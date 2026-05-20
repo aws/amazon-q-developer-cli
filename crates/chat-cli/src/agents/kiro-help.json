@@ -11,11 +11,13 @@
   "tools": [
     "introspect",
     "fs_read",
+    "kiro_cli_help",
     "@kiro-knowledge/search_kiro_knowledge"
   ],
   "allowedTools": [
     "@kiro-knowledge/search_kiro_knowledge",
-    "introspect"
+    "introspect",
+    "kiro_cli_help"
   ],
   "includeMcpJson": false,
   "welcomeMessage": "Ask me anything about Kiro CLI."

@@ -10,6 +10,7 @@ pub mod gh_issue;
 pub mod glob;
 pub mod grep;
 pub mod introspect;
+pub mod kiro_cli_help;
 pub mod knowledge;
 pub mod session;
 pub mod switch_to_execution;
