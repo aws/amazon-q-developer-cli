@@ -118,7 +118,7 @@
   },
   "fs_write": {
     "name": "fs_write",
-    "description": "A tool for creating and editing files\n * The `create` command will override the file at `path` if it already exists as a file, and otherwise create a new file\n * The `append` command will add content to the end of an existing file, automatically adding a newline if the file doesn't end with one. The file must exist.\n Notes for using the `str_replace` command:\n * The `old_str` parameter should match EXACTLY one or more consecutive lines from the original file. Be mindful of whitespaces!\n * If the `old_str` parameter is not unique in the file, the replacement will not be performed. Make sure to include enough context in `old_str` to make it unique\n * The `new_str` parameter should contain the edited lines that should replace the `old_str`.",
+    "description": "A tool for creating and editing files\n * The `create` command will override the file at `path` if it already exists as a file, and otherwise create a new file\n * The `append` command will add content to the end of an existing file, automatically adding a newline if the file does not end with one. The file must exist.\n Notes for using the `str_replace` command:\n * ALWAYS use `fs_read` to read the file content BEFORE calling `str_replace`. Never guess or reconstruct `old_str` from memory.\n * The `old_str` parameter should match one or more consecutive lines from the original file. Exact whitespace matching is preferred but minor indentation differences are tolerated.\n * If the `old_str` parameter is not unique in the file, the replacement will not be performed. Include enough surrounding context to make it unique.\n * The `new_str` parameter should contain the edited lines that should replace the `old_str`.\n * If `str_replace` fails, do NOT fall back to shell commands like `sed`. Re-read the file with `fs_read` and retry with the correct content.",
     "input_schema": {
       "type": "object",
       "properties": {
@@ -305,10 +305,10 @@
         "command": {
           "type": "string",
           "enum": [
-            "create", 
-            "complete", 
-            "load", 
-            "add", 
+            "create",
+            "complete",
+            "load",
+            "add",
             "remove",
             "lookup"
           ],
@@ -377,7 +377,9 @@
           }
         }
       },
-      "required": ["command"]
+      "required": [
+        "command"
+      ]
     }
   },
   "delegate": {
@@ -385,64 +387,63 @@
     "description": "Launch and manage asynchronous agent processes. This tool allows you to delegate tasks to agents that run independently in the background.\n\nOperations:\n- launch: Start a new task with an agent (requires task parameter, agent is optional)\n- status: Check agent status and get full output if completed. Agent is optional - defaults to 'all' if not specified\n\nIf no agent is specified for launch, uses 'default_agent'. Only one task can run per agent at a time. Files are stored in ~/.aws/amazonq/.subagents/\n\nIMPORTANT: If a specific agent is requested but not found, DO NOT automatically retry with 'default_agent' or any other agent. Simply report the error and available agents to the user.\n\nExample usage:\n1. Launch with agent: {\"operation\": \"launch\", \"agent\": \"rust-agent\", \"task\": \"Create a snake game\"}\n2. Launch without agent: {\"operation\": \"launch\", \"task\": \"Write a Python script\"}\n3. Check specific agent: {\"operation\": \"status\", \"agent\": \"rust-agent\"}\n4. Check all agents: {\"operation\": \"status\", \"agent\": \"all\"}\n5. Check all agents (shorthand): {\"operation\": \"status\"}",
     "input_schema": {
       "type": "object",
-        "properties": {
-          "operation": {
-            "description": "Operation to perform: launch, status, or list",
-            "$ref": "#/$defs/Operation"
-          },
-          "agent": {
-            "description": "Agent name to use (optional - uses \"q_cli_default\" if not specified)",
-            "type": [
-              "string",
-              "null"
-            ],
-            "default": null
-          },
-          "task": {
-            "description": "Task description (required for launch operation). This process is supposed to be async. DO NOT query immediately after launching a task.",
-            "type": [
-              "string",
-              "null"
-            ],
-            "default": null
-          }
+      "properties": {
+        "operation": {
+          "description": "Operation to perform: launch, status, or list",
+          "$ref": "#/$defs/Operation"
         },
-        "required": [
-          "operation"
-        ],
-        "$defs": {
-          "Operation": {
-            "oneOf": [
-              {
-                "description": "Launch a new agent with a specified task",
-                "type": "string",
-                "const": "launch"
-              },
-              {
-                "description": "Check the status of a specific agent or all agents if None is provided",
-                "type": "object",
-                "properties": {
-                  "status": {
-                    "type": [
-                      "string",
-                      "null"
-                    ]
-                  }
-                },
-                "required": [
-                  "status"
-                ],
-                "additionalProperties": false
-              },
-              {
-                "description": "List all available agents",
-                "type": "string",
-                "const": "list"
-              }
-            ]
-          }
+        "agent": {
+          "description": "Agent name to use (optional - uses \"q_cli_default\" if not specified)",
+          "type": [
+            "string",
+            "null"
+          ],
+          "default": null
         },
-        "required": ["operation"]
+        "task": {
+          "description": "Task description (required for launch operation). This process is supposed to be async. DO NOT query immediately after launching a task.",
+          "type": [
+            "string",
+            "null"
+          ],
+          "default": null
+        }
+      },
+      "required": [
+        "operation"
+      ],
+      "$defs": {
+        "Operation": {
+          "oneOf": [
+            {
+              "description": "Launch a new agent with a specified task",
+              "type": "string",
+              "const": "launch"
+            },
+            {
+              "description": "Check the status of a specific agent or all agents if None is provided",
+              "type": "object",
+              "properties": {
+                "status": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                }
+              },
+              "required": [
+                "status"
+              ],
+              "additionalProperties": false
+            },
+            {
+              "description": "List all available agents",
+              "type": "string",
+              "const": "list"
+            }
+          ]
+        }
+      }
     }
   }
 }

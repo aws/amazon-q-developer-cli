@@ -378,7 +378,7 @@ mod test {
         });
 
         assert_eq!(Cli::parse_from([CHAT_BINARY_NAME, "chat", "-vv"]), Cli {
-            subcommand: Some(RootSubcommand::Chat(ChatArgs {
+            subcommand: Some(RootSubcommand::Chat(ChatArgs { workdir: None,
                 resume: false,
                 input: None,
                 agent: None,
@@ -418,7 +418,7 @@ mod test {
     fn test_chat_with_context_profile() {
         assert_parse!(
             ["chat", "--profile", "my-profile"],
-            RootSubcommand::Chat(ChatArgs {
+            RootSubcommand::Chat(ChatArgs { workdir: None,
                 resume: false,
                 input: None,
                 agent: Some("my-profile".to_string()),
@@ -435,7 +435,7 @@ mod test {
     fn test_chat_with_context_profile_and_input() {
         assert_parse!(
             ["chat", "--profile", "my-profile", "Hello"],
-            RootSubcommand::Chat(ChatArgs {
+            RootSubcommand::Chat(ChatArgs { workdir: None,
                 resume: false,
                 input: Some("Hello".to_string()),
                 agent: Some("my-profile".to_string()),
@@ -452,7 +452,7 @@ mod test {
     fn test_chat_with_context_profile_and_accept_all() {
         assert_parse!(
             ["chat", "--profile", "my-profile", "--trust-all-tools"],
-            RootSubcommand::Chat(ChatArgs {
+            RootSubcommand::Chat(ChatArgs { workdir: None,
                 resume: false,
                 input: None,
                 agent: Some("my-profile".to_string()),
@@ -469,7 +469,7 @@ mod test {
     fn test_chat_with_no_interactive_and_resume() {
         assert_parse!(
             ["chat", "--no-interactive", "--resume"],
-            RootSubcommand::Chat(ChatArgs {
+            RootSubcommand::Chat(ChatArgs { workdir: None,
                 resume: true,
                 input: None,
                 agent: None,
@@ -482,7 +482,7 @@ mod test {
         );
         assert_parse!(
             ["chat", "--non-interactive", "-r"],
-            RootSubcommand::Chat(ChatArgs {
+            RootSubcommand::Chat(ChatArgs { workdir: None,
                 resume: true,
                 input: None,
                 agent: None,
@@ -499,7 +499,7 @@ mod test {
     fn test_chat_with_tool_trust_all() {
         assert_parse!(
             ["chat", "--trust-all-tools"],
-            RootSubcommand::Chat(ChatArgs {
+            RootSubcommand::Chat(ChatArgs { workdir: None,
                 resume: false,
                 input: None,
                 agent: None,
@@ -516,7 +516,7 @@ mod test {
     fn test_chat_with_tool_trust_none() {
         assert_parse!(
             ["chat", "--trust-tools="],
-            RootSubcommand::Chat(ChatArgs {
+            RootSubcommand::Chat(ChatArgs { workdir: None,
                 resume: false,
                 input: None,
                 agent: None,
@@ -533,7 +533,7 @@ mod test {
     fn test_chat_with_tool_trust_some() {
         assert_parse!(
             ["chat", "--trust-tools=fs_read,fs_write"],
-            RootSubcommand::Chat(ChatArgs {
+            RootSubcommand::Chat(ChatArgs { workdir: None,
                 resume: false,
                 input: None,
                 agent: None,
@@ -550,7 +550,7 @@ mod test {
     fn test_chat_with_different_wrap_modes() {
         assert_parse!(
             ["chat", "-w", "never"],
-            RootSubcommand::Chat(ChatArgs {
+            RootSubcommand::Chat(ChatArgs { workdir: None,
                 resume: false,
                 input: None,
                 agent: None,
@@ -563,7 +563,7 @@ mod test {
         );
         assert_parse!(
             ["chat", "--wrap", "always"],
-            RootSubcommand::Chat(ChatArgs {
+            RootSubcommand::Chat(ChatArgs { workdir: None,
                 resume: false,
                 input: None,
                 agent: None,
@@ -576,7 +576,7 @@ mod test {
         );
         assert_parse!(
             ["chat", "--wrap", "auto"],
-            RootSubcommand::Chat(ChatArgs {
+            RootSubcommand::Chat(ChatArgs { workdir: None,
                 resume: false,
                 input: None,
                 agent: None,

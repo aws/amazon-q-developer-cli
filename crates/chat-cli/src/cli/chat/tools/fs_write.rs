@@ -132,8 +132,23 @@ impl FsWrite {
                 write_to_file(os, &path, file_text).await?;
             },
             FsWrite::StrReplace { old_str, new_str, .. } => {
+                // Freshness check: if the file was read earlier in this session, verify it
+                // hasn't been modified externally since then.
+                let path_key = path.to_string_lossy().to_string();
+                if let Some(tracker) = line_tracker.get(&path_key) {
+                    if let Some(read_mtime) = tracker.last_read_mtime {
+                        if let Ok(current_mtime) = std::fs::metadata(&path).and_then(|m| m.modified()) {
+                            if current_mtime > read_mtime {
+                                return Err(eyre!(
+                                    "file '{}' was modified externally after it was last read — \
+                                    use fs_read to re-read the current content before retrying str_replace",
+                                    path.display()
+                                ));
+                            }
+                        }
+                    }
+                }
                 let file = os.fs.read_to_string(&path).await?;
-                let matches = file.match_indices(old_str).collect::<Vec<_>>();
                 queue!(
                     output,
                     style::Print("Updating: "),
@@ -142,14 +157,8 @@ impl FsWrite {
                     StyledText::reset(),
                     style::Print("\n"),
                 )?;
-                match matches.len() {
-                    0 => return Err(eyre!("no occurrences of \"{old_str}\" were found")),
-                    1 => {
-                        let file = file.replacen(old_str, new_str, 1);
-                        os.fs.write(&path, file).await?;
-                    },
-                    x => return Err(eyre!("{x} occurrences of old_str were found when only 1 is expected")),
-                }
+                let updated = str_replace_fuzzy(&file, old_str, new_str)?;
+                os.fs.write(&path, updated).await?;
             },
             FsWrite::Insert {
                 insert_line, new_str, ..
@@ -393,7 +402,16 @@ impl FsWrite {
                     bail!("Path must not be empty")
                 };
             },
-            FsWrite::StrReplace { path, .. } | FsWrite::Insert { path, .. } => {
+            FsWrite::StrReplace { path, old_str, .. } => {
+                let path = sanitize_path_tool_arg(os, path);
+                if !path.exists() {
+                    bail!("The provided path must exist in order to replace or insert contents into it")
+                }
+                if old_str.trim().is_empty() {
+                    bail!("old_str must not be empty — use fs_read to read the file first, then provide the exact text to replace")
+                }
+            },
+            FsWrite::Insert { path, .. } => {
                 let path = sanitize_path_tool_arg(os, path);
                 if !path.exists() {
                     bail!("The provided path must exist in order to replace or insert contents into it")
@@ -858,6 +876,212 @@ fn syntect_to_crossterm_color(syntect: syntect::highlighting::Color) -> style::C
     }
 }
 
+/// Attempts to replace `old_str` with `new_str` in `content` using a fallback chain:
+///
+/// 1. **Exact match** — fastest, most precise.
+/// 2. **Line-trimmed match** — matches lines after stripping leading/trailing whitespace,
+///    then replaces the original (indented) text. Handles indentation drift.
+/// 3. **Block-anchor match** — matches by first+last line as anchors, uses Levenshtein
+///    similarity on middle lines to find the best candidate. Handles minor edits in context.
+///
+/// Returns an error if no strategy finds exactly one unambiguous match.
+fn str_replace_fuzzy(content: &str, old_str: &str, new_str: &str) -> eyre::Result<String> {
+    // Normalize CRLF → LF for matching. Restore original line endings after replacement.
+    let (content_norm, content_crlf) = normalize_line_endings(content);
+    let (old_norm, _) = normalize_line_endings(old_str);
+    let (new_norm, _) = normalize_line_endings(new_str);
+    let content = content_norm.as_ref();
+    let old_str = old_norm.as_ref();
+    let new_str = new_norm.as_ref();
+
+    // Strategy 1: exact match
+    let exact_count = content.match_indices(old_str).count();
+    match exact_count {
+        1 => {
+            let result = content.replacen(old_str, new_str, 1);
+            return Ok(if content_crlf { result.replace('\n', "\r\n") } else { result });
+        },
+        x if x > 1 => {
+            return Err(eyre::eyre!(
+                "{x} occurrences of old_str were found when only 1 is expected — \
+                add more surrounding context to old_str to make it unique"
+            ))
+        },
+        _ => {},
+    }
+
+    // Strategies 2 & 3: fuzzy — both return a byte range to splice at
+    let range = line_trimmed_match(content, old_str)
+        .or_else(|| block_anchor_match(content, old_str));
+
+    if let Some((start, end)) = range {
+        let result = format!("{}{}{}", &content[..start], new_str, &content[end..]);
+        return Ok(if content_crlf { result.replace('\n', "\r\n") } else { result });
+    }
+
+    Err(eyre::eyre!(
+        "no occurrences of the provided old_str were found (tried exact, \
+        line-trimmed, and block-anchor matching) — use fs_read to read the \
+        current file content and retry str_replace with the exact text. \
+        Do NOT fall back to shell commands like sed."
+    ))
+}
+
+/// Normalizes line endings to `\n` and returns the normalized string along with
+/// a flag indicating whether the original used CRLF. The flag is used to restore
+/// the original line endings after replacement.
+fn normalize_line_endings(s: &str) -> (std::borrow::Cow<str>, bool) {
+    if s.contains("\r\n") {
+        (s.replace("\r\n", "\n").into(), true)
+    } else {
+        (s.into(), false)
+    }
+}
+
+/// Strips leading and trailing empty lines from a split-by-newline vec.
+fn strip_empty_boundary_lines(mut lines: Vec<&str>) -> Vec<&str> {
+    while lines.last().map(|l: &&str| l.trim().is_empty()).unwrap_or(false) {
+        lines.pop();
+    }
+    while lines.first().map(|l: &&str| l.trim().is_empty()).unwrap_or(false) {
+        lines.remove(0);
+    }
+    lines
+}
+
+/// Builds a prefix-sum table of byte offsets for lines split by `\n`.
+/// `offsets[i]` = byte offset of the start of line `i` in the original string.
+/// `offsets[lines.len()]` = one past the last byte (i.e. content.len() + 1 conceptually).
+fn build_line_offsets(lines: &[&str]) -> Vec<usize> {
+    let mut offsets = Vec::with_capacity(lines.len() + 1);
+    offsets.push(0usize);
+    for line in lines {
+        offsets.push(offsets.last().unwrap() + line.len() + 1); // +1 for '\n'
+    }
+    offsets
+}
+
+/// Matches `find` against `content` by comparing trimmed lines.
+/// Returns the byte range `(start, end)` in `content` if exactly one match is found.
+fn line_trimmed_match(content: &str, find: &str) -> Option<(usize, usize)> {
+    let content_lines: Vec<&str> = content.split('\n').collect();
+    let search_lines = strip_empty_boundary_lines(find.split('\n').collect());
+
+    if search_lines.is_empty() {
+        return None;
+    }
+
+    let offsets = build_line_offsets(&content_lines);
+
+    let mut matches: Vec<(usize, usize)> = Vec::new();
+    'outer: for i in 0..=content_lines.len().saturating_sub(search_lines.len()) {
+        for (j, search_line) in search_lines.iter().enumerate() {
+            if content_lines[i + j].trim() != search_line.trim() {
+                continue 'outer;
+            }
+        }
+        let start = offsets[i];
+        let end = offsets[i + search_lines.len()].saturating_sub(1).min(content.len());
+        matches.push((start, end));
+    }
+
+    if matches.len() == 1 { Some(matches[0]) } else { None }
+}
+
+/// Levenshtein distance between two strings (char-level, O(min(m,n)) space).
+/// `a` is placed in the row dimension (longer), `b` in the column (shorter).
+fn levenshtein(a: &str, b: &str) -> usize {
+    let a: Vec<char> = a.chars().collect();
+    let b: Vec<char> = b.chars().collect();
+    // Ensure `a` is the longer string so `b` (columns) is the smaller allocation
+    let (a, b) = if a.len() >= b.len() { (a, b) } else { (b, a) };
+    let (m, n) = (a.len(), b.len());
+    let mut prev: Vec<usize> = (0..=n).collect();
+    let mut curr = vec![0usize; n + 1];
+    for i in 1..=m {
+        curr[0] = i;
+        for j in 1..=n {
+            curr[j] = if a[i - 1] == b[j - 1] {
+                prev[j - 1]
+            } else {
+                1 + prev[j].min(curr[j - 1]).min(prev[j - 1])
+            };
+        }
+        std::mem::swap(&mut prev, &mut curr);
+    }
+    prev[n]
+}
+
+const SIMILARITY_THRESHOLD: f64 = 0.6;
+
+/// Matches `find` against `content` using first+last line as anchors and Levenshtein
+/// similarity on middle lines. Returns the byte range `(start, end)` in `content` if
+/// similarity exceeds the threshold and the match is unambiguous.
+fn block_anchor_match(content: &str, find: &str) -> Option<(usize, usize)> {
+    let content_lines: Vec<&str> = content.split('\n').collect();
+    let search_lines = strip_empty_boundary_lines(find.split('\n').collect());
+
+    // Need at least 2 distinct lines for anchor matching
+    if search_lines.len() < 2 {
+        return None;
+    }
+
+    let first = search_lines[0].trim();
+    let last = search_lines[search_lines.len() - 1].trim();
+
+    // Symmetric anchors (e.g. `}` / `}`) produce too many false positives
+    if first == last {
+        return None;
+    }
+
+    // Build offsets once — reused for both scoring and final byte range
+    let offsets = build_line_offsets(&content_lines);
+
+    // Collect candidate windows where first and last anchor lines match
+    let mut candidates: Vec<(usize, usize, f64)> = Vec::new();
+    for i in 0..content_lines.len() {
+        if content_lines[i].trim() != first { continue; }
+        for j in (i + 1)..content_lines.len() {
+            if content_lines[j].trim() == last {
+                let score = similarity_score(&content_lines, i, j, &search_lines);
+                candidates.push((i, j, score));
+                break;
+            }
+        }
+    }
+
+    // Pick the single best candidate above the threshold
+    let best = candidates
+        .into_iter()
+        .filter(|&(_, _, s)| s >= SIMILARITY_THRESHOLD)
+        .max_by(|a, b| a.2.partial_cmp(&b.2).unwrap_or(std::cmp::Ordering::Equal))?;
+
+    let start = offsets[best.0];
+    let end = offsets[best.1 + 1].saturating_sub(1).min(content.len());
+    Some((start, end))
+}
+
+/// Average Levenshtein similarity of middle lines between `search_lines` and the
+/// corresponding window `content_lines[start..=end]`.
+fn similarity_score(content_lines: &[&str], start: usize, end: usize, search_lines: &[&str]) -> f64 {
+    let middle_count = search_lines.len().saturating_sub(2);
+    if middle_count == 0 { return 1.0; }
+
+    let mut total = 0.0;
+    let mut counted = 0;
+    for k in 1..search_lines.len().saturating_sub(1) {
+        let ci = start + k;
+        if ci >= end { break; }
+        let a = content_lines[ci].trim();
+        let b = search_lines[k].trim();
+        let max_len = a.chars().count().max(b.chars().count());
+        if max_len == 0 { total += 1.0; counted += 1; continue; }
+        total += 1.0 - levenshtein(a, b) as f64 / max_len as f64;
+        counted += 1;
+    }
+    if counted == 0 { 1.0 } else { total / counted as f64 }
+}
+
 #[cfg(test)]
 mod tests {
     use std::collections::HashMap;
@@ -869,6 +1093,121 @@ mod tests {
         TEST_FILE_PATH,
         setup_test_directory,
     };
+
+    // ── str_replace_fuzzy tests ──────────────────────────────────────────────
+
+    #[test]
+    fn fuzzy_exact_match() {
+        let content = "fn foo() {\n    let x = 1;\n}\n";
+        let result = str_replace_fuzzy(content, "let x = 1;", "let x = 42;").unwrap();
+        assert_eq!(result, "fn foo() {\n    let x = 42;\n}\n");
+    }
+
+    #[test]
+    fn fuzzy_exact_match_fails_on_ambiguous() {
+        let content = "let x = 1;\nlet x = 1;\n";
+        assert!(str_replace_fuzzy(content, "let x = 1;", "let x = 2;").is_err());
+    }
+
+    #[test]
+    fn fuzzy_line_trimmed_handles_indentation_drift() {
+        // old_str has different indentation than the file
+        let content = "fn foo() {\n    let x = 1;\n    let y = 2;\n}\n";
+        let old_str = "let x = 1;\nlet y = 2;"; // no indentation
+        let result = str_replace_fuzzy(content, old_str, "let x = 10;\nlet y = 20;").unwrap();
+        assert!(result.contains("let x = 10;"));
+        assert!(result.contains("let y = 20;"));
+    }
+
+    #[test]
+    fn fuzzy_block_anchor_handles_minor_middle_edits() {
+        // Middle line has a minor typo vs what's in the file
+        let content = "fn calculate() {\n    let result = a + b;\n    return result;\n}\n";
+        // old_str has slightly different middle line
+        let old_str = "fn calculate() {\n    let result = a + b; // sum\n    return result;\n}";
+        let result = str_replace_fuzzy(content, old_str, "fn calculate() {\n    return a + b;\n}");
+        // Should find a match via block anchor (first+last line match)
+        assert!(result.is_ok(), "block anchor should match: {:?}", result);
+    }
+
+    #[test]
+    fn fuzzy_handles_crlf_file_with_lf_old_str() {
+        // File uses CRLF, model sends LF — should match and preserve CRLF in output
+        let content = "fn foo() {\r\n    let x = 1;\r\n}\r\n";
+        let old_str = "fn foo() {\n    let x = 1;\n}";
+        let result = str_replace_fuzzy(content, old_str, "fn foo() {\n    let x = 42;\n}").unwrap();
+        assert!(result.contains("\r\n"), "CRLF must be preserved in output");
+        assert!(result.contains("let x = 42;"), "replacement must be applied");
+        assert!(!result.contains("let x = 1;"), "old content must be gone");
+    }
+
+    #[test]
+    fn fuzzy_rejects_empty_old_str() {
+        // empty old_str should be caught at validation, not reach fuzzy matching
+        let result = str_replace_fuzzy("fn foo() {}", "", "fn bar() {}");
+        assert!(result.is_err());
+        // str_replace_fuzzy itself: exact match on "" would match everywhere,
+        // so it should return an ambiguous error
+        let msg = result.unwrap_err().to_string();
+        assert!(msg.contains("occurrences"), "should report ambiguous match: {msg}");
+    }
+
+    #[test]
+    fn fuzzy_returns_error_when_no_strategy_matches() {
+        let content = "fn foo() {}\n";
+        let result = str_replace_fuzzy(content, "fn bar() {}", "fn baz() {}");
+        assert!(result.is_err());
+        let msg = result.unwrap_err().to_string();
+        assert!(msg.contains("fs_read"), "error should mention fs_read: {msg}");
+        assert!(msg.contains("sed"), "error should warn against sed: {msg}");
+    }
+
+    #[test]
+    fn fuzzy_replaces_correct_occurrence_when_matched_text_appears_elsewhere() {
+        // The fuzzy-matched substring also appears earlier in the file.
+        // We must replace the matched position, not the first occurrence.
+        let content = "    let x = 1;\nfn foo() {\n    let x = 1;\n    let y = 2;\n}\n";
+        // old_str with no indentation — line-trimmed will match the block inside fn foo
+        let old_str = "let x = 1;\nlet y = 2;";
+        let result = str_replace_fuzzy(content, old_str, "let x = 10;\nlet y = 20;").unwrap();
+        // The standalone "let x = 1;" at the top must be untouched
+        assert!(result.starts_with("    let x = 1;\n"), "first occurrence must be untouched");
+        assert!(result.contains("let x = 10;"), "matched block must be replaced");
+    }
+
+    #[test]
+    fn block_anchor_skips_symmetric_first_last_lines() {
+        // first == last — should not produce false positive via block anchor
+        let content = "}\n}\n";
+        let find = "}\n}";
+        // block_anchor_match should return None because first == last
+        assert!(block_anchor_match(content, find).is_none());
+    }
+
+    #[test]
+    fn levenshtein_space_optimised_matches_naive() {
+        // Verify the O(n) space implementation gives correct results
+        assert_eq!(levenshtein("", "abc"), 3);
+        assert_eq!(levenshtein("abc", ""), 3);
+        assert_eq!(levenshtein("saturday", "sunday"), 3);
+    }
+
+    #[test]
+    fn line_trimmed_match_finds_indented_block() {
+        let content = "class Foo {\n    void bar() {\n        int x = 1;\n    }\n}\n";
+        let find = "void bar() {\n    int x = 1;\n}";
+        let matched = line_trimmed_match(content, find);
+        assert!(matched.is_some(), "should find indented block");
+        let (start, end) = matched.unwrap();
+        assert!(content[start..end].contains("    void bar()"), "should preserve original indentation");
+    }
+
+    #[test]
+    fn line_trimmed_match_returns_none_on_ambiguous() {
+        let content = "    foo()\n    foo()\n";
+        let find = "foo()";
+        assert!(line_trimmed_match(content, find).is_none());
+    }
 
     #[test]
     fn test_fs_write_deserialize() {

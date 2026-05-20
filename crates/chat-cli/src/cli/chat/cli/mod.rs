@@ -1,5 +1,6 @@
 use crate::theme::StyledText;
 pub mod changelog;
+pub mod changedir;
 pub mod checkpoint;
 pub mod clear;
 pub mod compact;
@@ -23,6 +24,7 @@ pub mod tools;
 pub mod usage;
 
 use changelog::ChangelogArgs;
+use changedir::ChangedirArgs;
 use clap::Parser;
 use clear::ClearArgs;
 use compact::CompactArgs;
@@ -65,6 +67,9 @@ pub enum SlashCommand {
     Quit,
     /// Clear the conversation history
     Clear(ClearArgs),
+    /// Change the working directory for this session
+    #[command(name = "changedir", alias = "cd")]
+    Changedir(ChangedirArgs),
     /// Manage agents
     #[command(subcommand)]
     Agent(AgentSubcommand),
@@ -134,6 +139,7 @@ impl SlashCommand {
         match self {
             Self::Quit => Ok(ChatState::Exit),
             Self::Clear(args) => args.execute(session).await,
+            Self::Changedir(args) => args.execute(session).await,
             Self::Agent(subcommand) => subcommand.execute(os, session).await,
             Self::Profile => {
                 use crossterm::{
@@ -203,6 +209,7 @@ impl SlashCommand {
         match self {
             Self::Quit => "quit",
             Self::Clear(_) => "clear",
+            Self::Changedir(_) => "changedir",
             Self::Agent(_) => "agent",
             Self::Profile => "profile",
             Self::Context(_) => "context",
