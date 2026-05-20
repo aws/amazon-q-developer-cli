@@ -59,7 +59,7 @@ hex = "0.4.3"
 http = "1.2.0"
 http-body-util = "0.1.3"
 hyper = { version = "1.6.0", features = ["server"] }
-hyper-util = { version = "0.1.11", features = ["tokio"] }
+hyper-util = { version = "0.1.17", features = ["tokio"] }
 indicatif = "0.17.11"
 indoc = "2.0.6"
 insta = "1.43.1"
