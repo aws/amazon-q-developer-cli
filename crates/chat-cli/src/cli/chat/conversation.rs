@@ -90,10 +90,10 @@ pub const CONTEXT_ENTRY_END_HEADER: &str = "--- CONTEXT ENTRY END ---\n\n";
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct HistoryEntry {
-    user: UserMessage,
-    assistant: AssistantMessage,
+    pub user: UserMessage,
+    pub assistant: AssistantMessage,
     #[serde(default)]
-    request_metadata: Option<RequestMetadata>,
+    pub request_metadata: Option<RequestMetadata>,
 }
 
 #[derive(Debug, Clone)]
@@ -235,6 +235,15 @@ impl ConversationState {
         self.tangent_state.is_some()
     }
 
+    /// Check if tangent conversation is empty (no new messages since entering tangent mode)
+    pub fn is_tangent_empty(&self) -> bool {
+        if let Some(checkpoint) = &self.tangent_state {
+            self.history.len() <= checkpoint.main_history.len()
+        } else {
+            false
+        }
+    }
+
     /// Create a checkpoint of current conversation state
     fn create_checkpoint(&self) -> ConversationCheckpoint {
         ConversationCheckpoint {
@@ -298,6 +307,38 @@ impl ConversationState {
             // Add the last entry if it exists
             if let Some(entry) = last_entry {
                 self.history.push_back(entry);
+            }
+        }
+    }
+
+    /// Exit tangent mode with compact - called after compact completes
+    /// Replaces tangent entries with a single summary entry in-place
+    pub fn exit_tangent_mode_with_compact(&mut self) {
+        if let Some(checkpoint) = self.tangent_state.take() {
+            // Capture the tangent's latest_summary (created by compact)
+            let tangent_summary = self.latest_summary.clone();
+
+            // Restore main history
+            self.history = checkpoint.main_history;
+            self.next_message = checkpoint.main_next_message;
+            self.transcript = checkpoint.main_transcript;
+            self.latest_summary = checkpoint.main_latest_summary;
+            self.valid_history_range = (0, self.history.len());
+
+            // Add summary as a history entry at the tangent position
+            if let Some((summary, metadata)) = tangent_summary {
+                let summary_entry = HistoryEntry {
+                    user: UserMessage::new_prompt("[Tangent conversation]".to_string(), None),
+                    assistant: AssistantMessage::new_response(None, summary),
+                    request_metadata: Some(metadata),
+                };
+                self.history.push_back(summary_entry);
+                self.valid_history_range = (0, self.history.len());
+            }
+            
+            if let Some(manager) = self.checkpoint_manager.as_mut() {
+                manager.message_locked = false;
+                manager.pending_user_message = None;
             }
         }
     }
@@ -1262,6 +1303,35 @@ fn enforce_tool_use_history_invariants(history: &mut VecDeque<HistoryEntry>, too
                 tool_use.name = DUMMY_TOOL_NAME.to_string();
             }
         }
+    }
+}
+
+impl ConversationState {
+    /// Test helper: Append a history entry directly (bypasses normal flow)
+    #[cfg(test)]
+    pub fn append_to_history_for_test(
+        &mut self,
+        user: UserMessage,
+        assistant: AssistantMessage,
+        request_metadata: Option<RequestMetadata>,
+    ) {
+        self.history.push_back(HistoryEntry {
+            user,
+            assistant,
+            request_metadata,
+        });
+    }
+
+    /// Test helper: Set latest summary directly
+    #[cfg(test)]
+    pub fn set_latest_summary_for_test(&mut self, summary: String, metadata: RequestMetadata) {
+        self.latest_summary = Some((summary, metadata));
+    }
+
+    /// Test helper: Get latest summary
+    #[cfg(test)]
+    pub fn get_latest_summary_for_test(&self) -> Option<(String, RequestMetadata)> {
+        self.latest_summary.clone()
     }
 }
 
