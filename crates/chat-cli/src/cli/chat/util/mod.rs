@@ -13,10 +13,41 @@ use aws_smithy_types::{
     Number as SmithyNumber,
 };
 use eyre::Result;
+use unicode_width::{
+    UnicodeWidthChar,
+    UnicodeWidthStr,
+};
 
 use super::ChatError;
 use super::token_counter::TokenCounter;
 use crate::util::env_var::get_term;
+
+/// Truncates text to a maximum display width.
+/// Dynamically calculate the display width of characters, where CJK characters are counted as 2
+pub fn truncate_safe_with_width(text: &str, max_width: usize) -> String {
+    let text_width = UnicodeWidthStr::width(text);
+    if text_width <= max_width {
+        text.to_string()
+    } else {
+        let mut current_width = 0;
+        let mut chars_to_take = 0;
+
+        for ch in text.chars() {
+            let char_width = ch.width().unwrap_or(0);
+            if current_width + char_width > max_width {
+                break;
+            }
+            current_width += char_width;
+            chars_to_take += 1;
+        }
+
+        text.chars()
+            .take(chars_to_take)
+            .collect::<String>()
+            .trim_end()
+            .to_string()
+    }
+}
 
 pub fn truncate_safe(s: &str, max_bytes: usize) -> &str {
     if s.len() <= max_bytes {
@@ -236,6 +267,45 @@ pub fn document_to_serde_value(value: Document) -> serde_json::Value {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn test_truncate_safe_with_width() {
+        // Test normal length
+        let short = "Short description";
+        assert_eq!(truncate_safe_with_width(short, 40), "Short description");
+
+        // Test truncation
+        let long =
+            "This is a very long description that should be truncated because it exceeds the maximum length limit";
+        let result = truncate_safe_with_width(long, 40);
+        assert!(UnicodeWidthStr::width(result.as_str()) <= 40);
+        assert!(!result.ends_with("..."));
+
+        // Test exact length
+        let exact = "A".repeat(40);
+        assert_eq!(truncate_safe_with_width(&exact, 40), exact);
+
+        // Test very short max length
+        let result = truncate_safe_with_width("Hello world", 5);
+        assert_eq!(result, "Hello");
+        assert_eq!(UnicodeWidthStr::width(result.as_str()), 5);
+
+        // Test space trimming
+        let with_space = "Prompt to explain available tools and how";
+        let result = truncate_safe_with_width(with_space, 37);
+        assert_eq!(result, "Prompt to explain available tools and");
+
+        // Test Korean text (CJK characters)
+        let korean_text = "사용자가 작성한 글의 어색한 표현이나 오타를 수정하고 싶을 때";
+        let result_korean = truncate_safe_with_width(korean_text, 10);
+        assert!(!result_korean.ends_with("..."));
+        assert!(UnicodeWidthStr::width(result_korean.as_str()) <= 10);
+
+        // Test mixed ASCII and Korean
+        let mixed_text = "Hello 안녕하세요 World";
+        let result_mixed = truncate_safe_with_width(mixed_text, 15);
+        assert!(UnicodeWidthStr::width(result_mixed.as_str()) <= 15);
+    }
 
     #[test]
     fn test_truncate_safe() {
