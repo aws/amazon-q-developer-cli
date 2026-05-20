@@ -249,14 +249,16 @@ export class TUI extends Container {
       this.wideLinesEnabled = true;
     }
     this.minWidth = Math.max(opts.minWidth ?? 10, 1);
-    if (process.env.TWINKI_DEBUG_REDRAW === '1') {
+    if (process.env.KIRO_RENDER_DEBUG === '1' || process.env.KIRO_RENDER_DEBUG_FILE || process.env.TWINKI_DEBUG_REDRAW === '1') {
       try {
         const fs = require('fs');
         const os = require('os');
         const path = require('path');
-        const dir = path.join(os.homedir(), '.twinki');
+        const logPath = process.env.KIRO_RENDER_DEBUG_FILE
+          ?? path.join(os.tmpdir(), 'kiro-log', 'kiro-render-debug.log');
+        const dir = path.dirname(logPath);
         fs.mkdirSync(dir, { recursive: true });
-        this.debugLogFd = fs.openSync(path.join(dir, 'debug.log'), 'a');
+        this.debugLogFd = fs.openSync(logPath, 'a');
       } catch {
         /* ignore */
       }
