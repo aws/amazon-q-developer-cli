@@ -89,6 +89,10 @@ pub enum Setting {
     EnabledCheckpoint,
     #[strum(message = "Enable the delegate tool for subagent management (boolean)")]
     EnabledDelegate,
+    #[strum(message = "Enable automatic conversation saving (boolean)")]
+    ChatEnableAutoSave,
+    #[strum(message = "Auto-save file path pattern (string)")]
+    ChatAutoSavePath,
     #[strum(message = "Specify UI variant to use (string)")]
     UiMode,
 }
@@ -132,6 +136,8 @@ impl AsRef<str> for Setting {
             Self::EnabledCheckpoint => "chat.enableCheckpoint",
             Self::EnabledContextUsageIndicator => "chat.enableContextUsageIndicator",
             Self::EnabledDelegate => "chat.enableDelegate",
+            Self::ChatEnableAutoSave => "chat.enableAutoSave",
+            Self::ChatAutoSavePath => "chat.autoSavePath",
             Self::UiMode => "chat.uiMode",
         }
     }
@@ -182,6 +188,9 @@ impl TryFrom<&str> for Setting {
             "chat.enableTodoList" => Ok(Self::EnabledTodoList),
             "chat.enableCheckpoint" => Ok(Self::EnabledCheckpoint),
             "chat.enableContextUsageIndicator" => Ok(Self::EnabledContextUsageIndicator),
+            "chat.enableDelegate" => Ok(Self::EnabledDelegate),
+            "chat.enableAutoSave" => Ok(Self::ChatEnableAutoSave),
+            "chat.autoSavePath" => Ok(Self::ChatAutoSavePath),
             "chat.uiMode" => Ok(Self::UiMode),
             _ => Err(DatabaseError::InvalidSetting(value.to_string())),
         }
