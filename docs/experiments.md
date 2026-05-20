@@ -151,6 +151,8 @@ Task execution details are stored in `.amazonq/.subagents/` in your current dire
 
 **Settings:**
 - `chat.enableDelegate` - Enable/disable delegate feature (boolean)
+ - `chat.delegateAutoApprove` - Automatically approve delegate launches (boolean, default: false)
+ - `chat.delegateAutoApproveAgents` - Comma-separated list of agent names to auto-approve (string)
 
 **When enabled:** You can delegate long-running or independent tasks to background agents. You'll be notified when tasks complete, and can ask about results in your main conversation.
 
