@@ -1,0 +1,31 @@
+[package]
+name = "kiro-bot-eval"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+publish.workspace = true
+description = "RAG retrieval eval suite for the kiro-help bot."
+
+[lib]
+name = "kiro_bot_eval"
+path = "src/lib.rs"
+
+[[bin]]
+name = "kiro-bot-eval"
+path = "src/main.rs"
+
+[dependencies]
+anyhow.workspace = true
+async-trait.workspace = true
+clap = { workspace = true, features = ["derive", "env"] }
+kiro-knowledge-mcp = { path = "../kiro-knowledge-mcp" }
+serde = { workspace = true, features = ["derive"] }
+serde_json.workspace = true
+tokio = { workspace = true, features = ["full"] }
+tracing.workspace = true
+tracing-subscriber.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true
+tokio = { workspace = true, features = ["macros", "rt"] }

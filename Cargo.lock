@@ -5004,6 +5004,22 @@ dependencies = [
 ]
 
 [[package]]
+name = "kiro-bot-eval"
+version = "2.4.0"
+dependencies = [
+ "anyhow",
+ "async-trait",
+ "clap",
+ "kiro-knowledge-mcp",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "tokio",
+ "tracing",
+ "tracing-subscriber",
+]
+
+[[package]]
 name = "kiro-help-corpus-ingest"
 version = "2.4.0"
 dependencies = [

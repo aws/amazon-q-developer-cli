@@ -1,0 +1,36 @@
+// kiro-help RAG eval cases. One JSON object per line; // and blank lines tolerated.
+// Categories: auth, mcp, agents, slash-commands, tools, errors, release-notes, config, hooks, ui.
+// "must_retrieve_any_of" lists doc paths that, if any one shows up in the top-N retrieved
+// chunks, the case is considered passed. Keep these to real, current paths.
+{"id":"auth-001","query":"how do I log in to kiro-cli","must_retrieve_any_of":["docs/authentication.md","docs/auth.md","autodocs/docs/cli/login.md"],"category":"auth"}
+{"id":"auth-002","query":"the kiro-cli login browser flow hangs forever","must_retrieve_any_of":["docs/authentication.md","docs/troubleshooting.md","docs/auth.md"],"category":"auth"}
+{"id":"auth-003","query":"how do I sign out of kiro-cli","must_retrieve_any_of":["docs/authentication.md","autodocs/docs/cli/logout.md"],"category":"auth"}
+{"id":"auth-004","query":"can I use a personal access token instead of browser login","must_retrieve_any_of":["docs/authentication.md","docs/api-keys.md"],"category":"auth"}
+{"id":"mcp-001","query":"how do I add a new MCP server","must_retrieve_any_of":["docs/mcp.md","autodocs/docs/slash-commands/mcp.md"],"category":"mcp"}
+{"id":"mcp-002","query":"what is the format of mcp.json","must_retrieve_any_of":["docs/mcp.md","autodocs/docs/configuration/mcp.md"],"category":"mcp"}
+{"id":"mcp-003","query":"my MCP server fails to start at launch","must_retrieve_any_of":["docs/mcp.md","docs/troubleshooting.md"],"category":"mcp"}
+{"id":"mcp-004","query":"how do I disable an MCP server temporarily","must_retrieve_any_of":["docs/mcp.md","autodocs/docs/slash-commands/mcp.md"],"category":"mcp"}
+{"id":"agents-001","query":"how do I create a custom agent","must_retrieve_any_of":["docs/agents.md","autodocs/docs/slash-commands/agent.md"],"category":"agents"}
+{"id":"agents-002","query":"what does the kiro_planner agent do","must_retrieve_any_of":["docs/agents.md","autodocs/docs/slash-commands/agent.md","crates/chat-cli/src/kiro_planner.json"],"category":"agents"}
+{"id":"agents-003","query":"how do I switch agents during a chat","must_retrieve_any_of":["autodocs/docs/slash-commands/agent.md","docs/agents.md"],"category":"agents"}
+{"id":"agents-004","query":"how do I configure tool permissions for an agent","must_retrieve_any_of":["docs/agents.md","docs/tool-permissions.md"],"category":"agents"}
+{"id":"slash-001","query":"what slash commands are available","must_retrieve_any_of":["autodocs/docs/slash-commands/index.md","docs/slash-commands.md"],"category":"slash-commands"}
+{"id":"slash-002","query":"how do I save a chat","must_retrieve_any_of":["autodocs/docs/slash-commands/save.md","autodocs/docs/slash-commands/chat.md"],"category":"slash-commands"}
+{"id":"slash-003","query":"how do I use the /context slash command","must_retrieve_any_of":["autodocs/docs/slash-commands/context.md"],"category":"slash-commands"}
+{"id":"slash-004","query":"how do I clear my session","must_retrieve_any_of":["autodocs/docs/slash-commands/clear.md","autodocs/docs/slash-commands/new.md"],"category":"slash-commands"}
+{"id":"tools-001","query":"how does the fs_read tool work","must_retrieve_any_of":["autodocs/docs/tools/fs_read.md","docs/tools.md"],"category":"tools"}
+{"id":"tools-002","query":"how do I run a shell command from kiro","must_retrieve_any_of":["autodocs/docs/tools/execute_bash.md","docs/tools.md"],"category":"tools"}
+{"id":"tools-003","query":"how does the introspect tool work","must_retrieve_any_of":["autodocs/docs/tools/introspect.md","docs/introspect.md"],"category":"tools"}
+{"id":"tools-004","query":"how do I disable a built-in tool","must_retrieve_any_of":["docs/tools.md","docs/tool-permissions.md","docs/agents.md"],"category":"tools"}
+{"id":"errors-001","query":"why am I getting permission denied for fs_write","must_retrieve_any_of":["docs/tool-permissions.md","docs/troubleshooting.md"],"category":"errors"}
+{"id":"errors-002","query":"the agent says 'rate limited' — what does that mean","must_retrieve_any_of":["docs/troubleshooting.md","docs/rate-limits.md"],"category":"errors"}
+{"id":"errors-003","query":"my prompt got cut off mid-response","must_retrieve_any_of":["docs/troubleshooting.md","docs/limits.md"],"category":"errors"}
+{"id":"release-001","query":"what changed in the most recent kiro-cli release","must_retrieve_any_of":["CHANGELOG.md","docs/release-notes.md","github_release:kiro-team/kiro-cli@v2.4.0"],"category":"release-notes"}
+{"id":"release-002","query":"when was the bot subcommand added to kiro-cli","must_retrieve_any_of":["CHANGELOG.md","docs/release-notes.md"],"category":"release-notes"}
+{"id":"config-001","query":"where is my kiro-cli config stored","must_retrieve_any_of":["docs/configuration.md","docs/settings.md"],"category":"config"}
+{"id":"config-002","query":"how do I set the default model","must_retrieve_any_of":["docs/configuration.md","docs/settings.md","autodocs/docs/slash-commands/model.md"],"category":"config"}
+{"id":"hooks-001","query":"what are kiro hooks and how do I add one","must_retrieve_any_of":["docs/hooks.md"],"category":"hooks"}
+{"id":"hooks-002","query":"can I run a script after a tool call finishes","must_retrieve_any_of":["docs/hooks.md"],"category":"hooks"}
+{"id":"ui-001","query":"what is tangent mode","must_retrieve_any_of":["docs/tangent-mode.md","docs/ui.md"],"category":"ui"}
+{"id":"ui-002","query":"how do I switch the chat to dark mode","must_retrieve_any_of":["docs/ui.md","docs/configuration.md"],"category":"ui"}
+{"id":"ui-003","query":"keyboard shortcuts for kiro-cli","must_retrieve_any_of":["docs/keyboard-shortcuts.md","docs/ui.md"],"category":"ui"}
