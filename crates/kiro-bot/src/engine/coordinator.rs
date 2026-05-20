@@ -103,6 +103,128 @@ pub struct NoopCoordinator {
     state: Mutex<NoopState>,
 }
 
+/// In-memory coordinator that mirrors `DynamoCoordinator`'s lease semantics —
+/// at most one owner per `conversation_id` at a time, with TTL-based expiry
+/// and explicit `Held { peer }` outcomes. Used by Phase 4 HA tests as a
+/// drop-in stand-in for the DDB-backed impl when integration tests can't (or
+/// shouldn't) reach a real DynamoDB endpoint.
+pub struct InMemoryClusterCoordinator {
+    /// Cluster-wide shared state. Wrap in `Arc` so multiple "tasks" can hold
+    /// distinct identities while sharing one map.
+    cluster: std::sync::Arc<Mutex<ClusterState>>,
+    own_task_id: String,
+    lease_ttl: chrono::Duration,
+}
+
+#[derive(Default)]
+struct ClusterState {
+    seen_events: HashSet<String>,
+    leases: HashMap<String, Lease>,
+    transcripts: HashMap<String, Vec<Turn>>,
+}
+
+#[derive(Clone)]
+struct Lease {
+    owner: String,
+    expires_at: DateTime<Utc>,
+}
+
+impl InMemoryClusterCoordinator {
+    pub fn new(own_task_id: impl Into<String>, lease_ttl: chrono::Duration) -> Self {
+        Self {
+            cluster: std::sync::Arc::new(Mutex::new(ClusterState::default())),
+            own_task_id: own_task_id.into(),
+            lease_ttl,
+        }
+    }
+
+    /// Spawn a sibling on the same cluster — shares the lease/transcript map.
+    pub fn sibling(&self, own_task_id: impl Into<String>) -> Self {
+        Self {
+            cluster: self.cluster.clone(),
+            own_task_id: own_task_id.into(),
+            lease_ttl: self.lease_ttl,
+        }
+    }
+
+    fn now(&self) -> DateTime<Utc> {
+        Utc::now()
+    }
+}
+
+#[async_trait::async_trait]
+impl Coordinator for InMemoryClusterCoordinator {
+    async fn dedupe_event(&self, slack_event_id: &str) -> bool {
+        let mut s = self.cluster.lock().expect("cluster state poisoned");
+        s.seen_events.insert(slack_event_id.to_string())
+    }
+
+    async fn try_acquire(&self, conversation_id: &str) -> LeaseOutcome {
+        let mut s = self.cluster.lock().expect("cluster state poisoned");
+        let now = self.now();
+        let expires_at = now + self.lease_ttl;
+        match s.leases.get(conversation_id).cloned() {
+            Some(existing) if existing.owner != self.own_task_id && existing.expires_at > now => {
+                LeaseOutcome::Held { peer: existing.owner }
+            },
+            _ => {
+                s.leases.insert(
+                    conversation_id.to_string(),
+                    Lease {
+                        owner: self.own_task_id.clone(),
+                        expires_at,
+                    },
+                );
+                LeaseOutcome::Acquired
+            },
+        }
+    }
+
+    async fn renew(&self, conversation_id: &str) -> anyhow::Result<()> {
+        let mut s = self.cluster.lock().expect("cluster state poisoned");
+        if let Some(lease) = s.leases.get_mut(conversation_id) {
+            if lease.owner == self.own_task_id {
+                lease.expires_at = self.now() + self.lease_ttl;
+                return Ok(());
+            }
+        }
+        anyhow::bail!("renew called on lease not owned by this task")
+    }
+
+    async fn release(&self, conversation_id: &str) -> anyhow::Result<()> {
+        let mut s = self.cluster.lock().expect("cluster state poisoned");
+        if matches!(s.leases.get(conversation_id), Some(l) if l.owner == self.own_task_id) {
+            s.leases.remove(conversation_id);
+        }
+        Ok(())
+    }
+
+    async fn forward(&self, _peer: &str, _payload: ForwardEvent) -> anyhow::Result<()> {
+        // The cluster is in-process — nothing to do.
+        Ok(())
+    }
+
+    async fn append_turn(&self, conversation_id: &str, turn: Turn) -> anyhow::Result<()> {
+        let mut s = self.cluster.lock().expect("cluster state poisoned");
+        s.transcripts.entry(conversation_id.to_string()).or_default().push(turn);
+        Ok(())
+    }
+
+    async fn load_history(
+        &self,
+        conversation_id: &str,
+        limit: usize,
+    ) -> anyhow::Result<Vec<Turn>> {
+        let s = self.cluster.lock().expect("cluster state poisoned");
+        let all = s.transcripts.get(conversation_id).cloned().unwrap_or_default();
+        if all.len() <= limit {
+            Ok(all)
+        } else {
+            Ok(all[all.len() - limit..].to_vec())
+        }
+    }
+}
+
 #[derive(Default)]
 struct NoopState {
     seen_events: HashSet<String>,
@@ -253,5 +375,63 @@ mod tests {
         let back: Turn = serde_json::from_str(&s).unwrap();
         assert_eq!(t, back);
         assert!(s.contains("\"assistant\""));
+    }
+
+    #[tokio::test]
+    async fn cluster_coordinator_arbitrates_leases_across_two_tasks() {
+        let task_a = InMemoryClusterCoordinator::new("task-A", chrono::Duration::minutes(5));
+        let task_b = task_a.sibling("task-B");
+
+        // First attempt by A wins.
+        assert_eq!(task_a.try_acquire("convo-1").await, LeaseOutcome::Acquired);
+
+        // B sees A's lease.
+        match task_b.try_acquire("convo-1").await {
+            LeaseOutcome::Held { peer } => assert_eq!(peer, "task-A"),
+            other => panic!("expected Held{{ peer = task-A }}, got {other:?}"),
+        }
+
+        // Different conversation: B can take it.
+        assert_eq!(task_b.try_acquire("convo-2").await, LeaseOutcome::Acquired);
+    }
+
+    #[tokio::test]
+    async fn cluster_coordinator_lets_owner_release_and_peer_acquire() {
+        let task_a = InMemoryClusterCoordinator::new("task-A", chrono::Duration::minutes(5));
+        let task_b = task_a.sibling("task-B");
+
+        task_a.try_acquire("convo-1").await;
+        assert!(matches!(task_b.try_acquire("convo-1").await, LeaseOutcome::Held { .. }));
+
+        task_a.release("convo-1").await.unwrap();
+        assert_eq!(task_b.try_acquire("convo-1").await, LeaseOutcome::Acquired);
+    }
+
+    #[tokio::test]
+    async fn cluster_coordinator_renew_fails_for_non_owner() {
+        let task_a = InMemoryClusterCoordinator::new("task-A", chrono::Duration::minutes(5));
+        let task_b = task_a.sibling("task-B");
+        task_a.try_acquire("convo-1").await;
+        let err = task_b.renew("convo-1").await.unwrap_err();
+        assert!(err.to_string().contains("not owned"));
+    }
+
+    #[tokio::test]
+    async fn cluster_coordinator_dedupe_is_cluster_wide() {
+        let task_a = InMemoryClusterCoordinator::new("task-A", chrono::Duration::minutes(5));
+        let task_b = task_a.sibling("task-B");
+
+        assert!(task_a.dedupe_event("evt-1").await, "first sighting on A → true");
+        assert!(!task_b.dedupe_event("evt-1").await, "second sighting on B → false (cluster-wide)");
+    }
+
+    #[tokio::test]
+    async fn cluster_coordinator_transcripts_are_visible_to_siblings() {
+        let task_a = InMemoryClusterCoordinator::new("task-A", chrono::Duration::minutes(5));
+        let task_b = task_a.sibling("task-B");
+        task_a.append_turn("convo-1", turn(TurnRole::User, "hi", 100)).await.unwrap();
+        let hist = task_b.load_history("convo-1", 10).await.unwrap();
+        assert_eq!(hist.len(), 1);
+        assert_eq!(hist[0].text, "hi");
     }
 }
