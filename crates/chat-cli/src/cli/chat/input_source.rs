@@ -1,5 +1,6 @@
 use eyre::Result;
 use rustyline::error::ReadlineError;
+use tokio::sync::broadcast;
 
 use super::prompt::{
     PasteState,
@@ -8,13 +9,18 @@ use super::prompt::{
     rl,
 };
 #[cfg(unix)]
-use super::skim_integration::SkimCommandSelector;
+use super::skim_integration::{
+    SkimCommandSelector,
+    SkimPromptSelector,
+};
 use crate::os::Os;
 
 #[derive(Debug)]
 pub struct InputSource {
     inner: inner::Inner,
     paste_state: PasteState,
+    prompt_sender: PromptQuerySender,
+    prompt_receiver: PromptQueryResponseReceiver,
 }
 
 mod inner {
@@ -44,7 +50,9 @@ impl InputSource {
     pub fn new(os: &Os, sender: PromptQuerySender, receiver: PromptQueryResponseReceiver) -> Result<Self> {
         let paste_state = PasteState::new();
         Ok(Self {
-            inner: inner::Inner::Readline(rl(os, sender, receiver, paste_state.clone())?),
+            inner: inner::Inner::Readline(rl(os, sender.clone(), receiver.resubscribe(), paste_state.clone())?),
+            prompt_sender: sender,
+            prompt_receiver: receiver,
             paste_state,
         })
     }
@@ -96,11 +104,35 @@ impl InputSource {
         }
     }
 
+    #[cfg(unix)]
+    pub fn put_skim_prompt_selector(&mut self, os: &Os) {
+        use rustyline::{
+            EventHandler,
+            KeyEvent,
+            Modifiers,
+        };
+
+        if let inner::Inner::Readline(rl) = &mut self.inner {
+            rl.bind_sequence(
+                KeyEvent(rustyline::KeyCode::Char('@'), Modifiers::empty()),
+                EventHandler::Conditional(Box::new(SkimPromptSelector::new(
+                    self.prompt_sender.clone(),
+                    self.prompt_receiver.resubscribe(),
+                    os.clone(),
+                ))),
+            );
+        }
+    }
+
     #[allow(dead_code)]
     pub fn new_mock(lines: Vec<String>) -> Self {
+        let (sender, _) = broadcast::channel(1);
+        let (_, receiver) = broadcast::channel(1);
         Self {
             inner: inner::Inner::Mock { index: 0, lines },
             paste_state: PasteState::new(),
+            prompt_sender: sender,
+            prompt_receiver: receiver,
         }
     }
 
