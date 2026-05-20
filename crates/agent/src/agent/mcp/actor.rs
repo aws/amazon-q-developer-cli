@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -50,14 +51,9 @@ pub enum McpMessage {
 pub struct McpServerActorHandle {
     _server_name: String,
     sender: RequestSender<McpServerActorRequest, McpServerActorResponse, McpServerActorError>,
-    event_rx: mpsc::Receiver<McpServerActorEvent>,
 }
 
 impl McpServerActorHandle {
-    pub async fn recv(&mut self) -> Option<McpServerActorEvent> {
-        self.event_rx.recv().await
-    }
-
     pub async fn get_tool_specs(&self) -> Result<Vec<ToolSpec>, McpServerActorError> {
         match self
             .sender
@@ -153,6 +149,7 @@ impl From<ServiceError> for McpServerActorError {
 pub enum McpServerActorEvent {
     /// The MCP server has launched successfully
     Initialized {
+        server_name: String,
         /// Time taken to launch the server
         serve_duration: Duration,
         /// Time taken to list all tools.
@@ -165,7 +162,9 @@ pub enum McpServerActorEvent {
         list_prompts_duration: Option<Duration>,
     },
     /// The MCP server failed to initialize successfully
-    InitializeError(String),
+    InitializeError { server_name: String, error: String },
+    /// An OAuth authentication request from the MCP server
+    OauthRequest { server_name: String, oauth_url: String },
 }
 
 #[derive(Debug)]
@@ -195,34 +194,38 @@ pub struct McpServerActor {
 
 impl McpServerActor {
     /// Spawns an actor to manage the MCP server, returning a [McpServerActorHandle].
-    pub fn spawn(server_name: String, config: McpServerConfig) -> McpServerActorHandle {
-        let (event_tx, event_rx) = mpsc::channel(32);
+    pub fn spawn(
+        server_name: String,
+        config: McpServerConfig,
+        cred_path: PathBuf,
+        event_tx: mpsc::Sender<McpServerActorEvent>,
+    ) -> McpServerActorHandle {
         let (req_tx, req_rx) = new_request_channel();
 
         let server_name_clone = server_name.clone();
-        tokio::spawn(async move { Self::launch(server_name_clone, config, req_rx, event_tx).await });
+        tokio::spawn(async move { Self::launch(server_name_clone, config, cred_path, req_rx, event_tx).await });
 
         McpServerActorHandle {
             _server_name: server_name,
             sender: req_tx,
-            event_rx,
         }
     }
 
     async fn launch(
         server_name: String,
         config: McpServerConfig,
+        cred_path: PathBuf,
         req_rx: RequestReceiver<McpServerActorRequest, McpServerActorResponse, McpServerActorError>,
         event_tx: mpsc::Sender<McpServerActorEvent>,
     ) {
         let (message_tx, message_rx) = mpsc::channel(32);
-        match McpService::new(server_name.clone(), config.clone(), message_tx.clone())
-            .launch()
+        match McpService::new(server_name.clone(), config.clone(), cred_path, message_tx.clone())
+            .launch(&event_tx)
             .await
         {
             Ok((service_handle, launch_md)) => {
                 let s = Self {
-                    server_name,
+                    server_name: server_name.clone(),
                     _config: config,
                     tools: launch_md.tools.unwrap_or_default(),
                     prompts: launch_md.prompts.unwrap_or_default(),
@@ -237,6 +240,7 @@ impl McpServerActor {
                 let _ = s
                     .event_tx
                     .send(McpServerActorEvent::Initialized {
+                        server_name,
                         serve_duration: launch_md.serve_time_taken,
                         list_tools_duration: launch_md.list_tools_duration,
                         list_prompts_duration: launch_md.list_prompts_duration,
@@ -246,7 +250,10 @@ impl McpServerActor {
             },
             Err(err) => {
                 let _ = event_tx
-                    .send(McpServerActorEvent::InitializeError(err.to_string()))
+                    .send(McpServerActorEvent::InitializeError {
+                        server_name,
+                        error: err.to_string(),
+                    })
                     .await;
             },
         }
@@ -340,7 +347,7 @@ impl McpServerActor {
         let service_handle = self.service_handle.clone();
         let tx = self.message_tx.clone();
         tokio::spawn(async move {
-            let res = service_handle.list_tools().await;
+            let res = service_handle.list_all_tools().await;
             let _ = tx.send(McpMessage::Tools(res)).await;
         });
     }
@@ -351,7 +358,7 @@ impl McpServerActor {
         let service_handle = self.service_handle.clone();
         let tx = self.message_tx.clone();
         tokio::spawn(async move {
-            let res = service_handle.list_prompts().await;
+            let res = service_handle.list_all_prompts().await;
             let _ = tx.send(McpMessage::Prompts(res)).await;
         });
     }

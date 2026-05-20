@@ -13,6 +13,8 @@ pub const MAX_TOOL_NAME_LEN: usize = 64;
 
 pub const MAX_TOOL_SPEC_DESCRIPTION_LEN: usize = 10_004;
 
+pub const DEFAULT_MCP_CREDENTIAL_PATH: &str = "~/.aws/sso/cache";
+
 /// 10 MB
 pub const MAX_IMAGE_SIZE_BYTES: u64 = 10 * 1024 * 1024;
 
