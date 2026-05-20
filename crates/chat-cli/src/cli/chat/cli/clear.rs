@@ -1,3 +1,4 @@
+use chat_cli_ui::protocol::Event;
 use clap::Args;
 use crossterm::style::{
     self,
@@ -7,6 +8,7 @@ use crossterm::{
     cursor,
     execute,
 };
+use tracing::error;
 
 use crate::cli::chat::{
     ChatError,
@@ -41,6 +43,26 @@ impl ClearArgs {
             cursor::Show,
         )?;
 
+        // BANDAID FIX: Prevent race condition between display and user input
+        // Without this synchronization, user input can start before the confirmation prompt
+        // is fully rendered, causing corrupted ANSI escape sequences and malformed output.
+        // As a bandaid fix (to hold us until we move to the new event loop where everything is in
+        // their rightful place), we signal to the UI layer that display is complete and wait for
+        // acknowledgment through the conduit system before reading user input.
+        session
+            .stderr
+            .send(Event::MetaEvent(chat_cli_ui::protocol::MetaEvent {
+                meta_type: "timing".to_string(),
+                payload: serde_json::Value::String("prompt_user".to_string()),
+            }))
+            .map_err(|_e| ChatError::Custom("Error sending timing event for prompting user".into()))?;
+
+        // Wait for UI acknowledgment with timeout to ensure display is flushed before user input
+        if let Err(e) = session.prompt_ack_rx.recv_timeout(std::time::Duration::from_secs(10)) {
+            error!("Failed to receive user prompting acknowledgement from UI: {:?}", e);
+        }
+
+        // Now safe to read user input - display is guaranteed to be complete
         // Setting `exit_on_single_ctrl_c` for better ux: exit the confirmation dialog rather than the CLI
         let user_input = match session.read_user_input("> ".yellow().to_string().as_str(), true) {
             Some(input) => input,
