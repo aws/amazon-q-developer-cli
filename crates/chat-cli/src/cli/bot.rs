@@ -48,8 +48,6 @@ pub enum BotCommand {
     Status,
     /// Run a cron/headless instance once and exit
     Run { name: String },
-    /// Interactive CLI chat without Slack (debug)
-    Chat { name: String },
     /// Show the monitoring dashboard
     Monitor,
     /// Check for and install binary updates
@@ -186,10 +184,6 @@ impl BotArgs {
             },
             BotCommand::Run { name } => {
                 kiro_bot::cli::run::cmd_cron(&name).await.map_err(|e| eyre::eyre!(e))?;
-                Ok(ExitCode::SUCCESS)
-            },
-            BotCommand::Chat { name } => {
-                kiro_bot::cli::run::cmd_chat(&name).await.map_err(|e| eyre::eyre!(e))?;
                 Ok(ExitCode::SUCCESS)
             },
             BotCommand::Monitor => {

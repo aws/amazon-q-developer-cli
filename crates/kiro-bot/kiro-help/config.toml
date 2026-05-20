@@ -9,7 +9,7 @@ conversation_history = 10
 [agent]
 command = "kiro-cli acp"
 model = ""
-approval_policy = "approve"
+approval_policy = "ask"
 max_workers = 5
 idle_timeout_secs = 300
 mcp_wait_ms = 2000
