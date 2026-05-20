@@ -36,7 +36,7 @@ pub struct Os {
     pub fs: Fs,
     pub sysinfo: SysInfo,
     pub database: Database,
-    pub client: ApiClient,
+    pub client: Option<ApiClient>,
     pub telemetry: TelemetryThread,
 }
 
@@ -45,7 +45,16 @@ impl Os {
         let env = Env::new();
         let fs = Fs::new();
         let mut database = Database::new().await?;
-        let client = ApiClient::new(&env, &fs, &mut database, None).await?;
+
+        // Try to initialize ApiClient, but don't fail if it's not possible
+        let client = match ApiClient::new(&env, &fs, &mut database, None).await {
+            Ok(client) => Some(client),
+            Err(err) => {
+                tracing::debug!("Failed to initialize ApiClient: {err}");
+                None
+            },
+        };
+
         let telemetry = TelemetryThread::new(&env, &fs, &mut database).await?;
 
         Ok(Self {

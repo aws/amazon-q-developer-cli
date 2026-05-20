@@ -302,7 +302,7 @@ impl ChatArgs {
         info!(?conversation_id, "Generated new conversation id");
 
         // Check MCP status once at the beginning of the session
-        let mcp_enabled = match os.client.is_mcp_enabled().await {
+        let mcp_enabled = match os.client.as_ref().unwrap().is_mcp_enabled().await {
             Ok(enabled) => enabled,
             Err(err) => {
                 tracing::warn!(?err, "Failed to check MCP configuration, defaulting to enabled");
@@ -1325,8 +1325,13 @@ impl ChatSession {
         request_metadata_lock: Arc<Mutex<Option<RequestMetadata>>>,
         message_meta_tags: Option<Vec<MessageMetaTag>>,
     ) -> Result<SendMessageStream, ChatError> {
-        match SendMessageStream::send_message(&os.client, conversation_state, request_metadata_lock, message_meta_tags)
-            .await
+        match SendMessageStream::send_message(
+            os.client.as_ref().unwrap(),
+            conversation_state,
+            request_metadata_lock,
+            message_meta_tags,
+        )
+        .await
         {
             Ok(res) => Ok(res),
             Err(err) => {
@@ -3450,7 +3455,7 @@ impl ChatSession {
     }
 
     async fn retry_model_overload(&mut self, os: &mut Os) -> Result<ChatState, ChatError> {
-        os.client.invalidate_model_cache().await;
+        os.client.as_ref().unwrap().invalidate_model_cache().await;
         match select_model(os, self).await {
             Ok(Some(_)) => (),
             Ok(None) => {
@@ -3889,7 +3894,7 @@ async fn get_subscription_status(os: &mut Os) -> Result<ActualSubscriptionStatus
         return Ok(ActualSubscriptionStatus::Active);
     }
 
-    match os.client.create_subscription_token().await {
+    match os.client.as_ref().unwrap().create_subscription_token().await {
         Ok(response) => match response.status() {
             SubscriptionStatus::Active => Ok(ActualSubscriptionStatus::Expiring),
             SubscriptionStatus::Inactive => Ok(ActualSubscriptionStatus::None),
@@ -4029,7 +4034,7 @@ mod tests {
     #[tokio::test]
     async fn test_flow() {
         let mut os = Os::new().await.unwrap();
-        os.client.set_mock_output(serde_json::json!([
+        os.client.as_mut().unwrap().set_mock_output(serde_json::json!([
             [
                 "Sure, I'll create a file for you",
                 {
@@ -4082,7 +4087,7 @@ mod tests {
     #[tokio::test]
     async fn test_flow_tool_permissions() {
         let mut os = Os::new().await.unwrap();
-        os.client.set_mock_output(serde_json::json!([
+        os.client.as_mut().unwrap().set_mock_output(serde_json::json!([
             [
                 "Ok",
                 {
@@ -4229,7 +4234,7 @@ mod tests {
     async fn test_flow_multiple_tools() {
         // let _ = tracing_subscriber::fmt::try_init();
         let mut os = Os::new().await.unwrap();
-        os.client.set_mock_output(serde_json::json!([
+        os.client.as_mut().unwrap().set_mock_output(serde_json::json!([
             [
                 "Sure, I'll create a file for you",
                 {
@@ -4323,7 +4328,7 @@ mod tests {
     async fn test_flow_tools_trust_all() {
         // let _ = tracing_subscriber::fmt::try_init();
         let mut os = Os::new().await.unwrap();
-        os.client.set_mock_output(serde_json::json!([
+        os.client.as_mut().unwrap().set_mock_output(serde_json::json!([
             [
                 "Sure, I'll create a file for you",
                 {
@@ -4410,7 +4415,10 @@ mod tests {
     #[cfg(unix)]
     async fn test_subscribe_flow() {
         let mut os = Os::new().await.unwrap();
-        os.client.set_mock_output(serde_json::Value::Array(vec![]));
+        os.client
+            .as_mut()
+            .unwrap()
+            .set_mock_output(serde_json::Value::Array(vec![]));
         let agents = get_test_agents(&os).await;
 
         let tool_manager = ToolManager::default();
@@ -4452,7 +4460,7 @@ mod tests {
         };
 
         let mut os = Os::new().await.unwrap();
-        os.client.set_mock_output(serde_json::json!([
+        os.client.as_mut().unwrap().set_mock_output(serde_json::json!([
             [
                 "I'll read that file for you",
                 {
@@ -4600,7 +4608,7 @@ mod tests {
         os.fs.write("/sensitive.txt", "classified information").await.unwrap();
 
         // Mock LLM responses: first tries fs_read, gets blocked, then responds to error
-        os.client.set_mock_output(serde_json::json!([
+        os.client.as_mut().unwrap().set_mock_output(serde_json::json!([
             [
                 "I'll read that file for you",
                 {
