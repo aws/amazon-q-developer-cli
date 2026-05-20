@@ -1,0 +1,24 @@
+# This is a basic workflow to update the qcli-issue-notifier Slack workflow when a new issue is created
+name: Slack Issue Notifier
+
+# Runs when new issue is created
+on:
+  issues:
+    types:
+      - opened
+
+jobs:
+  send_message:
+    runs-on: ubuntu-latest
+    steps:
+
+      # Send username and issue URL to webhook
+      - name: send_message
+        run: | 
+          curl -X POST \
+            -H "Content-Type: application/json" \
+            -d '{
+              "user": "${{ github.event.issue.user.login }}",
+              "URL": "${{ github.event.issue.html_url }}"
+            }' \
+            ${{ secrets.SLACK_ISSUE_WEBHOOK_URL }}
