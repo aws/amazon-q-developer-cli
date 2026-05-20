@@ -26,6 +26,7 @@ use super::agent::{
     DEFAULT_AGENT_NAME,
     McpServerConfig,
 };
+use super::chat::tools::custom_tool::TransportType;
 use crate::cli::chat::tool_manager::{
     global_mcp_config_path,
     workspace_mcp_config_path,
@@ -85,8 +86,11 @@ impl McpSubcommand {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Args)]
+#[derive(Debug, Default, Clone, PartialEq, Eq, Args)]
 pub struct AddArgs {
+    /// Transport type for the MCP server (e.g., stdio, http)
+    #[arg(long)]
+    pub r#type: Option<TransportType>,
     /// Name for the server
     #[arg(long)]
     pub name: String,
@@ -95,7 +99,13 @@ pub struct AddArgs {
     pub scope: Option<Scope>,
     /// The command used to launch the server
     #[arg(long)]
-    pub command: String,
+    pub command: Option<String>,
+    /// URL for HTTP-based MCP servers
+    #[arg(long)]
+    pub url: Option<String>,
+    /// HTTP headers to include with requests for HTTP-based MCP servers
+    #[arg(long, value_parser = parse_key_val_pair)]
+    pub headers: Vec<HashMap<String, String>>,
     /// Arguments to pass to the command. Can be provided as:
     /// 1. Multiple --args flags: --args arg1 --args arg2 --args "arg,with,commas"
     /// 2. Comma-separated with escaping: --args "arg1,arg2,arg\,with\,commas"
@@ -107,7 +117,7 @@ pub struct AddArgs {
     #[arg(long)]
     pub agent: Option<String>,
     /// Environment variables to use when launching the server
-    #[arg(long, value_parser = parse_env_vars)]
+    #[arg(long, value_parser = parse_key_val_pair)]
     pub env: Vec<HashMap<String, String>>,
     /// Server launch timeout, in milliseconds
     #[arg(long)]
@@ -121,11 +131,8 @@ pub struct AddArgs {
 }
 
 impl AddArgs {
-    pub async fn execute(self, os: &Os, output: &mut impl Write) -> Result<()> {
-        // Process args to handle comma-separated values, escaping, and JSON arrays
-        let processed_args = self.process_args()?;
-
-        match self.agent.as_deref() {
+    pub async fn execute(mut self, os: &Os, output: &mut impl Write) -> Result<()> {
+        match self.agent.take().as_deref() {
             Some(agent_name) => {
                 let (mut agent, config_path) = Agent::get_agent_by_name(os, agent_name).await?;
                 let mcp_servers = &mut agent.mcp_servers.mcp_servers;
@@ -139,19 +146,13 @@ impl AddArgs {
                     );
                 }
 
-                let merged_env = self.env.into_iter().flatten().collect::<HashMap<_, _>>();
-                let tool: CustomToolConfig = serde_json::from_value(serde_json::json!({
-                    "command": self.command,
-                    "args": processed_args,
-                    "env": merged_env,
-                    "timeout": self.timeout.unwrap_or(default_timeout()),
-                    "disabled": self.disabled,
-                }))?;
+                let name = self.name.clone();
+                let tool = self.into_custom_tool_config()?;
 
-                mcp_servers.insert(self.name.clone(), tool);
+                mcp_servers.insert(name.clone(), tool);
                 let json = agent.to_str_pretty()?;
                 os.fs.write(config_path, json).await?;
-                writeln!(output, "✓ Added MCP server '{}' to agent {}\n", self.name, agent_name)?;
+                writeln!(output, "✓ Added MCP server '{}' to agent {}\n", name, agent_name)?;
             },
             None => {
                 let resolver = PathResolver::new(os);
@@ -173,27 +174,60 @@ impl AddArgs {
                     );
                 }
 
-                let merged_env = self.env.into_iter().flatten().collect::<HashMap<_, _>>();
-                let tool: CustomToolConfig = serde_json::from_value(serde_json::json!({
-                    "command": self.command,
-                    "args": processed_args,
-                    "env": merged_env,
-                    "timeout": self.timeout.unwrap_or(default_timeout()),
-                    "disabled": self.disabled,
-                }))?;
+                let name = self.name.clone();
+                let tool = self.into_custom_tool_config()?;
 
-                mcp_servers.mcp_servers.insert(self.name.clone(), tool);
+                mcp_servers.mcp_servers.insert(name.clone(), tool);
                 mcp_servers.save_to_file(os, &legacy_mcp_config_path).await?;
                 writeln!(
                     output,
                     "✓ Added MCP server '{}' to global config in {}\n",
-                    self.name,
+                    name,
                     legacy_mcp_config_path.display()
                 )?;
             },
         };
 
         Ok(())
+    }
+
+    fn into_custom_tool_config(self) -> Result<CustomToolConfig> {
+        match self.r#type {
+            Some(TransportType::Http) => {
+                if let Some(url) = self.url {
+                    let merged_headers = self.headers.into_iter().flatten().collect::<HashMap<_, _>>();
+                    Ok(CustomToolConfig {
+                        r#type: TransportType::Http,
+                        url,
+                        headers: merged_headers,
+                        timeout: self.timeout.unwrap_or(default_timeout()),
+                        disabled: self.disabled,
+                        ..Default::default()
+                    })
+                } else {
+                    bail!("Transport type is specified to be http but url is not provided");
+                }
+            },
+            Some(TransportType::Stdio) | None => {
+                if self.command.is_some() {
+                    let processed_args = self.process_args()?;
+                    let merged_env = self.env.into_iter().flatten().collect::<HashMap<_, _>>();
+                    Ok(CustomToolConfig {
+                        r#type: TransportType::Stdio,
+                        // Doing this saves us an allocation and this is safe because we have
+                        // already verified that command is Some
+                        command: self.command.unwrap(),
+                        args: processed_args,
+                        env: Some(merged_env),
+                        timeout: self.timeout.unwrap_or(default_timeout()),
+                        disabled: self.disabled,
+                        ..Default::default()
+                    })
+                } else {
+                    bail!("Transport type is specified to be stdio but command is not provided")
+                }
+            },
+        }
     }
 
     fn process_args(&self) -> Result<Vec<String>> {
@@ -506,7 +540,7 @@ async fn ensure_config_file(os: &Os, path: &PathBuf, output: &mut impl Write) ->
     load_cfg(os, path).await
 }
 
-fn parse_env_vars(arg: &str) -> Result<HashMap<String, String>> {
+fn parse_key_val_pair(arg: &str) -> Result<HashMap<String, String>> {
     let mut vars = HashMap::new();
 
     for pair in arg.split(",") {
@@ -642,7 +676,7 @@ mod tests {
         AddArgs {
             name: "local".into(),
             scope: None,
-            command: "echo hi".into(),
+            command: Some("echo hi".into()),
             args: vec![
                 "awslabs.eks-mcp-server".to_string(),
                 "--allow-write".to_string(),
@@ -653,6 +687,7 @@ mod tests {
             agent: None,
             disabled: false,
             force: false,
+            ..Default::default()
         }
         .execute(&os, &mut vec![])
         .await
@@ -695,7 +730,7 @@ mod tests {
             RootSubcommand::Mcp(McpSubcommand::Add(AddArgs {
                 name: "test_server".to_string(),
                 scope: None,
-                command: "test_command".to_string(),
+                command: Some("test_command".to_string()),
                 args: vec!["awslabs.eks-mcp-server,--allow-write,--allow-sensitive-data-access".to_string(),],
                 agent: None,
                 env: vec![
@@ -709,6 +744,7 @@ mod tests {
                 timeout: None,
                 disabled: false,
                 force: false,
+                ..Default::default()
             }))
         );
     }
@@ -795,5 +831,94 @@ mod tests {
     fn test_parse_args_json_array_invalid() {
         let result = parse_args(r#"["invalid json"#);
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_parse_http_transport_type() {
+        let add_args = AddArgs {
+            r#type: Some(TransportType::Http),
+            name: "test_http_server".to_string(),
+            url: Some("https://api.example.com".to_string()),
+            headers: vec![
+                [("Authorization".to_string(), "Bearer token123".to_string())]
+                    .into_iter()
+                    .collect(),
+                [("Content-Type".to_string(), "application/json".to_string())]
+                    .into_iter()
+                    .collect(),
+            ],
+            timeout: Some(5000),
+            disabled: false,
+            ..Default::default()
+        };
+
+        let config = add_args.into_custom_tool_config().unwrap();
+
+        assert_eq!(config.r#type, TransportType::Http);
+        assert_eq!(config.url, "https://api.example.com");
+        assert_eq!(config.timeout, 5000);
+        assert!(!config.disabled);
+        assert_eq!(
+            config.headers.get("Authorization"),
+            Some(&"Bearer token123".to_string())
+        );
+        assert_eq!(
+            config.headers.get("Content-Type"),
+            Some(&"application/json".to_string())
+        );
+    }
+
+    #[test]
+    fn test_incorrect_transport_type_should_fail() {
+        // Test HTTP transport without URL should fail
+        let add_args = AddArgs {
+            r#type: Some(TransportType::Http),
+            name: "test_http_server".to_string(),
+            url: None,
+            ..Default::default()
+        };
+
+        let result = add_args.into_custom_tool_config();
+        assert!(result.is_err());
+        assert!(
+            result
+                .unwrap_err()
+                .to_string()
+                .contains("Transport type is specified to be http but url is not provided")
+        );
+
+        // Test STDIO transport without command should fail
+        let add_args = AddArgs {
+            r#type: Some(TransportType::Stdio),
+            name: "test_stdio_server".to_string(),
+            command: None,
+            ..Default::default()
+        };
+
+        let result = add_args.into_custom_tool_config();
+        assert!(result.is_err());
+        assert!(
+            result
+                .unwrap_err()
+                .to_string()
+                .contains("Transport type is specified to be stdio but command is not provided")
+        );
+
+        // Test default (stdio) transport without command should fail
+        let add_args = AddArgs {
+            r#type: None,
+            name: "test_default_server".to_string(),
+            command: None,
+            ..Default::default()
+        };
+
+        let result = add_args.into_custom_tool_config();
+        assert!(result.is_err());
+        assert!(
+            result
+                .unwrap_err()
+                .to_string()
+                .contains("Transport type is specified to be stdio but command is not provided")
+        );
     }
 }
