@@ -13,10 +13,10 @@ This is the index for the multi-phase implementation of the kiro-help Slack bot.
 | 1 | [2026-05-13-kiro-knowledge-mcp.md](2026-05-13-kiro-knowledge-mcp.md) | ✅ done | Standalone `kiro-knowledge-mcp` crate w/ `--stub` and Bedrock-backed modes |
 | Bridge | [2026-05-14-kiro-help-bot-minimal-deploy.md](2026-05-14-kiro-help-bot-minimal-deploy.md) | ✅ done | Single-task ECS Fargate deploy (Iteration 1 of the minimal deploy plan) |
 | 2 | [2026-05-19-phase-2-knowledge-mcp-wireup.md](2026-05-19-phase-2-knowledge-mcp-wireup.md) | code complete (smoke test pending deploy) | RAG-grounded Q&A end-to-end: KB + image carrying `kiro-knowledge-mcp` + agent wired |
-| 3 | [2026-05-19-phase-3-ingest-pipeline.md](2026-05-19-phase-3-ingest-pipeline.md) | code complete (live Lambda body + deploy pending) | Hourly Lambda keeps the corpus current |
-| 4 | [2026-05-19-phase-4-cross-task-coordinator.md](2026-05-19-phase-4-cross-task-coordinator.md) | code complete (DynamoCoordinator + HA verify pending) | DynamoDB-backed leases + transcripts; 2-task HA |
+| 3 | [2026-05-19-phase-3-ingest-pipeline.md](2026-05-19-phase-3-ingest-pipeline.md) | code complete (deploy pending) | Hourly Lambda keeps the corpus current — live source impls + S3 writer + StartIngestionJob shipped |
+| 4 | [2026-05-19-phase-4-cross-task-coordinator.md](2026-05-19-phase-4-cross-task-coordinator.md) | code complete (HA verify pending) | DynamoDB-backed leases + transcripts; 2-task HA — DynamoCoordinator + axum dispatch_server shipped |
 | 5 | [2026-05-19-phase-5-eval-and-release-automation.md](2026-05-19-phase-5-eval-and-release-automation.md) | code complete (deploy + smoke pending) | Eval suite + GH Actions + CodeBuild → no more local `finch push` |
-| 6 | [2026-05-19-phase-6-production-hardening.md](2026-05-19-phase-6-production-hardening.md) | code complete (remaining 7 tools + feedback wiring deferred — see [`crates/kiro-bot/PHASE-6-FOLLOW-UP.md`](../../../crates/kiro-bot/PHASE-6-FOLLOW-UP.md)) | Remaining 7 tools, alarms, beta+prod split, runbooks |
+| 6 | [2026-05-19-phase-6-production-hardening.md](2026-05-19-phase-6-production-hardening.md) | code complete (deploy pending) | Tools (kiro_cli_help built-in + kiro-github-mcp), 👍/👎 feedback persistence + nightly metrics Lambda, alarms, beta+prod split, runbooks all shipped |
 
 ## Recommended execution order
 
