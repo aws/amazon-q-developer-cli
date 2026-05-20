@@ -1,14 +1,16 @@
 //! Core types for the kiro-help corpus ingest Lambda.
 //!
 //! Production sources (git checkout, GitHub API, S3 writer) live in their own
-//! modules and require live network/credentials. The trait surface here is
-//! testable without any AWS or GitHub integration — fakes plug in via
-//! [`Source`].
+//! modules. The trait surface here is testable without any AWS or GitHub
+//! integration — fakes plug in via [`Source`] and [`runner::CorpusWriter`].
 
+pub mod aws_writer;
 pub mod git_source;
+pub mod github_http;
 pub mod github_source;
 pub mod manifest;
 pub mod normalize;
+pub mod runner;
 
 use serde::{
     Deserialize,
@@ -93,9 +95,6 @@ mod tests {
 
     #[test]
     fn partition_all_covers_every_variant() {
-        // Sanity: any new variant must show up in `ALL` so the Lambda runs all
-        // sources every cycle. If a future change adds a variant and forgets
-        // to update `ALL`, this test surfaces it.
         let count = Partition::ALL.iter().count();
         assert_eq!(count, 3, "Partition::ALL must list every variant");
     }

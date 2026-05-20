@@ -27,7 +27,7 @@ pub struct CorpusRecord<'a> {
 }
 
 /// One JSONL batch, ready for upload.
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Batch {
     /// Full S3 object key, e.g. `docs/2026-05-19T00:00:00Z/batch-0.jsonl`.
     pub key: String,
