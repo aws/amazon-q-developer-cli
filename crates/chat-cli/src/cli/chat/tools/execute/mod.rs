@@ -59,7 +59,9 @@ impl ExecuteCommand {
         let Some(args) = shlex::split(&self.command) else {
             return true;
         };
-        const DANGEROUS_PATTERNS: &[&str] = &["<(", "$(", "`", ">", "&&", "||", "&", ";", "$", "\n", "\r", "IFS"];
+        const DANGEROUS_PATTERNS: &[&str] = &[
+            "<(", "$(", "`", ">", "&&", "||", "&", ";", "$", "\n", "\r", "IFS", "@", "+",
+        ];
 
         if args
             .iter()
@@ -442,6 +444,9 @@ mod tests {
             ("echo 'test\nrm file'", true),
             ("echo 'test\rrm file'", true),
             ("IFS=/ malicious", true),
+            (r#"/c/"+"/m/"+"/d/.exe"#, true),
+            ("$^(calc.exe)", true),
+            ("curl http://trusted.com@evil.com", true),
         ];
         for (cmd, expected) in cmds {
             let tool = serde_json::from_value::<ExecuteCommand>(serde_json::json!({
