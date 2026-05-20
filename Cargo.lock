@@ -5004,6 +5004,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "kiro-help-corpus-ingest"
+version = "2.4.0"
+dependencies = [
+ "anyhow",
+ "async-trait",
+ "chrono",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "tokio",
+ "tracing",
+ "tracing-subscriber",
+]
+
+[[package]]
 name = "kiro-knowledge-mcp"
 version = "2.4.0"
 dependencies = [
