@@ -2217,6 +2217,8 @@ impl ChatSession {
             Ok(ChatState::PromptUser {
                 skip_printing_tools: false,
             })
+        } else if matches!(input.to_lowercase().as_str(), "exit" | "quit") {
+            return Ok(ChatState::Exit);
         } else if let Some(command) = input.strip_prefix("@") {
             let input_parts =
                 shlex::split(command).ok_or(ChatError::Custom("Error splitting prompt command".into()))?;
@@ -3462,7 +3464,7 @@ impl ChatSession {
                 return Ok(ChatState::PromptUser {
                     skip_printing_tools: false,
                 });
-            },
+},
             Err(err) => return Err(err),
         }
 
@@ -4694,6 +4696,50 @@ mod tests {
         for (input, expected) in tests {
             let actual = does_input_reference_file(input).is_some();
             assert_eq!(actual, *expected, "expected {} for input {}", expected, input);
+        }
+    }
+
+    #[tokio::test]
+    async fn test_exit_quit_commands() {
+        let mut os = Os::new().await.unwrap();
+        let agents = get_test_agents(&os).await;
+        let tool_manager = ToolManager::default();
+        let tool_config = serde_json::from_str::<HashMap<String, ToolSpec>>(include_str!("tools/tool_index.json"))
+            .expect("Tools failed to load");
+
+        let mut chat_session = ChatSession::new(
+            &mut os,
+            std::io::stdout(),
+            std::io::stderr(),
+            "fake_conv_id",
+            agents,
+            None,
+            InputSource::new_mock(vec![]),
+            false,
+            || Some(80),
+            tool_manager,
+            None,
+            tool_config,
+            true,
+            false,
+            None,
+        )
+        .await
+        .unwrap();
+
+        let test_cases = vec!["exit", "quit", "EXIT", "QUIT", "Exit", "Quit"];
+
+        for input in test_cases {
+            let result = chat_session.handle_input(&mut os, input.to_string()).await;
+            assert!(result.is_ok(), "handle_input should succeed for input: {}", input);
+
+            let chat_state = result.unwrap();
+            assert!(
+                matches!(chat_state, ChatState::Exit),
+                "Expected ChatState::Exit for input '{}', got {:?}",
+                input,
+                chat_state
+            );
         }
     }
 }
