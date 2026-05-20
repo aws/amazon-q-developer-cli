@@ -542,32 +542,6 @@ describe('KasAcpClient', () => {
     expect(result.message).toMatch(/\/agent swap <name>/);
   });
 
-  it('executeCommand("chat delete") forwards to _kiro/session/delete', async () => {
-    mockKiroSendExtMethod.mockResolvedValue({ success: true });
-    const client = new KasAcpClient();
-    await client.initialize();
-    await client.newSession();
-    await client.executeCommand({
-      command: 'chat',
-      args: { value: 'delete abc123' },
-    } as any);
-    expect(mockKiroSendExtMethod).toHaveBeenCalledWith(
-      '_kiro/session/delete',
-      expect.objectContaining({ sessionId: 'abc123' })
-    );
-  });
-
-  it('executeCommand("chat save") returns unsupported in KAS mode', async () => {
-    const client = new KasAcpClient();
-    await client.newSession();
-    const result = await client.executeCommand({
-      command: 'chat',
-      args: { value: 'save my-session' },
-    } as any);
-    expect(result.success).toBe(false);
-    expect(result.message).toContain('not yet supported in KAS mode');
-  });
-
   it('executeCommand("reply") returns success without forwarding', async () => {
     const client = new KasAcpClient();
     await client.newSession();
@@ -1657,28 +1631,6 @@ describe('KasAcpClient — executeCommand branches', () => {
     } as any);
     expect(result.success).toBe(false);
     expect(result.message).toContain('not yet implemented');
-  });
-
-  it('GIVEN session WHEN /chat with unsupported subcommand THEN returns error', async () => {
-    await client.initialize();
-    await client.newSession();
-    const result = await client.executeCommand({
-      command: 'chat',
-      args: { value: 'save' },
-    } as any);
-    expect(result.success).toBe(false);
-    expect(result.message).toContain('not yet supported');
-  });
-
-  it('GIVEN session WHEN /chat delete with no id THEN returns usage', async () => {
-    await client.initialize();
-    await client.newSession();
-    const result = await client.executeCommand({
-      command: 'chat',
-      args: { value: 'delete' },
-    } as any);
-    expect(result.success).toBe(false);
-    expect(result.message).toContain('Usage');
   });
 });
 

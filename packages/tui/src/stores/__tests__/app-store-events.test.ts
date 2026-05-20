@@ -1019,15 +1019,16 @@ describe('cleanupTerminatedSession', () => {
   });
 });
 
-describe('setExtensionCommands', () => {
-  it('sets extension commands', () => {
+describe('setKasCommands', () => {
+  it('sets KAS commands', async () => {
+    const { KasCommandName } = await import('../../kas-commands');
     const store = makeStore();
     store
       .getState()
-      .setExtensionCommands([
-        { name: '/ext', description: 'Extension', source: 'backend' as any },
+      .setKasCommands([
+        { name: KasCommandName.Help, description: 'Show help' },
       ]);
-    expect(store.getState().extensionCommands).toHaveLength(1);
+    expect(store.getState().kasCommands).toHaveLength(1);
   });
 });
 

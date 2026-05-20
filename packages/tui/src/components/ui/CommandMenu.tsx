@@ -10,8 +10,9 @@ import { Menu } from '../ui/menu/Menu';
 import { Text } from '../ui/text/Text.js';
 import { Divider } from '../ui/divider/Divider.js';
 import { useTheme } from '../../hooks/useThemeContext.js';
-import { useAppStore, type SlashCommand } from '../../stores/app-store';
+import { useAppStore } from '../../stores/app-store';
 import { useCommandState } from '../../stores/selectors';
+import type { AvailableCommand } from '../../types/commands';
 import { searchFilesAbortable } from '../../utils/file-search.js';
 import {
   getBundledTheme,
@@ -85,7 +86,7 @@ export const CommandMenu: React.FC = () => {
 
   // Show the sub-command dropdown for a command that has sub-commands
   const showSubcommandMenu = useCallback(
-    (cmd: SlashCommand) => {
+    (cmd: AvailableCommand) => {
       const subs = cmd.meta?.subcommands;
       const subHints = cmd.meta?.subcommandHints ?? {};
       if (!subs || subs.length === 0) return false;
@@ -314,7 +315,7 @@ export const CommandMenu: React.FC = () => {
 
   // Shared: prefill args or execute a prompt command
   const executePromptOrPrefill = useCallback(
-    async (cmd: SlashCommand) => {
+    async (cmd: AvailableCommand) => {
       if (cmd.meta?.arguments?.length) {
         const argHint = cmd.meta.arguments
           .map((a) => (a.required ? `<${a.name}>` : `[${a.name}]`))

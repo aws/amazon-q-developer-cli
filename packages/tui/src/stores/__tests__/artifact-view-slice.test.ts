@@ -19,7 +19,7 @@ function makeFakeKiro(): any {
     sessionId: 'test',
     settings: {},
     onCommandsUpdate: () => {},
-    onExtensionMethodsDiscovered: () => {},
+    onKasCommandsDiscovered: () => {},
     onPromptsUpdate: () => {},
     onModelUpdate: () => {},
     onAgentUpdate: () => {},

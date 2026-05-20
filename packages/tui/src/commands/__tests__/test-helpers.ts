@@ -1,8 +1,5 @@
 /**
  * Shared test helpers for command tests.
- *
- * Centralizes the mock CommandContext factory so new fields only need
- * to be added in one place.
  */
 
 import { mock } from 'bun:test';
@@ -17,6 +14,8 @@ export interface CreateMockCtxOptions {
   messages?: Array<{ id: string; role: string; content: string }>;
   /** Slash commands available in context. Default: [] */
   slashCommands?: CommandContext['slashCommands'];
+  /** KAS-side commands. Default: [] */
+  kasCommands?: CommandContext['kasCommands'];
   /** Override the kiro client mock. Default: bare {} */
   kiro?: Partial<CommandContext['kiro']>;
 }
@@ -45,7 +44,9 @@ export function createMockCommandContext(
 
   return {
     kiro: { ...defaultKiro, ...opts.kiro } as any,
+    agentEngine: 'rust',
     slashCommands: opts.slashCommands ?? [],
+    kasCommands: opts.kasCommands ?? [],
     showAlert: spy('showAlert') as any,
     setLoadingMessage: spy('setLoadingMessage') as any,
     setActiveCommand: spy('setActiveCommand') as any,

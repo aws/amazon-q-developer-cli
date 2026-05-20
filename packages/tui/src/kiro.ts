@@ -16,8 +16,10 @@ import type {
 import type {
   CommandOptionsResponse,
   CommandResult,
+  CommandMeta,
   TuiCommand,
 } from './types/commands';
+import type { KasCommand } from './kas-commands';
 import type {
   SpecInvokeRequest,
   SpecInvokeResponse,
@@ -36,16 +38,10 @@ export class Kiro {
     commands: Array<{
       name: string;
       description: string;
-      meta?: Record<string, unknown>;
+      meta?: CommandMeta;
     }>
   ) => void;
-  private extensionMethodsHandler?: (
-    commands: Array<{
-      name: string;
-      description: string;
-      meta?: Record<string, unknown>;
-    }>
-  ) => void;
+  private kasCommandsHandler?: (commands: KasCommand[]) => void;
   private promptsHandler?: (
     prompts: Array<{
       name: string;
@@ -103,23 +99,15 @@ export class Kiro {
       commands: Array<{
         name: string;
         description: string;
-        meta?: Record<string, unknown>;
+        meta?: CommandMeta;
       }>
     ) => void
   ): void {
     this.commandsHandler = handler;
   }
 
-  onExtensionMethodsDiscovered(
-    handler: (
-      commands: Array<{
-        name: string;
-        description: string;
-        meta?: Record<string, unknown>;
-      }>
-    ) => void
-  ): void {
-    this.extensionMethodsHandler = handler;
+  onKasCommandsDiscovered(handler: (commands: KasCommand[]) => void): void {
+    this.kasCommandsHandler = handler;
   }
 
   onPromptsUpdate(
@@ -326,10 +314,10 @@ export class Kiro {
           this.commandsHandler(event.commands);
         }
         if (
-          event.type === AgentEventType.ExtensionMethodsDiscovered &&
-          this.extensionMethodsHandler
+          event.type === AgentEventType.KasCommandsDiscovered &&
+          this.kasCommandsHandler
         ) {
-          this.extensionMethodsHandler(event.commands);
+          this.kasCommandsHandler(event.commands);
         }
         if (
           event.type === AgentEventType.PromptsUpdate &&

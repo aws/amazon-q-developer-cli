@@ -426,19 +426,20 @@ describe('Kiro — handler registration and forwarding', () => {
     ]);
   });
 
-  it('onExtensionMethodsDiscovered receives events', async () => {
+  it('onKasCommandsDiscovered receives events', async () => {
+    const { KasCommandName } = await import('../kas-commands');
     const kiro = new Kiro();
     const handler = mock(() => {});
-    kiro.onExtensionMethodsDiscovered(handler);
+    kiro.onKasCommandsDiscovered(handler);
     await kiro.initialize('/path/to/agent');
     if (mockOnUpdateHandler) {
       mockOnUpdateHandler({
-        type: AgentEventType.ExtensionMethodsDiscovered,
-        commands: [{ name: 'ext-cmd', description: 'Extension' }],
+        type: AgentEventType.KasCommandsDiscovered,
+        commands: [{ name: KasCommandName.Help, description: 'Show help' }],
       } as AgentStreamEvent);
     }
     expect(handler).toHaveBeenCalledWith([
-      { name: 'ext-cmd', description: 'Extension' },
+      { name: KasCommandName.Help, description: 'Show help' },
     ]);
   });
 

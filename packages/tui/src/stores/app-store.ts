@@ -1,4 +1,4 @@
-import { createStore, useStore } from 'zustand';
+import { createStore, useStore, type StoreApi } from 'zustand';
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { Kiro } from '../kiro';
@@ -6,6 +6,8 @@ import chalk from 'chalk';
 import { kiroSafe } from '../theme/kiroSafe';
 import type { TerminalColor } from '../types/themeTypes';
 import { createContext, useContext } from 'react';
+import { KAS_COMMANDS, type KasCommand } from '../kas-commands';
+import { type AgentEngine, resolveAgentEngine } from '../agent-engine';
 import {
   AgentEventType,
   ApprovalOptionId,
@@ -385,7 +387,7 @@ export interface SlashCommand extends AvailableCommand {
 }
 
 export interface ActiveCommand {
-  command: SlashCommand;
+  command: AvailableCommand;
   options: CommandOption[];
 }
 
@@ -506,6 +508,7 @@ const initialInputBufferState = (): InputBufferState => ({
 
 interface AppStoreProps {
   kiro: Kiro;
+  agentEngine?: AgentEngine;
 }
 
 export type AppActions = BaseAppActions & InputBufferActions;
@@ -553,7 +556,7 @@ interface BaseAppActions {
   startEditingQueue: (index: number) => void;
   cancelEditingQueue: () => void;
   setSlashCommands: (commands: SlashCommand[]) => void;
-  setExtensionCommands: (commands: SlashCommand[]) => void;
+  setKasCommands: (commands: KasCommand[]) => void;
   setPrompts: (
     prompts: Array<{
       name: string;
@@ -686,7 +689,7 @@ interface BaseAppActions {
   leaveArtifactDetail: () => void;
   /**
    * Reset all artifact-view state on engine switch. The agent engine in
-   * Kiro CLI is fixed at startup (see `slash-commands.ts`), so this is
+   * Kiro CLI is fixed at startup (see `kas-commands.ts`), so this is
    * a defence-in-depth no-op-safe action: callable from anywhere
    * without breaking the store.
    */
@@ -811,8 +814,26 @@ export interface AppState {
   liveOutputs: Map<string, string[]>;
   queuedMessages: string[];
   editingQueueIndex: number | null;
+  /**
+   * Slash commands sourced from the active backend's
+   * `available_commands_update` broadcast.
+   *
+   * - V2 mode: populated by `setSlashCommands` from V2's broadcast; prompts
+   *   and skills get appended directly here via `onPromptsUpdate`.
+   * - KAS mode: populated by `setSlashCommands` from KAS's broadcast, which
+   *   already includes prompts/skills/steering as commands tagged with
+   *   `_meta.kiro.type`.
+   */
   slashCommands: SlashCommand[];
-  extensionCommands: SlashCommand[];
+  /**
+   * Static, TUI-owned KAS commands. Seeded from `KAS_COMMANDS` at boot
+   * when `agentEngine === 'kas'`; empty otherwise. The dispatcher checks
+   * this list first in KAS mode so KAS-side handlers take precedence
+   * over the V2 dispatcher pipeline for the same command name.
+   */
+  kasCommands: KasCommand[];
+  /** Frozen at boot from props.agentEngine ?? process.env.KIRO_AGENT_ENGINE. */
+  agentEngine: AgentEngine;
   prompts: Array<{
     name: string;
     description?: string;
@@ -1014,13 +1035,7 @@ export interface AppState {
 
 interface AppStoreProps {
   kiro: Kiro;
-  noInteractive?: boolean;
-  initialInput?: string;
-  trustAllTools?: boolean;
-}
-
-interface AppStoreProps {
-  kiro: Kiro;
+  agentEngine?: AgentEngine;
   noInteractive?: boolean;
   initialInput?: string;
   trustAllTools?: boolean;
@@ -1127,7 +1142,118 @@ function extractTaskState(
   }
 }
 
+/** Build a CommandContext from the current AppState + setter. */
+function buildCommandContext(
+  state: AppState & AppActions,
+  set: StoreApi<AppState & AppActions>['setState'],
+  get: StoreApi<AppState & AppActions>['getState'],
+  extraClearState?: Partial<AppState>
+): CommandContext {
+  return {
+    kiro: state.kiro,
+    agentEngine: state.agentEngine,
+    slashCommands: state.slashCommands,
+    kasCommands: state.kasCommands,
+    showAlert: (message, status, autoHideMs = 3000) =>
+      state.showTransientAlert({ message, status, autoHideMs }),
+    setLoadingMessage: state.setLoadingMessage,
+    setActiveCommand: state.setActiveCommand,
+    setCurrentModel: state.setCurrentModel,
+    setCurrentAgent: state.setCurrentAgent,
+    setContextUsage: state.setContextUsage,
+    setShowContextBreakdown: state.setShowContextBreakdown,
+    setShowHelpPanel: state.setShowHelpPanel,
+    setShowTuiPanel: state.setShowTuiPanel,
+    setShowChangelogPanel: state.setShowChangelogPanel,
+    setShowUsagePanel: state.setShowUsagePanel,
+    setShowRewindExplorer: state.setShowRewindExplorer,
+    setShowMcpPanel: state.setShowMcpPanel,
+    setShowToolsPanel: state.setShowToolsPanel,
+    setShowStatsPanel: state.setShowStatsPanel,
+    setShowHooksPanel: state.setShowHooksPanel,
+    setShowKeybindingsPanel: state.setShowKeybindingsPanel,
+    setShowDisplaySettingsPanel: state.setShowDisplaySettingsPanel,
+    setSettingsReturnOnEscape: state.setSettingsReturnOnEscape,
+    setShowKnowledgePanel: state.setShowKnowledgePanel,
+    setShowCodePanel: state.setShowCodePanel,
+    openArtifactView: state.openArtifactView,
+    clearMessages: state.clearMessages,
+    resetMessages: state.resetMessages,
+    sendMessage: state.sendMessage,
+    createStreamEventHandler: state.createStreamEventHandler,
+    setSessionId: (id: string | null) => set({ sessionId: id, initErrors: [] }),
+    addSystemMessage: (content: string, success: boolean) =>
+      set((s) => ({
+        messages: [
+          ...s.messages,
+          {
+            id: generateMessageId(),
+            role: MessageRole.System,
+            content,
+            success,
+          },
+        ],
+      })),
+    addSession: state.addSession,
+    setActiveSession: state.setActiveSession,
+    sessions: state.sessions,
+    setMode: state.setMode,
+    clearUIState: () =>
+      set({
+        activeCommand: null,
+        showContextBreakdown: false,
+        showHelpPanel: false,
+        showUsagePanel: false,
+        showRewindExplorer: false,
+        showMcpPanel: false,
+        showToolsPanel: false,
+        showStatsPanel: false,
+        showHooksPanel: false,
+        showKeybindingsPanel: false,
+        settingsReturnOnEscape: false,
+        showKnowledgePanel: false,
+        contextBreakdown: null,
+        usageData: null,
+        ...extraClearState,
+      }),
+    getMessages: () => get().messages,
+    setUserColors: (prompt?: any, response?: any, diff?: any) => {
+      const setter = get()._userColorsSetter;
+      if (setter) setter(prompt, response, diff);
+    },
+    setBaseTheme: (theme: any) => {
+      const setter = get()._baseThemeSetter;
+      if (setter) setter(theme);
+    },
+    setThemePreview: (preview: string | null) => {
+      set({ themePreview: preview });
+    },
+    getThemeDiffHex: () => {
+      const getter = get()._themeDiffHexGetter;
+      if (getter) return getter();
+      const d = kiroSafe.colors.diff;
+      return {
+        added: {
+          background: d.added.background,
+          bar: d.added.bar,
+          highlight: d.added.highlight,
+        },
+        removed: {
+          background: d.removed.background,
+          bar: d.removed.bar,
+          highlight: d.removed.highlight,
+        },
+      };
+    },
+    getAutoPreview: () => {
+      const getter = get()._autoPreviewGetter;
+      return getter ? getter() : '';
+    },
+  };
+}
+
 export const createAppStore = (props: AppStoreProps) => {
+  const agentEngine: AgentEngine = props.agentEngine ?? resolveAgentEngine();
   const store = createStore<AppState & AppActions>((set, get) => ({
     // Initial state
     messages: [],
@@ -1202,7 +1328,8 @@ export const createAppStore = (props: AppStoreProps) => {
         meta: { local: true },
       },
     ], // Backend sends all commands via CommandsUpdate
-    extensionCommands: [],
+    kasCommands: agentEngine === 'kas' ? [...KAS_COMMANDS] : [],
+    agentEngine,
     prompts: [],
     kiro: props.kiro,
     sessionId: null,
@@ -2571,8 +2698,8 @@ export const createAppStore = (props: AppStoreProps) => {
       });
     },
 
-    setExtensionCommands: (commands: SlashCommand[]) => {
-      set({ extensionCommands: commands });
+    setKasCommands: (commands: KasCommand[]) => {
+      set({ kasCommands: commands });
     },
 
     setPrompts: (prompts) => {
@@ -2621,109 +2748,12 @@ export const createAppStore = (props: AppStoreProps) => {
       set({ activeCommand: null });
 
       const state = get();
-      const ctx: CommandContext = {
-        kiro: state.kiro,
-        slashCommands: [...state.extensionCommands, ...state.slashCommands],
-        showAlert: (message, status, autoHideMs = 3000) =>
-          state.showTransientAlert({ message, status, autoHideMs }),
-        setLoadingMessage: state.setLoadingMessage,
-        setActiveCommand: state.setActiveCommand,
-        setCurrentModel: state.setCurrentModel,
-        setCurrentAgent: state.setCurrentAgent,
-        setContextUsage: state.setContextUsage,
-        setShowContextBreakdown: state.setShowContextBreakdown,
-        setShowHelpPanel: state.setShowHelpPanel,
-        setShowTuiPanel: state.setShowTuiPanel,
-        setShowChangelogPanel: state.setShowChangelogPanel,
-        setShowUsagePanel: state.setShowUsagePanel,
-        setShowRewindExplorer: state.setShowRewindExplorer,
-        setShowMcpPanel: state.setShowMcpPanel,
-        setShowToolsPanel: state.setShowToolsPanel,
-        setShowStatsPanel: state.setShowStatsPanel,
-        setShowHooksPanel: state.setShowHooksPanel,
-        setShowKeybindingsPanel: state.setShowKeybindingsPanel,
-        setShowDisplaySettingsPanel: state.setShowDisplaySettingsPanel,
-        setSettingsReturnOnEscape: state.setSettingsReturnOnEscape,
-        setShowKnowledgePanel: state.setShowKnowledgePanel,
-        setShowCodePanel: state.setShowCodePanel,
-        openArtifactView: state.openArtifactView,
-        clearMessages: state.clearMessages,
-        resetMessages: state.resetMessages,
-        sendMessage: state.sendMessage,
-        createStreamEventHandler: state.createStreamEventHandler,
-        setSessionId: (id: string | null) =>
-          set({ sessionId: id, initErrors: [] }),
-        addSystemMessage: (content: string, success: boolean) =>
-          set((s) => ({
-            messages: [
-              ...s.messages,
-              {
-                id: generateMessageId(),
-                role: MessageRole.System,
-                content,
-                success,
-              },
-            ],
-          })),
-        addSession: state.addSession,
-        setActiveSession: state.setActiveSession,
-        sessions: state.sessions,
-        setMode: state.setMode,
-        clearUIState: () =>
-          set({
-            activeCommand: null,
-            showContextBreakdown: false,
-            showTuiPanel: false,
-            showChangelogPanel: false,
-            showHelpPanel: false,
-            showUsagePanel: false,
-            showRewindExplorer: false,
-            showMcpPanel: false,
-            showToolsPanel: false,
-            showStatsPanel: false,
-            showHooksPanel: false,
-            showKeybindingsPanel: false,
-            settingsReturnOnEscape: false,
-            showKnowledgePanel: false,
-            showCodePanel: false,
-            contextBreakdown: null,
-            usageData: null,
-            codeData: null,
-          }),
-        getMessages: () => get().messages,
-        setUserColors: (prompt?: any, response?: any, diff?: any) => {
-          const setter = get()._userColorsSetter;
-          if (setter) setter(prompt, response, diff);
-        },
-        setBaseTheme: (theme: any) => {
-          const setter = get()._baseThemeSetter;
-          if (setter) setter(theme);
-        },
-        setThemePreview: (preview: string | null) => {
-          set({ themePreview: preview });
-        },
-        getThemeDiffHex: () => {
-          const getter = get()._themeDiffHexGetter;
-          if (getter) return getter();
-          const d = kiroSafe.colors.diff;
-          return {
-            added: {
-              background: d.added.background,
-              bar: d.added.bar,
-              highlight: d.added.highlight,
-            },
-            removed: {
-              background: d.removed.background,
-              bar: d.removed.bar,
-              highlight: d.removed.highlight,
-            },
-          };
-        },
-        getAutoPreview: () => {
-          const getter = get()._autoPreviewGetter;
-          return getter ? getter() : '';
-        },
-      };
+      const ctx: CommandContext = buildCommandContext(state, set, get, {
+        showTuiPanel: false,
+        showChangelogPanel: false,
+        showCodePanel: false,
+        codeData: null,
+      });
 
       await executeCommandWithArg(cmdName, arg, ctx);
     },
@@ -3933,105 +3963,7 @@ export const createAppStore = (props: AppStoreProps) => {
       // Handle slash commands via command registry
       if (trimmed.startsWith('/')) {
         CommandHistory.getInstance().add(trimmed);
-        const ctx: CommandContext = {
-          kiro: state.kiro,
-          slashCommands: [...state.extensionCommands, ...state.slashCommands],
-          showAlert: (message, status, autoHideMs = 3000) =>
-            state.showTransientAlert({ message, status, autoHideMs }),
-          setLoadingMessage: state.setLoadingMessage,
-          setActiveCommand: state.setActiveCommand,
-          setCurrentModel: state.setCurrentModel,
-          setCurrentAgent: state.setCurrentAgent,
-          setContextUsage: state.setContextUsage,
-          setShowContextBreakdown: state.setShowContextBreakdown,
-          setShowHelpPanel: state.setShowHelpPanel,
-          setShowTuiPanel: state.setShowTuiPanel,
-          setShowChangelogPanel: state.setShowChangelogPanel,
-          setShowUsagePanel: state.setShowUsagePanel,
-          setShowRewindExplorer: state.setShowRewindExplorer,
-          setShowMcpPanel: state.setShowMcpPanel,
-          setShowToolsPanel: state.setShowToolsPanel,
-          setShowStatsPanel: state.setShowStatsPanel,
-          setShowHooksPanel: state.setShowHooksPanel,
-          setShowKeybindingsPanel: state.setShowKeybindingsPanel,
-          setShowDisplaySettingsPanel: state.setShowDisplaySettingsPanel,
-          setSettingsReturnOnEscape: state.setSettingsReturnOnEscape,
-          setShowKnowledgePanel: state.setShowKnowledgePanel,
-          setShowCodePanel: state.setShowCodePanel,
-          openArtifactView: state.openArtifactView,
-          clearMessages: state.clearMessages,
-          resetMessages: state.resetMessages,
-          sendMessage: state.sendMessage,
-          createStreamEventHandler: state.createStreamEventHandler,
-          setSessionId: (id: string | null) =>
-            set({ sessionId: id, initErrors: [] }),
-          addSystemMessage: (content: string, success: boolean) =>
-            set((s) => ({
-              messages: [
-                ...s.messages,
-                {
-                  id: generateMessageId(),
-                  role: MessageRole.System,
-                  content,
-                  success,
-                },
-              ],
-            })),
-          addSession: state.addSession,
-          setActiveSession: state.setActiveSession,
-          sessions: state.sessions,
-          setMode: state.setMode,
-          clearUIState: () =>
-            set({
-              activeCommand: null,
-              showContextBreakdown: false,
-              showHelpPanel: false,
-              showUsagePanel: false,
-              showRewindExplorer: false,
-              showMcpPanel: false,
-              showToolsPanel: false,
-              showStatsPanel: false,
-              showHooksPanel: false,
-              showKeybindingsPanel: false,
-              settingsReturnOnEscape: false,
-              showKnowledgePanel: false,
-              contextBreakdown: null,
-              usageData: null,
-            }),
-          getMessages: () => get().messages,
-          setUserColors: (prompt?: any, response?: any, diff?: any) => {
-            const setter = get()._userColorsSetter;
-            if (setter) setter(prompt, response, diff);
-          },
-          setBaseTheme: (theme: any) => {
-            const setter = get()._baseThemeSetter;
-            if (setter) setter(theme);
-          },
-          setThemePreview: (preview: string | null) => {
-            set({ themePreview: preview });
-          },
-          getThemeDiffHex: () => {
-            const getter = get()._themeDiffHexGetter;
-            if (getter) return getter();
-            const d = kiroSafe.colors.diff;
-            return {
-              added: {
-                background: d.added.background,
-                bar: d.added.bar,
-                highlight: d.added.highlight,
-              },
-              removed: {
-                background: d.removed.background,
-                bar: d.removed.bar,
-                highlight: d.removed.highlight,
-              },
-            };
-          },
-          getAutoPreview: () => {
-            const getter = get()._autoPreviewGetter;
-            return getter ? getter() : '';
-          },
-        };
+        const ctx: CommandContext = buildCommandContext(state, set, get);
         const handled = await executeCommand(trimmed, ctx);
         if (handled) return;
         // Not a recognized command — could be a file path like /Users/...

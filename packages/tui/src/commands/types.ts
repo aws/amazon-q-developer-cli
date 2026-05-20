@@ -5,6 +5,8 @@
 import type { AgentStreamEvent } from '../types/agent-events.js';
 import type { TerminalColor } from '../types/themeTypes.js';
 import type { Kiro } from '../kiro.js';
+import type { AgentEngine } from '../agent-engine.js';
+import type { KasCommand } from '../kas-commands.js';
 import type {
   SlashCommand,
   ActiveCommand,
@@ -21,8 +23,21 @@ import type {
 export interface CommandContext {
   /** Kiro client for backend communication */
   kiro: Kiro;
-  /** Available slash commands from backend */
+  /** Active agent backend */
+  agentEngine: AgentEngine;
+  /**
+   * Slash commands sourced from the active backend - V2's `available_commands_update`
+   * in V2 mode (which also gets prompts/skills appended via `onPromptsUpdate`),
+   * KAS's `available_commands_update` in KAS mode (which already includes
+   * prompts/skills/steering tagged via `_meta.kiro.type`).
+   */
   slashCommands: SlashCommand[];
+  /**
+   * Static, TUI-owned KAS commands. Always empty in V2 mode. The dispatcher
+   * checks this list first in KAS mode so KAS-side handlers take precedence
+   * over the V2 dispatcher pipeline for the same command name.
+   */
+  kasCommands: readonly KasCommand[];
   /** Show transient alert */
   showAlert: (
     message: string,

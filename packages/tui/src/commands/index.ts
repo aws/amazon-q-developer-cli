@@ -3,17 +3,17 @@
  */
 
 import { parseCommand } from '../types/commands.js';
+import type { AvailableCommand } from '../types/commands.js';
 import { dispatch } from './dispatcher.js';
 import type { CommandContext } from './types.js';
-import type { SlashCommand } from '../stores/app-store.js';
 
 export type { CommandContext } from './types.js';
 
 /** Find command by exact or prefix match (alphabetical order for prefix) */
-function findCommand(
-  commands: SlashCommand[],
+function findCommand<T extends AvailableCommand>(
+  commands: readonly T[],
   name: string
-): SlashCommand | undefined {
+): T | undefined {
   const lower = name.toLowerCase();
 
   // Exact match first
@@ -37,7 +37,8 @@ export async function executeCommand(
     return false;
   }
 
-  const cmd = findCommand(ctx.slashCommands, name);
+  const cmd =
+    findCommand(ctx.kasCommands, name) ?? findCommand(ctx.slashCommands, name);
   if (!cmd) {
     // Not a known command — let the caller handle it as a regular message
     // (e.g. pasted file paths like "/Users/me/file.txt")
@@ -57,7 +58,9 @@ export async function executeCommandWithArg(
   argValue: string,
   ctx: CommandContext
 ): Promise<void> {
-  const cmd = ctx.slashCommands.find((c) => c.name === `/${commandName}`);
+  const cmd =
+    ctx.kasCommands.find((c) => c.name === `/${commandName}`) ??
+    ctx.slashCommands.find((c) => c.name === `/${commandName}`);
   if (!cmd) {
     ctx.showAlert(`Unknown command: /${commandName}`, 'error', 3000);
     return;
@@ -68,5 +71,5 @@ export async function executeCommandWithArg(
   const effectiveArg =
     commandName === 'agent' && argValue ? `swap ${argValue}` : argValue;
 
-  await dispatch(cmd, effectiveArg, ctx);
+  await dispatch(cmd, effectiveArg, ctx, { argIsSynthetic: true });
 }

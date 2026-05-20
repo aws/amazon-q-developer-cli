@@ -35,7 +35,8 @@ import type {
 import type { ListSessionsResponse } from './types/session-client';
 
 import packageJson from '../package.json';
-import { SLASH_COMMANDS } from './slash-commands';
+import { KAS_COMMANDS } from './kas-commands';
+import { resolveAgentEngine } from './agent-engine';
 import { readClipboardImage } from './utils/clipboard-image';
 
 const TUI_VERSION: string = packageJson.version;
@@ -1457,14 +1458,14 @@ export class KasAcpClient extends BaseAcpClient {
   async initialize(): Promise<void> {
     await this.kiroClient.initialize();
 
-    const commands = SLASH_COMMANDS.map((cmd) => ({
+    const commands = KAS_COMMANDS.map((cmd) => ({
       name: cmd.name,
       description: cmd.description,
-      meta: (cmd.meta ?? {}) as Record<string, unknown>,
+      meta: cmd.meta,
     }));
 
     this.broadcastStreamEvent({
-      type: AgentEventType.ExtensionMethodsDiscovered,
+      type: AgentEventType.KasCommandsDiscovered,
       commands,
     });
 
@@ -1643,25 +1644,6 @@ export class KasAcpClient extends BaseAcpClient {
             );
           }
         }
-      }
-      case 'chat': {
-        const args = (command as Record<string, unknown>).args as
-          | Record<string, string>
-          | undefined;
-        const value = args?.value ?? '';
-        if (/^delete\b/.test(value)) {
-          const sessionId = value.slice(7).trim();
-          if (!sessionId)
-            return {
-              success: false,
-              message: 'Usage: /chat delete <sessionId>',
-            };
-          return this.callExtMethod('_kiro/session/delete', { sessionId });
-        }
-        return {
-          success: false,
-          message: `/chat ${value || 'save/load'} is not yet supported in KAS mode`,
-        };
       }
       case 'model': {
         const args = (command as Record<string, unknown>).args as
@@ -2286,7 +2268,7 @@ export function createAcpClient(
   agentPath: string,
   extraAcpArgs: string[] = []
 ): SessionClient {
-  if (process.env.KIRO_AGENT_ENGINE === 'kas') {
+  if (resolveAgentEngine() === 'kas') {
     // Test-only: inject an in-process mock transport when the harness set
     // the socket path env var. Production boots skip this branch entirely.
     // The require() path stays in this one call site so the rest of

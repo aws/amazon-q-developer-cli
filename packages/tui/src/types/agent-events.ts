@@ -1,5 +1,7 @@
 import { ToolNameAlias } from '../../e2e_tests/types/agent.js';
 import type { BuiltinToolId } from './tool-status.js';
+import type { CommandMeta } from './commands.js';
+import type { KasCommand } from '../kas-commands.js';
 
 export enum AgentEventType {
   Content = 'content',
@@ -26,7 +28,7 @@ export enum AgentEventType {
   McpOauthRequest = 'mcp_oauth_request',
   McpServerInitialized = 'mcp_server_initialized',
   McpGovernanceDisabled = 'mcp_governance_disabled',
-  ExtensionMethodsDiscovered = 'extension_methods_discovered',
+  KasCommandsDiscovered = 'kas_commands_discovered',
   EffortUpdate = 'effort_update',
 }
 
@@ -221,11 +223,7 @@ export interface CommandsUpdateEvent {
   commands: Array<{
     name: string;
     description: string;
-    meta?: {
-      inputType?: 'text' | 'selection' | 'multiselect' | 'panel';
-      optionsMethod?: string;
-      hint?: string;
-    };
+    meta?: CommandMeta;
   }>;
 }
 
@@ -351,13 +349,9 @@ export interface McpGovernanceDisabledEvent {
 export type AuthErrorType = string;
 export type SessionErrorType = string;
 
-export interface ExtensionMethodsDiscoveredEvent {
-  type: AgentEventType.ExtensionMethodsDiscovered;
-  commands: Array<{
-    name: string;
-    description: string;
-    meta?: Record<string, unknown>;
-  }>;
+export interface KasCommandsDiscoveredEvent {
+  type: AgentEventType.KasCommandsDiscovered;
+  commands: KasCommand[];
 }
 
 export type AgentStreamEvent =
@@ -385,5 +379,5 @@ export type AgentStreamEvent =
   | McpOauthRequestEvent
   | McpServerInitializedEvent
   | McpGovernanceDisabledEvent
-  | ExtensionMethodsDiscoveredEvent
+  | KasCommandsDiscoveredEvent
   | EffortUpdateEvent;

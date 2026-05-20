@@ -9,7 +9,7 @@
  */
 
 import type { CommandContext } from './types.js';
-import type { SlashCommand } from '../stores/app-store.js';
+import type { AvailableCommand } from '../types/commands.js';
 import type { EffectHandler } from './effects.js';
 import { setupTerminal } from '../utils/terminal-setup.js';
 
@@ -31,7 +31,7 @@ export interface SettingsSubcommand {
 export interface SettingsHandleContext {
   ctx: CommandContext;
   /** The /settings SlashCommand object (not /theme or any other subcommand). */
-  settingsCommand: SlashCommand;
+  settingsCommand: AvailableCommand;
   /**
    * Look up an effect handler by name. Throws if the effect does not exist,
    * which makes misspellings a build/run error rather than a silent no-op.
@@ -119,8 +119,8 @@ function alertDurationFor(message: string): number {
  * Build the `activeCommand` shape for the /settings top-level menu.
  * Shared by showSettingsMenu (first open) and reopenSettingsMenu (Esc-back).
  */
-export function buildSettingsActiveCommand(settingsCommand: SlashCommand): {
-  command: SlashCommand;
+export function buildSettingsActiveCommand(settingsCommand: AvailableCommand): {
+  command: AvailableCommand;
   options: Array<{ value: string; label: string; description: string }>;
 } {
   return {

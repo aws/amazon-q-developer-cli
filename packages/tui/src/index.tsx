@@ -17,6 +17,7 @@ import { connectResizeSource } from './hooks/useTerminalSize';
 import { clearTerminalProgress } from './utils/terminal-capabilities.js';
 import { isGhostty } from './utils/terminal-detection.js';
 import { Kiro } from './kiro';
+import { resolveAgentEngine } from './agent-engine';
 import { TestModeProvider } from './test-utils/TestModeProvider';
 import { parseCliArgs, buildAcpArgs } from './utils/cli-args';
 import { sessionConversationsStore } from './stores/session-conversations.js';
@@ -67,7 +68,7 @@ const getAgentPath = (): string => {
     return 'mock-agent-path';
   }
 
-  if (process.env.KIRO_AGENT_ENGINE === 'kas') {
+  if (resolveAgentEngine() === 'kas') {
     return '';
   }
 
@@ -138,22 +139,14 @@ const wireUpHandlers = () => {
         name: cmd.name.startsWith('/') ? cmd.name : `/${cmd.name}`,
         description: cmd.description,
         source: 'backend' as const,
-        meta: cmd.meta as import('./types/commands').CommandMeta | undefined,
+        meta: cmd.meta,
       }))
     );
   });
 
-  // Extension methods are stored separately and merged at read time
-  kiro.onExtensionMethodsDiscovered((commands) => {
-    logger.debug('[tui] extension methods discovered:', commands.length);
-    appStore.getState().setExtensionCommands(
-      commands.map((cmd) => ({
-        name: cmd.name.startsWith('/') ? cmd.name : `/${cmd.name}`,
-        description: cmd.description,
-        source: 'backend' as const,
-        meta: cmd.meta as import('./types/commands').CommandMeta | undefined,
-      }))
-    );
+  kiro.onKasCommandsDiscovered((commands) => {
+    logger.debug('[tui] KAS commands discovered:', commands.length);
+    appStore.getState().setKasCommands(commands);
   });
 
   // Wire up prompts handler before initialize
@@ -234,11 +227,11 @@ const wireUpHandlers = () => {
 
   // ── KAS-only wiring: spec artifact view ──
   //
-  // Engine is fixed at process start (see slash-commands.ts comment),
+  // Engine is fixed at process start (see kas-commands.ts comment),
   // so we wire this once at startup. We still call
   // `clearArtifactViewOnEngineSwitch` from any future engine-switch
   // path as defence-in-depth.
-  if (process.env.KIRO_AGENT_ENGINE === 'kas') {
+  if (resolveAgentEngine() === 'kas') {
     // Single in-flight idle timer — the store holds at most one
     // artifact-generating entry at a time, so we never need more than
     // one outstanding timer. We track the path it's keyed to so that

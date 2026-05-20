@@ -23,8 +23,10 @@ import type {
   SlashCommand,
   ToolInfo,
 } from '../stores/app-store.js';
+import type { AvailableCommand } from '../types/commands.js';
 import { openEditorSync } from '../utils/editor.js';
 import { executeShellEscapeTTY } from '../utils/shell-escape.js';
+import { truncateToRecentTurns } from '../utils/replay-history.js';
 import { extractRpcErrorMessage } from '../utils/error-handling.js';
 import { Kiro } from '../kiro.js';
 import {
@@ -49,7 +51,7 @@ import {
 export type EffectHandler = (
   result: CommandResult | null,
   ctx: CommandContext,
-  cmd: SlashCommand,
+  cmd: AvailableCommand,
   args: string
 ) => boolean | void | Promise<boolean | void>;
 
@@ -1388,7 +1390,7 @@ function pickMostRecentArtifact(
  */
 async function openSpecView(
   ctx: CommandContext,
-  cmd: SlashCommand,
+  cmd: AvailableCommand,
   workspaceRoot: string,
   rest: string
 ): Promise<boolean> {
@@ -1606,7 +1608,7 @@ export function copyToSystemClipboard(text: string): boolean {
  * Returns true if the effect handled its own messaging (suppresses dispatcher step 4).
  */
 export function runEffect(
-  cmd: SlashCommand,
+  cmd: AvailableCommand,
   result: CommandResult | null,
   ctx: CommandContext,
   args: string

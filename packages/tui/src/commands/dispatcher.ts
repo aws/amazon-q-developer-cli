@@ -8,11 +8,21 @@
  */
 
 import type { CommandContext } from './types.js';
-import type { SlashCommand } from '../stores/app-store.js';
-import type { TuiCommand, CommandOption } from '../types/commands.js';
+import type {
+  AvailableCommand,
+  TuiCommand,
+  CommandOption,
+} from '../types/commands.js';
 import { runEffect } from './effects.js';
+import { kasHandlers } from './kas-handlers/index.js';
+import { isKasCommand } from '../kas-commands.js';
 import { formatRelativeTime } from '../utils/sessions.js';
 import { extractRpcErrorMessage } from '../utils/error-handling.js';
+
+export interface DispatchOptions {
+  /** True when args were provided programmatically rather than typed by the user. */
+  argIsSynthetic?: boolean;
+}
 
 /**
  * Dispatch a command through the standard flow.
@@ -20,15 +30,27 @@ import { extractRpcErrorMessage } from '../utils/error-handling.js';
  * @param cmd - Slash command definition
  * @param args - Arguments (empty string if none)
  * @param ctx - Command context
+ * @param options - Optional dispatch metadata
  */
 export async function dispatch(
-  cmd: SlashCommand,
+  cmd: AvailableCommand,
   args: string,
-  ctx: CommandContext
+  ctx: CommandContext,
+  options?: DispatchOptions
 ): Promise<void> {
   const { inputType, type } = cmd.meta ?? {};
   const isLocal = cmd.meta?.local === true;
   const cmdName = cmd.name.replace(/^\//, '');
+
+  // KAS intercept: in KAS mode, registered handlers own the command flow
+  // and skip the V2 dispatcher pipeline entirely.
+  if (ctx.agentEngine === 'kas' && isKasCommand(cmd)) {
+    const handler = kasHandlers[cmd.name];
+    if (handler) {
+      await handler(cmd, args, ctx, options);
+      return;
+    }
+  }
 
   // Handle prompt and skill commands - send as regular message, backend resolves via session/prompt interception
   if (type === 'prompt' || type === 'skill') {
@@ -80,7 +102,7 @@ export async function dispatch(
   const isChatSubcommand =
     cmdName === 'chat' && args && /^(save|load)\b/.test(args);
   let result = null;
-  if (cmd.source === 'backend' && (!isLocal || isChatSubcommand)) {
+  if (!isLocal || isChatSubcommand) {
     // Show loading for agent swap
     const isSubcommand =
       args === 'create' ||

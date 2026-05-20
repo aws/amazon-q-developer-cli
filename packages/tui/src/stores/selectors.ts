@@ -5,7 +5,24 @@
  */
 import { useMemo } from 'react';
 import { useShallow } from 'zustand/react/shallow';
-import { useAppStore } from './app-store.js';
+import { useAppStore, type AppState } from './app-store.js';
+import type { AvailableCommand } from '../types/commands.js';
+
+/**
+ * Returns the slash commands the autocomplete should show for the
+ * current engine. In KAS mode the static TUI-side `kasCommands` list
+ * is concatenated with `slashCommands`, which holds both the V2-host-
+ * side `local` commands seeded at boot (`/exit`, `/settings`, etc.)
+ * and KAS's own `available_commands_update` broadcast (built-ins plus
+ * prompts/skills/steering). In V2 mode `slashCommands` already contains
+ * locals plus V2's backend broadcast, so we return it directly.
+ */
+export const selectVisibleSlashCommands = (
+  state: Pick<AppState, 'agentEngine' | 'kasCommands' | 'slashCommands'>
+): readonly AvailableCommand[] =>
+  state.agentEngine === 'kas'
+    ? [...state.kasCommands, ...state.slashCommands]
+    : state.slashCommands;
 
 /**
  * Notification state selector - for NotificationBar and BlockingErrorAlert
@@ -39,7 +56,8 @@ export const useCommandState = () => {
   const state = useAppStore(
     useShallow((s) => ({
       _slashCommands: s.slashCommands,
-      _extensionCommands: s.extensionCommands,
+      _kasCommands: s.kasCommands,
+      _agentEngine: s.agentEngine,
       activeCommand: s.activeCommand,
       commandInputValue: s.commandInputValue,
       activeTrigger: s.activeTrigger,
@@ -49,8 +67,13 @@ export const useCommandState = () => {
     }))
   );
   const slashCommands = useMemo(
-    () => [...state._extensionCommands, ...state._slashCommands],
-    [state._extensionCommands, state._slashCommands]
+    () =>
+      selectVisibleSlashCommands({
+        agentEngine: state._agentEngine,
+        kasCommands: state._kasCommands,
+        slashCommands: state._slashCommands,
+      }),
+    [state._agentEngine, state._kasCommands, state._slashCommands]
   );
   return { ...state, slashCommands };
 };
