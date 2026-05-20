@@ -33,6 +33,11 @@ def isLinux() -> bool:
 
 
 @cache
+def isWindows() -> bool:
+    return platform.system() == "Windows"
+
+
+@cache
 def isMusl() -> bool:
     return os.environ.get("AMAZON_Q_BUILD_MUSL") is not None
 

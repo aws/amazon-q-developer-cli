@@ -8,6 +8,9 @@
 - **macOS**:
   - **DMG**: [Download now](https://desktop-release.q.us-east-1.amazonaws.com/latest/Amazon%20Q.dmg)
   - **HomeBrew**: ```brew install --cask amazon-q ```
+- **Windows**:
+  - **ZIP**: [Download now](https://desktop-release.q.us-east-1.amazonaws.com/latest/qchat-windows.zip)
+  - **Executable**: [Download now](https://desktop-release.q.us-east-1.amazonaws.com/latest/qchat.exe)
 - **Linux**:
   - [Ubuntu/Debian](https://docs.aws.amazon.com/amazonq/latest/qdeveloper-ug/command-line-installing.html#command-line-installing-ubuntu)
   - [AppImage](https://docs.aws.amazon.com/amazonq/latest/qdeveloper-ug/command-line-installing.html#command-line-installing-appimage)
@@ -21,9 +24,16 @@ Before getting started, see our [contributing docs](CONTRIBUTING.md#security-iss
 
 ### Prerequisites
 
-- MacOS
+- **macOS**
   - Xcode 13 or later
   - Brew
+- **Windows**
+  - Visual Studio 2019 or later (with C++ build tools)
+  - PowerShell 5.1 or later
+  - Git for Windows
+- **Linux**
+  - GCC or Clang
+  - Git
 
 #### 1. Clone repo
 
@@ -33,8 +43,22 @@ git clone https://github.com/aws/amazon-q-developer-cli.git
 
 #### 2. Install the Rust toolchain using [Rustup](https://rustup.rs):
 
+**macOS/Linux:**
+
 ```shell
 curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
+rustup default stable
+rustup toolchain install nightly
+cargo install typos-cli
+```
+
+**Windows:**
+
+```powershell
+# Download and run rustup-init.exe from https://rustup.rs/
+# Or use the following PowerShell command:
+Invoke-WebRequest -Uri "https://win.rustup.rs/x86_64" -OutFile "rustup-init.exe"
+.\rustup-init.exe
 rustup default stable
 rustup toolchain install nightly
 cargo install typos-cli
