@@ -1,6 +1,9 @@
 {
   "name": "kiro-cli-chat",
   "private": true,
+  "scripts": {
+    "preinstall": "bash ./scripts/ensure-codeartifact-auth.sh"
+  },
   "workspaces": [
     "packages/*",
     "packages/twinki/packages/*"
