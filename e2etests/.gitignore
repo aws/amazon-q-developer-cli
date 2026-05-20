@@ -1,0 +1,4 @@
+qcli_test_summary*.json
+qcli_test_summary*.html
+report-analysis/
+.amazonq/
