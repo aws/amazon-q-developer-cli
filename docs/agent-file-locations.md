@@ -82,6 +82,7 @@ To create a local agent for your current project:
 mkdir -p .amazonq/cli-agents
 cat > .amazonq/cli-agents/project-helper.json << 'EOF'
 {
+  "name": "Project helper",
   "description": "Helper agent for this specific project",
   "tools": ["fs_read", "fs_write", "execute_bash"],
   "resources": [
@@ -98,6 +99,7 @@ To create a global agent available everywhere:
 mkdir -p ~/.aws/amazonq/cli-agents
 cat > ~/.aws/amazonq/cli-agents/general-helper.json << 'EOF'
 {
+  "name": "General helper",
   "description": "General purpose assistant",
   "tools": ["*"],
   "allowedTools": ["fs_read"]
