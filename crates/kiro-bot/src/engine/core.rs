@@ -126,6 +126,11 @@ pub struct BotCore {
     pub authz: Option<Arc<Authorizer>>,
     pub response_policy: Arc<ResponsePolicyConfig>,
     pub acp_info: Arc<std::sync::Mutex<AcpInfo>>,
+    /// Cross-task coordinator (Phase 4). Defaults to a per-process in-memory
+    /// `NoopCoordinator`, which preserves the legacy single-task behaviour.
+    /// `DynamoCoordinator` plugs in via this field when the runtime config
+    /// asks for it.
+    pub coordinator: Arc<dyn crate::engine::coordinator::Coordinator>,
 }
 
 // ---------------------------------------------------------------------------

@@ -2,6 +2,7 @@
 
 pub mod acp;
 pub mod authz;
+pub mod coordinator;
 pub mod core;
 pub mod response_policy;
 pub mod user_map;

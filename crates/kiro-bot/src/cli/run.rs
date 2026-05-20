@@ -118,6 +118,7 @@ async fn run_bot(cfg: Config, secrets: Secrets) -> Result<()> {
         authz,
         response_policy,
         acp_info,
+        coordinator: Arc::new(crate::engine::coordinator::NoopCoordinator::new()),
     };
 
     let pending_approvals: PendingApprovals = Arc::new(std::sync::Mutex::new(std::collections::HashMap::new()));
@@ -199,6 +200,7 @@ pub async fn cmd_chat(name: &str) -> Result<()> {
         authz: None,
         response_policy: Arc::new(ResponsePolicyConfig::default_policy()),
         acp_info,
+        coordinator: Arc::new(crate::engine::coordinator::NoopCoordinator::new()),
     };
 
     eprintln!("Ready. Type messages (prefix #name for multi-conversation). Ctrl-C to quit.");
