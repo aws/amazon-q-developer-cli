@@ -365,6 +365,12 @@ impl Agent {
                 } else {
                     None
                 };
+                // Substitute environment variables in MCP server configurations
+                for config in agent.mcp_servers.mcp_servers.values_mut() {
+                    if let Some(ref mut env_vars) = config.env {
+                        crate::cli::chat::tools::custom_tool::process_env_vars(env_vars, &os.env);
+                    }
+                }
                 let mut stderr = std::io::stderr();
                 agent.thaw(&config_path, legacy_mcp_config.as_ref(), &mut stderr)?;
                 Ok((agent, config_path))
@@ -391,6 +397,12 @@ impl Agent {
                 let config = load_legacy_mcp_config(os).await.unwrap_or_default();
                 if let Some(config) = config {
                     legacy_mcp_config.replace(config);
+                }
+            }
+            // Substitute environment variables in MCP server configurations
+            for config in agent.mcp_servers.mcp_servers.values_mut() {
+                if let Some(ref mut env_vars) = config.env {
+                    crate::cli::chat::tools::custom_tool::process_env_vars(env_vars, &os.env);
                 }
             }
             agent.thaw(agent_path.as_ref(), legacy_mcp_config.as_ref(), output)?;
@@ -762,6 +774,12 @@ impl Agents {
 
                     if let Some(config) = &global_mcp_config {
                         agent.mcp_servers = config.clone();
+                        // Substitute environment variables in MCP server configurations
+                        for server_config in agent.mcp_servers.mcp_servers.values_mut() {
+                            if let Some(ref mut env_vars) = server_config.env {
+                                crate::cli::chat::tools::custom_tool::process_env_vars(env_vars, &os.env);
+                            }
+                        }
                     }
                 } else {
                     agent.mcp_servers = McpServerConfig::default();
