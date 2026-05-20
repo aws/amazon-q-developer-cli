@@ -146,9 +146,20 @@
             "default": false
           }
         },
-        "required": [
-          "command"
-        ]
+        "if": {
+          "properties": {
+            "type": {
+              "const": "http"
+            }
+          },
+          "required": ["type"]
+        },
+        "then": {
+          "required": ["url"]
+        },
+        "else": {
+          "required": ["command"]
+        }
       },
       "default": {}
     },
