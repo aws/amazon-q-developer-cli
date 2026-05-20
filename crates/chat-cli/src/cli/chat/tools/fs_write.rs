@@ -413,7 +413,25 @@ impl FsWrite {
                     bail!("Path must not be empty")
                 };
             },
-            FsWrite::StrReplace { path, .. } | FsWrite::Insert { path, .. } => {
+            FsWrite::StrReplace {
+                path, old_str, new_str, ..
+            } => {
+                let path = sanitize_path_tool_arg(os, path);
+                if !path.exists() {
+                    bail!("The provided path must exist in order to replace or insert contents into it")
+                }
+                // Reject when old_str is a verbatim substring of new_str. Repeated calls with
+                // this pattern silently re-match the just-written content and grow the file on
+                // each invocation. Trim trailing newlines from old_str before the check to
+                // tolerate common LLM artifacts.
+                let old_str_normalized = normalize_line_endings(old_str);
+                let new_str_normalized = normalize_line_endings(new_str);
+                let old_str_trimmed = old_str_normalized.trim_end_matches('\n');
+                if !old_str_trimmed.is_empty() && new_str_normalized.contains(old_str_trimmed) {
+                    bail!("Cannot edit file: old_str is a substring of new_str")
+                }
+            },
+            FsWrite::Insert { path, .. } => {
                 let path = sanitize_path_tool_arg(os, path);
                 if !path.exists() {
                     bail!("The provided path must exist in order to replace or insert contents into it")
@@ -1972,5 +1990,99 @@ mod tests {
 
         let content = os.fs.read_to_string(file_path).await.unwrap();
         assert_eq!(content, "line1\r\nreplaced\r\nline3\r\n");
+    }
+
+    #[tokio::test]
+    async fn test_validate_rejects_old_str_substring_of_new_str() {
+        let os = setup_test_directory().await;
+
+        let mut tool = serde_json::from_value::<FsWrite>(serde_json::json!({
+            "path": TEST_FILE_PATH,
+            "command": "str_replace",
+            "old_str": "L5 → L6 promotion",
+            "new_str": "L5 → L6 promotion readiness evaluation — not a promotion",
+        }))
+        .unwrap();
+
+        let err = tool.validate(&os).await.unwrap_err().to_string();
+        assert!(
+            err.contains("old_str is a substring of new_str"),
+            "expected substring-containment error, got: {err}"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_validate_rejects_old_str_equals_new_str() {
+        let os = setup_test_directory().await;
+
+        let mut tool = serde_json::from_value::<FsWrite>(serde_json::json!({
+            "path": TEST_FILE_PATH,
+            "command": "str_replace",
+            "old_str": "hello",
+            "new_str": "hello",
+        }))
+        .unwrap();
+
+        let err = tool.validate(&os).await.unwrap_err().to_string();
+        assert!(
+            err.contains("old_str is a substring of new_str"),
+            "no-op replace (old_str == new_str) must be rejected, got: {err}"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_validate_rejects_substring_after_crlf_normalization() {
+        let os = setup_test_directory().await;
+
+        let mut tool = serde_json::from_value::<FsWrite>(serde_json::json!({
+            "path": TEST_FILE_PATH,
+            "command": "str_replace",
+            "old_str": "foo\nbar",
+            "new_str": "foo\r\nbar\r\nbaz",
+        }))
+        .unwrap();
+
+        let err = tool.validate(&os).await.unwrap_err().to_string();
+        assert!(
+            err.contains("old_str is a substring of new_str"),
+            "CRLF-normalized substring containment must be rejected, got: {err}"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_validate_rejects_substring_with_trailing_newline_in_old_str() {
+        let os = setup_test_directory().await;
+
+        let mut tool = serde_json::from_value::<FsWrite>(serde_json::json!({
+            "path": TEST_FILE_PATH,
+            "command": "str_replace",
+            "old_str": "section\n",
+            "new_str": "section header\n",
+        }))
+        .unwrap();
+
+        let err = tool.validate(&os).await.unwrap_err().to_string();
+        assert!(
+            err.contains("old_str is a substring of new_str"),
+            "trailing-newline old_str must still be detected as substring, got: {err}"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_validate_allows_disjoint_old_and_new_str() {
+        let os = setup_test_directory().await;
+
+        let mut tool = serde_json::from_value::<FsWrite>(serde_json::json!({
+            "path": TEST_FILE_PATH,
+            "command": "str_replace",
+            "old_str": "fn old_name()",
+            "new_str": "fn new_name()",
+        }))
+        .unwrap();
+
+        assert!(
+            tool.validate(&os).await.is_ok(),
+            "disjoint old_str and new_str must be allowed"
+        );
     }
 }
