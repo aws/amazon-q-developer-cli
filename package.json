@@ -15,9 +15,11 @@
     "fast-xml-parser": "5.7.2",
     "hono": "4.12.18",
     "ip-address": "10.1.1",
-    "langsmith": "0.5.19",
+    "langsmith": "0.6.0",
     "postcss": "8.5.10",
     "@opentelemetry/exporter-prometheus": "0.217.0",
-    "@opentelemetry/sdk-node": "0.217.0"
+    "@opentelemetry/sdk-node": "0.217.0",
+    "protobufjs": "8.2.0",
+    "ws": "8.20.1"
   }
 }
