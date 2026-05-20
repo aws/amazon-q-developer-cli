@@ -1,0 +1,4 @@
+{
+  "type": "fixed",
+  "description": "Fix crash on NFS4 mounts by removing flock() from settings file I/O"
+}

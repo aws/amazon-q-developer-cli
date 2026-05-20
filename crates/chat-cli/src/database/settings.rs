@@ -1,17 +1,11 @@
 use std::fmt::Display;
-use std::io::SeekFrom;
 
-use fd_lock::RwLock;
 use serde_json::{
     Map,
     Value,
 };
 use tokio::fs::File;
-use tokio::io::{
-    AsyncReadExt,
-    AsyncSeekExt,
-    AsyncWriteExt,
-};
+use tokio::io::AsyncWriteExt;
 
 use super::DatabaseError;
 use crate::os::{
@@ -476,15 +470,18 @@ impl Settings {
 
         Ok(match path.exists() {
             true => {
-                let mut file = RwLock::new(File::open(&path).await?);
-                let mut buf = Vec::new();
-                file.write()?.read_to_end(&mut buf).await?;
+                let buf = tokio::fs::read(&path).await?;
                 serde_json::from_slice(&buf)
                     .map_err(|e| DatabaseError::JsonParseWithPath(format!("failed to parse {}: {e}", path.display())))?
             },
             false => {
-                let mut file = RwLock::new(File::create(path).await?);
-                file.write()?.write_all(b"{}").await?;
+                let mut file_opts = File::options();
+                file_opts.create(true).write(true).truncate(true);
+                #[cfg(unix)]
+                file_opts.mode(0o600);
+                let mut file = file_opts.open(path).await?;
+                file.write_all(b"{}").await?;
+                file.flush().await?;
                 serde_json::Map::new()
             },
         })
@@ -608,25 +605,40 @@ impl Settings {
             tokio::fs::create_dir_all(parent).await?;
         }
 
-        let mut file_opts = File::options();
-        file_opts.create(true).write(true).truncate(true);
+        let json = serde_json::to_string_pretty(map).unwrap_or_else(|_| "{}".to_string());
 
-        #[cfg(unix)]
-        file_opts.mode(0o600);
-        let mut file = RwLock::new(file_opts.open(&path).await?);
-        let mut lock = file.write()?;
+        // Write to a temp file then atomically rename to avoid partial writes.
+        let tmp_path = path.with_extension(format!("tmp.{}", uuid::Uuid::new_v4()));
 
-        match serde_json::to_string_pretty(map) {
-            Ok(json) => lock.write_all(json.as_bytes()).await?,
-            Err(_err) => {
-                lock.seek(SeekFrom::Start(0)).await?;
-                lock.set_len(0).await?;
-                lock.write_all(b"{}").await?;
-            },
+        let result: Result<(), DatabaseError> = async {
+            let mut file_opts = File::options();
+            file_opts.create(true).write(true).truncate(true);
+            #[cfg(unix)]
+            file_opts.mode(0o600);
+
+            let mut file = file_opts.open(&tmp_path).await?;
+            file.write_all(json.as_bytes()).await?;
+            // Flush userspace buffers, then fsync data so the bytes hit the
+            // disk (or NFS server) before the rename. Without sync_data, a
+            // crash between write and rename can leave the renamed file
+            // empty even though rename(2) is atomic at the directory level.
+            file.flush().await?;
+            file.sync_data().await?;
+            drop(file);
+
+            tokio::fs::rename(&tmp_path, path).await?;
+            Ok(())
         }
-        lock.flush().await?;
+        .await;
 
-        Ok(())
+        if result.is_err() {
+            // Best-effort cleanup of the orphaned temp file. Ignore errors
+            // here (e.g. NotFound if open() failed) — we want to surface the
+            // original error, not mask it.
+            let _ = tokio::fs::remove_file(&tmp_path).await;
+        }
+
+        result
     }
 
     pub fn get_bool(&self, key: Setting) -> Option<bool> {

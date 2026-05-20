@@ -3559,9 +3559,9 @@ pub async fn execute(
                     use crate::database::settings::Setting;
                     let key = Setting::try_from(request.key.as_str())
                         .map_err(|e| sacp::util::internal_error(format!("{e}")))?;
-                    // Perform an atomic read-modify-write directly on the global
-                    // settings file with fd_lock, independent of the in-memory
-                    // Settings snapshot (which is a clone and may be stale).
+                    // Perform a read-modify-write directly on the global settings
+                    // file (write is atomic via temp+rename), independent of the
+                    // in-memory Settings snapshot (which is a clone and may be stale).
                     crate::database::settings::Settings::update_global_setting(key, request.value)
                         .await
                         .map_err(|e| sacp::util::internal_error(format!("{e}")))?;

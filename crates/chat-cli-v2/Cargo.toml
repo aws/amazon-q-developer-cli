@@ -60,7 +60,6 @@ ctrlc.workspace = true
 dialoguer.workspace = true
 dirs.workspace = true
 eyre.workspace = true
-fd-lock.workspace = true
 futures.workspace = true
 glob.workspace = true
 globset.workspace = true
