@@ -24,13 +24,13 @@
   },
   "execute_bash": {
     "name": "execute_bash",
-    "description": "Execute the specified bash command.",
+    "description": "Execute the specified shell command.\n\nIMPORTANT: Always check the 'operating_system' field in the user's environment context before generating commands.\n\nOS-specific guidance:\n- Windows: Use PowerShell syntax (Get-ChildItem instead of ls, Get-Content instead of cat, New-Item instead of touch, Remove-Item instead of rm, Copy-Item instead of cp, Move-Item instead of mv). Use backslashes for paths or forward slashes. Use $env:VAR for environment variables.\n- Linux/macOS: Use bash/POSIX syntax (ls, cat, touch, rm, cp, mv). Use forward slashes for paths. Use $VAR for environment variables.\n- WSL: The environment is Linux but may interact with Windows paths via /mnt/c/.\n\nNever assume Linux commands will work on Windows or vice versa. When the OS is unclear, ask the user to confirm.",
     "input_schema": {
       "type": "object",
       "properties": {
         "command": {
           "type": "string",
-          "description": "Bash command to execute"
+          "description": "Shell command to execute. Must use syntax appropriate for the user's operating system."
         },
         "summary": {
           "type": "string",

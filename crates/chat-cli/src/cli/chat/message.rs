@@ -15,6 +15,11 @@ use tracing::{
     warn,
 };
 
+use crate::util::system_info::{
+    in_wsl,
+    os_version,
+};
+
 use super::consts::{
     MAX_CURRENT_WORKING_DIRECTORY_LEN,
     MAX_USER_MESSAGE_SIZE,
@@ -540,8 +545,21 @@ impl From<ToolUse> for AssistantToolUse {
 }
 
 pub fn build_env_state() -> EnvState {
+    // Build a detailed OS description using system_info
+    let os_description = match os_version() {
+        Some(version) => {
+            let base = version.to_string();
+            if in_wsl() {
+                format!("{} (WSL - Windows Subsystem for Linux)", base)
+            } else {
+                base
+            }
+        },
+        None => env::consts::OS.into(),
+    };
+
     let mut env_state = EnvState {
-        operating_system: Some(env::consts::OS.into()),
+        operating_system: Some(os_description),
         ..Default::default()
     };
 
