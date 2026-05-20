@@ -40,10 +40,7 @@ use chrono::{
     Duration,
     Utc,
 };
-use tracing::{
-    info,
-    warn,
-};
+use tracing::warn;
 
 use crate::engine::coordinator::{
     Coordinator,

@@ -6,16 +6,30 @@
       "command": "kiro-knowledge-mcp",
       "args": [],
       "env": {}
+    },
+    "kiro-github-read": {
+      "command": "kiro-github-mcp",
+      "args": ["--scope", "read"],
+      "env": {}
+    },
+    "kiro-github-write": {
+      "command": "kiro-github-mcp",
+      "args": ["--scope", "write"],
+      "env": {}
     }
   },
   "tools": [
     "introspect",
     "fs_read",
     "kiro_cli_help",
-    "@kiro-knowledge/search_kiro_knowledge"
+    "@kiro-knowledge/search_kiro_knowledge",
+    "@kiro-github-read/search_github_issues",
+    "@kiro-github-write/create_github_issue",
+    "@kiro-github-write/comment_on_existing"
   ],
   "allowedTools": [
     "@kiro-knowledge/search_kiro_knowledge",
+    "@kiro-github-read/search_github_issues",
     "introspect",
     "kiro_cli_help"
   ],

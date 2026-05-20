@@ -2691,6 +2691,47 @@ mod tests {
         assert!(active.allowed_tools.contains("fs_write"), "fs_write should remain");
     }
 
+    /// Phase 6 Task 2 + reaction-approval: write-capable GitHub tools must
+    /// be exposed to the agent (so the LLM knows they exist) but kept OUT of
+    /// the allowedTools list so every invocation routes through the bot's
+    /// reaction-approval gate. Read-only tools (search_*, introspect,
+    /// kiro_cli_help) auto-approve.
+    #[test]
+    fn kiro_help_bot_agent_gates_writes_via_approval_flow() {
+        let agent: Agent = serde_json::from_str(include_str!("../../agents/kiro-help.json"))
+            .expect("Invalid agents/kiro-help.json");
+
+        // The two write tools the bot currently exposes (Phase 6 Task 2b).
+        let write_tools = [
+            "@kiro-github-write/create_github_issue",
+            "@kiro-github-write/comment_on_existing",
+        ];
+        for w in write_tools {
+            assert!(
+                agent.tools.iter().any(|t| t == w),
+                "agent must list {w} so the LLM can pick it"
+            );
+            assert!(
+                !agent.allowed_tools.contains(w),
+                "{w} must NOT be auto-approved — every invocation has to pass through the Slack reaction gate"
+            );
+        }
+
+        // Counterpart: read tools SHOULD be auto-approved.
+        let auto_approve = [
+            "@kiro-knowledge/search_kiro_knowledge",
+            "@kiro-github-read/search_github_issues",
+            "introspect",
+            "kiro_cli_help",
+        ];
+        for r in auto_approve {
+            assert!(
+                agent.allowed_tools.contains(r),
+                "{r} must be in allowedTools so users don't see a 🔐 prompt for every search"
+            );
+        }
+    }
+
     /// Phase 6 Task 1: a separate `kiro-help` (note: hyphen) agent ships
     /// alongside the in-CLI `kiro_help` (underscore) built-in, because the
     /// terminal-mode and Slack-mode prompts and tool sets diverge.
