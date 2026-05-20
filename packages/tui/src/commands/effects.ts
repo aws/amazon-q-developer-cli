@@ -11,10 +11,11 @@
 import type { CommandContext } from './types.js';
 import type { CommandResult, TuiCommand } from '../types/commands.js';
 import { logger } from '../utils/logger.js';
+import { type AgentStreamEvent } from '../types/agent-events.js';
 import {
-  AgentEventType,
-  type AgentStreamEvent,
-} from '../types/agent-events.js';
+  truncateToRecentTurns,
+  MAX_DISPLAY_TURNS,
+} from '../utils/truncate-history.js';
 import type {
   HookInfo,
   KnowledgeEntry,
@@ -54,33 +55,6 @@ export type EffectHandler = (
 
 /** Extract command name from TuiCommand union type */
 type CommandName = TuiCommand['command'] | 'spawn' | 'spec';
-
-/**
- * Keep only the last `maxTurns` user turns from a buffered event stream.
- * A "turn" starts at each UserMessage event and includes all subsequent
- * events until the next UserMessage.  Returns the truncated slice and
- * how many turns were dropped.
- */
-function truncateToRecentTurns(
-  events: AgentStreamEvent[],
-  maxTurns: number
-): { events: AgentStreamEvent[]; omittedTurns: number } {
-  // Find indices where each user turn starts
-  const turnStarts: number[] = [];
-  for (let i = 0; i < events.length; i++) {
-    if (events[i]!.type === AgentEventType.UserMessage) {
-      turnStarts.push(i);
-    }
-  }
-  if (turnStarts.length <= maxTurns) {
-    return { events, omittedTurns: 0 };
-  }
-  const keepFrom = turnStarts[turnStarts.length - maxTurns]!;
-  return {
-    events: events.slice(keepFrom),
-    omittedTurns: turnStarts.length - maxTurns,
-  };
-}
 
 /** Effect names - semantic actions the TUI can perform */
 type EffectName =
@@ -606,7 +580,6 @@ const effectHandlers: Record<EffectName, EffectHandler> = {
         ctx.addSystemMessage(`Loaded session ${sessionId}`, true);
         // Replay buffered history into the message store, capped to recent turns
         if (buffered.length > 0) {
-          const MAX_DISPLAY_TURNS = 10;
           const { events, omittedTurns } = truncateToRecentTurns(
             buffered,
             MAX_DISPLAY_TURNS

@@ -22,6 +22,7 @@ import { parseCliArgs, buildAcpArgs } from './utils/cli-args';
 import { sessionConversationsStore } from './stores/session-conversations.js';
 import { pickSessionFromEntries } from './utils/session-picker';
 import type { AgentStreamEvent } from './types/agent-events';
+import { truncateToRecentTurns } from './utils/truncate-history';
 import { readBoolSetting } from './utils/cli-settings';
 import { Settings } from './constants/settings';
 import { GlyphsProvider } from './hooks/useGlyphs';
@@ -515,8 +516,20 @@ const startInitialization = (resumePickerSessionId?: string) => {
               pendingHistoryEvents.length,
               'history events'
             );
+            // Truncate to recent turns to prevent rendering thousands of lines
+            // which causes ~200ms/frame and makes typing unresponsive.
+            // Same cap as /chat load uses.
+            const { events, omittedTurns } =
+              truncateToRecentTurns(pendingHistoryEvents);
+            if (omittedTurns > 0) {
+              logger.debug(
+                '[index] omitted',
+                omittedTurns,
+                'older turns from history replay'
+              );
+            }
             const handler = appStore.getState().createStreamEventHandler();
-            for (const event of pendingHistoryEvents) {
+            for (const event of events) {
               handler(event);
             }
             (handler as any).flush?.();
