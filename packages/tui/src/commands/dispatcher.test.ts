@@ -111,7 +111,7 @@ describe('dispatch', () => {
       expect(ctx._spies.showAlert!.mock.calls[0]?.[0]).toBe(
         "Added 'foo.txt' to context"
       );
-      expect(ctx._spies.showAlert!.mock.calls[0]?.[1]).toBe('success');
+      expect(ctx._spies.showAlert!.mock.calls[0]?.[1]).toBe('warning');
     });
 
     it('shows error alert for /context remove with missing path', async () => {
@@ -129,7 +129,7 @@ describe('dispatch', () => {
       await dispatch(cmd, 'remove nonexistent.txt', ctx);
 
       expect(ctx._spies.showAlert!).toHaveBeenCalled();
-      expect(ctx._spies.showAlert!.mock.calls[0]?.[1]).toBe('error');
+      expect(ctx._spies.showAlert!.mock.calls[0]?.[1]).toBe('warning');
     });
 
     it('passes initialExpanded through for /context show', async () => {

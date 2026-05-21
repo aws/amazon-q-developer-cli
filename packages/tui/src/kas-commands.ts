@@ -19,6 +19,7 @@ export enum KasCommandName {
   Spec = '/spec',
   Knowledge = '/knowledge',
   Compact = '/compact',
+  Context = '/context',
 }
 
 const KAS_COMMAND_NAME_VALUES: ReadonlySet<string> = new Set(
@@ -129,5 +130,15 @@ export const KAS_COMMANDS: readonly KasCommand[] = [
   {
     name: KasCommandName.Compact,
     description: 'Compact conversation history to reduce context usage',
+  },
+  {
+    name: KasCommandName.Context,
+    description: 'Show or manage context files',
+    meta: {
+      inputType: 'panel',
+      hint: 'add <path>, remove <path>, clear',
+      subcommands: ['show', 'add', 'remove', 'clear'],
+      subcommandHints: { add: '[--force] <path>...', remove: '<path>...' },
+    },
   },
 ];

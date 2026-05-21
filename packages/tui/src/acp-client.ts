@@ -376,6 +376,7 @@ abstract class BaseAcpClient implements SessionClient {
     (subagents: any[], pendingStages?: any[]) => void
   > = new Set();
   protected promptsCache: PromptCacheEntry[] = [];
+  protected cachedBreakdown: unknown = null;
 
   constructor(agentProcess: AgentProcess) {
     this.agentProcess = agentProcess;
@@ -895,6 +896,9 @@ abstract class BaseAcpClient implements SessionClient {
                   status: string;
                   summary?: { conversationSummary?: string };
                 };
+                contextUsage?: { usagePercentage?: number };
+                usagePercentage?: number;
+                breakdown?: unknown;
               };
             };
           }
@@ -919,6 +923,19 @@ abstract class BaseAcpClient implements SessionClient {
             type: AgentEventType.CompactionStatus,
             status: 'failed' as const,
           };
+        }
+        if (meta?.kind === 'context_usage' || meta?.contextUsage) {
+          const percent =
+            meta?.usagePercentage ?? meta?.contextUsage?.usagePercentage;
+          if (typeof percent === 'number') {
+            this.broadcastStreamEvent({
+              type: AgentEventType.ContextUsage,
+              percent,
+            });
+          }
+          if (meta?.breakdown) {
+            this.cachedBreakdown = meta.breakdown;
+          }
         }
         logger.debug(
           'KAS session update (not yet mapped):',
@@ -1767,6 +1784,19 @@ export class KasAcpClient extends BaseAcpClient {
           }
         });
         return { success: true, message: 'Compacting conversation...' };
+      }
+      case 'context': {
+        if (this.cachedBreakdown) {
+          return {
+            success: true,
+            message: '',
+            data: { breakdown: this.cachedBreakdown, initialExpanded: true },
+          };
+        }
+        return {
+          success: true,
+          message: 'Context breakdown not yet available. Try again shortly.',
+        };
       }
       default:
         return {

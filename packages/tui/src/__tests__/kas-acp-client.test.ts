@@ -1293,6 +1293,41 @@ describe('KasAcpClient', () => {
     });
   });
 
+  // ── /context command ──
+
+  describe('context command', () => {
+    it('returns cached breakdown when available', async () => {
+      const client = new KasAcpClient();
+      await client.initialize();
+      await client.newSession();
+      // Simulate receiving a push notification with breakdown
+      (client as any).cachedBreakdown = {
+        contextFiles: { tokens: 100, percent: 5 },
+      };
+
+      const result = await client.executeCommand({
+        command: 'context',
+      } as any);
+
+      expect(result.success).toBe(true);
+      expect((result.data as any).breakdown).toBeDefined();
+      expect((result.data as any).initialExpanded).toBe(true);
+    });
+
+    it('returns loading message when no breakdown is cached yet', async () => {
+      const client = new KasAcpClient();
+      await client.initialize();
+      await client.newSession();
+
+      const result = await client.executeCommand({
+        command: 'context',
+      } as any);
+
+      expect(result.success).toBe(true);
+      expect(result.message).toContain('not yet available');
+    });
+  });
+
   // ── /prompts command ──
 
   it('executeCommand("prompts") with no args returns success message', async () => {

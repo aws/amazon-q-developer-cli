@@ -218,6 +218,9 @@ const effectHandlers: Record<EffectName, EffectHandler> = {
         ...data.breakdown,
         initialExpanded: data.initialExpanded,
       });
+    } else if (result?.message) {
+      ctx.showAlert(result.message, 'warning', 3000);
+      return true;
     }
     // Otherwise it's an add/remove/clear result - alert is shown by dispatcher step 4
   },
