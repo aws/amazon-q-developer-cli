@@ -194,30 +194,27 @@ async fn rewind_to(ctx: &CommandContext<'_>, selected_prompt_index: usize) -> Re
         // isn't conflated with the original on the model's side.
         v1.rts_model_state.conversation_id = new_id.clone();
 
-        // Filter user_turn_metadatas to keep only those for prompts we're carrying over.
+        // Trim user_turn_metadatas to match the number of kept prompts.
         //
-        // `LogEntry::Prompt.message_id` is the same UUID space as
-        // `Message.id` (set by `LogEntry::apply` in event_log.rs), which in turn
-        // becomes `UserTurnMetadata.message_ids[0]` (the user-prompt id pushed by
-        // the agent loop's stream-state machinery). So we can match metadatas
-        // back to prompts by ID rather than relying on ordinal alignment.
-        //
-        // A metadata entry is kept iff its first message_id matches the id of
-        // a prompt we're carrying over.
-        let kept_prompt_ids: std::collections::HashSet<&str> = entries[..=turn_end_inclusive]
+        // Metadatas are appended positionally as turns complete — the Nth metadata
+        // corresponds to the Nth completed user turn. The two lists (prompts in the
+        // log vs metadatas in session state) are tail-aligned: the last K prompts
+        // match the last K metadatas where K = min(prompts, metadatas).
+        // After truncating the prompt list, drop the same count from the tail.
+        let total_prompts = entries
             .iter()
-            .filter_map(|e| match e {
-                LogEntry::V1(LogEntryV1::Prompt { message_id, .. }) => Some(message_id.as_str()),
-                LogEntry::V1(_) => None,
-            })
-            .collect();
-
-        v1.conversation_metadata.user_turn_metadatas.retain(|m| {
-            m.message_ids
-                .first()
-                .and_then(|opt| opt.as_deref())
-                .is_some_and(|id| kept_prompt_ids.contains(id))
-        });
+            .filter(|e| matches!(e, LogEntry::V1(LogEntryV1::Prompt { .. })))
+            .count();
+        let kept_prompts = entries[..=turn_end_inclusive]
+            .iter()
+            .filter(|e| matches!(e, LogEntry::V1(LogEntryV1::Prompt { .. })))
+            .count();
+        let new_meta_len = compute_trimmed_meta_len(
+            total_prompts,
+            kept_prompts,
+            v1.conversation_metadata.user_turn_metadatas.len(),
+        );
+        v1.conversation_metadata.user_turn_metadatas.truncate(new_meta_len);
     }
 
     let new_db = SessionDb::new(
@@ -289,14 +286,13 @@ fn collect_turns(ctx: &CommandContext<'_>) -> Result<Vec<TurnSummary>, String> {
 
     let mut summaries = Vec::with_capacity(prompts.len());
 
-    // Prompt.message_id (fresh UUID per log entry) and UserTurnMetadata.message_ids
-    // (stream-layer ids) live in different ID spaces, so they can't be matched directly.
-    //
-    // In practice, the Nth-most-recent `Prompt` corresponds to the Nth-most-recent
-    // `UserTurnMetadata`. We tail-align the two lists: the last K prompts match the
-    // last K metadatas where K = min(prompts.len(), user_turn_metadatas.len()).
-    // Older prompts that fall off the front (e.g. pre-history lost to compaction) just
-    // don't get metadata — which is fine, they render without a context %.
+    // Metadatas are appended positionally as turns complete. The two lists
+    // (prompts in the log vs metadatas in session state) are tail-aligned:
+    // the last K prompts match the last K metadatas where
+    // K = min(prompts.len(), user_turn_metadatas.len()).
+    // Older prompts that fall off the front (e.g. pre-history lost to
+    // compaction or cancelled turns without metadata) just don't get
+    // metadata — they render without a context %.
     let prompt_count = prompts.len();
     let meta_count = user_turn_metadatas.len();
     let meta_offset = prompt_count.saturating_sub(meta_count);
@@ -391,6 +387,13 @@ fn assistant_response_snippet(entries_after_prompt: &[LogEntry]) -> String {
     lines.join("\n")
 }
 
+/// Compute how many metadatas to keep after dropping `total_prompts - kept_prompts`
+/// turns from the tail. Pure arithmetic extracted for testability.
+fn compute_trimmed_meta_len(total_prompts: usize, kept_prompts: usize, meta_len: usize) -> usize {
+    let dropped_prompts = total_prompts.saturating_sub(kept_prompts);
+    meta_len.saturating_sub(dropped_prompts)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -438,5 +441,40 @@ mod tests {
     #[test]
     fn test_prompt_preview_no_text_block() {
         assert_eq!(prompt_preview(&[]), None);
+    }
+
+    // --- Metadata trimming arithmetic ---
+
+    #[test]
+    fn test_trim_meta_equal_prompts_and_metas() {
+        // 5 prompts, 5 metas, keep first 3 → drop 2 → keep 3 metas
+        assert_eq!(compute_trimmed_meta_len(5, 3, 5), 3);
+    }
+
+    #[test]
+    fn test_trim_meta_more_prompts_than_metas() {
+        // 5 prompts but only 3 metas (2 early prompts had no metadata).
+        // Keep first 2 prompts → drop 3 → 3.saturating_sub(3) = 0 metas kept.
+        assert_eq!(compute_trimmed_meta_len(5, 2, 3), 0);
+        // Keep first 4 → drop 1 → 3 - 1 = 2 metas kept.
+        assert_eq!(compute_trimmed_meta_len(5, 4, 3), 2);
+    }
+
+    #[test]
+    fn test_trim_meta_rewind_to_first_prompt() {
+        // 3 prompts, 3 metas, keep only the first → drop 2 → keep 1
+        assert_eq!(compute_trimmed_meta_len(3, 1, 3), 1);
+    }
+
+    #[test]
+    fn test_trim_meta_rewind_to_last_prompt() {
+        // 3 prompts, 3 metas, keep all → drop 0 → keep 3
+        assert_eq!(compute_trimmed_meta_len(3, 3, 3), 3);
+    }
+
+    #[test]
+    fn test_trim_meta_no_metas_at_all() {
+        // Edge case: session has prompts but no metadatas (e.g. loaded from v1 export)
+        assert_eq!(compute_trimmed_meta_len(3, 2, 0), 0);
     }
 }
