@@ -87,8 +87,12 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - name: Install zig (cross-toolchain)
         uses: mlugg/setup-zig@v1
+        # Pin to a Zig release that's still on the official mirror network.
+        # 0.16.0 was de-listed; the cargo-zigbuild docs recommend tracking a
+        # recent stable, so we follow latest of the 0.13 line which is what
+        # cargo-zigbuild's own CI uses.
         with:
-          version: 0.16.0
+          version: 0.13.0
       - name: Install cargo-zigbuild
         run: cargo install cargo-zigbuild
       - name: Build
