@@ -45,7 +45,12 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          # Honor the workspace's rust-toolchain.toml so the build runs on
+          # the same compiler everyone else uses (1.92.0 at time of writing).
+          # Without `with: toolchain:` set, this action reads the file.
+          toolchain: 1.92.0
       - uses: Swatinem/rust-cache@v2
       - run: |
           cargo test \
@@ -60,7 +65,12 @@ jobs:
     needs: test
     steps:
       - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          # Honor the workspace's rust-toolchain.toml so the build runs on
+          # the same compiler everyone else uses (1.92.0 at time of writing).
+          # Without `with: toolchain:` set, this action reads the file.
+          toolchain: 1.92.0
       - uses: Swatinem/rust-cache@v2
       - uses: aws-actions/configure-aws-credentials@v4
         with:
@@ -81,8 +91,9 @@ jobs:
     needs: eval
     steps:
       - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: dtolnay/rust-toolchain@master
         with:
+          toolchain: 1.92.0
           targets: ${{ env.TARGET }}
       - uses: Swatinem/rust-cache@v2
       - name: Install zig (cross-toolchain)
