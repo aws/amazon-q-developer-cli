@@ -298,7 +298,10 @@ const wireUpHandlers = () => {
   // ── End KAS-only wiring ──
 };
 
-const startInitialization = (resumePickerSessionId?: string) => {
+const startInitialization = (
+  resumePickerSessionId?: string,
+  pickerWasShown = false
+) => {
   if (initPromise) return initPromise;
 
   wireUpHandlers();
@@ -475,13 +478,20 @@ const startInitialization = (resumePickerSessionId?: string) => {
       }
 
       // Resolve resume session ID via ACP (merged V1+V2 list from backend).
-      // --resume-picker is resolved before Twinki starts (pre-passed as resumePickerSessionId)
-      // because the interactive picker can't coexist with Twinki's terminal input.
+      // --resume-picker and --resume (interactive) are resolved before Twinki starts
+      // (pre-passed as resumePickerSessionId) because the interactive picker can't
+      // coexist with Twinki's terminal input.
       let resolvedSessionId: string | undefined = resumePickerSessionId;
       if (!resolvedSessionId && cliArgs.resumeId) {
         resolvedSessionId = cliArgs.resumeId;
       }
-      if (!resolvedSessionId && cliArgs.resume) {
+      if (
+        !resolvedSessionId &&
+        (cliArgs.continueSession ||
+          (cliArgs.resume !== undefined && !pickerWasShown))
+      ) {
+        // --continue always picks most recent; --resume falls here only in
+        // non-interactive mode (interactive --resume is handled by the pre-Twinki picker).
         const { sessions } = await kiro.listSessions(process.cwd());
         if (sessions.length > 0) {
           resolvedSessionId = sessions[0]!.sessionId;
@@ -559,20 +569,28 @@ const startInitialization = (resumePickerSessionId?: string) => {
 
 // We wrap the entire startup in an async IIFE.
 const startApp = async () => {
-  // Handle --resume-picker before Twinki renders: the interactive picker needs
-  // raw terminal access that can't coexist with Twinki's input handling.
-  // We start the ACP backend, list sessions, run the picker, then pass the
-  // resolved ID into startInitialization.
+  // Handle --resume-picker (or --resume without ID in interactive mode) before Twinki renders:
+  // the interactive picker needs raw terminal access that can't coexist with
+  // Twinki's input handling. We start the ACP backend, list sessions, run the
+  // picker, then pass the resolved ID into startInitialization.
   let resumePickerSessionId: string | undefined;
-  if (cliArgs.resumePicker) {
+  const resumeHasId = cliArgs.resume !== undefined && cliArgs.resume !== '';
+  const isInteractive = !cliArgs.noInteractive && process.stdin.isTTY;
+  if (resumeHasId) {
+    // --resume <ID>: resume specific session directly
+    resumePickerSessionId = cliArgs.resume;
+  } else if (
+    cliArgs.resumePicker ||
+    (cliArgs.resume !== undefined && isInteractive)
+  ) {
     wireUpHandlers();
     await kiro.initialize(agentPath, acpArgs);
     const { sessions } = await kiro.listSessions(process.cwd());
     if (sessions.length > 0) {
+      // Returns undefined if user pressed Esc; we fall through to a new
+      // session (matching the V1 Rust picker). Ctrl+C exits the process
+      // from inside the picker.
       resumePickerSessionId = await pickSessionFromEntries(sessions);
-      if (!resumePickerSessionId) {
-        process.stderr.write('No session selected. Starting new session.\n');
-      }
     } else {
       process.stderr.write(
         'No saved sessions found for this directory. Starting new session.\n'
@@ -581,8 +599,11 @@ const startApp = async () => {
   }
 
   // Start initialization (non-blocking for the UI).
-  // --resume is resolved inside startInitialization via session/list.
-  startInitialization(resumePickerSessionId);
+  // --continue and --resume (non-interactive, no ID) are resolved inside startInitialization via session/list.
+  const pickerWasShown =
+    !resumeHasId &&
+    (cliArgs.resumePicker || (cliArgs.resume !== undefined && isInteractive));
+  startInitialization(resumePickerSessionId, pickerWasShown);
 
   // Handle non-interactive mode: bail early if no input provided
   if (cliArgs.noInteractive && !cliArgs.input) {
@@ -746,7 +767,7 @@ const startApp = async () => {
         if (sessionId) {
           writeSync(
             1,
-            `\x1b[2m\nSession ended.\nResume with: kiro-cli chat --resume-id ${sessionId}\n\x1b[0m`
+            `\x1b[2m\nSession ended.\nResume with: kiro-cli --resume ${sessionId}\n\x1b[0m`
           );
         }
       }

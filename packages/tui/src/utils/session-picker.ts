@@ -11,7 +11,10 @@ import type { SessionInfoEntry } from '../types/session-client.js';
 
 /**
  * Show an interactive session picker and return the selected session ID.
- * Returns undefined if no sessions exist or user cancels (Ctrl+C / Escape).
+ *
+ * Returns undefined if no sessions exist or the user dismisses the picker
+ * with Escape — in which case the caller should fall through to start a new
+ * session. Ctrl+C exits the process via the normal SIGINT path.
  */
 export async function pickSession(cwd: string): Promise<string | undefined> {
   const sessions = listSessionsForCwd(cwd);
@@ -72,7 +75,19 @@ export async function pickSession(cwd: string): Promise<string | undefined> {
     const onData = (data: Buffer) => {
       const key = data.toString();
 
-      if (key === '\x03' || key === '\x1b') {
+      if (key === '\x03') {
+        // Ctrl+C: raw mode swallows SIGINT, so re-raise it. This routes through
+        // the SIGINT handler in index.tsx which runs kiro.close() to terminate
+        // the agent process before exiting. Mirrors what the V1 Rust picker
+        // (dialoguer/console) does via libc::raise(SIGINT).
+        cleanup();
+        process.kill(process.pid, 'SIGINT');
+        return;
+      }
+
+      if (key === '\x1b') {
+        // Escape: dismiss picker; caller falls through to a new session
+        // (matches the V1 Rust picker behavior).
         cleanup();
         resolve(undefined);
         return;
@@ -107,7 +122,10 @@ export async function pickSession(cwd: string): Promise<string | undefined> {
 
 /**
  * Show an interactive session picker from ACP session/list entries.
- * Returns undefined if user cancels (Ctrl+C / Escape).
+ *
+ * Returns undefined if no sessions exist or the user dismisses the picker
+ * with Escape — caller should fall through to start a new session.
+ * Ctrl+C exits the process.
  */
 export async function pickSessionFromEntries(
   entries: SessionInfoEntry[]
@@ -165,7 +183,14 @@ export async function pickSessionFromEntries(
 
     const onData = (data: Buffer) => {
       const key = data.toString();
-      if (key === '\x03' || key === '\x1b') {
+      if (key === '\x03') {
+        // Re-raise SIGINT so the index.tsx handler can run kiro.close() before
+        // the process dies. See pickSession() above for the full rationale.
+        cleanup();
+        process.kill(process.pid, 'SIGINT');
+        return;
+      }
+      if (key === '\x1b') {
         cleanup();
         resolve(undefined);
         return;

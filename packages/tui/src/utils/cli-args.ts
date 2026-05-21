@@ -24,12 +24,14 @@ export interface CliArgs extends AcpSpawnArgs {
   noInteractive: boolean;
   /** The first question to ask (positional arg). TUI-only. */
   input?: string;
-  /** Resume the most recent conversation from this directory (--resume / -r). TUI-only. */
-  resume: boolean;
+  /** Resume a conversation. Empty string = show picker; non-empty = resume specific ID (--resume [ID]). TUI-only. */
+  resume?: string;
   /** Resume a specific conversation by session ID (--resume-id <id>). TUI-only. */
   resumeId?: string;
   /** Interactively select a conversation to resume (--resume-picker). TUI-only. */
   resumePicker: boolean;
+  /** Resume the most recent conversation without showing the picker (--continue). TUI-only. */
+  continueSession: boolean;
 }
 
 // ── Flag definitions ────────────────────────────────────────────────────
@@ -48,6 +50,7 @@ type StringListKeys = {
 
 type FlagDef =
   | { type: 'string'; key: StringKeys; flags: string[]; acp?: string }
+  | { type: 'optional-string'; key: StringKeys; flags: string[]; acp?: string }
   | { type: 'boolean'; key: BooleanKeys; flags: string[]; acp?: string }
   | { type: 'string-list'; key: StringListKeys; flags: string[]; acp?: string }
   | { type: 'skip'; flags: string[]; hasValue?: boolean };
@@ -78,8 +81,9 @@ const FLAG_DEFS: FlagDef[] = [
     key: 'noInteractive',
     flags: ['--no-interactive', '--non-interactive'],
   },
-  { type: 'boolean', key: 'resume', flags: ['--resume', '-r'] },
+  { type: 'optional-string', key: 'resume', flags: ['--resume', '-r'] },
   { type: 'boolean', key: 'resumePicker', flags: ['--resume-picker'] },
+  { type: 'boolean', key: 'continueSession', flags: ['--continue'] },
   // consumed by Rust ChatArgs before TUI is launched — skip without error
   { type: 'skip', flags: ['--tui'] },
   {
@@ -99,6 +103,30 @@ for (const def of FLAG_DEFS) {
 }
 
 /**
+ * Resolve the value for an `optional-string` flag.
+ *
+ * `--flag=value`            → value
+ * `--flag value`            → value, advance one position
+ * `--flag` (end / next is a flag) → empty string, no advance
+ *
+ * Returns the resolved value and how many extra positions to advance.
+ */
+function readOptionalStringValue(
+  eqValue: string | undefined,
+  args: string[],
+  i: number
+): { value: string; consumed: number } {
+  if (eqValue !== undefined) {
+    return { value: eqValue, consumed: 0 };
+  }
+  const next = args[i + 1];
+  if (next && !next.startsWith('-')) {
+    return { value: next, consumed: 1 };
+  }
+  return { value: '', consumed: 0 };
+}
+
+/**
  * Parse CLI arguments from process.argv.
  *
  * Supports both `--key value` and `--key=value` syntax for all flags.
@@ -108,8 +136,8 @@ export function parseCliArgs(): CliArgs {
   const result: CliArgs = {
     trustAllTools: false,
     noInteractive: false,
-    resume: false,
     resumePicker: false,
+    continueSession: false,
   };
 
   // Skip past "chat" subcommand if present
@@ -131,6 +159,10 @@ export function parseCliArgs(): CliArgs {
     if (def) {
       if (def.type === 'string') {
         (result as any)[def.key] = eqValue ?? args[++i];
+      } else if (def.type === 'optional-string') {
+        const { value, consumed } = readOptionalStringValue(eqValue, args, i);
+        (result as any)[def.key] = value;
+        i += consumed;
       } else if (def.type === 'string-list') {
         const csv = eqValue ?? args[++i] ?? '';
         (result as any)[def.key] = csv.split(',');

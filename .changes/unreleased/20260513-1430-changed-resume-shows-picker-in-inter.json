@@ -1,0 +1,4 @@
+{
+  "type": "changed",
+  "description": "--resume/-r now shows the session picker in interactive mode. Use --continue to resume the most recent session without a picker."
+}
