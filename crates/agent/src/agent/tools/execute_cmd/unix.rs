@@ -1183,7 +1183,7 @@ mod tests {
         let (tx, rx) = broadcast::channel::<AgentEvent>(64);
 
         let cmd = ExecuteCmd {
-            command: "sleep 0.05; exec 2>&-; echo line_a; echo line_b; echo line_c".to_string(),
+            command: "sleep 0.2; exec 2>&-; echo line_a; echo line_b; echo line_c".to_string(),
             working_dir: None,
         };
 
@@ -1215,7 +1215,7 @@ mod tests {
         let (tx, rx) = broadcast::channel::<AgentEvent>(64);
 
         let cmd = ExecuteCmd {
-            command: "sleep 0.05; exec 1>&-; echo err_x >&2; echo err_y >&2; echo err_z >&2".to_string(),
+            command: "sleep 0.2; exec 1>&-; echo err_x >&2; echo err_y >&2; echo err_z >&2".to_string(),
             working_dir: None,
         };
 
@@ -1247,7 +1247,7 @@ mod tests {
         let cmd = ExecuteCmd {
             // Use a subshell: stdout writes one line then closes its fd,
             // while stderr continues writing.
-            command: "sleep 0.05; echo early_out; exec 1>&-; echo late_err_1 >&2; echo late_err_2 >&2".to_string(),
+            command: "sleep 0.2; echo early_out; exec 1>&-; echo late_err_1 >&2; echo late_err_2 >&2".to_string(),
             working_dir: None,
         };
 
@@ -1271,7 +1271,7 @@ mod tests {
         let (tx, _rx) = broadcast::channel::<AgentEvent>(64);
 
         let cmd = ExecuteCmd {
-            command: "sleep 0.05; echo early_err >&2; exec 2>&-; echo late_out_1; echo late_out_2".to_string(),
+            command: "sleep 0.2; echo early_err >&2; exec 2>&-; echo late_out_1; echo late_out_2".to_string(),
             working_dir: None,
         };
 
@@ -1297,7 +1297,7 @@ mod tests {
 
         // Close stderr, write to stdout.
         let cmd = ExecuteCmd {
-            command: "sleep 0.05; exec 2>&-; echo ok".to_string(),
+            command: "sleep 0.2; exec 2>&-; echo ok".to_string(),
             working_dir: None,
         };
 
@@ -1316,7 +1316,7 @@ mod tests {
         let (tx, _rx) = broadcast::channel::<AgentEvent>(64);
 
         let cmd = ExecuteCmd {
-            command: "sleep 0.05; exec 1>&- 2>&-".to_string(),
+            command: "sleep 0.2; exec 1>&- 2>&-".to_string(),
             working_dir: None,
         };
 
@@ -1344,7 +1344,7 @@ mod tests {
         let test_base = TestBase::new().await;
 
         let cmd = ExecuteCmd {
-            command: "sleep 0.05; exec 2>&-; echo fallback_ok".to_string(),
+            command: "sleep 0.2; exec 2>&-; echo fallback_ok".to_string(),
             working_dir: None,
         };
 
@@ -1439,8 +1439,9 @@ mod tests {
         let (tx, _rx) = broadcast::channel::<AgentEvent>(64);
 
         let cmd = ExecuteCmd {
-            command: r#"sleep 0.05; echo "verbose build output"; echo "Build OK. Log: /tmp/build.log" > "$AGENT_CONTEXT_OUT""#
-                .to_string(),
+            command:
+                r#"sleep 0.2; echo "verbose build output"; echo "Build OK. Log: /tmp/build.log" > "$AGENT_CONTEXT_OUT""#
+                    .to_string(),
             working_dir: None,
         };
 
@@ -1472,7 +1473,7 @@ mod tests {
         let (tx, rx) = broadcast::channel::<AgentEvent>(64);
 
         let cmd = ExecuteCmd {
-            command: r#"sleep 0.05; echo "summary for agent"; echo "verbose line 1" > "$AGENT_DISPLAY_OUT"; echo "verbose line 2" >> "$AGENT_DISPLAY_OUT""#
+            command: r#"sleep 0.2; echo "summary for agent"; echo "verbose line 1" > "$AGENT_DISPLAY_OUT"; echo "verbose line 2" >> "$AGENT_DISPLAY_OUT""#
                 .to_string(),
             working_dir: None,
         };
@@ -1517,7 +1518,7 @@ mod tests {
 
         let cmd = ExecuteCmd {
             command: concat!(
-                r#"sleep 0.05; "#,
+                r#"sleep 0.2; "#,
                 r#"echo "compiling..." > "$AGENT_DISPLAY_OUT"; "#,
                 r#"echo "linking..." >> "$AGENT_DISPLAY_OUT"; "#,
                 r#"echo "Build succeeded. Artifacts: /out" > "$AGENT_CONTEXT_OUT"; "#,
@@ -1587,7 +1588,7 @@ mod tests {
 
         let cmd = ExecuteCmd {
             command: concat!(
-                r#"sleep 0.05; "#,
+                r#"sleep 0.2; "#,
                 r#"printf "line1\nline2\nline3\n" > "$AGENT_CONTEXT_OUT"; "#,
                 r#"echo "ok""#,
             )
