@@ -1,0 +1,4 @@
+{
+  "type": "added",
+  "description": "Hooks v2 support with /hooks command to view configured hooks and live updates via agent notifications"
+}

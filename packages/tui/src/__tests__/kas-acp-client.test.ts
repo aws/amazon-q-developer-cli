@@ -143,6 +143,11 @@ const MockKiroClient = class {
     capturedPermissionHandler = handler;
     return { dispose: mockPermissionRequestDispose };
   });
+  onExtNotification = mock(
+    (_method: string, _handler: (params: Record<string, unknown>) => void) => {
+      return { dispose: () => {} };
+    }
+  );
   constructor(config: any) {
     capturedKiroClientConfig = config;
   }
@@ -233,6 +238,14 @@ describe('KasAcpClient', () => {
   it('declares knowledge capability in clientMeta', () => {
     const _client = new KasAcpClient();
     expect(capturedKiroClientConfig?.clientMeta?.knowledge).toBe(true);
+  });
+
+  it('declares hooks capability in clientMeta', () => {
+    const _client = new KasAcpClient();
+    expect(capturedKiroClientConfig?.clientMeta?.hooks).toEqual({
+      enabled: true,
+      v2: true,
+    });
   });
 
   it('close() calls kill("SIGTERM") on the agent process', () => {

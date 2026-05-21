@@ -1477,6 +1477,7 @@ async function runSpecFeature(
     const { sessionId } = await ctx.kiro.resolveSpecSession({
       featureName: feature.featureName,
       strategy: 'reuse',
+      workspacePaths: [process.cwd()],
     });
     await ctx.kiro.invokeSpec({
       operation: 'runAllTasks',

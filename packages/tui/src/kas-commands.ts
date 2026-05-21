@@ -21,6 +21,7 @@ export enum KasCommandName {
   Compact = '/compact',
   Context = '/context',
   Code = '/code',
+  Hooks = '/hooks',
 }
 
 const KAS_COMMAND_NAME_VALUES: ReadonlySet<string> = new Set(
@@ -150,5 +151,10 @@ export const KAS_COMMANDS: readonly KasCommand[] = [
       inputType: 'panel',
       subcommands: ['status', 'init', 'overview'],
     },
+  },
+  {
+    name: KasCommandName.Hooks,
+    description: 'View configured hooks',
+    meta: { inputType: 'panel' },
   },
 ];

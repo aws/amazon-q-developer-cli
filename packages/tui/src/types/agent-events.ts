@@ -30,6 +30,7 @@ export enum AgentEventType {
   McpGovernanceDisabled = 'mcp_governance_disabled',
   KasCommandsDiscovered = 'kas_commands_discovered',
   EffortUpdate = 'effort_update',
+  HooksUpdate = 'hooks_update',
 }
 
 export enum ContentType {
@@ -251,6 +252,16 @@ export interface EffortUpdateEvent {
   effort: string | null;
 }
 
+export interface HooksUpdateEvent {
+  type: AgentEventType.HooksUpdate;
+  hooks: Array<{
+    name?: string;
+    trigger: string;
+    command: string;
+    matcher?: string;
+  }>;
+}
+
 export interface MetadataEvent {
   type: AgentEventType.Metadata;
   totalTokens?: number;
@@ -380,4 +391,5 @@ export type AgentStreamEvent =
   | McpServerInitializedEvent
   | McpGovernanceDisabledEvent
   | KasCommandsDiscoveredEvent
-  | EffortUpdateEvent;
+  | EffortUpdateEvent
+  | HooksUpdateEvent;

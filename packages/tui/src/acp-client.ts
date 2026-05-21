@@ -33,6 +33,7 @@ import type {
   TuiCommand,
 } from './types/commands';
 import type { ListSessionsResponse } from './types/session-client';
+import type { HookInfo } from './stores/app-store';
 
 import packageJson from '../package.json';
 import { KAS_COMMANDS } from './kas-commands';
@@ -983,7 +984,11 @@ abstract class BaseAcpClient implements SessionClient {
             optionId: opt.optionId,
           })),
           trustOptions: (params._meta as any)?.trustOptions,
-          resolve: (userResponse) => {
+          resolve: (userResponse: {
+            outcome: string;
+            optionId?: string;
+            _meta?: unknown;
+          }) => {
             resolve(
               userResponse.outcome === 'selected'
                 ? {
@@ -1373,6 +1378,7 @@ export class KasAcpClient extends BaseAcpClient {
         telemetryEnabled: isTelemetryEnabled(),
         telemetry: getTelemetryIdentity(),
         knowledge: true,
+        hooks: { enabled: true, v2: true },
         ...(kasSettings && { settings: kasSettings }),
       },
     });
@@ -1422,6 +1428,10 @@ export class KasAcpClient extends BaseAcpClient {
   private modelOptions: ModelOption[] = [];
   /** ID of the currently selected model, or undefined if no model config. */
   private currentModelId?: string;
+  /** Cached hooks from the agent's registry, updated via _kiro/hooks/didChange. */
+  private cachedHooks: HookInfo[] = [];
+  /** Disposable for the hooks notification subscription. */
+  private hooksNotificationDisposable: { dispose: () => void } | null = null;
 
   private wireSessionListeners(sessionId: string): void {
     this.sessionDisposables.forEach((d) => d.dispose());
@@ -1516,6 +1526,22 @@ export class KasAcpClient extends BaseAcpClient {
   async initialize(): Promise<void> {
     await this.kiroClient.initialize();
 
+    // Subscribe to hooks registry changes. The agent pushes this
+    // notification whenever hooks are loaded, reloaded, or the file
+    // watcher detects a change. We cache the list and broadcast a
+    // HooksUpdate event so the TUI can refresh the panel if open.
+    this.hooksNotificationDisposable = this.kiroClient.onExtNotification(
+      '_kiro/hooks/didChange',
+      (params: Record<string, unknown>) => {
+        const rawHooks = Array.isArray(params.hooks) ? params.hooks : [];
+        this.cachedHooks = this.projectHooks(rawHooks);
+        this.broadcastStreamEvent({
+          type: AgentEventType.HooksUpdate,
+          hooks: this.cachedHooks,
+        });
+      }
+    );
+
     // Register ext notification handlers
 
     const commands = KAS_COMMANDS.map((cmd) => ({
@@ -1530,6 +1556,14 @@ export class KasAcpClient extends BaseAcpClient {
     });
 
     logger.debug('[acp-client] KAS ACP handshake done');
+  }
+
+  override close(): void {
+    this.hooksNotificationDisposable?.dispose();
+    this.hooksNotificationDisposable = null;
+    this.sessionDisposables.forEach((d) => d.dispose());
+    this.sessionDisposables = [];
+    super.close();
   }
 
   async newSession(): Promise<SessionResult> {
@@ -1764,6 +1798,8 @@ export class KasAcpClient extends BaseAcpClient {
         const value = args?.value ?? 'show';
         return this.executeKnowledge(value);
       }
+      case 'hooks':
+        return this.executeHooks();
       case 'compact': {
         const args = (command as Record<string, unknown>).args as
           | Record<string, string>
@@ -1919,6 +1955,120 @@ export class KasAcpClient extends BaseAcpClient {
         message: e instanceof Error ? e.message : 'Failed to switch model',
       };
     }
+  }
+
+  /**
+   * /hooks — lists configured hooks from the agent's registry.
+   *
+   * Uses the cached hook list (populated by _kiro/hooks/didChange
+   * notifications) when available. Otherwise calls the agent's
+   * _kiro/hooks/list extension method.
+   */
+  private async executeHooks(): Promise<CommandResult> {
+    // Use cached hooks if we have them (populated by didChange notification)
+    if (this.cachedHooks.length > 0) {
+      const message = `${this.cachedHooks.length} hook${this.cachedHooks.length === 1 ? '' : 's'} configured`;
+      return {
+        success: true,
+        message,
+        data: { hooks: this.cachedHooks, message },
+      };
+    }
+
+    // Fetch from agent
+    let result: CommandResult;
+    try {
+      result = await this.callExtMethod('_kiro/hooks/list', {
+        trigger: 'all',
+      });
+    } catch (e) {
+      logger.debug('[kas/hooks] failed to fetch hooks list:', e);
+      return {
+        success: false,
+        message: 'Unable to fetch hooks — agent may be unavailable',
+        data: { hooks: [], message: 'Unable to fetch hooks' },
+      };
+    }
+
+    if (result.success && result.data) {
+      const data = result.data as {
+        hooks?: Array<{
+          name?: string;
+          trigger?: string;
+          matcher?: string;
+          action?: { type?: string; command?: string; prompt?: string };
+        }>;
+      };
+
+      if (Array.isArray(data?.hooks)) {
+        const hooks = this.projectHooks(data.hooks);
+        this.cachedHooks = hooks;
+        return this.formatHooksResult(hooks);
+      }
+    }
+
+    if (!result.success) {
+      logger.debug('[kas/hooks] ext method returned failure:', result.message);
+      return {
+        success: false,
+        message: result.message || 'Unable to fetch hooks',
+        data: { hooks: [], message: 'Unable to fetch hooks' },
+      };
+    }
+
+    return {
+      success: true,
+      message: 'No hooks configured',
+      data: { hooks: [], message: 'No hooks configured' },
+    };
+  }
+
+  /** Project raw hook data from the agent into the HookInfo shape. */
+  private projectHooks(
+    rawHooks: Array<{
+      name?: string;
+      trigger?: string;
+      matcher?: string;
+      action?: { type?: string; command?: string; prompt?: string };
+      _meta?: {
+        trigger?: string;
+        matcher?: string;
+        source?: string;
+        filePath?: string;
+        enabled?: boolean;
+      };
+    }>
+  ): HookInfo[] {
+    return rawHooks.map((h) => {
+      const trigger = h._meta?.trigger ?? h.trigger ?? 'unknown';
+      const matcher = h._meta?.matcher ?? h.matcher;
+      const actionType = h.action?.type;
+      const command =
+        actionType === 'runCommand' || actionType === 'command'
+          ? (h.action?.command ?? '')
+          : actionType === 'askAgent' || actionType === 'agent'
+            ? `[agent] ${(h.action?.prompt ?? '').slice(0, 60)}`
+            : (h.name ?? 'unknown');
+      return {
+        ...(h.name ? { name: h.name } : {}),
+        trigger,
+        command,
+        ...(matcher ? { matcher } : {}),
+      };
+    });
+  }
+
+  /** Format a hooks array into a CommandResult for the panel. */
+  private formatHooksResult(hooks: HookInfo[]): CommandResult {
+    if (hooks.length === 0) {
+      return {
+        success: true,
+        message: 'No hooks configured',
+        data: { hooks: [], message: 'No hooks configured' },
+      };
+    }
+    const message = `${hooks.length} hook${hooks.length === 1 ? '' : 's'} configured`;
+    return { success: true, message, data: { hooks, message } };
   }
 
   private async executeKnowledge(value: string): Promise<CommandResult> {

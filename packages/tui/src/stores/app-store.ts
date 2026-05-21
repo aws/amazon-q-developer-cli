@@ -120,6 +120,7 @@ export interface StatsSummary {
 }
 
 export interface HookInfo {
+  name?: string;
   trigger: string;
   command: string;
   matcher?: string;
@@ -2309,6 +2310,11 @@ export const createAppStore = (props: AppStoreProps) => {
                 });
               }
             }
+            break;
+          case AgentEventType.HooksUpdate:
+            // Update cached hooks list. If the panel is open, it will
+            // re-render with the new data automatically.
+            set({ hooksList: event.hooks });
             break;
         }
       };
