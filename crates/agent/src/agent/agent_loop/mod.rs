@@ -635,12 +635,31 @@ impl StreamParseState {
 
                 StreamEvent::ContentBlockStop(_) => {
                     if let Some(thinking_text) = self.parsing_thinking.take() {
-                        self.thinking_blocks.push(types::ThinkingBlock {
-                            text: thinking_text,
-                            signature: self.pending_signature.take(),
-                            redacted_content: self.pending_redacted_content.take().unwrap_or_default(),
-                            model_id: self.model_id.clone(),
-                        });
+                        let signature = self.pending_signature.take();
+                        let redacted_content = self.pending_redacted_content.take().unwrap_or_default();
+                        // Skip orphan thinking blocks: no signature AND no redacted content.
+                        // Bedrock's API rejects history that contains a thinking block missing
+                        // both fields ("messages.N.content.0.thinking.signature: Field required"),
+                        // and once one lands in conversation history every subsequent turn
+                        // replays it and fails — bricking long sessions until /compact, /rewind,
+                        // or /chat new. Orphans can occur when the upstream stream truncates
+                        // mid-thinking-block: the RTS parser synthesizes a ContentBlockStop at
+                        // end-of-stream while in_thinking, but no ReasoningSignature delta ever
+                        // arrived. Drop the thinking text rather than poison history; the
+                        // assistant's spoken text and tool calls are preserved separately.
+                        if signature.is_none() && redacted_content.is_empty() {
+                            warn!(
+                                len = thinking_text.len(),
+                                "dropping orphan thinking block: no signature or redacted content received"
+                            );
+                        } else {
+                            self.thinking_blocks.push(types::ThinkingBlock {
+                                text: thinking_text,
+                                signature,
+                                redacted_content,
+                                model_id: self.model_id.clone(),
+                            });
+                        }
                     } else if let Some((tool_use_id, name, tool_content)) = self.parsing_tool_use.take() {
                         // Defensively clear any stale signature state from protocol violations.
                         self.pending_signature.take();
@@ -1186,6 +1205,47 @@ mod tests {
         }
     }
 
+    /// Regression test for orphan thinking blocks bricking long sessions.
+    ///
+    /// When the upstream stream ends mid-thinking-block (no signature, no
+    /// redacted content ever delivered), the RTS parser synthesizes a
+    /// ContentBlockStop at end-of-stream while `in_thinking`. Without
+    /// guarding against this, the agent_loop seals an "orphan" ThinkingBlock
+    /// with `signature: None` and empty `redacted_content`. That orphan
+    /// then poisons conversation history — every subsequent turn sends it
+    /// back to Bedrock and gets rejected with
+    /// `messages.N.content.0.thinking.signature: Field required`.
+    ///
+    /// Observed in production: a session was bricked after exactly one
+    /// truncated thinking block landed in its persisted history.
+    #[test]
+    fn orphan_thinking_block_dropped_when_no_signature_or_redacted_content() {
+        let msg = run_stream(vec![
+            message_start(),
+            thinking_start(),
+            thinking_delta("Let me think about this..."),
+            // No reasoning_signature event — simulates upstream truncation.
+            block_stop(),
+            message_stop(),
+        ])
+        .expect("expected Ok");
+
+        let thinking_blocks: Vec<_> = msg
+            .content
+            .iter()
+            .filter_map(|c| match c {
+                ContentBlock::Thinking(tb) => Some(tb),
+                _ => None,
+            })
+            .collect();
+
+        assert!(
+            thinking_blocks.is_empty(),
+            "orphan thinking block (no signature, no redacted_content) should be dropped \
+             at parse time so it cannot poison conversation history; got: {thinking_blocks:?}"
+        );
+    }
+
     #[test]
     fn thinking_emits_thinking_text_events() {
         let mut state = StreamParseState::new(user_message(), None);
@@ -1329,6 +1389,7 @@ mod tests {
         state.next(Some(message_start()), &mut buf);
         state.next(Some(thinking_start()), &mut buf);
         state.next(Some(thinking_delta("reasoning")), &mut buf);
+        state.next(Some(reasoning_signature("sig")), &mut buf);
         state.next(Some(block_stop()), &mut buf);
         state.next(Some(text_delta("answer")), &mut buf);
         state.next(Some(message_stop()), &mut buf);
@@ -1360,6 +1421,7 @@ mod tests {
         state.next(Some(message_start()), &mut buf);
         state.next(Some(thinking_start()), &mut buf);
         state.next(Some(thinking_delta("reasoning")), &mut buf);
+        state.next(Some(reasoning_signature("sig")), &mut buf);
         state.next(Some(block_stop()), &mut buf);
         state.next(Some(text_delta("answer")), &mut buf);
         state.next(Some(message_stop()), &mut buf);

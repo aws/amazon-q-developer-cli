@@ -279,6 +279,17 @@ impl RtsModel {
         }
         content.iter().find_map(|c| {
             if let ContentBlock::Thinking(tb) = c {
+                // Skip orphan thinking blocks: no signature AND no redacted content.
+                // Bedrock rejects history that contains such a block — see the parse-time
+                // guard in `agent/agent_loop/mod.rs` for the canonical explanation. We
+                // re-apply the predicate here so sessions that already have an orphan
+                // persisted on disk (from before the parse-time fix landed, or from a
+                // future code path that bypasses the parser) self-heal: the orphan is
+                // skipped at history serialization, find_map walks past it, and a later
+                // valid thinking block can still be preserved if one exists.
+                if tb.signature.is_none() && tb.redacted_content.is_empty() {
+                    return None;
+                }
                 match (&tb.model_id, current_model_id) {
                     (Some(reasoning_model), Some(current)) if reasoning_model == current => {
                         Some(rts::ReasoningContentForHistory {
@@ -1384,5 +1395,68 @@ mod tests {
         let current = Some("claude-opus-4.7".to_string());
         let result = RtsModel::filter_reasoning_for_history(&content, &current);
         assert!(result.is_none());
+    }
+
+    /// Orphan thinking block (no signature, no redacted content) is filtered
+    /// out at history serialization. Self-heal for sessions persisted before
+    /// the parse-time fix landed, or any future code path that bypasses the
+    /// stream parser.
+    #[test]
+    fn test_filter_reasoning_orphan_block_strips() {
+        use agent::agent_loop::types::ThinkingBlock;
+        let content = vec![ContentBlock::Thinking(ThinkingBlock {
+            text: "orphan thinking".into(),
+            signature: None,
+            redacted_content: vec![],
+            model_id: Some("claude-opus-4.7".into()),
+        })];
+        let current = Some("claude-opus-4.7".to_string());
+        let result = RtsModel::filter_reasoning_for_history(&content, &current);
+        assert!(result.is_none(), "orphan thinking block should be skipped");
+    }
+
+    /// Redacted-only thinking blocks (no visible text, no signature, but
+    /// non-empty redacted_content) are valid encrypted-thinking blocks and
+    /// must be preserved. Locks in the predicate intent: only the
+    /// signature-AND-redacted-both-empty case is an orphan.
+    #[test]
+    fn test_filter_reasoning_redacted_only_block_preserved() {
+        use agent::agent_loop::types::ThinkingBlock;
+        let content = vec![ContentBlock::Thinking(ThinkingBlock {
+            text: "".into(),
+            signature: None,
+            redacted_content: vec![0xde, 0xad, 0xbe, 0xef],
+            model_id: Some("claude-opus-4.7".into()),
+        })];
+        let current = Some("claude-opus-4.7".to_string());
+        let result = RtsModel::filter_reasoning_for_history(&content, &current);
+        let reasoning = result.expect("redacted-only thinking block should be preserved");
+        assert_eq!(reasoning.redacted_content, vec![0xde, 0xad, 0xbe, 0xef]);
+    }
+
+    /// `find_map` continues past an orphan to find a later valid thinking
+    /// block. Defensive against multi-block messages where the corruption
+    /// is at the head but valid content exists later.
+    #[test]
+    fn test_filter_reasoning_walks_past_orphan_to_valid_block() {
+        use agent::agent_loop::types::ThinkingBlock;
+        let content = vec![
+            ContentBlock::Thinking(ThinkingBlock {
+                text: "orphan".into(),
+                signature: None,
+                redacted_content: vec![],
+                model_id: Some("claude-opus-4.7".into()),
+            }),
+            ContentBlock::Thinking(ThinkingBlock {
+                text: "valid".into(),
+                signature: Some("sig".into()),
+                redacted_content: vec![],
+                model_id: Some("claude-opus-4.7".into()),
+            }),
+        ];
+        let current = Some("claude-opus-4.7".to_string());
+        let result = RtsModel::filter_reasoning_for_history(&content, &current);
+        let reasoning = result.expect("should find the valid block past the orphan");
+        assert_eq!(reasoning.text, "valid");
     }
 }
