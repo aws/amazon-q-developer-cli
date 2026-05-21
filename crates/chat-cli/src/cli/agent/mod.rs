@@ -2766,6 +2766,35 @@ mod tests {
         }
     }
 
+    /// Phase 6 follow-up: the system prompt must hard-require retrieval before
+    /// answering any kiro-related question. We assert on prompt content rather
+    /// than runtime behavior because the prompt is the only contract we own —
+    /// the model's tool-call decisions are downstream of these MUST clauses.
+    #[test]
+    fn kiro_help_prompt_mandates_retrieval_before_answering() {
+        let prompt = include_str!("../../agents/kiro_help_prompt.md");
+        // Hard "MUST"-style clause that orders retrieval before answer drafting.
+        assert!(
+            prompt.contains("MUST be `search_kiro_knowledge`")
+                || prompt.contains("MUST call `search_kiro_knowledge`"),
+            "prompt must hard-require search_kiro_knowledge as the first action"
+        );
+        // The prompt must steer GitHub-issue search for bug-shaped questions —
+        // reporting bugs without first checking the issue tracker is a known
+        // failure mode we want to design out.
+        assert!(
+            prompt.contains("search_github_issues"),
+            "prompt must instruct the agent to also call search_github_issues for issue/bug queries"
+        );
+        // Citations are how end-users (and the eval suite) catch a missed
+        // retrieval. The prompt must say a missing citation is a failure
+        // signal, not an acceptable shortcut.
+        assert!(
+            prompt.contains("citation") || prompt.contains("Sources:") || prompt.contains("Cite "),
+            "prompt must require citations on retrieved answers"
+        );
+    }
+
     /// Phase 2 wireup: kiro_help.json must declare the kiro-knowledge MCP server, list
     /// `@kiro-knowledge/search_kiro_knowledge` in its tools, and auto-approve it via
     /// allowedTools so the kiro-help bot can answer Q&A without an interactive prompt.
