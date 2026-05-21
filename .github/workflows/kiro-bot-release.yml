@@ -16,18 +16,17 @@ on:
     branches:
       - main
       - feature/kiro-bot
+    tags:
+      - 'kiro-bot-v*'
     paths:
       - 'crates/kiro-bot/**'
       - 'crates/kiro-knowledge-mcp/**'
       - 'crates/kiro-help-corpus-ingest/**'
       - 'crates/kiro-bot-eval/**'
-      - 'crates/chat-cli/src/kiro_help.json'
-      - 'crates/chat-cli/src/help_prompt.md'
+      - 'crates/chat-cli/src/agents/kiro-help.json'
+      - 'crates/chat-cli/src/agents/kiro_help_prompt.md'
       - 'crates/chat-cli/src/cli/agent/mod.rs'
       - '.github/workflows/kiro-bot-release.yml'
-  push:
-    tags:
-      - 'kiro-bot-v*'
 
 permissions:
   id-token: write
