@@ -549,6 +549,11 @@ pub struct ReasoningContentForHistory {
     pub text: String,
     pub signature: Option<String>,
     pub redacted_content: Vec<u8>,
+    /// Model ID that generated this reasoning content. Used to strip reasoning
+    /// on model switch — reasoning blocks from a different model will be rejected.
+    /// `None` for sessions created before this field was added (treated as unknown → stripped).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub model_id: Option<String>,
 }
 
 impl TryFrom<AssistantResponseMessage> for amzn_codewhisperer_streaming_client::types::AssistantResponseMessage {
@@ -1551,5 +1556,45 @@ mod tests {
                 context_usage_percentage: 0.0
             }
         );
+    }
+
+    #[test]
+    fn reasoning_content_deserializes_without_model_id() {
+        // Old session file: no model_id field
+        let json = r#"{"text":"thinking...","signature":"sig","redacted_content":[]}"#;
+        let rc: ReasoningContentForHistory = serde_json::from_str(json).unwrap();
+        assert_eq!(rc.model_id, None);
+        assert_eq!(rc.text, "thinking...");
+    }
+
+    #[test]
+    fn reasoning_content_deserializes_with_model_id() {
+        let json = r#"{"text":"thinking...","signature":"sig","redacted_content":[],"model_id":"claude-opus-4.7"}"#;
+        let rc: ReasoningContentForHistory = serde_json::from_str(json).unwrap();
+        assert_eq!(rc.model_id, Some("claude-opus-4.7".to_string()));
+    }
+
+    #[test]
+    fn reasoning_content_omits_model_id_when_none() {
+        let rc = ReasoningContentForHistory {
+            text: "thinking".to_string(),
+            signature: Some("sig".to_string()),
+            redacted_content: vec![],
+            model_id: None,
+        };
+        let json = serde_json::to_string(&rc).unwrap();
+        assert!(!json.contains("model_id"), "None should be omitted: {json}");
+    }
+
+    #[test]
+    fn reasoning_content_includes_model_id_when_present() {
+        let rc = ReasoningContentForHistory {
+            text: "thinking".to_string(),
+            signature: Some("sig".to_string()),
+            redacted_content: vec![],
+            model_id: Some("claude-opus-4.7".to_string()),
+        };
+        let json = serde_json::to_string(&rc).unwrap();
+        assert!(json.contains("model_id"), "model_id should be present: {json}");
     }
 }

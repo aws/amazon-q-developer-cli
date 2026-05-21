@@ -63,6 +63,7 @@ use super::tools::{
 };
 use super::util::serde_value_to_document;
 use crate::api_client::model::{
+    AssistantResponseMessage,
     ChatMessage,
     ConversationState as FigConversationState,
     ImageBlock,
@@ -1666,7 +1667,19 @@ where
         acc.push(ChatMessage::UserInputMessage(
             user.clone().into_history_entry(model_id.map(str::to_string)),
         ));
-        acc.push(ChatMessage::AssistantResponseMessage(assistant.clone().into()));
+        let mut msg: AssistantResponseMessage = assistant.clone().into();
+        // Model-aware filtering: strip reasoning if it came from a different model.
+        // Legacy blocks (model_id = None) are also stripped as a safe default.
+        if let Some(ref rc) = msg.reasoning_content {
+            let dominated = !matches!(
+                (&rc.model_id, model_id),
+                (Some(reasoning_model), Some(current)) if reasoning_model == current
+            );
+            if dominated {
+                msg.reasoning_content = None;
+            }
+        }
+        acc.push(ChatMessage::AssistantResponseMessage(msg));
         acc
     })
 }

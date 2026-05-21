@@ -55,6 +55,11 @@ pub trait Model: std::fmt::Debug + Send + Sync + 'static {
         None
     }
 
+    /// Returns the model identifier (e.g. "claude-opus-4.7") used to tag reasoning blocks.
+    fn model_id(&self) -> Option<String> {
+        None
+    }
+
     /// Invokes an MCP tool call through the backend API.
     fn invoke_mcp(
         &self,

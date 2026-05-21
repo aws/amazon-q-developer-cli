@@ -4209,6 +4209,7 @@ mod log_entry_to_session_updates_tests {
                     text: "Let me reason about this.".to_string(),
                     signature: None,
                     redacted_content: Vec::new(),
+                    model_id: None,
                 }),
                 AgentContentBlock::Text("Here is my answer.".to_string()),
             ],

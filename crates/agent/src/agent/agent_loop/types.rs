@@ -543,6 +543,11 @@ pub struct ThinkingBlock {
     #[serde(with = "serde_bytes")]
     #[serde(default)]
     pub redacted_content: Vec<u8>,
+    /// Model ID that generated this thinking block. Used to strip reasoning
+    /// when the active model changes (reasoning blocks are model-specific and
+    /// will be rejected if sent to a different model).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub model_id: Option<String>,
 }
 
 #[typeshare]
