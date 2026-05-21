@@ -1,0 +1,1 @@
+{"type":"fixed","description":"OAuth authentication now works for registry-type MCP servers (e.g. Atlassian Rovo, Slack)"}

@@ -513,12 +513,22 @@ pub fn convert_registry_to_config(
 ) -> Result<crate::cli::chat::legacy::custom_tool::CustomToolConfig> {
     use crate::cli::chat::legacy::custom_tool::CustomToolConfig;
 
+    // Merge OAuth overrides; fall back to default scopes when none are set
+    // (empty scopes break Dynamic Client Registration on some servers).
+    let oauth_scopes = if !agent_config.oauth_scopes.is_empty() {
+        agent_config.oauth_scopes.clone()
+    } else if let Some(scopes) = agent_config.oauth.as_ref().and_then(|oc| oc.oauth_scopes.clone()) {
+        scopes
+    } else {
+        crate::cli::chat::legacy::custom_tool::get_default_scopes()
+    };
+
     let mut config = CustomToolConfig {
         transport_type: None, // Will be inferred
         url: String::new(),
         headers: std::collections::HashMap::new(),
-        oauth_scopes: crate::cli::chat::legacy::custom_tool::get_default_scopes(),
-        oauth: None,
+        oauth_scopes,
+        oauth: agent_config.oauth.clone(),
         command: String::new(),
         args: Vec::new(),
         env: None,
@@ -923,14 +933,28 @@ pub fn resolve_registry_servers_for_agent_config(
             let timeout_ms = agent_overrides
                 .and_then(|o| o.timeout)
                 .unwrap_or_else(agent::agent_config::definitions::default_timeout);
+
+            // Resolve OAuth scopes: oauth.oauthScopes > oauthScopes > default
+            // (empty scopes break Dynamic Client Registration on some servers).
+            let oauth_scopes = agent_overrides
+                .and_then(|o| o.oauth.as_ref())
+                .and_then(|oc| oc.oauth_scopes.clone())
+                .or_else(|| {
+                    agent_overrides
+                        .filter(|o| !o.oauth_scopes.is_empty())
+                        .map(|o| o.oauth_scopes.clone())
+                })
+                .unwrap_or_else(agent::agent_config::default_legacy_oauth_scopes);
+            let oauth = agent_overrides.and_then(|o| o.oauth.clone());
+
             resolved.push((
                 server_name.clone(),
                 AgentMcpServerConfig::Remote(RemoteMcpServerConfig {
                     url: remote.url.clone(),
                     headers,
                     timeout_ms,
-                    oauth_scopes: Vec::new(),
-                    oauth: None,
+                    oauth_scopes,
+                    oauth,
                     disabled: false,
                     disabled_tools: Vec::new(),
                 }),
@@ -1661,6 +1685,119 @@ mod tests {
         }
     }
 
+    /// Regression test: `resolve_registry_servers_for_agent_config` must
+    /// propagate user-supplied OAuth overrides and fall back to default
+    /// scopes (not empty) when none are provided.
+    #[test]
+    fn test_resolve_registry_servers_preserves_oauth_overrides() {
+        use std::collections::HashMap;
+
+        use agent::agent_config::definitions::{
+            AgentConfig,
+            AgentConfigV2025_08_22,
+            McpServerConfig as AgentMcpServerConfig,
+            RegistryMcpServerConfig,
+        };
+        use agent::agent_config::{
+            ConfigSource,
+            LoadedAgentConfig,
+            ResolvedGlobalPrompt,
+        };
+
+        let registry_json = r#"{
+            "servers": [{
+                "server": {
+                    "name": "atlassian",
+                    "description": "Atlassian Rovo MCP Server",
+                    "version": "1.0.0",
+                    "remotes": [{"type": "streamable-http", "url": "https://mcp.atlassian.com/v1/mcp"}]
+                }
+            }]
+        }"#;
+        let registry: McpRegistryResponse = serde_json::from_str(registry_json).unwrap();
+
+        // Case 1: user provides no OAuth overrides — resolver must fall back to
+        // legacy defaults rather than an empty Vec.
+        let mut mcp_servers = HashMap::new();
+        mcp_servers.insert(
+            "atlassian".to_string(),
+            AgentMcpServerConfig::Registry(RegistryMcpServerConfig {
+                server_type: "registry".to_string(),
+                env: None,
+                headers: None,
+                timeout: None,
+                oauth_scopes: Vec::new(),
+                oauth: None,
+            }),
+        );
+        let config = AgentConfigV2025_08_22 {
+            name: "test-agent".to_string(),
+            tools: vec!["@atlassian/*".to_string()],
+            mcp_servers,
+            ..Default::default()
+        };
+        let mut loaded = LoadedAgentConfig::new(
+            AgentConfig::V2025_08_22(config),
+            ConfigSource::Ephemeral,
+            ResolvedGlobalPrompt::None,
+        );
+        resolve_registry_servers_for_agent_config(&mut loaded, &registry);
+        let server = loaded.config().mcp_servers().get("atlassian").unwrap();
+        match server {
+            AgentMcpServerConfig::Remote(remote) => {
+                assert_eq!(
+                    remote.oauth_scopes,
+                    agent::agent_config::default_legacy_oauth_scopes(),
+                    "no-override case must fall back to legacy default scopes, not empty Vec"
+                );
+            },
+            other => panic!("Expected Remote variant, got {:?}", other),
+        }
+
+        // Case 2: user provides oauth.oauthScopes — resolver must propagate them.
+        let mut mcp_servers = HashMap::new();
+        mcp_servers.insert(
+            "atlassian".to_string(),
+            AgentMcpServerConfig::Registry(RegistryMcpServerConfig {
+                server_type: "registry".to_string(),
+                env: None,
+                headers: None,
+                timeout: None,
+                oauth_scopes: Vec::new(),
+                oauth: Some(agent::mcp::oauth_util::OAuthConfig {
+                    client_id: Some("custom-client-id".to_string()),
+                    redirect_uri: None,
+                    oauth_scopes: Some(vec!["read:jira-work".to_string(), "write:jira-work".to_string()]),
+                }),
+            }),
+        );
+        let config = AgentConfigV2025_08_22 {
+            name: "test-agent".to_string(),
+            tools: vec!["@atlassian/*".to_string()],
+            mcp_servers,
+            ..Default::default()
+        };
+        let mut loaded = LoadedAgentConfig::new(
+            AgentConfig::V2025_08_22(config),
+            ConfigSource::Ephemeral,
+            ResolvedGlobalPrompt::None,
+        );
+        resolve_registry_servers_for_agent_config(&mut loaded, &registry);
+        let server = loaded.config().mcp_servers().get("atlassian").unwrap();
+        match server {
+            AgentMcpServerConfig::Remote(remote) => {
+                assert_eq!(
+                    remote.oauth_scopes,
+                    vec!["read:jira-work".to_string(), "write:jira-work".to_string()],
+                    "user-provided oauth.oauthScopes must be propagated to resolved Remote"
+                );
+                let oauth = remote.oauth.as_ref().expect("oauth block should be propagated");
+                assert_eq!(oauth.client_id.as_deref(), Some("custom-client-id"));
+            },
+            other => panic!("Expected Remote variant, got {:?}", other),
+        }
+    }
+
     #[test]
     fn test_resolve_registry_servers_skips_already_loaded() {
         use std::collections::HashMap;
@@ -1813,6 +1950,8 @@ mod tests {
                 env: Some(env_overrides),
                 headers: None,
                 timeout: Some(45000),
+                oauth_scopes: Vec::new(),
+                oauth: None,
             }),
         );
 
@@ -1882,6 +2021,8 @@ mod tests {
                 env: None,
                 headers: Some(header_overrides),
                 timeout: Some(20000),
+                oauth_scopes: Vec::new(),
+                oauth: None,
             }),
         );
 

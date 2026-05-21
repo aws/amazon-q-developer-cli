@@ -215,6 +215,7 @@ impl From<UtilError> for AgentConfigError {
     }
 }
 
+pub use definitions::default_legacy_oauth_scopes;
 pub use load::{
     build_default_agent,
     load_agents,

@@ -415,6 +415,28 @@ Registry servers are resolved from the organization's MCP registry. Override fie
 - `env` (optional): Environment variables merged on top of registry defaults (agent values win)
 - `headers` (optional): HTTP headers merged on top of registry defaults (agent values win, remote servers only)
 - `timeout` (optional): Request timeout in milliseconds (overrides registry default)
+- `oauth` (optional): OAuth configuration object (remote registry servers only)
+  - `clientId` (optional): Pre-registered OAuth client ID for servers that don't support Dynamic Client Registration
+  - `redirectUri` (optional): Custom redirect URI for OAuth flow
+  - `oauthScopes` (optional): OAuth scopes to request from the authorization server
+- `oauthScopes` (optional): Top-level OAuth scopes (alternative location to `oauth.oauthScopes`; for remote registry servers only)
+
+When neither `oauth.oauthScopes` nor top-level `oauthScopes` is set, the CLI requests a default scope set (`openid`, `email`, `profile`, `offline_access`).
+
+Remote registry server with OAuth scope overrides:
+
+```json
+{
+  "mcpServers": {
+    "atlassian": {
+      "type": "registry",
+      "oauth": {
+        "oauthScopes": ["read:jira-work", "write:jira-work"]
+      }
+    }
+  }
+}
+```
 
 ### keyboardShortcut
 

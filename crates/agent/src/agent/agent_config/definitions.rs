@@ -660,6 +660,12 @@ pub struct RegistryMcpServerConfig {
     /// Optional timeout override in milliseconds.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub timeout: Option<u64>,
+    /// Optional OAuth scope overrides (remote servers only).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub oauth_scopes: Vec<String>,
+    /// Optional OAuth client configuration overrides (remote servers only).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub oauth: Option<OAuthConfig>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
@@ -713,6 +719,17 @@ pub struct RemoteMcpServerConfig {
 
 pub fn default_timeout() -> u64 {
     120 * 1000
+}
+
+/// Default OAuth scopes for registry-type MCP servers when no overrides are set.
+///
+/// Empty scope sets break Dynamic Client Registration on some authorization
+/// servers, so we fall back to a standard OpenID Connect scope set.
+pub fn default_legacy_oauth_scopes() -> Vec<String> {
+    ["openid", "email", "profile", "offline_access"]
+        .into_iter()
+        .map(String::from)
+        .collect()
 }
 
 impl McpServerConfig {
@@ -1610,5 +1627,31 @@ mod tests {
         let config = serde_json::json!({"url": "https://example.com/mcp"});
         let result: McpServerConfig = serde_json::from_value(config).unwrap();
         assert!(!result.is_registry());
+    }
+
+    /// Regression test: oauth blocks on registry-type entries must survive
+    /// deserialization round-trip.
+    #[test]
+    fn test_registry_mcp_server_config_preserves_oauth_block() {
+        let input = serde_json::json!({
+            "type": "registry",
+            "oauth": {
+                "oauthScopes": ["read:user", "write:user"]
+            }
+        });
+
+        let parsed: McpServerConfig = serde_json::from_value(input.clone()).unwrap();
+        let McpServerConfig::Registry(_reg) = &parsed else {
+            panic!("Expected Registry variant, got {:?}", parsed);
+        };
+
+        // Round-trip back to JSON and compare.
+        let round_tripped = serde_json::to_value(&parsed).unwrap();
+
+        assert_eq!(
+            round_tripped.get("oauth"),
+            Some(&serde_json::json!({"oauthScopes": ["read:user", "write:user"]})),
+            "oauth block must round-trip through Registry variant"
+        );
     }
 }

@@ -406,6 +406,8 @@ mod tests {
                 env: Some([("FOO".to_string(), "bar".to_string())].into()),
                 headers: None,
                 timeout: None,
+                oauth_scopes: Vec::new(),
+                oauth: None,
             }),
         );
         mcp_servers.insert(
@@ -415,6 +417,8 @@ mod tests {
                 env: None,
                 headers: None,
                 timeout: None,
+                oauth_scopes: Vec::new(),
+                oauth: None,
             }),
         );
 
@@ -461,6 +465,8 @@ mod tests {
                 env: Some([("SECRET".to_string(), "keep-me".to_string())].into()),
                 headers: Some([("Auth".to_string(), "Bearer tok".to_string())].into()),
                 timeout: Some(45000),
+                oauth_scopes: Vec::new(),
+                oauth: None,
             }),
         );
 

@@ -511,12 +511,22 @@ pub fn convert_registry_to_config(
 ) -> Result<crate::cli::chat::tools::custom_tool::CustomToolConfig> {
     use crate::cli::chat::tools::custom_tool::CustomToolConfig;
 
+    // Merge OAuth overrides; fall back to default scopes when none are set
+    // (empty scopes break Dynamic Client Registration on some servers).
+    let oauth_scopes = if !agent_config.oauth_scopes.is_empty() {
+        agent_config.oauth_scopes.clone()
+    } else if let Some(scopes) = agent_config.oauth.as_ref().and_then(|oc| oc.oauth_scopes.clone()) {
+        scopes
+    } else {
+        crate::cli::chat::tools::custom_tool::get_default_scopes()
+    };
+
     let mut config = CustomToolConfig {
         transport_type: None, // Will be inferred
         url: String::new(),
         headers: std::collections::HashMap::new(),
-        oauth_scopes: crate::cli::chat::tools::custom_tool::get_default_scopes(),
-        oauth: None,
+        oauth_scopes,
+        oauth: agent_config.oauth.clone(),
         command: String::new(),
         args: Vec::new(),
         env: None,
@@ -781,14 +791,28 @@ pub fn resolve_registry_servers_for_agent_config(
             let timeout_ms = agent_overrides
                 .and_then(|o| o.timeout)
                 .unwrap_or_else(agent::agent_config::definitions::default_timeout);
+
+            // Resolve OAuth scopes: oauth.oauthScopes > oauthScopes > default
+            // (empty scopes break Dynamic Client Registration on some servers).
+            let oauth_scopes = agent_overrides
+                .and_then(|o| o.oauth.as_ref())
+                .and_then(|oc| oc.oauth_scopes.clone())
+                .or_else(|| {
+                    agent_overrides
+                        .filter(|o| !o.oauth_scopes.is_empty())
+                        .map(|o| o.oauth_scopes.clone())
+                })
+                .unwrap_or_else(agent::agent_config::default_legacy_oauth_scopes);
+            let oauth = agent_overrides.and_then(|o| o.oauth.clone());
+
             resolved.push((
                 server_name.clone(),
                 AgentMcpServerConfig::Remote(RemoteMcpServerConfig {
                     url: remote.url.clone(),
                     headers,
                     timeout_ms,
-                    oauth_scopes: Vec::new(),
-                    oauth: None,
+                    oauth_scopes,
+                    oauth,
                     disabled: false,
                     disabled_tools: Vec::new(),
                 }),

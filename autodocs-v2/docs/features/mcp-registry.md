@@ -131,6 +131,25 @@ Use `"type": "registry"` with optional `env`, `headers`, and `timeout` fields:
 **For Remote (HTTP) Servers**:
 - `headers` - HTTP headers (authentication tokens)
 - `timeout` - Request timeout in milliseconds
+- `oauth` - OAuth configuration object (`clientId`, `redirectUri`, `oauthScopes`); useful for servers requiring custom scopes or pre-registered clients (e.g. Atlassian Rovo, Slack)
+- `oauthScopes` - Alternative top-level location for OAuth scopes
+
+When OAuth scopes are not specified, the CLI requests a default scope set (`openid`, `email`, `profile`, `offline_access`).
+
+Example — remote registry server with custom OAuth scopes:
+
+```json
+{
+  "mcpServers": {
+    "atlassian": {
+      "type": "registry",
+      "oauth": {
+        "oauthScopes": ["read:jira-work", "write:jira-work"]
+      }
+    }
+  }
+}
+```
 
 ### Merge Behavior
 
