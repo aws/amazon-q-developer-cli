@@ -45,8 +45,30 @@ pub async fn launch(options: LaunchOptions, os: &Os) -> Result<ExitCode> {
 /// otherwise returns the appropriate chalk color level:
 /// - User's explicit `FORCE_COLOR` value if already set
 /// - `"3"` (truecolor) when `COLORTERM` is `truecolor` or `24bit`
+/// - `"3"` (truecolor) when a known truecolor-capable terminal is detected by identity
 /// - `"2"` (256-color) as fallback
-fn resolve_force_color(no_color: bool, force_color: Option<String>, colorterm: Option<&str>) -> Option<String> {
+///
+/// Terminal identity detection covers cases where `COLORTERM` is stripped (e.g. tmux, SSH)
+/// but the terminal still supports truecolor.
+fn is_truecolor_terminal() -> bool {
+    std::env::var("KITTY_WINDOW_ID").is_ok()
+        || std::env::var("ALACRITTY_LOG").is_ok()
+        || matches!(
+            std::env::var("TERM_PROGRAM").ok().as_deref(),
+            Some("kitty" | "ghostty" | "WezTerm" | "iTerm.app")
+        )
+        || matches!(
+            std::env::var("TERM").ok().as_deref(),
+            Some("xterm-kitty" | "xterm-ghostty")
+        )
+}
+
+fn resolve_force_color(
+    no_color: bool,
+    force_color: Option<String>,
+    colorterm: Option<&str>,
+    truecolor_terminal: bool,
+) -> Option<String> {
     if no_color {
         return None;
     }
@@ -55,6 +77,7 @@ fn resolve_force_color(no_color: bool, force_color: Option<String>, colorterm: O
     }
     match colorterm {
         Some("truecolor" | "24bit") => Some("3".to_string()),
+        _ if truecolor_terminal => Some("3".to_string()),
         _ => Some("2".to_string()),
     }
 }
@@ -70,6 +93,7 @@ async fn launch_acp_interactive(os: &Os, agent_engine: AgentEngine, mode: Option
         std::env::var_os("NO_COLOR").is_some(),
         std::env::var("FORCE_COLOR").ok(),
         std::env::var("COLORTERM").ok().as_deref(),
+        is_truecolor_terminal(),
     );
 
     let mut cmd = tokio::process::Command::new(&asset_paths.bun_path);
@@ -417,32 +441,57 @@ mod tests {
 
     #[test]
     fn test_resolve_force_color_no_color_set() {
-        assert_eq!(resolve_force_color(true, None, None), None);
+        assert_eq!(resolve_force_color(true, None, None, false), None);
     }
 
     #[test]
     fn test_resolve_force_color_no_color_overrides_force_color() {
-        assert_eq!(resolve_force_color(true, Some("3".into()), Some("truecolor")), None);
+        assert_eq!(
+            resolve_force_color(true, Some("3".into()), Some("truecolor"), false),
+            None
+        );
     }
 
     #[test]
     fn test_resolve_force_color_respects_explicit_force_color() {
-        assert_eq!(resolve_force_color(false, Some("1".into()), None), Some("1".into()));
+        assert_eq!(
+            resolve_force_color(false, Some("1".into()), None, false),
+            Some("1".into())
+        );
     }
 
     #[test]
     fn test_resolve_force_color_truecolor() {
-        assert_eq!(resolve_force_color(false, None, Some("truecolor")), Some("3".into()));
+        assert_eq!(
+            resolve_force_color(false, None, Some("truecolor"), false),
+            Some("3".into())
+        );
     }
 
     #[test]
     fn test_resolve_force_color_24bit() {
-        assert_eq!(resolve_force_color(false, None, Some("24bit")), Some("3".into()));
+        assert_eq!(resolve_force_color(false, None, Some("24bit"), false), Some("3".into()));
     }
 
     #[test]
     fn test_resolve_force_color_fallback() {
-        assert_eq!(resolve_force_color(false, None, None), Some("2".into()));
-        assert_eq!(resolve_force_color(false, None, Some("256color")), Some("2".into()));
+        assert_eq!(resolve_force_color(false, None, None, false), Some("2".into()));
+        assert_eq!(
+            resolve_force_color(false, None, Some("256color"), false),
+            Some("2".into())
+        );
+    }
+
+    #[test]
+    fn test_resolve_force_color_truecolor_terminal_identity() {
+        // When COLORTERM is unset but terminal is identified as truecolor-capable
+        assert_eq!(resolve_force_color(false, None, None, true), Some("3".into()));
+        // COLORTERM still takes precedence
+        assert_eq!(
+            resolve_force_color(false, None, Some("truecolor"), true),
+            Some("3".into())
+        );
+        // NO_COLOR still wins
+        assert_eq!(resolve_force_color(true, None, None, true), None);
     }
 }
