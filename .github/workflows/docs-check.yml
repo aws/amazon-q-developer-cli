@@ -1,0 +1,205 @@
+name: "PR: Documentation & Changelog"
+
+on:
+  pull_request:
+    types: [opened, synchronize]
+  issue_comment:
+    types: [created]
+
+concurrency:
+  group: docs-check-${{ github.event.pull_request.number || github.event.issue.number }}
+  cancel-in-progress: true
+
+jobs:
+  pr-assist:
+    if: |
+      (github.event_name == 'pull_request' && github.actor != 'github-actions[bot]') ||
+      (github.event_name == 'issue_comment' &&
+       github.event.issue.pull_request &&
+       (startsWith(github.event.comment.body, '/docs') || startsWith(github.event.comment.body, '/changelog')) &&
+       (github.event.comment.author_association == 'OWNER' ||
+        github.event.comment.author_association == 'MEMBER' ||
+        github.event.comment.author_association == 'COLLABORATOR'))
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: write
+      pull-requests: write
+    steps:
+      - name: Get PR info
+        id: pr
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          if [ "${{ github.event_name }}" = "issue_comment" ]; then
+            echo "number=${{ github.event.issue.number }}" >> "$GITHUB_OUTPUT"
+            PR_JSON=$(gh pr view "${{ github.event.issue.number }}" --repo "${{ github.repository }}" --json headRefName,headRefOid)
+            echo "ref=$(echo $PR_JSON | jq -r '.headRefName')" >> "$GITHUB_OUTPUT"
+            echo "sha=$(echo $PR_JSON | jq -r '.headRefOid')" >> "$GITHUB_OUTPUT"
+          else
+            echo "number=${{ github.event.pull_request.number }}" >> "$GITHUB_OUTPUT"
+            echo "ref=${{ github.event.pull_request.head.ref }}" >> "$GITHUB_OUTPUT"
+            echo "sha=${{ github.event.pull_request.head.sha }}" >> "$GITHUB_OUTPUT"
+          fi
+
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ steps.pr.outputs.sha }}
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Determine what to run
+        id: check
+        env:
+          COMMENT_BODY: ${{ github.event.comment.body }}
+        run: |
+          # Check for code changes
+          CODE_CHANGES=$(git diff --name-only origin/main...HEAD -- crates/ packages/tui/src/ | grep -v test || true)
+          if [ -z "$CODE_CHANGES" ]; then
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+            echo "No user-facing code changes detected."
+            exit 0
+          fi
+          echo "skip=false" >> "$GITHUB_OUTPUT"
+
+          # Check if changelog already exists
+          HAS_CHANGELOG=$(git diff --name-only origin/main...HEAD -- '.changes/unreleased/*.json' || true)
+          if [ -n "$HAS_CHANGELOG" ]; then
+            echo "has_changelog=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "has_changelog=false" >> "$GITHUB_OUTPUT"
+          fi
+
+          # Determine trigger type for comment commands
+          if [ "${{ github.event_name }}" = "issue_comment" ]; then
+            if echo "$COMMENT_BODY" | grep -q "^/docs"; then
+              echo "trigger=docs" >> "$GITHUB_OUTPUT"
+            elif echo "$COMMENT_BODY" | grep -q "^/changelog"; then
+              echo "trigger=changelog" >> "$GITHUB_OUTPUT"
+            fi
+            printf '%s' "$COMMENT_BODY" > /tmp/user_comment.txt
+          else
+            echo "trigger=auto" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Install Kiro CLI
+        if: steps.check.outputs.skip != 'true'
+        run: |
+          curl -fsSL https://cli.kiro.dev/install | bash
+          kiro-cli --version
+
+      - name: Generate changelog
+        if: |
+          steps.check.outputs.skip != 'true' &&
+          (steps.check.outputs.has_changelog == 'false' || steps.check.outputs.trigger == 'changelog')
+        env:
+          KIRO_API_KEY: ${{ secrets.KIRO_REVIEW_PAT }}
+        run: |
+          PROMPT="Review the code changes in this branch (git diff origin/main...HEAD) and determine if a changelog entry is needed.
+
+          Rules:
+          - User-facing changes (new features, behavior changes, bug fixes users would notice) need a changelog entry.
+          - Internal changes (refactoring, tests, CI, KAS/Kiro Agent Server features) do NOT need a changelog entry.
+          - KAS is behind a feature gate and not customer-facing — skip it.
+
+          If a changelog entry is needed, create a JSON file in .changes/unreleased/ with this format:
+          {
+            \"type\": \"added|changed|fixed|removed|deprecated|security\",
+            \"description\": \"Concise, customer-facing description\"
+          }
+
+          Style guidelines for the description:
+          - Keep it short — one sentence, under 100 characters when possible
+          - Start with a verb (Add, Fix, Update, Remove)
+          - Focus on what users will notice, not internal details
+          - Mention the specific feature or command affected
+          - No trailing period
+
+          Filename format: YYYYMMDD-HHMM-type-short-description.json
+
+          If no changelog is needed, say so and stop."
+
+          if [ -f /tmp/user_comment.txt ] && grep -q "^/changelog" /tmp/user_comment.txt; then
+            EXTRA=$(sed 's|^/changelog||' /tmp/user_comment.txt)
+            PROMPT="$PROMPT
+
+          Additional instructions: $EXTRA"
+          fi
+
+          kiro-cli chat --no-interactive --trust-all-tools "$PROMPT"
+
+      - name: Generate docs
+        if: |
+          steps.check.outputs.skip != 'true' &&
+          (steps.check.outputs.trigger == 'auto' || steps.check.outputs.trigger == 'docs')
+        env:
+          KIRO_API_KEY: ${{ secrets.KIRO_REVIEW_PAT }}
+        run: |
+          PROMPT="Review the code changes in this branch against origin/main and update documentation in autodocs-v2/docs/ if needed."
+
+          if [ -f /tmp/user_comment.txt ] && grep -q "^/docs" /tmp/user_comment.txt; then
+            EXTRA=$(sed 's|^/docs||' /tmp/user_comment.txt)
+            PROMPT="$PROMPT
+
+          Additional instructions: $EXTRA"
+          fi
+
+          kiro-cli chat --no-interactive --trust-all-tools --agent docs-v2 "$PROMPT"
+
+      - name: Check for changes
+        if: steps.check.outputs.skip != 'true'
+        id: generated
+        run: |
+          CHANGES=""
+          if git diff --name-only | grep -q "autodocs-v2/"; then
+            CHANGES="docs"
+          fi
+          if git diff --name-only | grep -q ".changes/unreleased/"; then
+            CHANGES="${CHANGES:+$CHANGES }changelog"
+          fi
+          if [ -n "$CHANGES" ]; then
+            echo "has_changes=true" >> "$GITHUB_OUTPUT"
+            echo "what=$CHANGES" >> "$GITHUB_OUTPUT"
+          else
+            echo "has_changes=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Commit and push
+        if: steps.generated.outputs.has_changes == 'true'
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add autodocs-v2/ .changes/unreleased/
+          git commit -m "docs: auto-generated for PR #${{ steps.pr.outputs.number }}"
+          git push origin HEAD:${{ steps.pr.outputs.ref }}
+
+      - name: Post comment
+        if: steps.generated.outputs.has_changes == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          WHAT: ${{ steps.generated.outputs.what }}
+        run: |
+          BODY="🤖 **Auto-generated PR artifacts**"
+
+          DOC_FILES=$(git diff --name-only HEAD~1 -- autodocs-v2/ 2>/dev/null || true)
+          if [ -n "$DOC_FILES" ]; then
+            BODY="$BODY
+
+          📝 **Documentation:**
+          $(echo "$DOC_FILES" | sed 's/^/- /')"
+          fi
+
+          CL_FILES=$(git diff --name-only HEAD~1 -- .changes/unreleased/ 2>/dev/null || true)
+          if [ -n "$CL_FILES" ]; then
+            BODY="$BODY
+
+          📋 **Changelog:**
+          $(echo "$CL_FILES" | sed 's/^/- /')
+          $(cat .changes/unreleased/$(echo "$CL_FILES" | head -1 | xargs basename) 2>/dev/null | python3 -c "import json,sys; e=json.load(sys.stdin); print(f'> [{e[\"type\"]}] {e[\"description\"]}')" 2>/dev/null || true)"
+          fi
+
+          BODY="$BODY
+
+          Please review the generated changes. To regenerate: \`/docs <instructions>\` or \`/changelog <instructions>\`"
+
+          gh pr comment "${{ steps.pr.outputs.number }}" --body "$BODY"
