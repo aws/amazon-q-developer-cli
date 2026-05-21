@@ -18,6 +18,7 @@ export enum KasCommandName {
   Usage = '/usage',
   Spec = '/spec',
   Knowledge = '/knowledge',
+  Compact = '/compact',
 }
 
 const KAS_COMMAND_NAME_VALUES: ReadonlySet<string> = new Set(
@@ -124,5 +125,9 @@ export const KAS_COMMANDS: readonly KasCommand[] = [
     name: KasCommandName.Knowledge,
     description: 'Manage knowledge bases',
     meta: { inputType: 'panel' },
+  },
+  {
+    name: KasCommandName.Compact,
+    description: 'Compact conversation history to reduce context usage',
   },
 ];

@@ -2467,7 +2467,12 @@ export const createAppStore = (props: AppStoreProps) => {
               content: summary,
             });
           }
-          return { isCompacting: false, isProcessing: false, messages };
+          return {
+            isCompacting: false,
+            isProcessing: false,
+            transientAlert: null,
+            messages,
+          };
         });
         await get().processQueue();
       } else if (event.status === 'failed') {

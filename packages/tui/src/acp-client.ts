@@ -884,7 +884,48 @@ abstract class BaseAcpClient implements SessionClient {
       // (they update local caches before this switch runs).  The rest are
       // not yet mapped to TUI events.
       // (`agent_thought_chunk` is handled above — see ThinkingDisplay pipeline.)
-      case 'session_info_update':
+      case 'session_info_update': {
+        const meta = (
+          update as {
+            _meta?: {
+              kiro?: {
+                kind?: string;
+                conversationSummary?: string;
+                summarization?: {
+                  status: string;
+                  summary?: { conversationSummary?: string };
+                };
+              };
+            };
+          }
+        )._meta?.kiro;
+        if (meta?.kind === 'summarization_completed') {
+          return {
+            type: AgentEventType.CompactionStatus,
+            status: 'completed' as const,
+            summary:
+              meta.conversationSummary ??
+              meta.summarization?.summary?.conversationSummary,
+          };
+        }
+        if (meta?.kind === 'summarization_started') {
+          return {
+            type: AgentEventType.CompactionStatus,
+            status: 'started' as const,
+          };
+        }
+        if (meta?.kind === 'summarization_failed') {
+          return {
+            type: AgentEventType.CompactionStatus,
+            status: 'failed' as const,
+          };
+        }
+        logger.debug(
+          'KAS session update (not yet mapped):',
+          update.sessionUpdate
+        );
+        return null;
+      }
       case 'config_option_update':
       case 'plan':
       case 'usage_update':
@@ -1458,6 +1499,8 @@ export class KasAcpClient extends BaseAcpClient {
   async initialize(): Promise<void> {
     await this.kiroClient.initialize();
 
+    // Register ext notification handlers
+
     const commands = KAS_COMMANDS.map((cmd) => ({
       name: cmd.name,
       description: cmd.description,
@@ -1703,6 +1746,27 @@ export class KasAcpClient extends BaseAcpClient {
           | undefined;
         const value = args?.value ?? 'show';
         return this.executeKnowledge(value);
+      }
+      case 'compact': {
+        const args = (command as Record<string, unknown>).args as
+          | Record<string, string>
+          | undefined;
+        this.broadcastStreamEvent({
+          type: AgentEventType.CompactionStatus,
+          status: 'started',
+        });
+        this.callExtMethod('_kiro/session/compact', {
+          ...(args?.value && { value: args.value }),
+        }).then((result) => {
+          if (!result.success) {
+            this.broadcastStreamEvent({
+              type: AgentEventType.CompactionStatus,
+              status: 'failed',
+              error: result.message,
+            });
+          }
+        });
+        return { success: true, message: 'Compacting conversation...' };
       }
       default:
         return {
