@@ -22,6 +22,7 @@ use std::env;
 
 use anyhow::Context;
 use aws_sdk_bedrockagent::Client as BedrockAgentClient;
+use aws_sdk_secretsmanager::Client as SecretsManagerClient;
 use kiro_help_corpus_ingest::{
     Partition,
     Source,
@@ -44,6 +45,7 @@ use lambda_runtime::{
 use tracing::{
     error,
     info,
+    warn,
 };
 
 const DEFAULT_REPO: &str = "kiro-team/kiro-cli";
@@ -65,10 +67,7 @@ async fn handler(event: LambdaEvent<serde_json::Value>) -> Result<serde_json::Va
     let kb_id = env::var("KB_ID").context("KB_ID env required")?;
     let region = env::var("AWS_REGION").ok();
     let repo = env::var("KIRO_CLI_REPO").unwrap_or_else(|_| DEFAULT_REPO.to_string());
-    let pat = env::var("GH_PAT").ok();
     let local_checkout = env::var("KIRO_CLI_LOCAL_CHECKOUT").ok();
-
-    info!(%bucket, %kb_id, %repo, has_pat = pat.is_some(), "ingest run starting");
 
     // Resolve the KB's data source ID up front so the writer can carry it.
     let mut loader = aws_config::defaults(aws_config::BehaviorVersion::latest());
@@ -77,6 +76,21 @@ async fn handler(event: LambdaEvent<serde_json::Value>) -> Result<serde_json::Va
     }
     let cfg = loader.load().await;
     let bedrock_agent = BedrockAgentClient::new(&cfg);
+
+    // GitHub PAT — env var first (handy for local testing), then Secrets
+    // Manager via GH_PAT_SECRET_ARN / GH_PAT_SECRET_JSON_KEY (the production
+    // path; CDK passes the ARN, not the value, so PATs never sit in CFN
+    // templates).
+    let pat = match env::var("GH_PAT").ok() {
+        Some(p) if !p.is_empty() => Some(p),
+        _ => match env::var("GH_PAT_SECRET_ARN").ok() {
+            Some(arn) => fetch_pat_from_secret(&cfg, &arn, &env::var("GH_PAT_SECRET_JSON_KEY").unwrap_or_default()).await?,
+            None => None,
+        },
+    };
+
+    info!(%bucket, %kb_id, %repo, has_pat = pat.is_some(), "ingest run starting");
+
     let data_source_id = resolve_data_source_id(&bedrock_agent, &kb_id).await?;
     info!(%data_source_id, "resolved KB data source");
 
@@ -119,4 +133,37 @@ async fn handler(event: LambdaEvent<serde_json::Value>) -> Result<serde_json::Va
             Err(Error::from(format!("ingest failed: {e:#}")))
         }
     }
+}
+
+/// Pull a GitHub PAT from Secrets Manager. The secret stores a JSON object
+/// like `{"KIRO_BOT_PAT":"ghp_..."}`; `json_key` selects which field. Returns
+/// `Ok(None)` if the secret is empty or the key is missing — the caller
+/// downgrades to "unauthenticated GitHub" which is fine for public repos.
+async fn fetch_pat_from_secret(
+    cfg: &aws_config::SdkConfig,
+    arn: &str,
+    json_key: &str,
+) -> anyhow::Result<Option<String>> {
+    let client = SecretsManagerClient::new(cfg);
+    let resp = client
+        .get_secret_value()
+        .secret_id(arn)
+        .send()
+        .await
+        .context("Secrets Manager GetSecretValue")?;
+    let Some(secret_str) = resp.secret_string else {
+        warn!(arn, "secret has no SecretString; skipping PAT");
+        return Ok(None);
+    };
+    if json_key.is_empty() {
+        // Treat the entire SecretString as the PAT.
+        return Ok(Some(secret_str));
+    }
+    let v: serde_json::Value = serde_json::from_str(&secret_str)
+        .with_context(|| format!("parsing secret JSON from {arn}"))?;
+    let pat = v.get(json_key).and_then(|x| x.as_str()).map(String::from);
+    if pat.is_none() {
+        warn!(arn, json_key, "secret JSON missing the requested key; skipping PAT");
+    }
+    Ok(pat)
 }

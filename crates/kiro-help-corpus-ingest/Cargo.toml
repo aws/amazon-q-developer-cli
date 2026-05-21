@@ -21,6 +21,7 @@ async-trait.workspace = true
 aws-config.workspace = true
 aws-sdk-bedrockagent.workspace = true
 aws-sdk-s3.workspace = true
+aws-sdk-secretsmanager.workspace = true
 chrono.workspace = true
 lambda_runtime = "0.13"
 reqwest = { workspace = true }
