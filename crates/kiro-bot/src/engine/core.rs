@@ -281,6 +281,10 @@ pub fn dispatch(core: &BotCore, msg: IncomingMessage, frontend: Arc<dyn Frontend
                 }
             }
 
+            // Capture a copy of the user prompt before move so we can run
+            // the post-reply retrieval check without re-fetching it.
+            let prompt_for_check = text.clone();
+
             tokio::spawn(async move {
                 let ack_id = match frontend
                     .send(Reply::Send {
@@ -336,6 +340,23 @@ pub fn dispatch(core: &BotCore, msg: IncomingMessage, frontend: Arc<dyn Frontend
                 }
 
                 let reply_text = reply_rx.await.unwrap_or("Error".into());
+
+                // Post-reply retrieval check. We log a structured warning when
+                // the model answered a kiro-shaped question without citing.
+                // Don't block the reply — better to ship and tag than silently
+                // hold. CloudWatch metric filters key off "retrieval_check"
+                // for dashboarding.
+                use crate::engine::retrieval_check::{check, RetrievalCheck};
+                if matches!(check(&prompt_for_check, &reply_text), RetrievalCheck::MissingCitation) {
+                    tracing::warn!(
+                        target: "retrieval_check",
+                        conversation = %session_key,
+                        user = %msg.user,
+                        prompt_preview = %prompt_for_check.chars().take(120).collect::<String>(),
+                        "model answered a kiro-related question without citing a source — possible skipped retrieval"
+                    );
+                }
+
                 let _ = frontend
                     .send(Reply::Delete {
                         conversation: platform_id.clone(),
