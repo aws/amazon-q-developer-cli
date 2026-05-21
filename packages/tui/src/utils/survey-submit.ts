@@ -32,7 +32,7 @@ export interface ApertureFormPayload {
   locale: string;
   reference: string;
   location: string;
-  metadata?: Record<string, string>;
+  metadataList?: Array<{ key: string; value: string }>;
 }
 
 // ─── Metadata ────────────────────────────────────────────────────────────────
@@ -74,7 +74,10 @@ export function buildSurveyPayload(
       const value = answers[q.id] ?? '';
       const response: ApertureCustomerResponse['response'] = {
         responseType: q.responseType,
-        responseValue: q.responseType === 'rating' ? [value] : value,
+        responseValue:
+          q.responseType === 'rating'
+            ? [String((q.options?.indexOf(value) ?? 0) + 1)]
+            : value,
       };
       // Include rowLabels/columnLabels for rating types (required for Slack notifications)
       if (q.responseType === 'rating') {
@@ -89,12 +92,12 @@ export function buildSurveyPayload(
     }
   );
 
-  const metadata: Record<string, string> = {
-    userId: meta?.userId ?? getAnonymousUserId(),
-    sessionId: meta?.sessionId ?? '',
-    taskId: meta?.taskId ?? '',
-    isInternal: meta?.isInternal ? 'true' : 'false',
-  };
+  const metadataList: Array<{ key: string; value: string }> = [
+    { key: 'userId', value: meta?.userId ?? getAnonymousUserId() },
+    { key: 'sessionId', value: meta?.sessionId ?? '' },
+    { key: 'taskId', value: meta?.taskId ?? '' },
+    { key: 'isInternal', value: meta?.isInternal ? 'true' : 'false' },
+  ];
 
   return {
     customerResponses,
@@ -104,7 +107,7 @@ export function buildSurveyPayload(
     locale: 'en_US',
     reference: 'kiro-cli',
     location: 'kiro-cli',
-    metadata,
+    metadataList,
   };
 }
 

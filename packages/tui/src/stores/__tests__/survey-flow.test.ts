@@ -186,8 +186,10 @@ describe('Survey flow integration', () => {
     const body = JSON.parse(init.body as string);
     expect(body.category).toBe('KiroCLI');
     expect(body.name).toBe('SessionFeedback');
-    expect(body.customerResponses[0].response.responseValue).toEqual(['Good']);
-    expect(body.metadata.sessionId).toBe('sess-123');
+    expect(body.customerResponses[0].response.responseValue).toEqual(['4']);
+    expect(
+      body.metadataList.find((m: any) => m.key === 'sessionId')?.value
+    ).toBe('sess-123');
   });
 
   it('dismissSurveyPrompt clears prompt bar and bumps dismiss count', () => {

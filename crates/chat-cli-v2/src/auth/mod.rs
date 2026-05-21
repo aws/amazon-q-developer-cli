@@ -25,7 +25,10 @@ pub use builder_id::{
     is_builder_id_logged_in,
     logout,
 };
-pub use consts::START_URL;
+pub use consts::{
+    AMZN_START_URL,
+    START_URL,
+};
 use thiserror::Error;
 
 use crate::aws_common::SdkErrorDisplay;
