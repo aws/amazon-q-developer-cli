@@ -1,6 +1,7 @@
 ---
 doc_meta:
-  validated: 2026-05-16
+  validated: 2026-05-21
+  commit: da73d05a0
   status: validated
   testable_headless: true
   category: setting
@@ -17,23 +18,27 @@ Show thinking/reasoning blocks emitted by the agent in the TUI chat output.
 ## Overview
 
 Controls whether the TUI renders the streaming reasoning ("Thinking") panel
-that some models emit. When disabled (the default), reasoning chunks are
-still received and stored in the conversation, but they are not shown in
-the rendered output.
-
-This setting is **startup-only** — changes take effect on the next TUI
-launch.
+that some models emit. When enabled (the default), reasoning content is
+displayed as it streams. When disabled, reasoning chunks are still received
+and stored in the conversation, but they are not shown in the rendered output.
 
 ## Examples
 
-### Enable
+### Toggle via Display Settings Panel
+
+In chat, open the settings panel and toggle "Show thinking":
+
+```
+/settings
+```
+
+Navigate to Display tab and toggle the "Show thinking" option.
+
+### Enable via CLI
 
 ```bash
 kiro-cli settings chat.showThinking true
 ```
-
-After restart, the TUI will render the `Thinking` panel for any reasoning
-text the agent streams.
 
 ### Check current value
 
@@ -41,7 +46,7 @@ text the agent streams.
 kiro-cli settings chat.showThinking
 ```
 
-### Disable (return to default)
+### Disable
 
 ```bash
 kiro-cli settings chat.showThinking false
@@ -49,8 +54,9 @@ kiro-cli settings chat.showThinking false
 
 ## Notes
 
-- Setting is read from `~/.kiro/settings/cli.json` (or
-  `$KIRO_HOME/settings/cli.json`) once at TUI launch.
+- Setting is stored in `~/.kiro/settings/cli.json` (or
+  `$KIRO_HOME/settings/cli.json`).
+- Changes via `/settings` → Display take effect immediately.
 - Reasoning chunks continue to be ingested into the conversation history
   even when display is off, so disabling and re-enabling does not lose
   data within a session.

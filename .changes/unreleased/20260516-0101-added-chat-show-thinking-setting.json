@@ -1,4 +1,4 @@
 {
   "type": "added",
-  "description": "Added `chat.showThinking` setting to display the agent's reasoning (\"Thinking\") blocks in chat output. Disabled by default — enable with `kiro-cli settings chat.showThinking true`."
+  "description": "Added `chat.showThinking` setting to display the agent's reasoning (\"Thinking\") blocks in chat output. Enabled by default — disable via `/settings` → Display → Show thinking toggle."
 }

@@ -2,10 +2,10 @@
  * E2E test: `chat.showThinking` gates the `<ThinkingDisplay>` render in the
  * conversation view.
  *
- * Default (false): the agent's reasoning text is ingested into the store
+ * Default (true): the header and the reasoning lines are visible.
+ * Opt-out (false): the agent's reasoning text is ingested into the store
  *   (Model message has `thinking` populated) but the "Thinking" header
  *   from `ThinkingDisplay` is not rendered.
- * Opt-in (true): the header and the reasoning lines are visible.
  *
  * The live "Thinking..." spinner (`ThinkingMessage`) is a separate
  * affordance and is not affected by this setting; we don't assert on it
@@ -25,10 +25,11 @@ describe('chat.showThinking setting', () => {
     }
   });
 
-  it('hides <ThinkingDisplay> by default while still ingesting reasoning into the store', async () => {
+  it('hides <ThinkingDisplay> when chat.showThinking=false while still ingesting reasoning into the store', async () => {
     testCase = await E2ETestCase.builder()
       .withTestName('show-thinking-default-hidden')
       .withTerminal({ width: 120, height: 40 })
+      .withGlobalSettings({ 'chat.showThinking': false })
       .launch();
 
     await testCase.waitForText('ask a question', 15000);

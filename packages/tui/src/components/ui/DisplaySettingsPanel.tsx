@@ -11,6 +11,7 @@ import {
   useAllowAsciiArt,
   useAllowAnimations,
   useAllowIcons,
+  useShowThinking,
 } from '../../hooks/useGlyphs.js';
 import { useAppStore } from '../../stores/app-store.js';
 
@@ -44,6 +45,13 @@ const ITEMS: ToggleItem[] = [
       'When on: status icons (● running, ○ idle, ⚠ warning). When off: text-only labels',
     defaultValue: true,
   },
+  {
+    key: Settings.CHAT_SHOW_THINKING,
+    label: 'Show thinking',
+    description:
+      'When on: display model reasoning/thinking content. When off: reasoning is hidden',
+    defaultValue: true,
+  },
 ];
 
 interface DisplaySettingsPanelProps {
@@ -71,6 +79,7 @@ export const DisplaySettingsPanel: React.FC<DisplaySettingsPanelProps> = ({
   const { setAllowAsciiArt } = useAllowAsciiArt();
   const { setAllowAnimations } = useAllowAnimations();
   const { setAllowIcons } = useAllowIcons();
+  const { setShowThinking } = useShowThinking();
   const kiro = useAppStore((state) => state.kiro);
 
   const toggle = useCallback(
@@ -87,9 +96,18 @@ export const DisplaySettingsPanel: React.FC<DisplaySettingsPanelProps> = ({
         setAllowAnimations(newVal);
       } else if (key === Settings.CHAT_ICONS) {
         setAllowIcons(newVal);
+      } else if (key === Settings.CHAT_SHOW_THINKING) {
+        setShowThinking(newVal);
       }
     },
-    [values, kiro, setAllowAsciiArt, setAllowAnimations, setAllowIcons]
+    [
+      values,
+      kiro,
+      setAllowAsciiArt,
+      setAllowAnimations,
+      setAllowIcons,
+      setShowThinking,
+    ]
   );
 
   useInput((input, key) => {

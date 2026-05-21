@@ -19,6 +19,8 @@ interface GlyphsContextValue {
   setAllowAnimations: (v: boolean) => void;
   allowIcons: boolean;
   setAllowIcons: (v: boolean) => void;
+  showThinking: boolean;
+  setShowThinking: (v: boolean) => void;
 }
 
 const resolveAllowAsciiArt = (): boolean => {
@@ -30,6 +32,7 @@ const resolveAllowAsciiArt = (): boolean => {
 const initialAllowAsciiArt = resolveAllowAsciiArt();
 const initialAllowAnimations = readBoolSetting(Settings.CHAT_ANIMATIONS, true);
 const initialAllowIcons = readBoolSetting(Settings.CHAT_ICONS, true);
+const initialShowThinking = readBoolSetting(Settings.CHAT_SHOW_THINKING, true);
 
 const defaultValue: GlyphsContextValue = {
   glyphs: initialAllowAsciiArt ? UNICODE_GLYPHS : ASCII_GLYPHS,
@@ -40,6 +43,8 @@ const defaultValue: GlyphsContextValue = {
   setAllowAnimations: () => {},
   allowIcons: initialAllowIcons,
   setAllowIcons: () => {},
+  showThinking: initialShowThinking,
+  setShowThinking: () => {},
 };
 
 export const GlyphsContext = createContext<GlyphsContextValue>(defaultValue);
@@ -50,6 +55,7 @@ export const GlyphsProvider = ({ children }: { children: React.ReactNode }) => {
     initialAllowAnimations
   );
   const [allowIcons, setAllowIcons] = useState(initialAllowIcons);
+  const [showThinking, setShowThinking] = useState(initialShowThinking);
 
   const value = useMemo<GlyphsContextValue>(
     () => ({
@@ -61,8 +67,10 @@ export const GlyphsProvider = ({ children }: { children: React.ReactNode }) => {
       setAllowAnimations,
       allowIcons,
       setAllowIcons,
+      showThinking,
+      setShowThinking,
     }),
-    [allowAsciiArt, allowAnimations, allowIcons]
+    [allowAsciiArt, allowAnimations, allowIcons, showThinking]
   );
 
   return React.createElement(GlyphsContext.Provider, { value }, children);
@@ -87,4 +95,11 @@ export const useAllowAnimations = () => {
 export const useAllowIcons = () => {
   const ctx = useContext(GlyphsContext);
   return { allowIcons: ctx.allowIcons, setAllowIcons: ctx.setAllowIcons };
+};
+export const useShowThinking = () => {
+  const ctx = useContext(GlyphsContext);
+  return {
+    showThinking: ctx.showThinking,
+    setShowThinking: ctx.setShowThinking,
+  };
 };

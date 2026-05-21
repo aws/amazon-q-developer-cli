@@ -22,25 +22,13 @@ import { WelcomeScreen } from '../welcome-screen/index.js';
 import { WelcomeMessageBar } from './WelcomeMessageBar.js';
 import { getAgentColor } from '../../utils/agentColors.js';
 import { Settings } from '../../constants/settings.js';
-import { readBoolSetting } from '../../utils/cli-settings.js';
 import { computeFlushSet } from '../../utils/turn-flush-machine.js';
 import { trimStaticItems } from '../../utils/trim-static-items.js';
 import { useTerminalSize } from '../../hooks/useTerminalSize.js';
 import { useTheme } from '../../hooks/useThemeContext.js';
 import { useTwinkiContext } from 'twinki';
+import { useShowThinking } from '../../hooks/useGlyphs.js';
 import { SESSION_TOOL_NAMES } from '../../types/agent-events.js';
-
-/**
- * Read the `chat.showThinking` setting once at module load. When `false`
- * (the default), the streaming reasoning panel (`<ThinkingDisplay>`) is
- * hidden everywhere it would otherwise render. The live "Thinking..."
- * spinner (`<ThinkingMessage>`) is unaffected — that's a separate
- * "model is working" affordance, not reasoning content.
- *
- * Startup-only by design: the setting lives in `~/.kiro/settings/cli.json`
- * and takes effect on the next TUI launch. There is no live toggle.
- */
-const SHOW_THINKING = readBoolSetting(Settings.CHAT_SHOW_THINKING, false);
 
 interface ConversationTurn {
   userMessage: StoreMessageType;
@@ -104,6 +92,7 @@ const StaticMessage = React.memo(function StaticMessage({
   prevRole?: MessageRole;
   mainAgentName?: string;
 }) {
+  const { showThinking: SHOW_THINKING } = useShowThinking();
   if (message.role === MessageRole.User) {
     return (
       <Message
@@ -189,6 +178,7 @@ const ActiveTurnTail = React.memo(function ActiveTurnTail({
 }) {
   const { isProcessing } = useConversationState();
   const { height: termHeight } = useTerminalSize();
+  const { showThinking: SHOW_THINKING } = useShowThinking();
   const summaryText = useAppStore((s) => s.turnSummaries.get(turnId));
 
   // Find the last message that isn't a subagent tool call (those are hidden in rendering)

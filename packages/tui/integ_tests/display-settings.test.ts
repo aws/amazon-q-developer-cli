@@ -70,10 +70,12 @@ describe('Display settings panel', () => {
     expect(snap).toContain('Animations');
     expect(snap).toContain('ASCII art');
     expect(snap).toContain('Icons');
-    // Default values: Animations on, ASCII art on (inverted: asciiMode=false shows as on), Icons on
+    expect(snap).toContain('Show thinking');
+    // Default values: Animations on, ASCII art on (inverted: asciiMode=false shows as on), Icons on, Show thinking on
     expect(snap).toMatch(/Animations\s+on/);
     expect(snap).toMatch(/ASCII art\s+on/);
     expect(snap).toMatch(/Icons\s+on/);
+    expect(snap).toMatch(/Show thinking\s+on/);
   }, 30000);
 
   it('toggling ASCII art updates UI', async () => {
@@ -142,6 +144,13 @@ describe('Display settings panel', () => {
 
     snap = testCase.getSnapshot().join('\n');
     expect(snap).toContain('When on: status icons');
+
+    // Navigate down to Show thinking
+    await testCase.sendKeys(DOWN_ARROW);
+    await testCase.sleepMs(300);
+
+    snap = testCase.getSnapshot().join('\n');
+    expect(snap).toContain('When on: display model reasoning');
   }, 30000);
 
   it('respects pre-existing settings on open', async () => {
@@ -161,5 +170,47 @@ describe('Display settings panel', () => {
     const snap = testCase.getSnapshot().join('\n');
     // ASCII art should show "off" since allowAsciiArt=false
     expect(snap).toMatch(/ASCII art\s+off/);
+  }, 30000);
+
+  it('toggling Show thinking updates UI', async () => {
+    testCase = await TestCase.builder()
+      .withTestName('display-settings-thinking-toggle')
+      .withEnv({ KIRO_HOME: testDir })
+      .launch();
+    await testCase.waitForVisibleText('ask a question', 15000);
+
+    await openDisplaySettings(testCase);
+    await testCase.waitForVisibleText('Animations', 5000);
+
+    // Show thinking is the 4th item; navigate down 3 times then toggle
+    await testCase.sendKeys(DOWN_ARROW);
+    await testCase.sleepMs(200);
+    await testCase.sendKeys(DOWN_ARROW);
+    await testCase.sleepMs(200);
+    await testCase.sendKeys(DOWN_ARROW);
+    await testCase.sleepMs(200);
+    await testCase.sendKeys(ENTER);
+    await testCase.sleepMs(500);
+
+    // Verify the toggle changed in the UI (on -> off)
+    const snap = testCase.getSnapshot().join('\n');
+    expect(snap).toMatch(/Show thinking\s+off/);
+  }, 30000);
+
+  it('respects pre-existing showThinking=false setting on open', async () => {
+    const settingsPath = join(testDir, 'settings', 'cli.json');
+    writeFileSync(settingsPath, JSON.stringify({ 'chat.showThinking': false }), 'utf-8');
+
+    testCase = await TestCase.builder()
+      .withTestName('display-settings-preexisting-thinking')
+      .withEnv({ KIRO_HOME: testDir })
+      .launch();
+    await testCase.waitForVisibleText('ask a question', 15000);
+
+    await openDisplaySettings(testCase);
+    await testCase.waitForVisibleText('Animations', 5000);
+
+    const snap = testCase.getSnapshot().join('\n');
+    expect(snap).toMatch(/Show thinking\s+off/);
   }, 30000);
 });

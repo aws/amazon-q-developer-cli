@@ -5,11 +5,9 @@ import { AgentEventType, ContentType } from '../src/types/agent-events';
 /**
  * These tests exercise the `<ThinkingDisplay>` component (rendering, tail
  * truncation, ctrl+o expand/collapse). Rendering is gated by
- * `chat.showThinking` (default `false`), so each test opts in via
- * `withGlobalSettings({ 'chat.showThinking': true })`. Without this, the
- * gate would fall through to the developer's real
- * `~/.kiro/settings/cli.json` and the suite would silently depend on local
- * config — failing in CI or any environment where the setting is unset.
+ * `chat.showThinking` (default `true`), so each test explicitly sets it via
+ * `withGlobalSettings({ 'chat.showThinking': true })` to be resilient
+ * against future default changes.
  *
  * The setting itself is exercised by `e2e_tests/show-thinking-setting.test.ts`.
  */
