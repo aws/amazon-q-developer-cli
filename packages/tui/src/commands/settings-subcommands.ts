@@ -12,6 +12,8 @@ import type { CommandContext } from './types.js';
 import type { AvailableCommand } from '../types/commands.js';
 import type { EffectHandler } from './effects.js';
 import { setupTerminal } from '../utils/terminal-setup.js';
+import { Settings } from '../constants/settings.js';
+import { readStringSetting } from '../utils/cli-settings.js';
 
 export interface SettingsSubcommand {
   /** Machine value passed as `/settings <value>` */
@@ -96,6 +98,43 @@ export const settingsSubcommands: readonly SettingsSubcommand[] = [
       ctx.setShowKeybindingsPanel(true);
     },
   },
+  {
+    value: 'history',
+    label: 'history',
+    description: 'Prompt history scope (session or global)',
+    handle: ({ ctx, settingsCommand }) => {
+      const current = readStringSetting(Settings.CHAT_HISTORY_MODE, 'session');
+      ctx.setSettingsReturnOnEscape(true);
+      ctx.setActiveCommand({
+        command: {
+          ...settingsCommand,
+          meta: { ...settingsCommand.meta, inputType: 'selection' as const, searchable: false },
+        },
+        options: [
+          { value: 'history:session', label: `session${current === 'session' ? ' ●' : ''}`, description: 'Each session has its own prompt history' },
+          { value: 'history:global', label: `global${current === 'global' ? ' ●' : ''}`, description: 'All sessions share one prompt history' },
+        ],
+      });
+    },
+  },
+  {
+    value: 'history:session',
+    label: 'session',
+    description: 'Each session has its own prompt history',
+    handle: async ({ ctx }) => {
+      await ctx.kiro.setSetting(Settings.CHAT_HISTORY_MODE, 'session').catch(() => {});
+      ctx.showAlert('History: per-session (takes effect next session)', 'success', 5000);
+    },
+  },
+  {
+    value: 'history:global',
+    label: 'global',
+    description: 'All sessions share one prompt history',
+    handle: async ({ ctx }) => {
+      await ctx.kiro.setSetting(Settings.CHAT_HISTORY_MODE, 'global').catch(() => {});
+      ctx.showAlert('History: global (takes effect next session)', 'success', 5000);
+    },
+  },
 ] as const;
 
 /** Lookup helper: find a subcommand by its value. */
@@ -132,10 +171,12 @@ export function buildSettingsActiveCommand(settingsCommand: AvailableCommand): {
         searchable: false,
       },
     },
-    options: settingsSubcommands.map((s) => ({
-      value: s.value,
-      label: s.label,
-      description: s.description,
-    })),
+    options: settingsSubcommands
+      .filter((s) => !s.value.includes(':'))
+      .map((s) => ({
+        value: s.value,
+        label: s.label,
+        description: s.description,
+      })),
   };
 }

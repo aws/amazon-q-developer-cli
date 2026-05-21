@@ -1,0 +1,4 @@
+{
+  "type": "added",
+  "description": "Prompt history (Up/Down arrow) is now per-session by default. Configure via /settings → history to switch between session and global modes"
+}

@@ -18,4 +18,5 @@ export const Settings = {
   CHAT_ANIMATIONS: 'chat.allowAnimations',
   CHAT_ICONS: 'chat.allowIcons',
   CHAT_SHOW_THINKING: 'chat.showThinking',
+  CHAT_HISTORY_MODE: 'chat.historyMode',
 } as const;

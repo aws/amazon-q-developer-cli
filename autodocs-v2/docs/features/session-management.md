@@ -185,6 +185,25 @@ Sessions are per-directory by design. To work around this:
 **Cause**: Session was created in a different directory  
 **Solution**: Sessions are tied to their original directory. Start a new session or navigate to the original directory.
 
+## Prompt History
+
+Prompt history (Up/Down arrow navigation) is scoped per-session by default. Each session stores its own history file:
+
+- `~/.kiro/sessions/cli/{session_id}.history`
+
+When you start a new session, the history starts fresh. When you resume an existing session, its prompt history is restored.
+
+### Configuration
+
+Use `/settings` → `history` to switch between:
+
+| Mode | Description |
+|------|-------------|
+| **session** (default) | Each session has its own prompt history |
+| **global** | All sessions share one history file (`~/.kiro/.cli_bash_history`) |
+
+**Backward compatibility**: If a global history file exists from a previous version, new sessions inherit it as a starting point.
+
 ## Related
 
 - [/chat save](../slash-commands/chat-save.md) - Save command

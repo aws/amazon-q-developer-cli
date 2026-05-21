@@ -249,6 +249,7 @@ import {
 import { extractRpcErrorMessage } from '../utils/error-handling.js';
 import { CommandHistory } from '../utils/command-history.js';
 import { Settings } from '../constants/settings.js';
+import { readStringSetting } from '../utils/cli-settings.js';
 import {
   resolveNotificationMethod,
   playNotification,
@@ -1181,7 +1182,12 @@ function buildCommandContext(
     resetMessages: state.resetMessages,
     sendMessage: state.sendMessage,
     createStreamEventHandler: state.createStreamEventHandler,
-    setSessionId: (id: string | null) => set({ sessionId: id, initErrors: [] }),
+    setSessionId: (id: string | null) => {
+      if (id && readStringSetting(Settings.CHAT_HISTORY_MODE, 'session') === 'session') {
+        CommandHistory.getInstance().setSessionId(id);
+      }
+      set({ sessionId: id, initErrors: [] });
+    },
     addSystemMessage: (content: string, success: boolean) =>
       set((s) => ({
         messages: [

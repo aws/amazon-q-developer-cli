@@ -24,8 +24,9 @@ import { sessionConversationsStore } from './stores/session-conversations.js';
 import { pickSessionFromEntries } from './utils/session-picker';
 import type { AgentStreamEvent } from './types/agent-events';
 import { truncateToRecentTurns } from './utils/truncate-history';
-import { readBoolSetting } from './utils/cli-settings';
+import { readBoolSetting, readStringSetting } from './utils/cli-settings';
 import { Settings } from './constants/settings';
+import { CommandHistory } from './utils/command-history';
 import { GlyphsProvider } from './hooks/useGlyphs';
 import { getAnnouncements } from './constants/feed.js';
 import {
@@ -504,6 +505,9 @@ const startInitialization = (
 
       await kiro.createSession(resolvedSessionId);
       appStore.setState({ sessionId: kiro.sessionId ?? null });
+      if (kiro.sessionId && readStringSetting(Settings.CHAT_HISTORY_MODE, 'session') === 'session') {
+        CommandHistory.getInstance().setSessionId(kiro.sessionId);
+      }
 
       // Clear the history handler so future events (from live streaming)
       // don't get buffered.

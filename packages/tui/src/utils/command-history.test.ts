@@ -89,4 +89,40 @@ describe('CommandHistory', () => {
     // Should preserve the multiline entry as a single item
     expect(h2.getAll()).toEqual(['single line', 'line1\nline2\nline3']);
   });
+
+  test('switchToFile isolates history per file', () => {
+    const fileA = join(tmpdir(), `kiro-test-history-a-${process.pid}`);
+    const fileB = join(tmpdir(), `kiro-test-history-b-${process.pid}`);
+    const h = CommandHistory.createWithFile(fileA);
+
+    h.add('from-a');
+    h.switchToFile(fileB);
+    h.add('from-b');
+
+    expect(h.getAll()).toEqual(['from-a', 'from-b']);
+
+    // Switch back to A — should reload A's history
+    h.switchToFile(fileA);
+    expect(h.getAll()).toEqual(['from-a']);
+
+    try { rmSync(fileA); } catch { /* ignore */ }
+    try { rmSync(fileB); } catch { /* ignore */ }
+  });
+
+  test('setSessionId switches to session-specific file', () => {
+    history.add('global-cmd');
+    history.setSessionId('test-session-123');
+    history.add('session-cmd');
+
+    expect(history.getAll()).toContain('session-cmd');
+  });
+
+  test('switchToFile is no-op when path unchanged', () => {
+    const file = join(tmpdir(), `kiro-test-noop-${process.pid}`);
+    const h = CommandHistory.createWithFile(file);
+    h.add('cmd1');
+    h.switchToFile(file);
+    expect(h.getAll()).toEqual(['cmd1']);
+    try { rmSync(file); } catch { /* ignore */ }
+  });
 });

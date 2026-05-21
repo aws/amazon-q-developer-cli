@@ -57,11 +57,12 @@ describe('/settings command', () => {
       const call = ctx._spies.setActiveCommand!.mock.calls[0]!;
       const { options } = call[0];
 
-      // One menu option per subcommand in the registry
-      expect(options).toHaveLength(settingsSubcommands.length);
-      for (let i = 0; i < settingsSubcommands.length; i++) {
-        expect(options[i].value).toBe(settingsSubcommands[i]!.value);
-        expect(options[i].label).toBe(settingsSubcommands[i]!.label);
+      // One menu option per top-level subcommand (sub-options with ':' are nested)
+      const topLevel = settingsSubcommands.filter((s) => !s.value.includes(':'));
+      expect(options).toHaveLength(topLevel.length);
+      for (let i = 0; i < topLevel.length; i++) {
+        expect(options[i].value).toBe(topLevel[i]!.value);
+        expect(options[i].label).toBe(topLevel[i]!.label);
       }
     });
 
