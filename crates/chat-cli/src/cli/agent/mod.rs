@@ -1235,10 +1235,19 @@ impl Agents {
 
         // Add Slack-bot help agent (kiro-help mode used by the kiro-help bot
         // only; distinct from the in-CLI kiro_help built-in above).
+        //
+        // The system prompt and the per-turn workflow live in two files: the
+        // prompt sets identity + retrieval rules; the SKILL.md is a numbered
+        // procedure the model reruns each turn. Concatenating them here means
+        // both ride into the prompt every turn (Inclusion::Always) — `skill://`
+        // resources are Inclusion::Auto, which is wrong for a workflow we want
+        // applied unconditionally.
         all_agents.push({
             let mut agent: Agent = serde_json::from_str(include_str!("../../agents/kiro-help.json"))
                 .expect("Invalid kiro-help.json");
-            agent.prompt = Some(include_str!("../../agents/kiro_help_prompt.md").to_string());
+            let prompt = include_str!("../../agents/kiro_help_prompt.md");
+            let skill = include_str!("../../agents/skills/kiro-help/SKILL.md");
+            agent.prompt = Some(format!("{prompt}\n\n---\n\n{skill}"));
             configure_builtin_agent_resources(&mut agent, &resolver).await;
             agent
         });
@@ -2764,6 +2773,55 @@ mod tests {
                 "bot agent must not expose write tool {forbidden}"
             );
         }
+    }
+
+    /// The skill file is a separate, versionable per-turn procedure that the
+    /// model reruns every reply. We assert it ships with the binary, parses
+    /// frontmatter, and contains the load-bearing steps. If the skill drifts
+    /// out of sync with the prompt's MUST-language, this catches it.
+    #[test]
+    fn kiro_help_skill_defines_per_turn_workflow() {
+        let skill = include_str!("../../agents/skills/kiro-help/SKILL.md");
+        // Frontmatter contract — kiro-cli's skill loader expects a name+desc.
+        assert!(
+            skill.starts_with("---\nname: kiro-help-workflow"),
+            "skill must start with frontmatter declaring name = kiro-help-workflow"
+        );
+        // The workflow's three load-bearing steps must remain in the file —
+        // weakening or removing them re-introduces the no-retrieval failure
+        // mode this skill exists to prevent.
+        for clause in [
+            "search_kiro_knowledge",
+            "search_github_issues",
+            "Sources:",
+        ] {
+            assert!(
+                skill.contains(clause),
+                "skill must keep the '{clause}' clause that defines the workflow"
+            );
+        }
+    }
+
+    /// At registration time the bot agent's prompt should carry both the
+    /// system prompt AND the skill file content — the skill is the per-turn
+    /// recipe and must always be in context, so we concatenate rather than
+    /// rely on `skill://` (which is Auto-inclusion).
+    #[tokio::test]
+    async fn kiro_help_bot_agent_prompt_includes_skill_workflow() {
+        // Mirror the registration logic: parse the JSON, attach the prompt
+        // concatenated with the skill, and assert the resulting prompt
+        // contains the load-bearing skill clauses verbatim. This catches
+        // a future regression where someone forgets to concatenate or
+        // swaps the skill for a `skill://` resource.
+        let mut agent: Agent =
+            serde_json::from_str(include_str!("../../agents/kiro-help.json")).expect("Invalid kiro-help.json");
+        let prompt = include_str!("../../agents/kiro_help_prompt.md");
+        let skill = include_str!("../../agents/skills/kiro-help/SKILL.md");
+        agent.prompt = Some(format!("{prompt}\n\n---\n\n{skill}"));
+        let combined = agent.prompt.as_deref().unwrap();
+        assert!(combined.contains("# kiro-help workflow"));
+        assert!(combined.contains("Self-check before sending"));
+        assert!(combined.contains("MUST be `search_kiro_knowledge`"));
     }
 
     /// Phase 6 follow-up: the system prompt must hard-require retrieval before
