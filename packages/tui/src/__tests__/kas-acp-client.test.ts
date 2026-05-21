@@ -1328,6 +1328,67 @@ describe('KasAcpClient', () => {
     });
   });
 
+  // ── /code command ──
+
+  describe('/code command', () => {
+    it('executeCommand code defaults to status subcommand', async () => {
+      mockKiroSendExtMethod.mockResolvedValue({
+        success: true,
+        status: {
+          initialized: true,
+          languages: ['typescript'],
+          lspServers: [],
+        },
+      });
+      const client = new KasAcpClient();
+      await client.initialize();
+      await client.newSession();
+
+      const result = await client.executeCommand({
+        command: 'code',
+      } as any);
+
+      expect(result.success).toBe(true);
+      expect((result.data as any).status).toBe('initialized');
+    });
+
+    it('executeCommand code passes subcommand from args.value', async () => {
+      mockKiroSendExtMethod.mockResolvedValue({ status: 'initializing' });
+      const client = new KasAcpClient();
+      await client.initialize();
+      await client.newSession();
+
+      await client.executeCommand({
+        command: 'code',
+        args: { value: 'init' },
+      } as any);
+
+      expect(mockKiroSendExtMethod).toHaveBeenCalledWith(
+        '_kiro/codeIntelligence',
+        expect.objectContaining({ subcommand: 'init' })
+      );
+    });
+
+    it('executeCommand code overview passes subcommand', async () => {
+      mockKiroSendExtMethod.mockResolvedValue({
+        executePrompt: 'overview data',
+      });
+      const client = new KasAcpClient();
+      await client.initialize();
+      await client.newSession();
+
+      await client.executeCommand({
+        command: 'code',
+        args: { value: 'overview' },
+      } as any);
+
+      expect(mockKiroSendExtMethod).toHaveBeenCalledWith(
+        '_kiro/codeIntelligence',
+        expect.objectContaining({ subcommand: 'overview' })
+      );
+    });
+  });
+
   // ── /prompts command ──
 
   it('executeCommand("prompts") with no args returns success message', async () => {

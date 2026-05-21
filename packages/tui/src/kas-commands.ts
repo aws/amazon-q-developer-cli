@@ -20,6 +20,7 @@ export enum KasCommandName {
   Knowledge = '/knowledge',
   Compact = '/compact',
   Context = '/context',
+  Code = '/code',
 }
 
 const KAS_COMMAND_NAME_VALUES: ReadonlySet<string> = new Set(
@@ -139,6 +140,15 @@ export const KAS_COMMANDS: readonly KasCommand[] = [
       hint: 'add <path>, remove <path>, clear',
       subcommands: ['show', 'add', 'remove', 'clear'],
       subcommandHints: { add: '[--force] <path>...', remove: '<path>...' },
+    },
+  },
+  {
+    name: KasCommandName.Code,
+    description:
+      'Code intelligence status, initialization, and codebase overview',
+    meta: {
+      inputType: 'panel',
+      subcommands: ['status', 'init', 'overview'],
     },
   },
 ];

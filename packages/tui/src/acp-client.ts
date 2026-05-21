@@ -1798,6 +1798,13 @@ export class KasAcpClient extends BaseAcpClient {
           message: 'Context breakdown not yet available. Try again shortly.',
         };
       }
+      case 'code': {
+        const args = (command as Record<string, unknown>).args as
+          | Record<string, string>
+          | undefined;
+        const value = args?.value ?? 'status';
+        return this.executeCode(value);
+      }
       default:
         return {
           success: false,
@@ -1949,6 +1956,105 @@ export class KasAcpClient extends BaseAcpClient {
       success: true,
       message: data?.message ?? '',
     };
+  }
+
+  private async executeCode(subcommand: string): Promise<CommandResult> {
+    const validSubcommands = ['status', 'init', 'overview'];
+    const cmd = subcommand.trim().split(/\s+/)[0] || 'status';
+    if (!validSubcommands.includes(cmd)) {
+      return {
+        success: false,
+        message: `Unknown subcommand '${cmd}'. Use: ${validSubcommands.join(', ')}`,
+      };
+    }
+    // TODO: 'logs' is not yet supported by kiro-agent (returns empty array)
+    const result = await this.callExtMethod('_kiro/codeIntelligence', {
+      subcommand: cmd,
+    });
+    if (!result.success) return result;
+
+    // After init, fetch status to show the panel
+    if (cmd === 'init') {
+      const statusResult = await this.callExtMethod('_kiro/codeIntelligence', {
+        subcommand: 'status',
+      });
+      if (statusResult.success) return this.formatCodeResponse(statusResult);
+      return statusResult;
+    }
+
+    return this.formatCodeResponse(result);
+  }
+
+  // TODO: Import CodeIntelligenceResponse from @kiro/acp-type-covenant once released (post v0.3.33)
+  private formatCodeResponse(result: CommandResult): CommandResult {
+    const response = result.data as
+      | {
+          success?: boolean;
+          message?: string;
+          overview?: string;
+          status?: {
+            initialized: boolean;
+            languages: string[];
+            lspServers: Array<{
+              name: string;
+              languages: string[];
+              status: string;
+              isAvailable: boolean;
+            }>;
+          };
+        }
+      | undefined;
+
+    if (!response?.success) {
+      return { success: false, message: response?.message ?? 'Command failed' };
+    }
+
+    // overview/summary → inject as prompt
+    if (response.overview) {
+      return {
+        success: true,
+        message: '',
+        data: {
+          executePrompt: `Here is the codebase overview:\n\n${response.overview}\n\nAnalyze this codebase structure and provide a summary of the project architecture.`,
+          label: '/code overview',
+        },
+      };
+    }
+
+    // status → transform to CodePanelData shape
+    if (response.status) {
+      const { status } = response;
+      const statusStr = status.initialized ? 'initialized' : 'not_initialized';
+      const message = status.initialized
+        ? 'Workspace initialized'
+        : 'Workspace not initialized. Run /code init to initialize.';
+      return {
+        success: true,
+        message: '',
+        data: {
+          status: statusStr,
+          message,
+          // TODO: The following fields are static placeholders. They will be populated
+          // by kiro-agent once upstream changes land there (subsequent PRs).
+          rootPath: process.cwd(),
+          detectedLanguages: status.languages,
+          projectMarkers: [],
+          lsps: (status.lspServers ?? []).map((s) => ({
+            name: s.name,
+            languages: s.languages,
+            status: s.status,
+            isAvailable: s.isAvailable,
+            initDurationMs: null,
+            workspaceFolders: [process.cwd()],
+          })),
+          configPath: '.kiro/settings/lsp.json',
+          docUrl: 'https://kiro.dev/docs/cli/code-intelligence/',
+        },
+      };
+    }
+
+    // logs — just show the message
+    return { success: true, message: response.message ?? '' };
   }
 
   /**
