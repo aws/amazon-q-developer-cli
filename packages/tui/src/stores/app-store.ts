@@ -1206,7 +1206,10 @@ function buildCommandContext(
     sendMessage: state.sendMessage,
     createStreamEventHandler: state.createStreamEventHandler,
     setSessionId: (id: string | null) => {
-      if (id && readStringSetting(Settings.CHAT_HISTORY_MODE, 'session') === 'session') {
+      if (
+        id &&
+        readStringSetting(Settings.CHAT_HISTORY_MODE, 'session') === 'session'
+      ) {
         CommandHistory.getInstance().setSessionId(id);
       }
       set({ sessionId: id, initErrors: [] });

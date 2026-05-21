@@ -509,7 +509,10 @@ const startInitialization = (
 
       await kiro.createSession(resolvedSessionId);
       appStore.setState({ sessionId: kiro.sessionId ?? null });
-      if (kiro.sessionId && readStringSetting(Settings.CHAT_HISTORY_MODE, 'session') === 'session') {
+      if (
+        kiro.sessionId &&
+        readStringSetting(Settings.CHAT_HISTORY_MODE, 'session') === 'session'
+      ) {
         CommandHistory.getInstance().setSessionId(kiro.sessionId);
       }
 

@@ -58,7 +58,9 @@ describe('/settings command', () => {
       const { options } = call[0];
 
       // One menu option per top-level subcommand (sub-options with ':' are nested)
-      const topLevel = settingsSubcommands.filter((s) => !s.value.includes(':'));
+      const topLevel = settingsSubcommands.filter(
+        (s) => !s.value.includes(':')
+      );
       expect(options).toHaveLength(topLevel.length);
       for (let i = 0; i < topLevel.length; i++) {
         expect(options[i].value).toBe(topLevel[i]!.value);

@@ -108,11 +108,23 @@ export const settingsSubcommands: readonly SettingsSubcommand[] = [
       ctx.setActiveCommand({
         command: {
           ...settingsCommand,
-          meta: { ...settingsCommand.meta, inputType: 'selection' as const, searchable: false },
+          meta: {
+            ...settingsCommand.meta,
+            inputType: 'selection' as const,
+            searchable: false,
+          },
         },
         options: [
-          { value: 'history:session', label: `session${current === 'session' ? ' ●' : ''}`, description: 'Each session has its own prompt history' },
-          { value: 'history:global', label: `global${current === 'global' ? ' ●' : ''}`, description: 'All sessions share one prompt history' },
+          {
+            value: 'history:session',
+            label: `session${current === 'session' ? ' ●' : ''}`,
+            description: 'Each session has its own prompt history',
+          },
+          {
+            value: 'history:global',
+            label: `global${current === 'global' ? ' ●' : ''}`,
+            description: 'All sessions share one prompt history',
+          },
         ],
       });
     },
@@ -122,8 +134,14 @@ export const settingsSubcommands: readonly SettingsSubcommand[] = [
     label: 'session',
     description: 'Each session has its own prompt history',
     handle: async ({ ctx }) => {
-      await ctx.kiro.setSetting(Settings.CHAT_HISTORY_MODE, 'session').catch(() => {});
-      ctx.showAlert('History: per-session (takes effect next session)', 'success', 5000);
+      await ctx.kiro
+        .setSetting(Settings.CHAT_HISTORY_MODE, 'session')
+        .catch(() => {});
+      ctx.showAlert(
+        'History: per-session (takes effect next session)',
+        'success',
+        5000
+      );
     },
   },
   {
@@ -131,8 +149,14 @@ export const settingsSubcommands: readonly SettingsSubcommand[] = [
     label: 'global',
     description: 'All sessions share one prompt history',
     handle: async ({ ctx }) => {
-      await ctx.kiro.setSetting(Settings.CHAT_HISTORY_MODE, 'global').catch(() => {});
-      ctx.showAlert('History: global (takes effect next session)', 'success', 5000);
+      await ctx.kiro
+        .setSetting(Settings.CHAT_HISTORY_MODE, 'global')
+        .catch(() => {});
+      ctx.showAlert(
+        'History: global (takes effect next session)',
+        'success',
+        5000
+      );
     },
   },
 ] as const;

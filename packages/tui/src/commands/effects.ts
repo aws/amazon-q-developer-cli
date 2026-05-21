@@ -20,7 +20,6 @@ import type {
   HookInfo,
   KnowledgeEntry,
   McpServerInfo,
-  SlashCommand,
   ToolInfo,
 } from '../stores/app-store.js';
 import type { AvailableCommand } from '../types/commands.js';

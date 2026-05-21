@@ -105,8 +105,16 @@ describe('CommandHistory', () => {
     h.switchToFile(fileA);
     expect(h.getAll()).toEqual(['from-a']);
 
-    try { rmSync(fileA); } catch { /* ignore */ }
-    try { rmSync(fileB); } catch { /* ignore */ }
+    try {
+      rmSync(fileA);
+    } catch {
+      /* ignore */
+    }
+    try {
+      rmSync(fileB);
+    } catch {
+      /* ignore */
+    }
   });
 
   test('setSessionId switches to session-specific file', () => {
@@ -123,6 +131,10 @@ describe('CommandHistory', () => {
     h.add('cmd1');
     h.switchToFile(file);
     expect(h.getAll()).toEqual(['cmd1']);
-    try { rmSync(file); } catch { /* ignore */ }
+    try {
+      rmSync(file);
+    } catch {
+      /* ignore */
+    }
   });
 });
