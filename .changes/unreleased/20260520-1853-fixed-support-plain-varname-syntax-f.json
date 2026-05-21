@@ -1,0 +1,4 @@
+{
+  "type": "fixed",
+  "description": "Support plain ${VAR_NAME} syntax for environment variable expansion in MCP server configuration, in addition to ${env:VAR_NAME}"
+}
