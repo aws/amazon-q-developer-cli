@@ -2535,6 +2535,13 @@ async fn advertise_commands_and_prompts_to_client(
 ) -> Result<(), sacp::Error> {
     let commands: Vec<super::schema::AvailableCommand> = TuiCommand::all_commands()
         .into_iter()
+        .filter(|cmd| {
+            // Hide /voice from command list when rollout is not enabled
+            if cmd.name() == "/voice" {
+                return crate::rollout::Rollout::is_enabled(crate::rollout::Feature::Voice);
+            }
+            true
+        })
         .map(|cmd| super::schema::AvailableCommand {
             name: cmd.name().to_string(),
             description: cmd.description().to_string(),

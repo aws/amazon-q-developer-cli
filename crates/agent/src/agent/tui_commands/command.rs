@@ -57,6 +57,8 @@ pub enum TuiCommand {
     Reply(ReplyArgs),
     /// Code intelligence workspace management
     Code(CodeArgs),
+    /// Voice input mode
+    Voice(VoiceArgs),
     /// View configured hooks
     Hooks(HooksArgs),
     /// Switch to the guide agent for help with Kiro CLI
@@ -228,6 +230,16 @@ pub struct CodeArgs {
     pub subcommand: Option<String>,
 }
 
+/// Arguments for /voice command
+#[typeshare]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct VoiceArgs {
+    /// Enable continuous voice mode (auto-record after each response)
+    #[serde(default)]
+    pub continuous: bool,
+}
+
 /// Arguments for /hooks command
 #[typeshare]
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
@@ -301,6 +313,7 @@ impl TuiCommand {
             TuiCommand::Chat(_) => "/chat",
             TuiCommand::Reply(_) => "/reply",
             TuiCommand::Code(_) => "/code",
+            TuiCommand::Voice(_) => "/voice",
             TuiCommand::Hooks(_) => "/hooks",
             TuiCommand::Guide(_) => "/guide",
             TuiCommand::Rewind(_) => "/rewind",
@@ -330,6 +343,7 @@ impl TuiCommand {
             TuiCommand::Chat(_) => "Load a previous session or start a new one",
             TuiCommand::Reply(_) => "Open editor pre-filled with the last assistant message to compose a reply",
             TuiCommand::Code(_) => "Code intelligence workspace management",
+            TuiCommand::Voice(_) => "Voice input mode for hands-free interaction",
             TuiCommand::Hooks(_) => "View configured hooks",
             TuiCommand::Guide(_) => "Get help with Kiro CLI features from the guide agent",
             TuiCommand::Rewind(_) => "Rewind conversation to a previous turn (forks into a new session)",
@@ -361,6 +375,7 @@ impl TuiCommand {
             TuiCommand::Chat(_) => "/chat [save [--force] <path>|load <path>|new [prompt]]",
             TuiCommand::Reply(_) => "/reply",
             TuiCommand::Code(_) => "/code [status|init|logs|overview|summary]",
+            TuiCommand::Voice(_) => "/voice [start|stop|status]",
             TuiCommand::Hooks(_) => "/hooks",
             TuiCommand::Guide(_) => "/guide [question]",
             TuiCommand::Rewind(_) => "/rewind",
@@ -379,6 +394,7 @@ impl TuiCommand {
             TuiCommand::Tools(_) => vec!["trust-all", "trust", "untrust", "reset"],
             TuiCommand::Chat(_) => vec!["save", "load", "new"],
             TuiCommand::Code(_) => vec!["status", "init", "logs", "overview", "summary"],
+            TuiCommand::Voice(_) => vec!["start", "stop", "status"],
             TuiCommand::Mcp(_) => vec!["list", "add", "remove"],
             _ => vec![],
         }
@@ -483,6 +499,7 @@ impl TuiCommand {
                 Some(meta)
             },
             TuiCommand::Reply(_) => None,
+            TuiCommand::Voice(_) => None,
             TuiCommand::Code(_) => {
                 let mut meta = serde_json::Map::new();
                 meta.insert("inputType".into(), "panel".into());
@@ -559,6 +576,7 @@ impl TuiCommand {
             TuiCommand::Chat(ChatArgs::default()),
             TuiCommand::Reply(ReplyArgs::default()),
             TuiCommand::Code(CodeArgs::default()),
+            TuiCommand::Voice(VoiceArgs::default()),
             TuiCommand::Hooks(HooksArgs::default()),
             TuiCommand::Guide(GuideArgs::default()),
             TuiCommand::Rewind(RewindArgs::default()),
@@ -616,6 +634,9 @@ impl TuiCommand {
                 subcommand: (!args.is_empty()).then(|| args.to_string()),
             })),
             "hooks" => Some(Self::Hooks(HooksArgs::default())),
+            "voice" => Some(Self::Voice(VoiceArgs {
+                continuous: args == "--continuous" || args == "-c",
+            })),
             "guide" => Some(Self::Guide(GuideArgs {
                 question: (!args.is_empty()).then(|| args.to_string()),
             })),

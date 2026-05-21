@@ -149,6 +149,24 @@ export interface CommandContext {
     role: string;
     content: string;
   }>;
+  /** Set voice stop callback */
+  setVoiceStop: (fn: (() => void) | null) => void;
+  /** Set voice cancel callback */
+  setVoiceCancel: (fn: (() => void) | null) => void;
+  /** Set voice level */
+  setVoiceLevel: (level: number | null) => void;
+  /** Set partial transcription text for ghost text display during recording */
+  setVoicePartialText: (text: string | null) => void;
+  /** Whether voice auto-submit is enabled */
+  voiceAutoSubmit: boolean;
+  /** Toggle voice auto-submit */
+  toggleVoiceAutoSubmit: () => void;
+  /** Current voice hint index */
+  voiceHintIndex: number;
+  /** Increment voice hint index */
+  incrementVoiceHint: () => void;
+  /** Set pending voice text for insertion into input */
+  setPendingVoiceText: (text: string | null) => void;
   /** Update user theme colors (prompt text+bg combo and/or response text and/or diff colors).
    *  Pass null to clear an override, undefined to leave unchanged. */
   setUserColors: (

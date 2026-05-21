@@ -6,6 +6,7 @@
 export enum LocalCommand {
   Exit = 'exit',
   Clear = 'clear',
+  Voice = 'voice',
 }
 
 export type LocalEffectContext = {
@@ -20,6 +21,9 @@ const effects: Record<LocalCommand, LocalEffect> = {
   [LocalCommand.Clear]: (ctx) => {
     // Only show alert - backend clears conversation history, UI keeps displaying messages
     ctx.showAlert('Conversation history cleared');
+  },
+  [LocalCommand.Voice]: () => {
+    // Voice is handled by the dispatcher directly, not as a local effect
   },
 };
 

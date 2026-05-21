@@ -333,7 +333,15 @@ def build_chat_bin(
 ):
     package = CHAT_PACKAGE_NAME
 
-    args = [cargo_cmd_name(), "build", "--locked", "--package", package]
+    # ort-sys (used by voice_activity_detector) only provides pre-built ONNX Runtime
+    # binaries for x86_64-unknown-linux-gnu. Disable the voice feature on all other
+    # Linux targets to avoid build failures.
+    ORT_SUPPORTED_TARGETS = {"x86_64-unknown-linux-gnu"}
+    voice_unsupported = any(t not in ORT_SUPPORTED_TARGETS and t.startswith(("x86_64-unknown-linux", "aarch64-unknown-linux")) for t in targets)
+    if voice_unsupported:
+        args = [cargo_cmd_name(), "build", "--locked", "--package", package, "--no-default-features"]
+    else:
+        args = [cargo_cmd_name(), "build", "--locked", "--package", package]
 
     for target in targets:
         args.extend(["--target", target])

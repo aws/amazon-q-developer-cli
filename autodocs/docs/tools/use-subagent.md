@@ -1,13 +1,13 @@
 ---
 doc_meta:
-  validated: 2026-05-19
-  commit: 303e25369
+  validated: 2026-05-21
+  commit: 69ae7a5f5
   status: validated
   testable_headless: true
   category: tool
   title: use_subagent
   description: Delegate tasks to specialized subagents running in parallel with isolated context
-  keywords: [use_subagent, subagent, delegate, parallel, multi-agent, availableAgents, trustedAgents, agent_crew, pipeline, loop, loop_iterations_used, resultType, changes_needed]
+  keywords: [use_subagent, subagent, delegate, parallel, multi-agent, availableAgents, trustedAgents]
   related: [delegate, slash-agent]
 ---
 
@@ -102,63 +102,6 @@ Main agent invokes use_subagent with queries for each subagent. Subagents start 
 ```
 
 **What this does**: Subagent executes all tools without approval prompts. Use with caution.
-
-#### Use Case 5: Crew Pipeline (agent_crew mode)
-
-The `agent_crew` mode orchestrates multi-stage pipelines with dependencies. Stages with no dependencies start in parallel; dependent stages wait for prerequisites.
-
-```json
-{
-  "task": "Implement authentication system",
-  "stages": [
-    {
-      "name": "implement",
-      "role": "code-agent",
-      "prompt_template": "Implement {task}"
-    },
-    {
-      "name": "review",
-      "role": "review-agent",
-      "prompt_template": "Review the implementation. Output NEEDS_CHANGES if issues found.",
-      "depends_on": ["implement"],
-      "loop_to": {
-        "target": "implement",
-        "max_iterations": 3,
-        "trigger": "NEEDS_CHANGES"
-      }
-    }
-  ],
-  "mode": "blocking"
-}
-```
-
-**What this does**: Runs an implement→review cycle. If the reviewer signals changes are needed, the implementer re-runs with feedback (up to 3 iterations).
-
-**Triggering loops**: Stages can trigger loops in two ways:
-1. **Structured signal (recommended)**: The subagent sets `resultType: "changes_needed"` when calling the summary tool
-2. **Text matching (fallback)**: The trigger text (e.g., "NEEDS_CHANGES") appears in the last 500 bytes of output
-
-The structured signal is more reliable because it avoids false positives from trigger text appearing in feedback context from prior iterations.
-
-**Output**: When stages complete, results include `loop_iterations_used` showing how many iterations each stage ran. Stages that looped display this in the formatted output:
-
-```
-## reviewer (↻ 3 iterations)
-
-All checks passed.
-```
-
-**Stage fields**:
-- `name` (string, required): Unique stage identifier
-- `role` (string, required): Agent name to execute this stage
-- `prompt_template` (string, required): Task prompt (`{task}` references the top-level task)
-- `depends_on` (array, optional): Stage names that must complete first
-- `model` (string, optional): Override model for this stage
-- `loop_to` (object, optional): Loop configuration with `target`, `max_iterations` (capped at 10), and `trigger` (min 4 chars)
-
-**Loop validation**: Target must exist, no self-loops, no circular A↔B loops, trigger ≥4 chars, max_iterations ≥1.
-
-**UX**: Press `Ctrl+G` to open the crew monitor. Shows stage status, dependencies, and loop progress (`↻ [2/4]`).
 
 ## Configuration
 

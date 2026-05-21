@@ -415,6 +415,10 @@ pub mod tips {
                 StyledText::command("@file.txt"),
                 StyledText::command("@src/")
             ),
+            format!(
+                "Use {} to speak your prompt instead of typing it",
+                StyledText::command("/voice")
+            ),
         ]
     }
 }

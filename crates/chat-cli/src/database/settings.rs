@@ -198,6 +198,30 @@ pub enum Setting {
     ChatHasSeenLogo,
     #[strum(message = "Show thinking/reasoning blocks in chat output (boolean, default: false; startup-only)")]
     ChatShowThinking,
+    #[cfg(feature = "voice")]
+    #[strum(message = "Voice input language (string)")]
+    VoiceLanguage,
+    #[cfg(feature = "voice")]
+    #[strum(message = "Whisper model size for voice transcription (string)")]
+    VoiceModelSize,
+    #[cfg(feature = "voice")]
+    #[strum(message = "Silence timeout in seconds for voice input (number, default: 5)")]
+    VoiceSilenceTimeout,
+    #[cfg(feature = "voice")]
+    #[strum(message = "Pause duration in ms to trigger partial transcription (number, default: 500)")]
+    VoicePartialPause,
+    #[cfg(feature = "voice")]
+    #[strum(message = "Maximum voice session time in seconds (number)")]
+    VoiceMaxSessionTime,
+    #[cfg(feature = "voice")]
+    #[strum(message = "Voice server URL for remote transcription (string)")]
+    VoiceServerUrl,
+    #[cfg(feature = "voice")]
+    #[strum(message = "Whether voice welcome box has been shown (bool)")]
+    VoiceSeenWelcome,
+    #[cfg(feature = "voice")]
+    #[strum(message = "Auto-submit voice transcription without review (boolean, default: true)")]
+    VoiceAutoSubmit,
 }
 
 impl Setting {
@@ -209,6 +233,10 @@ impl Setting {
     /// Check if this setting can be safely changed via the session tool.
     /// Uses whitelist approach - new settings are denied by default.
     pub fn is_session_safe(&self) -> bool {
+        #[cfg(feature = "voice")]
+        if matches!(self, Self::VoiceAutoSubmit) {
+            return true;
+        }
         matches!(
             self,
             // Display/UX settings
@@ -326,6 +354,22 @@ impl AsRef<str> for Setting {
             Self::ChatAllowIcons => "chat.allowIcons",
             Self::ChatHasSeenLogo => "chat.hasSeenLogo",
             Self::ChatShowThinking => "chat.showThinking",
+            #[cfg(feature = "voice")]
+            Self::VoiceLanguage => "voice.language",
+            #[cfg(feature = "voice")]
+            Self::VoiceModelSize => "voice.modelSize",
+            #[cfg(feature = "voice")]
+            Self::VoiceSilenceTimeout => "voice.silenceTimeout",
+            #[cfg(feature = "voice")]
+            Self::VoicePartialPause => "voice.partialPause",
+            #[cfg(feature = "voice")]
+            Self::VoiceMaxSessionTime => "voice.maxSessionTime",
+            #[cfg(feature = "voice")]
+            Self::VoiceServerUrl => "voice.serverUrl",
+            #[cfg(feature = "voice")]
+            Self::VoiceSeenWelcome => "voice.seenWelcome",
+            #[cfg(feature = "voice")]
+            Self::VoiceAutoSubmit => "voice.autoSubmit",
         }
     }
 }
@@ -406,6 +450,22 @@ impl TryFrom<&str> for Setting {
             "chat.allowIcons" => Ok(Self::ChatAllowIcons),
             "chat.hasSeenLogo" => Ok(Self::ChatHasSeenLogo),
             "chat.showThinking" => Ok(Self::ChatShowThinking),
+            #[cfg(feature = "voice")]
+            "voice.language" => Ok(Self::VoiceLanguage),
+            #[cfg(feature = "voice")]
+            "voice.modelSize" => Ok(Self::VoiceModelSize),
+            #[cfg(feature = "voice")]
+            "voice.silenceTimeout" => Ok(Self::VoiceSilenceTimeout),
+            #[cfg(feature = "voice")]
+            "voice.partialPause" => Ok(Self::VoicePartialPause),
+            #[cfg(feature = "voice")]
+            "voice.maxSessionTime" => Ok(Self::VoiceMaxSessionTime),
+            #[cfg(feature = "voice")]
+            "voice.serverUrl" => Ok(Self::VoiceServerUrl),
+            #[cfg(feature = "voice")]
+            "voice.seenWelcome" => Ok(Self::VoiceSeenWelcome),
+            #[cfg(feature = "voice")]
+            "voice.autoSubmit" => Ok(Self::VoiceAutoSubmit),
             _ => Err(DatabaseError::InvalidSetting(value.to_string())),
         }
     }

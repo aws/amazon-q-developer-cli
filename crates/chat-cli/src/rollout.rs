@@ -1,5 +1,4 @@
-// Rollout framework is intentionally kept for future feature gating even though
-// `variation()` / `is_enabled()` have no callers after the TUI rollout completed.
+// Rollout framework for gradual feature gating by segment and release channel.
 #![allow(dead_code)]
 
 use std::collections::HashMap;
@@ -22,10 +21,13 @@ pub const CONTROL: &str = "CONTROL";
 #[strum(serialize_all = "snake_case")]
 pub enum Feature {
     Tui,
+    Voice,
     #[cfg(test)]
     Test,
     #[cfg(test)]
     TestInternalOnly,
+    #[cfg(test)]
+    TestNightlyOnly,
 }
 
 /// Which user segment the experiment targets.
@@ -39,6 +41,19 @@ pub enum Segment {
     Internal,
 }
 
+/// Which release channel the experiment targets.
+#[derive(Debug, Clone, Copy, Deserialize, Default, PartialEq)]
+#[serde(rename_all = "snake_case")]
+pub enum Channel {
+    /// Experiment applies to all channels (default).
+    #[default]
+    All,
+    /// Experiment applies only to nightly builds.
+    Nightly,
+    /// Experiment applies only to stable builds.
+    Stable,
+}
+
 #[derive(Debug, Clone, Deserialize)]
 pub struct FeatureRollout {
     /// What this experiment is testing.
@@ -48,6 +63,9 @@ pub struct FeatureRollout {
     pub treatment_percent: u8,
     #[serde(default)]
     pub segment: Segment,
+    /// Which release channel this experiment targets.
+    #[serde(default)]
+    pub channel: Channel,
 }
 
 /// Gradual rollout configuration baked into the binary at compile time.
@@ -58,9 +76,8 @@ pub struct FeatureRollout {
 /// different cohorts for different features.
 ///
 /// `percent` controls what fraction of eligible users get TREATMENT.
-/// The remainder get CONTROL. Users outside the segment are not in
-/// the experiment at all (`variation()` returns `None`).
-///
+/// The remainder get CONTROL. Users outside the segment or channel are not
+/// in the experiment at all (`variation()` returns `None`).
 ///
 /// Initialized once at startup via `Rollout::init()`, then accessed
 /// anywhere via `Rollout::variation()` or `Rollout::is_enabled()`.
@@ -69,6 +86,7 @@ pub struct Rollout {
     features: HashMap<String, FeatureRollout>,
     client_id: Option<Uuid>,
     is_internal: bool,
+    is_nightly: bool,
 }
 
 const EMBEDDED_CONFIG: &str = include_str!("../rollout.json");
@@ -91,10 +109,12 @@ impl Rollout {
     pub fn init(client_id: Option<Uuid>, start_url: Option<String>) {
         let features = serde_json::from_str::<HashMap<String, FeatureRollout>>(EMBEDDED_CONFIG).unwrap_or_default();
         let is_internal = start_url.as_deref().map(str::trim) == Some(AMZN_START_URL);
+        let is_nightly = env!("CARGO_PKG_VERSION").contains("-nightly");
         let _ = INSTANCE.set(Rollout {
             features,
             client_id,
             is_internal,
+            is_nightly,
         });
     }
 
@@ -103,8 +123,8 @@ impl Rollout {
     /// - `Some(TREATMENT)` — user is in the experiment and gets the new behavior
     /// - `Some(CONTROL)` — user is in the experiment but gets the default behavior (for
     ///   measurement)
-    /// - `None` — user is not in the experiment (wrong segment, no client_id, or feature not
-    ///   configured)
+    /// - `None` — user is not in the experiment (wrong segment, wrong channel, no client_id, or
+    ///   feature not configured)
     pub fn variation(feature: Feature) -> Option<&'static str> {
         INSTANCE.get()?.variation_impl(feature)
     }
@@ -114,6 +134,11 @@ impl Rollout {
         let config = self.features.get(<&str>::from(feature))?;
         if config.segment == Segment::Internal && !self.is_internal {
             return None;
+        }
+        match config.channel {
+            Channel::Nightly if !self.is_nightly => return None,
+            Channel::Stable if self.is_nightly => return None,
+            _ => {},
         }
         let id = self.client_id?;
         if in_rollout(<&str>::from(feature), id, config.treatment_percent) {
@@ -137,8 +162,10 @@ mod tests {
     fn test_embedded_config_parses() {
         let features: HashMap<String, FeatureRollout> = serde_json::from_str(EMBEDDED_CONFIG).unwrap();
         assert!(features.contains_key(<&str>::from(Feature::Tui)));
+        assert!(features.contains_key(<&str>::from(Feature::Voice)));
         assert!(features.contains_key(<&str>::from(Feature::Test)));
         assert!(features.contains_key(<&str>::from(Feature::TestInternalOnly)));
+        assert!(features.contains_key(<&str>::from(Feature::TestNightlyOnly)));
     }
 
     #[test]
@@ -147,6 +174,7 @@ mod tests {
             features: serde_json::from_str(EMBEDDED_CONFIG).unwrap(),
             client_id: Some(Uuid::from_u128(1)),
             is_internal: false,
+            is_nightly: true,
         };
 
         // test has segment=all, treatment_percent=100 → TREATMENT
@@ -162,10 +190,62 @@ mod tests {
             features: serde_json::from_str(EMBEDDED_CONFIG).unwrap(),
             client_id: Some(Uuid::from_u128(1)),
             is_internal: true,
+            is_nightly: true,
         };
 
         assert_eq!(rollout.variation_impl(Feature::Test), Some(TREATMENT));
         assert_eq!(rollout.variation_impl(Feature::TestInternalOnly), Some(TREATMENT));
+    }
+
+    #[test]
+    fn test_nightly_channel_gate() {
+        // Nightly build, internal user → sees nightly-only feature
+        let rollout = Rollout {
+            features: serde_json::from_str(EMBEDDED_CONFIG).unwrap(),
+            client_id: Some(Uuid::from_u128(1)),
+            is_internal: true,
+            is_nightly: true,
+        };
+        assert_eq!(rollout.variation_impl(Feature::TestNightlyOnly), Some(TREATMENT));
+
+        // Stable build, internal user → does NOT see nightly-only feature
+        let rollout_stable = Rollout {
+            features: serde_json::from_str(EMBEDDED_CONFIG).unwrap(),
+            client_id: Some(Uuid::from_u128(1)),
+            is_internal: true,
+            is_nightly: false,
+        };
+        assert_eq!(rollout_stable.variation_impl(Feature::TestNightlyOnly), None);
+    }
+
+    #[test]
+    fn test_voice_requires_nightly() {
+        // Nightly + internal → voice enabled
+        let rollout = Rollout {
+            features: serde_json::from_str(EMBEDDED_CONFIG).unwrap(),
+            client_id: Some(Uuid::from_u128(1)),
+            is_internal: true,
+            is_nightly: true,
+        };
+        assert_eq!(rollout.variation_impl(Feature::Voice), Some(TREATMENT));
+
+        // Stable + internal → voice NOT enabled
+        let rollout_stable = Rollout {
+            features: serde_json::from_str(EMBEDDED_CONFIG).unwrap(),
+            client_id: Some(Uuid::from_u128(1)),
+            is_internal: true,
+            is_nightly: false,
+        };
+        assert_eq!(rollout_stable.variation_impl(Feature::Voice), None);
+
+        // Nightly + external → voice NOT enabled (segment=internal)
+        let rollout_external = Rollout {
+            features: serde_json::from_str(EMBEDDED_CONFIG).unwrap(),
+            client_id: Some(Uuid::from_u128(1)),
+            is_internal: false,
+            is_nightly: true,
+        };
+        assert_eq!(rollout_external.variation_impl(Feature::Voice), None);
     }
 
     #[test]

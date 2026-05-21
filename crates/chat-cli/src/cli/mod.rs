@@ -160,6 +160,40 @@ pub enum RootSubcommand {
         #[arg(long)]
         agent: String,
     },
+    /// Record voice and print transcription to stdout (used by TUI).
+    #[cfg(feature = "voice")]
+    #[command(hide = true)]
+    Voice {
+        /// Push-to-talk mode (disables silence auto-stop)
+        #[arg(long)]
+        ptt: bool,
+    },
+    /// Start a voice recording server for remote/cloud desktop use.
+    #[cfg(feature = "voice")]
+    VoiceServe {
+        /// Port to listen on.
+        #[arg(long, default_value = "19876")]
+        port: u16,
+        /// Address to bind to.
+        #[arg(long, default_value = "127.0.0.1")]
+        bind: String,
+    },
+    /// Set up voice mode for a cloud desktop (run locally).
+    #[cfg(feature = "voice")]
+    #[command(name = "voice-cloud-setup")]
+    VoiceCloudSetup {
+        /// Cloud desktop hostname or SSH config alias
+        host: String,
+        /// Port for voice server
+        #[arg(long, default_value = "19876")]
+        port: u16,
+        /// Path to kiro binary on cloud desktop
+        #[arg(long)]
+        remote_bin: Option<String>,
+        /// SSH identity file
+        #[arg(long, short = 'i')]
+        identity: Option<String>,
+    },
 }
 
 impl RootSubcommand {
@@ -333,6 +367,73 @@ impl RootSubcommand {
                     chat_cli_v2::agent::acp::acp_agent::execute(&mut os, spawn_args, legacy_session_exporter).await
                 },
                 Self::AcpClient { agent } => chat_cli_v2::agent::acp::acp_client::execute(agent).await,
+                #[cfg(feature = "voice")]
+                Self::Voice { ptt } => {
+                    use crate::database::settings::Setting;
+                    let server_url = os.database.settings.get_string(Setting::VoiceServerUrl);
+                    let backend = if server_url.is_some() {
+                        "RemoteServer".to_string()
+                    } else {
+                        "LocalWhisper".to_string()
+                    };
+                    let silence_timeout = if ptt {
+                        None
+                    } else {
+                        Some(
+                            os.database
+                                .settings
+                                .get_int(Setting::VoiceSilenceTimeout)
+                                .and_then(|v| v.try_into().ok())
+                                .unwrap_or(5u64),
+                        )
+                    };
+                    let language = os.database.settings.get_string(Setting::VoiceLanguage);
+                    let model_size = os.database.settings.get_string(Setting::VoiceModelSize);
+                    let result =
+                        voice::voice_handler::voice_only_mode(server_url, silence_timeout, language, model_size).await;
+                    let (telem_result, reason, reason_desc) = match &result {
+                        Ok(_) => (crate::telemetry::TelemetryResult::Succeeded, None, None),
+                        Err(e) => (
+                            crate::telemetry::TelemetryResult::Failed,
+                            Some("VoiceError".to_string()),
+                            Some(e.to_string()),
+                        ),
+                    };
+                    let input_method = if ptt { "PTT" } else { "SlashCommand" };
+                    os.telemetry
+                        .send_voice_input(
+                            None,
+                            telem_result,
+                            reason,
+                            reason_desc,
+                            backend,
+                            input_method.to_string(),
+                            None,
+                            None,
+                            None,
+                            None,
+                            None,
+                        )
+                        .ok();
+                    result
+                },
+                #[cfg(feature = "voice")]
+                Self::VoiceServe { port, bind } => voice::voice_serve::run_voice_server(&bind, port).await,
+                #[cfg(feature = "voice")]
+                Self::VoiceCloudSetup {
+                    host,
+                    port,
+                    remote_bin,
+                    identity,
+                } => {
+                    voice::voice_cloud_setup::run_voice_cloud_setup(
+                        &host,
+                        port,
+                        remote_bin.as_deref(),
+                        identity.as_deref(),
+                    )
+                    .await
+                },
             };
 
             if let Some(handle) = update_handle {
@@ -437,6 +538,68 @@ impl RootSubcommand {
                 chat_cli_v2::agent::acp::acp_agent::execute(&mut os, spawn_args, legacy_session_exporter).await
             },
             Self::AcpClient { agent } => chat_cli_v2::agent::acp::acp_client::execute(agent).await,
+            #[cfg(feature = "voice")]
+            Self::Voice { ptt } => {
+                use crate::database::settings::Setting;
+                let server_url = os.database.settings.get_string(Setting::VoiceServerUrl);
+                let backend = if server_url.is_some() {
+                    "RemoteServer".to_string()
+                } else {
+                    "LocalWhisper".to_string()
+                };
+                let silence_timeout = if ptt {
+                    None
+                } else {
+                    Some(
+                        os.database
+                            .settings
+                            .get_int(Setting::VoiceSilenceTimeout)
+                            .and_then(|v| v.try_into().ok())
+                            .unwrap_or(5u64),
+                    )
+                };
+                let language = os.database.settings.get_string(Setting::VoiceLanguage);
+                let model_size = os.database.settings.get_string(Setting::VoiceModelSize);
+                let result =
+                    voice::voice_handler::voice_only_mode(server_url, silence_timeout, language, model_size).await;
+                let (telem_result, reason, reason_desc) = match &result {
+                    Ok(_) => (crate::telemetry::TelemetryResult::Succeeded, None, None),
+                    Err(e) => (
+                        crate::telemetry::TelemetryResult::Failed,
+                        Some("VoiceError".to_string()),
+                        Some(e.to_string()),
+                    ),
+                };
+                let input_method = if ptt { "PTT" } else { "SlashCommand" };
+                os.telemetry
+                    .send_voice_input(
+                        None,
+                        telem_result,
+                        reason,
+                        reason_desc,
+                        backend,
+                        input_method.to_string(),
+                        None,
+                        None,
+                        None,
+                        None,
+                        None,
+                    )
+                    .ok();
+                result
+            },
+            #[cfg(feature = "voice")]
+            Self::VoiceServe { port, bind } => voice::voice_serve::run_voice_server(&bind, port).await,
+            #[cfg(feature = "voice")]
+            Self::VoiceCloudSetup {
+                host,
+                port,
+                remote_bin,
+                identity,
+            } => {
+                voice::voice_cloud_setup::run_voice_cloud_setup(&host, port, remote_bin.as_deref(), identity.as_deref())
+                    .await
+            },
         }
     }
 }
@@ -583,6 +746,12 @@ impl Display for RootSubcommand {
             Self::Update(_) => "update",
             Self::Acp { .. } => "acp",
             Self::AcpClient { .. } => "acp-client",
+            #[cfg(feature = "voice")]
+            Self::Voice { .. } => "voice",
+            #[cfg(feature = "voice")]
+            Self::VoiceServe { .. } => "voice-serve",
+            #[cfg(feature = "voice")]
+            Self::VoiceCloudSetup { .. } => "voice-cloud-setup",
         };
 
         write!(f, "{name}")

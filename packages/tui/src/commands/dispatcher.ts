@@ -16,6 +16,7 @@ import type {
 import { runEffect } from './effects.js';
 import { kasHandlers } from './kas-handlers/index.js';
 import { isKasCommand } from '../kas-commands.js';
+import { startPTTRecording } from './voice-helper.js';
 import { formatRelativeTime } from '../utils/sessions.js';
 import { extractRpcErrorMessage } from '../utils/error-handling.js';
 
@@ -56,6 +57,69 @@ export async function dispatch(
   if (type === 'prompt' || type === 'skill') {
     const message = args ? `/${cmdName} ${args}` : `/${cmdName}`;
     await ctx.sendMessage(message);
+    return;
+  }
+
+  // Voice command: spawn local voice helper, capture text, place in input or auto-submit
+  if (cmdName === 'voice') {
+    try {
+      const remoteServerUrl = process.env.KIRO_VOICE_SERVER_URL ?? undefined;
+      let downloadOnly = false;
+      let cancelled = false;
+      const session = startPTTRecording(
+        remoteServerUrl,
+        {
+          onLevel: (level: number) => {
+            ctx.setVoiceLevel(level);
+          },
+          onPartial: (text: string) => {
+            ctx.setVoicePartialText(text);
+          },
+          onStatus: (status: string) => {
+            if (status === 'recording') {
+              ctx.setVoiceLevel(0);
+            } else if (status === 'downloading') {
+              ctx.showAlert('Downloading voice model...', 'success', 120000);
+            } else if (status === 'download_complete') {
+              downloadOnly = true;
+              ctx.showAlert(
+                'Voice model ready! Hold Space or type /voice to start recording.',
+                'success',
+                8000
+              );
+            }
+          },
+        },
+        false
+      );
+      ctx.setVoiceStop(session.stop);
+      ctx.setVoiceCancel(() => {
+        cancelled = true;
+        session.cancel();
+      });
+      const text = await session.text;
+      ctx.setVoiceStop(null);
+      ctx.setVoiceCancel(null);
+      ctx.setVoiceLevel(null);
+      ctx.setVoicePartialText(null);
+      if (downloadOnly || cancelled) return;
+      ctx.incrementVoiceHint();
+      if (text) {
+        if (ctx.voiceAutoSubmit) {
+          await ctx.sendMessage(text);
+        } else {
+          ctx.setPendingVoiceText(text);
+        }
+      } else {
+        ctx.showAlert('No speech detected', 'error', 2000);
+      }
+    } catch (error) {
+      ctx.setVoiceStop(null);
+      ctx.setVoiceCancel(null);
+      ctx.setVoiceLevel(null);
+      const msg = error instanceof Error ? error.message : 'Voice input failed';
+      ctx.showAlert(msg, 'error', 3000);
+    }
     return;
   }
 

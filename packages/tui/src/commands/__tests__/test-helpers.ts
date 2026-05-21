@@ -97,6 +97,15 @@ export function createMockCommandContext(
       },
     })) as any,
     getAutoPreview: mock(() => '') as any,
+    setVoiceStop: spy('setVoiceStop') as any,
+    setVoiceCancel: spy('setVoiceCancel') as any,
+    setVoiceLevel: spy('setVoiceLevel') as any,
+    setVoicePartialText: spy('setVoicePartialText') as any,
+    voiceAutoSubmit: false,
+    toggleVoiceAutoSubmit: spy('toggleVoiceAutoSubmit') as any,
+    voiceHintIndex: 0,
+    incrementVoiceHint: spy('incrementVoiceHint') as any,
+    setPendingVoiceText: spy('setPendingVoiceText') as any,
     _spies: spies,
   };
 }

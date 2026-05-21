@@ -79,6 +79,7 @@ export const AppContainer: React.FC = () => {
   const showTransientAlert = useAppStore((state) => state.showTransientAlert);
   const surveyPrompt = useAppStore((state) => state.surveyPrompt);
   const openSurveyPanel = useAppStore((state) => state.openSurveyPanel);
+  const voiceCancel = useAppStore((state) => state.voiceCancel);
 
   // Restore terminal state when the process is resumed after ctrl+z suspend
   useEffect(() => {
@@ -165,6 +166,7 @@ export const AppContainer: React.FC = () => {
       },
       suspendProcess,
       shellEscapeWrite: shellEscapeWriter ?? null,
+      voiceCancel: voiceCancel ?? null,
     };
 
     dispatchAppKeypress(userInput, key, state, actions, keybindings);

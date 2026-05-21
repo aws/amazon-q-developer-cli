@@ -39,6 +39,7 @@ export interface AppKeypressActions {
   suspendProcess: () => void;
   shellEscapeWrite: ((bytes: string) => void) | null;
   acceptSurveyPrompt: () => void;
+  voiceCancel: (() => void) | null;
 }
 
 export interface AppKeypressBindings {
@@ -106,7 +107,9 @@ export function dispatchAppKeypress(
       // PromptInput handles the quit key during reverse search
       return true;
     }
-    if (state.isProcessing) {
+    if (actions.voiceCancel) {
+      actions.voiceCancel();
+    } else if (state.isProcessing) {
       actions.cancelMessage();
     } else if (state.hasCommandInput) {
       actions.clearCommandInput();

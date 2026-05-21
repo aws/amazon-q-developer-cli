@@ -582,6 +582,20 @@ interface BaseAppActions {
   setPromptHint: (hint: string | null) => void;
   setCommandShadowText: (text: string | null) => void;
   clearCommandInput: () => void;
+  voiceStop: (() => void) | null;
+  setVoiceStop: (fn: (() => void) | null) => void;
+  voiceCancel: (() => void) | null;
+  setVoiceCancel: (fn: (() => void) | null) => void;
+  voiceLevel: number | null;
+  setVoiceLevel: (level: number | null) => void;
+  voiceAutoSubmit: boolean;
+  toggleVoiceAutoSubmit: () => void;
+  voiceHintIndex: number;
+  incrementVoiceHint: () => void;
+  voicePartialText: string | null;
+  setVoicePartialText: (text: string | null) => void;
+  pendingVoiceText: string | null;
+  setPendingVoiceText: (text: string | null) => void;
 
   navigateHistory: (direction: 'up' | 'down') => string | null;
 
@@ -993,6 +1007,15 @@ export interface AppState {
   tasks: TaskItem[];
   activityTrayExpanded: boolean;
 
+  // Voice state
+  voiceStop: (() => void) | null;
+  voiceCancel: (() => void) | null;
+  voiceLevel: number | null;
+  voiceAutoSubmit: boolean;
+  voiceHintIndex: number;
+  voicePartialText: string | null;
+  pendingVoiceText: string | null;
+
   // Announcement state
   announcement: { id: string; content: string; maxLines: number } | null;
   announcementExpanded: boolean;
@@ -1255,6 +1278,15 @@ function buildCommandContext(
       const getter = get()._autoPreviewGetter;
       return getter ? getter() : '';
     },
+    setVoiceStop: state.setVoiceStop,
+    setVoiceCancel: state.setVoiceCancel,
+    setVoiceLevel: state.setVoiceLevel,
+    voiceAutoSubmit: state.voiceAutoSubmit,
+    toggleVoiceAutoSubmit: state.toggleVoiceAutoSubmit,
+    voiceHintIndex: state.voiceHintIndex,
+    incrementVoiceHint: state.incrementVoiceHint,
+    setPendingVoiceText: state.setPendingVoiceText,
+    setVoicePartialText: state.setVoicePartialText,
   };
 }
 
@@ -1361,6 +1393,13 @@ export const createAppStore = (props: AppStoreProps) => {
     filePickerHasResults: false,
     promptHint: null,
     commandShadowText: null,
+    voiceStop: null,
+    voiceCancel: null,
+    voiceLevel: null,
+    voiceAutoSubmit: false,
+    voiceHintIndex: 0,
+    voicePartialText: null,
+    pendingVoiceText: null,
 
     input: initialInputBufferState(),
     reverseSearchActive: false,
@@ -2739,6 +2778,39 @@ export const createAppStore = (props: AppStoreProps) => {
 
     setCommandShadowText: (text) => {
       set({ commandShadowText: text });
+    },
+
+    setVoiceStop: (fn) => {
+      set({ voiceStop: fn });
+    },
+
+    setVoiceCancel: (fn) => {
+      set({ voiceCancel: fn });
+    },
+
+    setVoiceLevel: (level) => {
+      set({ voiceLevel: level });
+    },
+
+    toggleVoiceAutoSubmit: () => {
+      set((s) => {
+        const next = !s.voiceAutoSubmit;
+        return { voiceAutoSubmit: next };
+      });
+    },
+
+    incrementVoiceHint: () => {
+      set((s) => {
+        const next = s.voiceHintIndex + 1;
+        return { voiceHintIndex: next };
+      });
+    },
+
+    setVoicePartialText: (text) => {
+      set({ voicePartialText: text });
+    },
+    setPendingVoiceText: (text) => {
+      set({ pendingVoiceText: text });
     },
 
     clearCommandInput: () => {

@@ -16,7 +16,8 @@ path = "eval/tool_search_eval.rs"
 workspace = true
 
 [features]
-default = []
+default = ["voice"]
+voice = ["dep:voice"]
 wayland = ["arboard/wayland-data-control"]
 
 [dependencies]
@@ -51,6 +52,7 @@ clap_complete_fig.workspace = true
 clap_complete.workspace = true
 clap.workspace = true
 code-agent-sdk = { path = "../code-agent-sdk" }
+voice = { workspace = true, optional = true }
 color-eyre.workspace = true
 color-print.workspace = true
 convert_case.workspace = true
@@ -176,5 +178,6 @@ prettyplease.workspace = true
 quote.workspace = true
 serde.workspace = true
 serde_json.workspace = true
+sha2.workspace = true
 syn.workspace = true
 schemars.workspace = true

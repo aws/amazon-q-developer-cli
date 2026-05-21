@@ -11,15 +11,7 @@ import { useTheme } from '../../../hooks/useThemeContext.js';
 import { useKeypress, type Key } from '../../../hooks/useKeypress.js';
 import { Text } from '../../ui/text/Text.js';
 import { useAppStore } from '../../../stores/app-store.js';
-
-/** Visual cursor (inverse block) + hardware cursor marker (APC sequence for twinki IME positioning). */
-const EXPAND_HINT = 'Press Tab to expand';
-const CursorBlock = ({ char = ' ' }: { char?: string }) => (
-  <>
-    <Text>{CURSOR_MARKER}</Text>
-    <Text inverse>{char}</Text>
-  </>
-);
+import chalk from 'chalk';
 import { PastedChip, shouldCollapsePaste } from './PastedChip.js';
 import { FileChip } from './FileChip.js';
 import {
@@ -81,6 +73,19 @@ import {
 // editing logic. For now we import just the KillRing utility.
 import { KillRing } from 'twinki';
 import { useTerminalSize } from '../../../hooks/useTerminalSize.js';
+import {
+  startPTTRecording,
+  type PTTSession,
+} from '../../../commands/voice-helper.js';
+
+/** Visual cursor (inverse block) + hardware cursor marker (APC sequence for twinki IME positioning). */
+const EXPAND_HINT = 'Press Tab to expand';
+const CursorBlock = ({ char = ' ' }: { char?: string }) => (
+  <>
+    <Text>{CURSOR_MARKER}</Text>
+    <Text inverse>{char}</Text>
+  </>
+);
 
 export interface TriggerRule {
   key: string;
@@ -185,6 +190,20 @@ export const PromptInput = React.memo(function PromptInput({
     setPromptHint,
     setActiveCommand,
   } = useCommandActions();
+  const voiceStop = useAppStore((s) => s.voiceStop);
+  const voiceLevel = useAppStore((s) => s.voiceLevel);
+  const voiceAutoSubmit = useAppStore((s) => s.voiceAutoSubmit);
+  const voiceHintIndex = useAppStore((s) => s.voiceHintIndex);
+  const pendingVoiceText = useAppStore((s) => s.pendingVoiceText);
+  const setVoiceLevel = useAppStore((s) => s.setVoiceLevel);
+  const setVoicePartialText = useAppStore((s) => s.setVoicePartialText);
+  const voicePartialText = useAppStore((s) => s.voicePartialText);
+  const setVoiceStop = useAppStore((s) => s.setVoiceStop);
+  const setVoiceCancel = useAppStore((s) => s.setVoiceCancel);
+  const setPendingVoiceText = useAppStore((s) => s.setPendingVoiceText);
+  const incrementVoiceHint = useAppStore((s) => s.incrementVoiceHint);
+  const showTransientAlert = useAppStore((s) => s.showTransientAlert);
+  const sendMessage = useAppStore((s) => s.sendMessage);
   const { pendingFileAttachment } = useFileAttachmentState();
   const { consumePendingFileAttachment } = useFileAttachmentActions();
   const { kiro } = useKiroClient();
@@ -254,6 +273,20 @@ export const PromptInput = React.memo(function PromptInput({
   const prevTriggerRef = useRef<TriggerInfo | null>(null);
   const suppressNextTriggerRef = useRef(false);
 
+  // Push-to-talk refs
+  const SPACE_HOLD_MS = Number(process.env.KIRO_PTT_HOLD_MS ?? 1500);
+  const SPACE_RELEASE_TIMEOUT_MS = 550;
+  const spaceHoldStartRef = useRef<number | null>(null);
+  const spaceReleaseTimerRef = useRef<ReturnType<typeof setTimeout> | null>(
+    null
+  );
+  const spaceActivateTimerRef = useRef<ReturnType<typeof setTimeout> | null>(
+    null
+  );
+  const pttSessionRef = useRef<PTTSession | null>(null);
+  const pttActiveRef = useRef(false);
+  const voiceCancelledRef = useRef(false);
+
   const primaryColor = useMemo(
     () => getUserPromptColor(),
     [getUserPromptColor]
@@ -275,6 +308,22 @@ export const PromptInput = React.memo(function PromptInput({
     [isShellEscape, brandColor, primaryColor]
   );
   const placeholderColor = useMemo(() => getColor('muted'), [getColor]);
+
+  const VOICE_BLOCK_CHARS = '▁▂▃▄▅▆▇█';
+  const voiceCursorChar =
+    voiceLevel !== null
+      ? (VOICE_BLOCK_CHARS[Math.min(voiceLevel, 7)] ?? '▁')
+      : null;
+
+  const VOICE_HINTS = [
+    'hold SPACE for quick push-to-talk',
+    `auto-submit is ${voiceAutoSubmit ? 'ON' : 'OFF'} · /settings voice.autoSubmit`,
+    'text appears as you pause · /settings voice.partialPause (ms)',
+    'silence auto-stops after 5s · /settings voice.silenceTimeout (s)',
+    '/settings voice.modelSize base|small',
+    'Ctrl+C cancels recording',
+  ];
+  const voiceHint = VOICE_HINTS[voiceHintIndex % VOICE_HINTS.length] ?? null;
 
   useEffect(() => {
     if (localSyncRef.current) {
@@ -409,6 +458,43 @@ export const PromptInput = React.memo(function PromptInput({
     },
     [setCommandInput, setPromptHint, promptHint]
   );
+
+  // Insert voice transcription text at cursor position
+  const insertVoiceText = useCallback(
+    (text: string) => {
+      const segs = segmentsRef.current;
+      const cur = cursorRef.current;
+      if (totalWidth(segs) === 0) {
+        const newSegs: Segment[] = [{ type: 'text', value: text }];
+        setSegments(newSegs);
+        setCursor(text.length);
+        syncToStore(newSegs);
+      } else {
+        const { segIdx, offset } = locateCursor(segs, cur);
+        const seg = segs[segIdx];
+        if (seg?.type === 'text') {
+          const needsLeadingSpace = offset > 0 && seg.value[offset - 1] !== ' ';
+          const insert = (needsLeadingSpace ? ' ' : '') + text;
+          const newValue =
+            seg.value.slice(0, offset) + insert + seg.value.slice(offset);
+          const newSegs = [...segs];
+          newSegs[segIdx] = { type: 'text', value: newValue };
+          setSegments(newSegs);
+          setCursor(cur + insert.length);
+          syncToStore(newSegs);
+        }
+      }
+    },
+    [syncToStore, setSegments, setCursor]
+  );
+
+  // Handle pendingVoiceText from /voice command dispatcher (uses store as relay)
+  useEffect(() => {
+    if (pendingVoiceText !== null) {
+      insertVoiceText(pendingVoiceText);
+      setPendingVoiceText(null);
+    }
+  }, [pendingVoiceText, insertVoiceText, setPendingVoiceText]);
 
   const clearAll = () => {
     setSegments([{ type: 'text', value: '' }]);
@@ -748,6 +834,9 @@ export const PromptInput = React.memo(function PromptInput({
         if (key.meta || key.shift) {
           // Alt+Enter or Shift+Enter - insert newline
           insertText('\n');
+        } else if (voiceStop) {
+          // Stop active /voice recording
+          voiceStop();
         } else {
           // When processing, dismiss menus and submit directly (for queuing
           // or slash command rejection — the menus aren't useful here).
@@ -1109,6 +1198,8 @@ export const PromptInput = React.memo(function PromptInput({
               setStoreReverseSearchActive(true);
             }
             break;
+          case 'o': // Ctrl+O - voice input (disabled)
+            break;
           default:
             break;
         }
@@ -1170,6 +1261,128 @@ export const PromptInput = React.memo(function PromptInput({
           default:
             break;
         }
+      } else if (
+        userInput === ' ' &&
+        !key.ctrl &&
+        !key.meta &&
+        totalWidth(segments) === 0
+      ) {
+        // Space hold-to-record: only intercept when input is empty
+        const now = Date.now();
+
+        // Clear existing release timer -- key is still being held
+        if (spaceReleaseTimerRef.current) {
+          clearTimeout(spaceReleaseTimerRef.current);
+          spaceReleaseTimerRef.current = null;
+        }
+
+        if (spaceHoldStartRef.current === null) {
+          // First space event -- start tracking
+          spaceHoldStartRef.current = now;
+
+          // Activate recording after SPACE_HOLD_MS
+          spaceActivateTimerRef.current = setTimeout(() => {
+            if (!pttActiveRef.current) {
+              pttActiveRef.current = true;
+              const remoteUrl = process.env.KIRO_VOICE_SERVER_URL ?? undefined;
+              const spaceSession = startPTTRecording(remoteUrl, {
+                onLevel: (level) => {
+                  setVoiceLevel(level);
+                },
+                onPartial: (text) => {
+                  setVoicePartialText(text);
+                },
+                onStatus: (status) => {
+                  if (status === 'recording') {
+                    setVoiceLevel(0);
+                  } else if (status === 'downloading') {
+                    showTransientAlert({
+                      message: 'Downloading voice model...',
+                      status: 'info',
+                      autoHideMs: 120000,
+                    });
+                  } else if (status === 'download_complete') {
+                    pttActiveRef.current = false;
+                    pttSessionRef.current = null;
+                    setVoiceCancel(null);
+                    setVoiceLevel(null);
+                    showTransientAlert({
+                      message:
+                        'Voice model ready! Hold Space or type /voice to start recording.',
+                      status: 'success',
+                      autoHideMs: 8000,
+                    });
+                  }
+                },
+              });
+              pttSessionRef.current = spaceSession;
+              setVoiceCancel(() => {
+                voiceCancelledRef.current = true;
+                spaceSession.cancel();
+                pttActiveRef.current = false;
+                pttSessionRef.current = null;
+                setVoiceStop(null);
+                setVoiceCancel(null);
+                setVoiceLevel(null);
+                setVoicePartialText(null);
+              });
+            }
+          }, SPACE_HOLD_MS);
+        }
+
+        // Set release detection timer
+        spaceReleaseTimerRef.current = setTimeout(() => {
+          // Space key released
+          if (spaceActivateTimerRef.current) {
+            clearTimeout(spaceActivateTimerRef.current);
+            spaceActivateTimerRef.current = null;
+          }
+          spaceHoldStartRef.current = null;
+          spaceReleaseTimerRef.current = null;
+
+          if (pttActiveRef.current && pttSessionRef.current) {
+            // Stop recording
+            pttActiveRef.current = false;
+            const session = pttSessionRef.current;
+            pttSessionRef.current = null;
+            setVoiceCancel(null);
+            session.stop();
+            session.text
+              .then((text) => {
+                if (voiceCancelledRef.current) {
+                  voiceCancelledRef.current = false;
+                  setVoiceStop(null);
+                  setVoiceLevel(null);
+                  setVoicePartialText(null);
+                  return;
+                }
+                setVoiceStop(null);
+                setVoiceLevel(null);
+                setVoicePartialText(null);
+                incrementVoiceHint();
+                if (text) {
+                  if (voiceAutoSubmit) {
+                    sendMessage(text);
+                  } else {
+                    insertVoiceText(text);
+                  }
+                } else {
+                  showTransientAlert({
+                    message: 'No speech detected',
+                    status: 'error',
+                    autoHideMs: 2000,
+                  });
+                }
+              })
+              .catch(() => {
+                setVoiceStop(null);
+                setVoiceLevel(null);
+              });
+          } else {
+            // Hold was released before activation -- insert the space
+            insertText(' ');
+          }
+        }, SPACE_RELEASE_TIMEOUT_MS);
       } else if (userInput && isPrintable(userInput)) {
         insertText(normalizeLineEndings(userInput));
       }
@@ -1215,10 +1428,29 @@ export const PromptInput = React.memo(function PromptInput({
 
     const total = totalWidth(segments);
     if (total === 0) {
+      const recordingPlaceholder = voiceHint
+        ? `Recording... ENTER to stop · ${voiceHint}`
+        : 'Recording... ENTER to stop';
+      const activePlaceholder =
+        voiceCursorChar != null ? recordingPlaceholder : placeholder;
       return (
         <>
-          <CursorBlock />
-          <Text>{placeholderColor(placeholder)}</Text>
+          {voiceCursorChar != null && voicePartialText ? (
+            <Text wrap="wrap">
+              {voicePartialText}
+              {chalk.green(voiceCursorChar)}
+            </Text>
+          ) : voiceCursorChar != null ? (
+            <>
+              <Text>{chalk.green(voiceCursorChar)}</Text>
+              <Text>{placeholderColor(activePlaceholder)}</Text>
+            </>
+          ) : (
+            <>
+              <CursorBlock />
+              <Text>{placeholderColor(activePlaceholder)}</Text>
+            </>
+          )}
         </>
       );
     }
@@ -1261,7 +1493,11 @@ export const PromptInput = React.memo(function PromptInput({
               <Text>
                 {styleInputText(seg.value.slice(0, localCursor), i === 0)}
               </Text>
-              <CursorBlock char={charAtCursor} />
+              {voiceCursorChar != null ? (
+                <Text>{chalk.green(voiceCursorChar)}</Text>
+              ) : (
+                <CursorBlock char={charAtCursor} />
+              )}
               {shadowRemainder && (
                 <Text>{placeholderColor(shadowRemainder)}</Text>
               )}
@@ -1276,7 +1512,11 @@ export const PromptInput = React.memo(function PromptInput({
           parts.push(
             // Text color handled by FileChip component (uses theme colors internally)
             <React.Fragment key={i}>
-              <CursorBlock />
+              {voiceCursorChar != null ? (
+                <Text>{chalk.green(voiceCursorChar)}</Text>
+              ) : (
+                <CursorBlock />
+              )}
               <FileChip filePath={seg.filePath} lineCount={seg.lineCount} />
             </React.Fragment>
           );
@@ -1294,7 +1534,11 @@ export const PromptInput = React.memo(function PromptInput({
           parts.push(
             // Text color handled by PastedChip component (uses theme colors internally)
             <React.Fragment key={i}>
-              <CursorBlock />
+              {voiceCursorChar != null ? (
+                <Text>{chalk.green(voiceCursorChar)}</Text>
+              ) : (
+                <CursorBlock />
+              )}
               <PastedChip lineCount={seg.lineCount} charCount={seg.charCount} />
             </React.Fragment>
           );
@@ -1311,7 +1555,11 @@ export const PromptInput = React.memo(function PromptInput({
         if (cursorInSeg && cursor === pos) {
           parts.push(
             <React.Fragment key={i}>
-              <CursorBlock />
+              {voiceCursorChar != null ? (
+                <Text>{chalk.green(voiceCursorChar)}</Text>
+              ) : (
+                <CursorBlock />
+              )}
               <PastedChip
                 type="image"
                 imageWidth={seg.width}
@@ -1336,14 +1584,17 @@ export const PromptInput = React.memo(function PromptInput({
     }
 
     // Trailing cursor after a chip at the end
-    // inverse swaps fg/bg colors - no explicit color needed
     if (cursor === total) {
       const lastSeg = segments[segments.length - 1];
       if (lastSeg && lastSeg.type !== 'text') {
         parts.push(
-          <React.Fragment key="cursor-end">
-            <CursorBlock />
-          </React.Fragment>
+          voiceCursorChar != null ? (
+            <Text key="cursor-end">{chalk.green(voiceCursorChar)}</Text>
+          ) : (
+            <React.Fragment key="cursor-end">
+              <CursorBlock />
+            </React.Fragment>
+          )
         );
       }
     }

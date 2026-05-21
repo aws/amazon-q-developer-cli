@@ -36,6 +36,12 @@ const copyCmd: SlashCommand = {
   meta: { local: true },
 };
 
+function createMockCtx(
+  messages: Array<{ id: string; role: string; content: string }> = []
+) {
+  return createMockCommandContext({ messages, slashCommands: [copyCmd] });
+}
+
 function modelMessage(content: string) {
   return { id: '1', role: MessageRole.Model, content };
 }
@@ -64,10 +70,7 @@ describe('/copy OSC 52 clipboard fallback', () => {
 
   it('falls back to OSC 52 when platform tools fail', () => {
     const text = 'hello clipboard';
-    const ctx = createMockCommandContext({
-      messages: [modelMessage(text)],
-      slashCommands: [copyCmd],
-    });
+    const ctx = createMockCtx([modelMessage(text)]);
 
     runEffect(copyCmd, null, ctx, '');
 
@@ -82,10 +85,7 @@ describe('/copy OSC 52 clipboard fallback', () => {
 
   it('writes correct base64 encoding in OSC 52 sequence', () => {
     const text = 'Unicode: 日本語 🎉';
-    const ctx = createMockCommandContext({
-      messages: [modelMessage(text)],
-      slashCommands: [copyCmd],
-    });
+    const ctx = createMockCtx([modelMessage(text)]);
 
     runEffect(copyCmd, null, ctx, '');
 
@@ -96,10 +96,7 @@ describe('/copy OSC 52 clipboard fallback', () => {
 
   it('skips OSC 52 for payloads > 100KB', () => {
     const bigText = 'x'.repeat(100_001);
-    const ctx = createMockCommandContext({
-      messages: [modelMessage(bigText)],
-      slashCommands: [copyCmd],
-    });
+    const ctx = createMockCtx([modelMessage(bigText)]);
 
     runEffect(copyCmd, null, ctx, '');
 
@@ -109,10 +106,7 @@ describe('/copy OSC 52 clipboard fallback', () => {
   });
 
   it('handles OSC 52 write failure gracefully', () => {
-    const ctx = createMockCommandContext({
-      messages: [modelMessage('test')],
-      slashCommands: [copyCmd],
-    });
+    const ctx = createMockCtx([modelMessage('test')]);
     mockWriteFileSync.mockImplementation(() => {
       throw new Error('write failed');
     });
@@ -125,10 +119,7 @@ describe('/copy OSC 52 clipboard fallback', () => {
 
   it('skips OSC 52 when platform tool succeeds', () => {
     mockSpawnSync.mockImplementation(() => ({ status: 0 }));
-    const ctx = createMockCommandContext({
-      messages: [modelMessage('test')],
-      slashCommands: [copyCmd],
-    });
+    const ctx = createMockCtx([modelMessage('test')]);
 
     runEffect(copyCmd, null, ctx, '');
 

@@ -136,6 +136,27 @@ pub enum Setting {
         props(scope = "global_only")
     )]
     DisableAutoupdates,
+    #[cfg(feature = "voice")]
+    #[strum(message = "Voice server URL for remote transcription (string)")]
+    VoiceServerUrl,
+    #[cfg(feature = "voice")]
+    #[strum(message = "Whisper model size for voice transcription (string)")]
+    VoiceModelSize,
+    #[cfg(feature = "voice")]
+    #[strum(message = "Voice language for transcription (string)")]
+    VoiceLanguage,
+    #[cfg(feature = "voice")]
+    #[strum(message = "Silence timeout in seconds for voice recording (number, default: 5)")]
+    VoiceSilenceTimeout,
+    #[cfg(feature = "voice")]
+    #[strum(message = "Pause duration in ms to trigger partial transcription (number, default: 500)")]
+    VoicePartialPause,
+    #[cfg(feature = "voice")]
+    #[strum(message = "Maximum session time in seconds for voice recording (number)")]
+    VoiceMaxSessionTime,
+    #[cfg(feature = "voice")]
+    #[strum(message = "Auto-submit voice transcription without review (boolean, default: true)")]
+    VoiceAutoSubmit,
     #[strum(message = "Always show full tool output inline without truncation (boolean)")]
     ChatAutoExpandToolOutput,
     #[strum(
@@ -252,6 +273,20 @@ impl AsRef<str> for Setting {
             Self::ChatAllowIcons => "chat.allowIcons",
             Self::ChatHasSeenLogo => "chat.hasSeenLogo",
             Self::ChatShowThinking => "chat.showThinking",
+            #[cfg(feature = "voice")]
+            Self::VoiceServerUrl => "voice.serverUrl",
+            #[cfg(feature = "voice")]
+            Self::VoiceModelSize => "voice.modelSize",
+            #[cfg(feature = "voice")]
+            Self::VoiceLanguage => "voice.language",
+            #[cfg(feature = "voice")]
+            Self::VoiceSilenceTimeout => "voice.silenceTimeout",
+            #[cfg(feature = "voice")]
+            Self::VoicePartialPause => "voice.partialPause",
+            #[cfg(feature = "voice")]
+            Self::VoiceMaxSessionTime => "voice.maxSessionTime",
+            #[cfg(feature = "voice")]
+            Self::VoiceAutoSubmit => "voice.autoSubmit",
         }
     }
 }
@@ -329,6 +364,20 @@ impl TryFrom<&str> for Setting {
             "chat.allowIcons" => Ok(Self::ChatAllowIcons),
             "chat.hasSeenLogo" => Ok(Self::ChatHasSeenLogo),
             "chat.showThinking" => Ok(Self::ChatShowThinking),
+            #[cfg(feature = "voice")]
+            "voice.serverUrl" => Ok(Self::VoiceServerUrl),
+            #[cfg(feature = "voice")]
+            "voice.modelSize" => Ok(Self::VoiceModelSize),
+            #[cfg(feature = "voice")]
+            "voice.language" => Ok(Self::VoiceLanguage),
+            #[cfg(feature = "voice")]
+            "voice.silenceTimeout" => Ok(Self::VoiceSilenceTimeout),
+            #[cfg(feature = "voice")]
+            "voice.partialPause" => Ok(Self::VoicePartialPause),
+            #[cfg(feature = "voice")]
+            "voice.maxSessionTime" => Ok(Self::VoiceMaxSessionTime),
+            #[cfg(feature = "voice")]
+            "voice.autoSubmit" => Ok(Self::VoiceAutoSubmit),
             _ => Err(DatabaseError::InvalidSetting(value.to_string())),
         }
     }

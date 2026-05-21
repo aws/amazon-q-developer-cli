@@ -14,6 +14,7 @@ mod logging;
 mod mcp_registry;
 mod os;
 mod request;
+pub mod rollout;
 mod telemetry;
 mod theme;
 mod util;

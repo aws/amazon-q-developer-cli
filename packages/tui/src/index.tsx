@@ -463,7 +463,11 @@ const startInitialization = (
   initPromise = kiro
     .initialize(agentPath, acpArgs)
     .then(async () => {
-      appStore.setState({ settings: kiro.settings });
+      const backendSettings = kiro.settings;
+      appStore.setState({
+        settings: backendSettings,
+        voiceAutoSubmit: backendSettings?.['voice.autoSubmit'] === true,
+      });
 
       // Initialize announcement if greeting is enabled
       if (kiro.settings?.['chat.greeting.enabled'] !== false) {

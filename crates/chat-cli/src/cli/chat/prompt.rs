@@ -1,6 +1,8 @@
 use std::borrow::Cow;
 use std::cell::RefCell;
 use std::path::PathBuf;
+#[cfg(feature = "voice")]
+use std::sync::atomic::AtomicBool;
 use std::sync::atomic::Ordering;
 use std::sync::{
     Arc,
@@ -157,6 +159,10 @@ pub const COMMANDS: &[&str] = &[
 /// Generate dynamic command list including experiment-based commands when enabled
 pub fn get_available_commands(os: &Os) -> Vec<&'static str> {
     let mut commands = COMMANDS.to_vec();
+    #[cfg(feature = "voice")]
+    {
+        commands.push("/voice");
+    }
     commands.extend(ExperimentManager::get_commands(os));
     commands.sort();
     commands
@@ -913,6 +919,74 @@ impl rustyline::ConditionalEventHandler for WindowsPasteEnterHandler {
     }
 }
 
+/// Ctrl+O: trigger PTT voice recording immediately.
+#[cfg(feature = "voice")]
+struct ShiftVPttHandler {
+    ptt_triggered: Arc<AtomicBool>,
+    ptt_buffer: Arc<Mutex<String>>,
+}
+
+#[cfg(feature = "voice")]
+impl rustyline::ConditionalEventHandler for ShiftVPttHandler {
+    fn handle(
+        &self,
+        _evt: &rustyline::Event,
+        _n: rustyline::RepeatCount,
+        _positive: bool,
+        ctx: &rustyline::EventContext<'_>,
+    ) -> Option<Cmd> {
+        // Capture any text already in the buffer so it can be prepended to the
+        // transcription result.
+        *self.ptt_buffer.lock().unwrap() = ctx.line().to_string();
+        self.ptt_triggered.store(true, Ordering::Release);
+        Some(Cmd::Interrupt)
+    }
+}
+
+/// Space held for PTT_HOLD_MS on an empty input line: trigger PTT voice recording.
+#[cfg(feature = "voice")]
+struct SpacePttHandler {
+    ptt_triggered: Arc<AtomicBool>,
+    ptt_buffer: Arc<Mutex<String>>,
+    first_space_time: Mutex<Option<std::time::Instant>>,
+    hold_threshold: std::time::Duration,
+}
+
+#[cfg(feature = "voice")]
+impl rustyline::ConditionalEventHandler for SpacePttHandler {
+    fn handle(
+        &self,
+        _evt: &rustyline::Event,
+        _n: rustyline::RepeatCount,
+        _positive: bool,
+        ctx: &rustyline::EventContext<'_>,
+    ) -> Option<Cmd> {
+        if ctx.line().is_empty() {
+            let now = std::time::Instant::now();
+            let mut guard = self.first_space_time.lock().unwrap();
+            match *guard {
+                None => {
+                    *guard = Some(now);
+                    Some(Cmd::Noop) // eat the space, wait for hold
+                },
+                Some(start) if now.duration_since(start) >= self.hold_threshold => {
+                    *guard = None;
+                    // Capture actual buffer (empty in this case, but keep it consistent)
+                    *self.ptt_buffer.lock().unwrap() = ctx.line().to_string();
+                    self.ptt_triggered.store(true, Ordering::Release);
+                    Some(Cmd::Interrupt) // fires PTT
+                },
+                Some(_) => Some(Cmd::Noop), // still holding, eat the repeat
+            }
+        } else {
+            // Buffer not empty: reset timer and let space be typed normally
+            *self.first_space_time.lock().unwrap() = None;
+            None
+        }
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
 pub fn rl(
     os: &Os,
     sender: PromptQuerySender,
@@ -920,6 +994,8 @@ pub fn rl(
     paste_state: PasteState,
     agents: &crate::cli::agent::Agents,
     agent_swap_state: &super::agent_swap::AgentSwapState,
+    #[cfg(feature = "voice")] ptt_triggered: Arc<AtomicBool>,
+    #[cfg(feature = "voice")] ptt_buffer: Arc<Mutex<String>>,
 ) -> Result<Editor<ChatHelper, FileHistory>> {
     let edit_mode = match os.database.settings.get_string(Setting::ChatEditMode).as_deref() {
         Some("vi" | "vim") => EditMode::Vi,
@@ -1038,6 +1114,29 @@ pub fn rl(
         KeyEvent(KeyCode::Enter, Modifiers::NONE),
         EventHandler::Conditional(Box::new(WindowsPasteEnterHandler)),
     );
+
+    // Voice keybindings: Ctrl+O and Space-hold trigger PTT
+    #[cfg(feature = "voice")]
+    {
+        // Ctrl+O: immediate PTT trigger (works with or without existing input)
+        rl.bind_sequence(
+            KeyEvent(KeyCode::Char('o'), Modifiers::CTRL),
+            EventHandler::Conditional(Box::new(ShiftVPttHandler {
+                ptt_triggered: Arc::clone(&ptt_triggered),
+                ptt_buffer: Arc::clone(&ptt_buffer),
+            })),
+        );
+        // Space held for 1.5s on empty input: PTT trigger
+        rl.bind_sequence(
+            KeyEvent(KeyCode::Char(' '), Modifiers::NONE),
+            EventHandler::Conditional(Box::new(SpacePttHandler {
+                ptt_triggered: Arc::clone(&ptt_triggered),
+                ptt_buffer: Arc::clone(&ptt_buffer),
+                first_space_time: Mutex::new(None),
+                hold_threshold: std::time::Duration::from_millis(1500),
+            })),
+        );
+    }
 
     // Setup agent keybinds
     super::agent_keybinds::bind_agent_shortcuts(&mut rl, agents, agent_swap_state)?;
@@ -1508,7 +1607,19 @@ mod tests {
         let paste_state = PasteState::new();
         let agents = crate::cli::agent::Agents::default();
         let agent_swap_state = crate::cli::chat::agent_swap::AgentSwapState::new();
-        let mut test_editor = rl(&mock_os, sender, receiver, paste_state, &agents, &agent_swap_state).unwrap();
+        let mut test_editor = rl(
+            &mock_os,
+            sender,
+            receiver,
+            paste_state,
+            &agents,
+            &agent_swap_state,
+            #[cfg(feature = "voice")]
+            std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false)),
+            #[cfg(feature = "voice")]
+            std::sync::Arc::new(std::sync::Mutex::new(String::new())),
+        )
+        .unwrap();
 
         // Reserved Emacs keybindings that should not be overridden
         let reserved_keys = ['a', 'e', 'f', 'b', 'k'];

@@ -1,6 +1,6 @@
 {
-  "generated_at": "2026-05-13T22:16:36.655755",
-  "total_docs": 106,
+  "generated_at": "2026-05-21T21:11:44.848727",
+  "total_docs": 110,
   "by_category": {
     "command": [
       "commands/acp.md",
@@ -30,7 +30,8 @@
       "features/session-management.md",
       "features/steering-files.md",
       "features/tangent-mode.md",
-      "features/terminal-progress-indicator.md"
+      "features/terminal-progress-indicator.md",
+      "features/voice-mode.md"
     ],
     "settings-group": [
       "settings/api-service-settings.md",
@@ -58,7 +59,9 @@
       "settings/hooks-show-status.md",
       "settings/introspect-progressive-mode.md",
       "settings/introspect-tangent-mode.md",
-      "settings/tangent-mode-key.md"
+      "settings/show-thinking.md",
+      "settings/tangent-mode-key.md",
+      "settings/voice-settings.md"
     ],
     "slash_command": [
       "slash-commands/agent-create.md",
@@ -99,7 +102,8 @@
       "slash-commands/tangent.md",
       "slash-commands/todo.md",
       "slash-commands/tools.md",
-      "slash-commands/usage.md"
+      "slash-commands/usage.md",
+      "slash-commands/voice.md"
     ],
     "tool": [
       "tools/code.md",
@@ -704,6 +708,30 @@
       "status": "validated"
     },
     {
+      "path": "features/voice-mode.md",
+      "file": "voice-mode.md",
+      "title": "Voice Mode",
+      "description": "Hands-free speech-to-text input for chat using local Whisper transcription",
+      "category": "feature",
+      "keywords": [
+        "voice",
+        "speech",
+        "transcription",
+        "whisper",
+        "microphone",
+        "hands-free",
+        "dictation",
+        "audio",
+        "recording"
+      ],
+      "related": [
+        "voice-command",
+        "voice-settings"
+      ],
+      "validated": "2026-05-21",
+      "status": "validated"
+    },
+    {
       "path": "settings/api-service-settings.md",
       "file": "api-service-settings.md",
       "title": "API and Service Settings",
@@ -1121,6 +1149,23 @@
       "status": "validated"
     },
     {
+      "path": "settings/show-thinking.md",
+      "file": "show-thinking.md",
+      "title": "chat.showThinking",
+      "description": "Show thinking/reasoning blocks in chat output",
+      "category": "setting",
+      "keywords": [
+        "setting",
+        "thinking",
+        "reasoning",
+        "display",
+        "tui"
+      ],
+      "related": [],
+      "validated": "2026-05-21",
+      "status": "validated"
+    },
+    {
       "path": "settings/tangent-mode-key.md",
       "file": "tangent-mode-key.md",
       "title": "chat.tangentModeKey",
@@ -1154,6 +1199,29 @@
       ],
       "related": [],
       "validated": "2026-01-05",
+      "status": "validated"
+    },
+    {
+      "path": "settings/voice-settings.md",
+      "file": "voice-settings.md",
+      "title": "Voice Settings",
+      "description": "Configuration options for voice input mode including model size, timeouts, and language",
+      "category": "setting",
+      "keywords": [
+        "voice",
+        "settings",
+        "whisper",
+        "model",
+        "timeout",
+        "language",
+        "transcription",
+        "microphone"
+      ],
+      "related": [
+        "voice-mode",
+        "voice-command"
+      ],
+      "validated": "2026-05-21",
       "status": "validated"
     },
     {
@@ -1956,6 +2024,28 @@
       "status": "validated"
     },
     {
+      "path": "slash-commands/voice.md",
+      "file": "voice.md",
+      "title": "/voice",
+      "description": "Start voice input mode for hands-free speech-to-text prompts",
+      "category": "slash_command",
+      "keywords": [
+        "voice",
+        "speech",
+        "microphone",
+        "recording",
+        "transcription",
+        "whisper",
+        "dictation"
+      ],
+      "related": [
+        "voice-mode",
+        "voice-settings"
+      ],
+      "validated": "2026-05-21",
+      "status": "validated"
+    },
+    {
       "path": "tools/code.md",
       "file": "code.md",
       "title": "code",
@@ -2246,7 +2336,7 @@
         "delegate",
         "slash-agent"
       ],
-      "validated": "2026-02-19",
+      "validated": "2026-05-21",
       "status": "validated"
     },
     {
@@ -2314,7 +2404,7 @@
         "read",
         "code"
       ],
-      "validated": "2025-12-19",
+      "validated": "2026-05-21",
       "status": "validated"
     }
   ]

@@ -70,6 +70,7 @@ function makeActions(): AppKeypressActions & {
     suspendProcess: track('suspendProcess'),
     shellEscapeWrite: mock(),
     acceptSurveyPrompt: track('acceptSurveyPrompt'),
+    voiceCancel: null,
     _calls: calls,
     _args: args,
   };

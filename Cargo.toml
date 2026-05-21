@@ -1,6 +1,6 @@
 [workspace]
 resolver = "3"
-members = ["crates/amzn-codewhisperer-client", "crates/amzn-codewhisperer-streaming-client", "crates/amzn-consolas-client", "crates/amzn-qdeveloper-streaming-client", "crates/amzn-toolkit-telemetry-client", "crates/aws-toolkit-telemetry-definitions", "crates/chat-cli", "crates/chat-cli-v2", "crates/code-agent-sdk", "crates/semantic-search-client", "crates/agent", "crates/mock-mcp-server", "crates/chat-cli-ui", "crates/kiro-bot", "crates/kiro-knowledge-mcp"]
+members = ["crates/amzn-codewhisperer-client", "crates/amzn-codewhisperer-streaming-client", "crates/amzn-consolas-client", "crates/amzn-qdeveloper-streaming-client", "crates/amzn-toolkit-telemetry-client", "crates/aws-toolkit-telemetry-definitions", "crates/chat-cli", "crates/chat-cli-v2", "crates/code-agent-sdk", "crates/semantic-search-client", "crates/agent", "crates/mock-mcp-server", "crates/chat-cli-ui", "crates/kiro-bot", "crates/kiro-knowledge-mcp", "crates/voice"]
 default-members = ["crates/chat-cli"]
 
 [workspace.package]
@@ -13,6 +13,7 @@ license = "MIT OR Apache-2.0"
 
 [workspace.dependencies]
 agent = { path = "crates/agent" }
+voice = { path = "crates/voice" }
 agent-client-protocol = { version = "0.10.4", features = ["unstable"] }
 amzn-codewhisperer-client = { path = "crates/amzn-codewhisperer-client" }
 amzn-codewhisperer-streaming-client = { path = "crates/amzn-codewhisperer-streaming-client" }
@@ -72,6 +73,7 @@ color-eyre = "0.6.5"
 color-print = "0.3.5"
 convert_case = "0.11.0"
 cookie = "0.18.1"
+cpal = "0.15.3"
 criterion = "0.8.2"
 crossterm = { version = "0.28.1", features = ["event-stream", "events"] }
 ctrlc = "3.4.6"
@@ -173,9 +175,11 @@ typeshare = "1.0.4"
 unicode-width = "0.2.0"
 url = "2.5.4"
 uuid = { version = "1.15.1", features = ["v4", "serde"] }
+voice_activity_detector = "0.2.1"
 walkdir = "2.5.0"
 webpki-roots = "=0.26.8"
 which = "8.0"
+whisper-rs = { version = "0.13.0", features = ["whisper-cpp-log"] }
 whoami = "1.6.0"
 windows = { version = "0.61.1", features = ["Foundation", "Win32_System_ProcessStatus", "Win32_System_Kernel", "Win32_System_Threading", "Wdk_System_Threading"] }
 winnow = "=0.6.2"
