@@ -113,6 +113,13 @@ describe('Chat Command', () => {
       {
         kind: 'event',
         data: {
+          kind: 'ReasoningEvent',
+          data: { signature: 'test-sig' },
+        },
+      },
+      {
+        kind: 'event',
+        data: {
           kind: 'AssistantResponseEvent',
           data: { content: 'The answer is 4.' },
         },
