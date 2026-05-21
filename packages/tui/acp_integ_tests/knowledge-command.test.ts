@@ -71,8 +71,13 @@ describe('/knowledge command', () => {
     await tc.mock.awaitConnection();
     await tc.sleepMs(200);
 
-    // Send /knowledge command
-    await tc.sendKeys('/knowledge\n');
+    // Send /knowledge by typing the body and pressing Enter as separate
+    // events. The slash autocomplete popup that opens on '/' consumes a
+    // single Enter as "select highlighted item", which dispatches the
+    // command.
+    await tc.sendKeys('/knowledge');
+    await tc.sleepMs(200);
+    await tc.pressEnter();
     await tc.sleepMs(500);
 
     // Assert the request was sent with correct params

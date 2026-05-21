@@ -5,6 +5,7 @@ import * as path from 'path';
 import type { AgentStreamEvent } from '../types/agent-events';
 import type { AppState } from '../stores/app-store';
 import { PtyManager, TerminalSnapshot } from './shared/pty-manager';
+import type { CellAttributes } from './shared/pty-manager';
 import { TuiIpcConnection } from './shared/tui-ipc-connection';
 import { createTestDir, type TestPaths } from './shared/test-paths';
 
@@ -345,6 +346,29 @@ export class TestCase {
    */
   getSnapshot(): string[] {
     return this.ptyManager.getSnapshot();
+  }
+
+  /**
+   * Finds the first occurrence of `text` on the terminal screen and returns
+   * the per-character formatting attributes for each cell of the match
+   * (bold, italic, underline, fgColor, etc.). Returns null if not found.
+   *
+   * Used by markdown-rendering tests to assert that styling attributes
+   * survive the markdown -> ANSI -> xterm pipeline.
+   */
+  findTextCells(text: string): CellAttributes[] | null {
+    return this.ptyManager.findTextCells(text);
+  }
+
+  /**
+   * Resets the xterm buffer (visible screen + scrollback) and the raw
+   * output buffer, leaving the underlying TUI process untouched. Used
+   * by tests that share a single TUI across multiple cases (e.g. the
+   * markdown-rendering suites) so each case starts from a clean screen
+   * for `findTextCells()` / `getSnapshot()` lookups.
+   */
+  clearTerminal(): void {
+    this.ptyManager.clearTerminal();
   }
 
   /**

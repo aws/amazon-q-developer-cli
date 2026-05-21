@@ -115,11 +115,15 @@ jobs:
         working-directory: packages/twinki
 
   tui-integ:
-    name: Integration Tests
+    name: Integration Tests (${{ matrix.os }})
     needs: check-paths
     if: needs.check-paths.outputs.tui-changed == 'true'
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-x64-latest-16-cores]
+      fail-fast: false
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
       - uses: oven-sh/setup-bun@v2
@@ -130,13 +134,19 @@ jobs:
         run: bun run build
         working-directory: packages/twinki/packages/twinki
       - name: Run integration tests
+        # `test:integ` spawns chat_cli over IPC and is currently Linux-only.
+        # `test:acp-integ` does not need a Rust binary and runs on all OSes.
+        if: runner.os == 'Linux'
         run: bun run test:integ
+        working-directory: packages/tui
+      - name: Run ACP integration tests
+        run: bun run test:acp-integ
         working-directory: packages/tui
       - name: Upload test logs
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: integ-logs
+          name: integ-logs-${{ matrix.os }}
           path: packages/tui/integ_tests/test-outputs/
           retention-days: 7
 

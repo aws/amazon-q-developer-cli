@@ -189,6 +189,23 @@ export class PtyManager {
   }
 
   /**
+   * Clears the xterm terminal buffer (visible screen + scrollback) and the
+   * accumulated raw output, without touching the underlying PTY process.
+   * Used by tests that share a single TUI across multiple cases.
+   *
+   * `terminal.reset()` resets all terminal state (cursor, attributes, modes)
+   * and clears both the active buffer and scrollback. The TUI process itself
+   * is unaware of the reset; on its next render frame ink may re-emit
+   * previously-committed `<Static>` items into the cleared buffer, so
+   * callers that use index-based snapshot lookups should prefer
+   * `findLastIndex` - the latest test's content is always at the bottom.
+   */
+  clearTerminal(): void {
+    this.terminal.reset();
+    this.output = '';
+  }
+
+  /**
    * Returns the PID of the spawned process.
    */
   getPid(): number | undefined {

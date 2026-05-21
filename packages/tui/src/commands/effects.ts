@@ -26,7 +26,6 @@ import type {
 import type { AvailableCommand } from '../types/commands.js';
 import { openEditorSync } from '../utils/editor.js';
 import { executeShellEscapeTTY } from '../utils/shell-escape.js';
-import { truncateToRecentTurns } from '../utils/replay-history.js';
 import { extractRpcErrorMessage } from '../utils/error-handling.js';
 import { Kiro } from '../kiro.js';
 import {

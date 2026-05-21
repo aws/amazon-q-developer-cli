@@ -24,7 +24,17 @@ fi
 # Skip if .npmrc already has a non-expired token
 if [ -f "$NPMRC" ] && grep -q "_authToken=" "$NPMRC" 2>/dev/null; then
   TOKEN=$(grep '_authToken=' "$NPMRC" | sed 's/.*_authToken=//')
-  EXP=$(echo "$TOKEN" | cut -d. -f1 | base64 -D 2>/dev/null | grep -o '"exp":[0-9]*' | cut -d: -f2)
+  # CodeArtifact tokens are JWTs; the header (before the first '.') decodes
+  # to JSON containing an `exp` claim. base64's decode flag varies between
+  # GNU coreutils (-d) and BSD/macOS (-D), so try both. Trailing `|| true`
+  # keeps the script alive under `set -e -o pipefail` when neither variant
+  # is available or when the token isn't a JWT.
+  EXP=$(echo "$TOKEN" \
+    | cut -d. -f1 \
+    | { base64 -d 2>/dev/null || base64 -D 2>/dev/null || true; } \
+    | grep -o '"exp":[0-9]*' \
+    | cut -d: -f2 \
+    || true)
   NOW=$(date +%s)
   if [ -n "$EXP" ] && [ "$EXP" -gt "$NOW" ] 2>/dev/null; then
     exit 0
