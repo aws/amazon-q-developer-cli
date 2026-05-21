@@ -89,10 +89,19 @@ pub async fn run_eval(
             })
             .await?;
         let retrieved_paths: Vec<String> = chunks.iter().map(|c| c.source_path.clone()).collect();
-        let passed = case
-            .must_retrieve_any_of
-            .iter()
-            .any(|expected| retrieved_paths.iter().any(|p| p == expected));
+        // Bedrock returns full S3 URIs like
+        //   s3://<bucket>/root/docs/auth.md
+        // (or s3://<bucket>/docs/auth.md). Eval cases are written as bare
+        // repo-relative paths (`docs/auth.md`) because the corpus bucket is
+        // an internal detail and the case file shouldn't churn when the
+        // bucket name changes. Match by suffix so both formats work.
+        let passed = case.must_retrieve_any_of.iter().any(|expected| {
+            retrieved_paths.iter().any(|got| {
+                got == expected
+                    || got.ends_with(&format!("/{expected}"))
+                    || got.ends_with(expected.as_str())
+            })
+        });
         results.push(CaseResult {
             id: case.id.clone(),
             category: case.category.clone(),
