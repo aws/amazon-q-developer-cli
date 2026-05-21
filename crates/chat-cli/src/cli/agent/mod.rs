@@ -2824,6 +2824,33 @@ mod tests {
         assert!(combined.contains("MUST be `search_kiro_knowledge`"));
     }
 
+    /// The worked example is the strongest lever we have for actually
+    /// changing model behavior — terse MUST clauses are easy to ignore but
+    /// a concrete "here's the shape, copy it" example pulls the model
+    /// toward calling search_kiro_knowledge first. If someone strips the
+    /// example out, retrieval reliability craters; pin it.
+    #[test]
+    fn kiro_help_prompt_carries_a_worked_example_with_sources_line() {
+        let prompt = include_str!("../../agents/kiro_help_prompt.md");
+        assert!(
+            prompt.contains("Worked example"),
+            "prompt must include a worked example showing the expected output shape"
+        );
+        // The example must show a Sources: line — this is the artifact end
+        // users (and the agent-side validator) check for.
+        assert!(
+            prompt.contains("Sources: `autodocs/docs/slash-commands/model.md`"),
+            "worked example must show a concrete Sources: line so the model has a copy-this-shape target"
+        );
+        // The closing reminder ("if you skip retrieval, STOP and rewrite")
+        // is the only after-the-fact enforcement we have inside the prompt
+        // itself; do not let it drift away from the example block.
+        assert!(
+            prompt.contains("STOP, call `search_kiro_knowledge`, and rewrite"),
+            "prompt must keep the violation-recovery clause that tells the model what to do when it caught itself skipping"
+        );
+    }
+
     /// Phase 6 follow-up: the system prompt must hard-require retrieval before
     /// answering any kiro-related question. We assert on prompt content rather
     /// than runtime behavior because the prompt is the only contract we own —
