@@ -142,7 +142,28 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           pattern: autodocs-embeddings-*
-          merge-multiple: true
+          path: autodocs-artifacts
+
+      - name: Install autodocs embeddings
+        run: |
+          echo "=== Before: committed files ==="
+          echo "V1: $(python3 -c "import json; d=json.load(open('autodocs/meta/doc-index.json')); print(f'generated_at={d[\"generated_at\"]} total_docs={d[\"total_docs\"]}')")"
+          echo "V1 tar.gz sha256: $(shasum -a 256 autodocs/meta/doc-search-index.tar.gz | cut -d' ' -f1)"
+          echo "V2: $(python3 -c "import json; d=json.load(open('autodocs-v2/meta/doc-index.json')); print(f'generated_at={d[\"generated_at\"]} total_docs={d[\"total_docs\"]}')")"
+          echo "V2 tar.gz sha256: $(shasum -a 256 autodocs-v2/meta/doc-search-index.tar.gz | cut -d' ' -f1)"
+          echo ""
+          echo "=== Installing from artifacts ==="
+          find autodocs-artifacts -type f | sort
+          cp autodocs-artifacts/autodocs-embeddings-v1/doc-search-index.tar.gz autodocs/meta/doc-search-index.tar.gz
+          cp autodocs-artifacts/autodocs-embeddings-v1/doc-index.json autodocs/meta/doc-index.json
+          cp autodocs-artifacts/autodocs-embeddings-v2/doc-search-index.tar.gz autodocs-v2/meta/doc-search-index.tar.gz
+          cp autodocs-artifacts/autodocs-embeddings-v2/doc-index.json autodocs-v2/meta/doc-index.json
+          echo ""
+          echo "=== After: installed from CI ==="
+          echo "V1: $(python3 -c "import json; d=json.load(open('autodocs/meta/doc-index.json')); print(f'generated_at={d[\"generated_at\"]} total_docs={d[\"total_docs\"]}')")"
+          echo "V1 tar.gz sha256: $(shasum -a 256 autodocs/meta/doc-search-index.tar.gz | cut -d' ' -f1)"
+          echo "V2: $(python3 -c "import json; d=json.load(open('autodocs-v2/meta/doc-index.json')); print(f'generated_at={d[\"generated_at\"]} total_docs={d[\"total_docs\"]}')")"
+          echo "V2 tar.gz sha256: $(shasum -a 256 autodocs-v2/meta/doc-search-index.tar.gz | cut -d' ' -f1)"
 
       - uses: ./.github/actions/codeartifact-login
         with:
