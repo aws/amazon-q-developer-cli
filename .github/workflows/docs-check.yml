@@ -112,7 +112,7 @@ jobs:
           PROMPT="Review the code changes in this branch (git diff origin/main...HEAD) and determine if a changelog entry is needed.
 
           Rules:
-          - User-facing changes (new features, behavior changes, bug fixes users would notice) need a changelog entry.
+          - User-facing changes (new features, behavior changes, bug fixes users would notice, UX improvements visible to users) need a changelog entry.
           - Internal changes (refactoring, tests, CI, KAS/Kiro Agent Server features) do NOT need a changelog entry.
           - KAS is behind a feature gate and not customer-facing — skip it.
 
