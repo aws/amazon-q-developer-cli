@@ -9,7 +9,7 @@ import {
 
 export type TerminalTheme = 'dark' | 'light';
 
-interface DetectionResult {
+export interface DetectionResult {
   theme: TerminalTheme;
   method: string;
   confidence: 'high' | 'medium' | 'low';

@@ -4,20 +4,20 @@
 import { visibleWidth } from '../utils/text-width.js';
 
 // Segment types (shared with PromptInput)
-type TextSegment = { type: 'text'; value: string };
-type FileSegment = {
+export type TextSegment = { type: 'text'; value: string };
+export type FileSegment = {
   type: 'file';
   filePath: string;
   content: string;
   lineCount: number;
 };
-type PasteSegment = {
+export type PasteSegment = {
   type: 'paste';
   content: string;
   lineCount: number;
   charCount: number;
 };
-type ImageSegment = {
+export type ImageSegment = {
   type: 'image';
   /** Base64-encoded image data */
   base64: string;

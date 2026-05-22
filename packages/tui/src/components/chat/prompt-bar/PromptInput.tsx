@@ -33,6 +33,9 @@ import {
 } from '../../../stores/selectors.js';
 import {
   type Segment,
+  type FileSegment,
+  type PasteSegment,
+  type ImageSegment,
   segmentWidth,
   totalWidth,
   getVisibleText,
@@ -105,28 +108,6 @@ export interface PromptInputProps {
   onTriggerDetected?: (trigger: TriggerInfo | null) => void;
   placeholder?: string;
 }
-
-// FileSegment type for local use
-type FileSegment = {
-  type: 'file';
-  filePath: string;
-  content: string;
-  lineCount: number;
-};
-type PasteSegment = {
-  type: 'paste';
-  content: string;
-  lineCount: number;
-  charCount: number;
-};
-type ImageSegment = {
-  type: 'image';
-  base64: string;
-  mimeType: string;
-  width: number;
-  height: number;
-  sizeBytes: number;
-};
 
 // buildContent is defined and exported here in PromptInput.tsx so tests
 // can import it directly. Keep the implementation tiny: join the segments

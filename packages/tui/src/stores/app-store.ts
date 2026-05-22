@@ -384,6 +384,17 @@ export type MessageType =
     }
   | { id: string; role: MessageRole.System; content: string; success: boolean };
 
+/**
+ * A conversation "turn" groups a user message with all of the AI-side messages
+ * (model responses, tool uses, system notes) that followed it before the next
+ * user message. Shared between `ConversationView` and `SessionOutput`.
+ */
+export interface ConversationTurn {
+  userMessage: MessageType;
+  aiMessages: MessageType[];
+  isActive: boolean;
+}
+
 export interface SlashCommand extends AvailableCommand {
   source: 'local' | 'backend';
 }
@@ -511,6 +522,9 @@ const initialInputBufferState = (): InputBufferState => ({
 interface AppStoreProps {
   kiro: Kiro;
   agentEngine?: AgentEngine;
+  noInteractive?: boolean;
+  initialInput?: string;
+  trustAllTools?: boolean;
 }
 
 export type AppActions = BaseAppActions & InputBufferActions;
@@ -1060,14 +1074,6 @@ export interface AppState {
     startBuffering: (() => void) | null;
     stopBuffering: (() => void) | null;
   };
-}
-
-interface AppStoreProps {
-  kiro: Kiro;
-  agentEngine?: AgentEngine;
-  noInteractive?: boolean;
-  initialInput?: string;
-  trustAllTools?: boolean;
 }
 
 export const useAppStore = <T>(

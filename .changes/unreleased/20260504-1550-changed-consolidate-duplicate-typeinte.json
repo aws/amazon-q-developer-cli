@@ -1,0 +1,4 @@
+{
+  "type": "changed",
+  "description": "Consolidate duplicate type/interface declarations in TUI"
+}

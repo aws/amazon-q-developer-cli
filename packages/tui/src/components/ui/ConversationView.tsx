@@ -29,12 +29,7 @@ import { useTheme } from '../../hooks/useThemeContext.js';
 import { useTwinkiContext } from 'twinki';
 import { useShowThinking } from '../../hooks/useGlyphs.js';
 import { SESSION_TOOL_NAMES } from '../../types/agent-events.js';
-
-interface ConversationTurn {
-  userMessage: StoreMessageType;
-  aiMessages: StoreMessageType[];
-  isActive: boolean;
-}
+import type { ConversationTurn } from '../../stores/app-store.js';
 
 /** Whether a Model message needs top spacing (every Model except the first after User) */
 function needsModelSpacing(prevRole: MessageRole | undefined): boolean {
