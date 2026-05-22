@@ -13,7 +13,9 @@ concurrency:
 jobs:
   pr-assist:
     if: |
-      (github.event_name == 'pull_request' && github.actor != 'github-actions[bot]') ||
+      (github.event_name == 'pull_request' &&
+       github.actor != 'github-actions[bot]' &&
+       !contains(github.event.pull_request.labels.*.name, 'no-changelog')) ||
       (github.event_name == 'issue_comment' &&
        github.event.issue.pull_request &&
        (startsWith(github.event.comment.body, '/docs') || startsWith(github.event.comment.body, '/changelog')) &&
